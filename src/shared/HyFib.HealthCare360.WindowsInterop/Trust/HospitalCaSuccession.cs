@@ -3,39 +3,39 @@ using System.Security.Cryptography.X509Certificates;
 namespace HyFib.HealthCare360.WindowsInterop.Trust;
 
 /// <summary>
-/// Whether a hospital CA a device does not pin yet succeeds the one it pins, after the server's CA was rolled over
-/// ('certificates roll-ca', docs/deployment/CA-ROLLOVER.md). A device takes a new CA only on the word of the CA it pins:
-/// the server sends, with its own certificate, the certificate the old CA signed for the new CA's key (the cross
-/// certificate). HC360 Desktop and the lab agent decide with this one copy of the code, and the server's tests check it
+/// Whether a hospital CA a device does not pin yet succeeds the one it pins, as the server's CA is rolled over
+/// ('certificates prepare-ca', then 'switch-ca'; docs/deployment/CA-ROLLOVER.md). A device holds a new CA only on the word of
+/// the CA it pins: the server hands out, with the next CA, the certificate the current CA signed for the next CA's key (the
+/// cross certificate). HC360 Desktop and the lab agent decide with this one copy of the code, and the server's tests check it
 /// against a real rollover.
 /// </summary>
 public static class HospitalCaSuccession
 {
     /// <summary>
     /// True when <paramref name="candidate"/> is a certificate authority in <paramref name="pinned"/>'s name, with another key,
-    /// and <paramref name="handshake"/> (the certificates the server sent over the connection pinned to
+    /// and <paramref name="handedOut"/> (what the server handed out with it, over a connection pinned to
     /// <paramref name="pinned"/>) holds a certificate authority for the candidate's name and key that <paramref name="pinned"/>
-    /// signed, valid at <paramref name="now"/>. The candidate's own signature on itself is not what is trusted: the old CA's
-    /// signature on its key is.
+    /// signed, valid at <paramref name="now"/>. The candidate's own signature on itself is not what is trusted: the pinned
+    /// CA's signature on its key is.
     /// </summary>
-    public static bool Succeeds(X509Certificate2 pinned, X509Certificate2 candidate, IEnumerable<X509Certificate2> handshake, DateTimeOffset now) =>
-        CrossFor(pinned, candidate, handshake, now) is not null;
+    public static bool Succeeds(X509Certificate2 pinned, X509Certificate2 candidate, IEnumerable<X509Certificate2> handedOut, DateTimeOffset now) =>
+        CrossFor(pinned, candidate, handedOut, now) is not null;
 
     /// <summary>
-    /// The certificate in <paramref name="handshake"/> that makes <paramref name="candidate"/> the successor of
+    /// The certificate in <paramref name="handedOut"/> that makes <paramref name="candidate"/> the successor of
     /// <paramref name="pinned"/> (see <see cref="Succeeds"/>), or null when there is none.
     /// </summary>
-    public static X509Certificate2? CrossFor(X509Certificate2 pinned, X509Certificate2 candidate, IEnumerable<X509Certificate2> handshake, DateTimeOffset now)
+    public static X509Certificate2? CrossFor(X509Certificate2 pinned, X509Certificate2 candidate, IEnumerable<X509Certificate2> handedOut, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(pinned);
         ArgumentNullException.ThrowIfNull(candidate);
-        ArgumentNullException.ThrowIfNull(handshake);
+        ArgumentNullException.ThrowIfNull(handedOut);
         if (!SameName(candidate, pinned) || !SelfIssued(candidate) || SameKey(candidate, pinned) || !IsCa(candidate))
         {
             return null;
         }
 
-        return handshake.FirstOrDefault(cross =>
+        return handedOut.FirstOrDefault(cross =>
             !cross.RawData.AsSpan().SequenceEqual(candidate.RawData)
             && SameName(cross, candidate)
             && SameKey(cross, candidate)
@@ -45,8 +45,8 @@ public static class HospitalCaSuccession
     }
 
     /// <summary>
-    /// Whether <paramref name="cross"/>, kept since a device followed a rollover, shows that <paramref name="current"/>
-    /// succeeded <paramref name="previous"/>. It is checked as of when the previous CA signed it: that the previous CA vouched
+    /// Whether <paramref name="cross"/>, kept since a device took <paramref name="current"/> as the next CA, shows that it
+    /// succeeds <paramref name="previous"/>. It is checked as of when the previous CA signed it: that the previous CA vouched
     /// for the current one stays true after the cross certificate expires.
     /// </summary>
     public static bool Succeeded(X509Certificate2 previous, X509Certificate2 current, X509Certificate2 cross)

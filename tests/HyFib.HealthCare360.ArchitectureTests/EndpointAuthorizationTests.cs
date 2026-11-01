@@ -41,8 +41,10 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/auth/refresh",
 
         // Workstation set-up, the sign-in page and the portal: the server's public CA certificate, name and version, and
-        // whether the patient portal and video consultations are switched on (hospital-wide, nothing per person).
+        // whether the patient portal and video consultations are switched on (hospital-wide, nothing per person). While the
+        // hospital CA is rolled over, the next CA and the one it replaced: public certificates too (CA-ROLLOVER.md).
         "GET /api/v1/system/ca-certificate",
+        "GET /api/v1/system/ca-certificate/next",
         "GET /api/v1/system/ca-certificate/previous",
         "GET /api/v1/system/info",
         "POST /api/v1/devices/enroll",

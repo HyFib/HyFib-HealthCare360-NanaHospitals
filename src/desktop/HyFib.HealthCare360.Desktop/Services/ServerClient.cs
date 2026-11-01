@@ -84,28 +84,12 @@ internal sealed class ServerClient(Uri baseUri, ServerTrust trust) : IDisposable
     }
 
     /// <summary>
-    /// After the hospital CA was rolled over, the new CA on the word of the CA this workstation pins
-    /// (<see cref="HospitalCaPins.SuccessorIn"/>): the server's CA certificate, fetched over a pinned connection that keeps
-    /// what the server sent with its own certificate. Null when the server's CA is the pinned one, or the pinned CA did not
-    /// vouch for it.
+    /// The hospital CA rollover's next step for this workstation (<see cref="HospitalCaFollow.CheckAsync"/>): hold the next CA
+    /// the server prepared, on the word of the CA it pins, or switch to it once the server did. Asked over the pinned
+    /// connection; null when there is nothing to do.
     /// </summary>
-    public async Task<HospitalCaSuccessor?> FindCaSuccessorAsync(CancellationToken cancellationToken)
-    {
-        X509Certificate2[] sent = [];
-        using var http = trust.CreateHttpClient(baseUri, TimeSpan.FromSeconds(15), handshake => sent = handshake);
-        var pem = await http.GetStringAsync("api/v1/system/ca-certificate", cancellationToken);
-        try
-        {
-            return trust.Pins.SuccessorIn(pem, sent, DateTimeOffset.UtcNow);
-        }
-        finally
-        {
-            foreach (var certificate in sent)
-            {
-                certificate.Dispose();
-            }
-        }
-    }
+    public Task<HospitalCaStep?> CheckCaAsync(CancellationToken cancellationToken) =>
+        HospitalCaFollow.CheckAsync(_http, trust.Pins, DateTimeOffset.UtcNow, cancellationToken);
 
     /// <summary>
     /// First contact with a server that is not yet trusted: download its public CA certificate. The TLS certificate

@@ -25,7 +25,13 @@ internal sealed class AgentConfiguration
     public string? CaFingerprint { get; set; }
 
     /// <summary>
-    /// The CA that <see cref="CaCertificatePem"/> replaced in a rollover the agent followed: a second pin until it expires
+    /// The next CA the server prepared ('certificates prepare-ca'), held on the word of the CA pinned: a second pin until the
+    /// server switches to it, and then the CA pinned (CA-ROLLOVER.md).
+    /// </summary>
+    public string? NextCaCertificatePem { get; set; }
+
+    /// <summary>
+    /// The CA that <see cref="CaCertificatePem"/> replaced in a switch the agent followed: a second pin until it expires
     /// (CA-ROLLOVER.md).
     /// </summary>
     public string? PreviousCaCertificatePem { get; set; }
@@ -70,12 +76,36 @@ internal sealed class AgentConfiguration
             : Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(value), SecretEntropy, DataProtectionScope.LocalMachine));
     }
 
-    /// <summary>Pins <paramref name="successor"/>, the new CA after a rollover, keeping the one it replaced.</summary>
-    public void Follow(HospitalCaSuccessor successor)
+    /// <summary>
+    /// Takes <paramref name="step"/> of the hospital CA's rollover and saves it to <paramref name="path"/>: holds the next CA
+    /// the server prepared, or pins it once the server switched to it, keeping the CA it replaced. When the file cannot be
+    /// written the configuration stays as it was, and the exception is thrown: the next check takes the step again.
+    /// </summary>
+    public void Take(HospitalCaStep step, string path)
     {
-        PreviousCaCertificatePem = CaCertificatePem;
-        CaCertificatePem = successor.CaPem;
-        CaFingerprint = successor.Fingerprint;
+        ArgumentNullException.ThrowIfNull(step);
+        var before = (CaCertificatePem, CaFingerprint, NextCaCertificatePem, PreviousCaCertificatePem);
+        switch (step)
+        {
+            case HospitalCaStep.HoldNext hold:
+                NextCaCertificatePem = hold.Next.CaPem;
+                break;
+            case HospitalCaStep.SwitchToNext switched when NextCaCertificatePem is { } next:
+                (PreviousCaCertificatePem, CaCertificatePem, CaFingerprint, NextCaCertificatePem) = (CaCertificatePem, next, switched.Fingerprint, null);
+                break;
+            default:
+                return;
+        }
+
+        try
+        {
+            Save(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            (CaCertificatePem, CaFingerprint, NextCaCertificatePem, PreviousCaCertificatePem) = before;
+            throw;
+        }
     }
 
     /// <summary>The saved configuration; an empty one when there is none yet or it cannot be read.</summary>

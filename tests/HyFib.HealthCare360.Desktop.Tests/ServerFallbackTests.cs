@@ -46,7 +46,7 @@ public sealed class ServerFallbackTests
             ["https://HC360-SRV:7360/", "https://192.168.1.10:7360/", "not an address", "http://192.168.1.11:7360/", "https://192.168.1.10:7360/"],
             thisComputer,
             [stranger, hospital],
-            Fingerprint);
+            [Fingerprint]);
 
         candidates.Select(c => c.AbsoluteUri).ShouldBe(
         [
@@ -60,29 +60,36 @@ public sealed class ServerFallbackTests
     }
 
     /// <summary>
-    /// After the hospital CA is rolled over the server announces the new CA, and the one it replaced, which still vouches for
-    /// it: a workstation that pinned the old CA finds the server by that. Another server's announcing it changes nothing: an
-    /// address is used only once the server answers there over the pinned connection.
+    /// While the hospital CA is rolled over, a server may announce another CA the workstation holds: the next one, once it
+    /// switched to it, or the one the pinned CA replaced, a standby not switched yet. Another server's announcing one changes
+    /// nothing: an address is used only once the server answers there over the pinned connection.
     /// </summary>
     [Fact]
-    public void Tries_a_server_that_announces_the_pinned_ca_as_the_one_its_ca_replaced()
+    public void Tries_a_server_that_announces_any_CA_the_workstation_holds()
     {
-        var rolled = new DiscoveredServer("NH._hc360._tcp.local", "HC360-SRV2", 7360, [IPAddress.Parse("192.168.1.20")], "1.0", "NH", new string('C', 64),
-            PreviousCaFingerprint: Fingerprint);
-        var stranger = new DiscoveredServer("XX._hc360._tcp.local", "OTHER", 7360, [IPAddress.Parse("192.168.1.30")], "1.0", "XX", new string('B', 64),
-            PreviousCaFingerprint: new string('D', 64));
+        var next = new string('C', 64);
+        var previous = new string('D', 64);
+        var switched = new DiscoveredServer("NH._hc360._tcp.local", "HC360-SRV2", 7360, [IPAddress.Parse("192.168.1.20")], "1.0", "NH", next);
+        var standby = new DiscoveredServer("NH2._hc360._tcp.local", "HC360-SRV3", 7360, [IPAddress.Parse("192.168.1.21")], "1.0", "NH", previous);
+        var stranger = new DiscoveredServer("XX._hc360._tcp.local", "OTHER", 7360, [IPAddress.Parse("192.168.1.30")], "1.0", "XX", new string('B', 64));
 
-        ServerFallback.Candidates(new Uri("https://hc360-srv:7360/"), [], null, [stranger, rolled], Fingerprint).Select(c => c.AbsoluteUri).ShouldBe(
-        [
-            "https://hc360-srv2:7360/",
-            "https://hc360-srv2.local:7360/",
-            "https://192.168.1.20:7360/",
-        ]);
+        ServerFallback.Candidates(new Uri("https://hc360-srv:7360/"), [], null, [stranger, switched, standby], [Fingerprint, next, previous.ToLowerInvariant()])
+            .Select(c => c.AbsoluteUri).ShouldBe(
+            [
+                "https://hc360-srv2:7360/",
+                "https://hc360-srv2.local:7360/",
+                "https://192.168.1.20:7360/",
+                "https://hc360-srv3:7360/",
+                "https://hc360-srv3.local:7360/",
+                "https://192.168.1.21:7360/",
+            ]);
+        ServerFallback.Candidates(new Uri("https://hc360-srv:7360/"), [], null, [stranger, switched, standby], [Fingerprint]).ShouldBeEmpty(
+            "a workstation that holds no other CA tries neither");
     }
 
     [Fact]
     public void Has_nothing_to_try_when_nothing_else_is_known() =>
-        ServerFallback.Candidates(new Uri("https://hc360-srv:7360/"), ["https://hc360-srv:7360/"], null, [], Fingerprint).ShouldBeEmpty();
+        ServerFallback.Candidates(new Uri("https://hc360-srv:7360/"), ["https://hc360-srv:7360/"], null, [], [Fingerprint]).ShouldBeEmpty();
 
     [Fact]
     public async Task Uses_the_first_address_where_the_hospital_server_answers()
@@ -106,7 +113,7 @@ public sealed class ServerFallbackTests
             var serving = Task.WhenAll(ServeHealthAsync(strangerListener, stranger), ServeHealthAsync(hospitalListener, hospital));
 
             var found = await ServerFallback.FirstAnsweringAsync(
-                [nothingThere, Address(strangerListener), Address(hospitalListener)], ca.ExportCertificatePem(), TestContext.Current.CancellationToken);
+                [nothingThere, Address(strangerListener), Address(hospitalListener)], () => new ServerTrust(ca.ExportCertificatePem()), TestContext.Current.CancellationToken);
 
             found.ShouldBe(Address(hospitalListener));
             await serving;
@@ -130,7 +137,7 @@ public sealed class ServerFallbackTests
         {
             var serving = ServeHealthAsync(listener, stranger);
 
-            (await ServerFallback.FirstAnsweringAsync([Address(listener)], ca.ExportCertificatePem(), TestContext.Current.CancellationToken))
+            (await ServerFallback.FirstAnsweringAsync([Address(listener)], () => new ServerTrust(ca.ExportCertificatePem()), TestContext.Current.CancellationToken))
                 .ShouldBeNull();
             await serving;
         }

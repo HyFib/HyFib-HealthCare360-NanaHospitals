@@ -14,7 +14,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
 /// The certificate commands as an administrator and a monitoring tool run them (docs/deployment/CA-ROLLOVER.md): a new
-/// hospital CA and a rollover are made only once confirmed, and the probe's exit code is the worst of the addresses it checks.
+/// hospital CA, and each step of a rollover, are made only once confirmed, and the probe's exit code is the worst of the
+/// addresses it checks.
 /// </summary>
 public sealed class CertificateCommandTests : IDisposable
 {
@@ -51,32 +52,53 @@ public sealed class CertificateCommandTests : IDisposable
     }
 
     /// <summary>
-    /// A rollover too waits for --confirm, and is not run again while the CA it replaced still vouches for the new one: a
-    /// second one would leave the devices that have not moved yet with a chain they cannot follow.
+    /// The rollover's two steps each wait for --confirm, and the switch for every device seen in the last 30 days to hold the
+    /// next CA, as the database says: here what it says is given, and CaRolloverDeviceTests reads it from a real one. Neither
+    /// runs twice: the next CA is prepared once, and switched to once.
     /// </summary>
     [Fact]
-    public async Task A_rollover_is_made_only_once_confirmed_and_not_again_while_the_last_one_runs()
+    public async Task The_next_CA_is_prepared_and_switched_to_only_once_confirmed_and_the_switch_waits_for_every_device()
     {
         var directories = new DataDirectories(new PlatformOptions { DataDirectory = _root });
-        string old;
+        var keys = HospitalDataProtection.CreateNodeProvider(directories);
+        string current;
         using (var first = Start(directories))
         {
-            old = first.CaFingerprint!;
+            current = first.CaFingerprint!;
         }
 
-        (await ServerCli.RunAsync(["certificates", "roll-ca", "--data-dir", _root])).ShouldBe(1, "nothing is rolled over without --confirm");
-        Fingerprint(directories).ShouldBe(old);
+        (await ServerCli.RunAsync(["certificates", "prepare-ca", "--data-dir", _root])).ShouldBe(1, "nothing is prepared without --confirm");
+        LanCertificateManager.PreparedNextCaFingerprint(directories, keys, DateTimeOffset.UtcNow).ShouldBeNull();
+        (await ServerCli.RunAsync(["certificates", "prepare-ca", "--confirm", "--data-dir", _root])).ShouldBe(0);
+        var next = LanCertificateManager.PreparedNextCaFingerprint(directories, keys, DateTimeOffset.UtcNow).ShouldNotBeNull();
+        Fingerprint(directories).ShouldBe(current, "the server keeps serving with its CA");
+        (await ServerCli.RunAsync(["certificates", "prepare-ca", "--confirm", "--data-dir", _root])).ShouldBe(1, "prepared already");
+        LanCertificateManager.PreparedNextCaFingerprint(directories, keys, DateTimeOffset.UtcNow).ShouldBe(next);
 
-        (await ServerCli.RunAsync(["certificates", "roll-ca", "--confirm", "--data-dir", _root])).ShouldBe(0);
-        var rolled = Fingerprint(directories);
-        rolled.ShouldNotBe(old);
+        var options = new Dictionary<string, string> { ["data-dir"] = _root };
+        var ready = new CaRolloverReadiness([], [], 3);
+        (await ServerCli.SwitchCaAsync(options, confirmed: true, (_, _) => Task.FromResult(new CaRolloverReadiness(["Lab PC 2"], [], 3))))
+            .ShouldBe(1, "a device without the next CA would no longer trust the server");
+        (await ServerCli.SwitchCaAsync(options, confirmed: true, (_, _) => Task.FromResult(new CaRolloverReadiness([], ["Ward 3 Station"], 3))))
+            .ShouldBe(1, "nor might one that does not say");
+        (await ServerCli.SwitchCaAsync(options, confirmed: true, (_, _) => Task.FromException<CaRolloverReadiness>(new TimeoutException("no answer"))))
+            .ShouldBe(3, "without the database it cannot tell");
+        (await ServerCli.SwitchCaAsync(options, confirmed: false, (_, _) => Task.FromResult(ready))).ShouldBe(1, "nothing is switched without --confirm");
+        Fingerprint(directories).ShouldBe(current);
+
+        string? askedFor = null;
+        (await ServerCli.SwitchCaAsync(options, confirmed: true, (fingerprint, _) =>
+        {
+            askedFor = fingerprint;
+            return Task.FromResult(ready);
+        })).ShouldBe(0);
+        askedFor.ShouldBe(next, "it asks which devices hold the next CA");
+        Fingerprint(directories).ShouldBe(next);
         Directory.GetFiles(directories.Certificates, "hospital-ca.pfx.protected.replaced-*").ShouldHaveSingleItem("the CA it replaced is kept");
-
-        (await ServerCli.RunAsync(["certificates", "roll-ca", "--confirm", "--data-dir", _root])).ShouldBe(1, "the last rollover still runs");
-        Fingerprint(directories).ShouldBe(rolled);
+        (await ServerCli.SwitchCaAsync(options, confirmed: true, (_, _) => Task.FromResult(ready))).ShouldBe(1, "no next CA is prepared any more");
 
         using var started = Start(directories);
-        (started.CaFingerprint, started.PreviousCaFingerprint).ShouldBe((rolled, old), "the server starts with the new CA, which the old one vouches for");
+        (started.CaFingerprint, started.PreviousCaFingerprint).ShouldBe((next, current), "the server starts with the next CA, and hands out the one it replaced");
     }
 
     [Fact]

@@ -17,7 +17,7 @@ namespace HyFib.HealthCare360.Platform.Networking;
 /// <summary>
 /// Advertises the Server Node on the hospital WiFi via mDNS/DNS-SD (<c>_hc360._tcp.local</c>, DED-02) so HC360
 /// Desktop finds it without anyone typing IP addresses. TXT records (<see cref="ServerAdvertisement"/>): version, facility
-/// code, CA fingerprint (and after a rollover the previous CA's), host name and path. Re-announces periodically and whenever the network address changes (WiFi
+/// code, CA fingerprint, host name and path. Re-announces periodically and whenever the network address changes (WiFi
 /// reconnect / DHCP renewal).
 /// </summary>
 internal sealed class MdnsAdvertiser(
@@ -41,8 +41,7 @@ internal sealed class MdnsAdvertiser(
         {
             using var multicast = new MulticastService();
             using var discovery = new ServiceDiscovery(multicast);
-            var profile = Profile(settings.Network, settings.HttpsPort, Environment.MachineName, version, facilityCode, certificates.CaFingerprint,
-                previousCaFingerprint: certificates.PreviousCaFingerprint);
+            var profile = Profile(settings.Network, settings.HttpsPort, Environment.MachineName, version, facilityCode, certificates.CaFingerprint);
 
             multicast.Start();
             discovery.Advertise(profile);
@@ -103,8 +102,7 @@ internal sealed class MdnsAdvertiser(
         string version,
         string facilityCode,
         string? caFingerprint,
-        IEnumerable<IPAddress>? addresses = null,
-        string? previousCaFingerprint = null)
+        IEnumerable<IPAddress>? addresses = null)
     {
         var profile = new ServiceProfile(
             new DomainName(ServerAdvertisement.InstanceName(machineName)),
@@ -112,7 +110,7 @@ internal sealed class MdnsAdvertiser(
             (ushort)httpsPort,
             addresses,
             false);
-        foreach (var (key, value) in ServerAdvertisement.Properties(version, facilityCode, caFingerprint, machineName, previousCaFingerprint))
+        foreach (var (key, value) in ServerAdvertisement.Properties(version, facilityCode, caFingerprint, machineName))
         {
             profile.AddProperty(key, value);
         }

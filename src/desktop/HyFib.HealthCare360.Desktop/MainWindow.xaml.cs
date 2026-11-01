@@ -77,7 +77,7 @@ public partial class MainWindow : Window
         _args = args;
         _notice = notice;
         _server = settings.ServerUri ?? throw new InvalidOperationException("No server configured.");
-        _trust = new ServerTrust(settings.CaCertificatePem!, settings.PreviousCaCertificatePem);
+        _trust = new ServerTrust(settings.CaCertificatePem!, settings.PreviousCaCertificatePem, settings.NextCaCertificatePem);
         _client = new ServerClient(_server, _trust);
         _network = new NetworkStatusService(_client);
         _updates = new DesktopUpdateService(_server, _trust, settings);
@@ -507,7 +507,7 @@ public partial class MainWindow : Window
         try
         {
             OfflineDetails.Text = $"{_server.Host} · looking for the server at its other addresses…";
-            var other = await ServerFallback.FindAsync(_server, _settings, _trust.Fingerprint, _lifetime.Token);
+            var other = await ServerFallback.FindAsync(_server, _settings, _trust.Pins, _lifetime.Token);
 
             // The usual address may have answered meanwhile (the retries go on), or a refused certificate locked the window.
             if (other is null || !_retry.IsEnabled || Locked)
@@ -596,10 +596,11 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// After the hospital CA was rolled over ('certificates roll-ca'), takes the new CA on the word of the CA this workstation
-    /// pins, a minute after start and every six hours: the server sends, with its own certificate, the one its old CA signed
-    /// for the new CA's key. The CA pinned until then stays a second pin until it expires, and the heartbeat reports both, so
-    /// System health can name the workstations that have not moved (CA-ROLLOVER.md).
+    /// Follows the hospital CA's two-step rollover (CA-ROLLOVER.md), a minute after start and every six hours: once IT
+    /// prepared the next CA ('certificates prepare-ca'), holds it as a second pin on the word of the CA this workstation pins;
+    /// once the server switched to it ('certificates switch-ca'), pins it, and keeps the CA it replaced as a second pin until
+    /// that expires. The heartbeat reports the CAs held, so System health names the workstations that do not hold the next
+    /// CA, and the switch waits for them.
     /// </summary>
     private async Task FollowCaLoopAsync(CancellationToken cancellationToken)
     {
@@ -621,41 +622,47 @@ public partial class MainWindow : Window
 
     private async Task FollowCaAsync(CancellationToken cancellationToken)
     {
-        HospitalCaSuccessor? successor;
+        HospitalCaStep? step;
         try
         {
-            successor = await _client.FindCaSuccessorAsync(cancellationToken);
+            step = await _client.CheckCaAsync(cancellationToken);
         }
         catch (Exception ex) when (ex is HttpRequestException or CryptographicException
             || (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
         {
-            Log.Debug(ex, "Could not ask the server for its CA; trying again later");
+            Log.Debug(ex, "Could not ask the server for its CAs; trying again later");
             return;
         }
 
-        if (successor is null)
+        if (step is null)
         {
             return;
         }
 
-        var before = (_settings.CaCertificatePem, _settings.CaFingerprint, _settings.PreviousCaCertificatePem, _settings.CaCrossCertificatePem);
         try
         {
-            _settings.Follow(successor);
-            _settings.Save();
+            _settings.Take(step, _settings.Save);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Not saved: the CA pinned so far stays, and the next try takes the new one again.
-            (_settings.CaCertificatePem, _settings.CaFingerprint, _settings.PreviousCaCertificatePem, _settings.CaCrossCertificatePem) = before;
-            Log.Error(ex, "The hospital's new CA could not be saved");
+            // Not saved: the CAs stay as they were, and the next check takes the step again.
+            Log.Error(ex, "The hospital CA's rollover could not be saved");
             return;
         }
 
-        _trust.Pins.Follow(successor);
-        Log.Information(
-            "The hospital CA was rolled over: HC360 Desktop now pins the new CA {Fingerprint}, and the one it replaced until that expires",
-            successor.Fingerprint);
+        switch (step)
+        {
+            case HospitalCaStep.HoldNext hold:
+                _trust.Pins.Hold(hold.Next);
+                Log.Information("The server prepared the next hospital CA {Fingerprint}: HC360 Desktop holds it for the switch", hold.Next.Fingerprint);
+                break;
+            case HospitalCaStep.SwitchToNext switched:
+                _trust.Pins.SwitchToNext();
+                Log.Information(
+                    "The server switched to the hospital CA {Fingerprint}: HC360 Desktop pins it, and the one it replaced until that expires",
+                    switched.Fingerprint);
+                break;
+        }
     }
 
     /// <summary>

@@ -1,35 +1,25 @@
-using System.Net;
-using System.Net.Security;
-using System.Net.Sockets;
-using System.Security.Authentication;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
-using HyFib.HealthCare360.WindowsInterop.Discovery;
 using HyFib.HealthCare360.WindowsInterop.Trust;
-using Makaretu.Dns;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace HyFib.HealthCare360.Platform.Tests;
 
 /// <summary>
-/// A planned rollover of the hospital CA ('certificates roll-ca', docs/deployment/CA-ROLLOVER.md) sets no device up again:
-/// the new CA has the old one's name and a new key, the old CA signs a certificate for the new key, and the server sends it
-/// with its own until the old CA expires. Over real TLS to Kestrel, as HC360 serves it (<see cref="HospitalHttps"/>), a
-/// device that pins the old CA, one that pins the new CA and one that pins another CA each check the server with the code
-/// HC360 Desktop and the lab agent check it with (<see cref="HospitalCaPins"/>).
+/// The hospital CA is rolled over in two steps, so no device is set up again (docs/deployment/CA-ROLLOVER.md).
+/// 'certificates prepare-ca' makes the next CA (the current one's name, a new key) and a certificate the current CA signs for
+/// its key; the server keeps serving with the current CA and hands both out. 'certificates switch-ca' then makes the next CA
+/// the server's, and the server hands out the CA it replaced until that expires. The server only ever sends its own
+/// certificate. Over real TLS to Kestrel, as HC360 serves it (<see cref="HospitalHttps"/>, the routes it hands its CAs out
+/// at), devices check the server with the code HC360 Desktop and the lab agent check it with (<see cref="HospitalCaPins"/>).
 /// </summary>
 public sealed class HospitalCaRollTests : IDisposable
 {
     private const string Password = "standby-transfer-2026";
 
-    /// <summary>When the old CA was made: nine and a half years ago, so it is in its last year, as a CA is when it is rolled over.</summary>
+    /// <summary>When the current CA was made: nine and a half years ago, so it is in its last year, as a CA is when it is rolled over.</summary>
     private static readonly DateTimeOffset Made = DateTimeOffset.UtcNow.AddYears(-9).AddMonths(-6);
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "hc360-tests", Guid.NewGuid().ToString("N"));
@@ -45,386 +35,358 @@ public sealed class HospitalCaRollTests : IDisposable
     }
 
     [Fact]
-    public void A_rollover_keeps_the_CA_name_makes_a_new_key_and_has_the_old_CA_vouch_for_it_until_it_expires()
+    public async Task Preparing_keeps_the_server_on_its_CA_and_hands_out_the_next_one_with_the_current_CAs_word_for_it()
     {
-        var (directories, keys) = Machine("primary");
+        var node = Node("primary");
         var now = DateTimeOffset.UtcNow;
-        var old = Snapshot(directories, keys, Made);
+        var current = node.Ca(Made);
 
-        var rolled = LanCertificateManager.RollCa(directories, keys, now);
+        var prepared = LanCertificateManager.PrepareCa(node.Directories, node.Keys, now);
 
-        rolled.PreviousFingerprint.ShouldBe(old.CaFingerprint);
-        rolled.Fingerprint.ShouldNotBe(old.CaFingerprint);
-        (rolled.PreviousExpiresAt, rolled.CrossSignedUntil).ShouldBe((old.CaExpiresAt, old.CaExpiresAt), "the old CA vouches for the new one until it expires");
-        rolled.ExpiresAt.ShouldBeGreaterThan(now.AddYears(10).AddDays(-2));
-        File.Exists(Path.Combine(directories.Certificates, rolled.PreviousKeptAs.ShouldNotBeNull())).ShouldBeTrue("the old CA is kept, never deleted");
-        File.Exists(Path.Combine(directories.Certificates, "server.pfx.protected")).ShouldBeFalse("the server certificate the old CA issued goes with it");
+        (prepared.CurrentFingerprint, prepared.CurrentExpiresAt).ShouldBe((current.Fingerprint, current.ExpiresAt));
+        prepared.Fingerprint.ShouldNotBe(current.Fingerprint);
+        prepared.ExpiresAt.ShouldBeGreaterThan(now.AddYears(10).AddDays(-2), "valid for ten years");
+        File.Exists(Path.Combine(node.Directories.Certificates, "hospital-ca-next.pfx.protected")).ShouldBeTrue("the next CA's key, protected for this machine");
 
-        using var server = Start(directories, keys, now);
-        server.CaFingerprint.ShouldBe(rolled.Fingerprint);
-        (server.PreviousCaFingerprint, server.CrossSignedUntil).ShouldBe((old.CaFingerprint, old.CaExpiresAt));
-        using var oldCa = X509Certificate2.CreateFromPem(old.CaPem);
-        using var newCa = X509Certificate2.CreateFromPem(server.CaPem!);
-        using var previous = X509Certificate2.CreateFromPem(server.PreviousCaPem!);
-        CertificateProbe.Fingerprint(previous).ShouldBe(old.CaFingerprint, "the server hands out the CA it replaced while it vouches for the new one");
-        newCa.SubjectName.RawData.ShouldBe(oldCa.SubjectName.RawData, "the same name, so the certificate the old CA signs for it is self-issued");
-        newCa.PublicKey.EncodedKeyValue.RawData.ShouldNotBe(oldCa.PublicKey.EncodedKeyValue.RawData, "a new key");
-        newCa.Extensions.OfType<X509BasicConstraintsExtension>().Single().PathLengthConstraint.ShouldBe(0, "it issues server certificates only, as the old one");
-
-        // What the server sends after its own certificate: the certificate the old CA signed for the new key, and the old CA it
-        // leads to; never the new CA, which the devices that moved hold themselves. (What goes over the wire: the TLS test.)
-        server.ServerCertificateContext.ShouldNotBeNull();
-        var cross = Crosses(server.SentWithCertificate, newCa).ShouldHaveSingleItem();
-        server.SentWithCertificate.Select(c => c.RawData).ShouldBe([cross.RawData, oldCa.RawData]);
-        if (OperatingSystem.IsWindows())
-        {
-            // Windows' TLS sends only a chain it builds from this computer's stores, and only to a root the computer trusts.
-            WindowsTlsChain.Holds(cross).ShouldBeTrue("among the computer's intermediate CAs");
-            WindowsTlsChain.Holds(oldCa).ShouldBeTrue("the old CA among its trusted roots");
-            TrustedHereFor(oldCa, WindowsTlsChain.ServerAuthentication).ShouldBeTrue("for TLS servers");
-            TrustedHereFor(oldCa, "1.3.6.1.5.5.7.3.3").ShouldBeFalse("and for nothing else: not to sign code");
-        }
-        cross.SubjectName.RawData.ShouldBe(newCa.SubjectName.RawData);
-        cross.IssuerName.RawData.ShouldBe(oldCa.SubjectName.RawData, "the old CA's name, which is the new one's: self-issued");
-        cross.PublicKey.EncodedKeyValue.RawData.ShouldBe(newCa.PublicKey.EncodedKeyValue.RawData);
-        cross.NotAfter.ShouldBe(oldCa.NotAfter, "valid as long as the old CA, and no longer");
-        cross.Extensions.OfType<X509BasicConstraintsExtension>().Single().PathLengthConstraint.ShouldBe(0);
+        using var server = node.Start(now);
+        (server.CaFingerprint, server.NextCaFingerprint, server.PreviousCaFingerprint).ShouldBe((current.Fingerprint, prepared.Fingerprint, null));
+        using var currentCa = X509Certificate2.CreateFromPem(current.Pem);
+        using var nextCa = X509Certificate2.CreateFromPem(server.NextCaPem!);
+        using var cross = X509Certificate2.CreateFromPem(server.NextCaCrossPem!);
+        nextCa.SubjectName.RawData.ShouldBe(currentCa.SubjectName.RawData, "the same name, so the certificate the current CA signs for it is self-issued");
+        nextCa.IssuerName.RawData.ShouldBe(nextCa.SubjectName.RawData, "a CA of its own");
+        nextCa.PublicKey.EncodedKeyValue.RawData.ShouldNotBe(currentCa.PublicKey.EncodedKeyValue.RawData, "a new key");
+        nextCa.Extensions.OfType<X509BasicConstraintsExtension>().Single().PathLengthConstraint.ShouldBe(0, "it issues server certificates only, as the current one");
+        cross.SubjectName.RawData.ShouldBe(nextCa.SubjectName.RawData);
+        cross.PublicKey.EncodedKeyValue.RawData.ShouldBe(nextCa.PublicKey.EncodedKeyValue.RawData, "for the next CA's key");
+        cross.NotAfter.ShouldBe(currentCa.NotAfter, "valid as long as the current CA, and no longer");
         cross.Extensions.OfType<X509AuthorityKeyIdentifierExtension>().Single().KeyIdentifier!.Value.ToArray()
-            .ShouldBe(oldCa.Extensions.OfType<X509SubjectKeyIdentifierExtension>().Single().SubjectKeyIdentifierBytes.ToArray(), "it names the old key as its issuer's");
+            .ShouldBe(currentCa.Extensions.OfType<X509SubjectKeyIdentifierExtension>().Single().SubjectKeyIdentifierBytes.ToArray(), "it names the current key as its issuer's");
+        HospitalCaSuccession.Succeeds(currentCa, nextCa, [cross], now).ShouldBeTrue("signed by the current CA: its word, which devices check");
+
+        await using var app = await HospitalCaTestServer.ServeAsync(server);
+        using var pinnedToCurrent = new HospitalCaPins(current.Pem);
+        var connection = await HospitalCaTestServer.ConnectAsync(app, pinnedToCurrent);
+        connection.Trusted.ShouldBeTrue("the server keeps serving with the current CA: nothing changes for any device");
+        connection.Sent.ShouldBeEmpty("the server sends its own certificate alone");
+        using var pinnedToNextAlone = new HospitalCaPins(server.NextCaPem!);
+        (await HospitalCaTestServer.TrustsAsync(app, pinnedToNextAlone)).ShouldBeFalse("the next CA issues nothing before the switch");
+
+        // Handed out over the connection the devices pin, the next CA first, then the current CA's word for it.
+        using var http = HospitalCaTestServer.PinnedClient(app, pinnedToCurrent);
+        var handedOut = new X509Certificate2Collection();
+        handedOut.ImportFromPem(await http.GetStringAsync(HospitalCaFollow.NextCaPath, Ct));
+        handedOut.Select(c => c.RawData).ShouldBe([nextCa.RawData, cross.RawData]);
+    }
+
+    /// <summary>Why the switch waits for every device: a device that holds the current CA alone no longer trusts the server.</summary>
+    [Fact]
+    public async Task After_the_switch_a_device_that_holds_the_next_CA_trusts_the_server_and_one_that_holds_only_the_old_CA_does_not()
+    {
+        var node = Node("primary");
+        var now = DateTimeOffset.UtcNow;
+        var old = node.Ca(Made);
+        var stranger = Node("other-hospital").Ca(now);
+        var prepared = LanCertificateManager.PrepareCa(node.Directories, node.Keys, now);
+        string nextPem;
+        using (var preparedServer = node.Start(now))
+        {
+            nextPem = preparedServer.NextCaPem!;
+        }
+
+        var switched = LanCertificateManager.SwitchCa(node.Directories, node.Keys, now);
+
+        (switched.Fingerprint, switched.PreviousFingerprint, switched.PreviousExpiresAt).ShouldBe((prepared.Fingerprint, old.Fingerprint, old.ExpiresAt));
+        File.Exists(Path.Combine(node.Directories.Certificates, switched.PreviousKeptAs.ShouldNotBeNull())).ShouldBeTrue("the CA it replaced is kept, never deleted");
+        File.Exists(Path.Combine(node.Directories.Certificates, "hospital-ca-next.pfx.protected")).ShouldBeFalse("no next CA is prepared any more");
+        File.Exists(Path.Combine(node.Directories.Certificates, "server.pfx.protected")).ShouldBeFalse("the server certificate the old CA issued goes with it");
+
+        using var server = node.Start(now);
+        (server.CaFingerprint, server.NextCaFingerprint).ShouldBe((prepared.Fingerprint, null));
+        (server.PreviousCaFingerprint, server.PreviousCaExpiresAt).ShouldBe((old.Fingerprint, old.ExpiresAt), "handed out until it expires");
+        await using var app = await HospitalCaTestServer.ServeAsync(server);
+
+        using var holdsBoth = new HospitalCaPins(old.Pem, nextCaPem: nextPem);
+        using var holdsOldAlone = new HospitalCaPins(old.Pem);
+        using var holdsNewAlone = new HospitalCaPins(nextPem);
+        using var holdsAnother = new HospitalCaPins(stranger.Pem, nextCaPem: old.Pem);
+        var both = await HospitalCaTestServer.ConnectAsync(app, holdsBoth);
+        both.Trusted.ShouldBeTrue("a device that took the next CA before the switch trusts the server after it");
+        both.Sent.ShouldBeEmpty("through the next CA it holds itself: the server sends nothing for it");
+        (await HospitalCaTestServer.TrustsAsync(app, holdsOldAlone)).ShouldBeFalse("a device that never took the next CA is cut off: the switch waits for it");
+        (await HospitalCaTestServer.TrustsAsync(app, holdsNewAlone)).ShouldBeTrue("a device set up after the switch");
+        (await HospitalCaTestServer.TrustsAsync(app, holdsAnother)).ShouldBeFalse("another CA is trusted no more after a switch than before");
+    }
+
+    /// <summary>
+    /// A standby serves with the CA it was given until it is given the new one: devices that switched keep the old CA as a
+    /// second pin, so a failover in between cuts none of them off. A next CA prepared on the primary stays there.
+    /// </summary>
+    [Fact]
+    public async Task A_standby_not_switched_yet_serves_the_devices_that_switched_and_after_the_import_serves_with_the_new_CA()
+    {
+        var primary = Node("primary");
+        var now = DateTimeOffset.UtcNow;
+        var old = primary.Ca(Made);
+        var standby = Node("standby");
+        standby.Ca(now);
+        LanCertificateManager.ImportCa(standby.Directories, standby.Keys, LanCertificateManager.ExportCa(primary.Directories, primary.Keys, Password).Pkcs12, Password, now);
+
+        var prepared = LanCertificateManager.PrepareCa(primary.Directories, primary.Keys, now);
+        string nextPem;
+        using (var preparedServer = primary.Start(now))
+        {
+            nextPem = preparedServer.NextCaPem!;
+        }
+
+        var duringPreparation = LanCertificateManager.ExportCa(primary.Directories, primary.Keys, Password);
+        (duringPreparation.Fingerprint, duringPreparation.NextCaLeftHere).ShouldBe((old.Fingerprint, true), "the CA the standby serves with; the next one stays");
+        var spare = Node("spare");
+        spare.Ca(now);
+        LanCertificateManager.ImportCa(spare.Directories, spare.Keys, duringPreparation.Pkcs12, Password, now);
+        using (var spareServer = spare.Start(now))
+        {
+            (spareServer.CaFingerprint, spareServer.NextCaFingerprint).ShouldBe((old.Fingerprint, null));
+        }
+
+        LanCertificateManager.SwitchCa(primary.Directories, primary.Keys, now);
+        using var switchedDevice = new HospitalCaPins(nextPem, previousCaPem: old.Pem);
+        using var notSwitchedYet = new HospitalCaPins(old.Pem, nextCaPem: nextPem);
+        using (var primaryServer = primary.Start(now))
+        using (var standbyServer = standby.Start(now))
+        {
+            standbyServer.CaFingerprint.ShouldBe(old.Fingerprint, "not given the new CA yet");
+            await using var primaryApp = await HospitalCaTestServer.ServeAsync(primaryServer);
+            await using var standbyApp = await HospitalCaTestServer.ServeAsync(standbyServer);
+            foreach (var device in new[] { switchedDevice, notSwitchedYet })
+            {
+                (await HospitalCaTestServer.TrustsAsync(primaryApp, device)).ShouldBeTrue();
+                (await HospitalCaTestServer.TrustsAsync(standbyApp, device)).ShouldBeTrue("a failover to the standby cuts no device off");
+            }
+        }
+
+        var afterSwitch = LanCertificateManager.ExportCa(primary.Directories, primary.Keys, Password);
+        (afterSwitch.Fingerprint, afterSwitch.PreviousCaExpiresAt, afterSwitch.NextCaLeftHere).ShouldBe((prepared.Fingerprint, old.ExpiresAt, false));
+        var imported = LanCertificateManager.ImportCa(standby.Directories, standby.Keys, afterSwitch.Pkcs12, Password, now);
+        (imported.Fingerprint, imported.Changed, imported.PreviousCaExpiresAt).ShouldBe((prepared.Fingerprint, true, old.ExpiresAt));
+        using var standbySwitched = standby.Start(now);
+        (standbySwitched.CaFingerprint, standbySwitched.PreviousCaFingerprint).ShouldBe((prepared.Fingerprint, old.Fingerprint), "it hands out the CA the new one replaced, as the primary does");
+        await using var app = await HospitalCaTestServer.ServeAsync(standbySwitched);
+        (await HospitalCaTestServer.TrustsAsync(app, switchedDevice)).ShouldBeTrue();
+        using var holdsOldAlone = new HospitalCaPins(old.Pem);
+        (await HospitalCaTestServer.TrustsAsync(app, holdsOldAlone)).ShouldBeFalse();
     }
 
     [Fact]
-    public async Task Over_TLS_devices_that_pin_the_old_CA_or_the_new_one_trust_the_rolled_server_and_one_that_pins_another_CA_does_not()
+    public void Preparing_is_refused_for_an_expired_CA_while_a_next_CA_is_prepared_and_while_devices_keep_the_CA_the_last_switch_replaced()
     {
-        var (directories, keys) = Machine("primary");
-        var old = Snapshot(directories, keys, Made);
-        var stranger = Snapshot(Machine("other-hospital"), DateTimeOffset.UtcNow);
-        LanCertificateManager.RollCa(directories, keys, DateTimeOffset.UtcNow);
-        using var server = Start(directories, keys, DateTimeOffset.UtcNow);
-        await using var app = await ServeAsync(server);
+        var node = Node("primary");
+        var now = DateTimeOffset.UtcNow;
+        var current = node.Ca(Made);
 
-        var pinnedToOld = await ConnectAsync(app, old.CaPem);
-        var pinnedToNew = await ConnectAsync(app, server.CaPem!);
-        var pinnedToAnother = await ConnectAsync(app, stranger.CaPem);
+        var expired = Should.Throw<InvalidOperationException>(() => LanCertificateManager.PrepareCa(node.Directories, node.Keys, current.ExpiresAt.AddDays(1)));
+        expired.Message.ShouldContain("an expired CA cannot vouch for the next one");
+        expired.Message.ShouldContain("certificates new-ca");
 
-        pinnedToOld.Trusted.ShouldBeTrue("a device that has not moved yet trusts the server through the certificate the old CA signed");
-        pinnedToNew.Trusted.ShouldBeTrue("a device that moved trusts the server through the new CA itself");
-        pinnedToAnother.Trusted.ShouldBeFalse("another CA is trusted no more after a rollover than before");
+        var prepared = LanCertificateManager.PrepareCa(node.Directories, node.Keys, now);
+        var again = Should.Throw<InvalidOperationException>(() => LanCertificateManager.PrepareCa(node.Directories, node.Keys, now.AddDays(30)));
+        again.Message.ShouldContain($"The next CA, {prepared.Fingerprint}, is prepared already");
+        LanCertificateManager.PreparedNextCaFingerprint(node.Directories, node.Keys, now).ShouldBe(prepared.Fingerprint, "nothing changed");
 
-        // What went over the wire after the server's own certificate: the certificate the old CA signed for the new key, and
-        // nothing else but, where the platform sends the root too, the old CA. Never the new CA.
-        using var newCa = X509Certificate2.CreateFromPem(server.CaPem!);
-        Crosses(pinnedToOld.Sent, newCa).ShouldHaveSingleItem();
-        pinnedToOld.Sent.ShouldAllBe(c => Crosses(new[] { c }, newCa).Any() || CertificateProbe.Fingerprint(c) == old.CaFingerprint);
-    }
+        LanCertificateManager.SwitchCa(node.Directories, node.Keys, now);
+        var whileKept = Should.Throw<InvalidOperationException>(() => LanCertificateManager.PrepareCa(node.Directories, node.Keys, now.AddDays(30)));
+        whileKept.Message.ShouldContain($"until it expires on {current.ExpiresAt:dd MMM yyyy}, and hold two at most");
 
-    /// <summary>Why the server sends it: served alone, as Kestrel served the certificate before, the old CA does not reach it.</summary>
-    [Fact]
-    public async Task Without_the_certificate_the_old_CA_signed_a_device_that_pins_the_old_CA_refuses_the_rolled_server()
-    {
-        var (directories, keys) = Machine("primary");
-        var old = Snapshot(directories, keys, Made);
-        LanCertificateManager.RollCa(directories, keys, DateTimeOffset.UtcNow);
-        using var server = Start(directories, keys, DateTimeOffset.UtcNow);
-
-        // Windows' TLS sends what it finds in this computer's stores, where HC360 put the certificate: out of them, so the
-        // server certificate goes out alone, as it did before.
-        WindowsTlsChain.Withdraw(server.SentWithCertificate);
-        await using var alone = await ServeAsync(server, leafAlone: true);
-
-        var pinnedToOld = await ConnectAsync(alone, old.CaPem);
-        pinnedToOld.Sent.ShouldBeEmpty("the server certificate alone");
-        pinnedToOld.Trusted.ShouldBeFalse();
-        (await ConnectAsync(alone, server.CaPem!)).Trusted.ShouldBeTrue();
+        // Once the CA the switch replaced has expired, the next rollover can begin.
+        LanCertificateManager.PrepareCa(node.Directories, node.Keys, current.ExpiresAt.AddDays(1)).CurrentFingerprint.ShouldBe(prepared.Fingerprint);
     }
 
     [Fact]
-    public async Task A_standby_given_the_rolled_CA_sends_the_same_chain_so_devices_that_pin_the_old_CA_trust_it_too()
+    public void Switching_is_refused_with_no_next_CA_and_with_a_next_CA_the_current_one_did_not_vouch_for()
     {
-        var (primary, primaryKeys) = Machine("primary");
-        var old = Snapshot(primary, primaryKeys, Made);
-        var rolled = LanCertificateManager.RollCa(primary, primaryKeys, DateTimeOffset.UtcNow);
+        var node = Node("primary");
+        var now = DateTimeOffset.UtcNow;
+        node.Ca(Made);
+        Should.Throw<InvalidOperationException>(() => LanCertificateManager.SwitchCa(node.Directories, node.Keys, now))
+            .Message.ShouldContain("No next CA is prepared");
 
-        var exported = LanCertificateManager.ExportCa(primary, primaryKeys, Password);
-        var (standby, standbyKeys) = Machine("standby");
-        Snapshot(standby, standbyKeys, DateTimeOffset.UtcNow);
-        var imported = LanCertificateManager.ImportCa(standby, standbyKeys, exported.Pkcs12, Password, DateTimeOffset.UtcNow);
+        // The next CA another CA prepared, copied in beside this one (its files, on the same machine's keys): left aside.
+        LanCertificateManager.PrepareCa(node.Directories, node.Keys, now);
+        var other = node.CopyAs(_root, "other");
+        LanCertificateManager.NewCa(other.Directories, other.Keys, "Nana Hospitals", now);
+        foreach (var file in new[] { "hospital-ca-next.pfx.protected", "hospital-ca-cross.crt" })
+        {
+            File.Copy(Path.Combine(node.Directories.Certificates, file), Path.Combine(other.Directories.Certificates, file));
+        }
 
-        (exported.Fingerprint, exported.CrossSignedUntil).ShouldBe((rolled.Fingerprint, rolled.CrossSignedUntil));
-        (imported.Fingerprint, imported.CrossSignedUntil).ShouldBe((rolled.Fingerprint, rolled.CrossSignedUntil));
-        using var server = Start(standby, standbyKeys, DateTimeOffset.UtcNow);
-        (server.CaFingerprint, server.PreviousCaFingerprint).ShouldBe((rolled.Fingerprint, old.CaFingerprint));
-        await using var app = await ServeAsync(server);
-        (await ConnectAsync(app, old.CaPem)).Trusted.ShouldBeTrue("the standby serves the devices that have not moved, as the primary does");
-        (await ConnectAsync(app, server.CaPem!)).Trusted.ShouldBeTrue();
+        using (var otherServer = other.Start(now))
+        {
+            otherServer.NextCaFingerprint.ShouldBeNull("its CA did not sign the certificate for that key: no device would take it");
+        }
 
-        // A CA exported before any rollover carries none: the standby then sends none, whatever was left there.
-        var (fresh, freshKeys) = Machine("fresh");
-        Snapshot(fresh, freshKeys, DateTimeOffset.UtcNow);
-        var plain = LanCertificateManager.ExportCa(fresh, freshKeys, Password);
-        LanCertificateManager.ImportCa(standby, standbyKeys, plain.Pkcs12, Password, DateTimeOffset.UtcNow).CrossSignedUntil.ShouldBeNull();
-        using var again = Start(standby, standbyKeys, DateTimeOffset.UtcNow);
-        (again.CaFingerprint, again.PreviousCaFingerprint).ShouldBe((plain.Fingerprint, null));
+        LanCertificateManager.PreparedNextCaFingerprint(other.Directories, other.Keys, now).ShouldBeNull();
+        Should.Throw<InvalidOperationException>(() => LanCertificateManager.SwitchCa(other.Directories, other.Keys, now))
+            .Message.ShouldContain("No next CA is prepared");
+    }
+
+    /// <summary>
+    /// A switch held up until the current CA expired: the server does not start with an expired CA, and says to switch, which
+    /// the devices that hold the next CA need nothing more for. No device that holds it is set up again.
+    /// </summary>
+    [Fact]
+    public async Task A_server_whose_CA_expired_before_the_switch_says_to_switch_and_once_switched_serves_the_devices_that_hold_the_next_CA()
+    {
+        var node = Node("primary");
+        var now = DateTimeOffset.UtcNow;
+        var made = now.AddYears(-10).AddDays(-1);
+        var old = node.Ca(made);
+        old.ExpiresAt.ShouldBeLessThan(now, "expired yesterday");
+        LanCertificateManager.PrepareCa(node.Directories, node.Keys, made.AddYears(9).AddMonths(6));
+        string nextPem;
+        using (var preparedServer = node.Start(made.AddYears(9).AddMonths(6)))
+        {
+            nextPem = preparedServer.NextCaPem!;
+        }
+
+        var refused = Should.Throw<InvalidOperationException>(() => node.Start(now));
+        refused.Message.ShouldContain($"the hospital CA expired on {old.ExpiresAt:dd MMM yyyy}");
+        refused.Message.ShouldContain("The next CA is prepared: switch to it with 'HyFib.HealthCare360.Server.exe certificates switch-ca --confirm'");
+        LanCertificateManager.PreparedNextCaFingerprint(node.Directories, node.Keys, now).ShouldNotBeNull("the switch-ca command finds it, to check the devices");
+
+        LanCertificateManager.SwitchCa(node.Directories, node.Keys, now);
+
+        using var server = node.Start(now);
+        server.PreviousCaFingerprint.ShouldBeNull("an expired CA is handed out to no one");
+        await using var app = await HospitalCaTestServer.ServeAsync(server);
+        using var heldTheNext = new HospitalCaPins(old.Pem, nextCaPem: nextPem);
+        (await HospitalCaTestServer.TrustsAsync(app, heldTheNext)).ShouldBeTrue();
     }
 
     /// <summary>A new CA, for a key that may have been seen, ends any rollover: whoever holds the old key could sign a CA of their own.</summary>
     [Fact]
-    public async Task A_new_CA_ends_the_rollover_and_a_device_that_pins_the_old_CA_must_be_set_up_again()
+    public void A_new_CA_ends_a_rollover_prepared_or_switched()
     {
-        var (directories, keys) = Machine("primary");
-        var old = Snapshot(directories, keys, Made);
-        LanCertificateManager.RollCa(directories, keys, DateTimeOffset.UtcNow);
+        var node = Node("primary");
+        var now = DateTimeOffset.UtcNow;
+        node.Ca(Made);
+        LanCertificateManager.PrepareCa(node.Directories, node.Keys, now);
 
-        // Within a second of the rollover, as a script may run them: each CA replaced is kept under a name of its own.
-        LanCertificateManager.NewCa(directories, keys, "Nana Hospitals", DateTimeOffset.UtcNow);
+        LanCertificateManager.NewCa(node.Directories, node.Keys, "Nana Hospitals", now);
 
-        Directory.GetFiles(directories.Certificates, "hospital-ca.pfx.protected.replaced-*").Length.ShouldBe(2, "both CAs it replaced are kept");
-        File.Exists(Path.Combine(directories.Certificates, "hospital-ca-cross.crt")).ShouldBeFalse("the rollover's certificates go with it");
-        File.Exists(Path.Combine(directories.Certificates, "hc360-hospital-ca-previous.crt")).ShouldBeFalse();
-        using var server = Start(directories, keys, DateTimeOffset.UtcNow);
-        (server.PreviousCaFingerprint, server.CrossSignedUntil, server.PreviousCaPem).ShouldBe((null, null, null));
-        server.SentWithCertificate.ShouldBeEmpty();
-        await using var app = await ServeAsync(server);
-        (await ConnectAsync(app, old.CaPem)).Trusted.ShouldBeFalse();
+        using (var server = node.Start(now))
+        {
+            (server.NextCaFingerprint, server.NextCaPem, server.NextCaCrossPem).ShouldBe((null, null, null));
+        }
+
+        File.Exists(Path.Combine(node.Directories.Certificates, "hospital-ca-next.pfx.protected")).ShouldBeFalse();
+        File.Exists(Path.Combine(node.Directories.Certificates, "hospital-ca-cross.crt")).ShouldBeFalse();
+
+        var switching = Node("switching");
+        switching.Ca(Made);
+        LanCertificateManager.PrepareCa(switching.Directories, switching.Keys, now);
+        LanCertificateManager.SwitchCa(switching.Directories, switching.Keys, now);
+
+        // Within a second of the switch, as a script may run them: each CA replaced is kept under a name of its own.
+        LanCertificateManager.NewCa(switching.Directories, switching.Keys, "Nana Hospitals", now);
+
+        Directory.GetFiles(switching.Directories.Certificates, "hospital-ca.pfx.protected.replaced-*").Length.ShouldBe(2, "both CAs it replaced are kept");
+        File.Exists(Path.Combine(switching.Directories.Certificates, "hc360-hospital-ca-previous.crt")).ShouldBeFalse();
+        using var restarted = switching.Start(now);
+        (restarted.PreviousCaFingerprint, restarted.PreviousCaPem).ShouldBe((null, null));
     }
 
     [Fact]
-    public void A_rollover_is_refused_for_an_expired_CA_and_while_the_last_one_still_runs()
+    public void Once_the_CA_the_switch_replaced_expires_the_server_stops_handing_it_out()
     {
-        var (directories, keys) = Machine("primary");
+        var node = Node("primary");
         var now = DateTimeOffset.UtcNow;
-        var old = Snapshot(directories, keys, Made);
-
-        var expired = Should.Throw<InvalidOperationException>(() => LanCertificateManager.RollCa(directories, keys, old.CaExpiresAt.AddDays(1)));
-        expired.Message.ShouldContain("an expired CA cannot vouch for the next one");
-        expired.Message.ShouldContain("certificates new-ca");
-
-        var rolled = LanCertificateManager.RollCa(directories, keys, now);
-        X509Certificate2[] sent;
-        using (var started = Start(directories, keys, now))
-        {
-            sent = [.. started.SentWithCertificate.Select(c => X509CertificateLoader.LoadCertificate(c.RawData))];
-        }
-
-        // Out of the Windows stores, as if the first 'roll-ca' could not put them there: run again, it is refused, and gives
-        // Windows the running rollover's certificates.
-        WindowsTlsChain.Withdraw(sent);
-        var running = Should.Throw<InvalidOperationException>(() => LanCertificateManager.RollCa(directories, keys, now.AddDays(30)));
-        running.Message.ShouldContain($"The last rollover runs until {rolled.CrossSignedUntil:dd MMM yyyy}");
-        Snapshot(directories, keys, now).CaFingerprint.ShouldBe(rolled.Fingerprint, "nothing changed");
-        if (OperatingSystem.IsWindows())
-        {
-            running.Message.ShouldEndWith("Windows has the certificates that rollover sends.");
-            sent.ShouldAllBe(c => WindowsTlsChain.Holds(c), "the refusal gave them back to Windows");
-        }
-
-        foreach (var certificate in sent)
-        {
-            certificate.Dispose();
-        }
-
-        // Once the old CA has expired, the new one can be rolled over in its turn.
-        LanCertificateManager.RollCa(directories, keys, rolled.CrossSignedUntil.AddDays(1)).PreviousFingerprint.ShouldBe(rolled.Fingerprint);
-    }
-
-    [Fact]
-    public void Once_the_old_CA_expires_the_server_stops_sending_the_certificate_it_signed()
-    {
-        var (directories, keys) = Machine("primary");
-        var now = DateTimeOffset.UtcNow;
-        Snapshot(directories, keys, Made);
-        var rolled = LanCertificateManager.RollCa(directories, keys, now);
-        var clock = new Clock(now);
+        var old = node.Ca(Made);
+        LanCertificateManager.PrepareCa(node.Directories, node.Keys, now);
+        LanCertificateManager.SwitchCa(node.Directories, node.Keys, now);
+        var clock = new RolloverClock(now);
         using var server = new LanCertificateManager(
-            directories, new PlatformOptions { DataDirectory = directories.Root }, keys, NullLogger<LanCertificateManager>.Instance, clock);
+            node.Directories, new PlatformOptions { DataDirectory = node.Directories.Root }, node.Keys, NullLogger<LanCertificateManager>.Instance, clock);
         server.EnsureCertificates();
-        using var newCa = X509Certificate2.CreateFromPem(server.CaPem!);
-        using var cross = X509CertificateLoader.LoadCertificate(Crosses(server.SentWithCertificate, newCa).ShouldHaveSingleItem().RawData);
-        using var oldCa = X509CertificateLoader.LoadCertificate(server.SentWithCertificate[^1].RawData);
+        server.PreviousCaFingerprint.ShouldBe(old.Fingerprint);
 
-        // The running server's own check, the day after the old CA expired.
-        clock.Now = rolled.CrossSignedUntil.AddDays(1);
+        // The running server's own check, the day after the previous CA expired.
+        clock.Now = old.ExpiresAt.AddDays(1);
         server.RefreshIfNeeded();
 
-        (server.PreviousCaFingerprint, server.CrossSignedUntil).ShouldBe((null, null));
-        server.SentWithCertificate.ShouldBeEmpty();
-        server.ServerCertificateContext.ShouldNotBeNull();
-        if (OperatingSystem.IsWindows())
-        {
-            WindowsTlsChain.Holds(cross).ShouldBeFalse("taken out of the store Windows' TLS sends from");
-            WindowsTlsChain.Holds(oldCa).ShouldBeFalse("and the computer no longer trusts the old CA");
-        }
-        using var restarted = Start(directories, keys, clock.Now);
-        restarted.PreviousCaFingerprint.ShouldBeNull("nor does it at its next start");
+        (server.PreviousCaFingerprint, server.PreviousCaPem, server.PreviousCaExpiresAt).ShouldBe((null, null, null));
+        using var restarted = node.Start(clock.Now);
+        restarted.PreviousCaFingerprint.ShouldBeNull("nor at its next start");
     }
 
     /// <summary>
-    /// The outside probe that pins the old CA (CA-ROLLOVER.md) checks the chain the server sends against it: a warning that
-    /// names the new CA, critical in the old CA's last 90 days. Pinned to the new CA it is well.
+    /// The outside probe (CA-ROLLOVER.md) sees the rollover as a device does: in the CA's last year it says to prepare the next
+    /// CA, then, once prepared, to switch to it; pinned to the CA a switch replaced it is critical and says to give it the new
+    /// fingerprint, which it is well with.
     /// </summary>
     [Fact]
-    public async Task The_probe_that_pins_the_old_CA_warns_and_names_the_new_one_until_the_old_CA_ends()
+    public async Task The_probe_says_to_prepare_then_to_switch_and_once_switched_to_be_given_the_new_CA()
     {
-        var (directories, keys) = Machine("primary");
+        var node = Node("primary");
         var now = DateTimeOffset.UtcNow;
-        var old = Snapshot(directories, keys, Made);
-        var rolled = LanCertificateManager.RollCa(directories, keys, now);
-        using var server = Start(directories, keys, now);
-        await using var app = await ServeAsync(server);
-        var address = new Uri(app.Urls.Single());
+        var old = node.Ca(Made);
 
-        var byOldPin = await CertificateProbe.ProbeAsync(address, old.CaFingerprint, null, now, Ct);
-        var byNewPin = await CertificateProbe.ProbeAsync(address, rolled.Fingerprint, null, now, Ct);
-        var lastMonths = await CertificateProbe.ProbeAsync(address, old.CaFingerprint, null, rolled.CrossSignedUntil.AddDays(-60), Ct);
+        ProbeResult before;
+        using (var server = node.Start(now))
+        await using (var app = await HospitalCaTestServer.ServeAsync(server))
+        {
+            before = await ProbeAsync(app, old.Fingerprint, now);
+        }
 
-        byOldPin.Outcome.ShouldBe(CertificateProbeOutcome.Warning, string.Join(" ", byOldPin.Findings));
-        byOldPin.Findings.ShouldContain(f => f.Contains($"the server's CA is now {CertificateProbe.Group(rolled.Fingerprint)}", StringComparison.Ordinal)
-            && f.Contains($"until {rolled.CrossSignedUntil:dd MMM yyyy}", StringComparison.Ordinal));
-        byOldPin.Findings.ShouldNotContain(f => f.Contains("was not issued by the hospital CA", StringComparison.Ordinal));
-        byNewPin.Outcome.ShouldBe(CertificateProbeOutcome.Ok, string.Join(" ", byNewPin.Findings));
-        lastMonths.Outcome.ShouldBe(CertificateProbeOutcome.Critical, string.Join(" ", lastMonths.Findings));
-        lastMonths.Findings.ShouldContain(f => f.Contains("The hospital CA was rolled over", StringComparison.Ordinal));
+        var prepared = LanCertificateManager.PrepareCa(node.Directories, node.Keys, now);
+        ProbeResult whilePrepared;
+        using (var server = node.Start(now))
+        await using (var app = await HospitalCaTestServer.ServeAsync(server))
+        {
+            whilePrepared = await ProbeAsync(app, old.Fingerprint, now);
+        }
+
+        LanCertificateManager.SwitchCa(node.Directories, node.Keys, now);
+        ProbeResult byOldPin, byNewPin;
+        using (var server = node.Start(now))
+        await using (var app = await HospitalCaTestServer.ServeAsync(server))
+        {
+            byOldPin = await ProbeAsync(app, old.Fingerprint, now);
+            byNewPin = await ProbeAsync(app, prepared.Fingerprint, now);
+        }
+
+        before.Outcome.ShouldBe(CertificateProbeOutcome.Warning, before.Said);
+        before.Said.ShouldContain("Prepare the next CA with 'certificates prepare-ca'");
+        whilePrepared.Outcome.ShouldBe(CertificateProbeOutcome.Warning, whilePrepared.Said);
+        whilePrepared.Said.ShouldContain("The next CA is prepared: switch to it with 'certificates switch-ca'");
+        byOldPin.Outcome.ShouldBe(CertificateProbeOutcome.Critical, byOldPin.Said);
+        byOldPin.Said.ShouldContain($"The hospital CA was switched: the server's CA is now {CertificateProbe.Group(prepared.Fingerprint)}");
+        byNewPin.Outcome.ShouldBe(CertificateProbeOutcome.Ok, byNewPin.Said);
     }
 
+    /// <summary>Prepared well before the CA's last year: the probe is well, and says the next CA is prepared.</summary>
     [Fact]
-    public void After_a_rollover_the_server_advertises_the_CA_it_replaced_as_well_as_its_own()
+    public async Task Pinned_to_the_current_CA_the_probe_says_a_next_CA_is_prepared()
     {
-        var (directories, keys) = Machine("primary");
-        var old = Snapshot(directories, keys, Made);
-        LanCertificateManager.RollCa(directories, keys, DateTimeOffset.UtcNow);
-        using var server = Start(directories, keys, DateTimeOffset.UtcNow);
-        var options = new PlatformOptions();
+        var node = Node("primary");
+        var now = DateTimeOffset.UtcNow;
+        var current = node.Ca(now.AddYears(-1));
+        var prepared = LanCertificateManager.PrepareCa(node.Directories, node.Keys, now);
+        using var server = node.Start(now);
+        await using var app = await HospitalCaTestServer.ServeAsync(server);
 
-        var txt = MdnsAdvertiser.Profile(options.Network, options.HttpsPort, "HC360-SRV", "1.4.2", "NH", server.CaFingerprint, [IPAddress.Parse("192.168.1.10")],
-            server.PreviousCaFingerprint).Resources.OfType<TXTRecord>().Single();
+        var probed = await ProbeAsync(app, current.Fingerprint, now);
 
-        ServerAdvertisement.Read(txt.Strings).ShouldBe(new AdvertisedProperties("1.4.2", "NH", server.CaFingerprint, "HC360-SRV", old.CaFingerprint));
-        txt.Strings.ShouldContain($"fpprev={old.CaFingerprint}");
+        probed.Outcome.ShouldBe(CertificateProbeOutcome.Ok, probed.Said);
+        probed.Said.ShouldContain($"The next CA, {CertificateProbe.Group(prepared.Fingerprint)}, is prepared");
     }
 
-    /// <summary>
-    /// Whether this computer trusts <paramref name="root"/>, by its own stores, for <paramref name="purpose"/> (an OID): in the
-    /// computer's context, as Windows' TLS builds the server's chain.
-    /// </summary>
-    private static bool TrustedHereFor(X509Certificate2 root, string purpose)
+    private static async Task<ProbeResult> ProbeAsync(WebApplication app, string pinned, DateTimeOffset now)
     {
-        using var chain = new X509Chain(useMachineContext: true);
-        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-        chain.ChainPolicy.ApplicationPolicy.Add(new Oid(purpose));
-        return chain.Build(root);
+        var result = await CertificateProbe.ProbeAsync(new Uri(app.Urls.Single()), pinned, null, now, Ct);
+        return new ProbeResult(result.Outcome, string.Join(" ", result.Findings));
     }
 
-    /// <summary>The certificates among <paramref name="certificates"/> for <paramref name="ca"/>'s key that are not the CA itself.</summary>
-    private static List<X509Certificate2> Crosses(IEnumerable<X509Certificate2> certificates, X509Certificate2 ca) =>
-    [
-        .. certificates.Where(c => !c.RawData.AsSpan().SequenceEqual(ca.RawData)
-            && c.PublicKey.EncodedKeyValue.RawData.AsSpan().SequenceEqual(ca.PublicKey.EncodedKeyValue.RawData)),
-    ];
+    private HospitalCaTestServer Node(string name) => new(_root, name);
 
-    private (DataDirectories Directories, IDataProtectionProvider Keys) Machine(string name) =>
-        (new DataDirectories(new PlatformOptions { DataDirectory = Path.Combine(_root, name) }), new EphemeralDataProtectionProvider());
-
-    /// <summary>Starts the server's TLS as HC360 does at <paramref name="now"/>.</summary>
-    private static LanCertificateManager Start(DataDirectories directories, IDataProtectionProvider keys, DateTimeOffset now)
-    {
-        var certificates = new LanCertificateManager(
-            directories, new PlatformOptions { DataDirectory = directories.Root }, keys, NullLogger<LanCertificateManager>.Instance, new Clock(now));
-        certificates.EnsureCertificates();
-        return certificates;
-    }
-
-    private static Started Snapshot((DataDirectories Directories, IDataProtectionProvider Keys) machine, DateTimeOffset now) =>
-        Snapshot(machine.Directories, machine.Keys, now);
-
-    /// <summary>The CA a server started with at <paramref name="now"/>, as the devices pinned it.</summary>
-    private static Started Snapshot(DataDirectories directories, IDataProtectionProvider keys, DateTimeOffset now)
-    {
-        using var certificates = Start(directories, keys, now);
-        return new Started(certificates.CaFingerprint!, certificates.CaPem!, certificates.CaExpiresAt!.Value);
-    }
-
-    private sealed record Started(string CaFingerprint, string CaPem, DateTimeOffset CaExpiresAt);
-
-    /// <summary>
-    /// A real HTTPS listener with HC360's TLS (<see cref="HospitalHttps"/>), handing out the CA and, after a rollover, the one it
-    /// replaced, where the devices and the probe read them. <paramref name="leafAlone"/> serves the certificate alone, as Kestrel
-    /// served it before HC360 sent a chain.
-    /// </summary>
-    private static async Task<WebApplication> ServeAsync(LanCertificateManager certificates, bool leafAlone = false)
-    {
-        var builder = WebApplication.CreateBuilder();
-        builder.Logging.ClearProviders();
-        builder.WebHost.ConfigureKestrel(kestrel => kestrel.Listen(IPAddress.Loopback, 0, listen =>
-        {
-            if (leafAlone)
-            {
-                listen.UseHttps(certificates.ServerCertificate);
-            }
-            else
-            {
-                listen.UseHttps(https => HospitalHttps.Configure(https, certificates));
-            }
-        }));
-        var app = builder.Build();
-        app.MapGet("/" + CertificateProbe.CaCertificatePath, () => Results.Text(certificates.CaPem!, "application/x-x509-ca-cert"));
-        app.MapGet("/" + CertificateProbe.PreviousCaCertificatePath, () =>
-            certificates.PreviousCaPem is { } pem ? Results.Text(pem, "application/x-x509-ca-cert") : Results.NotFound());
-        await app.StartAsync(Ct);
-        return app;
-    }
-
-    /// <summary>
-    /// A TLS connection from a device that pinned <paramref name="pinnedPem"/>, checking the server as HC360 Desktop and the lab
-    /// agent do (<see cref="HospitalCaPins.Validate"/>): the certificate names the address, is for a TLS server, and chains to
-    /// exactly the pinned CA through what the server sent. Says whether the device trusted it, and what the server sent after
-    /// its own certificate.
-    /// </summary>
-    private static async Task<Connection> ConnectAsync(WebApplication app, string pinnedPem)
-    {
-        var address = new Uri(app.Urls.Single());
-        using var client = new TcpClient();
-        await client.ConnectAsync(address.Host, address.Port, Ct);
-        await using var tls = new SslStream(client.GetStream(), leaveInnerStreamOpen: false);
-        using var pinned = new HospitalCaPins(pinnedPem);
-        var trusted = false;
-        var sent = new List<X509Certificate2>();
-        try
-        {
-            await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
-            {
-                TargetHost = address.Host,
-                CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
-                RemoteCertificateValidationCallback = (_, certificate, handshake, _) =>
-                {
-                    using var served = X509CertificateLoader.LoadCertificate(certificate!.GetRawCertData());
-                    foreach (var other in handshake?.ChainPolicy.ExtraStore ?? [])
-                    {
-                        if (!other.RawData.AsSpan().SequenceEqual(served.RawData))
-                        {
-                            sent.Add(X509CertificateLoader.LoadCertificate(other.RawData));
-                        }
-                    }
-
-                    trusted = pinned.Validate(certificate, handshake, address.Host);
-                    return trusted;
-                },
-            }, Ct);
-        }
-        catch (AuthenticationException)
-        {
-            // Refused by the device: trusted stays false.
-        }
-
-        return new Connection(trusted, sent);
-    }
-
-    private sealed record Connection(bool Trusted, IReadOnlyList<X509Certificate2> Sent);
-
-    /// <summary>A clock the test sets; the server's own daily check is called by the test rather than waited for.</summary>
-    private sealed class Clock(DateTimeOffset now) : TimeProvider
-    {
-        public DateTimeOffset Now { get; set; } = now;
-
-        public override DateTimeOffset GetUtcNow() => Now;
-    }
+    private sealed record ProbeResult(CertificateProbeOutcome Outcome, string Said);
 }

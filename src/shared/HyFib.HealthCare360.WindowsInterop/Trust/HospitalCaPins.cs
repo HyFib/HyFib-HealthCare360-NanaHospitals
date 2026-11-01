@@ -4,37 +4,50 @@ using System.Security.Cryptography.X509Certificates;
 namespace HyFib.HealthCare360.WindowsInterop.Trust;
 
 /// <summary>
-/// The hospital CAs a device trusts the server through (SRS DED-04, DED-05): the one it pins and, once it followed a
-/// rollover ('certificates roll-ca', docs/deployment/CA-ROLLOVER.md), the one that CA replaced, as a second pin until it
-/// expires. The server's certificate must name the host the device contacts, be for a TLS server, and chain to exactly one
-/// of them; the Windows trust store is never consulted, so a device on the network cannot pose as the server with some
-/// other valid certificate. HC360 Desktop and the lab agent check the server with this one copy of the code, and the
-/// server's tests run it over TLS against a real rollover.
+/// The hospital CAs a device trusts the server through (SRS DED-04, DED-05), as the hospital CA is rolled over in two steps
+/// (docs/deployment/CA-ROLLOVER.md):
+/// <list type="bullet">
+/// <item>the CA it pins (<see cref="Ca"/>), which issues the server's certificate;</item>
+/// <item>after 'certificates prepare-ca', the next CA (<see cref="NextCa"/>), which the device holds on the pinned CA's word,
+/// so that it still trusts the server after 'certificates switch-ca';</item>
+/// <item>after the switch, the CA the pinned one replaced (<see cref="PreviousCa"/>), until it expires, so that a standby
+/// server not switched yet still serves the device.</item>
+/// </list>
+/// The server's certificate must name the host the device contacts, be for a TLS server, and chain to exactly one of them;
+/// the Windows trust store is never consulted, so a device on the network cannot pose as the server with some other valid
+/// certificate. HC360 Desktop and the lab agent check the server with this one copy of the code, and the server's tests run
+/// it over TLS against a real rollover.
 /// </summary>
 public sealed class HospitalCaPins : IDisposable
 {
     /// <summary>The TLS server authentication extended key usage (id-kp-serverAuth).</summary>
     private static readonly Oid ServerAuthentication = new("1.3.6.1.5.5.7.3.1");
 
-    // Replaced whole when the device follows a rollover, so a check on another thread sees the pins before or after.
+    // Replaced whole when the device holds the next CA or switches to it, so a check on another thread sees the pins before
+    // or after a change, never half of one.
     private volatile Pins _pins;
 
     /// <param name="caPem">The CA the device pins.</param>
-    /// <param name="previousCaPem">
-    /// The CA it replaced in a rollover the device followed, if any. One that cannot be read is left out: it is a second pin
-    /// only, and the device still trusts the server through the first.
-    /// </param>
-    public HospitalCaPins(string caPem, string? previousCaPem = null)
+    /// <param name="previousCaPem">The CA <paramref name="caPem"/> replaced in a switch the device followed, if any.</param>
+    /// <param name="nextCaPem">The next CA the server prepared, which the device holds, if any.</param>
+    /// <remarks>
+    /// A second pin that cannot be read is left out: the device still trusts the server through the first, and takes the next
+    /// CA from the server again.
+    /// </remarks>
+    public HospitalCaPins(string caPem, string? previousCaPem = null, string? nextCaPem = null)
     {
         var ca = X509Certificate2.CreateFromPem(caPem);
-        _pins = new Pins(ca, ComputeFingerprint(ca), Readable(previousCaPem));
+        _pins = new Pins(ca, ComputeFingerprint(ca), Readable(previousCaPem), Readable(nextCaPem));
     }
 
     /// <summary>The CA the device pins.</summary>
     public X509Certificate2 Ca => _pins.Ca;
 
-    /// <summary>The CA that <see cref="Ca"/> replaced in a rollover the device followed; null when it followed none.</summary>
+    /// <summary>The CA that <see cref="Ca"/> replaced in a switch the device followed; null when it followed none.</summary>
     public X509Certificate2? PreviousCa => _pins.Previous;
+
+    /// <summary>The next CA the server prepared, which the device holds until the server switches to it; null when none.</summary>
+    public X509Certificate2? NextCa => _pins.Next;
 
     /// <summary>SHA-256 of the pinned CA as upper-case hex: as the server announces it and its installer prints it.</summary>
     public string Fingerprint => _pins.Fingerprint;
@@ -43,14 +56,13 @@ public sealed class HospitalCaPins : IDisposable
 
     /// <summary>
     /// The CAs the device trusts the server through at <paramref name="now"/>, as its heartbeat reports them: the one it pins,
-    /// then the one it replaced while that is still valid. An expired CA vouches for nothing.
+    /// then the next one it holds, then the one the pinned CA replaced, each second pin while it is valid. An expired CA
+    /// vouches for nothing.
     /// </summary>
     public IReadOnlyList<string> Fingerprints(DateTimeOffset now)
     {
         var pins = _pins;
-        return pins.Previous is { } previous && now.UtcDateTime < previous.NotAfter.ToUniversalTime()
-            ? [pins.Fingerprint, ComputeFingerprint(previous)]
-            : [pins.Fingerprint];
+        return [pins.Fingerprint, .. pins.Seconds.Where(ca => ValidAt(ca, now)).Select(ComputeFingerprint)];
     }
 
     /// <summary>
@@ -68,10 +80,9 @@ public sealed class HospitalCaPins : IDisposable
         var pins = _pins;
         using var chain = new X509Chain();
         chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-        chain.ChainPolicy.CustomTrustStore.Add(pins.Ca);
-        if (pins.Previous is { } previous)
+        foreach (var pinned in pins.All)
         {
-            chain.ChainPolicy.CustomTrustStore.Add(previous);
+            chain.ChainPolicy.CustomTrustStore.Add(pinned);
         }
 
         if (intermediates is not null)
@@ -99,8 +110,8 @@ public sealed class HospitalCaPins : IDisposable
             }
         }
 
-        var root = chain.ChainElements[^1].Certificate.RawData.AsSpan();
-        return root.SequenceEqual(pins.Ca.RawData) || (pins.Previous is { } replaced && root.SequenceEqual(replaced.RawData));
+        var root = chain.ChainElements[^1].Certificate.RawData;
+        return pins.All.Any(pinned => pinned.RawData.AsSpan().SequenceEqual(root));
     }
 
     /// <summary>
@@ -139,53 +150,89 @@ public sealed class HospitalCaPins : IDisposable
     }
 
     /// <summary>
-    /// Copies of what the server sent besides its own certificate, for <see cref="SuccessorIn"/> after the TLS callback: the
-    /// platform disposes the handshake's certificates once the callback returns.
+    /// The next CA the server prepared, on the word of the CA pinned here: <paramref name="handedOut"/> is what the server
+    /// hands out at <see cref="HospitalCaFollow.NextCaPath"/> over a connection pinned here, the next CA and the certificate
+    /// the pinned CA signed for its key (<see cref="HospitalCaSuccession"/>). Null when the pinned CA does not vouch for it,
+    /// or the device holds it already.
     /// </summary>
-    public static X509Certificate2[] KeepSent(X509Certificate? certificate, X509Chain? handshake)
+    public HospitalCaNext? NextIn(string handedOut, DateTimeOffset now)
     {
-        if (certificate is null)
+        ArgumentNullException.ThrowIfNull(handedOut);
+        var pins = _pins;
+        var certificates = new X509Certificate2Collection();
+        try
         {
-            return [];
+            certificates.ImportFromPem(handedOut);
+            foreach (var candidate in certificates)
+            {
+                if (pins.All.Any(pinned => pinned.RawData.AsSpan().SequenceEqual(candidate.RawData)))
+                {
+                    continue;
+                }
+
+                if (HospitalCaSuccession.CrossFor(pins.Ca, candidate, certificates, now) is { } cross)
+                {
+                    return new HospitalCaNext(candidate.ExportCertificatePem(), ComputeFingerprint(candidate), cross.ExportCertificatePem());
+                }
+            }
+
+            return null;
+        }
+        finally
+        {
+            foreach (var certificate in certificates)
+            {
+                certificate.Dispose();
+            }
+        }
+    }
+
+    /// <summary>Whether <paramref name="serverCaPem"/>, the server's CA, is the next CA the device holds: the server switched.</summary>
+    public bool IsNext(string serverCaPem)
+    {
+        if (_pins.Next is not { } next)
+        {
+            return false;
         }
 
-        using var server = new X509Certificate2(certificate);
-        return [.. Intermediates(handshake, server).Select(sent => X509CertificateLoader.LoadCertificate(sent.RawData))];
+        using var serverCa = X509Certificate2.CreateFromPem(serverCaPem);
+        return serverCa.RawData.AsSpan().SequenceEqual(next.RawData);
+    }
+
+    /// <summary>Holds <paramref name="next"/>, the next CA the server prepared, as a second pin.</summary>
+    public void Hold(HospitalCaNext next)
+    {
+        ArgumentNullException.ThrowIfNull(next);
+        // A next CA held before is left to the collector: a check on another thread may still hold it.
+        _pins = _pins with { Next = X509Certificate2.CreateFromPem(next.CaPem) };
     }
 
     /// <summary>
-    /// After the server's CA was rolled over, its new CA, on the word of the CA pinned here: <paramref name="serverCaPem"/> is
-    /// the server's CA certificate and <paramref name="sent"/> what the server sent, both over a connection pinned here
-    /// (<see cref="HospitalCaSuccession"/>). Null when the server's CA is the pinned one, or the pinned CA did not vouch for it.
+    /// Pins the next CA held, the server's CA since the switch, and keeps the CA it replaced as the second pin until that
+    /// expires. Does nothing when no next CA is held.
     /// </summary>
-    public HospitalCaSuccessor? SuccessorIn(string serverCaPem, IEnumerable<X509Certificate2> sent, DateTimeOffset now)
+    public void SwitchToNext()
     {
-        var pinned = _pins.Ca;
-        using var candidate = X509Certificate2.CreateFromPem(serverCaPem);
-        if (candidate.RawData.AsSpan().SequenceEqual(pinned.RawData)
-            || HospitalCaSuccession.CrossFor(pinned, candidate, sent, now) is not { } cross)
+        var pins = _pins;
+        if (pins.Next is not { } next)
         {
-            return null;
+            return;
         }
 
-        return new HospitalCaSuccessor(candidate.ExportCertificatePem(), ComputeFingerprint(candidate), cross.ExportCertificatePem());
-    }
-
-    /// <summary>Pins <paramref name="successor"/>, keeping the CA it replaced as the second pin until that expires.</summary>
-    public void Follow(HospitalCaSuccessor successor)
-    {
-        ArgumentNullException.ThrowIfNull(successor);
-        var ca = X509Certificate2.CreateFromPem(successor.CaPem);
-        // The pin before the previous one is left to the collector: a check on another thread may still hold it.
-        _pins = new Pins(ca, ComputeFingerprint(ca), _pins.Ca);
+        // The pin the previous one replaced is left to the collector: a check on another thread may still hold it.
+        _pins = new Pins(next, ComputeFingerprint(next), pins.Ca, Next: null);
     }
 
     public void Dispose()
     {
-        var pins = _pins;
-        pins.Ca.Dispose();
-        pins.Previous?.Dispose();
+        foreach (var pinned in _pins.All)
+        {
+            pinned.Dispose();
+        }
     }
+
+    private static bool ValidAt(X509Certificate2 certificate, DateTimeOffset now) =>
+        certificate.NotBefore.ToUniversalTime() <= now.UtcDateTime && now.UtcDateTime < certificate.NotAfter.ToUniversalTime();
 
     private static X509Certificate2? Readable(string? pem)
     {
@@ -204,11 +251,19 @@ public sealed class HospitalCaPins : IDisposable
         }
     }
 
-    private sealed record Pins(X509Certificate2 Ca, string Fingerprint, X509Certificate2? Previous);
+    private sealed record Pins(X509Certificate2 Ca, string Fingerprint, X509Certificate2? Previous, X509Certificate2? Next)
+    {
+        /// <summary>The second pins: the next CA, then the previous one.</summary>
+        public IEnumerable<X509Certificate2> Seconds => new[] { Next, Previous }.OfType<X509Certificate2>();
+
+        /// <summary>The pinned CA, then the second pins.</summary>
+        public IEnumerable<X509Certificate2> All => Seconds.Prepend(Ca);
+    }
 }
 
 /// <summary>
-/// A hospital CA a device follows after a rollover: its certificate, its fingerprint, and the certificate the CA it replaced
-/// signed for its key, which the device keeps to show that it succeeded the CA it pinned (an IT policy may name that one).
+/// The next hospital CA a device holds while the server prepares a switch to it: its certificate, its fingerprint, and the
+/// certificate the CA the device pins signed for its key, which the device keeps to show that the next CA succeeds the one
+/// it pins (an IT policy may name either).
 /// </summary>
-public sealed record HospitalCaSuccessor(string CaPem, string Fingerprint, string CrossPem);
+public sealed record HospitalCaNext(string CaPem, string Fingerprint, string CrossPem);

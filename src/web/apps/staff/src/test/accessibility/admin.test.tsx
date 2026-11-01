@@ -63,30 +63,50 @@ describe('devices', SCREEN_TESTS, () => {
 });
 
 describe('system health', SCREEN_TESTS, () => {
-  it('during a CA rollover: the CA it replaced, and until when devices that pin that CA trust the server', async () => {
-    const until = new Date(Date.now() + 200 * 24 * 3600_000).toISOString();
-    const previous = '9C1D4F0B7A2E58D3C6B1F09A4E7D2C5B8A1F3E6D9C2B5A8F1E4D7C0B3A6F9E2D';
+  const next = '9C1D4F0B7A2E58D3C6B1F09A4E7D2C5B8A1F3E6D9C2B5A8F1E4D7C0B3A6F9E2D';
+  const previous = '1E4D7C0B3A6F9E2D9C1D4F0B7A2E58D3C6B1F09A4E7D2C5B8A1F3E6D9C2B5A8F';
+
+  it('while the next CA is prepared: that CA, which devices take before the switch', async () => {
     server = fakeServer({
       ...SYSTEM_HEALTH_ANSWERS,
       'GET /api/v1/admin/system/health': {
         ...SYSTEM_HEALTH,
-        certificate: { ...SYSTEM_HEALTH.certificate, previousCaFingerprint: previous, crossSignedUntil: until },
+        certificate: { ...SYSTEM_HEALTH.certificate, nextCaFingerprint: next },
       },
     });
     openScreen('/admin/system');
 
-    expect(await screen.findByText('Previous CA (rolled over)', {}, SLOW)).toBeInTheDocument();
-    expect(screen.getByText(previous)).toBeInTheDocument();
-    expect(screen.getByText('Devices that pin it trust the server until')).toBeInTheDocument();
-    expect(screen.getByText(formatDateTime(until))).toBeInTheDocument();
+    expect(await screen.findByText('Next CA (prepared; devices take it before the switch)', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText(next)).toBeInTheDocument();
+    expect(screen.queryByText('Previous CA (switched from)')).not.toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
-  it('without a rollover, says nothing of a previous CA', async () => {
+  it('after the switch: the CA it replaced, and until when devices keep it', async () => {
+    const until = new Date(Date.now() + 200 * 24 * 3600_000).toISOString();
+    server = fakeServer({
+      ...SYSTEM_HEALTH_ANSWERS,
+      'GET /api/v1/admin/system/health': {
+        ...SYSTEM_HEALTH,
+        certificate: { ...SYSTEM_HEALTH.certificate, previousCaFingerprint: previous, previousCaExpiresAt: until },
+      },
+    });
+    openScreen('/admin/system');
+
+    expect(await screen.findByText('Previous CA (switched from)', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText(previous)).toBeInTheDocument();
+    expect(screen.getByText('Devices keep it as a second CA until')).toBeInTheDocument();
+    expect(screen.getByText(formatDateTime(until))).toBeInTheDocument();
+    expect(screen.queryByText(/^Next CA/)).not.toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
+
+  it('without a rollover, says nothing of a next or previous CA', async () => {
     server = fakeServer(SYSTEM_HEALTH_ANSWERS);
     openScreen('/admin/system');
 
     expect(await screen.findByText('CA expires', {}, SLOW)).toBeInTheDocument();
-    expect(screen.queryByText('Previous CA (rolled over)')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Next CA/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Previous CA (switched from)')).not.toBeInTheDocument();
   });
 });

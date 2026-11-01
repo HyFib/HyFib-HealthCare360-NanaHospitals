@@ -52,27 +52,23 @@ public sealed class SystemHealthWarningsTests
     }
 
     /// <summary>
-    /// After a rollover the devices that still pin the previous CA trust the server only until it expires: a warning for the
-    /// whole rollover, so the new CA reaches every tablet, browser and probe, and critical in its last 90 days.
+    /// In the CA's last year the first step is to prepare the next CA; once it is prepared, to switch to it. Once the CA has
+    /// expired with the next one prepared, the switch is still the way back: no device that holds it is set up again.
     /// </summary>
-    [Theory]
-    [InlineData(300, "warning")]
-    [InlineData(91, "warning")]
-    [InlineData(89, "critical")]
-    public void A_rollover_is_flagged_until_the_previous_CA_ends_and_critically_in_its_last_90_days(int daysLeft, string severity)
+    [Fact]
+    public void A_CA_in_its_last_year_says_to_prepare_the_next_CA_then_to_switch_to_it()
     {
-        var rolled = Certificate(server: Now.AddDays(300), ca: Now.AddYears(10)) with
-        {
-            PreviousCaFingerprint = "CD34",
-            CrossSignedUntil = Now.AddDays(daysLeft),
-        };
+        var expiring = Certificate(server: Now.AddDays(200), ca: Now.AddDays(200));
 
-        var warning = SystemHealthService.CertificateWarnings(rolled, Now).ShouldHaveSingleItem();
+        SystemHealthService.CertificateWarnings(expiring, Now).ShouldHaveSingleItem().Message
+            .ShouldContain("Prepare the next CA with 'certificates prepare-ca'");
+        SystemHealthService.CertificateWarnings(expiring with { NextCaFingerprint = "CD34" }, Now).ShouldHaveSingleItem().Message
+            .ShouldContain("The next CA is prepared: switch to it with 'certificates switch-ca' once every device holds it");
 
-        (warning.Code, warning.Severity).ShouldBe(("cert.rollover_ending", severity));
-        warning.Message.ShouldContain(Now.AddDays(daysLeft).ToString("dd MMM yyyy", CultureInfo.InvariantCulture));
-        warning.Message.ShouldContain("CA-ROLLOVER.md");
-        SystemHealthService.CertificateWarnings(rolled with { PreviousCaFingerprint = null, CrossSignedUntil = null }, Now).ShouldBeEmpty();
+        var expired = Certificate(server: Now.AddDays(-1), ca: Now.AddDays(-1));
+        SystemHealthService.CertificateWarnings(expired, Now).Single(w => w.Code == "cert.ca_expired").Message.ShouldContain("Make one now with HyFib support");
+        SystemHealthService.CertificateWarnings(expired with { NextCaFingerprint = "CD34" }, Now).Single(w => w.Code == "cert.ca_expired").Message
+            .ShouldContain("The next CA is prepared: switch to it now with 'certificates switch-ca', and every device that holds it trusts the server again");
     }
 
     [Fact]

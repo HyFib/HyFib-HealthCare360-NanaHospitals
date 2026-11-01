@@ -37,8 +37,11 @@ public static class CertificateProbe
     /// <summary>Where HC360 hands out its hospital CA, as HC360 Desktop and the lab agent read it at enrolment.</summary>
     public const string CaCertificatePath = "api/v1/system/ca-certificate";
 
-    /// <summary>After a rollover, where the server hands out the CA its current one replaced (404 otherwise).</summary>
+    /// <summary>After a switch, where the server hands out the CA its current one replaced, until it expires (404 otherwise).</summary>
     public const string PreviousCaCertificatePath = "api/v1/system/ca-certificate/previous";
+
+    /// <summary>While a next CA is prepared, where the server hands it out, then the current CA's word for it (404 otherwise).</summary>
+    public const string NextCaCertificatePath = "api/v1/system/ca-certificate/next";
 
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
@@ -72,7 +75,7 @@ public static class CertificateProbe
             var ca = trustedCa;
             X509Certificate2? handedOut = null;
             X509Certificate2? previous = null;
-            DateTimeOffset? currentCaExpires = null;
+            string? next = null;
             try
             {
                 if (pinnedFingerprint is not null)
@@ -90,8 +93,9 @@ public static class CertificateProbe
                     var handedOutFingerprint = Fingerprint(handedOut);
                     if (!string.Equals(handedOutFingerprint, Normalise(pinnedFingerprint), StringComparison.Ordinal))
                     {
-                        // A rollover: the pinned CA, now the previous one, still vouches for the current one. Anything else is
-                        // a CA the devices do not trust.
+                        // A switch: the pinned CA is the one the server's replaced. Devices that held the next CA as well trust the
+                        // server; one that holds only the pinned CA, as this probe, no longer does. Anything else is a CA the
+                        // devices do not trust.
                         previous = await TryFetchAsync(new Uri(address, PreviousCaCertificatePath), ct);
                         if (previous is null || !string.Equals(Fingerprint(previous), Normalise(pinnedFingerprint), StringComparison.Ordinal))
                         {
@@ -100,18 +104,20 @@ public static class CertificateProbe
                                 + "pinned: none of them connects. If the CA was replaced on purpose, set every device up again (CA-ROLLOVER.md).");
                         }
 
-                        // Devices that pin it trust the server only until it expires: in its last months, that is critical.
-                        var rolledUntil = new DateTimeOffset(previous.NotAfter.ToUniversalTime(), TimeSpan.Zero);
-                        currentCaExpires = new DateTimeOffset(handedOut.NotAfter.ToUniversalTime(), TimeSpan.Zero);
-                        findings.Add((rolledUntil - now < SystemHealthService.CaUrgentPeriod ? CertificateProbeOutcome.Critical : CertificateProbeOutcome.Warning,
-                            $"The hospital CA was rolled over: the server's CA is now {Group(handedOutFingerprint)}, and devices that pin "
-                            + $"{Group(Normalise(pinnedFingerprint))} trust the server until {rolledUntil:dd MMM yyyy}. Give this probe the new "
-                            + "fingerprint (--ca-fingerprint) before then, as every other device that pins the CA (CA-ROLLOVER.md)."));
-                        ca = previous;
+                        findings.Add((CertificateProbeOutcome.Critical,
+                            $"The hospital CA was switched: the server's CA is now {Group(handedOutFingerprint)}, which replaced "
+                            + $"{Group(Normalise(pinnedFingerprint))}. Devices that hold only the CA this probe pins no longer trust the server. "
+                            + "Give this probe the new fingerprint (--ca-fingerprint), as every other device that pins the CA (CA-ROLLOVER.md)."));
+
+                        // The certificate served is judged against the CA the server switched to.
+                        ca = handedOut;
                     }
                     else
                     {
                         ca = handedOut;
+
+                        // While the next CA is prepared, System health's rule says to switch to it rather than to prepare one.
+                        next = await TryFetchFingerprintAsync(new Uri(address, NextCaCertificatePath), ct);
                     }
                 }
 
@@ -134,8 +140,7 @@ public static class CertificateProbe
                 // certificate an administrator supplied, checked against this machine's roots) only the certificate is judged.
                 var serverExpires = new DateTimeOffset(served.NotAfter.ToUniversalTime(), TimeSpan.Zero);
                 DateTimeOffset? caExpires = ca is null ? null : new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero);
-                // After a rollover the CA that matters from here on is the server's current one; the previous one's end is said above.
-                foreach (var warning in SystemHealthService.CertificateWarnings(new CertificateInfo(null, serverExpires, [], currentCaExpires ?? caExpires), now))
+                foreach (var warning in SystemHealthService.CertificateWarnings(new CertificateInfo(null, serverExpires, [], caExpires, NextCaFingerprint: next), now))
                 {
                     findings.Add((warning.Severity == "critical" ? CertificateProbeOutcome.Critical : CertificateProbeOutcome.Warning, warning.Message));
                 }
@@ -144,7 +149,8 @@ public static class CertificateProbe
                 IReadOnlyList<string> said = findings.Count == 0
                     ? [$"The server certificate is valid until {serverExpires:dd MMM yyyy}" + (caExpires is { } until
                         ? $", and the hospital CA {Group(Fingerprint(ca!))} until {until:dd MMM yyyy}."
-                        : ".")]
+                        : ".")
+                        + (next is null ? "" : $" The next CA, {Group(next)}, is prepared: give this probe its fingerprint once the server switched to it.")]
                     : [.. findings.OrderByDescending(f => f.Outcome).Select(f => f.Text)];
                 return new CertificateProbeResult(address, outcome, said, serverExpires, caExpires, ca is null ? null : Fingerprint(ca));
             }
@@ -180,7 +186,7 @@ public static class CertificateProbe
             {
                 served = certificate is null ? null : X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
 
-                // The other certificates the server sent (after a rollover, the one the previous CA signed for the current CA),
+                // The other certificates the server sent (an administrator-supplied certificate's issuers, say),
                 // as the devices take them: from the handshake's extra store, not the chain the platform built, which may hold
                 // certificates from this computer's own stores.
                 if (chain is not null && served is not null)
@@ -212,6 +218,23 @@ public static class CertificateProbe
         using var http = new HttpClient(handler) { Timeout = Timeout };
         using var response = await http.GetAsync(url, ct);
         return response.IsSuccessStatusCode ? X509Certificate2.CreateFromPem(await response.Content.ReadAsStringAsync(ct)) : null;
+    }
+
+    /// <summary>
+    /// The fingerprint of the certificate the server hands out at <paramref name="url"/> (the first, when there are several);
+    /// null when it has none there, or it could not be read: what it says only adds to the probe's findings.
+    /// </summary>
+    private static async Task<string?> TryFetchFingerprintAsync(Uri url, CancellationToken ct)
+    {
+        try
+        {
+            using var certificate = await TryFetchAsync(url, ct);
+            return certificate is null ? null : Fingerprint(certificate);
+        }
+        catch (Exception ex) when (IsConnectionFailure(ex, ct) || ex is HttpRequestException or CryptographicException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The CA the server hands out, read as HC360 Desktop reads it at enrolment: not trusted until its fingerprint is checked.</summary>

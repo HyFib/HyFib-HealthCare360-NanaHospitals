@@ -4,9 +4,9 @@ using Microsoft.AspNetCore.Server.Kestrel.Https;
 namespace HyFib.HealthCare360.Platform.Networking;
 
 /// <summary>
-/// The server's HTTPS, as every listener serves it: TLS 1.2 or 1.3, and the server certificate with the chain the hospital
-/// CA's devices need. After a rollover the chain carries the certificate the previous CA signed for the current one
-/// (<see cref="LanCertificateManager.RollCa"/>), so a device that pins the previous CA still trusts the server.
+/// The server's HTTPS, as every listener serves it: TLS 1.2 or 1.3, and the server certificate alone. Nothing is sent with
+/// it: on Windows the operating system's TLS sends no certificate the devices would need, so a CA rollover never depends on
+/// one (<see cref="LanCertificateManager.PrepareCa"/>, <see cref="LanCertificateManager.SwitchCa"/>).
 /// </summary>
 public static class HospitalHttps
 {
@@ -19,17 +19,5 @@ public static class HospitalHttps
 
         // The certificate as it is now: it is issued again on a network change and before it expires, while the server runs.
         https.ServerCertificateSelector = (_, _) => certificates.ServerCertificate;
-
-        // A selected certificate goes out alone, so the chain is given instead, where the server made the certificate. Kestrel
-        // has set everything else (protocols, ALPN) by now; an administrator-supplied certificate is served as Kestrel finds it.
-        https.OnAuthenticate = (_, tls) =>
-        {
-            if (certificates.ServerCertificateContext is { } context)
-            {
-                tls.ServerCertificateSelectionCallback = null;
-                tls.ServerCertificate = null;
-                tls.ServerCertificateContext = context;
-            }
-        };
     }
 }

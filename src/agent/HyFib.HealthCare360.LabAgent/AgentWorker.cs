@@ -41,7 +41,7 @@ internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, Ti
     private static readonly TimeSpan NotEnrolledWait = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan RevokedWait = TimeSpan.FromMinutes(5);
 
-    /// <summary>How often the agent looks for a new hospital CA to follow after a rollover.</summary>
+    /// <summary>How often the agent asks the server for the next hospital CA, and whether it switched to it.</summary>
     private static readonly TimeSpan FollowCaEvery = TimeSpan.FromHours(6);
 
     private readonly ILogger _logger = loggers.CreateLogger<AgentWorker>();
@@ -65,7 +65,7 @@ internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, Ti
                     continue;
                 }
 
-                using var trust = new ServerTrust(configuration.CaCertificatePem!, configuration.PreviousCaCertificatePem);
+                using var trust = new ServerTrust(configuration.CaCertificatePem!, configuration.PreviousCaCertificatePem, configuration.NextCaCertificatePem);
                 using var api = new ServerApi(configuration.ServerUri!, trust);
                 var connector = new RelayConnector(configuration.ServerUri!, trust, configuration.DeviceId!.Value, secret);
                 await RunEnrolledAsync(configuration, secret, trust, api, connector, stamp, stoppingToken);
@@ -84,7 +84,7 @@ internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, Ti
 
     /// <summary>
     /// Heartbeats until the configuration file changes or the server no longer knows the agent. Every six hours, after a
-    /// heartbeat that reached the server, it also looks for a new hospital CA to follow (<see cref="FollowCaAsync"/>).
+    /// heartbeat that reached the server, it also follows the hospital CA's rollover (<see cref="FollowCaAsync"/>).
     /// </summary>
     private async Task RunEnrolledAsync(
         AgentConfiguration configuration, string secret, ServerTrust trust, ServerApi api, IRelayConnector connector, DateTime stamp,
@@ -142,48 +142,57 @@ internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, Ti
     }
 
     /// <summary>
-    /// After the hospital CA was rolled over ('certificates roll-ca'), takes the new CA on the word of the CA the agent pins and
-    /// saves it, keeping the one it replaced as a second pin until that expires (CA-ROLLOVER.md). The relays keep running:
-    /// the check they use follows in place, and the configuration file's new time is the agent's own write, not a new
-    /// enrolment. Returns the file time to watch from now on.
+    /// Follows the hospital CA's two-step rollover (CA-ROLLOVER.md): once IT prepared the next CA ('certificates prepare-ca'),
+    /// holds it as a second pin on the word of the CA the agent pins; once the server switched to it ('certificates
+    /// switch-ca'), pins it, and keeps the CA it replaced as a second pin until that expires. The heartbeat reports the CAs
+    /// held, so System health names an agent that does not hold the next CA, and the switch waits for it. The relays keep
+    /// running: the check they use changes in place, and the configuration file's new time is the agent's own write, not a
+    /// new enrolment. Returns the file time to watch from now on.
     /// </summary>
     private async Task<DateTime> FollowCaAsync(AgentConfiguration configuration, ServerTrust trust, ServerApi api, DateTime stamp, CancellationToken stoppingToken)
     {
-        HospitalCaSuccessor? successor;
+        HospitalCaStep? step;
         try
         {
-            successor = await api.FindCaSuccessorAsync(time.GetUtcNow(), stoppingToken);
+            step = await api.CheckCaAsync(time.GetUtcNow(), stoppingToken);
         }
         catch (Exception ex) when (ex is HttpRequestException or CryptographicException
             || (ex is TaskCanceledException && !stoppingToken.IsCancellationRequested))
         {
-            _logger.LogDebug(ex, "Could not ask the HC360 server for its CA; trying again later");
+            _logger.LogDebug(ex, "Could not ask the HC360 server for its CAs; trying again later");
             return stamp;
         }
 
         // A new enrolment written meanwhile is not overwritten: the loop picks it up.
-        if (successor is null || Stamp() != stamp)
+        if (step is null || Stamp() != stamp)
         {
             return stamp;
         }
 
-        var before = (configuration.CaCertificatePem, configuration.CaFingerprint, configuration.PreviousCaCertificatePem);
         try
         {
-            configuration.Follow(successor);
-            configuration.Save(paths.ConfigurationFile);
+            configuration.Take(step, paths.ConfigurationFile);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            (configuration.CaCertificatePem, configuration.CaFingerprint, configuration.PreviousCaCertificatePem) = before;
-            _logger.LogError(ex, "The hospital's new CA could not be saved; this lab agent keeps the CA it pins and tries again later");
+            _logger.LogError(ex, "The hospital CA's rollover could not be saved; this lab agent keeps the CAs it holds and tries again later");
             return stamp;
         }
 
-        trust.Pins.Follow(successor);
-        _logger.LogInformation(
-            "The hospital CA was rolled over: this lab agent now pins the new CA {Fingerprint}, and the one it replaced until that expires",
-            successor.Fingerprint);
+        switch (step)
+        {
+            case HospitalCaStep.HoldNext hold:
+                trust.Pins.Hold(hold.Next);
+                _logger.LogInformation("The HC360 server prepared the next hospital CA {Fingerprint}: this lab agent holds it for the switch", hold.Next.Fingerprint);
+                break;
+            case HospitalCaStep.SwitchToNext switched:
+                trust.Pins.SwitchToNext();
+                _logger.LogInformation(
+                    "The HC360 server switched to the hospital CA {Fingerprint}: this lab agent pins it, and the one it replaced until that expires",
+                    switched.Fingerprint);
+                break;
+        }
+
         return Stamp();
     }
 

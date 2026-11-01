@@ -9,6 +9,9 @@
     Digital Signature Certificate and the server verifies with the same code.
     And the Server Node's mDNS advertisement (Discovery/, DED-02): its service type and TXT record, which the server writes
     and HC360 Desktop reads with the same code.
+    And the check of the server's certificate against the hospital CAs a device pins, and how a device follows the hospital
+    CA's two-step rollover (Trust/, DED-04, DED-05): HC360 Desktop and the lab agent check with the same code, which the
+    server's tests run over TLS.
   -->
   <PropertyGroup>
     <RootNamespace>HyFib.HealthCare360.WindowsInterop</RootNamespace>

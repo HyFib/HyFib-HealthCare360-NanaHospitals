@@ -9,8 +9,7 @@ namespace HyFib.HealthCare360.Desktop.Services;
 
 /// <summary>
 /// An HC360 Server Node found on the WiFi through mDNS/DNS-SD, or listening on this computer
-/// (<see cref="OnThisComputer"/>). After its CA was rolled over it announces the CA it replaced too
-/// (<see cref="PreviousCaFingerprint"/>), which workstations that have not moved yet pin.
+/// (<see cref="OnThisComputer"/>).
 /// </summary>
 internal sealed record DiscoveredServer(
     string InstanceName,
@@ -20,8 +19,7 @@ internal sealed record DiscoveredServer(
     string? Version,
     string? FacilityCode,
     string? CaFingerprint,
-    bool OnThisComputer = false,
-    string? PreviousCaFingerprint = null)
+    bool OnThisComputer = false)
 {
     /// <summary>Addresses to try, most stable first: the machine name survives DHCP changes, IPs are a fallback.</summary>
     public IEnumerable<Uri> CandidateUris()
@@ -146,8 +144,7 @@ internal static class ServerDiscovery
                 addresses.TryGetValue(target, out var ips) ? ips : [],
                 txt.Version,
                 txt.FacilityCode,
-                txt.CaFingerprint,
-                PreviousCaFingerprint: txt.PreviousCaFingerprint));
+                txt.CaFingerprint));
         }
 
         return servers;

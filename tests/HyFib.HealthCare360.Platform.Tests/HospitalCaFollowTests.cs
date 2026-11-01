@@ -1,27 +1,23 @@
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
-using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.WindowsInterop.Trust;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace HyFib.HealthCare360.Platform.Tests;
 
 /// <summary>
-/// After the hospital CA is rolled over ('certificates roll-ca'), HC360 Desktop and the lab agent take the new CA by
-/// themselves, on the word of the CA they pin (<see cref="HospitalCaPins"/>): over a connection pinned to the old CA they
-/// fetch the server's CA and keep what the server sent with its own certificate, which holds the certificate the old CA
-/// signed for the new key. Over real TLS to Kestrel, as HC360 serves it (<see cref="HospitalHttps"/>), with the code both
-/// apps check the server with; their own few lines around it are tested on Windows.
+/// HC360 Desktop and the lab agent follow the hospital CA's two-step rollover by themselves (<see cref="HospitalCaFollow"/>):
+/// once IT prepared the next CA they hold it as a second pin, on the word of the CA they pin; once the server switched to it
+/// they pin it, and keep the CA it replaced as a second pin until it expires. Over real TLS to Kestrel, as HC360 serves it, with
+/// the routes it hands its CAs out at and the code both apps follow with; their own few lines around it are tested on Windows.
 /// </summary>
 public sealed class HospitalCaFollowTests : IDisposable
 {
-    /// <summary>When the old CA was made: nine and a half years ago, so it is in its last year, as a CA is when it is rolled over.</summary>
+    /// <summary>When the current CA was made: nine and a half years ago, so it is in its last year, as a CA is when it is rolled over.</summary>
     private static readonly DateTimeOffset Made = DateTimeOffset.UtcNow.AddYears(-9).AddMonths(-6);
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "hc360-tests", Guid.NewGuid().ToString("N"));
@@ -37,111 +33,170 @@ public sealed class HospitalCaFollowTests : IDisposable
     }
 
     [Fact]
-    public async Task A_device_that_pins_the_old_CA_follows_the_new_one_on_its_word_and_keeps_the_old_one_as_a_second_pin()
+    public async Task A_device_holds_the_next_CA_on_the_current_CAs_word_then_switches_to_it_with_the_server()
     {
-        var (directories, keys) = Machine("primary");
-        string oldPem;
-        using (var first = Start(directories, keys, Made))
-        {
-            oldPem = first.CaPem!;
-        }
-
-        // A standby that never took the rollover: the server as it was before it.
-        var standbyDirectories = new DataDirectories(new PlatformOptions { DataDirectory = Path.Combine(_root, "standby") });
-        CopyDirectory(directories.Root, standbyDirectories.Root);
-
+        var node = Node("primary");
         var now = DateTimeOffset.UtcNow;
-        var rolled = LanCertificateManager.RollCa(directories, keys, now);
-        using var server = Start(directories, keys, now);
-        await using var rolledServer = await ServeAsync(server);
-        using var oldCa = X509Certificate2.CreateFromPem(oldPem);
-        using var newCa = X509Certificate2.CreateFromPem(server.CaPem!);
-        using var pins = new HospitalCaPins(oldPem);
+        var old = node.Ca(Made);
+        using var pins = new HospitalCaPins(old.Pem);
+        using var oldCa = X509Certificate2.CreateFromPem(old.Pem);
 
-        var successor = (await AskAsync(rolledServer, pins, now)).ShouldNotBeNull("the old CA vouched for the new one in the handshake");
-        successor.Fingerprint.ShouldBe(rolled.Fingerprint);
-        using (var followed = X509Certificate2.CreateFromPem(successor.CaPem))
-        using (var cross = X509Certificate2.CreateFromPem(successor.CrossPem))
+        (await CheckAsync(node, pins, now)).ShouldBeNull("nothing is prepared: nothing to do");
+
+        var prepared = LanCertificateManager.PrepareCa(node.Directories, node.Keys, now);
+        string nextPem;
+        using (var server = node.Start(now))
+        await using (var app = await HospitalCaTestServer.ServeAsync(server))
+        using (var http = HospitalCaTestServer.PinnedClient(app, pins))
         {
-            followed.RawData.ShouldBe(newCa.RawData);
-            HospitalCaSuccession.Succeeded(oldCa, newCa, cross).ShouldBeTrue("it keeps the certificate the old CA signed for the new key");
+            nextPem = server.NextCaPem!;
+            var hold = (await HospitalCaFollow.CheckAsync(http, pins, now, Ct)).ShouldBeOfType<HospitalCaStep.HoldNext>();
+            hold.Next.Fingerprint.ShouldBe(prepared.Fingerprint);
+            using (var next = X509Certificate2.CreateFromPem(hold.Next.CaPem))
+            using (var cross = X509Certificate2.CreateFromPem(hold.Next.CrossPem))
+            using (var handedOut = X509Certificate2.CreateFromPem(nextPem))
+            {
+                next.RawData.ShouldBe(handedOut.RawData);
+                HospitalCaSuccession.Succeeded(oldCa, next, cross).ShouldBeTrue("it keeps the current CA's word for the next one");
+            }
+
+            pins.Hold(hold.Next);
+            pins.Fingerprints(now).ShouldBe([old.Fingerprint, prepared.Fingerprint], "the heartbeat says both, the one it pins first");
+            pins.Fingerprint.ShouldBe(old.Fingerprint, "the server still serves with the current CA");
+            (await HospitalCaFollow.CheckAsync(http, pins, now, Ct)).ShouldBeNull("it holds it already, and the server has not switched");
         }
 
-        pins.Follow(successor);
-        pins.Fingerprint.ShouldBe(rolled.Fingerprint);
-        pins.Fingerprints(now).ShouldBe([rolled.Fingerprint, rolled.PreviousFingerprint], "the heartbeat says both, the one it pins first");
-        pins.Fingerprints(rolled.PreviousExpiresAt.AddDays(1)).ShouldBe([rolled.Fingerprint], "an expired CA vouches for nothing");
-        (await AskAsync(rolledServer, pins, now)).ShouldBeNull("nothing more to follow: the server's CA is the one it pins");
-
-        // Once the old CA expires, the server sends no certificate it signed: the device that followed holds the new CA. (Windows'
-        // TLS sends what it finds in this computer's stores, where HC360 put it: out of them first.)
-        WindowsTlsChain.Withdraw(server.SentWithCertificate);
-        await using (var afterTheOldCa = await ServeAsync(server, leafAlone: true))
+        LanCertificateManager.SwitchCa(node.Directories, node.Keys, now);
+        using (var server = node.Start(now))
+        await using (var app = await HospitalCaTestServer.ServeAsync(server))
         {
-            (await TrustsAsync(afterTheOldCa, pins)).ShouldBeTrue();
-            using var onlyTheOld = new HospitalCaPins(oldPem);
-            (await TrustsAsync(afterTheOldCa, onlyTheOld)).ShouldBeFalse("one that did not follow is cut off then");
-        }
+            using (var http = HospitalCaTestServer.PinnedClient(app, pins))
+            {
+                (await HospitalCaFollow.CheckAsync(http, pins, now, Ct)).ShouldBeOfType<HospitalCaStep.SwitchToNext>()
+                    .Fingerprint.ShouldBe(prepared.Fingerprint, "asked over the connection the next CA it holds lets through");
+                pins.SwitchToNext();
+                (await HospitalCaFollow.CheckAsync(http, pins, now, Ct)).ShouldBeNull("nothing more: the server's CA is the one it pins");
+            }
 
-        // A standby still on the old CA, until it is given the rollover: the second pin still trusts it, the new CA alone does
-        // not, and the device never goes back to the old CA.
-        using var stale = Start(standbyDirectories, keys, now);
-        await using var standby = await ServeAsync(stale);
-        (await TrustsAsync(standby, pins)).ShouldBeTrue("the old CA, a second pin");
-        using var onlyTheNew = new HospitalCaPins(server.CaPem!);
-        (await TrustsAsync(standby, onlyTheNew)).ShouldBeFalse();
-        (await AskAsync(standby, pins, now)).ShouldBeNull("never back to the CA it replaced");
+            (pins.Fingerprint, pins.NextCa).ShouldBe((prepared.Fingerprint, null));
+            pins.PreviousCa.ShouldNotBeNull().RawData.ShouldBe(oldCa.RawData);
+            pins.Fingerprints(now).ShouldBe([prepared.Fingerprint, old.Fingerprint], "the CA it replaced, a second pin until it expires");
+            pins.Fingerprints(old.ExpiresAt.AddDays(1)).ShouldBe([prepared.Fingerprint], "an expired CA vouches for nothing");
+
+            // One that never took the next CA is refused by the server's certificate, and asks nothing of it.
+            using var oldAlone = new HospitalCaPins(old.Pem);
+            using var refused = HospitalCaTestServer.PinnedClient(app, oldAlone);
+            await Should.ThrowAsync<HttpRequestException>(() => HospitalCaFollow.CheckAsync(refused, oldAlone, now, Ct));
+        }
     }
 
     /// <summary>
-    /// A CA made again ('certificates new-ca', for a key that may have been seen) has no word from the old one: a device that
-    /// pins the old CA is refused by the server's certificate, and asks nothing of it. It is set up again.
+    /// A standby serves with the CA it was given until it is given the new one: a device that switched still trusts it, through
+    /// the CA it replaced, and does not go back to that CA; one that holds the next CA keeps holding it.
     /// </summary>
     [Fact]
-    public async Task A_CA_made_again_rather_than_rolled_over_is_never_followed()
+    public async Task A_device_that_switched_trusts_a_standby_not_switched_yet_and_never_goes_back_to_the_old_CA()
     {
-        var (directories, keys) = Machine("primary");
-        string oldPem;
-        using (var first = Start(directories, keys, Made))
+        var primary = Node("primary");
+        var now = DateTimeOffset.UtcNow;
+        var old = primary.Ca(Made);
+        var standby = primary.CopyAs(_root, "standby");
+        var prepared = LanCertificateManager.PrepareCa(primary.Directories, primary.Keys, now);
+        string nextPem;
+        using (var server = primary.Start(now))
         {
-            oldPem = first.CaPem!;
+            nextPem = server.NextCaPem!;
         }
 
-        LanCertificateManager.NewCa(directories, keys, "Nana Hospitals", DateTimeOffset.UtcNow);
-        using var replaced = Start(directories, keys, DateTimeOffset.UtcNow);
-        await using var server = await ServeAsync(replaced);
-        using var pins = new HospitalCaPins(oldPem);
+        LanCertificateManager.SwitchCa(primary.Directories, primary.Keys, now);
+        using var switched = new HospitalCaPins(nextPem, previousCaPem: old.Pem);
+        using var holding = new HospitalCaPins(old.Pem, nextCaPem: nextPem);
 
-        await Should.ThrowAsync<HttpRequestException>(() => AskAsync(server, pins, DateTimeOffset.UtcNow));
-        pins.Fingerprint.ShouldNotBe(replaced.CaFingerprint);
+        (await CheckAsync(standby, switched, now)).ShouldBeNull("the standby's CA is the one this device replaced: it stays on the new one");
+        switched.Fingerprint.ShouldBe(prepared.Fingerprint);
+        (await CheckAsync(standby, holding, now)).ShouldBeNull("the standby has not switched, and hands out no next CA");
+        holding.NextCa.ShouldNotBeNull("it keeps the next CA it holds: the primary switched to it");
+        (await CheckAsync(primary, holding, now)).ShouldBeOfType<HospitalCaStep.SwitchToNext>();
+    }
+
+    /// <summary>
+    /// What the server hands out as the next CA is held only on the word of the CA the device pins: the next CA without it, a
+    /// rollover another CA vouched for (another hospital's, a CA of this one's name), or a page that is no certificate at all
+    /// (an older server's answer) changes nothing.
+    /// </summary>
+    [Fact]
+    public async Task A_device_holds_no_next_CA_the_CA_it_pins_did_not_vouch_for()
+    {
+        var node = Node("primary");
+        var now = DateTimeOffset.UtcNow;
+        var current = node.Ca(Made);
+        LanCertificateManager.PrepareCa(node.Directories, node.Keys, now);
+        var other = Node("other-hospital");
+        other.Ca(Made);
+        LanCertificateManager.PrepareCa(other.Directories, other.Keys, now);
+        string nextPem, crossPem, othersNext, othersCross;
+        using (var server = node.Start(now))
+        using (var otherServer = other.Start(now))
+        {
+            (nextPem, crossPem) = (server.NextCaPem!, server.NextCaCrossPem!);
+            (othersNext, othersCross) = (otherServer.NextCaPem!, otherServer.NextCaCrossPem!);
+        }
+
+        using (var nextCa = X509Certificate2.CreateFromPem(nextPem))
+        using (var otherCa = X509Certificate2.CreateFromPem(othersNext))
+        {
+            otherCa.SubjectName.RawData.ShouldBe(nextCa.SubjectName.RawData, "a server of the same name set up the same day: the names say nothing");
+        }
+
+        string[] refused =
+        [
+            nextPem,
+            Pem(othersNext, othersCross),
+            Pem(nextPem, othersCross),
+            "<!doctype html><html><body>HC360</body></html>",
+            current.Pem,
+        ];
+        using var pins = new HospitalCaPins(current.Pem);
+        foreach (var handedOut in refused)
+        {
+            (await CheckAsync(node, pins, now, handedOut)).ShouldBeNull(handedOut[..Math.Min(40, handedOut.Length)]);
+        }
+
+        pins.NextCa.ShouldBeNull();
+        (await CheckAsync(node, pins, now, Pem(nextPem, crossPem))).ShouldBeOfType<HospitalCaStep.HoldNext>("the real one, as the server hands it out");
+        (await CheckAsync(node, pins, now, Pem(crossPem, nextPem))).ShouldBeOfType<HospitalCaStep.HoldNext>("in either order");
     }
 
     /// <summary>
     /// A certificate this computer holds, but the server did not send, does not count: the chain is built from what the server
     /// sent and the pins only. Windows builds chains from the computer's own stores, and .NET elsewhere from the user's: here,
-    /// the certificate the old CA signed is in this user's intermediate store while the server sends its certificate alone.
+    /// after a switch, the certificate the old CA signed for the new key is in this user's intermediate store, and a device
+    /// that holds the old CA alone still refuses the server.
     /// </summary>
     [Fact]
     public void A_certificate_on_this_computer_that_the_server_did_not_send_does_not_count()
     {
-        var (directories, keys) = Machine("primary");
-        string oldPem;
-        using (var first = Start(directories, keys, Made))
+        var node = Node("primary");
+        var now = DateTimeOffset.UtcNow;
+        var old = node.Ca(Made);
+        LanCertificateManager.PrepareCa(node.Directories, node.Keys, now);
+        string crossPem;
+        using (var prepared = node.Start(now))
         {
-            oldPem = first.CaPem!;
+            crossPem = prepared.NextCaCrossPem!;
         }
 
-        LanCertificateManager.RollCa(directories, keys, DateTimeOffset.UtcNow);
-        using var server = Start(directories, keys, DateTimeOffset.UtcNow);
-        using var cross = X509CertificateLoader.LoadCertificate(server.SentWithCertificate[0].RawData);
-        using var pins = new HospitalCaPins(oldPem);
+        LanCertificateManager.SwitchCa(node.Directories, node.Keys, now);
+        using var server = node.Start(now);
+        using var cross = X509Certificate2.CreateFromPem(crossPem);
+        using var pins = new HospitalCaPins(old.Pem);
         using var store = new X509Store(StoreName.CertificateAuthority, StoreLocation.CurrentUser);
         store.Open(OpenFlags.ReadWrite);
         store.Add(cross);
         try
         {
             pins.IsTrusted(server.ServerCertificate, "127.0.0.1", []).ShouldBeFalse("the server sent its certificate alone");
-            pins.IsTrusted(server.ServerCertificate, "127.0.0.1", [cross]).ShouldBeTrue("the server sent the certificate the old CA signed");
+            pins.IsTrusted(server.ServerCertificate, "127.0.0.1", [cross]).ShouldBeTrue("had the server sent it, the old CA's word would let it through");
         }
         finally
         {
@@ -153,116 +208,42 @@ public sealed class HospitalCaFollowTests : IDisposable
     [Fact]
     public void A_second_pin_that_cannot_be_read_is_left_out()
     {
-        var (directories, keys) = Machine("primary");
-        using var server = Start(directories, keys, DateTimeOffset.UtcNow);
-        using var pins = new HospitalCaPins(server.CaPem!, "-----BEGIN CERTIFICATE-----\nnot a certificate\n-----END CERTIFICATE-----");
+        var node = Node("primary");
+        var current = node.Ca(DateTimeOffset.UtcNow);
+        const string broken = "-----BEGIN CERTIFICATE-----\nnot a certificate\n-----END CERTIFICATE-----";
+        using var pins = new HospitalCaPins(current.Pem, previousCaPem: broken, nextCaPem: broken);
 
-        pins.PreviousCa.ShouldBeNull();
-        pins.Fingerprints(DateTimeOffset.UtcNow).ShouldBe([server.CaFingerprint!]);
+        (pins.PreviousCa, pins.NextCa).ShouldBe((null, null));
+        pins.Fingerprints(DateTimeOffset.UtcNow).ShouldBe([current.Fingerprint]);
     }
 
     /// <summary>
-    /// What HC360 Desktop and the lab agent do every six hours: over a connection pinned with <paramref name="pins"/>, ask the
-    /// server for its CA, keeping what the server sent with its certificate, and see whether the pinned CA vouched for it.
-    /// Throws <see cref="HttpRequestException"/> when the device refuses the server.
+    /// What HC360 Desktop and the lab agent ask the server, started at <paramref name="now"/>, over a connection pinned to
+    /// <paramref name="pins"/>. With <paramref name="nextHandedOut"/> the server hands that out as the next CA instead of its own.
     /// </summary>
-    private static async Task<HospitalCaSuccessor?> AskAsync(WebApplication server, HospitalCaPins pins, DateTimeOffset now)
+    private static async Task<HospitalCaStep?> CheckAsync(HospitalCaTestServer node, HospitalCaPins pins, DateTimeOffset now, string? nextHandedOut = null)
     {
-        var address = new Uri(server.Urls.Single());
-        X509Certificate2[] sent = [];
-        using var handler = new SocketsHttpHandler
-        {
-            UseProxy = false,
-            SslOptions =
-            {
-                RemoteCertificateValidationCallback = (_, certificate, chain, _) =>
-                {
-                    sent = HospitalCaPins.KeepSent(certificate, chain);
-                    return pins.Validate(certificate, chain, address.Host);
-                },
-            },
-        };
-        using var http = new HttpClient(handler) { BaseAddress = address };
-        var pem = await http.GetStringAsync(CertificateProbe.CaCertificatePath, Ct);
-        try
-        {
-            return pins.SuccessorIn(pem, sent, now);
-        }
-        finally
-        {
-            foreach (var certificate in sent)
-            {
-                certificate.Dispose();
-            }
-        }
+        using var server = node.Start(now);
+        await using var app = nextHandedOut is null ? await HospitalCaTestServer.ServeAsync(server) : await ServeHandingOutAsync(server, nextHandedOut);
+        using var http = HospitalCaTestServer.PinnedClient(app, pins);
+        return await HospitalCaFollow.CheckAsync(http, pins, now, Ct);
     }
 
-    private static async Task<bool> TrustsAsync(WebApplication server, HospitalCaPins pins)
-    {
-        try
-        {
-            await AskAsync(server, pins, DateTimeOffset.UtcNow);
-            return true;
-        }
-        catch (HttpRequestException)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// A real HTTPS listener with HC360's TLS (<see cref="HospitalHttps"/>), handing out the CA where the devices read it.
-    /// <paramref name="leafAlone"/> serves the server's certificate alone, as the server does once the old CA expired.
-    /// </summary>
-    private static async Task<WebApplication> ServeAsync(LanCertificateManager certificates, bool leafAlone = false)
+    /// <summary>The server's TLS and CA, handing out <paramref name="next"/> where it hands out the next CA.</summary>
+    private static async Task<WebApplication> ServeHandingOutAsync(LanCertificateManager certificates, string next)
     {
         var builder = WebApplication.CreateBuilder();
         builder.Logging.ClearProviders();
-        builder.WebHost.ConfigureKestrel(kestrel => kestrel.Listen(IPAddress.Loopback, 0, listen =>
-        {
-            if (leafAlone)
-            {
-                listen.UseHttps(certificates.ServerCertificate);
-            }
-            else
-            {
-                listen.UseHttps(https => HospitalHttps.Configure(https, certificates));
-            }
-        }));
+        builder.WebHost.ConfigureKestrel(kestrel => kestrel.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(https => HospitalHttps.Configure(https, certificates))));
         var app = builder.Build();
-        app.MapGet("/" + CertificateProbe.CaCertificatePath, () => Results.Text(certificates.CaPem!, "application/x-x509-ca-cert"));
+        app.MapGet("/" + HospitalCaFollow.CaPath, () => Results.Text(certificates.CaPem!, "application/x-x509-ca-cert"));
+        app.MapGet("/" + HospitalCaFollow.NextCaPath, () => Results.Text(next, "application/x-pem-file"));
         await app.StartAsync(Ct);
         return app;
     }
 
-    private (DataDirectories Directories, IDataProtectionProvider Keys) Machine(string name) =>
-        (new DataDirectories(new PlatformOptions { DataDirectory = Path.Combine(_root, name) }), new EphemeralDataProtectionProvider());
+    private HospitalCaTestServer Node(string name) => new(_root, name);
 
-    /// <summary>Starts the server's TLS as HC360 does at <paramref name="now"/>.</summary>
-    private static LanCertificateManager Start(DataDirectories directories, IDataProtectionProvider keys, DateTimeOffset now)
-    {
-        var certificates = new LanCertificateManager(
-            directories, new PlatformOptions { DataDirectory = directories.Root }, keys, NullLogger<LanCertificateManager>.Instance, new Clock(now));
-        certificates.EnsureCertificates();
-        return certificates;
-    }
-
-    private static void CopyDirectory(string from, string to)
-    {
-        foreach (var directory in Directory.GetDirectories(from, "*", SearchOption.AllDirectories))
-        {
-            Directory.CreateDirectory(directory.Replace(from, to, StringComparison.Ordinal));
-        }
-
-        Directory.CreateDirectory(to);
-        foreach (var file in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
-        {
-            File.Copy(file, file.Replace(from, to, StringComparison.Ordinal));
-        }
-    }
-
-    private sealed class Clock(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
-    }
+    /// <summary>Certificates one after the other, each on lines of its own, as the server hands them out.</summary>
+    private static string Pem(params string[] certificates) => string.Join("\n", certificates.Select(c => c.TrimEnd())) + "\n";
 }

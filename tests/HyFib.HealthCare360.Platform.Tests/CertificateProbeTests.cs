@@ -112,8 +112,8 @@ public sealed class CertificateProbeTests : IDisposable
     /// speaks of the CA alone, a warning to plan with and critical in its last 90 days.
     /// </summary>
     [Theory]
-    [InlineData(100, CertificateProbeOutcome.Warning, "Roll it over with 'certificates roll-ca' in the coming months")]
-    [InlineData(250, CertificateProbeOutcome.Critical, "Roll it over now with 'certificates roll-ca'")]
+    [InlineData(100, CertificateProbeOutcome.Warning, "Prepare the next CA with 'certificates prepare-ca'")]
+    [InlineData(250, CertificateProbeOutcome.Critical, "once every device holds it, now, as the CA rollover procedure says")]
     public async Task A_CA_in_its_last_year_is_judged_as_System_health_judges_it(int daysOn, CertificateProbeOutcome outcome, string says)
     {
         var now = DateTimeOffset.UtcNow;

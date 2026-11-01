@@ -6,19 +6,22 @@ namespace HyFib.HealthCare360.LabAgent;
 
 /// <summary>
 /// Pins the server to the hospital's private CA, with the same rules as HC360 Desktop (SRS DED-04, DED-05): the server's
-/// certificate must chain to exactly this CA, or to the one it replaced in a rollover the agent followed, and name the host
-/// the agent contacts. The Windows trust store is not consulted, so a device on the network cannot pose as the server with
+/// certificate must chain to exactly this CA, or, while the hospital CA is rolled over, to the next CA the agent holds or the
+/// one the pinned CA replaced, and name the host the agent contacts. The Windows trust store is not consulted, so a device on the network cannot pose as the server with
 /// some other valid certificate. Every call the agent makes, the relay's WebSocket included, goes through this check; none
 /// ever accepts any certificate. The check itself is <see cref="HospitalCaPins"/>, which HC360 Desktop shares.
 /// </summary>
 internal sealed class ServerTrust : IDisposable
 {
-    public ServerTrust(string caPem, string? previousCaPem = null)
+    public ServerTrust(string caPem, string? previousCaPem = null, string? nextCaPem = null)
     {
-        Pins = new HospitalCaPins(caPem, previousCaPem);
+        Pins = new HospitalCaPins(caPem, previousCaPem, nextCaPem);
     }
 
-    /// <summary>The CAs pinned: after a rollover, the agent follows the new CA on the old one's word (<see cref="HospitalCaPins.Follow"/>).</summary>
+    /// <summary>
+    /// The CAs pinned: the agent holds the next CA on the pinned one's word, and switches to it with the server
+    /// (<see cref="HospitalCaFollow"/>).
+    /// </summary>
     public HospitalCaPins Pins { get; }
 
     /// <summary>SHA-256 of the DER certificate as upper-case hex (the format the server installer prints).</summary>
@@ -48,12 +51,8 @@ internal sealed class ServerTrust : IDisposable
     internal static X509Certificate2Collection Intermediates(X509Chain? handshake, X509Certificate2 server) =>
         HospitalCaPins.Intermediates(handshake, server);
 
-    /// <summary>
-    /// HttpClient for the agent's calls: pinned, no proxy (the server is on the hospital LAN), bounded waits. With
-    /// <paramref name="sent"/>, each connection also hands over what the server sent besides its own certificate
-    /// (<see cref="HospitalCaPins.KeepSent"/>).
-    /// </summary>
-    public HttpClient CreateHttpClient(Uri baseAddress, TimeSpan timeout, Action<X509Certificate2[]>? sent = null)
+    /// <summary>HttpClient for the agent's calls: pinned, no proxy (the server is on the hospital LAN), bounded waits.</summary>
+    public HttpClient CreateHttpClient(Uri baseAddress, TimeSpan timeout)
     {
         var host = baseAddress.Host;
         var handler = new SocketsHttpHandler
@@ -63,11 +62,7 @@ internal sealed class ServerTrust : IDisposable
             ConnectTimeout = TimeSpan.FromSeconds(10),
             SslOptions =
             {
-                RemoteCertificateValidationCallback = (_, certificate, chain, _) =>
-                {
-                    sent?.Invoke(HospitalCaPins.KeepSent(certificate, chain));
-                    return Validate(certificate, chain, host);
-                },
+                RemoteCertificateValidationCallback = (_, certificate, chain, _) => Validate(certificate, chain, host),
             },
         };
         return new HttpClient(handler) { BaseAddress = baseAddress, Timeout = timeout };

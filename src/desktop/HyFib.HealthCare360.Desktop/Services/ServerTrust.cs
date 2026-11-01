@@ -15,18 +15,22 @@ internal sealed record RejectedCertificate(string Host, string Subject, string I
 
 /// <summary>
 /// Certificate pinning to the hospital's private CA (SRS DED-04/SEC-06). The server's LAN certificate must chain to exactly
-/// this CA, or to the one it replaced in a rollover this workstation followed, and name the host being contacted; the public
-/// Windows trust store is not consulted, so a device on the WiFi cannot impersonate the server with some other valid
-/// certificate. The check itself is <see cref="HospitalCaPins"/>, which the lab agent shares.
+/// this CA, or, while the hospital CA is rolled over, to the next CA this workstation holds or the one the pinned CA replaced,
+/// and name the host being contacted; the public Windows trust store is not consulted, so a device on the WiFi cannot
+/// impersonate the server with some other valid certificate. The check itself is <see cref="HospitalCaPins"/>, which the lab
+/// agent shares.
 /// </summary>
 internal sealed class ServerTrust : IDisposable
 {
-    public ServerTrust(string caPem, string? previousCaPem = null)
+    public ServerTrust(string caPem, string? previousCaPem = null, string? nextCaPem = null)
     {
-        Pins = new HospitalCaPins(caPem, previousCaPem);
+        Pins = new HospitalCaPins(caPem, previousCaPem, nextCaPem);
     }
 
-    /// <summary>The CAs pinned: after a rollover, this workstation follows the new CA on the old one's word (<see cref="HospitalCaPins.Follow"/>).</summary>
+    /// <summary>
+    /// The CAs pinned: this workstation holds the next CA on the pinned one's word, and switches to it with the server
+    /// (<see cref="HospitalCaFollow"/>).
+    /// </summary>
     public HospitalCaPins Pins { get; }
 
     /// <summary>SHA-256 of the pinned CA as upper-case hex (same format the server advertises).</summary>
@@ -79,11 +83,8 @@ internal sealed class ServerTrust : IDisposable
     internal static X509Certificate2Collection Intermediates(X509Chain? handshake, X509Certificate2 server) =>
         HospitalCaPins.Intermediates(handshake, server);
 
-    /// <summary>
-    /// HttpClient for server calls that only accepts certificates issued by a pinned CA. With <paramref name="sent"/>, each
-    /// connection also hands over what the server sent besides its own certificate (<see cref="HospitalCaPins.KeepSent"/>).
-    /// </summary>
-    public HttpClient CreateHttpClient(Uri baseAddress, TimeSpan timeout, Action<X509Certificate2[]>? sent = null)
+    /// <summary>HttpClient for server calls that only accepts certificates issued by a pinned CA.</summary>
+    public HttpClient CreateHttpClient(Uri baseAddress, TimeSpan timeout)
     {
         var host = baseAddress.Host;
         var handler = new SocketsHttpHandler
@@ -92,11 +93,7 @@ internal sealed class ServerTrust : IDisposable
             ConnectTimeout = TimeSpan.FromSeconds(5),
             SslOptions =
             {
-                RemoteCertificateValidationCallback = (_, certificate, chain, _) =>
-                {
-                    sent?.Invoke(HospitalCaPins.KeepSent(certificate, chain));
-                    return Check(certificate, chain, host);
-                },
+                RemoteCertificateValidationCallback = (_, certificate, chain, _) => Check(certificate, chain, host),
             },
         };
         return new HttpClient(handler) { BaseAddress = baseAddress, Timeout = timeout };

@@ -278,9 +278,8 @@ public partial class SetupWindow : Window
         _settings.CaFingerprint = _fingerprint;
         if (!sameServer)
         {
-            // A CA this workstation followed from belongs to the CA it pinned until now.
-            _settings.PreviousCaCertificatePem = null;
-            _settings.CaCrossCertificatePem = null;
+            // The next and previous CAs belong to the CA this workstation pinned until now.
+            _settings.ForgetRollover();
         }
 
         if (!enrolled && !sameServer)
