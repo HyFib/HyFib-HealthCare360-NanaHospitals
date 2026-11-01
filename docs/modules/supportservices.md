@@ -43,7 +43,7 @@ in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill wit
 | GET | `/sets?includeInactive&search` | `cssd.read` or `cssd.requests` | → `InstrumentSetDto[]` (method, shelfLifeDays, count sheet `items`, instrumentCount, packsAvailable) |
 | GET | `/sets/{id}` | same | → `InstrumentSetDto` |
 | POST | `/sets` | `cssd.masters.manage` | `SaveInstrumentSetRequest` (code, name, category, ownerDepartmentId, method Steam/EthyleneOxide/Plasma, shelfLifeDays, items[name, quantity]) → 201 |
-| PUT | `/sets/{id}` | `cssd.masters.manage` | `SaveInstrumentSetRequest` (+`version`) → 204 |
+| PUT | `/sets/{id}` | `cssd.masters.manage` | `SaveInstrumentSetRequest` (+`version`) → 204. Saving replaces the count sheet; the set's audit event lists it as it was and as it is (`items`) |
 | GET | `/requests?status&departmentId&openOnly` | `cssd.read` or `cssd.requests` | → `CssdRequestDto[]` (urgent first) |
 | POST | `/requests` | `cssd.requests` | `CreateCssdRequestRequest` (departmentId, requiredBy, priority, lines[setId, quantity]) → 201 `CssdRequestDto` (urgent requests alert CSSD) |
 | POST | `/requests/{id}/cancel` | `cssd.requests` | `CancelCssdRequestRequest` → 204 while the request is open or part issued (packs already issued stay issued); 422 `cssd.request_closed` once it is issued or cancelled |

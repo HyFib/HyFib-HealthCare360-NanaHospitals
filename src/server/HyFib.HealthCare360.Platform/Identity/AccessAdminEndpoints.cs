@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.SharedKernel;
@@ -221,7 +222,17 @@ internal static class AccessAdminEndpoints
         user.Facilities.AddRange((request.FacilityIds ?? []).Distinct().Select(f => new UserFacility { UserId = user.Id, FacilityId = f }));
 
         db.Add(user);
-        audit.Add(new AuditEntry(AuditCategories.Admin, "user.created", $"Created user {user.UserName}") { EntityType = nameof(User), EntityId = user.Id.ToString() });
+        var names = await GrantNamesAsync(db, user.Roles.Select(r => r.RoleId), user.Facilities.Select(f => f.FacilityId), ct);
+        audit.Add(new AuditEntry(AuditCategories.Admin, "user.created", $"Created user {user.UserName}")
+        {
+            EntityType = nameof(User),
+            EntityId = user.Id.ToString(),
+            Details = new
+            {
+                roles = names.Roles(user.Roles.Select(r => r.RoleId)),
+                facilities = names.Facilities(user.Facilities.Select(f => f.FacilityId)),
+            },
+        });
         await db.SaveChangesAsync(ct);
         return TypedResults.Created($"/api/v1/admin/users/{user.Id}", new TemporaryPasswordResponse(user.Id, password, user.TemporaryPasswordExpiresAt!.Value));
     }
@@ -270,10 +281,12 @@ internal static class AccessAdminEndpoints
         var wasActive = user.IsActive;
         user.IsActive = request.IsActive;
 
+        var rolesBefore = user.Roles.Select(r => r.RoleId).ToList();
         var roleIds = request.RoleIds.Distinct().ToHashSet();
         user.Roles.RemoveAll(r => !roleIds.Contains(r.RoleId));
         user.Roles.AddRange(roleIds.Where(r => user.Roles.All(x => x.RoleId != r)).Select(r => new UserRole { UserId = user.Id, RoleId = r }));
 
+        var facilitiesBefore = user.Facilities.Select(f => f.FacilityId).ToList();
         var facilityIds = (request.FacilityIds ?? []).Distinct().ToHashSet();
         user.Facilities.RemoveAll(f => !facilityIds.Contains(f.FacilityId));
         user.Facilities.AddRange(facilityIds.Where(f => user.Facilities.All(x => x.FacilityId != f)).Select(f => new UserFacility { UserId = user.Id, FacilityId = f }));
@@ -282,7 +295,18 @@ internal static class AccessAdminEndpoints
             ? await RevokeAllSessionsAsync(db, user.Id, "user_deactivated", time.GetUtcNow(), ct)
             : [];
 
-        audit.Add(new AuditEntry(AuditCategories.Admin, "user.updated", $"Updated user {user.UserName}") { EntityType = nameof(User), EntityId = user.Id.ToString() });
+        // Which roles and facilities the change gave and took away, by name, in the transaction that makes it.
+        var names = await GrantNamesAsync(db, rolesBefore.Concat(roleIds), facilitiesBefore.Concat(facilityIds), ct);
+        audit.Add(new AuditEntry(AuditCategories.Admin, "user.updated", $"Updated user {user.UserName}")
+        {
+            EntityType = nameof(User),
+            EntityId = user.Id.ToString(),
+            Details = new
+            {
+                roles = new { granted = names.Roles(roleIds.Except(rolesBefore)), withdrawn = names.Roles(rolesBefore.Except(roleIds)) },
+                facilities = new { granted = names.Facilities(facilityIds.Except(facilitiesBefore)), withdrawn = names.Facilities(facilitiesBefore.Except(facilityIds)) },
+            },
+        });
         await db.SaveChangesAsync(ct);
         Invalidate(sessions, ended);
         permissions.Invalidate(user.Id);
@@ -679,6 +703,16 @@ internal static class AccessAdminEndpoints
         }
     }
 
+    /// <summary>The names of these roles and facilities, deleted ones included, for an audit entry to name what it gave or took.</summary>
+    private static async Task<GrantNames> GrantNamesAsync(HospitalDbContext db, IEnumerable<Guid> roleIds, IEnumerable<Guid> facilityIds, CancellationToken ct)
+    {
+        var roles = roleIds.Distinct().ToList();
+        var facilities = facilityIds.Distinct().ToList();
+        return new GrantNames(
+            await db.Set<Role>().IgnoreQueryFilters().Where(r => roles.Contains(r.Id)).Select(r => new { r.Id, r.Name }).ToDictionaryAsync(r => r.Id, r => r.Name, ct),
+            await db.Set<Facility>().IgnoreQueryFilters().Where(f => facilities.Contains(f.Id)).Select(f => new { f.Id, f.Name }).ToDictionaryAsync(f => f.Id, f => f.Name, ct));
+    }
+
     private static UserDetail ToDetail(User user) => new(
         user.Id, user.UserName, user.DisplayName, user.Email, user.Phone, user.IsActive, user.MfaEnabled, user.MustChangePassword,
         user.LastLoginAt, user.LockoutEndsAt, user.PractitionerId, user.DefaultFacilityId,
@@ -690,4 +724,17 @@ internal static class AccessAdminEndpoints
 
     internal static string GenerateTemporaryPassword() =>
         $"{SecretTokens.NewReadableCode(4)}-{SecretTokens.NewReadableCode(4)}-{SecretTokens.NewReadableCode(4)}";
+
+    /// <summary>Roles and facilities as a user's audit entries list them: by id and name, in order of name.</summary>
+    private sealed record GrantNames(IReadOnlyDictionary<Guid, string> RoleNames, IReadOnlyDictionary<Guid, string> FacilityNames)
+    {
+        public List<Grant> Roles(IEnumerable<Guid> ids) => Named(ids, RoleNames);
+
+        public List<Grant> Facilities(IEnumerable<Guid> ids) => Named(ids, FacilityNames);
+
+        private static List<Grant> Named(IEnumerable<Guid> ids, IReadOnlyDictionary<Guid, string> names) =>
+            [.. ids.Distinct().Select(id => new Grant(id, names.GetValueOrDefault(id))).OrderBy(g => g.Name, StringComparer.Ordinal).ThenBy(g => g.Id)];
+    }
+
+    private sealed record Grant(Guid Id, string? Name);
 }

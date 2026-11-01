@@ -88,6 +88,11 @@ public sealed class RolePermission
     public string Permission { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// A role granted to a user. Each grant and withdrawal is in the user's data audit event (<c>roles</c>, from/to), in the
+/// transaction that makes it, whichever way it is made: administration, a portal account's first sign-in, the seeder.
+/// </summary>
+[AuditedWithParent]
 public sealed class UserRole
 {
     public Guid UserId { get; set; }
@@ -95,6 +100,8 @@ public sealed class UserRole
     public Role? Role { get; set; }
 }
 
+/// <summary>A facility a user may work in, audited with the user as their roles are (<c>facilities</c>).</summary>
+[AuditedWithParent]
 public sealed class UserFacility
 {
     public Guid UserId { get; set; }

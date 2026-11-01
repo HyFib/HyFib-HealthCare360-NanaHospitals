@@ -99,7 +99,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | POST | `/emr/procedures/{id}/entered-in-error` | emr.write | `EnteredInErrorRequest{reason}` → `ProcedureDto` (`EnteredInError`); 422 `procedure.already_voided` |
 | GET | `/emr/templates?specialtyCode&search&includeInactive` | emr.read | → `TemplateListItem[]` (shared + own personal) |
 | GET | `/emr/templates/{id}` | emr.read | → `TemplateDto` (SOAP defaults, complaints, default orders, medicines) |
-| POST / PUT | `/emr/templates`, `/emr/templates/{id}` | templates.manage | `SaveTemplateRequest` |
+| POST / PUT | `/emr/templates`, `/emr/templates/{id}` | templates.manage | `SaveTemplateRequest`. Saving replaces the default medicines; the template's audit event lists them as they were and as they are (`medications`) |
 | GET / POST / DELETE | `/emr/favourites`, `/emr/favourites/{id}` | emr.read / emr.write or prescriptions.write | `SaveFavouriteRequest{kind: Order|Drug, label, serviceItemId?, drugItemId?, dose defaults…}` |
 | GET | `/emr/drugs?search&take` | prescriptions.write | → `PrescribableDrug[]` (see *Drug search*); `take` defaults to 20, capped at 50 |
 
@@ -447,7 +447,7 @@ isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, a
 | GET / POST / PUT | `/mrd/procedure-codes[/{id}]` | emr.read or mrd.coding / mrd.coding | `?search&category&includeInactive&limit` (switched-off codes as for ICD) / `SaveProcedureCodeRequest` |
 | GET | `/mrd/codings?status&from&to&page` | mrd.coding | coding worklist (pending first) |
 | POST | `/mrd/codings` | mrd.coding | `CreateCodingRequest{patientId, encounterId?, admissionId?, visitId?, episodeDate?, notes}` |
-| GET / PUT | `/mrd/codings/{id}` | mrd.coding | `SaveCodingRequest{entries[{kind, code, isPrimary}], notes, version}` (catalogue codes only; categories with subdivisions rejected) |
+| GET / PUT | `/mrd/codings/{id}` | mrd.coding | `SaveCodingRequest{entries[{kind, code, isPrimary}], notes, version}` (catalogue codes only; categories with subdivisions rejected). Coding again replaces the codes; the coding's audit event lists them as they were and as they are (`entries`) |
 | POST | `/mrd/codings/{id}/verify` | mrd.coding | `VerifyCodingRequest{version}` (a different coder must verify); insurance claims then take the coding (MB-03) |
 | GET | `/mrd/codings/{id}/suggestions` | mrd.coding | → `CodingSuggestion[]` |
 | GET | `/mrd/reports/morbidity?from&to&groupBy=code|block|chapter&source=clinical|coded` | mrd.records | → `MorbidityReport` (episodes, patients, sex and age bands, most episodes first; ≤ 1 year). Each episode counts once per row and each patient once; ages are the patient's on the day of the episode (the day the coded episode ended, or the day the doctor recorded the diagnosis). `clinical` takes the doctors' ICD-coded diagnoses except differentials; `coded` the facility's codings a second coder verified, by the day the episode ended, every diagnosis line counted and procedures left out (`MorbidityIndexTests`) |
@@ -603,7 +603,7 @@ supplies, in Medical records > ICD catalogue > Import or with the server command
 |---|---|---|---|
 | GET | `/health-checkups/packages?search&includeInactive`, `/{id}` | healthcheck.manage or emr.read | → `PackageDto` |
 | GET | `/health-checkups/packages/{id}/eligibility?patientId` | healthcheck.manage or emr.read | → `PackageEligibility{isEligible, reason, excludedItems}` |
-| POST / PUT | `/health-checkups/packages[/{id}]` | healthcheck.manage | `SavePackageRequest{code "HC-…", name, description, gender, minAgeYears, maxAgeYears, price, isActive, items[{kind, serviceItemId?, departmentCode?, gender, minAgeYears}], version?}` — also creates/updates the package's `org.service_items` row (category HealthCheckup) |
+| POST / PUT | `/health-checkups/packages[/{id}]` | healthcheck.manage | `SavePackageRequest{code "HC-…", name, description, gender, minAgeYears, maxAgeYears, price, isActive, items[{kind, serviceItemId?, departmentCode?, gender, minAgeYears}], version?}` — also creates/updates the package's `org.service_items` row (category HealthCheckup). Saving replaces the items; the package's audit event lists them as they were and as they are (`items`) |
 | GET / POST | `/health-checkups/bookings` | healthcheck.manage or emr.read / healthcheck.manage | `BookCheckupRequest{patientId, packageId, scheduledDate, visitId?, notes}` (a `visitId` makes it a walk-in: checked in and charged at once) → `BookingDto` (itinerary + one ClinicalOrder for the included lab/radiology/cardiology tests) |
 | GET | `/health-checkups/bookings/{id}` | healthcheck.manage or emr.read | → `BookingDto` |
 | POST | `/health-checkups/bookings/{id}/check-in` | healthcheck.manage | `CheckInCheckupRequest{visitId?}` — posts the package charge (see *Package billing*); refused if Billing refuses the charge, if the package has no service item (422 `package.not_billable`) or if the visit is another patient's. A corporate batch's booking is charged on a visit billed to its company: a linked visit billed to anyone else is refused (400 on `visitId`), and without one a health check-up visit billed to the company is opened (see *Corporate check-ups*) |

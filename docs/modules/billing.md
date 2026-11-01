@@ -125,7 +125,7 @@ Readers = any of `billing.tariffs.manage`, `billing.charges.read`, `billing.op.c
 | GET | `/` | readers | → `TariffPlanListItem[]` |
 | GET | `/{id}` | readers | → `TariffPlanDetail` (bed-class multipliers) |
 | POST | `/` | `billing.tariffs.manage` | `SaveTariffPlanRequest` → 201 |
-| PUT | `/{id}` | `billing.tariffs.manage` | `SaveTariffPlanRequest` (+`version`) → 204 |
+| PUT | `/{id}` | `billing.tariffs.manage` | `SaveTariffPlanRequest` (+`version`) → 204. Saving replaces the bed-class multipliers; the plan's audit event lists them as they were and as they are (`bedMultipliers`) |
 | GET | `/{id}/prices` (paged, `sort=effectiveFrom\|price`) | readers | → `PagedResult<TariffPriceDto>` |
 | PUT | `/{id}/prices` | `billing.tariffs.manage` | `SaveTariffPriceRequest` (effective from/to) → 204 |
 | POST | `/{id}/prices/bulk` | `billing.tariffs.manage` | `BulkTariffPricesRequest` → `BulkTariffPricesResult` |
@@ -156,7 +156,7 @@ that publishes its list (`billing.rateList.publish`, on unless set to false); se
 |---|---|---|---|
 | GET | `/` · `/{id}` | `billing.tariffs.manage` / `billing.ip.manage` / `billing.charges.read` / `billing.op.create` | → `PackageListItem[]` / `PackageDetail` |
 | POST | `/` | `billing.tariffs.manage` | `SavePackageRequest` (price, `usedFor`: `InPatient`, `OutPatient` or `Both`, LOS, inclusions: item or category, quantity/amount caps, `hbpCode`: the AB PM-JAY procedure, see [PM-JAY procedures](#pm-jay-procedures-hbp)) → 201 |
-| PUT | `/{id}` | `billing.tariffs.manage` | `SavePackageRequest` (+`version`) → `PackageDetail` |
+| PUT | `/{id}` | `billing.tariffs.manage` | `SavePackageRequest` (+`version`) → `PackageDetail`. Saving replaces the inclusions; the package's audit event lists them as they were and as they are (`inclusions`) |
 
 ### PM-JAY procedures — `/api/v1/billing/hbp`
 | Method | Path | Permission | Request → response |

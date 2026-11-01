@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -14,7 +15,8 @@ namespace HyFib.HealthCare360.Platform.Identity;
 /// Seeds built-in roles, default permission grants (each grant applied once, so admin revocations survive
 /// upgrades) and the first administrator. The initial admin password is random and written to a file in the
 /// protected data directory unless a bootstrap password is configured, which only a development machine uses
-/// (<see cref="Bootstrap"/>).
+/// (<see cref="Bootstrap"/>). The permissions it gives a role or takes back are in the audit trail, as an administrator's
+/// are (<see cref="RecordPermissionChanges"/>).
 /// </summary>
 internal sealed class IdentitySeeder(
     PermissionRegistry registry,
@@ -23,6 +25,7 @@ internal sealed class IdentitySeeder(
     IConfiguration configuration,
     IHostEnvironment environment,
     IOptions<PlatformOptions> options,
+    IAuditLogger audit,
     TimeProvider time,
     ILogger<IdentitySeeder> logger) : ISeeder
 {
@@ -61,6 +64,7 @@ internal sealed class IdentitySeeder(
         }
 
         var roles = await db.Set<Role>().Include(r => r.Permissions).ToDictionaryAsync(r => r.Name, StringComparer.Ordinal, cancellationToken);
+        var held = roles.Values.ToDictionary(r => r.Id, r => r.Permissions.Select(p => p.Permission).ToHashSet(StringComparer.Ordinal));
 
         foreach (var (name, description) in SystemRoles.All)
         {
@@ -100,6 +104,7 @@ internal sealed class IdentitySeeder(
         }
 
         WithdrawDroppedDefaults(db, roles, await db.Set<SeededGrant>().ToListAsync(cancellationToken));
+        RecordPermissionChanges(roles.Values, held);
         await db.SaveChangesAsync(cancellationToken);
 
         if (!await db.Set<User>().AnyAsync(u => u.Type == UserType.Staff, cancellationToken))
@@ -228,4 +233,32 @@ internal sealed class IdentitySeeder(
         }
     }
 
+    /// <summary>
+    /// What this start gave each role and took back (<paramref name="held"/> is what the roles held before it), audited as an
+    /// administrator's change to a role is, <c>role.permissions_changed</c>, and saved with the change: a default that an
+    /// upgrade grants to every doctor is a permission given like any other.
+    /// </summary>
+    private void RecordPermissionChanges(IEnumerable<Role> roles, Dictionary<Guid, HashSet<string>> held)
+    {
+        foreach (var role in roles)
+        {
+            var before = held.GetValueOrDefault(role.Id) ?? [];
+            var now = role.Permissions.Select(p => p.Permission).ToHashSet(StringComparer.Ordinal);
+            var added = now.Except(before).Order(StringComparer.Ordinal).ToList();
+            var removed = before.Except(now).Order(StringComparer.Ordinal).ToList();
+            if (added.Count == 0 && removed.Count == 0)
+            {
+                continue;
+            }
+
+            audit.Add(new AuditEntry(AuditCategories.Admin, "role.permissions_changed",
+                $"Default permissions of role {role.Name} updated at start-up: {added.Count} given, {removed.Count} taken back")
+            {
+                EntityType = nameof(Role),
+                EntityId = role.Id.ToString(),
+                Details = new { added, removed },
+                Severity = AuditSeverity.Warning,
+            });
+        }
+    }
 }

@@ -548,7 +548,19 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 - Records carry who and when on every change, and deletes are soft deletes. Every change to an audited record also
   writes a data audit event with each changed value (from/to); compound values such as addresses, cardiology
   findings and TTI results are recorded part by part. Binary values (a prescription's DSC signature and the bytes it
-  signed, which name the patient) are recorded by their length and SHA-256, never copied into the trail.
+  signed, which name the patient) are recorded by their length and SHA-256, never copied into the trail. A text longer
+  than 500 characters is recorded by its first 500, its length and the SHA-256 of all of it, so an edit further on still
+  shows as a change while each row stays small.
+- What the trail covers (`UnitOfWorkInterceptor`, in the transaction that makes the change):
+  - Rows a record holds as a collection are audited with it (`[AuditedWithParent]`): the record's event lists the
+    collection as it was and as it is (or, when it was not read first, the rows added and removed). So a coding's ICD
+    codes, a tariff plan's bed multipliers, a package's inclusions, a template's medicines, a health check-up package's
+    items, an instrument set's count sheet, a salary structure's pay heads and a user's roles and facilities are in the
+    trail when they are replaced, however the change is made.
+  - Account changes name the roles and facilities given and taken away (`user.created`, `user.updated`), and the
+    permissions start-up gives a role or takes back at an upgrade are audited as an administrator's are
+    (`role.permissions_changed`, with no user).
+  - `AuditedChangeTests` (IntegrationTests) read each of these changes back from the audit log.
 - **Idempotency keys** on every write:
   - A WiFi retry replays the original result instead of creating a duplicate bill, payment or order.
   - Stored responses are encrypted, because they can contain one-time secrets.

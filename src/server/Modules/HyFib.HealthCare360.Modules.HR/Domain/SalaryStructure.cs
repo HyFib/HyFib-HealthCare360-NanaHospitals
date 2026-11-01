@@ -109,7 +109,11 @@ public sealed class EmployeeSalaryStructure : AuditableEntity, IFacilityScoped
     public bool IsEffectiveOn(DateOnly date) => date >= EffectiveFrom && (EffectiveTo is null || date <= EffectiveTo);
 }
 
-/// <summary>One pay head in a structure: a monthly amount, or a percentage of basic for percentage components.</summary>
+/// <summary>
+/// One pay head in a structure: a monthly amount, or a percentage of basic for percentage components. The amounts are in
+/// the structure's audit event (<c>lines</c>), so a revision's pay is in the trail as the structure's dates are.
+/// </summary>
+[AuditedWithParent]
 public sealed class SalaryStructureLine : Entity
 {
     public Guid StructureId { get; set; }
