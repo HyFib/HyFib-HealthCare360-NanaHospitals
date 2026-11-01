@@ -4,7 +4,7 @@ HC360 makes a private certificate authority, the **hospital CA**, when the serve
 years. Every device that connects to HC360 trusts this one CA:
 
 - **HC360 Desktop** pins its fingerprint, for each Windows user, when the workstation is set up;
-- each **lab agent** pins it when it is enrolled, and from then on trusts no other;
+- each **lab agent** pins it when it is enrolled, and from then on trusts no other but its successor (below);
 - **tablets and browsers** have it installed as a trusted root (MDM or device settings);
 - a **warm standby** and any other server node hold a copy, imported with `certificates import-ca`.
 
@@ -49,17 +49,29 @@ The server also hands out the old CA at `/api/v1/system/ca-certificate/previous`
 network (mDNS `fpprev`) next to the new one's (`fp`), so a workstation that pinned the old CA still finds the server.
 A warm standby that imports the CA after the rollover sends the same chain.
 
+**HC360 Desktop and the lab agent take the new CA by themselves.** Within six hours of reaching the server, each asks it
+for its CA over the connection it already trusts, and takes the new one only on the old CA's word: the certificate the
+old CA signed for the new key, which the server sent on that connection. A CA in the hospital's name without that word
+is refused, whoever sends it. Each keeps the old CA as a second pin until it expires, and says in its heartbeat which CAs
+it holds.
+
 The rollover ends when the old CA expires: the server stops sending the old CA's certificate, and a device that still
-has only the old CA stops connecting. Until then System health warns that devices which have not moved stop trusting
-the server on that day (critical in its last 90 days). Every device must have the new CA before then:
+has only the old CA stops connecting. Until then System health warns:
+
+- that devices which have not moved stop trusting the server on that day (`cert.rollover_ending`);
+- **which** workstations and lab agents, seen in the last 30 days, have not taken the new CA (`cert.rollover_devices`):
+  those still on the previous CA, and those that do not say, because they run a version from before devices followed a
+  rollover. Revoked devices are left out.
+
+Both turn critical in the old CA's last 90 days, which tells IT on-call. Every device must have the new CA before then:
 
 | What | What it needs before the old CA expires |
 | --- | --- |
 | Tablets, phones and browsers | The new CA installed as a trusted root, beside the old one (MDM). Remove the old one after it has expired. |
 | The certificate probe's tasks | The new fingerprint (`--ca-fingerprint`). Until then the probe warns that the CA was rolled over, and names the new CA. |
 | Anything else that calls HC360 over HTTPS | BI gateways, partners' systems: the new CA or fingerprint. |
-| HC360 Desktop and lab agents | Today: each set up again with the new fingerprint, one at a time, at any time before the old CA expires: no downtime, nothing on the day. A later version of HC360 Desktop and the lab agent takes the new CA by itself over its pinned connection. |
-| IT's `-CaFingerprint` policy for HC360 Desktop | The new fingerprint, on each workstation as it is set up again, not before: a workstation whose policy names another CA than the one it pinned drops its pin, and must be set up again. |
+| HC360 Desktop and lab agents | Nothing: each takes the new CA by itself (above). Update those System health names as not saying, which run an older version. Look into those it names as still on the previous CA: each must reach the server, and see its log. |
+| IT's `-CaFingerprint` policy for HC360 Desktop | Nothing at first: a workstation that took the new CA from the CA the policy names keeps its setup, since it keeps the old CA's signature on the new key. Change the policy's fingerprint to the new CA once System health names no workstation, and in any case before the next rollover, ten years on. A workstation whose policy names the new CA before it took it asks to be set up again. |
 
 ### The day of a rollover
 
@@ -108,14 +120,18 @@ the server on that day (critical in its last 90 days). Every device must have th
 8. **Try one device of each kind** that has only the old CA: a workstation, a lab agent, and one tablet and one browser
    of each make the hospital uses. Each must connect as before. Phones and tablets check certificates in their own way;
    only the hospital's own devices can show that each one follows the old CA's certificate.
-9. **Over the following months**, give the new CA to everything in the table above. System health keeps warning until
-   the old CA has expired.
+9. **The next day**, System health names the workstations and lab agents that have not taken the new CA. Within six
+   hours of reaching the server each takes it, and its log says so ("The hospital CA was rolled over: … now pins the new
+   CA").
+10. **Over the following months**, give the new CA to everything else in the table above. System health keeps warning
+    until the old CA has expired.
 
 ### Undo
 
 Before the old CA expires you can put it back, as for a replacement ([Undo](#undo-putting-the-old-ca-back)), and also
-delete `hospital-ca-cross.crt` and `hc360-hospital-ca-previous.crt` in the same folder. Devices that already have only
-the new CA must then be given the old one again.
+delete `hospital-ca-cross.crt` and `hc360-hospital-ca-previous.crt` in the same folder. Workstations and lab agents that
+took the new CA keep the old one as a second pin, so they keep connecting; tablets and browsers that have only the new CA
+must be given the old one again.
 
 ## Replacing the CA (every device set up again)
 
@@ -239,8 +255,4 @@ HyFib.HealthCare360.Server.exe certificates probe https://HC360-SRV:7361/ --ca-f
 
 ## What HC360 does not do yet
 
-- **HC360 Desktop and the lab agents** trust exactly one CA fingerprint. After a rollover they keep working through
-  the old CA's certificate, but each must still be set up again with the new fingerprint before the old CA expires. A
-  later version takes the new CA by itself over the connection it already trusts, and reports which CA each device
-  holds, so System health can name the devices that have not moved.
 - **The certificate probe's scheduled task** is registered by hand (above). A later installer registers it.

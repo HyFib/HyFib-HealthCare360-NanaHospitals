@@ -43,6 +43,17 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     for Server Authentication only (the store's "Enable only the following purposes"). The old CA's key is not there,
     and it is trusted for nothing else: not to sign code or e-mail, nor to authenticate a client. It goes when the
     rollover ends. The new CA is never made a trusted root on the Server Node.
+  - HC360 Desktop and the lab agent then take the new CA by themselves, and only on the old CA's word
+    (`WindowsInterop/Trust/HospitalCaSuccession`). Over a connection already pinned to the old CA they fetch the
+    server's CA, and take it only when it is a CA in the old one's name, with another key, and the server sent on that
+    connection a CA certificate for that name and key that the old CA itself signed, valid now. A CA in the hospital's
+    name signed by its own key, by another hospital's CA, or not a CA, is refused. The old CA stays a second pin until it
+    expires (`Trust/HospitalCaPins`, one copy of the check for both apps). Each reports in its heartbeat the CAs it
+    holds, so System health names the devices that have not moved.
+  - An IT policy fingerprint (HC360 Desktop) is compared with the certificate the workstation pins, not with the
+    fingerprint written beside it in the user's settings file, which the user can edit. A workstation that took the new
+    CA in a rollover keeps a policy that still names the old CA only when the old CA's signature on the new key, kept
+    since, shows it (`HospitalCaSuccession.Succeeded`).
   - WebView2, which shows the staff app in HC360 Desktop, hands the Desktop a server certificate only when Windows
     rejects it. A certificate Windows trusts would pass unchecked: one from a company's TLS-inspection proxy, say.
     So the Desktop checks the connection with its own pinned client before it loads the staff app, and every 10

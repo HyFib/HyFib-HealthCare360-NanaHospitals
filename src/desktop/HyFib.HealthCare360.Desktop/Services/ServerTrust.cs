@@ -1,7 +1,6 @@
 using System.Net.Http;
-using System.Net.Security;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 
 namespace HyFib.HealthCare360.Desktop.Services;
 
@@ -15,29 +14,23 @@ internal sealed record RejectedCertificate(string Host, string Subject, string I
 }
 
 /// <summary>
-/// Certificate pinning to the hospital's private CA (SRS DED-04/SEC-06). The server's LAN certificate must chain
-/// to exactly this CA and name the host being contacted; the public Windows trust store is not consulted, so a
-/// device on the WiFi cannot impersonate the server with some other valid certificate.
+/// Certificate pinning to the hospital's private CA (SRS DED-04/SEC-06). The server's LAN certificate must chain to exactly
+/// this CA, or to the one it replaced in a rollover this workstation followed, and name the host being contacted; the public
+/// Windows trust store is not consulted, so a device on the WiFi cannot impersonate the server with some other valid
+/// certificate. The check itself is <see cref="HospitalCaPins"/>, which the lab agent shares.
 /// </summary>
 internal sealed class ServerTrust : IDisposable
 {
-    /// <summary>The TLS server authentication extended key usage (id-kp-serverAuth).</summary>
-    private static readonly Oid ServerAuthentication = new("1.3.6.1.5.5.7.3.1");
-
-    private readonly X509Certificate2 _ca;
-
-    public ServerTrust(string caPem)
+    public ServerTrust(string caPem, string? previousCaPem = null)
     {
-        _ca = X509Certificate2.CreateFromPem(caPem);
-        Fingerprint = ComputeFingerprint(_ca);
+        Pins = new HospitalCaPins(caPem, previousCaPem);
     }
 
-    /// <summary>SHA-256 of the DER certificate as upper-case hex (same format the server advertises).</summary>
-    public string Fingerprint { get; }
+    /// <summary>The CAs pinned: after a rollover, this workstation follows the new CA on the old one's word (<see cref="HospitalCaPins.Follow"/>).</summary>
+    public HospitalCaPins Pins { get; }
 
-    public DateTime NotAfter => _ca.NotAfter;
-
-    public string Subject => _ca.Subject;
+    /// <summary>SHA-256 of the pinned CA as upper-case hex (same format the server advertises).</summary>
+    public string Fingerprint => Pins.Fingerprint;
 
     /// <summary>
     /// Raised, on the connection's thread, when a pinned connection is refused because the server presented a
@@ -46,7 +39,7 @@ internal sealed class ServerTrust : IDisposable
     /// </summary>
     public event Action<RejectedCertificate>? CertificateRejected;
 
-    public static string ComputeFingerprint(X509Certificate2 certificate) => Convert.ToHexString(SHA256.HashData(certificate.RawData));
+    public static string ComputeFingerprint(X509Certificate2 certificate) => HospitalCaPins.ComputeFingerprint(certificate);
 
     /// <summary>"AB12CD34…" → "AB12 CD34 …" for reading aloud / comparing on screen.</summary>
     public static string Format(string fingerprint) =>
@@ -54,63 +47,14 @@ internal sealed class ServerTrust : IDisposable
 
     /// <summary>
     /// Whether <paramref name="serverCertificate"/> may be trusted for <paramref name="host"/>: it names the host,
-    /// is for a TLS server, and chains to exactly the pinned CA, directly or only through <paramref name="intermediates"/>
+    /// is for a TLS server, and chains to exactly a pinned CA, directly or through <paramref name="intermediates"/>
     /// (the CA certificates the server sent in the handshake).
     /// </summary>
-    public bool IsTrusted(
-        X509Certificate2 serverCertificate, string host, X509Certificate2Collection? intermediates = null)
-    {
-        if (!serverCertificate.MatchesHostname(host, allowWildcards: false, allowCommonName: false))
-        {
-            return false;
-        }
+    public bool IsTrusted(X509Certificate2 serverCertificate, string host, X509Certificate2Collection? intermediates = null) =>
+        Pins.IsTrusted(serverCertificate, host, intermediates);
 
-        using var chain = new X509Chain();
-        chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-        chain.ChainPolicy.CustomTrustStore.Add(_ca);
-        if (intermediates is not null)
-        {
-            chain.ChainPolicy.ExtraStore.AddRange(intermediates);
-        }
-
-        chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);
-        // A private CA on an isolated LAN publishes no revocation lists.
-        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-        chain.ChainPolicy.VerificationTime = DateTime.Now;
-
-        if (!chain.Build(serverCertificate))
-        {
-            return false;
-        }
-
-        // Built from what the server sent and the pinned CA only: Windows also takes certificates from this computer's own
-        // stores to build a chain, and whether the server is trusted must not depend on what happens to be there.
-        for (var link = 1; link < chain.ChainElements.Count - 1; link++)
-        {
-            var linked = chain.ChainElements[link].Certificate.RawData;
-            if (intermediates is null || !intermediates.Any(sent => sent.RawData.AsSpan().SequenceEqual(linked)))
-            {
-                return false;
-            }
-        }
-
-        return chain.ChainElements[^1].Certificate.RawData.AsSpan().SequenceEqual(_ca.RawData);
-    }
-
-    /// <summary>
-    /// The TLS callback: <paramref name="handshake"/> is the chain .NET built for the server's certificate, whose extra store
-    /// holds what the server sent. Only that is offered: the chain's own elements may come from this computer's stores.
-    /// </summary>
-    public bool Validate(X509Certificate? certificate, X509Chain? handshake, string host)
-    {
-        if (certificate is null)
-        {
-            return false;
-        }
-
-        using var certificate2 = new X509Certificate2(certificate);
-        return IsTrusted(certificate2, host, Intermediates(handshake, certificate2));
-    }
+    /// <summary>The TLS callback's check (<see cref="HospitalCaPins.Validate"/>).</summary>
+    public bool Validate(X509Certificate? certificate, X509Chain? handshake, string host) => Pins.Validate(certificate, handshake, host);
 
     /// <summary>
     /// <see cref="Validate"/>, raising <see cref="CertificateRejected"/> when a presented certificate is refused.
@@ -131,28 +75,15 @@ internal sealed class ServerTrust : IDisposable
         return false;
     }
 
-    /// <summary>What the server sent in the handshake besides its own certificate.</summary>
-    internal static X509Certificate2Collection Intermediates(X509Chain? handshake, X509Certificate2 server)
-    {
-        var intermediates = new X509Certificate2Collection();
-        if (handshake is null)
-        {
-            return intermediates;
-        }
+    /// <summary>Every certificate of the handshake other than the server's own.</summary>
+    internal static X509Certificate2Collection Intermediates(X509Chain? handshake, X509Certificate2 server) =>
+        HospitalCaPins.Intermediates(handshake, server);
 
-        foreach (var sent in handshake.ChainPolicy.ExtraStore)
-        {
-            if (!sent.RawData.AsSpan().SequenceEqual(server.RawData))
-            {
-                intermediates.Add(sent);
-            }
-        }
-
-        return intermediates;
-    }
-
-    /// <summary>HttpClient for server calls that only accepts certificates issued by the pinned CA.</summary>
-    public HttpClient CreateHttpClient(Uri baseAddress, TimeSpan timeout)
+    /// <summary>
+    /// HttpClient for server calls that only accepts certificates issued by a pinned CA. With <paramref name="sent"/>, each
+    /// connection also hands over what the server sent besides its own certificate (<see cref="HospitalCaPins.KeepSent"/>).
+    /// </summary>
+    public HttpClient CreateHttpClient(Uri baseAddress, TimeSpan timeout, Action<X509Certificate2[]>? sent = null)
     {
         var host = baseAddress.Host;
         var handler = new SocketsHttpHandler
@@ -161,11 +92,15 @@ internal sealed class ServerTrust : IDisposable
             ConnectTimeout = TimeSpan.FromSeconds(5),
             SslOptions =
             {
-                RemoteCertificateValidationCallback = (_, certificate, chain, _) => Check(certificate, chain, host),
+                RemoteCertificateValidationCallback = (_, certificate, chain, _) =>
+                {
+                    sent?.Invoke(HospitalCaPins.KeepSent(certificate, chain));
+                    return Check(certificate, chain, host);
+                },
             },
         };
         return new HttpClient(handler) { BaseAddress = baseAddress, Timeout = timeout };
     }
 
-    public void Dispose() => _ca.Dispose();
+    public void Dispose() => Pins.Dispose();
 }

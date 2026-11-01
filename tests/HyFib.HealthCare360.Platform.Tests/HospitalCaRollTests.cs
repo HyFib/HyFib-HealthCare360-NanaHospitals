@@ -6,8 +6,8 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
-using HyFib.HealthCare360.WindowsInterop.Trust;
 using HyFib.HealthCare360.WindowsInterop.Discovery;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 using Makaretu.Dns;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
@@ -22,8 +22,8 @@ namespace HyFib.HealthCare360.Platform.Tests;
 /// A planned rollover of the hospital CA ('certificates roll-ca', docs/deployment/CA-ROLLOVER.md) sets no device up again:
 /// the new CA has the old one's name and a new key, the old CA signs a certificate for the new key, and the server sends it
 /// with its own until the old CA expires. Over real TLS to Kestrel, as HC360 serves it (<see cref="HospitalHttps"/>), a
-/// device that pins the old CA, one that pins the new CA and one that pins another CA each check the server as HC360
-/// Desktop and the lab agent do (their ServerTrust, whose own tests run on Windows).
+/// device that pins the old CA, one that pins the new CA and one that pins another CA each check the server with the code
+/// HC360 Desktop and the lab agent check it with (<see cref="HospitalCaPins"/>).
 /// </summary>
 public sealed class HospitalCaRollTests : IDisposable
 {
@@ -375,8 +375,9 @@ public sealed class HospitalCaRollTests : IDisposable
 
     /// <summary>
     /// A TLS connection from a device that pinned <paramref name="pinnedPem"/>, checking the server as HC360 Desktop and the lab
-    /// agent do: the certificate names the address, is for a TLS server, and chains to exactly the pinned CA through what the
-    /// server sent. Says whether the device trusted it, and what the server sent after its own certificate.
+    /// agent do (<see cref="HospitalCaPins.Validate"/>): the certificate names the address, is for a TLS server, and chains to
+    /// exactly the pinned CA through what the server sent. Says whether the device trusted it, and what the server sent after
+    /// its own certificate.
     /// </summary>
     private static async Task<Connection> ConnectAsync(WebApplication app, string pinnedPem)
     {
@@ -384,7 +385,7 @@ public sealed class HospitalCaRollTests : IDisposable
         using var client = new TcpClient();
         await client.ConnectAsync(address.Host, address.Port, Ct);
         await using var tls = new SslStream(client.GetStream(), leaveInnerStreamOpen: false);
-        using var pinned = X509Certificate2.CreateFromPem(pinnedPem);
+        using var pinned = new HospitalCaPins(pinnedPem);
         var trusted = false;
         var sent = new List<X509Certificate2>();
         try
@@ -404,7 +405,7 @@ public sealed class HospitalCaRollTests : IDisposable
                         }
                     }
 
-                    trusted = TrustedBy(pinned, served, handshake, address.Host);
+                    trusted = pinned.Validate(certificate, handshake, address.Host);
                     return trusted;
                 },
             }, Ct);
@@ -418,47 +419,6 @@ public sealed class HospitalCaRollTests : IDisposable
     }
 
     private sealed record Connection(bool Trusted, IReadOnlyList<X509Certificate2> Sent);
-
-    /// <summary>HC360 Desktop's and the lab agent's check of the server (ServerTrust.Validate), line for line.</summary>
-    private static bool TrustedBy(X509Certificate2 pinned, X509Certificate2 served, X509Chain? handshake, string host)
-    {
-        if (!served.MatchesHostname(host, allowWildcards: false, allowCommonName: false))
-        {
-            return false;
-        }
-
-        var sent = new X509Certificate2Collection();
-        foreach (var other in handshake?.ChainPolicy.ExtraStore ?? [])
-        {
-            if (!other.RawData.AsSpan().SequenceEqual(served.RawData))
-            {
-                sent.Add(other);
-            }
-        }
-
-        using var chain = new X509Chain();
-        chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-        chain.ChainPolicy.CustomTrustStore.Add(pinned);
-        chain.ChainPolicy.ExtraStore.AddRange(sent);
-        chain.ChainPolicy.ApplicationPolicy.Add(new Oid("1.3.6.1.5.5.7.3.1"));
-        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-        chain.ChainPolicy.VerificationTime = DateTime.Now;
-        if (!chain.Build(served))
-        {
-            return false;
-        }
-
-        for (var link = 1; link < chain.ChainElements.Count - 1; link++)
-        {
-            var linked = chain.ChainElements[link].Certificate.RawData;
-            if (!sent.Any(certificate => certificate.RawData.AsSpan().SequenceEqual(linked)))
-            {
-                return false;
-            }
-        }
-
-        return chain.ChainElements[^1].Certificate.RawData.AsSpan().SequenceEqual(pinned.RawData);
-    }
 
     /// <summary>A clock the test sets; the server's own daily check is called by the test rather than waited for.</summary>
     private sealed class Clock(DateTimeOffset now) : TimeProvider

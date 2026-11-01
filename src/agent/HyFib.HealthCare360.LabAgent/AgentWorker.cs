@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text.Json;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -39,6 +41,9 @@ internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, Ti
     private static readonly TimeSpan NotEnrolledWait = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan RevokedWait = TimeSpan.FromMinutes(5);
 
+    /// <summary>How often the agent looks for a new hospital CA to follow after a rollover.</summary>
+    private static readonly TimeSpan FollowCaEvery = TimeSpan.FromHours(6);
+
     private readonly ILogger _logger = loggers.CreateLogger<AgentWorker>();
     private readonly Dictionary<string, InstrumentRelay> _relays = new(StringComparer.OrdinalIgnoreCase);
 
@@ -60,10 +65,10 @@ internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, Ti
                     continue;
                 }
 
-                using var trust = new ServerTrust(configuration.CaCertificatePem!);
+                using var trust = new ServerTrust(configuration.CaCertificatePem!, configuration.PreviousCaCertificatePem);
                 using var api = new ServerApi(configuration.ServerUri!, trust);
                 var connector = new RelayConnector(configuration.ServerUri!, trust, configuration.DeviceId!.Value, secret);
-                await RunEnrolledAsync(configuration, secret, api, connector, stamp, stoppingToken);
+                await RunEnrolledAsync(configuration, secret, trust, api, connector, stamp, stoppingToken);
                 await StopAllAsync();
             }
         }
@@ -77,16 +82,21 @@ internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, Ti
         }
     }
 
-    /// <summary>Heartbeats until the configuration file changes or the server no longer knows the agent.</summary>
+    /// <summary>
+    /// Heartbeats until the configuration file changes or the server no longer knows the agent. Every six hours, after a
+    /// heartbeat that reached the server, it also looks for a new hospital CA to follow (<see cref="FollowCaAsync"/>).
+    /// </summary>
     private async Task RunEnrolledAsync(
-        AgentConfiguration configuration, string secret, ServerApi api, IRelayConnector connector, DateTime stamp, CancellationToken stoppingToken)
+        AgentConfiguration configuration, string secret, ServerTrust trust, ServerApi api, IRelayConnector connector, DateTime stamp,
+        CancellationToken stoppingToken)
     {
         var deviceId = configuration.DeviceId!.Value;
         var unreachable = new Backoff(TimeSpan.FromSeconds(5), TimeSpan.FromMinutes(1));
         var reportedOutage = false;
+        var nextCaCheck = time.GetUtcNow();
         while (!stoppingToken.IsCancellationRequested && Stamp() == stamp)
         {
-            var report = new HeartbeatRequest(ServerApi.AppVersion, _relays.Values.Select(r => r.Report).ToList());
+            var report = new HeartbeatRequest(ServerApi.AppVersion, _relays.Values.Select(r => r.Report).ToList(), trust.Pins.Fingerprints(time.GetUtcNow()));
             HeartbeatOutcome outcome;
             try
             {
@@ -119,10 +129,62 @@ internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, Ti
                 return;
             }
 
+            if (time.GetUtcNow() >= nextCaCheck)
+            {
+                nextCaCheck = time.GetUtcNow() + FollowCaEvery;
+                stamp = await FollowCaAsync(configuration, trust, api, stamp, stoppingToken);
+            }
+
             var assignments = outcome.Assignments;
             await ApplyAsync(assignments.GatewayEnabled ? assignments.Instruments : [], connector);
             await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(assignments.HeartbeatSeconds, 15, 300)), time, stoppingToken);
         }
+    }
+
+    /// <summary>
+    /// After the hospital CA was rolled over ('certificates roll-ca'), takes the new CA on the word of the CA the agent pins and
+    /// saves it, keeping the one it replaced as a second pin until that expires (CA-ROLLOVER.md). The relays keep running:
+    /// the check they use follows in place, and the configuration file's new time is the agent's own write, not a new
+    /// enrolment. Returns the file time to watch from now on.
+    /// </summary>
+    private async Task<DateTime> FollowCaAsync(AgentConfiguration configuration, ServerTrust trust, ServerApi api, DateTime stamp, CancellationToken stoppingToken)
+    {
+        HospitalCaSuccessor? successor;
+        try
+        {
+            successor = await api.FindCaSuccessorAsync(time.GetUtcNow(), stoppingToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or CryptographicException
+            || (ex is TaskCanceledException && !stoppingToken.IsCancellationRequested))
+        {
+            _logger.LogDebug(ex, "Could not ask the HC360 server for its CA; trying again later");
+            return stamp;
+        }
+
+        // A new enrolment written meanwhile is not overwritten: the loop picks it up.
+        if (successor is null || Stamp() != stamp)
+        {
+            return stamp;
+        }
+
+        var before = (configuration.CaCertificatePem, configuration.CaFingerprint, configuration.PreviousCaCertificatePem);
+        try
+        {
+            configuration.Follow(successor);
+            configuration.Save(paths.ConfigurationFile);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            (configuration.CaCertificatePem, configuration.CaFingerprint, configuration.PreviousCaCertificatePem) = before;
+            _logger.LogError(ex, "The hospital's new CA could not be saved; this lab agent keeps the CA it pins and tries again later");
+            return stamp;
+        }
+
+        trust.Pins.Follow(successor);
+        _logger.LogInformation(
+            "The hospital CA was rolled over: this lab agent now pins the new CA {Fingerprint}, and the one it replaced until that expires",
+            successor.Fingerprint);
+        return Stamp();
     }
 
     private async Task ApplyAsync(IReadOnlyList<Assignment> assigned, IRelayConnector connector)

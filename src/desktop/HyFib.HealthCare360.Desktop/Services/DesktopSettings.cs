@@ -1,9 +1,11 @@
 using System.IO;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 using Serilog;
 
 namespace HyFib.HealthCare360.Desktop.Services;
@@ -32,6 +34,15 @@ internal sealed class DesktopSettings
     public string? CaCertificatePem { get; set; }
 
     public string? CaFingerprint { get; set; }
+
+    /// <summary>
+    /// The CA that <see cref="CaCertificatePem"/> replaced in a rollover this workstation followed: a second pin until it
+    /// expires, and what an IT policy that still names it is checked against (CA-ROLLOVER.md).
+    /// </summary>
+    public string? PreviousCaCertificatePem { get; set; }
+
+    /// <summary>The certificate the previous CA signed for the current CA's key: that this CA succeeded it.</summary>
+    public string? CaCrossCertificatePem { get; set; }
 
     public Guid? DeviceId { get; set; }
 
@@ -142,6 +153,15 @@ internal sealed class DesktopSettings
         return true;
     }
 
+    /// <summary>Pins <paramref name="successor"/>, the new CA after a rollover, keeping the one it replaced.</summary>
+    public void Follow(HospitalCaSuccessor successor)
+    {
+        PreviousCaCertificatePem = CaCertificatePem;
+        CaCertificatePem = successor.CaPem;
+        CaFingerprint = successor.Fingerprint;
+        CaCrossCertificatePem = successor.CrossPem;
+    }
+
     public void Save()
     {
         Directory.CreateDirectory(AppDataDirectory);
@@ -179,11 +199,13 @@ internal sealed class DesktopSettings
             }
 
             PolicyCaFingerprint = policy.CaFingerprint?.Replace(" ", string.Empty, StringComparison.Ordinal).Replace(":", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
-            if (PolicyCaFingerprint is not null && CaFingerprint is not null && !string.Equals(PolicyCaFingerprint, CaFingerprint, StringComparison.Ordinal))
+            if (PolicyCaFingerprint is not null && CaCertificatePem is not null && !PinsPolicyCa(PolicyCaFingerprint))
             {
                 Log.Warning("The pinned CA does not match the IT policy; setup is required");
                 CaCertificatePem = null;
                 CaFingerprint = null;
+                PreviousCaCertificatePem = null;
+                CaCrossCertificatePem = null;
             }
 
             if (policy.Kiosk is { } kiosk)
@@ -207,6 +229,37 @@ internal sealed class DesktopSettings
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
             Log.Error(ex, "The machine policy could not be read");
+        }
+    }
+
+    /// <summary>
+    /// Whether the pinned CA is the one the IT policy names, or succeeded it in a rollover this workstation followed. This file
+    /// is the user's to edit, so the fingerprints are those of the certificates themselves, and the succession is the policy
+    /// CA's own signature on the pinned CA's key (<see cref="HospitalCaSuccession.Succeeded"/>).
+    /// </summary>
+    private bool PinsPolicyCa(string policyFingerprint)
+    {
+        try
+        {
+            using var pinned = X509Certificate2.CreateFromPem(CaCertificatePem!);
+            if (string.Equals(HospitalCaPins.ComputeFingerprint(pinned), policyFingerprint, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (PreviousCaCertificatePem is null || CaCrossCertificatePem is null)
+            {
+                return false;
+            }
+
+            using var previous = X509Certificate2.CreateFromPem(PreviousCaCertificatePem);
+            using var cross = X509Certificate2.CreateFromPem(CaCrossCertificatePem);
+            return string.Equals(HospitalCaPins.ComputeFingerprint(previous), policyFingerprint, StringComparison.Ordinal)
+                && HospitalCaSuccession.Succeeded(previous, pinned, cross);
+        }
+        catch (CryptographicException)
+        {
+            return false;
         }
     }
 

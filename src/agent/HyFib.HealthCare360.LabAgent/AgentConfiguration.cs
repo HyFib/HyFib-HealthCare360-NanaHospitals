@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 
 namespace HyFib.HealthCare360.LabAgent;
 
@@ -22,6 +23,12 @@ internal sealed class AgentConfiguration
     public string? CaCertificatePem { get; set; }
 
     public string? CaFingerprint { get; set; }
+
+    /// <summary>
+    /// The CA that <see cref="CaCertificatePem"/> replaced in a rollover the agent followed: a second pin until it expires
+    /// (CA-ROLLOVER.md).
+    /// </summary>
+    public string? PreviousCaCertificatePem { get; set; }
 
     public Guid? DeviceId { get; set; }
 
@@ -61,6 +68,14 @@ internal sealed class AgentConfiguration
         set => ProtectedDeviceSecret = value is null
             ? null
             : Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(value), SecretEntropy, DataProtectionScope.LocalMachine));
+    }
+
+    /// <summary>Pins <paramref name="successor"/>, the new CA after a rollover, keeping the one it replaced.</summary>
+    public void Follow(HospitalCaSuccessor successor)
+    {
+        PreviousCaCertificatePem = CaCertificatePem;
+        CaCertificatePem = successor.CaPem;
+        CaFingerprint = successor.Fingerprint;
     }
 
     /// <summary>The saved configuration; an empty one when there is none yet or it cannot be read.</summary>

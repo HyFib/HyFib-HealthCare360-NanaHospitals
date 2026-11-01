@@ -40818,6 +40818,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("secret_hash");
 
+                    b.Property<string>("TrustedCaFingerprints")
+                        .HasMaxLength(259)
+                        .HasColumnType("character varying(259)")
+                        .HasColumnName("trusted_ca_fingerprints");
+
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");

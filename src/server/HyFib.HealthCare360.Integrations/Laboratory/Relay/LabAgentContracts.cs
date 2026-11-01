@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Platform.Identity;
+
 namespace HyFib.HealthCare360.Integrations.Laboratory.Relay;
 
 /// <summary>
@@ -26,10 +28,11 @@ public static class LabAgentProtocol
 }
 
 /// <summary>
-/// What a lab agent reports every minute: its version, and for each COM port it was asked to open whether it is open
-/// (or why not). Port errors are short texts from Windows ("Access to the port is denied"), never analyser data.
+/// What a lab agent reports every minute: its version, for each COM port it was asked to open whether it is open (or why
+/// not), and the hospital CAs it trusts the server through, the one it pins first. Port errors are short texts from
+/// Windows ("Access to the port is denied"), never analyser data.
 /// </summary>
-public sealed record LabAgentHeartbeatRequest(string? AppVersion, IReadOnlyList<LabAgentPortReport>? Ports);
+public sealed record LabAgentHeartbeatRequest(string? AppVersion, IReadOnlyList<LabAgentPortReport>? Ports, IReadOnlyList<string>? CaFingerprints = null);
 
 public sealed record LabAgentPortReport(string Code, bool Open, string? Error);
 
@@ -46,6 +49,7 @@ public sealed class LabAgentHeartbeatRequestValidator : AbstractValidator<LabAge
     {
         RuleFor(r => r.AppVersion).SafeText(32);
         RuleFor(r => r.Ports).Must(ports => ports is null || ports.Count <= 64).WithMessage("Report at most 64 ports.");
+        RuleFor(r => r.CaFingerprints).Must(DeviceCaFingerprints.AreValid).WithMessage(DeviceCaFingerprints.Rule);
         RuleForEach(r => r.Ports).ChildRules(port =>
         {
             port.RuleFor(p => p.Code).NotEmpty().Matches("^[A-Za-z0-9_-]{1,32}$").WithMessage("An analyser code is 1–32 letters, digits, - or _.");

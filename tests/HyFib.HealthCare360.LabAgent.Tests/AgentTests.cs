@@ -42,13 +42,15 @@ public sealed class AgentTests : IDisposable
             [new LabAgentAssignment("XN550", "Haematology analyser", "Astm", new LabAgentSerialPort("COM3", 9600, 7, "Even", "Two", "XOnXOff", true, false))]);
 
         var received = JsonSerializer.Deserialize<Assignments>(JsonSerializer.Serialize(sent, Web), Web)!;
+        string[] trusted = [new string('A', 64), new string('B', 64)];
         var report = JsonSerializer.Deserialize<LabAgentHeartbeatRequest>(
-            JsonSerializer.Serialize(new HeartbeatRequest("1.0.0", [new PortReport("XN550", false, "Access to the port 'COM3' is denied.")]), Web), Web)!;
+            JsonSerializer.Serialize(new HeartbeatRequest("1.0.0", [new PortReport("XN550", false, "Access to the port 'COM3' is denied.")], trusted), Web), Web)!;
 
         received.DeviceId.ShouldBe(deviceId);
         received.HeartbeatSeconds.ShouldBe(60);
         received.Instruments.ShouldHaveSingleItem().Port.ShouldBe(new SerialSettings("COM3", 9600, 7, "Even", "Two", "XOnXOff", true, false));
         report.Ports.ShouldNotBeNull().ShouldHaveSingleItem().ShouldBe(new LabAgentPortReport("XN550", false, "Access to the port 'COM3' is denied."));
+        report.CaFingerprints.ShouldBe(trusted, "the CAs the agent trusts the server through, the one it pins first");
     }
 
     [Fact]

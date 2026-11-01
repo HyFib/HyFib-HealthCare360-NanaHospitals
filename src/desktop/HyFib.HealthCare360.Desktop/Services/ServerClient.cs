@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 
 namespace HyFib.HealthCare360.Desktop.Services;
 
@@ -69,7 +70,7 @@ internal sealed class ServerClient(Uri baseUri, ServerTrust trust) : IDisposable
         {
             using var response = await _http.PostAsJsonAsync(
                 "api/v1/devices/heartbeat",
-                new { deviceId, deviceSecret, appVersion = DesktopSettings.AppVersion, wifiSsid, wifiSignal },
+                new { deviceId, deviceSecret, appVersion = DesktopSettings.AppVersion, wifiSsid, wifiSignal, caFingerprints = trust.Pins.Fingerprints(DateTimeOffset.UtcNow) },
                 Json,
                 cancellationToken);
             return response.StatusCode == HttpStatusCode.Unauthorized ? HeartbeatOutcome.Revoked
@@ -79,6 +80,30 @@ internal sealed class ServerClient(Uri baseUri, ServerTrust trust) : IDisposable
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             return HeartbeatOutcome.Unreachable;
+        }
+    }
+
+    /// <summary>
+    /// After the hospital CA was rolled over, the new CA on the word of the CA this workstation pins
+    /// (<see cref="HospitalCaPins.SuccessorIn"/>): the server's CA certificate, fetched over a pinned connection that keeps
+    /// what the server sent with its own certificate. Null when the server's CA is the pinned one, or the pinned CA did not
+    /// vouch for it.
+    /// </summary>
+    public async Task<HospitalCaSuccessor?> FindCaSuccessorAsync(CancellationToken cancellationToken)
+    {
+        X509Certificate2[] sent = [];
+        using var http = trust.CreateHttpClient(baseUri, TimeSpan.FromSeconds(15), handshake => sent = handshake);
+        var pem = await http.GetStringAsync("api/v1/system/ca-certificate", cancellationToken);
+        try
+        {
+            return trust.Pins.SuccessorIn(pem, sent, DateTimeOffset.UtcNow);
+        }
+        finally
+        {
+            foreach (var certificate in sent)
+            {
+                certificate.Dispose();
+            }
         }
     }
 

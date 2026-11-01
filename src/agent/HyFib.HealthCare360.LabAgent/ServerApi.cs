@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 
 namespace HyFib.HealthCare360.LabAgent;
 
@@ -53,6 +54,30 @@ internal sealed class ServerApi(Uri baseUri, ServerTrust trust) : IDisposable
         }
 
         return new HeartbeatOutcome(await response.Content.ReadFromJsonAsync<Assignments>(Json, cancellationToken), NotEnrolled: false);
+    }
+
+    /// <summary>
+    /// After the hospital CA was rolled over, the new CA on the word of the CA this agent pins
+    /// (<see cref="HospitalCaPins.SuccessorIn"/>): the server's CA certificate, fetched over a pinned connection that keeps
+    /// what the server sent with its own certificate. Null when the server's CA is the pinned one, or the pinned CA did not
+    /// vouch for it.
+    /// </summary>
+    public async Task<HospitalCaSuccessor?> FindCaSuccessorAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        X509Certificate2[] sent = [];
+        using var http = trust.CreateHttpClient(baseUri, TimeSpan.FromSeconds(30), handshake => sent = handshake);
+        var pem = await http.GetStringAsync(AgentProtocol.CaCertificatePath, cancellationToken);
+        try
+        {
+            return trust.Pins.SuccessorIn(pem, sent, now);
+        }
+        finally
+        {
+            foreach (var certificate in sent)
+            {
+                certificate.Dispose();
+            }
+        }
     }
 
     /// <summary>

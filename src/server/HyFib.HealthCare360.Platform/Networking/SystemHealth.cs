@@ -246,6 +246,12 @@ public sealed class SystemHealthService(
             keyWarnings.Add(simulatorRecords);
         }
 
+        // During a CA rollover, the workstations and lab agents that have not taken the new CA yet, by name.
+        if (await CaRolloverDevices.WarningAsync(db, certificates, now, ct) is { } devicesNotMoved)
+        {
+            keyWarnings.Add(devicesNotMoved);
+        }
+
         if (signingKey.KeyCreatedAt is { } signedSince && now - signedSince > SigningKeyPeriod)
         {
             keyWarnings.Add(new("keys.signing_due", "info", "The sign-in token key is over a year old. Rotate it under Encryption keys."));

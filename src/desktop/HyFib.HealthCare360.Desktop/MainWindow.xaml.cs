@@ -1,11 +1,14 @@
 using System.ComponentModel;
 using System.IO;
+using System.Net.Http;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using HyFib.HealthCare360.Desktop.Bridge;
 using HyFib.HealthCare360.Desktop.Services;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 using Microsoft.Web.WebView2.Core;
 using Serilog;
 
@@ -74,7 +77,7 @@ public partial class MainWindow : Window
         _args = args;
         _notice = notice;
         _server = settings.ServerUri ?? throw new InvalidOperationException("No server configured.");
-        _trust = new ServerTrust(settings.CaCertificatePem!);
+        _trust = new ServerTrust(settings.CaCertificatePem!, settings.PreviousCaCertificatePem);
         _client = new ServerClient(_server, _trust);
         _network = new NetworkStatusService(_client);
         _updates = new DesktopUpdateService(_server, _trust, settings);
@@ -130,6 +133,7 @@ public partial class MainWindow : Window
         _scanner.Use(ScannerSetupStore.ForThisComputer().Load().Setup);
         _ = HeartbeatLoopAsync(_lifetime.Token);
         _ = UpdateLoopAsync(_lifetime.Token);
+        _ = FollowCaLoopAsync(_lifetime.Token);
 
         // The pinned check runs before the staff app (and the sign-in cookies it sends) goes to the server.
         if (await _client.PingAsync(_lifetime.Token) is not null)
@@ -589,6 +593,69 @@ public partial class MainWindow : Window
             }
         }
         while (await timer.WaitForNextTickAsync(cancellationToken));
+    }
+
+    /// <summary>
+    /// After the hospital CA was rolled over ('certificates roll-ca'), takes the new CA on the word of the CA this workstation
+    /// pins, a minute after start and every six hours: the server sends, with its own certificate, the one its old CA signed
+    /// for the new CA's key. The CA pinned until then stays a second pin until it expires, and the heartbeat reports both, so
+    /// System health can name the workstations that have not moved (CA-ROLLOVER.md).
+    /// </summary>
+    private async Task FollowCaLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);
+            using var timer = new PeriodicTimer(TimeSpan.FromHours(6));
+            do
+            {
+                await FollowCaAsync(cancellationToken);
+            }
+            while (await timer.WaitForNextTickAsync(cancellationToken));
+        }
+        catch (OperationCanceledException)
+        {
+            // The window is closing.
+        }
+    }
+
+    private async Task FollowCaAsync(CancellationToken cancellationToken)
+    {
+        HospitalCaSuccessor? successor;
+        try
+        {
+            successor = await _client.FindCaSuccessorAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or CryptographicException
+            || (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            Log.Debug(ex, "Could not ask the server for its CA; trying again later");
+            return;
+        }
+
+        if (successor is null)
+        {
+            return;
+        }
+
+        var before = (_settings.CaCertificatePem, _settings.CaFingerprint, _settings.PreviousCaCertificatePem, _settings.CaCrossCertificatePem);
+        try
+        {
+            _settings.Follow(successor);
+            _settings.Save();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Not saved: the CA pinned so far stays, and the next try takes the new one again.
+            (_settings.CaCertificatePem, _settings.CaFingerprint, _settings.PreviousCaCertificatePem, _settings.CaCrossCertificatePem) = before;
+            Log.Error(ex, "The hospital's new CA could not be saved");
+            return;
+        }
+
+        _trust.Pins.Follow(successor);
+        Log.Information(
+            "The hospital CA was rolled over: HC360 Desktop now pins the new CA {Fingerprint}, and the one it replaced until that expires",
+            successor.Fingerprint);
     }
 
     /// <summary>

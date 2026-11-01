@@ -19,6 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The check of the server's certificate, which HC360 Desktop shares (Trust/HospitalCaPins). -->
+    <ProjectReference Include="..\..\shared\HyFib.HealthCare360.WindowsInterop\HyFib.HealthCare360.WindowsInterop.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="HyFib.HealthCare360.LabAgent.Tests" />
     <!-- NSubstitute (Castle DynamicProxy) proxies the agent's internal interfaces in the unit tests. -->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
