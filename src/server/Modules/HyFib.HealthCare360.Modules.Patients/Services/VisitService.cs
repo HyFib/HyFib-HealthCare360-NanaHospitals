@@ -184,7 +184,11 @@ public sealed class VisitService(
             token.Status = TokenStatus.Cancelled;
         }
 
+        // In a transaction of its own: the modules that withdraw the visit's work hold its lock from their reads to this
+        // commit, so an order being placed on the visit is either seen by them or sees the visit cancelled.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         if (token is not null)
         {
             await PublishQueueChangeAsync(token, ct);

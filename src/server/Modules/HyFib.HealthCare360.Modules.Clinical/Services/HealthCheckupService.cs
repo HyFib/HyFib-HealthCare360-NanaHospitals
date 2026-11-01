@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.HealthCheckups;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Services;
@@ -23,6 +24,7 @@ public sealed class HealthCheckupService(
     IPayerDirectory payers,
     ICurrentUser currentUser,
     PatientContactAccess contacts,
+    INotificationService notifications,
     TimeProvider time)
 {
     private readonly PackageBilling billing = new(charges);
@@ -231,6 +233,11 @@ public sealed class HealthCheckupService(
                 return Error.Field("visitId", "This visit does not belong to the patient.");
             }
 
+            if (visitId is { } linked && await ClosedVisitAsync(linked, ct) is { } closed)
+            {
+                return closed;
+            }
+
             var ready = b.EnsureCanCheckIn();
             if (ready.IsFailure)
             {
@@ -311,10 +318,13 @@ public sealed class HealthCheckupService(
     /// Cancelling the booking cancels its package charge and the tests that have not been done (ServiceOrderCancelled),
     /// and the health check-up visit its check-in opened for the company (VisitCancelled: Billing withdraws the visit's
     /// draft and returns a registration fee charged on it to the patient's next visit). A charge already on a finalised
-    /// bill leaves the booking unchanged (422 <c>booking.package_billed</c>).
+    /// bill leaves the booking unchanged (422 <c>booking.package_billed</c>). In a transaction: the visit's cancellation
+    /// withdraws its work under the visit's lock, held to the commit (<see cref="EncounterLocks"/>).
     /// </summary>
-    public Task<Result<BookingDto>> CancelAsync(Guid id, string reason, CancellationToken ct) =>
-        ChangeAsync(id, async b =>
+    public async Task<Result<BookingDto>> CancelAsync(Guid id, string reason, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var cancelled = await ChangeAsync(id, async b =>
         {
             var result = await billing.CancelAsync(b, reason, time.GetUtcNow(), ct);
             if (result.IsSuccess)
@@ -323,12 +333,58 @@ public sealed class HealthCheckupService(
                 await CancelOrderAsync(b, why, ct);
                 if (await OwnVisitAsync(b, ct) is { } visit)
                 {
-                    visit.Cancel(why.Length <= MaxVisitCancelReason ? why : why[..MaxVisitCancelReason], time.GetUtcNow());
+                    visit.Cancel(Clip(why), time.GetUtcNow());
                 }
             }
 
             return result;
         }, ct);
+        if (cancelled.IsSuccess)
+        {
+            await transaction.CommitAsync(ct);
+        }
+
+        return cancelled;
+    }
+
+    /// <summary>
+    /// A visit cancelled at the desk takes the check-ups checked in on it with it, as their own cancellation does: the
+    /// package charge first, then the tests not done, then the booking. Billing refuses a package charge already on a
+    /// finalised bill: that check-up then stays as it was, its tests with it, since the patient has paid for them, and the
+    /// health check-up desk is told to cancel the bill or issue a credit note before cancelling it. Runs in the visit's
+    /// cancellation, under the visit's lock (<see cref="EncounterLocks"/>), so a check-up being booked on the visit at the
+    /// same moment is either found here or finds the visit cancelled.
+    /// </summary>
+    internal async Task CancelForVisitAsync(Guid visitId, string visitNumber, string reason, CancellationToken ct)
+    {
+        await EncounterLocks.LockAsync(db, [visitId], ct);
+        var bookings = await Bookings().Include(b => b.Itinerary)
+            .Where(b => b.VisitId == visitId && (b.Status == BookingStatus.CheckedIn || b.Status == BookingStatus.InProgress))
+            .ToListAsync(ct);
+
+        // A booking cancelled in this same unit of work (its own cancellation cancels the visit it opened) is open in the
+        // database but no longer here.
+        foreach (var booking in bookings.Where(b => b.IsOpen))
+        {
+            var cancelled = await billing.CancelAsync(booking, Clip(reason), time.GetUtcNow(), ct);
+            if (cancelled.IsSuccess)
+            {
+                await CancelOrderAsync(booking, Clip($"Health checkup cancelled: {reason}"), ct);
+                continue;
+            }
+
+            await notifications.NotifyPermissionHoldersAsync(
+                ClinicalPermissions.HealthCheckManage,
+                booking.FacilityId,
+                "Visit cancelled — health checkup kept",
+                $"Visit {visitNumber} was cancelled, but health checkup {booking.BookingNumber} ({booking.PackageName}) was kept with its tests: "
+                + cancelled.Error!.Message,
+                $"/health-checkups/bookings/{booking.Id}",
+                "clinical",
+                "warning",
+                ct);
+        }
+    }
 
     public async Task<Result<CheckupReport>> ReportAsync(Guid id, CancellationToken ct)
     {
@@ -380,6 +436,11 @@ public sealed class HealthCheckupService(
     private async Task<Result<PackageBooking>> BookCoreAsync(Guid facilityId, Guid patientId, HealthPackage package, DateOnly scheduledDate, Guid? visitId,
         string? notes, CorporateCheckupBatch? batch, CancellationToken ct)
     {
+        if (visitId is { } walkInVisitId && await ClosedVisitAsync(walkInVisitId, ct) is { } closed)
+        {
+            return closed;
+        }
+
         var patient = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == patientId)
             .Select(p => new { p.Gender, p.DateOfBirth, p.IsDeceased, p.IsActive }).FirstOrDefaultAsync(ct);
         if (patient is null)
@@ -560,6 +621,22 @@ public sealed class HealthCheckupService(
     /// <summary>Billing takes the facility and tariff from the visit, so a visit of another patient must never be used.</summary>
     private Task<bool> VisitBelongsToAsync(Guid visitId, Guid patientId, CancellationToken ct) =>
         db.Set<Visit>().AnyAsync(v => v.Id == visitId && v.PatientId == patientId, ct);
+
+    /// <summary>
+    /// Why a check-up cannot be booked or checked in on this visit, or null while the visit is open. The package is charged
+    /// on the visit and its tests ordered on it, so neither may land on a visit closed at the desk or cancelled, nor on one
+    /// closing at this moment: asked under the visit's lock, in the caller's transaction, as an order asks it
+    /// (<see cref="ClinicalOrderService.ClosedEncounterAsync"/>).
+    /// </summary>
+    private async Task<Error?> ClosedVisitAsync(Guid visitId, CancellationToken ct) =>
+        await orders.ClosedEncounterAsync(visitId, null, locked: true, ct) is { } closed
+            ? closed.Code == "visit.cancelled"
+                ? Error.Rule(closed.Code, $"Visit {closed.Number} was cancelled: a health checkup cannot be booked or checked in on it.")
+                : Error.Rule(closed.Code, $"Visit {closed.Number} is closed: a health checkup cannot be booked or checked in on it. Link the patient's current visit.")
+            : null;
+
+    /// <summary>The Patients and Billing modules keep a reason to 300 characters.</summary>
+    private static string Clip(string text) => text.Length <= MaxVisitCancelReason ? text : text[..MaxVisitCancelReason];
 
     /// <summary>
     /// The visit a company-paid check-up is charged on, as Billing bills a visit to its payer: the visit the desk linked,

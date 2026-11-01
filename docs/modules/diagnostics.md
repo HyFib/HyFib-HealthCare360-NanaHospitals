@@ -356,6 +356,22 @@ diagnostics screen.
   `diagnostics.cardiology`; SourceReference = item/study id; quantity from the order; departments LAB, RAD, CDX) and
   reversed on cancellation. A billing failure never blocks clinical work: the error is stored and can be retried.
   Health-checkup package components (`ServiceOrderPlaced.PackageBookingId`) are never charged per test/study.
+* **Closed visits and stays** (`EncounterClosedHandlers`, in the closing's unit of work and transaction, under the
+  encounter's lock `EncounterLocks`, held to the commit, as an order takes it): work that had not begun when its
+  encounter closed is withdrawn with its charge, so it neither waits on a worklist nor stays on the bill. An order being
+  placed at the same moment is committed first and withdrawn with the rest, or finds the encounter closed. A health
+  check-up's tests are left to their booking, which the visit's cancellation cancels with its package charge (see
+  [clinical.md](clinical.md)). A cancelled
+  visit withdraws its tests whose sample is not drawn (status Ordered: never drawn, or waiting to be drawn again after a
+  rejected tube) and its imaging studies not done (ordered, scheduled or arrived) and cardiology studies not done (ordered
+  or scheduled), with the reason "Visit cancelled: …". A cancelled admission withdraws the same of its stay (by admission
+  or by its visit), with "Admission cancelled: …"; its in-patient visit's own cancellation is left to it. A discharge,
+  however the stay ended, withdraws the stay's tests whose sample is not drawn, with "Patient discharged before the
+  sample was collected"; a test already drawn carries on, so its result reaches the record. A clinician's test or study
+  is withdrawn by cancelling its order line (`ClinicalOrderService.WithdrawLinesAsync`), which cancels it here as the
+  clinician's cancellation does (tube, analyser order, charge, Form F); a test registered at the lab counter is cancelled
+  the same way directly. A charge already on a finalized bill (a final bill settled before the discharge) cannot be
+  reversed: the refusal is logged and the bill is credited by the billing desk, as for any late cancellation.
 * **Unmapped services**: a clinical lab order for a service without a test set-up creates a provisional free-text test and
   alerts `lab.masters.manage` holders, so the order is never lost; radiology infers modality and body part from the code.
 * **Modality worklist entries** (`ModalityWorklistSource`, read by the DICOM worklist server in Integrations): one
@@ -429,6 +445,7 @@ diagnostics screen.
 |---|---|---|
 | Handled | `ServiceOrderPlaced` (Category Laboratory / Radiology / Cardiology) | Creates a lab accession item (one accession per clinical order), an imaging study or a cardiology study inside the ordering transaction; idempotent on `OrderItemId` (unique index + change-tracker check). Package components and `Quantity` are honoured. |
 | Handled | `ServiceOrderCancelled` | Cancels the matching test/study and reverses its charge; verified/reported work is not undone — the department is alerted to review it. |
+| Handled | `VisitCancelled` (Patients), `AdmissionCancelled`, `PatientDischarged` | Withdraws the work that had not begun: see *Closed visits and stays* above. A cancelled in-patient visit is left to its admission's event. |
 | Raised | `DiagnosticReportReleased` | Per released lab test, radiology report or cardiology report (and on amendment/addendum), with `Kind`, `OrderItemId`, title and `HasCriticalFindings`. |
 
 Realtime (`Topics.Lab(facilityId)`): `lab.order.created`, `lab.order.cancelled`, `lab.sample.collected`,
