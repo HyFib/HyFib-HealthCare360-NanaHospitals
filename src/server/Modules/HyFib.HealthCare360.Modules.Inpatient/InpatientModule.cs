@@ -68,6 +68,7 @@ public sealed class InpatientModule : IModule
         services.AddScoped<CensusService>();
         services.AddScoped<InpatientChargeService>();
         services.Replace(ServiceDescriptor.Scoped<IRoomClassDirectory, RoomClassDirectory>());
+        services.Replace(ServiceDescriptor.Scoped<IAdmissionDirectory, AdmissionDirectory>());
         services.AddScoped<MarService>();
         services.AddScoped<AdmissionAccess>();
         services.AddScoped<WardRoundQueries>();

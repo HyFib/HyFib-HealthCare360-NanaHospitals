@@ -29,16 +29,20 @@ public sealed record OrderDraft(
 /// <summary>
 /// Clinical orders (EMR-05): validation against the service catalogue, duplicate-order protection, gap-free order
 /// numbers ("{FAC}OR{YY}{SEQ:7}") and publication of <see cref="ServiceOrderPlaced"/>/<see cref="ServiceOrderCancelled"/>
-/// to the performing departments in the same transaction.
+/// to the performing departments in the same transaction. Nothing is ordered on a visit or a stay that has ended.
 /// </summary>
 public sealed class ClinicalOrderService(
     HospitalDbContext db,
     INumberSeries numbers,
     ClinicalAccess access,
+    IAdmissionDirectory admissions,
     ICurrentUser currentUser,
     IRealtimePublisher realtime,
     TimeProvider time)
 {
+    /// <summary>The longest cancellation reason a line keeps, as a clinician may type it.</summary>
+    private const int MaxCancelReason = 300;
+
     /// <summary>Services a clinician may order; beds, nursing, registration and packages are billed by other flows.</summary>
     public static readonly IReadOnlySet<ServiceCategory> OrderableCategories = new HashSet<ServiceCategory>
     {
@@ -73,9 +77,36 @@ public sealed class ClinicalOrderService(
             admissionId ??= encounter.AdmissionId;
         }
 
-        if (visitId is { } vid && !await db.Set<Visit>().AnyAsync(v => v.Id == vid && v.PatientId == request.PatientId, ct))
+        var visit = visitId is { } vid
+            ? await db.Set<Visit>().AsNoTracking()
+                .Where(v => v.Id == vid && v.PatientId == request.PatientId)
+                .Select(v => new { v.VisitNumber, v.Status })
+                .FirstOrDefaultAsync(ct)
+            : null;
+        if (visitId is not null && visit is null)
         {
             return Error.Field("visitId", "This visit does not belong to the patient.");
+        }
+
+        // Nobody would do the work of a stay or a visit that has ended, and its charge would land on a bill already
+        // settled or withdrawn. A stay's own visit closes with it, so the stay is asked first, to say what happened.
+        if (admissionId is { } aid && await admissions.FindAsync(aid, ct) is { Status: not StayStatus.Open } stay)
+        {
+            return stay.Status == StayStatus.Cancelled
+                ? Error.Rule("admission.cancelled", $"Admission {stay.AdmissionNumber} was cancelled: nothing can be ordered on it.")
+                : Error.Rule("admission.closed",
+                    $"The patient was discharged from admission {stay.AdmissionNumber}: nothing more can be ordered on it. Order on a new visit.");
+        }
+
+        if (visit?.Status == VisitStatus.Cancelled)
+        {
+            return Error.Rule("visit.cancelled", $"Visit {visit.VisitNumber} was cancelled: nothing can be ordered on it.");
+        }
+
+        if (visit?.Status == VisitStatus.Completed)
+        {
+            return Error.Rule("visit.closed",
+                $"Visit {visit.VisitNumber} is closed: nothing more can be ordered on it. Order on the patient's current visit or admission.");
         }
 
         var lines = await ResolveLinesAsync(request, ct);
@@ -154,6 +185,34 @@ public sealed class ClinicalOrderService(
 
     public Task<Result<OrderDto>> UpdateItemStatusAsync(Guid itemId, OrderItemStatus status, string? reference, CancellationToken ct) =>
         ChangeAsync(o => o.Items.Any(i => i.Id == itemId), order => order.UpdateItemStatus(itemId, status, time.GetUtcNow(), reference), ct);
+
+    /// <summary>
+    /// Cancels lines whose work had not begun when their visit or stay closed (a sample not drawn, a scan not done), as the
+    /// performing department found them. Each raises <see cref="ServiceOrderCancelled"/> as a line the clinician cancels
+    /// does, so the department cancels its work and its charge the same way; lines closed meanwhile are left as they are.
+    /// Runs in the caller's unit of work (an event handler of the closing), which saves it.
+    /// </summary>
+    public async Task WithdrawLinesAsync(IReadOnlyCollection<Guid> itemIds, string reason, CancellationToken ct)
+    {
+        if (itemIds.Count == 0)
+        {
+            return;
+        }
+
+        var orders = await db.Set<ClinicalOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Include(o => o.Items)
+            .Where(o => o.Items.Any(i => itemIds.Contains(i.Id)))
+            .ToListAsync(ct);
+        var now = time.GetUtcNow();
+        var why = reason.Length <= MaxCancelReason ? reason : reason[..MaxCancelReason];
+        foreach (var order in orders)
+        {
+            foreach (var item in order.Items.Where(i => i.IsOpen && itemIds.Contains(i.Id)).ToList())
+            {
+                order.CancelItem(item.Id, why, now);
+            }
+        }
+    }
 
     public async Task<OrderDto> ToDtoAsync(ClinicalOrder o, CancellationToken ct)
     {

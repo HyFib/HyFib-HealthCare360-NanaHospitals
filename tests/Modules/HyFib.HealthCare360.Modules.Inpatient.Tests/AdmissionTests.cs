@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
+using HyFib.HealthCare360.Modules.Inpatient.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.SharedKernel;
@@ -192,6 +193,19 @@ public sealed class AdmissionTests
         DischargeRules.NotifiesPatient(type).ShouldBe(notifiesPatient);
         DischargeRules.RequiresNotes(type).ShouldBe(needsNotes);
     }
+
+    /// <summary>What Clinical is told of a stay before it takes an order for it: it has ended however the patient left.</summary>
+    [Theory]
+    [InlineData(AdmissionStatus.Admitted, StayStatus.Open)]
+    [InlineData(AdmissionStatus.DischargeInitiated, StayStatus.Open)]
+    [InlineData(AdmissionStatus.Discharged, StayStatus.Discharged)]
+    [InlineData(AdmissionStatus.Lama, StayStatus.Discharged)]
+    [InlineData(AdmissionStatus.Dama, StayStatus.Discharged)]
+    [InlineData(AdmissionStatus.Absconded, StayStatus.Discharged)]
+    [InlineData(AdmissionStatus.Expired, StayStatus.Discharged)]
+    [InlineData(AdmissionStatus.Cancelled, StayStatus.Cancelled)]
+    public void A_stay_goes_on_while_the_patient_is_in_a_bed(AdmissionStatus status, StayStatus stay) =>
+        AdmissionDirectory.StatusOf(status).ShouldBe(stay);
 
     /// <summary>
     /// The visit a stay comes from is one the Admit screen offers (staff app, sourceVisit.test.ts has the same cases): of the

@@ -136,6 +136,7 @@ docs/                                     SRS, architecture, security, deploymen
 |---|---|---|
 | `IChargePoster` — post/cancel billable charges against a visit or admission | Billing | Clinical, Diagnostics, Pharmacy, Inpatient, SpecialtyCare, SupportServices |
 | `IBillingStatusProvider` — paid status of order lines, outstanding dues, discharge clearance | Billing | Diagnostics, Inpatient, Front office |
+| `IAdmissionDirectory` — whether a stay goes on, is discharged or was cancelled | Inpatient | Clinical (no order for a stay that has ended) |
 | `IVerifiedCodingSource` — the medical records coding of an admission or visit, once a second coder has verified it | Clinical | Billing (insurance claims) |
 | `INotificationService` — patient/staff notifications (SMS, WhatsApp, e-mail, in-app) | Platform + Integrations | all |
 | `IRealtimePublisher` — push events to SignalR groups | Platform | all |

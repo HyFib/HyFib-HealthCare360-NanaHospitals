@@ -93,6 +93,41 @@ internal sealed class LabOrderService(
         return true;
     }
 
+    // ------------------------------------------------------------------ closed visits and stays (inside the closing's unit of work)
+
+    /// <summary>
+    /// The tests of a visit, or of a stay when <paramref name="admissionId"/> is given, whose sample has not been drawn (nor
+    /// drawn again after a rejected tube) when it closes: nobody will draw it now. A test a clinician ordered is withdrawn
+    /// through its order line, whose id is returned for the caller to cancel: that cancels the test and its charge here
+    /// (<see cref="HandleClinicalCancelAsync"/>), as the clinician's cancellation does. A test registered at the lab counter
+    /// has no line and is cancelled here, the same way. A test whose sample is drawn carries on, so its result reaches the
+    /// record.
+    /// </summary>
+    public async Task<IReadOnlyList<Guid>> WithdrawUncollectedAsync(Guid visitId, Guid? admissionId, string reason, CancellationToken ct)
+    {
+        var accessions = db.Set<LabOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(o => o.VisitId == visitId || (admissionId != null && o.AdmissionId == admissionId));
+        var waiting = await db.Set<LabOrderItem>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(i => i.Status == LabOrderItemStatus.Ordered && accessions.Any(o => o.Id == i.LabOrderId))
+            .ToListAsync(ct);
+
+        var why = TextLimits.Clip(reason, 300);
+        var lines = new List<Guid>();
+        foreach (var item in waiting.Where(i => i.Status == LabOrderItemStatus.Ordered))
+        {
+            if (item.SourceOrderItemId is { } line)
+            {
+                lines.Add(line);
+            }
+            else if ((await CancelItemCoreAsync(item, why, ct)).IsSuccess)
+            {
+                realtime.PublishAfterCommit(item.FacilityId, "lab.order.cancelled", new { item.LabOrderId, ItemId = item.Id });
+            }
+        }
+
+        return lines;
+    }
+
     // ------------------------------------------------------------------ lab counter (walk-in / outside referral)
 
     public async Task<Result<LabOrderCreated>> CreateManualAsync(CreateLabOrderRequest request, CancellationToken ct)

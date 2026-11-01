@@ -145,7 +145,7 @@ permissions, released-only rule, restricted-record guard and PHI audit apply as 
 
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
-| POST | `/clinical/orders` | orders.place | `PlaceOrderRequest{patientId, encounterId?, visitId?, admissionId?, priority, clinicalNotes, items[{serviceItemId, notes, quantity?}], orderSetId?, confirmDuplicates}` → 201 `OrderDto` (409 `order.duplicate` lists pending duplicates). `quantity` (default 1) may exceed 1 only for blood components (≤ 10 units) and physiotherapy/dialysis (≤ 30 sessions); a service listed twice is rejected (422) rather than merged |
+| POST | `/clinical/orders` | orders.place | `PlaceOrderRequest{patientId, encounterId?, visitId?, admissionId?, priority, clinicalNotes, items[{serviceItemId, notes, quantity?}], orderSetId?, confirmDuplicates}` → 201 `OrderDto` (409 `order.duplicate` lists pending duplicates). `quantity` (default 1) may exceed 1 only for blood components (≤ 10 units) and physiotherapy/dialysis (≤ 30 sessions); a service listed twice is rejected (422) rather than merged. Nothing is ordered on an encounter that has ended, whether named or taken from the encounter note: 422 `admission.closed` (the patient was discharged, however the stay ended) or `admission.cancelled`, asked of Inpatient through `IAdmissionDirectory`, and 422 `visit.closed` or `visit.cancelled` for the visit; each names the admission or visit |
 | GET | `/clinical/orders?patientId&encounterId&visitId&admissionId&status&page` | emr.read | → `PagedResult<OrderDto>` |
 | GET | `/clinical/orders/{id}` | emr.read | → `OrderDto` |
 | POST | `/clinical/orders/{id}/cancel`, `/clinical/orders/items/{itemId}/cancel` | orders.place | `CancelOrderRequest{reason}` |
@@ -909,7 +909,7 @@ Raised:
 | Event | When |
 |---|---|
 | `ServiceOrderPlaced` (Platform) | one per order line on placement (encounter orders, order sets, health-checkup tests); carries the line's `Quantity`, and `PackageBookingId` (so `IsPackageComponent`) on health-checkup tests, which Billing charges once under the package. An order refuses to place if its source and package link disagree (`order.package_link`) |
-| `ServiceOrderCancelled` (Platform) | line or order cancelled, checkup cancelled / no-show |
+| `ServiceOrderCancelled` (Platform) | line or order cancelled, checkup cancelled / no-show; and a line Diagnostics withdraws because its visit or stay closed before the work began (`ClinicalOrderService.WithdrawLinesAsync`, with the reason: "Visit cancelled: …", "Admission cancelled: …", "Patient discharged before the sample was collected"), so the department cancels the work and its charge as it does for the clinician's own cancellation |
 | `PrescriptionSigned` (Platform) | prescription signed or refill issued (lines with snapshot and quantity) |
 | `PrescriptionCancelled` (Platform) | signed prescription cancelled |
 | `PrescriptionSharedWithPatient` (Platform) | an out-patient was told their prescription is ready (the "prescription shared" message): at signing, or, where the DSC was required then, once it was signed with the DSC; once per prescription (`patient_notified_at`). Virtual Care adds its SMS after a video consultation |

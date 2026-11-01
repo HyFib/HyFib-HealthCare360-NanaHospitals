@@ -5,7 +5,11 @@ census statistics, automatic bed/nursing/consultant-visit charges, and nursing d
 administration record. SRS **WB-01..06**, IPB auto charges (IPB-01), PH-03 MAR feed.
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Inpatient` (references Patients, and Clinical for the ward
-round). Schema `inpatient`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Inpatient.Tests` (206 unit tests).
+round). Schema `inpatient`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Inpatient.Tests` (214 unit tests).
+
+It implements the Platform contracts `IRoomClassDirectory` (Billing's rate list) and `IAdmissionDirectory` (whether a
+stay goes on, read in every facility: Clinical takes no order for a stay that is discharged or cancelled), and asks
+`IBillingStatusProvider` before it completes a discharge.
 
 ## Permissions
 
@@ -174,10 +178,10 @@ fractions allowed), `Q4H`/`6 hourly`…, STAT (one dose), SOS/PRN/"As directed" 
 |---|---|---|
 | `PatientAdmitted` | raised | on admission; includes `WardId`, `BedId`, `BedServiceItemId` (ward tariff), `PayerType` |
 | `PatientTransferred` | raised | includes `FromBedId`, `ToBedId`, `ToBedServiceItemId`, `ToWardId` |
-| `AdmissionCancelled` | raised | on cancellation, with the reason. The admission's visit is cancelled in the same transaction (Billing reacts to `VisitCancelled`); Dietary stops the diet order and future meals, Pharmacy cancels pending ward indents, SpecialtyCare cancels waiting surgeries and unissued blood requests |
+| `AdmissionCancelled` | raised | on cancellation, with the reason. The admission's visit is cancelled in the same transaction (Billing reacts to `VisitCancelled`); Dietary stops the diet order and future meals, Pharmacy cancels pending ward indents, SpecialtyCare cancels waiting surgeries and unissued blood requests, Diagnostics withdraws the tests not drawn and the studies not done |
 | `DischargeInitiated` | raised | on initiation (and on direct completion of death/abscondence) |
 | `DischargeRevoked` | raised | when an initiated discharge is revoked: Billing opens the IP account again, so the stay is not settled while the patient is in |
-| `PatientDischarged` | raised and handled | `DischargeType` = `Normal`, `Referred`, `Lama`, `Dama`, `Absconded` or `Expired`. Handled here too: the stay's chart lines stop ("Patient discharged") and the doses scheduled from the discharge on are cancelled; doses that fell due before it stay for the nurse to document |
+| `PatientDischarged` | raised and handled | `DischargeType` = `Normal`, `Referred`, `Lama`, `Dama`, `Absconded` or `Expired`; Diagnostics withdraws the stay's tests whose sample is not drawn. Handled here too: the stay's chart lines stop ("Patient discharged") and the doses scheduled from the discharge on are cancelled; doses that fell due before it stay for the nurse to document |
 | `VisitCreated` / `VisitCompleted` / `VisitCancelled` (Patients) | raised | the in-patient visit is created with Patients' numbering (`visit`, `{FAC}V{YY}{SEQ:7}`), completed on discharge, cancelled with the admission; the OPD visit the patient was admitted from is completed at admission |
 | `PrescriptionSigned` | handled | in-patient lines become medication-chart lines (no doses until dispensed) |
 | `PrescriptionCancelled` | handled | chart lines stopped, future doses cancelled |
