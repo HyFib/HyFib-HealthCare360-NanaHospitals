@@ -343,7 +343,9 @@ public sealed class RetentionService(
         var expiredTokens = db.Set<RefreshToken>().IgnoreQueryFilters().Where(t => t.ExpiresAt < before);
         if (run is null)
         {
-            return removed + await ended.CountAsync(ct) + await expiredTokens.CountAsync(ct);
+            // An ended session's tokens go with it, expired or not.
+            return removed + await ended.CountAsync(ct)
+                + await db.Set<RefreshToken>().IgnoreQueryFilters().Where(t => t.ExpiresAt < before || ended.Any(s => s.Id == t.SessionId)).CountAsync(ct);
         }
 
         while (true)
@@ -354,10 +356,11 @@ public sealed class RetentionService(
                 break;
             }
 
-            // A session's refresh tokens go with it (there is no foreign key to cascade); the entry names the sessions.
-            removed += await RemoveBatchAsync(run, key, before, nameof(UserSession), sessions, async () =>
-                await db.Set<RefreshToken>().IgnoreQueryFilters().Where(t => sessions.Contains(t.SessionId)).ExecuteDeleteAsync(ct)
-                + await db.Set<UserSession>().IgnoreQueryFilters().Where(s => sessions.Contains(s.Id)).ExecuteDeleteAsync(ct), ct);
+            // A session's refresh tokens go first (there is no foreign key to cascade), in batches of their own named by
+            // their ids: a token not yet expired would otherwise go unnamed with its session.
+            removed += await DeleteAsync(run, key, before, db.Set<RefreshToken>().IgnoreQueryFilters().Where(t => sessions.Contains(t.SessionId)), t => t.Id, ct);
+            removed += await RemoveBatchAsync(run, key, before, nameof(UserSession), sessions, () =>
+                db.Set<UserSession>().IgnoreQueryFilters().Where(s => sessions.Contains(s.Id)).ExecuteDeleteAsync(ct), ct);
         }
 
         return removed + await DeleteAsync(run, key, before, expiredTokens, t => t.Id, ct);

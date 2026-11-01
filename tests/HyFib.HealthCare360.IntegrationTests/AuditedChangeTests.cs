@@ -325,52 +325,46 @@ public sealed class AuditedChangeTests(HospitalServer server)
     }
 
     [Fact]
-    public async Task An_abdm_erase_that_fails_part_way_erases_nothing_and_the_one_that_completes_names_the_records()
+    public async Task A_clean_up_names_each_refresh_token_it_removes_with_its_session()
     {
-        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
-        var patient = (await frontOffice.PostAsync<PatientCreated>("/api/v1/patients",
-            AbdmExportTests.Registration(AbdmExportTests.NewAbha(), "erase." + AbdmExportTests.Letters(8) + "@sbx"))).Id;
-        Guid record, transfer;
+        // A session revoked long ago that still holds a refresh token not yet expired: the token goes with its session.
+        var user = (await (await server.SignInAsync(HospitalServer.Users.FrontOffice)).GetAsync<AuthUser>("/api/v1/auth/me")).Id;
+        var old = DateTimeOffset.UtcNow.AddDays(-400);
+        var session = new UserSession { UserId = user, CreatedAt = old, LastSeenAt = old, LastActiveAt = old, ExpiresAt = old.AddHours(8), RevokedAt = old.AddHours(1), RevokedReason = "test" };
+        var token = new RefreshToken { SessionId = session.Id, TokenHash = "audit-test-" + Guid.NewGuid().ToString("N"), CreatedAt = old, ExpiresAt = DateTimeOffset.UtcNow.AddDays(30) };
+        RetentionRun run;
         await using (var scope = server.Services.CreateAsyncScope())
         {
-            // A record received under a consent whose erase date has passed.
             var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
-            var eraseAt = DateTimeOffset.UtcNow.AddMinutes(-5);
-            var request = new AbdmConsentRequest
-            {
-                PatientId = patient,
-                AbhaAddress = "erase@sbx",
-                GatewayRequestId = Guid.NewGuid(),
-                Status = AbdmConsentRequestStatus.Granted,
-                Purpose = "CAREMGT",
-                HiTypes = "OPConsultation",
-                RequesterName = "Dr. Test",
-                DateFrom = DateTimeOffset.UtcNow.AddYears(-1),
-                DateTo = DateTimeOffset.UtcNow,
-                DataEraseAt = eraseAt,
-            };
-            var artefact = new AbdmConsentArtefact
-            {
-                ConsentRequestEntityId = request.Id,
-                PatientId = patient,
-                ArtefactId = Guid.NewGuid().ToString(),
-                Status = "GRANTED",
-                DataEraseAt = eraseAt,
-            };
-            var information = new AbdmHealthInformationRequest
-            {
-                ArtefactEntityId = artefact.Id,
-                PatientId = patient,
-                GatewayRequestId = Guid.NewGuid(),
-                Status = AbdmHealthInformationStatus.Requested,
-                PrivateKeyCipher = "v1.key",
-                Nonce = "nonce",
-                KeyExpiresAt = eraseAt,
-            };
-            var received = new AbdmReceivedRecord { RequestEntityId = information.Id, PatientId = patient, CareContextReference = "visit/1", PageNumber = 1, Content = "{}" };
-            db.AddRange(request, artefact, information, received);
+            db.AddRange(session, token);
             await db.SaveChangesAsync(Ct);
-            (record, transfer) = (received.Id, information.Id);
+            run = await scope.ServiceProvider.GetRequiredService<RetentionService>().RunAsync(RetentionRunTrigger.Manual, null, Ct);
+        }
+
+        run.Error.ShouldBeNull();
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            (await db.Set<UserSession>().IgnoreQueryFilters().AnyAsync(s => s.Id == session.Id, Ct)).ShouldBeFalse();
+            (await db.Set<RefreshToken>().IgnoreQueryFilters().AnyAsync(t => t.Id == token.Id, Ct)).ShouldBeFalse();
+            var batches = (await db.Set<AuditEvent>().AsNoTracking()
+                    .Where(e => e.Action == RetentionService.PurgedAction && e.EntityId == run.Id.ToString()).ToListAsync(Ct))
+                .Select(e => JsonNode.Parse(e.Details!)!).ToList();
+            List<Guid> Named(string records) =>
+                [.. batches.Where(b => b["records"]!.GetValue<string>() == records).SelectMany(b => Ids(b["ids"]!))];
+            Named(nameof(RefreshToken)).ShouldContain(token.Id, "The token is named in the entry of the batch that removed it.");
+            Named(nameof(UserSession)).ShouldContain(session.Id);
+            batches.ShouldAllBe(b => b["removed"]!.GetValue<int>() == b["ids"]!.AsArray().Count, "Each entry counts only the records it names.");
+        }
+    }
+
+    [Fact]
+    public async Task An_abdm_erase_that_fails_part_way_erases_nothing_and_the_one_that_completes_names_the_records()
+    {
+        var (patient, _, transfer, record) = await ReceivedUnderAPassedConsentAsync();
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
 
             // Dropping the request's key fails, after the record is deleted.
             var refuse = $"""
@@ -405,6 +399,82 @@ public sealed class AuditedChangeTests(HospitalServer server)
 
         Task<List<AuditEvent>> Erased(HospitalDbContext db) =>
             db.Set<AuditEvent>().AsNoTracking().Where(a => a.PatientId == patient && a.Action == AbdmHealthInformationService.Erased).ToListAsync(Ct);
+    }
+
+    [Fact]
+    public async Task A_page_kept_while_an_erase_waits_for_it_is_erased_and_named_with_the_rest()
+    {
+        var (patient, artefact, transfer, first) = await ReceivedUnderAPassedConsentAsync();
+
+        // A page being kept: the receipt holds the transfer's lock (AbdmHealthInformationService.ReceiveAsync) and has
+        // written its record, not yet committed.
+        await using var receipt = server.Services.CreateAsyncScope();
+        var receiving = receipt.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        await using var keeping = await receiving.Database.BeginTransactionAsync(Ct);
+        await receiving.Database.ExecuteSqlAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({AbdmHealthInformationService.TransferLock(artefact)}, 0))", Ct);
+        var late = new AbdmReceivedRecord { RequestEntityId = transfer, PatientId = patient, CareContextReference = "visit/2", PageNumber = 2, Content = "{}" };
+        receiving.Add(late);
+        await receiving.SaveChangesAsync(Ct);
+
+        // The erase starts meanwhile: it waits for the page, then erases it with the record before it.
+        await using var eraser = server.Services.CreateAsyncScope();
+        var erase = eraser.ServiceProvider.GetRequiredService<AbdmHealthInformationService>().EraseExpiredAsync(Ct);
+        (await Task.WhenAny(erase, Task.Delay(TimeSpan.FromSeconds(2), Ct))).ShouldNotBe(erase, "The erase waits for the page being kept.");
+        await keeping.CommitAsync(Ct);
+        await erase;
+
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        (await db.Set<AbdmReceivedRecord>().IgnoreQueryFilters().AnyAsync(r => r.RequestEntityId == transfer, Ct)).ShouldBeFalse("No record of the transfer outlives the erase.");
+        var erased = await db.Set<AuditEvent>().AsNoTracking().Where(a => a.PatientId == patient && a.Action == AbdmHealthInformationService.Erased).ToListAsync(Ct);
+        Ids(JsonNode.Parse(erased.ShouldHaveSingleItem().Details!)!["records"]!).ShouldBe([first, late.Id], ignoreOrder: true);
+    }
+
+    /// <summary>A patient with a record received through ABDM under a consent whose erase date has passed.</summary>
+    private async Task<(Guid Patient, Guid Artefact, Guid Transfer, Guid Record)> ReceivedUnderAPassedConsentAsync()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var patient = (await frontOffice.PostAsync<PatientCreated>("/api/v1/patients",
+            AbdmExportTests.Registration(AbdmExportTests.NewAbha(), "erase." + AbdmExportTests.Letters(8) + "@sbx"))).Id;
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var eraseAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var request = new AbdmConsentRequest
+        {
+            PatientId = patient,
+            AbhaAddress = "erase@sbx",
+            GatewayRequestId = Guid.NewGuid(),
+            Status = AbdmConsentRequestStatus.Granted,
+            Purpose = "CAREMGT",
+            HiTypes = "OPConsultation",
+            RequesterName = "Dr. Test",
+            DateFrom = DateTimeOffset.UtcNow.AddYears(-1),
+            DateTo = DateTimeOffset.UtcNow,
+            DataEraseAt = eraseAt,
+        };
+        var artefact = new AbdmConsentArtefact
+        {
+            ConsentRequestEntityId = request.Id,
+            PatientId = patient,
+            ArtefactId = Guid.NewGuid().ToString(),
+            Status = "GRANTED",
+            DataEraseAt = eraseAt,
+        };
+        var information = new AbdmHealthInformationRequest
+        {
+            ArtefactEntityId = artefact.Id,
+            PatientId = patient,
+            GatewayRequestId = Guid.NewGuid(),
+            Status = AbdmHealthInformationStatus.Requested,
+            PrivateKeyCipher = "v1.key",
+            Nonce = "nonce",
+            KeyExpiresAt = eraseAt,
+        };
+        var received = new AbdmReceivedRecord { RequestEntityId = information.Id, PatientId = patient, CareContextReference = "visit/1", PageNumber = 1, Content = "{}" };
+        db.AddRange(request, artefact, information, received);
+        await db.SaveChangesAsync(Ct);
+        return (patient, artefact.Id, information.Id, received.Id);
     }
 
     [Fact]
