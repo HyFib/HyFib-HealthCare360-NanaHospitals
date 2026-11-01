@@ -1,4 +1,6 @@
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
+using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.SharedKernel;
 
@@ -189,6 +191,50 @@ public sealed class AdmissionTests
         DischargeRules.RequiresInitiation(type).ShouldBe(needsClearance);
         DischargeRules.NotifiesPatient(type).ShouldBe(notifiesPatient);
         DischargeRules.RequiresNotes(type).ShouldBe(needsNotes);
+    }
+
+    /// <summary>
+    /// The visit a stay comes from is one the Admit screen offers (staff app, sourceVisit.test.ts has the same cases): of the
+    /// source's kind, not cancelled, of the three days before the admission and none after it. Now is 31 Oct, 11 am; an
+    /// admission entered as earlier counts back from its own time.
+    /// </summary>
+    [Theory]
+    // Admitted now, "Advised in OPD": today's and the day before yesterday's OPD visits, open or closed; nothing older.
+    [InlineData(AdmissionSource.OutPatient, VisitType.OutPatient, 1.0, VisitStatus.InProgress, 0, null)]
+    [InlineData(AdmissionSource.OutPatient, VisitType.OutPatient, 48.0, VisitStatus.Completed, 0, null)]
+    [InlineData(AdmissionSource.OutPatient, VisitType.OutPatient, 72.0, VisitStatus.Completed, 0, null)]
+    [InlineData(AdmissionSource.OutPatient, VisitType.OutPatient, 72.1, VisitStatus.Completed, 0, "admission.source_visit_too_old")]
+    [InlineData(AdmissionSource.OutPatient, VisitType.OutPatient, 24.0 * 7, VisitStatus.Completed, 0, "admission.source_visit_too_old")]
+    [InlineData(AdmissionSource.OutPatient, VisitType.OutPatient, 2.0, VisitStatus.Cancelled, 0, "admission.source_visit_cancelled")]
+    [InlineData(AdmissionSource.OutPatient, VisitType.Emergency, 20.0, VisitStatus.InProgress, 0, "admission.source_visit_type")]
+    [InlineData(AdmissionSource.OutPatient, VisitType.DayCare, 1.0, VisitStatus.InProgress, 0, "admission.source_visit_type")]
+    [InlineData(AdmissionSource.OutPatient, VisitType.InPatient, 30.0, VisitStatus.Completed, 0, "admission.source_visit_type")]
+    // "From casualty / ER": the casualty visit only.
+    [InlineData(AdmissionSource.Emergency, VisitType.Emergency, 20.0, VisitStatus.InProgress, 0, null)]
+    [InlineData(AdmissionSource.Emergency, VisitType.OutPatient, 1.0, VisitStatus.InProgress, 0, "admission.source_visit_type")]
+    // A referral or a direct admission comes from no visit.
+    [InlineData(AdmissionSource.Referral, VisitType.OutPatient, 1.0, VisitStatus.InProgress, 0, "admission.source_visit_type")]
+    [InlineData(AdmissionSource.Direct, VisitType.Emergency, 20.0, VisitStatus.InProgress, 0, "admission.source_visit_type")]
+    // Admitted yesterday at 11 am, entered today: today's visit came after the stay began; the one four days before it is too old.
+    [InlineData(AdmissionSource.OutPatient, VisitType.OutPatient, 1.0, VisitStatus.InProgress, 24, "admission.source_visit_after_admission")]
+    [InlineData(AdmissionSource.OutPatient, VisitType.OutPatient, 24.0, VisitStatus.InProgress, 24, null)]
+    [InlineData(AdmissionSource.OutPatient, VisitType.OutPatient, 26.0, VisitStatus.InProgress, 24, null)]
+    [InlineData(AdmissionSource.OutPatient, VisitType.OutPatient, 24.0 + 48, VisitStatus.Completed, 24, null)]
+    [InlineData(AdmissionSource.OutPatient, VisitType.OutPatient, 24.0 + 96, VisitStatus.Completed, 24, "admission.source_visit_too_old")]
+    public void A_stay_comes_from_a_visit_of_its_source_not_cancelled_of_the_three_days_before_it_and_none_after(
+        AdmissionSource source, VisitType type, double visitedHoursAgo, VisitStatus status, int admittedHoursAgo, string? refusal)
+    {
+        var now = new DateTimeOffset(2026, 10, 31, 11, 0, 0, TimeSpan.Zero);
+        var visit = new Visit { VisitNumber = "NHV260000006", Type = type, Status = status, VisitedAt = now.AddHours(-visitedHoursAgo) };
+
+        var error = AdmissionRules.SourceVisitRefusal(source, visit, now.AddHours(-admittedHoursAgo));
+
+        (error?.Code).ShouldBe(refusal);
+        if (error is not null)
+        {
+            error.Type.ShouldBe(ErrorType.BusinessRule);
+            error.Message.ShouldContain("NHV260000006");
+        }
     }
 
     [Fact]

@@ -5,7 +5,7 @@ census statistics, automatic bed/nursing/consultant-visit charges, and nursing d
 administration record. SRS **WB-01..06**, IPB auto charges (IPB-01), PH-03 MAR feed.
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Inpatient` (references Patients, and Clinical for the ward
-round). Schema `inpatient`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Inpatient.Tests` (188 unit tests).
+round). Schema `inpatient`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Inpatient.Tests` (206 unit tests).
 
 ## Permissions
 
@@ -66,7 +66,7 @@ Bed board alerts (`BedAlert`): `Mlc`, `Restricted` (VIP — name shown as "Restr
 |---|---|---|---|
 | GET | `/?search&status&activeOnly&wardId&consultantId&from&to` (paged) | `inpatient.admissions.read` | → `PagedResult<AdmissionListItem>` (search: UHID/name/phone/ABHA or admission number) |
 | GET | `/{id}` | `inpatient.admissions.read` | → `AdmissionDetail` (restricted-record guard + PHI audit; policy number masked) |
-| POST | `/` | `inpatient.admissions.admit` | `AdmitPatientRequest` (patientId, bedId, type, source, sourceVisitId, departmentId, admitting/consultant practitioner, provisionalDiagnosis, payerType/payerId, policyNumber, isMlc/mlcNumber, expectedDischargeDate, attendant*, admittedAt ≤ 3 days back, notifyPatient) → 201 `AdmissionCreated` (id, admissionNumber, visitId, visitNumber, bedId, bedLabel) |
+| POST | `/` | `inpatient.admissions.admit` | `AdmitPatientRequest` (patientId, bedId, type, source, sourceVisitId, departmentId, admitting/consultant practitioner, provisionalDiagnosis, payerType/payerId, policyNumber, isMlc/mlcNumber, expectedDischargeDate, attendant*, admittedAt ≤ 3 days back, notifyPatient) → 201 `AdmissionCreated` (id, admissionNumber, visitId, visitNumber, bedId, bedLabel). The visit named as `sourceVisitId` must be the patient's own (400) and one the Admit screen offers (staff app `modules/inpatient/sourceVisit.ts`), else 422 naming it: of the source's kind, an OPD visit for `OutPatient` and a casualty visit for `Emergency`, none for `Referral` or `Direct` (`admission.source_visit_type`); not cancelled (`admission.source_visit_cancelled`); checked in no later than the admission time (`admission.source_visit_after_admission`: a late entry cannot come from a later visit) and no more than 3 days before it (`admission.source_visit_too_old`). An admission entered as earlier counts back from its own `admittedAt`. An OPD visit so named, while still open, is completed in the same transaction with its queue token, as `VisitService` completes a visit at the desk, so it no longer shows as in consultation nor stops a check-in the same day; an emergency visit is left to the ER, whose disposition closes it |
 | PUT | `/{id}` | `inpatient.admissions.admit` | `UpdateAdmissionRequest` (+`version`; consultant, department, diagnosis, expected discharge, policy number, MLC, attendant, notes) → 204. The payer is fixed at admission (changed in Billing). |
 | POST | `/{id}/transfer` | `inpatient.admissions.transfer` | `TransferPatientRequest` (toBedId, reason, consultant/department change, transferredAt ≤ 24 h back) → 204 |
 | POST | `/{id}/cancel` | `inpatient.admissions.admit` | `CancelAdmissionRequest` → 204; reverses this module's charges in the same transaction (422 `admission.charges_billed` if Billing refuses) |
@@ -178,7 +178,7 @@ fractions allowed), `Q4H`/`6 hourly`…, STAT (one dose), SOS/PRN/"As directed" 
 | `DischargeInitiated` | raised | on initiation (and on direct completion of death/abscondence) |
 | `DischargeRevoked` | raised | when an initiated discharge is revoked: Billing opens the IP account again, so the stay is not settled while the patient is in |
 | `PatientDischarged` | raised and handled | `DischargeType` = `Normal`, `Referred`, `Lama`, `Dama`, `Absconded` or `Expired`. Handled here too: the stay's chart lines stop ("Patient discharged") and the doses scheduled from the discharge on are cancelled; doses that fell due before it stay for the nurse to document |
-| `VisitCreated` / `VisitCompleted` / `VisitCancelled` (Patients) | raised | the in-patient visit is created with Patients' numbering (`visit`, `{FAC}V{YY}{SEQ:7}`), completed on discharge, cancelled with the admission |
+| `VisitCreated` / `VisitCompleted` / `VisitCancelled` (Patients) | raised | the in-patient visit is created with Patients' numbering (`visit`, `{FAC}V{YY}{SEQ:7}`), completed on discharge, cancelled with the admission; the OPD visit the patient was admitted from is completed at admission |
 | `PrescriptionSigned` | handled | in-patient lines become medication-chart lines (no doses until dispensed) |
 | `PrescriptionCancelled` | handled | chart lines stopped, future doses cancelled |
 | `MedicationDispensed` | handled | next 24 h of doses scheduled; unlinked lines charted as one dose to confirm |

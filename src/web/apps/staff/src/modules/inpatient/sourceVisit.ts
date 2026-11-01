@@ -15,7 +15,7 @@ const VISIT_TYPE_OF_SOURCE: Partial<Record<string, VisitType>> = { OutPatient: '
  * casualty / ER" her casualty visits, not cancelled, of the three days before the admission and none after it. An
  * admission entered as earlier counts back from its `admittedAt`; one made now, from `now`. The admission links the
  * one chosen (the first by default), so the stay goes on from it: its free treatment of a victim (BNSS 2023 s.397) and
- * its record.
+ * its record. The server takes no other visit (Inpatient `AdmissionRules.SourceVisitRefusal`): keep the two in step.
  */
 export function sourceVisitChoices<T extends Pick<VisitListItem, 'id' | 'type' | 'status' | 'visitedAt'>>(
   visits: readonly T[],
