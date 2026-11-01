@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Analytics.Features.Dashboards;
+using HyFib.HealthCare360.Modules.Analytics.Features.Journeys;
 using HyFib.HealthCare360.Modules.Analytics.Features.Reports;
 using HyFib.HealthCare360.Modules.Analytics.Features.Schedules;
 using HyFib.HealthCare360.Modules.Analytics.Reports;
@@ -11,7 +12,9 @@ namespace HyFib.HealthCare360.Modules.Analytics;
 /// MIS reports and managed BI (MIS-01..05, BI-01..05): a permission-filtered catalogue of hospital reports over every
 /// module's data, Excel/CSV/PDF exports, executive KPIs, saved dashboards, scheduled report e-mails and BI extracts for
 /// Power BI and similar tools. Reports run on an optional read-only replica (<c>ConnectionStrings:Analytics</c>) and
-/// never write to other modules' tables.
+/// never write to other modules' tables. The patient journeys (the pipeline of each patient's visit, stay, operations
+/// and lab orders, and the board of patients in the hospital) read every module's records too, live, which only this
+/// module's layer may.
 /// </summary>
 public sealed class AnalyticsModule : IModule
 {
@@ -36,6 +39,7 @@ public sealed class AnalyticsModule : IModule
         services.AddScoped<ReportDeliveryService>();
         services.AddSingleton<ExtractFolder>();
         services.AddScoped<ExtractMonitor>();
+        services.AddScoped<JourneyQueries>();
 
         // Sends due scheduled e-mails and refreshes due BI extracts every minute; returns immediately on API-only nodes
         // (PlatformOptions.RunsJobs).
@@ -47,5 +51,6 @@ public sealed class AnalyticsModule : IModule
         ReportEndpoints.Map(endpoints);
         DashboardEndpoints.Map(endpoints);
         ScheduleEndpoints.Map(endpoints);
+        JourneyEndpoints.Map(endpoints);
     }
 }
