@@ -1,3 +1,4 @@
+import { formatDateOnly } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
 import type { BreachDetail, DataSummary } from './api';
 import { breachReportHtml, dataSummaryHtml } from './print';
@@ -18,6 +19,7 @@ const summary: DataSummary = {
     fullName: 'Asha <b>Rao</b>',
     gender: 'Female',
     dateOfBirth: '1987-03-14',
+    isDateOfBirthEstimated: false,
     phone: '+919812345678',
     alternatePhone: null,
     email: 'asha@example.com',
@@ -130,6 +132,21 @@ const breach: BreachDetail = {
   certInReference: null,
   certInReportOverdue: false,
 };
+
+describe('a date of birth in the data summary', () => {
+  it('is marked as estimated when it was worked out from the age given at registration', () => {
+    const estimated = {
+      ...summary,
+      person: { ...summary.person, dateOfBirth: '1974-10-31', isDateOfBirthEstimated: true },
+    };
+    const date = formatDateOnly('1974-10-31');
+
+    expect(dataSummaryHtml(estimated, null, '2026-10-31T07:00:00Z')).toContain(
+      `${date} (estimated from the age given at registration)`,
+    );
+    expect(dataSummaryHtml(summary, null, '2026-10-31T07:00:00Z')).not.toContain('estimated');
+  });
+});
 
 describe('Board report print', () => {
   it('covers every part rule 7(2)(b) asks for, and escapes every value', () => {

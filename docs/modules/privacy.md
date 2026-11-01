@@ -100,9 +100,10 @@ The request records what was erased and until when the rest is kept. The retenti
 
 `{generatedAt, hospital, person, categories[], consents[], sharedWith[], processors[], nominee, contact, periods}`:
 
-- **`person`**: the registration details as held: `uhid, fullName, gender, dateOfBirth, phone, alternatePhone, email,
-  address, emergencyContact, abhaNumber` (masked), `abhaAddress, aadhaarLast4` (`XXXX-XXXX-1234`), `hasPhoto,
-  registeredAt, registeredAtFacility`.
+- **`person`**: the registration details as held: `uhid, fullName, gender, dateOfBirth, isDateOfBirthEstimated` (worked
+  out from the age given at registration; the portal and the print say so), `phone, alternatePhone, email, address,
+  emergencyContact, abhaNumber` (masked), `abhaAddress, aadhaarLast4` (`XXXX-XXXX-1234`), `hasPhoto, registeredAt,
+  registeredAtFacility`.
 - **`categories[]`**: `{key, title, description, purpose, basis, retention, retentionKind, items[{key, label, count, first, last}]}`.
   - `retention` is the English sentence. `retentionKind` (`MedicalRecords, Finance, MessageLog, Audit, WhileInUse,
     WithRecords`) and `periods {outpatientYears, inpatientYears, financeYears, messageLogDays, auditYears}` let a client

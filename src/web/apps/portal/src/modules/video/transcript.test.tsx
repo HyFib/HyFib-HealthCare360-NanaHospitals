@@ -21,6 +21,7 @@ const PROFILE: PortalProfile = {
   fullName: 'Asha Verma',
   gender: 'Female',
   dateOfBirth: '1987-03-14',
+  isDateOfBirthEstimated: false,
   age: '39Y',
   phone: '+91******3210',
   bloodGroup: 'BPositive',

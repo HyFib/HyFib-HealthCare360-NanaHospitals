@@ -54,7 +54,8 @@ and `npx eslint apps/portal`.
   keeps its own refresh cookie and each address reads only its own app's: signing in to one never signs the other out,
   and nothing on the portal's address can renew a staff session.
 * **Family.** `GET /api/v1/portal/profiles` returns everyone registered with the verified number, then the family
-  members on other numbers that the account sees through a family link (below). The patient chooses whose records to
+  members on other numbers that the account sees through a family link (below). A date of birth worked out from the
+  age given at registration (`isDateOfBirthEstimated`) is shown as estimated, not as the patient's birthday. The patient chooses whose records to
   see, and the switcher is always in the header. Every query key starts `['portal', patientId, …]`, and family-wide
   lists are filtered to the person being viewed. A record that belongs to another family member shows "This belongs
   to …" with a switch button.

@@ -125,6 +125,7 @@ describe('profiles', () => {
     fullName: `Person ${id}`,
     gender: 'Unknown',
     dateOfBirth: null,
+    isDateOfBirthEstimated: false,
     age: null,
     phone: null,
     bloodGroup: 'Unknown',

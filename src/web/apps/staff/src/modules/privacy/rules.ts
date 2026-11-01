@@ -4,7 +4,7 @@
  */
 import { formatDate, formatDateOnly, formatDateTime, HOSPITAL_TIME_ZONE } from '@hc360/core';
 import { diffDays } from '@/modules/hr/shared/dates';
-import type { DataRequestDetail } from './api';
+import type { DataRequestDetail, SummaryPerson } from './api';
 import {
   correctableFieldLabel,
   CORRECTABLE_FIELDS,
@@ -596,6 +596,18 @@ export function keptUntilText(until: string | null, permanently: boolean): strin
     return 'Permanently';
   }
   return until ? `Until ${formatDateOnly(until)}` : '—';
+}
+
+/**
+ * The date of birth as held, marked when it was worked out from the age given at registration: the patient reads it in
+ * the summary, and a day and month she never gave are not her birthday.
+ */
+export function birthDateText(person: Pick<SummaryPerson, 'dateOfBirth' | 'isDateOfBirthEstimated'>): string | null {
+  if (!person.dateOfBirth) {
+    return null;
+  }
+  const date = formatDateOnly(person.dateOfBirth);
+  return person.isDateOfBirthEstimated ? `${date} (estimated from the age given at registration)` : date;
 }
 
 /** "3 Jan 2021 – 12 Sept 2026", or one date when both are the same day. */

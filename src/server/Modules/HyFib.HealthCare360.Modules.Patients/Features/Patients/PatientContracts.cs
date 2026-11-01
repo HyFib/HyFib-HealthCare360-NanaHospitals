@@ -61,6 +61,7 @@ public sealed record PatientDetail(
     bool ContactsMasked = false);
 
 /// <summary>Compact identity used by banners, pickers and other modules.</summary>
+/// <param name="IsDateOfBirthEstimated">The date of birth was worked out from the age given at registration.</param>
 public sealed record PatientSummary(
     Guid Id,
     string Uhid,
@@ -73,7 +74,8 @@ public sealed record PatientSummary(
     PatientCategory Category,
     bool IsVip,
     bool IsDeceased,
-    Guid? PhotoFileId);
+    Guid? PhotoFileId,
+    bool IsDateOfBirthEstimated = false);
 
 /// <param name="PrivacyNoticeGiven">
 /// The desk gave the patient the privacy notice (DPDP s.5): recorded as a <see cref="ConsentType.PrivacyNotice"/> consent

@@ -33,6 +33,7 @@ const summary: DataSummary = {
     fullName: 'Meena Kumari',
     gender: 'Female',
     dateOfBirth: null,
+    isDateOfBirthEstimated: false,
     phone: null,
     alternatePhone: null,
     email: null,
