@@ -39,6 +39,15 @@ public sealed record ChargeRequest
     /// may be charged; null for a service.
     /// </summary>
     public DeviceDetails? Device { get; init; }
+
+    /// <summary>
+    /// A charge the module posts by itself and posts again until billing accepts it (a bed's day, a nursing day, a
+    /// consultant's visit of a stay in progress). Billing keeps a refusal of one on record, cleared when it posts or its
+    /// source is cancelled: System health warns while one stands, and a stay's final bill is not finalized over it. A
+    /// charge its module does not post again (a diet's day, charged on the day only) is not automatic: its refusal could
+    /// never clear.
+    /// </summary>
+    public bool Automatic { get; init; }
 }
 
 /// <summary>
@@ -140,6 +149,13 @@ public interface IBillingStatusProvider
     Task<decimal> GetOutstandingAsync(Guid patientId, CancellationToken cancellationToken);
 
     Task<DischargeClearance> GetDischargeClearanceAsync(Guid admissionId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The stays with an automatic charge of these source modules that billing refused and keeps on record
+    /// (<see cref="ChargeRequest.Automatic"/>), however long ago the stay ended: their module posts those charges again
+    /// until they are charged, so a refused day never holds a stay's final bill, or its discharge, for good.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetStaysWithRefusedChargesAsync(IReadOnlyCollection<string> sourceModules, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -213,4 +229,7 @@ internal sealed class NullBillingStatusProvider : IBillingStatusProvider
 
     public Task<DischargeClearance> GetDischargeClearanceAsync(Guid admissionId, CancellationToken cancellationToken) =>
         Task.FromResult(new DischargeClearance(true, 0m, null));
+
+    public Task<IReadOnlyList<Guid>> GetStaysWithRefusedChargesAsync(IReadOnlyCollection<string> sourceModules, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<Guid>>([]);
 }

@@ -17,6 +17,7 @@ internal sealed class VisitCancelledHandler(
     HospitalDbContext db,
     ChargeService charges,
     BillService bills,
+    ChargeRefusals refusals,
     INotificationService notifications,
     TimeProvider time) : IDomainEventHandler<VisitCancelled>
 {
@@ -93,6 +94,9 @@ internal sealed class VisitCancelledHandler(
         }
 
         account.CancelAdmission(reason, time.GetUtcNow());
+
+        // A day of it billing refused is not owed either, and its module no longer posts it.
+        await refusals.StayCancelledAsync(account.AdmissionId, ct);
 
         // Whatever other modules charged, anything already billed and any advance held need a person.
         var remaining = admissionCharges.Where(c => c.Status != ChargeStatus.Cancelled).ToList();

@@ -21,6 +21,7 @@ public sealed class BillService(
     INumberSeries numbers,
     IRealtimePublisher realtime,
     IAuditLogger audit,
+    ChargeRefusals refusals,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -348,6 +349,13 @@ public sealed class BillService(
             && await db.Set<Charge>().AnyAsync(c => c.AdmissionId == admissionId && c.Status == ChargeStatus.Unbilled && c.BillId == null, ct))
         {
             return Error.Rule("billing.final_bill_stale", "New services were charged after this final bill was prepared. Refresh the final bill first.");
+        }
+
+        // A day billing refused (a bed's service out of use, say) is posted again until it is charged: the final bill
+        // waits for it rather than leave it unbilled.
+        if (bill.IsFinalBill && bill.AdmissionId is { } stay && await refusals.ForAdmissionAsync(stay, ct) is { Count: > 0 } refused)
+        {
+            return ChargeRefusals.FinalBillHeld(refused);
         }
 
         await using var transaction = await db.BeginOwnedTransactionAsync(ct);

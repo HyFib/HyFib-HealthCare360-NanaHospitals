@@ -754,6 +754,19 @@ is not set, nothing is listed and nothing can be recorded.
 * Negative quantity = a **return**: it must name its admission (or visit) and may not credit more than was charged for
   the same service item there, net of earlier returns (`billing.credit_exceeds_charge`). Pharmacy posts these as
   `pharmacy.ip.return`; bill, running-bill and portal lines flag them with `isReturn`.
+* **An automatic charge** (`ChargeRequest.Automatic`: Inpatient's bed and nursing days, and its consultant's visits,
+  retried while their stay is in progress) is posted again on each run until billing takes it. Its refusal (the service
+  out of use, the patient merged into another record) is kept in `billing.charge_refusals` (`ChargeRefusal`, one per
+  source line, counted again on each retry), not only logged: the first refusal is audited (`billing.charge_refused`),
+  System health warns while one stands (`billing.charges_refused`, naming the stays and why; a stay that ended by
+  absconding or death, whose days are posted after it ended, included), and a stay's **final bill is not finalized**,
+  nor the stay **cleared for discharge**, while one stands (422 `billing.charges_refused`, naming each charge and why;
+  the clearance says the same). Its module posts it again however long ago the stay ended
+  (`IBillingStatusProvider.GetStaysWithRefusedChargesAsync`), not only for the few days a discharged stay is
+  revisited. Fixed, the charge posts within the hour, the refusal is cleared (audited `billing.charge_refusal_cleared`)
+  and the final bill, refreshed, is finalized with it. A cancelled source line clears its refusal, and a cancelled stay
+  all of its own; a merge moves them to the surviving record. A diet's day is charged on that day only, so it is not
+  automatic (its refusal could never clear): the services master keeps a diet's service in use instead.
 * `CancelAsync(sourceModule, sourceReference, reason)` also only stages: it joins the caller's transaction (Inpatient
   reverses all of a cancelled admission's charges atomically), takes an unbilled charge off any draft bill, succeeds for
   unknown or already-cancelled sources, and fails with **`billing.charge_billed`** (422) when the charge is already on a

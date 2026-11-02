@@ -4,9 +4,10 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 
 /// <summary>
 /// Read-only billing facts for lower modules (<see cref="IBillingStatusProvider"/>): whether an order line is paid
-/// (for example "collect the sample once paid"), a patient's outstanding dues and IP discharge clearance.
+/// (for example "collect the sample once paid"), a patient's outstanding dues, IP discharge clearance, and the stays with
+/// an automatic charge refused.
 /// </summary>
-internal sealed class BillingStatusProvider(HospitalDbContext db) : IBillingStatusProvider
+internal sealed class BillingStatusProvider(HospitalDbContext db, ChargeRefusals refusals) : IBillingStatusProvider
 {
     /// <summary>
     /// State of each source line (any source key, for example "supportservices.diet" with "{dietOrderId}:{date}"), in every
@@ -46,8 +47,29 @@ internal sealed class BillingStatusProvider(HospitalDbContext db) : IBillingStat
             .Where(b => b.PatientId == patientId && (b.Status == BillStatus.Finalized || b.Status == BillStatus.PartiallyPaid))
             .SumAsync(b => b.DueAmount, cancellationToken);
 
-    public async Task<DischargeClearance> GetDischargeClearanceAsync(Guid admissionId, CancellationToken cancellationToken) =>
-        DischargeClearanceRules.Evaluate(await PositionAsync(db, admissionId, cancellationToken));
+    /// <summary>
+    /// Whether the stay may be discharged, as billing sees it. Never while an automatic charge of it stands refused
+    /// (<see cref="ChargeRefusals"/>): the day would go unbilled, whatever else clears the stay (its services all on
+    /// interim bills, say), as its final bill is not finalized over it.
+    /// </summary>
+    public async Task<DischargeClearance> GetDischargeClearanceAsync(Guid admissionId, CancellationToken cancellationToken)
+    {
+        var clearance = DischargeClearanceRules.Evaluate(await PositionAsync(db, admissionId, cancellationToken));
+        return await refusals.ForAdmissionAsync(admissionId, cancellationToken) is { Count: > 0 } refused
+            ? clearance with { Cleared = false, Reason = ChargeRefusals.FinalBillHeld(refused).Message }
+            : clearance;
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetStaysWithRefusedChargesAsync(IReadOnlyCollection<string> sourceModules, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(sourceModules);
+        var modules = sourceModules.Select(m => m.Trim()).Distinct(StringComparer.Ordinal).ToList();
+        return await db.Set<ChargeRefusal>().AsNoTracking()
+            .Where(r => r.AdmissionId != null && modules.Contains(r.SourceModule))
+            .Select(r => r.AdmissionId!.Value)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+    }
 
     /// <summary>
     /// Unbilled services, final bill and patient dues of an admission. A charge reserved by a draft bill still counts as

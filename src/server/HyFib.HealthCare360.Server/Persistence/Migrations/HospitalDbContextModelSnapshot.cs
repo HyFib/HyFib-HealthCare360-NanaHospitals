@@ -1864,6 +1864,87 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("charges", "billing");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.ChargeRefusal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AdmissionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("admission_id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("code");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("description");
+
+                    b.Property<DateTimeOffset>("FirstRefusedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_refused_at");
+
+                    b.Property<DateTimeOffset>("LastRefusedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_refused_at");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("message");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<DateTimeOffset?>("ServiceDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("service_date");
+
+                    b.Property<Guid>("ServiceItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("service_item_id");
+
+                    b.Property<string>("SourceModule")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("source_module");
+
+                    b.Property<string>("SourceReference")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_reference");
+
+                    b.Property<Guid?>("VisitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("visit_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_charge_refusals");
+
+                    b.HasIndex("AdmissionId")
+                        .HasDatabaseName("ix_charge_refusals_admission_id");
+
+                    b.HasIndex("SourceModule", "SourceReference")
+                        .IsUnique()
+                        .HasDatabaseName("ix_charge_refusals_source_module_source_reference");
+
+                    b.ToTable("charge_refusals", "billing");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.ClaimDeduction", b =>
                 {
                     b.Property<Guid>("Id")

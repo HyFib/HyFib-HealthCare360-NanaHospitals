@@ -120,6 +120,7 @@ public sealed class SupportServicesModule : IModule
         services.AddScoped<CssdService>();
         services.AddScoped<DietOrderService>();
         services.AddScoped<MealPlanService>();
+        services.AddScoped<IServiceChargeSource, DietServiceCharges>();
         services.AddScoped<CanteenService>();
         services.AddScoped<StaffCreditService>();
         services.AddScoped<WasteService>();

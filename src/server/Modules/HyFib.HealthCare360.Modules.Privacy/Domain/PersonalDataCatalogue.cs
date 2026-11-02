@@ -200,6 +200,7 @@ public static class PersonalDataCatalogue
             [
                 new("billing.bills", "Bills"),
                 new("billing.charges", "Charges on bills", Counted: false),
+                new("billing.charge_refusals", "Charges for your stay the hospital could not post yet", Counted: false),
                 new("billing.receipts", "Payments"),
                 new("billing.refunds", "Refunds"),
                 new("billing.credit_notes", "Credit notes", Counted: false),
