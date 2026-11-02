@@ -55,7 +55,7 @@ public sealed class AuditedChangeTests(HospitalServer server)
             null, null, null, null, null, null, null, null, null, null, IsActive: false, null))).Id;
 
         // A front office clerk moves to the wards, and covers the annexe too. What adds access is asked for, and given when
-        // another administrator approves it (#155); what takes it away is done at once.
+        // another administrator approves it; what takes it away is done at once.
         var account = await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", new CreateUserRequest(
             "it-ward-" + Letters(6), "Saranya", Email: null, Phone: null, [frontOffice.Id], [main], main, PractitionerId: null, TemporaryPassword: null));
         await server.ApproveGrantAsync(account.ApprovalId.ShouldNotBeNull("a new account's roles wait for approval"));

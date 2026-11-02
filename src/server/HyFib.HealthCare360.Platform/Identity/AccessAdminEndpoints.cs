@@ -36,7 +36,7 @@ public sealed record UserDetail(
     uint Version,
     PendingUserGrant? PendingGrant = null);
 
-/// <param name="Reason">Why the user needs the roles and facilities, for the administrator who approves them (#155).</param>
+/// <param name="Reason">Why the user needs the roles and facilities, for the administrator who approves them.</param>
 public sealed record CreateUserRequest(
     string UserName,
     string DisplayName,
@@ -70,7 +70,7 @@ public sealed record RoleListItem(Guid Id, string Name, string? Description, boo
 public sealed record RoleDetail(
     Guid Id, string Name, string? Description, bool IsSystem, IReadOnlyList<string> Permissions, uint Version, PendingRoleGrant? PendingGrant = null);
 
-/// <param name="Reason">Why the role needs the permissions added, for the administrator who approves them (#155).</param>
+/// <param name="Reason">Why the role needs the permissions added, for the administrator who approves them.</param>
 public sealed record SaveRoleRequest(string Name, string? Description, IReadOnlyList<string> Permissions, uint? Version, string? Reason = null);
 
 public sealed record PermissionItem(string Name, string Description);
@@ -218,7 +218,7 @@ internal static class AccessAdminEndpoints
             return Error.Validation("user.weak_password", errors[0], new Dictionary<string, string[]> { ["temporaryPassword"] = errors.ToArray() }).ToProblem();
         }
 
-        // A new user's roles and facilities are access given: they wait for a second person who may approve grants (#155).
+        // A new user's roles and facilities are access given: they wait for a second person who may approve grants.
         var decision = await grants.DecideAsync(self: false, await grants.AdministrativeAsync([.. request.RoleIds.Distinct()], ct), ct);
         if (decision.IsFailure)
         {
@@ -337,7 +337,7 @@ internal static class AccessAdminEndpoints
         user.Facilities.RemoveAll(f => !facilityIds.Contains(f.FacilityId));
 
         // What widens it (roles and facilities added, the account reactivated) waits for a second person who may approve
-        // grants (#155). What already waits is not asked for again.
+        // grants. What already waits is not asked for again.
         var pending = await grants.PendingForUserAsync(user.Id, ct);
         var addRoles = roleIds.Where(r => !rolesBefore.Contains(r) && pending?.RoleIds.Contains(r) != true).ToList();
         var addFacilities = facilityIds.Where(f => !facilitiesBefore.Contains(f) && pending?.FacilityIds.Contains(f) != true).ToList();
@@ -594,7 +594,7 @@ internal static class AccessAdminEndpoints
             return mayGrant.Error!.ToProblem();
         }
 
-        // A new role's permissions are access given to whoever will hold it: they wait for a second person (#155).
+        // A new role's permissions are access given to whoever will hold it: they wait for a second person.
         var wanted = request.Permissions.Distinct(StringComparer.Ordinal).ToList();
         var decision = GrantDecision.Ask;
         if (wanted.Count > 0)
@@ -701,7 +701,7 @@ internal static class AccessAdminEndpoints
         role.Description = request.Description?.Trim();
         var wanted = request.Permissions.Distinct().ToHashSet(StringComparer.Ordinal);
 
-        // Permissions taken away apply at once; those added wait for a second person who may approve grants (#155), unless
+        // Permissions taken away apply at once; those added wait for a second person who may approve grants, unless
         // they already wait. Adding to a role you hold is giving them to yourself.
         var removed = role.Permissions.Where(p => !wanted.Contains(p.Permission)).Select(p => p.Permission).ToList();
         role.Permissions.RemoveAll(p => !wanted.Contains(p.Permission));

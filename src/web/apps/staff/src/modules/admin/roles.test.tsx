@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeServer, openScreen, SCREEN_TESTS, SLOW, stubBrowserApis } from '@/test/appScreen';
 import type { PermissionGroup, RoleDetail, RoleListItem } from './api';
 
-// Editing a role on the roles screen, whole with the shell, against a fake server (#155): permissions added to a role wait
+// Editing a role on the roles screen, whole with the shell, against a fake server: permissions added to a role wait
 // for a second administrator. Those waiting show as given, with a notice, so saving again asks for nothing twice; a save
 // that adds one says it was asked for, not that it was saved.
 

@@ -3,7 +3,7 @@ import { formatDateTime } from '@hc360/core';
 import { useNavigate } from '@tanstack/react-router';
 
 /**
- * Access asked for and waiting for a second administrator (#155): what it gives, who asked and when, and a link to the
+ * Access asked for and waiting for a second administrator: what it gives, who asked and when, and a link to the
  * request, where the one who asked can withdraw it and the one who approves decides it.
  */
 export function PendingGrantNotice({

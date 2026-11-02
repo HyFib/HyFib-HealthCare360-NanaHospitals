@@ -225,7 +225,7 @@ function RoleForm({
       return role ? api.put(`/api/v1/admin/roles/${role.id}`, body) : api.post('/api/v1/admin/roles', body);
     },
     onSuccess: (result) => {
-      // Permissions added wait for another administrator who may approve grants (#155).
+      // Permissions added wait for another administrator who may approve grants.
       const asked =
         askedForApproval(result) ??
         (result && typeof result === 'object' && 'pendingGrant' in result && (result as RoleDetail).pendingGrant

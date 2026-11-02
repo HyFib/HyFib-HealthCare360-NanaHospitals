@@ -495,7 +495,7 @@ public sealed class HospitalServer : IAsyncLifetime
     }
 
     /// <summary>
-    /// Access is given by two people (#155): approves the grant <paramref name="approvalId"/> as whichever of the seed's two
+    /// Access is given by two people: approves the grant <paramref name="approvalId"/> as whichever of the seed's two
     /// administrators (the Super Administrator and the hospital administrator) did not ask for it, as a second
     /// administrator approves a new member of staff's roles.
     /// </summary>

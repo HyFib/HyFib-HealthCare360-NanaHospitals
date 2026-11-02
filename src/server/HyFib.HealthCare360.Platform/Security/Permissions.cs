@@ -108,7 +108,7 @@ public static class PlatformPermissions
 
     /// <summary>
     /// Approve access another administrator gives: roles and facilities added to a user, a user reactivated, permissions
-    /// added to a role (#155). Administrative, so only those who hold it give it out, and they use two-step verification.
+    /// added to a role. Administrative, so only those who hold it give it out, and they use two-step verification.
     /// </summary>
     public const string GrantsApprove = "admin.grants.approve";
     public const string DevicesManage = "admin.devices.manage";

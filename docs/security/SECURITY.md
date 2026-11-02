@@ -302,7 +302,7 @@ and grants nothing.
     cannot take over a Super Administrator.
 
   The Patient role cannot be edited, so no staff permission can reach every portal account.
-- **Access is given by two people** (#155). What widens someone's access waits for a second person who holds
+- **Access is given by two people**. What widens someone's access waits for a second person who holds
   `admin.grants.approve` (hospital administrators by default; the Super Administrator holds everything):
   - roles or facilities added to a user, a new user's included, and a user reactivated (`identity.user_grant`);
   - permissions added to a role, a new role's included (`identity.role_grant`).

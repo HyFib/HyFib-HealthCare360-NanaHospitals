@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
-/// Access is given by two people (#155), over the real API and database. What widens someone's access (roles or facilities
+/// Access is given by two people, over the real API and database. What widens someone's access (roles or facilities
 /// added to a user, a new user's included, permissions added to a role) waits for a second administrator who may approve
 /// grants; what narrows it is done at once. Nobody approves their own request, nor access given to themselves, and an
 /// administrative permission is approved only by someone who holds it: with nobody else who does, a Super Administrator's

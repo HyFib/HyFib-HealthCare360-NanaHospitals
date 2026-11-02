@@ -10,10 +10,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HyFib.HealthCare360.Platform.Identity;
 
-/// <summary>Roles and facilities given to a user, and the user reactivated, as asked for (#155).</summary>
+/// <summary>Roles and facilities given to a user, and the user reactivated, as asked for.</summary>
 public sealed record UserGrantPayload(Guid UserId, IReadOnlyList<Guid> RoleIds, IReadOnlyList<Guid> FacilityIds, bool Activate);
 
-/// <summary>Permissions added to a role, as asked for (#155).</summary>
+/// <summary>Permissions added to a role, as asked for.</summary>
 public sealed record RoleGrantPayload(Guid RoleId, IReadOnlyList<string> Permissions);
 
 /// <summary>Access asked for a user, waiting for a second administrator: what it gives, who asked and when.</summary>
@@ -43,7 +43,7 @@ internal sealed class GrantLatch
 }
 
 /// <summary>
-/// Access is given by two people (#155). Whatever widens someone's access, roles or facilities added to a user, a user
+/// Access is given by two people. Whatever widens someone's access, roles or facilities added to a user, a user
 /// reactivated, permissions added to a role, waits for a second person who holds <see cref="PlatformPermissions.GrantsApprove"/>.
 /// What narrows it (roles, facilities or permissions taken away, a user deactivated) applies at once. A hospital setting up has
 /// one such person: until it has had two, grants are given at once and audited so. Once it has had two (a one-way latch,
@@ -449,7 +449,7 @@ internal sealed class GrantApprovals(
     private static string Fit(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 }
 
-/// <summary>Roles and facilities given to a user, or a user reactivated: one administrator asks, another approves (#155).</summary>
+/// <summary>Roles and facilities given to a user, or a user reactivated: one administrator asks, another approves.</summary>
 internal sealed class UserGrantApproval(GrantApprovals grants) : IApprovalAction
 {
     public string Kind => GrantApprovals.UserGrantKind;
@@ -461,7 +461,7 @@ internal sealed class UserGrantApproval(GrantApprovals grants) : IApprovalAction
     public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => grants.ApplyUserGrantAsync(request, ct);
 }
 
-/// <summary>Permissions added to a role: one administrator asks, another approves (#155).</summary>
+/// <summary>Permissions added to a role: one administrator asks, another approves.</summary>
 internal sealed class RoleGrantApproval(GrantApprovals grants) : IApprovalAction
 {
     public string Kind => GrantApprovals.RoleGrantKind;

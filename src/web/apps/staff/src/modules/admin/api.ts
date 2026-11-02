@@ -31,11 +31,11 @@ export interface UserDetail {
   roleIds: string[];
   facilityIds: string[];
   version: number;
-  /** Roles and facilities asked for the user, or their reactivation, waiting for a second administrator (#155). */
+  /** Roles and facilities asked for the user, or their reactivation, waiting for a second administrator. */
   pendingGrant?: PendingUserGrant | null;
 }
 
-/** Access asked for a user, waiting for a second administrator who may approve grants (#155). */
+/** Access asked for a user, waiting for a second administrator who may approve grants. */
 export interface PendingUserGrant {
   approvalId: string;
   roleIds: string[];
@@ -45,7 +45,7 @@ export interface PendingUserGrant {
   requestedAt: string;
 }
 
-/** Permissions asked for a role, waiting for a second administrator who may approve grants (#155). */
+/** Permissions asked for a role, waiting for a second administrator who may approve grants. */
 export interface PendingRoleGrant {
   approvalId: string;
   permissions: string[];
@@ -53,7 +53,7 @@ export interface PendingRoleGrant {
   requestedAt: string;
 }
 
-/** The approval request a save that adds access makes (202): the access waits for a second administrator (#155). */
+/** The approval request a save that adds access makes (202): the access waits for a second administrator. */
 export interface AskedForApproval {
   id: string;
   summary: string;
@@ -98,7 +98,7 @@ export interface RoleDetail {
   isSystem: boolean;
   permissions: string[];
   version: number;
-  /** Permissions asked for the role, waiting for a second administrator (#155). */
+  /** Permissions asked for the role, waiting for a second administrator. */
   pendingGrant?: PendingRoleGrant | null;
 }
 

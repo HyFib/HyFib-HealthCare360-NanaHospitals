@@ -95,7 +95,7 @@ describe('adding a user', SCREEN_TESTS, () => {
   });
 });
 
-// Access is given by two people (#155): what an edit adds waits for another administrator who may approve grants.
+// Access is given by two people: what an edit adds waits for another administrator who may approve grants.
 describe('access that waits for a second administrator', SCREEN_TESTS, () => {
   const userId = id('200');
   const waiting = {

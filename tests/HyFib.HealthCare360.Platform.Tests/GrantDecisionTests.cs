@@ -5,7 +5,7 @@ using HyFib.HealthCare360.SharedKernel;
 namespace HyFib.HealthCare360.Platform.Tests;
 
 /// <summary>
-/// Access is given by two people (#155): the rule, row by row. A grant waits for anyone else who may approve it; with nobody
+/// Access is given by two people: the rule, row by row. A grant waits for anyone else who may approve it; with nobody
 /// else, access given to oneself is refused, a hospital that has never had two people who may approve grants (setting up)
 /// gives it at once, and once it has had two only a Super Administrator gives it alone (break-glass). The integration tests
 /// drive the same rule over the API, where the seeded hospital always has two approvers; the rows they cannot reach are here.

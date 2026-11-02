@@ -462,7 +462,7 @@ interface TemporaryPassword {
   name: string;
   password: string;
   expiresAt: string | null;
-  /** The new user's roles wait for a second administrator's approval (#155). */
+  /** The new user's roles wait for a second administrator's approval. */
   awaitingApproval?: boolean;
 }
 
