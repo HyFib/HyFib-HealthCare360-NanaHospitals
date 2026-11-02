@@ -34,10 +34,10 @@ public sealed class ShareRuleApprovalTests(HospitalServer server)
         var doctor = await DoctorFeeStatementTests.DoctorAsync(admin);
         var debridement = await DoctorFeeStatementTests.ServiceAsync(server, admin, "Wound debridement", 2000m);
 
-        // The accountant asks for the doctor's own rule, 20 % of procedures, from a month ago, as his contract says.
+        // The accountant asks for the doctor's own rule, 20 % of procedures, from a month ago, as the doctor's contract says.
         var from = today.AddDays(-30);
         using var created = await accountant.SendRawAsync(HttpMethod.Post, Rules, new SaveShareRuleRequest(
-            doctor.Id, null, ServiceCategory.Procedure, null, ShareMethod.Percentage, 20m, from, null, true, "Agreed in his contract", null, "Contract signed on the 1st"));
+            doctor.Id, null, ServiceCategory.Procedure, null, ShareMethod.Percentage, 20m, from, null, true, "Agreed in the contract", null, "Contract signed on the 1st"));
         created.StatusCode.ShouldBe(HttpStatusCode.Created);
         var saved = (await created.Content.ReadFromJsonAsync<SavedShareRule>(ApiClient.Json, Ct))!;
         var asked = saved.Asked.ShouldNotBeNull();
@@ -50,7 +50,7 @@ public sealed class ShareRuleApprovalTests(HospitalServer server)
 
         // Listed out of use, with its terms waiting, even where rules out of use are not; the notes are saved at once.
         var listed = (await accountant.GetAsync<List<ShareRuleDto>>($"{Rules}?practitionerId={doctor.Id}")).Single(r => r.Id == saved.Id);
-        (listed.IsActive, listed.Value, listed.Notes, listed.Pending?.Asked.Value, listed.Pending?.Asked.IsActive).ShouldBe((false, 20m, "Agreed in his contract", 20m, true));
+        (listed.IsActive, listed.Value, listed.Notes, listed.Pending?.Asked.Value, listed.Pending?.Asked.IsActive).ShouldBe((false, 20m, "Agreed in the contract", 20m, true));
 
         // A bill finalized meanwhile is shared at the hospital's default: the new rule shares nothing yet.
         var first = await fees.BillAsync(billing, (debridement, 1m, doctor.Id));
@@ -87,7 +87,7 @@ public sealed class ShareRuleApprovalTests(HospitalServer server)
         await fees.BillAsync(billing, (debridement, 1m, doctor.Id));
         await fees.BillAsync(billing, (debridement, 1m, doctor.Id));
 
-        // The accountant asks for 25 %: the approver is told it would have shared his two bill lines ₹200 more.
+        // The accountant asks for 25 %: the approver is told it would have shared the doctor's two bill lines ₹200 more.
         var rule = await RuleAsync(accountant, doctor.Id, ruleId);
         using var raise = await accountant.SendRawAsync(HttpMethod.Put, $"{Rules}/{ruleId}", Request(rule, value: 25m));
         raise.StatusCode.ShouldBe(HttpStatusCode.Accepted, await raise.Content.ReadAsStringAsync(Ct));
@@ -123,7 +123,7 @@ public sealed class ShareRuleApprovalTests(HospitalServer server)
     }
 
     [Fact]
-    public async Task Taking_a_doctors_own_rule_out_of_use_waits_because_his_lines_fall_back_to_the_hospitals_default()
+    public async Task Taking_a_doctors_own_rule_out_of_use_waits_because_their_lines_fall_back_to_the_hospitals_default()
     {
         var (admin, billing, accountant, fees) = await PeopleAsync();
         var today = await fees.HospitalDayAsync();
@@ -132,7 +132,7 @@ public sealed class ShareRuleApprovalTests(HospitalServer server)
         var ruleId = await DoctorFeeStatementTests.RuleAsync(server, accountant, doctor.Id, null, ServiceCategory.Procedure, ShareMethod.Percentage, 20m, today);
         await fees.BillAsync(billing, (debridement, 1m, doctor.Id));
 
-        // Out of use, his procedures would be shared at the hospital's 30 %: that waits, and the approver is told so.
+        // Out of use, the doctor's procedures would be shared at the hospital's 30 %: that waits, and the approver is told so.
         var rule = await RuleAsync(accountant, doctor.Id, ruleId);
         using var retire = await accountant.SendRawAsync(HttpMethod.Put, $"{Rules}/{ruleId}", Request(rule, active: false));
         retire.StatusCode.ShouldBe(HttpStatusCode.Accepted, await retire.Content.ReadAsStringAsync(Ct));
@@ -140,7 +140,7 @@ public sealed class ShareRuleApprovalTests(HospitalServer server)
         asked.Details.ShouldContain(d => d.Label == "In use" && d.Value.StartsWith("Taken out of use", StringComparison.Ordinal));
         asked.Details.ShouldContain(d => d.Label == "Last 90 days" && d.Value == "1 bill line(s) would be shared differently: ₹400.00 → ₹600.00 (+₹200.00)");
 
-        // A rule in use is not deleted; meanwhile his bills are shared at 20 %.
+        // A rule in use is not deleted; meanwhile the doctor's bills are shared at 20 %.
         using (var delete = await accountant.SendRawAsync(HttpMethod.Delete, $"{Rules}/{ruleId}"))
         {
             delete.StatusCode.ShouldBe(HttpStatusCode.Conflict);
@@ -150,7 +150,7 @@ public sealed class ShareRuleApprovalTests(HospitalServer server)
         var waiting = await fees.BillAsync(billing, (debridement, 1m, doctor.Id));
         (await ShareAsync(accountant, doctor.Id, today, waiting)).ShouldBe((20m, 400m));
 
-        // Approved, his procedures fall back to the default; the rule, out of use, is deleted at once.
+        // Approved, the doctor's procedures fall back to the default; the rule, out of use, is deleted at once.
         using (var approved = await ApproveAsync(admin, asked.Id))
         {
             approved.StatusCode.ShouldBe(HttpStatusCode.OK, await approved.Content.ReadAsStringAsync(Ct));

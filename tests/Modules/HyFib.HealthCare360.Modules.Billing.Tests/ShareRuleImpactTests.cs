@@ -8,7 +8,7 @@ namespace HyFib.HealthCare360.Modules.Billing.Tests;
 /// <summary>
 /// What a change of a doctor's sharing rules would share differently (maker-checker, DFA-01): the approver is shown the
 /// bill lines it would share otherwise and their shares before and after, worked out by the rule that accrues fees.
-/// Taking a doctor's own rule out of use is a change like a raise: his lines fall back to the hospital's default.
+/// Taking a doctor's own rule out of use is a change like a raise: the doctor's lines fall back to the hospital's default.
 /// </summary>
 public sealed class ShareRuleImpactTests
 {
@@ -32,7 +32,7 @@ public sealed class ShareRuleImpactTests
 
         var impact = ShareRuleImpact.Of(lines, [HospitalDefault, OwnProcedures], [HospitalDefault, raised]);
 
-        impact.ShouldBe(new ShareImpact(2, 600m, 750m), "his two lines at 20 % then 25 %; the other doctor's line stays at the default");
+        impact.ShouldBe(new ShareImpact(2, 600m, 750m), "the doctor's two lines at 20 % then 25 %; the other doctor's line stays at the default");
         impact.Change.ShouldBe(150m);
     }
 
