@@ -450,7 +450,99 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
         (await log.BeginAsync("test", eventId, info, null, Ct)).ShouldBeNull();
     }
 
+    [Fact]
+    public async Task A_settlement_that_fails_after_its_payout_is_reversed_in_the_books_of_that_day_raised_and_restored_when_paid_out()
+    {
+        var heldBy = Guid.CreateVersion7();
+        var settlement = Settlement(heldBy, Paid("pay_It" + Letters(14), 1_000m, 23.60m, 3.60m));
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            await StoreAsync(scope, settlement, match: false);
+        }
+
+        var journal = (await DayBookAsync(heldBy, settlement.SettledOn)).ShouldHaveSingleItem();
+        journal.Number.ShouldBe(settlement.SettlementId);
+
+        // The bank returned the transfer: the journal stays in its day (it may be in Tally already), today's books
+        // reverse it, and the failure is raised and audited.
+        (await ApplyAsync(heldBy, settlement, PaymentSettlementStatus.Failed)).Message.ShouldEndWith("1 settlement paid out earlier failed: their journals are reversed today.");
+        (await DayBookAsync(heldBy, settlement.SettledOn)).ShouldHaveSingleItem().ShouldBe(journal);
+        var reversal = (await DayBookAsync(heldBy, Today)).ShouldHaveSingleItem();
+        reversal.ShouldSatisfyAllConditions(
+            r => r.Number.ShouldBe(settlement.SettlementId + "-R1"),
+            r => (r.Net, r.Charges, r.Tax).ShouldBe((-journal.Net, -journal.Charges, -journal.Tax)),
+            r => r.Correction.ShouldNotBeNull().ShouldStartWith($"Reverses journal {settlement.SettlementId} of "));
+        (await ExceptionAsync(DiscrepancyKind.FailedSettlement, settlement.SettlementId + "-R1")).ShouldNotBeNull().ShouldSatisfyAllConditions(
+            e => e.Status.ShouldBe(DiscrepancyStatus.Open),
+            e => e.GatewayAmount.ShouldBe(settlement.Amount),
+            e => e.Summary.ShouldContain("failed after it was paid out"));
+        (await AuditCountAsync("billing.gateway.settlement_failed", settlement.Id)).ShouldBe(1);
+
+        // Read again while it stays failed: reversed once.
+        await ApplyAsync(heldBy, settlement, PaymentSettlementStatus.Failed);
+        (await DayBookAsync(heldBy, Today)).ShouldHaveSingleItem();
+
+        // Paid out after all: the journal is restored in today's books, and the exception clears.
+        await ApplyAsync(heldBy, settlement, PaymentSettlementStatus.Processed);
+        var today = await DayBookAsync(heldBy, Today);
+        today.Select(v => v.Number).ShouldBe([settlement.SettlementId + "-R1", settlement.SettlementId + "-S2"]);
+        (today[1].Net, today[1].Charges, today[1].Tax).ShouldBe((journal.Net, journal.Charges, journal.Tax));
+        (await ExceptionAsync(DiscrepancyKind.FailedSettlement, settlement.SettlementId + "-R1"))!.Status.ShouldBe(DiscrepancyStatus.Resolved);
+        (await AuditCountAsync("billing.gateway.settlement_restored", settlement.Id)).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_settlement_webhook_reads_that_settlements_day_again()
+    {
+        await using var gateway = await PaymentsToSimulatorAsync();
+        var settlement = Settlement(await FacilityAsync(), Paid("pay_It" + Letters(14), 500m));
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            await StoreAsync(scope, settlement, match: false);
+        }
+
+        var body = new JsonObject
+        {
+            ["event"] = "settlement.processed",
+            ["payload"] = new JsonObject { ["settlement"] = new JsonObject { ["entity"] = new JsonObject { ["id"] = settlement.SettlementId } } },
+        }.ToJsonString();
+        var eventId = "evt" + Guid.NewGuid().ToString("N")[..20];
+
+        // Read at once, not left to the hourly job (which reads only today and yesterday).
+        (await DeliverAsync(body, eventId)).ShouldBe(new WebhookAck(true));
+        await using var check = server.Services.CreateAsyncScope();
+        var logged = await check.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<GatewayWebhookEvent>().AsNoTracking()
+            .SingleAsync(e => e.EventId == eventId, Ct);
+        logged.Note.ShouldNotBeNull().ShouldStartWith($"Settlements of {settlement.SettledOn:dd MMM yyyy} read again");
+    }
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    /// <summary>The settlement journals of a facility's day in the Tally day book.</summary>
+    private async Task<IReadOnlyList<TallyGatewaySettlement>> DayBookAsync(Guid facilityId, DateOnly date)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await GatewaySettlementService.ForDayBookAsync(scope.ServiceProvider.GetRequiredService<HospitalDbContext>(), facilityId, date, Ct);
+    }
+
+    /// <summary>The settlement's day as the gateway reports it now, the settlement in this status.</summary>
+    private async Task<SettlementFetchResult> ApplyAsync(Guid facilityId, GatewaySettlement settlement, PaymentSettlementStatus status)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var report = new PaymentSettlementReport("simulator", true,
+            [new PaymentSettlement(settlement.SettlementId, settlement.Utr, status, settlement.Amount, 0m, 0m, settlement.SettledAt, [])], null);
+        var applied = await scope.ServiceProvider.GetRequiredService<GatewaySettlementService>().ApplyAsync(facilityId, settlement.SettledOn, report, Ct);
+        applied.IsSuccess.ShouldBeTrue(applied.Error?.Message);
+        return applied.Value;
+    }
+
+    private async Task<int> AuditCountAsync(string action, Guid entityId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var id = entityId.ToString();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<HyFib.HealthCare360.Platform.Auditing.AuditEvent>()
+            .CountAsync(e => e.Action == action && e.EntityId == id, Ct);
+    }
 
     private static string Letters(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('a' + Random.Shared.Next(26))));
 

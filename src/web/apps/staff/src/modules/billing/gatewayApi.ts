@@ -7,7 +7,13 @@ import { api } from '@/lib/api';
  * receipts and refunds, and the exceptions an accountant deals with. Permission `billing.gateway.reconcile`.
  */
 
-export const DISCREPANCY_KINDS = ['UnrecordedPayment', 'UnsettledReceipt', 'AmountMismatch', 'RefundMismatch'] as const;
+export const DISCREPANCY_KINDS = [
+  'UnrecordedPayment',
+  'UnsettledReceipt',
+  'FailedSettlement',
+  'AmountMismatch',
+  'RefundMismatch',
+] as const;
 export type DiscrepancyKind = (typeof DISCREPANCY_KINDS)[number];
 export type DiscrepancyStatus = 'Open' | 'Resolved';
 export type SettlementStatus = 'Created' | 'Processed' | 'Failed';
@@ -18,6 +24,7 @@ export type SettlementMatch = 'Matched' | 'AmountDiffers' | 'NoReceipt' | 'NoRef
 export const DISCREPANCY_KIND_LABEL: Record<DiscrepancyKind, string> = {
   UnrecordedPayment: 'Paid, no receipt',
   UnsettledReceipt: 'Not settled',
+  FailedSettlement: 'Payout failed',
   AmountMismatch: 'Amounts differ',
   RefundMismatch: 'Refund differs',
 };
@@ -25,6 +32,8 @@ export const DISCREPANCY_KIND_LABEL: Record<DiscrepancyKind, string> = {
 /** What to do about each kind, in one sentence. */
 export const DISCREPANCY_KIND_HELP: Record<DiscrepancyKind, string> = {
   UnrecordedPayment: 'The patient paid online but was not credited. Record the receipt.',
+  FailedSettlement:
+    'A settlement paid out to the bank failed afterwards. Its journal is reversed; check the bank statement and wait for the gateway to pay it out again.',
   UnsettledReceipt:
     'HC360 has the receipt, but the gateway has not paid it to the bank. Check again, then ask the gateway.',
   AmountMismatch: 'The gateway and HC360 record different amounts. Check the receipt and the bank statement.',
@@ -231,6 +240,7 @@ export function retryLabel(discrepancy: Pick<GatewayDiscrepancyDto, 'kind' | 're
     case 'UnrecordedPayment':
       return 'Ask the gateway again';
     case 'UnsettledReceipt':
+    case 'FailedSettlement':
       return 'Read the settlements again';
     case 'RefundMismatch':
       return discrepancy.refundId && discrepancy.summary.includes('failed at the gateway')

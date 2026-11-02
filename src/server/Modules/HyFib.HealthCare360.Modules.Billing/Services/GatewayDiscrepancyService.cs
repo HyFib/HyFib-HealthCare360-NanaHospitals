@@ -165,6 +165,7 @@ public sealed class GatewayDiscrepancyService(
         DiscrepancyKind.UnrecordedPayment => "payment without a receipt",
         DiscrepancyKind.UnsettledReceipt => "receipt not settled",
         DiscrepancyKind.AmountMismatch => "amount difference",
+        DiscrepancyKind.FailedSettlement => "settlement failed after its payout",
         _ => "refund difference",
     };
 

@@ -3418,6 +3418,47 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("gateway_settlements", "billing");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.GatewaySettlementCorrection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<Guid>("GatewaySettlementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("gateway_settlement_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateOnly>("On")
+                        .HasColumnType("date")
+                        .HasColumnName("on");
+
+                    b.Property<int>("Seq")
+                        .HasColumnType("integer")
+                        .HasColumnName("seq");
+
+                    b.HasKey("Id")
+                        .HasName("pk_gateway_settlement_corrections");
+
+                    b.HasIndex("On")
+                        .HasDatabaseName("ix_gateway_settlement_corrections_on");
+
+                    b.HasIndex("GatewaySettlementId", "Seq")
+                        .IsUnique()
+                        .HasDatabaseName("ix_gateway_settlement_corrections_gateway_settlement_id_seq");
+
+                    b.ToTable("gateway_settlement_corrections", "billing");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.GatewaySettlementLine", b =>
                 {
                     b.Property<Guid>("Id")
@@ -43862,6 +43903,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_doctor_payout_deductions_doctor_payouts_payout_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.GatewaySettlementCorrection", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.GatewaySettlement", null)
+                        .WithMany("Corrections")
+                        .HasForeignKey("GatewaySettlementId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_gateway_settlement_corrections_gateway_settlements_gateway_");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.GatewaySettlementLine", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.GatewaySettlement", null)
@@ -46730,6 +46781,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.GatewaySettlement", b =>
                 {
+                    b.Navigation("Corrections");
+
                     b.Navigation("Lines");
                 });
 

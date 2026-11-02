@@ -196,6 +196,29 @@ public sealed class PaymentGatewayService(
     /// them. Each verified event is kept by its id (<paramref name="eventId"/>, else a hash of the body), so a
     /// redelivery is acknowledged without being handled twice.
     /// </summary>
+    /// <summary>
+    /// A settlement's webhook (processed, failed): its day is read again at once, so a payout that failed after it was
+    /// paid out is reversed and raised within minutes, however long ago it was settled (the hourly job reads only today
+    /// and yesterday). A settlement not stored yet is read with today's, for the facility the webhook names.
+    /// </summary>
+    private async Task<(WebhookEventOutcome Outcome, string Note)> ReadSettlementAsync(string settlementId, Guid? facilityId, CancellationToken ct)
+    {
+        var known = await db.Set<GatewaySettlement>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(s => s.SettlementId == settlementId)
+            .Select(s => new { s.FacilityId, s.SettledOn })
+            .FirstOrDefaultAsync(ct);
+        if ((known?.FacilityId ?? facilityId) is not { } facility)
+        {
+            return (WebhookEventOutcome.Ignored, "Settlements are read by the reconciliation job every hour.");
+        }
+
+        var day = known?.SettledOn ?? BillingTime.Today(time);
+        var fetched = await settlements.FetchAsync(facility, day, ct);
+        return fetched.IsSuccess
+            ? (WebhookEventOutcome.Processed, $"Settlements of {day:dd MMM yyyy} read again: {fetched.Value.Message}")
+            : (WebhookEventOutcome.Failed, fetched.Error!.Message);
+    }
+
     public async Task<WebhookOutcome> HandleWebhookAsync(
         string payload, string? signature, string? eventId, string provider, Guid? facilityHint, CancellationToken ct)
     {
@@ -265,7 +288,7 @@ public sealed class PaymentGatewayService(
 
             if (outcome == WebhookEventOutcome.Ignored && info.SettlementId is not null)
             {
-                note = "Settlements are read by the reconciliation job every hour.";
+                (outcome, note) = await ReadSettlementAsync(info.SettlementId, facilityId, ct);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
