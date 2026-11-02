@@ -11,6 +11,7 @@ using HyFib.HealthCare360.Integrations.Laboratory.Relay;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabOrders;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabSamples;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.UnmatchedResults;
@@ -269,6 +270,49 @@ public sealed class LabAnalyserTests(HospitalServer server)
             }
 
             (await SimulatorRecords.OpenAsync(admin, "lab-results")).ShouldNotContain(r => r.Reference == unknown);
+        }
+        finally
+        {
+            var current = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+            using var removed = await admin.SendRawAsync(HttpMethod.Delete, $"{connections}/EM360?version={current}");
+            removed.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+    }
+
+    [Fact]
+    public async Task A_released_result_from_the_training_analyser_is_open_until_the_report_is_amended_from_a_real_measurement()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+        await EnableGatewayAsync(admin);
+        const string connections = "/api/v1/integrations/lab/connections";
+        var version = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+        await admin.PutAsync($"{connections}/EM360", new SaveLabConnectionRequest("Simulator", true, null, null, null, null, null, null, null, version));
+        try
+        {
+            var channel = (await admin.GetAsync<TrainingSampleDto>($"{connections}/EM360/training/samples/{tube.Barcode}")).Channels.ShouldHaveSingleItem();
+            (await admin.PostAsync<TrainingResultsOutcome>($"{connections}/EM360/training/results",
+                new TrainingResultsRequest(tube.Barcode, [new TrainingResult(channel, "96", "mg/dL")]))).Accepted.ShouldBeTrue();
+
+            // Released as the analyser's value, before anyone knew it came from no analyser: open.
+            var sheet = await lab.GetAsync<ResultSheet>($"/api/v1/lab/samples/{tube.Id}/results");
+            var resultId = sheet.Lines.Single().ResultId;
+            (await pathologist.PostAsync<VerificationOutcome>("/api/v1/lab/results/verify",
+                new VerifyResultsRequest([resultId], null, null, Release: true))).ReleasedItemIds.ShouldNotBeEmpty();
+            (await SimulatorRecords.OpenAsync(admin, "lab-results")).ShouldContain(r => r.Reference == tube.Barcode);
+
+            // The report amended with a real measurement: the result keeps the analyser's code, but no longer its value.
+            var reportId = (await lab.GetAsync<LabOrderDetail>($"/api/v1/lab/orders/{sheet.LabOrderId}")).ReportId.ShouldNotBeNull();
+            using (var amended = await pathologist.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/reports/{reportId}/amend",
+                       new AmendReportRequest("Typed into the training analyser: measured again on the laboratory's own analyser.",
+                           [new AmendmentChange(resultId, "98", null, null, null)], null)))
+            {
+                amended.StatusCode.ShouldBe(HttpStatusCode.NoContent, await amended.Content.ReadAsStringAsync(Ct));
+            }
+
+            (await SimulatorRecords.OpenAsync(admin, "lab-results")).ShouldNotContain(r => r.Reference == tube.Barcode);
         }
         finally
         {
