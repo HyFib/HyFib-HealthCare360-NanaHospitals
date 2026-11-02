@@ -90,6 +90,15 @@ export interface NonPayableItemDto {
   serviceName: string | null;
   category: ServiceCategory | null;
   notes: string | null;
+  /** A change waiting for a second person: an item to be added (not in force yet) or taken off (in force until then). */
+  waiting?: PendingNonPayable | null;
+}
+
+export interface PendingNonPayable {
+  approvalId: string;
+  change: 'Add' | 'Remove';
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface SaveNonPayableItemRequest {
@@ -97,6 +106,8 @@ export interface SaveNonPayableItemRequest {
   serviceItemId: string | null;
   category: ServiceCategory | null;
   notes: string | null;
+  /** For the second person who approves it. */
+  reason?: string | null;
 }
 
 // ------------------------------------------------------------------ policies
@@ -477,9 +488,12 @@ export const insuranceApi = {
   /** The payer as saved, or the request asking a second person for the terms changed. */
   updatePayer: (id: string, request: SavePayerRequest) =>
     api.put<PayerDetail | ApprovalRequestDto>(`/api/v1/insurance/payers/${id}`, request),
+  /** Asks a second person to add the item to the non-payable list; nothing is added until they approve it. */
   addNonPayable: (request: SaveNonPayableItemRequest) =>
-    api.post<{ id: string }>('/api/v1/insurance/non-payable-items', request),
-  deleteNonPayable: (id: string) => api.delete<void>(`/api/v1/insurance/non-payable-items/${id}`),
+    api.post<ApprovalRequestDto>('/api/v1/insurance/non-payable-items', request),
+  /** Asks a second person to take the item off the non-payable list; it stays in force until they approve it. */
+  removeNonPayable: (id: string, reason: string | null) =>
+    api.post<ApprovalRequestDto>(`/api/v1/insurance/non-payable-items/${id}/remove`, { reason }),
   searchPolicies: (policyNumber: string) =>
     api.get<PolicyDto[]>('/api/v1/insurance/policies/search', { query: { policyNumber } }),
   revealPolicyNumber: (id: string) => api.get<PolicyNumberDto>(`/api/v1/insurance/policies/${id}/policy-number`),

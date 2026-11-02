@@ -404,7 +404,10 @@ and grants nothing.
     who holds `masters.prices.approve` approves every change of its terms, taking it out of use included (its lines fall
     back to a broader rule, which may share more); a new rule is made out of use until approved, and a rule in use is not
     deleted. The approver is shown the share before and after, backdating, and what the change would have done to the
-    last 90 days' bill lines. Non-payable items still change at once;
+    last 90 days' bill lines;
+  - the non-payable list (`insurance.non_payable`): adding an item (the patient then pays for it on insured bills) and
+    taking one off (the payer is charged again) are both asked for by whoever keeps the payers and approved by another
+    who holds `masters.prices.approve`, shown the insured patients' charges not yet billed that the change would move;
   - correcting a released lab report where the lab sets `lab.separateVerifier`: one pathologist asks, another releases
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
     a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.
