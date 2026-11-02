@@ -192,8 +192,13 @@ public sealed class ReversalTests
     {
         var reversal = new ReceiptReversal
         {
-            FacilityId = FacilityId, Number = "NHRR260000001", ReceiptId = Guid.CreateVersion7(), PatientId = PatientId, BillId = Guid.CreateVersion7(),
-            Amount = 600m, ReversedAt = Now,
+            FacilityId = FacilityId,
+            Number = "NHRR260000001",
+            ReceiptId = Guid.CreateVersion7(),
+            PatientId = PatientId,
+            BillId = Guid.CreateVersion7(),
+            Amount = 600m,
+            ReversedAt = Now,
         };
         reversal.AnnouncePaymentReversed();
         var reversed = reversal.DomainEvents.OfType<PaymentReversed>().ShouldHaveSingleItem();
