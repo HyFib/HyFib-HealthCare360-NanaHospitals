@@ -185,6 +185,25 @@ public sealed class ShiftService(
             .Select(b => b.NetAmount)
             .ToListAsync(ct);
 
+        // Reversals are made by the accounts office, so only the whole day's report has them. Undoing an advance
+        // adjustment moved no money, as the adjustment did not.
+        var notReceived = counterName is not null
+            ? []
+            : await Of<ReceiptReversal>(facilityId)
+                .Where(r => r.ReversedAt >= start && r.ReversedAt < end)
+                .SelectMany(r => r.Lines, (r, l) => new { r.Id, l.Mode, l.Amount })
+                .Where(l => l.Mode != PaymentMode.Advance)
+                .GroupBy(l => l.Mode)
+                .Select(g => new DayEndReversalTotal(g.Key, g.Sum(l => l.Amount), g.Select(l => l.Id).Distinct().Count()))
+                .ToListAsync(ct);
+        var notPaidOut = counterName is not null
+            ? []
+            : await Of<RefundReversal>(facilityId)
+                .Where(r => r.ReversedAt >= start && r.ReversedAt < end)
+                .GroupBy(r => r.Mode)
+                .Select(g => new DayEndReversalTotal(g.Key, g.Sum(r => r.Amount), g.Count()))
+                .ToListAsync(ct);
+
         var rows = shifts.Select(s =>
         {
             var inShift = payments.Where(p => p.ShiftId == s.Id && p.Mode is not (PaymentMode.Advance or PaymentMode.Insurance)).ToList();
@@ -211,7 +230,10 @@ public sealed class ShiftService(
             billed.Sum(b => b.DiscountAmount),
             cancelled.Count,
             cancelled.Sum(),
-            shifts.Count(s => s.Status == ShiftStatus.Open));
+            shifts.Count(s => s.Status == ShiftStatus.Open),
+            notReceived.OrderBy(t => t.Mode).ToList(),
+            notPaidOut.OrderBy(t => t.Mode).ToList(),
+            byMode.Sum(t => t.Net) - notReceived.Sum(t => t.Amount) + notPaidOut.Sum(t => t.Amount));
     }
 
     /// <summary>The facility's rows, read-only; a null facility reads every facility's, as the facility filter does without one.</summary>

@@ -74,7 +74,7 @@ public sealed class SimulatorRecordSweep(HospitalDbContext db, IAuditLogger audi
     internal static readonly IReadOnlyList<SimulatorRecordKind> Kinds =
     [
         new("payments", "Online payments the payment simulator took", "critical",
-            "No money was received, though each was marked paid. Cancel or correct the receipts they made, and the bills, deposits and appointments they settled.",
+            "No money was received, though each was marked paid. Record each receipt's money as not received (Billing › the receipt › Money not received; a second person approves): the bills, deposits and advances it settled owe again or hold less.",
             // Only the orders marked paid: a link nobody paid, one that failed, expired or was cancelled made no receipt.
             """
             SELECT count(*) AS count, sum(o.paid_amount) AS amount, min(o.created_at) AS first, max(o.created_at) AS last,
@@ -83,7 +83,7 @@ public sealed class SimulatorRecordSweep(HospitalDbContext db, IAuditLogger audi
             WHERE lower(trim(o.provider)) = 'simulator' AND o.status = 'Paid' AND NOT o.is_deleted
             """),
         new("refunds", "Refunds the payment simulator said it paid back", "critical",
-            "Nothing was paid back: the patient may still be owed the money. Check each with the patient, and pay it back another way.",
+            "Nothing was paid back: the patient may still be owed the money. Record each refund as not paid out (the refund › Not paid out; a second person approves), check with the patient, and pay it back another way with a new refund.",
             """
             SELECT count(*) AS count, sum(r.amount) AS amount, min(r.created_at) AS first, max(r.created_at) AS last,
                    (array_agg(r.refund_number ORDER BY r.created_at DESC))[1:5] AS examples
@@ -91,7 +91,7 @@ public sealed class SimulatorRecordSweep(HospitalDbContext db, IAuditLogger audi
             WHERE r.gateway_refund_id LIKE 'rfnd\_sim%' AND NOT r.is_deleted
             """),
         new("card-sales", "Card and UPI sales the terminal simulator approved", "critical",
-            "No card or UPI payment was taken: correct the receipts the approved sales made, and the cashier shifts they were counted in.",
+            "No card or UPI payment was taken: record the money of each receipt the approved sales made as not received (Billing › the receipt › Money not received; a second person approves). The day-end of that day shows it.",
             // Only the approved sales: a declined, cancelled or timed-out one made no receipt.
             """
             SELECT count(*) AS count, sum(t.amount) AS amount, min(t.created_at) AS first, max(t.created_at) AS last,

@@ -47,7 +47,19 @@ public sealed record TallyRecordFigures
     public decimal PayoutsNet { get; init; }
     public int OpenShifts { get; init; }
     public IReadOnlyList<TallyCashVariance> CashVariances { get; init; } = [];
+
+    /// <summary>The day-end's money not received (receipts reversed on the day), per mode.</summary>
+    public IReadOnlyList<TallyModeAmount> NotReceived { get; init; } = [];
+
+    /// <summary>The day-end's refunds not paid out (reversed on the day), per mode.</summary>
+    public IReadOnlyList<TallyModeAmount> NotPaidOut { get; init; } = [];
+
+    /// <summary>Advance adjustments undone on the day because the advance's money did not arrive.</summary>
+    public decimal AdjustmentsUndone { get; init; }
 }
+
+/// <summary>An amount in one payment mode.</summary>
+public sealed record TallyModeAmount(PaymentMode Mode, decimal Amount);
 
 /// <summary>The day book compared with its records (INT-TALLY reconciliation inside HC360).</summary>
 public sealed record TallyRecordsComparison(IReadOnlyList<TallyCheckLine> Lines, IReadOnlyList<string> Notes)
@@ -67,6 +79,8 @@ public static class TallyRecordsCheck
     private const string Bills = "Bills";
     private const string Received = "Money received";
     private const string PaidBack = "Money paid back";
+    private const string NotReceived = "Money not received";
+    private const string NotPaidOut = "Refunds not paid out";
     private const string Advances = "Advances";
     private const string Insurance = "Insurance";
     private const string Credits = "Credit notes";
@@ -104,10 +118,31 @@ public static class TallyRecordsCheck
             }
         }
 
+        // Reversals of the day: the receipts' and refunds' entries turned round, by the mode they were recorded in.
+        var notReceivedModes = day.ReceiptReversals.SelectMany(r => r.Payments).Where(p => p.Mode != PaymentMode.Advance)
+            .GroupBy(p => p.Mode).ToDictionary(g => g.Key, g => g.Sum(p => p.Amount));
+        var notReceivedRecords = records.NotReceived.ToDictionary(t => t.Mode, t => t.Amount);
+        foreach (var mode in notReceivedModes.Keys.Union(notReceivedRecords.Keys).Order())
+        {
+            lines.Add(new(NotReceived, ModeName(mode), notReceivedRecords.GetValueOrDefault(mode), notReceivedModes.GetValueOrDefault(mode), Note: "Records: the cashier day-end report"));
+        }
+
+        var notPaidOutModes = day.RefundReversals.GroupBy(r => r.Mode).ToDictionary(g => g.Key, g => g.Sum(r => r.Amount));
+        var notPaidOutRecords = records.NotPaidOut.ToDictionary(t => t.Mode, t => t.Amount);
+        foreach (var mode in notPaidOutModes.Keys.Union(notPaidOutRecords.Keys).Order())
+        {
+            lines.Add(new(NotPaidOut, ModeName(mode), notPaidOutRecords.GetValueOrDefault(mode), notPaidOutModes.GetValueOrDefault(mode), Note: "Records: the cashier day-end report"));
+        }
+
         lines.Add(new(Advances, "Deposits and advances received", records.AdvancesCollected,
             day.Receipts.Where(r => r.Purpose is ReceiptPurpose.Deposit or ReceiptPurpose.Advance).SelectMany(r => r.Payments).Where(p => p.Mode != PaymentMode.Advance).Sum(p => p.Amount)));
         lines.Add(new(Advances, "Adjusted against bills", records.AdvancesAdjusted,
             day.Receipts.SelectMany(r => r.Payments).Where(p => p.Mode == PaymentMode.Advance).Sum(p => p.Amount)));
+        if (records.AdjustmentsUndone != 0 || day.ReceiptReversals.Any(r => r.Payments.Any(p => p.Mode == PaymentMode.Advance)))
+        {
+            lines.Add(new(Advances, "Adjustments undone (advance not received)", records.AdjustmentsUndone,
+                day.ReceiptReversals.SelectMany(r => r.Payments).Where(p => p.Mode == PaymentMode.Advance).Sum(p => p.Amount)));
+        }
         lines.Add(new(Insurance, "Settlements received", records.PayerSettlements,
             day.Receipts.Where(r => r.Purpose == ReceiptPurpose.PayerSettlement).SelectMany(r => r.Payments).Sum(p => p.Amount)));
         lines.Add(new(Insurance, "Claim deductions", records.ClaimDeductions, day.Disallowances.Sum(d => d.Amount)));

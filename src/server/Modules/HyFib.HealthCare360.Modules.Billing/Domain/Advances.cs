@@ -36,8 +36,43 @@ public sealed class PatientAdvance : AuditableEntity, IFacilityScoped
     /// <summary>Returns the money to the patient (the refund is paid out).</summary>
     public Result Refund(decimal amount) => Consume(amount, adjust: false);
 
-    /// <summary>Puts an adjustment back (the bill it paid was cancelled).</summary>
+    /// <summary>Puts an adjustment back (the bill it paid was cancelled, or the payment is undone).</summary>
     public void ReverseAdjustment(decimal amount) => AdjustedAmount = Math.Max(AdjustedAmount - Math.Max(amount, 0m), 0m);
+
+    /// <summary>
+    /// The advance's money never arrived (a receipt reversal): it holds that much less. Only an unused balance can go:
+    /// the bills it paid are undone first, and a refund paid from it is recorded as not paid out first.
+    /// </summary>
+    public Result Reverse(decimal amount)
+    {
+        if (amount <= 0)
+        {
+            return Error.Rule("billing.amount_invalid", "Enter an amount greater than zero.");
+        }
+
+        if (amount > Balance)
+        {
+            return Error.Rule(
+                "billing.reversal_exceeds_held",
+                $"Advance {ReceiptNumber} holds ₹{Money.FormatInr(Math.Max(Balance, 0m))}: ₹{Money.FormatInr(RefundedAmount)} of it was refunded. " +
+                "If a refund was not paid out, record that first.");
+        }
+
+        Amount -= amount;
+        return Result.Success();
+    }
+
+    /// <summary>A refund recorded as paid out of the advance was not paid: the advance holds that money again.</summary>
+    public Result ReverseRefund(decimal amount)
+    {
+        if (amount <= 0 || amount > RefundedAmount)
+        {
+            return Error.Rule("billing.refund_reversal_exceeds", $"Advance {ReceiptNumber} has ₹{Money.FormatInr(RefundedAmount)} of refunds recorded.");
+        }
+
+        RefundedAmount -= amount;
+        return Result.Success();
+    }
 
     private Result Consume(decimal amount, bool adjust)
     {

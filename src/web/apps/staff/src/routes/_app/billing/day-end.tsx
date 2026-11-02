@@ -150,6 +150,13 @@ function DayEndPage() {
               value={<Amount value={r.netCollection} />}
               hint={`Collected ${formatInr(r.totalCollected)} · refunded ${formatInr(r.totalRefunded)}`}
             />
+            {(r.notReceived?.length ?? 0) + (r.notPaidOut?.length ?? 0) > 0 && (
+              <KpiCard
+                label="Net, with the day's reversals"
+                value={<Amount value={r.netAfterReversals ?? r.netCollection} />}
+                hint={`Not received ${formatInr((r.notReceived ?? []).reduce((sum, t) => sum + t.amount, 0))} · not paid out ${formatInr((r.notPaidOut ?? []).reduce((sum, t) => sum + t.amount, 0))}`}
+              />
+            )}
             <KpiCard label="IP advances collected" value={<Amount value={r.depositsCollected} />} />
             <KpiCard
               label="Bills finalised"
@@ -184,6 +191,30 @@ function DayEndPage() {
                 emptyTitle="Nothing collected"
               />
             </Section>
+            {(r.notReceived?.length ?? 0) + (r.notPaidOut?.length ?? 0) > 0 && (
+              <Section title="Reversed today" flush>
+                <DataTable
+                  ariaLabel="Money reversed today as not received or not paid out"
+                  rows={[
+                    ...(r.notReceived ?? []).map((t) => ({ ...t, kind: 'Not received' as const })),
+                    ...(r.notPaidOut ?? []).map((t) => ({ ...t, kind: 'Refund not paid out' as const })),
+                  ]}
+                  getRowId={(t) => `${t.kind}-${t.mode}`}
+                  size="small"
+                  columns={[
+                    { key: 'kind', header: 'What', render: (t) => t.kind },
+                    { key: 'mode', header: 'Mode', render: (t) => PAYMENT_MODE_LABEL[t.mode] },
+                    { key: 'count', header: 'Records', align: 'end', render: (t) => t.count.toLocaleString('en-IN') },
+                    {
+                      key: 'amount',
+                      header: 'Amount',
+                      align: 'end',
+                      render: (t) => <Amount value={t.amount} strong />,
+                    },
+                  ]}
+                />
+              </Section>
+            )}
             <Section title="By cashier" flush>
               <DataTable
                 ariaLabel="Collections by cashier"

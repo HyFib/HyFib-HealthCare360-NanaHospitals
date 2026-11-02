@@ -300,6 +300,8 @@ public sealed class GatewaySettlementService(
                 where r.FacilityId == facilityId && r.ReceivedAt >= since && r.ReceivedAt < before
                       && p.Mode == PaymentMode.PaymentGateway && p.ExternalId != null
                       && !db.Set<GatewaySettlementLine>().Any(l => l.EntityId == p.ExternalId)
+                      // A payment reversed as never received is not waiting for a settlement.
+                      && !db.Set<ReceiptReversalLine>().Any(x => x.ReceiptPaymentId == p.Id)
                 orderby r.ReceivedAt
                 select new { r.Id, r.ReceiptNumber, r.BillId, r.IpAccountId, r.ReceivedAt, PaymentId = p.ExternalId!, p.Amount })
             .Take(500)

@@ -88,6 +88,14 @@ public sealed class TallyService(
             .Where(p => p.FacilityId == facilityId && p.Status == PayoutStatus.Paid && p.PaidAt >= start && p.PaidAt < end)
             .ToListAsync(ct);
         var gatewaySettlements = await GatewaySettlementService.ForDayBookAsync(db, facilityId, date, ct);
+        var receiptReversals = await db.Set<ReceiptReversal>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().Include(r => r.Lines)
+            .Where(r => r.FacilityId == facilityId && r.ReversedAt >= start && r.ReversedAt < end)
+            .OrderBy(r => r.ReversedAt)
+            .ToListAsync(ct);
+        var refundReversals = await db.Set<RefundReversal>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(r => r.FacilityId == facilityId && r.ReversedAt >= start && r.ReversedAt < end)
+            .OrderBy(r => r.ReversedAt)
+            .ToListAsync(ct);
 
         var payerIds = bills.Where(b => b.PayerId is not null).Select(b => b.PayerId!.Value)
             .Concat(receipts.Where(r => r.PayerId is not null).Select(r => r.PayerId!.Value))
@@ -157,6 +165,10 @@ public sealed class TallyService(
             Counters = await CountersAsync(facilityId, date, ct),
             LegacyDoctorFeeNumbers = legacy,
             PosSettlements = await PosSettlementService.ForDayBookAsync(db, facilityId, date, facilityCode, ct),
+            // An insurer's settlement is never reversed (ReversalRules), so no reversal posts to a payer's ledger.
+            ReceiptReversals = receiptReversals.Select(r => new TallyReceiptReversal(
+                r.Number, date, r.ReceiptNumber, r.Purpose, null, r.Lines.Select(l => new TallyPayment(l.Mode, l.Amount)).ToList())).ToList(),
+            RefundReversals = refundReversals.Select(r => new TallyRefundReversal(r.Number, date, r.RefundNumber, r.Purpose, r.Mode, r.Amount)).ToList(),
         };
     }
 

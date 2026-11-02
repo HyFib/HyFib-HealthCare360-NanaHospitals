@@ -261,6 +261,11 @@ public sealed class TallyReconciliationService(HospitalDbContext db, TallyServic
             .Select(p => p.NetAmount)
             .ToListAsync(ct);
         var dayEnd = await shifts.DayEndAsync(facilityId, date, null, ct);
+        var undone = await db.Set<ReceiptReversal>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(r => r.FacilityId == facilityId && r.ReversedAt >= start && r.ReversedAt < end)
+            .SelectMany(r => r.Lines)
+            .Where(l => l.Mode == PaymentMode.Advance)
+            .SumAsync(l => l.Amount, ct);
 
         return new TallyRecordFigures
         {
@@ -282,6 +287,9 @@ public sealed class TallyReconciliationService(HospitalDbContext db, TallyServic
             PayoutsNet = paidOut.Sum(),
             OpenShifts = dayEnd.OpenShifts,
             CashVariances = dayEnd.Shifts.Where(s => s.Variance is not (null or 0)).Select(s => new TallyCashVariance(s.Counter, s.UserName, s.Variance!.Value)).ToList(),
+            NotReceived = (dayEnd.NotReceived ?? []).Select(t => new TallyModeAmount(t.Mode, t.Amount)).ToList(),
+            NotPaidOut = (dayEnd.NotPaidOut ?? []).Select(t => new TallyModeAmount(t.Mode, t.Amount)).ToList(),
+            AdjustmentsUndone = undone,
         };
     }
 }

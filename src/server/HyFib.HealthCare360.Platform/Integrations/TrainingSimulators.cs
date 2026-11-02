@@ -28,8 +28,14 @@ public static class TrainingSimulators
             : null;
     }
 
+    /// <summary>How the payment simulator's refund ids begin: it returns no money.</summary>
+    public const string RefundIdPrefix = "rfnd_sim";
+
     /// <summary>Whether <paramref name="provider"/> is the simulator, as integrations read it (any case, spaces trimmed).</summary>
     public static bool IsSimulator(string? provider) => string.Equals(provider?.Trim(), Provider, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Whether <paramref name="gatewayRefundId"/> is a refund the payment simulator made up.</summary>
+    public static bool IsSimulatorRefund(string? gatewayRefundId) => gatewayRefundId?.StartsWith(RefundIdPrefix, StringComparison.Ordinal) == true;
 
     // Settings are read with web defaults, which match property names in any case.
     private static bool NamesSimulator(JsonNode? value) =>

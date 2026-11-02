@@ -20,6 +20,7 @@ import type {
   ReceiptSource,
   RefundPurpose,
   RefundStatus,
+  ReversalReason,
   ServiceCategory,
   ShiftStatus,
 } from './labels';
@@ -110,6 +111,8 @@ export interface ReceiptSummary {
   amount: number;
   modes: string;
   receivedAt: string;
+  /** What reversals took back as money not received. */
+  reversedAmount?: number;
 }
 
 export interface RefundSummary {
@@ -370,6 +373,8 @@ export interface PostChargeRequest {
 // ------------------------------------------------------------------ receipts, dues, advances, refunds
 
 export interface ReceiptPaymentDto {
+  /** The payment line, to name in a reversal. */
+  id?: string;
   mode: PaymentMode;
   amount: number;
   reference: string | null;
@@ -378,6 +383,36 @@ export interface ReceiptPaymentDto {
   chequeNumber: string | null;
   chequeBank: string | null;
   chequeDate: string | null;
+  /** What reversals took back from it as money not received. */
+  reversed?: number;
+}
+
+/**
+ * Money a receipt recorded that did not arrive. `causedById`: an advance adjustment undone because the advance's money
+ * did not arrive, by that reversal.
+ */
+export interface ReceiptReversalDto {
+  id: string;
+  number: string;
+  amount: number;
+  reason: ReversalReason;
+  note: string;
+  requestedByName: string | null;
+  approvedByName: string | null;
+  reversedAt: string;
+  causedById: string | null;
+}
+
+/** A refund recorded as paid out that did not reach the patient. */
+export interface RefundReversalDto {
+  id: string;
+  number: string;
+  amount: number;
+  reason: ReversalReason;
+  note: string;
+  requestedByName: string | null;
+  approvedByName: string | null;
+  reversedAt: string;
 }
 
 export interface ReceiptDto {
@@ -397,6 +432,8 @@ export interface ReceiptDto {
   receivedAt: string;
   notes: string | null;
   payments: ReceiptPaymentDto[];
+  reversals?: ReceiptReversalDto[] | null;
+  reversedAmount?: number;
 }
 
 export interface ReceiptListItem {
@@ -412,6 +449,7 @@ export interface ReceiptListItem {
   counter: string | null;
   receivedByName: string | null;
   receivedAt: string;
+  reversedAmount?: number;
 }
 
 export interface ReceiptFilters {
@@ -487,6 +525,8 @@ export interface RefundDto {
   /** The bank's reference for it (ARN, RRN or UTR), which the patient's bank can trace. */
   gatewayReference?: string | null;
   gatewayError?: string | null;
+  /** Recorded as not paid out: the money is back where it came from, and a new refund pays the patient. */
+  notPaidOut?: RefundReversalDto | null;
 }
 
 export type GatewayRefundStatus = 'Pending' | 'Processed' | 'Failed';
@@ -582,6 +622,18 @@ export interface DayEndReport {
   billsCancelled: number;
   cancelledAmount: number;
   openShifts: number;
+  /** Receipts reversed on the day as money not received, by the mode they were recorded in (the whole day's report only). */
+  notReceived?: DayEndReversalTotal[] | null;
+  /** Refunds recorded on the day as not paid out, by the mode they were paid in. */
+  notPaidOut?: DayEndReversalTotal[] | null;
+  /** The net collection with the day's reversals. */
+  netAfterReversals?: number;
+}
+
+export interface DayEndReversalTotal {
+  mode: PaymentMode;
+  amount: number;
+  count: number;
 }
 
 export interface ShiftFilters {
@@ -898,6 +950,16 @@ export const billingApi = {
   rejectRefund: (id: string, reason: string) => api.post<void>(`/api/v1/billing/refunds/${id}/reject`, { reason }),
   payRefund: (id: string, mode: PaymentMode, reference: string | null, options: WriteOptions = {}) =>
     api.post<void>(`/api/v1/billing/refunds/${id}/pay`, { mode, reference }, options),
+  /**
+   * Asks for payment lines of a receipt to be reversed as money not received (202): an approver, someone other than
+   * the person asking, makes it from the approvals inbox. The bill owes again, or the advance holds less; bills an
+   * advance paid owe again too.
+   */
+  requestReceiptReversal: (receiptId: string, paymentIds: string[], reason: ReversalReason, note: string) =>
+    api.post<ApprovalRequestDto>(`/api/v1/billing/receipts/${receiptId}/reversal`, { paymentIds, reason, note }),
+  /** Asks for a paid refund to be recorded as not paid out (202), approved by someone else; a new refund then pays the patient. */
+  requestRefundNotPaid: (refundId: string, reason: ReversalReason, note: string) =>
+    api.post<ApprovalRequestDto>(`/api/v1/billing/refunds/${refundId}/not-paid`, { reason, note }),
   approveDiscount: (id: string, remarks: string | null) =>
     api.post<void>(`/api/v1/billing/discount-approvals/${id}/approve`, { remarks }),
   rejectDiscount: (id: string, remarks: string | null) =>

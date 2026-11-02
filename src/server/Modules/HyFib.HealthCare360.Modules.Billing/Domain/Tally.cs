@@ -215,6 +215,17 @@ public sealed record TallyDisallowance(string Reference, DateOnly Date, string? 
 
 public sealed record TallyRefund(string Number, DateOnly Date, RefundPurpose Purpose, PaymentMode Mode, decimal Amount);
 
+/// <summary>
+/// Money receipt <paramref name="ReceiptNumber"/> recorded that never arrived, reversed on <paramref name="Date"/>
+/// (<see cref="ReceiptReversal"/>): the payments taken back, by mode. An advance adjustment undone with the advance's
+/// money has only mode Advance.
+/// </summary>
+public sealed record TallyReceiptReversal(
+    string Number, DateOnly Date, string ReceiptNumber, ReceiptPurpose Purpose, string? PayerName, IReadOnlyList<TallyPayment> Payments);
+
+/// <summary>Refund <paramref name="RefundNumber"/>, recorded as paid out by <paramref name="Mode"/>, never reached the patient (<see cref="RefundReversal"/>).</summary>
+public sealed record TallyRefundReversal(string Number, DateOnly Date, string RefundNumber, RefundPurpose Purpose, PaymentMode Mode, decimal Amount);
+
 public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKind Kind, decimal Amount);
 
 /// <param name="PractitionerCode">The doctor's master code; it makes the accrual journal's number stable across re-posts.</param>
@@ -260,8 +271,14 @@ public sealed record TallyDayBook(
     /// <summary>The card and UPI acquirer's payouts of the day, from the settlement reports imported (INT-POS).</summary>
     public IReadOnlyList<TallyPosSettlement> PosSettlements { get; init; } = [];
 
+    /// <summary>Money receipts recorded that never arrived, reversed on the day.</summary>
+    public IReadOnlyList<TallyReceiptReversal> ReceiptReversals { get; init; } = [];
+
+    /// <summary>Refunds recorded as paid out that never reached the patient, reversed on the day.</summary>
+    public IReadOnlyList<TallyRefundReversal> RefundReversals { get; init; } = [];
+
     public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DoctorFees.Count + Payouts.Count
-                           + (GatewaySettlements?.Count ?? 0) + PosSettlements.Count == 0
+                           + (GatewaySettlements?.Count ?? 0) + PosSettlements.Count + ReceiptReversals.Count + RefundReversals.Count == 0
                            && Counters.All(c => c.IsEmpty);
 }
 
@@ -269,7 +286,8 @@ public sealed record TallyDayBook(
 /// Builds balanced Tally vouchers from a day book (INT-TALLY): a Sales voucher per bill (income by department ledger,
 /// discount, CGST/SGST, round-off, patient and payer receivables), Credit Notes for cancellations, credit notes and
 /// write-offs, Receipts by payment mode, Payments for refunds and doctor payouts (with TDS) and Journals for advance
-/// adjustments, insurance disallowances and doctor-fee accruals. Narrations carry document numbers, never patient names.
+/// adjustments, insurance disallowances, doctor-fee accruals and reversals of money that did not move (each the entries of
+/// its receipt or refund turned round, on the day of the reversal). Narrations carry document numbers, never patient names.
 /// </summary>
 public static class TallyVoucherBuilder
 {
@@ -286,6 +304,8 @@ public static class TallyVoucherBuilder
         vouchers.AddRange(day.Receipts.Select(r => Receipt(r, map)));
         vouchers.AddRange(day.Disallowances.Select(d => Disallowance(d, map)));
         vouchers.AddRange(day.Refunds.Select(r => Refund(r, map)));
+        vouchers.AddRange(day.ReceiptReversals.Select(r => ReceiptReversal(r, map)));
+        vouchers.AddRange(day.RefundReversals.Select(r => RefundReversal(r, map)));
         vouchers.AddRange(day.CreditNotes.Select(c => CreditNote(c, map)));
         vouchers.AddRange(DoctorFees(day, map));
         vouchers.AddRange(day.Payouts.Select(p => Payout(p, map)));
@@ -386,25 +406,41 @@ public static class TallyVoucherBuilder
 
     private static AccountingVoucher? Receipt(TallyReceipt receipt, TallyLedgerMap map)
     {
+        var entries = ReceiptEntries(receipt.Purpose, receipt.PayerName, receipt.Payments, map);
+        return IsAdjustment(receipt.Payments)
+            ? entries.ToVoucher(JournalType, receipt.Date, receipt.Number, $"Advance adjusted, receipt {receipt.Number}", receipt.Number)
+            : entries.ToVoucher(ReceiptType, receipt.Date, receipt.Number, $"Receipt {receipt.Number}", receipt.Number);
+    }
+
+    /// <summary>The receipt's entries for the payments reversed, turned round: the money is owed again, or the advance holds less.</summary>
+    private static AccountingVoucher? ReceiptReversal(TallyReceiptReversal reversal, TallyLedgerMap map)
+    {
+        var entries = ReceiptEntries(reversal.Purpose, reversal.PayerName, reversal.Payments, map).Reversed();
+        var narration = IsAdjustment(reversal.Payments)
+            ? $"Advance adjustment of receipt {reversal.ReceiptNumber} undone, {reversal.Number}: the advance was not received"
+            : $"Receipt {reversal.ReceiptNumber} reversed, {reversal.Number}: money not received";
+        return entries.ToVoucher(JournalType, reversal.Date, reversal.Number, narration, reversal.Number);
+    }
+
+    private static EntryList ReceiptEntries(ReceiptPurpose purpose, string? payerName, IReadOnlyList<TallyPayment> payments, TallyLedgerMap map)
+    {
         var entries = new EntryList();
-        foreach (var mode in receipt.Payments.GroupBy(p => p.Mode))
+        foreach (var mode in payments.GroupBy(p => p.Mode))
         {
             entries.Debit(map.ModeLedger(mode.Key), mode.Sum(p => p.Amount));
         }
 
-        var counterLedger = receipt.Purpose switch
+        var counterLedger = purpose switch
         {
             ReceiptPurpose.Deposit or ReceiptPurpose.Advance => map.PatientAdvances,
-            ReceiptPurpose.PayerSettlement => map.PayerLedger(receipt.PayerName),
+            ReceiptPurpose.PayerSettlement => map.PayerLedger(payerName),
             _ => map.PatientDebtors,
         };
-        entries.Credit(counterLedger, receipt.Payments.Sum(p => p.Amount));
-
-        var isAdjustment = receipt.Payments.Count > 0 && receipt.Payments.All(p => p.Mode == PaymentMode.Advance);
-        return isAdjustment
-            ? entries.ToVoucher(JournalType, receipt.Date, receipt.Number, $"Advance adjusted, receipt {receipt.Number}", receipt.Number)
-            : entries.ToVoucher(ReceiptType, receipt.Date, receipt.Number, $"Receipt {receipt.Number}", receipt.Number);
+        entries.Credit(counterLedger, payments.Sum(p => p.Amount));
+        return entries;
     }
+
+    private static bool IsAdjustment(IReadOnlyList<TallyPayment> payments) => payments.Count > 0 && payments.All(p => p.Mode == PaymentMode.Advance);
 
     private static AccountingVoucher? Disallowance(TallyDisallowance disallowance, TallyLedgerMap map)
     {
@@ -424,9 +460,20 @@ public static class TallyVoucherBuilder
             return entries.ToVoucher(JournalType, refund.Date, refund.Number, $"Advance restored, refund {refund.Number}", refund.Number);
         }
 
-        entries.Debit(refund.Purpose is RefundPurpose.Deposit or RefundPurpose.Advance ? map.PatientAdvances : map.PatientDebtors, refund.Amount);
-        entries.Credit(map.ModeLedger(refund.Mode), refund.Amount);
-        return entries.ToVoucher(PaymentType, refund.Date, refund.Number, $"Refund {refund.Number}", refund.Number);
+        return RefundEntries(refund.Purpose, refund.Mode, refund.Amount, map).ToVoucher(PaymentType, refund.Date, refund.Number, $"Refund {refund.Number}", refund.Number);
+    }
+
+    /// <summary>The refund's payment turned round: the money is back with the hospital, owed to the patient again.</summary>
+    private static AccountingVoucher? RefundReversal(TallyRefundReversal reversal, TallyLedgerMap map) =>
+        RefundEntries(reversal.Purpose, reversal.Mode, reversal.Amount, map).Reversed()
+            .ToVoucher(JournalType, reversal.Date, reversal.Number, $"Refund {reversal.RefundNumber} not paid out, {reversal.Number}", reversal.Number);
+
+    private static EntryList RefundEntries(RefundPurpose purpose, PaymentMode mode, decimal amount, TallyLedgerMap map)
+    {
+        var entries = new EntryList();
+        entries.Debit(purpose is RefundPurpose.Deposit or RefundPurpose.Advance ? map.PatientAdvances : map.PatientDebtors, amount);
+        entries.Credit(map.ModeLedger(mode), amount);
+        return entries;
     }
 
     private static AccountingVoucher? CreditNote(TallyCreditNote note, TallyLedgerMap map)

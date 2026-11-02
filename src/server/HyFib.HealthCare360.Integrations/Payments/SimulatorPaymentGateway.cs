@@ -56,7 +56,7 @@ internal sealed class SimulatorPaymentGateway(SimulatorInbox inbox, SimulatorSig
         PaymentSecrets secrets, CancellationToken cancellationToken)
     {
         var started = trace.Start();
-        var refundId = "rfnd_sim" + (idempotencyKey is null
+        var refundId = TrainingSimulators.RefundIdPrefix + (idempotencyKey is null
             ? Guid.CreateVersion7().ToString("N")[..16]
             : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{paymentId}:{idempotencyKey}")))[..16]);
         var error = await inbox.RefundAsync(paymentId, amount, refundId, cancellationToken);
@@ -73,7 +73,7 @@ internal sealed class SimulatorPaymentGateway(SimulatorInbox inbox, SimulatorSig
             return new RefundStatusResult(refundId, PaymentRefundStatus.Processed, refund.Amount, refund.Reference, "SIMARN" + refundId[^8..].ToUpperInvariant(), refund.CreatedAt, null);
         }
 
-        return refundId.StartsWith("rfnd_sim", StringComparison.Ordinal)
+        return TrainingSimulators.IsSimulatorRefund(refundId)
             ? new RefundStatusResult(refundId, PaymentRefundStatus.Processed, null, null, null, null, null)
             : new RefundStatusResult(refundId, PaymentRefundStatus.Failed, null, null, null, null, "The simulator has no such refund.");
     }

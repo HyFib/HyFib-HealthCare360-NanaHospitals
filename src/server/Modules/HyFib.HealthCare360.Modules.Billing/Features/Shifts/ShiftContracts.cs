@@ -39,7 +39,14 @@ public sealed record DayEndCashierRow(
     decimal? DeclaredCash,
     decimal? Variance);
 
-/// <summary>Day-end collection report (OPB-07): per cashier/counter, per payment mode, and the day's billing totals.</summary>
+/// <summary>Money recorded on an earlier receipt or refund that did not move, reversed on the day, in one payment mode.</summary>
+public sealed record DayEndReversalTotal(PaymentMode Mode, decimal Amount, int Count);
+
+/// <summary>
+/// Day-end collection report (OPB-07): per cashier/counter, per payment mode, and the day's billing totals. The
+/// reversals made on the day (money not received, refunds not paid out) are made by the accounts office, not at a
+/// counter: they are in the whole day's report, and <paramref name="NetAfterReversals"/> is the net collection with them.
+/// </summary>
 public sealed record DayEndReport(
     DateOnly Date,
     string? Counter,
@@ -54,7 +61,10 @@ public sealed record DayEndReport(
     decimal DiscountGiven,
     int BillsCancelled,
     decimal CancelledAmount,
-    int OpenShifts);
+    int OpenShifts,
+    IReadOnlyList<DayEndReversalTotal>? NotReceived = null,
+    IReadOnlyList<DayEndReversalTotal>? NotPaidOut = null,
+    decimal NetAfterReversals = 0m);
 
 public sealed class OpenShiftRequestValidator : AbstractValidator<OpenShiftRequest>
 {

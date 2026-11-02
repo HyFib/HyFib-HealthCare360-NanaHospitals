@@ -123,6 +123,7 @@ const RECEIPT: ReceiptDto = {
   notes: null,
   payments: [
     {
+      id: id('11'),
       mode: 'Upi',
       amount: 500,
       reference: '429811736520',

@@ -5,15 +5,16 @@ import { useNavigate } from '@tanstack/react-router';
 import { approvalQueries } from './api';
 
 /**
- * The changes waiting for a second person's approval on one record (a bill's credit note, a patient's merge, a lab
- * report's correction), so the desk does not ask twice and sees why nothing has changed yet. The server lists only what
+ * The changes waiting for a second person's approval on one record (a bill's credit note or money not received, a
+ * patient's merge, a lab report's correction, a refund not paid out), so the desk does not ask twice and sees why
+ * nothing has changed yet. The server lists only what
  * the user asked for or may decide.
  */
 export function PendingApprovals({
   subjectType,
   subjectId,
 }: {
-  subjectType: 'Bill' | 'Patient' | 'LabReport';
+  subjectType: 'Bill' | 'Patient' | 'LabReport' | 'Refund' | 'IpAccount' | 'PatientAdvance';
   subjectId: string;
 }) {
   const navigate = useNavigate();

@@ -51,6 +51,7 @@ internal static class BillQueries
         var practitioners = await db.Set<Practitioner>().Where(p => practitionerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.DisplayName, ct);
 
         var receipts = await db.Set<Receipt>().AsNoTracking().Include(r => r.Payments).Where(r => r.BillId == billId).OrderBy(r => r.ReceivedAt).ToListAsync(ct);
+        var reversed = await ReversedAsync(db, receipts.Select(r => r.Id).ToList(), ct);
         var refunds = await db.Set<Refund>().AsNoTracking().Where(r => r.BillId == billId).OrderBy(r => r.RequestedAt).ToListAsync(ct);
         var credits = await db.Set<CreditNote>().AsNoTracking().Where(c => c.BillId == billId).OrderBy(c => c.IssuedAt).ToListAsync(ct);
         var pending = await db.Set<DiscountApproval>().AsNoTracking()
@@ -78,7 +79,7 @@ internal static class BillQueries
             bill.NetAmount, bill.PayerAmount, bill.PatientAmount, bill.CoPayAmount, bill.NonPayableAmount, bill.PaidAmount, bill.RefundedAmount,
             bill.CreditAmount, bill.DueAmount, bill.RefundableAmount, bill.PayerSettledAmount, bill.PayerDisallowedAmount,
             IsTaxInvoice: bill.Lines.Any(l => l.TaxAmount > 0), bill.CreatedAt, bill.FinalizedAt, bill.CancelledAt, bill.CancelReason, bill.Notes, lines,
-            receipts.Select(ToSummary).ToList(),
+            receipts.Select(r => ToSummary(r, reversed.GetValueOrDefault(r.Id))).ToList(),
             refunds.Select(r => new RefundSummary(r.Id, r.RefundNumber, r.Amount, r.Status, r.Mode, r.RequestedAt, r.PaidAt)).ToList(),
             credits.Select(c => new CreditNoteDto(c.Id, c.Number, c.Kind, c.Amount, c.Reason, c.IssuedAt, c.IssuedByName, c.RequestedByName)).ToList(),
             pending is null ? null : ToDto(pending, bill.BillNumber, patient?.Uhid, patient?.FullName),
@@ -116,7 +117,16 @@ internal static class BillQueries
         return new BillPackageSummary(id, package.Code, package.Name, price, actuals, covered, actuals - covered);
     }
 
-    public static ReceiptSummary ToSummary(Receipt r) => new(r.Id, r.ReceiptNumber, r.Purpose, r.Amount, r.ModeSummary, r.ReceivedAt);
+    public static ReceiptSummary ToSummary(Receipt r, decimal reversed) => new(r.Id, r.ReceiptNumber, r.Purpose, r.Amount, r.ModeSummary, r.ReceivedAt, reversed);
+
+    /// <summary>What reversals took back from each of these receipts as money not received (receipts with none are left out).</summary>
+    public static async Task<Dictionary<Guid, decimal>> ReversedAsync(HospitalDbContext db, IReadOnlyCollection<Guid> receiptIds, CancellationToken ct) =>
+        receiptIds.Count == 0
+            ? []
+            : await db.Set<ReceiptReversal>().AsNoTracking().Where(x => receiptIds.Contains(x.ReceiptId))
+                .GroupBy(x => x.ReceiptId)
+                .Select(g => new { g.Key, Amount = g.Sum(x => x.Amount) })
+                .ToDictionaryAsync(x => x.Key, x => x.Amount, ct);
 
     public static DiscountApprovalDto ToDto(DiscountApproval a, string? billNumber, string? uhid, string? patientName) => new(
         a.Id, a.BillId, billNumber, a.PatientId, uhid, patientName, a.RequestedAmount, a.DiscountBase, a.BillDiscountPercent, a.BillDiscountAmount,

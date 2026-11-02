@@ -344,6 +344,10 @@ and grants nothing.
   `/api/v1/approvals`):
   - credit notes and write-offs on a finalized bill (audit finding S6): a cashier or the billing desk asks
     (`billing.refunds.request`), an approver issues (`billing.refunds.approve`);
+  - money recorded that did not move: a receipt whose money never arrived (a cheque returned, a payment the bank never
+    settled, one a training simulator made up), and a refund recorded as paid out that never reached the patient. The
+    same two permissions; the approver sees what changes, and the reversal is made only if it would still do exactly
+    that. Cash is never reversed: a shortfall is the shift's (billing.md, Money that did not move);
   - merging a duplicate patient record into another: one holder of `patients.merge` asks, another approves;
   - correcting a released lab report where the lab sets `lab.separateVerifier`: one pathologist asks, another releases
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says

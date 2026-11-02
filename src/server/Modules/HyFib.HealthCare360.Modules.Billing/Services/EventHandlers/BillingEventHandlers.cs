@@ -53,6 +53,21 @@ internal sealed class BillPaidDoctorFeeHandler(HospitalDbContext db, DoctorFeeSe
     }
 }
 
+/// <summary>
+/// With the "paid" trigger, reverses the doctors' shares of a bill that owes again because money recorded on it never
+/// arrived (a receipt reversal): they accrue again when it is paid. Unpaid shares cancel out; paid ones are recovered.
+/// </summary>
+internal sealed class BillPaymentReversedDoctorFeeHandler(DoctorFeeService fees) : IDomainEventHandler<BillPaymentReversed>
+{
+    public async Task HandleAsync(BillPaymentReversed domainEvent, CancellationToken cancellationToken)
+    {
+        if (await fees.AccruesOnPaymentAsync(domainEvent.FacilityId, cancellationToken))
+        {
+            await fees.ReverseAsync(domainEvent.BillId, cancellationToken);
+        }
+    }
+}
+
 /// <summary>Reverses doctors' shares of a cancelled bill (unpaid ones cancel out; paid ones are recovered).</summary>
 internal sealed class BillCancelledDoctorFeeHandler(DoctorFeeService fees) : IDomainEventHandler<BillCancelled>
 {

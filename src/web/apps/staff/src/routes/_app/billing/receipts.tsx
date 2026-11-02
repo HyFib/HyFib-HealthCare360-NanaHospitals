@@ -13,7 +13,7 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { MoreHorizontalRegular, PrintRegular, ReceiptRegular } from '@fluentui/react-icons';
+import { MoneyOffRegular, MoreHorizontalRegular, PrintRegular, ReceiptRegular } from '@fluentui/react-icons';
 import { formatDateTime, todayIso, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -30,6 +30,8 @@ import {
 } from '@/modules/billing/labels';
 import { sumRupees } from '@/modules/billing/money';
 import { dateParam, enumParam, pageParam, textParam } from '@/modules/billing/searchParams';
+import { ReceiptReversalDialog } from '@/modules/billing/ReversalDialogs';
+import { mayHaveReversibleMoney } from '@/modules/billing/reversals';
 import { Amount, NoAccess } from '@/modules/billing/ui';
 
 interface ReceiptsSearch {
@@ -53,12 +55,17 @@ export const Route = createFileRoute('/_app/billing/receipts')({
   component: ReceiptsPage,
 });
 
-/** Receipts of a day (or range): reprint on the receipt printer or A4, open the bill. */
+/**
+ * Receipts of a day (or range): reprint on the receipt printer or A4, open the bill, and ask for money that did not
+ * arrive to be reversed (a second person approves).
+ */
 function ReceiptsPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const canRead = usePermission(['billing.charges.read', 'billing.payments.collect']);
+  const canAsk = usePermission('billing.refunds.request');
   const { printReceiptById } = useBillingPrint();
+  const [reversing, setReversing] = useState<string | null>(null);
   const [term, setTerm] = useState(search.q ?? '');
   const debounced = useDebouncedValue(term.trim(), 300);
   useBillingLive();
@@ -190,29 +197,52 @@ function ReceiptsPage() {
               priority: 'low',
               render: (r) => `${r.receivedByName ?? '—'}${r.counter ? ` · ${r.counter}` : ''}`,
             },
-            { key: 'amount', header: 'Amount', align: 'end', render: (r) => <Amount value={r.amount} strong /> },
+            {
+              key: 'amount',
+              header: 'Amount',
+              align: 'end',
+              render: (r) =>
+                r.reversedAmount ? (
+                  <span>
+                    <Amount value={r.amount} strong /> · <Amount value={r.reversedAmount} /> not received
+                  </span>
+                ) : (
+                  <Amount value={r.amount} strong />
+                ),
+            },
           ]}
           rowActions={(r) => (
-            <Menu>
-              <MenuTrigger disableButtonEnhancement>
+            <>
+              {canAsk && mayHaveReversibleMoney(r) && (
                 <Button
                   size="small"
                   appearance="subtle"
-                  icon={<MoreHorizontalRegular />}
-                  aria-label={`Reprint ${r.receiptNumber}`}
+                  icon={<MoneyOffRegular />}
+                  aria-label={`Money of receipt ${r.receiptNumber} not received`}
+                  onClick={() => setReversing(r.id)}
                 />
-              </MenuTrigger>
-              <MenuPopover>
-                <MenuList>
-                  <MenuItem icon={<PrintRegular />} onClick={() => void printReceiptById(r.id, 'Receipt80')}>
-                    Receipt printer (80 mm)
-                  </MenuItem>
-                  <MenuItem icon={<PrintRegular />} onClick={() => void printReceiptById(r.id, 'A4')}>
-                    A4 receipt
-                  </MenuItem>
-                </MenuList>
-              </MenuPopover>
-            </Menu>
+              )}
+              <Menu>
+                <MenuTrigger disableButtonEnhancement>
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<MoreHorizontalRegular />}
+                    aria-label={`Reprint ${r.receiptNumber}`}
+                  />
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    <MenuItem icon={<PrintRegular />} onClick={() => void printReceiptById(r.id, 'Receipt80')}>
+                      Receipt printer (80 mm)
+                    </MenuItem>
+                    <MenuItem icon={<PrintRegular />} onClick={() => void printReceiptById(r.id, 'A4')}>
+                      A4 receipt
+                    </MenuItem>
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
+            </>
           )}
           emptyTitle="No receipts for these filters"
           emptyDescription="Change the dates, or search by the full receipt number."
@@ -223,6 +253,7 @@ function ReceiptsPage() {
           size="small"
         />
       </Section>
+      {reversing && <ReceiptReversalDialog receiptId={reversing} open onClose={() => setReversing(null)} />}
     </Page>
   );
 }

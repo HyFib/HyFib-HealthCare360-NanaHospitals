@@ -21,6 +21,14 @@ public static class BillingNumberSeries
     public static NumberSeriesDefinition CreditNote { get; } =
         new("billing.creditnote", "Credit note", "Billing", "{FAC}CN{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
 
+    /// <summary>Money a receipt recorded that never arrived.</summary>
+    public static NumberSeriesDefinition ReceiptReversal { get; } =
+        new("billing.receiptreversal", "Receipt reversal", "Billing", "{FAC}RR{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    /// <summary>A refund recorded as paid out that never reached the patient.</summary>
+    public static NumberSeriesDefinition RefundReversal { get; } =
+        new("billing.refundreversal", "Refund not paid out", "Billing", "{FAC}RX{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
+
     public static NumberSeriesDefinition InsuranceClaim { get; } =
         new("insurance.claim", "Insurance claim", "Insurance", "{FAC}CL{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
 
@@ -31,5 +39,5 @@ public static class BillingNumberSeries
         new("doctorfees.payout", "Doctor payout", "Doctor fees", "{FAC}DP{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
 
     internal static IEnumerable<NumberSeriesDefinition> All { get; } =
-        [OpBill, IpBill, Receipt, Refund, CreditNote, InsuranceClaim, PreAuthorisation, DoctorPayout];
+        [OpBill, IpBill, Receipt, Refund, CreditNote, ReceiptReversal, RefundReversal, InsuranceClaim, PreAuthorisation, DoctorPayout];
 }

@@ -10,12 +10,18 @@ public enum SpendKind
 
     /// <summary>Money returned to the patient: reduces what the patient has paid.</summary>
     Refunded,
+
+    /// <summary>Money a receipt recorded never arrived: reduces what the patient has paid.</summary>
+    PaymentReversed,
+
+    /// <summary>A refund recorded as paid out never reached the patient: what the patient has paid counts it again.</summary>
+    RefundReversed,
 }
 
 /// <summary>
 /// Read model of a patient's spend for the 360° view (CRM-04). Billing sits above Engagement in the module layers, so
-/// the figures arrive through its <c>BillFinalized</c>, <c>BillCancelled</c>, <c>PaymentReceived</c> and <c>RefundPaid</c>
-/// events. Rows are append-only —
+/// the figures arrive through its <c>BillFinalized</c>, <c>BillCancelled</c>, <c>PaymentReceived</c>, <c>RefundPaid</c>,
+/// <c>PaymentReversed</c> and <c>RefundPayoutReversed</c> events. Rows are append-only —
 /// concurrent bills never contend for a shared total row inside Billing's transaction.
 /// </summary>
 [NotAudited]
@@ -28,7 +34,7 @@ public sealed class PatientSpendEntry : Entity
 
     public SpendKind Kind { get; set; }
 
-    /// <summary>Bill, receipt or refund id (unique per kind, so a replayed event is ignored).</summary>
+    /// <summary>Bill, receipt, refund or reversal id (unique per kind, so a replayed event is ignored).</summary>
     public Guid SourceId { get; set; }
 
     public string Reference { get; set; } = string.Empty;

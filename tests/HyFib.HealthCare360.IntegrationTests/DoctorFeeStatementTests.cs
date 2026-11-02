@@ -113,7 +113,7 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
     // ---------------------------------------------------------------------- steps
 
     /// <summary>The admin: adds a consultant to the practitioner master, with a code no other test uses.</summary>
-    private static async Task<(Guid Id, string Name)> DoctorAsync(ApiClient admin)
+    internal static async Task<(Guid Id, string Name)> DoctorAsync(ApiClient admin)
     {
         var surname = Letters(8);
         var lastName = surname[0] + surname[1..].ToLowerInvariant();
@@ -127,12 +127,12 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
     }
 
     /// <summary>The admin: adds a procedure to the service catalogue at a price, without GST.</summary>
-    private static Task<ServiceItemDto> ServiceAsync(ApiClient admin, string name, decimal price) =>
+    internal static Task<ServiceItemDto> ServiceAsync(ApiClient admin, string name, decimal price) =>
         admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
             $"SV-{Letters(8)}", name, null, ServiceCategory.Procedure, null, price, 0m, null, true, false, null, true, null));
 
     /// <summary>The accountant: a sharing rule for the doctor, in force from today.</summary>
-    private static Task RuleAsync(
+    internal static Task RuleAsync(
         ApiClient accountant, Guid doctorId, Guid? serviceItemId, ServiceCategory? category, ShareMethod method, decimal value, DateOnly from) =>
         accountant.PostAsync($"{Fees}/rules", new SaveShareRuleRequest(doctorId, serviceItemId, category, null, method, value, from, null, true, null, null));
 
