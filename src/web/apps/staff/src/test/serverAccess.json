@@ -337,6 +337,7 @@
       "abdm.export",
       "admin.audit.read",
       "admin.devices.manage",
+      "admin.grants.approve",
       "admin.notifications.manage",
       "admin.numbering.manage",
       "admin.print.manage",

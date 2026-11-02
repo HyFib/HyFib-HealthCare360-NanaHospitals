@@ -26,6 +26,11 @@ function subjectLink(request: ApprovalRequestDto): { label: string; to: string }
       return { label: 'Open the in-patient account', to: `/billing/ip/${request.subjectId}` };
     case 'PatientAdvance':
       return request.patientId ? { label: "Open the patient's record", to: `/patients/${request.patientId}` } : null;
+    // Access given (#155): the request names the user or role and what it gives; the list shows who holds what now.
+    case 'User':
+      return { label: 'Open the users', to: '/admin/users' };
+    case 'Role':
+      return { label: 'Open the roles', to: '/admin/roles' };
     default:
       return null;
   }

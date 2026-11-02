@@ -31,6 +31,39 @@ export interface UserDetail {
   roleIds: string[];
   facilityIds: string[];
   version: number;
+  /** Roles and facilities asked for the user, or their reactivation, waiting for a second administrator (#155). */
+  pendingGrant?: PendingUserGrant | null;
+}
+
+/** Access asked for a user, waiting for a second administrator who may approve grants (#155). */
+export interface PendingUserGrant {
+  approvalId: string;
+  roleIds: string[];
+  facilityIds: string[];
+  activate: boolean;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** Permissions asked for a role, waiting for a second administrator who may approve grants (#155). */
+export interface PendingRoleGrant {
+  approvalId: string;
+  permissions: string[];
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** The approval request a save that adds access makes (202): the access waits for a second administrator (#155). */
+export interface AskedForApproval {
+  id: string;
+  summary: string;
+}
+
+/** The request a save made, when what it added waits for approval; null when it was saved as it is. */
+export function askedForApproval(result: unknown): AskedForApproval | null {
+  return result !== null && typeof result === 'object' && 'kind' in result && 'summary' in result && 'id' in result
+    ? (result as AskedForApproval)
+    : null;
 }
 
 export interface SaveUserRequest {
@@ -45,6 +78,8 @@ export interface SaveUserRequest {
   temporaryPassword?: string | null;
   isActive?: boolean;
   version?: number;
+  /** Why the user needs the roles added, for the administrator who approves them. */
+  reason?: string | null;
 }
 
 export interface RoleListItem {
@@ -63,6 +98,8 @@ export interface RoleDetail {
   isSystem: boolean;
   permissions: string[];
   version: number;
+  /** Permissions asked for the role, waiting for a second administrator (#155). */
+  pendingGrant?: PendingRoleGrant | null;
 }
 
 export interface PermissionGroup {

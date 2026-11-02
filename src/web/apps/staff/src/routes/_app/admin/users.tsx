@@ -67,7 +67,8 @@ import { api } from '@/lib/api';
 import { searchPractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { PasswordConfirmDialog } from '@/modules/account/PasswordConfirmDialog';
-import { adminQueries, type UserDetail, type UserListItem } from '@/modules/admin/api';
+import { adminQueries, askedForApproval, type UserDetail, type UserListItem } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 
 export const Route = createFileRoute('/_app/admin/users')({
   component: UsersPage,
@@ -403,6 +404,14 @@ function UsersPage() {
                   .
                 </MessageBarBody>
               </MessageBar>
+              {tempPassword?.awaitingApproval && (
+                <MessageBar intent="info" layout="multiline">
+                  <MessageBarBody>
+                    Their roles wait for another administrator who may approve grants. They can sign in and change their
+                    password now, but see nothing until the roles are approved.
+                  </MessageBarBody>
+                </MessageBar>
+              )}
             </DialogContent>
             <DialogActions>
               <Button
@@ -443,6 +452,7 @@ const userSchema = z.object({
   practitionerId: z.string().nullable(),
   temporaryPassword: z.string().max(128),
   isActive: z.boolean(),
+  reason: z.string().trim().max(500, 'Keep the reason under 500 characters.'),
 });
 
 type UserForm = z.infer<typeof userSchema>;
@@ -452,6 +462,8 @@ interface TemporaryPassword {
   name: string;
   password: string;
   expiresAt: string | null;
+  /** The new user's roles wait for a second administrator's approval (#155). */
+  awaitingApproval?: boolean;
 }
 
 function UserDrawer({
@@ -495,9 +507,17 @@ function UserDrawer({
       isSelf={existing.data?.id === selfId}
       onClose={onClose}
       onCreated={onCreated}
-      onSaved={() => {
-        notify.success('User saved');
+      onSaved={(asked) => {
+        if (asked) {
+          notify.success(
+            'Asked for approval',
+            `${asked.summary}. Another administrator who may approve grants decides it.`,
+          );
+        } else {
+          notify.success('User saved');
+        }
         void queryClient.invalidateQueries({ queryKey: ['admin'] });
+        void queryClient.invalidateQueries({ queryKey: ['approvals'] });
         onClose();
       }}
       styles={styles}
@@ -519,7 +539,7 @@ function UserDrawerForm({
   isSelf: boolean;
   onClose: () => void;
   onCreated: (created: TemporaryPassword) => void;
-  onSaved: () => void;
+  onSaved: (asked: { summary: string } | null) => void;
   styles: ReturnType<typeof useStyles>;
 }) {
   const notify = useNotify();
@@ -531,12 +551,15 @@ function UserDrawerForm({
       displayName: user?.displayName ?? '',
       email: user?.email ?? '',
       phone: user?.phone ?? '',
-      roleIds: user?.roleIds ?? [],
+      // Roles waiting for approval are shown as given: saving the form again asks for nothing twice.
+      roleIds: [...new Set([...(user?.roleIds ?? []), ...(user?.pendingGrant?.roleIds ?? [])])],
       practitionerId: user?.practitionerId ?? null,
       temporaryPassword: '',
       isActive: user?.isActive ?? true,
+      reason: '',
     },
   });
+  const pending = user?.pendingGrant;
 
   const save = useMutation({
     mutationFn: (values: UserForm) => {
@@ -548,22 +571,32 @@ function UserDrawerForm({
         facilityIds: user?.facilityIds ?? null,
         defaultFacilityId: user?.defaultFacilityId ?? null,
         practitionerId: values.practitionerId,
+        reason: values.reason || null,
       };
       return user
         ? api.put(`/api/v1/admin/users/${user.id}`, { ...common, isActive: values.isActive, version: user.version })
-        : api.post<{ userId: string; temporaryPassword: string; expiresAt: string }>('/api/v1/admin/users', {
-            ...common,
-            userName: values.userName,
-            temporaryPassword: values.temporaryPassword || null,
-          });
+        : api.post<{ userId: string; temporaryPassword: string; expiresAt: string; approvalId: string | null }>(
+            '/api/v1/admin/users',
+            {
+              ...common,
+              userName: values.userName,
+              temporaryPassword: values.temporaryPassword || null,
+            },
+          );
     },
     onSuccess: (result, values) => {
       if (!user && result && typeof result === 'object' && 'temporaryPassword' in result) {
         void queryClient.invalidateQueries({ queryKey: ['admin'] });
-        const created = result as { temporaryPassword: string; expiresAt: string };
-        onCreated({ name: values.displayName, password: created.temporaryPassword, expiresAt: created.expiresAt });
+        void queryClient.invalidateQueries({ queryKey: ['approvals'] });
+        const created = result as { temporaryPassword: string; expiresAt: string; approvalId?: string | null };
+        onCreated({
+          name: values.displayName,
+          password: created.temporaryPassword,
+          expiresAt: created.expiresAt,
+          awaitingApproval: Boolean(created.approvalId),
+        });
       } else {
-        onSaved();
+        onSaved(askedForApproval(result));
       }
     },
     onError: (error) => {
@@ -589,6 +622,22 @@ function UserDrawerForm({
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
+            {pending && (
+              <PendingGrantNotice
+                approvalId={pending.approvalId}
+                what={[
+                  pending.roleIds.length > 0 &&
+                    `Roles ${pending.roleIds.map((id) => roles.find((r) => r.id === id)?.name ?? 'a removed role').join(', ')}`,
+                  pending.facilityIds.length > 0 &&
+                    `${pending.facilityIds.length} ${pending.facilityIds.length === 1 ? 'facility' : 'facilities'}`,
+                  pending.activate && 'Reactivating the account',
+                ]
+                  .filter(Boolean)
+                  .join('; ')}
+                requestedBy={pending.requestedBy}
+                requestedAt={pending.requestedAt}
+              />
+            )}
             <TextField
               control={form.control}
               name="userName"
@@ -640,6 +689,12 @@ function UserDrawerForm({
               label="Linked doctor / practitioner"
               load={searchPractitioners}
               hint="Link doctors so their queue, orders and fees follow their sign-in."
+            />
+            <TextField
+              control={form.control}
+              name="reason"
+              label="Reason, for the approver"
+              hint="Why they need the roles you add. Added roles wait for another administrator who may approve grants."
             />
             {!user && (
               <TextField
