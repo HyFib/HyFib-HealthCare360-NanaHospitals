@@ -122,6 +122,30 @@ public sealed class RadiologyImagesTests(HospitalServer server)
             ConfirmedNotDuplicate: false));
     }
 
+    [Fact]
+    public async Task A_study_linked_to_the_pacs_simulator_is_open_until_it_is_cancelled_as_not_done()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        await using var pacs = await PacsSimulatorAsync(admin);
+        var radiographer = await server.SignInAsync(HospitalServer.Users.Radiographer);
+        var facilityId = (await radiographer.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
+        var patient = await RegisterPatientAsync();
+        var digits = Random.Shared.Next(1_000_000, 9_999_999).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var study = await AddStudyAsync(facilityId, patient.Id, $"NHRDS{digits}");
+        await server.Services.GetServices<IHostedService>().OfType<PacsLinkJob>().Single().RunOnceAsync(TestContext.Current.CancellationToken);
+
+        // Its images were made up: open while the study stands linked to them.
+        (await SimulatorRecords.OpenAsync(admin, "imaging")).Single(r => r.EntityId == study.Id).Reference.ShouldBe(study.AccessionNumber);
+
+        using (var cancelled = await radiographer.SendRawAsync(HttpMethod.Post, $"/api/v1/radiology/studies/{study.Id}/cancel",
+                   new CancelStudyRequest("The images came from the training PACS: the X-ray was not taken.")))
+        {
+            cancelled.IsSuccessStatusCode.ShouldBeTrue(await cancelled.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        }
+
+        (await SimulatorRecords.OpenAsync(admin, "imaging")).ShouldNotContain(r => r.EntityId == study.Id);
+    }
+
     /// <summary>A chest X-ray ordered an hour ago, as a clinician's order would create it.</summary>
     private async Task<ImagingStudy> AddStudyAsync(Guid facilityId, Guid patientId, string accession)
     {
