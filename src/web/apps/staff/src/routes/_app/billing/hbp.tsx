@@ -5,7 +5,7 @@ import { Page, PageHeader, Section } from '@hc360/ui';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { HbpProcedures, ImportHbpDialog } from '@/modules/billing/HbpMaster';
+import { HbpImports, HbpProcedures, ImportHbpDialog } from '@/modules/billing/HbpMaster';
 import { NoAccess } from '@/modules/billing/ui';
 
 export const Route = createFileRoute('/_app/billing/hbp')({
@@ -13,8 +13,9 @@ export const Route = createFileRoute('/_app/billing/hbp')({
 });
 
 /**
- * AB PM-JAY's Health Benefit Package master (INS-PMJAY): the scheme's procedures, imported from NHA's file, which
- * packages are mapped to so that claims to the scheme name its procedure codes.
+ * AB PM-JAY's Health Benefit Package master (INS-PMJAY): the scheme's procedures, imported from NHA's file and put in
+ * force by a second person, which packages are mapped to so that claims to the scheme name its procedure codes; and the
+ * master's imports, with an import waiting for approval.
  */
 function HbpPage() {
   const canRead = usePermission(['billing.tariffs.manage', 'insurance.preauth.manage', 'insurance.claims.manage']);
@@ -63,6 +64,9 @@ function HbpPage() {
         }
       >
         <HbpProcedures search={term} includeRetired={includeRetired} />
+      </Section>
+      <Section flush title="Imports">
+        <HbpImports />
       </Section>
       <ImportHbpDialog open={importing} onClose={() => setImporting(false)} />
     </Page>

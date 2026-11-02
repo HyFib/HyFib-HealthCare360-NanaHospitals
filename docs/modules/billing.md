@@ -190,7 +190,8 @@ it waits, a save must ask for the same terms (409).
 |---|---|---|---|
 | GET | `/procedures?search=&specialty=&includeRetired=` | `billing.tariffs.manage` / `insurance.preauth.manage` / `insurance.claims.manage` | → `HbpProcedureDto[]` (the first 50 by code, active ones unless asked) |
 | GET | `/procedures/{code}` | as above | → `HbpProcedureDto`; 404 `billing.hbp_not_found` |
-| POST | `/imports` | `billing.tariffs.manage` | multipart `file` (NHA's HBP master, .xlsx or CSV, at most 10 MB) and `version` (for example `HBP 2022`) → `HbpImportResult` (read, added, updated, retired, the rows not read); 400 `file` or `version` |
+| GET | `/imports` | as above | → `HbpImportDto[]`: the latest 10 imports, newest first (version, file name and SHA-256, read/new/changed/retired, rows not read, `status`: `Waiting`, `Applied`, `Rejected`, `Withdrawn`, `Expired` or `NotApplied`, who asked and who decided, the approver's note or why it was not applied) |
+| POST | `/imports` | `billing.tariffs.manage` | multipart `file` (NHA's HBP master, .xlsx or CSV, at most 10 MB), `version` (for example `HBP 2022`) and `reason` (for the approver, at most 500 characters) → **202** `HbpImportAsked` (the import staged, with what it would change and the rows not read, and the approval request `billing.hbp_master`); nothing changes in the master until a second person approves it; 400 `file`, `version` or `reason`; 409 `approval.already_requested` while another import waits; 422 `hbp.unchanged` when the master already reads as the file does |
 
 ### Charges — `/api/v1/billing/charges`
 | Method | Path | Permission | Request → response |
@@ -501,11 +502,29 @@ burns by %TBSA band). The master also gives the rate, the expected stay, what th
 scheme reserves the procedure for public hospitals.
 
 * **Import.** Whoever keeps the tariffs (`billing.tariffs.manage`) imports the master (**Billing › PM-JAY procedures ›
-  Import master**), as .xlsx or CSV, under the name NHA gives it. HC360 finds the columns by their headings rather than
-  their place, since state copies order and name them differently: the procedure code and name are required; the
-  specialty and its code, package name, rate or price, length of stay, reservation and stratification are read when
-  present. A rate with a rupee sign or commas is read; a row whose code is not an HBP procedure code, has no name, or
-  repeats an earlier code is left out and listed back with its row number. Audited as `data` / `billing.hbp.imported`.
+  Import master**), as .xlsx or CSV, under the name NHA gives it, with a reason for the approver (the circular that
+  issued it, say). HC360 finds the columns by their headings rather than their place, since state copies order and
+  name them differently: the procedure code and name are required; the specialty and its code, package name, rate or
+  price, length of stay, reservation and stratification are read when present. A rate with a rupee sign or commas is
+  read; a row whose code is not an HBP procedure code, has no name, or repeats an earlier code is left out and listed
+  back with its row number.
+* **A second person puts it in force (maker-checker).** The import is staged, not applied: HC360 keeps the procedures
+  it read exactly as they will be applied, with the SHA-256 of the file and of those rows, and asks someone else who
+  may approve prices (`masters.prices.approve`, the same approver as every price in the catalogue) to approve it
+  (**Approvals**, kind `billing.hbp_master`). The request shows the master and its file, the file's SHA-256 (to match
+  with `sha256sum` or `certutil -hashfile <file> SHA256` against the copy NHA or the State Health Agency sent), what it
+  changes (procedures read, new, changed and retired, the largest changes of scheme rate, procedures newly reserved for
+  public hospitals, the rows not read) and, by name, the hospital's **packages mapped to procedures it retires,
+  newly reserves for public hospitals, or rates otherwise**. Approved, the rows staged are applied, in the approval's
+  transaction, only if they still match their hash (422 `hbp.import_altered` otherwise) and only over the master they
+  were read against (422 `hbp.master_changed`: what it would change is no longer what was approved; import the file
+  again). One import waits at a time; the person who asked may withdraw it; nobody approves their own. A file that
+  would change nothing is refused (422 `hbp.unchanged`). The master put in force is audited as `data` /
+  `billing.hbp.imported` (version, file name and SHA-256, the rows' SHA-256, counts, who asked, who approved), next to
+  the approval's own `approval.requested` and `approval.approved`.
+* **The master's history.** **Billing › PM-JAY procedures › Imports** lists the latest imports: which master was put in
+  force when, from which file, asked for and approved by whom, and an import still waiting, refused (with the
+  approver's reason), withdrawn, expired or not applied (with why). An import is kept once decided.
 * **A later master** updates the procedures it lists, adds the new ones, and **retires** (does not delete) those it no
   longer lists: a package or claim that names a retired procedure still reads, but a package cannot newly be mapped
   to it.

@@ -3532,6 +3532,144 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("gateway_webhook_events", "billing");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.HbpMasterImport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Added")
+                        .HasColumnType("integer")
+                        .HasColumnName("added");
+
+                    b.Property<DateTimeOffset?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("applied_at");
+
+                    b.Property<Guid?>("ApprovalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("approval_id");
+
+                    b.Property<string>("ApprovedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("approved_by_name");
+
+                    b.Property<DateTimeOffset>("AskedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("asked_at");
+
+                    b.Property<string>("AskedByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("asked_by_name");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)")
+                        .HasColumnName("file_name");
+
+                    b.Property<string>("FileSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("file_sha256");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("MasterStamp")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("master_stamp");
+
+                    b.Property<string>("MasterVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("master_version");
+
+                    b.Property<int>("ProblemCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("problem_count");
+
+                    b.PrimitiveCollection<List<string>>("Problems")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("problems");
+
+                    b.Property<int>("Read")
+                        .HasColumnType("integer")
+                        .HasColumnName("read");
+
+                    b.Property<int>("Retired")
+                        .HasColumnType("integer")
+                        .HasColumnName("retired");
+
+                    b.Property<string>("Rows")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("rows");
+
+                    b.Property<string>("RowsSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("rows_sha256");
+
+                    b.Property<int>("Updated")
+                        .HasColumnType("integer")
+                        .HasColumnName("updated");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_hbp_master_imports");
+
+                    b.HasIndex("ApprovalId")
+                        .HasDatabaseName("ix_hbp_master_imports_approval_id");
+
+                    b.HasIndex("AskedAt")
+                        .HasDatabaseName("ix_hbp_master_imports_asked_at");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_hbp_master_imports_is_deleted");
+
+                    b.ToTable("hbp_master_imports", "billing");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.HbpProcedure", b =>
                 {
                     b.Property<Guid>("Id")
