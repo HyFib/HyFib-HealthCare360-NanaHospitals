@@ -31,8 +31,8 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
         // The doctor and his sharing rules: 40 % of what procedures are billed at, except suturing, which earns him a fixed
         // ₹150 for each one. These are his own rules, so they win over the hospital's default for procedures.
         var doctor = await DoctorAsync(admin);
-        var debridement = await ServiceAsync(admin, "Wound debridement", 2000m);
-        var suturing = await ServiceAsync(admin, "Suturing of a laceration", 1000m);
+        var debridement = await ServiceAsync(server, admin, "Wound debridement", 2000m);
+        var suturing = await ServiceAsync(server, admin, "Suturing of a laceration", 1000m);
         var dressing = (await admin.GetAsync<List<ServiceItemDto>>("/api/v1/masters/lookups/services?search=PROC-DRESS")).Single(s => s.Code == "PROC-DRESS");
         await RuleAsync(accountant, doctor.Id, null, ServiceCategory.Procedure, ShareMethod.Percentage, 40m, today);
         await RuleAsync(accountant, doctor.Id, suturing.Id, null, ShareMethod.FixedPerUnit, 150m, today);
@@ -127,8 +127,8 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
     }
 
     /// <summary>The admin: adds a procedure to the service catalogue at a price, without GST.</summary>
-    internal static Task<ServiceItemDto> ServiceAsync(ApiClient admin, string name, decimal price) =>
-        admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+    internal static Task<ServiceItemDto> ServiceAsync(HospitalServer hospital, ApiClient admin, string name, decimal price) =>
+        hospital.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", name, null, ServiceCategory.Procedure, null, price, 0m, null, true, false, null, true, null));
 
     /// <summary>The accountant: a sharing rule for the doctor, in force from today.</summary>

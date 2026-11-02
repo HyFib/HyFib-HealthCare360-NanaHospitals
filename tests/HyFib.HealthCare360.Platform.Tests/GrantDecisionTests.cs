@@ -91,8 +91,10 @@ public sealed class GrantDecisionTests
         alone.Message.ShouldContain(PlatformPermissions.GrantsApprove);
         GrantApprovals.Warnings(breakGlass: 0, latched: true, approvers: 0).ShouldHaveSingleItem().Code.ShouldBe(GrantApprovals.OneApproverCode);
 
-        var breakGlass = GrantApprovals.Warnings(breakGlass: 2, latched: false, approvers: 0).ShouldHaveSingleItem();
+        // A single break-glass grant is enough to tell.
+        var breakGlass = GrantApprovals.Warnings(breakGlass: 1, latched: false, approvers: 0).ShouldHaveSingleItem();
         (breakGlass.Code, breakGlass.Severity).ShouldBe((GrantApprovals.AloneAction, "critical"), "critical, so IT on-call is told");
-        breakGlass.Message.ShouldContain("2 time(s)");
+        breakGlass.Message.ShouldContain("1 time(s)");
+        GrantApprovals.Warnings(breakGlass: 2, latched: false, approvers: 0).ShouldHaveSingleItem().Message.ShouldContain("2 time(s)");
     }
 }

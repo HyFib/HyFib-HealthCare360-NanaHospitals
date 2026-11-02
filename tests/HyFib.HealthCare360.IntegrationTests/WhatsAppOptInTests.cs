@@ -171,7 +171,7 @@ public sealed class WhatsAppOptInTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var (patientId, phone) = await RegisterAsync(frontOffice, optIn: false);
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        var service = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var service = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Digits(8)}", "Dressing (WhatsApp bill)", null, ServiceCategory.Procedure, null, 450m, 0m, null, true, false, null, true, null));
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(null, patientId, null));

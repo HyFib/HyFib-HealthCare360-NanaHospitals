@@ -43,7 +43,7 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
     public async Task A_bill_to_a_registered_company_gets_its_irn_recorded_printed_and_cancelled_within_the_day()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        var service = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var service = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", "Executive lounge access", null, ServiceCategory.Miscellaneous, null, 1000m, 18m, "999799", true, false, null, true, null));
         var company = await admin.PostAsync<PayerDetail>("/api/v1/insurance/payers", new SavePayerRequest(
             $"CO{Letters(8).ToUpperInvariant()}", $"Malabar Traders {Letters(6).ToUpperInvariant()} Ltd", PayerCategory.Corporate, "Anil Menon", "9876543210",

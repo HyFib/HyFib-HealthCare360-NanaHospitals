@@ -368,6 +368,15 @@ and grants nothing.
   - merging a duplicate patient record into another: one holder of `patients.merge` asks, another approves;
   - access given to a user or a role (see "Access is given by two people" above): one administrator asks, another who
     holds `admin.grants.approve`, and any administrative permission it gives, approves;
+  - a service's own price and GST rate, which a self-pay patient pays (`masters.service_price`): one person saves the
+    service, another who holds `masters.prices.approve` (accountants and hospital administrators by default) approves.
+    A new price or GST rate, a price the counter may type, discounts allowed and a service put in use wait; what only
+    narrows them (no counter price, no discounts, out of use) applies at once. While a change waits, any other change to
+    the price is refused (`approval.already_requested`), the price in use put back included. A new service is made out
+    of use at ₹0 and goes live at the price approved. The approver sets the terms only over those the request replaced
+    (`prices.changed`), so a change made after it was asked for is never overwritten. The service's form shows a price
+    that waits, with its request. Check-up package prices, tariff plan prices, billing packages and doctor-fee rules
+    still change at once;
   - correcting a released lab report where the lab sets `lab.separateVerifier`: one pathologist asks, another releases
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
     a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.

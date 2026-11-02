@@ -266,6 +266,10 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<GrantApprovals>();
         services.AddScoped<IApprovalAction, UserGrantApproval>();
         services.AddScoped<IApprovalAction, RoleGrantApproval>();
+
+        // A service's price changes only when two people agree.
+        services.AddScoped<ServicePrices>();
+        services.AddScoped<IApprovalAction, ServicePriceApproval>();
         services.AddHttpClient(AlertHeartbeat.HttpClientName, client => client.DefaultRequestHeaders.UserAgent.ParseAdd("HyFib-HC360-Heartbeat"))
             .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
 

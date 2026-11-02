@@ -512,6 +512,30 @@ public sealed class HospitalServer : IAsyncLifetime
         await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Approved for the tests.", request.Version));
     }
 
+    /// <summary>
+    /// A price changes only when two people agree: approves the price <paramref name="approvalId"/> asks for as whichever of
+    /// the seed's two administrators did not ask for it (both may approve prices).
+    /// </summary>
+    public Task ApprovePriceAsync(Guid approvalId) => ApproveGrantAsync(approvalId);
+
+    /// <summary>
+    /// A service added through the masters API, its price approved by the other administrator, so it is in use at that
+    /// price as a test expects: the service as it is then.
+    /// </summary>
+    public async Task<ServiceItemDto> CreateServiceAsync(ApiClient maker, SaveServiceItemRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        var created = await maker.PostAsync<CreatedService>("/api/v1/masters/services", request);
+        if (created.ApprovalId is { } approval)
+        {
+            await ApprovePriceAsync(approval);
+        }
+
+        return await maker.GetAsync<ServiceItemDto>($"/api/v1/masters/services/{created.Id}");
+    }
+
+    private sealed record CreatedService(Guid Id, Guid? ApprovalId);
+
     /// <summary>A member of staff created through the admin API, their roles and facilities approved by the other administrator.</summary>
     public async Task<TemporaryPasswordResponse> CreateUserAsync(ApiClient maker, CreateUserRequest request)
     {
