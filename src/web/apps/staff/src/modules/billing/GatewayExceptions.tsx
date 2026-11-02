@@ -54,6 +54,7 @@ const useStyles = makeStyles({
 const KIND_TONE: Record<DiscrepancyKind, 'danger' | 'warning' | 'informative'> = {
   UnrecordedPayment: 'danger',
   UnsettledReceipt: 'warning',
+  FailedSettlement: 'warning',
   AmountMismatch: 'warning',
   RefundMismatch: 'informative',
 };

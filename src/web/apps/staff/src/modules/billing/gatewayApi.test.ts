@@ -13,7 +13,13 @@ import {
 
 describe('gateway reconciliation wording', () => {
   it('lists the kinds worst first, each with a label and what to do', () => {
-    expect(DISCREPANCY_KINDS).toEqual(['UnrecordedPayment', 'UnsettledReceipt', 'AmountMismatch', 'RefundMismatch']);
+    expect(DISCREPANCY_KINDS).toEqual([
+      'UnrecordedPayment',
+      'UnsettledReceipt',
+      'FailedSettlement',
+      'AmountMismatch',
+      'RefundMismatch',
+    ]);
     for (const kind of DISCREPANCY_KINDS) {
       expect(DISCREPANCY_KIND_LABEL[kind]).toBeTruthy();
       expect(DISCREPANCY_KIND_HELP[kind]).toMatch(/\.$/);
@@ -24,6 +30,7 @@ describe('gateway reconciliation wording', () => {
   it('says what "try again" does for each kind', () => {
     expect(retryLabel({ kind: 'UnrecordedPayment', refundId: null, summary: '' })).toBe('Ask the gateway again');
     expect(retryLabel({ kind: 'UnsettledReceipt', refundId: null, summary: '' })).toBe('Read the settlements again');
+    expect(retryLabel({ kind: 'FailedSettlement', refundId: null, summary: '' })).toBe('Read the settlements again');
     expect(
       retryLabel({
         kind: 'RefundMismatch',

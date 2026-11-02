@@ -243,6 +243,13 @@ public sealed record TallyGatewaySettlement(string Number, DateOnly Date, string
 {
     /// <summary>What the settlement clears from the payment-gateway clearing ledger.</summary>
     public decimal Gross => Net + Charges + Tax;
+
+    /// <summary>
+    /// The narration of a correction of the settlement's journal (its reversal when the payout failed, or its
+    /// restoration), whose amounts carry the correction's sign: a reversal's are negative, so its entries are the
+    /// journal's turned round. Null for the settlement's own journal.
+    /// </summary>
+    public string? Correction { get; init; }
 }
 
 /// <summary>Everything that happened in the books of one facility on one day.</summary>
@@ -338,9 +345,9 @@ public static class TallyVoucherBuilder
         entries.Debit(map.GatewayCharges, settlement.Charges);
         entries.Debit(map.GatewayInputGst, settlement.Tax);
         entries.Credit(map.ModeLedger(PaymentMode.PaymentGateway), settlement.Gross);
-        var narration = settlement.Utr is null
+        var narration = settlement.Correction ?? (settlement.Utr is null
             ? $"Payment gateway settlement {settlement.SettlementId}"
-            : $"Payment gateway settlement {settlement.SettlementId}, UTR {settlement.Utr}";
+            : $"Payment gateway settlement {settlement.SettlementId}, UTR {settlement.Utr}");
         return entries.ToVoucher(JournalType, settlement.Date, settlement.Number, narration, settlement.Number);
     }
 

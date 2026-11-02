@@ -147,6 +147,47 @@ public sealed class GatewayReconciliationTests
     }
 
     [Fact]
+    public void A_failed_payout_reverses_the_settlement_journal_in_the_day_it_is_learnt_and_a_later_payout_restores_it()
+    {
+        var settlement = Settlement(976.40m + 488.20m, Payment("pay_A1B2C3D4E5", 1_000m, 23.60m, 3.60m), Payment("pay_F6G7H8I9J0", 500m, 11.80m, 1.80m));
+        settlement.Lines[1].MatchTo(Guid.CreateVersion7(), null, 500m, Branch);
+        var learnt = Day.AddDays(3);
+
+        var reversal = settlement.Correct(SettlementCorrectionKind.Reversed, learnt, SettledAt.AddDays(3));
+        settlement.IsReversed.ShouldBeTrue();
+        var restored = settlement.Correct(SettlementCorrectionKind.Restored, learnt.AddDays(1), SettledAt.AddDays(4));
+        settlement.IsReversed.ShouldBeFalse();
+        (reversal.Seq, restored.Seq, reversal.On).ShouldBe((1, 2, learnt));
+
+        // Each facility's part is corrected in its own books, numbered after its journal.
+        var portions = SettlementJournal.Portions(settlement);
+        var main = portions.Single(p => p.IsOwner);
+        var branch = portions.Single(p => p.FacilityId == Branch);
+        SettlementJournal.CorrectionNumber(settlement, main, reversal).ShouldBe("setl_A1B2C3D4E5-R1");
+        SettlementJournal.CorrectionNumber(settlement, branch, restored).ShouldBe($"{SettlementJournal.VoucherNumber(settlement, branch)}-S2");
+
+        // The reversal is the settlement journal turned round, dated the day the failure was learnt; the restoration is
+        // the journal again.
+        var journal = TallyVoucherBuilder.Build(
+            new TallyDayBook(Day, [], [], [], [], [], [], [], [new TallyGatewaySettlement(settlement.SettlementId, Day, settlement.SettlementId, settlement.Utr, main.Net, main.Charges, main.Tax)]),
+            new TallyLedgerMap()).ShouldHaveSingleItem();
+        var reversed = TallyVoucherBuilder.Build(
+            new TallyDayBook(learnt, [], [], [], [], [], [], [], [GatewaySettlementService.CorrectionOf(settlement, main, reversal, learnt)]),
+            new TallyLedgerMap()).ShouldHaveSingleItem();
+        reversed.ShouldSatisfyAllConditions(
+            v => v.Date.ShouldBe(learnt),
+            v => v.Number.ShouldBe("setl_A1B2C3D4E5-R1"),
+            v => v.Narration.ShouldBe("Reverses journal setl_A1B2C3D4E5 of 25-09-2026: payment gateway settlement setl_A1B2C3D4E5 failed after it was paid out "
+                                      + "(the bank refused or returned the transfer)"),
+            v => v.Entries.ShouldBe(journal.Entries.Select(e => e with { IsDebit = !e.IsDebit })));
+        var again = TallyVoucherBuilder.Build(
+            new TallyDayBook(learnt, [], [], [], [], [], [], [], [GatewaySettlementService.CorrectionOf(settlement, main, restored, learnt)]),
+            new TallyLedgerMap()).ShouldHaveSingleItem();
+        again.Entries.ShouldBe(journal.Entries);
+        again.Narration.ShouldStartWith("Restores journal setl_A1B2C3D4E5 of 25-09-2026");
+    }
+
+    [Fact]
     public void A_day_book_without_settlements_builds_as_before() =>
         TallyVoucherBuilder.Build(new TallyDayBook(Day, [], [], [], [], [], [], []), new TallyLedgerMap()).ShouldBeEmpty();
 
@@ -154,7 +195,7 @@ public sealed class GatewayReconciliationTests
     public void Exceptions_rank_worst_first_in_the_order_the_hospital_set()
     {
         Enum.GetValues<DiscrepancyKind>().OrderBy(GatewayDiscrepancy.RankOf).ShouldBe(
-            [DiscrepancyKind.UnrecordedPayment, DiscrepancyKind.UnsettledReceipt, DiscrepancyKind.AmountMismatch, DiscrepancyKind.RefundMismatch]);
+            [DiscrepancyKind.UnrecordedPayment, DiscrepancyKind.UnsettledReceipt, DiscrepancyKind.FailedSettlement, DiscrepancyKind.AmountMismatch, DiscrepancyKind.RefundMismatch]);
     }
 
     [Fact]

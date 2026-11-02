@@ -867,7 +867,18 @@ stores each settlement once (unique on provider and settlement id) with its line
 the payment a refund came from, the order, amount, fee with GST, GST, credit, debit, method, and the times. Only ids,
 amounts, the UTR and the method are kept, never card or bank details. A settlement already stored only has its status
 updated (created → processed or failed). The reconciliation job reads today and yesterday every hour for every active
-facility, in facility-code order; accountants can read any day of the last year from the screen.
+facility, in facility-code order; accountants can read any day of the last year from the screen. A settlement webhook
+(`settlement.processed`, `settlement.failed`) reads its settlement's day again at once, however long ago it was
+settled (a settlement not stored yet: today's, for the facility the webhook names), and the webhook log says so.
+
+**A payout that fails afterwards.** A settlement paid out (`processed`) that the gateway later reports `failed` (the
+bank refused or returned the transfer) keeps its settlement journal in its own day, which may be in Tally already;
+the failure is a journal of its own, the settlement journal turned round, in the books of the day it is learnt
+(`gateway_settlement_corrections`, voucher `{settlement}-R{n}`, each facility its own part). It is raised as a
+`FailedSettlement` exception (keyed by that voucher number), told to whoever reconciles the gateway in each facility
+with a part of it, and audited (`billing.gateway.settlement_failed`). Paid out after all, the settlement's journal is
+restored the same way (`{settlement}-S{n}`, `billing.gateway.settlement_restored`) and the exception clears. Days in
+Tally are never altered: the books show the journal, its reversal and its restoration each on its own day.
 
 **Shared merchant accounts.** Facilities that use the same gateway account (the all-facility settings) share its
 settlements. The settlement is kept under the first facility that read it, and each line takes the facility of the
@@ -895,6 +906,7 @@ only the one that clashed is merely refreshed.
 |---|---|---|---|
 | 1 | `UnrecordedPayment` | a settled payment has no receipt; or the gateway reports a payment captured but its receipt could not be recorded (the reason is kept on the order and accountants get an alert) | the receipt is recorded |
 | 2 | `UnsettledReceipt` | an online receipt is not in any settlement `settlementDays` after the payment, while the gateway has settled something newer (receipts of the last month are looked at) | a settlement carries the payment, or the payment is reversed as not received |
+| 2 | `FailedSettlement` | a settlement paid out fails afterwards; its journal is reversed in the books of the day it is learnt (accountants get an alert) | the gateway pays the settlement out after all (its journal is restored); "Read the settlements again" reads its day |
 | 3 | `AmountMismatch` | a settled payment's amount differs from its receipt; the gateway adjusted a settlement; a settlement's payout differs from its transactions | the amounts agree on a later match |
 | 4 | `RefundMismatch` | a settled refund is unknown to HC360 or has a different amount; a gateway refund failed (accountants get an alert) | the refund matches, or the bank confirms it; a failed refund only when it is sent again or the bank confirms it, never by a settlement line |
 
@@ -1225,8 +1237,10 @@ are append-mostly and not data-audited; imports and reviews are audited. `OpBill
   the banks offer them as downloads or e-mails, not through the terminal API).
 * **The pharmacy's and the canteen's card sales** are not recorded with references, so they are not matched: their
   terminals are set as `otherTerminals`, and their money still clears through the settlement journal.
-* **Reversing a settlement journal.** A settlement the gateway reports as failed after it was journalled is not
-  reversed in Tally; the accountant corrects it there.
+* **A failed payout settled again in another settlement.** A failed settlement paid out after all is restored, but
+  if the gateway carries its transactions in a new settlement instead, their lines find their receipts already matched
+  by the failed one; the accountant resolves the exception with the new settlement's UTR.
+* **Withdrawing a card or UPI settlement report imported in error** is not possible yet.
 * **Chargebacks and disputes** arrive as gateway adjustments and are listed as amount differences; there is no dispute
   workflow.
 * **A payment on an older order of a prepaid booking** (the patient restarted the checkout and paid both) is found by

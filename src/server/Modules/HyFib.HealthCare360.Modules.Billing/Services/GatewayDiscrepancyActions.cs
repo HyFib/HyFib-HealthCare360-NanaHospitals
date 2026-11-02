@@ -79,6 +79,9 @@ public sealed class GatewayDiscrepancyActions(
             case DiscrepancyKind.UnsettledReceipt:
                 return await ReadSettlementsAgainAsync(discrepancy, ct);
 
+            case DiscrepancyKind.FailedSettlement:
+                return await ReadFailedSettlementAgainAsync(discrepancy, ct);
+
             case DiscrepancyKind.RefundMismatch when discrepancy.RefundId is { } refundId:
                 return await RetryRefundAsync(discrepancy, refundId, ct);
 
@@ -229,6 +232,31 @@ public sealed class GatewayDiscrepancyActions(
         var message = current.Status == DiscrepancyStatus.Resolved
             ? current.Resolution ?? "Settled."
             : problem ?? $"Still not in any settlement of {days[0]:dd MMM} to {days[^1]:dd MMM}.";
+        return await ResultAsync(discrepancy.Id, message, ct);
+    }
+
+    /// <summary>
+    /// Reads the day of a settlement whose payout failed again: paid out after all, its journal is restored and the
+    /// exception clears. The exception's key is its reversal's voucher number (setl_N8a1Bc2d3E4f5G-R1).
+    /// </summary>
+    private async Task<Result<DiscrepancyActionResult>> ReadFailedSettlementAgainAsync(GatewayDiscrepancy discrepancy, CancellationToken ct)
+    {
+        var settlementId = discrepancy.Key[..Math.Max(0, discrepancy.Key.LastIndexOf("-R", StringComparison.Ordinal))];
+        var settlement = await db.Set<GatewaySettlement>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(s => s.SettlementId == settlementId)
+            .Select(s => new { s.FacilityId, s.SettledOn })
+            .FirstOrDefaultAsync(ct);
+        if (settlement is null)
+        {
+            return Error.NotFound(nameof(GatewaySettlement), settlementId);
+        }
+
+        var fetched = await settlements.FetchAsync(settlement.FacilityId, settlement.SettledOn, ct);
+        db.ChangeTracker.Clear();
+        var current = await db.Set<GatewayDiscrepancy>().AsNoTracking().FirstAsync(d => d.Id == discrepancy.Id, ct);
+        var message = current.Status == DiscrepancyStatus.Resolved
+            ? current.Resolution ?? "Paid out after all."
+            : fetched.IsFailure ? fetched.Error!.Message : $"The gateway still reports settlement {settlementId} as failed.";
         return await ResultAsync(discrepancy.Id, message, ct);
     }
 
