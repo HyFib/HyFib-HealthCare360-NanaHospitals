@@ -399,8 +399,12 @@ and grants nothing.
     file, and another who holds `masters.prices.approve` puts it in force after reading what it changes (the file's
     SHA-256, procedures new, changed and retired, scheme rates, and the hospital's packages mapped to procedures it
     retires, reserves for public hospitals or rates otherwise). The rows staged are applied only while they match their
-    SHA-256, and only over the master they were read against; one import waits at a time. Non-payable items and
-    doctor-fee rules still change at once;
+    SHA-256, and only over the master they were read against; one import waits at a time;
+  - a doctor's sharing rule (`doctorfees.rule`): whoever keeps the rules (`doctorfees.rules.manage`) asks, and another
+    who holds `masters.prices.approve` approves every change of its terms, taking it out of use included (its lines fall
+    back to a broader rule, which may share more); a new rule is made out of use until approved, and a rule in use is not
+    deleted. The approver is shown the share before and after, backdating, and what the change would have done to the
+    last 90 days' bill lines. Non-payable items still change at once;
   - correcting a released lab report where the lab sets `lab.separateVerifier`: one pathologist asks, another releases
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
     a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.

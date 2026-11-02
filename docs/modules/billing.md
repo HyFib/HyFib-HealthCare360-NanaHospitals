@@ -415,8 +415,9 @@ for the same terms (409).
 ### Doctor fees — `/api/v1/doctor-fees`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/rules` | rules or payouts manage | → `ShareRuleDto[]` |
-| POST · PUT · DELETE | `/rules` · `/rules/{id}` | `doctorfees.rules.manage` | `SaveShareRuleRequest` (practitioner/item/category/payer type, % or fixed, effective dates) |
+| GET | `/rules?practitionerId&includeInactive` | rules or payouts manage | → `ShareRuleDto[]`, each with `pending` (the terms waiting for approval, who asked, when); a rule out of use with a change waiting is listed without `includeInactive` |
+| POST · PUT | `/rules` · `/rules/{id}` | `doctorfees.rules.manage` | `SaveShareRuleRequest` (practitioner/item/category/payer type, % or fixed, effective dates, in use, notes, `reason` for the approver). The notes are saved at once; the terms are asked for (`doctorfees.rule`, approved with `masters.prices.approve`). POST → 201 `{ id, asked }` (the rule saved out of use, and the request when it was asked in use); PUT → 204 (notes only, or the terms that already wait), 202 with the request, or 409 while another change of the rule waits |
+| DELETE | `/rules/{id}` | `doctorfees.rules.manage` | → 204 for a rule out of use; 409 `doctorfees.rule_in_use` for one in use (take it out of use first, which waits for approval) |
 | GET | `/accruals?practitionerId&from&to&status` (paged) | `doctorfees.payouts.manage` | → `PagedResult<AccrualDto>` |
 | GET | `/payouts?practitionerId&status` (paged) · `/payouts/{id}` | `doctorfees.payouts.manage` | → `PayoutDto` |
 | POST | `/payouts` | `doctorfees.payouts.manage` | `CreatePayoutRequest(practitionerId, period, deductions)` → 201 (`{FAC}DP{YY}{SEQ:5}`; TDS `doctorfees.tds.percent` on gross) |
@@ -424,6 +425,29 @@ for the same terms (409).
 | POST | `/payouts/{id}/pay` | `doctorfees.payouts.manage` | `PayPayoutRequest(reference)` → 204 |
 | DELETE | `/payouts/{id}?version` | `doctorfees.payouts.manage` | → 204 (draft only) |
 | GET | `/statements?practitionerId&from&to` | `doctorfees.payouts.manage` | → `DoctorStatement`: the doctor's fee lines earned in the period (by the IST day each was earned; a cancelled bill adds a negative line dated the day of the cancellation, which the doctor's next payout recovers if the fee was already in a payout), each with its bill, service, billed value, rule and share; the totals earned, reversed, in a payout, paid out and unpaid; and the payouts whose period overlaps it, each with gross, deductions, TDS and net. 400 when `to` is before `from` |
+
+#### A sharing rule's terms are approved by a second person
+A sharing rule decides what a doctor earns of each bill line (DFA-01), and so what the hospital pays out. Its terms
+change only when two people agree (maker-checker): whoever keeps the rules (`doctorfees.rules.manage`) asks, and someone
+else who approves prices (`masters.prices.approve`, the approver of every price in the catalogue) decides, in
+**Approvals**. Nobody approves their own request, and an approval is made only over the terms it replaces (422
+`prices.changed` when the rule changed meanwhile).
+
+* **Every change of terms waits**: whose lines it shares, which (service, category, payer type), how much, when, and
+  putting it in use **or taking it out of use**. The most specific rule in force decides a line's share, so the lines of a
+  rule taken out of use fall back to a broader one (the hospital's default, say), which may share more: that is a change
+  like a raise. A new rule is saved with the terms asked, out of use, until they are approved. Its notes are saved at
+  once.
+* **A rule in use is not deleted** (409): it is taken out of use first, which waits for approval; a rule out of use
+  shares nothing and is deleted at once.
+* **The approver is told what the change does**: the doctor (or every doctor, for the hospital's default), what it
+  applies to, the share before and after, the dates in force, whether it is **backdated** (bills finalized from now for
+  services since its start are shared at it, a long stay's final bill, say), and **what it would have changed on the last
+  90 days' bill lines**: how many lines it would share differently and their share before and after, worked out by the
+  rule that accrues fees, each line shared as on the day the change takes effect.
+* Bills finalized while a change waits accrue at the rule in use; fees already accrued are never re-shared. Approved,
+  the change is audited as `admin` / `doctorfees.rule_changed` (before and after, who asked, who approved), next to the
+  approval's own `approval.requested` and `approval.approved`.
 
 ### Tally — `/api/v1/billing/tally`
 Everything works on the signed-in user's facility. See [The Tally day book](#the-tally-day-book) for what the day book

@@ -1,4 +1,6 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.DoctorFees;
 
@@ -16,9 +18,13 @@ public sealed record ShareRuleDto(
     DateOnly? EffectiveTo,
     bool IsActive,
     string? Notes,
-    uint Version);
+    uint Version,
+    PendingShareRule? Pending = null);
 
-/// <summary>A sharing rule; leave the practitioner empty for the hospital-wide default.</summary>
+/// <summary>
+/// A sharing rule; leave the practitioner empty for the hospital-wide default. Its notes are saved at once; its terms wait
+/// for a second person, with <paramref name="Reason"/> for them.
+/// </summary>
 public sealed record SaveShareRuleRequest(
     Guid? PractitionerId,
     Guid? ServiceItemId,
@@ -30,7 +36,11 @@ public sealed record SaveShareRuleRequest(
     DateOnly? EffectiveTo,
     bool IsActive,
     string? Notes,
-    uint? Version);
+    uint? Version,
+    string? Reason = null);
+
+/// <summary>A rule saved, and the approval its terms wait for, if they were asked for.</summary>
+public sealed record SavedShareRule(Guid Id, ApprovalRequestDto? Asked);
 
 public sealed record AccrualDto(
     Guid Id,
@@ -122,6 +132,7 @@ public sealed class SaveShareRuleRequestValidator : AbstractValidator<SaveShareR
             .Must((request, to) => to is null || to >= request.EffectiveFrom)
             .WithMessage("The end date must be on or after the start date.");
         RuleFor(x => x.Notes).SafeText(300);
+        RuleFor(x => x.Reason).SafeText(500);
     }
 }
 

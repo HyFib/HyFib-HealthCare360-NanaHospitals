@@ -34,8 +34,8 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
         var debridement = await ServiceAsync(server, admin, "Wound debridement", 2000m);
         var suturing = await ServiceAsync(server, admin, "Suturing of a laceration", 1000m);
         var dressing = (await admin.GetAsync<List<ServiceItemDto>>("/api/v1/masters/lookups/services?search=PROC-DRESS")).Single(s => s.Code == "PROC-DRESS");
-        await RuleAsync(accountant, doctor.Id, null, ServiceCategory.Procedure, ShareMethod.Percentage, 40m, today);
-        await RuleAsync(accountant, doctor.Id, suturing.Id, null, ShareMethod.FixedPerUnit, 150m, today);
+        await RuleAsync(server, accountant, doctor.Id, null, ServiceCategory.Procedure, ShareMethod.Percentage, 40m, today);
+        await RuleAsync(server, accountant, doctor.Id, suturing.Id, null, ShareMethod.FixedPerUnit, 150m, today);
 
         // Two bills finalized today with his services, and a dressing that names no doctor.
         var first = await BillAsync(billing, (debridement, 1m, doctor.Id), (suturing, 2m, doctor.Id), (dressing, 1m, null));
@@ -131,16 +131,24 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
         hospital.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", name, null, ServiceCategory.Procedure, null, price, 0m, null, true, false, null, true, null));
 
-    /// <summary>The accountant: a sharing rule for the doctor, in force from today.</summary>
-    internal static Task RuleAsync(
-        ApiClient accountant, Guid doctorId, Guid? serviceItemId, ServiceCategory? category, ShareMethod method, decimal value, DateOnly from) =>
-        accountant.PostAsync($"{Fees}/rules", new SaveShareRuleRequest(doctorId, serviceItemId, category, null, method, value, from, null, true, null, null));
+    /// <summary>
+    /// The accountant: a sharing rule for the doctor, in force from <paramref name="from"/>, put in use by the other
+    /// administrator who approves prices (a rule's terms wait for a second person). Its id.
+    /// </summary>
+    internal static async Task<Guid> RuleAsync(
+        HospitalServer hospital, ApiClient accountant, Guid doctorId, Guid? serviceItemId, ServiceCategory? category, ShareMethod method, decimal value, DateOnly from)
+    {
+        var saved = await accountant.PostAsync<SavedShareRule>($"{Fees}/rules",
+            new SaveShareRuleRequest(doctorId, serviceItemId, category, null, method, value, from, null, true, null, null));
+        await hospital.ApprovePriceAsync(saved.Asked.ShouldNotBeNull().Id);
+        return saved.Id;
+    }
 
     /// <summary>
     /// Billing desk: bills a new patient's services, each with its doctor (or none), and finalizes the bill, which
     /// accrues the doctors' fees.
     /// </summary>
-    private async Task<BillDetail> BillAsync(ApiClient billing, params (ServiceItemDto Service, decimal Quantity, Guid? DoctorId)[] lines)
+    internal async Task<BillDetail> BillAsync(ApiClient billing, params (ServiceItemDto Service, decimal Quantity, Guid? DoctorId)[] lines)
     {
         var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(null, await PatientAsync(), null));
         foreach (var (service, quantity, doctorId) in lines)
@@ -176,7 +184,7 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
     /// Today in the hospital's calendar (IST). Fees are dated the day they are earned, so the test must not straddle
     /// midnight: started in the last two minutes of a day, it waits for the next.
     /// </summary>
-    private async Task<DateOnly> HospitalDayAsync()
+    internal async Task<DateOnly> HospitalDayAsync()
     {
         var clock = server.Services.GetRequiredService<TimeProvider>();
         var untilMidnight = BillingTime.StartOfDay(BillingTime.Today(clock).AddDays(1)) - clock.GetUtcNow();
@@ -188,7 +196,7 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
         return BillingTime.Today(clock);
     }
 
-    private static string StatementPath(Guid doctorId, DateOnly from, DateOnly to) =>
+    internal static string StatementPath(Guid doctorId, DateOnly from, DateOnly to) =>
         $"{Fees}/statements?practitionerId={doctorId}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}";
 
     /// <summary>Each fee line of a statement (bill, service, billed value, rule, share, status, reversal), in a fixed order.</summary>
