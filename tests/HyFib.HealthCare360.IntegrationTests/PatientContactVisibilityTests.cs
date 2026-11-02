@@ -164,7 +164,7 @@ public sealed class PatientContactVisibilityTests(HospitalServer server)
             .ToList();
         var suffix = Letters(8).ToLowerInvariant();
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
-        var role = await admin.PostAsync<RoleDetail>("/api/v1/admin/roles", new SaveRoleRequest(
+        var role = await server.CreateRoleAsync(admin, new SaveRoleRequest(
             $"IT {(withContacts ? "with" : "without")} contacts {suffix}", "Every permission but administration", permissions, Version: null));
         var userName = "it-prv03-" + suffix;
         await server.CreateStaffAccountAsync(userName, role.Name);

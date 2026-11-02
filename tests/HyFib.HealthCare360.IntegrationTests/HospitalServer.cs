@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
@@ -480,7 +481,7 @@ public sealed class HospitalServer : IAsyncLifetime
                          ?? throw new InvalidOperationException("The hospital administrator has no facility.");
         var temporary = "It-first-" + Guid.NewGuid().ToString("N");
         var practitionerId = userName == Users.SecondDoctor ? await SecondConsultantAsync() : null;
-        await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", new CreateUserRequest(
+        await CreateUserAsync(admin, new CreateUserRequest(
             userName, $"Demo {role}", Email: null, Phone: null, [roleId], [facilityId], facilityId, practitionerId, temporary));
 
         var first = await LogInAsync(http, userName, temporary);
@@ -491,6 +492,68 @@ public sealed class HospitalServer : IAsyncLifetime
 
         using var response = await PostChangePasswordAsync(http, restricted, temporary);
         return FullAccess(userName, await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/change-password"));
+    }
+
+    /// <summary>
+    /// Access is given by two people (#155): approves the grant <paramref name="approvalId"/> as whichever of the seed's two
+    /// administrators (the Super Administrator and the hospital administrator) did not ask for it, as a second
+    /// administrator approves a new member of staff's roles.
+    /// </summary>
+    public async Task ApproveGrantAsync(Guid approvalId)
+    {
+        var checker = await SignInAsync(Users.Admin);
+        var request = await checker.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
+        if (!request.CanDecide)
+        {
+            checker = await SignInAsync(Users.HospitalAdmin);
+            request = await checker.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
+        }
+
+        await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Approved for the tests.", request.Version));
+    }
+
+    /// <summary>A member of staff created through the admin API, their roles and facilities approved by the other administrator.</summary>
+    public async Task<TemporaryPasswordResponse> CreateUserAsync(ApiClient maker, CreateUserRequest request)
+    {
+        var created = await maker.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", request);
+        if (created.ApprovalId is { } approval)
+        {
+            await ApproveGrantAsync(approval);
+        }
+
+        return created;
+    }
+
+    /// <summary>A role created through the admin API, its permissions approved by the other administrator where one may.</summary>
+    public async Task<RoleDetail> CreateRoleAsync(ApiClient maker, SaveRoleRequest request)
+    {
+        var role = await maker.PostAsync<RoleDetail>("/api/v1/admin/roles", request);
+        if (role.PendingGrant is not { } pending)
+        {
+            return role;
+        }
+
+        await ApproveGrantAsync(pending.ApprovalId);
+        return await maker.GetAsync<RoleDetail>($"/api/v1/admin/roles/{role.Id}");
+    }
+
+    /// <summary>
+    /// A user or role changed through the admin API (PUT), whatever it added approved by the other administrator: the
+    /// change is then as it would have been in one step.
+    /// </summary>
+    public async Task UpdateAndApproveAsync(ApiClient maker, string path, object body)
+    {
+        using var response = await maker.SendRawAsync(HttpMethod.Put, path, body);
+        if (response.StatusCode == HttpStatusCode.Accepted)
+        {
+            await ApproveGrantAsync((await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Put, path)).Id);
+            return;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"PUT {path} failed: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)}");
+        }
     }
 
     // The seed signs the first consultant (by code) in as the doctor; the second doctor is the next one.

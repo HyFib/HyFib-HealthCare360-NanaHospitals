@@ -45,17 +45,17 @@ public sealed class ScaleOutTests(HospitalServer server)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var suffix = Guid.NewGuid().ToString("N")[..8];
-        var role = await admin.PostAsync<RoleDetail>("/api/v1/admin/roles", new SaveRoleRequest(
+        var role = await server.CreateRoleAsync(admin, new SaveRoleRequest(
             "IT scale-out " + suffix, "Reads the user list", [PlatformPermissions.UsersRead], Version: null));
-        var user = await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", NewUser("it-scale-" + suffix, role.Id));
+        var user = await server.CreateUserAsync(admin, NewUser("it-scale-" + suffix, role.Id));
         await using var other = await SecondNode.StartAsync(server, Ct);
 
         var cached = await other.Permissions.GetPermissionsAsync(user.UserId, Ct);
         cached.ShouldContain(PlatformPermissions.UsersRead);
         (await other.Permissions.GetPermissionsAsync(user.UserId, Ct)).ShouldBeSameAs(cached, "the other node keeps what it read for two minutes");
 
-        // On the test server: the role loses the permission.
-        await admin.PutAsync($"/api/v1/admin/roles/{role.Id}", new SaveRoleRequest(role.Name, role.Description, [PlatformPermissions.AuditRead], role.Version));
+        // On the test server: the role loses the permission at once, and gains another once a second administrator approves it.
+        await server.UpdateAndApproveAsync(admin, $"/api/v1/admin/roles/{role.Id}", new SaveRoleRequest(role.Name, role.Description, [PlatformPermissions.AuditRead], role.Version));
 
         (await SecondNode.EventuallyAsync(
                 async () => !(await other.Permissions.GetPermissionsAsync(user.UserId, Ct)).Contains(PlatformPermissions.UsersRead), AtOnce, Ct))
@@ -487,7 +487,7 @@ public sealed class ScaleOutTests(HospitalServer server)
         var roleId = (await admin.GetAsync<List<RoleListItem>>("/api/v1/admin/roles")).Single(r => r.Name == SystemRoles.Billing).Id;
         var facility = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId;
         var name = "it-scale-" + Guid.NewGuid().ToString("N")[..8];
-        var created = await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", new CreateUserRequest(
+        var created = await server.CreateUserAsync(admin, new CreateUserRequest(
             name, name, Email: null, Phone: null, [roleId], facility is { } f ? [f] : [], facility, PractitionerId: null, TemporaryPassword: null));
         using var signedIn = await server.AnonymousFrom(NewAddress()).SendRawAsync(HttpMethod.Post, "/api/v1/auth/login",
             new LoginRequest(name, created.TemporaryPassword, DeviceId: device?.Id, DeviceSecret: device?.Secret));

@@ -395,7 +395,7 @@ public sealed class SignInHardeningTests(HospitalServer server)
     {
         // Made while the test server asks nobody for two-step verification.
         var superAdmin = await server.SignInAsync(HospitalServer.Users.Admin);
-        await superAdmin.PostAsync<RoleDetail>("/api/v1/admin/roles", new SaveRoleRequest(
+        await server.CreateRoleAsync(superAdmin, new SaveRoleRequest(
             "IT audit reviewers", "Reads the audit trail", [PlatformPermissions.AuditRead], Version: null));
         await server.CreateStaffAccountAsync("it-auditor", "IT audit reviewers");
         await server.CreateStaffAccountAsync("it-accountant", SystemRoles.Accountant);
@@ -429,7 +429,7 @@ public sealed class SignInHardeningTests(HospitalServer server)
     {
         var roleId = (await admin.GetAsync<List<RoleListItem>>("/api/v1/admin/roles")).Single(r => r.Name == role).Id;
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId;
-        return await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", new CreateUserRequest(
+        return await server.CreateUserAsync(admin, new CreateUserRequest(
             name, $"Test {name}", email, Phone: null, [roleId], facilityId is { } f ? [f] : [], facilityId, PractitionerId: null, TemporaryPassword: null));
     }
 

@@ -214,7 +214,7 @@ public sealed class CorporateCheckupTests(HospitalServer server)
 
         // A role the hospital made for its check-up desk: health check-ups, nothing of billing or insurance.
         var suffix = Letters(8).ToLowerInvariant();
-        var role = await (await server.SignInAsync(HospitalServer.Users.Admin)).PostAsync<RoleDetail>("/api/v1/admin/roles", new SaveRoleRequest(
+        var role = await server.CreateRoleAsync(await server.SignInAsync(HospitalServer.Users.Admin), new SaveRoleRequest(
             "IT check-up desk " + suffix, "Runs corporate check-up drives", [ClinicalPermissions.HealthCheckManage], Version: null));
         await server.CreateStaffAccountAsync("it-checkup-" + suffix, role.Name);
         var desk = await server.SignInAsync("it-checkup-" + suffix);
