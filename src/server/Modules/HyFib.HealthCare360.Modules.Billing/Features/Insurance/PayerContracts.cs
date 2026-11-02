@@ -56,6 +56,10 @@ public sealed record SavePayerRequest(
     uint? Version,
     string? Reason = null);
 
+/// <summary>
+/// An item of the non-payable list, or one asked to be added (<see cref="Waiting"/> says so, and it is not in force); an
+/// item asked to be taken off is in force until approved.
+/// </summary>
 public sealed record NonPayableItemDto(
     Guid Id,
     Guid? PayerId,
@@ -64,9 +68,14 @@ public sealed record NonPayableItemDto(
     string? ServiceCode,
     string? ServiceName,
     ServiceCategory? Category,
-    string? Notes);
+    string? Notes,
+    PendingNonPayable? Waiting = null);
 
-public sealed record SaveNonPayableItemRequest(Guid? PayerId, Guid? ServiceItemId, ServiceCategory? Category, string? Notes);
+/// <summary>An item to add to the non-payable list, with <paramref name="Reason"/> for the second person who approves it.</summary>
+public sealed record SaveNonPayableItemRequest(Guid? PayerId, Guid? ServiceItemId, ServiceCategory? Category, string? Notes, string? Reason = null);
+
+/// <summary>Why an item should be taken off the non-payable list, for the second person who approves it.</summary>
+public sealed record RemoveNonPayableItemRequest(string? Reason);
 
 /// <summary>A policy as shown in lists and forms: the policy number is always masked.</summary>
 public sealed record PolicyDto(
@@ -143,7 +152,13 @@ public sealed class SaveNonPayableItemRequestValidator : AbstractValidator<SaveN
         RuleFor(x => x).Must(x => (x.ServiceItemId is null) != (x.Category is null))
             .WithName("serviceItemId").WithMessage("Name either a service or a category.");
         RuleFor(x => x.Notes).SafeText(300);
+        RuleFor(x => x.Reason).SafeText(500);
     }
+}
+
+public sealed class RemoveNonPayableItemRequestValidator : AbstractValidator<RemoveNonPayableItemRequest>
+{
+    public RemoveNonPayableItemRequestValidator() => RuleFor(x => x.Reason).SafeText(500);
 }
 
 public sealed class SavePolicyRequestValidator : AbstractValidator<SavePolicyRequest>

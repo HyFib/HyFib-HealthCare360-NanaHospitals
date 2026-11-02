@@ -42,6 +42,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<StayPlanApprovals>();
         services.AddScoped<PackageApprovals>();
         services.AddScoped<ShareRuleApprovals>();
+        services.AddScoped<NonPayableApprovals>();
         services.AddScoped<RateListService>();
         services.AddSingleton<PublicRateListPdf>();
         services.AddScoped<ChargeService>();

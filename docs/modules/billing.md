@@ -385,8 +385,9 @@ A self-paying patient's long stay can be billed in parts, so the family pays as 
 |---|---|---|---|
 | GET | `/payers` · `/payers/{id}` | payers/policies/pre-auth/claims manage, `op.create`, `ip.manage`, `charges.read` | → `PayerListItem[]` / `PayerDetail` |
 | POST · PUT | `/payers` · `/payers/{id}` | `insurance.payers.manage` | `SavePayerRequest` (`reason` for the approver) → 201 `PayerDetail` (a new payer out of use, `pendingTerms` when its terms wait) / 200 `PayerDetail` or 202 `ApprovalRequestDto` (`insurance.payer_terms`) when terms are asked; 409 `approval.already_requested` when other terms wait |
-| GET | `/non-payable-items?payerId` | payers/claims manage, `ip.manage` | → `NonPayableItemDto[]` |
-| POST · DELETE | `/non-payable-items` · `/{id}` | `insurance.payers.manage` | `SaveNonPayableItemRequest` → 201 / 204 |
+| GET | `/non-payable-items?payerId` | payers/claims manage, `ip.manage` | → `NonPayableItemDto[]`: the items in force, each with `waiting` when taking it off waits for approval, and the items asked to be added (`waiting.change` `Add`; not in force yet) |
+| POST | `/non-payable-items` | `insurance.payers.manage` | `SaveNonPayableItemRequest` (payer or every payer, a service or a whole category, notes, `reason` for the approver) → **202** with the approval request (`insurance.non_payable`, approved with `masters.prices.approve`); nothing is added until it is approved; 409 `insurance.non_payable_exists` when the list has it, 409 `approval.already_requested` while the same item waits to be added |
+| POST | `/non-payable-items/{id}/remove` | `insurance.payers.manage` | `RemoveNonPayableItemRequest(reason)` → **202** with the approval request; the item stays in force until it is approved; 409 while another change of it waits |
 | GET | `/policies?patientId&includeInactive` · `/policies/{id}` | policies/pre-auth/claims manage, `ip.manage`, `op.create` | → `PolicyDto[]` (number masked) |
 | GET | `/policies/search?policyNumber` | policies/claims manage | → `PolicyDto[]` (blind-index lookup) |
 | GET | `/policies/{id}/policy-number` | policies/pre-auth/claims manage | → `PolicyNumberDto` (decrypted; audited) |
@@ -448,6 +449,28 @@ else who approves prices (`masters.prices.approve`, the approver of every price 
 * Bills finalized while a change waits accrue at the rule in use; fees already accrued are never re-shared. Approved,
   the change is audited as `admin` / `doctorfees.rule_changed` (before and after, who asked, who approved), next to the
   approval's own `approval.requested` and `approval.approved`.
+
+#### The non-payable list is changed by two people
+The non-payable list (IRDAI non-payables: admission kits, toiletries and the like) decides who pays a charge on an
+insured bill: the payer, or the patient. Both ways of changing it move money, so both wait for a second person
+(maker-checker): whoever keeps the payers (`insurance.payers.manage`) asks to **add** an item (for one payer or every
+payer; a service or a whole category) or to **take one off**, with a reason, and someone else who approves prices
+(`masters.prices.approve`) decides in **Approvals** (`insurance.non_payable`).
+
+* **Added**, the patient pays for the item on the insured bills made from then; until it is approved the payer is charged
+  for it, and the list shows it as "to be added". **Taken off**, the payer is charged for it again (and an insurer may
+  disallow it at the claim); until it is approved it stays on the list, shown as "to be taken off".
+* **The approver is told what it does to the charges not yet billed** of insured patients, on out-patient visits on a
+  payer and on stays in progress on one: how many charges, of how many patients, and how much would be charged to the
+  patients instead of the payer, or the other way (charges another item of the list already makes non-payable are left
+  out).
+* One change of an item waits at a time: an item asked to be added is the same item whatever its notes (the same payer,
+  and the same service or category), so asking for it again while it waits is refused (409
+  `approval.already_requested`). An item the list already has is refused (409 `insurance.non_payable_exists`), and an
+  approval adds nothing over the same item put on the list meanwhile (422 `insurance.non_payable_exists`); taking off an
+  item removed or changed meanwhile takes off nothing (422 `prices.changed`). Nobody approves their own request.
+  Approved, the change is audited as `admin` / `insurance.non_payable_changed` (who asked, who approved), next to the
+  approval's own events.
 
 ### Tally — `/api/v1/billing/tally`
 Everything works on the signed-in user's facility. See [The Tally day book](#the-tally-day-book) for what the day book
@@ -1181,8 +1204,6 @@ are append-mostly and not data-audited; imports and reviews are audited. `OpBill
   whether the hospital is public.
 * **Packages that span several visits**, such as antenatal care or a course of physiotherapy: an OP package prices one
   bill.
-* **Non-payable items** (what a payer never pays, so the patient does) are still added and removed by one person, as
-  are doctor-fee rules.
 * **A visit's payer** is set at the front desk without a second person; an out-patient is priced on the plan of the
   payer chosen there. A stay's plan other than its payer's waits for approval; a visit has no plan of its own to choose.
 * **A failed gateway refund paid another way.** The refund stays paid through the gateway in HC360; the accountant
