@@ -42036,6 +42036,139 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("outbox_messages", "platform");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Platform.Networking.AlertIncident", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("AcknowledgedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("acknowledged_at");
+
+                    b.Property<string>("AcknowledgedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("acknowledged_by");
+
+                    b.Property<Guid?>("AcknowledgedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("acknowledged_by_id");
+
+                    b.Property<DateTimeOffset?>("ClearedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cleared_at");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("level");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("message");
+
+                    b.PrimitiveCollection<List<Guid>>("OnCallMessageIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("on_call_message_ids");
+
+                    b.Property<DateTimeOffset>("RaisedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("raised_at");
+
+                    b.Property<DateTimeOffset?>("RemindedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reminded_at");
+
+                    b.Property<DateTimeOffset?>("SecondContactAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("second_contact_at");
+
+                    b.PrimitiveCollection<List<Guid>>("SecondContactMessageIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("second_contact_message_ids");
+
+                    b.Property<string>("Server")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("server");
+
+                    b.Property<DateTimeOffset?>("SupportAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("support_at");
+
+                    b.PrimitiveCollection<List<Guid>>("SupportMessageIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("support_message_ids");
+
+                    b.Property<DateTimeOffset?>("ToldAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("told_at");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_alert_incidents");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_alert_incidents_is_deleted");
+
+                    b.HasIndex("RaisedAt")
+                        .HasDatabaseName("ix_alert_incidents_raised_at");
+
+                    b.HasIndex("Code", "Server")
+                        .IsUnique()
+                        .HasDatabaseName("ix_alert_incidents_code_server")
+                        .HasFilter("cleared_at IS NULL AND NOT is_deleted");
+
+                    b.ToTable("alert_incidents", "platform");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Networking.ServerNode", b =>
                 {
                     b.Property<string>("Node")

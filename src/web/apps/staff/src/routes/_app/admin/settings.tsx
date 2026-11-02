@@ -59,6 +59,13 @@ const KNOWN: Record<string, string> = {
     "IT's mobile number, which gets an SMS for each critical warning in System health (a day later again while it lasts), and when the server's WiFi drops or its adapter disappears, its signal stays weak, or its network is not secure. With MSG91, the system.alert SMS template needs its DLT template id.",
   'alerts.oncallWhatsApp':
     'Also send those alerts to the on-call number on WhatsApp (off if not set, true turns it on). The WhatsApp provider must have the system_alert template approved.',
+  'alerts.escalationPhone':
+    'The second contact (say, the IT head): gets the SMS of a critical alert nobody acknowledged in time, or that reached nobody at IT on-call. Not set: it goes on to HyFib support.',
+  'alerts.supportPhone':
+    "HyFib support's number: gets the SMS of a critical alert the second contact did not acknowledge in time either, with the hospital's name. Not set: nobody is paged after the second contact.",
+  'alerts.escalateMinutes':
+    'Minutes IT on-call has to acknowledge a critical alert before the second contact is paged (15 if not set, 0 to 1440; 0 pages at the next check, within five minutes).',
+  'alerts.supportMinutes': 'Minutes the second contact has before HyFib support is paged (30 if not set, 0 to 1440).',
   'alerts.heartbeatUrl.secret':
     "The address a heartbeat monitor outside the hospital gives (a dead-man's switch): the server that runs the jobs fetches it every few minutes while the database answers, and the monitor raises its alarm when that stops, as in a power cut or a stopped server. https, or http to a private address on the hospital's network. Kept encrypted and never shown again: whoever has it could fetch it and hide an outage.",
   'alerts.heartbeatMinutes':

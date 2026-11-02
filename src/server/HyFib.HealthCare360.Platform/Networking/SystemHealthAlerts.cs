@@ -1,10 +1,4 @@
-using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
-using HyFib.HealthCare360.Platform.Notifications;
-using HyFib.HealthCare360.Platform.Persistence;
-using HyFib.HealthCare360.Platform.Security;
-using HyFib.HealthCare360.Platform.Settings;
-using HyFib.HealthCare360.SharedKernel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -14,14 +8,15 @@ namespace HyFib.HealthCare360.Platform.Networking;
 
 /// <summary>
 /// Tells people when System health turns critical, rather than waiting for someone to open it (DED-17): every five
-/// minutes the server that runs the jobs builds the report, and each critical warning that was not there at the last check
-/// goes to everyone who may see System health, in the app, and to the IT on-call number by SMS (and WhatsApp when the
-/// hospital turned it on), as Wi-Fi alerts do (<see cref="WifiMonitor"/>). A warning is told again a day after it was
-/// last told while it lasts, so one put off at go-live, such as nobody holding the backups' recovery key, is not forgotten
-/// (audit P8); and again as soon as it clears and comes back. After a restart the ones still there are told once more.
-/// The WiFi warnings are the WiFi monitor's to tell: it tells a drop, a lost adapter or an insecure network as it happens,
-/// and not at all where the hospital turned it off. An alert drill's warning is told as any other, and the drill keeps when,
-/// and the messages it went out in (<see cref="AlertDrills"/>, audit P2).
+/// minutes the server that runs the jobs builds the report, and each critical warning becomes an alert someone must
+/// acknowledge (<see cref="AlertIncidents"/>, audit P2). It goes at once to everyone who may see System health, in the app,
+/// and to the IT on-call number by SMS (and WhatsApp when the hospital turned it on), as Wi-Fi alerts do
+/// (<see cref="WifiMonitor"/>); while nobody acknowledges it, to the second contact and then HyFib support
+/// (<see cref="AlertEscalation"/>). It is told again a day after it was last told while it lasts, so one put off at
+/// go-live, such as nobody holding the backups' recovery key, is not forgotten (audit P8); and again, as a new alert,
+/// when it clears and comes back. The alerts are kept in the database, so a restart tells none again. The WiFi warnings are the WiFi monitor's to tell: it tells a drop, a lost adapter or an insecure network as it
+/// happens, and not at all where the hospital turned it off. An alert drill's warning is told as any other, and the drill
+/// keeps when, and the messages it went out in (<see cref="AlertDrills"/>, audit P2).
 /// </summary>
 internal sealed class SystemHealthAlerts(
     IServiceScopeFactory scopeFactory, IOptions<PlatformOptions> options, TimeProvider time, ILogger<SystemHealthAlerts> logger) : BackgroundService
@@ -34,8 +29,6 @@ internal sealed class SystemHealthAlerts(
     /// <summary>How long after it was told a warning that lasts is told again.</summary>
     public static readonly TimeSpan RemindAfter = TimeSpan.FromDays(1);
 
-    // When each warning still there was last told.
-    private readonly Dictionary<string, DateTimeOffset> _told = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _checking = new(1, 1);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -59,7 +52,7 @@ internal sealed class SystemHealthAlerts(
         }
     }
 
-    /// <summary>One check: tells the critical warnings not told since they appeared, or not for a day, and returns them.</summary>
+    /// <summary>One check: takes each critical warning's alert the step it is due, and returns the warnings told, first or again.</summary>
     public async Task<IReadOnlyList<HealthWarning>> CheckAsync(CancellationToken cancellationToken)
     {
         await _checking.WaitAsync(cancellationToken);
@@ -70,59 +63,13 @@ internal sealed class SystemHealthAlerts(
             var critical = (await services.GetRequiredService<SystemHealthService>().BuildAsync(cancellationToken)).Warnings
                 .Where(w => w.Severity == "critical" && !w.Code.StartsWith("wifi.", StringComparison.Ordinal))
                 .ToList();
-
-            // One that cleared is told again if it comes back.
-            foreach (var cleared in _told.Keys.Except(critical.Select(Key)).ToList())
+            var told = await services.GetRequiredService<AlertIncidents>().CheckAsync(critical, time.GetUtcNow(), cancellationToken);
+            if (told.Count > 0)
             {
-                _told.Remove(cleared);
+                logger.LogWarning("System health is critical: {Warnings}", string.Join("; ", told.Select(w => w.Code)));
             }
 
-            var now = time.GetUtcNow();
-            var fresh = critical.Where(w => !_told.TryGetValue(Key(w), out var told) || now - told >= RemindAfter).ToList();
-            if (fresh.Count == 0)
-            {
-                return fresh;
-            }
-
-            var notifications = services.GetRequiredService<INotificationService>();
-            var onCall = await WifiMonitor.OnCallAsync(services.GetRequiredService<ISettingsService>(), cancellationToken);
-            var drills = new List<(string Code, IReadOnlyList<Guid> LogIds)>();
-            foreach (var warning in fresh)
-            {
-                var server = warning.Server ?? Environment.MachineName;
-                await notifications.NotifyPermissionHoldersAsync(PlatformPermissions.SystemRead, null, Title,
-                    warning.Server is null ? warning.Message : $"{warning.Message} (server {warning.Server})", "/admin/system", "system", "critical", cancellationToken);
-
-                // Tried through an internet outage until the reminder after it is due, which takes its place while the warning
-                // lasts: the outage ends with one message, not one for every day it lasted.
-                IReadOnlyList<Guid> queued = [];
-                if (!string.IsNullOrWhiteSpace(onCall.Phone))
-                {
-                    queued = notifications.Queue(AlertReadiness.AlertTemplate, new NotificationRecipient(Phone.Normalize(onCall.Phone), null, null, "IT on-call"),
-                        new Dictionary<string, string> { ["server"] = server, ["message"] = warning.Message },
-                        onCall.WhatsApp ? [NotificationChannel.Sms, NotificationChannel.WhatsApp] : [NotificationChannel.Sms], RemindAfter);
-                }
-
-                if (warning.Code.StartsWith(AlertDrills.WarningPrefix, StringComparison.Ordinal))
-                {
-                    drills.Add((warning.Code, queued));
-                }
-            }
-
-            var db = services.GetRequiredService<HospitalDbContext>();
-            await db.SaveChangesAsync(cancellationToken);
-            foreach (var warning in fresh)
-            {
-                _told[Key(warning)] = now;
-            }
-
-            // A drill keeps when it was told, and the messages it went out in, for its timings.
-            foreach (var (code, logIds) in drills)
-            {
-                await AlertDrills.RecordToldAsync(db, services.GetRequiredService<IAuditLogger>(), time, code, logIds, cancellationToken);
-            }
-            logger.LogWarning("System health is critical: {Warnings}", string.Join("; ", fresh.Select(w => w.Code)));
-            return fresh;
+            return told;
         }
         finally
         {
@@ -135,6 +82,4 @@ internal sealed class SystemHealthAlerts(
         _checking.Dispose();
         base.Dispose();
     }
-
-    private static string Key(HealthWarning warning) => $"{warning.Code}|{warning.Server}";
 }
