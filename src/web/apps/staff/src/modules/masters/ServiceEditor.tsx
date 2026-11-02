@@ -1,4 +1,5 @@
-import { Link, MessageBar, MessageBarBody } from '@fluentui/react-components';
+import { Link, MessageBar, MessageBarBody, MessageBarTitle } from '@fluentui/react-components';
+import { formatInr } from '@hc360/core';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   FormGrid,
@@ -17,6 +18,8 @@ import { useState } from 'react';
 import { useForm, type Control } from 'react-hook-form';
 import { useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
+import { askedForApproval } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import { SERVICE_CATEGORIES, SERVICE_CATEGORY_LABEL } from '@/modules/billing/labels';
 import {
   mastersApi,
@@ -24,6 +27,7 @@ import {
   refreshAfterMasterChange,
   type LocalLanguageItem,
   type ServiceItemDto,
+  type ServicePriceTerms,
 } from './api';
 import {
   PERMANENT_CODE_HINT,
@@ -80,8 +84,19 @@ function ServiceEditor({
   const save = useMutation({
     mutationFn: (values: ServiceForm) =>
       mastersApi.saveService(service?.id ?? null, toServiceRequest(values, service, loadedVersion)),
-    onSuccess: () => {
-      notify.success(service ? 'Service saved' : 'Service added', 'New bills and orders use it from now on.');
+    onSuccess: (result, values) => {
+      // A price changes only when two people agree: a save that changes it says it was asked for, not that it was made.
+      const asked =
+        askedForApproval(result) ??
+        (newServiceAsked(result) ? { summary: `The price of ${values.name.trim()}` } : null);
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Someone who may approve prices decides it; until then ${service ? 'the price in use is charged' : 'the service is not in use'}.`,
+        );
+      } else {
+        notify.success(service ? 'Service saved' : 'Service added', 'New bills and orders use it from now on.');
+      }
       refreshAfterMasterChange(queryClient);
     },
     onError: (error) =>
@@ -102,15 +117,54 @@ function ServiceEditor({
       submitLabel={service ? 'Save' : 'Add service'}
       onSubmit={form.handleSubmit((values) => save.mutate(values, { onSuccess: guard.close }))}
     >
+      {service?.pendingPrice && (
+        <PendingGrantNotice
+          approvalId={service.pendingPrice.approvalId}
+          what={pendingWhat(service, service.pendingPrice.asked)}
+          requestedBy={service.pendingPrice.requestedBy}
+          requestedAt={service.pendingPrice.requestedAt}
+          decides="Someone who may approve prices decides it; until then the price in use is charged. The form shows it as asked."
+        />
+      )}
       <ServiceFields
         control={form.control}
         editing={service !== null}
         departmentOptions={departmentOptions}
-        currentTaxRate={service?.taxRate ?? null}
+        currentTaxRate={service?.pendingPrice?.asked.taxRate ?? service?.taxRate ?? null}
         languages={named}
       />
     </MasterDrawer>
   );
+}
+
+/** A new service's save that left its price waiting for approval: it is made out of use until then. */
+function newServiceAsked(result: unknown): boolean {
+  return result !== null && typeof result === 'object' && 'approvalId' in result && Boolean(result.approvalId);
+}
+
+/** What waits for approval, against what is charged now. */
+function pendingWhat(service: ServiceItemDto, asked: ServicePriceTerms): string {
+  const parts = [
+    asked.basePrice === service.basePrice
+      ? `Price ${formatInr(asked.basePrice)}`
+      : `Price ${formatInr(asked.basePrice)} (now ${formatInr(service.basePrice)})`,
+  ];
+  if (asked.taxRate !== service.taxRate) {
+    const gst = (rate: number) => (rate === 0 ? 'exempt' : `${rate}%`);
+    parts.push(`GST ${gst(asked.taxRate)} (now ${gst(service.taxRate)})`);
+  }
+  if (asked.isPriceEditable !== service.isPriceEditable) {
+    parts.push(
+      asked.isPriceEditable ? 'the counter may change the price' : 'the counter may no longer change the price',
+    );
+  }
+  if (asked.isDiscountAllowed !== service.isDiscountAllowed) {
+    parts.push(asked.isDiscountAllowed ? 'discounts allowed' : 'discounts no longer allowed');
+  }
+  if (asked.isActive && !service.isActive) {
+    parts.push('put in use');
+  }
+  return parts.join('; ');
 }
 
 /**
@@ -169,8 +223,9 @@ export function ServiceFields({
             <FullRow>
               <MessageBar intent="info">
                 <MessageBarBody>
-                  A facility&apos;s rate list prints each service&apos;s name in the local language too. Enter the
-                  facility&apos;s state in Setup › Facilities to name services in its language here.
+                  <MessageBarTitle>Names in the local language</MessageBarTitle>A facility&apos;s rate list prints each
+                  service&apos;s name in the local language too. Enter the facility&apos;s state in Setup › Facilities
+                  to name services in its language here.
                 </MessageBarBody>
               </MessageBar>
             </FullRow>
@@ -243,8 +298,17 @@ export function ServiceFields({
           label="The billing counter can change the price"
           hint="For services priced case by case, such as a procedure."
         />
+        <TextAreaField
+          control={control}
+          name="reason"
+          label="Reason for a price change, for the approver"
+          rows={2}
+          maxLength={500}
+          hint="A new price or GST rate, counter pricing, discounts, or putting the service in use waits for someone who may approve prices."
+        />
         <MessageBar intent="info">
           <MessageBarBody>
+            <MessageBarTitle>Plan prices</MessageBarTitle>
             Corporate, insurance and scheme patients pay their tariff plan&apos;s price.{' '}
             {canPrice ? (
               <Link as="button" type="button" inline onClick={() => void navigate({ to: '/billing/tariffs' })}>

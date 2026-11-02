@@ -174,6 +174,28 @@ export interface ServiceItemDto {
    * language under the English name.
    */
   localNames: Record<string, string>;
+  /** The price terms waiting for someone who may approve prices (maker-checker), on a single service's read. */
+  pendingPrice?: PendingServicePrice | null;
+}
+
+/**
+ * What a service charges a patient without a tariff plan: its price and GST rate, counter pricing, discounts, and whether
+ * it is in use.
+ */
+export interface ServicePriceTerms {
+  basePrice: number;
+  taxRate: number;
+  isPriceEditable: boolean;
+  isDiscountAllowed: boolean;
+  isActive: boolean;
+}
+
+/** A service's price terms asked for and waiting for someone who may approve prices. */
+export interface PendingServicePrice {
+  approvalId: string;
+  asked: ServicePriceTerms;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 /** A language a service may be named in, by its code (such as ta), and whether it is an active facility's local language. */
@@ -183,7 +205,11 @@ export interface LocalLanguageItem {
   atFacility: boolean;
 }
 
-export type SaveServiceItemRequest = Omit<ServiceItemDto, 'id' | 'version'> & { version: number | null };
+export type SaveServiceItemRequest = Omit<ServiceItemDto, 'id' | 'version' | 'pendingPrice'> & {
+  version: number | null;
+  /** Why the price changes, for the person who approves it. */
+  reason?: string | null;
+};
 
 export interface PractitionerFilters {
   search?: string;

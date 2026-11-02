@@ -399,10 +399,10 @@ public sealed class InterimBillTests(HospitalServer server)
     }
 
     /// <summary>The admin: a package for admissions with the bed days and the consultant's visits of a short stay.</summary>
-    private static async Task<PackageDetail> PackageAsync(ApiClient admin)
+    private async Task<PackageDetail> PackageAsync(ApiClient admin)
     {
         const string name = "Cellulitis care (3 days)";
-        var item = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var item = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", name, null, ServiceCategory.Package, null, 9000m, 0m, null, true, false, null, true, null));
         return await admin.PostAsync<PackageDetail>("/api/v1/billing/packages", new SavePackageRequest(
             $"PKG-{Letters(8)}", name, item.Id, 9000m, 3, null, PackageUse.InPatient, null, true,

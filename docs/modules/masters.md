@@ -16,6 +16,7 @@ Code: `src/server/HyFib.HealthCare360.Platform/Organization` (schema `org`). Scr
 |---|---|---|
 | `masters.read` | Read facilities, departments, doctors and services (pickers, prints) | All staff |
 | `masters.manage` | Add and change them, preview the letterhead | HospitalAdmin |
+| `masters.prices.approve` | Approve the price changes another person makes (maker-checker; see *A service's price*) | Accountant, HospitalAdmin |
 
 ## Screens: Administration › Hospital setup
 
@@ -61,7 +62,7 @@ embeds), keeping PNG transparency for logos and signatures, then stored in the f
 | GET | `/practitioners?page&pageSize&search&departmentId&specialtyId&kind&active` · `/practitioners/{id}` | masters.read | → `PagedResult<PractitionerDto>` (search: name, code, registration number) · `PractitionerDto` |
 | POST · PUT | `/practitioners` · `/practitioners/{id}` | masters.manage | `SavePractitionerRequest` (+`version`) → 201 · 204 |
 | GET | `/services?page&pageSize&search&sort&desc&category&departmentId&active` · `/services/{id}` | masters.read | → `PagedResult<ServiceItemDto>` (sort: code, name, price, category) · `ServiceItemDto` |
-| POST · PUT | `/services` · `/services/{id}` | masters.manage | `SaveServiceItemRequest` (+`version`) → 201 · 204 |
+| POST · PUT | `/services` · `/services/{id}` | masters.manage | `SaveServiceItemRequest` (+`version`, `reason` for the approver) → 201 `{ id, approvalId }` · 204, or 202 with the `ApprovalRequestDto` when the price waits for approval; 409 `approval.already_requested` when a change to the price waits and this save does not fit it |
 | GET | `/lookups/departments?kind` · `/lookups/specialties` · `/lookups/practitioners?departmentId&search` · `/lookups/services?category&search` | masters.read | → active items for pickers (at most 50 doctors or services) |
 | GET | `/lookups/local-languages` | masters.read | → `LocalLanguageItem[]`: the languages a service may be named in (`code`, `name`), `atFacility` when one is an active facility's local language (billing.md, *The rate list*) |
 
@@ -93,6 +94,18 @@ A save replaces every field, so screens send the whole record.
   `facility.current`) and the last facility in use (422 `facility.last_active`) can't be taken out of use.
 - **Out of use, not deleted.** A department out of use takes no new visits; a doctor out of use can't be booked or chosen
   for new visits (appointments already booked stay); a service out of use can't be added to new bills or orders.
+- **A service's price is approved by a second person** (maker-checker, `ServicePrices`). A self-pay patient pays the
+  service's own price and GST, so a save that changes either, lets the counter type a price, allows discounts or puts
+  the service in use saves everything else and asks for that (`masters.service_price`); someone else who holds
+  `masters.prices.approve` decides it in Approvals. What only narrows the terms (no counter price, no discounts, out of
+  use) is made at once, also while a price waits. A new service is made out of use at ₹0 and goes live at the price
+  approved. `GET /services/{id}` returns the terms waiting (`pendingPrice`), the editor shows them with a notice and a
+  link to the request, so saving again asks for nothing twice; any other change to the terms while they wait, the price
+  in use put back included, is refused (409 `approval.already_requested`) until the request is withdrawn or decided.
+  The approver sets them only over the terms the request replaced; a change made meanwhile fails it (422
+  `prices.changed`) and the person who asked asks again. Billing quotes and charges the terms in use until then. Each
+  approved change is audited as `service.price_changed` (before and after, who asked, who approved). The SAC code
+  changes at once: it classifies the service for GST returns, not what a patient pays.
 - **Audit.** Every save writes a data audit event with each changed value (from/to). Addresses are recorded part by
   part (`address.city`), as are the other compound values in the system: patients', employees' and donors' addresses,
   cardiology findings and TTI results.
@@ -116,3 +129,5 @@ document follows its print template: the letterhead or pre-printed stationery, t
 - The facility's time zone and currency can't be edited (India only).
 - Nothing warns, before a doctor is taken out of use, how many future appointments they have.
 - Taking a service out of use is not checked against the wards, lab tests and packages that charge it.
+- Tariff plan prices, packages and doctor-fee rules (billing.md) still change without a second person, and so does a
+  health check-up package's price, which saving the package writes to its service.

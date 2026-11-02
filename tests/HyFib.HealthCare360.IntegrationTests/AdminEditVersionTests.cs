@@ -84,7 +84,7 @@ public sealed class AdminEditVersionTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var plan = await admin.PostAsync<TariffPlanDetail>("/api/v1/billing/tariffs", new SaveTariffPlanRequest(
             "RV" + Letters(6).ToUpperInvariant(), "Version test plan", TariffType.Corporate, null, null, 0m, false, false, null, null, null));
-        var service = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var service = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             "SV-" + Letters(8).ToUpperInvariant(), "Dressing (version test)", null, ServiceCategory.Procedure, null, 400m, 0m, null, true, false, null, true, null));
         var from = new DateOnly(2031, 1, 1);
         var path = $"/api/v1/billing/tariffs/{plan.Id}/prices";

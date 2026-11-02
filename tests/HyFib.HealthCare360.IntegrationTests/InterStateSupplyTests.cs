@@ -38,7 +38,7 @@ public sealed class InterStateSupplyTests(HospitalServer server)
     {
         await using var _ = await HospitalGstinAsync(Hospital);
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        var service = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var service = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", "Executive lounge access", null, ServiceCategory.Miscellaneous, null, 1000m, 18m, "999799", true, false, null, true, null));
 
         var kerala = await BillAsync(await CompanyAsync(admin, KeralaClinic), service);

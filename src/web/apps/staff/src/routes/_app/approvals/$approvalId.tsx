@@ -6,15 +6,23 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { ApprovalDecisionDialog, ApprovalStatusBadge, type Decision } from '@/modules/approvals/ApprovalDecision';
+import { usePermission } from '@/lib/permissions';
 import { approvalQueries, type ApprovalRequestDto } from '@/modules/approvals/api';
 import { Detail, DetailGrid } from '@/modules/billing/ui';
+import { MASTERS_MANAGE } from '@/modules/masters/api';
 
 export const Route = createFileRoute('/_app/approvals/$approvalId')({
   component: ApprovalPage,
 });
 
-/** Where the record a request is about opens, so the approver can look at it before deciding. */
-function subjectLink(request: ApprovalRequestDto): { label: string; to: string } | null {
+/**
+ * Where the record a request is about opens, so the approver can look at it before deciding: only where the approver may
+ * open it (`canManageMasters` for a service's form).
+ */
+function subjectLink(
+  request: ApprovalRequestDto,
+  canManageMasters: boolean,
+): { label: string; to: string; search?: Record<string, string> } | null {
   switch (request.subjectType) {
     case 'Bill':
       return { label: 'Open the bill', to: `/billing/bills/${request.subjectId}` };
@@ -31,6 +39,12 @@ function subjectLink(request: ApprovalRequestDto): { label: string; to: string }
       return { label: 'Open the users', to: '/admin/users' };
     case 'Role':
       return { label: 'Open the roles', to: '/admin/roles' };
+    // A price asked for: the service's form shows the price charged now and the one that waits. An accountant, who
+    // approves prices but does not edit services, decides from what the request says changes.
+    case 'ServiceItem':
+      return canManageMasters
+        ? { label: 'Open the service', to: '/setup/services', search: { edit: request.subjectId } }
+        : null;
     default:
       return null;
   }
@@ -42,6 +56,7 @@ function ApprovalPage() {
   const navigate = useNavigate();
   const request = useQuery(approvalQueries.detail(approvalId));
   const [decision, setDecision] = useState<Decision | null>(null);
+  const canManageMasters = usePermission(MASTERS_MANAGE);
   const back = () => void navigate({ to: '/approvals' });
 
   if (request.isLoading) {
@@ -57,7 +72,7 @@ function ApprovalPage() {
   }
 
   const r = request.data;
-  const subject = subjectLink(r);
+  const subject = subjectLink(r, canManageMasters);
   return (
     <Page maxWidth={900}>
       <PageHeader
@@ -68,7 +83,7 @@ function ApprovalPage() {
         actions={
           <>
             {subject && (
-              <Button icon={<OpenRegular />} onClick={() => void navigate({ to: subject.to })}>
+              <Button icon={<OpenRegular />} onClick={() => void navigate({ to: subject.to, search: subject.search })}>
                 {subject.label}
               </Button>
             )}

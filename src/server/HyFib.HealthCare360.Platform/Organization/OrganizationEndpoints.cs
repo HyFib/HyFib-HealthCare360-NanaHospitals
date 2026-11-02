@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using FluentValidation;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Http;
@@ -55,15 +56,17 @@ public sealed record SavePractitionerRequest(
     Guid? PhotoFileId, Guid? SignatureFileId, bool AvailableForOnlineBooking, bool AvailableForTelehealth, IReadOnlyList<Guid>? FacilityIds,
     bool IsActive, uint? Version);
 
+/// <param name="PendingPrice">The price terms waiting for a second person (maker-checker), on a single service's read.</param>
 public sealed record ServiceItemDto(
     Guid Id, string Code, string Name, string? ShortName, ServiceCategory Category, Guid? DepartmentId, decimal BasePrice, decimal TaxRate,
     string? SacCode, bool IsDiscountAllowed, bool IsPriceEditable, string? Description, bool IsActive, uint Version,
-    IReadOnlyDictionary<string, string> LocalNames);
+    IReadOnlyDictionary<string, string> LocalNames, PendingServicePrice? PendingPrice = null);
 
+/// <param name="Reason">Why the price changes, for the person who approves it.</param>
 public sealed record SaveServiceItemRequest(
     string Code, string Name, string? ShortName, ServiceCategory Category, Guid? DepartmentId, decimal BasePrice, decimal TaxRate,
     string? SacCode, bool IsDiscountAllowed, bool IsPriceEditable, string? Description, bool IsActive, uint? Version,
-    IReadOnlyDictionary<string, string>? LocalNames = null);
+    IReadOnlyDictionary<string, string>? LocalNames = null, string? Reason = null);
 
 /// <summary>A language a service may be named in, and whether it is the local language of an active facility.</summary>
 public sealed record LocalLanguageItem(string Code, string Name, bool AtFacility);
@@ -198,6 +201,7 @@ public sealed class SaveServiceItemRequestValidator : AbstractValidator<SaveServ
         RuleFor(x => x.TaxRate).InclusiveBetween(0, 28).PrecisionScale(5, 2, ignoreTrailingZeros: true);
         RuleFor(x => x.SacCode).Matches("^[0-9]{4,8}$").When(x => !string.IsNullOrWhiteSpace(x.SacCode)).WithMessage("Enter the 4–8 digit SAC or HSN code.");
         RuleFor(x => x.Description).SafeText(1000);
+        RuleFor(x => x.Reason).SafeText(500);
     }
 }
 
@@ -303,14 +307,15 @@ internal static class OrganizationEndpoints
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SavePractitionerRequest>().RequireVersion();
 
         masters.MapGet("/services", ListServices).RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapGet("/services/{id:guid}", async (Guid id, HospitalDbContext db, CancellationToken ct) =>
+        masters.MapGet("/services/{id:guid}", async (Guid id, HospitalDbContext db, ServicePrices prices, CancellationToken ct) =>
                 await db.Set<ServiceItem>().Where(s => s.Id == id).Select(ToServiceDto).FirstOrDefaultAsync(ct) is { } dto
-                    ? TypedResults.Ok(dto)
+                    ? TypedResults.Ok(dto with { PendingPrice = await prices.PendingAsync(id, ct) })
                     : Error.NotFound(nameof(ServiceItem), id).ToProblem())
             .RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapPost("/services", (SaveServiceItemRequest r, HospitalDbContext db, CancellationToken ct) => SaveService(null, r, db, ct))
+        masters.MapPost("/services", (SaveServiceItemRequest r, HospitalDbContext db, ServicePrices prices, CancellationToken ct) => SaveService(null, r, db, prices, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveServiceItemRequest>();
-        masters.MapPut("/services/{id:guid}", (Guid id, SaveServiceItemRequest r, HospitalDbContext db, CancellationToken ct) => SaveService(id, r, db, ct))
+        masters.MapPut("/services/{id:guid}", (Guid id, SaveServiceItemRequest r, HospitalDbContext db, ServicePrices prices, CancellationToken ct) =>
+                SaveService(id, r, db, prices, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveServiceItemRequest>().RequireVersion();
 
         var lookups = masters.MapGroup("/lookups");
@@ -789,7 +794,7 @@ internal static class OrganizationEndpoints
 
     private static readonly Expression<Func<ServiceItem, ServiceItemDto>> ToServiceDto = s => new ServiceItemDto(
         s.Id, s.Code, s.Name, s.ShortName, s.Category, s.DepartmentId, s.BasePrice, s.TaxRate, s.SacCode, s.IsDiscountAllowed,
-        s.IsPriceEditable, s.Description, s.IsActive, s.Version, s.LocalNames);
+        s.IsPriceEditable, s.Description, s.IsActive, s.Version, s.LocalNames, null);
 
     private static async Task<IResult> ListServices(
         [AsParameters] PageQuery query, ServiceCategory? category, Guid? departmentId, bool? active, HospitalDbContext db, CancellationToken ct)
@@ -828,7 +833,7 @@ internal static class OrganizationEndpoints
         return TypedResults.Ok(await q.OrderByKey(page, sorts, s => s.Name).Select(ToServiceDto).ToPagedResultAsync(page, ct));
     }
 
-    private static async Task<IResult> SaveService(Guid? id, SaveServiceItemRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> SaveService(Guid? id, SaveServiceItemRequest request, HospitalDbContext db, ServicePrices prices, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         ServiceItem service;
@@ -878,16 +883,48 @@ internal static class OrganizationEndpoints
         service.LocalNames = CleanNames(request.LocalNames);
         service.Category = request.Category;
         service.DepartmentId = request.DepartmentId;
-        service.BasePrice = Money.Round(request.BasePrice);
-        service.TaxRate = request.TaxRate;
         service.SacCode = Clean(request.SacCode);
-        service.IsDiscountAllowed = request.IsDiscountAllowed;
-        service.IsPriceEditable = request.IsPriceEditable;
         service.Description = Clean(request.Description);
-        service.IsActive = request.IsActive;
 
+        // What a patient pays changes only when two people agree (maker-checker): what only narrows the terms applies now,
+        // the rest is asked for. A new service starts out of use at no price, and goes live at the price approved. While a
+        // change waits, a save must fit it (ServicePriceTerms.Covers): nothing is asked for twice, and anything else, the
+        // price in use put back included, is refused rather than saved while the other change still waits.
+        var before = id is null ? ServicePriceTerms.None : ServicePriceTerms.Of(service);
+        var asked = new ServicePriceTerms(
+            Money.Round(request.BasePrice), request.TaxRate, request.IsPriceEditable, request.IsDiscountAllowed, request.IsActive);
+        var now = before.Narrowed(asked);
+        var waiting = id is null ? null : await prices.PendingAsync(service.Id, ct);
+        if (waiting is not null && !ServicePriceTerms.Covers(waiting.Asked, now, asked))
+        {
+            return Error.Conflict(ServicePrices.WaitingCode,
+                    $"A change to {service.Code}'s price, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.")
+                .ToProblem();
+        }
+
+        now.ApplyTo(service);
+        var asking = waiting is null && asked != now;
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return id is null ? TypedResults.Created($"/api/v1/masters/services/{service.Id}", new { service.Id }) : TypedResults.NoContent();
+        ApprovalRequestDto? requested = null;
+        if (asking)
+        {
+            var approval = await prices.AskAsync(service, now, asked, request.Reason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            requested = approval.Value;
+        }
+
+        await transaction.CommitAsync(ct);
+        return id is null
+            ? TypedResults.Created($"/api/v1/masters/services/{service.Id}", new { service.Id, ApprovalId = requested?.Id })
+            : requested is null
+                ? TypedResults.NoContent()
+                : TypedResults.Accepted($"/api/v1/approvals/{requested.Id}", requested);
     }
 
     // ---------------------------------------------------------------- references

@@ -483,6 +483,8 @@ export const serviceSchema = z.object({
   isPriceEditable: z.boolean(),
   description: text(1000),
   isActive: z.boolean(),
+  /** Why the price changes, for the person who approves it. */
+  reason: text(500),
 });
 
 export type ServiceForm = z.infer<typeof serviceSchema>;
@@ -498,8 +500,12 @@ export function serviceNameLanguages(
   return languages.filter((l) => l.atFacility || (service?.localNames[l.code] ?? '') !== '');
 }
 
-/** The form for a service, with a name field for each of `languages` (codes, from {@link serviceNameLanguages}). */
+/**
+ * The form for a service, with a name field for each of `languages` (codes, from {@link serviceNameLanguages}). Price
+ * terms waiting for approval are shown as asked, so saving the form again asks for nothing twice.
+ */
 export function toServiceForm(service: ServiceItemDto | null, languages: readonly string[] = []): ServiceForm {
+  const terms = service?.pendingPrice?.asked ?? service;
   return {
     code: service?.code ?? '',
     name: service?.name ?? '',
@@ -512,13 +518,14 @@ export function toServiceForm(service: ServiceItemDto | null, languages: readonl
     shortName: service?.shortName ?? '',
     category: service?.category ?? 'Procedure',
     departmentId: service?.departmentId ?? null,
-    basePrice: service?.basePrice ?? 0,
-    taxRate: String(service?.taxRate ?? 0),
+    basePrice: terms?.basePrice ?? 0,
+    taxRate: String(terms?.taxRate ?? 0),
     sacCode: service?.sacCode ?? '999312',
-    isDiscountAllowed: service?.isDiscountAllowed ?? true,
-    isPriceEditable: service?.isPriceEditable ?? false,
+    isDiscountAllowed: terms?.isDiscountAllowed ?? true,
+    isPriceEditable: terms?.isPriceEditable ?? false,
     description: service?.description ?? '',
-    isActive: service?.isActive ?? true,
+    isActive: terms?.isActive ?? true,
+    reason: '',
   };
 }
 
@@ -546,5 +553,6 @@ export function toServiceRequest(
     description: orNull(values.description),
     isActive: values.isActive,
     version,
+    reason: orNull(values.reason),
   };
 }

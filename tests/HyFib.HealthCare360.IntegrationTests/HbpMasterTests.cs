@@ -108,10 +108,10 @@ public sealed class HbpMasterTests(HospitalServer server)
         }
     }
 
-    private static async Task<PackageDetail> PackageAsync(ApiClient admin, string? hbpCode) =>
+    private async Task<PackageDetail> PackageAsync(ApiClient admin, string? hbpCode) =>
         await admin.PostAsync<PackageDetail>("/api/v1/billing/packages", await PackageRequestAsync(admin, hbpCode));
 
-    private static async Task PackageRefusedAsync(ApiClient admin, string hbpCode, string reason)
+    private async Task PackageRefusedAsync(ApiClient admin, string hbpCode, string reason)
     {
         using var response = await admin.SendRawAsync(HttpMethod.Post, "/api/v1/billing/packages", await PackageRequestAsync(admin, hbpCode));
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
@@ -120,10 +120,10 @@ public sealed class HbpMasterTests(HospitalServer server)
         problem.ShouldContain(reason);
     }
 
-    private static async Task<SavePackageRequest> PackageRequestAsync(ApiClient admin, string? hbpCode)
+    private async Task<SavePackageRequest> PackageRequestAsync(ApiClient admin, string? hbpCode)
     {
         var code = $"SV-{Letters(8)}";
-        var item = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var item = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             code, "PM-JAY test package", null, ServiceCategory.Package, null, 12500m, 0m, null, true, false, null, true, null));
         return new SavePackageRequest($"PKG-{Letters(8)}", "PM-JAY test package", item.Id, 12500m, 2, null, PackageUse.InPatient, null, true, [], null, hbpCode);
     }

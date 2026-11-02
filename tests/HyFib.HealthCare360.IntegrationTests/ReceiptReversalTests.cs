@@ -296,7 +296,7 @@ public sealed class ReceiptReversalTests(HospitalServer server)
         {
             // A doctor earning 40 % of procedures, on a ₹2,000 bill: nothing accrues until it is paid.
             var doctor = await DoctorFeeStatementTests.DoctorAsync(hospitalAdmin);
-            var debridement = await DoctorFeeStatementTests.ServiceAsync(hospitalAdmin, "Wound debridement", 2000m);
+            var debridement = await DoctorFeeStatementTests.ServiceAsync(server, hospitalAdmin, "Wound debridement", 2000m);
             await DoctorFeeStatementTests.RuleAsync(accountant, doctor.Id, null, ServiceCategory.Procedure, ShareMethod.Percentage, 40m, today);
             var patient = await RegisterAsync(frontOffice);
             var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(null, patient, null));

@@ -553,8 +553,8 @@ public sealed class AuditedChangeTests(HospitalServer server)
     private static TemplateMedicationRequest Medicine(string name, string dose, DoseFrequency frequency, int days) =>
         new(null, name, null, null, null, "Oral", dose, frequency, null, days, null);
 
-    private static async Task<Guid> ServiceAsync(ApiClient admin, string name, ServiceCategory category, decimal price) =>
-        (await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+    private async Task<Guid> ServiceAsync(ApiClient admin, string name, ServiceCategory category, decimal price) =>
+        (await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8).ToUpperInvariant()}", name, null, category, null, price, 0m, null, true, false, null, true, null))).Id;
 
     private static DialysisPatientProfile Profile(Guid facility, Guid patient, DateOnly enrolled) => new()

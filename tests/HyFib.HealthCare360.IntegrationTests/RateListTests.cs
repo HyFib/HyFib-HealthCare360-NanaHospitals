@@ -48,7 +48,7 @@ public sealed class RateListTests(HospitalServer server)
     {
         // A dressing with GST and names in Tamil and Hindi, and a doctor with a fee of their own and five free follow-up days.
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        var created = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var created = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", "Wound dressing — major", null, ServiceCategory.Procedure, null, 1_250m, 18m, "999312", true, false, null, true, null,
             LocalNames: new Dictionary<string, string> { ["ta"] = Tamil, ["hi"] = " " + Hindi + " " }));
         var dressing = await admin.GetAsync<ServiceItemDto>($"/api/v1/masters/services/{created.Id}");
@@ -76,7 +76,7 @@ public sealed class RateListTests(HospitalServer server)
         // One service named in two languages: a Tamil Nadu facility prints the Tamil name, a Delhi facility the Hindi one.
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var code = $"SV-{Letters(8)}";
-        await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             code, "Wound dressing — major", null, ServiceCategory.Procedure, null, 1_250m, 0m, "999312", true, false, null, true, null,
             LocalNames: new Dictionary<string, string> { ["ta"] = Tamil, ["hi"] = Hindi }));
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
@@ -198,7 +198,7 @@ public sealed class RateListTests(HospitalServer server)
     {
         // A minor dressing with GST and a Tamil name, and a doctor with a fee of their own.
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        var created = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var created = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", "Wound dressing — minor", null, ServiceCategory.Procedure, null, 450m, 18m, "999312", true, false, null, true, null,
             LocalNames: new Dictionary<string, string> { ["ta"] = MinorTamil }));
         var dressing = await admin.GetAsync<ServiceItemDto>($"/api/v1/masters/services/{created.Id}");
@@ -341,10 +341,10 @@ public sealed class RateListTests(HospitalServer server)
         return await admin.GetAsync<PractitionerDto>($"/api/v1/masters/practitioners/{added.Id}");
     }
 
-    private static async Task<PackageDetail> PackageAsync(ApiClient admin, string name, Guid? tariffPlanId)
+    private async Task<PackageDetail> PackageAsync(ApiClient admin, string name, Guid? tariffPlanId)
     {
         // The package itself is billed under a catalogue service of category Package.
-        var item = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var item = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", name, null, ServiceCategory.Package, null, 12_500m, 0m, null, true, false, null, true, null));
         return await admin.PostAsync<PackageDetail>("/api/v1/billing/packages", new SavePackageRequest(
             $"PKG-{Letters(8)}", name, item.Id, 12_500m, 1, tariffPlanId, PackageUse.OutPatient, null, true,
