@@ -6,6 +6,7 @@ import type {
   WifiSample,
 } from '@/modules/admin/api';
 import type { AlertDrill } from '@/modules/admin/alertDrillsApi';
+import type { AlertReport } from '@/modules/admin/alertIncidentsApi';
 import type { FakeAnswers } from '../../fakeApi';
 
 // System health of the server machine with canned data: a link that dipped overnight, a backup that failed once,
@@ -216,12 +217,65 @@ const ALERT_DRILLS: AlertDrill[] = [
   },
 ];
 
+// Critical alerts (audit P2): a backup alert nobody has acknowledged yet, paged on to the second contact, and a clock
+// alert acknowledged and cleared, which the month's figures are made of.
+const ALERTS: AlertReport = {
+  from: hoursAgo(30 * 24),
+  to: hoursAgo(0),
+  total: 2,
+  acknowledged: 1,
+  unacknowledged: 1,
+  reachedSecondContact: 1,
+  reachedSupport: 0,
+  medianMinutesToAcknowledge: 6,
+  ninetiethMinutesToAcknowledge: 6,
+  incidents: [
+    {
+      id: '0194f2a0-0000-7000-8000-0000000a1e01',
+      code: 'backup.stale',
+      server: null,
+      message: 'No successful backup in the last 36 hours.',
+      level: 'SecondContact',
+      raisedAt: hoursAgo(1),
+      toldAt: hoursAgo(1),
+      firstDeliveredAt: hoursAgo(0.99),
+      firstReadAt: null,
+      secondContactAt: hoursAgo(0.75),
+      supportAt: null,
+      acknowledgedAt: null,
+      acknowledgedBy: null,
+      clearedAt: null,
+      minutesToAcknowledge: null,
+      messages: [],
+    },
+    {
+      id: '0194f2a0-0000-7000-8000-0000000a1e02',
+      code: 'clock.offset',
+      server: 'HC360-APP-01',
+      message: 'The server clock is 75 s off.',
+      level: 'OnCall',
+      raisedAt: hoursAgo(50),
+      toldAt: hoursAgo(50),
+      firstDeliveredAt: hoursAgo(49.99),
+      firstReadAt: hoursAgo(49.95),
+      secondContactAt: null,
+      supportAt: null,
+      acknowledgedAt: hoursAgo(49.9),
+      acknowledgedBy: 'IT Officer',
+      clearedAt: hoursAgo(46),
+      minutesToAcknowledge: 6,
+      messages: [],
+    },
+  ],
+};
+
 export const SYSTEM_HEALTH_ANSWERS: FakeAnswers = {
   'GET /api/v1/admin/system/health': SYSTEM_HEALTH,
   'GET /api/v1/admin/system/wifi-samples': WIFI_SAMPLES,
   'GET /api/v1/admin/system/database-password': DATABASE_PASSWORD,
   'GET /api/v1/admin/system/keys': ENCRYPTION_KEYS,
   'GET /api/v1/admin/system/alert-drills': ALERT_DRILLS,
+  'GET /api/v1/admin/system/alerts': ALERTS,
 };
 
 // The devices page of a hospital enrolling its first workstation: a queue display and a lab PC, no workstation yet.
