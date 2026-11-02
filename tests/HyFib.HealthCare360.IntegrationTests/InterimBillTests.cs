@@ -404,7 +404,7 @@ public sealed class InterimBillTests(HospitalServer server)
         const string name = "Cellulitis care (3 days)";
         var item = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", name, null, ServiceCategory.Package, null, 9000m, 0m, null, true, false, null, true, null));
-        return await admin.PostAsync<PackageDetail>("/api/v1/billing/packages", new SavePackageRequest(
+        return await server.SavePackageAsync(admin, new SavePackageRequest(
             $"PKG-{Letters(8)}", name, item.Id, 9000m, 3, null, PackageUse.InPatient, null, true,
             [
                 new PackageInclusionInput(null, ServiceCategory.BedCharge, 3m, null, "Three bed days"),

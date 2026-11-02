@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using HyFib.HealthCare360.Modules.Billing.Features.Insurance;
+using HyFib.HealthCare360.Modules.Billing.Features.Packages;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Platform.Approvals;
@@ -596,6 +597,39 @@ public sealed class HospitalServer : IAsyncLifetime
         }
 
         return await maker.GetAsync<PayerDetail>($"/api/v1/insurance/payers/{created.Id}");
+    }
+
+    /// <summary>
+    /// A billing package saved through the billing API, new or (with <paramref name="packageId"/>) existing, its price and
+    /// cover approved by the other administrator when they wait (what a package's patients pay changes only when two people
+    /// agree): the package as it is then.
+    /// </summary>
+    public async Task<PackageDetail> SavePackageAsync(ApiClient maker, SavePackageRequest request, Guid? packageId = null)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        if (packageId is { } existing)
+        {
+            using var response = await maker.SendRawAsync(HttpMethod.Put, $"/api/v1/billing/packages/{existing}", request);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"Saving package {existing}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+            }
+
+            if (response.StatusCode == HttpStatusCode.Accepted)
+            {
+                await ApprovePriceAsync((await response.Content.ReadFromJsonAsync<ApprovalRequestDto>(ApiClient.Json))!.Id);
+            }
+
+            return await maker.GetAsync<PackageDetail>($"/api/v1/billing/packages/{existing}");
+        }
+
+        var created = await maker.PostAsync<PackageDetail>("/api/v1/billing/packages", request);
+        if (created.PendingTerms is { } pending)
+        {
+            await ApprovePriceAsync(pending.ApprovalId);
+        }
+
+        return await maker.GetAsync<PackageDetail>($"/api/v1/billing/packages/{created.Id}");
     }
 
     /// <summary>A member of staff created through the admin API, their roles and facilities approved by the other administrator.</summary>

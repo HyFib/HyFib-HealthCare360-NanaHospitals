@@ -386,8 +386,13 @@ and grants nothing.
   - a stay billed on another plan than its payer's (`billing.ip_plan`): the billing desk asks, with the payer and policy
     asked with it, and someone else who holds `billing.discounts.approve` approves; the request reads what the stay's
     unbilled services come to on the payer's plan and on the plan asked. A stay keeps an approved plan while its payer
-    stays, and a new payer brings its own plan at once. Check-up package prices, billing packages, non-payable items and
-    doctor-fee rules still change at once;
+    stays, and a new payer brings its own plan at once;
+  - a billing package's price and cover (`billing.package`): the billing desk asks, someone else who holds
+    `masters.prices.approve` approves its price, the service it is billed as, what it covers, the plan it is priced for,
+    the bills it may price and putting it in use; the request says how many stays in progress are on it, as their final
+    bills take the package as approved. Taking it out of use is made at once, and a new package is made out of use at ₹0
+    covering nothing until its terms are approved. Approving is made only over the terms it replaces. Check-up package
+    prices, non-payable items and doctor-fee rules still change at once;
   - correcting a released lab report where the lab sets `lab.separateVerifier`: one pathologist asks, another releases
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
     a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.
