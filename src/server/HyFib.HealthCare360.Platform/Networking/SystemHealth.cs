@@ -724,8 +724,12 @@ internal static class SystemEndpoints
         admin.MapPost("/keys/signing/rotate", async (KeyRotationService keys, CancellationToken ct) => (await keys.RotateSigningKeyAsync(ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage);
 
-        // Records the integrations' simulators made (audit P6): the latest sweep, a sweep now, and the IT officer's sign-off.
+        // Records the integrations' simulators made (audit P6): the latest sweep, the open ones, a sweep now, and the IT officer's
+        // sign-off.
         admin.MapGet("/simulator-records", async (SimulatorRecordSweep sweep, CancellationToken ct) => TypedResults.Ok(await sweep.ViewAsync(ct)));
+        // The records of a kind still open now, each with the record to correct it on: the IT officer's worklist.
+        admin.MapGet("/simulator-records/{code}/open", async (string code, SimulatorRecordSweep sweep, CancellationToken ct) =>
+            (await sweep.OpenRecordsAsync(code, ct)).ToOk());
         admin.MapPost("/simulator-records/sweep", async (SimulatorRecordSweep sweep, CancellationToken ct) => TypedResults.Ok(await sweep.SweepAsync(ct)))
             .RequirePermission(PlatformPermissions.SystemManage);
         admin.MapPost("/simulator-records/sign-off", async (SignOffSimulatorRecordsRequest request, SimulatorRecordSweep sweep, CancellationToken ct) =>

@@ -374,6 +374,33 @@ public sealed class PatientIdentityCheckTests(HospitalServer server)
 
     private static string Path(PatientCreated patient) => $"/api/v1/patients/{patient.Id}/identity-checks";
 
+    [Fact]
+    public async Task A_number_the_simulator_linked_is_open_until_it_is_removed_from_the_record()
+    {
+        await WithSimulatorAsync(async () =>
+        {
+            var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+            var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+            var patient = await RegisterAsync(isVip: false, aadhaar: null);
+            var check = await frontOffice.PostAsync<IdentityCheckDto>(Path(patient), new VerifyIdentityRequest(NewAadhaar(), Matching, true));
+            check.LinkedAadhaar.ShouldBeTrue();
+
+            // Nobody's fingerprint was checked: open while the record holds the number.
+            (await SimulatorRecords.OpenAsync(admin, "aadhaar-links")).Single(r => r.EntityId == patient.Id).Reference.ShouldBe(patient.Uhid);
+
+            // Removed from the record (the patient › Edit): open no more.
+            var full = await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}");
+            await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", new UpdatePatientRequest(
+                full.Title, full.FirstName, full.MiddleName, full.LastName, full.Gender, full.DateOfBirth, null, null, full.Phone, full.AlternatePhone,
+                full.Email, full.Address, full.BloodGroup, full.MaritalStatus, full.GuardianName, full.GuardianRelation, full.EmergencyContactName,
+                full.EmergencyContactPhone, full.EmergencyContactRelation, full.Occupation, full.Religion, full.Nationality, full.PreferredLanguage,
+                full.Category, null, full.AbhaAddress, "", full.PhotoFileId, full.IsVip, full.IsDeceased, full.DeceasedAt,
+                "The Aadhaar number was linked by the training simulator", full.IsActive, full.Version));
+            (await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}")).AadhaarLast4.ShouldBeNull();
+            (await SimulatorRecords.OpenAsync(admin, "aadhaar-links")).ShouldNotContain(r => r.EntityId == patient.Id);
+        });
+    }
+
     private async Task WithSimulatorAsync(Func<Task> test)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);

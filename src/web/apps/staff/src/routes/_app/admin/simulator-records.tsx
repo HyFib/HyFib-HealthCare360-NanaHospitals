@@ -1,4 +1,8 @@
 import {
+  Accordion,
+  AccordionHeader,
+  AccordionItem,
+  AccordionPanel,
   Button,
   Caption1,
   Field,
@@ -10,14 +14,17 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowSyncRegular, CheckmarkCircleRegular } from '@fluentui/react-icons';
+import { ArrowSyncRegular, CheckmarkCircleRegular, OpenRegular } from '@fluentui/react-icons';
+import { formatDateTime, formatInr } from '@hc360/core';
 import { DataTable, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import {
   foundText,
+  openRecordLink,
+  openText,
   signOffSimulatorRecords,
   simulatorRecordsQueries,
   sweepSimulatorRecords,
@@ -38,8 +45,9 @@ const useStyles = makeStyles({
 /**
  * Records the integrations' simulators made that look real (audit P6): payments and refunds that moved no money, card
  * sales nobody paid, Aadhaar links nobody's finger proved, images and results from nowhere. The server sweeps a live
- * server's database for them every day; an IT officer deals with each kind and signs them off, and until then System
- * health warns.
+ * server's database for them every day. Each critical record stays open until its current state shows it corrected,
+ * listed under "To correct" with a link to the record; once none is open, an IT officer signs the sweep off, and until
+ * then System health warns.
  */
 function SimulatorRecordsPage() {
   const styles = useStyles();
@@ -76,6 +84,8 @@ function SimulatorRecordsPage() {
   const status = data ? sweepStatus(data) : null;
   const found = data?.latest?.findings.filter((f) => f.count > 0) ?? [];
   const clear = data?.latest?.findings.filter((f) => f.count === 0) ?? [];
+  const toCorrect = data?.latest?.findings.filter((f) => (f.open ?? 0) > 0) ?? [];
+  const criticalOpen = data?.latest?.criticalOpen ?? 0;
 
   return (
     <Page>
@@ -137,6 +147,7 @@ function SimulatorRecordsPage() {
               ),
             },
             { key: 'found', header: 'Found', width: 140, render: (f) => foundText(f) },
+            { key: 'open', header: 'Still open', width: 140, render: (f) => openText(f) },
             { key: 'when', header: 'Made', width: 220, priority: 'low', render: (f) => whenText(f) },
             {
               key: 'examples',
@@ -158,13 +169,43 @@ function SimulatorRecordsPage() {
           </Caption1>
         )}
       </Section>
+      {toCorrect.length > 0 && (
+        <Section title="To correct">
+          <Caption1 block className={styles.muted}>
+            As the latest sweep found them. Each list is read again when it is opened, so a record corrected since is
+            gone from it.
+          </Caption1>
+          <Accordion multiple collapsible>
+            {toCorrect.map((f) => (
+              <AccordionItem key={f.code} value={f.code}>
+                <AccordionHeader>
+                  {f.title}: {openText(f)} still open
+                </AccordionHeader>
+                <AccordionPanel>
+                  <OpenRecords code={f.code} title={f.title} />
+                </AccordionPanel>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </Section>
+      )}
       {data?.latest && data.outstanding && canManage && (
         <Section title="Sign off">
           <div className={styles.signOff}>
-            <Text>
-              Sign off once each kind above has been dealt with as it says. The sign-off covers the records this sweep
-              found; one a simulator makes later brings the warning back.
-            </Text>
+            {criticalOpen > 0 ? (
+              <MessageBar intent="warning" layout="multiline">
+                <MessageBarBody>
+                  {criticalOpen.toLocaleString('en-IN')} critical {criticalOpen === 1 ? 'record is' : 'records are'} not
+                  corrected yet. Correct each under &quot;To correct&quot;, sweep again, and sign off that sweep: no
+                  sign-off is taken before.
+                </MessageBarBody>
+              </MessageBar>
+            ) : (
+              <Text>
+                Sign off once each kind above has been dealt with as it says. The sign-off covers the records this sweep
+                found; one a simulator makes later brings the warning back.
+              </Text>
+            )}
             <Field label="What was done" hint="10 to 1000 characters. It is kept in the audit trail." required>
               <Textarea
                 className={styles.note}
@@ -176,7 +217,7 @@ function SimulatorRecordsPage() {
             </Field>
             <Button
               icon={<CheckmarkCircleRegular />}
-              disabled={note.trim().length < 10 || signOff.isPending}
+              disabled={criticalOpen > 0 || note.trim().length < 10 || signOff.isPending}
               onClick={() => signOff.mutate({ sweptAt: data.latest!.sweptAt, text: note.trim() })}
             >
               Sign off this sweep
@@ -185,5 +226,47 @@ function SimulatorRecordsPage() {
         </Section>
       )}
     </Page>
+  );
+}
+
+/** The records of a kind still open now, each with a link to the record it is corrected on. */
+function OpenRecords({ code, title }: { code: string; title: string }) {
+  const navigate = useNavigate();
+  const records = useQuery(simulatorRecordsQueries.open(code));
+  return (
+    <DataTable
+      ariaLabel={`${title}: still open`}
+      rows={records.data?.map((record, index) => ({ ...record, key: `${index}` }))}
+      loading={records.isLoading}
+      error={records.error}
+      onRetry={() => void records.refetch()}
+      getRowId={(r) => r.key}
+      columns={[
+        { key: 'reference', header: 'Record', width: 220, render: (r) => <Text font="monospace">{r.reference}</Text> },
+        { key: 'at', header: 'Made', width: 200, render: (r) => (r.at ? formatDateTime(r.at) : '—') },
+        {
+          key: 'amount',
+          header: 'Amount',
+          width: 140,
+          align: 'end',
+          render: (r) => (r.amount != null ? formatInr(r.amount) : '—'),
+        },
+      ]}
+      rowActions={(r) => {
+        const link = openRecordLink(r);
+        return (
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<OpenRegular />}
+            aria-label={`${link.label}: ${r.reference}`}
+            onClick={() => void navigate({ to: link.to, search: link.search })}
+          />
+        );
+      }}
+      emptyTitle="Nothing left to correct"
+      emptyDescription="Every record of this kind now shows it was corrected. Sweep again to sign off."
+      size="small"
+    />
   );
 }
