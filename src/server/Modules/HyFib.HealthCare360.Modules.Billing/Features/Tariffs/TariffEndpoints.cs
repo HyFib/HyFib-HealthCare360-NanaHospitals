@@ -2,12 +2,16 @@ using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 
 /// <summary>/api/v1/billing/tariffs — tariff plans, plan prices (with validity) and price quotes (MB-02).</summary>
 internal static class TariffEndpoints
 {
+    /// <summary>Refused on save: a change to the plan's terms is waiting for approval (the approvals' own code).</summary>
+    private const string WaitingCode = "approval.already_requested";
+
     private static readonly string[] Readers =
         [BillingPermissions.TariffsManage, BillingPermissions.ChargesRead, BillingPermissions.OpCreate, BillingPermissions.IpManage];
 
@@ -62,13 +66,19 @@ internal static class TariffEndpoints
             p.Id, p.Code, p.Name, p.Type, p.PayerId, p.PayerName, p.FacilityId, p.DefaultDiscountPercent, p.IsDefault, p.IsActive, p.PriceCount)).ToList());
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> Get(Guid id, HospitalDbContext db, TariffApprovals tariffs, CancellationToken ct)
     {
         var plan = await db.Set<TariffPlan>().AsNoTracking().Include(p => p.BedMultipliers).FirstOrDefaultAsync(p => p.Id == id, ct);
-        return plan is null ? Error.NotFound(nameof(TariffPlan), id).ToProblem() : TypedResults.Ok(await ToDetailAsync(db, plan, ct));
+        return plan is null
+            ? Error.NotFound(nameof(TariffPlan), id).ToProblem()
+            : TypedResults.Ok(await ToDetailAsync(db, plan, ct) with
+            {
+                PendingTerms = await tariffs.PendingTermsAsync(id, ct),
+                PendingPrices = await tariffs.PendingPricesAsync(id, ct),
+            });
     }
 
-    private static async Task<IResult> Create(SaveTariffPlanRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> Create(SaveTariffPlanRequest request, HospitalDbContext db, TariffApprovals tariffs, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         if (await db.Set<TariffPlan>().IgnoreQueryFilters().AnyAsync(p => p.Code == code, ct))
@@ -77,18 +87,37 @@ internal static class TariffEndpoints
         }
 
         var plan = new TariffPlan { Code = code };
-        var applied = await ApplyAsync(db, plan, request, ct);
+        var applied = await ApplyDetailsAsync(db, plan, request, ct);
         if (applied.IsFailure)
         {
             return applied.Error!.ToProblem();
         }
 
+        // What a plan's patients pay changes only when two people agree (maker-checker): a new plan is made out of use, and
+        // goes live with the terms a second person approves.
+        var asked = Terms(request);
+        var now = asked.OutOfUse();
+        now.ApplyTo(plan);
         db.Add(plan);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return TypedResults.Created($"/api/v1/billing/tariffs/{plan.Id}", await ToDetailAsync(db, plan, ct));
+        PendingTariffTerms? pending = null;
+        if (asked != now)
+        {
+            var approval = await tariffs.AskTermsAsync(plan, now, asked, request.Reason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            pending = new PendingTariffTerms(approval.Value.Id, asked, approval.Value.RequestedByName, approval.Value.RequestedAt);
+        }
+
+        await transaction.CommitAsync(ct);
+        return TypedResults.Created($"/api/v1/billing/tariffs/{plan.Id}", await ToDetailAsync(db, plan, ct) with { PendingTerms = pending });
     }
 
-    private static async Task<IResult> Update(Guid id, SaveTariffPlanRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> Update(Guid id, SaveTariffPlanRequest request, HospitalDbContext db, TariffApprovals tariffs, CancellationToken ct)
     {
         var plan = await db.Set<TariffPlan>().Include(p => p.BedMultipliers).FirstOrDefaultAsync(p => p.Id == id, ct);
         if (plan is null)
@@ -97,14 +126,40 @@ internal static class TariffEndpoints
         }
 
         db.GuardVersion(plan, request.Version ?? 0);
-        var applied = await ApplyAsync(db, plan, request, ct);
+        var applied = await ApplyDetailsAsync(db, plan, request, ct);
         if (applied.IsFailure)
         {
             return applied.Error!.ToProblem();
         }
 
+        // Every change to the terms waits for a second person: for a plan nothing only narrows, as its patients move to
+        // another plan's prices when it is taken out of use. While a change waits, a save must ask for the same terms.
+        var before = TariffPlanTerms.Of(plan);
+        var asked = Terms(request);
+        var waiting = await tariffs.PendingTermsAsync(plan.Id, ct);
+        if (waiting is not null && waiting.Asked != asked)
+        {
+            return Error.Conflict(WaitingCode,
+                    $"A change to tariff plan {plan.Code}'s terms, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.")
+                .ToProblem();
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return TypedResults.Ok(await ToDetailAsync(db, plan, ct));
+        if (waiting is null && asked != before)
+        {
+            var approval = await tariffs.AskTermsAsync(plan, before, asked, request.Reason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            await transaction.CommitAsync(ct);
+            return TypedResults.Accepted($"/api/v1/approvals/{approval.Value.Id}", approval.Value);
+        }
+
+        await transaction.CommitAsync(ct);
+        return TypedResults.Ok(await ToDetailAsync(db, plan, ct) with { PendingTerms = waiting });
     }
 
     private static async Task<IResult> Prices(Guid id, [AsParameters] PageQuery query, DateOnly? onDate, HospitalDbContext db, CancellationToken ct)
@@ -131,29 +186,63 @@ internal static class TariffEndpoints
         return TypedResults.Ok(result);
     }
 
-    private static async Task<IResult> SavePrice(Guid id, SaveTariffPriceRequest request, HospitalDbContext db, CancellationToken ct)
-    {
-        var outcome = await UpsertPricesAsync(db, id, [request], checkVersions: true, ct);
-        return outcome.IsSuccess ? TypedResults.Ok(outcome.Value) : outcome.Error!.ToProblem();
-    }
+    private static Task<IResult> SavePrice(Guid id, SaveTariffPriceRequest request, HospitalDbContext db, TariffApprovals tariffs, CancellationToken ct) =>
+        AskPricesAsync(db, tariffs, id, [request], [], request.Reason, checkVersions: true, ct);
 
-    private static async Task<IResult> SavePrices(Guid id, BulkTariffPricesRequest request, HospitalDbContext db, CancellationToken ct)
-    {
-        var outcome = await UpsertPricesAsync(db, id, request.Prices, checkVersions: false, ct);
-        return outcome.IsSuccess ? TypedResults.Ok(outcome.Value) : outcome.Error!.ToProblem();
-    }
+    private static Task<IResult> SavePrices(Guid id, BulkTariffPricesRequest request, HospitalDbContext db, TariffApprovals tariffs, CancellationToken ct) =>
+        AskPricesAsync(db, tariffs, id, request.Prices, [], request.Reason, checkVersions: false, ct);
 
-    private static async Task<IResult> DeletePrice(Guid id, Guid priceId, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> DeletePrice(Guid id, Guid priceId, HospitalDbContext db, TariffApprovals tariffs, CancellationToken ct)
     {
-        var price = await db.Set<TariffPrice>().FirstOrDefaultAsync(p => p.Id == priceId && p.TariffPlanId == id, ct);
-        if (price is null)
+        if (!await db.Set<TariffPrice>().AnyAsync(p => p.Id == priceId && p.TariffPlanId == id, ct))
         {
             return Error.NotFound(nameof(TariffPrice), priceId).ToProblem();
         }
 
-        db.Remove(price);
-        await db.SaveChangesAsync(ct);
-        return TypedResults.NoContent();
+        return await AskPricesAsync(db, tariffs, id, [], [priceId], null, checkVersions: false, ct);
+    }
+
+    /// <summary>
+    /// Asks a second person to set and remove a plan's prices (maker-checker): a single price, a bulk revision as one
+    /// request, or a price removed. Nothing changes until it is approved; while one waits, the plan's prices are not asked
+    /// for again (<c>approval.already_requested</c>).
+    /// </summary>
+    private static async Task<IResult> AskPricesAsync(
+        HospitalDbContext db, TariffApprovals tariffs, Guid planId, IReadOnlyList<SaveTariffPriceRequest> set, IReadOnlyList<Guid> remove, string? reason,
+        bool checkVersions, CancellationToken ct)
+    {
+        var plan = await db.Set<TariffPlan>().FirstOrDefaultAsync(p => p.Id == planId, ct);
+        if (plan is null)
+        {
+            return Error.NotFound(nameof(TariffPlan), planId).ToProblem();
+        }
+
+        var itemIds = set.Select(r => r.ServiceItemId).Distinct().ToList();
+        if (await db.Set<ServiceItem>().CountAsync(s => itemIds.Contains(s.Id), ct) != itemIds.Count)
+        {
+            return Error.Field("serviceItemId", "One or more services were not found.").ToProblem();
+        }
+
+        if (checkVersions)
+        {
+            // The form's version of the row it changes (REL-04): a price changed meanwhile, or one added for that date since
+            // the form was loaded (sent without a version), is reported, not overwritten.
+            foreach (var row in set)
+            {
+                var current = await db.Set<TariffPrice>().AsNoTracking()
+                    .Where(p => p.TariffPlanId == planId && p.ServiceItemId == row.ServiceItemId && p.EffectiveFrom == row.EffectiveFrom)
+                    .Select(p => (uint?)p.Version).FirstOrDefaultAsync(ct);
+                if (current is { } version && row.Version != version)
+                {
+                    return Error.ConcurrencyConflict.ToProblem();
+                }
+            }
+        }
+
+        var approval = await tariffs.AskPricesAsync(plan, set, remove, reason, ct);
+        return approval.IsSuccess
+            ? TypedResults.Accepted($"/api/v1/approvals/{approval.Value.Id}", approval.Value)
+            : approval.Error!.ToProblem();
     }
 
     /// <summary>Price a service would be charged at for a visit, an admission, a plan, or the hospital default.</summary>
@@ -193,7 +282,12 @@ internal static class TariffEndpoints
             item.IsPriceEditable, item.IsDiscountAllowed));
     }
 
-    private static async Task<Result> ApplyAsync(HospitalDbContext db, TariffPlan plan, SaveTariffPlanRequest request, CancellationToken ct)
+    /// <summary>The terms of the plan a request asks for.</summary>
+    private static TariffPlanTerms Terms(SaveTariffPlanRequest request) =>
+        TariffPlanTerms.Create(request.Type, request.FacilityId, request.DefaultDiscountPercent, request.IsDefault, request.IsActive, request.BedMultipliers);
+
+    /// <summary>Checks a plan's references and sets what does not change what its patients pay: name, payer and description.</summary>
+    private static async Task<Result> ApplyDetailsAsync(HospitalDbContext db, TariffPlan plan, SaveTariffPlanRequest request, CancellationToken ct)
     {
         if (request.PayerId is { } payerId && !await db.Set<Payer>().AnyAsync(p => p.Id == payerId, ct))
         {
@@ -207,90 +301,9 @@ internal static class TariffEndpoints
         }
 
         plan.Name = request.Name.Trim();
-        plan.Type = request.Type;
         plan.PayerId = request.PayerId;
-        plan.FacilityId = request.FacilityId;
-        plan.DefaultDiscountPercent = request.DefaultDiscountPercent;
-        plan.IsActive = request.IsActive;
-        plan.IsDefault = request.IsDefault && request.IsActive;
         plan.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
-        plan.BedMultipliers.Clear();
-        foreach (var multiplier in request.BedMultipliers ?? [])
-        {
-            plan.BedMultipliers.Add(new TariffBedMultiplier { TariffPlanId = plan.Id, BedServiceItemId = multiplier.BedServiceItemId, Multiplier = multiplier.Multiplier });
-        }
-
-        if (plan.IsDefault)
-        {
-            // One default per plan type and facility scope: the new default replaces the previous one.
-            foreach (var other in await db.Set<TariffPlan>()
-                         .Where(p => p.Id != plan.Id && p.IsDefault && p.Type == plan.Type && p.FacilityId == plan.FacilityId)
-                         .ToListAsync(ct))
-            {
-                other.IsDefault = false;
-            }
-        }
-
         return Result.Success();
-    }
-
-    /// <summary>
-    /// Adds or updates plan prices. A new price closes the previous open-ended price of the same service the day before
-    /// it starts, so revisions never overlap and history is kept.
-    /// </summary>
-    private static async Task<Result<BulkTariffPricesResult>> UpsertPricesAsync(
-        HospitalDbContext db, Guid planId, IReadOnlyList<SaveTariffPriceRequest> requests, bool checkVersions, CancellationToken ct)
-    {
-        if (!await db.Set<TariffPlan>().AnyAsync(p => p.Id == planId, ct))
-        {
-            return Error.NotFound(nameof(TariffPlan), planId);
-        }
-
-        var itemIds = requests.Select(r => r.ServiceItemId).Distinct().ToList();
-        if (await db.Set<ServiceItem>().CountAsync(s => itemIds.Contains(s.Id), ct) != itemIds.Count)
-        {
-            return Error.Field("serviceItemId", "One or more services were not found.");
-        }
-
-        var existing = await db.Set<TariffPrice>().Where(p => p.TariffPlanId == planId && itemIds.Contains(p.ServiceItemId)).ToListAsync(ct);
-        int created = 0, updated = 0;
-        foreach (var request in requests)
-        {
-            var same = existing.FirstOrDefault(p => p.ServiceItemId == request.ServiceItemId && p.EffectiveFrom == request.EffectiveFrom);
-            if (same is not null)
-            {
-                if (checkVersions)
-                {
-                    db.SetExpectedVersion(same, request.Version);
-                }
-
-                same.Price = request.Price;
-                same.EffectiveTo = request.EffectiveTo;
-                updated++;
-                continue;
-            }
-
-            foreach (var previous in existing.Where(p => p.ServiceItemId == request.ServiceItemId && p.EffectiveFrom < request.EffectiveFrom
-                                                         && (p.EffectiveTo is null || p.EffectiveTo >= request.EffectiveFrom)))
-            {
-                previous.EffectiveTo = request.EffectiveFrom.AddDays(-1);
-            }
-
-            var price = new TariffPrice
-            {
-                TariffPlanId = planId,
-                ServiceItemId = request.ServiceItemId,
-                Price = request.Price,
-                EffectiveFrom = request.EffectiveFrom,
-                EffectiveTo = request.EffectiveTo,
-            };
-            db.Add(price);
-            existing.Add(price);
-            created++;
-        }
-
-        await db.SaveChangesAsync(ct);
-        return new BulkTariffPricesResult(created, updated);
     }
 
     private static async Task<TariffPlanDetail> ToDetailAsync(HospitalDbContext db, TariffPlan plan, CancellationToken ct)

@@ -123,14 +123,27 @@ Readers = any of `billing.tariffs.manage`, `billing.charges.read`, `billing.op.c
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/` | readers | → `TariffPlanListItem[]` |
-| GET | `/{id}` | readers | → `TariffPlanDetail` (bed-class multipliers) |
-| POST | `/` | `billing.tariffs.manage` | `SaveTariffPlanRequest` → 201 |
-| PUT | `/{id}` | `billing.tariffs.manage` | `SaveTariffPlanRequest` (+`version`) → 204. Saving replaces the bed-class multipliers; the plan's audit event lists them as they were and as they are (`bedMultipliers`) |
+| GET | `/{id}` | readers | → `TariffPlanDetail` (bed-class multipliers; `pendingTerms` and `pendingPrices`, what waits for approval) |
+| POST | `/` | `billing.tariffs.manage` | `SaveTariffPlanRequest` (+`reason`) → 201 `TariffPlanDetail`: made out of use, its terms in `pendingTerms` until approved |
+| PUT | `/{id}` | `billing.tariffs.manage` | `SaveTariffPlanRequest` (+`version`, `reason`) → 200 `TariffPlanDetail`, or 202 with the `ApprovalRequestDto` when its terms wait; 409 `approval.already_requested` when other terms wait. Approving replaces the bed-class multipliers; the plan's audit event lists them as they were and as they are (`bedMultipliers`) |
 | GET | `/{id}/prices` (paged, `sort=effectiveFrom\|price`) | readers | → `PagedResult<TariffPriceDto>` |
-| PUT | `/{id}/prices` | `billing.tariffs.manage` | `SaveTariffPriceRequest` (effective from/to) → 204 |
-| POST | `/{id}/prices/bulk` | `billing.tariffs.manage` | `BulkTariffPricesRequest` → `BulkTariffPricesResult` |
-| DELETE | `/{id}/prices/{priceId}` | `billing.tariffs.manage` | → 204 |
+| PUT | `/{id}/prices` | `billing.tariffs.manage` | `SaveTariffPriceRequest` (effective from/to, `version` of the price it changes, `reason`) → 202 `ApprovalRequestDto`; 409 `concurrency` on a stale or missing version |
+| POST | `/{id}/prices/bulk` | `billing.tariffs.manage` | `BulkTariffPricesRequest` (at most 5,000 prices, `reason`) → 202 `ApprovalRequestDto`: one request for the revision |
+| DELETE | `/{id}/prices/{priceId}` | `billing.tariffs.manage` | → 202 `ApprovalRequestDto` |
 | GET | `/quote?serviceItemId&planId&date&bedServiceItemId` | readers | → `PriceQuoteDto` (price source: base, plan, override, free follow-up) |
+
+**A plan's prices and terms change only when two people agree** (maker-checker, `TariffApprovals`). Every change to a
+plan's prices (one, a bulk revision as one request, one removed: `billing.tariff_prices`) and to its terms (type,
+facility, concession, bed-class multipliers, default, in use: `billing.tariff_plan`) is asked for; someone else who holds
+`masters.prices.approve` (accountants and hospital administrators by default) decides it in Approvals. For a plan nothing
+only narrows: taken out of use, its patients are charged by their type's default plan instead. Name, payer and
+description are saved at once. A new plan is made out of use, without a concession, multipliers or default, and goes
+live with the terms approved. While prices wait, the plan's prices are not asked for again; while terms wait, a save
+must ask for the same terms (409 `approval.already_requested`). The request lists each price (the first 20) against the
+one it replaces, a bulk revision's summary (dearer, cheaper, new, the largest change) and a backdated start (charges
+already posted keep their price). Approving is made only over the very rows and terms the request replaced: a change
+made meanwhile fails it (422 `prices.changed`). Billing quotes and charges the prices and terms in use until then; each
+approved change is audited (`tariff.prices_changed`, `tariff.plan_changed`: before and after, who asked, who approved).
 
 ### Rate list — `/api/v1/billing/rate-list`
 Readers = any of `billing.tariffs.manage`, `billing.charges.read`, `billing.op.create`, `billing.ip.manage`,

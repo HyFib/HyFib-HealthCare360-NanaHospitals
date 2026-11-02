@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Documents;
@@ -535,6 +536,50 @@ public sealed class HospitalServer : IAsyncLifetime
     }
 
     private sealed record CreatedService(Guid Id, Guid? ApprovalId);
+
+    /// <summary>
+    /// A tariff plan saved through the billing API, new or (with <paramref name="planId"/>) existing, its terms approved by
+    /// the other administrator when they wait (a plan's terms change only when two people agree): the plan as it is then.
+    /// </summary>
+    public async Task<TariffPlanDetail> SaveTariffPlanAsync(ApiClient maker, SaveTariffPlanRequest request, Guid? planId = null)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        if (planId is { } existing)
+        {
+            using var response = await maker.SendRawAsync(HttpMethod.Put, $"/api/v1/billing/tariffs/{existing}", request);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"Saving tariff plan {existing}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+            }
+
+            if (response.StatusCode == HttpStatusCode.Accepted)
+            {
+                await ApprovePriceAsync((await response.Content.ReadFromJsonAsync<ApprovalRequestDto>(ApiClient.Json))!.Id);
+            }
+
+            return await maker.GetAsync<TariffPlanDetail>($"/api/v1/billing/tariffs/{existing}");
+        }
+
+        var created = await maker.PostAsync<TariffPlanDetail>("/api/v1/billing/tariffs", request);
+        if (created.PendingTerms is { } pending)
+        {
+            await ApprovePriceAsync(pending.ApprovalId);
+        }
+
+        return await maker.GetAsync<TariffPlanDetail>($"/api/v1/billing/tariffs/{created.Id}");
+    }
+
+    /// <summary>
+    /// Prices of a tariff plan asked for through the billing API as a bulk revision (which replaces the prices it lists on
+    /// purpose) and approved by the other administrator: a plan's prices change only when two people agree.
+    /// </summary>
+    public async Task SaveTariffPricesAsync(ApiClient maker, Guid planId, params SaveTariffPriceRequest[] prices)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        ArgumentNullException.ThrowIfNull(prices);
+        var approval = await maker.PostAsync<ApprovalRequestDto>($"/api/v1/billing/tariffs/{planId}/prices/bulk", new BulkTariffPricesRequest(prices));
+        await ApprovePriceAsync(approval.Id);
+    }
 
     /// <summary>A member of staff created through the admin API, their roles and facilities approved by the other administrator.</summary>
     public async Task<TemporaryPasswordResponse> CreateUserAsync(ApiClient maker, CreateUserRequest request)

@@ -375,8 +375,12 @@ and grants nothing.
     the price is refused (`approval.already_requested`), the price in use put back included. A new service is made out
     of use at ₹0 and goes live at the price approved. The approver sets the terms only over those the request replaced
     (`prices.changed`), so a change made after it was asked for is never overwritten. The service's form shows a price
-    that waits, with its request. Check-up package prices, tariff plan prices, billing packages and doctor-fee rules
-    still change at once;
+    that waits, with its request;
+  - a tariff plan's prices and terms (`billing.tariff_prices`, `billing.tariff_plan`): the billing desk asks, someone
+    else who holds `masters.prices.approve` approves. Every change waits, as for a plan nothing only narrows (taken out of
+    use, its patients are charged by another plan); a bulk revision is one request, and a new plan is made out of use
+    until its terms are approved. Approving is made only over the very rows and terms it replaces (`prices.changed`).
+    Check-up package prices, billing packages and doctor-fee rules still change at once;
   - correcting a released lab report where the lab sets `lab.separateVerifier`: one pathologist asks, another releases
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
     a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.

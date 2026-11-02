@@ -37,6 +37,7 @@ public sealed class BillingModule : IModule
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<TariffService>();
+        services.AddScoped<TariffApprovals>();
         services.AddScoped<RateListService>();
         services.AddSingleton<PublicRateListPdf>();
         services.AddScoped<ChargeService>();
