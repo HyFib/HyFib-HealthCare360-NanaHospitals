@@ -306,7 +306,7 @@ Readers = `billing.ip.manage` or `billing.charges.read`.
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/?status` (paged, `search`) · `/{id}` · `/by-admission/{admissionId}` | readers | → `IpAccountListItem` / `IpAccountDetail` |
-| PUT | `/{id}` | `billing.ip.manage` | `UpdateIpAccountRequest` (payer, policy, pre-auth, estimate; unbilled charges re-priced) → 204 |
+| PUT | `/{id}` | `billing.ip.manage` | `UpdateIpAccountRequest` (payer, policy, plan, estimate; unbilled charges re-priced) → 204; a plan other than the payer's → 202 `ApprovalRequestDto` (`billing.ip_plan`, [the stay's plan](#the-plan-a-stay-is-billed-on)); 409 `approval.already_requested` while another waits |
 | GET | `/{id}/running-bill` | readers | → `RunningBill` (by category, by day, lines with `isReturn`, `returnsNet`, package vs actuals, insurance estimate, deposit, estimated balance); guarded + audited |
 | GET | `/{id}/package-status` | readers | → `PackageStatus` |
 | PUT | `/{id}/package` | `billing.ip.manage` | `AssignPackageRequest(packageId?)` → 204; 400 `packageId` for a package for out-patient visits only |
@@ -318,6 +318,19 @@ Readers = `billing.ip.manage` or `billing.charges.read`.
 
 IP account statuses: `Open`, `DischargeInitiated`, `Discharged`, `Closed`, `Cancelled` (admission cancelled; no new
 advances or packages; leftover services can still be billed; any advance is refunded through the refund flow).
+
+#### The plan a stay is billed on
+A stay is billed on its payer's plan: the one billing resolves for its payer when the patient is admitted (the payer's
+own plan if in use, else its type's default, else the General default), shown as `payerPlanId`. Saving the stay's
+payer, policy and plan (`PUT /{id}`) is made at once when it puts the stay on that plan (no `tariffPlanId`, or the
+payer's), or keeps the plan the stay has while its payer stays the same. Any other plan (a concession, or a dearer plan)
+is asked for (`billing.ip_plan`), with the payer and policy asked with it and a `reason`, and someone else who holds
+`billing.discounts.approve` decides; the estimate and notes are saved at once. The request reads, for the approver,
+what the stay's unbilled services come to as priced now, on its payer's plan and on the plan asked (each priced on a
+copy that is never saved). Approving re-checks the stay's payer terms (`prices.changed` when any changed meanwhile), that
+the stay is not discharged, the plan and payer are in use and no draft bill waits when re-pricing was asked, then sets
+them and re-prices the unbilled services; audited `billing.ip.plan_changed`. `IpAccountDetail.pendingPlan` holds what
+waits. One waiting request per stay: while it waits, a save asking other payer terms is refused (409).
 
 #### Interim bills (IPB-05)
 A self-paying patient's long stay can be billed in parts, so the family pays as the stay goes on:
@@ -356,7 +369,7 @@ A self-paying patient's long stay can be billed in parts, so the family pays as 
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/payers` · `/payers/{id}` | payers/policies/pre-auth/claims manage, `op.create`, `ip.manage`, `charges.read` | → `PayerListItem[]` / `PayerDetail` |
-| POST · PUT | `/payers` · `/payers/{id}` | `insurance.payers.manage` | `SavePayerRequest` → 201 / 204 |
+| POST · PUT | `/payers` · `/payers/{id}` | `insurance.payers.manage` | `SavePayerRequest` (`reason` for the approver) → 201 `PayerDetail` (a new payer out of use, `pendingTerms` when its terms wait) / 200 `PayerDetail` or 202 `ApprovalRequestDto` (`insurance.payer_terms`) when terms are asked; 409 `approval.already_requested` when other terms wait |
 | GET | `/non-payable-items?payerId` | payers/claims manage, `ip.manage` | → `NonPayableItemDto[]` |
 | POST · DELETE | `/non-payable-items` · `/{id}` | `insurance.payers.manage` | `SaveNonPayableItemRequest` → 201 / 204 |
 | GET | `/policies?patientId&includeInactive` · `/policies/{id}` | policies/pre-auth/claims manage, `ip.manage`, `op.create` | → `PolicyDto[]` (number masked) |
@@ -372,6 +385,17 @@ A self-paying patient's long stay can be billed in parts, so the family pays as 
 | PUT | `/claims/{id}/coding` | `insurance.claims.manage` | `UpdateClaimCodingRequest` (ICD / procedure codes as text) → 204 |
 | POST | `/claims/{id}/query` · `/answer` · `/approve` · `/settle` · `/reject` | `insurance.claims.manage` | `ClaimTextRequest`, `ApproveClaimRequest`, `SettleClaimRequest` (tranche, deductions with reasons, UTR), `RejectClaimRequest` → 204; a rejection is a full disallowance |
 | GET | `/receivables/ageing?asOf` | `insurance.claims.manage` | → `ReceivablesAgeingReport` (0-30 / 31-60 / 61-90 / 90+ by payer) |
+
+**A payer's terms change only when two people agree.** A payer's category (whose default plan prices its patients
+while it has no plan of its own), its tariff plan, its default co-pay (the patient's share where the policy states
+none) and putting it in use are asked for (`insurance.payer_terms`), and someone else who holds
+`masters.prices.approve` decides. Taking a payer out of use is made at once: it only stops new visits and stays being
+billed to it. A new payer is added out of use, with no plan of its own and no co-pay, and goes live with the terms
+approved. Its name, contact, GSTIN, credit period, portal and notes are saved at once. The request reads each change in
+words, and that a new plan or category reaches out-patient services charged after approval and admissions after it
+(stays already open keep their plan). Approving re-checks the terms it replaces (`prices.changed`); audited
+`payer.terms_changed` with before and after. `PayerDetail.pendingTerms` holds what waits; while it waits, a save must ask
+for the same terms (409).
 
 ### Doctor fees — `/api/v1/doctor-fees`
 | Method | Path | Permission | Request → response |
@@ -1099,6 +1123,10 @@ are append-mostly and not data-audited; imports and reviews are audited. `OpBill
   whether the hospital is public.
 * **Packages that span several visits**, such as antenatal care or a course of physiotherapy: an OP package prices one
   bill.
+* **Non-payable items** (what a payer never pays, so the patient does) are still added and removed by one person, as
+  are packages and doctor-fee rules.
+* **A visit's payer** is set at the front desk without a second person; an out-patient is priced on the plan of the
+  payer chosen there. A stay's plan other than its payer's waits for approval; a visit has no plan of its own to choose.
 * **An admission's package is not checked against its tariff plan.** OP bills take only packages for their tariff plan
   or for any plan; the IP account still accepts any active package for admissions.
 * **A failed gateway refund paid another way.** The refund stays paid through the gateway in HC360; the accountant

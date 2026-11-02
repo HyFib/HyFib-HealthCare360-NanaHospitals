@@ -14,6 +14,8 @@ internal static class PayerEndpoints
 
     private static readonly string[] PolicyReaders = PayerDirectory.PolicyReaders;
 
+    private const string WaitingCode = "approval.already_requested";
+
     public static void Map(IEndpointRouteBuilder app)
     {
         var payers = app.MapGroup("/api/v1/insurance/payers").WithTags("Insurance - Payers");
@@ -64,13 +66,15 @@ internal static class PayerEndpoints
         return TypedResults.Ok(rows);
     }
 
-    private static async Task<IResult> GetPayer(Guid id, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> GetPayer(Guid id, HospitalDbContext db, PayerApprovals approvals, CancellationToken ct)
     {
         var payer = await db.Set<Payer>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, ct);
-        return payer is null ? Error.NotFound(nameof(Payer), id).ToProblem() : TypedResults.Ok(ToDetail(payer));
+        return payer is null
+            ? Error.NotFound(nameof(Payer), id).ToProblem()
+            : TypedResults.Ok(ToDetail(payer) with { PendingTerms = await approvals.PendingAsync(payer.Id, ct) });
     }
 
-    private static async Task<IResult> CreatePayer(SavePayerRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> CreatePayer(SavePayerRequest request, HospitalDbContext db, PayerApprovals approvals, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         if (await db.Set<Payer>().IgnoreQueryFilters().AnyAsync(p => p.Code == code, ct))
@@ -83,14 +87,33 @@ internal static class PayerEndpoints
             return Error.Field("tariffPlanId", "Choose a tariff plan.").ToProblem();
         }
 
+        // What a payer's patients pay changes only when two people agree (maker-checker): a new payer is made out of use,
+        // and goes live with the terms a second person approves.
         var payer = new Payer { Code = code };
         Apply(payer, request);
+        var asked = Terms(request);
+        var now = asked.OutOfUse();
+        now.ApplyTo(payer);
         db.Add(payer);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return TypedResults.Created($"/api/v1/insurance/payers/{payer.Id}", ToDetail(payer));
+        PendingPayerTerms? pending = null;
+        if (asked != now)
+        {
+            var approval = await approvals.AskAsync(payer, now, asked, request.Reason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            pending = new PendingPayerTerms(approval.Value.Id, asked, approval.Value.RequestedByName, approval.Value.RequestedAt);
+        }
+
+        await transaction.CommitAsync(ct);
+        return TypedResults.Created($"/api/v1/insurance/payers/{payer.Id}", ToDetail(payer) with { PendingTerms = pending });
     }
 
-    private static async Task<IResult> UpdatePayer(Guid id, SavePayerRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> UpdatePayer(Guid id, SavePayerRequest request, HospitalDbContext db, PayerApprovals approvals, CancellationToken ct)
     {
         var payer = await db.Set<Payer>().FirstOrDefaultAsync(p => p.Id == id, ct);
         if (payer is null)
@@ -104,9 +127,38 @@ internal static class PayerEndpoints
         }
 
         db.SetExpectedVersion(payer, request.Version ?? 0);
+
+        // The terms wait for a second person, except taking the payer out of use, which only stops its new use. While a
+        // change waits, a save must ask for the same terms.
+        var before = PayerTerms.Of(payer);
+        var asked = Terms(request);
+        var waiting = await approvals.PendingAsync(payer.Id, ct);
+        if (waiting is not null && waiting.Asked != asked)
+        {
+            return Error.Conflict(WaitingCode,
+                    $"A change to payer {payer.Code}'s terms, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.")
+                .ToProblem();
+        }
+
         Apply(payer, request);
+        var now = before.Narrowed(asked);
+        now.ApplyTo(payer);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return TypedResults.Ok(ToDetail(payer));
+        if (waiting is null && asked != now)
+        {
+            var approval = await approvals.AskAsync(payer, now, asked, request.Reason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            await transaction.CommitAsync(ct);
+            return TypedResults.Accepted($"/api/v1/approvals/{approval.Value.Id}", approval.Value);
+        }
+
+        await transaction.CommitAsync(ct);
+        return TypedResults.Ok(ToDetail(payer) with { PendingTerms = waiting });
     }
 
     private static async Task<IResult> ListNonPayables(Guid? payerId, HospitalDbContext db, CancellationToken ct)
@@ -212,22 +264,23 @@ internal static class PayerEndpoints
     private static async Task<IResult> VerifyPolicy(Guid id, VerifyPolicyRequest request, PolicyService policies, CancellationToken ct) =>
         (await policies.VerifyAsync(id, request.Notes, ct)).ToNoContent();
 
+    /// <summary>The details a save makes at once: everything but the terms.</summary>
     private static void Apply(Payer payer, SavePayerRequest request)
     {
         payer.Name = request.Name.Trim();
-        payer.Category = request.Category;
         payer.ContactPerson = Clean(request.ContactPerson);
         payer.Phone = Phone.Normalize(request.Phone);
         payer.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant();
         payer.Address = Clean(request.Address);
         payer.Gstin = string.IsNullOrWhiteSpace(request.Gstin) ? null : request.Gstin.Trim().ToUpperInvariant();
-        payer.TariffPlanId = request.TariffPlanId;
         payer.CreditDays = request.CreditDays;
-        payer.DefaultCoPayPercent = request.DefaultCoPayPercent;
         payer.PortalUrl = Clean(request.PortalUrl);
-        payer.IsActive = request.IsActive;
         payer.Notes = Clean(request.Notes);
     }
+
+    /// <summary>The terms a save asks for: what decides what the payer's patients pay.</summary>
+    private static PayerTerms Terms(SavePayerRequest request) =>
+        new(request.Category, request.TariffPlanId, request.DefaultCoPayPercent, request.IsActive);
 
     private static PayerDetail ToDetail(Payer p) => new(
         p.Id, p.Code, p.Name, p.Category, p.ContactPerson, p.Phone, p.Email, p.Address, p.Gstin, p.TariffPlanId, p.CreditDays, p.DefaultCoPayPercent,

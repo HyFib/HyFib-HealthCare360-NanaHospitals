@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using HyFib.HealthCare360.Modules.Billing.Features.Insurance;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Platform.Approvals;
@@ -579,6 +580,22 @@ public sealed class HospitalServer : IAsyncLifetime
         ArgumentNullException.ThrowIfNull(prices);
         var approval = await maker.PostAsync<ApprovalRequestDto>($"/api/v1/billing/tariffs/{planId}/prices/bulk", new BulkTariffPricesRequest(prices));
         await ApprovePriceAsync(approval.Id);
+    }
+
+    /// <summary>
+    /// A payer added through the insurance API, its terms approved by the other administrator when they wait (what a payer's
+    /// patients pay changes only when two people agree): the payer as it is then.
+    /// </summary>
+    public async Task<PayerDetail> CreatePayerAsync(ApiClient maker, SavePayerRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        var created = await maker.PostAsync<PayerDetail>("/api/v1/insurance/payers", request);
+        if (created.PendingTerms is { } pending)
+        {
+            await ApprovePriceAsync(pending.ApprovalId);
+        }
+
+        return await maker.GetAsync<PayerDetail>($"/api/v1/insurance/payers/{created.Id}");
     }
 
     /// <summary>A member of staff created through the admin API, their roles and facilities approved by the other administrator.</summary>

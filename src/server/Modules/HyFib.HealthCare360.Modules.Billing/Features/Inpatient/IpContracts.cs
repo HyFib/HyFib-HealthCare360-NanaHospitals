@@ -52,11 +52,15 @@ public sealed record IpAccountDetail(
     string? DischargeApprovalReason,
     string? Notes,
     uint Version,
-    string? FreeTreatmentReason = null);
+    string? FreeTreatmentReason = null,
+    Guid? PayerPlanId = null,
+    PendingStayPlan? PendingPlan = null);
 
 /// <summary>
 /// Changes the payer/tariff of an admission (for example cash converted to cashless mid-stay). With
-/// <paramref name="RepriceUnbilledCharges"/> the unbilled services are re-priced on the new tariff.
+/// <paramref name="RepriceUnbilledCharges"/> the unbilled services are re-priced on the new tariff. No
+/// <paramref name="TariffPlanId"/> means the payer's plan; another plan than the payer's waits for a second person, and
+/// <paramref name="Reason"/> is for them.
 /// </summary>
 public sealed record UpdateIpAccountRequest(
     decimal EstimatedAmount,
@@ -66,7 +70,8 @@ public sealed record UpdateIpAccountRequest(
     Guid? PolicyId,
     bool RepriceUnbilledCharges,
     string? Notes,
-    uint Version);
+    uint Version,
+    string? Reason = null);
 
 public sealed record AssignPackageRequest(Guid? PackageId, uint Version);
 
@@ -181,6 +186,7 @@ public sealed class UpdateIpAccountRequestValidator : AbstractValidator<UpdateIp
             .When(x => x.PayerType is PayerType.Insurance or PayerType.Corporate or PayerType.GovernmentScheme)
             .WithMessage("Choose the insurer, corporate or scheme.");
         RuleFor(x => x.Notes).SafeText(1000);
+        RuleFor(x => x.Reason).SafeText(500);
     }
 }
 
