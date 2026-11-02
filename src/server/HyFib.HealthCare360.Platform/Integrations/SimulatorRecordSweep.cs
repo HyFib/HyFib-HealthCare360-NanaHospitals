@@ -86,18 +86,15 @@ public sealed class SimulatorRecordSweep(HospitalDbContext db, IAuditLogger audi
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     /// <summary>
-    /// The receipt lines of money the payment simulator took: by its payment ids, or by an order or advance the simulator made
-    /// for the receipt; with what reversals have taken back of each.
+    /// The receipt lines of money the payment simulator took, by the payment ids it gives (<c>pay_sim…</c>, since it was
+    /// first built), with what reversals have taken back of each.
     /// </summary>
     private const string SimulatorGatewayLines = """
         SELECT r.receipt_number AS reference, r.received_at AS at, p.amount, r.id AS receipt_id, r.patient_id,
                coalesce((SELECT sum(x.amount) FROM billing.receipt_reversal_lines x WHERE x.receipt_payment_id = p.id), 0) AS reversed
         FROM billing.receipt_payments p
         JOIN billing.receipts r ON r.id = p.receipt_id
-        WHERE p.mode = 'PaymentGateway' AND NOT r.is_deleted
-          AND (p.external_id LIKE 'pay\_sim%'
-               OR EXISTS (SELECT 1 FROM billing.gateway_orders o WHERE o.receipt_id = r.id AND lower(trim(o.provider)) = 'simulator')
-               OR EXISTS (SELECT 1 FROM billing.patient_advances a WHERE a.receipt_id = r.id AND lower(trim(a.provider)) = 'simulator'))
+        WHERE p.mode = 'PaymentGateway' AND p.external_id LIKE 'pay\_sim%' AND NOT r.is_deleted
         """;
 
     /// <summary>
@@ -204,7 +201,8 @@ public sealed class SimulatorRecordSweep(HospitalDbContext db, IAuditLogger audi
             WHERE l.provider LIKE 'simulator:%' AND l.operation = 'results' AND l.success
             """,
             // Per sample of a message: open while a result on it from that analyser still holds the analyser's value (entering
-            // it again or amending it clears the analyser's fields), or while one waits unmatched.
+            // it again or amending it clears the analyser's fields), or while one waits unmatched. The training analyser marks
+            // every result final, so a value it gave always has its status.
             """
             SELECT smp.barcode AS reference, l.created_at AS at, NULL::numeric AS amount, 'LabOrder' AS entity, smp.lab_order_id AS entity_id, smp.patient_id
             FROM integrations.integration_logs l

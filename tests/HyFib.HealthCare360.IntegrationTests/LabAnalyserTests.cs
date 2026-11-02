@@ -243,6 +243,42 @@ public sealed class LabAnalyserTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_result_from_the_training_analyser_for_no_known_sample_is_open_until_it_is_discarded()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        await EnableGatewayAsync(admin);
+        const string connections = "/api/v1/integrations/lab/connections";
+        var version = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+        await admin.PutAsync($"{connections}/EM360", new SaveLabConnectionRequest("Simulator", true, null, null, null, null, null, null, null, version));
+        try
+        {
+            var unknown = "9" + Digits(8);
+            (await admin.PostAsync<TrainingResultsOutcome>($"{connections}/EM360/training/results",
+                new TrainingResultsRequest(unknown, [new TrainingResult("GLU", "97", "mg/dL")]))).Accepted.ShouldBeTrue();
+
+            // Kept aside for a person to place, and open while it waits.
+            var kept = (await UnmatchedAsync(lab, unknown)).ShouldHaveSingleItem();
+            var open = (await SimulatorRecords.OpenAsync(admin, "lab-results")).Single(r => r.Reference == unknown);
+            (open.Entity, open.EntityId).ShouldBe(("UnmatchedLabResult", kept.Id));
+
+            using (var discarded = await lab.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/unmatched-results/{kept.Id}/discard",
+                       new DiscardUnmatchedResultRequest("Typed into the training analyser: no sample was measured.")))
+            {
+                discarded.StatusCode.ShouldBe(HttpStatusCode.NoContent, await discarded.Content.ReadAsStringAsync(Ct));
+            }
+
+            (await SimulatorRecords.OpenAsync(admin, "lab-results")).ShouldNotContain(r => r.Reference == unknown);
+        }
+        finally
+        {
+            var current = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+            using var removed = await admin.SendRawAsync(HttpMethod.Delete, $"{connections}/EM360?version={current}");
+            removed.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+    }
+
+    [Fact]
     public async Task Results_sent_from_the_training_analyser_reach_the_sample_as_that_analysers()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);

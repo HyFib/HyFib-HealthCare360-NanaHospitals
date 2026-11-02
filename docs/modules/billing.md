@@ -263,7 +263,9 @@ note of 10 to 500 characters saying how it was found.
   bill that owes again reverses its doctors' fees; they accrue again when it is paid. A payment reversed is no longer
   reported unsettled, by the gateway's settlement check (its open exception is cleared) or in the card and UPI
   settlement list.
-* The simulator sweep's guidance for payments, card sales and refunds is carried out with these reversals.
+* The simulator sweep's guidance for payments, card sales and refunds is carried out with these reversals. The sweep
+  counts each such record open until all its money is reversed, or its refund is recorded as not paid out, and takes no
+  sign-off meanwhile (DEPLOYMENT.md, "Going live on a database used for training").
 
 ### POS terminals and payment links — `/api/v1/billing/pos/sales`, `/api/v1/billing/payment-links`
 | Method | Path | Permission | Request → response |

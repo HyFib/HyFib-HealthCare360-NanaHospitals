@@ -435,11 +435,32 @@ A live server sweeps its database for them ten minutes after it starts and every
 Simulator records** lists each kind it found:
 - how many, and the money they say moved;
 - when they were made, and the references of the newest;
+- for the six kinds below, how many are still open;
 - what to do about them.
 
+A payment, refund, card sale, Aadhaar link, image or lab result a simulator made stays open until its record shows it
+corrected. **To correct** on the same page lists the open ones of a kind (up to 500, newest first), each with a link to
+the record it is corrected on:
+
+| Kind | Corrected when | Where |
+|---|---|---|
+| Online payments the payment simulator took (bill payments, IP deposits, appointment prepayments, payments kept as an advance) | All of the receipt line's money is recorded as not received | Billing › Receipts › Money not received; a second person approves |
+| Refunds the payment simulator said it paid back | The refund is recorded as not paid out | The refund › Not paid out; a second person approves |
+| Card and UPI sales the terminal simulator approved | All of the money of the receipt line the sale made is recorded as not received | As a payment |
+| Aadhaar numbers the Aadhaar simulator linked | The number is removed from the patient's record or replaced, or a real fingerprint check of it, not with a virtual ID, matches | The patient › Edit |
+| Imaging studies linked to the PACS simulator | The study is linked to its real images, cancelled as not done, or its report has an addendum written after the images were linked | Radiology › the study |
+| Results typed into the training analyser | Each result it gave on the sample is entered again from a real measurement (a verified one is reopened first) or amended on the released report; one still waiting unmatched is discarded | The lab order; Lab › Unmatched analyser results |
+
 System health warns until an IT officer (`admin.system.manage`) has dealt with each kind and signed the sweep off there,
-with a note of what was done. Payments, refunds, card sales, Aadhaar links, images and lab results make the warning
-critical, which is sent to IT on-call. A record a simulator makes after the sign-off brings the warning back.
+with a note of what was done:
+- While any of the six is still open, the warning is critical and is sent to IT on-call, and the sign-off is refused
+  (`simulators.critical_open`, naming the kinds and how many of each). Correct them, **Sweep now**, and sign off that
+  sweep: one that still counted open records is refused too, even when they have been corrected since.
+- The other kinds (settlements, messages, day-book vouchers, attendance punches, cardiology files and labels) leave no
+  trace on their records to tell when they are dealt with. The note says what was done about them.
+- Once none is open, the warning stays (not critical) until the sign-off.
+
+A record a simulator makes after the sign-off brings the warning back.
 
 ## 5. Install HC360 Desktop on workstations
 
@@ -1324,7 +1345,8 @@ clean-up reads only the months concerned. The audit trail's partitions refuse TR
 | HC360 does not start, and its log says "The database is a read-only warm standby" | HC360 was started on the standby. Leave its service disabled; to fail over, promote the standby first (section 9) |
 | "Critical warnings do not reach IT on-call by phone" or "…may not arrive by SMS" (System health) | The on-call number, the SMS provider, or the `system.alert` template's DLT template id: the warning names which (section 4, "Alerts that reach someone"). Then run an alert drill |
 | "The outside heartbeat to … has failed" (System health) | The server's internet access, the firewall towards the monitor's host, and `alerts.heartbeatUrl.secret`. The monitoring service raises its own alarm meanwhile |
-| "This live server's database holds records the integrations' simulators made" (System health) | The database was used for training, or set up before HC360 refused the simulators on a live server (section 4, "Going live on a database used for training"). Administration › Simulator records lists each kind and what to do about it. Deal with each, then sign them off there |
+| "This live server's database holds records the integrations' simulators made" (System health) | The database was used for training, or set up before HC360 refused the simulators on a live server (section 4, "Going live on a database used for training"). Administration › Simulator records lists each kind and what to do about it, and under "To correct" the payments, refunds, card sales, Aadhaar links, images and lab results not corrected yet. Correct those, deal with the rest, sweep again, then sign them off there |
+| "… record(s) the simulators made are not corrected yet" or "The sweep of … found … record(s) not corrected" when signing off (Administration › Simulator records) | The sign-off waits for the records: each kind named still has records open, or the sweep being signed off counted some. Correct each under "To correct" as the table in section 4 says, press **Sweep now**, and sign off the new sweep |
 | HC360 does not start, and its log says "HealthCare360:SeedDemoData is on, but this database holds patients" | `SeedDemoData` was turned on for the hospital's database. Demonstration data, its accounts and the simulators would mix into real records, so HC360 refuses. Remove `"SeedDemoData": true` from `config\hc360.settings.json` and start the service. A training or test server needs a database of its own, with demonstration data on before anyone is registered (docs/testing/LOAD-TESTS.md); one made before this check that holds patients needs a new database |
 | A node of several does not start: "this server has a data encryption key of its own …, and the shared folder … has none" | The keys are not in the shared folder yet. Put them there with `backup restore` (section 10, "Setting it up", step 4) |
 | A node of several does not start: "… names certificate …, which is not in the Local Computer's Personal store", or "… has no RSA private key this server may use" | Import the cluster key certificate on this node, with its private key, and give `NT SERVICE\HC360Server` *Read* on the key (section 10) |

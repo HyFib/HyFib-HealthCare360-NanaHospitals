@@ -244,6 +244,12 @@ public sealed class SimulatorRecordSweepTests(HospitalServer server)
         var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
 
         (await hospitalAdmin.GetAsync<SimulatorRecordsView>(Records)).ShouldNotBeNull();
+        (await SimulatorRecords.OpenAsync(hospitalAdmin, "messages")).ShouldBeEmpty("a kind the IT officer acknowledges has nothing to correct");
+        using (var unknown = await hospitalAdmin.SendRawAsync(HttpMethod.Get, $"{Records}/no-such-kind/open"))
+        {
+            unknown.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        }
+
         using var sweep = await hospitalAdmin.SendRawAsync(HttpMethod.Post, $"{Records}/sweep");
         using var signOff = await hospitalAdmin.SendRawAsync(HttpMethod.Post, $"{Records}/sign-off",
             new SignOffSimulatorRecordsRequest(DateTimeOffset.UtcNow, "Nothing from training left here."));
