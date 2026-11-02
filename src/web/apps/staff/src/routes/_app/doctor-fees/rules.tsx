@@ -36,7 +36,11 @@ export const Route = createFileRoute('/_app/doctor-fees/rules')({
   component: RulesPage,
 });
 
-/** Doctor revenue-share rules (DFA-01). The most specific rule in force on the service date decides the share. */
+/**
+ * Doctor revenue-share rules (DFA-01). The most specific rule in force on the service date decides the share. A rule's
+ * terms change only when a second person approves them; a rule waiting for approval says so, and only a rule out of use
+ * is deleted.
+ */
 function RulesPage() {
   // Closing a dialog opened from a row's menu returns focus to that row's menu button.
   const restoreFocusTarget = useRestoreFocusTarget();
@@ -144,10 +148,13 @@ function RulesPage() {
               key: 'status',
               header: 'Status',
               render: (r) => (
-                <StatusBadge
-                  status={r.isActive ? 'Active' : 'Inactive'}
-                  tone={r.isActive ? 'success' : 'informative'}
-                />
+                <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+                  <StatusBadge
+                    status={r.isActive ? 'Active' : 'Inactive'}
+                    tone={r.isActive ? 'success' : 'informative'}
+                  />
+                  {r.pending && <StatusBadge status="Waiting" label="Waiting for approval" tone="warning" />}
+                </span>
               ),
             },
           ]}
@@ -169,9 +176,12 @@ function RulesPage() {
                         <MenuItem icon={<EditRegular />} onClick={() => setEditing(r)}>
                           Edit
                         </MenuItem>
-                        <MenuItem icon={<DeleteRegular />} onClick={() => setDeleting(r)}>
-                          Delete
-                        </MenuItem>
+                        {/* A rule in use is taken out of use first (approved by a second person), then deleted. */}
+                        {!r.isActive && (
+                          <MenuItem icon={<DeleteRegular />} onClick={() => setDeleting(r)}>
+                            Delete
+                          </MenuItem>
+                        )}
                       </MenuList>
                     </MenuPopover>
                   </Menu>
@@ -200,8 +210,8 @@ function RulesPage() {
         onConfirm={() => deleting && remove.mutate(deleting.id)}
         onCancel={() => setDeleting(null)}
       >
-        Fees already earned are not changed. To stop a rule from a date, set its end date instead; that keeps the
-        history.
+        The rule is out of use and shares nothing; fees already earned are not changed. To stop a rule in use from a
+        date, set its end date instead (approved by a second person); that keeps the history.
         <ActionError error={remove.error} />
       </ConfirmDialog>
     </Page>

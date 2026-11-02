@@ -1,6 +1,7 @@
 import type { PagedResult, PayerType } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { PaymentMode, ServiceCategory } from '@/modules/billing/labels';
 
 /*
@@ -56,6 +57,34 @@ export interface ShareRuleDto {
   isActive: boolean;
   notes: string | null;
   version: number;
+  /** Terms asked for and waiting for a second person (maker-checker); the rule shares at its terms in use until then. */
+  pending?: PendingShareRule | null;
+}
+
+/** What decides what a sharing rule shares: everything but its notes. */
+export interface ShareRuleTerms {
+  practitionerId: string | null;
+  serviceItemId: string | null;
+  category: ServiceCategory | null;
+  payerType: PayerType | null;
+  method: ShareMethod;
+  value: number;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  isActive: boolean;
+}
+
+export interface PendingShareRule {
+  approvalId: string;
+  asked: ShareRuleTerms;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** A rule saved, and the approval its terms wait for when they were asked for. */
+export interface SavedShareRule {
+  id: string;
+  asked: ApprovalRequestDto | null;
 }
 
 export interface SaveShareRuleRequest {
@@ -70,6 +99,8 @@ export interface SaveShareRuleRequest {
   isActive: boolean;
   notes: string | null;
   version: number | null;
+  /** Why the terms change, for the approver. */
+  reason?: string | null;
 }
 
 export interface AccrualDto {
@@ -217,8 +248,11 @@ export const feeQueries = {
 };
 
 export const feeApi = {
-  createRule: (request: SaveShareRuleRequest) => api.post<{ id: string }>('/api/v1/doctor-fees/rules', request),
-  updateRule: (id: string, request: SaveShareRuleRequest) => api.put<void>(`/api/v1/doctor-fees/rules/${id}`, request),
+  /** A new rule is saved out of use; its terms wait for a second person (`asked`). */
+  createRule: (request: SaveShareRuleRequest) => api.post<SavedShareRule>('/api/v1/doctor-fees/rules', request),
+  /** Notes are saved at once (no content); changed terms are asked for (the approval request). */
+  updateRule: (id: string, request: SaveShareRuleRequest) =>
+    api.put<ApprovalRequestDto | undefined>(`/api/v1/doctor-fees/rules/${id}`, request),
   deleteRule: (id: string) => api.delete<void>(`/api/v1/doctor-fees/rules/${id}`),
   createPayout: (request: CreatePayoutRequest) => api.post<{ id: string }>('/api/v1/doctor-fees/payouts', request),
   approvePayout: (id: string, version: number) =>

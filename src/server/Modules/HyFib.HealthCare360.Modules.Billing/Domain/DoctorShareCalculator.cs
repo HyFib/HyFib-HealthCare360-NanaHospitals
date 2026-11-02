@@ -68,6 +68,43 @@ public static class DoctorShareCalculator
         (rule.PractitionerId is null ? 0 : 8) + (rule.ServiceItemId is null ? 0 : 4) + (rule.Category is null ? 0 : 2) + (rule.PayerType is null ? 0 : 1);
 }
 
+/// <summary>What a change of sharing rules would share differently: how many bill lines, and the doctors' share of them before and after.</summary>
+public sealed record ShareImpact(int Lines, decimal Before, decimal After)
+{
+    public decimal Change => After - Before;
+}
+
+/// <summary>
+/// What a change of sharing rules does to the doctors' share of a set of bill lines (maker-checker, DFA-01): each line
+/// is shared under the rules before and after, by the same rule that accrues fees (<see cref="DoctorShareCalculator"/>),
+/// and the lines shared differently are counted with their shares. Taking a specific rule out of use is a change like
+/// any other: its lines fall back to the next most specific rule, which may share more.
+/// </summary>
+public static class ShareRuleImpact
+{
+    public static ShareImpact Of(IEnumerable<ShareLine> lines, IReadOnlyList<ShareRuleView> before, IReadOnlyList<ShareRuleView> after)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        var count = 0;
+        decimal was = 0m, now = 0m;
+        foreach (var line in lines)
+        {
+            var shared = DoctorShareCalculator.Calculate(before, line).Amount;
+            var asked = DoctorShareCalculator.Calculate(after, line).Amount;
+            if (shared == asked)
+            {
+                continue;
+            }
+
+            count++;
+            was += shared;
+            now += asked;
+        }
+
+        return new ShareImpact(count, was, now);
+    }
+}
+
 public sealed record PayoutAmounts(decimal Gross, decimal Deductions, decimal TdsPercent, decimal Tds, decimal Net);
 
 /// <summary>

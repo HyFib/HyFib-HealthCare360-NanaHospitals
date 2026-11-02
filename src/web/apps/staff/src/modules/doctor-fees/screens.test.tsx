@@ -180,6 +180,15 @@ const concurrency = () =>
 let server: ReturnType<typeof fakeServer>;
 /** The sharing rules as the server has them now. */
 let rules: ShareRuleDto[];
+/** Whether a rule's save asks for a second person's approval (202) instead of being saved. */
+let askOnSave: boolean;
+
+/** A save of a rule's terms asked for approval: the request, as the server answers it. */
+const askedForApproval = () =>
+  new Response(JSON.stringify({ id: id('0a2'), summary: 'Sharing rule for Dr. Anil Rao: share 40% → 50%' }), {
+    status: 202,
+    headers: { 'content-type': 'application/json' },
+  });
 
 /** The payouts list, filtered by status the way the server does (the overview's counts ask with pageSize 1). */
 function listPayouts(request: FakeRequest): PagedResult<PayoutDto> {
@@ -203,13 +212,14 @@ beforeEach(() => {
   stubBrowserApis();
   localStorage.clear();
   rules = [DEFAULT_RULE, ANIL_RULE];
+  askOnSave = false;
   server = fakeServer({
     'GET /api/v1/masters/lookups/practitioners': [MEERA, ANIL],
     'GET /api/v1/print/letterhead': { name: 'Nana Hospitals, Pune' },
     'GET /api/v1/doctor-fees/rules': (request: FakeRequest) =>
       request.url.searchParams.get('includeInactive') === 'true' ? [...rules, OLD_RULE] : rules,
     'POST /api/v1/doctor-fees/rules': { id: id('004') },
-    'PUT /api/v1/doctor-fees/rules/*': saveRule,
+    'PUT /api/v1/doctor-fees/rules/*': (request: FakeRequest) => (askOnSave ? askedForApproval() : saveRule(request)),
     'GET /api/v1/doctor-fees/accruals': paged(ACCRUALS),
     'GET /api/v1/doctor-fees/payouts': listPayouts,
     'GET /api/v1/doctor-fees/payouts/*': (request: FakeRequest) =>
@@ -292,6 +302,7 @@ describe('doctor fee screens (DFA-01..05)', SCREEN_TESTS, () => {
       isActive: true,
       notes: 'CGHS rate',
       version: 3,
+      reason: null,
     });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Sharing rule' })).not.toBeInTheDocument());
   });
@@ -351,7 +362,61 @@ describe('doctor fee screens (DFA-01..05)', SCREEN_TESTS, () => {
       isActive: true,
       notes: null,
       version: null,
+      reason: null,
     });
+  });
+
+  it('a change waiting for approval is listed and held in the form, and a new share is asked for with a reason', async () => {
+    const user = userEvent.setup();
+    const asked = { ...ANIL_RULE, value: 45 };
+    rules = [
+      DEFAULT_RULE,
+      {
+        ...ANIL_RULE,
+        pending: {
+          approvalId: id('0a1'),
+          asked: {
+            practitionerId: asked.practitionerId,
+            serviceItemId: asked.serviceItemId,
+            category: asked.category,
+            payerType: asked.payerType,
+            method: asked.method,
+            value: asked.value,
+            effectiveFrom: asked.effectiveFrom,
+            effectiveTo: asked.effectiveTo,
+            isActive: asked.isActive,
+          },
+          requestedBy: 'Accounts Officer',
+          requestedAt: '2026-11-02T09:00:00Z',
+        },
+      },
+    ];
+    askOnSave = true;
+    openScreen('/doctor-fees/rules');
+    const table = await screen.findByRole('table', { name: 'Sharing rules' }, SLOW);
+    expect(await within(table).findByText('Waiting for approval', {}, SLOW)).toBeInTheDocument();
+
+    // The form holds the share asked (45 %), with the notice of what waits; a rule in use is not offered for deletion.
+    await user.click(within(table).getAllByRole('button', { name: 'Rule actions' })[1]!);
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    const drawer = await dialogTitled('Sharing rule');
+    expect(within(drawer).getByText('Waiting for approval')).toBeInTheDocument();
+    expect(within(drawer).getByText(/A share of 45%, asked for by Accounts Officer/)).toBeInTheDocument();
+    const percent = within(drawer).getByRole('textbox', { name: /^Percent/ });
+    expect(percent).toHaveValue('45');
+
+    await user.clear(percent);
+    await user.type(percent, '50');
+    await user.type(within(drawer).getByRole('textbox', { name: /^Reason for a change/ }), 'Revised contract');
+    await user.click(within(drawer).getByRole('button', { name: 'Save rule' }));
+    await waitFor(() => expect(sent('PUT', `/api/v1/doctor-fees/rules/${ANIL_RULE.id}`)).toHaveLength(1));
+    expect(sent('PUT', `/api/v1/doctor-fees/rules/${ANIL_RULE.id}`)[0]).toMatchObject({
+      value: 50,
+      reason: 'Revised contract',
+      version: 3,
+    });
+    expect(await screen.findByText('Asked for approval', {}, SLOW)).toBeInTheDocument();
   });
 
   it('a list the server cannot load says so and offers to retry', async () => {

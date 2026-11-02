@@ -10,7 +10,8 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// paid, per setting), reverses it when the bill is cancelled, and turns a period's unpaid accruals into a payout with
 /// deductions and TDS that a second person approves before it is paid.
 /// </summary>
-public sealed class DoctorFeeService(HospitalDbContext db, INumberSeries numbers, ISettingsService settings, IAuditLogger audit, ICurrentUser currentUser, TimeProvider time)
+public sealed class DoctorFeeService(
+    HospitalDbContext db, INumberSeries numbers, ISettingsService settings, IAuditLogger audit, ICurrentUser currentUser, ShareRuleApprovals ruleApprovals, TimeProvider time)
 {
     /// <summary>"finalized" (default: fee earned when billed) or "paid" (earned when the patient's share is fully paid).</summary>
     public const string TriggerSetting = "doctorfees.accrual.trigger";
@@ -146,7 +147,11 @@ public sealed class DoctorFeeService(HospitalDbContext db, INumberSeries numbers
         }
     }
 
-    public async Task<Result<Guid>> SaveRuleAsync(Guid? id, SaveShareRuleRequest request, CancellationToken ct)
+    /// <summary>
+    /// Saves a sharing rule (maker-checker): its notes at once, and its terms only when a second person approves them
+    /// (<see cref="ShareRuleApprovals"/>). A new rule is saved with the terms asked, out of use until they are approved.
+    /// </summary>
+    public async Task<Result<SavedShareRule>> SaveRuleAsync(Guid? id, SaveShareRuleRequest request, CancellationToken ct)
     {
         if (request.PractitionerId is { } practitionerId && !await db.Set<Practitioner>().AnyAsync(p => p.Id == practitionerId, ct))
         {
@@ -158,7 +163,9 @@ public sealed class DoctorFeeService(HospitalDbContext db, INumberSeries numbers
             return Error.Field("serviceItemId", "Choose a service.");
         }
 
+        var asked = ShareRuleTerms.Of(request);
         DoctorShareRule rule;
+        ShareRuleTerms before;
         if (id is { } existingId)
         {
             var found = await db.Set<DoctorShareRule>().FirstOrDefaultAsync(r => r.Id == existingId, ct);
@@ -169,25 +176,68 @@ public sealed class DoctorFeeService(HospitalDbContext db, INumberSeries numbers
 
             db.SetExpectedVersion(found, request.Version ?? 0);
             rule = found;
+            before = ShareRuleTerms.Of(found);
         }
         else
         {
             rule = new DoctorShareRule();
+            before = asked.OutOfUse();
+            before.ApplyTo(rule);
             db.Add(rule);
         }
 
-        rule.PractitionerId = request.PractitionerId;
-        rule.ServiceItemId = request.ServiceItemId;
-        rule.Category = request.Category;
-        rule.PayerType = request.PayerType;
-        rule.Method = request.Method;
-        rule.Value = request.Value;
-        rule.EffectiveFrom = request.EffectiveFrom;
-        rule.EffectiveTo = request.EffectiveTo;
-        rule.IsActive = request.IsActive;
         rule.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
+        if (asked == before)
+        {
+            await db.SaveChangesAsync(ct);
+            return new SavedShareRule(rule.Id, null);
+        }
+
+        // One change of a rule waits at a time: saving what already waits does not ask twice, and another change is refused.
+        if (id is not null && (await ruleApprovals.PendingAsync([rule.Id], ct)).GetValueOrDefault(rule.Id) is { } waiting)
+        {
+            if (waiting.Asked != asked)
+            {
+                return Error.Conflict("approval.already_requested", "A change of this rule is already waiting for approval. Withdraw it, or wait for its decision, before asking for another.");
+            }
+
+            await db.SaveChangesAsync(ct);
+            return new SavedShareRule(rule.Id, null);
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return rule.Id;
+        var requested = await ruleApprovals.AskAsync(rule, before, asked, id is null, request.Reason, ct);
+        if (requested.IsFailure)
+        {
+            return requested.Error!;
+        }
+
+        await transaction.CommitAsync(ct);
+        return new SavedShareRule(rule.Id, requested.Value);
+    }
+
+    /// <summary>
+    /// Deletes a rule out of use, which shares nothing, at once. A rule in use is not deleted: taking it out of use, which a
+    /// second person approves, comes first.
+    /// </summary>
+    public async Task<Result> DeleteRuleAsync(Guid id, CancellationToken ct)
+    {
+        var rule = await db.Set<DoctorShareRule>().FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (rule is null)
+        {
+            return Error.NotFound(nameof(DoctorShareRule), id);
+        }
+
+        if (rule.IsActive)
+        {
+            return Error.Conflict("doctorfees.rule_in_use",
+                "A rule in use is not deleted: ask to take it out of use, which a second person approves, and delete it then.");
+        }
+
+        db.Remove(rule);
+        await db.SaveChangesAsync(ct);
+        return Result.Success();
     }
 
     /// <summary>Closes the period for a doctor: unpaid accruals in it are locked into a draft payout.</summary>

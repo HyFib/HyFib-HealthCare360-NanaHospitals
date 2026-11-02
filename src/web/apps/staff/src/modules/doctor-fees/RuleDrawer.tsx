@@ -25,6 +25,8 @@ import { todayIso, useDebouncedValue, type PayerType } from '@hc360/core';
 import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import { searchServices } from '@/modules/billing/api';
 import {
   PAYER_TYPE_LABEL,
@@ -44,7 +46,7 @@ import {
   type ShareMethod,
   type ShareRuleDto,
 } from './api';
-import { checkRuleForm, type RuleScope } from './logic';
+import { checkRuleForm, ruleShare, type RuleScope } from './logic';
 import { PractitionerPicker, type PickedDoctor } from './PractitionerPicker';
 
 const useStyles = makeStyles({
@@ -61,29 +63,46 @@ const useStyles = makeStyles({
 /**
  * Doctor revenue-share rule (DFA-01): whose, for what (a service, a category or everything), for which payer type, and
  * how much. The most specific rule in force on the service date wins; leave the doctor empty for the hospital default.
+ * Its terms change only when a second person who may approve prices approves them (maker-checker): the form holds the
+ * terms that wait, if any, and a reason for the approver; the notes are saved at once.
  */
 export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClose: () => void }) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
+  // The terms the form starts from: those waiting for approval, else those in use.
+  const terms = rule?.pending?.asked ?? rule;
   const [doctor, setDoctor] = useState<PickedDoctor | null>(
-    rule?.practitionerId ? { id: rule.practitionerId, name: rule.practitionerName ?? 'Doctor' } : null,
+    terms?.practitionerId
+      ? {
+          id: terms.practitionerId,
+          name: terms.practitionerId === rule?.practitionerId ? (rule.practitionerName ?? 'Doctor') : 'Doctor',
+        }
+      : null,
   );
-  const [scope, setScope] = useState<RuleScope>(rule?.serviceItemId ? 'service' : rule?.category ? 'category' : 'all');
+  const [scope, setScope] = useState<RuleScope>(
+    terms?.serviceItemId ? 'service' : terms?.category ? 'category' : 'all',
+  );
   const [service, setService] = useState<{ id: string; label: string } | null>(
-    rule?.serviceItemId ? { id: rule.serviceItemId, label: rule.serviceCode ?? 'Service' } : null,
+    terms?.serviceItemId
+      ? {
+          id: terms.serviceItemId,
+          label: terms.serviceItemId === rule?.serviceItemId ? (rule.serviceCode ?? 'Service') : 'Service',
+        }
+      : null,
   );
   const [serviceTerm, setServiceTerm] = useState('');
-  const [category, setCategory] = useState<ServiceCategory | ''>(rule?.category ?? '');
-  const [payerType, setPayerType] = useState<PayerType | ''>(rule?.payerType ?? '');
-  const [method, setMethod] = useState<ShareMethod>(rule?.method ?? 'Percentage');
+  const [category, setCategory] = useState<ServiceCategory | ''>(terms?.category ?? '');
+  const [payerType, setPayerType] = useState<PayerType | ''>(terms?.payerType ?? '');
+  const [method, setMethod] = useState<ShareMethod>(terms?.method ?? 'Percentage');
   const [value, setValue] = useState(
-    rule ? (rule.method === 'Percentage' ? String(rule.value) : amountInputText(rule.value)) : '',
+    terms ? (terms.method === 'Percentage' ? String(terms.value) : amountInputText(terms.value)) : '',
   );
-  const [from, setFrom] = useState(rule?.effectiveFrom ?? todayIso());
-  const [to, setTo] = useState(rule?.effectiveTo ?? '');
-  const [active, setActive] = useState(rule?.isActive ?? true);
+  const [from, setFrom] = useState(terms?.effectiveFrom ?? todayIso());
+  const [to, setTo] = useState(terms?.effectiveTo ?? '');
+  const [active, setActive] = useState(terms?.isActive ?? true);
   const [notes, setNotes] = useState(rule?.notes ?? '');
+  const [reason, setReason] = useState('');
   const debounced = useDebouncedValue(serviceTerm.trim(), 250);
   const services = useQuery({
     queryKey: ['billing', 'service-search', debounced],
@@ -106,23 +125,42 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
     version: rule?.version ?? null,
   });
 
-  const save = useMutation<void, unknown, SaveShareRuleRequest>({
+  const save = useMutation<ApprovalRequestDto | null, unknown, SaveShareRuleRequest>({
     mutationFn: async (request) => {
-      if (rule) {
-        await feeApi.updateRule(rule.id, request);
-      } else {
-        await feeApi.createRule(request);
-      }
+      const body = { ...request, reason: reason.trim() || null };
+      return rule ? ((await feeApi.updateRule(rule.id, body)) ?? null) : (await feeApi.createRule(body)).asked;
     },
-    onSuccess: () => {
-      notify.success(rule ? 'Rule saved' : 'Rule added', 'It applies to bills finalised from now on.');
+    onSuccess: (asked) => {
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          rule
+            ? `${asked.summary}. Someone who may approve prices decides it; until then the rule in use shares.`
+            : 'The rule is added out of use; its terms wait for someone who may approve prices.',
+        );
+      } else {
+        notify.success(rule ? 'Rule saved' : 'Rule added', 'It applies to bills finalised from now on.');
+      }
       void queryClient.invalidateQueries({ queryKey: feeKeys.rules });
       onClose();
     },
   });
 
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ doctor, scope, service, category, payerType, method, value, from, to, active, notes }),
+    dirty: useValuesChanged({
+      doctor,
+      scope,
+      service,
+      category,
+      payerType,
+      method,
+      value,
+      from,
+      to,
+      active,
+      notes,
+      reason,
+    }),
     busy: save.isPending,
     onClose,
   });
@@ -149,6 +187,15 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
+            {rule?.pending && (
+              <PendingGrantNotice
+                approvalId={rule.pending.approvalId}
+                what={pendingRuleWhat(rule)}
+                requestedBy={rule.pending.requestedBy}
+                requestedAt={rule.pending.requestedAt}
+                decides="Someone who may approve prices decides it; until then the rule in use shares. The form shows the terms asked."
+              />
+            )}
             <PractitionerPicker
               value={doctor}
               onChange={setDoctor}
@@ -254,8 +301,14 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
               the line&apos;s value.
             </Caption1>
             <Switch checked={active} onChange={(_, d) => setActive(d.checked)} label="Active" />
-            <Field label="Notes">
+            <Field label="Notes" hint="Saved at once">
               <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} maxLength={300} rows={2} />
+            </Field>
+            <Field
+              label="Reason for a change to the terms, for the approver"
+              hint="Whose lines it shares, which, how much, when, and putting it in or out of use wait for someone who may approve prices."
+            >
+              <Textarea value={reason} onChange={(_, d) => setReason(d.value)} maxLength={500} rows={2} />
             </Field>
             <ActionError error={save.error} />
           </div>
@@ -279,4 +332,17 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
       {guard.dialogs}
     </OverlayDrawer>
   );
+}
+
+/** What a rule's waiting change asks for, in words: "25% of the billed value, from 02 Nov 2026" or "Taken out of use". */
+function pendingRuleWhat(rule: ShareRuleDto): string {
+  const asked = rule.pending?.asked;
+  if (!asked) {
+    return '';
+  }
+  if (!asked.isActive) {
+    return 'Taken out of use';
+  }
+  const share = ruleShare(asked.method, asked.value);
+  return rule.isActive ? `A share of ${share}` : `Put in use at ${share}`;
 }
