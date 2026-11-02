@@ -302,6 +302,23 @@ and grants nothing.
     cannot take over a Super Administrator.
 
   The Patient role cannot be edited, so no staff permission can reach every portal account.
+- **Access is given by two people** (#155). What widens someone's access waits for a second person who holds
+  `admin.grants.approve` (hospital administrators by default; the Super Administrator holds everything):
+  - roles or facilities added to a user, a new user's included, and a user reactivated (`identity.user_grant`);
+  - permissions added to a role, a new role's included (`identity.role_grant`).
+
+  What narrows it applies at once: roles, facilities or permissions taken away, a user deactivated, a role deleted.
+  - Only someone who holds an administrative permission approves a grant of it, as only they may give it.
+  - Nobody approves their own request (`approval.self`), nor access given to themselves (`access.self_grant`). A grant to
+    yourself, your own account or a role you hold, waits for someone else, and is refused when nobody else may approve it.
+  - The approver gives what was asked, if it may still be given: the user still active (unless the grant reactivates
+    them), the roles and facilities still there, and the approver allowed to manage the user and to give those roles.
+  - The user and role pages show a grant that waits, with a link to its request; the one who asked can withdraw it there.
+  - A hospital setting up has one person who may approve grants: until it has had two, grants are given at once and
+    audited as `access.granted_alone`. From the first time it has two (`access.two_approvers` in the audit trail, never
+    undone), a grant nobody else may approve is refused (`access.no_second_approver`). The exception is a Super
+    Administrator's, given at once as a break-glass: audited as critical, and System health is critical for a day after.
+    A live server with fewer than two people who may approve grants says so (`access.one_approver`).
 - **Restricted records** (VIP, staff, high-profile patients):
   - They need an extra permission or **break-the-glass** access.
   - Break-the-glass requires a written reason, expires, and is flagged for review. The grant is a row in the database
@@ -349,6 +366,8 @@ and grants nothing.
     same two permissions; the approver sees what changes, and the reversal is made only if it would still do exactly
     that. Cash is never reversed: a shortfall is the shift's (billing.md, Money that did not move);
   - merging a duplicate patient record into another: one holder of `patients.merge` asks, another approves;
+  - access given to a user or a role (see "Access is given by two people" above): one administrator asks, another who
+    holds `admin.grants.approve`, and any administrative permission it gives, approves;
   - correcting a released lab report where the lab sets `lab.separateVerifier`: one pathologist asks, another releases
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
     a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.

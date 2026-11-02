@@ -253,6 +253,9 @@ public sealed class SystemHealthService(
             keyWarnings.Add(simulatorRecords);
         }
 
+        // Who approves the access administrators give (#155): a break-glass grant, and a hospital left with one approver.
+        keyWarnings.AddRange(await GrantApprovals.WarningsAsync(db, options.Value, now, ct));
+
         // While a next CA is prepared, the workstations and lab agents that do not hold it yet, by name.
         if (await CaRolloverDevices.WarningAsync(db, certificates, now, ct) is { } devicesNotReady)
         {

@@ -1,4 +1,5 @@
 using FluentValidation;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
@@ -32,8 +33,10 @@ public sealed record UserDetail(
     Guid? DefaultFacilityId,
     IReadOnlyList<Guid> RoleIds,
     IReadOnlyList<Guid> FacilityIds,
-    uint Version);
+    uint Version,
+    PendingUserGrant? PendingGrant = null);
 
+/// <param name="Reason">Why the user needs the roles and facilities, for the administrator who approves them (#155).</param>
 public sealed record CreateUserRequest(
     string UserName,
     string DisplayName,
@@ -43,7 +46,8 @@ public sealed record CreateUserRequest(
     IReadOnlyList<Guid>? FacilityIds,
     Guid? DefaultFacilityId,
     Guid? PractitionerId,
-    string? TemporaryPassword);
+    string? TemporaryPassword,
+    string? Reason = null);
 
 public sealed record UpdateUserRequest(
     string DisplayName,
@@ -54,16 +58,20 @@ public sealed record UpdateUserRequest(
     Guid? DefaultFacilityId,
     Guid? PractitionerId,
     bool IsActive,
-    uint Version);
+    uint Version,
+    string? Reason = null);
 
 /// <param name="ExpiresAt">When the temporary password stops working, unless the user has replaced it by then.</param>
-public sealed record TemporaryPasswordResponse(Guid UserId, string TemporaryPassword, DateTimeOffset ExpiresAt);
+/// <param name="ApprovalId">The request for the user's roles and facilities, when they wait for a second administrator.</param>
+public sealed record TemporaryPasswordResponse(Guid UserId, string TemporaryPassword, DateTimeOffset ExpiresAt, Guid? ApprovalId = null);
 
 public sealed record RoleListItem(Guid Id, string Name, string? Description, bool IsSystem, int PermissionCount, int UserCount);
 
-public sealed record RoleDetail(Guid Id, string Name, string? Description, bool IsSystem, IReadOnlyList<string> Permissions, uint Version);
+public sealed record RoleDetail(
+    Guid Id, string Name, string? Description, bool IsSystem, IReadOnlyList<string> Permissions, uint Version, PendingRoleGrant? PendingGrant = null);
 
-public sealed record SaveRoleRequest(string Name, string? Description, IReadOnlyList<string> Permissions, uint? Version);
+/// <param name="Reason">Why the role needs the permissions added, for the administrator who approves them (#155).</param>
+public sealed record SaveRoleRequest(string Name, string? Description, IReadOnlyList<string> Permissions, uint? Version, string? Reason = null);
 
 public sealed record PermissionItem(string Name, string Description);
 
@@ -80,6 +88,7 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
         RuleFor(x => x.Phone).PhoneNumber();
         RuleFor(x => x.RoleIds).NotEmpty().WithMessage("Assign at least one role.");
         RuleFor(x => x.TemporaryPassword).MaximumLength(PasswordPolicy.MaxLength).WithMessage(IdentityRules.PasswordTooLongMessage);
+        RuleFor(x => x.Reason).MaximumLength(500);
     }
 }
 
@@ -91,6 +100,7 @@ public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserReq
         RuleFor(x => x.Email).EmailAddress().MaximumLength(256).When(x => !string.IsNullOrWhiteSpace(x.Email));
         RuleFor(x => x.Phone).PhoneNumber();
         RuleFor(x => x.RoleIds).NotEmpty().WithMessage("Assign at least one role.");
+        RuleFor(x => x.Reason).MaximumLength(500);
     }
 }
 
@@ -101,6 +111,7 @@ public sealed class SaveRoleRequestValidator : AbstractValidator<SaveRoleRequest
         RuleFor(x => x.Name).NotEmpty().MaximumLength(64).Matches("^[A-Za-z][A-Za-z0-9 _-]*$");
         RuleFor(x => x.Description).MaximumLength(256);
         RuleFor(x => x.Permissions).NotNull();
+        RuleFor(x => x.Reason).MaximumLength(500);
     }
 }
 
@@ -167,10 +178,12 @@ internal static class AccessAdminEndpoints
         return TypedResults.Ok(result);
     }
 
-    private static async Task<IResult> GetUser(Guid id, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> GetUser(Guid id, HospitalDbContext db, GrantApprovals grants, CancellationToken ct)
     {
         var user = await db.Set<User>().Include(u => u.Roles).Include(u => u.Facilities).AsSplitQuery().FirstOrDefaultAsync(u => u.Id == id, ct);
-        return user is null ? Error.NotFound(nameof(User), id).ToProblem() : TypedResults.Ok(ToDetail(user));
+        return user is null
+            ? Error.NotFound(nameof(User), id).ToProblem()
+            : TypedResults.Ok(ToDetail(user) with { PendingGrant = await grants.PendingForUserAsync(user.Id, ct) });
     }
 
     private static async Task<IResult> CreateUser(
@@ -182,6 +195,7 @@ internal static class AccessAdminEndpoints
         ICurrentUser current,
         IPermissionService permissions,
         IOptions<PlatformOptions> options,
+        GrantApprovals grants,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -204,6 +218,16 @@ internal static class AccessAdminEndpoints
             return Error.Validation("user.weak_password", errors[0], new Dictionary<string, string[]> { ["temporaryPassword"] = errors.ToArray() }).ToProblem();
         }
 
+        // A new user's roles and facilities are access given: they wait for a second person who may approve grants (#155).
+        var decision = await grants.DecideAsync(self: false, await grants.AdministrativeAsync([.. request.RoleIds.Distinct()], ct), ct);
+        if (decision.IsFailure)
+        {
+            return decision.Error!.ToProblem();
+        }
+
+        var roleIds = request.RoleIds.Distinct().ToList();
+        var facilityIds = (request.FacilityIds ?? []).Distinct().ToList();
+        var ask = decision.Value == GrantDecision.Ask;
         var user = new User
         {
             UserName = request.UserName.Trim(),
@@ -218,11 +242,14 @@ internal static class AccessAdminEndpoints
             PractitionerId = request.PractitionerId,
             DefaultFacilityId = request.DefaultFacilityId,
         };
-        user.Roles.AddRange(request.RoleIds.Distinct().Select(r => new UserRole { UserId = user.Id, RoleId = r }));
-        user.Facilities.AddRange((request.FacilityIds ?? []).Distinct().Select(f => new UserFacility { UserId = user.Id, FacilityId = f }));
+        if (!ask)
+        {
+            user.Roles.AddRange(roleIds.Select(r => new UserRole { UserId = user.Id, RoleId = r }));
+            user.Facilities.AddRange(facilityIds.Select(f => new UserFacility { UserId = user.Id, FacilityId = f }));
+        }
 
         db.Add(user);
-        var names = await GrantNamesAsync(db, user.Roles.Select(r => r.RoleId), user.Facilities.Select(f => f.FacilityId), ct);
+        var names = await GrantNamesAsync(db, roleIds, facilityIds, ct);
         audit.Add(new AuditEntry(AuditCategories.Admin, "user.created", $"Created user {user.UserName}")
         {
             EntityType = nameof(User),
@@ -231,10 +258,30 @@ internal static class AccessAdminEndpoints
             {
                 roles = names.Roles(user.Roles.Select(r => r.RoleId)),
                 facilities = names.Facilities(user.Facilities.Select(f => f.FacilityId)),
+                asked = ask ? new { roles = names.Roles(roleIds), facilities = names.Facilities(facilityIds) } : null,
             },
         });
+        if (!ask)
+        {
+            grants.AuditGivenAlone(decision.Value, nameof(User), user.Id, $"{user.UserName}, created with the roles {string.Join(", ", names.Roles(roleIds).Select(r => r.Name))}");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return TypedResults.Created($"/api/v1/admin/users/{user.Id}", new TemporaryPasswordResponse(user.Id, password, user.TemporaryPasswordExpiresAt!.Value));
+        Guid? approvalId = null;
+        if (ask)
+        {
+            var asked = await grants.AskForUserAsync(user, roleIds, facilityIds, activate: false, request.Reason, ct);
+            if (asked.IsFailure)
+            {
+                return asked.Error!.ToProblem();
+            }
+
+            approvalId = asked.Value.Id;
+        }
+
+        await transaction.CommitAsync(ct);
+        return TypedResults.Created($"/api/v1/admin/users/{user.Id}", new TemporaryPasswordResponse(user.Id, password, user.TemporaryPasswordExpiresAt!.Value, approvalId));
     }
 
     private static async Task<IResult> UpdateUser(
@@ -245,6 +292,7 @@ internal static class AccessAdminEndpoints
         ICurrentUser current,
         IPermissionService permissions,
         ISessionValidator sessions,
+        GrantApprovals grants,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -278,39 +326,89 @@ internal static class AccessAdminEndpoints
         user.PractitionerId = request.PractitionerId;
         user.DefaultFacilityId = request.DefaultFacilityId;
 
+        // What narrows access applies at once: roles and facilities taken away, the account deactivated.
         var wasActive = user.IsActive;
-        user.IsActive = request.IsActive;
-
+        user.IsActive = wasActive && request.IsActive;
         var rolesBefore = user.Roles.Select(r => r.RoleId).ToList();
         var roleIds = request.RoleIds.Distinct().ToHashSet();
         user.Roles.RemoveAll(r => !roleIds.Contains(r.RoleId));
-        user.Roles.AddRange(roleIds.Where(r => user.Roles.All(x => x.RoleId != r)).Select(r => new UserRole { UserId = user.Id, RoleId = r }));
-
         var facilitiesBefore = user.Facilities.Select(f => f.FacilityId).ToList();
         var facilityIds = (request.FacilityIds ?? []).Distinct().ToHashSet();
         user.Facilities.RemoveAll(f => !facilityIds.Contains(f.FacilityId));
-        user.Facilities.AddRange(facilityIds.Where(f => user.Facilities.All(x => x.FacilityId != f)).Select(f => new UserFacility { UserId = user.Id, FacilityId = f }));
+
+        // What widens it (roles and facilities added, the account reactivated) waits for a second person who may approve
+        // grants (#155). What already waits is not asked for again.
+        var pending = await grants.PendingForUserAsync(user.Id, ct);
+        var addRoles = roleIds.Where(r => !rolesBefore.Contains(r) && pending?.RoleIds.Contains(r) != true).ToList();
+        var addFacilities = facilityIds.Where(f => !facilitiesBefore.Contains(f) && pending?.FacilityIds.Contains(f) != true).ToList();
+        var activate = !wasActive && request.IsActive && pending?.Activate != true;
+        var decision = GrantDecision.Ask;
+        var widens = addRoles.Count > 0 || addFacilities.Count > 0 || activate;
+        if (widens)
+        {
+            // Reactivating gives back what the account's roles hold.
+            var administrative = await grants.AdministrativeAsync(activate ? [.. addRoles, .. user.Roles.Select(r => r.RoleId)] : addRoles, ct);
+            var decided = await grants.DecideAsync(self: user.Id == current.UserId, administrative, ct);
+            if (decided.IsFailure)
+            {
+                return decided.Error!.ToProblem();
+            }
+
+            decision = decided.Value;
+        }
+
+        var giveNow = widens && decision != GrantDecision.Ask;
+        if (giveNow)
+        {
+            user.Roles.AddRange(addRoles.Select(r => new UserRole { UserId = user.Id, RoleId = r }));
+            user.Facilities.AddRange(addFacilities.Select(f => new UserFacility { UserId = user.Id, FacilityId = f }));
+            user.IsActive = user.IsActive || activate;
+        }
 
         var ended = wasActive && !user.IsActive
             ? await RevokeAllSessionsAsync(db, user.Id, "user_deactivated", time.GetUtcNow(), ct)
             : [];
 
-        // Which roles and facilities the change gave and took away, by name, in the transaction that makes it.
+        // Which roles and facilities the change gave, asked for and took away, by name, in the transaction that makes it.
+        var rolesNow = user.Roles.Select(r => r.RoleId).ToList();
+        var facilitiesNow = user.Facilities.Select(f => f.FacilityId).ToList();
         var names = await GrantNamesAsync(db, rolesBefore.Concat(roleIds), facilitiesBefore.Concat(facilityIds), ct);
+        var asking = widens && !giveNow;
         audit.Add(new AuditEntry(AuditCategories.Admin, "user.updated", $"Updated user {user.UserName}")
         {
             EntityType = nameof(User),
             EntityId = user.Id.ToString(),
             Details = new
             {
-                roles = new { granted = names.Roles(roleIds.Except(rolesBefore)), withdrawn = names.Roles(rolesBefore.Except(roleIds)) },
-                facilities = new { granted = names.Facilities(facilityIds.Except(facilitiesBefore)), withdrawn = names.Facilities(facilitiesBefore.Except(facilityIds)) },
+                roles = new { granted = names.Roles(rolesNow.Except(rolesBefore)), withdrawn = names.Roles(rolesBefore.Except(rolesNow)) },
+                facilities = new { granted = names.Facilities(facilitiesNow.Except(facilitiesBefore)), withdrawn = names.Facilities(facilitiesBefore.Except(facilitiesNow)) },
+                asked = asking ? new { roles = names.Roles(addRoles), facilities = names.Facilities(addFacilities), reactivate = activate } : null,
             },
         });
+        if (giveNow)
+        {
+            grants.AuditGivenAlone(decision, nameof(User), user.Id,
+                $"{user.UserName}: roles {string.Join(", ", names.Roles(addRoles).Select(r => r.Name))}; {addFacilities.Count} facilities{(activate ? "; reactivated" : string.Empty)}");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        ApprovalRequestDto? asked = null;
+        if (asking)
+        {
+            var requested = await grants.AskForUserAsync(user, addRoles, addFacilities, activate, request.Reason, ct);
+            if (requested.IsFailure)
+            {
+                return requested.Error!.ToProblem();
+            }
+
+            asked = requested.Value;
+        }
+
+        await transaction.CommitAsync(ct);
         Invalidate(sessions, ended);
         permissions.Invalidate(user.Id);
-        return TypedResults.NoContent();
+        return asked is null ? TypedResults.NoContent() : TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked);
     }
 
     private static async Task<IResult> ResetPassword(
@@ -460,12 +558,13 @@ internal static class AccessAdminEndpoints
             .Select(r => new RoleListItem(r.Id, r.Name, r.Description, r.IsSystem, r.Permissions.Count, db.Set<UserRole>().Count(ur => ur.RoleId == r.Id)))
             .ToListAsync(ct));
 
-    private static async Task<IResult> GetRole(Guid id, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> GetRole(Guid id, HospitalDbContext db, GrantApprovals grants, CancellationToken ct)
     {
         var role = await db.Set<Role>().Include(r => r.Permissions).FirstOrDefaultAsync(r => r.Id == id, ct);
         return role is null
             ? Error.NotFound(nameof(Role), id).ToProblem()
-            : TypedResults.Ok(new RoleDetail(role.Id, role.Name, role.Description, role.IsSystem, role.Permissions.Select(p => p.Permission).OrderBy(p => p).ToList(), role.Version));
+            : TypedResults.Ok(new RoleDetail(role.Id, role.Name, role.Description, role.IsSystem, role.Permissions.Select(p => p.Permission).OrderBy(p => p).ToList(), role.Version,
+                await grants.PendingForRoleAsync(role.Id, ct)));
     }
 
     private static async Task<IResult> CreateRole(
@@ -475,6 +574,7 @@ internal static class AccessAdminEndpoints
         IAuditLogger audit,
         ICurrentUser current,
         IPermissionService permissions,
+        GrantApprovals grants,
         CancellationToken ct)
     {
         if (await db.Set<Role>().AnyAsync(r => r.Name == request.Name.Trim(), ct))
@@ -494,12 +594,56 @@ internal static class AccessAdminEndpoints
             return mayGrant.Error!.ToProblem();
         }
 
+        // A new role's permissions are access given to whoever will hold it: they wait for a second person (#155).
+        var wanted = request.Permissions.Distinct(StringComparer.Ordinal).ToList();
+        var decision = GrantDecision.Ask;
+        if (wanted.Count > 0)
+        {
+            var decided = await grants.DecideAsync(self: false, [.. wanted.Where(PlatformPermissions.IsAdministrative)], ct);
+            if (decided.IsFailure)
+            {
+                return decided.Error!.ToProblem();
+            }
+
+            decision = decided.Value;
+        }
+
+        var ask = wanted.Count > 0 && decision == GrantDecision.Ask;
         var role = new Role { Name = request.Name.Trim(), Description = request.Description?.Trim() };
-        role.Permissions.AddRange(request.Permissions.Distinct().Select(p => new RolePermission { RoleId = role.Id, Permission = p }));
+        if (!ask)
+        {
+            role.Permissions.AddRange(wanted.Select(p => new RolePermission { RoleId = role.Id, Permission = p }));
+        }
+
         db.Add(role);
-        audit.Add(new AuditEntry(AuditCategories.Admin, "role.created", $"Created role {role.Name}") { EntityType = nameof(Role), EntityId = role.Id.ToString(), Details = request.Permissions });
+        audit.Add(new AuditEntry(AuditCategories.Admin, "role.created", $"Created role {role.Name}")
+        {
+            EntityType = nameof(Role),
+            EntityId = role.Id.ToString(),
+            Details = new { permissions = ask ? [] : wanted, asked = ask ? wanted : [] },
+        });
+        if (!ask && wanted.Count > 0)
+        {
+            grants.AuditGivenAlone(decision, nameof(Role), role.Id, $"the role {role.Name}, created with {string.Join(", ", wanted)}");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return TypedResults.Created($"/api/v1/admin/roles/{role.Id}", new RoleDetail(role.Id, role.Name, role.Description, false, request.Permissions.ToList(), role.Version));
+        PendingRoleGrant? pending = null;
+        if (ask)
+        {
+            var asked = await grants.AskForRoleAsync(role, wanted, request.Reason, ct);
+            if (asked.IsFailure)
+            {
+                return asked.Error!.ToProblem();
+            }
+
+            pending = new PendingRoleGrant(asked.Value.Id, wanted, asked.Value.RequestedByName, asked.Value.RequestedAt);
+        }
+
+        await transaction.CommitAsync(ct);
+        return TypedResults.Created($"/api/v1/admin/roles/{role.Id}",
+            new RoleDetail(role.Id, role.Name, role.Description, false, [.. role.Permissions.Select(p => p.Permission).Order(StringComparer.Ordinal)], role.Version, pending));
     }
 
     private static async Task<IResult> UpdateRole(
@@ -510,6 +654,8 @@ internal static class AccessAdminEndpoints
         IPermissionService permissions,
         IAuditLogger audit,
         ICurrentUser current,
+        GrantApprovals grants,
+        TimeProvider time,
         CancellationToken ct)
     {
         var role = await db.Set<Role>().Include(r => r.Permissions).FirstOrDefaultAsync(r => r.Id == id, ct);
@@ -554,22 +700,60 @@ internal static class AccessAdminEndpoints
 
         role.Description = request.Description?.Trim();
         var wanted = request.Permissions.Distinct().ToHashSet(StringComparer.Ordinal);
+
+        // Permissions taken away apply at once; those added wait for a second person who may approve grants (#155), unless
+        // they already wait. Adding to a role you hold is giving them to yourself.
         var removed = role.Permissions.Where(p => !wanted.Contains(p.Permission)).Select(p => p.Permission).ToList();
-        var added = wanted.Where(p => role.Permissions.All(x => x.Permission != p)).ToList();
         role.Permissions.RemoveAll(p => !wanted.Contains(p.Permission));
+        var pending = await grants.PendingForRoleAsync(role.Id, ct);
+        var adding = wanted.Where(p => role.Permissions.All(x => x.Permission != p) && pending?.Permissions.Contains(p) != true).Order(StringComparer.Ordinal).ToList();
+        var decision = GrantDecision.Ask;
+        if (adding.Count > 0)
+        {
+            var self = current.UserId is { } me && await db.Set<UserRole>().AnyAsync(ur => ur.UserId == me && ur.RoleId == role.Id, ct);
+            var decided = await grants.DecideAsync(self, [.. adding.Where(PlatformPermissions.IsAdministrative)], ct);
+            if (decided.IsFailure)
+            {
+                return decided.Error!.ToProblem();
+            }
+
+            decision = decided.Value;
+        }
+
+        var giveNow = adding.Count > 0 && decision != GrantDecision.Ask;
+        List<string> added = giveNow ? adding : [];
         role.Permissions.AddRange(added.Select(p => new RolePermission { RoleId = role.Id, Permission = p }));
-        role.UpdatedAt = DateTimeOffset.UtcNow; // force a version bump even when only child rows change
+        role.UpdatedAt = time.GetUtcNow(); // force a version bump even when only child rows change
 
         audit.Add(new AuditEntry(AuditCategories.Admin, "role.permissions_changed", $"Updated role {role.Name}")
         {
             EntityType = nameof(Role),
             EntityId = role.Id.ToString(),
-            Details = new { added, removed },
+            Details = new { added, removed, asked = giveNow ? [] : adding },
             Severity = AuditSeverity.Warning,
         });
+        if (giveNow)
+        {
+            grants.AuditGivenAlone(decision, nameof(Role), role.Id, $"the role {role.Name}: {string.Join(", ", added)}");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        ApprovalRequestDto? asked = null;
+        if (adding.Count > 0 && !giveNow)
+        {
+            var requested = await grants.AskForRoleAsync(role, adding, request.Reason, ct);
+            if (requested.IsFailure)
+            {
+                return requested.Error!.ToProblem();
+            }
+
+            asked = requested.Value;
+        }
+
+        await transaction.CommitAsync(ct);
         permissions.InvalidateAll();
-        return TypedResults.NoContent();
+        return asked is null ? TypedResults.NoContent() : TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked);
     }
 
     private static async Task<IResult> DeleteRole(Guid id, HospitalDbContext db, IAuditLogger audit, CancellationToken ct)
@@ -611,7 +795,7 @@ internal static class AccessAdminEndpoints
     /// A role that carries administrative permissions can only be given by someone who holds them (and only a Super
     /// Administrator grants that role). Clinical and business roles are the user administrators' everyday work.
     /// </summary>
-    private static async Task<Result> ValidateRoleAssignmentAsync(IReadOnlyList<Guid> roleIds, HospitalDbContext db, ICurrentUser current, IPermissionService permissions, CancellationToken ct)
+    internal static async Task<Result> ValidateRoleAssignmentAsync(IReadOnlyList<Guid> roleIds, HospitalDbContext db, ICurrentUser current, IPermissionService permissions, CancellationToken ct)
     {
         var roles = await db.Set<Role>().Where(r => roleIds.Contains(r.Id)).Select(r => r.Name).ToListAsync(ct);
         if (roles.Count != roleIds.Distinct().Count())
@@ -635,7 +819,7 @@ internal static class AccessAdminEndpoints
     }
 
     /// <summary>Nobody gives out an administrative permission they do not hold themselves.</summary>
-    private static async Task<Result> EnsureMayGrantAsync(IEnumerable<string> permissionsToGrant, ICurrentUser current, IPermissionService permissions, CancellationToken ct)
+    internal static async Task<Result> EnsureMayGrantAsync(IEnumerable<string> permissionsToGrant, ICurrentUser current, IPermissionService permissions, CancellationToken ct)
     {
         var held = await CallerPermissionsAsync(current, permissions, ct);
         if (held.Contains(PermissionRegistry.Wildcard))
@@ -654,7 +838,7 @@ internal static class AccessAdminEndpoints
     /// administrative permission that account holds. Otherwise a password reset would hand the administrator control
     /// they were never given: a hospital administrator could take over a Super Administrator.
     /// </summary>
-    private static async Task<Result> EnsureMayManageAsync(Guid targetId, HospitalDbContext db, ICurrentUser current, IPermissionService permissions, CancellationToken ct)
+    internal static async Task<Result> EnsureMayManageAsync(Guid targetId, HospitalDbContext db, ICurrentUser current, IPermissionService permissions, CancellationToken ct)
     {
         var held = await CallerPermissionsAsync(current, permissions, ct);
         if (held.Contains(PermissionRegistry.Wildcard))

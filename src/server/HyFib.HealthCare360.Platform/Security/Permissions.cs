@@ -105,6 +105,12 @@ public static class PlatformPermissions
     public const string UsersRead = "admin.users.read";
     public const string UsersManage = "admin.users.manage";
     public const string RolesManage = "admin.roles.manage";
+
+    /// <summary>
+    /// Approve access another administrator gives: roles and facilities added to a user, a user reactivated, permissions
+    /// added to a role (#155). Administrative, so only those who hold it give it out, and they use two-step verification.
+    /// </summary>
+    public const string GrantsApprove = "admin.grants.approve";
     public const string DevicesManage = "admin.devices.manage";
     public const string AuditRead = "admin.audit.read";
     public const string SettingsManage = "admin.settings.manage";
@@ -156,6 +162,7 @@ public static class PlatformPermissions
         new(UsersRead, "Administration", "View users and their roles", Admins),
         new(UsersManage, "Administration", "Create, edit, lock and reset users", Admins),
         new(RolesManage, "Administration", "Create roles and assign permissions"),
+        new(GrantsApprove, "Administration", "Approve roles, facilities and permissions another administrator gives", Admins),
         new(DevicesManage, "Administration", "Enrol and revoke workstations", Admins),
         new(AuditRead, "Administration", "View and verify the audit trail", [SystemRoles.HospitalAdmin, SystemRoles.QualityManager]),
         new(SettingsManage, "Administration", "Change system settings", Admins),
