@@ -14,6 +14,7 @@ import type {
 import type { AbdmGatewayStatus, IntegrationStatusDto } from '@/modules/admin/integrationsApi';
 import type { NotificationLogDto, NotificationTemplateDto } from '@/modules/admin/notificationTemplatesApi';
 import type { AlertDrill } from '@/modules/admin/alertDrillsApi';
+import type { AlertReport } from '@/modules/admin/alertIncidentsApi';
 import type { SimulatorRecordsView } from '@/modules/admin/simulatorRecordsApi';
 import { FACILITY_ID, paged, STAFF_USER, type FakeAnswers, type FakeRequest } from '../fakeApi';
 
@@ -655,6 +656,39 @@ const ALERT_DRILLS: AlertDrill[] = [
   },
 ];
 
+// An alert acknowledged and cleared, and none open: what the month's figures are made of.
+const ALERTS: AlertReport = {
+  from: hoursAgo(30 * 24),
+  to: hoursAgo(0),
+  total: 1,
+  acknowledged: 1,
+  unacknowledged: 0,
+  reachedSecondContact: 0,
+  reachedSupport: 0,
+  medianMinutesToAcknowledge: 4,
+  ninetiethMinutesToAcknowledge: 4,
+  incidents: [
+    {
+      id: '0194f2a0-0000-7000-8000-00000000e001',
+      code: 'backup.stale',
+      server: null,
+      message: 'No successful backup in the last 36 hours.',
+      level: 'OnCall',
+      raisedAt: hoursAgo(50),
+      toldAt: hoursAgo(50),
+      firstDeliveredAt: hoursAgo(49.98),
+      firstReadAt: hoursAgo(49.95),
+      secondContactAt: null,
+      supportAt: null,
+      acknowledgedAt: hoursAgo(49.93),
+      acknowledgedBy: 'IT Officer',
+      clearedAt: hoursAgo(46),
+      minutesToAcknowledge: 4,
+      messages: [],
+    },
+  ],
+};
+
 export const ANSWERS: FakeAnswers = {
   'GET /api/v1/abdm/gateway': ABDM_GATEWAY,
   'GET /api/v1/admin/users': paged(USERS),
@@ -668,6 +702,7 @@ export const ANSWERS: FakeAnswers = {
   'GET /api/v1/admin/backups': BACKUPS,
   'GET /api/v1/admin/system/simulator-records': SIMULATOR_RECORDS,
   'GET /api/v1/admin/system/alert-drills': ALERT_DRILLS,
+  'GET /api/v1/admin/system/alerts': ALERTS,
   'GET /api/v1/admin/backups/recovery-key': RECOVERY_KEY,
   'GET /api/v1/admin/integrations': INTEGRATIONS,
   'GET /api/v1/admin/notification-templates': TEMPLATES,
