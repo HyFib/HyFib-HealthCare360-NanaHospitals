@@ -22,9 +22,8 @@ public enum AlertLevel
 
 /// <summary>
 /// A critical System health warning while it lasts (audit P2): when it was raised and told, who it was escalated to while
-/// nobody acknowledged it, who acknowledged it, and when it cleared. One is open per warning and server. A warning that
-/// clears and comes back within <see cref="AlertIncidents.FlapWindow"/> reopens it rather than paging anyone again.
-/// Acknowledging it says someone is on it: the warning stays until its condition clears, and it is still told again a
+/// nobody acknowledged it, who acknowledged it, and when it cleared. One is open per warning and server; a warning that
+/// clears and comes back is a new one, told again. Acknowledging it says someone is on it: the warning stays until its condition clears, and it is still told again a
 /// day later while it lasts, but nobody further is paged.
 /// </summary>
 public sealed class AlertIncident : AuditableEntity

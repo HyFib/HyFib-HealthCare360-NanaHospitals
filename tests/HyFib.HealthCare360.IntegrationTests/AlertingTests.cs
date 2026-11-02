@@ -226,29 +226,31 @@ public sealed class AlertingTests(HospitalServer server)
     }
 
     [Fact]
-    public async Task A_warning_that_clears_and_comes_back_soon_reopens_its_alert_and_pages_nobody_again()
+    public async Task A_warning_that_clears_and_comes_back_is_a_new_alert_told_again()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         await using var onCall = await SettingAsync("alerts.oncallPhone", "+919800000152");
-        var flapping = new HealthWarning("test.flapping:" + Guid.NewGuid().ToString("N")[..8], "critical", "A test warning that clears and comes back.");
+        var recurring = new HealthWarning("test.recurring:" + Guid.NewGuid().ToString("N")[..8], "critical", "A test warning that clears and comes back.");
 
-        await CheckWithAsync(flapping);
-        var first = await IncidentAsync(admin, flapping.Code);
+        await CheckWithAsync(recurring);
+        var first = await IncidentAsync(admin, recurring.Code);
         first.ToldAt.ShouldNotBeNull();
         first.Messages.ShouldNotBeEmpty();
 
         await CheckWithAsync();
-        (await IncidentAsync(admin, flapping.Code)).ClearedAt.ShouldNotBeNull();
+        (await IncidentAsync(admin, recurring.Code)).ClearedAt.ShouldNotBeNull();
         using (var cleared = await admin.SendRawAsync(HttpMethod.Post, $"{Alerts}/{first.Id}/acknowledge"))
         {
             cleared.StatusCode.ShouldBe(HttpStatusCode.Conflict, "it cleared before anyone acknowledged it");
         }
 
-        // Back within half an hour: the same alert, told when it first came, and nobody paged for it again.
-        await CheckWithAsync(flapping);
-        var back = await IncidentAsync(admin, flapping.Code);
-        (back.Id, back.ToldAt, back.Messages.Count).ShouldBe((first.Id, first.ToldAt, first.Messages.Count));
-        (await admin.GetAsync<AlertReport>($"{Alerts}?days=1")).Incidents.Count(i => i.Code == flapping.Code).ShouldBe(1);
+        // Back again, however soon: a new alert, told at once, as a broken audit chain that comes back is a second break.
+        await CheckWithAsync(recurring);
+        var back = await IncidentAsync(admin, recurring.Code);
+        back.Id.ShouldNotBe(first.Id);
+        (back.ToldAt, back.ClearedAt).ShouldBe((back.RaisedAt, null));
+        back.Messages.ShouldNotBeEmpty();
+        (await admin.GetAsync<AlertReport>($"{Alerts}?days=1")).Incidents.Count(i => i.Code == recurring.Code).ShouldBe(2);
 
         await CheckWithAsync();
     }
@@ -405,7 +407,7 @@ public sealed class AlertingTests(HospitalServer server)
         await using var scope = server.Services.CreateAsyncScope();
         var critical = (await scope.ServiceProvider.GetRequiredService<SystemHealthService>().BuildAsync(Ct)).Warnings
             .Where(w => w.Severity == "critical" && !w.Code.StartsWith("wifi.", StringComparison.Ordinal));
-        await scope.ServiceProvider.GetRequiredService<AlertIncidents>().CheckAsync([.. critical, .. extra], Ct);
+        await scope.ServiceProvider.GetRequiredService<AlertIncidents>().CheckAsync([.. critical, .. extra], DateTimeOffset.UtcNow, Ct);
     }
 
     private async Task<int> EscalationsAsync(Guid incidentId)

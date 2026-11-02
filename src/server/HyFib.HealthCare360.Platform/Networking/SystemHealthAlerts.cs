@@ -13,9 +13,8 @@ namespace HyFib.HealthCare360.Platform.Networking;
 /// and to the IT on-call number by SMS (and WhatsApp when the hospital turned it on), as Wi-Fi alerts do
 /// (<see cref="WifiMonitor"/>); while nobody acknowledges it, to the second contact and then HyFib support
 /// (<see cref="AlertEscalation"/>). It is told again a day after it was last told while it lasts, so one put off at
-/// go-live, such as nobody holding the backups' recovery key, is not forgotten (audit P8); and again when it clears and
-/// comes back after <see cref="AlertIncidents.FlapWindow"/>. The alerts are kept in the database, so a restart tells none
-/// again. The WiFi warnings are the WiFi monitor's to tell: it tells a drop, a lost adapter or an insecure network as it
+/// go-live, such as nobody holding the backups' recovery key, is not forgotten (audit P8); and again, as a new alert,
+/// when it clears and comes back. The alerts are kept in the database, so a restart tells none again. The WiFi warnings are the WiFi monitor's to tell: it tells a drop, a lost adapter or an insecure network as it
 /// happens, and not at all where the hospital turned it off. An alert drill's warning is told as any other, and the drill
 /// keeps when, and the messages it went out in (<see cref="AlertDrills"/>, audit P2).
 /// </summary>
@@ -64,7 +63,7 @@ internal sealed class SystemHealthAlerts(
             var critical = (await services.GetRequiredService<SystemHealthService>().BuildAsync(cancellationToken)).Warnings
                 .Where(w => w.Severity == "critical" && !w.Code.StartsWith("wifi.", StringComparison.Ordinal))
                 .ToList();
-            var told = await services.GetRequiredService<AlertIncidents>().CheckAsync(critical, cancellationToken);
+            var told = await services.GetRequiredService<AlertIncidents>().CheckAsync(critical, time.GetUtcNow(), cancellationToken);
             if (told.Count > 0)
             {
                 logger.LogWarning("System health is critical: {Warnings}", string.Join("; ", told.Select(w => w.Code)));

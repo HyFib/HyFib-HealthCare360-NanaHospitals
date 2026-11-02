@@ -432,7 +432,7 @@ sure it reaches someone. On a live server, System health warns while one is miss
      server.
    - Once acknowledged, nobody further is paged, though the alert is told again a day later while it lasts.
    - The escalations use the `system.alert` template, so they need no DLT registration of their own.
-   - A warning that clears and comes back within half an hour is the same alert, paged no more.
+   - A warning that clears and comes back is a new alert, told again at once, as before.
    - The alerts are kept in the database: a restart pages nobody again. Each escalation and acknowledgement is in the
      audit trail (`alerts.escalated`, `alerts.acknowledged`).
 

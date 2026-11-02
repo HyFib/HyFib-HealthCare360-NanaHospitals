@@ -50,24 +50,20 @@ public sealed class AlertIncidents(
     public const string AcknowledgedAction = "alerts.acknowledged";
     public const string EscalatedAction = "alerts.escalated";
 
-    /// <summary>A warning that clears and comes back within this long reopens its incident, rather than paging anyone again.</summary>
-    public static readonly TimeSpan FlapWindow = TimeSpan.FromMinutes(30);
-
     /// <summary>How many of the alerts that cleared the report lists, the latest first.</summary>
     public const int Listed = 500;
 
     private const string Entity = "AlertIncident";
 
     /// <summary>
-    /// One check against the critical warnings now: opens, reopens and closes incidents, and takes the step each open one is
-    /// due. Returns the warnings told in the app and to IT on-call, first or again.
+    /// One check against the critical warnings at <paramref name="now"/> (the alerts' own clock): opens and closes incidents,
+    /// and takes the step each open one is due. Returns the warnings told in the app and to IT on-call, first or again.
     /// </summary>
-    internal async Task<IReadOnlyList<HealthWarning>> CheckAsync(IReadOnlyList<HealthWarning> critical, CancellationToken ct)
+    internal async Task<IReadOnlyList<HealthWarning>> CheckAsync(IReadOnlyList<HealthWarning> critical, DateTimeOffset now, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(critical);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await TakeTurnAsync(db, ct);
-        var now = time.GetUtcNow();
         var present = critical.GroupBy(Key).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var open = await db.Set<AlertIncident>().Where(i => i.ClearedAt == null).ToListAsync(ct);
         foreach (var gone in open.Where(i => !present.ContainsKey(Key(i))))
@@ -78,7 +74,7 @@ public sealed class AlertIncidents(
         var current = new List<(AlertIncident Incident, HealthWarning Warning)>();
         foreach (var (key, warning) in present)
         {
-            current.Add((open.FirstOrDefault(i => Key(i) == key) ?? await ReopenOrRaiseAsync(warning, now, ct), warning));
+            current.Add((open.FirstOrDefault(i => Key(i) == key) ?? Raise(warning, now), warning));
         }
 
         var escalation = await AlertEscalation.ReadAsync(settings, ct);
@@ -242,21 +238,19 @@ public sealed class AlertIncidents(
         });
     }
 
-    private async Task<AlertIncident> ReopenOrRaiseAsync(HealthWarning warning, DateTimeOffset now, CancellationToken ct)
+    /// <summary>
+    /// A new alert for a warning that has none open: one that cleared and comes back is told again, as a new alert (P8). A
+    /// broken audit chain that comes back is a second break, not the first one still going.
+    /// </summary>
+    private AlertIncident Raise(HealthWarning warning, DateTimeOffset now)
     {
-        var server = Clip(warning.Server ?? string.Empty, AlertIncident.ServerLength);
-        var code = Clip(warning.Code, AlertIncident.CodeLength);
-        var since = now - FlapWindow;
-        if (await db.Set<AlertIncident>()
-                .Where(i => i.Code == code && i.Server == server && i.ClearedAt >= since)
-                .OrderByDescending(i => i.ClearedAt)
-                .FirstOrDefaultAsync(ct) is { } recent)
+        var raised = new AlertIncident
         {
-            recent.ClearedAt = null;
-            return recent;
-        }
-
-        var raised = new AlertIncident { Code = code, Server = server, Message = Clip(warning.Message, AlertIncident.MessageLength), RaisedAt = now };
+            Code = Clip(warning.Code, AlertIncident.CodeLength),
+            Server = Clip(warning.Server ?? string.Empty, AlertIncident.ServerLength),
+            Message = Clip(warning.Message, AlertIncident.MessageLength),
+            RaisedAt = now,
+        };
         db.Add(raised);
         return raised;
     }
