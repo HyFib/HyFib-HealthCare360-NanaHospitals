@@ -242,6 +242,35 @@ public sealed record RefundPaid(
     DateTimeOffset PaidAt) : DomainEvent;
 
 /// <summary>
+/// Money a receipt recorded from the patient never arrived (a cheque returned unpaid, a payment the bank never settled,
+/// or one a training simulator made up): <paramref name="Amount"/> of receipt <paramref name="ReceiptId"/> no longer
+/// counts as paid. Engagement takes it off the patient's spend.
+/// </summary>
+public sealed record PaymentReversed(
+    Guid ReversalId,
+    string ReversalNumber,
+    Guid ReceiptId,
+    Guid FacilityId,
+    Guid PatientId,
+    Guid? BillId,
+    decimal Amount,
+    DateTimeOffset ReversedAt) : DomainEvent;
+
+/// <summary>
+/// A refund recorded as paid out never reached the patient: <paramref name="Amount"/> of refund
+/// <paramref name="RefundId"/> counts as the patient's again. Engagement adds it back to the patient's spend.
+/// </summary>
+public sealed record RefundPayoutReversed(
+    Guid ReversalId,
+    string ReversalNumber,
+    Guid RefundId,
+    Guid FacilityId,
+    Guid PatientId,
+    Guid? BillId,
+    decimal Amount,
+    DateTimeOffset ReversedAt) : DomainEvent;
+
+/// <summary>
 /// Someone replied STOP (<paramref name="OptedOut"/>) or START to the hospital's WhatsApp number. Raised by Integrations
 /// once for each newly received reply that is the number's latest, so webhook redeliveries and older replies arriving
 /// late raise nothing. The platform records the number's WhatsApp opt-out, which the notification pipeline honours;

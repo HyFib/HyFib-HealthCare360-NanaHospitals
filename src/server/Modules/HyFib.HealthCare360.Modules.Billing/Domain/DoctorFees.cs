@@ -71,6 +71,12 @@ public sealed class DoctorFeeAccrual : AuditableEntity, IFacilityScoped
 
     /// <summary>Set on a negative accrual that reverses an earlier one.</summary>
     public Guid? ReversalOfId { get; set; }
+
+    /// <summary>
+    /// 1 for a bill line's first accrual. A line accrues again (2, 3…) only once the accrual before it was reversed, as
+    /// when a bill paid by a cheque that bounced is paid again; a reversal carries the occurrence it reverses.
+    /// </summary>
+    public int Occurrence { get; set; } = 1;
 }
 
 public enum PayoutStatus

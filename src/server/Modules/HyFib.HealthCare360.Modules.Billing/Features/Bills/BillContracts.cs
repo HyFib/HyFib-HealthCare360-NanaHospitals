@@ -54,7 +54,8 @@ public sealed record BillLineDto(
     bool IsReturn,
     DeviceDetails? Device = null);
 
-public sealed record ReceiptSummary(Guid Id, string ReceiptNumber, ReceiptPurpose Purpose, decimal Amount, string Modes, DateTimeOffset ReceivedAt);
+/// <param name="ReversedAmount">What reversals took back as money not received.</param>
+public sealed record ReceiptSummary(Guid Id, string ReceiptNumber, ReceiptPurpose Purpose, decimal Amount, string Modes, DateTimeOffset ReceivedAt, decimal ReversedAmount = 0m);
 
 public sealed record RefundSummary(Guid Id, string RefundNumber, decimal Amount, RefundStatus Status, PaymentMode? Mode, DateTimeOffset RequestedAt, DateTimeOffset? PaidAt);
 

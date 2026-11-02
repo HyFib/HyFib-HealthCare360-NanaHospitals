@@ -99,6 +99,67 @@ internal sealed class RefundConfiguration : IEntityTypeConfiguration<Refund>
     }
 }
 
+internal sealed class ReceiptReversalConfiguration : IEntityTypeConfiguration<ReceiptReversal>
+{
+    public void Configure(EntityTypeBuilder<ReceiptReversal> b)
+    {
+        b.ToTable("receipt_reversals", BillingSchema.Name);
+        b.Property(x => x.Number).HasMaxLength(24);
+        b.Property(x => x.ReceiptNumber).HasMaxLength(24);
+        b.Property(x => x.Note).HasMaxLength(ReversalRules.NoteMaxLength);
+        b.Property(x => x.RequestedByName).HasMaxLength(200);
+        b.Property(x => x.ApprovedByName).HasMaxLength(200);
+        b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.ReversalId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Receipt>().WithMany().HasForeignKey(x => x.ReceiptId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ReceiptReversal>().WithMany().HasForeignKey(x => x.CausedById).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.Number).IsUnique();
+        b.HasIndex(x => x.ReceiptId);
+        b.HasIndex(x => x.BillId);
+        b.HasIndex(x => x.IpAccountId);
+        b.HasIndex(x => x.AdvanceId);
+        b.HasIndex(x => x.CausedById);
+        b.HasIndex(x => new { x.FacilityId, x.ReversedAt });
+    }
+}
+
+internal sealed class ReceiptReversalLineConfiguration : IEntityTypeConfiguration<ReceiptReversalLine>
+{
+    public void Configure(EntityTypeBuilder<ReceiptReversalLine> b)
+    {
+        b.ToTable("receipt_reversal_lines", BillingSchema.Name);
+        b.HasKey(x => x.Id);
+        b.HasOne<ReceiptPayment>().WithMany().HasForeignKey(x => x.ReceiptPaymentId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.ReversalId);
+        b.HasIndex(x => x.ReceiptPaymentId);
+    }
+}
+
+internal sealed class RefundReversalConfiguration : IEntityTypeConfiguration<RefundReversal>
+{
+    public void Configure(EntityTypeBuilder<RefundReversal> b)
+    {
+        b.ToTable("refund_reversals", BillingSchema.Name);
+        b.Property(x => x.Number).HasMaxLength(24);
+        b.Property(x => x.RefundNumber).HasMaxLength(24);
+        b.Property(x => x.Reference).HasMaxLength(64);
+        b.Property(x => x.GatewayRefundId).HasMaxLength(128);
+        b.Property(x => x.Note).HasMaxLength(ReversalRules.NoteMaxLength);
+        b.Property(x => x.RequestedByName).HasMaxLength(200);
+        b.Property(x => x.ApprovedByName).HasMaxLength(200);
+        b.HasOne<Refund>().WithMany().HasForeignKey(x => x.RefundId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.Number).IsUnique();
+
+        // A refund's payout is undone at most once: the refund stays as recorded, and a new refund pays the patient.
+        b.HasIndex(x => x.RefundId).IsUnique();
+        b.HasIndex(x => x.BillId);
+        b.HasIndex(x => x.IpAccountId);
+        b.HasIndex(x => x.AdvanceId);
+        b.HasIndex(x => new { x.FacilityId, x.ReversedAt });
+    }
+}
+
 internal sealed class CreditNoteConfiguration : IEntityTypeConfiguration<CreditNote>
 {
     public void Configure(EntityTypeBuilder<CreditNote> b)

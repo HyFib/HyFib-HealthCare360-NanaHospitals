@@ -474,6 +474,63 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     }
 
     /// <summary>
+    /// Money recorded on the bill that never arrived (a receipt reversal): the bill owes it again, or a cancelled bill
+    /// has that much less to refund. Only money the bill still holds can be taken back: a refund paid out of it must be
+    /// recorded as not paid out first, if it was not paid. Leaving Paid raises <see cref="BillPaymentReversed"/>.
+    /// </summary>
+    public Result ReversePayment(decimal amount)
+    {
+        var reversible = CanReversePayment(amount);
+        if (reversible.IsFailure)
+        {
+            return reversible;
+        }
+
+        var wasPaid = Status == BillStatus.Paid;
+        PaidAmount -= amount;
+        UpdateBalances();
+        if (wasPaid && Status != BillStatus.Paid)
+        {
+            Raise(new BillPaymentReversed(Id, FacilityId));
+        }
+
+        return Result.Success();
+    }
+
+    /// <summary>Whether <paramref name="amount"/> recorded as paid on the bill can be reversed (<see cref="ReversePayment"/>).</summary>
+    public Result CanReversePayment(decimal amount)
+    {
+        if (amount <= 0)
+        {
+            return Error.Rule("billing.amount_invalid", "Enter an amount greater than zero.");
+        }
+
+        var held = PaidAmount - RefundedAmount;
+        return amount > held
+            ? Error.Rule(
+                "billing.reversal_exceeds_held",
+                $"Bill {BillNumber} holds ₹{Money.FormatInr(Math.Max(held, 0m))} of what was paid on it: ₹{Money.FormatInr(RefundedAmount)} was refunded. " +
+                "If a refund was not paid out, record that first.")
+            : Result.Success();
+    }
+
+    /// <summary>What the bill would owe, and have to refund, once <paramref name="amount"/> paid on it is reversed.</summary>
+    public (decimal Due, decimal Refundable) BalancesAfterReversal(decimal amount) => Balances(PaidAmount - amount);
+
+    /// <summary>A refund recorded as paid out from the bill was not paid: the bill holds that money again.</summary>
+    public Result ReverseRefund(decimal amount)
+    {
+        if (amount <= 0 || amount > RefundedAmount)
+        {
+            return Error.Rule("billing.refund_reversal_exceeds", $"Bill {BillNumber} has ₹{Money.FormatInr(RefundedAmount)} of refunds recorded.");
+        }
+
+        RefundedAmount -= amount;
+        UpdateBalances();
+        return Result.Success();
+    }
+
+    /// <summary>
     /// Cancels a finalized bill; whatever the patient paid becomes refundable (BillCancelled is raised). Someone other
     /// than whoever finalized it cancels it, as with refunds and discounts: one person cannot bill, collect and undo.
     /// </summary>
@@ -530,14 +587,18 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         }
     }
 
-    private void UpdateBalances()
+    private (decimal Due, decimal Refundable) Balances(decimal paid)
     {
         var cancelled = Status is BillStatus.Cancelled or BillStatus.Refunded;
         var owed = cancelled ? 0m : PatientAmount - CreditAmount;
+        var balance = owed - (paid - RefundedAmount);
+        return (Math.Max(balance, 0m), Math.Max(-balance, 0m));
+    }
+
+    private void UpdateBalances()
+    {
         var netPaid = PaidAmount - RefundedAmount;
-        var balance = owed - netPaid;
-        DueAmount = Math.Max(balance, 0m);
-        RefundableAmount = Math.Max(-balance, 0m);
+        (DueAmount, RefundableAmount) = Balances(PaidAmount);
 
         Status = Status switch
         {

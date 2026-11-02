@@ -63,6 +63,7 @@ internal static class PortalBillEndpoints
             .Where(r => r.BillId == id && r.Purpose != ReceiptPurpose.PayerSettlement)
             .OrderBy(r => r.ReceivedAt)
             .ToListAsync(ct);
+        var reversed = await BillQueries.ReversedAsync(db, receipts.Select(r => r.Id).ToList(), ct);
         return TypedResults.Ok(new PortalBillDetail(
             b.Id, b.BillNumber, b.Type, b.Status, b.PatientId, patient?.FullName, b.FinalizedAt, b.GrossAmount, b.DiscountAmount, b.TaxAmount, b.RoundOffAmount,
             b.NetAmount, b.PayerAmount, b.PatientAmount, b.PaidAmount - b.RefundedAmount, b.DueAmount,
@@ -71,7 +72,7 @@ internal static class PortalBillEndpoints
                     l.Description, l.Quantity, l.UnitPrice, l.TariffDiscountAmount + l.LineDiscountAmount + l.BillDiscountShare + l.PackageCoveredAmount, l.TaxAmount,
                     l.NetAmount, l.ServiceDate, IsReturn: l.GrossAmount < 0))
                 .ToList(),
-            receipts.Select(BillQueries.ToSummary).ToList()));
+            receipts.Select(r => BillQueries.ToSummary(r, reversed.GetValueOrDefault(r.Id))).ToList()));
     }
 
     /// <summary>The bill as a PDF: the same A4 document the counter prints, for the bills the patient can see above.</summary>

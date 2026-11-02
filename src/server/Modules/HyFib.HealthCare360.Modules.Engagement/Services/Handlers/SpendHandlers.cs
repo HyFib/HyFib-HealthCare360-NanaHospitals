@@ -31,7 +31,25 @@ internal sealed class RefundPaidSpendHandler(HospitalDbContext db) : IDomainEven
         SpendLedger.RecordAsync(db, SpendKind.Refunded, refund.RefundId, refund.RefundNumber, refund.PatientId, refund.FacilityId, refund.Amount, refund.PaidAt, cancellationToken);
 }
 
-/// <summary>Append-only spend rows, one per bill or receipt; a replayed event is ignored.</summary>
+/// <summary>Money recorded as received that never arrived no longer counts as paid.</summary>
+internal sealed class PaymentReversedSpendHandler(HospitalDbContext db) : IDomainEventHandler<PaymentReversed>
+{
+    public Task HandleAsync(PaymentReversed reversal, CancellationToken cancellationToken) =>
+        SpendLedger.RecordAsync(
+            db, SpendKind.PaymentReversed, reversal.ReversalId, reversal.ReversalNumber, reversal.PatientId, reversal.FacilityId, reversal.Amount, reversal.ReversedAt,
+            cancellationToken);
+}
+
+/// <summary>A refund that never reached the patient counts as paid again.</summary>
+internal sealed class RefundPayoutReversedSpendHandler(HospitalDbContext db) : IDomainEventHandler<RefundPayoutReversed>
+{
+    public Task HandleAsync(RefundPayoutReversed reversal, CancellationToken cancellationToken) =>
+        SpendLedger.RecordAsync(
+            db, SpendKind.RefundReversed, reversal.ReversalId, reversal.ReversalNumber, reversal.PatientId, reversal.FacilityId, reversal.Amount, reversal.ReversedAt,
+            cancellationToken);
+}
+
+/// <summary>Append-only spend rows, one per bill, receipt, refund or reversal; a replayed event is ignored.</summary>
 internal static class SpendLedger
 {
     private const int MaxReferenceLength = 40;

@@ -313,6 +313,34 @@ describe('receipt prints', () => {
     expect(html).toContain('size: 80mm auto');
   });
 
+  it('shows money a reversal took back, and what the receipt holds after it, in both formats', () => {
+    const reversed: ReceiptDto = {
+      ...receipt,
+      reversedAmount: 1000,
+      reversals: [
+        {
+          id: 'rv-1',
+          number: 'NHRR260000004',
+          amount: 1000,
+          reason: 'NotSettled',
+          note: 'The acquirer reports the sale was never settled.',
+          requestedByName: 'Meena',
+          approvedByName: 'Ravi',
+          reversedAt: '2026-09-26T05:00:00Z',
+          causedById: null,
+        },
+      ],
+    };
+
+    for (const format of ['Receipt80', 'A4'] as const) {
+      const html = buildReceiptHtml(reversed, facility, format);
+      expect(html).toContain('Not received: NHRR260000004');
+      expect(html).toContain('Received, after reversals');
+      expect(html).toContain('₹250.50');
+    }
+    expect(buildReceiptHtml(receipt, facility, 'A4')).not.toContain('Not received');
+  });
+
   it('on pre-printed stationery keeps the tax ids and the title, and leaves room for the letterhead', () => {
     const html = buildReceiptHtml(receipt, { ...facility, templates: { receipt: stationery } }, 'A4');
 

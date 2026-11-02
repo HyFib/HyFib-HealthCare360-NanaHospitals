@@ -21,7 +21,10 @@ public sealed class DoctorFeeService(HospitalDbContext db, INumberSeries numbers
     internal async Task<bool> AccruesOnPaymentAsync(Guid facilityId, CancellationToken ct) =>
         string.Equals(await settings.GetAsync<string>(TriggerSetting, facilityId, ct), "paid", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Accrues the doctors' shares of a finalized bill (idempotent per bill line). Does not save.</summary>
+    /// <summary>
+    /// Accrues the doctors' shares of a finalized bill (idempotent per bill line: a line accrues again only once its
+    /// accrual was reversed, as when a bill paid, then owing again, is paid again). Does not save.
+    /// </summary>
     internal async Task AccrueAsync(Bill bill, CancellationToken ct)
     {
         if (bill.BillNumber is null)
@@ -36,11 +39,18 @@ public sealed class DoctorFeeService(HospitalDbContext db, INumberSeries numbers
         }
 
         var lineIds = lines.Select(l => l.Id).ToList();
-        var accrued = await db.Set<DoctorFeeAccrual>().IgnoreQueryFilters()
-            .Where(a => lineIds.Contains(a.BillLineId) && a.ReversalOfId == null)
-            .Select(a => a.BillLineId)
-            .ToListAsync(ct);
-        accrued.AddRange(db.Set<DoctorFeeAccrual>().Local.Where(a => a.BillId == bill.Id && a.ReversalOfId == null).Select(a => a.BillLineId));
+        // Every accrual and reversal of these lines, saved or about to be.
+        var entries = (await db.Set<DoctorFeeAccrual>().IgnoreQueryFilters().AsNoTracking()
+                .Where(a => lineIds.Contains(a.BillLineId))
+                .Select(a => new FeeEntry(a.Id, a.BillLineId, a.ReversalOfId, a.Occurrence))
+                .ToListAsync(ct))
+            .Concat(db.Set<DoctorFeeAccrual>().Local.Where(a => lineIds.Contains(a.BillLineId)).Select(a => new FeeEntry(a.Id, a.BillLineId, a.ReversalOfId, a.Occurrence)))
+            .DistinctBy(e => e.Id)
+            .ToList();
+        var reversed = entries.Where(e => e.ReversalOfId is not null).Select(e => e.ReversalOfId!.Value).ToHashSet();
+        var originals = entries.Where(e => e.ReversalOfId is null).ToList();
+        var accrued = originals.Where(e => !reversed.Contains(e.Id)).Select(e => e.BillLineId).ToHashSet();
+        var lastOccurrence = originals.GroupBy(e => e.BillLineId).ToDictionary(g => g.Key, g => g.Max(e => e.Occurrence));
 
         var practitionerIds = lines.Select(l => l.PractitionerId!.Value).Distinct().ToList();
         var rules = (await db.Set<DoctorShareRule>().AsNoTracking()
@@ -82,6 +92,7 @@ public sealed class DoctorFeeService(HospitalDbContext db, INumberSeries numbers
                 Rate = share.Rule.Value,
                 ShareAmount = share.Amount,
                 Status = AccrualStatus.Accrued,
+                Occurrence = lastOccurrence.GetValueOrDefault(line.Id) + 1,
             });
         }
     }
@@ -126,6 +137,7 @@ public sealed class DoctorFeeService(HospitalDbContext db, INumberSeries numbers
                 ShareAmount = -original.ShareAmount,
                 Status = unpaid ? AccrualStatus.Reversed : AccrualStatus.Accrued,
                 ReversalOfId = original.Id,
+                Occurrence = original.Occurrence,
             });
             if (unpaid)
             {
@@ -312,4 +324,7 @@ public sealed class DoctorFeeService(HospitalDbContext db, INumberSeries numbers
         await db.SaveChangesAsync(ct);
         return Result.Success();
     }
+
+    /// <summary>An accrual or a reversal of a bill line, as far as accruing it again needs.</summary>
+    private sealed record FeeEntry(Guid Id, Guid BillLineId, Guid? ReversalOfId, int Occurrence);
 }

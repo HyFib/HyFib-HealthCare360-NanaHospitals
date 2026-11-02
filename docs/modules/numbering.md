@@ -185,7 +185,9 @@ again and the next number cannot be set below them.
 | Billing | IP bill | `billing.bill.ip` | `{FAC}IB{YY}{SEQ:7}` | every year | per facility | 24 |
 | Billing | OP bill | `billing.bill.op` | `{FAC}OB{YY}{SEQ:7}` | every year | per facility | 24 |
 | Billing | Receipt | `billing.receipt` | `{FAC}RC{YY}{SEQ:7}` | every year | per facility | 24 |
+| Billing | Receipt reversal | `billing.receiptreversal` | `{FAC}RR{YY}{SEQ:6}` | every year | per facility | 24 |
 | Billing | Refund | `billing.refund` | `{FAC}RF{YY}{SEQ:6}` | every year | per facility | 24 |
+| Billing | Refund not paid out | `billing.refundreversal` | `{FAC}RX{YY}{SEQ:6}` | every year | per facility | 24 |
 | Blood bank | Blood bag | `blood-bag` | `{FAC}BB{YY}{SEQ:6}` | every year | per facility | 24 |
 | Blood bank | Blood donor | `blood-donor` | `{FAC}DN{SEQ:6}` | never | shared | 20 |
 | Blood bank | Blood request | `blood-request` | `{FAC}BR{YY}{SEQ:6}` | every year | per facility | 24 |

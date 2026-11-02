@@ -22,7 +22,8 @@ internal sealed class DoctorFeeAccrualConfiguration : IEntityTypeConfiguration<D
         b.Property(x => x.Description).HasMaxLength(300);
 
         // One accrual per bill line and at most one reversal per accrual, so re-dispatched events never double-pay.
-        b.HasIndex(x => x.BillLineId, "ix_doctor_fee_accruals_one_per_line").IsUnique().HasFilter("reversal_of_id IS NULL");
+        // One accrual of a line at a time: the next occurrence only after the one before was reversed.
+        b.HasIndex(x => new { x.BillLineId, x.Occurrence }, "ix_doctor_fee_accruals_one_per_line").IsUnique().HasFilter("reversal_of_id IS NULL");
         b.HasIndex(x => x.ReversalOfId).IsUnique().HasFilter("reversal_of_id IS NOT NULL");
         b.HasIndex(x => new { x.PractitionerId, x.AccruedOn });
         b.HasIndex(x => new { x.FacilityId, x.AccruedOn });

@@ -12,6 +12,7 @@ using HyFib.HealthCare360.Modules.Billing.Features.Payments;
 using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Organization;
@@ -203,6 +204,40 @@ public sealed class PosSettlementTests(HospitalServer server)
         (await LineAsync(reference)).ShouldSatisfyAllConditions(
             l => l.MatchBasis.ShouldBe(PosMatchBasis.Rrn),
             l => l.ReceiptId.ShouldBe(receipt.Id));
+        (await accounts.GetAsync<List<UnsettledPosReceiptDto>>("/api/v1/billing/pos/settlements/unsettled")).ShouldNotContain(u => u.ReceiptId == receipt.Id);
+    }
+
+    [Fact]
+    public async Task A_card_receipt_whose_money_did_not_arrive_waits_for_no_settlement()
+    {
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var accounts = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        await OpenCounterShiftAsync(billing);
+        var bill = await FinalizedBillAsync(billing);
+        var receipt = await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new CollectPaymentRequest(
+            bill.Id, [new PaymentLineInput(PaymentMode.Card, bill.DueAmount, Digits(12), Random.Shared.Next(2000, 9999).ToString(CultureInfo.InvariantCulture), "VISA", null, null, null)], null));
+
+        // Taken six days ago, and in none of the acquirer's reports of the last eight days: it waits for a settlement.
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var sixDaysAgo = DateTimeOffset.UtcNow.AddDays(-6);
+            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Receipt>().IgnoreQueryFilters()
+                .Where(r => r.Id == receipt.Id)
+                .ExecuteUpdateAsync(u => u.SetProperty(r => r.ReceivedAt, sixDaysAgo), Ct);
+        }
+
+        var eightDaysAgo = Today.AddDays(-8).ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+        await ImportAsync(accounts, $"""
+            RRN,Txn Date,Card Type,Txn Amount,Net Amount,Settlement Date,UTR
+            {Digits(12)},{eightDaysAgo},VISA,4321.00,4321.00,{Today:dd/MM/yyyy},AXISN{Digits(11)}
+            """, "HDFC Bank");
+        (await accounts.GetAsync<List<UnsettledPosReceiptDto>>("/api/v1/billing/pos/settlements/unsettled")).ShouldContain(u => u.ReceiptId == receipt.Id);
+
+        // The acquirer never paid it. Recorded as not received, one person asking and another approving, it waits no more.
+        using var response = await billing.SendRawAsync(HttpMethod.Post, $"/api/v1/billing/receipts/{receipt.Id}/reversal",
+            new ReverseReceiptRequest([receipt.Payments.Single().Id], ReversalReason.NotSettled, "None of the acquirer's reports carries this charge slip."));
+        response.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+        await MakerChecker.ApproveAsync(accounts, (await response.Content.ReadFromJsonAsync<ApprovalRequestDto>(ApiClient.Json, Ct)).ShouldNotBeNull());
         (await accounts.GetAsync<List<UnsettledPosReceiptDto>>("/api/v1/billing/pos/settlements/unsettled")).ShouldNotContain(u => u.ReceiptId == receipt.Id);
     }
 

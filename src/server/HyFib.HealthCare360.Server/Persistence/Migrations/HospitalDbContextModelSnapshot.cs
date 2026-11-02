@@ -2348,6 +2348,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("method");
 
+                    b.Property<int>("Occurrence")
+                        .HasColumnType("integer")
+                        .HasColumnName("occurrence");
+
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
@@ -2444,9 +2448,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.HasIndex("PractitionerId", "AccruedOn")
                         .HasDatabaseName("ix_doctor_fee_accruals_practitioner_id_accrued_on");
 
-                    b.HasIndex(new[] { "BillLineId" }, "ix_doctor_fee_accruals_one_per_line")
+                    b.HasIndex(new[] { "BillLineId", "Occurrence" }, "ix_doctor_fee_accruals_one_per_line")
                         .IsUnique()
-                        .HasDatabaseName("ix_doctor_fee_accruals_bill_line_id")
+                        .HasDatabaseName("ix_doctor_fee_accruals_bill_line_id_occurrence")
                         .HasFilter("reversal_of_id IS NULL");
 
                     b.ToTable("doctor_fee_accruals", "billing");
@@ -5578,6 +5582,205 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("receipt_payments", "billing");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.ReceiptReversal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AdvanceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("advance_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("approved_by");
+
+                    b.Property<string>("ApprovedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("approved_by_name");
+
+                    b.Property<Guid?>("BillId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("bill_id");
+
+                    b.Property<Guid?>("CausedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caused_by_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<Guid?>("IpAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ip_account_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("number");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("purpose");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("ReceiptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("receipt_id");
+
+                    b.Property<string>("ReceiptNumber")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("receipt_number");
+
+                    b.Property<Guid?>("RequestedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by");
+
+                    b.Property<string>("RequestedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("requested_by_name");
+
+                    b.Property<DateTimeOffset>("ReversedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reversed_at");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_receipt_reversals");
+
+                    b.HasIndex("AdvanceId")
+                        .HasDatabaseName("ix_receipt_reversals_advance_id");
+
+                    b.HasIndex("BillId")
+                        .HasDatabaseName("ix_receipt_reversals_bill_id");
+
+                    b.HasIndex("CausedById")
+                        .HasDatabaseName("ix_receipt_reversals_caused_by_id");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_receipt_reversals_facility_id");
+
+                    b.HasIndex("IpAccountId")
+                        .HasDatabaseName("ix_receipt_reversals_ip_account_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_receipt_reversals_is_deleted");
+
+                    b.HasIndex("Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_receipt_reversals_number");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_receipt_reversals_patient_id");
+
+                    b.HasIndex("ReceiptId")
+                        .HasDatabaseName("ix_receipt_reversals_receipt_id");
+
+                    b.HasIndex("FacilityId", "ReversedAt")
+                        .HasDatabaseName("ix_receipt_reversals_facility_id_reversed_at");
+
+                    b.ToTable("receipt_reversals", "billing");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.ReceiptReversalLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("mode");
+
+                    b.Property<Guid>("ReceiptPaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("receipt_payment_id");
+
+                    b.Property<Guid>("ReversalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reversal_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_receipt_reversal_lines");
+
+                    b.HasIndex("ReceiptPaymentId")
+                        .HasDatabaseName("ix_receipt_reversal_lines_receipt_payment_id");
+
+                    b.HasIndex("ReversalId")
+                        .HasDatabaseName("ix_receipt_reversal_lines_reversal_id");
+
+                    b.ToTable("receipt_reversal_lines", "billing");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.Refund", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5692,6 +5895,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
 
+                    b.Property<DateTimeOffset?>("PayoutReversedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("payout_reversed_at");
+
                     b.Property<string>("Purpose")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -5792,6 +5999,182 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_refunds_status_requested_at");
 
                     b.ToTable("refunds", "billing");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.RefundReversal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AdvanceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("advance_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("approved_by");
+
+                    b.Property<string>("ApprovedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("approved_by_name");
+
+                    b.Property<Guid?>("BillId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("bill_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("GatewayRefundId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("gateway_refund_id");
+
+                    b.Property<Guid?>("IpAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ip_account_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("mode");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("number");
+
+                    b.Property<DateTimeOffset>("PaidAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("paid_at");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("purpose");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reference");
+
+                    b.Property<Guid>("RefundId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("refund_id");
+
+                    b.Property<string>("RefundNumber")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("refund_number");
+
+                    b.Property<Guid?>("RequestedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by");
+
+                    b.Property<string>("RequestedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("requested_by_name");
+
+                    b.Property<DateTimeOffset>("ReversedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reversed_at");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_refund_reversals");
+
+                    b.HasIndex("AdvanceId")
+                        .HasDatabaseName("ix_refund_reversals_advance_id");
+
+                    b.HasIndex("BillId")
+                        .HasDatabaseName("ix_refund_reversals_bill_id");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_refund_reversals_facility_id");
+
+                    b.HasIndex("IpAccountId")
+                        .HasDatabaseName("ix_refund_reversals_ip_account_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_refund_reversals_is_deleted");
+
+                    b.HasIndex("Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_refund_reversals_number");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_refund_reversals_patient_id");
+
+                    b.HasIndex("RefundId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_refund_reversals_refund_id");
+
+                    b.HasIndex("FacilityId", "ReversedAt")
+                        .HasDatabaseName("ix_refund_reversals_facility_id_reversed_at");
+
+                    b.ToTable("refund_reversals", "billing");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.TallyExport", b =>
@@ -43258,6 +43641,46 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_receipt_payments_receipts_receipt_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.ReceiptReversal", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.ReceiptReversal", null)
+                        .WithMany()
+                        .HasForeignKey("CausedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_receipt_reversals_receipt_reversals_caused_by_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_receipt_reversals_patients_patient_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.Receipt", null)
+                        .WithMany()
+                        .HasForeignKey("ReceiptId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_receipt_reversals_receipts_receipt_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.ReceiptReversalLine", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.ReceiptPayment", null)
+                        .WithMany()
+                        .HasForeignKey("ReceiptPaymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_receipt_reversal_lines_receipt_payments_receipt_payment_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.ReceiptReversal", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("ReversalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_receipt_reversal_lines_receipt_reversals_reversal_id");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.Refund", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
@@ -43266,6 +43689,23 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_refunds_patients_patient_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.RefundReversal", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_refund_reversals_patients_patient_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.Refund", null)
+                        .WithMany()
+                        .HasForeignKey("RefundId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_refund_reversals_refunds_refund_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.TallyVoucherRecord", b =>
@@ -45961,6 +46401,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.Receipt", b =>
                 {
                     b.Navigation("Payments");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.ReceiptReversal", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.TariffPlan", b =>

@@ -32,6 +32,21 @@ public sealed class SpendSummaryTests
     }
 
     [Fact]
+    public void Money_that_never_arrived_is_not_paid_and_a_refund_never_paid_out_still_counts()
+    {
+        SpendRow[] rows =
+        [
+            new(SpendKind.Billed, Guid.NewGuid(), 1500m, Now.AddDays(-5)),
+            new(SpendKind.Paid, Guid.NewGuid(), 1500m, Now.AddDays(-5)),
+            new(SpendKind.PaymentReversed, Guid.NewGuid(), 600m, Now.AddDays(-2)),
+            new(SpendKind.Refunded, Guid.NewGuid(), 400m, Now.AddDays(-4)),
+            new(SpendKind.RefundReversed, Guid.NewGuid(), 400m, Now.AddDays(-1)),
+        ];
+
+        Summarize(rows, YearAgo).TotalPaid.ShouldBe(900m);
+    }
+
+    [Fact]
     public void Only_bills_of_the_last_twelve_months_count_as_recent()
     {
         SpendRow[] rows =

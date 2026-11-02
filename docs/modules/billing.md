@@ -92,8 +92,8 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 | `billing.bills.cancel` | Cancel finalized bills | HospitalAdmin, Accountant |
 | `billing.discounts.approve` | Approve discounts above a user's limit, discharge with dues, set limits | HospitalAdmin, Accountant |
 | `billing.payments.collect` | Collect payments, POS, payment links, advance adjustment, pay out approved refunds | Cashier, Billing, FrontOffice, HospitalAdmin |
-| `billing.refunds.request` | Request refunds, credit notes and write-offs | Cashier, Billing, HospitalAdmin |
-| `billing.refunds.approve` | Approve refunds, credit notes and write-offs someone else asked for | HospitalAdmin, Accountant |
+| `billing.refunds.request` | Request refunds, credit notes and write-offs, and ask to reverse money that did not move (a receipt not received, a refund not paid out) | Cashier, Billing, HospitalAdmin |
+| `billing.refunds.approve` | Approve refunds, credit notes, write-offs and reversals of money that did not move, someone else asked for | HospitalAdmin, Accountant |
 | `billing.deposits` | Collect IP advances | Cashier, Billing, HospitalAdmin |
 | `billing.shifts` | Cashier shifts, day-end report | Cashier, Billing, FrontOffice, Accountant, HospitalAdmin |
 | `billing.tariffs.manage` | Tariff plans, prices, packages | Billing, HospitalAdmin |
@@ -208,8 +208,9 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 ### Payments, advances and refunds
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/api/v1/billing/receipts?from&to&patientId&billId&ipAccountId&purpose&counter` (paged) | `charges.read` / `payments.collect` | → `PagedResult<ReceiptListItem>` |
-| GET | `/api/v1/billing/receipts/{id}` | same | → `ReceiptDto` |
+| GET | `/api/v1/billing/receipts?from&to&patientId&billId&ipAccountId&purpose&counter` (paged) | `charges.read` / `payments.collect` | → `PagedResult<ReceiptListItem>` (`reversedAmount`: taken back as not received) |
+| GET | `/api/v1/billing/receipts/{id}` | same | → `ReceiptDto` (each payment line's `id` and `reversed`; `reversals[]`, `reversedAmount`) |
+| POST | `/api/v1/billing/receipts/{id}/reversal` | `billing.refunds.request` | `ReverseReceiptRequest(paymentIds[], reason, note)` → 202 `ApprovalRequestDto` (kind `billing.receipt_reversal`; [money that did not move](#money-that-did-not-move)); 422 `billing.reversal_cash`, `billing.reversal_mode`, `billing.reversal_done`, `billing.reversal_payer_settlement`, `billing.reversal_adjustment`, `billing.reversal_exceeds_held` |
 | POST | `/api/v1/billing/receipts` | `billing.payments.collect` | `CollectPaymentRequest(billId, payments[], notes)` → 201 `ReceiptDto` (`{FAC}RC{YY}{SEQ:7}`; split modes; cash needs an open shift when `billing.shift.required`); 422 `payments.cash_limit` (the cash limit, above) |
 | POST | `/api/v1/billing/ip-accounts/{id}/deposits` | `billing.deposits` | `CollectDepositRequest` → 201 `ReceiptDto`; 422 `payments.cash_limit` |
 | GET | `/api/v1/billing/patients/{patientId}/dues` | `payments.collect` / `charges.read` | → `PatientDues` (open bills, IP deposits + open patient advances, `advances[]`) |
@@ -218,11 +219,51 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | GET | `/api/v1/billing/refunds/{id}` | same | → `RefundDto` (incl. `advanceId`) |
 | POST | `/api/v1/billing/refunds` | `billing.refunds.request` | `RequestRefundRequest(billId? \| ipAccountId? \| advanceId?, amount, reason)` → 201 (`{FAC}RF{YY}{SEQ:6}`) |
 | POST | `/api/v1/billing/refunds/{id}/approve` · `/reject` | `billing.refunds.approve` | `ApproveRefundRequest` / `RejectRefundRequest` → 204 |
+| POST | `/api/v1/billing/refunds/{id}/not-paid` | `billing.refunds.request` | `ReverseRefundRequest(reason, note)` → 202 `ApprovalRequestDto` (kind `billing.refund_reversal`); 422 `billing.refund_not_paid`, `billing.refund_reversal_cash`, `billing.refund_reversal_advance`, `billing.refund_reversal_gateway`, `billing.refund_reversal_done`. `RefundDto.notPaidOut` once recorded |
 | POST | `/api/v1/billing/refunds/{id}/pay` | `billing.payments.collect` | `PayRefundRequest(mode, reference)` → 204 (`PaymentGateway` reverses the original online payment; the refund is paid in HC360 when the gateway accepts it, and `RefundDto.gatewayStatus` then follows it: `Pending` until the bank confirms, `Processed` with the bank's reference in `gatewayReference`, or `Failed` with `gatewayError`) |
 
 Counter payment evidence (`PaymentLineRules`): card last 4 digits, UPI/net-banking/wallet reference, 6-digit cheque
 number + bank + date (no post-dated cheques, valid 3 months). Advance, insurance and gateway modes are never keyed at
 the counter.
+
+### Money that did not move
+
+Receipts and refunds are never edited. When money recorded as received never arrived (a cheque the bank returned
+unpaid, a card, UPI or online payment the bank never settled, or one a training simulator made up), or a refund
+recorded as paid out never reached the patient, a **reversal** stands beside the record, dated the day it is made.
+One person asks (`billing.refunds.request`); another approves (`billing.refunds.approve`; maker-checker, the person
+who asked never approves). The reason is one of `ChequeReturned`, `NotSettled`, `TrainingSimulator`, `Other`, with a
+note of 10 to 500 characters saying how it was found.
+
+* **Money not received** (`ReceiptReversal`, `{FAC}RR{YY}{SEQ:6}`): the payment lines asked for are taken back in full
+  (what reversals have not taken already). Cash is never reversed: it was counted when the shift closed, and cash
+  recorded and not received is the shift's shortage. Advance adjustments, insurers' settlements and receipts that only
+  moved an advance onto a bill are not reversed either (reverse the advance's own receipt).
+  * A bill payment: the bill owes it again (`Bill.ReversePayment`); a cancelled bill has that much less to refund.
+    Only money the bill still holds can be taken back: a refund paid out of it is recorded as not paid out first.
+  * An IP deposit or a patient advance: the advance holds that much less. If it already paid bills, those payments are
+    undone first, newest first, each as a reversal of its adjustment's receipt that names the reversal of the money
+    (`causedById`): the bills owe again. Refunds waiting to be paid from a bill or advance that no longer holds the
+    money are closed (rejected, "Closed by RR…"). A settled stay whose bills owe again is reopened (discharged, not
+    closed).
+  * The approval's subject is the bill, the IP account or the advance: its page shows the request waiting, and one
+    waits at a time. The checker sees what changes (what the bill owes, the bills paid from an advance, the refunds
+    closed); the reversal is made only if the bill, account or advance is as it was when asked (a payment, credit or
+    adjustment on it since changes what the reversal leaves) and it would still do exactly that (`approval.stale`
+    otherwise).
+* **Refund not paid out** (`RefundReversal`, `{FAC}RX{YY}{SEQ:6}`): a paid refund in a mode other than cash or an
+  advance. Through the payment gateway, only one the gateway reports failed (and not being sent again) or one the
+  payment simulator made up (`rfnd_sim…`); one reported processed reached the patient's bank. The refund stays as it
+  was recorded (`notPaidOut` on it says so, and it is never paid or sent through the gateway again); its money is back
+  on the bill, the IP deposit or the patient advance, from which a new refund pays the patient. Once per refund.
+* Each is audited (`billing.receipt.reversed` on the receipt and `billing.bill.payment_reversed` on every bill that
+  owes again; `billing.refund.not_paid_out`), is a Journal in the Tally day book of its day, and is in that day's
+  day-end report and its records check. The patient's spend no longer counts money not received
+  (`PaymentReversed`), and counts a refund not paid out again (`RefundPayoutReversed`). With the "paid" trigger, a
+  bill that owes again reverses its doctors' fees; they accrue again when it is paid. A payment reversed is no longer
+  reported unsettled, by the gateway's settlement check (its open exception is cleared) or in the card and UPI
+  settlement list.
+* The simulator sweep's guidance for payments, card sales and refunds is carried out with these reversals.
 
 ### POS terminals and payment links — `/api/v1/billing/pos/sales`, `/api/v1/billing/payment-links`
 | Method | Path | Permission | Request → response |
@@ -242,7 +283,7 @@ the counter.
 | GET | `/shifts` (paged) · `/shifts/{id}` | `billing.shifts` | → `ShiftDto` |
 | POST | `/shifts/open` | `billing.shifts` | `OpenShiftRequest(counter, openingFloat)` → `ShiftDto` (one open shift per cashier) |
 | POST | `/shifts/{id}/close` | `billing.shifts` | `CloseShiftRequest(declaredCash, notes, version)` → `ShiftDto` (expected per mode, variance) |
-| GET | `/api/v1/billing/reports/day-end?date&counter` | `billing.shifts` | → `DayEndReport` (per cashier, per mode, advances collected, bills, discounts, cancellations) |
+| GET | `/api/v1/billing/reports/day-end?date&counter` | `billing.shifts` | → `DayEndReport` (per cashier, per mode, advances collected, bills, discounts, cancellations; on the whole day's report, the reversals made that day by mode, `notReceived` and `notPaidOut`, and `netAfterReversals`) |
 
 ### In-patient accounts — `/api/v1/billing/ip-accounts`
 Readers = `billing.ip.manage` or `billing.charges.read`.
@@ -388,7 +429,7 @@ one). See [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos) fo
 | GET | `/lines?attention&settledOn&utr&noUtr` (paged) | → `PagedResult<PosSettlementLineDto>`: `attention=true` the ones to look at, worst first (no receipt, amount differs, no refund, chargeback); `settledOn` with `utr` (or `noUtr=true`) one payout's transactions. Each with its references (RRN, approval code, card's last four digits, TID), amounts, what it matched (receipt or refund number, bill, how it was found) and any review |
 | POST | `/lines/{id}/review` | `ReviewPosSettlementLineRequest(note, version)` (5–500 characters) → `PosSettlementLineDto`; 422 `billing.pos_settlement_matched` for a line that matches, `billing.pos_settlement_reviewed` for one already reviewed; 409 when someone changed it meanwhile. Audited `billing.pos.settlement_reviewed` |
 | POST | `/match` | → `PosMatchResult(checked, matched, toLookAt, message)`: matches again the transactions without a receipt or refund settled in the last 90 days, for example after a missing receipt was recorded |
-| GET | `/unsettled` | → `UnsettledPosReceiptDto[]` oldest first: card and UPI receipts no report carries although the reports already go `settlementDays` past them (receipt and bill, mode, amount, reference, card's last four digits, HC360's terminal, days waiting) |
+| GET | `/unsettled` | → `UnsettledPosReceiptDto[]` oldest first: card and UPI receipts no report carries although the reports already go `settlementDays` past them, leaving out payments reversed as not received (receipt and bill, mode, amount, reference, card's last four digits, HC360's terminal, days waiting) |
 | GET | `/training-file?date` | → `text/csv` `training-card-settlement-<date>.csv`: the training terminal's approved sales of the day as an acquirer would report them, to practise the import; 422 `billing.pos_training_server` on a live server |
 
 ### Patient portal — `/api/v1/portal/bills` (`patients.portal`, own/linked patients only)
@@ -639,6 +680,12 @@ Raised:
   for advance adjustments or payer settlements. Carries the facility.
 * `RefundPaid` (Platform) — a refund was paid out (cash, card reversal, UPI, bank transfer, cheque or gateway); not
   for refunds kept as a patient advance.
+* `PaymentReversed` (Platform) — money a receipt recorded from the patient never arrived (not for the advance
+  adjustments undone with it); Engagement takes it off the patient's spend.
+* `RefundPayoutReversed` (Platform) — a refund recorded as paid out never reached the patient; Engagement counts it
+  again.
+* `BillPaymentReversed` (Billing-internal) — a bill paid in full owes again; under the "paid" trigger its doctors'
+  fees are reversed, and accrue again when it is paid.
 * `BillPaid` (Billing-internal) — accrual under the "paid" trigger whichever
   payment settled the bill (counter, POS, gateway or an advance adjustment) or when the payer covers it all; a credit
   note or write-off clearing the due is not a payment.
@@ -659,7 +706,7 @@ Handled (all inside the raising transaction; handlers stage changes and never sa
 | `PatientsMerged` | Re-points every billing row (incl. advances, policies, claims) to the surviving UHID |
 | `AppointmentPaymentCaptured` (Scheduling) | Queues `billing.appointment.prepayment` (outbox) |
 | `AppointmentCancelled` | For a cancelled (not rescheduled) prepaid booking, queues the same message to refund it |
-| `BillFinalized`, `BillPaid`, `BillCancelled` | Doctor-fee accrual (idempotent per bill line) and reversal |
+| `BillFinalized`, `BillPaid`, `BillCancelled`, `BillPaymentReversed` | Doctor-fee accrual (idempotent per bill line; a line whose accrual was reversed accrues again) and reversal |
 
 ### Appointment prepayments (OA-03)
 Scheduling posts nothing to billing. The outbox handler `billing.appointment.prepayment` (retried with back-off)
@@ -714,7 +761,7 @@ only the one that clashed is merely refreshed.
 | Rank | Kind | Raised when | Clears itself when |
 |---|---|---|---|
 | 1 | `UnrecordedPayment` | a settled payment has no receipt; or the gateway reports a payment captured but its receipt could not be recorded (the reason is kept on the order and accountants get an alert) | the receipt is recorded |
-| 2 | `UnsettledReceipt` | an online receipt is not in any settlement `settlementDays` after the payment, while the gateway has settled something newer (receipts of the last month are looked at) | a settlement carries the payment |
+| 2 | `UnsettledReceipt` | an online receipt is not in any settlement `settlementDays` after the payment, while the gateway has settled something newer (receipts of the last month are looked at) | a settlement carries the payment, or the payment is reversed as not received |
 | 3 | `AmountMismatch` | a settled payment's amount differs from its receipt; the gateway adjusted a settlement; a settlement's payout differs from its transactions | the amounts agree on a later match |
 | 4 | `RefundMismatch` | a settled refund is unknown to HC360 or has a different amount; a gateway refund failed (accountants get an alert) | the refund matches, or the bank confirms it; a failed refund only when it is sent again or the bank confirms it, never by a settlement line |
 
@@ -839,6 +886,9 @@ it would settle sales no card paid); see *Simulators only on a training or test 
   receivables), and a Credit Note `<bill>/C` for a bill cancelled on the day;
 * a Receipt per receipt (a Journal for an advance adjustment), a Payment per refund paid, a Credit Note per credit note
   or write-off, a Journal per claim deduction (`<claim>/<six hex digits of the settlement>`);
+* a Journal per reversal made on the day, numbered by the reversal: money not received (`RR…`) turns the receipt's
+  entries round for the lines taken back, and a refund not paid out (`RX…`) turns its payment round. The day the
+  receipt or refund was recorded keeps its own voucher;
 * a Journal per doctor for the day's fee accruals, numbered `DF-<facility>-<yyyyMMdd>-<doctor code>`
   (`DF-NH-20260925-DR005`). A doctor without a code is numbered by an eight-digit hash of the name. Two doctors whose
   numbers would be the same (a shared code) both add the last eight hex digits of their practitioner id, so neither
@@ -975,6 +1025,8 @@ estimate) or a cancelled bill gives no document and is never sent.
 | `billing.receipt` | `{FAC}RC{YY}{SEQ:7}` | yearly |
 | `billing.refund` | `{FAC}RF{YY}{SEQ:6}` | yearly |
 | `billing.creditnote` | `{FAC}CN{YY}{SEQ:6}` | yearly |
+| `billing.receiptreversal` | `{FAC}RR{YY}{SEQ:6}` | yearly |
+| `billing.refundreversal` | `{FAC}RX{YY}{SEQ:6}` | yearly |
 | `insurance.preauth` | `{FAC}PA{YY}{SEQ:6}` | yearly |
 | `insurance.claim` | `{FAC}CL{YY}{SEQ:6}` | yearly |
 | `doctorfees.payout` | `{FAC}DP{YY}{SEQ:5}` | yearly |
@@ -1007,8 +1059,9 @@ Schema `billing`; enums stored as text (no ordering on enum columns in SQL; filt
 Key unique indexes: charge (`source_module`, `source_reference`); bill number (non-null); one OP draft per visit; one
 draft final bill per admission; receipt payment (`mode`, `external_id`); gateway order (provider, order id), merchant
 reference, gateway payment id; POS (provider, transaction id); patient advance gateway payment id and receipt;
-one open shift per cashier; one doctor-fee accrual per bill line (and one reversal per accrual); one Tally export per
-facility/day (`tally_exports`, with `xmin` as its concurrency token); one Tally voucher record per export and reference
+one open shift per cashier; one doctor-fee accrual per bill line and occurrence (the next only after the one before
+was reversed; one reversal per accrual); one Tally export per facility/day (`tally_exports`, with `xmin` as its
+concurrency token); one Tally voucher record per export and reference
 (`tally_vouchers`, also `xmin`); refund `gateway_refund_id` (non-null); gateway settlement (provider, settlement id);
 gateway exception (kind, key); webhook event (provider, event id). Gateway settlements, their lines and webhook events
 are append-mostly and not data-audited; exceptions are. The migrations live in

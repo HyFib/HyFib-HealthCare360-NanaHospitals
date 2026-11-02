@@ -20,6 +20,12 @@ function subjectLink(request: ApprovalRequestDto): { label: string; to: string }
       return { label: 'Open the bill', to: `/billing/bills/${request.subjectId}` };
     case 'Patient':
       return { label: 'Open the duplicate record', to: `/patients/${request.subjectId}` };
+    case 'Refund':
+      return { label: 'Open the refund', to: `/billing/refunds/${request.subjectId}` };
+    case 'IpAccount':
+      return { label: 'Open the in-patient account', to: `/billing/ip/${request.subjectId}` };
+    case 'PatientAdvance':
+      return request.patientId ? { label: "Open the patient's record", to: `/patients/${request.patientId}` } : null;
     default:
       return null;
   }

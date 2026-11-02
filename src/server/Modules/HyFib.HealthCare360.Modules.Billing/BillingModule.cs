@@ -45,6 +45,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<DiscountService>();
         services.AddScoped<ReceiptService>();
         services.AddScoped<RefundService>();
+        services.AddScoped<ReversalService>();
         services.AddScoped<AdvanceService>();
         services.AddScoped<ShiftService>();
         services.AddScoped<PosService>();

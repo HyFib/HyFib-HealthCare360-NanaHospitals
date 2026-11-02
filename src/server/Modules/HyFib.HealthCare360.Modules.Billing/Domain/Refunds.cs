@@ -58,6 +58,13 @@ public sealed class Refund : AuditableEntity, IFacilityScoped
     public string? GatewayRefundId { get; set; }
 
     /// <summary>
+    /// When the refund, recorded as paid out, was recorded as never having reached the patient (a
+    /// <see cref="RefundReversal"/>): its money is back where it came from, and a new refund pays the patient. Such a refund
+    /// is never paid, or sent through the gateway, again.
+    /// </summary>
+    public DateTimeOffset? PayoutReversedAt { get; set; }
+
+    /// <summary>
     /// For a refund through the payment gateway: whether the bank has returned the money yet. The refund is paid out in
     /// HC360 when the gateway accepts it; this follows it until the gateway reports it processed or failed.
     /// </summary>
@@ -116,7 +123,7 @@ public sealed class Refund : AuditableEntity, IFacilityScoped
 
     /// <summary>A refund the gateway failed can be sent again, as can one whose retry stopped part way.</summary>
     public bool CanSendGatewayRefundAgain(DateTimeOffset now) =>
-        Status == RefundStatus.Paid && GatewayRefundId is not null
+        Status == RefundStatus.Paid && GatewayRefundId is not null && PayoutReversedAt is null
         && (GatewayRetryStartedAt is { } since
             ? now - since >= GatewayRetryTimeout
             : GatewayStatus == PaymentRefundStatus.Failed);
@@ -274,6 +281,23 @@ public sealed class Refund : AuditableEntity, IFacilityScoped
         Counter = counter;
         Raise(new RefundPaid(Id, RefundNumber, FacilityId, PatientId, BillId, Amount, now));
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Closes a refund not yet paid out whose money is gone: the money it would return never arrived (a receipt
+    /// reversal). It is rejected, with the reason, by the approver of that reversal.
+    /// </summary>
+    public void CloseUnpaid(Guid? approverId, string remarks, DateTimeOffset now)
+    {
+        if (!IsOutstanding)
+        {
+            return;
+        }
+
+        Status = RefundStatus.Rejected;
+        DecidedBy = approverId;
+        DecidedAt = now;
+        DecisionRemarks = remarks.Length <= 300 ? remarks : remarks[..299] + "…";
     }
 
     private Result CheckDecision(Guid approverId)

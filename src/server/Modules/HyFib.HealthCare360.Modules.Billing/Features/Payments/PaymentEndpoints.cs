@@ -17,6 +17,7 @@ internal static class PaymentEndpoints
         receipts.MapGet("/", ListReceipts).RequireAnyPermission(BillingPermissions.ChargesRead, BillingPermissions.PaymentsCollect);
         receipts.MapGet("/{id:guid}", GetReceipt).RequireAnyPermission(BillingPermissions.ChargesRead, BillingPermissions.PaymentsCollect);
         receipts.MapPost("/", Collect).RequirePermission(BillingPermissions.PaymentsCollect).WithValidation<CollectPaymentRequest>();
+        receipts.MapPost("/{id:guid}/reversal", ReverseReceipt).RequirePermission(BillingPermissions.RefundsRequest).WithValidation<ReverseReceiptRequest>();
 
         app.MapPost("/api/v1/billing/ip-accounts/{id:guid}/deposits", CollectDeposit)
             .WithTags("Billing - Payments")
@@ -40,6 +41,7 @@ internal static class PaymentEndpoints
         refunds.MapPost("/{id:guid}/approve", ApproveRefund).RequirePermission(BillingPermissions.RefundsApprove).WithValidation<ApproveRefundRequest>();
         refunds.MapPost("/{id:guid}/reject", RejectRefund).RequirePermission(BillingPermissions.RefundsApprove).WithValidation<RejectRefundRequest>();
         refunds.MapPost("/{id:guid}/pay", PayRefund).RequirePermission(BillingPermissions.PaymentsCollect).WithValidation<PayRefundRequest>();
+        refunds.MapPost("/{id:guid}/not-paid", ReverseRefund).RequirePermission(BillingPermissions.RefundsRequest).WithValidation<ReverseRefundRequest>();
     }
 
     private static async Task<IResult> ListReceipts(
@@ -92,12 +94,13 @@ internal static class PaymentEndpoints
 
         var result = await rows.Include(r => r.Payments).OrderByDescending(r => r.ReceivedAt).ToPagedResultAsync(page, ct);
         var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(r => r.PatientId), today, fullContacts: false, ct);
+        var reversed = await BillQueries.ReversedAsync(db, result.Items.Select(r => r.Id).ToList(), ct);
         return TypedResults.Ok(result.Map(r =>
         {
             var patient = patients.GetValueOrDefault(r.PatientId);
             return new ReceiptListItem(
                 r.Id, r.ReceiptNumber, r.Purpose, r.PatientId, patient?.Uhid, patient?.FullName, r.BillId, r.Amount, r.ModeSummary, r.Counter,
-                r.ReceivedByName, r.ReceivedAt);
+                r.ReceivedByName, r.ReceivedAt, reversed.GetValueOrDefault(r.Id));
         }));
     }
 
@@ -155,7 +158,8 @@ internal static class PaymentEndpoints
 
         var result = await rows.OrderByDescending(r => r.RequestedAt).ToPagedResultAsync(page, ct);
         var patients = await PatientQueries.SummariesAsync(db, result.Items.Select(r => r.PatientId), BillingTime.Today(time), fullContacts: false, ct);
-        return TypedResults.Ok(result.Map(r => ToDto(r, patients.GetValueOrDefault(r.PatientId))));
+        var reversals = await RefundReversalsAsync(db, result.Items, ct);
+        return TypedResults.Ok(result.Map(r => ToDto(r, patients.GetValueOrDefault(r.PatientId), reversals.GetValueOrDefault(r.Id))));
     }
 
     private static async Task<IResult> GetRefund(Guid id, HospitalDbContext db, TimeProvider time, CancellationToken ct)
@@ -167,7 +171,27 @@ internal static class PaymentEndpoints
         }
 
         var patients = await PatientQueries.SummariesAsync(db, [refund.PatientId], BillingTime.Today(time), fullContacts: false, ct);
-        return TypedResults.Ok(ToDto(refund, patients.GetValueOrDefault(refund.PatientId)));
+        var reversals = await RefundReversalsAsync(db, [refund], ct);
+        return TypedResults.Ok(ToDto(refund, patients.GetValueOrDefault(refund.PatientId), reversals.GetValueOrDefault(refund.Id)));
+    }
+
+    private static async Task<IResult> ReverseReceipt(Guid id, ReverseReceiptRequest request, ReversalService reversals, CancellationToken ct) =>
+        (await reversals.RequestReceiptReversalAsync(id, request, ct)).ToHttpResult(approval => TypedResults.Accepted($"/api/v1/approvals/{approval.Id}", approval));
+
+    private static async Task<IResult> ReverseRefund(Guid id, ReverseRefundRequest request, ReversalService reversals, CancellationToken ct) =>
+        (await reversals.RequestRefundReversalAsync(id, request, ct)).ToHttpResult(approval => TypedResults.Accepted($"/api/v1/approvals/{approval.Id}", approval));
+
+    /// <summary>The not-paid-out record of each of these refunds that has one.</summary>
+    private static async Task<Dictionary<Guid, RefundReversalDto>> RefundReversalsAsync(HospitalDbContext db, IReadOnlyCollection<Refund> refunds, CancellationToken ct)
+    {
+        var ids = refunds.Where(r => r.PayoutReversedAt is not null).Select(r => r.Id).ToList();
+        return ids.Count == 0
+            ? []
+            : await db.Set<RefundReversal>().AsNoTracking().Where(x => ids.Contains(x.RefundId))
+                .ToDictionaryAsync(
+                    x => x.RefundId,
+                    x => new RefundReversalDto(x.Id, x.Number, x.Amount, x.Reason, x.Note, x.RequestedByName, x.ApprovedByName, x.ReversedAt),
+                    ct);
     }
 
     private static async Task<IResult> RequestRefund(RequestRefundRequest request, RefundService refunds, CancellationToken ct)
@@ -200,14 +224,19 @@ internal static class PaymentEndpoints
     {
         var patient = (await PatientQueries.SummariesAsync(db, [r.PatientId], BillingTime.Today(time), fullContacts: false, ct)).GetValueOrDefault(r.PatientId);
         var billNumber = r.BillId is { } billId ? await db.Set<Bill>().Where(b => b.Id == billId).Select(b => b.BillNumber).FirstOrDefaultAsync(ct) : null;
+        var reversals = await db.Set<ReceiptReversal>().AsNoTracking().Include(x => x.Lines).Where(x => x.ReceiptId == r.Id).OrderBy(x => x.ReversedAt).ToListAsync(ct);
+        var reversed = reversals.SelectMany(x => x.Lines).GroupBy(l => l.ReceiptPaymentId).ToDictionary(g => g.Key, g => g.Sum(l => l.Amount));
         return new ReceiptDto(
             r.Id, r.ReceiptNumber, r.Purpose, r.PatientId, patient?.Uhid, patient?.FullName, r.BillId, billNumber, r.IpAccountId, r.Amount, r.Source,
             r.Counter, r.ReceivedByName, r.ReceivedAt, r.Notes,
-            r.Payments.Select(p => new ReceiptPaymentDto(p.Mode, p.Amount, p.Reference, p.CardLast4, p.CardNetwork, p.ChequeNumber, p.ChequeBank, p.ChequeDate)).ToList());
+            r.Payments.Select(p => new ReceiptPaymentDto(
+                p.Mode, p.Amount, p.Reference, p.CardLast4, p.CardNetwork, p.ChequeNumber, p.ChequeBank, p.ChequeDate, p.Id, reversed.GetValueOrDefault(p.Id))).ToList(),
+            reversals.Select(x => new ReceiptReversalDto(x.Id, x.Number, x.Amount, x.Reason, x.Note, x.RequestedByName, x.ApprovedByName, x.ReversedAt, x.CausedById)).ToList(),
+            reversals.Sum(x => x.Amount));
     }
 
-    private static RefundDto ToDto(Refund r, PatientSummary? patient) => new(
+    private static RefundDto ToDto(Refund r, PatientSummary? patient, RefundReversalDto? notPaidOut) => new(
         r.Id, r.RefundNumber, r.Purpose, r.PatientId, patient?.Uhid, patient?.FullName, r.BillId, r.IpAccountId, r.Amount, r.Reason, r.Status,
         r.RequestedByName, r.RequestedAt, r.DecidedBy, r.DecidedAt, r.DecisionRemarks, r.Mode, r.Reference, r.PaidAt, r.AdvanceId,
-        r.GatewayStatus, r.GatewayReference, r.GatewayError);
+        r.GatewayStatus, r.GatewayReference, r.GatewayError, notPaidOut);
 }

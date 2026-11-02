@@ -89,6 +89,39 @@ export const PAYMENT_MODE_LABEL: Record<PaymentMode, string> = {
   Advance: 'Advance adjusted',
 };
 
+/**
+ * Modes whose money a receipt reversal can take back as never received. Cash was counted when the shift closed (a
+ * shortfall is the shift's); an advance adjusted or an insurer's settlement took no money from the patient.
+ */
+export const REVERSIBLE_MODES: ReadonlySet<PaymentMode> = new Set<PaymentMode>([
+  'Card',
+  'Upi',
+  'NetBanking',
+  'Cheque',
+  'PaymentGateway',
+  'Wallet',
+]);
+
+/** Why money recorded as received or paid out did not move. */
+export const REVERSAL_REASONS = ['ChequeReturned', 'NotSettled', 'TrainingSimulator', 'Other'] as const;
+export type ReversalReason = (typeof REVERSAL_REASONS)[number];
+
+/** Why a receipt's money did not arrive. */
+export const RECEIPT_REVERSAL_REASON_LABEL: Record<ReversalReason, string> = {
+  ChequeReturned: 'The bank returned the cheque unpaid',
+  NotSettled: 'The card, UPI, transfer or online payment never reached the bank',
+  TrainingSimulator: 'A training simulator recorded it: nothing was paid',
+  Other: 'Another reason (say it below)',
+};
+
+/** Why a refund recorded as paid out did not reach the patient. */
+export const REFUND_REVERSAL_REASON_LABEL: Record<ReversalReason, string> = {
+  ChequeReturned: 'The cheque was stopped or never presented',
+  NotSettled: 'The transfer, card reversal or online refund failed',
+  TrainingSimulator: 'A training simulator recorded it: nothing was paid back',
+  Other: 'Another reason (say it below)',
+};
+
 /** Modes a cashier may key in at the counter (advances, insurance and gateway payments are recorded by the system). */
 export const COUNTER_PAYMENT_MODES = [
   'Cash',

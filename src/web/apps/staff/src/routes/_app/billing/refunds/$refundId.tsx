@@ -4,6 +4,7 @@ import {
   CheckmarkRegular,
   DismissRegular,
   MoneyHandRegular,
+  MoneyOffRegular,
   PrintRegular,
   ReceiptRegular,
 } from '@fluentui/react-icons';
@@ -13,11 +14,14 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PendingApprovals } from '@/modules/approvals/PendingApprovals';
 import { billingQueries, gatewayRefundText } from '@/modules/billing/api';
 import { BillingPatientBanner } from '@/modules/billing/BillingPatientBanner';
 import { useBillingLive, useBillingPrint } from '@/modules/billing/hooks';
-import { PAYMENT_MODE_LABEL, REFUND_PURPOSE_LABEL } from '@/modules/billing/labels';
+import { PAYMENT_MODE_LABEL, REFUND_PURPOSE_LABEL, REFUND_REVERSAL_REASON_LABEL } from '@/modules/billing/labels';
 import { DecideRefundDialog, PayRefundDialog } from '@/modules/billing/RefundDialogs';
+import { RefundNotPaidDialog } from '@/modules/billing/ReversalDialogs';
+import { mayReverseRefund } from '@/modules/billing/reversals';
 import { Amount, Detail, DetailGrid, NoAccess, RefundStatusBadge } from '@/modules/billing/ui';
 
 export const Route = createFileRoute('/_app/billing/refunds/$refundId')({
@@ -31,8 +35,10 @@ function RefundPage() {
   const canRead = usePermission(['billing.refunds.request', 'billing.refunds.approve', 'billing.charges.read']);
   const canApprove = usePermission('billing.refunds.approve');
   const canPay = usePermission('billing.payments.collect');
+  const canAsk = usePermission('billing.refunds.request');
+  const canSeeApprovals = usePermission(['billing.refunds.request', 'billing.refunds.approve']);
   const { printRefund } = useBillingPrint();
-  const [action, setAction] = useState<'approve' | 'reject' | 'pay' | null>(null);
+  const [action, setAction] = useState<'approve' | 'reject' | 'pay' | 'not-paid' | null>(null);
   useBillingLive();
   const refund = useQuery({ ...billingQueries.refund(refundId), enabled: canRead });
 
@@ -99,6 +105,11 @@ function RefundPage() {
                 Print refund voucher
               </Button>
             )}
+            {canAsk && mayReverseRefund(r) && (
+              <Button icon={<MoneyOffRegular />} onClick={() => setAction('not-paid')}>
+                Not paid out…
+              </Button>
+            )}
             {r.billId && (
               <Button
                 icon={<ReceiptRegular />}
@@ -111,6 +122,7 @@ function RefundPage() {
         }
       />
       <BillingPatientBanner patientId={r.patientId} showDues={false} />
+      {canSeeApprovals && <PendingApprovals subjectType="Refund" subjectId={r.id} />}
       <Section title="Refund">
         <DetailGrid>
           <Detail label="Amount">
@@ -134,9 +146,15 @@ function RefundPage() {
               {gatewayRefundText(r.gatewayStatus, r.gatewayReference, r.gatewayError)}
             </Detail>
           )}
+          {r.notPaidOut && (
+            <Detail label="Not paid out">
+              {`${r.notPaidOut.number} · ${formatDateTime(r.notPaidOut.reversedAt)} · ${REFUND_REVERSAL_REASON_LABEL[r.notPaidOut.reason]}: ${r.notPaidOut.note} · asked for by ${r.notPaidOut.requestedByName ?? '—'}, approved by ${r.notPaidOut.approvedByName ?? '—'}. The money is back where it came from; a new refund pays the patient.`}
+            </Detail>
+          )}
         </DetailGrid>
       </Section>
       {action === 'pay' && <PayRefundDialog refund={r} onClose={() => setAction(null)} />}
+      {action === 'not-paid' && <RefundNotPaidDialog refund={r} open onClose={() => setAction(null)} />}
       {(action === 'approve' || action === 'reject') && (
         <DecideRefundDialog refund={r} decision={action} onClose={() => setAction(null)} />
       )}

@@ -350,6 +350,8 @@ public sealed class PosSettlementService(
                     join r in db.Set<Receipt>() on p.ReceiptId equals r.Id
                     where r.FacilityId == facilityId && p.Mode == mode.Mode && r.ReceivedAt >= start && r.ReceivedAt < end
                           && !db.Set<PosSettlementLine>().Any(l => l.ReceiptPaymentId == p.Id)
+                          // A payment reversed as never received is not waiting for a settlement.
+                          && !db.Set<ReceiptReversalLine>().Any(x => x.ReceiptPaymentId == p.Id)
                     orderby r.ReceivedAt
                     select new { PaymentId = p.Id, ReceiptId = r.Id, r.ReceiptNumber, r.BillId, r.ReceivedAt, p.Mode, p.Amount, p.Reference, p.CardLast4, p.ExternalId })
                 .Take(MaxUnsettled)

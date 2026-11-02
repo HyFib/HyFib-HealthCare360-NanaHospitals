@@ -28,6 +28,7 @@ import {
   DocumentCheckmarkRegular,
   LinkRegular,
   MoneyHandRegular,
+  MoneyOffRegular,
   MoreHorizontalRegular,
   PrintRegular,
   ReceiptRegular,
@@ -55,6 +56,8 @@ import { CREDIT_NOTE_KIND_LABEL, RECEIPT_PURPOSE_LABEL, REFUND_STATUS_LABEL, mod
 import { fromPaise, maxBig, toPaise } from './money';
 import { PaymentLinkDialog } from './PaymentLinkDialog';
 import { RequestRefundDialog } from './RefundDialogs';
+import { ReceiptReversalDialog } from './ReversalDialogs';
+import { mayHaveReversibleMoney } from './reversals';
 import { ServicePicker } from './ServicePicker';
 import { ActionError, Amount, KeyHint, ReasonDialog } from './ui';
 
@@ -127,6 +130,7 @@ export function BillWorkspace({
   const { downloadPdf } = useServerDocuments();
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [reversing, setReversing] = useState<string | null>(null);
 
   const canEditOp = usePermission('billing.op.create');
   const canDiscount = usePermission(['billing.op.create', 'billing.ip.manage']);
@@ -359,16 +363,39 @@ export function BillWorkspace({
                   { key: 'at', header: 'Received', render: (r) => formatDateTime(r.receivedAt) },
                   { key: 'purpose', header: 'For', priority: 'low', render: (r) => RECEIPT_PURPOSE_LABEL[r.purpose] },
                   { key: 'mode', header: 'Mode', render: (r) => modeSummaryLabel(r.modes) },
-                  { key: 'amount', header: 'Amount', align: 'end', render: (r) => <Amount value={r.amount} strong /> },
+                  {
+                    key: 'amount',
+                    header: 'Amount',
+                    align: 'end',
+                    render: (r) =>
+                      r.reversedAmount ? (
+                        <span>
+                          <Amount value={r.amount} strong /> · <Amount value={r.reversedAmount} /> not received
+                        </span>
+                      ) : (
+                        <Amount value={r.amount} strong />
+                      ),
+                  },
                 ]}
                 rowActions={(r) => (
-                  <Button
-                    size="small"
-                    appearance="subtle"
-                    icon={<PrintRegular />}
-                    aria-label={`Print receipt ${r.receiptNumber}`}
-                    onClick={() => void printReceiptById(r.id)}
-                  />
+                  <>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<PrintRegular />}
+                      aria-label={`Print receipt ${r.receiptNumber}`}
+                      onClick={() => void printReceiptById(r.id)}
+                    />
+                    {canRequestRefund && mayHaveReversibleMoney(r) && (
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<MoneyOffRegular />}
+                        aria-label={`Money of receipt ${r.receiptNumber} not received`}
+                        onClick={() => setReversing(r.id)}
+                      />
+                    )}
+                  </>
                 )}
               />
             )}
@@ -590,6 +617,7 @@ export function BillWorkspace({
         />
       )}
       {dialog === 'credit' && <CreditNoteDialog bill={bill} open onClose={() => setDialog(null)} />}
+      {reversing && <ReceiptReversalDialog receiptId={reversing} open onClose={() => setReversing(null)} />}
     </div>
   );
 }
