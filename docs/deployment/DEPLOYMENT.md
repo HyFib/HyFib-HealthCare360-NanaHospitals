@@ -325,8 +325,9 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
 7. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS for each critical warning in System health, and if the server's
    WiFi drops, its WiFi adapter disappears, it starts without the WiFi it had when it last ran, its signal stays weak for
-   a minute or its network is not secure). Set up the heartbeat outside the hospital as "Alerts that reach someone"
-   below says.
+   a minute or its network is not secure), and who a critical alert nobody acknowledges goes to next:
+   `alerts.escalationPhone` (a second contact, such as the IT head) and `alerts.supportPhone` (HyFib support's number).
+   Set up the heartbeat outside the hospital as "Alerts that reach someone" below says.
    System health warns while the adapter is missing; on a server moved to Ethernet on purpose, restart the
    `HC360Server` service to clear the warning.
    Set `alerts.oncallWhatsApp` to `true` to have those alerts on WhatsApp too, once the hospital's WhatsApp provider
@@ -390,7 +391,7 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
 ### Alerts that reach someone
 
 A critical warning is told within five minutes: in the app to everyone who may see System health, and to the IT
-on-call number by SMS (and WhatsApp, where the hospital chose it), again a day later while it lasts. Three things make
+on-call number by SMS (and WhatsApp, where the hospital chose it), again a day later while it lasts. Four things make
 sure it reaches someone. On a live server, System health warns while one is missing.
 
 1. **The on-call number, and an SMS that goes** (`alerts.not_ready`). Set `alerts.oncallPhone` (step 7) to IT's mobile
@@ -415,12 +416,38 @@ sure it reaches someone. On a live server, System health warns while one is miss
      encrypted, as a secret setting, and never shows it again or writes it in the audit trail.
 
    System health warns after three failed fetches in a row, naming the monitor's host.
-3. **A drill** (Administration › System health › Alert drills; starting one needs `admin.system.manage`). It raises a
+3. **Someone acknowledges each critical alert** (Administration › System health › Critical alerts). Each critical
+   warning stays an alert until a person acknowledges it there, which says they are on it: the warning itself stays
+   until its condition clears. While nobody acknowledges it:
+
+   | When | Who is paged, by SMS |
+   |---|---|
+   | At once | IT on-call (`alerts.oncallPhone`), and everyone who may see System health, in the app |
+   | `alerts.escalateMinutes` later (15 if not set), or as soon as nothing reached IT on-call | The second contact (`alerts.escalationPhone`) |
+   | `alerts.supportMinutes` after that (30 if not set), or as soon as nothing reached the second contact | HyFib support (`alerts.supportPhone`), with the hospital's name |
+
+   - A message that failed or was never sent (no number set, or the number opted out of SMS) counts as nothing reached:
+     the next contact is paged at the next check, within five minutes, without waiting on the SMS provider's retries.
+   - A level nobody is set for is skipped. With neither set, System health warns (`alerts.no_escalation`) on a live
+     server.
+   - Once acknowledged, nobody further is paged, though the alert is told again a day later while it lasts.
+   - The escalations use the `system.alert` template, so they need no DLT registration of their own.
+   - A warning that clears and comes back within half an hour is the same alert, paged no more.
+   - The alerts are kept in the database: a restart pages nobody again. Each escalation and acknowledgement is in the
+     audit trail (`alerts.escalated`, `alerts.acknowledged`).
+
+   The same section gives the last 30 days in figures: how many alerts, how long they took to be acknowledged (median and
+   90th percentile), how many reached the second contact and HyFib support, and how many nobody acknowledged. The
+   figures count every alert of the period; the list below them shows every open one and the latest 500 that cleared.
+4. **A drill** (Administration › System health › Alert drills; starting one needs `admin.system.manage`). It raises a
    test critical warning, `alerts.drill:<code>`, which the alerts tell as any other: "Nothing is wrong. Acknowledge
    it". Whoever it reaches acknowledges it there. The drill keeps when it was told in the app, when its SMS was sent and
    delivered, when it was first read, and when it was acknowledged and by whom. One nobody acknowledges within an hour
    ends as not acknowledged.
    - Run one at go-live, every quarter, and whenever the on-call number, the SMS provider or its templates change.
+   - A drill is an alert like any other. Leave one unacknowledged once a year, to see the second contact and HyFib
+     support paged at the times set: check the times against the SMS provider's delivery reports, and against HyFib
+     support's record of the call.
    - Keep the timings with the go-live and quarterly records. A step that never came shows where the chain breaks.
 
 ### Going live on a database used for training
