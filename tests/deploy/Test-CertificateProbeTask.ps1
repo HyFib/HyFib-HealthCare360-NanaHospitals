@@ -106,7 +106,10 @@ try {
     Write-Host 'Task Scheduler runs the probe as SYSTEM, and what it finds reaches the event log'
     $since = (Get-Date).AddSeconds(-1)
     $result = Invoke-CertificateProbeTask $name
-    Assert ($result -eq 2) "the task's result is the probe's exit code 2, critical: nothing serves $address (found: $result)"
+    $seen = Get-ScheduledTaskInfo -TaskName $name -TaskPath '\HyFib\'
+    $state = (Get-ScheduledTask -TaskName $name -TaskPath '\HyFib\').State
+    Assert ($result -eq 2) ("the task's result is the probe's exit code 2, critical: nothing serves $address " +
+        "(found: $result; Task Scheduler reports $state, last run $($seen.LastRunTime), result $($seen.LastTaskResult))")
     # The text the probe wrote, as the event's own string: the message file may not render it the same in both PowerShells.
     $written = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = $source; StartTime = $since } -ErrorAction SilentlyContinue |
             ForEach-Object { [pscustomobject] @{ Level = $_.Level; Text = (@($_.Properties) | ForEach-Object { [string] $_.Value }) -join ' ' } } |

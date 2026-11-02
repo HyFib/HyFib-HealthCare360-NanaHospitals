@@ -241,16 +241,17 @@ function Invoke-CertificateProbeTask([string] $TaskName = 'HC360 certificate pro
     while ("$((Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath).State)" -eq 'Running' -and (Get-Date) -lt $now.AddSeconds($Seconds)) {
         Start-Sleep -Seconds 2
     }
-    $started = Get-Date
-    # Task Scheduler keeps the run's time in whole seconds.
-    $since = $started.AddMilliseconds(-$started.Millisecond)
+    # The run is told by what Task Scheduler reports changing, not by comparing its clock with this one: Windows
+    # PowerShell and PowerShell 7 read its times differently.
+    $before = Get-ScheduledTaskInfo -TaskName $TaskName -TaskPath $TaskPath
     Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
     do {
         Start-Sleep -Seconds 2
         $info = Get-ScheduledTaskInfo -TaskName $TaskName -TaskPath $TaskPath
-        $state = (Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath).State
+        $state = "$((Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath).State)"
+        $ran = "$($info.LastRunTime)" -ne "$($before.LastRunTime)" -or $info.LastTaskResult -ne $before.LastTaskResult
         # 267009 (0x41301): Task Scheduler's "still running".
-        if ($info.LastRunTime -ge $since -and "$state" -ne 'Running' -and $info.LastTaskResult -ne 267009) { return $info.LastTaskResult }
+        if ($ran -and $state -ne 'Running' -and $info.LastTaskResult -ne 267009) { return $info.LastTaskResult }
     } while ((Get-Date) -lt $now.AddSeconds($Seconds))
     return $null
 }
