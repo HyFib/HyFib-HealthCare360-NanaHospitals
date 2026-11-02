@@ -100,8 +100,9 @@ public sealed class ReversalService(
 
     /// <summary>
     /// Makes an approved receipt reversal, in the approval's transaction (the approval saves and commits), only if it
-    /// would still do what the checker approved: the same lines, adjustments and refunds. The advance adjustments go
-    /// first, then the money; refunds that could no longer be paid are closed.
+    /// would still do what the checker approved: the bill, stay account or advance as it was asked against, and the same
+    /// lines, adjustments and refunds. The advance adjustments go first, then the money; refunds that could no longer be
+    /// paid are closed.
     /// </summary>
     internal async Task<Result<string>> ApplyReceiptReversalAsync(ApprovalRequest approval, CancellationToken ct)
     {
@@ -114,7 +115,16 @@ public sealed class ReversalService(
 
         var plan = planned.Value;
         var receipt = plan.Receipt;
-        if (!Same(plan.Lines.Select(l => new ReversalStep(l.Line.Id, l.Amount)), asked.Lines)
+        // The record whose balance the checker saw changing: a payment, credit or adjustment on it since changes what the
+        // reversal leaves (what the bill owes, what the advance holds), even when the lines are the same.
+        var subjectVersion = receipt.Purpose switch
+        {
+            ReceiptPurpose.BillPayment => plan.Bill!.Version,
+            ReceiptPurpose.Deposit => plan.Account!.Version,
+            _ => plan.Advance!.Version,
+        };
+        if (subjectVersion != approval.SubjectVersion
+            || !Same(plan.Lines.Select(l => new ReversalStep(l.Line.Id, l.Amount)), asked.Lines)
             || !Same(plan.Undos.Select(u => new ReversalStep(u.Line.Id, u.Amount)), asked.Undone)
             || !plan.RefundsToClose.Select(r => r.Id).ToHashSet().SetEquals(asked.RefundsClosed))
         {

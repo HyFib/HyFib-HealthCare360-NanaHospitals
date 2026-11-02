@@ -248,7 +248,9 @@ note of 10 to 500 characters saying how it was found.
     closed).
   * The approval's subject is the bill, the IP account or the advance: its page shows the request waiting, and one
     waits at a time. The checker sees what changes (what the bill owes, the bills paid from an advance, the refunds
-    closed); the reversal is made only if it would still do exactly that (`approval.stale` otherwise).
+    closed); the reversal is made only if the bill, account or advance is as it was when asked (a payment, credit or
+    adjustment on it since changes what the reversal leaves) and it would still do exactly that (`approval.stale`
+    otherwise).
 * **Refund not paid out** (`RefundReversal`, `{FAC}RX{YY}{SEQ:6}`): a paid refund in a mode other than cash or an
   advance. Through the payment gateway, only one the gateway reports failed (and not being sent again) or one the
   payment simulator made up (`rfnd_sim…`); one reported processed reached the patient's bank. The refund stays as it
@@ -258,8 +260,9 @@ note of 10 to 500 characters saying how it was found.
   owes again; `billing.refund.not_paid_out`), is a Journal in the Tally day book of its day, and is in that day's
   day-end report and its records check. The patient's spend no longer counts money not received
   (`PaymentReversed`), and counts a refund not paid out again (`RefundPayoutReversed`). With the "paid" trigger, a
-  bill that owes again reverses its doctors' fees; they accrue again when it is paid. A gateway payment reversed is no
-  longer reported unsettled, and its open exception is cleared.
+  bill that owes again reverses its doctors' fees; they accrue again when it is paid. A payment reversed is no longer
+  reported unsettled, by the gateway's settlement check (its open exception is cleared) or in the card and UPI
+  settlement list.
 * The simulator sweep's guidance for payments, card sales and refunds is carried out with these reversals.
 
 ### POS terminals and payment links — `/api/v1/billing/pos/sales`, `/api/v1/billing/payment-links`
@@ -426,7 +429,7 @@ one). See [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos) fo
 | GET | `/lines?attention&settledOn&utr&noUtr` (paged) | → `PagedResult<PosSettlementLineDto>`: `attention=true` the ones to look at, worst first (no receipt, amount differs, no refund, chargeback); `settledOn` with `utr` (or `noUtr=true`) one payout's transactions. Each with its references (RRN, approval code, card's last four digits, TID), amounts, what it matched (receipt or refund number, bill, how it was found) and any review |
 | POST | `/lines/{id}/review` | `ReviewPosSettlementLineRequest(note, version)` (5–500 characters) → `PosSettlementLineDto`; 422 `billing.pos_settlement_matched` for a line that matches, `billing.pos_settlement_reviewed` for one already reviewed; 409 when someone changed it meanwhile. Audited `billing.pos.settlement_reviewed` |
 | POST | `/match` | → `PosMatchResult(checked, matched, toLookAt, message)`: matches again the transactions without a receipt or refund settled in the last 90 days, for example after a missing receipt was recorded |
-| GET | `/unsettled` | → `UnsettledPosReceiptDto[]` oldest first: card and UPI receipts no report carries although the reports already go `settlementDays` past them (receipt and bill, mode, amount, reference, card's last four digits, HC360's terminal, days waiting) |
+| GET | `/unsettled` | → `UnsettledPosReceiptDto[]` oldest first: card and UPI receipts no report carries although the reports already go `settlementDays` past them, leaving out payments reversed as not received (receipt and bill, mode, amount, reference, card's last four digits, HC360's terminal, days waiting) |
 | GET | `/training-file?date` | → `text/csv` `training-card-settlement-<date>.csv`: the training terminal's approved sales of the day as an acquirer would report them, to practise the import; 422 `billing.pos_training_server` on a live server |
 
 ### Patient portal — `/api/v1/portal/bills` (`patients.portal`, own/linked patients only)
@@ -758,7 +761,7 @@ only the one that clashed is merely refreshed.
 | Rank | Kind | Raised when | Clears itself when |
 |---|---|---|---|
 | 1 | `UnrecordedPayment` | a settled payment has no receipt; or the gateway reports a payment captured but its receipt could not be recorded (the reason is kept on the order and accountants get an alert) | the receipt is recorded |
-| 2 | `UnsettledReceipt` | an online receipt is not in any settlement `settlementDays` after the payment, while the gateway has settled something newer (receipts of the last month are looked at) | a settlement carries the payment |
+| 2 | `UnsettledReceipt` | an online receipt is not in any settlement `settlementDays` after the payment, while the gateway has settled something newer (receipts of the last month are looked at) | a settlement carries the payment, or the payment is reversed as not received |
 | 3 | `AmountMismatch` | a settled payment's amount differs from its receipt; the gateway adjusted a settlement; a settlement's payout differs from its transactions | the amounts agree on a later match |
 | 4 | `RefundMismatch` | a settled refund is unknown to HC360 or has a different amount; a gateway refund failed (accountants get an alert) | the refund matches, or the bank confirms it; a failed refund only when it is sent again or the bank confirms it, never by a settlement line |
 

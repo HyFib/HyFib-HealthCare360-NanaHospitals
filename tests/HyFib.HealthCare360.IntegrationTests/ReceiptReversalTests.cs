@@ -251,6 +251,37 @@ public sealed class ReceiptReversalTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_reversal_approved_after_the_bill_changed_is_not_made_until_asked_again()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+        await OpenShiftAsync(billing);
+
+        // ₹400 of a ₹600 bill paid by UPI, and asked to be reversed: the checker is shown the bill owing ₹600 again.
+        var bill = await MakerCheckerTests.FinalizedBillAsync(frontOffice, billing);
+        var upi = await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts",
+            new CollectPaymentRequest(bill.Id, [new(PaymentMode.Upi, 400m, "UTR" + Digits(9), null, null, null, null, null)], null));
+        var asked = await AskAsync(billing, upi, [upi.Payments.Single().Id], ReversalReason.NotSettled, "The bank reports the UPI payment was never credited.");
+        asked.Details.ShouldContain(new ApprovalDetail("What changes", $"Bill {bill.BillNumber} owes ₹600.00"));
+
+        // Then ₹100 is paid at the counter. The lines are the same, but the bill would owe ₹500, not what the checker saw:
+        // it is not made, and nothing changes.
+        await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts",
+            new CollectPaymentRequest(bill.Id, [new(PaymentMode.Cash, 100m, null, null, null, null, null, null)], null));
+        (await RefusedAsync(accountant, $"/api/v1/approvals/{asked.Id}/approve", new ApproveRequest(null, asked.Version), HttpStatusCode.UnprocessableEntity))
+            .ShouldBe("approval.stale");
+        (await BillAsync(billing, bill.Id)).DueAmount.ShouldBe(100m);
+        (await billing.GetAsync<ReceiptDto>($"/api/v1/billing/receipts/{upi.Id}")).ReversedAmount.ShouldBe(0m);
+
+        // Asked again, the checker sees what the bill will owe now, and it is made.
+        var again = await AskAsync(billing, upi, [upi.Payments.Single().Id], ReversalReason.NotSettled, "The bank reports the UPI payment was never credited.");
+        again.Details.ShouldContain(new ApprovalDetail("What changes", $"Bill {bill.BillNumber} owes ₹500.00"));
+        await MakerChecker.ApproveAsync(accountant, again);
+        (await BillAsync(billing, bill.Id)).DueAmount.ShouldBe(500m);
+    }
+
+    [Fact]
     public async Task Doctors_fees_accrued_on_payment_are_reversed_with_the_money_and_accrue_again_when_the_bill_is_paid()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
