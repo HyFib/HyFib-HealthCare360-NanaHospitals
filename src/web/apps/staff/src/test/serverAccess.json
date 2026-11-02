@@ -985,6 +985,7 @@
     "/api/v1/billing/gateway/settlements billing.gateway.reconcile",
     "/api/v1/billing/gateway/settlements/{id:guid} billing.gateway.reconcile",
     "/api/v1/billing/gateway/summary billing.gateway.reconcile",
+    "/api/v1/billing/hbp/imports billing.tariffs.manage|insurance.preauth.manage|insurance.claims.manage",
     "/api/v1/billing/hbp/procedures billing.tariffs.manage|insurance.preauth.manage|insurance.claims.manage",
     "/api/v1/billing/hbp/procedures/{code} billing.tariffs.manage|insurance.preauth.manage|insurance.claims.manage",
     "/api/v1/billing/ip-accounts billing.ip.manage|billing.charges.read",

@@ -17,7 +17,7 @@ import type {
   PackageStatus,
   RunningBill,
 } from '@/modules/billing/ipApi';
-import type { HbpProcedure } from '@/modules/billing/hbpApi';
+import type { HbpImport, HbpProcedure } from '@/modules/billing/hbpApi';
 import type { PackageDetail, TariffPlanDetail, TariffPlanListItem, TariffPriceDto } from '@/modules/billing/mastersApi';
 import type {
   PosSettlementDayDto,
@@ -679,6 +679,50 @@ const HBP_PROCEDURE: HbpProcedure = {
   isActive: true,
 };
 
+/** The master's imports: one put in force, one waiting for a second person's approval. */
+const HBP_IMPORTS: HbpImport[] = [
+  {
+    id: id('b2'),
+    masterVersion: 'HBP 2022 (revised)',
+    fileName: 'hbp-2022-revised.xlsx',
+    fileSha256: '9f2c1e4b7a0d3c5e8f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70',
+    read: 1949,
+    added: 12,
+    updated: 140,
+    retired: 3,
+    problemCount: 0,
+    problems: [],
+    status: 'Waiting',
+    askedBy: 'Billing Desk',
+    askedAt: dateIn(-1),
+    decidedBy: null,
+    decidedAt: null,
+    note: null,
+    approvalId: id('b3'),
+  },
+  {
+    id: id('b1'),
+    masterVersion: 'HBP 2022',
+    fileName: 'hbp-2022.xlsx',
+    fileSha256: '0d3c5e8f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f709f2c1e4b7a',
+    read: 1937,
+    added: 1937,
+    updated: 0,
+    retired: 0,
+    problemCount: 2,
+    problems: [
+      'Row 12: "S.01.0001" is not an HBP procedure code (two letters, three digits, then a letter for a stratified procedure).',
+    ],
+    status: 'Applied',
+    askedBy: 'Billing Desk',
+    askedAt: dateIn(-90),
+    decidedBy: 'Accounts Officer',
+    decidedAt: dateIn(-89),
+    note: null,
+    approvalId: id('b4'),
+  },
+];
+
 const PACKAGE_ID = '0192a000-0000-7000-8000-000000000b41';
 const PACKAGE: PackageDetail = {
   id: PACKAGE_ID,
@@ -1055,6 +1099,7 @@ export const ANSWERS: FakeAnswers = {
   [`GET /api/v1/billing/packages/${PACKAGE_ID}`]: PACKAGE,
   'GET /api/v1/billing/hbp/procedures': [HBP_PROCEDURE],
   'GET /api/v1/billing/hbp/procedures/SG039A': HBP_PROCEDURE,
+  'GET /api/v1/billing/hbp/imports': HBP_IMPORTS,
   'GET /api/v1/billing/gateway/summary': GATEWAY_SUMMARY,
   'GET /api/v1/billing/gateway/exceptions': paged(EXCEPTIONS),
   'GET /api/v1/billing/gateway/settlements': GATEWAY_SETTLEMENTS,

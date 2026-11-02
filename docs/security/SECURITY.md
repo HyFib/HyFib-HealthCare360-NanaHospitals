@@ -394,8 +394,13 @@ and grants nothing.
     covering nothing until its terms are approved. Approving is made only over the terms it replaces;
   - a health check-up package's price: its service's price (`masters.service_price`), asked for from the package's form
     as from the services master; a new check-up is made out of use, and is not booked, until its price is approved, and
-    the package follows its service's price and use whichever screen set them. Non-payable items and doctor-fee rules
-    still change at once;
+    the package follows its service's price and use whichever screen set them;
+  - an import of AB PM-JAY's HBP master (`billing.hbp_master`): the tariff keeper (`billing.tariffs.manage`) stages NHA's
+    file, and another who holds `masters.prices.approve` puts it in force after reading what it changes (the file's
+    SHA-256, procedures new, changed and retired, scheme rates, and the hospital's packages mapped to procedures it
+    retires, reserves for public hospitals or rates otherwise). The rows staged are applied only while they match their
+    SHA-256, and only over the master they were read against; one import waits at a time. Non-payable items and
+    doctor-fee rules still change at once;
   - correcting a released lab report where the lab sets `lab.separateVerifier`: one pathologist asks, another releases
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
     a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.

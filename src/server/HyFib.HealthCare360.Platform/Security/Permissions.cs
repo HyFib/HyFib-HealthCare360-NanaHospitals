@@ -183,7 +183,7 @@ public static class PlatformPermissions
         new(BackupsManage, "Administration", "Run backups and see which recovery key opens each"),
         new(MastersRead, "Masters", "View facilities, departments, doctors and services", AllStaff),
         new(MastersManage, "Masters", "Edit facilities, departments, doctors and services", Admins),
-        new(PricesApprove, "Masters", "Approve the changes another person makes to a service's price, GST and use, to tariff plans, and to payers' terms", PriceApprovers),
+        new(PricesApprove, "Masters", "Approve the changes another person makes to a service's price, GST and use, to tariff plans, packages and payers' terms, and to the PM-JAY HBP master", PriceApprovers),
         new(FilesRead, "Documents", "Download stored documents", AllStaff),
         new(FilesWrite, "Documents", "Upload documents", AllStaff),
     ];
