@@ -71,7 +71,7 @@ through it, and a device that switched never goes back to the old CA.
 | --- | --- |
 | HC360 Desktop and lab agents | Nothing: each takes the next CA by itself (above). Update those System health names as not saying, which run an older version. Look into those it names as without the next CA: each must reach the server; its log says when it took it ("The server prepared the next hospital CA …: … holds it for the switch"). Revoke, in Administration › Devices, a device that is gone for good: it then does not hold up the switch. |
 | Tablets, phones and browsers | The next CA installed as a trusted root, beside the current one (MDM): it is at `https://HC360-SRV:7360/api/v1/system/ca-certificate/next`. They cannot say which CAs they hold, so `switch-ca` cannot wait for them: give it to them first. Remove the old one after it has expired. |
-| The certificate probe's tasks | Nothing before the switch. After it, the new fingerprint (`--ca-fingerprint`): until then the probe says, critically, that the CA was switched and names the new CA. The installer gives its own task the new fingerprint when it is run again. |
+| The certificate probe's tasks | Nothing before the switch. After it, the new fingerprint (`--ca-fingerprint`): until then the probe says, critically, that the CA was switched and names the new CA. The server's own, which the installer registers, on the day of the switch ([step 4](#the-day-you-switch)); each install or upgrade gives it the server's CA too. |
 | Anything else that calls HC360 over HTTPS | BI gateways, partners' systems: the next CA or fingerprint, beside the current one. |
 | IT's `-CaFingerprint` policy for HC360 Desktop | Nothing: a workstation that switched keeps its setup under a policy that names the CA it replaced, since it keeps that CA's signature on the new key. Change the policy's fingerprint to the new CA after the switch, and in any case before the next rollover, ten years on. A workstation whose policy names the next CA before it switched pins that CA alone at its next start. |
 
@@ -118,7 +118,17 @@ through it, and a device that switched never goes back to the old CA.
    `hospital-ca.pfx.protected.replaced-<time>`.
 3. **Start the service.** The server issues itself a certificate from the new CA.
 4. **Probe from another machine with the new fingerprint.** It says `OK`. With the old fingerprint it says, critically,
-   that the CA was switched, and names the new CA: give every probe task the new fingerprint.
+   that the CA was switched, and names the new CA: give every probe task the new fingerprint. On the server, give it,
+   without spaces, to the daily probe the installer registered:
+
+   ```powershell
+   $probe = Get-ScheduledTask -TaskPath '\HyFib\' -TaskName 'HC360 certificate probe'
+   $probe.Actions[0].Arguments = $probe.Actions[0].Arguments -replace '--ca-fingerprint \S+', '--ca-fingerprint <new>'
+   $probe | Set-ScheduledTask | Out-Null
+   ```
+
+   Then run it once (Task Scheduler › HyFib › *HC360 certificate probe* › Run): its Application event log entry, or
+   none, says what it found. The next install or upgrade gives the probe the server's CA too, and says so.
 5. **Do the standby and the other server nodes** (`certificates export-ca` here, `certificates import-ca` there): each
    then serves with the new CA and hands out the CA it replaced, as this one does. Until then they serve with the old
    CA, which every device that switched keeps as a second pin. Probe each one with the new fingerprint.
@@ -197,7 +207,8 @@ downtime forms ready (the NABH downtime procedure), and with someone at each lab
 6. **Do the standby and the other server nodes** (`export-ca` here, `import-ca` there), and probe each one.
 7. **Set the devices up again**, the most critical areas first: emergency, ICU, wards, then the lab agents and
    analysers, then the counters.
-8. **Give the certificate probe's tasks the new fingerprint.**
+8. **Give the certificate probe's tasks the new fingerprint**: on the server as in [step 4 of the day you
+   switch](#the-day-you-switch), and on IT's machines.
 9. **Afterwards**, once every device works, remove the old CA from MDM profiles and tablets. When you are sure nothing
    needs it, delete the `.replaced-<time>` file and the exported copy.
 
@@ -254,9 +265,15 @@ HyFib.HealthCare360.Server.exe certificates probe https://HC360-SRV:7361/ --ca-f
   now, or an address cannot be checked. This is how monitoring tools such as Nagios, Zabbix and PRTG read a check.
 - **Event log.** `--event-log` also writes a warning or an error to the Application event log, under the source the
   server's installer registers.
-- **Where to run it.** Run it daily from the server itself, which catches a server that is not serving. Also run it
-  from a machine in IT, which catches the network and the server's name, and still runs when the server is down.
-  For example:
+- **On the server.** The installer registers the scheduled task *HC360 certificate probe* (Task Scheduler › HyFib). It
+  checks the staff address every day as SYSTEM, against the fingerprint the installer prints, an hour after Windows
+  Update's active hours begin (07:10 by default), when an update has restarted the server. The installer runs it once
+  and shows what it found. It catches a server that is not serving, or serves what devices refuse. In the CA's last
+  year it says to prepare the next CA, then to switch to it. Each install or upgrade gives it the server's CA, and warns
+  when that is not the CA it checked for before: a CA replaced, or made again because its files were lost, means devices
+  that do not connect. A standby has none until a failover.
+- **From IT.** Also run it from a machine in IT, which catches the network and the server's name, and still runs when
+  the server is down. For example:
 
   ```powershell
   $exe = "$env:ProgramFiles\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe"
@@ -265,7 +282,3 @@ HyFib.HealthCare360.Server.exe certificates probe https://HC360-SRV:7361/ --ca-f
   Register-ScheduledTask -TaskPath '\HyFib\' -TaskName 'HC360 certificate probe' -Action $probe `
       -Trigger (New-ScheduledTaskTrigger -Daily -At 07:10) -User 'SYSTEM'
   ```
-
-## What HC360 does not do yet
-
-- **The certificate probe's scheduled task** is registered by hand (above). A later installer registers it.

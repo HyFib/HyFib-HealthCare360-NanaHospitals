@@ -110,6 +110,18 @@ jobs:
         shell: pwsh
         run: tests/deploy/Test-DatabaseWatchdog.ps1 -Server src/server/HyFib.HealthCare360.Server/bin/Release/net10.0/HyFib.HealthCare360.Server.exe
 
+      # The daily certificate probe the installer registers (SRS DED-04): Task Scheduler runs it as SYSTEM, its exit code is
+      # the task's result and what it found reaches the event log; the uninstaller removes every task the installer adds. In
+      # both PowerShells the installer runs in.
+      - name: Check the certificate probe's scheduled task runs the probe as SYSTEM
+        shell: pwsh
+        run: |
+          $server = 'src/server/HyFib.HealthCare360.Server/bin/Release/net10.0/HyFib.HealthCare360.Server.exe'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-CertificateProbeTask.ps1 -Server $server
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-CertificateProbeTask.ps1 -Server $server
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
       # The warm standby (SRS DED-20, REL-02) with the real scripts, in Windows PowerShell 5.1 as on a Server Node: a second
       # PostgreSQL on this runner becomes a standby of the runner's own over TLS, with WAL archiving; HC360 refuses to run
       # against it; it is promoted; and -Remove closes the primary again. Last, as it restarts the runner's PostgreSQL.

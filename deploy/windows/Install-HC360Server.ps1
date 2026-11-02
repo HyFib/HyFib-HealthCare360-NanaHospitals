@@ -39,6 +39,10 @@
       server (SRS DED-18): HC360-Desktop-<version>-win-x64.zip, with its .manifest.json and .manifest.sig, from beside
       the server package (the folder it was extracted to, or the one above), or from -DesktopPackage. The server takes
       it in only when HyFib signed it (desktop publish); otherwise workstations are upgraded with Install-HC360Desktop.ps1.
+    - Registers the "HC360 certificate probe" scheduled task, which checks every day, as SYSTEM, the certificate the
+      staff address serves, as HC360 Desktop and the lab agents check it, against the CA fingerprint printed at the end,
+      and writes what needs attention to the Application event log (SRS DED-04). It runs it once and shows what it found.
+      A standby has none until a failover.
     - Starts the service, waits until it is healthy and prints the CA fingerprint staff will verify on workstations.
       With -NoStart the service is left stopped, and does not start with Windows, for a node of several servers whose
       settings (its role, the shared folder, the database) must be in place before it first starts: running the installer
@@ -185,6 +189,71 @@ function Set-RestartOnFailure([string] $Name) {
 # The triggers of the database watchdog task: every minute from now for as long as Windows runs, and at each start-up.
 function New-EveryMinuteTriggers {
     return @((New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1)), (New-ScheduledTaskTrigger -AtStartup))
+}
+
+# SHA-256 of a certificate file in upper-case hex: for the hospital CA, the fingerprint staff compare on HC360 Desktop.
+function Get-CertificateFingerprint([string] $Path) {
+    $certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $Path
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return -join ($sha.ComputeHash($certificate.RawData) | ForEach-Object { $_.ToString('X2') }) }
+    finally { $sha.Dispose(); $certificate.Dispose() }
+}
+
+# The daily certificate probe (SRS DED-04, docs/deployment/CA-ROLLOVER.md): HC360's own program, run as SYSTEM, checks
+# $Address as HC360 Desktop and the lab agents check it, against the hospital CA fingerprint they pinned, and writes what
+# needs attention to the Application event log. It needs no database, so it tells while HC360 is down too. Returns the
+# fingerprint the task checked for before, or $null when there was no such task.
+function Register-CertificateProbe([string] $Exe, [string] $Address, [string] $Fingerprint, [string] $At,
+    [string] $TaskName = 'HC360 certificate probe', [string] $TaskPath = '\HyFib\') {
+    $before = Get-CertificateProbePin $TaskName $TaskPath
+    $action = New-ScheduledTaskAction -Execute $Exe -Argument "certificates probe $Address --ca-fingerprint $Fingerprint --event-log"
+    $principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    # -StartWhenAvailable: on a day the server was off at that time, it checks once the server starts. The first run is
+    # the next $At to come: one already past today would count as missed, and run at once beside the run this installer
+    # starts itself.
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+    $first = [datetime]::Today.Add([timespan]::Parse($At))
+    if ($first -le (Get-Date)) { $first = $first.AddDays(1) }
+    Register-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Action $action -Trigger (New-ScheduledTaskTrigger -Daily -At $first) `
+        -Principal $principal -Settings $settings -Force `
+        -Description 'Checks the certificate HyFib HealthCare360 serves as its workstations and lab agents check it, and writes what needs attention to the Application event log (SRS DED-04).' | Out-Null
+    return $before
+}
+
+# The hospital CA fingerprint the certificate probe task checks for, or $null when there is no such task.
+function Get-CertificateProbePin([string] $TaskName = 'HC360 certificate probe', [string] $TaskPath = '\HyFib\') {
+    $task = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction SilentlyContinue
+    if (-not $task) { return $null }
+    foreach ($action in @($task.Actions)) {
+        if ("$($action.Arguments)" -match "--ca-fingerprint\s+['""]?([0-9A-Fa-f]{64})\b") { return $Matches[1].ToUpperInvariant() }
+    }
+    return $null
+}
+
+# Runs the certificate probe task now, as Task Scheduler runs it every day, and returns its result once it has ended: the
+# probe's exit code (0 nothing to do, 1 a certificate to plan for, 2 act now), another code when the task could not run the
+# probe, or $null when it did not end within $Seconds.
+function Invoke-CertificateProbeTask([string] $TaskName = 'HC360 certificate probe', [string] $TaskPath = '\HyFib\', [int] $Seconds = 120) {
+    $now = Get-Date
+    # A run already under way (the day's, or one Task Scheduler caught up) ends first: Task Scheduler starts no second one
+    # beside it (-MultipleInstances IgnoreNew), so this run would never come.
+    while ("$((Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath).State)" -eq 'Running' -and (Get-Date) -lt $now.AddSeconds($Seconds)) {
+        Start-Sleep -Seconds 2
+    }
+    # The run is told by what Task Scheduler reports changing, not by comparing its clock with this one: Windows
+    # PowerShell and PowerShell 7 read its times differently.
+    $before = Get-ScheduledTaskInfo -TaskName $TaskName -TaskPath $TaskPath
+    Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
+    do {
+        Start-Sleep -Seconds 2
+        $info = Get-ScheduledTaskInfo -TaskName $TaskName -TaskPath $TaskPath
+        $state = "$((Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath).State)"
+        $ran = "$($info.LastRunTime)" -ne "$($before.LastRunTime)" -or $info.LastTaskResult -ne $before.LastTaskResult
+        # 267009 (0x41301): Task Scheduler's "still running".
+        if ($ran -and $state -ne 'Running' -and $info.LastTaskResult -ne 267009) { return $info.LastTaskResult }
+    } while ((Get-Date) -lt $now.AddSeconds($Seconds))
+    return $null
 }
 
 # The newest HC360 Desktop package of a release beside the server package (SRS DED-18): in the folder the server package
@@ -1041,12 +1110,61 @@ if ($postgres) {
     }
 }
 
+# ---------------------------------------------------------------- the certificate probe (SRS DED-04)
+# Every day HC360's own program checks, as SYSTEM, the staff address as the workstations and lab agents do: against the
+# hospital CA whose fingerprint is printed below, which they pin. Run apart from the server, it still tells when HC360 is
+# down or cannot send its own alerts, and when what the devices are served is not what the server holds; what needs
+# attention goes to the Application event log, where monitoring tools read it. An hour after Windows Update may last
+# restart the server, or once it starts when it was off then. A standby serves nothing until a failover, when this
+# installer runs there again without -Standby.
 $caPath = Join-Path $DataDir 'certs\hc360-hospital-ca.crt'
-if (Test-Path $caPath) {
-    $ca = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $caPath
-    $sha = [System.Security.Cryptography.SHA256]::Create().ComputeHash($ca.RawData)
-    $fingerprint = -join ($sha | ForEach-Object { $_.ToString('X2') })
-    $grouped = ($fingerprint -split '(.{4})' | Where-Object { $_ }) -join ' '
+$caFingerprint = if (Test-Path -LiteralPath $caPath) { Get-CertificateFingerprint $caPath } else { $null }
+if ($Standby) {
+    $probeTask = Get-ScheduledTask -TaskName 'HC360 certificate probe' -TaskPath '\HyFib\' -ErrorAction SilentlyContinue
+    if ($probeTask) {
+        $probeTask | Unregister-ScheduledTask -Confirm:$false
+        Write-Host '    The daily certificate probe is removed: a standby serves nothing until a failover.'
+    }
+}
+elseif ($caFingerprint -and -not $NoStart) {
+    Write-Step 'Registering the daily certificate probe'
+    $probeAddress = "https://$($env:COMPUTERNAME.ToLowerInvariant()):$HttpsPort/"
+    $probeAt = '{0:00}:10' -f (($UpdateActiveHoursStart + 1) % 24)
+    $pinnedBefore = Register-CertificateProbe $exe $probeAddress $caFingerprint $probeAt
+    if ($pinnedBefore -and $pinnedBefore -ne $caFingerprint) {
+        $previousCaPath = Join-Path $DataDir 'certs\hc360-hospital-ca-previous.crt'
+        if ((Test-Path -LiteralPath $previousCaPath) -and (Get-CertificateFingerprint $previousCaPath) -eq $pinnedBefore) {
+            Write-Host '    The hospital CA was switched to the next one (certificates switch-ca): the probe now checks for the new CA.'
+        }
+        else {
+            $wasPinned = ($pinnedBefore -split '(.{4})' | Where-Object { $_ }) -join ' '
+            $isNow = ($caFingerprint -split '(.{4})' | Where-Object { $_ }) -join ' '
+            Write-Warning "The certificate probe checked for the hospital CA ${wasPinned}, but the server's CA is ${isNow}: devices that pinned the first do not connect. If the CA was replaced (certificates new-ca), or made again because its files were lost, set every device up again (docs/deployment/CA-ROLLOVER.md). The probe now checks for the server's CA."
+        }
+    }
+    if (-not $ready) {
+        Write-Host "    It checks $probeAddress every day at $probeAt."
+    }
+    else {
+        $probed = Invoke-CertificateProbeTask
+        if ($null -eq $probed) {
+            Write-Warning "The 'HC360 certificate probe' scheduled task did not end within two minutes. Check it in Task Scheduler (HyFib folder)."
+        }
+        elseif ($probed -eq 0) {
+            Write-Host "    It found the certificate devices are served good, and checks $probeAddress again every day at $probeAt."
+        }
+        elseif ($probed -eq 1 -or $probed -eq 2) {
+            Write-Warning "The certificate probe found what needs attention in what $probeAddress serves, and wrote it to the Application event log:"
+            & $exe certificates probe $probeAddress --ca-fingerprint $caFingerprint | ForEach-Object { Write-Host "    $_" }
+        }
+        else {
+            Write-Warning ("The 'HC360 certificate probe' scheduled task did not run the probe (result 0x{0:X8}). Check it in Task Scheduler (HyFib folder)." -f $probed)
+        }
+    }
+}
+
+if ($caFingerprint) {
+    $grouped = ($caFingerprint -split '(.{4})' | Where-Object { $_ }) -join ' '
     Write-Host ''
     Write-Host 'Hospital CA fingerprint (staff compare this when setting up HC360 Desktop):' -ForegroundColor Green
     Write-Host "    $grouped"
