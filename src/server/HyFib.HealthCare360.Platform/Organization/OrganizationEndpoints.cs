@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using FluentValidation;
 using HyFib.HealthCare360.Platform.Approvals;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Http;
@@ -312,10 +313,11 @@ internal static class OrganizationEndpoints
                     ? TypedResults.Ok(dto with { PendingPrice = await prices.PendingAsync(id, ct) })
                     : Error.NotFound(nameof(ServiceItem), id).ToProblem())
             .RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapPost("/services", (SaveServiceItemRequest r, HospitalDbContext db, ServicePrices prices, CancellationToken ct) => SaveService(null, r, db, prices, ct))
+        masters.MapPost("/services", (SaveServiceItemRequest r, HospitalDbContext db, ServicePrices prices, ServiceChargeSources sources, CancellationToken ct) =>
+                SaveService(null, r, db, prices, sources, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveServiceItemRequest>();
-        masters.MapPut("/services/{id:guid}", (Guid id, SaveServiceItemRequest r, HospitalDbContext db, ServicePrices prices, CancellationToken ct) =>
-                SaveService(id, r, db, prices, ct))
+        masters.MapPut("/services/{id:guid}", (Guid id, SaveServiceItemRequest r, HospitalDbContext db, ServicePrices prices, ServiceChargeSources sources, CancellationToken ct) =>
+                SaveService(id, r, db, prices, sources, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveServiceItemRequest>().RequireVersion();
 
         var lookups = masters.MapGroup("/lookups");
@@ -833,7 +835,8 @@ internal static class OrganizationEndpoints
         return TypedResults.Ok(await q.OrderByKey(page, sorts, s => s.Name).Select(ToServiceDto).ToPagedResultAsync(page, ct));
     }
 
-    private static async Task<IResult> SaveService(Guid? id, SaveServiceItemRequest request, HospitalDbContext db, ServicePrices prices, CancellationToken ct)
+    private static async Task<IResult> SaveService(
+        Guid? id, SaveServiceItemRequest request, HospitalDbContext db, ServicePrices prices, ServiceChargeSources sources, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         ServiceItem service;
@@ -900,6 +903,14 @@ internal static class OrganizationEndpoints
             return Error.Conflict(ServicePrices.WaitingCode,
                     $"A change to {service.Code}'s price, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.")
                 .ToProblem();
+        }
+
+        // A ward's beds, a stay in progress in one of them or a diet charges some services by itself, day after day:
+        // taken out of use, billing would refuse each of those charges and the days would go unbilled.
+        if (before.IsActive && !now.IsActive
+            && await sources.UsesAsync(service.Id, ct) is { Count: > 0 } uses)
+        {
+            return ServiceChargeSources.InUse(service.Code, uses).ToProblem();
         }
 
         now.ApplyTo(service);

@@ -68,6 +68,7 @@ public sealed class AuditCoverageTests
         ["ReportDeliveryRecipient"] = "One e-mail of a scheduled report's delivery, sent through the outbox.",
         ["TallyExport"] = "The day book posting log for Tally; posting, export and checks are audited (billing.tally.*).",
         ["TallyVoucherRecord"] = "A voucher as sent to Tally with Tally's answer; the posting is audited (billing.tally.*).",
+        ["ChargeRefusal"] = "An automatic charge billing refused, counted again on each retry; its first refusal and its clearing are audited (billing.charge_refused, billing.charge_refusal_cleared).",
         ["GatewaySettlement"] = "A payout as the payment gateway reported it; its receipts and exceptions are audited (billing.gateway.*).",
         ["GatewaySettlementLine"] = "One transaction of a gateway payout as reported, and what it matched.",
         ["PosSettlementImport"] = "An acquirer's settlement file as imported; the import and its review are audited (billing.pos.*).",

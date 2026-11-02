@@ -94,6 +94,13 @@ A save replaces every field, so screens send the whole record.
   `facility.current`) and the last facility in use (422 `facility.last_active`) can't be taken out of use.
 - **Out of use, not deleted.** A department out of use takes no new visits; a doctor out of use can't be booked or chosen
   for new visits (appointments already booked stay); a service out of use can't be added to new bills or orders.
+- **A service charged by itself stays in use while it is** (`IServiceChargeSource`, each module's own): a ward's beds,
+  a stay in progress in one of them (it keeps the bed charge its bed was taken with until it moves bed or ends, whatever
+  its ward is re-pointed to) and a diet are charged day after day by a service, and billing refuses every charge of a
+  service out of use, so the days would go unbilled. Taking it out of use is refused (409 `service.charged_by_itself`),
+  naming each ward, stay and diet; point them to another service first, or wait for the stays to end. The nursing day and
+  the consultant's visit are looked up by code and charged only while in use: taking them out of use is how a hospital
+  stops charging them, and is not refused.
 - **A service's price is approved by a second person** (maker-checker, `ServicePrices`). A self-pay patient pays the
   service's own price and GST, so a save that changes either, lets the counter type a price, allows discounts or puts
   the service in use saves everything else and asks for that (`masters.service_price`); someone else who holds
@@ -128,7 +135,9 @@ document follows its print template: the letterhead or pre-printed stationery, t
 
 - The facility's time zone and currency can't be edited (India only).
 - Nothing warns, before a doctor is taken out of use, how many future appointments they have.
-- Taking a service out of use is not checked against the wards, lab tests and packages that charge it.
-- Doctor-fee rules (billing.md) still change without a second person. Tariff plans' prices and terms, payers' terms, a
-  stay's plan other than its payer's and billing packages' price and cover wait for one (billing.md), and a health
-  check-up package's price is its service's, asked for from the package's form (clinical.md).
+- Taking a service out of use is checked against what charges it by itself (wards, stays in progress, diets), not
+  against the lab tests, procedures and packages that charge it when ordered: those are refused when ordered, where the
+  person ordering sees it.
+- Tariff plans' prices and terms, payers' terms, a stay's plan other than its payer's, billing packages' price and
+  cover, doctor-fee rules and the non-payable list wait for a second person (billing.md), and a health check-up
+  package's price is its service's, asked for from the package's form (clinical.md).

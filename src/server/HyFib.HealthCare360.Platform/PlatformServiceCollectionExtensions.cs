@@ -269,6 +269,7 @@ public static class PlatformServiceCollectionExtensions
 
         // A service's price changes only when two people agree.
         services.AddScoped<ServicePrices>();
+        services.AddScoped<ServiceChargeSources>();
         services.AddScoped<IApprovalAction, ServicePriceApproval>();
         services.AddHttpClient(AlertHeartbeat.HttpClientName, client => client.DefaultRequestHeaders.UserAgent.ParseAdd("HyFib-HC360-Heartbeat"))
             .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);

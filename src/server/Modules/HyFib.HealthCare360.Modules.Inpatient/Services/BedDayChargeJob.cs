@@ -1,4 +1,3 @@
-using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Platform.Hosting;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -16,9 +15,6 @@ internal sealed class BedDayChargeJob(IServiceScopeFactory scopeFactory, IOption
     : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromHours(1);
-
-    /// <summary>Discharged stays are revisited for a few days in case Billing was unreachable at discharge.</summary>
-    private static readonly TimeSpan RecentDischargeWindow = TimeSpan.FromDays(3);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -44,18 +40,13 @@ internal sealed class BedDayChargeJob(IServiceScopeFactory scopeFactory, IOption
 
     internal async Task RunOnceAsync(CancellationToken ct)
     {
-        List<Guid> admissionIds;
+        IReadOnlyList<Guid> admissionIds;
         int visitsCharged;
         await using (var scope = scopeFactory.CreateAsyncScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
-            var since = time.GetUtcNow() - RecentDischargeWindow;
-            admissionIds = await db.Set<Admission>().AsNoTracking()
-                .Where(a => a.Status == AdmissionStatus.Admitted || a.Status == AdmissionStatus.DischargeInitiated
-                            || (a.DischargedAt != null && a.DischargedAt >= since))
-                .Select(a => a.Id)
-                .ToListAsync(ct);
-            visitsCharged = await scope.ServiceProvider.GetRequiredService<InpatientChargeService>().RetryVisitChargesAsync(ct);
+            var charges = scope.ServiceProvider.GetRequiredService<InpatientChargeService>();
+            admissionIds = await charges.StaysDueAsync(ct);
+            visitsCharged = await charges.RetryVisitChargesAsync(ct);
         }
 
         var posted = 0;

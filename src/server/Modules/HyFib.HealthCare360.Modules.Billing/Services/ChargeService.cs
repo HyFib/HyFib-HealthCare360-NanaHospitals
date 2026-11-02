@@ -23,7 +23,7 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// already on a finalized bill.</item>
 /// </list>
 /// </summary>
-public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, ICurrentUser currentUser, TimeProvider time) : IChargePoster
+public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, ChargeRefusals refusals, ICurrentUser currentUser, TimeProvider time) : IChargePoster
 {
     public const string ManualSource = "billing.manual";
     public const string AdhocSource = "billing.adhoc";
@@ -41,9 +41,23 @@ public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, I
     /// </summary>
     public static readonly IReadOnlySet<string> ImplantServiceCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "OT-IMPLANT", "PHARM-IMPL" };
 
+    /// <summary>
+    /// Stages the charge of a module's line. An automatic charge's refusal is kept on record until the line posts
+    /// (<see cref="ChargeRefusals"/>), so a day that goes unbilled is warned of and holds the stay's final bill. Does not save.
+    /// </summary>
     public async Task<Result<Guid>> PostAsync(ChargeRequest request, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         var staged = await StageAsync(request, isFreeFollowUp: false, cancellationToken);
+        if (request.Automatic && staged.IsFailure)
+        {
+            await refusals.RefusedAsync(request, staged.Error!, cancellationToken);
+        }
+        else if (request.Automatic)
+        {
+            await refusals.ClearedAsync(request.SourceModule, request.SourceReference, posted: true, cancellationToken);
+        }
+
         return staged.IsSuccess ? Result<Guid>.Ok(staged.Value.Id) : Result<Guid>.Fail(staged.Error!);
     }
 
@@ -54,6 +68,7 @@ public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, I
     /// </summary>
     public async Task<Result> CancelAsync(string sourceModule, string sourceReference, string reason, CancellationToken cancellationToken)
     {
+        await refusals.ClearedAsync(sourceModule, sourceReference, posted: false, cancellationToken);
         var charge = await FindBySourceAsync(sourceModule, sourceReference, cancellationToken);
         return charge is null ? Result.Success() : await CancelChargeAsync(charge, reason, cancellationToken);
     }

@@ -14,6 +14,7 @@ using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Billing.Features.Tally;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 using HyFib.HealthCare360.Modules.Billing.Services;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -46,6 +47,8 @@ public sealed class BillingModule : IModule
         services.AddScoped<RateListService>();
         services.AddSingleton<PublicRateListPdf>();
         services.AddScoped<ChargeService>();
+        services.AddScoped<ChargeRefusals>();
+        services.AddScoped<IHealthWarningSource, ChargeRefusalWarnings>();
         services.AddScoped<PayerCoverageService>();
         services.AddScoped<BillService>();
         services.AddScoped<DiscountService>();
