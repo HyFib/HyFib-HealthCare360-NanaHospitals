@@ -110,8 +110,8 @@ public sealed class InterStateSupplyTests(HospitalServer server)
         return await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
     }
 
-    private static Task<PayerDetail> CompanyAsync(ApiClient admin, string? gstin) =>
-        admin.PostAsync<PayerDetail>("/api/v1/insurance/payers", new SavePayerRequest(
+    private Task<PayerDetail> CompanyAsync(ApiClient admin, string? gstin) =>
+        server.CreatePayerAsync(admin, new SavePayerRequest(
             $"CO{Letters(8).ToUpperInvariant()}", $"Malabar Traders {Letters(6).ToUpperInvariant()} Ltd", PayerCategory.Corporate, "Anil Menon", "9876543210",
             null, null, gstin, null, CreditDays: 30, DefaultCoPayPercent: 0m, PortalUrl: null, IsActive: true, Notes: null, Version: null));
 

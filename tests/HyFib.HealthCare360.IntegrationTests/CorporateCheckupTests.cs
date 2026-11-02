@@ -270,9 +270,12 @@ public sealed class CorporateCheckupTests(HospitalServer server)
     private static async Task<VisitStatus> VisitStatusAsync(ApiClient frontOffice, BookingDto booking) =>
         (await frontOffice.GetAsync<VisitDetail>($"/api/v1/visits/{booking.VisitId.ShouldNotBeNull()}")).Status;
 
-    /// <summary>A company the hospital has a tie-up with, as the insurance desk adds it to the payer master.</summary>
-    private static Task<PayerDetail> CompanyAsync(ApiClient admin, bool isActive, string? name = null) =>
-        admin.PostAsync<PayerDetail>("/api/v1/insurance/payers", new SavePayerRequest(
+    /// <summary>
+    /// A company the hospital has a tie-up with, as the insurance desk adds it to the payer master and a second person
+    /// approves its terms.
+    /// </summary>
+    private Task<PayerDetail> CompanyAsync(ApiClient admin, bool isActive, string? name = null) =>
+        server.CreatePayerAsync(admin, new SavePayerRequest(
             $"CO{Letters(8).ToUpperInvariant()}", name is null ? $"Acme Steel {Letters(6).ToUpperInvariant()} Ltd" : $"{name} {Letters(4).ToUpperInvariant()}",
             PayerCategory.Corporate, "Meena Iyer", "9876543210", null, null, null, null,
             CreditDays: 45, DefaultCoPayPercent: 0m, PortalUrl: null, IsActive: isActive, Notes: null, Version: null));

@@ -45,7 +45,7 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var service = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", "Executive lounge access", null, ServiceCategory.Miscellaneous, null, 1000m, 18m, "999799", true, false, null, true, null));
-        var company = await admin.PostAsync<PayerDetail>("/api/v1/insurance/payers", new SavePayerRequest(
+        var company = await server.CreatePayerAsync(admin, new SavePayerRequest(
             $"CO{Letters(8).ToUpperInvariant()}", $"Malabar Traders {Letters(6).ToUpperInvariant()} Ltd", PayerCategory.Corporate, "Anil Menon", "9876543210",
             null, "4/12 MG Road, Ernakulam, Kochi, Kerala 682016", KeralaCompany, null, CreditDays: 30, DefaultCoPayPercent: 0m, PortalUrl: null,
             IsActive: true, Notes: null, Version: null));

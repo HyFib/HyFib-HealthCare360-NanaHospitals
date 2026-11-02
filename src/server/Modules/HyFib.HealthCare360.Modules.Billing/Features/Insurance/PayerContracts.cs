@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Services;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Insurance;
 
@@ -30,8 +31,13 @@ public sealed record PayerDetail(
     string? PortalUrl,
     bool IsActive,
     string? Notes,
-    uint Version);
+    uint Version,
+    PendingPayerTerms? PendingTerms = null);
 
+/// <summary>
+/// A payer saved. Its category, tariff plan, co-pay and putting it in use change only when a second person approves them
+/// (<paramref name="Reason"/> is for the approver); its other details, and taking it out of use, are saved at once.
+/// </summary>
 public sealed record SavePayerRequest(
     string Code,
     string Name,
@@ -47,7 +53,8 @@ public sealed record SavePayerRequest(
     string? PortalUrl,
     bool IsActive,
     string? Notes,
-    uint? Version);
+    uint? Version,
+    string? Reason = null);
 
 public sealed record NonPayableItemDto(
     Guid Id,
@@ -125,6 +132,7 @@ public sealed class SavePayerRequestValidator : AbstractValidator<SavePayerReque
             .Must(url => string.IsNullOrWhiteSpace(url) || (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps))
             .WithMessage("Enter the portal's https:// address.");
         RuleFor(x => x.Notes).SafeText(1000);
+        RuleFor(x => x.Reason).SafeText(500);
     }
 }
 

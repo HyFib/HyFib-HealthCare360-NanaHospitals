@@ -80,8 +80,17 @@ internal static class IpEndpoints
         return id is null ? Error.NotFound(nameof(IpAccount), admissionId).ToProblem() : (await ip.DetailAsync(id.Value, ct)).ToOk();
     }
 
-    private static async Task<IResult> Update(Guid id, UpdateIpAccountRequest request, IpBillingService ip, CancellationToken ct) =>
-        (await ip.UpdateAsync(id, request, ct)).ToNoContent();
+    private static async Task<IResult> Update(Guid id, UpdateIpAccountRequest request, IpBillingService ip, CancellationToken ct)
+    {
+        var updated = await ip.UpdateAsync(id, request, ct);
+        if (updated.IsFailure)
+        {
+            return updated.Error!.ToProblem();
+        }
+
+        // Another plan than the payer's waits for a second person: the request is returned, as asked for.
+        return updated.Value is { } approval ? TypedResults.Accepted($"/api/v1/approvals/{approval.Id}", approval) : TypedResults.NoContent();
+    }
 
     private static async Task<IResult> RunningBill(Guid id, IpBillingService ip, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)
     {

@@ -1,6 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { ServiceCategory } from '@/modules/billing/labels';
 import type { ClaimStatus, EnhancementStatus, PayerCategory, PreAuthStatus } from './labels';
 
@@ -41,6 +42,23 @@ export interface PayerDetail {
   isActive: boolean;
   notes: string | null;
   version: number;
+  /** The terms waiting for a second person, if any. */
+  pendingTerms?: PendingPayerTerms | null;
+}
+
+/** What a payer's agreement decides about what its patients pay: these change only when two people agree. */
+export interface PayerTerms {
+  category: PayerCategory;
+  tariffPlanId: string | null;
+  defaultCoPayPercent: number;
+  isActive: boolean;
+}
+
+export interface PendingPayerTerms {
+  approvalId: string;
+  asked: PayerTerms;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface SavePayerRequest {
@@ -59,6 +77,8 @@ export interface SavePayerRequest {
   isActive: boolean;
   notes: string | null;
   version: number | null;
+  /** For the approver, when the terms change. */
+  reason?: string | null;
 }
 
 export interface NonPayableItemDto {
@@ -454,8 +474,9 @@ export const insuranceQueries = {
 
 export const insuranceApi = {
   createPayer: (request: SavePayerRequest) => api.post<PayerDetail>('/api/v1/insurance/payers', request),
+  /** The payer as saved, or the request asking a second person for the terms changed. */
   updatePayer: (id: string, request: SavePayerRequest) =>
-    api.put<PayerDetail>(`/api/v1/insurance/payers/${id}`, request),
+    api.put<PayerDetail | ApprovalRequestDto>(`/api/v1/insurance/payers/${id}`, request),
   addNonPayable: (request: SaveNonPayableItemRequest) =>
     api.post<{ id: string }>('/api/v1/insurance/non-payable-items', request),
   deleteNonPayable: (id: string) => api.delete<void>(`/api/v1/insurance/non-payable-items/${id}`),

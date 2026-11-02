@@ -379,8 +379,15 @@ and grants nothing.
   - a tariff plan's prices and terms (`billing.tariff_prices`, `billing.tariff_plan`): the billing desk asks, someone
     else who holds `masters.prices.approve` approves. Every change waits, as for a plan nothing only narrows (taken out of
     use, its patients are charged by another plan); a bulk revision is one request, and a new plan is made out of use
-    until its terms are approved. Approving is made only over the very rows and terms it replaces (`prices.changed`).
-    Check-up package prices, billing packages and doctor-fee rules still change at once;
+    until its terms are approved. Approving is made only over the very rows and terms it replaces (`prices.changed`);
+  - a payer's terms (`insurance.payer_terms`): the insurance desk asks, someone else who holds `masters.prices.approve`
+    approves its category, tariff plan, co-pay and putting it in use; taking it out of use is made at once, and a new
+    payer is added out of use until its terms are approved. Approving is made only over the terms it replaces;
+  - a stay billed on another plan than its payer's (`billing.ip_plan`): the billing desk asks, with the payer and policy
+    asked with it, and someone else who holds `billing.discounts.approve` approves; the request reads what the stay's
+    unbilled services come to on the payer's plan and on the plan asked. A stay keeps an approved plan while its payer
+    stays, and a new payer brings its own plan at once. Check-up package prices, billing packages, non-payable items and
+    doctor-fee rules still change at once;
   - correcting a released lab report where the lab sets `lab.separateVerifier`: one pathologist asks, another releases
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
     a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.

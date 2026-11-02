@@ -1,6 +1,7 @@
 import type { PagedResult, PayerType } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { BillDetail, DeviceDetails } from './api';
 import type { ChargeStatus, IpAccountStatus, ServiceCategory } from './labels';
 
@@ -58,6 +59,27 @@ export interface IpAccountDetail {
   version: number;
   /** Why the stay is free of cost by law (BNSS 2023 s.397, with the MLC entry): no advance is taken and its bills come to nothing. */
   freeTreatmentReason?: string | null;
+  /** The plan the stay's payer prices its patients on: a stay on another plan was approved by a second person. */
+  payerPlanId?: string | null;
+  /** The payer and plan waiting for a second person, if any. */
+  pendingPlan?: PendingStayPlan | null;
+}
+
+/** Who pays for a stay, under which policy, and the plan that prices its services. */
+export interface StayPayerTerms {
+  payerType: PayerType;
+  payerId: string | null;
+  policyId: string | null;
+  tariffPlanId: string | null;
+}
+
+export interface PendingStayPlan {
+  approvalId: string;
+  asked: StayPayerTerms;
+  tariffPlanName: string | null;
+  repriceUnbilledCharges: boolean;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface UpdateIpAccountRequest {
@@ -69,6 +91,8 @@ export interface UpdateIpAccountRequest {
   repriceUnbilledCharges: boolean;
   notes: string | null;
   version: number;
+  /** For the approver, when a plan other than the payer's is asked for. */
+  reason?: string | null;
 }
 
 export interface RunningBillCategory {
@@ -230,7 +254,9 @@ export const ipQueries = {
 };
 
 export const ipApi = {
-  update: (id: string, request: UpdateIpAccountRequest) => api.put<void>(`/api/v1/billing/ip-accounts/${id}`, request),
+  /** Nothing when saved; the request when a plan other than the payer's waits for a second person. */
+  update: (id: string, request: UpdateIpAccountRequest) =>
+    api.put<ApprovalRequestDto | undefined>(`/api/v1/billing/ip-accounts/${id}`, request),
   assignPackage: (id: string, packageId: string | null, version: number) =>
     api.put<void>(`/api/v1/billing/ip-accounts/${id}/package`, { packageId, version }),
   createInterimBill: (id: string, upTo: string | null) =>

@@ -38,6 +38,8 @@ public sealed class BillingModule : IModule
     {
         services.AddScoped<TariffService>();
         services.AddScoped<TariffApprovals>();
+        services.AddScoped<PayerApprovals>();
+        services.AddScoped<StayPlanApprovals>();
         services.AddScoped<RateListService>();
         services.AddSingleton<PublicRateListPdf>();
         services.AddScoped<ChargeService>();
