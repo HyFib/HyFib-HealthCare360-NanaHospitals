@@ -205,25 +205,28 @@ public sealed class AuditedChangeTests(HospitalServer server)
         var privateRoom = await ServiceAsync(admin, "Private room", ServiceCategory.BedCharge, 3_000m);
         var icu = await ServiceAsync(admin, "ICU bed", ServiceCategory.BedCharge, 8_000m);
         var code = "AT" + Letters(6).ToUpperInvariant();
-        var plan = await admin.PostAsync<TariffPlanDetail>("/api/v1/billing/tariffs", Plan(code, null, new BedMultiplierInput(privateRoom, 1.5m)));
+        // A plan's terms change only when two people agree: each save of the multipliers is approved by the other administrator.
+        var plan = await server.SaveTariffPlanAsync(admin, Plan(code, null, new BedMultiplierInput(privateRoom, 1.5m)));
 
         // The insurer's new contract: private rooms at twice the rate, and the ICU at two and a half.
-        plan = await admin.PutAsync<TariffPlanDetail>($"/api/v1/billing/tariffs/{plan.Id}",
-            Plan(code, plan.Version, new BedMultiplierInput(privateRoom, 2m), new BedMultiplierInput(icu, 2.5m)));
+        plan = await server.SaveTariffPlanAsync(admin,
+            Plan(code, plan.Version, new BedMultiplierInput(privateRoom, 2m), new BedMultiplierInput(icu, 2.5m)), plan.Id);
 
-        // Saved again from the screen, multipliers untouched.
+        // Saved again from the screen, multipliers untouched: nothing to ask for, the description saved at once.
         await admin.PutAsync<TariffPlanDetail>($"/api/v1/billing/tariffs/{plan.Id}",
             Plan(code, plan.Version, new BedMultiplierInput(icu, 2.5m), new BedMultiplierInput(privateRoom, 2m)) with { Description = "2027 contract" });
 
+        // Newest first: the multipliers as each approval set them, from none (a new plan is made without its terms).
         var trail = await TrailAsync(nameof(TariffPlan), plan.Id);
-        Multipliers(Details(trail, "TariffPlan.create")["bedMultipliers"]!).ShouldBe([(privateRoom, 1.5m)]);
         var updates = trail.Where(e => e.Action == "TariffPlan.update").Select(e => JsonNode.Parse(e.Details!)!).ToList();
-        updates.Count.ShouldBe(2);
-        var changed = updates[1]["bedMultipliers"]!;
-        Multipliers(changed["from"]!).ShouldBe([(privateRoom, 1.5m)]);
-        Multipliers(changed["to"]!).ShouldBe([(privateRoom, 2m), (icu, 2.5m)], ignoreOrder: true);
-        updates[0].AsObject().ContainsKey("bedMultipliers").ShouldBeFalse("The same multipliers saved again are no change.");
-        updates[0]["description"]!["to"]!.GetValue<string>().ShouldBe("2027 contract");
+        var set = updates.Where(u => u.AsObject().ContainsKey("bedMultipliers")).Select(u => u["bedMultipliers"]!).ToList();
+        set.Count.ShouldBe(2, "each approval sets them once");
+        Multipliers(set[0]["from"]!).ShouldBe([(privateRoom, 1.5m)]);
+        Multipliers(set[0]["to"]!).ShouldBe([(privateRoom, 2m), (icu, 2.5m)], ignoreOrder: true);
+        Multipliers(set[1]["to"]!).ShouldBe([(privateRoom, 1.5m)]);
+        var described = updates.Single(u => u.AsObject().ContainsKey("description"));
+        described.AsObject().ContainsKey("bedMultipliers").ShouldBeFalse("The same multipliers saved again are no change.");
+        described["description"]!["to"]!.GetValue<string>().ShouldBe("2027 contract");
     }
 
     [Fact]

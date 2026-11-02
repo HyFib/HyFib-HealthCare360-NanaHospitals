@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Services;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 
@@ -17,6 +18,8 @@ public sealed record TariffPlanListItem(
 
 public sealed record BedMultiplierDto(Guid BedServiceItemId, string? BedServiceCode, string? BedServiceName, decimal Multiplier);
 
+/// <param name="PendingTerms">The plan's terms waiting for a second person (maker-checker), on a single plan's read.</param>
+/// <param name="PendingPrices">The plan's prices waiting for a second person, on a single plan's read.</param>
 public sealed record TariffPlanDetail(
     Guid Id,
     string Code,
@@ -29,11 +32,14 @@ public sealed record TariffPlanDetail(
     bool IsActive,
     string? Description,
     IReadOnlyList<BedMultiplierDto> BedMultipliers,
-    uint Version);
+    uint Version,
+    PendingTariffTerms? PendingTerms = null,
+    PendingTariffPrices? PendingPrices = null);
 
 public sealed record BedMultiplierInput(Guid BedServiceItemId, decimal Multiplier);
 
 /// <summary>Create (no <paramref name="Version"/>) or update (with the last-seen version) a tariff plan.</summary>
+/// <param name="Reason">Why the plan's terms change, for the person who approves them.</param>
 public sealed record SaveTariffPlanRequest(
     string Code,
     string Name,
@@ -45,7 +51,8 @@ public sealed record SaveTariffPlanRequest(
     bool IsActive,
     string? Description,
     IReadOnlyList<BedMultiplierInput>? BedMultipliers,
-    uint? Version);
+    uint? Version,
+    string? Reason = null);
 
 public sealed record TariffPriceDto(
     Guid Id,
@@ -60,9 +67,11 @@ public sealed record TariffPriceDto(
     uint Version);
 
 /// <param name="Version">The version of the price being changed (REL-04); none for a new start date, and none in a bulk import.</param>
-public sealed record SaveTariffPriceRequest(Guid ServiceItemId, decimal Price, DateOnly EffectiveFrom, DateOnly? EffectiveTo, uint? Version = null);
+/// <param name="Reason">Why the price changes, for the person who approves it (a single price's save).</param>
+public sealed record SaveTariffPriceRequest(Guid ServiceItemId, decimal Price, DateOnly EffectiveFrom, DateOnly? EffectiveTo, uint? Version = null, string? Reason = null);
 
-public sealed record BulkTariffPricesRequest(IReadOnlyList<SaveTariffPriceRequest> Prices);
+/// <param name="Reason">Why the prices change, for the person who approves them.</param>
+public sealed record BulkTariffPricesRequest(IReadOnlyList<SaveTariffPriceRequest> Prices, string? Reason = null);
 
 public sealed record BulkTariffPricesResult(int Created, int Updated);
 
@@ -89,6 +98,7 @@ public sealed class SaveTariffPlanRequestValidator : AbstractValidator<SaveTarif
         RuleFor(x => x.Type).IsInEnum();
         RuleFor(x => x.DefaultDiscountPercent).Percent();
         RuleFor(x => x.Description).SafeText(500);
+        RuleFor(x => x.Reason).SafeText(500);
         RuleForEach(x => x.BedMultipliers).ChildRules(m =>
         {
             m.RuleFor(x => x.BedServiceItemId).NotEmpty();
@@ -107,6 +117,7 @@ public sealed class SaveTariffPriceRequestValidator : AbstractValidator<SaveTari
     {
         RuleFor(x => x.ServiceItemId).NotEmpty();
         RuleFor(x => x.Price).NonNegativeAmount();
+        RuleFor(x => x.Reason).SafeText(500);
         RuleFor(x => x.EffectiveTo)
             .Must((request, to) => to is null || to >= request.EffectiveFrom)
             .WithMessage("The end date must be on or after the start date.");
@@ -117,7 +128,9 @@ public sealed class BulkTariffPricesRequestValidator : AbstractValidator<BulkTar
 {
     public BulkTariffPricesRequestValidator()
     {
-        RuleFor(x => x.Prices).NotEmpty().Must(p => p.Count <= 500).WithMessage("Import at most 500 prices at a time.");
+        // A revision is one request for the approver, so it carries every price the screen loads (at most 5,000).
+        RuleFor(x => x.Prices).NotEmpty().Must(p => p.Count <= 5000).WithMessage("Import at most 5,000 prices at a time.");
+        RuleFor(x => x.Reason).SafeText(500);
         RuleForEach(x => x.Prices).SetValidator(new SaveTariffPriceRequestValidator());
     }
 }

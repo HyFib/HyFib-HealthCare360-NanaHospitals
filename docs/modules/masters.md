@@ -129,5 +129,6 @@ document follows its print template: the letterhead or pre-printed stationery, t
 - The facility's time zone and currency can't be edited (India only).
 - Nothing warns, before a doctor is taken out of use, how many future appointments they have.
 - Taking a service out of use is not checked against the wards, lab tests and packages that charge it.
-- Tariff plan prices, packages and doctor-fee rules (billing.md) still change without a second person, and so does a
-  health check-up package's price, which saving the package writes to its service.
+- Packages and doctor-fee rules (billing.md) still change without a second person, and so does a health check-up
+  package's price, which saving the package writes to its service. Tariff plans' prices and terms wait for one
+  (billing.md, *Tariffs*).

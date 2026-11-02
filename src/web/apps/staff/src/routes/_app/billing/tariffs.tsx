@@ -40,12 +40,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import { searchServices, type ServiceItemDto } from '@/modules/billing/api';
 import { SERVICE_CATEGORY_LABEL, TARIFF_TYPE_LABEL } from '@/modules/billing/labels';
 import {
   mastersApi,
   mastersKeys,
   mastersQueries,
+  type PendingTariffPrices,
   type TariffPlanDetail,
   type TariffPriceDto,
 } from '@/modules/billing/mastersApi';
@@ -239,7 +241,12 @@ function TariffsPage() {
                   </Caption1>
                 )}
               </Section>
-              <PricesSection planId={plan.data.id} canManage={canManage} search={search} />
+              <PricesSection
+                planId={plan.data.id}
+                canManage={canManage}
+                search={search}
+                pending={plan.data.pendingPrices ?? null}
+              />
             </>
           )}
         </div>
@@ -248,9 +255,9 @@ function TariffsPage() {
         <TariffPlanDrawer
           plan={editingPlan === 'new' ? null : editingPlan}
           onClose={() => setEditingPlan(null)}
-          onSaved={(saved) => {
+          onSaved={(savedId) => {
             setEditingPlan(null);
-            void navigate({ search: (prev) => ({ ...prev, plan: saved.id }) });
+            void navigate({ search: (prev) => ({ ...prev, plan: savedId }) });
           }}
         />
       )}
@@ -259,7 +266,18 @@ function TariffsPage() {
   );
 }
 
-function PricesSection({ planId, canManage, search }: { planId: string; canManage: boolean; search: TariffsSearch }) {
+function PricesSection({
+  planId,
+  canManage,
+  search,
+  pending,
+}: {
+  planId: string;
+  canManage: boolean;
+  search: TariffsSearch;
+  /** The plan's prices waiting for someone who may approve prices (maker-checker). */
+  pending: PendingTariffPrices | null;
+}) {
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -277,8 +295,12 @@ function PricesSection({ planId, canManage, search }: { planId: string; canManag
 
   const remove = useMutation({
     mutationFn: (price: TariffPriceDto) => mastersApi.deletePrice(planId, price.id),
-    onSuccess: () => {
-      notify.success('Price removed');
+    onSuccess: (result) => {
+      // A price changes only when two people agree: removing one is asked for, not made.
+      notify.success(
+        'Asked for approval',
+        `${result.summary}. Someone who may approve prices decides it; until then the price is charged.`,
+      );
       setDeleting(null);
       void queryClient.invalidateQueries({ queryKey: mastersKeys.tariffs });
     },
@@ -298,6 +320,15 @@ function PricesSection({ planId, canManage, search }: { planId: string; canManag
       flush
     >
       <div style={{ padding: '0 16px 12px' }}>
+        {pending && (
+          <PendingGrantNotice
+            approvalId={pending.approvalId}
+            what={pendingPricesWhat(pending)}
+            requestedBy={pending.requestedBy}
+            requestedAt={pending.requestedAt}
+            decides="Someone who may approve prices decides it; until then the prices below are charged, and no other price change can be asked for."
+          />
+        )}
         <FilterBar>
           <Field label="Service" style={{ flex: '1 1 240px' }}>
             <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name or code" />
@@ -408,6 +439,7 @@ function PriceDialog({
   const [amount, setAmount] = useState(price ? amountInputText(price.price) : '');
   const [from, setFrom] = useState(price?.effectiveFrom ?? todayIso());
   const [to, setTo] = useState(price?.effectiveTo ?? '');
+  const [reason, setReason] = useState('');
   const results = useQuery({
     queryKey: ['billing', 'service-search', debounced],
     queryFn: () => searchServices(debounced),
@@ -426,9 +458,14 @@ function PriceDialog({
         effectiveTo: to || null,
         // A new start date makes a new price; the shown one is changed only when its own date is kept.
         version: price && price.effectiveFrom === from ? price.version : undefined,
+        reason: reason.trim() || null,
       }),
     onSuccess: (result) => {
-      notify.success(result.created ? 'Price added' : 'Price updated', service?.name);
+      // A price changes only when two people agree: a save asks for it, it does not make it.
+      notify.success(
+        'Asked for approval',
+        `${result.summary}. Someone who may approve prices decides it; until then the price in use is charged.`,
+      );
       void queryClient.invalidateQueries({ queryKey: mastersKeys.tariffs });
       onClose();
     },
@@ -501,6 +538,9 @@ function PriceDialog({
               >
                 <Input type="date" value={to} min={from} onChange={(_, d) => setTo(d.value)} />
               </Field>
+              <Field label="Reason, for the approver" hint="A price waits for someone who may approve prices.">
+                <Input value={reason} maxLength={500} onChange={(_, d) => setReason(d.value)} />
+              </Field>
               <ActionError error={save.error} />
             </DialogContent>
             <DialogActions>
@@ -513,7 +553,7 @@ function PriceDialog({
                 disabled={!valid || save.isPending}
                 icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
-                Save price
+                Ask for approval
               </Button>
             </DialogActions>
           </DialogBody>
@@ -522,4 +562,16 @@ function PriceDialog({
       </DialogSurface>
     </Dialog>
   );
+}
+
+/** What waits for approval among a plan's prices, in words. */
+function pendingPricesWhat(pending: PendingTariffPrices): string {
+  const set = pending.set.length;
+  const removed = pending.remove.length;
+  if (set === 1 && removed === 0) {
+    const row = pending.set[0]!;
+    return `A price of ${formatInr(row.price)} from ${formatDateOnly(row.effectiveFrom)}`;
+  }
+  const parts = [set > 0 ? `${set} price${set === 1 ? '' : 's'} set` : null, removed > 0 ? `${removed} removed` : null];
+  return `Prices: ${parts.filter(Boolean).join(', ')}`;
 }

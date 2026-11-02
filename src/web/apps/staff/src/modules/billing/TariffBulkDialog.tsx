@@ -13,7 +13,6 @@ import {
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
-  ProgressBar,
   Select,
   Spinner,
   Tab,
@@ -35,14 +34,7 @@ import {
   type TariffPlanListItem,
 } from './mastersApi';
 import { parsePercent } from './money';
-import {
-  inBatches,
-  parsePriceSheet,
-  PRICE_ROUNDING,
-  PRICE_ROUNDING_LABEL,
-  revisePrice,
-  type PriceRounding,
-} from './tariffBulk';
+import { parsePriceSheet, PRICE_ROUNDING, PRICE_ROUNDING_LABEL, revisePrice, type PriceRounding } from './tariffBulk';
 import { ActionError } from './ui';
 
 const useStyles = makeStyles({
@@ -70,7 +62,8 @@ interface Prepared {
 /**
  * Bulk price update of a tariff plan: revise every price (or those matching a search) by a percentage, or paste a
  * price list from Excel. New prices start on the chosen date; the previous prices are closed the day before, so the
- * history stays intact. Sent in batches of 500.
+ * history stays intact. The revision is one request for someone who may approve prices (maker-checker): nothing changes
+ * until it is approved.
  */
 export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; onClose: () => void }) {
   const styles = useStyles();
@@ -83,7 +76,7 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
   const [sheet, setSheet] = useState('');
   const [from, setFrom] = useState(todayIso(1));
   const [prepared, setPrepared] = useState<Prepared | null>(null);
-  const [progress, setProgress] = useState<number | null>(null);
+  const [reason, setReason] = useState('');
 
   const parsedPercent = parsePercent(percent.replace(/^[+-]/, ''), { allowZero: false });
   const signedPercent = parsedPercent.ok
@@ -144,31 +137,15 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
   });
 
   const apply = useMutation({
-    mutationFn: async () => {
-      if (!prepared) {
-        return { created: 0, updated: 0 };
-      }
-      const batches = inBatches(prepared.prices);
-      let created = 0;
-      let updated = 0;
-      for (let index = 0; index < batches.length; index++) {
-        setProgress(index / batches.length);
-        const result = await mastersApi.savePrices(plan.id, batches[index]!);
-        created += result.created;
-        updated += result.updated;
-      }
-      setProgress(1);
-      return { created, updated };
-    },
+    mutationFn: () => mastersApi.savePrices(plan.id, prepared?.prices ?? [], reason.trim() || null),
     onSuccess: (result) => {
       notify.success(
-        'Prices updated',
-        `${result.created} new and ${result.updated} changed prices from ${formatDateOnly(from)}`,
+        'Asked for approval',
+        `${result.summary}, from ${formatDateOnly(from)}. Someone who may approve prices decides it; until then the prices in use are charged.`,
       );
       void queryClient.invalidateQueries({ queryKey: mastersKeys.tariffs });
       onClose();
     },
-    onSettled: () => setProgress(null),
   });
 
   /** Any change to the inputs invalidates the preview. */
@@ -304,7 +281,14 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
                 {prepared.preview.length > 50 && <Caption1 className={styles.muted}>Showing the first 50.</Caption1>}
               </>
             )}
-            {progress !== null && <ProgressBar value={progress} aria-label="Saving prices" />}
+            {prepared && prepared.prices.length > 0 && (
+              <Field
+                label="Reason, for the approver"
+                hint="The revision waits for someone who may approve prices; nothing changes until then."
+              >
+                <Input value={reason} maxLength={500} onChange={(_, d) => setReason(d.value)} />
+              </Field>
+            )}
             <ActionError error={prepare.error ?? apply.error} />
           </DialogContent>
           <DialogActions>
@@ -327,7 +311,7 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
                 onClick={() => apply.mutate()}
                 icon={apply.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
-                Save {prepared.prices.length} price{prepared.prices.length === 1 ? '' : 's'}
+                Ask for approval of {prepared.prices.length} price{prepared.prices.length === 1 ? '' : 's'}
               </Button>
             )}
           </DialogActions>

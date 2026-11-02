@@ -1,6 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { ServiceItemDto } from './api';
 import type { PackageUse, ServiceCategory, TariffType } from './labels';
 
@@ -40,6 +41,37 @@ export interface TariffPlanDetail {
   description: string | null;
   bedMultipliers: BedMultiplierDto[];
   version: number;
+  /** The plan's terms waiting for someone who may approve prices (maker-checker), on a single plan's read. */
+  pendingTerms?: PendingTariffTerms | null;
+  /** The plan's prices waiting for someone who may approve prices, on a single plan's read. */
+  pendingPrices?: PendingTariffPrices | null;
+}
+
+/** What a plan decides about what its patients pay, and which patients it prices. */
+export interface TariffPlanTerms {
+  type: TariffType;
+  facilityId: string | null;
+  defaultDiscountPercent: number;
+  isDefault: boolean;
+  isActive: boolean;
+  bedMultipliers: { bedServiceItemId: string; multiplier: number }[];
+}
+
+/** A plan's terms asked for and waiting for someone who may approve prices. */
+export interface PendingTariffTerms {
+  approvalId: string;
+  asked: TariffPlanTerms;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** A plan's prices asked for and waiting for someone who may approve prices: the rows to set and those to remove. */
+export interface PendingTariffPrices {
+  approvalId: string;
+  set: SaveTariffPriceRequest[];
+  remove: string[];
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface SaveTariffPlanRequest {
@@ -54,6 +86,8 @@ export interface SaveTariffPlanRequest {
   description: string | null;
   bedMultipliers: { bedServiceItemId: string; multiplier: number }[] | null;
   version: number | null;
+  /** Why the plan's terms change, for the person who approves them. */
+  reason?: string | null;
 }
 
 export interface TariffPriceDto {
@@ -79,6 +113,8 @@ export interface SaveTariffPriceRequest {
    * meanwhile is not overwritten (REL-04). The bulk import sends none: it replaces prices on purpose.
    */
   version?: number;
+  /** Why the price changes, for the person who approves it (a single price's save). */
+  reason?: string | null;
 }
 
 export interface BulkTariffPricesResult {
@@ -217,19 +253,22 @@ export const mastersQueries = {
 };
 
 export const mastersApi = {
+  /** A new plan is made out of use; the terms asked wait for approval (`pendingTerms`). */
   createPlan: (request: SaveTariffPlanRequest) => api.post<TariffPlanDetail>('/api/v1/billing/tariffs', request),
+  /** The plan as saved, or the approval request when its terms wait for a second person. */
   updatePlan: (id: string, request: SaveTariffPlanRequest) =>
-    api.put<TariffPlanDetail>(`/api/v1/billing/tariffs/${id}`, request),
+    api.put<TariffPlanDetail | ApprovalRequestDto>(`/api/v1/billing/tariffs/${id}`, request),
+  /** Every price change waits for a second person: these return the approval request. */
   savePrice: (planId: string, request: SaveTariffPriceRequest) =>
-    api.put<BulkTariffPricesResult>(`/api/v1/billing/tariffs/${planId}/prices`, request),
-  savePrices: (planId: string, prices: SaveTariffPriceRequest[]) =>
-    api.post<BulkTariffPricesResult>(
+    api.put<ApprovalRequestDto>(`/api/v1/billing/tariffs/${planId}/prices`, request),
+  savePrices: (planId: string, prices: SaveTariffPriceRequest[], reason: string | null = null) =>
+    api.post<ApprovalRequestDto>(
       `/api/v1/billing/tariffs/${planId}/prices/bulk`,
-      { prices },
+      { prices, reason },
       { timeoutMs: 120_000 },
     ),
   deletePrice: (planId: string, priceId: string) =>
-    api.delete<void>(`/api/v1/billing/tariffs/${planId}/prices/${priceId}`),
+    api.delete<ApprovalRequestDto>(`/api/v1/billing/tariffs/${planId}/prices/${priceId}`),
   createPackage: (request: SavePackageRequest) => api.post<PackageDetail>('/api/v1/billing/packages', request),
   updatePackage: (id: string, request: SavePackageRequest) =>
     api.put<PackageDetail>(`/api/v1/billing/packages/${id}`, request),

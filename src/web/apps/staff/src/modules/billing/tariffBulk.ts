@@ -91,12 +91,3 @@ export function parsePriceSheet(text: string): { rows: PriceSheetRow[]; problems
 
   return { rows, problems };
 }
-
-/** Splits a list into batches the server accepts (at most 500 prices per request). */
-export function inBatches<T>(items: readonly T[], size = 500): T[][] {
-  const batches: T[][] = [];
-  for (let start = 0; start < items.length; start += size) {
-    batches.push(items.slice(start, start + size));
-  }
-  return batches;
-}

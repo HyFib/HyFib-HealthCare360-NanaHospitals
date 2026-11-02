@@ -28,10 +28,12 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { askedForApproval } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import { insuranceQueries } from '@/modules/insurance/api';
 import { searchServices } from './api';
 import { TARIFF_TYPE_LABEL, TARIFF_TYPES, optionsOf, type TariffType } from './labels';
-import { mastersApi, mastersKeys, type TariffPlanDetail } from './mastersApi';
+import { mastersApi, mastersKeys, type TariffPlanDetail, type TariffPlanTerms } from './mastersApi';
 import { hasAtMostTwoDecimals } from './money';
 import { ActionError } from './ui';
 
@@ -59,6 +61,8 @@ const schema = z.object({
   isDefault: z.boolean(),
   isActive: z.boolean(),
   description: z.string().max(500),
+  /** Why the plan's terms change, for the person who approves them. */
+  reason: z.string().max(500),
   bedMultipliers: z.array(
     z.object({
       bedServiceItemId: z.string().min(1, 'Choose a room / bed service.'),
@@ -70,7 +74,11 @@ const schema = z.object({
 
 type PlanForm = z.infer<typeof schema>;
 
-/** Create or edit a tariff plan: who it is for, its default concession and room-class multipliers (MB-02). */
+/**
+ * Create or edit a tariff plan: who it is for, its default concession and room-class multipliers (MB-02). Its terms
+ * change only when two people agree (maker-checker): a save that changes them asks for them, and a new plan is out of use
+ * until they are approved. Terms waiting for approval are shown as asked, so saving again asks for nothing twice.
+ */
 export function TariffPlanDrawer({
   plan,
   onClose,
@@ -78,7 +86,8 @@ export function TariffPlanDrawer({
 }: {
   plan: TariffPlanDetail | null;
   onClose: () => void;
-  onSaved: (plan: TariffPlanDetail) => void;
+  /** The plan saved (or asked for), by id. */
+  onSaved: (planId: string) => void;
 }) {
   const styles = useStyles();
   const notify = useNotify();
@@ -90,20 +99,25 @@ export function TariffPlanDrawer({
     staleTime: 10 * 60_000,
   });
 
+  const terms = plan?.pendingTerms?.asked ?? plan;
+  const bedNames = new Map(
+    (plan?.bedMultipliers ?? []).map((m) => [m.bedServiceItemId, m.bedServiceName ?? m.bedServiceCode ?? '']),
+  );
   const form = useForm<PlanForm>({
     resolver: zodResolver(schema),
     defaultValues: {
       code: plan?.code ?? '',
       name: plan?.name ?? '',
-      type: plan?.type ?? 'General',
+      type: terms?.type ?? 'General',
       payerId: plan?.payerId ?? null,
-      defaultDiscountPercent: plan?.defaultDiscountPercent ?? 0,
-      isDefault: plan?.isDefault ?? false,
-      isActive: plan?.isActive ?? true,
+      defaultDiscountPercent: terms?.defaultDiscountPercent ?? 0,
+      isDefault: terms?.isDefault ?? false,
+      isActive: terms?.isActive ?? true,
       description: plan?.description ?? '',
-      bedMultipliers: (plan?.bedMultipliers ?? []).map((m) => ({
+      reason: '',
+      bedMultipliers: (terms?.bedMultipliers ?? []).map((m) => ({
         bedServiceItemId: m.bedServiceItemId,
-        label: m.bedServiceName ?? m.bedServiceCode ?? '',
+        label: bedNames.get(m.bedServiceItemId) ?? '',
         multiplier: m.multiplier,
       })),
     },
@@ -129,13 +143,29 @@ export function TariffPlanDrawer({
           multiplier: m.multiplier,
         })),
         version: plan?.version ?? null,
+        reason: values.reason.trim() || null,
       };
       return plan ? mastersApi.updatePlan(plan.id, request) : mastersApi.createPlan(request);
     },
-    onSuccess: (saved) => {
-      notify.success(plan ? 'Tariff plan saved' : 'Tariff plan created', saved.name);
+    onSuccess: (result, values) => {
+      // A plan's terms change only when two people agree: a save that changes them says they were asked for.
+      const asked = askedForApproval(result);
+      const created = plan ? null : (result as TariffPlanDetail);
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Someone who may approve prices decides it; until then the plan's terms in use apply.`,
+        );
+      } else if (created?.pendingTerms) {
+        notify.success(
+          'Asked for approval',
+          `${values.name.trim()} is made out of use; its terms wait for someone who may approve prices.`,
+        );
+      } else {
+        notify.success(plan ? 'Tariff plan saved' : 'Tariff plan created', values.name.trim());
+      }
       void queryClient.invalidateQueries({ queryKey: mastersKeys.tariffs });
-      onSaved(saved);
+      onSaved(plan?.id ?? (result as TariffPlanDetail).id);
     },
     onError: (error) => {
       applyServerErrors(error, form.setError);
@@ -170,6 +200,15 @@ export function TariffPlanDrawer({
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
+            {plan?.pendingTerms && (
+              <PendingGrantNotice
+                approvalId={plan.pendingTerms.approvalId}
+                what={pendingTermsWhat(plan, plan.pendingTerms.asked)}
+                requestedBy={plan.pendingTerms.requestedBy}
+                requestedAt={plan.pendingTerms.requestedAt}
+                decides="Someone who may approve prices decides it; until then the plan's terms in use apply. The form shows them as asked."
+              />
+            )}
             <FormGrid columns={2} minColumnWidth={180}>
               <TextField
                 control={form.control}
@@ -210,6 +249,14 @@ export function TariffPlanDrawer({
             <SwitchField control={form.control} name="isDefault" label="Default plan for this kind of payer" />
             <SwitchField control={form.control} name="isActive" label="Active" />
             <TextAreaField control={form.control} name="description" label="Description" rows={2} maxLength={500} />
+            <TextAreaField
+              control={form.control}
+              name="reason"
+              label="Reason for a change to the terms, for the approver"
+              rows={2}
+              maxLength={500}
+              hint="The type, concession, room multipliers, default and in use wait for someone who may approve prices."
+            />
 
             <Field
               label="Room-class multipliers"
@@ -285,4 +332,30 @@ export function TariffPlanDrawer({
       {guard.dialogs}
     </OverlayDrawer>
   );
+}
+
+/** What waits for approval in a plan's terms, against what applies now. */
+function pendingTermsWhat(plan: TariffPlanDetail, asked: TariffPlanTerms): string {
+  const parts: string[] = [];
+  if (asked.isActive !== plan.isActive) {
+    parts.push(asked.isActive ? 'put in use' : 'taken out of use');
+  }
+  if (asked.isDefault !== plan.isDefault) {
+    parts.push(asked.isDefault ? 'made the default plan' : 'no longer the default');
+  }
+  if (asked.type !== plan.type) {
+    parts.push(`for ${TARIFF_TYPE_LABEL[asked.type]}`);
+  }
+  if (asked.defaultDiscountPercent !== plan.defaultDiscountPercent) {
+    parts.push(`concession ${asked.defaultDiscountPercent}% (now ${plan.defaultDiscountPercent}%)`);
+  }
+  const multipliers = (list: { bedServiceItemId: string; multiplier: number }[]) =>
+    list
+      .map((m) => `${m.bedServiceItemId}:${m.multiplier}`)
+      .sort()
+      .join(',');
+  if (multipliers(asked.bedMultipliers) !== multipliers(plan.bedMultipliers)) {
+    parts.push('room-class multipliers changed');
+  }
+  return parts.length > 0 ? `Terms: ${parts.join('; ')}` : 'Terms';
 }

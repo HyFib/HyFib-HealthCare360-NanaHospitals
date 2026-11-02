@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inBatches, parsePriceSheet, revisePrice } from './tariffBulk';
+import { parsePriceSheet, revisePrice } from './tariffBulk';
 
 describe('revisePrice', () => {
   it('raises and lowers prices by a percentage, rounded half away from zero', () => {
@@ -46,12 +46,5 @@ describe('parsePriceSheet', () => {
 
   it('allows a zero price (free service)', () => {
     expect(parsePriceSheet('REG-FU\t0').rows).toEqual([{ line: 1, code: 'REG-FU', price: 0 }]);
-  });
-});
-
-describe('inBatches', () => {
-  it('splits into server-sized batches', () => {
-    expect(inBatches([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
-    expect(inBatches([], 2)).toEqual([]);
   });
 });
