@@ -227,6 +227,11 @@ public sealed class SystemHealthService(
             messageWarnings.Add(alertsNotReady);
         }
 
+        if (await AlertEscalation.WarningAsync(settings, options.Value, ct) is { } noEscalation)
+        {
+            messageWarnings.Add(noEscalation);
+        }
+
         if (await AlertHeartbeat.OffWarningAsync(settings, options.Value, ct) is { } heartbeatOff)
         {
             messageWarnings.Add(heartbeatOff);
@@ -744,6 +749,12 @@ internal static class SystemEndpoints
             .RequirePermission(PlatformPermissions.SystemManage);
         admin.MapPost("/alert-drills/{id:guid}/acknowledge", async (Guid id, AlertDrills drills, CancellationToken ct) =>
             (await drills.AcknowledgeAsync(id, ct)).ToOk());
+
+        // Alerts (audit P2): each critical warning until someone acknowledges it, who was paged while nobody did, and how long
+        // it took. Whoever may see System health acknowledges one: they are those it goes to in the app.
+        admin.MapGet("/alerts", async (int? days, AlertIncidents alerts, CancellationToken ct) => TypedResults.Ok(await alerts.ReportAsync(days ?? 30, ct)));
+        admin.MapPost("/alerts/{id:guid}/acknowledge", async (Guid id, AlertIncidents alerts, CancellationToken ct) =>
+            (await alerts.AcknowledgeAsync(id, ct)).ToOk());
 
         admin.MapGet("/wifi-samples", async (int? hours, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
         {

@@ -259,6 +259,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<SystemHealthService>();
         services.AddScoped<SimulatorRecordSweep>();
         services.AddScoped<AlertDrills>();
+        services.AddScoped<AlertIncidents>();
         services.AddHttpClient(AlertHeartbeat.HttpClientName, client => client.DefaultRequestHeaders.UserAgent.ParseAdd("HyFib-HC360-Heartbeat"))
             .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
 

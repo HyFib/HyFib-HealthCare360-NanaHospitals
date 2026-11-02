@@ -83,6 +83,9 @@ public sealed class AlertDrills(HospitalDbContext db, IAuditLogger audit, ICurre
     public async Task<Result<AlertDrill>> AcknowledgeAsync(Guid id, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        // The alerts' turn first, as acknowledging the drill's alert takes them, so the two never wait on each other.
+        await AlertIncidents.TakeTurnAsync(db, ct);
         await TakeTurnAsync(ct);
         var start = await StartsAsync(time.GetUtcNow() - Kept, id, ct);
         if (start.Count == 0)
@@ -98,16 +101,38 @@ public sealed class AlertDrills(HospitalDbContext db, IAuditLogger audit, ICurre
                 : $"Drill {drill.Code} expired: nobody acknowledged it within an hour.");
         }
 
-        audit.Add(new AuditEntry(AuditCategories.Admin, AcknowledgedAction, $"Acknowledged alert drill {drill.Code}.")
+        Acknowledged(id, drill.Code);
+
+        // Its alert too, so the alerts' report counts it acknowledged, not one that cleared unseen.
+        await AlertIncidents.AcknowledgeDrillAsync(db, audit, user, time, WarningPrefix + drill.Code, ct);
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return (await BuildAsync(start, ct)).Single();
+    }
+
+    /// <summary>
+    /// Acknowledges the open drill <paramref name="code"/>, when its alert is acknowledged (<see cref="AlertIncidents"/>), so
+    /// its warning goes. Saved with the caller's changes, in its transaction; nothing when no drill of that code is open.
+    /// </summary>
+    internal async Task AcknowledgeOpenAsync(string code, CancellationToken ct)
+    {
+        await TakeTurnAsync(ct);
+        var now = time.GetUtcNow();
+        var starts = await Events(db, StartedAction, now - OpenFor).ToListAsync(ct);
+        if (starts.FirstOrDefault(e => Read<StartedDetails>(e.Details)?.Code == code) is { } start
+            && !await Events(db, AcknowledgedAction, start.OccurredAt).AnyAsync(e => e.EntityId == start.EntityId, ct))
+        {
+            Acknowledged(Guid.Parse(start.EntityId!, CultureInfo.InvariantCulture), code);
+        }
+    }
+
+    private void Acknowledged(Guid id, string code) =>
+        audit.Add(new AuditEntry(AuditCategories.Admin, AcknowledgedAction, $"Acknowledged alert drill {code}.")
         {
             EntityType = Entity,
             EntityId = id.ToString(),
             Details = new AcknowledgedDetails(user.DisplayName),
         });
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return (await BuildAsync(start, ct)).Single();
-    }
 
     /// <summary>The drills of the last year, the latest first.</summary>
     public async Task<IReadOnlyList<AlertDrill>> ListAsync(CancellationToken ct)
