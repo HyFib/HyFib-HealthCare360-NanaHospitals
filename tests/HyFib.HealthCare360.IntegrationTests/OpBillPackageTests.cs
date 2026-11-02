@@ -175,7 +175,7 @@ public sealed class OpBillPackageTests(HospitalServer server)
     {
         // The package itself is billed under a catalogue service of category Package.
         var item = await ServiceAsync(admin, name, ServiceCategory.Package, price);
-        return await admin.PostAsync<PackageDetail>("/api/v1/billing/packages", new SavePackageRequest(
+        return await server.SavePackageAsync(admin, new SavePackageRequest(
             $"PKG-{Letters(8)}", name, item.Id, price, null, tariffPlanId, usedFor, null, true, inclusions, null));
     }
 

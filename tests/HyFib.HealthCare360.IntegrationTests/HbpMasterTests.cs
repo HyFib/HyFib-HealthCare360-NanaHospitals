@@ -109,7 +109,7 @@ public sealed class HbpMasterTests(HospitalServer server)
     }
 
     private async Task<PackageDetail> PackageAsync(ApiClient admin, string? hbpCode) =>
-        await admin.PostAsync<PackageDetail>("/api/v1/billing/packages", await PackageRequestAsync(admin, hbpCode));
+        await server.SavePackageAsync(admin, await PackageRequestAsync(admin, hbpCode));
 
     private async Task PackageRefusedAsync(ApiClient admin, string hbpCode, string reason)
     {

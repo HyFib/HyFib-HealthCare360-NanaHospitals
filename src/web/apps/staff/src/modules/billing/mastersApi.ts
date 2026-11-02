@@ -172,6 +172,33 @@ export interface PackageDetail {
   version: number;
   hbpCode: string | null;
   hbpProcedureName: string | null;
+  /** The price and cover waiting for a second person, if any. */
+  pendingTerms?: PendingPackageTerms | null;
+}
+
+/** What a package decides about what its patients pay: these change only when two people agree. */
+export interface PackageTerms {
+  serviceItemId: string;
+  price: number;
+  tariffPlanId: string | null;
+  usedFor: PackageUse;
+  isActive: boolean;
+  covers: {
+    serviceItemId: string | null;
+    category: ServiceCategory | null;
+    maxQuantity: number | null;
+    maxAmount: number | null;
+  }[];
+}
+
+export interface PendingPackageTerms {
+  approvalId: string;
+  asked: PackageTerms;
+  requestedBy: string;
+  requestedAt: string;
+  /** The code of the service the package would be billed as, and its covers named, as the form shows them. */
+  serviceCode: string | null;
+  inclusions: PackageInclusionDto[] | null;
 }
 
 export interface PackageInclusionInput {
@@ -195,6 +222,8 @@ export interface SavePackageRequest {
   inclusions: PackageInclusionInput[];
   version: number | null;
   hbpCode: string | null;
+  /** For the approver, when the price or cover changes. */
+  reason?: string | null;
 }
 
 /** Packages an OP bill may be priced at: active (the list holds only those), for OP visits, for its tariff or any. */
@@ -270,8 +299,9 @@ export const mastersApi = {
   deletePrice: (planId: string, priceId: string) =>
     api.delete<ApprovalRequestDto>(`/api/v1/billing/tariffs/${planId}/prices/${priceId}`),
   createPackage: (request: SavePackageRequest) => api.post<PackageDetail>('/api/v1/billing/packages', request),
+  /** The package as saved, or the request asking a second person for its price or cover. */
   updatePackage: (id: string, request: SavePackageRequest) =>
-    api.put<PackageDetail>(`/api/v1/billing/packages/${id}`, request),
+    api.put<PackageDetail | ApprovalRequestDto>(`/api/v1/billing/packages/${id}`, request),
 };
 
 /**

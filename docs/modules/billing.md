@@ -168,8 +168,22 @@ that publishes its list (`billing.rateList.publish`, on unless set to false); se
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/` · `/{id}` | `billing.tariffs.manage` / `billing.ip.manage` / `billing.charges.read` / `billing.op.create` | → `PackageListItem[]` / `PackageDetail` |
-| POST | `/` | `billing.tariffs.manage` | `SavePackageRequest` (price, `usedFor`: `InPatient`, `OutPatient` or `Both`, LOS, inclusions: item or category, quantity/amount caps, `hbpCode`: the AB PM-JAY procedure, see [PM-JAY procedures](#pm-jay-procedures-hbp)) → 201 |
-| PUT | `/{id}` | `billing.tariffs.manage` | `SavePackageRequest` (+`version`) → `PackageDetail`. Saving replaces the inclusions; the package's audit event lists them as they were and as they are (`inclusions`) |
+| POST | `/` | `billing.tariffs.manage` | `SavePackageRequest` (price, `usedFor`: `InPatient`, `OutPatient` or `Both`, LOS, inclusions: item or category, quantity/amount caps, `hbpCode`: the AB PM-JAY procedure, see [PM-JAY procedures](#pm-jay-procedures-hbp); `reason` for the approver) → 201 `PackageDetail`: a new package out of use, at ₹0 covering nothing, with `pendingTerms` when its terms wait |
+| PUT | `/{id}` | `billing.tariffs.manage` | `SavePackageRequest` (+`version`) → 200 `PackageDetail` (saved at once) / 202 `ApprovalRequestDto` (`billing.package`, its price or cover asked for) / 409 `approval.already_requested` (other terms while some wait). Approved terms replace the inclusions; the package's audit event lists them as they were and as they are (`inclusions`) |
+
+**A package's price and cover change only when two people agree.** What a package's patients pay is its price, the
+catalogue service it is billed as (whose GST rate the package line carries), what it covers (each service or category
+with its caps), the tariff plan it is priced for (none: any plan), the bills it may price and whether it is in use. These
+are asked for (`billing.package`), and someone else who holds `masters.prices.approve` decides. An admission's package is
+priced at its final bill from the package as it is then, so a change reaches every stay already on it: the request says
+how many stays in progress are on the package, and reads each change in words ("price ₹9,000.00 → ₹9,900.00 (+10%)",
+"covers every bed charge service, up to 3", "no longer covers …"). A cheaper package waits too: it is a concession to
+every stay on it. Taking a package out of use is made at once: it only stops it being chosen again, and stays and bills
+on it keep it. A new package is made out of use, at ₹0 and covering nothing, and goes live with the terms approved. Its
+name, length of stay, description and PM-JAY procedure, and the covers' notes (which decide nothing), are saved at once.
+Approving re-checks the terms it replaces (`prices.changed`); audited `package.terms_changed` with before and after, who
+asked and who approved. `PackageDetail.pendingTerms` holds what waits, with the service code and the covers named; while
+it waits, a save must ask for the same terms (409).
 
 ### PM-JAY procedures — `/api/v1/billing/hbp`
 | Method | Path | Permission | Request → response |
@@ -309,7 +323,7 @@ Readers = `billing.ip.manage` or `billing.charges.read`.
 | PUT | `/{id}` | `billing.ip.manage` | `UpdateIpAccountRequest` (payer, policy, plan, estimate; unbilled charges re-priced) → 204; a plan other than the payer's → 202 `ApprovalRequestDto` (`billing.ip_plan`, [the stay's plan](#the-plan-a-stay-is-billed-on)); 409 `approval.already_requested` while another waits |
 | GET | `/{id}/running-bill` | readers | → `RunningBill` (by category, by day, lines with `isReturn`, `returnsNet`, package vs actuals, insurance estimate, deposit, estimated balance); guarded + audited |
 | GET | `/{id}/package-status` | readers | → `PackageStatus` |
-| PUT | `/{id}/package` | `billing.ip.manage` | `AssignPackageRequest(packageId?)` → 204; 400 `packageId` for a package for out-patient visits only |
+| PUT | `/{id}/package` | `billing.ip.manage` | `AssignPackageRequest(packageId?)` → 204; 400 `packageId` for a package for out-patient visits only, or one priced for another tariff plan than the stay's |
 | POST | `/{id}/interim-bills` | `billing.ip.manage` | `CreateInterimBillRequest(upTo?)` → 201 `BillDetail`: the services not billed yet up to the end of `upTo` (today when empty). Self-pay, non-package stays only; 422 `billing.interim_insured`, `billing.interim_package`, `billing.ip_account_inactive`, `billing.nothing_to_bill` ([Interim bills](#interim-bills-ipb-05)) |
 | POST | `/{id}/final-bill` | `billing.ip.manage` | → 201 `BillDetail`: draft final bill (or a supplementary bill for late services); 422 `billing.billed_on_interim_bills` when interim bills took every service, `billing.nothing_to_bill` when none was charged |
 | POST | `/{id}/settle` | `billing.ip.manage` | → `SettlementResult` (advance adjusted oldest bill first; unused advance becomes a refund request). Once the discharge has been initiated (422 `billing.discharge_not_initiated` while the account is open, a revoked discharge included) and every draft interim bill is finalized (422 `billing.interim_bill_draft`: the advance pays finalized bills only); after the final bill, or with nothing for one (`finalBillId` null; `billing.final_bill_missing` while services wait for it) |
@@ -523,7 +537,8 @@ out-patient visits, or both. Packages made before out-patient bills could use th
 * **What the bill shows.** `BillDetail.package` gives the package, its price as billed, the services at full price, what
   it covered and what is billed beyond it, for an OP bill and for an IP final bill (whose package is the IP account's).
   The staff bill screen shows them, with the package picker on OP drafts, and the printed bill names the package.
-* An admission cannot be given a package for out-patient visits only.
+* An admission cannot be given a package for out-patient visits only, nor one priced for another tariff plan than the
+  stay's: as an OP bill, a stay takes a package for its plan or for any plan.
 
 ## The printed bill
 The A4 bill is made on the server (`Documents/BillDocument.cs`) from `BillDetail` and the facility letterhead, so the
@@ -1124,11 +1139,10 @@ are append-mostly and not data-audited; imports and reviews are audited. `OpBill
 * **Packages that span several visits**, such as antenatal care or a course of physiotherapy: an OP package prices one
   bill.
 * **Non-payable items** (what a payer never pays, so the patient does) are still added and removed by one person, as
-  are packages and doctor-fee rules.
+  are doctor-fee rules. A health check-up package's price, which saving the check-up package writes to its service,
+  does not wait for a second person yet either.
 * **A visit's payer** is set at the front desk without a second person; an out-patient is priced on the plan of the
   payer chosen there. A stay's plan other than its payer's waits for approval; a visit has no plan of its own to choose.
-* **An admission's package is not checked against its tariff plan.** OP bills take only packages for their tariff plan
-  or for any plan; the IP account still accepts any active package for admissions.
 * **A failed gateway refund paid another way.** The refund stays paid through the gateway in HC360; the accountant
   pays it by bank transfer outside HC360, records that in Tally, and resolves the exception with the reference.
 * **Card and UPI settlement reports are imported by hand.** HC360 does not fetch them from the acquirer (Pine Labs and

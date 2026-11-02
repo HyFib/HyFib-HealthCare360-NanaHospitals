@@ -431,6 +431,13 @@ public sealed class IpBillingService(
             {
                 return Error.Field("packageId", $"{package.Name} is a package for out-patient visits.");
             }
+
+            // As an out-patient bill takes only a package for its plan or any plan: the plan a package is approved for
+            // decides which patients it prices.
+            if (package.TariffPlanId is { } planId && planId != account.TariffPlanId)
+            {
+                return Error.Field("packageId", $"{package.Name} is priced for another tariff plan than this stay's.");
+            }
         }
 
         if (account.PackageId == request.PackageId)

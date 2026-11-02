@@ -235,15 +235,16 @@ public sealed class AuditedChangeTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var item = await ServiceAsync(admin, "Cataract package", ServiceCategory.Package, 18_000m);
         var lens = await ServiceAsync(admin, "Foldable IOL", ServiceCategory.Consumable, 6_000m);
-        var package = await admin.PostAsync<PackageDetail>("/api/v1/billing/packages", new SavePackageRequest(
+        var package = await server.SavePackageAsync(admin, new SavePackageRequest(
             $"PKG-{Letters(8)}", "Cataract (per eye)", item, 18_000m, 1, null, PackageUse.Both, null, true,
             [new PackageInclusionInput(null, ServiceCategory.Consumable, null, 4_000m, "Drugs and consumables")], null));
 
-        // The lens is covered by name now, with the consumables cap raised.
-        await admin.PutAsync<PackageDetail>($"/api/v1/billing/packages/{package.Id}", new SavePackageRequest(
+        // The lens is covered by name now, with the consumables cap raised: asked for, and approved by the other
+        // administrator (a package's cover changes only when two people agree), so the newest update is the approved one.
+        await server.SavePackageAsync(admin, new SavePackageRequest(
             package.Code, package.Name, item, 18_000m, 1, null, PackageUse.Both, null, true,
             [new PackageInclusionInput(lens, null, 1m, null, "One lens"), new PackageInclusionInput(null, ServiceCategory.Consumable, null, 4_500m, "Drugs and consumables")],
-            package.Version));
+            package.Version), package.Id);
 
         var inclusions = Details(await TrailAsync(nameof(Package), package.Id), "Package.update")["inclusions"]!;
         Caps(inclusions["from"]!).ShouldBe([(null, 4_000m)]);

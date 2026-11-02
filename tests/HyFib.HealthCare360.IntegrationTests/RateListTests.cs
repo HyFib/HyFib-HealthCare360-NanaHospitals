@@ -346,7 +346,7 @@ public sealed class RateListTests(HospitalServer server)
         // The package itself is billed under a catalogue service of category Package.
         var item = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", name, null, ServiceCategory.Package, null, 12_500m, 0m, null, true, false, null, true, null));
-        return await admin.PostAsync<PackageDetail>("/api/v1/billing/packages", new SavePackageRequest(
+        return await server.SavePackageAsync(admin, new SavePackageRequest(
             $"PKG-{Letters(8)}", name, item.Id, 12_500m, 1, tariffPlanId, PackageUse.OutPatient, null, true,
             [new PackageInclusionInput(null, ServiceCategory.Consumable, null, 4_000m, "Drugs and consumables")], null));
     }
