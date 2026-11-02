@@ -36,6 +36,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using CheckupPackageDto = HyFib.HealthCare360.Modules.Clinical.Features.HealthCheckups.PackageDto;
+using CheckupPackageRequest = HyFib.HealthCare360.Modules.Clinical.Features.HealthCheckups.SavePackageRequest;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -597,6 +599,40 @@ public sealed class HospitalServer : IAsyncLifetime
         }
 
         return await maker.GetAsync<PayerDetail>($"/api/v1/insurance/payers/{created.Id}");
+    }
+
+    /// <summary>
+    /// A health check-up package saved through the clinical API, new or (with <paramref name="packageId"/>) existing, its
+    /// price approved by the other administrator when it waits (a check-up's price is its service's, which changes only
+    /// when two people agree): the package as it is then.
+    /// </summary>
+    public async Task<CheckupPackageDto> SaveCheckupPackageAsync(ApiClient maker, CheckupPackageRequest request, Guid? packageId = null)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        const string Packages = "/api/v1/health-checkups/packages";
+        if (packageId is { } existing)
+        {
+            using var response = await maker.SendRawAsync(HttpMethod.Put, $"{Packages}/{existing}", request);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"Saving check-up package {existing}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+            }
+
+            if (response.StatusCode == HttpStatusCode.Accepted)
+            {
+                await ApprovePriceAsync((await response.Content.ReadFromJsonAsync<ApprovalRequestDto>(ApiClient.Json))!.Id);
+            }
+
+            return await maker.GetAsync<CheckupPackageDto>($"{Packages}/{existing}");
+        }
+
+        var created = await maker.PostAsync<CheckupPackageDto>(Packages, request);
+        if (created.PendingPrice is { } pending)
+        {
+            await ApprovePriceAsync(pending.ApprovalId);
+        }
+
+        return await maker.GetAsync<CheckupPackageDto>($"{Packages}/{created.Id}");
     }
 
     /// <summary>

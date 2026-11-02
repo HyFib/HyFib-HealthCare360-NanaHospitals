@@ -187,4 +187,10 @@ public sealed class ServiceItem : AuditableEntity
     /// Rules 2012, r.9(i): rates displayed in the local language as well as in English).
     /// </summary>
     public Dictionary<string, string> LocalNames { get; set; } = [];
+
+    /// <summary>
+    /// Tells the modules that keep a copy of what this service charges that its price terms were just set
+    /// (<see cref="ServicePriceTerms.ApplyTo"/> calls it): its price and whether it may be charged now.
+    /// </summary>
+    public void PriceTermsSet() => Raise(new ServicePriceChanged(Id, BasePrice, IsActive));
 }

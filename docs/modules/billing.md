@@ -1139,8 +1139,7 @@ are append-mostly and not data-audited; imports and reviews are audited. `OpBill
 * **Packages that span several visits**, such as antenatal care or a course of physiotherapy: an OP package prices one
   bill.
 * **Non-payable items** (what a payer never pays, so the patient does) are still added and removed by one person, as
-  are doctor-fee rules. A health check-up package's price, which saving the check-up package writes to its service,
-  does not wait for a second person yet either.
+  are doctor-fee rules.
 * **A visit's payer** is set at the front desk without a second person; an out-patient is priced on the plan of the
   payer chosen there. A stay's plan other than its payer's waits for approval; a visit has no plan of its own to choose.
 * **A failed gateway refund paid another way.** The refund stays paid through the gateway in HC360; the accountant

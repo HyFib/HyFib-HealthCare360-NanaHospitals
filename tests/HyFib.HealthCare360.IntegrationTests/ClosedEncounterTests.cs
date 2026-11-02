@@ -359,8 +359,8 @@ public sealed class ClosedEncounterTests(HospitalServer server)
     }
 
     /// <summary>A check-up of a blood count alone, for anyone.</summary>
-    private static async Task<PackageDto> CheckupPackageAsync(ApiClient frontOffice, ApiClient doctor) =>
-        await frontOffice.PostAsync<PackageDto>("/api/v1/health-checkups/packages", new SavePackageRequest(
+    private async Task<PackageDto> CheckupPackageAsync(ApiClient frontOffice, ApiClient doctor) =>
+        await server.SaveCheckupPackageAsync(frontOffice, new SavePackageRequest(
             "HC-CE" + Letters(8), "Fever screen", null, PackageGender.Any, MinAgeYears: null, MaxAgeYears: null, Price: 1500m, IsActive: true,
             [new PackageItemRequest(PackageItemKind.Investigation, await ServiceAsync(doctor, Cbc), null, PackageGender.Any, null)], Version: null));
 
