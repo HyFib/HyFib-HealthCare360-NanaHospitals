@@ -1,7 +1,9 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { ServiceCategory } from '@/modules/emr/orderCart';
+import type { PendingServicePrice } from '@/modules/masters/api';
 import type { BookingStatus, ItineraryStatus } from './itinerary';
 
 export type PackageGender = 'Any' | 'Male' | 'Female';
@@ -33,6 +35,11 @@ export interface PackageDto {
   isActive: boolean;
   items: PackageItemDto[];
   version: number;
+  /**
+   * The price, or putting the package in use, waiting for someone who may approve prices: a package's price is its
+   * service's, which changes only when two people agree.
+   */
+  pendingPrice?: PendingServicePrice | null;
 }
 
 export interface PackageItemRequest {
@@ -54,6 +61,8 @@ export interface SavePackageRequest {
   isActive: boolean;
   items: PackageItemRequest[];
   version: number | null;
+  /** For the approver, when the price changes or the package is put in use. */
+  reason?: string | null;
 }
 
 export interface PackageEligibility {
@@ -246,9 +255,10 @@ export const checkupQueries = {
 };
 
 export const checkupApi = {
+  /** The package as saved, or, for an existing one, the request asking a second person for its price or use. */
   savePackage: (id: string | null, request: SavePackageRequest) =>
     id
-      ? api.put<PackageDto>(`/api/v1/health-checkups/packages/${id}`, request)
+      ? api.put<PackageDto | ApprovalRequestDto>(`/api/v1/health-checkups/packages/${id}`, request)
       : api.post<PackageDto>('/api/v1/health-checkups/packages', request),
   book: (request: BookCheckupRequest) => api.post<BookingDto>('/api/v1/health-checkups/bookings', request),
   checkIn: (id: string, visitId: string | null) =>

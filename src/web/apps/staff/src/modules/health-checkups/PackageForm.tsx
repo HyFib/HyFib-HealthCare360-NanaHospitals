@@ -39,9 +39,19 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useDepartments } from '@/lib/lookups';
+import { askedForApproval } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import { serviceCategoryLabel, type ServiceCategory } from '@/modules/emr/orderCart';
 import { ServicePicker } from '@/modules/emr/ServicePicker';
-import { checkupApi, checkupKeys, type PackageDto, type PackageGender, type PackageItemKind } from './api';
+import type { ServicePriceTerms } from '@/modules/masters/api';
+import {
+  checkupApi,
+  checkupKeys,
+  checkupQueries,
+  type PackageDto,
+  type PackageGender,
+  type PackageItemKind,
+} from './api';
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '16px' },
@@ -89,6 +99,7 @@ const headerSchema = z
       .max(9_999_999)
       .nullable(),
     isActive: z.boolean(),
+    reason: z.string().max(500),
   })
   .superRefine((v, ctx) => {
     if (v.minAgeYears !== null && v.maxAgeYears !== null && v.maxAgeYears < v.minAgeYears) {
@@ -135,7 +146,9 @@ function linesFrom(pkg: PackageDto | null): PackageLine[] {
 
 /**
  * Health package editor (MHC-01): who it is for (sex, age), the price and each test or consultation — optionally only
- * for one sex or above an age (e.g. PSA for men over 50). Saving also registers the package as a billable service.
+ * for one sex or above an age (e.g. PSA for men over 50). Saving also registers the package as a billable service. Its
+ * price, and putting it in use, are that service's price terms: they change only when someone who may approve prices
+ * agrees, so the form holds the price that waits and says when a save asked for one.
  */
 export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved: (saved: PackageDto) => void }) {
   const styles = useStyles();
@@ -155,8 +168,9 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
       gender: pkg?.gender ?? 'Any',
       minAgeYears: pkg?.minAgeYears ?? null,
       maxAgeYears: pkg?.maxAgeYears ?? null,
-      price: pkg?.price ?? null,
-      isActive: pkg?.isActive ?? true,
+      price: pkg?.pendingPrice?.asked.basePrice ?? pkg?.price ?? null,
+      isActive: pkg?.pendingPrice?.asked.isActive ?? pkg?.isActive ?? true,
+      reason: '',
     },
   });
 
@@ -187,13 +201,30 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
           minAgeYears: l.minAgeYears,
         })),
         version: current?.version ?? null,
+        reason: values.reason.trim() || null,
       }),
-    onSuccess: (saved) => {
+    onSuccess: async (result) => {
+      // The price changes only when two people agree: a save that asked for one says so, and the form keeps it as asked.
+      const asked = askedForApproval(result);
+      const saved =
+        asked && current ? await queryClient.fetchQuery(checkupQueries.package(current.id)) : (result as PackageDto);
       setCurrent(saved);
       setLinesChanged(false);
-      form.reset(form.getValues());
+      form.reset({ ...form.getValues(), reason: '' });
       void queryClient.invalidateQueries({ queryKey: checkupKeys.all });
-      notify.success(`${saved.code} saved`, saved.serviceItemId ? 'It can be booked and billed.' : undefined);
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Someone who may approve prices decides it; until then the package is booked and charged at the price in use.`,
+        );
+      } else if (!current && saved.pendingPrice) {
+        notify.success(
+          'Asked for approval',
+          `${saved.code} is out of use until someone who may approve prices approves its price.`,
+        );
+      } else {
+        notify.success(`${saved.code} saved`, saved.isActive ? 'It can be booked and billed.' : undefined);
+      }
       onSaved(saved);
     },
     onError: (error) => {
@@ -223,6 +254,15 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
 
   return (
     <form onSubmit={submit} noValidate className={styles.stack}>
+      {current?.pendingPrice && (
+        <PendingGrantNotice
+          approvalId={current.pendingPrice.approvalId}
+          what={pendingPriceWhat(current, current.pendingPrice.asked)}
+          requestedBy={current.pendingPrice.requestedBy}
+          requestedAt={current.pendingPrice.requestedAt}
+          decides="Someone who may approve prices decides it; until then the package is booked and charged at the price in use. The form shows the price as asked."
+        />
+      )}
       {current && !current.serviceItemId && (
         <MessageBar intent="warning">
           <MessageBarBody>
@@ -271,6 +311,14 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
           maxLength={1000}
         />
         <SwitchField control={form.control} name="isActive" label="Offered for booking" />
+        <TextAreaField
+          control={form.control}
+          name="reason"
+          label="Reason for a new price, for the approver"
+          hint="A new price, and offering the package for booking again, wait for someone who may approve prices."
+          rows={2}
+          maxLength={500}
+        />
       </Section>
 
       <Section
@@ -424,7 +472,7 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
       </Section>
 
       <div className={styles.footer}>
-        {current && <Caption1 className={styles.muted}>Saved price {formatInr(current.price)}</Caption1>}
+        {current && <Caption1 className={styles.muted}>Price in use {formatInr(current.price)}</Caption1>}
         {(form.formState.isDirty || linesChanged) && <Caption1 className={styles.muted}>Unsaved changes</Caption1>}
         <Button
           type="submit"
@@ -437,4 +485,16 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
       </div>
     </form>
   );
+}
+
+/** What waits for approval in a package's price, against what applies now. */
+function pendingPriceWhat(pkg: PackageDto, asked: ServicePriceTerms): string {
+  const parts: string[] = [];
+  if (asked.basePrice !== pkg.price) {
+    parts.push(`price ${formatInr(asked.basePrice)} (now ${formatInr(pkg.price)})`);
+  }
+  if (asked.isActive && !pkg.isActive) {
+    parts.push('offered for booking');
+  }
+  return parts.length > 0 ? `Price: ${parts.join('; ')}` : 'Price';
 }

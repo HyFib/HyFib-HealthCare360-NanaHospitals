@@ -603,7 +603,7 @@ supplies, in Medical records > ICD catalogue > Import or with the server command
 |---|---|---|---|
 | GET | `/health-checkups/packages?search&includeInactive`, `/{id}` | healthcheck.manage or emr.read | → `PackageDto` |
 | GET | `/health-checkups/packages/{id}/eligibility?patientId` | healthcheck.manage or emr.read | → `PackageEligibility{isEligible, reason, excludedItems}` |
-| POST / PUT | `/health-checkups/packages[/{id}]` | healthcheck.manage | `SavePackageRequest{code "HC-…", name, description, gender, minAgeYears, maxAgeYears, price, isActive, items[{kind, serviceItemId?, departmentCode?, gender, minAgeYears}], version?}` — also creates/updates the package's `org.service_items` row (category HealthCheckup). Saving replaces the items; the package's audit event lists them as they were and as they are (`items`) |
+| POST / PUT | `/health-checkups/packages[/{id}]` | healthcheck.manage | `SavePackageRequest{code "HC-…", name, description, gender, minAgeYears, maxAgeYears, price, isActive, items[{kind, serviceItemId?, departmentCode?, gender, minAgeYears}], version?, reason?}` → 201 `PackageDto` (a new package out of use at ₹0, `pendingPrice` while its price waits) / 200 `PackageDto` (saved at once) / 202 `ApprovalRequestDto` (its price or putting it in use asked for, `masters.service_price`) / 409 `approval.already_requested` (another price while one waits). Also creates/updates the package's `org.service_items` row (category HealthCheckup): see *A check-up's price* below. Saving replaces the items; the package's audit event lists them as they were and as they are (`items`) |
 | GET / POST | `/health-checkups/bookings` | healthcheck.manage or emr.read / healthcheck.manage | `BookCheckupRequest{patientId, packageId, scheduledDate, visitId?, notes}` (a `visitId` makes it a walk-in: checked in and charged at once) → `BookingDto` (itinerary + one ClinicalOrder for the included lab/radiology/cardiology tests). Not on a visit closed at the desk or cancelled: 422 `visit.closed` / `visit.cancelled`, asked under the visit's lock as an order asks it |
 | GET | `/health-checkups/bookings/{id}` | healthcheck.manage or emr.read | → `BookingDto` |
 | POST | `/health-checkups/bookings/{id}/check-in` | healthcheck.manage | `CheckInCheckupRequest{visitId?}` — posts the package charge (see *Package billing*); refused if Billing refuses the charge, if the package has no service item (422 `package.not_billable`), if the visit is another patient's, or if it is closed or cancelled (422 `visit.closed` / `visit.cancelled`). A corporate batch's booking is charged on a visit billed to its company: a linked visit billed to anyone else is refused (400 on `visitId`), and without one a health check-up visit billed to the company is opened (see *Corporate check-ups*) |
@@ -615,6 +615,19 @@ supplies, in Medical records > ICD catalogue > Import or with the server command
 | GET | `/health-checkups/bookings/{id}/report/document`, `/report/pdf` | healthcheck.manage or emr.read | The full check-up report (summary, then every released lab, radiology and cardiology result) as a printable document or PDF. Served by the Diagnostics module, which reads the results; see [diagnostics.md](diagnostics.md) |
 | GET / POST | `/health-checkups/corporate-batches`, `GET /{id}` | healthcheck.manage | `CorporateBatchRequest{payerId, contactPerson, contactPhone, reference, packageId, scheduledDate, patientIds[≤500], notes}` → `CorporateBatchResult{batchId, batchNumber, booked, skipped[{patientId, reason}]}`. `payerId` is the company: an active corporate payer of the payer master, else 400 on `payerId`. The batch (`CorporateBatchDto.payerId`, `corporateName` as the payer master names it) and each booking (`BookingDto.corporatePayerId`) carry it. Every employee the package's sex and age rules allow is booked once (a repeated id counts once), under the batch, with their own itinerary and tests; the others (wrong sex or age, already booked for the package that day, unknown or inactive record) are reported with the reason and not booked. Nothing is charged until each employee checks in, and then to the company (see *Corporate check-ups*; `CorporateCheckupTests`) |
 | GET | `/health-checkups/corporate-payers` | healthcheck.manage | → `CorporatePayer[]{id, name, contactPerson, phone}`: the payer master's active corporate payers by name, the companies a batch can be booked for (through `IPayerDirectory.ListCorporateAsync`, so the check-up desk needs no billing or insurance permission) |
+
+#### A check-up's price
+
+A check-up's price is its billable service's price (category HealthCheckup), and changes only when two people agree
+(maker-checker), as any service's price does ([masters.md](masters.md), `ServicePrices`). Saving a package saves its
+name, description, eligibility and lines at once, and asks for its service's new price, and for putting it in use
+(`masters.service_price`, approved by someone else who holds `masters.prices.approve`); `reason` goes to the approver.
+Taking a package out of use is made at once. A new package is made out of use at ₹0 and goes live at the price
+approved; while it is out of use it is not booked (422 `package.not_in_use`), as its service could not be charged at
+check-in. The package shows, and is booked and charged at, the price in use until a new one is approved, and follows its
+service whichever screen set the service's price or use: the package's form, the services master, or an approval of
+either (`ServicePriceChanged`, handled in the same transaction). `PackageDto.pendingPrice` holds what waits; while it
+waits, a save must ask for the same price (409).
 
 #### Package billing
 

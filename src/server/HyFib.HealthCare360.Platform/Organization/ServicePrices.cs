@@ -61,6 +61,10 @@ public sealed record ServicePriceTerms(decimal BasePrice, decimal TaxRate, bool 
                && (!asked.IsActive || now.IsActive || waiting.IsActive);
     }
 
+    /// <summary>
+    /// Sets these terms on <paramref name="service"/>, and tells the modules that keep a copy of what it charges
+    /// (<see cref="ServicePriceChanged"/>), whichever screen or approval set them.
+    /// </summary>
     public void ApplyTo(ServiceItem service)
     {
         ArgumentNullException.ThrowIfNull(service);
@@ -69,8 +73,15 @@ public sealed record ServicePriceTerms(decimal BasePrice, decimal TaxRate, bool 
         service.IsPriceEditable = IsPriceEditable;
         service.IsDiscountAllowed = IsDiscountAllowed;
         service.IsActive = IsActive;
+        service.PriceTermsSet();
     }
 }
+
+/// <summary>
+/// A service's price terms were set, at once or by an approval: its price and whether it may be charged. A module that
+/// shows or offers something by this service's price (a health check-up package) follows it in the same transaction.
+/// </summary>
+public sealed record ServicePriceChanged(Guid ServiceItemId, decimal BasePrice, bool IsActive) : DomainEvent;
 
 /// <summary>A service's price terms asked for, and the terms they replace (a price changed meanwhile is not overwritten).</summary>
 public sealed record ServicePricePayload(Guid ServiceItemId, ServicePriceTerms Asked, ServicePriceTerms Replaced);
@@ -82,9 +93,10 @@ public sealed record PendingServicePrice(Guid ApprovalId, ServicePriceTerms Aske
 /// A service's price changes only when two people agree (maker-checker). Saving a service applies what only narrows its
 /// terms at once and asks for the rest: a new price or GST rate, a price the counter may type, a discount allowed, the
 /// service put in use. A new service is made out of use and goes live at the price a second person approves. The approver holds
-/// <see cref="PlatformPermissions.PricesApprove"/> and is never the person who asked (the approvals' four eyes).
+/// <see cref="PlatformPermissions.PricesApprove"/> and is never the person who asked (the approvals' four eyes). Modules
+/// that save a service of their own (a health check-up package's) ask through it too.
 /// </summary>
-internal sealed class ServicePrices(HospitalDbContext db, ICurrentUser current, IAuditLogger audit, IApprovals approvals, TimeProvider time)
+public sealed class ServicePrices(HospitalDbContext db, ICurrentUser current, IAuditLogger audit, IApprovals approvals, TimeProvider time)
 {
     public const string Kind = "masters.service_price";
 

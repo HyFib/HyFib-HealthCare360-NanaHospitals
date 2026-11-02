@@ -391,8 +391,11 @@ and grants nothing.
     `masters.prices.approve` approves its price, the service it is billed as, what it covers, the plan it is priced for,
     the bills it may price and putting it in use; the request says how many stays in progress are on it, as their final
     bills take the package as approved. Taking it out of use is made at once, and a new package is made out of use at ₹0
-    covering nothing until its terms are approved. Approving is made only over the terms it replaces. Check-up package
-    prices, non-payable items and doctor-fee rules still change at once;
+    covering nothing until its terms are approved. Approving is made only over the terms it replaces;
+  - a health check-up package's price: its service's price (`masters.service_price`), asked for from the package's form
+    as from the services master; a new check-up is made out of use, and is not booked, until its price is approved, and
+    the package follows its service's price and use whichever screen set them. Non-payable items and doctor-fee rules
+    still change at once;
   - correcting a released lab report where the lab sets `lab.separateVerifier`: one pathologist asks, another releases
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
     a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.
