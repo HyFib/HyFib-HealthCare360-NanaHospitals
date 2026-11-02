@@ -218,7 +218,10 @@ public sealed class CaRolloverTests : IDisposable
                 listener.Dispose();
             }
         }, Ct);
-        return (new Uri($"https://localhost:{port}/"), serving);
+        // By its address, where it listens: Windows tries "localhost" as ::1 first, where nothing does, and a refused
+        // connection there can use up the client's 5-second connect timeout before 127.0.0.1 is tried. The certificate
+        // names 127.0.0.1 (Leaf).
+        return (new Uri($"https://127.0.0.1:{port}/"), serving);
     }
 
     /// <summary>A server certificate for <paramref name="host"/> (and 127.0.0.1) issued by <paramref name="ca"/>.</summary>
