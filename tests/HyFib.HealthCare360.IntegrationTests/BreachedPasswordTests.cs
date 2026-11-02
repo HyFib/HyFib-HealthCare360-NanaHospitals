@@ -72,7 +72,7 @@ public sealed class BreachedPasswordTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var me = await admin.GetAsync<AuthUser>("/api/v1/auth/me");
         var role = (await admin.GetAsync<List<RoleListItem>>("/api/v1/admin/roles")).First(r => r.Name == SystemRoles.FrontOffice);
-        await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", new CreateUserRequest(
+        await server.CreateUserAsync(admin, new CreateUserRequest(
             userName, "Breach Test", Email: null, Phone: null, [role.Id], [me.FacilityId!.Value], me.FacilityId, PractitionerId: null, null));
 
         await using var scope = server.Services.CreateAsyncScope();

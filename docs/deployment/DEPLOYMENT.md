@@ -322,6 +322,11 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
 6. **Administration › Users**: create staff accounts, giving each person only the roles their job needs. HC360
    refuses passwords on public breach lists or holding a facility's name, for temporary passwords too. A temporary
    password works for 72 hours; after that, reset the password to give out a new one.
+   Access is given by two people: create the hospital administrators first, while the Super Administrator is the only
+   one who may approve grants, so their roles are given at once (and audited so). From then on, the roles and
+   facilities you give, and the permissions you add to a role, wait for another administrator who may approve grants
+   (Approvals, or the link on the user's page); taking access away is immediate. Keep at least two such people
+   active: System health warns when fewer remain.
 7. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS for each critical warning in System health, and if the server's
    WiFi drops, its WiFi adapter disappears, it starts without the WiFi it had when it last ran, its signal stays weak for

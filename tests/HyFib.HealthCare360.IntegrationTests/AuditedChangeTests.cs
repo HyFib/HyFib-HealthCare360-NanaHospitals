@@ -54,28 +54,41 @@ public sealed class AuditedChangeTests(HospitalServer server)
             Letters(6).ToUpperInvariant(), annexeName, null, new Address { City = "Chennai", PinCode = "600002" },
             null, null, null, null, null, null, null, null, null, null, IsActive: false, null))).Id;
 
-        // A front office clerk moves to the wards, and covers the annexe too.
+        // A front office clerk moves to the wards, and covers the annexe too. What adds access is asked for, and given when
+        // another administrator approves it; what takes it away is done at once.
         var account = await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", new CreateUserRequest(
             "it-ward-" + Letters(6), "Saranya", Email: null, Phone: null, [frontOffice.Id], [main], main, PractitionerId: null, TemporaryPassword: null));
+        await server.ApproveGrantAsync(account.ApprovalId.ShouldNotBeNull("a new account's roles wait for approval"));
         var user = await admin.GetAsync<UserDetail>($"/api/v1/admin/users/{account.UserId}");
-        await admin.PutAsync($"/api/v1/admin/users/{user.Id}", new UpdateUserRequest(
+        user.RoleIds.ShouldBe([frontOffice.Id]);
+        await server.UpdateAndApproveAsync(admin, $"/api/v1/admin/users/{user.Id}", new UpdateUserRequest(
             user.DisplayName, user.Email, user.Phone, [nurse.Id], [main, annexe], main, null, IsActive: true, user.Version));
 
         var trail = await TrailAsync(nameof(User), user.Id);
 
         var created = Details(trail, "user.created");
-        Names(created["roles"]!).ShouldBe([SystemRoles.FrontOffice]);
-        Ids(created["facilities"]!).ShouldBe([main]);
+        created["roles"]!.AsArray().ShouldBeEmpty();
+        Names(created["asked"]!["roles"]!).ShouldBe([SystemRoles.FrontOffice]);
+        Ids(created["asked"]!["facilities"]!).ShouldBe([main]);
         var updated = Details(trail, "user.updated");
-        Names(updated["roles"]!["granted"]!).ShouldBe([SystemRoles.Nurse]);
+        updated["roles"]!["granted"]!.AsArray().ShouldBeEmpty();
         Names(updated["roles"]!["withdrawn"]!).ShouldBe([SystemRoles.FrontOffice]);
-        Names(updated["facilities"]!["granted"]!).ShouldBe([annexeName]);
-        updated["facilities"]!["withdrawn"]!.AsArray().ShouldBeEmpty();
+        Names(updated["asked"]!["roles"]!).ShouldBe([SystemRoles.Nurse]);
+        Names(updated["asked"]!["facilities"]!).ShouldBe([annexeName]);
 
-        // The account's own data events hold the grants too, whichever way they are made.
-        Rows(Details(trail, "User.create")["roles"]!, "roleId").ShouldBe([frontOffice.Id]);
+        // Each approval gives what was asked, newest first.
+        var given = trail.Where(e => e.Action == "user.access_granted").Select(e => JsonNode.Parse(e.Details!)!).ToList();
+        given.Count.ShouldBe(2);
+        Ids(given[0]["roles"]!).ShouldBe([nurse.Id]);
+        Ids(given[0]["facilities"]!).ShouldBe([annexe]);
+        Ids(given[1]["roles"]!).ShouldBe([frontOffice.Id]);
+        Ids(given[1]["facilities"]!).ShouldBe([main]);
+
+        // The account's own data events hold the grants too, whichever way they are made: the last one is the nurse role
+        // and the annexe given on approval.
+        RowsOrNone(Details(trail, "User.create")["roles"], "roleId").ShouldBeEmpty();
         var change = Details(trail, "User.update");
-        Rows(change["roles"]!["from"]!, "roleId").ShouldBe([frontOffice.Id]);
+        RowsOrNone(change["roles"]!["from"], "roleId").ShouldBeEmpty();
         Rows(change["roles"]!["to"]!, "roleId").ShouldBe([nurse.Id]);
         Rows(change["facilities"]!["from"]!, "facilityId").ShouldBe([main]);
         Rows(change["facilities"]!["to"]!, "facilityId").ShouldBe([main, annexe], ignoreOrder: true);
@@ -515,6 +528,9 @@ public sealed class AuditedChangeTests(HospitalServer server)
     private static List<string?> Names(JsonNode list) => [.. list.AsArray().Select(n => n!["name"]?.GetValue<string>())];
 
     private static List<Guid> Rows(JsonNode list, string property) => [.. list.AsArray().Select(n => n![property]!.GetValue<Guid>())];
+
+    /// <summary>The rows of a list the trail may leave out when it is empty.</summary>
+    private static List<Guid> RowsOrNone(JsonNode? list, string property) => list is null ? [] : Rows(list, property);
 
     private static List<string> Strings(JsonNode list, string? property = null) =>
         [.. list.AsArray().Select(n => property is null ? n!.GetValue<string>() : n![property]!.GetValue<string>())];

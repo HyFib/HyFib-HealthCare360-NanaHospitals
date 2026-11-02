@@ -260,6 +260,12 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<SimulatorRecordSweep>();
         services.AddScoped<AlertDrills>();
         services.AddScoped<AlertIncidents>();
+
+        // Access is given by two people: the decision, its approval actions, and whether the hospital has had two.
+        services.AddSingleton<GrantLatch>();
+        services.AddScoped<GrantApprovals>();
+        services.AddScoped<IApprovalAction, UserGrantApproval>();
+        services.AddScoped<IApprovalAction, RoleGrantApproval>();
         services.AddHttpClient(AlertHeartbeat.HttpClientName, client => client.DefaultRequestHeaders.UserAgent.ParseAdd("HyFib-HC360-Heartbeat"))
             .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
 

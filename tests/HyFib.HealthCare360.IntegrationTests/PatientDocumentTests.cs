@@ -174,7 +174,7 @@ public sealed class PatientDocumentTests(HospitalServer server)
 
         // A role made for patients' documents alone (attach and view them), without searching the patient register.
         var suffix = Guid.NewGuid().ToString("N")[..8];
-        var role = await (await server.SignInAsync(HospitalServer.Users.Admin)).PostAsync<RoleDetail>("/api/v1/admin/roles", new SaveRoleRequest(
+        var role = await server.CreateRoleAsync(await server.SignInAsync(HospitalServer.Users.Admin), new SaveRoleRequest(
             "IT documents " + suffix, "Scans and files patients' documents", [PatientsPermissions.Documents, PlatformPermissions.FilesRead], Version: null));
         await server.CreateStaffAccountAsync("it-docs-" + suffix, role.Name);
         var scanner = await server.SignInAsync("it-docs-" + suffix);

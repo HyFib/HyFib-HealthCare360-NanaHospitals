@@ -94,3 +94,105 @@ describe('adding a user', SCREEN_TESTS, () => {
     });
   });
 });
+
+// Access is given by two people: what an edit adds waits for another administrator who may approve grants.
+describe('access that waits for a second administrator', SCREEN_TESTS, () => {
+  const userId = id('200');
+  const waiting = {
+    approvalId: id('901'),
+    roleIds: [id('004')],
+    facilityIds: [],
+    activate: false,
+    requestedBy: 'Hospital Admin',
+    requestedAt: '2026-11-02T05:00:00Z',
+  };
+
+  it("says when a new user's roles wait for approval", async () => {
+    server = fakeServer({
+      'GET /api/v1/admin/users': paged([]),
+      'GET /api/v1/admin/roles': ROLES,
+      'GET /api/v1/masters/lookups/practitioners': [],
+      'POST /api/v1/admin/users': {
+        userId: id('100'),
+        temporaryPassword: 'Kite-Lamp-42',
+        expiresAt: '2026-11-01T06:30:00Z',
+        approvalId: id('900'),
+      },
+    });
+    const user = userEvent.setup();
+    openScreen('/admin/users');
+    await user.click(await screen.findByRole('button', { name: 'Add user' }, SLOW));
+    const drawer = await screen.findByRole('dialog', { name: /Add user/ });
+    await user.type(within(drawer).getByRole('textbox', { name: /User name/ }), 'priya.s');
+    await user.type(within(drawer).getByRole('textbox', { name: /Full name/ }), 'Priya Sharma');
+    await user.click(await within(drawer).findByRole('checkbox', { name: 'Nurse' }, SLOW));
+    await user.type(within(drawer).getByRole('textbox', { name: /Reason, for the approver/ }), 'Joins ward 3.');
+    await user.click(within(drawer).getByRole('button', { name: 'Create user' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Temporary password for Priya Sharma' }, SLOW);
+    expect(
+      within(dialog).getByText(/Their roles wait for another administrator who may approve grants/),
+    ).toBeInTheDocument();
+    expect(created()[0]).toMatchObject({ body: { roleIds: [id('004')], reason: 'Joins ward 3.' } });
+  });
+
+  it('shows the roles waiting on an account as given, and says an edit that adds one was asked for', async () => {
+    server = fakeServer({
+      'GET /api/v1/admin/users': paged([
+        {
+          id: userId,
+          userName: 'priya.s',
+          displayName: 'Priya Sharma',
+          email: null,
+          phone: null,
+          isActive: true,
+          isLocked: false,
+          mfaEnabled: false,
+          lastLoginAt: null,
+          roles: [],
+        },
+      ]),
+      [`GET /api/v1/admin/users/${userId}`]: {
+        id: userId,
+        userName: 'priya.s',
+        displayName: 'Priya Sharma',
+        email: null,
+        phone: null,
+        isActive: true,
+        mfaEnabled: false,
+        mustChangePassword: true,
+        lastLoginAt: null,
+        lockoutEndsAt: null,
+        practitionerId: null,
+        defaultFacilityId: null,
+        roleIds: [],
+        facilityIds: [],
+        version: 3,
+        pendingGrant: waiting,
+      },
+      'GET /api/v1/admin/roles': ROLES,
+      'GET /api/v1/masters/lookups/practitioners': [],
+      [`PUT /api/v1/admin/users/${userId}`]: {
+        id: id('902'),
+        kind: 'identity.user_grant',
+        summary: 'Access for Priya Sharma: roles Billing',
+      },
+    });
+    const user = userEvent.setup();
+    openScreen('/admin/users');
+    await user.click(await screen.findByText('Priya Sharma', {}, SLOW));
+    const drawer = await screen.findByRole('dialog', { name: /Priya Sharma/ }, SLOW);
+
+    // The nurse role waits: the notice says so, with the request, and its box stays ticked so nothing is asked twice.
+    expect(await within(drawer).findByText('Waiting for approval')).toBeInTheDocument();
+    expect(within(drawer).getByText(/Roles Nurse, asked for by Hospital Admin/)).toBeInTheDocument();
+    expect(within(drawer).getByRole('checkbox', { name: 'Nurse' })).toBeChecked();
+    await expectNoAxeViolations();
+
+    await user.click(within(drawer).getByRole('checkbox', { name: 'Billing' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('Asked for approval', {}, SLOW)).toBeInTheDocument();
+    const put = server.requests.find((request) => request.method === 'PUT');
+    expect(put?.body).toMatchObject({ roleIds: [id('004'), id('002')], version: 3 });
+  });
+});
