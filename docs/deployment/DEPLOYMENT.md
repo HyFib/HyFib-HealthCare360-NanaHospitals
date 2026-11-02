@@ -112,14 +112,18 @@ The installer:
   with `-UpdateActiveHoursStart` and `-UpdateActiveHoursEnd` (at most 18 apart, as Windows allows); an upgrade keeps
   the hours set before.
 - Starts HC360 and checks that it is ready: up, and reaching the database.
+- Registers the scheduled task *HC360 certificate probe* (Task Scheduler › HyFib), which checks every day, as SYSTEM, the
+  certificate the staff address serves, as HC360 Desktop and the lab agents check it, against the hospital CA
+  fingerprint printed below; on a day the server was off at that time, once it starts. It runs it once and shows what
+  it found. What needs attention goes to the Application event log, where monitoring tools read it, even while HC360 is
+  down ([CA-ROLLOVER.md](CA-ROLLOVER.md#the-certificate-probe)).
 
 At the end it prints two things. Write them down:
 - the **hospital CA fingerprint**, which staff compare when setting up HC360 Desktop;
 - the **first administrator password** (user `admin`).
 
-Give the fingerprint to the certificate probe too, run every day from the server and from a machine in IT
-([CA-ROLLOVER.md](CA-ROLLOVER.md#the-certificate-probe)): it says when the certificate devices are served is about to
-expire or would be refused, even while HC360 is down.
+Give the fingerprint to a certificate probe on a machine in IT too ([CA-ROLLOVER.md](CA-ROLLOVER.md#the-certificate-probe)):
+the server's own cannot see the network or the server's name as the devices do, nor run while the server is off.
 
 ### When PostgreSQL stops
 
@@ -1303,6 +1307,8 @@ clean-up reads only the months concerned. The audit trail's partitions refuse TR
 | "… is failing: the latest call failed" (System health) | Administration › Integrations shows the last error for that integration, and its log says more. Correct the settings or the provider's side, then *Send a test*: the warning clears once a call succeeds. An integration no longer used can be switched off instead |
 | "The hospital CA expires on …" or "… expired" (System health) | The CA is made for ten years when the server first starts and is never made again by itself, because every workstation, tablet, HC360 Desktop and lab agent trusts it. System health warns a year ahead: prepare the next CA with `certificates prepare-ca`, and switch to it with `certificates switch-ca` once every device holds it, as [CA-ROLLOVER.md](CA-ROLLOVER.md) says. No device stops connecting, and none is set up again. A server whose CA has expired does not start, and says so in the Application event log: with the next CA prepared it says to switch to it, and every device that holds it trusts the server again; without one, a new CA means setting every device up again. "The server certificate expires on …" instead means the automatic renewal 30 days before expiry failed: the log says why |
 | "The next hospital CA is prepared: … devices seen in the last 30 days do not hold it yet …" (System health) | It names them, and `certificates switch-ca` waits for them: after the switch they would no longer trust the server. **Without it**: the device has not reached the server since the next CA was prepared, or cannot ask it: check that it connects, and its log ("HC360 Desktop" or the lab agent's service log). **Not saying which CAs they hold**: an HC360 Desktop or lab agent older than this server, which does not take the next CA by itself: update it. Revoke a device that is gone for good (Administration › Devices). Revoked devices and those not seen for 30 days are left out. Critical in the current CA's last 90 days ([CA-ROLLOVER.md](CA-ROLLOVER.md#rolling-the-ca-over)) |
+| "HC360 certificate probe, …: No TLS connection" (Application event log, Error) | The server's own daily probe could not reach the staff address: HC360 was down when it ran, or does not listen on that port. Check the service and System health; the probe runs again the next day, or run the task now |
+| "HC360 certificate probe, …: The hospital CA was switched …" (Application event log, Error) | The server's own daily probe still checks for the CA the switch replaced. Give it the new fingerprint as step 4 of the day you switch says ([CA-ROLLOVER.md](CA-ROLLOVER.md#the-day-you-switch)), or run `Install-HC360Server.ps1` again: each install or upgrade gives it the server's CA |
 | "The audit trail failed its check on …" (System health, critical) | A check of the audit chain, asked for under Administration › Audit log or made by the server once a day, found an entry changed, moved or removed in the database. Keep the database and its backups as they are, note the position the message names, and contact HyFib support. The warning clears when a later check passes |
 | "System health: critical" notifications, or an SMS from HC360 to the IT on-call number | A critical System health warning appeared; the notification says which. Open Administration › System health for what to do. Each is told again every day until it is fixed, and at once if it clears and comes back |
 | A report e-mail arrives without its PDF | The notification log notes "Sent without the document" and why. The PDF was tried three times first |

@@ -2,7 +2,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Removes the HC360 Server service, its scheduled task, firewall rules and program files. Hospital data is KEPT unless
+    Removes the HC360 Server service, its scheduled tasks, firewall rules and program files. Hospital data is KEPT unless
     -RemoveData is given and confirmed by typing the facility code.
 
 .EXAMPLE
@@ -30,8 +30,11 @@ if ($service) {
     }
 }
 
-Get-ScheduledTask -TaskName 'HC360 disk encryption check' -TaskPath '\HyFib\' -ErrorAction SilentlyContinue |
-    Unregister-ScheduledTask -Confirm:$false
+# Every scheduled task Install-HC360Server.ps1 registers, by name: HC360 Desktop's update task, in the same folder, is left
+# to its own uninstaller (tests/deploy/Test-CertificateProbeTask.ps1 checks the list against the installer).
+foreach ($task in 'HC360 disk encryption check', 'HC360 database watchdog', 'HC360 certificate probe') {
+    Get-ScheduledTask -TaskName $task -TaskPath '\HyFib\' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false
+}
 Get-NetFirewallRule -Group 'HyFib HealthCare360' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 
 if ((Test-Path $InstallDir) -and $PSCmdlet.ShouldProcess($InstallDir, 'Remove program files')) {
