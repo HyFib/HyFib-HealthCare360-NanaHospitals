@@ -2,6 +2,7 @@ import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { ApprovalRequestDto } from '@/modules/approvals/api';
+import type { PaymentMode } from './labels';
 
 /**
  * Chargebacks on card, UPI and gateway payments: /api/v1/billing/disputes. A case is opened by HC360 when a settlement
@@ -67,6 +68,17 @@ export interface PaymentDisputeSummaryDto {
   late: number;
 }
 
+/** A receipt's card, UPI or online payment line, to choose the one the bank took back. */
+export interface DisputablePaymentDto {
+  id: string;
+  mode: PaymentMode;
+  amount: number;
+  /** The gateway's payment id, or the RRN or reference the cashier recorded. */
+  reference: string | null;
+  /** A chargeback on this line is open already. */
+  hasOpenCase: boolean;
+}
+
 export interface OpenPaymentDisputeRequest {
   receiptNumber: string;
   paymentId: string | null;
@@ -106,6 +118,14 @@ export const disputeQueries = {
     queryOptions({
       queryKey: disputeKeys.summary(),
       queryFn: ({ signal }) => api.get<PaymentDisputeSummaryDto>(`${BASE}/summary`, { signal }),
+    }),
+  /** The card, UPI and online payment lines of the receipt a notice names. */
+  paymentLines: (receiptNumber: string) =>
+    queryOptions({
+      queryKey: [...disputeKeys.all, 'payment-lines', receiptNumber],
+      queryFn: ({ signal }) =>
+        api.get<DisputablePaymentDto[]>(`${BASE}/payment-lines`, { query: { receiptNumber }, signal }),
+      retry: false,
     }),
 };
 

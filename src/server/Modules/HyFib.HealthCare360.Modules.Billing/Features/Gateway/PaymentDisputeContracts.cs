@@ -39,6 +39,11 @@ public sealed record PaymentDisputeDto(
 /// <summary>Open cases, those due within two days or late, and what they come to.</summary>
 public sealed record PaymentDisputeSummaryDto(int Open, decimal OpenAmount, int DueSoon, int Late);
 
+/// <summary>A receipt's card, UPI or online payment line, to choose the one the bank took back.</summary>
+/// <param name="Reference">The gateway's payment id, or the RRN or reference the cashier recorded.</param>
+/// <param name="HasOpenCase">A chargeback on this line is open already: another is refused.</param>
+public sealed record DisputablePaymentDto(Guid Id, PaymentMode Mode, decimal Amount, string? Reference, bool HasOpenCase);
+
 /// <summary>
 /// A chargeback the bank or the gateway gave notice of, before a settlement carried it: the receipt (by its number), its
 /// payment line when it has more than one card, UPI or online payment, the amount, and what the notice says.

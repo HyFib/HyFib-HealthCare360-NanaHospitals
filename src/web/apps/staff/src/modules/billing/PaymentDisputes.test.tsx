@@ -12,6 +12,7 @@ import { PaymentDisputes } from './PaymentDisputes';
 
 // The server, the router and the toasts are outside the test; the screen's own behaviour is what is tested.
 const listCases = vi.hoisted(() => vi.fn());
+const paymentLines = vi.hoisted(() => vi.fn());
 vi.mock('./disputesApi', async (importOriginal) => {
   const actual = await importOriginal<typeof DisputesApi>();
   return {
@@ -22,6 +23,11 @@ vi.mock('./disputesApi', async (importOriginal) => {
       list: (filter: DisputesApi.DisputeFilter) => ({
         queryKey: [...actual.disputeKeys.list(), filter],
         queryFn: () => listCases(filter),
+      }),
+      paymentLines: (receiptNumber: string) => ({
+        queryKey: [...actual.disputeKeys.all, 'payment-lines', receiptNumber],
+        queryFn: () => paymentLines(receiptNumber),
+        retry: false,
       }),
     },
   };
@@ -45,6 +51,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // A receipt paid in one card payment unless a test says otherwise: nothing to choose.
+  paymentLines.mockResolvedValue([{ id: 'p0', mode: 'Card', amount: 1500, reference: null, hasOpenCase: false }]);
 });
 
 function wrap(children: ReactNode) {
@@ -198,6 +206,48 @@ describe('chargeback cases', () => {
       }),
     );
     expect(notify.success).toHaveBeenCalledWith('Chargeback NHCB2600003 opened', 'Receipt NHRC260000050.');
+  });
+
+  it('asks which payment the notice is about when the receipt has more than one', async () => {
+    listCases.mockResolvedValue(page([]));
+    paymentLines.mockResolvedValue([
+      { id: 'p1', mode: 'Card', amount: 1000, reference: '627910111111', hasOpenCase: false },
+      { id: 'p2', mode: 'Upi', amount: 500, reference: '627910222222', hasOpenCase: false },
+      { id: 'p3', mode: 'Card', amount: 250, reference: null, hasOpenCase: true },
+    ]);
+    vi.mocked(disputeApi.open).mockResolvedValue(dispute({ number: 'NHCB2600004', receiptNumber: 'NHRC260000051' }));
+    const user = userEvent.setup();
+    render(wrap(<PaymentDisputes terminal />));
+
+    await user.click(await screen.findByRole('button', { name: 'Open a case…' }));
+    await user.type(screen.getByRole('textbox', { name: /Receipt number/ }), 'NHRC260000051');
+    await user.type(screen.getByRole('spinbutton', { name: /Amount taken back/ }), '500');
+    const choice = await screen.findByRole('combobox', { name: /Payment taken back/ });
+    expect(paymentLines).toHaveBeenCalledWith('NHRC260000051');
+    expect(screen.getByRole('option', { name: 'Card · ₹250.00 · a case is open' })).toBeDisabled();
+
+    // Not opened until the payment is chosen.
+    await user.click(screen.getByRole('button', { name: 'Open the case' }));
+    expect(disputeApi.open).not.toHaveBeenCalled();
+    await user.selectOptions(choice, 'p2');
+    await user.click(screen.getByRole('button', { name: 'Open the case' }));
+
+    await waitFor(() =>
+      expect(disputeApi.open).toHaveBeenCalledWith(expect.objectContaining({ paymentId: 'p2', amount: 500 })),
+    );
+  });
+
+  it('says when the receipt is not there', async () => {
+    listCases.mockResolvedValue(page([]));
+    paymentLines.mockRejectedValue(new Error('Not found'));
+    const user = userEvent.setup();
+    render(wrap(<PaymentDisputes terminal />));
+
+    await user.click(await screen.findByRole('button', { name: 'Open a case…' }));
+    await user.type(screen.getByRole('textbox', { name: /Receipt number/ }), 'NHRC269999999');
+    await user.tab();
+
+    expect(await screen.findByText('No receipt NHRC269999999 in this facility.')).toBeInTheDocument();
   });
 
   it('shows closed cases with how they ended, and only the bill to open', async () => {

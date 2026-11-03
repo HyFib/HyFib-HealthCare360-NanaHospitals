@@ -803,9 +803,10 @@ public sealed class GatewaySettlementService(
         {
             logger.LogInformation(ex, "Gateway exceptions were changed by a concurrent run; they are read again");
 
-            // The chargeback cases staged with them, and their audit, are read again as well, never saved twice.
+            // The chargeback cases staged with them, their reminders and their audit are read again as well, never saved
+            // twice. The reminders are let go by name, not left to EF's handling of orphans once their case is let go.
             var staged = db.ChangeTracker.Entries()
-                .Where(e => e.Entity is GatewayDiscrepancy or PaymentDispute or AuditEvent && e.State != EntityState.Unchanged)
+                .Where(e => e.Entity is GatewayDiscrepancy or PaymentDispute or PaymentDisputeReminder or AuditEvent && e.State != EntityState.Unchanged)
                 .ToList();
             foreach (var entry in staged)
             {

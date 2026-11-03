@@ -980,6 +980,7 @@
     "/api/v1/billing/discount-limits billing.discounts.approve",
     "/api/v1/billing/discount-limits/me billing.op.create|billing.ip.manage",
     "/api/v1/billing/disputes billing.gateway.reconcile",
+    "/api/v1/billing/disputes/payment-lines billing.gateway.reconcile",
     "/api/v1/billing/disputes/summary billing.gateway.reconcile",
     "/api/v1/billing/disputes/{id:guid} billing.gateway.reconcile",
     "/api/v1/billing/einvoices billing.einvoice",

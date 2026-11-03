@@ -17,6 +17,7 @@ internal static class PaymentDisputeEndpoints
             .RequirePermission(BillingPermissions.GatewayReconcile);
         group.MapGet("/", List);
         group.MapGet("/summary", Summary);
+        group.MapGet("/payment-lines", PaymentLines);
         group.MapGet("/{id:guid}", Get);
         group.MapPost("/", Open).WithValidation<OpenPaymentDisputeRequest>();
         group.MapPost("/{id:guid}/details", (Guid id, DescribePaymentDisputeRequest r, PaymentDisputeService disputes, CancellationToken ct) =>
@@ -41,6 +42,12 @@ internal static class PaymentDisputeEndpoints
         user.FacilityId is { } facilityId ? TypedResults.Ok(await disputes.SummaryAsync(facilityId, ct)) : BillingDb.FacilityRequired.ToProblem();
 
     private static async Task<IResult> Get(Guid id, PaymentDisputeService disputes, CancellationToken ct) => (await disputes.GetAsync(id, ct)).ToOk();
+
+    /// <summary>The receipt's card, UPI and online payment lines (<c>?receiptNumber=</c>), to choose the one a notice is about.</summary>
+    private static async Task<IResult> PaymentLines(string receiptNumber, ICurrentUser user, PaymentDisputeService disputes, CancellationToken ct) =>
+        user.FacilityId is { } facilityId
+            ? (await disputes.PaymentLinesAsync(facilityId, receiptNumber, ct)).ToOk()
+            : BillingDb.FacilityRequired.ToProblem();
 
     private static async Task<IResult> Open(OpenPaymentDisputeRequest request, ICurrentUser user, PaymentDisputeService disputes, CancellationToken ct) =>
         user.FacilityId is { } facilityId

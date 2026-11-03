@@ -9,6 +9,7 @@ import {
   MenuList,
   MenuPopover,
   MenuTrigger,
+  Select,
   Tab,
   TabList,
   Text,
@@ -24,7 +25,7 @@ import {
   ReceiptRegular,
   SendRegular,
 } from '@fluentui/react-icons';
-import { formatDateOnly, formatDateTime, todayIso } from '@hc360/core';
+import { formatDateOnly, formatDateTime, formatInr, todayIso } from '@hc360/core';
 import { DataTable, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -40,6 +41,7 @@ import {
   type PaymentDisputeDto,
   type PaymentDisputeStatus,
 } from './disputesApi';
+import { PAYMENT_MODE_LABEL } from './labels';
 import { Amount, ReasonDialog } from './ui';
 
 const useStyles = makeStyles({
@@ -78,8 +80,13 @@ export function PaymentDisputes({ terminal }: { terminal: boolean }) {
   const [respondBy, setRespondBy] = useState('');
   const [sentOn, setSentOn] = useState(todayIso());
   const [receiptNumber, setReceiptNumber] = useState('');
+  const [lookedUp, setLookedUp] = useState('');
+  const [paymentId, setPaymentId] = useState('');
   const [amount, setAmount] = useState('');
   const list = useQuery(disputeQueries.list({ open, terminal, page }));
+  // A receipt paid in more than one card, UPI or online payment: the accountant chooses the one the notice is about.
+  const lines = useQuery({ ...disputeQueries.paymentLines(lookedUp), enabled: opening && lookedUp !== '' });
+  const choosing = (lines.data?.length ?? 0) > 1;
   const refresh = () => void queryClient.invalidateQueries({ queryKey: disputeKeys.all });
 
   const act = useMutation({
@@ -115,7 +122,7 @@ export function PaymentDisputes({ terminal }: { terminal: boolean }) {
     mutationFn: (note: string) =>
       disputeApi.open({
         receiptNumber: receiptNumber.trim(),
-        paymentId: null,
+        paymentId: choosing && paymentId ? paymentId : null,
         amount: Number(amount),
         reasonCode: reasonCode.trim() || null,
         reason: note || null,
@@ -156,6 +163,8 @@ export function PaymentDisputes({ terminal }: { terminal: boolean }) {
           onClick={() => {
             openCase.reset();
             setReceiptNumber('');
+            setLookedUp('');
+            setPaymentId('');
             setAmount('');
             setReasonCode('');
             setRespondBy('');
@@ -363,7 +372,7 @@ export function PaymentDisputes({ terminal }: { terminal: boolean }) {
         error={openCase.error}
         dirty={receiptNumber !== '' || amount !== ''}
         onConfirm={(note) => {
-          if (receiptNumber.trim() && Number(amount) > 0) {
+          if (receiptNumber.trim() && Number(amount) > 0 && (!choosing || paymentId)) {
             openCase.mutate(note);
           }
         }}
@@ -373,9 +382,45 @@ export function PaymentDisputes({ terminal }: { terminal: boolean }) {
         }}
       >
         <div className={styles.fields}>
-          <Field label="Receipt number" required>
-            <Input value={receiptNumber} maxLength={24} onChange={(_, v) => setReceiptNumber(v.value)} />
+          <Field
+            label="Receipt number"
+            required
+            validationMessage={
+              lines.isError
+                ? `No receipt ${lookedUp} in this facility.`
+                : lines.data?.length === 0
+                  ? 'This receipt has no card, UPI or online payment for a bank to take back.'
+                  : undefined
+            }
+          >
+            <Input
+              value={receiptNumber}
+              maxLength={24}
+              onChange={(_, v) => {
+                setReceiptNumber(v.value);
+                setPaymentId('');
+              }}
+              onBlur={() => setLookedUp(receiptNumber.trim())}
+            />
           </Field>
+          {choosing && (
+            <Field
+              label="Payment taken back"
+              required
+              hint="The receipt has more than one: choose the one the notice names."
+            >
+              <Select value={paymentId} onChange={(_, d) => setPaymentId(d.value)}>
+                <option value="">Choose the payment…</option>
+                {lines.data?.map((p) => (
+                  <option key={p.id} value={p.id} disabled={p.hasOpenCase}>
+                    {[PAYMENT_MODE_LABEL[p.mode], formatInr(p.amount), p.reference, p.hasOpenCase && 'a case is open']
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
           <Field label="Amount taken back (₹)" required>
             <Input type="number" inputMode="decimal" min={0} value={amount} onChange={(_, v) => setAmount(v.value)} />
           </Field>

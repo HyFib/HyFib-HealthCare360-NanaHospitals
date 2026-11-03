@@ -163,6 +163,30 @@ public sealed class ChargebackTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_notice_on_a_receipt_paid_in_two_cards_names_the_payment_it_is_about()
+    {
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+        var (_, receipt) = await TwoCardReceiptAsync();
+        var second = receipt.Payments[1];
+
+        var lines = await accountant.GetAsync<List<DisputablePaymentDto>>($"/api/v1/billing/disputes/payment-lines?receiptNumber={receipt.ReceiptNumber}");
+        lines.Select(l => (l.Id, l.Mode, l.Amount, l.HasOpenCase)).ShouldBe(
+            receipt.Payments.Select(p => (p.Id, PaymentMode.Card, p.Amount, false)), ignoreOrder: true);
+
+        // Without saying which, it is refused; naming the second card opens the case on it, which the list then shows.
+        (await RefusedAsync(accountant, "/api/v1/billing/disputes",
+                new OpenPaymentDisputeRequest(receipt.ReceiptNumber, null, second.Amount, null, null, null), HttpStatusCode.BadRequest))
+            .ShouldBe("validation");
+        var opened = await accountant.PostAsync<PaymentDisputeDto>("/api/v1/billing/disputes",
+            new OpenPaymentDisputeRequest(receipt.ReceiptNumber, second.Id, second.Amount, null, null, null));
+        opened.ReceiptPaymentId.ShouldBe(second.Id);
+        (await accountant.GetAsync<List<DisputablePaymentDto>>($"/api/v1/billing/disputes/payment-lines?receiptNumber={receipt.ReceiptNumber}"))
+            .Single(l => l.Id == second.Id).HasOpenCase.ShouldBeTrue();
+        using var missing = await accountant.SendRawAsync(HttpMethod.Get, "/api/v1/billing/disputes/payment-lines?receiptNumber=NHRC269999999");
+        missing.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task A_chargeback_of_part_of_a_payment_is_not_accepted_by_reversing_the_whole_receipt()
     {
         var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
@@ -176,7 +200,8 @@ public sealed class ChargebackTests(HospitalServer server)
     }
 
     /// <summary>A finalized bill paid in full by card at a counter, the RRN from the charge slip typed as the reference.</summary>
-    private async Task<(BillDetail Bill, ReceiptDto Receipt, string Rrn)> CardReceiptAsync()
+    /// <summary>A new patient's bill paid at the counter by card (or, with <paramref name="pay"/> false, finalized and left due).</summary>
+    private async Task<(BillDetail Bill, ReceiptDto Receipt, string Rrn)> CardReceiptAsync(bool pay = true)
     {
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         using (var current = await billing.SendRawAsync(HttpMethod.Get, "/api/v1/billing/shifts/current"))
@@ -199,10 +224,32 @@ public sealed class ChargebackTests(HospitalServer server)
         await billing.PostAsync<ChargeDto>("/api/v1/billing/charges", new PostChargeRequest(registered.Id, null, null, service.Id, 1m, null, null, null, null, null));
         var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(null, registered.Id, null));
         var bill = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
+        if (!pay)
+        {
+            return (bill, null!, string.Empty);
+        }
+
         var rrn = Digits(12);
         var receipt = await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new CollectPaymentRequest(
             bill.Id, [new PaymentLineInput(PaymentMode.Card, bill.DueAmount, rrn, Random.Shared.Next(2000, 9999).ToString(CultureInfo.InvariantCulture), "VISA", null, null, null)], null));
         return (bill, receipt, rrn);
+    }
+
+    /// <summary>A new patient's bill paid at the counter in two card payments.</summary>
+    private async Task<(BillDetail Bill, ReceiptDto Receipt)> TwoCardReceiptAsync()
+    {
+        var (bill, _, _) = await CardReceiptAsync(pay: false);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var first = Math.Round(bill.DueAmount / 2, 2);
+        var receipt = await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new CollectPaymentRequest(
+            bill.Id,
+            [
+                new PaymentLineInput(PaymentMode.Card, first, Digits(12), Random.Shared.Next(2000, 9999).ToString(CultureInfo.InvariantCulture), "VISA", null, null, null),
+                new PaymentLineInput(PaymentMode.Card, bill.DueAmount - first, Digits(12), Random.Shared.Next(2000, 9999).ToString(CultureInfo.InvariantCulture), "VISA", null, null, null),
+            ],
+            null));
+        receipt.Payments.Count.ShouldBe(2);
+        return (bill, receipt);
     }
 
     /// <summary>The acquirer's report of today: the card sale and, when asked, a chargeback of all of it under the same RRN.</summary>

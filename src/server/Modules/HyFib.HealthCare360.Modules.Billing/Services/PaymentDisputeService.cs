@@ -34,8 +34,9 @@ public sealed class PaymentDisputeService(
 
     /// <summary>
     /// A gateway settlement's adjustment on a payment HC360 recorded: money taken back opens a case (or joins the case an
-    /// accountant opened from the notice); money returned wins the open case. Returns why the line needs no exception,
-    /// or null when it does (a payment HC360 does not know, or money added that no case explains).
+    /// accountant opened from the notice); the money taken coming back wins the open case. Returns why the line needs no
+    /// exception, or null when it does (a payment HC360 does not know, money added that no case explains, or a return of
+    /// part of what was taken: the case stays open for the rest).
     /// </summary>
     internal async Task<string?> TakeGatewayAdjustmentAsync(GatewaySettlementLine line, string settlementId, CancellationToken ct)
     {
@@ -56,14 +57,14 @@ public sealed class PaymentDisputeService(
             // The settlement is read again on every fetch of its day: a return that already won its case is followed.
             var open = await Cases(line.FacilityId).FirstOrDefaultAsync(d => d.ReturnLineId == line.Id, ct)
                        ?? await Cases(line.FacilityId).FirstOrDefaultAsync(d => d.ReceiptPaymentId == payment.Value.Payment.Id && d.Status != PaymentDisputeStatus.Won && d.Status != PaymentDisputeStatus.Lost, ct);
-            if (open is null)
+            // Only the money taken coming back wins the case by itself. Part of it (or more) does not: the case stays open
+            // for what is still taken back, and the return is an exception for a person to put against it.
+            if (open is null || (open.ReturnLineId != line.Id && line.Gross != open.Amount))
             {
                 return null;
             }
 
-            var returned = line.Gross == open.Amount
-                ? $"₹{Money.FormatInr(line.Gross)}"
-                : $"₹{Money.FormatInr(line.Gross)} of the ₹{Money.FormatInr(open.Amount)} taken";
+            var returned = $"₹{Money.FormatInr(line.Gross)}";
             if (open.WonByReturn($"The gateway returned {returned} in settlement {settlementId} ({line.EntityId}).", line.Id, now))
             {
                 Audit(open, "billing.dispute.won", $"Chargeback {open.Number} won: the gateway returned {returned} in settlement {settlementId}");
@@ -158,6 +159,31 @@ public sealed class PaymentDisputeService(
 
         await db.SaveChangesAsync(ct);
         return (await ToDtosAsync([dispute], ct))[0];
+    }
+
+    /// <summary>
+    /// The card, UPI and online payment lines of a receipt of the facility, for choosing the one the bank took back, each
+    /// saying whether a case on it is open already.
+    /// </summary>
+    public async Task<Result<List<DisputablePaymentDto>>> PaymentLinesAsync(Guid facilityId, string receiptNumber, CancellationToken ct)
+    {
+        var number = receiptNumber.Trim();
+        var receipt = await db.Set<Receipt>().AsNoTracking().FirstOrDefaultAsync(r => r.FacilityId == facilityId && r.ReceiptNumber == number, ct);
+        if (receipt is null)
+        {
+            return Error.NotFound("Receipt", number);
+        }
+
+        var lines = await db.Set<ReceiptPayment>().AsNoTracking()
+            .Where(p => p.ReceiptId == receipt.Id && DisputableModes.Contains(p.Mode))
+            .OrderBy(p => p.Id)
+            .ToListAsync(ct);
+        var ids = lines.Select(p => p.Id).ToList();
+        var open = await Cases(facilityId).AsNoTracking()
+            .Where(d => ids.Contains(d.ReceiptPaymentId) && d.Status != PaymentDisputeStatus.Won && d.Status != PaymentDisputeStatus.Lost)
+            .Select(d => d.ReceiptPaymentId)
+            .ToListAsync(ct);
+        return lines.Select(p => new DisputablePaymentDto(p.Id, p.Mode, p.Amount, p.ExternalId ?? p.Reference, open.Contains(p.Id))).ToList();
     }
 
     public async Task<Result<PaymentDisputeDto>> DescribeAsync(Guid id, DescribePaymentDisputeRequest request, CancellationToken ct) =>

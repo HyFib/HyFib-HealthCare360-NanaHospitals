@@ -311,6 +311,62 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Part_of_the_money_given_back_leaves_the_case_open_and_the_return_to_look_at()
+    {
+        await using var gateway = await PaymentsToSimulatorAsync();
+        var order = await PaidOrderAsync();
+        await RaiseAsync(Settlement(order.FacilityId, Adjusted("adj_Cb" + Letters(12), -order.Amount, order.GatewayPaymentId!)));
+        var part = Math.Round(order.Amount / 2, 2);
+        var returnedId = "adj_Rt" + Letters(12);
+
+        // The bank gave back only part of what it took: the rest is still taken back, so the case stays open to be
+        // answered or accepted, and the return is for an accountant to put against it.
+        var returned = Settlement(order.FacilityId, Adjusted(returnedId, part, order.GatewayPaymentId!));
+        await RaiseAsync(returned);
+        await RaiseAsync(returned, rematched: true);
+
+        var open = (await CasesOfAsync(order.ReceiptId!.Value)).ShouldHaveSingleItem();
+        open.ShouldSatisfyAllConditions(
+            d => d.Status.ShouldBe(PaymentDisputeStatus.Open),
+            d => d.ReturnLineId.ShouldBeNull(),
+            d => d.Amount.ShouldBe(order.Amount));
+        (await ExceptionAsync(DiscrepancyKind.AmountMismatch, returnedId)).ShouldNotBeNull().GatewayAmount.ShouldBe(part);
+    }
+
+    [Fact]
+    public async Task A_chargeback_a_concurrent_run_saved_first_leaves_nothing_of_this_runs_attempt_behind()
+    {
+        await using var gateway = await PaymentsToSimulatorAsync();
+        var order = await PaidOrderAsync();
+        var settlement = Settlement(order.FacilityId, Adjusted("adj_Cb" + Letters(12), -order.Amount, order.GatewayPaymentId!));
+
+        // This run stages the chargeback's case (and its reminder)...
+        await using var run = server.Services.CreateAsyncScope();
+        await StoreAsync(run, settlement);
+        (await run.ServiceProvider.GetRequiredService<PaymentDisputeService>()
+            .TakeGatewayAdjustmentAsync(settlement.Lines.Single(), settlement.SettlementId, Ct)).ShouldNotBeNull();
+
+        // ...while a concurrent run opens and saves the same case first.
+        await using (var other = server.Services.CreateAsyncScope())
+        {
+            var stored = await other.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<GatewaySettlement>().IgnoreQueryFilters()
+                .Include(s => s.Lines).SingleAsync(s => s.Id == settlement.Id, Ct);
+            await other.ServiceProvider.GetRequiredService<GatewaySettlementService>().RaiseExceptionsAsync([stored], null, Ct);
+        }
+
+        // This run's save clashes on the case: it lets go of all it staged, follows the saved case, and its unit of work
+        // saves cleanly afterwards (no reminder left pointing at a case that was never saved).
+        await run.ServiceProvider.GetRequiredService<GatewaySettlementService>().RaiseExceptionsAsync([settlement], null, Ct);
+        await run.ServiceProvider.GetRequiredService<HospitalDbContext>().SaveChangesAsync(Ct);
+
+        var dispute = (await CasesOfAsync(order.ReceiptId!.Value)).ShouldHaveSingleItem();
+        await using var check = server.Services.CreateAsyncScope();
+        (await check.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<PaymentDisputeReminder>().CountAsync(r => r.DisputeId == dispute.Id, Ct))
+            .ShouldBe(1);
+        (await AuditCountAsync("billing.dispute.opened", dispute.Id)).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task Money_taken_back_on_a_payment_HC360_never_recorded_stays_an_exception()
     {
         var facilityId = await FacilityAsync();

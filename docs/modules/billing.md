@@ -549,6 +549,7 @@ one). See [Chargebacks](#chargebacks) for what happens behind them.
 | GET | `/?open&terminal` (paged, at most 100) | → `PagedResult<PaymentDisputeDto>`: `open=true` the cases not yet won or lost, by their deadline (soonest first, those without one last); `open=false` the closed ones, newest first; `terminal=true` card and UPI terminal payments, `false` the gateway's. Each with its number, where it came from (`Gateway`, `Terminal`, `Notice`), status (`Open`, `Contested`, `Won`, `Lost`), the receipt, payment line, bill, mode and reference (the gateway's payment id or the RRN), the amount taken back, the notice's reason code, reason and answer-by date with `daysLeft` (negative when late; null once answered), the evidence sent, who asked to accept the loss and `lossWaiting` while that waits for a second person, how it ended and the reversal's number |
 | GET | `/summary` | → `PaymentDisputeSummaryDto(open, openAmount, dueSoon, late)`: open cases and what they took back; those not answered whose deadline is within two days, or past |
 | GET | `/{id}` | → `PaymentDisputeDto`; 404 for another facility's case |
+| GET | `/payment-lines?receiptNumber` | → `DisputablePaymentDto[]` (id, mode, amount, the gateway's payment id or the recorded reference, and whether a case on it is open): the receipt's card, UPI and online payment lines, to choose the one a notice names; 404 for a receipt not in this facility |
 | POST | `/` | `OpenPaymentDisputeRequest(receiptNumber, paymentId?, amount, reasonCode?, reason?, respondBy?)` → 201 `PaymentDisputeDto`: a case opened from the bank's or the gateway's notice. 400 `receiptNumber` for a receipt not in this facility, `paymentId` when the receipt has more than one card, UPI or online payment and none is chosen, `amount` for more than the payment; 422 `billing.dispute_not_card` for a receipt with no card, UPI, net banking, wallet or gateway payment; 409 `billing.dispute_open` while a case on the payment is open. Audited `billing.dispute.opened` |
 | POST | `/{id}/details` | `DescribePaymentDisputeRequest(reasonCode?, reason?, respondBy?, version)` → `PaymentDisputeDto`: what the notice says and the date to answer by (a new date is reminded again). Audited `billing.dispute.described` |
 | POST | `/{id}/evidence` | `PaymentDisputeEvidenceRequest(sentOn, note, version)` (note 5–500 characters) → `PaymentDisputeDto` `Contested`; 400 `sentOn` after today. Audited `billing.dispute.evidence_sent` |
@@ -1176,15 +1177,18 @@ or the payment gateway (documented gap 10). HC360 follows each as a case (`Payme
   with each import and **Match again**. A settlement read again (each fetch of its day, **Match again**) finds its case
   and opens no second one; a run whose exceptions clash with another's lets go of the cases it staged with them, and
   reads them again.
-* **From the notice.** An accountant opens a `Notice` case with the receipt number, the amount and what the notice
-  says, often before any settlement carries it; the settlement that takes the money later joins that case.
+* **From the notice.** An accountant opens a `Notice` case with the receipt number (choosing the payment the notice
+  names when the receipt has more than one card, UPI or online payment), the amount and what the notice says, often
+  before any settlement carries it; the settlement that takes the money later joins that case.
 
 The accountant records the notice's reason code, reason and the date to answer by, then the evidence sent (the bill,
 the receipt, the charge slip, the patient's consent…) with the day it was sent: the case is `Contested` until the bank
 decides. It ends one of two ways:
 
-* **Won.** An accountant records how the money came back; or the gateway gives it back in a later settlement (an
-  adjustment adding money on the same payment), which wins the open case by itself and is no exception either.
+* **Won.** An accountant records how the money came back; or the gateway gives back what it took in a later settlement
+  (an adjustment adding that money on the same payment), which wins the open case by itself and is no exception either.
+  Part of it given back (or more) does not win the case: the case stays open for what is still taken back, and the
+  return is an amount-difference exception for the accountant to put against it.
 * **Lost.** Accepting the loss never closes a case by one person's word. The accountant asks; HC360 asks for the
   receipt's payment line to be reversed with the reason `Chargeback` (*Taken back by a chargeback*), and someone else
   who approves reversals (`billing.refunds.approve`) approves or rejects it, as any receipt reversal. Approved, the
