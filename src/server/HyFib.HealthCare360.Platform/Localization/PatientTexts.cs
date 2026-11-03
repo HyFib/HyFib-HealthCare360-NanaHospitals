@@ -16,6 +16,9 @@ namespace HyFib.HealthCare360.Platform.Localization;
 /// message), with its translation. Messages are matched on their English text, placeholders standing for any value, so a
 /// message whose English is changed in the code is shown in English until its entry is updated, never with a stale
 /// translation.</item>
+/// <item><c>validator.*</c>: the validators' own messages in the patient languages, worded without the field's name and
+/// keyed by FluentValidation's name for the check (<see cref="PatientValidatorMessages"/>). The English is the
+/// translators' source; English readers keep the library's own wording.</item>
 /// </list>
 /// </summary>
 public sealed partial class PatientTexts

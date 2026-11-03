@@ -234,15 +234,15 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
 ## The server's text in the patient's language (PP-06)
 
 The portal sends the language the patient chose in it with every call, the OTP sign-in included, as
-`X-HC360-Language: en|hi` (`getLanguage` of `createApiClient`, the `language` argument of `auth.requestOtp` and
+`X-HC360-Language: en|hi|ta` (`getLanguage` of `createApiClient`, the `language` argument of `auth.requestOtp` and
 `auth.verifyOtp`). For portal, public and OTP requests, and any request with a patient's sign-in, the server writes
 its own text in this order:
 
 1. the language chosen in the portal (`X-HC360-Language`): what the patient sees on screen wins, so a patient whose
    record says Hindi but who reads the portal in English gets English refusals and PDFs;
 2. without a choice in the request (a call with a patient's token from elsewhere), the preferred language on the
-   signed-in patient's record when it is English or Hindi ("Hindi", "hi", "हिन्दी"), read once per patient every five
-   minutes;
+   signed-in patient's record when it is English, Hindi or Tamil ("Hindi", "hi", "हिन्दी", "Tamil", "தமிழ்"), read once
+   per patient every five minutes;
 3. Accept-Language;
 4. English.
 
@@ -251,14 +251,35 @@ the record's preferred language, else English.
 
 * **Refusals.** The Problem Details `title`, `detail` and field messages of a refusal (400, 409, 422 and the others)
   are in that language, and the answer says so (`Content-Language: hi`). The `code` and the field names never change,
-  so the portal's own handling of codes is unaffected. A message without a translation is sent in English, as before.
-  The portal shows business-rule messages as sent, so a Hindi reader now sees the server's reason in Hindi; transport
-  and status problems (no connection, 401, 403, 404, 429, 5xx) are still worded by the portal itself.
+  so the portal's own handling of codes is unaffected. A message without a translation would be sent in English; a
+  test keeps that from happening (below). The portal shows business-rule messages as sent, so a Hindi or Tamil reader
+  sees the server's reason in their language; transport and status problems (no connection, 401, 403, 404, 429, 5xx)
+  are still worded by the portal itself.
+* **Field checks.** A field left empty, too long or holding a value not offered gets the validators' own message,
+  worded in Hindi and Tamil without the field's name, because the portal shows it next to the field: "यह जानकारी
+  ज़रूरी है।", where the library's own Hindi would name the field in English ('Patient Id'). These are the
+  `validator.*` texts, which `PatientValidatorMessages` gives the FluentValidation library for those languages. Staff,
+  and English readers, keep the library's own English.
 * **PDFs.** `…/pdf` answers in the same language as the request, so in the portal's (see print-templates.md, *The
   patient's language*).
 * **Texts.** One catalogue per language in `src/server/HyFib.HealthCare360.Platform/Localization/Resources`
-  (`patient-texts-en.json`, `patient-texts-hi.json`); a server message is matched on its English text. The Hindi is
-  listed for review by a native speaker in [../requirements/hindi-review.md](../requirements/hindi-review.md).
+  (`patient-texts-en.json`, `patient-texts-hi.json`, `patient-texts-ta.json`); a server message is matched on its
+  English text. The Hindi and Tamil are listed for review by native speakers in
+  [../requirements/hindi-review.md](../requirements/hindi-review.md) and
+  [../requirements/tamil-review.md](../requirements/tamil-review.md).
+* **Kept complete by a test.** `PortalMessageTests` (architecture tests) finds the portal's endpoints from the server
+  itself (every route under `/api/v1/portal`, `/api/v1/public` and `/api/v1/auth/otp`, and every endpoint the patients'
+  portal permission opens) and fails when anything they can answer with has no Hindi or Tamil entry:
+  * every rule of the requests they check, in each patient language;
+  * every message their code can return: it follows the compiled code from each endpoint through every call that can
+    carry a refusal back (an `Error`, a `Result` or an HTTP result), and reads each message at its source line, every
+    branch of it included;
+  * the title of each kind of refusal, "not found", "changed by someone else", and the answers of a switched-off
+    feature.
+
+  A message the code reaches but that is never sent to a patient (the portal pays a bill by its id, so the
+  IP-advance branches of the same method never run for it) is on a short reviewed list in the test, with its reason.
+  The test's output lists the few messages built at run time that it cannot read.
 
 ## Security and privacy
 
@@ -311,9 +332,8 @@ the record's preferred language, else English.
 ## Known gaps (server follow-ups)
 
 * **Refund status in the portal.** Patients do not see where a refund stands; the hospital tells them.
-* **Server text not yet translated.** Server messages of features added later, and the validators' built-in messages
-  ("'Reason' must not be empty"), which FluentValidation words in Hindi with the field's English name, are not in the
-  catalogue; they arrive in English (or in that mixed form) until their entries are added. Receipts and the privacy
-  data summary have no server PDF; they are printed from the page.
-* **Hindi review.** The server's Hindi was written by the development team and awaits a native speaker's review
-  ([../requirements/hindi-review.md](../requirements/hindi-review.md)).
+* **No server PDF for receipts or the privacy data summary.** They are printed from the page (*Documents without a
+  server PDF*, above).
+* **Hindi and Tamil review.** The server's Hindi and Tamil were written by the development team and await native
+  speakers' review ([../requirements/hindi-review.md](../requirements/hindi-review.md),
+  [../requirements/tamil-review.md](../requirements/tamil-review.md)).

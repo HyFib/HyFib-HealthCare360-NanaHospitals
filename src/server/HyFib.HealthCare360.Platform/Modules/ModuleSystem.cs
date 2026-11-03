@@ -2,6 +2,7 @@ using System.Reflection;
 using FluentValidation;
 using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -64,6 +65,9 @@ public static class ModuleServiceCollectionExtensions
     {
         var catalog = new ModuleCatalog(modules);
         services.AddSingleton(catalog);
+
+        // The validators' own messages in the patient languages, without the field's English name (PP-06).
+        PatientValidatorMessages.Install();
 
         foreach (var assembly in catalog.Assemblies)
         {

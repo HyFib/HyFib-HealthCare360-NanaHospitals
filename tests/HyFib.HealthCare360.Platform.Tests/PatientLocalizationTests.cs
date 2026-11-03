@@ -169,6 +169,40 @@ public sealed class PatientLocalizationTests
         DocumentFonts.HasDevanagari(message).ShouldBeTrue(message);
     }
 
+    [Theory]
+    [InlineData("hi-IN", "यह जानकारी ज़रूरी है।", "500 अक्षरों से ज़्यादा न लिखें। आपने 501 अक्षर लिखे हैं।")]
+    [InlineData("ta-IN", "இந்தத் தகவல் தேவை.", "500 எழுத்துகளுக்கு மிகாமல் எழுதுங்கள். நீங்கள் 501 எழுத்துகள் எழுதியுள்ளீர்கள்.")]
+    public void The_validators_own_messages_reach_a_patient_without_the_fields_english_name(string culture, string required, string tooLong)
+    {
+        var messages = new PatientValidatorMessages(PatientTexts.Catalog);
+        var formatter = new FluentValidation.Internal.MessageFormatter().AppendArgument("MaxLength", 500).AppendArgument("TotalLength", 501);
+
+        messages.GetString("NotEmptyValidator", CultureInfo.GetCultureInfo(culture)).ShouldBe(required);
+        formatter.BuildMessage(messages.GetString("MaximumLengthValidator", CultureInfo.GetCultureInfo(culture))).ShouldBe(tooLong);
+        messages.GetString("NotEmptyValidator", CultureInfo.GetCultureInfo(culture[..2])).ShouldBe(required, "the language without its region");
+        messages.GetString("EmailValidator", CultureInfo.GetCultureInfo(culture)).ShouldNotContain("{PropertyName}");
+    }
+
+    [Fact]
+    public void Staff_keep_the_validators_own_english()
+    {
+        var messages = new PatientValidatorMessages(PatientTexts.Catalog);
+
+        messages.GetString("NotEmptyValidator", CultureInfo.GetCultureInfo("en")).ShouldBe("'{PropertyName}' must not be empty.");
+        messages.GetString("NotEmptyValidator", CultureInfo.GetCultureInfo("en-IN")).ShouldBe("'{PropertyName}' must not be empty.");
+    }
+
+    [Fact]
+    public void Every_validator_text_is_one_fluent_validation_has()
+    {
+        // A key FluentValidation does not use would never be shown: a misspelt validator name is a mistake.
+        var english = new FluentValidation.Resources.LanguageManager();
+        var keys = PatientTexts.Catalog.Languages[PatientLanguages.English].Keys.Where(k => k.StartsWith(PatientValidatorMessages.KeyPrefix, StringComparison.Ordinal)).ToList();
+
+        keys.ShouldNotBeEmpty();
+        keys.Where(key => string.IsNullOrEmpty(english.GetString(key[PatientValidatorMessages.KeyPrefix.Length..], CultureInfo.GetCultureInfo("en")))).ShouldBeEmpty();
+    }
+
     // ---------------- Problem Details
 
     [Fact]
