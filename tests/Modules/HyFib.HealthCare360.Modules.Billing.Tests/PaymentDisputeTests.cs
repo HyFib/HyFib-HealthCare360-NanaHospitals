@@ -1,11 +1,14 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Services;
+using HyFib.HealthCare360.Platform.Integrations;
 
 namespace HyFib.HealthCare360.Modules.Billing.Tests;
 
 /// <summary>
 /// A chargeback case: what the bank's notice says and the date to answer by, reminders as the date comes near (kept
 /// apart from the case, <see cref="PaymentDisputeReminder"/>), the evidence sent, and the two ends — won (by an accountant, or by the gateway returning the money) and lost (only by a
-/// reversal someone approved). A closed case takes no more changes.
+/// reversal someone approved). A closed case takes no more changes. A case on a gateway payment follows the gateway's
+/// own record of the dispute: its reason code, phase, status and deadline.
 /// </summary>
 public sealed class PaymentDisputeTests
 {
@@ -256,5 +259,149 @@ public sealed class PaymentDisputeTests
         dispute.WonByReturn("Returned", Guid.CreateVersion7(), Now);
 
         dispute.Describe(null, null, Today).Error!.Message.ShouldBe("Chargeback NHCB2600001 is closed: it was won.");
+    }
+
+    private static GatewayDispute Gateway(GatewayDisputeStatus status, string word, DateTimeOffset? submittedAt = null) =>
+        new("disp_AHfqOvkldwsbqt", "pay_EsyWjHrfzb59eR", 1_500m, "pre_arbitration", "pre_arbitration", status, word,
+            DateTimeOffset.FromUnixTimeSeconds(1590604200), DateTimeOffset.FromUnixTimeSeconds(1590059211), submittedAt);
+
+    [Fact]
+    public void The_last_day_to_answer_is_the_day_before_the_gateways_midnight()
+    {
+        // Razorpay's documented dispute answers by 1590604200: midnight in India at the start of 28 May 2020.
+        PaymentDisputeService.LastDay(DateTimeOffset.FromUnixTimeSeconds(1590604200)).ShouldBe(new DateOnly(2020, 5, 27));
+        PaymentDisputeService.LastDay(new DateTimeOffset(2020, 5, 27, 23, 59, 0, TimeSpan.FromHours(5.5))).ShouldBe(new DateOnly(2020, 5, 27));
+        PaymentDisputeService.LastDay(null).ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_gateway_dispute_gives_the_case_its_reason_code_phase_status_and_deadline()
+    {
+        var dispute = Case();
+        dispute.Describe("10.4", "Card holder says the payment was not theirs", Today.AddDays(9));
+
+        var changed = dispute.FollowGateway(Gateway(GatewayDisputeStatus.Open, "open"), Today.AddDays(5), null, Now);
+
+        changed.ShouldBe("follows the gateway's dispute disp_AHfqOvkldwsbqt; the gateway says open; phase pre arbitration; reason code pre_arbitration; answer by "
+                         + Today.AddDays(5).ToString("dd-MM-yyyy"));
+        dispute.ShouldSatisfyAllConditions(
+            d => d.GatewayDisputeId.ShouldBe("disp_AHfqOvkldwsbqt"),
+            d => d.GatewayStatus.ShouldBe("open"),
+            d => d.GatewayPhase.ShouldBe("pre_arbitration"),
+            d => d.ReasonCode.ShouldBe("pre_arbitration"),
+            d => d.Reason.ShouldBe("Card holder says the payment was not theirs", "the accountant's words are kept"),
+            d => d.RespondBy.ShouldBe(Today.AddDays(5)),
+            d => d.Status.ShouldBe(PaymentDisputeStatus.Open));
+    }
+
+    [Fact]
+    public void Reading_the_same_dispute_again_changes_nothing()
+    {
+        var dispute = Case();
+        dispute.FollowGateway(Gateway(GatewayDisputeStatus.Open, "open"), Today.AddDays(5), null, Now);
+
+        dispute.FollowGateway(Gateway(GatewayDisputeStatus.Open, "open"), Today.AddDays(5), null, Now.AddHours(1)).ShouldBeNull();
+    }
+
+    [Fact]
+    public void Evidence_submitted_at_the_gateway_makes_the_case_contested()
+    {
+        var dispute = Case();
+
+        dispute.FollowGateway(Gateway(GatewayDisputeStatus.UnderReview, "under_review"), Today.AddDays(5), Today.AddDays(-1), Now);
+
+        dispute.ShouldSatisfyAllConditions(
+            d => d.Status.ShouldBe(PaymentDisputeStatus.Contested),
+            d => d.EvidenceSentOn.ShouldBe(Today.AddDays(-1)),
+            d => d.EvidenceNote.ShouldBe("Submitted at the gateway."));
+    }
+
+    [Fact]
+    public void Evidence_the_accountant_recorded_is_kept_when_the_gateway_reports_it_submitted()
+    {
+        var dispute = Case();
+        dispute.RecordEvidence(Today.AddDays(-2), "Bill and consent uploaded to Razorpay", "Asha", Today);
+
+        dispute.FollowGateway(Gateway(GatewayDisputeStatus.UnderReview, "under_review"), Today.AddDays(5), Today.AddDays(-1), Now);
+
+        dispute.EvidenceSentOn.ShouldBe(Today.AddDays(-2));
+        dispute.EvidenceNote.ShouldBe("Bill and consent uploaded to Razorpay");
+    }
+
+    [Fact]
+    public void The_gateway_deciding_for_the_hospital_wins_the_case()
+    {
+        var dispute = Case();
+
+        dispute.FollowGateway(Gateway(GatewayDisputeStatus.Won, "won"), Today.AddDays(5), null, Now)
+            .ShouldEndWith("won: the gateway decided it for the hospital");
+
+        dispute.ShouldSatisfyAllConditions(
+            d => d.Status.ShouldBe(PaymentDisputeStatus.Won),
+            d => d.ClosedByName.ShouldBeNull(),
+            d => d.ClosedAt.ShouldBe(Now),
+            d => d.Outcome.ShouldBe("The gateway decided the dispute for the hospital."));
+    }
+
+    [Fact]
+    public void A_loss_the_gateway_decided_waits_for_someone_to_accept_it()
+    {
+        var dispute = Case();
+        var reminder = new PaymentDisputeReminder();
+
+        dispute.FollowGateway(Gateway(GatewayDisputeStatus.Lost, "lost"), Today, null, Now);
+
+        dispute.ShouldSatisfyAllConditions(
+            d => d.Status.ShouldBe(PaymentDisputeStatus.Open, "a loss is booked only by a reversal a second person approves"),
+            d => d.DecidedAgainst.ShouldBeTrue(),
+            d => d.ReversalId.ShouldBeNull());
+        reminder.IsDue(dispute, Today).ShouldBeFalse("nothing is answered any more");
+        dispute.Lose(Guid.CreateVersion7(), "NHRR26000010", Now).ShouldBeTrue();
+        dispute.DecidedAgainst.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_closed_case_only_keeps_the_gateways_status()
+    {
+        var dispute = Case();
+        dispute.Win("HDFC credited it back", "Asha", Now);
+
+        dispute.FollowGateway(Gateway(GatewayDisputeStatus.Lost, "lost"), Today.AddDays(5), null, Now)
+            .ShouldBe("follows the gateway's dispute disp_AHfqOvkldwsbqt; the gateway says lost; phase pre arbitration");
+
+        dispute.ShouldSatisfyAllConditions(
+            d => d.Status.ShouldBe(PaymentDisputeStatus.Won),
+            d => d.RespondBy.ShouldBeNull(),
+            d => d.ReasonCode.ShouldBeNull(),
+            d => d.DecidedAgainst.ShouldBeFalse());
+    }
+
+    [Fact]
+    public void The_deadline_of_a_case_following_a_gateway_dispute_is_the_gateways()
+    {
+        var dispute = Case();
+        dispute.FollowGateway(Gateway(GatewayDisputeStatus.Open, "open"), Today.AddDays(5), null, Now);
+
+        var refused = dispute.Describe("4837", "No authorisation", Today.AddDays(9));
+
+        refused.Error!.Fields!.ShouldContainKey("respondBy");
+        dispute.RespondBy.ShouldBe(Today.AddDays(5));
+        dispute.Describe("4837", "No authorisation", Today.AddDays(5)).IsSuccess.ShouldBeTrue();
+        dispute.Reason.ShouldBe("No authorisation");
+    }
+
+    [Fact]
+    public void The_money_of_a_case_won_by_the_gateways_decision_comes_back_once()
+    {
+        var dispute = Case();
+        var returned = Guid.CreateVersion7();
+        dispute.Returned(returned).ShouldBeFalse("an open case is won by the return instead");
+        dispute.FollowGateway(Gateway(GatewayDisputeStatus.Won, "won"), Today, null, Now);
+
+        dispute.Returned(returned).ShouldBeTrue();
+        dispute.Returned(Guid.CreateVersion7()).ShouldBeFalse();
+
+        dispute.ReturnLineId.ShouldBe(returned);
+        dispute.Outcome.ShouldBe("The gateway decided the dispute for the hospital.");
     }
 }

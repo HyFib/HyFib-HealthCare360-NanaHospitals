@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Platform.Integrations;
+
 namespace HyFib.HealthCare360.Modules.Billing.Domain;
 
 /// <summary>Where HC360 learnt of a chargeback.</summary>
@@ -74,8 +76,23 @@ public sealed class PaymentDispute : AuditableEntity, IFacilityScoped
     /// <summary>The acquirer's chargeback transaction (a terminal case).</summary>
     public Guid? PosSettlementLineId { get; set; }
 
-    /// <summary>The gateway settlement's adjustment that gave the money back (a case the gateway's return won).</summary>
+    /// <summary>
+    /// The settlement line that gave the money back: the gateway settlement's adjustment for an online payment, the
+    /// acquirer's chargeback reversal for a terminal payment.
+    /// </summary>
     public Guid? ReturnLineId { get; set; }
+
+    /// <summary>
+    /// The gateway's own record of this dispute (<c>disp_…</c>). The reason code, phase, status and deadline of a case
+    /// that follows one are the gateway's, read by HC360 (<see cref="FollowGateway"/>).
+    /// </summary>
+    public string? GatewayDisputeId { get; set; }
+
+    /// <summary>The gateway's word for where the dispute stands: <c>open</c>, <c>under_review</c>, <c>won</c>, <c>lost</c>, <c>closed</c>…</summary>
+    public string? GatewayStatus { get; set; }
+
+    /// <summary>The dispute's phase at the gateway: <c>chargeback</c>, <c>pre_arbitration</c>, <c>arbitration</c>…</summary>
+    public string? GatewayPhase { get; set; }
 
     /// <summary>The network's or the gateway's reason code (for example 10.4, 4837, or "fraudulent").</summary>
     public string? ReasonCode { get; set; }
@@ -118,12 +135,26 @@ public sealed class PaymentDispute : AuditableEntity, IFacilityScoped
 
     public bool IsClosed => Status is PaymentDisputeStatus.Won or PaymentDisputeStatus.Lost;
 
+    /// <summary>
+    /// The gateway decided the dispute against the hospital and the loss is not booked yet: the next step is to accept it,
+    /// which a second person approves. Nothing is answered any more, so the deadline is no longer reminded.
+    /// </summary>
+    public bool DecidedAgainst => !IsClosed && GatewayStatus == GatewayLost;
+
+    /// <summary>The gateway's word for a dispute decided against the hospital.</summary>
+    public const string GatewayLost = "lost";
+
     /// <summary>What the bank's or the gateway's notice says: the reason and the date to answer by.</summary>
     public Result Describe(string? reasonCode, string? reason, DateOnly? respondBy)
     {
         if (IsClosed)
         {
             return Closed();
+        }
+
+        if (GatewayDisputeId is not null && RespondBy is { } gatewayDate && respondBy != gatewayDate)
+        {
+            return Error.Field("respondBy", $"The gateway sets the date to answer dispute {GatewayDisputeId} by: {gatewayDate:dd-MM-yyyy}.");
         }
 
         ReasonCode = Clip(reasonCode, 32);
@@ -190,6 +221,84 @@ public sealed class PaymentDispute : AuditableEntity, IFacilityScoped
         return true;
     }
 
+    /// <summary>
+    /// The money of a case already won (by an accountant, or by the gateway's decision) came back in a settlement
+    /// (<paramref name="returnLineId"/>). False when the case is not won, or already has its money back.
+    /// </summary>
+    public bool Returned(Guid returnLineId)
+    {
+        if (Status != PaymentDisputeStatus.Won || ReturnLineId is not null)
+        {
+            return false;
+        }
+
+        ReturnLineId = returnLineId;
+        return true;
+    }
+
+    /// <summary>
+    /// What the gateway's own record of the dispute says now: read from the gateway by HC360, never taken from a
+    /// webhook's body. The case takes the gateway's dispute id, status, phase, reason code and the last day to answer
+    /// (<paramref name="respondBy"/>); it is contested once the evidence was submitted there (on
+    /// <paramref name="submittedOn"/>), and won when the gateway decided for the hospital. A loss the gateway decided is
+    /// not booked here: the case waits for an accountant to accept it and a second person to approve the reversal
+    /// (<see cref="DecidedAgainst"/>). A closed case only keeps the gateway's status and phase. Returns what changed, in
+    /// words, or null when nothing did: a read that changes nothing leaves the case as it was.
+    /// </summary>
+    public string? FollowGateway(GatewayDispute dispute, DateOnly? respondBy, DateOnly? submittedOn, DateTimeOffset now)
+    {
+        var changes = new List<string>();
+        if (GatewayDisputeId != dispute.DisputeId)
+        {
+            GatewayDisputeId = dispute.DisputeId;
+            changes.Add($"follows the gateway's dispute {dispute.DisputeId}");
+        }
+
+        var status = Clip(dispute.StatusText, 32);
+        if (GatewayStatus != status)
+        {
+            GatewayStatus = status;
+            changes.Add($"the gateway says {status?.Replace('_', ' ') ?? "nothing"}");
+        }
+
+        var phase = Clip(dispute.Phase, 32);
+        if (GatewayPhase != phase)
+        {
+            GatewayPhase = phase;
+            changes.Add($"phase {phase?.Replace('_', ' ') ?? "—"}");
+        }
+
+        if (!IsClosed)
+        {
+            if (Clip(dispute.ReasonCode, 32) is { } code && ReasonCode != code)
+            {
+                ReasonCode = code;
+                changes.Add($"reason code {code}");
+            }
+
+            if (respondBy is { } by && RespondBy != by)
+            {
+                RespondBy = by;
+                changes.Add($"answer by {by:dd-MM-yyyy}");
+            }
+
+            if (dispute.Status == GatewayDisputeStatus.UnderReview && Status == PaymentDisputeStatus.Open)
+            {
+                Status = PaymentDisputeStatus.Contested;
+                EvidenceSentOn ??= submittedOn;
+                EvidenceNote ??= "Submitted at the gateway.";
+                changes.Add("evidence submitted at the gateway");
+            }
+            else if (dispute.Status == GatewayDisputeStatus.Won)
+            {
+                Close(PaymentDisputeStatus.Won, "The gateway decided the dispute for the hospital.", null, now);
+                changes.Add("won: the gateway decided it for the hospital");
+            }
+        }
+
+        return changes.Count == 0 ? null : string.Join("; ", changes);
+    }
+
     /// <summary>Someone asked to accept the loss: a receipt reversal waits for a second person (<paramref name="subjectType"/>, <paramref name="subjectId"/>).</summary>
     public Result LossAsked(string? byName, string subjectType, Guid subjectId, DateTimeOffset now)
     {
@@ -254,12 +363,16 @@ public sealed class PaymentDisputeReminder
     /// <summary>The deadline that reminder was about: a deadline changed since is reminded again the same day.</summary>
     public DateOnly? RemindedFor { get; set; }
 
+    /// <summary>When they were told the gateway decided the dispute against the hospital (once).</summary>
+    public DateTimeOffset? LostToldAt { get; set; }
+
     /// <summary>
-    /// Not answered, its deadline within <see cref="PaymentDispute.RemindDays"/> days or past, and not reminded today of
-    /// that deadline.
+    /// Not answered, not already decided against the hospital at the gateway, its deadline within
+    /// <see cref="PaymentDispute.RemindDays"/> days or past, and not reminded today of that deadline.
     /// </summary>
     public bool IsDue(PaymentDispute dispute, DateOnly today) =>
-        dispute.Status == PaymentDisputeStatus.Open && dispute.RespondBy is { } by && by <= today.AddDays(PaymentDispute.RemindDays)
+        dispute.Status == PaymentDisputeStatus.Open && !dispute.DecidedAgainst
+        && dispute.RespondBy is { } by && by <= today.AddDays(PaymentDispute.RemindDays)
         && (RemindedOn != today || RemindedFor != by);
 
     public void Reminded(DateOnly today, DateOnly respondBy)

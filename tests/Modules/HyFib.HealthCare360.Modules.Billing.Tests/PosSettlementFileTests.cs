@@ -192,6 +192,28 @@ public sealed class PosSettlementFileTests
     }
 
     [Fact]
+    public void A_chargeback_the_acquirer_reversed_gives_the_money_back()
+    {
+        var file = Read("""
+            TID,Txn Type,RRN,Txn Amount,Net Amount,Settlement Date,UTR
+            72001234,Chargeback,627910123456,1200.00,1200.00,07/10/2026,UTR123
+            72001234,Chargeback Reversal,627910123456,1200.00,1200.00,09/10/2026,UTR124
+            72001234,CBK REPRESENTMENT CREDIT,627910123457,800.00,790.00,09/10/2026,UTR124
+            72001234,Adjustment Debit,627910123458,300.00,300.00,09/10/2026,UTR124
+            """);
+
+        file.Rows.Select(r => (r.Type, r.Net, r.Charges)).ShouldBe(
+        [
+            (PosSettlementLineType.Adjustment, -1_200m, 0m),
+            (PosSettlementLineType.Adjustment, 1_200m, 0m),
+            (PosSettlementLineType.Adjustment, 790m, 10m),
+            (PosSettlementLineType.Adjustment, -300m, 0m),
+        ]);
+        file.Problems.ShouldBeEmpty();
+        file.Rows[1].Key.ShouldNotBe(file.Rows[0].Key, "the reversal is a transaction of its own, not the chargeback again");
+    }
+
+    [Fact]
     public void Chargebacks_that_nothing_tells_apart_are_all_kept_and_keep_their_keys_in_a_later_report()
     {
         const string report = """

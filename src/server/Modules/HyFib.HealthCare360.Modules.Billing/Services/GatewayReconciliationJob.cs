@@ -298,6 +298,36 @@ public sealed class GatewayReconciliationRunner(
         return added;
     }
 
+    /// <summary>
+    /// The gateway's own records of disputes, for every active facility with reconciliation on
+    /// (<see cref="PaymentDisputeService.FollowGatewayDisputesAsync"/>): a dispute whose webhook never came, or could not
+    /// be handled, still has its case, with the gateway's deadline and status.
+    /// </summary>
+    public async Task<int> FollowGatewayDisputesAsync(CancellationToken ct)
+    {
+        var facilities = await db.Set<Facility>().AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => f.Id).ToListAsync(ct);
+        var read = 0;
+        foreach (var facilityId in facilities)
+        {
+            if (!(await GatewayReconciliationSettings.ReadAsync(settings, facilityId, ct)).Enabled)
+            {
+                continue;
+            }
+
+            try
+            {
+                read += await disputes.FollowGatewayDisputesAsync(facilityId, ct) ?? 0;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Could not follow the gateway's disputes for facility {FacilityId}", facilityId);
+                db.ChangeTracker.Clear();
+            }
+        }
+
+        return read;
+    }
+
     /// <summary>Every run while the payment is fresh (two hours from when it was started), then about hourly.</summary>
     internal static bool IsBookingDue(DateTimeOffset startedAt, DateTimeOffset now)
     {
@@ -308,8 +338,9 @@ public sealed class GatewayReconciliationRunner(
 
 /// <summary>
 /// The gateway reconciliation job (INT-PG): every 5 minutes it asks the gateway about payments still open (links,
-/// portal checkouts, prepaid bookings and the orders they had before); hourly, and once at start, it follows gateway
-/// refunds, reads the settlements of today and yesterday, and lists receipts still unsettled. Runs only on nodes that
+/// portal checkouts, prepaid bookings and the orders they had before) and tells of chargebacks; hourly, and once at
+/// start, it follows gateway refunds, reads the settlements of today and yesterday, lists receipts still unsettled, and
+/// reads the gateway's disputes. Runs only on nodes that
 /// run jobs (<see cref="PlatformOptions.RunsJobs"/>); every step is idempotent, so a second worker does no harm.
 /// </summary>
 internal sealed class GatewayReconciliationJob(
@@ -339,6 +370,7 @@ internal sealed class GatewayReconciliationJob(
             {
                 await StepAsync("follow gateway refunds", (runner, ct) => runner.FollowRefundsAsync(ct), stoppingToken);
                 await StepAsync("read gateway settlements", (runner, ct) => runner.FetchSettlementsAsync(ct), stoppingToken);
+                await StepAsync("read the gateway's disputes", (runner, ct) => runner.FollowGatewayDisputesAsync(ct), stoppingToken);
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));

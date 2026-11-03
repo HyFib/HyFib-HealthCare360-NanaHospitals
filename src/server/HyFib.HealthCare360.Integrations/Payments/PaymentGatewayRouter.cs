@@ -100,6 +100,14 @@ internal sealed class PaymentGatewayRouter(IEnumerable<IPaymentProvider> provide
         }
     }
 
+    /// <summary>A dispute as the facility's gateway holds it; read even while online payments are switched off.</summary>
+    public Task<GatewayDisputeReport> GetDisputeAsync(string disputeId, Guid? facilityId, CancellationToken cancellationToken) =>
+        ReadDisputesAsync(facilityId, async (provider, config) => [await provider.GetDisputeAsync(disputeId, config.Settings!, config.Secrets, cancellationToken)], cancellationToken);
+
+    /// <summary>The disputes raised at the facility's gateway since <paramref name="since"/>, all or none.</summary>
+    public Task<GatewayDisputeReport> GetDisputesAsync(DateTimeOffset since, Guid? facilityId, CancellationToken cancellationToken) =>
+        ReadDisputesAsync(facilityId, (provider, config) => provider.GetDisputesAsync(since, config.Settings!, config.Secrets, cancellationToken), cancellationToken);
+
     /// <summary>
     /// Checkout (<c>order_id|payment_id</c>), payment-link and webhook signatures, checked with the secrets of the named
     /// facility's account (webhooks are anonymous, so the caller passes the facility of the order concerned).
@@ -130,6 +138,28 @@ internal sealed class PaymentGatewayRouter(IEnumerable<IPaymentProvider> provide
         var provider = providers.FirstOrDefault(p => p.Key == key)
             ?? throw new IntegrationException($"Unknown payment gateway '{key}'. Use razorpay or simulator.");
         return (provider, config);
+    }
+
+    private async Task<GatewayDisputeReport> ReadDisputesAsync(
+        Guid? facilityId,
+        Func<IPaymentProvider, IntegrationConfig<PaymentSettings, PaymentSecrets>, Task<IReadOnlyList<GatewayDispute>>> read,
+        CancellationToken cancellationToken)
+    {
+        using var facility = IntegrationTrace.ForFacility(facilityId);
+        var (provider, config, problem) = await ResolveForReadingAsync(facilityId, cancellationToken);
+        if (provider is null)
+        {
+            return GatewayDisputeReport.Unavailable(config.Settings?.Provider ?? "none", problem!);
+        }
+
+        try
+        {
+            return new GatewayDisputeReport(provider.Key, true, await read(provider, config), null);
+        }
+        catch (IntegrationException ex)
+        {
+            return GatewayDisputeReport.Unavailable(provider.Key, ex.Message);
+        }
     }
 
     /// <summary>The configured provider whether or not online payments are switched on (reconciliation of past payments).</summary>

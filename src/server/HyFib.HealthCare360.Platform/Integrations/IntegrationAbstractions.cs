@@ -125,6 +125,12 @@ public interface IPaymentGateway
 
     /// <summary>Where a refund stands at the gateway: pending until the bank confirms it, then processed or failed.</summary>
     Task<RefundStatusResult> GetRefundStatusAsync(string refundId, Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>One dispute (chargeback) as the gateway holds it now, or why it could not be read.</summary>
+    Task<GatewayDisputeReport> GetDisputeAsync(string disputeId, Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>Every dispute raised at the gateway since <paramref name="since"/>, or why they could not all be read.</summary>
+    Task<GatewayDisputeReport> GetDisputesAsync(DateTimeOffset since, Guid? facilityId, CancellationToken cancellationToken);
 }
 
 // ---------- Card/UPI POS terminal ----------

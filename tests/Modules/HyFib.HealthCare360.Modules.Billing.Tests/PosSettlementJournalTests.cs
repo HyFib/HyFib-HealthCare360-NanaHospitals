@@ -131,6 +131,20 @@ public sealed class PosSettlementJournalTests
     }
 
     [Fact]
+    public void A_chargeback_the_acquirer_reversed_puts_the_money_back_into_the_payout()
+    {
+        var row = new PosSettlementRow(1, PosSettlementLineType.Adjustment, PaymentMode.Card, "72001234", null, null, 1_200m, 0m, 0m, 1_200m, "627910123456", null, null, Day, "AXISN1");
+        var reversal = PosSettlementLine.From(Guid.CreateVersion7(), Guid.CreateVersion7(), "HDFC Bank", row);
+
+        reversal.ShouldSatisfyAllConditions(l => l.GivesBack.ShouldBeTrue(), l => l.Gross.ShouldBe(1_200m), l => l.NeedsAttention.ShouldBeTrue());
+        var journal = PosSettlementJournal.Journals([reversal], Day, "NH").ShouldHaveSingleItem();
+        journal.ShouldSatisfyAllConditions(
+            j => j.Net.ShouldBe(1_200m, "the bank receives it"),
+            j => j.Clears.ShouldHaveSingleItem().ShouldBe(new TallyPosClearing(PaymentMode.Card, 1_200m)));
+        Line(PosSettlementLineType.Adjustment, PaymentMode.Card, 1_200m, 0m, 0m).GivesBack.ShouldBeFalse();
+    }
+
+    [Fact]
     public void Other_counters_are_named_by_the_acquirers_terminal_id_in_any_case()
     {
         var settings = new PosSettlementSettings { OtherTerminals = ["ph000001", " 72009999 "] };

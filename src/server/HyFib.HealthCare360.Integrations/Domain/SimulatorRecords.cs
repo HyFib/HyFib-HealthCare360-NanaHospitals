@@ -44,6 +44,13 @@ public enum SimulatorTransactionKind
     /// the employee's number on it and <c>Description</c> the terminal's clock at the punch.
     /// </summary>
     TerminalPunch,
+
+    /// <summary>
+    /// A dispute (chargeback) on a simulated gateway payment: <c>ExternalId</c> is the dispute id, <c>Reference</c> the
+    /// payment id, <c>Description</c> the reason code, <c>Status</c> where it stands (Created while open) and
+    /// <c>CompletedAt</c> when it last moved.
+    /// </summary>
+    PaymentDispute,
 }
 
 public enum SimulatorTransactionStatus
@@ -54,6 +61,15 @@ public enum SimulatorTransactionStatus
     Approved,
     Cancelled,
     Refunded,
+
+    /// <summary>A simulated dispute whose evidence was submitted.</summary>
+    UnderReview,
+
+    /// <summary>A simulated dispute decided for the hospital.</summary>
+    Won,
+
+    /// <summary>A simulated dispute decided against the hospital.</summary>
+    Lost,
 }
 
 /// <summary>

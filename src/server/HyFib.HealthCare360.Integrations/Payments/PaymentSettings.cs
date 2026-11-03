@@ -61,6 +61,12 @@ internal interface IPaymentProvider
     Task<IReadOnlyList<PaymentSettlement>> GetSettlementsAsync(DateOnly settledOn, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken);
 
     Task<RefundStatusResult> GetRefundStatusAsync(string refundId, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken);
+
+    /// <summary>One dispute by its id; throws <see cref="IntegrationException"/> when it cannot be read.</summary>
+    Task<GatewayDispute> GetDisputeAsync(string disputeId, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken);
+
+    /// <summary>Every dispute raised since <paramref name="since"/>; throws <see cref="IntegrationException"/> when they cannot all be read.</summary>
+    Task<IReadOnlyList<GatewayDispute>> GetDisputesAsync(DateTimeOffset since, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken);
 }
 
 /// <summary>Rupee ↔ paise conversion with the validation every gateway call needs.</summary>

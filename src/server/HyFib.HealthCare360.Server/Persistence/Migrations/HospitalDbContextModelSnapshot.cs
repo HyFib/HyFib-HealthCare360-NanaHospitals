@@ -3583,6 +3583,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("debit");
 
+                    b.Property<string>("DisputeId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("dispute_id");
+
                     b.Property<string>("EntityId")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -3679,6 +3684,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<int>("Deliveries")
                         .HasColumnType("integer")
                         .HasColumnName("deliveries");
+
+                    b.Property<string>("DisputeId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("dispute_id");
 
                     b.Property<string>("EventId")
                         .IsRequired()
@@ -5092,9 +5102,24 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
 
+                    b.Property<string>("GatewayDisputeId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("gateway_dispute_id");
+
+                    b.Property<string>("GatewayPhase")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("gateway_phase");
+
                     b.Property<Guid?>("GatewaySettlementLineId")
                         .HasColumnType("uuid")
                         .HasColumnName("gateway_settlement_line_id");
+
+                    b.Property<string>("GatewayStatus")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("gateway_status");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
@@ -5230,6 +5255,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.HasIndex("FacilityId")
                         .HasDatabaseName("ix_payment_disputes_facility_id");
 
+                    b.HasIndex("GatewayDisputeId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_payment_disputes_gateway_dispute_id")
+                        .HasFilter("gateway_dispute_id IS NOT NULL");
+
                     b.HasIndex("GatewaySettlementLineId")
                         .IsUnique()
                         .HasDatabaseName("ix_payment_disputes_gateway_settlement_line_id")
@@ -5273,6 +5303,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<DateTimeOffset?>("AnnouncedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("announced_at");
+
+                    b.Property<DateTimeOffset?>("LostToldAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lost_told_at");
 
                     b.Property<DateOnly?>("RemindedFor")
                         .HasColumnType("date")

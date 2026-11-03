@@ -7,7 +7,8 @@ internal sealed record RazorpayReconItem(string SettlementId, string? Utr, DateT
 
 /// <summary>
 /// Reads Razorpay's settlement reconciliation data (<c>GET v1/settlements/recon/combined</c> and
-/// <c>GET v1/settlements/{id}</c>). Only ids, amounts, the UTR and the payment method are kept: the card network,
+/// <c>GET v1/settlements/{id}</c>). Only ids (with the dispute an adjustment was made for), amounts, the UTR and the
+/// payment method are kept: the card network,
 /// issuer and type, the description and the notes the API also returns are left behind, because reconciliation does
 /// not need them and notes can carry what staff typed about a patient.
 /// </summary>
@@ -48,7 +49,8 @@ internal static partial class RazorpaySettlements
                 Paise(element, "credit"),
                 Paise(element, "debit"),
                 Method(IntegrationHttp.Property(element, "method")),
-                RazorpayStatus.ReadTime(element, "created_at"));
+                RazorpayStatus.ReadTime(element, "created_at"),
+                RazorpayDisputes.SafeId(IntegrationHttp.Property(element, "dispute_id")));
             result.Add(new RazorpayReconItem(settlementId, Utr(IntegrationHttp.Property(element, "settlement_utr")), RazorpayStatus.ReadTime(element, "settled_at"), item));
         }
 

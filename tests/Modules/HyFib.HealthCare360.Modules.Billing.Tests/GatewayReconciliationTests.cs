@@ -466,6 +466,22 @@ public sealed class GatewayReconciliationTests
     }
 
     [Fact]
+    public void A_disputes_webhook_names_the_dispute_and_its_payment()
+    {
+        const string created = """
+            {"entity":"event","event":"payment.dispute.created","contains":["payment","dispute"],"payload":{
+             "payment":{"entity":{"id":"pay_EsyWjHrfzb59eR","order_id":"order_EsyWbwr9y7FfUd","amount":10000}},
+             "dispute":{"entity":{"id":"disp_AHfqOvkldwsbqt","entity":"dispute","payment_id":"pay_EsyWjHrfzb59eR","amount":10000,"status":"open"}}}}
+            """;
+
+        GatewayWebhookInfo.Read(created).ShouldBe(
+            new GatewayWebhookInfo("payment.dispute.created", "order_EsyWbwr9y7FfUd", "pay_EsyWjHrfzb59eR", null, null, "disp_AHfqOvkldwsbqt"));
+        GatewayWebhookInfo.Read("""{"event":"payment.dispute.lost","payload":{"dispute":{"entity":{"id":"disp_AHfqOvkldwsbqt","payment_id":"pay_EsyWjHrfzb59eR"}}}}""")
+            .ShouldBe(new GatewayWebhookInfo("payment.dispute.lost", null, "pay_EsyWjHrfzb59eR", null, null, "disp_AHfqOvkldwsbqt"));
+        GatewayWebhookInfo.Read("""{"event":"payment.dispute.won","payload":{"dispute":{"entity":{"id":"disp_../../x"}}}}""").DisputeId.ShouldBeNull();
+    }
+
+    [Fact]
     public void A_webhook_is_known_by_its_event_id_else_by_its_body()
     {
         GatewayWebhookInfo.EventIdOf("KE2cmXtQi5JDdj", "{}").ShouldBe("KE2cmXtQi5JDdj");

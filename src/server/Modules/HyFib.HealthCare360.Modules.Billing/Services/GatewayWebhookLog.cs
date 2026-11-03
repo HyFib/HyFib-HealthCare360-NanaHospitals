@@ -10,9 +10,10 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// <summary>
 /// What a gateway webhook is about: the event type and the gateway ids, nothing else. Razorpay's shape is
 /// <c>{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_…","order_id":"order_…"}}}}</c>; refunds,
-/// payment links, orders and settlements sit under their own names. Ids that do not look like gateway ids are dropped.
+/// payment links, orders, settlements and disputes sit under their own names. Ids that do not look like gateway ids are
+/// dropped.
 /// </summary>
-public sealed partial record GatewayWebhookInfo(string? EventType, string? OrderId, string? PaymentId, string? RefundId, string? SettlementId)
+public sealed partial record GatewayWebhookInfo(string? EventType, string? OrderId, string? PaymentId, string? RefundId, string? SettlementId, string? DisputeId = null)
 {
     public static GatewayWebhookInfo Read(string payload)
     {
@@ -30,9 +31,10 @@ public sealed partial record GatewayWebhookInfo(string? EventType, string? Order
             return new GatewayWebhookInfo(
                 eventType,
                 Id(Entity(body, "payment"), "order_id") ?? Id(Entity(body, "order"), "id") ?? Id(Entity(body, "payment_link"), "id"),
-                Id(Entity(body, "payment"), "id") ?? Id(Entity(body, "refund"), "payment_id"),
+                Id(Entity(body, "payment"), "id") ?? Id(Entity(body, "refund"), "payment_id") ?? Id(Entity(body, "dispute"), "payment_id"),
                 Id(Entity(body, "refund"), "id"),
-                Id(Entity(body, "settlement"), "id"));
+                Id(Entity(body, "settlement"), "id"),
+                Id(Entity(body, "dispute"), "id"));
         }
         catch (JsonException)
         {
@@ -121,6 +123,7 @@ public sealed class GatewayWebhookLog(IDbContextFactory<HospitalDbContext> conte
             PaymentId = info.PaymentId,
             RefundId = info.RefundId,
             SettlementId = info.SettlementId,
+            DisputeId = info.DisputeId,
             FacilityId = facilityId,
             ReceivedAt = now,
             StartedAt = now,

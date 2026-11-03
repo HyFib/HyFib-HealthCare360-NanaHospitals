@@ -233,13 +233,25 @@ public sealed class PosSettlementLine : Entity, IFacilityScoped, IVersioned
 
     public uint Version { get; set; }
 
-    /// <summary>The transaction before charges: positive for money in, negative for money returned or taken back.</summary>
-    public decimal Gross => Type == PosSettlementLineType.Sale ? Amount : -Amount;
+    /// <summary>
+    /// The transaction before charges: positive for money in (a sale, or a chargeback the acquirer reversed), negative
+    /// for money returned or taken back.
+    /// </summary>
+    public decimal Gross => Type == PosSettlementLineType.Sale || GivesBack ? Amount : -Amount;
+
+    /// <summary>
+    /// An adjustment that gives money back to the hospital: the acquirer reversed a chargeback (representment won, or the
+    /// cardholder withdrew it). It adds to the payout, and wins the case on its sale.
+    /// </summary>
+    public bool GivesBack => Type == PosSettlementLineType.Adjustment && Net > 0;
 
     /// <summary>Still to be looked at: it does not match, or it is a chargeback, and nobody has reviewed it.</summary>
     public bool NeedsAttention => ReviewedAt is null && DisputeId is null && NeedsAttentionWhenUnreviewed(Match);
 
-    /// <summary>The chargeback case that follows this chargeback (<see cref="PaymentDispute"/>); the case is what to look at then.</summary>
+    /// <summary>
+    /// The chargeback case that follows this chargeback, or that this reversal won (<see cref="PaymentDispute"/>); the case
+    /// is what to look at then.
+    /// </summary>
     public Guid? DisputeId { get; set; }
 
     public static bool NeedsAttentionWhenUnreviewed(PosSettlementMatch match) =>

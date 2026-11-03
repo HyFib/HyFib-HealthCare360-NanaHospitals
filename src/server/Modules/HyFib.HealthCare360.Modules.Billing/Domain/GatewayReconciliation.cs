@@ -146,6 +146,7 @@ public sealed class GatewaySettlement : Entity, IFacilityScoped
                 Credit = Money.Round(item.Credit),
                 Debit = Money.Round(item.Debit),
                 Method = item.Method,
+                DisputeId = item.DisputeId,
                 TransactionAt = item.CreatedAt,
                 SettledAt = reported.SettledAt,
                 Match = item.Type is PaymentTransactionType.Payment ? SettlementMatch.NoReceipt
@@ -240,6 +241,9 @@ public sealed class GatewaySettlementLine : Entity
     public decimal Credit { get; set; }
     public decimal Debit { get; set; }
     public string? Method { get; set; }
+
+    /// <summary>For an adjustment a dispute made, the gateway's dispute (<c>disp_…</c>): the case it belongs to.</summary>
+    public string? DisputeId { get; set; }
 
     /// <summary>When the payment was taken or the refund made at the gateway.</summary>
     public DateTimeOffset? TransactionAt { get; set; }
@@ -604,6 +608,10 @@ public sealed class GatewayWebhookEvent : Entity
     public string? PaymentId { get; set; }
     public string? RefundId { get; set; }
     public string? SettlementId { get; set; }
+
+    /// <summary>The gateway's dispute the event was about (<c>payment.dispute.*</c>).</summary>
+    public string? DisputeId { get; set; }
+
     public Guid? FacilityId { get; set; }
     public DateTimeOffset ReceivedAt { get; set; }
 
