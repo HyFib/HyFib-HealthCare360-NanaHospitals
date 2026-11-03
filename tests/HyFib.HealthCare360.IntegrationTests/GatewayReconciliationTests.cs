@@ -421,6 +421,52 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
         (await AuditCountAsync("billing.dispute.opened", opened.Id)).ShouldBe(1);
         (await AuditCountAsync("billing.dispute.won", opened.Id)).ShouldBe(1);
         (await AuditCountAsync("billing.dispute.returned", opened.Id)).ShouldBe(1);
+
+        // What the gateway says of the case afterwards (here, that it was lost) is followed: the case stays won, and it is
+        // not audited as a second win.
+        var followedBefore = await AuditCountAsync("billing.dispute.followed", opened.Id);
+        await MoveDisputeAsync(raised.ExternalId, SimulatorTransactionStatus.Lost);
+        (await DeliverAsync(DisputeEvent("payment.dispute.lost", raised.ExternalId, order), "evt" + Letters(16))).ShouldBe(new WebhookAck(true));
+        (await CasesOfAsync(order.ReceiptId.Value)).ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            d => d.Status.ShouldBe(PaymentDisputeStatus.Won),
+            d => d.GatewayStatus.ShouldBe("lost"),
+            d => d.ReversalId.ShouldBeNull());
+        (await AuditCountAsync("billing.dispute.won", opened.Id)).ShouldBe(1);
+        (await AuditCountAsync("billing.dispute.followed", opened.Id)).ShouldBe(followedBefore + 1);
+    }
+
+    [Fact]
+    public async Task A_loss_waiting_for_its_approver_when_the_gateway_decides_for_the_hospital_reverses_nothing()
+    {
+        await using var gateway = await PaymentsToSimulatorAsync();
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var order = await PaidOrderAsync();
+        var raised = await RaiseDisputeAsync(order, "13.1");
+        (await DeliverAsync(DisputeEvent("payment.dispute.created", raised.ExternalId, order), "evt" + Letters(16))).ShouldBe(new WebhookAck(true));
+        var opened = (await CasesOfAsync(order.ReceiptId!.Value)).ShouldHaveSingleItem();
+        var current = await accountant.GetAsync<PaymentDisputeDto>($"/api/v1/billing/disputes/{opened.Id}");
+
+        // The accountant asks to accept the loss; before anyone approves it, the gateway decides for the hospital.
+        using var asked = await accountant.SendRawAsync(HttpMethod.Post, $"/api/v1/billing/disputes/{opened.Id}/accept-loss",
+            new PaymentDisputeNoteRequest("Nothing to send the bank.", current.Version));
+        asked.StatusCode.ShouldBe(HttpStatusCode.Accepted, await asked.Content.ReadAsStringAsync(Ct));
+        var approval = (await asked.Content.ReadFromJsonAsync<ApprovalRequestDto>(ApiClient.Json, Ct)).ShouldNotBeNull();
+        await MoveDisputeAsync(raised.ExternalId, SimulatorTransactionStatus.Won);
+        (await DeliverAsync(DisputeEvent("payment.dispute.won", raised.ExternalId, order), "evt" + Letters(16))).ShouldBe(new WebhookAck(true));
+        (await CasesOfAsync(order.ReceiptId.Value)).ShouldHaveSingleItem().Status.ShouldBe(PaymentDisputeStatus.Won);
+
+        // Approving the loss now is refused, and nothing is reversed: the case was won after the loss was asked for.
+        using var approve = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/approvals/{approval.Id}/approve", new ApproveRequest(null, approval.Version));
+        var problem = await approve.Content.ReadAsStringAsync(Ct);
+        approve.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, problem);
+        problem.ShouldContain("billing.dispute_won");
+        await using var check = server.Services.CreateAsyncScope();
+        (await check.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<ReceiptReversal>().IgnoreQueryFilters()
+            .AnyAsync(r => r.ReceiptId == order.ReceiptId, Ct)).ShouldBeFalse();
+        (await CasesOfAsync(order.ReceiptId.Value)).ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            d => d.Status.ShouldBe(PaymentDisputeStatus.Won),
+            d => d.ReversalId.ShouldBeNull());
     }
 
     [Fact]

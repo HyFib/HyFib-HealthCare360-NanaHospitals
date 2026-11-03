@@ -149,6 +149,7 @@ public sealed class PaymentDisputeService(
             }
         }
 
+        var wasWon = dispute.Status == PaymentDisputeStatus.Won;
         var changed = dispute.FollowGateway(
             gatewayDispute, LastDay(gatewayDispute.RespondBy),
             gatewayDispute.EvidenceSubmittedAt is { } submitted ? BillingTime.LocalDate(submitted) : null, time.GetUtcNow());
@@ -157,7 +158,8 @@ public sealed class PaymentDisputeService(
             return (dispute, $"Chargeback {dispute.Number} is as the gateway's dispute {gatewayDispute.DisputeId} says.");
         }
 
-        Audit(dispute, dispute.Status == PaymentDisputeStatus.Won ? "billing.dispute.won" : "billing.dispute.followed",
+        // Only the read that won the case is its win; what the gateway says of a case already won is followed.
+        Audit(dispute, !wasWon && dispute.Status == PaymentDisputeStatus.Won ? "billing.dispute.won" : "billing.dispute.followed",
             $"Chargeback {dispute.Number}, the gateway's dispute {gatewayDispute.DisputeId}: {changed}");
         return (dispute, opened ? $"Chargeback {dispute.Number} opened from the gateway's dispute {gatewayDispute.DisputeId}." : $"Chargeback {dispute.Number}: {changed}.");
     }
