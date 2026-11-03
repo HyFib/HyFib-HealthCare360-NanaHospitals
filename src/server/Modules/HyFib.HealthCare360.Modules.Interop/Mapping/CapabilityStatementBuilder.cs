@@ -52,7 +52,8 @@ internal static class CapabilityStatementBuilder
                               + "and its last day. State the purpose of use in the X-Purpose-Of-Use header (HL7 v3 ActReason: "
                               + string.Join(", ", SharingPurposeCodes.All) + "); a consent that names purposes admits no request without one. "
                               + "Records outside every consent that admits the caller are left out of searches and refused on read "
-                              + "(403 consent-required). Restricted (VIP) records also need patients.restricted.read or an emergency "
+                              + "(403 consent-required). Counselling notes go only under a consent that names them, labelled restricted "
+                              + "(v3 confidentiality R). Restricted (VIP) records also need patients.restricted.read or an emergency "
                               + "(break-the-glass) grant. Every read and search is recorded in the tamper-evident audit trail with the stated purpose.",
             },
         };

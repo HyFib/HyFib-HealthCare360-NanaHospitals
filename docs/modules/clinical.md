@@ -88,7 +88,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | GET | `/emr/patients/{patientId}/diagnoses?encounterId&problemsOnly` | emr.read | → `DiagnosisDto[]` |
 | POST | `/emr/encounters/{encounterId}/diagnoses` | emr.write | `AddDiagnosisRequest{icdCode?, title?, type, isPrimary, onsetDate, status, notes}` |
 | PUT | `/emr/diagnoses/{id}` | emr.write | `UpdateDiagnosisRequest{type, isPrimary, status, onsetDate, notes, version}` |
-| GET / POST | `/emr/patients/{patientId}/notes` | emr.read / emr.write | `WriteNoteRequest{encounterId?, admissionId?, type, title?, body}` → `ClinicalNoteDto` |
+| GET / POST | `/emr/patients/{patientId}/notes` | emr.read / emr.write | `WriteNoteRequest{encounterId?, admissionId?, type, title?, body}` → `ClinicalNoteDto`. The encounter and the admission must be this patient's (400 on `encounterId` or `admissionId`). Once signed, a note is served by the FHIR API to providers the patient's consent covers ([interop.md](interop.md#documentreference)); a counselling note only under a consent that names counselling notes |
 | PUT | `/emr/notes/{id}` | emr.write | `EditNoteRequest{type, title, body, version}` (author only, unsigned only) |
 | POST | `/emr/notes/{id}/sign` | encounters.sign | `SignNoteRequest{version}` |
 | POST | `/emr/notes/{id}/addendum` | emr.write | `AddendumRequest{body}` → new note with `amendsNoteId` |

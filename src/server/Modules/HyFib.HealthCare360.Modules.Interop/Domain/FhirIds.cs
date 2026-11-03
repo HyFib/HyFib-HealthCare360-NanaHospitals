@@ -3,7 +3,7 @@ namespace HyFib.HealthCare360.Modules.Interop.Domain;
 /// <summary>
 /// Logical ids of the facade's resources. A resource type fed by one table uses the row's GUID. A type fed by several
 /// sources prefixes it with the source (<c>visit-</c>, <c>enc-</c>, <c>lab-</c>, <c>rad-</c>, <c>card-</c>, <c>doc-</c>,
-/// <c>ds-</c>), and a vital-sign observation adds the measurement (<c>vs-{guid}-bp</c>). Every id is therefore stable
+/// <c>ds-</c>, <c>note-</c>), and a vital-sign observation adds the measurement (<c>vs-{guid}-bp</c>). Every id is therefore stable
 /// and resolves to exactly one row, and a read never has to probe several tables.
 /// </summary>
 internal static class FhirIds
@@ -16,6 +16,7 @@ internal static class FhirIds
     public const string Cardiology = "card-";
     public const string PatientDocument = "doc-";
     public const string DischargeSummary = "ds-";
+    public const string ClinicalNote = "note-";
 
     private const int GuidLength = 36;
 

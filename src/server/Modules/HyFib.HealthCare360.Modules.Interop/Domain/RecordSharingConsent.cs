@@ -12,7 +12,8 @@ internal sealed record SharingReader(Guid UserId, SharingPurpose? Purpose, DateO
 /// <summary>
 /// What one given record-sharing consent covers: the accounts that may read, what for, which kinds of records, the
 /// records' dates and the last day it lets anyone read. An empty list or a missing date leaves that part open, so a
-/// consent recorded without a scope shares the whole record with every FHIR account, as before scopes existed.
+/// consent recorded without a scope shares the whole record with every FHIR account, as before scopes existed, except
+/// the kinds a consent must name (counselling notes, <see cref="SharedRecordKinds.NamedOnly"/>).
 /// </summary>
 internal sealed record SharingScope(
     IReadOnlyCollection<Guid> ShareWith,
@@ -35,11 +36,12 @@ internal sealed record SharingScope(
         && (Purposes.Count == 0 || (reader.Purpose is { } purpose && Purposes.Contains(purpose)));
 
     /// <summary>
-    /// Whether a record of this kind, dated <paramref name="date"/> (hospital time), is shared under the consent. Once
-    /// the consent names dates, a record without a date is not shared.
+    /// Whether a record of this kind, dated <paramref name="date"/> (hospital time), is shared under the consent. A kind
+    /// the consent must name is shared only when it does. Once the consent names dates, a record without a date is not
+    /// shared.
     /// </summary>
     public bool Covers(SharedRecordKind kind, DateOnly? date) =>
-        (Kinds.Count == 0 || Kinds.Contains(kind))
+        (Kinds.Count == 0 ? !SharedRecordKinds.NamedOnly(kind) : Kinds.Contains(kind))
         && ((RecordsFrom is null && RecordsTo is null)
             || (date is { } day && (RecordsFrom is null || day >= RecordsFrom) && (RecordsTo is null || day <= RecordsTo)));
 }

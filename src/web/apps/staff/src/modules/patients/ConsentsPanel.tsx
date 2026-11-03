@@ -420,7 +420,7 @@ function SharingScopeFields({ control }: { control: Control<ConsentFormValues> }
         control={control}
         name="kinds"
         label="Which records"
-        hint="None ticked: all of them. The patient’s name, sex and date of birth go with any of them."
+        hint="None ticked: all of them but counselling notes, which are shared only when ticked. The patient’s name, sex and date of birth go with any of them."
         options={SHARED_RECORD_KINDS.map((k) => ({ value: k, label: SHARED_RECORD_KIND_LABELS[k] }))}
       />
       <FormGrid columns={3} minColumnWidth={160}>
@@ -570,9 +570,9 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
               control={form.control}
               name="sharing"
               label="What the patient agreed to share"
-              hint="Through the FHIR API, with other care providers’ integration accounts."
+              hint="Through the FHIR API, with other care providers’ integration accounts. Counselling notes are shared only when the patient chooses them."
               options={[
-                { value: 'everything', label: 'The whole record, with every partner' },
+                { value: 'everything', label: 'The whole record but counselling notes, with every partner' },
                 { value: 'limited', label: 'Only what the patient chose' },
               ]}
             />

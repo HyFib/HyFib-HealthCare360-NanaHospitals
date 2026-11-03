@@ -68,15 +68,38 @@ public sealed class RecordSharingConsentTests
     }
 
     [Fact]
-    public void A_consent_without_a_scope_admits_every_account_for_any_purpose_or_none_and_covers_every_record()
+    public void A_consent_without_a_scope_admits_every_account_for_any_purpose_or_none_and_covers_every_record_but_counselling_notes()
     {
         foreach (var reader in new[] { Reader, new SharingReader(PartnerB, SharingPurpose.Payment, Today), new SharingReader(PartnerB, null, Today) })
         {
             var scopes = RecordSharingConsent.ScopesFor([new ConsentFact(true, Monday, null)], reader);
 
             scopes.ShouldHaveSingleItem().ShouldBe(SharingScope.Everything);
-            Enum.GetValues<SharedRecordKind>().ShouldAllBe(kind => scopes[0].Covers(kind, null));
+            Enum.GetValues<SharedRecordKind>().Where(kind => kind != SharedRecordKind.CounsellingNotes).ShouldAllBe(kind => scopes[0].Covers(kind, null));
+            scopes[0].Covers(SharedRecordKind.CounsellingNotes, null).ShouldBeFalse("agreeing to share the record is not agreeing to share what was said in counselling");
         }
+    }
+
+    [Fact]
+    public void Counselling_notes_are_shared_only_under_a_consent_that_names_them()
+    {
+        SharedRecordKinds.NamedOnly(SharedRecordKind.CounsellingNotes).ShouldBeTrue();
+        Enum.GetValues<SharedRecordKind>().Where(SharedRecordKinds.NamedOnly).ShouldBe([SharedRecordKind.CounsellingNotes], "no other kind needs naming");
+
+        Scope(kinds: [SharedRecordKind.CounsellingNotes]).Covers(SharedRecordKind.CounsellingNotes, Today).ShouldBeTrue();
+        Scope(kinds: [SharedRecordKind.ClinicalNotes]).Covers(SharedRecordKind.CounsellingNotes, Today).ShouldBeFalse("other notes are not counselling notes");
+        Scope(kinds: [SharedRecordKind.CounsellingNotes]).Covers(SharedRecordKind.ClinicalNotes, Today).ShouldBeFalse();
+        Scope(from: new DateOnly(2026, 1, 1)).Covers(SharedRecordKind.CounsellingNotes, Today).ShouldBeFalse("dates alone name no kind");
+        Scope(shareWith: [PartnerA], purposes: [SharingPurpose.Treatment]).Covers(SharedRecordKind.ClinicalNotes, Today).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_consent_for_documents_shares_no_notes()
+    {
+        var documents = Scope(kinds: [SharedRecordKind.Documents]);
+
+        documents.Covers(SharedRecordKind.ClinicalNotes, Today).ShouldBeFalse("a patient who shared their discharge summaries did not share every note");
+        documents.Covers(SharedRecordKind.CounsellingNotes, Today).ShouldBeFalse();
     }
 
     [Fact]

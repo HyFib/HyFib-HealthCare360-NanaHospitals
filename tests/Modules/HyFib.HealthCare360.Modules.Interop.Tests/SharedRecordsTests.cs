@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using R4 = Hl7.Fhir.Model;
@@ -19,6 +20,29 @@ public sealed class SharedRecordsTests
         SharedRecords.KindOf(new R4.MedicationRequest()).ShouldBe(SharedRecordKind.Medicines);
         SharedRecords.KindOf(new R4.DocumentReference()).ShouldBe(SharedRecordKind.Documents);
         SharedRecords.KindOf(new R4.Immunization()).ShouldBe(SharedRecordKind.Immunisations);
+    }
+
+    [Theory]
+    [InlineData(ClinicalNoteType.ProgressNote, SharedRecordKind.ClinicalNotes)]
+    [InlineData(ClinicalNoteType.Procedure, SharedRecordKind.ClinicalNotes)]
+    [InlineData(ClinicalNoteType.Referral, SharedRecordKind.ClinicalNotes)]
+    [InlineData(ClinicalNoteType.Other, SharedRecordKind.ClinicalNotes)]
+    [InlineData(ClinicalNoteType.Counselling, SharedRecordKind.CounsellingNotes)]
+    public void A_note_is_a_clinical_note_or_a_counselling_note(ClinicalNoteType type, SharedRecordKind kind) =>
+        SharedRecords.KindOf(DocumentReferenceMapper.FromClinicalNote(ClinicalNoteDocumentTests.Note() with { Type = type }, TestData.Directory)).ShouldBe(kind);
+
+    [Fact]
+    public void A_document_typed_as_a_counselling_note_is_one_whatever_its_id()
+    {
+        var typed = new R4.DocumentReference
+        {
+            Id = "doc-01923a4b-0000-7000-8000-000000000d0c",
+            Type = DocumentReferenceMapper.NoteType(ClinicalNoteType.Counselling),
+        };
+
+        SharedRecords.KindOf(typed).ShouldBe(SharedRecordKind.CounsellingNotes, "the type decides, so it is never shared as something milder");
+        SharedRecords.KindOf(new R4.DocumentReference { Id = "doc-01923a4b-0000-7000-8000-000000000d0c", Type = DocumentReferenceMapper.NoteType(ClinicalNoteType.Referral) })
+            .ShouldBe(SharedRecordKind.Documents, "a referral letter filed with the record is a document, not a note");
     }
 
     [Theory]

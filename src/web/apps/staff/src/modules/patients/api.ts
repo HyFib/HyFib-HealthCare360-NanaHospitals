@@ -365,7 +365,10 @@ export const SHARING_PURPOSES = [
 ] as const;
 export type SharingPurpose = (typeof SHARING_PURPOSES)[number];
 
-/** The kinds of records a record-sharing consent can name. */
+/**
+ * The kinds of records a record-sharing consent can name. Counselling notes are shared only when a consent names them
+ * (`NAMED_ONLY_RECORD_KINDS`); a consent that names no kinds shares every other kind.
+ */
 export const SHARED_RECORD_KINDS = [
   'Visits',
   'Allergies',
@@ -375,8 +378,13 @@ export const SHARED_RECORD_KINDS = [
   'VitalSigns',
   'Documents',
   'Immunisations',
+  'ClinicalNotes',
+  'CounsellingNotes',
 ] as const;
 export type SharedRecordKind = (typeof SHARED_RECORD_KINDS)[number];
+
+/** Kinds a consent shares only when it names them (the server's `SharedRecordKinds.NamedOnly`). */
+export const NAMED_ONLY_RECORD_KINDS: readonly SharedRecordKind[] = ['CounsellingNotes'];
 
 /** An account another care provider reads records with through the FHIR API. */
 export interface SharingPartner {
