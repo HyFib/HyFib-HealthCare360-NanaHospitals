@@ -104,6 +104,20 @@ internal sealed class SimulatorPaymentGateway(SimulatorInbox inbox, SimulatorSig
         return settlements;
     }
 
+    /// <summary>A dispute the training gateway holds; the simulator never raises one by itself (a trainer or a test does).</summary>
+    public async Task<GatewayDispute> GetDisputeAsync(string disputeId, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    {
+        var started = trace.Start();
+        var dispute = await inbox.FindDisputeAsync(disputeId, cancellationToken);
+        await trace.LogAsync(IntegrationNames.Payment, Key, "dispute.fetch", dispute is not null, started, disputeId, null, dispute?.Status.ToString(),
+            dispute is null ? "The simulator has no such dispute." : null);
+        return dispute is null ? throw new IntegrationException("The simulator has no such dispute.") : SimulatorDisputes.ToGateway(dispute);
+    }
+
+    public async Task<IReadOnlyList<GatewayDispute>> GetDisputesAsync(
+        DateTimeOffset since, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken) =>
+        (await inbox.DisputesSinceAsync(since, cancellationToken)).Select(SimulatorDisputes.ToGateway).ToList();
+
     public bool VerifySignature(string payload, string signature, PaymentSecrets secrets) =>
         Signatures.VerifyHmacSha256Hex(string.IsNullOrWhiteSpace(secrets.SimulatorSecret) ? signingKey.Secret : secrets.SimulatorSecret, payload, signature);
 

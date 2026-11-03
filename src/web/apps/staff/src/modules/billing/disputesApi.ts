@@ -6,9 +6,10 @@ import type { PaymentMode } from './labels';
 
 /**
  * Chargebacks on card, UPI and gateway payments: /api/v1/billing/disputes. A case is opened by HC360 when a settlement
- * takes money back on a payment it recorded, or by an accountant from the bank's notice. Accountants record what the
- * notice says, the evidence sent and a win; accepting the loss asks for the receipt to be reversed, which a second person
- * who approves reversals makes. Permission `billing.gateway.reconcile`.
+ * takes money back on a payment it recorded or the gateway reports a dispute, or by an accountant from the bank's
+ * notice. A gateway payment's case follows the gateway's own record of the dispute (its reason code, phase, status and
+ * deadline). Accountants record what the notice says, the evidence sent and a win; accepting the loss asks for the
+ * receipt to be reversed, which a second person who approves reversals makes. Permission `billing.gateway.reconcile`.
  */
 
 export type PaymentDisputeSource = 'Gateway' | 'Terminal' | 'Notice';
@@ -22,7 +23,7 @@ export const DISPUTE_STATUS_LABEL: Record<PaymentDisputeStatus, string> = {
 };
 
 export const DISPUTE_SOURCE_LABEL: Record<PaymentDisputeSource, string> = {
-  Gateway: "From the gateway's settlement",
+  Gateway: 'From the gateway',
   Terminal: "From the acquirer's report",
   Notice: "From the bank's notice",
 };
@@ -43,7 +44,10 @@ export interface PaymentDisputeDto {
   reasonCode: string | null;
   reason: string | null;
   respondBy: string | null;
-  /** Days until the answer is due (negative when late); null without a deadline, or once answered or closed. */
+  /**
+   * Days until the answer is due (negative when late); null without a deadline, once answered or closed, or once the
+   * gateway decided against the hospital.
+   */
   daysLeft: number | null;
   openedAt: string;
   openedByName: string | null;
@@ -58,6 +62,14 @@ export interface PaymentDisputeDto {
   closedByName: string | null;
   outcome: string | null;
   reversalNumber: string | null;
+  /** The gateway's own record of the dispute the case follows: its reason code, phase, status and deadline. */
+  gatewayDisputeId: string | null;
+  /** The gateway's word for where the dispute stands: open, under_review, won, lost, closed… */
+  gatewayStatus: string | null;
+  /** chargeback, pre_arbitration, arbitration… */
+  gatewayPhase: string | null;
+  /** The gateway decided against the hospital and the loss is not booked yet: accept it. */
+  decidedAgainst: boolean;
   version: number;
 }
 
@@ -66,6 +78,8 @@ export interface PaymentDisputeSummaryDto {
   openAmount: number;
   dueSoon: number;
   late: number;
+  /** Cases the gateway decided against the hospital, whose loss is still to be accepted. */
+  decidedAgainst: number;
 }
 
 /** A receipt's card, UPI or online payment line, to choose the one the bank took back. */
@@ -146,10 +160,10 @@ export const disputeApi = {
 
 /** The deadline in words: "Answer by 12 Nov (3 days left)", "Late by 2 days", "Due today". */
 export function deadlineText(
-  dispute: Pick<PaymentDisputeDto, 'respondBy' | 'daysLeft'>,
+  dispute: Pick<PaymentDisputeDto, 'respondBy' | 'daysLeft'> & Partial<Pick<PaymentDisputeDto, 'decidedAgainst'>>,
   format: (iso: string) => string,
 ): string | null {
-  if (!dispute.respondBy) {
+  if (!dispute.respondBy || dispute.decidedAgainst) {
     return null;
   }
 
@@ -168,7 +182,10 @@ export function deadlineText(
 }
 
 /** What is next for a case, in a few words. */
-export function nextStep(dispute: Pick<PaymentDisputeDto, 'status' | 'lossWaiting' | 'respondBy'>): string {
+export function nextStep(
+  dispute: Pick<PaymentDisputeDto, 'status' | 'lossWaiting' | 'respondBy'> &
+    Partial<Pick<PaymentDisputeDto, 'decidedAgainst'>>,
+): string {
   if (dispute.status === 'Won' || dispute.status === 'Lost') {
     return dispute.status === 'Won' ? 'Closed: the money came back' : 'Closed: the receipt was reversed';
   }
@@ -177,9 +194,31 @@ export function nextStep(dispute: Pick<PaymentDisputeDto, 'status' | 'lossWaitin
     return 'Accepting the loss waits for a second person';
   }
 
+  if (dispute.decidedAgainst) {
+    return 'The bank decided against the hospital: accept the loss';
+  }
+
   if (dispute.status === 'Contested') {
     return 'Waiting for the bank to decide';
   }
 
   return dispute.respondBy ? 'Send the evidence, or accept the loss' : "Record the bank's notice and its deadline";
+}
+
+/** The gateway's own words for a dispute (dispute id, phase, status), or null for a case that follows none. */
+export function gatewayText(
+  dispute: Pick<PaymentDisputeDto, 'gatewayDisputeId' | 'gatewayPhase' | 'gatewayStatus'>,
+): string | null {
+  if (!dispute.gatewayDisputeId) {
+    return null;
+  }
+
+  const words = (word: string) => word.replaceAll('_', ' ');
+  return [
+    `Dispute ${dispute.gatewayDisputeId}`,
+    dispute.gatewayPhase && words(dispute.gatewayPhase),
+    dispute.gatewayStatus && `gateway: ${words(dispute.gatewayStatus)}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }

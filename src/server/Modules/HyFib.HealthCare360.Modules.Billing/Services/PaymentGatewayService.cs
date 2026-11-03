@@ -41,6 +41,7 @@ public sealed class PaymentGatewayService(
     GatewayRefundTracker refundTracker,
     PrepaymentChecker prepayments,
     GatewaySettlementService settlements,
+    PaymentDisputeService disputes,
     TallyCorrections tally,
     TimeProvider time,
     ILogger<PaymentGatewayService> logger)
@@ -251,7 +252,16 @@ public sealed class PaymentGatewayService(
                 .FirstOrDefaultAsync(r => r.GatewayRefundId != null && candidates.Contains(r.GatewayRefundId), ct);
         }
 
-        var facilityId = order?.FacilityId ?? booking?.FacilityId ?? replaced?.FacilityId ?? refund?.FacilityId ?? facilityHint;
+        // A dispute names the payment: the facility whose receipt holds it has the account the webhook is signed with.
+        var paidAt = order is null && booking is null && replaced is null && refund is null && candidates.Count > 0
+            ? await (
+                    from p in db.Set<ReceiptPayment>()
+                    join r in db.Set<Receipt>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on p.ReceiptId equals r.Id
+                    where p.Mode == PaymentMode.PaymentGateway && p.ExternalId != null && candidates.Contains(p.ExternalId)
+                    select (Guid?)r.FacilityId)
+                .FirstOrDefaultAsync(ct)
+            : null;
+        var facilityId = order?.FacilityId ?? booking?.FacilityId ?? replaced?.FacilityId ?? refund?.FacilityId ?? paidAt ?? facilityHint;
         if (string.IsNullOrWhiteSpace(signature) || !gateway.VerifySignature(payload, signature, facilityId))
         {
             logger.LogWarning("Rejected a payment-gateway webhook with a missing or invalid signature");
@@ -269,7 +279,12 @@ public sealed class PaymentGatewayService(
         string? note = null;
         try
         {
-            if (order is not null)
+            if (info.DisputeId is { } disputeId && info.EventType is { } type && type.StartsWith("payment.dispute.", StringComparison.Ordinal))
+            {
+                // A dispute's event names the dispute; what it says is read from the gateway, not from the event.
+                (outcome, note) = await disputes.ReadGatewayDisputeAsync(disputeId, facilityId, ct);
+            }
+            else if (order is not null)
             {
                 var synced = await SyncAsync(order, ct);
                 outcome = synced.IsFailure ? WebhookEventOutcome.Failed

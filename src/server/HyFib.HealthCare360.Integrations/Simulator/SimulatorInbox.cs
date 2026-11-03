@@ -157,6 +157,67 @@ internal sealed class SimulatorInbox(IDbContextFactory<HospitalDbContext> contex
             .ToListAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Raises a dispute on a simulated gateway payment, as a patient's bank would through the gateway (training, and the
+    /// tests). Returns the dispute, or null when there is no such payment or the amount is more than it.
+    /// </summary>
+    public async Task<SimulatorTransaction?> RaiseDisputeAsync(string paymentId, decimal amount, string? reasonCode, CancellationToken cancellationToken)
+    {
+        await using var db = await contexts.CreateDbContextAsync(cancellationToken);
+        var payment = await db.Set<SimulatorTransaction>().AsNoTracking()
+            .FirstOrDefaultAsync(t => t.PaymentId == paymentId && (t.Kind == SimulatorTransactionKind.PaymentOrder || t.Kind == SimulatorTransactionKind.PaymentLink),
+                cancellationToken);
+        if (payment is null || amount <= 0 || amount > payment.Amount)
+        {
+            return null;
+        }
+
+        var now = time.GetUtcNow();
+        var dispute = new SimulatorTransaction
+        {
+            CreatedAt = now,
+            CompletedAt = now,
+            FacilityId = payment.FacilityId,
+            Kind = SimulatorTransactionKind.PaymentDispute,
+            ExternalId = "disp_sim" + Guid.CreateVersion7().ToString("N")[..16],
+            Amount = amount,
+            Currency = payment.Currency,
+            Reference = payment.PaymentId,
+            Status = SimulatorTransactionStatus.Created,
+            Description = IntegrationTrace.Truncate(reasonCode, 32),
+        };
+        db.Set<SimulatorTransaction>().Add(dispute);
+        await db.SaveChangesAsync(cancellationToken);
+        return dispute;
+    }
+
+    /// <summary>Moves a simulated dispute on (evidence submitted, won, lost); false when there is no such dispute.</summary>
+    public async Task<bool> MoveDisputeAsync(string disputeId, SimulatorTransactionStatus status, CancellationToken cancellationToken)
+    {
+        await using var db = await contexts.CreateDbContextAsync(cancellationToken);
+        return await db.Set<SimulatorTransaction>()
+            .Where(t => t.ExternalId == disputeId && t.Kind == SimulatorTransactionKind.PaymentDispute)
+            .ExecuteUpdateAsync(set => set.SetProperty(t => t.Status, status).SetProperty(t => t.CompletedAt, time.GetUtcNow()), cancellationToken) == 1;
+    }
+
+    public async Task<SimulatorTransaction?> FindDisputeAsync(string disputeId, CancellationToken cancellationToken)
+    {
+        await using var db = await contexts.CreateDbContextAsync(cancellationToken);
+        return await db.Set<SimulatorTransaction>().AsNoTracking()
+            .FirstOrDefaultAsync(t => t.ExternalId == disputeId && t.Kind == SimulatorTransactionKind.PaymentDispute, cancellationToken);
+    }
+
+    /// <summary>The simulated disputes raised since <paramref name="since"/>, oldest first.</summary>
+    public async Task<IReadOnlyList<SimulatorTransaction>> DisputesSinceAsync(DateTimeOffset since, CancellationToken cancellationToken)
+    {
+        await using var db = await contexts.CreateDbContextAsync(cancellationToken);
+        return await db.Set<SimulatorTransaction>().AsNoTracking()
+            .Where(t => t.Kind == SimulatorTransactionKind.PaymentDispute && t.CreatedAt >= since)
+            .OrderBy(t => t.CreatedAt)
+            .Take(5_000)
+            .ToListAsync(cancellationToken);
+    }
+
     /// <summary>Loads a transaction by gateway/terminal id or payment id and lets <paramref name="update"/> change it.</summary>
     public async Task<SimulatorTransaction?> UpdateTransactionAsync(
         string id, Func<SimulatorTransaction, DateTimeOffset, bool> update, CancellationToken cancellationToken)

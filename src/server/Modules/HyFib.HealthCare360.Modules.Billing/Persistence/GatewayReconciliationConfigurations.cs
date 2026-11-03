@@ -33,6 +33,7 @@ internal sealed class GatewaySettlementLineConfiguration : IEntityTypeConfigurat
         b.Property(x => x.PaymentId).HasMaxLength(64);
         b.Property(x => x.OrderId).HasMaxLength(64);
         b.Property(x => x.Method).HasMaxLength(32);
+        b.Property(x => x.DisputeId).HasMaxLength(64);
         b.Ignore(x => x.Net);
         b.Ignore(x => x.Gross);
         b.HasIndex(x => x.GatewaySettlementId);
@@ -75,6 +76,7 @@ internal sealed class GatewayWebhookEventConfiguration : IEntityTypeConfiguratio
         b.Property(x => x.PaymentId).HasMaxLength(64);
         b.Property(x => x.RefundId).HasMaxLength(64);
         b.Property(x => x.SettlementId).HasMaxLength(64);
+        b.Property(x => x.DisputeId).HasMaxLength(64);
         b.Property(x => x.Note).HasMaxLength(300);
 
         // A redelivered event finds its first delivery; a concurrent one runs into this index.

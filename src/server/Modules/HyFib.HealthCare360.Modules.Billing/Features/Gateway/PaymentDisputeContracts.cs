@@ -4,8 +4,13 @@ namespace HyFib.HealthCare360.Modules.Billing.Features.Gateway;
 
 /// <summary>A chargeback case as accountants follow it.</summary>
 /// <param name="PaymentReference">The gateway's payment id or the terminal transaction's RRN.</param>
-/// <param name="DaysLeft">Days until the answer is due (negative when late); null without a deadline or once answered or closed.</param>
+/// <param name="DaysLeft">
+/// Days until the answer is due (negative when late); null without a deadline, once answered or closed, or once the
+/// gateway decided against the hospital.
+/// </param>
 /// <param name="LossWaiting">Accepting the loss was asked for and waits for a second person.</param>
+/// <param name="GatewayDisputeId">The gateway's own record of the dispute the case follows (its reason, phase, status and deadline).</param>
+/// <param name="DecidedAgainst">The gateway decided against the hospital and the loss is not booked yet: accept it.</param>
 public sealed record PaymentDisputeDto(
     Guid Id,
     string Number,
@@ -34,10 +39,17 @@ public sealed record PaymentDisputeDto(
     string? ClosedByName,
     string? Outcome,
     string? ReversalNumber,
+    string? GatewayDisputeId,
+    string? GatewayStatus,
+    string? GatewayPhase,
+    bool DecidedAgainst,
     uint Version);
 
-/// <summary>Open cases, those due within two days or late, and what they come to.</summary>
-public sealed record PaymentDisputeSummaryDto(int Open, decimal OpenAmount, int DueSoon, int Late);
+/// <summary>
+/// Open cases, those due within two days or late, those the gateway decided against the hospital (the loss to accept),
+/// and what they come to.
+/// </summary>
+public sealed record PaymentDisputeSummaryDto(int Open, decimal OpenAmount, int DueSoon, int Late, int DecidedAgainst);
 
 /// <summary>A receipt's card, UPI or online payment line, to choose the one the bank took back.</summary>
 /// <param name="Reference">The gateway's payment id, or the RRN or reference the cashier recorded.</param>

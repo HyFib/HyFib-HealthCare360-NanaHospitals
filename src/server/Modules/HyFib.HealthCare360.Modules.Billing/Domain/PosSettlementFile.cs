@@ -34,14 +34,18 @@ public sealed record PosSettlementRow(
     /// <summary>
     /// The same transaction gets the same key from every file that lists it: its type and RRN, or without an RRN its
     /// terminal, approval code, amount and day (a chargeback without either: also its settlement day, UTR and
-    /// <see cref="Occurrence"/>).
+    /// <see cref="Occurrence"/>). A chargeback and the acquirer's reversal of it carry the same RRN, so the reversal's
+    /// type is keyed apart: it is a transaction of its own, not the chargeback again.
     /// </summary>
     public string Key => Rrn is not null
-        ? $"{Type}|{Rrn}"
+        ? $"{Kind}|{Rrn}"
         : ApprovalCode is not null
-            ? $"{Type}|{TerminalId}|{ApprovalCode}|{Amount.ToString("0.00", CultureInfo.InvariantCulture)}|{Day(TransactionOn)}"
-            : $"{Type}|{TerminalId}|{Amount.ToString("0.00", CultureInfo.InvariantCulture)}|{Day(TransactionOn)}|{Day(SettledOn)}|{Utr}"
+            ? $"{Kind}|{TerminalId}|{ApprovalCode}|{Amount.ToString("0.00", CultureInfo.InvariantCulture)}|{Day(TransactionOn)}"
+            : $"{Kind}|{TerminalId}|{Amount.ToString("0.00", CultureInfo.InvariantCulture)}|{Day(TransactionOn)}|{Day(SettledOn)}|{Utr}"
               + (Occurrence > 1 ? $"#{Occurrence.ToString(CultureInfo.InvariantCulture)}" : string.Empty);
+
+    /// <summary>The type as keyed: an adjustment that gives money back is a reversal, not the chargeback it reverses.</summary>
+    private string Kind => Type == PosSettlementLineType.Adjustment && Net > 0 ? "AdjustmentReversed" : Type.ToString();
 
     /// <summary>A chargeback without an RRN or approval code: nothing in the report tells two alike apart.</summary>
     public bool IsUnreferenced => Rrn is null && ApprovalCode is null;
@@ -459,6 +463,17 @@ public static class PosSettlementFile
                 return Error.Rule("row", $"{place}: the net amount, charges and GST do not add up to the transaction amount, so it was left out.");
             }
         }
+        else if (type == PosSettlementLineType.Adjustment && GivesBack(typeText))
+        {
+            // The acquirer reversed a chargeback: the money comes back, less any charge it keeps.
+            net = netGiven is { } back ? Money.Round(back) : amount;
+            tax = 0m;
+            charges = amount - net;
+            if (net <= 0 || charges < 0)
+            {
+                return Error.Rule("row", $"{place}: the amount given back does not add up to the transaction amount, so it was left out.");
+            }
+        }
         else
         {
             // A refund or chargeback takes money back; any charge returned with it (or added to it) counts as charges.
@@ -485,6 +500,17 @@ public static class PosSettlementFile
             cardLast4,
             settledOn,
             Reference(cell("utr"), 40));
+    }
+
+    /// <summary>
+    /// An adjustment whose words say the money comes back: a chargeback reversed or re-credited, a representment the
+    /// hospital won, an adjustment credit. Without such words an adjustment takes money back.
+    /// </summary>
+    private static bool GivesBack(string typeText)
+    {
+        var t = typeText.ToLowerInvariant();
+        string[] back = ["revers", "represent", "re-present", "credit", "won", "refund of chargeback"];
+        return back.Any(w => t.Contains(w, StringComparison.Ordinal)) && !t.Contains("debit", StringComparison.Ordinal);
     }
 
     private static PosSettlementLineType TypeOf(string text)

@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as DisputesApi from './disputesApi';
-import { deadlineText, disputeApi, nextStep, type PaymentDisputeDto } from './disputesApi';
+import { deadlineText, disputeApi, gatewayText, nextStep, type PaymentDisputeDto } from './disputesApi';
 import { PaymentDisputes } from './PaymentDisputes';
 
 // The server, the router and the toasts are outside the test; the screen's own behaviour is what is tested.
@@ -93,6 +93,10 @@ function dispute(patch: Partial<PaymentDisputeDto>): PaymentDisputeDto {
     closedByName: null,
     outcome: null,
     reversalNumber: null,
+    gatewayDisputeId: null,
+    gatewayStatus: null,
+    gatewayPhase: null,
+    decidedAgainst: false,
     version: 7,
     ...patch,
   };
@@ -167,6 +171,68 @@ describe('chargeback cases', () => {
       'Chargeback NHCB2600001',
       'Someone else who approves reversals decides; the receipt is reversed when they approve.',
     );
+  });
+
+  it("shows the gateway's dispute, and keeps its deadline when the notice is recorded", async () => {
+    listCases.mockResolvedValue(
+      page([
+        dispute({
+          source: 'Gateway',
+          mode: 'PaymentGateway',
+          paymentReference: 'pay_EsyWjHrfzb59eR',
+          reasonCode: 'pre_arbitration',
+          respondBy: '2026-11-09',
+          daysLeft: 6,
+          gatewayDisputeId: 'disp_AHfqOvkldwsbqt',
+          gatewayStatus: 'under_review',
+          gatewayPhase: 'pre_arbitration',
+        }),
+      ]),
+    );
+    vi.mocked(disputeApi.describe).mockResolvedValue(dispute({}));
+    const user = userEvent.setup();
+    render(wrap(<PaymentDisputes terminal={false} />));
+
+    expect(
+      await screen.findByText('Dispute disp_AHfqOvkldwsbqt · pre arbitration · gateway: under review'),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Actions for chargeback NHCB2600001' }));
+    await user.click(await screen.findByRole('menuitem', { name: "Record the bank's notice…" }));
+    expect(screen.getByLabelText('Answer by')).toBeDisabled();
+    expect(screen.getByText('Set by the gateway for this dispute')).toBeInTheDocument();
+    await user.type(
+      screen.getByRole('textbox', { name: /What the notice says/ }),
+      'Patient says the stay was cut short',
+    );
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(disputeApi.describe).toHaveBeenCalledWith('d1', {
+        reasonCode: 'pre_arbitration',
+        reason: 'Patient says the stay was cut short',
+        respondBy: '2026-11-09',
+        version: 7,
+      }),
+    );
+  });
+
+  it('asks to accept the loss once the gateway decided against the hospital', async () => {
+    listCases.mockResolvedValue(
+      page([
+        dispute({
+          source: 'Gateway',
+          respondBy: '2026-11-01',
+          daysLeft: null,
+          gatewayDisputeId: 'disp_AHfqOvkldwsbqt',
+          gatewayStatus: 'lost',
+          decidedAgainst: true,
+        }),
+      ]),
+    );
+    render(wrap(<PaymentDisputes terminal={false} />));
+
+    expect(await screen.findByText('The bank decided against the hospital: accept the loss')).toBeInTheDocument();
+    expect(screen.queryByText(/Answer was due/)).not.toBeInTheDocument();
   });
 
   it('offers neither a win nor the loss again while accepting the loss waits for a second person', async () => {
@@ -302,5 +368,19 @@ describe('deadline and next step in words', () => {
     );
     expect(nextStep({ status: 'Won', lossWaiting: false, respondBy: null })).toBe('Closed: the money came back');
     expect(nextStep({ status: 'Lost', lossWaiting: false, respondBy: null })).toBe('Closed: the receipt was reversed');
+    expect(nextStep({ status: 'Contested', lossWaiting: false, respondBy: '2026-11-05', decidedAgainst: true })).toBe(
+      'The bank decided against the hospital: accept the loss',
+    );
+    expect(nextStep({ status: 'Open', lossWaiting: true, respondBy: null, decidedAgainst: true })).toBe(
+      'Accepting the loss waits for a second person',
+    );
+  });
+
+  it("names the gateway's dispute", () => {
+    expect(gatewayText({ gatewayDisputeId: null, gatewayPhase: null, gatewayStatus: null })).toBeNull();
+    expect(gatewayText({ gatewayDisputeId: 'disp_AHfqOvkldwsbqt', gatewayPhase: null, gatewayStatus: 'open' })).toBe(
+      'Dispute disp_AHfqOvkldwsbqt · gateway: open',
+    );
+    expect(deadlineText({ respondBy: '2026-11-02', daysLeft: null, decidedAgainst: true }, (iso) => iso)).toBeNull();
   });
 });

@@ -308,7 +308,7 @@ case, and its Tally journal reads "taken back by a chargeback" rather than "mone
 | POST | `/payment-links` | `payments.collect` / `deposits` | `CreatePaymentLinkRequest` → 201 `GatewayOrderDto` (SMS/WhatsApp template `payment.link`) |
 | GET | `/payment-links?billId&ipAccountId&status` (paged) | `payments.collect` / `charges.read` | → `PagedResult<GatewayOrderDto>` (`paidAt` = when the gateway took the payment; `lastError` = why it failed, expired or was cancelled, or why its paid receipt could not be recorded yet; `paymentId`) |
 | POST | `/payment-links/{id}/refresh` | `payments.collect` / `deposits` | → `GatewayOrderDto` (asks the gateway for the real status: records a captured payment, or marks the order `Failed`, `Expired` or `Cancelled`; for a paid order whose receipt could not be recorded, it tries again) |
-| POST | `/api/v1/billing/webhooks/payment-gateway` (optional `?facility=<id>`) | anonymous, rate limit `partner`; the signature is checked with the merchant account of the facility that owns the order, prepaid booking or refund named in the payload (`?facility=` only when the payload names none of them) | raw provider JSON (≤ 64 KB) → 200 `WebhookAck`; 401 bad signature (`X-Razorpay-Signature` / `X-PayU-Signature` / `X-Webhook-Signature` / `X-Signature`), 503 no gateway, 413 too large. The status is always re-fetched from the gateway; receipts are idempotent on the gateway payment id. Each verified event is kept by its id (`X-Razorpay-Event-Id`, else a SHA-256 of the body) in `gateway_webhook_events`: a redelivery of an event already handled gets `processed: false` and changes nothing. A webhook for a portal booking's prepayment confirms the booking and receipts its advance, also for an order the booking had before its current one (the booking's own payment, or a second payment kept as an advance with its refund asked for); one for a gateway refund updates the refund's status. |
+| POST | `/api/v1/billing/webhooks/payment-gateway` (optional `?facility=<id>`) | anonymous, rate limit `partner`; the signature is checked with the merchant account of the facility that owns the order, prepaid booking or refund named in the payload (`?facility=` only when the payload names none of them) | raw provider JSON (≤ 64 KB) → 200 `WebhookAck`; 401 bad signature (`X-Razorpay-Signature` / `X-PayU-Signature` / `X-Webhook-Signature` / `X-Signature`), 503 no gateway, 413 too large. The status is always re-fetched from the gateway; receipts are idempotent on the gateway payment id. Each verified event is kept by its id (`X-Razorpay-Event-Id`, else a SHA-256 of the body) in `gateway_webhook_events`: a redelivery of an event already handled gets `processed: false` and changes nothing. A webhook for a portal booking's prepayment confirms the booking and receipts its advance, also for an order the booking had before its current one (the booking's own payment, or a second payment kept as an advance with its refund asked for); one for a gateway refund updates the refund's status. A dispute's event (`payment.dispute.*`, whatever follows the prefix) names the dispute: it is read from the gateway with the account of the facility whose receipt holds the payment, and its [chargeback case](#chargebacks) follows it; nothing else in the body is used. |
 
 ### Cash counter — `/api/v1/billing/shifts`, day-end
 | Method | Path | Permission | Request → response |
@@ -1092,7 +1092,10 @@ the card number or anything about the customer.
 * A payment's net is what reached the bank; when the report gives it, the charges are the amount less GST less the net,
   so `amount = net + charges + GST` always holds. Without a net column, the net is the amount less MDR and GST.
 * A refund, void or reversal (or a negative amount) takes money back; a chargeback, dispute or adjustment is kept for
-  review. On these, any charge returned with the money counts as charges. Chargebacks without an RRN or approval code
+  review. On these, any charge returned with the money counts as charges. An adjustment whose words say the money comes
+  back (a chargeback reversal, a re-presentment, an adjustment credit, a dispute won; never one that says debit) adds
+  to the payout instead, less any charge the acquirer keeps. It carries the chargeback's RRN but is keyed apart from it
+  (`line_key`), so it is a transaction of its own and not the chargeback read again. Chargebacks without an RRN or approval code
   that look the same (terminal, amount, days, UTR) are all kept, numbered in the report's order, so a later report
   listing them again adds none of them.
 * Rows left out, each with its reason (at most 20 listed): rows without an amount, rows with neither an RRN nor an
@@ -1121,6 +1124,7 @@ or the UPI reference (UTR) when they take the payment.
 | Payment | nothing | `NoReceipt` |
 | Refund | the refund paid by card or UPI whose reference is the RRN or (same amount) the approval code | `Matched`, else `NoRefund` |
 | Chargeback | the sale with the same RRN (without one, the approval code at the same terminal) that matched a receipt | followed as a [chargeback case](#chargebacks), not to look at; `Review` when the sale matched no receipt |
+| Chargeback reversed (money back) | the case on that sale: open, or won without its money back yet | wins the open case by itself (or is the money back of a won one), not to look at; `Review` otherwise |
 | Payment or refund that matched nothing above, at any terminal | the pharmacy's or the canteen's card or UPI payment (for a refund, money it paid back by card or UPI) whose typed reference is the RRN, else is the approval code with the same amount within two days; a payment of the same mode first | `Matched` by the RRN or the approval code, with the counter and its invoice or bill, or `AmountDiffers` |
 | Any, at a TID in `otherTerminals`, that matched nothing | another counter's sale HC360 does not record, or one typed without its reference; Billing's receipts are not looked for there | `OtherCounter` |
 
@@ -1180,15 +1184,43 @@ or the payment gateway (documented gap 10). HC360 follows each as a case (`Payme
 * **From the notice.** An accountant opens a `Notice` case with the receipt number (choosing the payment the notice
   names when the receipt has more than one card, UPI or online payment), the amount and what the notice says, often
   before any settlement carries it; the settlement that takes the money later joins that case.
+* **From the gateway's own record.** A dispute the gateway reports (below) on a payment a receipt recorded joins the
+  open case on that payment that follows no other dispute, or opens a `Gateway` case.
+
+**The gateway's own record of a dispute.** For a gateway payment, the gateway holds the dispute: its reason code, its
+phase (`chargeback`, `pre_arbitration`, `arbitration`…), where it stands, and the time to answer by. HC360 reads it
+(`IPaymentGateway.GetDisputeAsync` and `GetDisputesAsync`; Razorpay's `GET v1/disputes/{id}` and
+`GET v1/disputes?from&count&skip`) when the dispute's webhook arrives, and hourly for the disputes raised in the last
+30 days and every open case following an older one, so a webhook the gateway could not deliver, or HC360 could not
+handle, still has its case. Only the ids, amount, reason code, phase, status and times are kept: the evidence's
+documents and the hospital's written answer stay at the gateway. One case per dispute (`gateway_dispute_id`, unique):
+the webhook, the hourly read and a settlement that carry the same dispute find the same case. The case takes:
+
+| The gateway says | The case |
+|---|---|
+| a reason code, a phase, a time to answer by | the reason code and phase; the last day to answer is the Indian day before that midnight (Razorpay's `respond_by`). The accountant's words of the notice are kept, but its date cannot be typed over (400 `respondBy`) |
+| `open` | as it is |
+| `under_review` (the evidence was submitted there) | `Contested`, the evidence's day taken from the gateway when HC360 has none |
+| `won` | `Won` by the gateway's decision |
+| `lost` | stays open: those who reconcile are told once, its deadline is no longer reminded, and the next step is to accept the loss, which a second person approves as below |
+| anything else (`closed`…) | as it is, with the gateway's word shown for a person to read |
+
+A read that changes nothing leaves the case untouched (its version too), so an accountant who has it open is not told
+it changed. A settlement adjustment that names the dispute (Razorpay's `dispute_id`) belongs to that dispute's case: it
+is the money taken (joining the case) or, when it adds money, the money back of the case (winning an open one, or
+completing one the gateway already decided won). A second debit or return for one case, or money returned on a lost
+case, stays an exception for a person.
 
 The accountant records the notice's reason code, reason and the date to answer by, then the evidence sent (the bill,
 the receipt, the charge slip, the patient's consent…) with the day it was sent: the case is `Contested` until the bank
 decides. It ends one of two ways:
 
 * **Won.** An accountant records how the money came back; or the gateway gives back what it took in a later settlement
-  (an adjustment adding that money on the same payment), which wins the open case by itself and is no exception either.
-  Part of it given back (or more) does not win the case: the case stays open for what is still taken back, and the
-  return is an amount-difference exception for the accountant to put against it.
+  (an adjustment adding that money on the same payment), which wins the open case by itself and is no exception either;
+  or the gateway decides the dispute for the hospital; or the acquirer reverses a terminal chargeback in a later report
+  (money back, under the sale's RRN), which wins the case by itself and adds to that day's payout. Part of the money
+  given back (or more) does not win the case: the case stays open for what is still taken back, and the return is an
+  amount-difference exception (or, from the acquirer, a transaction to look at) for the accountant to put against it.
 * **Lost.** Accepting the loss never closes a case by one person's word. The accountant asks; HC360 asks for the
   receipt's payment line to be reversed with the reason `Chargeback` (*Taken back by a chargeback*), and someone else
   who approves reversals (`billing.refunds.approve`) approves or rejects it, as any receipt reversal. Approved, the
@@ -1203,9 +1235,10 @@ carried the chargeback cleared that much less of it (its gross is payments less 
 case is money still in clearing, matching what the bank holds back. A lost case's reversal journal takes it out of
 clearing against the patient's account; a won case's money comes back in a settlement, which clears it.
 
-**Told and reminded.** `GatewayReconciliationJob` tells those holding `billing.gateway.reconcile` of each case HC360
-opened from a settlement once it is saved, and, once a day, of every case not yet answered whose deadline is within
-two days or past; a deadline changed since is reminded again the same day. What was told when is kept apart from the
+**Told and reminded.** `GatewayReconciliationJob` tells those holding `billing.gateway.reconcile` of each open case
+HC360 opened itself (from a settlement, or from the gateway's dispute with its deadline) once it is saved, once of each
+dispute the gateway decided against the hospital, and, once a day, of every case not yet answered and not yet decided
+whose deadline is within two days or past; a deadline changed since is reminded again the same day. What was told when is kept apart from the
 case (`PaymentDisputeReminder`), and each reminder is claimed with a conditional update before anyone is told: a
 second worker or a step run again never tells the same thing twice, and telling never changes a case an accountant
 has open (its version).
@@ -1318,7 +1351,8 @@ the bill's day again, never to delete it.
 * `billing.appointment.prepayment` — see above.
 * `GatewayReconciliationJob` — re-checks open online payments, prepaid bookings and the orders they had before, follows
   gateway refunds, reads settlements; see [Gateway reconciliation](#gateway-reconciliation-int-pg). Every five minutes
-  it also tells of new chargeback cases and reminds of their deadlines; see [Chargebacks](#chargebacks).
+  it also tells of new chargeback cases and reminds of their deadlines, and hourly it reads the gateway's disputes; see
+  [Chargebacks](#chargebacks).
 * `PosRecheckJob` — every minute where `PlatformOptions.RunsJobs` is set, follows the terminal sales the counter
   stopped polling (the screen closed, the browser crashed, the cashier moved on while the customer paid). Sales started
   more than a minute and less than two days ago that are still `Initiated` or `AwaitingCustomer`, or `Approved` without
@@ -1335,7 +1369,8 @@ the bill's day again, never to delete it.
 * In-app alerts: discount approval needed, refund awaiting approval, discharge initiated (final bill drafted), patient
   discharged with dues, admission cancelled (billing follow-up), cancelled order already billed; to holders of
   `billing.gateway.reconcile`: an online payment not recorded, an online refund failed, settled transactions that do
-  not match, a chargeback taken back, a chargeback's deadline near or past.
+  not match, a chargeback taken back or disputed, a chargeback's deadline near or past, a chargeback lost at the
+  gateway.
 * Realtime: `billing.bill.changed`, `billing.pos.changed` (facility group).
 
 ### Bills on WhatsApp (INT-WA)
@@ -1452,10 +1487,14 @@ indexed where set). Notes and IRNs from before keep zeros and nulls.
   if the gateway carries its transactions in a new settlement instead, their lines find their receipts already matched
   by the failed one; the accountant resolves the exception with the new settlement's UTR.
 * **Part of a card or UPI report** cannot be withdrawn: the whole report is, and a corrected file imported in its place.
-* **The gateway's own dispute records** (Razorpay's dispute webhooks and Disputes API, with the reason code, phase and
-  date to answer by) are not read yet: a gateway case is opened from the settlement's adjustment or from the notice,
-  and its deadline is typed from the notice (gap 10b). A chargeback the acquirer reverses in a later report is not yet
-  taken as money in: the accountant records the case as won.
+* **Answering the gateway from HC360.** Accepting a dispute at the gateway, or contesting it with documents, is done
+  in the gateway's dashboard; HC360 reads what was answered (the dispute's status and when the evidence was
+  submitted). Sending the patient's bill, consent or discharge summary to the gateway from HC360 is the hospital's
+  decision on what patient data leaves for a payment dispute.
+* **The training gateway's disputes** are raised by the tests (its inbox); a training screen to raise or decide one is
+  not there yet, and its simulated settlements do not take or return the money of a dispute.
+* **A gateway dispute on a payment HC360 never recorded** opens nothing (the webhook is recorded as ignored); its
+  settlement debit stays an amount-difference exception.
 * **Part of a payment taken back** is not accepted by reversing the receipt (`billing.dispute_part`): the accountant
   puts it right on the bill.
 * **Orders replaced before migration `AppointmentReplacedOrders`** are not remembered: a payment on one is found only

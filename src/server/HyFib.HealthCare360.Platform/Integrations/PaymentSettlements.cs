@@ -39,6 +39,7 @@ public enum PaymentTransactionType
 /// <param name="EntityId">The gateway's id of the transaction: a payment (<c>pay_…</c>), refund (<c>rfnd_…</c>) or adjustment.</param>
 /// <param name="PaymentId">For a refund, the payment it returned money from.</param>
 /// <param name="CreatedAt">When the transaction happened at the gateway (a payment's capture, a refund's creation).</param>
+/// <param name="DisputeId">For an adjustment a dispute made, the gateway's dispute (<c>disp_…</c>).</param>
 public sealed record PaymentSettlementItem(
     string EntityId,
     PaymentTransactionType Type,
@@ -50,7 +51,8 @@ public sealed record PaymentSettlementItem(
     decimal Credit,
     decimal Debit,
     string? Method,
-    DateTimeOffset? CreatedAt);
+    DateTimeOffset? CreatedAt,
+    string? DisputeId = null);
 
 /// <summary>
 /// A payout from the gateway to the hospital's bank. <paramref name="Amount"/> is what reached the bank;
@@ -101,3 +103,50 @@ public sealed record RefundStatusResult(
     string? Reference,
     DateTimeOffset? CreatedAt,
     string? Error);
+
+/// <summary>Where a dispute stands at the gateway.</summary>
+public enum GatewayDisputeStatus
+{
+    /// <summary>Raised, and the hospital has not submitted its answer (a draft saved at the gateway counts as not submitted).</summary>
+    Open = 0,
+
+    /// <summary>The hospital's evidence was submitted; the bank decides.</summary>
+    UnderReview,
+
+    /// <summary>Decided for the hospital: the money stays with it, or comes back.</summary>
+    Won,
+
+    /// <summary>Decided against the hospital, or accepted by it at the gateway: the money is gone.</summary>
+    Lost,
+
+    /// <summary>Closed without either, or a status HC360 does not know: a person reads <c>StatusText</c>.</summary>
+    Other,
+}
+
+/// <summary>
+/// A dispute (chargeback) as the gateway holds it: the payment it is on, the amount disputed, the network's reason code,
+/// the phase (chargeback, pre-arbitration…), where it stands, and the time by which the hospital must answer. Evidence
+/// documents and the hospital's written answer are never copied.
+/// </summary>
+/// <param name="StatusText">The gateway's own word for the status (<c>open</c>, <c>under_review</c>, <c>won</c>, <c>lost</c>, <c>closed</c>…).</param>
+/// <param name="EvidenceSubmittedAt">When the hospital's evidence was submitted at the gateway, if it was.</param>
+public sealed record GatewayDispute(
+    string DisputeId,
+    string PaymentId,
+    decimal Amount,
+    string? ReasonCode,
+    string? Phase,
+    GatewayDisputeStatus Status,
+    string? StatusText,
+    DateTimeOffset? RespondBy,
+    DateTimeOffset? CreatedAt,
+    DateTimeOffset? EvidenceSubmittedAt);
+
+/// <summary>
+/// Disputes the gateway gave (all those raised in a period, or the one asked for), or why they could not be read in full.
+/// <paramref name="Provider"/> names the gateway that answered.
+/// </summary>
+public sealed record GatewayDisputeReport(string Provider, bool Available, IReadOnlyList<GatewayDispute> Disputes, string? Problem)
+{
+    public static GatewayDisputeReport Unavailable(string provider, string problem) => new(provider, false, [], problem);
+}

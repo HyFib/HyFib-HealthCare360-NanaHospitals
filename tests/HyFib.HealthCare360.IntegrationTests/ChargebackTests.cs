@@ -187,6 +187,44 @@ public sealed class ChargebackTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_chargeback_the_acquirer_reverses_in_a_later_report_wins_its_case_and_puts_the_money_back_in_the_payout()
+    {
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+        var (_, receipt, rrn) = await CardReceiptAsync();
+        var amount = receipt.Payments.Single().Amount;
+        (await ImportAsync(accountant, Report(rrn, amount, chargeback: true))).ToLookAt.ShouldBe(0);
+        var opened = await CaseOfAsync(accountant, receipt.ReceiptNumber, open: true);
+
+        // A later report: the acquirer reversed the chargeback under the same RRN. It is a transaction of its own (not
+        // the chargeback again), it wins the case by itself, and nothing is left to look at.
+        var reversal = Reversal(rrn, amount);
+        var reversed = await ImportAsync(accountant, reversal);
+        reversed.ShouldSatisfyAllConditions(r => r.Import.Added.ShouldBe(1), r => r.ToLookAt.ShouldBe(0));
+        var won = await CaseAsync(accountant, opened.Id);
+        won.ShouldSatisfyAllConditions(
+            d => d.Status.ShouldBe(PaymentDisputeStatus.Won),
+            d => d.ClosedByName.ShouldBeNull(),
+            d => d.Outcome.ShouldStartWith($"The acquirer reversed the chargeback: ₹{Money.FormatInr(amount)} back"));
+
+        // The reversal adds to that day's payout: it clears the card ledger back into the bank.
+        await using var scope = server.Services.CreateAsyncScope();
+        var lines = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<PosSettlementLine>().IgnoreQueryFilters().AsNoTracking()
+            .Where(l => l.Rrn == rrn && l.Type == PosSettlementLineType.Adjustment)
+            .ToListAsync(Ct);
+        lines.Select(l => l.Gross).OrderBy(g => g).ShouldBe([-amount, amount]);
+        lines.ShouldAllBe(l => l.DisputeId == opened.Id);
+
+        // The same report again is refused; another report listing the reversal (its own UTR) adds nothing, because the
+        // reversal is known by its own key, and the case stays won.
+        (await ImportAgainAsync(accountant, reversal)).ShouldBe(HttpStatusCode.Conflict);
+        var listedAgain = await ImportAsync(accountant, Reversal(rrn, amount));
+        listedAgain.Import.ShouldSatisfyAllConditions(i => i.Added.ShouldBe(0), i => i.AlreadyImported.ShouldBe(1));
+        (await CaseAsync(accountant, opened.Id)).Status.ShouldBe(PaymentDisputeStatus.Won);
+        (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<PosSettlementLine>().IgnoreQueryFilters().AsNoTracking()
+            .CountAsync(l => l.Rrn == rrn && l.Type == PosSettlementLineType.Adjustment, Ct)).ShouldBe(2);
+    }
+
+    [Fact]
     public async Task A_chargeback_of_part_of_a_payment_is_not_accepted_by_reversing_the_whole_receipt()
     {
         var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
@@ -199,8 +237,10 @@ public sealed class ChargebackTests(HospitalServer server)
             .ShouldBe("billing.dispute_part");
     }
 
-    /// <summary>A finalized bill paid in full by card at a counter, the RRN from the charge slip typed as the reference.</summary>
-    /// <summary>A new patient's bill paid at the counter by card (or, with <paramref name="pay"/> false, finalized and left due).</summary>
+    /// <summary>
+    /// A new patient's bill paid in full by card at a counter, the RRN from the charge slip typed as the reference (or,
+    /// with <paramref name="pay"/> false, finalized and left due).
+    /// </summary>
     private async Task<(BillDetail Bill, ReceiptDto Receipt, string Rrn)> CardReceiptAsync(bool pay = true)
     {
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
@@ -267,6 +307,29 @@ public sealed class ChargebackTests(HospitalServer server)
         }
 
         return report.ToString();
+    }
+
+    /// <summary>A later report of the acquirer: the chargeback of the payment under <paramref name="rrn"/> reversed.</summary>
+    private static string Reversal(string rrn, decimal amount)
+    {
+        var day = Today.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+        var at = DateTimeOffset.UtcNow.ToOffset(India).ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture);
+        var money = amount.ToString("0.00", CultureInfo.InvariantCulture);
+        return new StringBuilder("Settlement Date,UTR No,TID,Txn Date,Txn Type,Card Type,Card No,Approval Code,RRN,Txn Amount,MDR Amount,GST,Net Amount\n")
+            .AppendLine(CultureInfo.InvariantCulture, $"{day},AXISN{Digits(11)},72001234,{at},CHARGEBACK REVERSAL,VISA DEBIT,4718XXXXXXXX1111,,{rrn},{money},0.00,0.00,{money}")
+            .ToString();
+    }
+
+    /// <summary>Imports a report the server is expected to refuse, and says how.</summary>
+    private static async Task<HttpStatusCode> ImportAgainAsync(ApiClient client, string report)
+    {
+        using var form = new MultipartFormDataContent();
+        var file = new ByteArrayContent(Encoding.UTF8.GetBytes(report));
+        file.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
+        form.Add(file, "file", "settlement.csv");
+        form.Add(new StringContent("HDFC Bank"), "acquirer");
+        using var response = await client.Http.PostAsync("/api/v1/billing/pos/settlements/imports", form, Ct);
+        return response.StatusCode;
     }
 
     private static async Task<PosSettlementImportResult> ImportAsync(ApiClient client, string report)

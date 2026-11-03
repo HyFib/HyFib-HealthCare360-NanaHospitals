@@ -37,6 +37,7 @@ import {
   disputeApi,
   disputeKeys,
   disputeQueries,
+  gatewayText,
   nextStep,
   type PaymentDisputeDto,
   type PaymentDisputeStatus,
@@ -193,6 +194,7 @@ export function PaymentDisputes({ terminal }: { terminal: boolean }) {
               <span className={styles.stack}>
                 <Text weight="semibold">{d.number}</Text>
                 <Caption1 className={styles.muted}>{DISPUTE_SOURCE_LABEL[d.source]}</Caption1>
+                {d.gatewayDisputeId && <Caption1 className={styles.muted}>{gatewayText(d)}</Caption1>}
               </span>
             ),
           },
@@ -349,8 +351,20 @@ export function PaymentDisputes({ terminal }: { terminal: boolean }) {
             <Field label="Reason code">
               <Input value={reasonCode} maxLength={32} onChange={(_, v) => setReasonCode(v.value)} />
             </Field>
-            <Field label="Answer by">
-              <Input type="date" value={respondBy} onChange={(_, v) => setRespondBy(v.value)} />
+            <Field
+              label="Answer by"
+              hint={
+                acting.dispute.gatewayDisputeId && acting.dispute.respondBy
+                  ? 'Set by the gateway for this dispute'
+                  : undefined
+              }
+            >
+              <Input
+                type="date"
+                value={respondBy}
+                disabled={!!acting.dispute.gatewayDisputeId && !!acting.dispute.respondBy}
+                onChange={(_, v) => setRespondBy(v.value)}
+              />
             </Field>
           </div>
         )}

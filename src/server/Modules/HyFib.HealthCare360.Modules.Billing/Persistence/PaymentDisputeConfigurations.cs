@@ -21,7 +21,11 @@ internal sealed class PaymentDisputeConfiguration : IEntityTypeConfiguration<Pay
         b.Property(x => x.ClosedByName).HasMaxLength(200);
         b.Property(x => x.Outcome).HasMaxLength(PaymentDispute.NoteMaxLength);
         b.Property(x => x.ReversalNumber).HasMaxLength(24);
+        b.Property(x => x.GatewayDisputeId).HasMaxLength(64);
+        b.Property(x => x.GatewayStatus).HasMaxLength(32);
+        b.Property(x => x.GatewayPhase).HasMaxLength(32);
         b.Ignore(x => x.IsClosed);
+        b.Ignore(x => x.DecidedAgainst);
         b.HasOne<Receipt>().WithMany().HasForeignKey(x => x.ReceiptId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ReceiptPayment>().WithMany().HasForeignKey(x => x.ReceiptPaymentId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.Number).IsUnique();
@@ -32,6 +36,9 @@ internal sealed class PaymentDisputeConfiguration : IEntityTypeConfiguration<Pay
         b.HasIndex(x => x.GatewaySettlementLineId).IsUnique().HasFilter("gateway_settlement_line_id IS NOT NULL");
         b.HasIndex(x => x.PosSettlementLineId).IsUnique().HasFilter("pos_settlement_line_id IS NOT NULL");
         b.HasIndex(x => x.ReturnLineId).IsUnique().HasFilter("return_line_id IS NOT NULL");
+
+        // One case per dispute the gateway holds, whether its webhook, the hourly read or a settlement opens it first.
+        b.HasIndex(x => x.GatewayDisputeId).IsUnique().HasFilter("gateway_dispute_id IS NOT NULL");
     }
 }
 
