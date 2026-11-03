@@ -7,21 +7,37 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as PosApi from './posSettlementApi';
-import { posSettlementApi, type PosSettlementImportResult, type PosSettlementLineDto } from './posSettlementApi';
-import { ImportReportDialog, PosToLookAt } from './PosSettlements';
+import {
+  posSettlementApi,
+  type PosSettlementImportDto,
+  type PosSettlementImportResult,
+  type PosSettlementLineDto,
+} from './posSettlementApi';
+import { ImportReportDialog, PosImports, PosToLookAt } from './PosSettlements';
 
 // The server, the router and the toasts are outside the test; the screen's own behaviour is what is tested.
 const listLines = vi.hoisted(() => vi.fn());
+const listImports = vi.hoisted(() => vi.fn());
 vi.mock('./posSettlementApi', async (importOriginal) => {
   const actual = await importOriginal<typeof PosApi>();
   return {
     ...actual,
-    posSettlementApi: { importReport: vi.fn(), review: vi.fn(), match: vi.fn(), trainingFile: vi.fn() },
+    posSettlementApi: {
+      importReport: vi.fn(),
+      review: vi.fn(),
+      match: vi.fn(),
+      trainingFile: vi.fn(),
+      withdraw: vi.fn(),
+    },
     posSettlementQueries: {
       ...actual.posSettlementQueries,
       lines: (filter: PosApi.PosLineFilter) => ({
         queryKey: [...actual.posSettlementKeys.lines(), filter],
         queryFn: () => listLines(filter),
+      }),
+      imports: (pageNumber: number) => ({
+        queryKey: [...actual.posSettlementKeys.imports(), pageNumber],
+        queryFn: () => listImports(pageNumber),
       }),
     },
   };
@@ -69,6 +85,10 @@ const imported: PosSettlementImportResult = {
     lastSettledOn: '2026-10-07',
     importedAt: '2026-10-08T05:00:00Z',
     importedByName: 'Accounts',
+    withdrawnOn: null,
+    withdrawnByName: null,
+    withdrawReason: null,
+    withdrawalAskedAt: null,
   },
   columns: ['RRN from "RRN"', 'Amount from "Txn Amount"'],
   problems: ['Row 7 has neither an RRN nor an approval code, so it cannot be matched and was left out.'],
@@ -114,6 +134,13 @@ function line(patch: Partial<PosSettlementLineDto>): PosSettlementLineDto {
 }
 
 const page = (items: PosSettlementLineDto[]): PagedResult<PosSettlementLineDto> => ({
+  items,
+  page: 1,
+  pageSize: 25,
+  totalCount: items.length,
+});
+
+const reports = (items: PosSettlementImportDto[]): PagedResult<PosSettlementImportDto> => ({
   items,
   page: 1,
   pageSize: 25,
@@ -199,5 +226,42 @@ describe('transactions to look at', () => {
         '1 transaction now matches; 1 transaction still to look at.',
       ),
     );
+  });
+});
+
+describe('reports imported', () => {
+  it('withdraws one imported in error only through a second person, saying why', async () => {
+    listImports.mockResolvedValue(
+      reports([
+        imported.import,
+        { ...imported.import, id: 'i2', fileName: 'mis-06-10.csv', withdrawalAskedAt: '2026-10-08T06:00:00Z' },
+        {
+          ...imported.import,
+          id: 'i3',
+          fileName: 'mis-05-10.csv',
+          withdrawnOn: '2026-10-08',
+          withdrawnByName: 'Finance Head',
+          withdrawReason: 'The report of another branch',
+        },
+      ]),
+    );
+    vi.mocked(posSettlementApi.withdraw).mockResolvedValue({} as never);
+    const user = userEvent.setup();
+    render(wrap(<PosImports page={1} onPage={vi.fn()} />));
+
+    // One waiting for a decision, and one withdrawn, offer nothing more; the withdrawn one says who approved it and why.
+    expect(await screen.findByText('Withdrawal waiting for approval')).toBeInTheDocument();
+    expect(screen.getByText(/^Withdrawn on /)).toBeInTheDocument();
+    expect(screen.getByText(/Approved by Finance Head: The report of another branch/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Withdraw…' })).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: 'Withdraw…' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/its 3 transaction\(s\) stop matching receipts and refunds/)).toBeInTheDocument();
+    await user.type(within(dialog).getByRole('textbox'), 'The report of another branch');
+    await user.click(within(dialog).getByRole('button', { name: 'Ask for approval' }));
+
+    await waitFor(() => expect(posSettlementApi.withdraw).toHaveBeenCalledWith('i1', 'The report of another branch'));
+    expect(notify.success).toHaveBeenCalledWith('Asked for approval', expect.stringContaining('Someone else'));
   });
 });

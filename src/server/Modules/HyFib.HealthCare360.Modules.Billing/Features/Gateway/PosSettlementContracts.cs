@@ -15,7 +15,19 @@ public sealed record PosSettlementImportDto(
     DateOnly? FirstSettledOn,
     DateOnly? LastSettledOn,
     DateTimeOffset ImportedAt,
-    string? ImportedByName);
+    string? ImportedByName)
+{
+    /// <summary>The day the report was withdrawn as imported in error (its journals reversed in that day's books); null while it stands.</summary>
+    public DateOnly? WithdrawnOn { get; init; }
+
+    /// <summary>Who approved the withdrawal.</summary>
+    public string? WithdrawnByName { get; init; }
+
+    public string? WithdrawReason { get; init; }
+
+    /// <summary>When a withdrawal was asked for that still waits for a second person; null when none waits.</summary>
+    public DateTimeOffset? WithdrawalAskedAt { get; init; }
+}
 
 /// <summary>What an import did, in words for the screen, with the rows it left out and why.</summary>
 /// <param name="Columns">The headings HC360 read, as <c>Amount from "Txn Amount"</c>.</param>
@@ -121,6 +133,19 @@ public sealed record PosSettlementSummaryDto(
     IReadOnlyList<string> OtherTerminals);
 
 public sealed record ReviewPosSettlementLineRequest(string Note, uint Version);
+
+/// <summary>Why a report is withdrawn as imported in error (the wrong file, facility or settlement day): for the approver.</summary>
+public sealed record WithdrawPosImportRequest(string Reason);
+
+public sealed class WithdrawPosImportRequestValidator : AbstractValidator<WithdrawPosImportRequest>
+{
+    public WithdrawPosImportRequestValidator()
+    {
+        RuleFor(x => x.Reason).NotEmpty().WithMessage("Say why the report was imported in error.")
+            .MinimumLength(5).WithMessage("Say why the report was imported in error in a few words.")
+            .SafeText(500);
+    }
+}
 
 /// <param name="Checked">Transactions that did not match before and were looked at again.</param>
 public sealed record PosMatchResult(int Checked, int Matched, int ToLookAt, string Message);

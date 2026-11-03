@@ -871,6 +871,10 @@ const POS_IMPORT: PosSettlementImportDto = {
   lastSettledOn: dateIn(-1),
   importedAt: minutesAgo(60 * 5),
   importedByName: 'Accounts Manager',
+  withdrawnOn: null,
+  withdrawnByName: null,
+  withdrawReason: null,
+  withdrawalAskedAt: null,
 };
 
 const POS_SUMMARY: PosSettlementSummaryDto = {

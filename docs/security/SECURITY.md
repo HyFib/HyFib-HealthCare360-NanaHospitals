@@ -365,6 +365,10 @@ and grants nothing.
     settled, one a training simulator made up), and a refund recorded as paid out that never reached the patient. The
     same two permissions; the approver sees what changes, and the reversal is made only if it would still do exactly
     that. Cash is never reversed: a shortfall is the shift's (billing.md, Money that did not move);
+  - withdrawing a card and UPI settlement report imported in error (`billing.pos_import_withdrawal`): whoever reconciles
+    the card and UPI payouts (`billing.gateway.reconcile`) asks with the reason, and another who holds
+    `billing.refunds.approve` approves, shown what the report brought and matched. Its transactions are reversed in the
+    books of the day it is approved, never removed (billing.md, Card and UPI reconciliation);
   - merging a duplicate patient record into another: one holder of `patients.merge` asks, another approves;
   - access given to a user or a role (see "Access is given by two people" above): one administrator asks, another who
     holds `admin.grants.approve`, and any administrative permission it gives, approves;

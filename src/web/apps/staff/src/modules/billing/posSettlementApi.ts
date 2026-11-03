@@ -1,6 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 
 /**
  * Card and UPI terminal reconciliation: /api/v1/billing/pos/settlements (INT-POS). The acquirer's settlement reports,
@@ -9,7 +10,8 @@ import { api } from '@/lib/api';
  */
 
 export type PosSettlementLineType = 'Sale' | 'Refund' | 'Adjustment';
-export type PosSettlementMatch = 'Matched' | 'AmountDiffers' | 'NoReceipt' | 'NoRefund' | 'Review' | 'OtherCounter';
+export type PosSettlementMatch =
+  'Matched' | 'AmountDiffers' | 'NoReceipt' | 'NoRefund' | 'Review' | 'OtherCounter' | 'Withdrawn';
 export type PosMatchBasis = 'Rrn' | 'ApprovalCode' | 'CardAndAmount';
 export type PosPaymentMode = 'Card' | 'Upi';
 
@@ -23,6 +25,7 @@ export const POS_MATCH_LABEL: Record<PosSettlementMatch, string> = {
   NoRefund: 'Refund not in HC360',
   Review: 'Chargeback',
   OtherCounter: 'Another counter',
+  Withdrawn: 'Report withdrawn',
 };
 
 /** What to do about each, in one sentence. */
@@ -34,6 +37,7 @@ export const POS_MATCH_HELP: Record<PosSettlementMatch, string> = {
   NoRefund: 'The acquirer took this money back as a refund, but no HC360 refund records it.',
   Review: 'The acquirer took money back (a chargeback or correction). Check it with the acquirer.',
   OtherCounter: 'Taken at a terminal of a counter HC360 billing does not record, such as the pharmacy.',
+  Withdrawn: 'Its report was withdrawn as imported in error; a correct report may bring it again.',
 };
 
 export const POS_MATCH_BASIS_LABEL: Record<PosMatchBasis, string> = {
@@ -61,6 +65,13 @@ export interface PosSettlementImportDto {
   lastSettledOn: string | null;
   importedAt: string;
   importedByName: string | null;
+  /** The day the report was withdrawn as imported in error (its journals reversed in that day's books). */
+  withdrawnOn: string | null;
+  /** Who approved the withdrawal. */
+  withdrawnByName: string | null;
+  withdrawReason: string | null;
+  /** When a withdrawal was asked for that still waits for a second person. */
+  withdrawalAskedAt: string | null;
 }
 
 export interface PosSettlementImportResult {
@@ -251,6 +262,8 @@ export const posSettlementApi = {
   review: (id: string, note: string, version: number) =>
     api.post<PosSettlementLineDto>(`${BASE}/lines/${id}/review`, { note, version }),
   match: () => api.post<PosMatchResult>(`${BASE}/match`, undefined, { timeoutMs: 120_000 }),
+  /** Asks to withdraw a report imported in error; someone else who approves reversals makes it. */
+  withdraw: (id: string, reason: string) => api.post<ApprovalRequestDto>(`${BASE}/imports/${id}/withdraw`, { reason }),
   trainingFile: (date: string) => api.download(`${BASE}/training-file`, { query: { date } }),
 };
 

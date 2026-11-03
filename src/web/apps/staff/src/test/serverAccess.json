@@ -1731,6 +1731,7 @@
     "POST /api/v1/billing/pos/sales billing.payments.collect|billing.deposits",
     "POST /api/v1/billing/pos/sales/{id:guid}/cancel billing.payments.collect|billing.deposits",
     "POST /api/v1/billing/pos/settlements/imports billing.gateway.reconcile",
+    "POST /api/v1/billing/pos/settlements/imports/{id:guid}/withdraw billing.gateway.reconcile",
     "POST /api/v1/billing/pos/settlements/lines/{id:guid}/review billing.gateway.reconcile",
     "POST /api/v1/billing/pos/settlements/match billing.gateway.reconcile",
     "POST /api/v1/billing/receipts billing.payments.collect",

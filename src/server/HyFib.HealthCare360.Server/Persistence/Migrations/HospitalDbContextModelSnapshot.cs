@@ -4996,6 +4996,24 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("rows");
 
+                    b.Property<string>("WithdrawReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("withdraw_reason");
+
+                    b.Property<DateTimeOffset?>("WithdrawnAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("withdrawn_at");
+
+                    b.Property<string>("WithdrawnByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("withdrawn_by_name");
+
+                    b.Property<DateOnly?>("WithdrawnOn")
+                        .HasColumnType("date")
+                        .HasColumnName("withdrawn_on");
+
                     b.HasKey("Id")
                         .HasName("pk_pos_settlement_imports");
 
@@ -5003,7 +5021,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_pos_settlement_imports_facility_id");
 
                     b.HasIndex("FacilityId", "FileSha256")
-                        .IsUnique()
                         .HasDatabaseName("ix_pos_settlement_imports_facility_id_file_sha256");
 
                     b.HasIndex("FacilityId", "ImportedAt")
@@ -5163,6 +5180,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
 
+                    b.Property<DateOnly?>("WithdrawnOn")
+                        .HasColumnType("date")
+                        .HasColumnName("withdrawn_on");
+
                     b.HasKey("Id")
                         .HasName("pk_pos_settlement_lines");
 
@@ -5184,10 +5205,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("FacilityId", "LineKey")
                         .IsUnique()
-                        .HasDatabaseName("ix_pos_settlement_lines_facility_id_line_key");
+                        .HasDatabaseName("ix_pos_settlement_lines_facility_id_line_key")
+                        .HasFilter("withdrawn_on IS NULL");
 
                     b.HasIndex("FacilityId", "SettledOn")
                         .HasDatabaseName("ix_pos_settlement_lines_facility_id_settled_on");
+
+                    b.HasIndex("FacilityId", "WithdrawnOn")
+                        .HasDatabaseName("ix_pos_settlement_lines_facility_id_withdrawn_on")
+                        .HasFilter("withdrawn_on IS NOT NULL");
 
                     b.HasIndex("FacilityId", "Match", "ReviewedAt")
                         .HasDatabaseName("ix_pos_settlement_lines_facility_id_match_reviewed_at");

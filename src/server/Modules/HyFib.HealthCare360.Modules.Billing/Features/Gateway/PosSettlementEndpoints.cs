@@ -22,6 +22,7 @@ internal static class PosSettlementEndpoints
         // refused before it is read.
         group.MapPost("/imports", Import).DisableAntiforgery().WithMetadata(new RequestSizeLimitAttribute(PosSettlementFile.MaxBytes + (64 * 1024)));
         group.MapGet("/imports", Imports);
+        group.MapPost("/imports/{id:guid}/withdraw", Withdraw).WithValidation<WithdrawPosImportRequest>();
         group.MapGet("/days", Days);
         group.MapGet("/lines", Lines);
         group.MapPost("/lines/{id:guid}/review", Review).WithValidation<ReviewPosSettlementLineRequest>();
@@ -112,6 +113,12 @@ internal static class PosSettlementEndpoints
     private static async Task<IResult> Review(
         Guid id, ReviewPosSettlementLineRequest request, ICurrentUser user, PosSettlementService service, CancellationToken ct) =>
         user.FacilityId is null ? BillingDb.FacilityRequired.ToProblem() : (await service.ReviewAsync(id, request, ct)).ToOk();
+
+    /// <summary>Asks to withdraw a report imported in error; someone else who approves reversals makes it (202, the approval).</summary>
+    private static async Task<IResult> Withdraw(Guid id, WithdrawPosImportRequest request, ICurrentUser user, PosSettlementService service, CancellationToken ct) =>
+        user.FacilityId is null
+            ? BillingDb.FacilityRequired.ToProblem()
+            : (await service.RequestWithdrawalAsync(id, request, ct)).ToHttpResult(approval => TypedResults.Accepted($"/api/v1/approvals/{approval.Id}", approval));
 
     private static async Task<IResult> Match(ICurrentUser user, PosSettlementService service, CancellationToken ct) =>
         user.FacilityId is { } facilityId ? (await service.RematchAsync(facilityId, ct)).ToOk() : BillingDb.FacilityRequired.ToProblem();

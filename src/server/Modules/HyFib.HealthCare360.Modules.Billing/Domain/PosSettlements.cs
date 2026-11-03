@@ -38,6 +38,12 @@ public enum PosSettlementMatch
     /// (setting <c>otherTerminals</c>). Nothing to match; the money still clears through the settlement journal.
     /// </summary>
     OtherCounter,
+
+    /// <summary>
+    /// Its report was withdrawn as imported in error: it matches nothing, its journal is reversed on the day of the
+    /// withdrawal, and a correct report may bring the transaction again.
+    /// </summary>
+    Withdrawn,
 }
 
 /// <summary>What a matched line was found by, from the surest to the weakest.</summary>
@@ -114,6 +120,30 @@ public sealed class PosSettlementImport : Entity, IFacilityScoped
     public DateTimeOffset ImportedAt { get; set; }
     public Guid? ImportedBy { get; set; }
     public string? ImportedByName { get; set; }
+
+    /// <summary>
+    /// The Indian calendar day the report was withdrawn as imported in error (asked for by one person, approved by
+    /// another): its transactions' journals are reversed in that day's books. Null while it stands.
+    /// </summary>
+    public DateOnly? WithdrawnOn { get; set; }
+
+    public DateTimeOffset? WithdrawnAt { get; set; }
+
+    /// <summary>Who approved the withdrawal; who asked for it is in its approval.</summary>
+    public string? WithdrawnByName { get; set; }
+
+    public string? WithdrawReason { get; set; }
+
+    /// <summary>Withdraws the report and its own transactions (those it brought first), in the books of <paramref name="on"/>.</summary>
+    public void Withdraw(IEnumerable<PosSettlementLine> lines, DateOnly on, DateTimeOffset at, string? approvedBy, string reason)
+    {
+        foreach (var line in lines.Where(l => l.ImportId == Id))
+        {
+            line.Withdraw(on);
+        }
+
+        (WithdrawnOn, WithdrawnAt, WithdrawnByName, WithdrawReason) = (on, at, approvedBy, reason);
+    }
 }
 
 /// <summary>
@@ -185,6 +215,12 @@ public sealed class PosSettlementLine : Entity, IFacilityScoped, IVersioned
     public string? ReviewedByName { get; set; }
     public string? ReviewNote { get; set; }
 
+    /// <summary>
+    /// The day its report was withdrawn as imported in error: its journal is reversed in that day's books, it matches
+    /// nothing, and a correct report may bring the transaction again. Null while it stands.
+    /// </summary>
+    public DateOnly? WithdrawnOn { get; set; }
+
     public uint Version { get; set; }
 
     /// <summary>The transaction before charges: positive for money in, negative for money returned or taken back.</summary>
@@ -197,7 +233,7 @@ public sealed class PosSettlementLine : Entity, IFacilityScoped, IVersioned
         match is PosSettlementMatch.AmountDiffers or PosSettlementMatch.NoReceipt or PosSettlementMatch.NoRefund or PosSettlementMatch.Review;
 
     /// <summary>Whether matching may still change the line: one that matched, or belongs to another counter, stays as it is.</summary>
-    public bool IsOpen => Match is not (PosSettlementMatch.Matched or PosSettlementMatch.OtherCounter);
+    public bool IsOpen => Match is not (PosSettlementMatch.Matched or PosSettlementMatch.OtherCounter or PosSettlementMatch.Withdrawn);
 
     public static PosSettlementLine From(Guid facilityId, Guid importId, string acquirer, PosSettlementRow row) => new()
     {
@@ -255,6 +291,14 @@ public sealed class PosSettlementLine : Entity, IFacilityScoped, IVersioned
         Match = PosSettlementMatch.OtherCounter;
     }
 
+    /// <summary>Its report withdrawn: the receipt or refund it matched is free again, and it matches nothing more.</summary>
+    public void Withdraw(DateOnly on)
+    {
+        Unmatch();
+        Match = PosSettlementMatch.Withdrawn;
+        WithdrawnOn = on;
+    }
+
     /// <summary>Back to what nothing matched: no receipt, no refund, or (a chargeback) to review.</summary>
     public void Unmatch()
     {
@@ -298,6 +342,12 @@ public sealed record TallyPosSettlement(
     string Number, DateOnly Date, string? Utr, decimal Net, decimal Charges, decimal Tax, IReadOnlyList<TallyPosClearing> Clears)
 {
     public decimal Gross => Clears.Sum(c => c.Gross);
+
+    /// <summary>
+    /// The narration of a reversal (the transactions of a report withdrawn as imported in error), whose amounts are
+    /// negative, so its entries are the payout journal's turned round. Null for a payout's own journal.
+    /// </summary>
+    public string? Correction { get; init; }
 }
 
 public sealed record TallyPosClearing(PaymentMode Mode, decimal Gross);
@@ -321,6 +371,34 @@ public static class PosSettlementJournal
                 g.Sum(l => l.Charges),
                 g.Sum(l => l.Tax),
                 g.GroupBy(l => l.Mode).OrderBy(m => m.Key).Select(m => new TallyPosClearing(m.Key, m.Sum(l => l.Gross))).ToList()))
+            .Where(j => j.Net != 0 || j.Charges != 0 || j.Tax != 0 || j.Gross != 0)
+            .ToList();
+
+    /// <summary>
+    /// The reversals in the books of <paramref name="date"/>: the transactions of each report withdrawn that day, per
+    /// payout (its day and UTR), turned round. A payout's own journal stays in its day, which may be in Tally already;
+    /// the reversal is numbered after it and the report (<c>POS-NH-&lt;UTR&gt;-W1A2B3C</c>).
+    /// </summary>
+    public static IReadOnlyList<TallyPosSettlement> Withdrawals(IEnumerable<PosSettlementLine> lines, DateOnly date, string? facilityCode) =>
+        lines.Where(l => l.WithdrawnOn == date)
+            .GroupBy(l => (l.ImportId, l.SettledOn, Utr: (l.Utr ?? string.Empty).ToUpperInvariant()))
+            .OrderBy(g => g.Key.SettledOn).ThenBy(g => g.Key.Utr, StringComparer.Ordinal).ThenBy(g => g.Key.ImportId)
+            .Select(g =>
+            {
+                var journal = VoucherNumber(facilityCode, g.Key.SettledOn, g.Key.Utr.Length == 0 ? null : g.Key.Utr);
+                var settledOn = g.Key.SettledOn.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture);
+                return new TallyPosSettlement(
+                    $"{journal}-W{g.Key.ImportId.ToString("N")[..6].ToUpperInvariant()}",
+                    date,
+                    g.Key.Utr.Length == 0 ? null : g.First().Utr,
+                    -g.Sum(l => l.Net),
+                    -g.Sum(l => l.Charges),
+                    -g.Sum(l => l.Tax),
+                    g.GroupBy(l => l.Mode).OrderBy(m => m.Key).Select(m => new TallyPosClearing(m.Key, -m.Sum(l => l.Gross))).ToList())
+                {
+                    Correction = $"Reverses card and UPI settlement journal {journal} of {settledOn}: its report was withdrawn as imported in error",
+                };
+            })
             .Where(j => j.Net != 0 || j.Charges != 0 || j.Tax != 0 || j.Gross != 0)
             .ToList();
 
