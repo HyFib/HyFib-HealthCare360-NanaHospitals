@@ -102,9 +102,12 @@ export const REVERSIBLE_MODES: ReadonlySet<PaymentMode> = new Set<PaymentMode>([
   'Wallet',
 ]);
 
-/** Why money recorded as received or paid out did not move. */
+/**
+ * Why money recorded as received or paid out did not move: the reasons a cashier chooses. `Chargeback` comes only from a
+ * chargeback case whose loss was accepted, so it is not offered.
+ */
 export const REVERSAL_REASONS = ['ChequeReturned', 'NotSettled', 'TrainingSimulator', 'Other'] as const;
-export type ReversalReason = (typeof REVERSAL_REASONS)[number];
+export type ReversalReason = (typeof REVERSAL_REASONS)[number] | 'Chargeback';
 
 /** Why a receipt's money did not arrive. */
 export const RECEIPT_REVERSAL_REASON_LABEL: Record<ReversalReason, string> = {
@@ -112,6 +115,7 @@ export const RECEIPT_REVERSAL_REASON_LABEL: Record<ReversalReason, string> = {
   NotSettled: 'The card, UPI, transfer or online payment never reached the bank',
   TrainingSimulator: 'A training simulator recorded it: nothing was paid',
   Other: 'Another reason (say it below)',
+  Chargeback: "The patient's bank took it back through a chargeback",
 };
 
 /** Why a refund recorded as paid out did not reach the patient. */
@@ -120,6 +124,7 @@ export const REFUND_REVERSAL_REASON_LABEL: Record<ReversalReason, string> = {
   NotSettled: 'The transfer, card reversal or online refund failed',
   TrainingSimulator: 'A training simulator recorded it: nothing was paid back',
   Other: 'Another reason (say it below)',
+  Chargeback: "The patient's bank took it back through a chargeback",
 };
 
 /** Modes a cashier may key in at the counter (advances, insurance and gateway payments are recorded by the system). */

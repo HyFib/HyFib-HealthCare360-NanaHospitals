@@ -83,6 +83,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<PosRecheckRunner>();
         services.AddScoped<GatewayWebhookLog>();
         services.AddScoped<PosSettlementService>();
+        services.AddScoped<PaymentDisputeService>();
         services.AddScoped<HbpService>();
         services.AddScoped<BillSharing>();
         services.AddScoped<INotificationDocumentSource, BillDocumentSource>();
@@ -111,6 +112,7 @@ public sealed class BillingModule : IModule
         GatewayEndpoints.Map(endpoints);
         ReconciliationEndpoints.Map(endpoints);
         PosSettlementEndpoints.Map(endpoints);
+        PaymentDisputeEndpoints.Map(endpoints);
         ShiftEndpoints.Map(endpoints);
         IpEndpoints.Map(endpoints);
         PayerEndpoints.Map(endpoints);

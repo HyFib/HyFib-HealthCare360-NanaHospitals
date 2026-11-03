@@ -19,10 +19,17 @@ public sealed class GatewayReconciliationRunner(
     PrepaymentChecker prepayments,
     GatewayRefundTracker refunds,
     GatewaySettlementService settlements,
+    PaymentDisputeService disputes,
     ISettingsService settings,
     TimeProvider time,
     ILogger<GatewayReconciliationRunner> logger)
 {
+    /// <summary>
+    /// Chargebacks: tells accountants of each case HC360 opened from a settlement, and reminds them daily of the cases
+    /// whose deadline is near or past (<see cref="PaymentDisputeService.RemindAsync"/>).
+    /// </summary>
+    public Task<int> FollowChargebacksAsync(CancellationToken ct) => disputes.RemindAsync(ct);
+
     /// <summary>At most this many records are looked at per step and run; the rest wait for the next run.</summary>
     private const int Batch = 200;
 
@@ -327,6 +334,7 @@ internal sealed class GatewayReconciliationJob(
             await StepAsync("re-check open online payments", (runner, ct) => runner.RecheckOrdersAsync(ct), stoppingToken);
             await StepAsync("re-check prepaid bookings", (runner, ct) => runner.RecheckBookingsAsync(ct), stoppingToken);
             await StepAsync("re-check bookings' earlier orders", (runner, ct) => runner.RecheckReplacedOrdersAsync(ct), stoppingToken);
+            await StepAsync("follow chargebacks", (runner, ct) => runner.FollowChargebacksAsync(ct), stoppingToken);
             if (hourly)
             {
                 await StepAsync("follow gateway refunds", (runner, ct) => runner.FollowRefundsAsync(ct), stoppingToken);

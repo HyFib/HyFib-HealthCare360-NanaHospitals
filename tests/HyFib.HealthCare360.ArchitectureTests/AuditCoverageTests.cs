@@ -74,6 +74,7 @@ public sealed class AuditCoverageTests
         ["GatewaySettlementLine"] = "One transaction of a gateway payout as reported, and what it matched.",
         ["PosSettlementImport"] = "An acquirer's settlement file as imported; the import and its review are audited (billing.pos.*).",
         ["PosSettlementLine"] = "One transaction of an acquirer's settlement file as imported, and what it matched.",
+        ["PaymentDisputeReminder"] = "When accountants were told of a chargeback case and reminded of its deadline; the notifications are the record, and the case's own changes are audited (billing.dispute.*).",
 
         // Derived: kept from other records, which are audited where they change.
         ["AdmissionRecord"] = "SpecialtyCare's copy of an admission, kept from Inpatient's admission and discharge events.",

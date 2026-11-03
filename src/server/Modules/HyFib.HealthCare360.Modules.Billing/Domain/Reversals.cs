@@ -16,6 +16,12 @@ public enum ReversalReason
     TrainingSimulator,
 
     Other,
+
+    /// <summary>
+    /// The patient's bank took the money back through a chargeback, and the hospital lost it or accepted it
+    /// (<see cref="PaymentDispute"/>).
+    /// </summary>
+    Chargeback,
 }
 
 /// <summary>

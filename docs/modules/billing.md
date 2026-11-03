@@ -263,7 +263,9 @@ unpaid, a card, UPI or online payment the bank never settled, or one a training 
 recorded as paid out never reached the patient, a **reversal** stands beside the record, dated the day it is made.
 One person asks (`billing.refunds.request`); another approves (`billing.refunds.approve`; maker-checker, the person
 who asked never approves). The reason is one of `ChequeReturned`, `NotSettled`, `TrainingSimulator`, `Other`, with a
-note of 10 to 500 characters saying how it was found.
+note of 10 to 500 characters saying how it was found. `Chargeback` is refused here (400): a payment the patient's bank
+took back is reversed only by accepting the loss of its [chargeback case](#chargebacks), so every such reversal has a
+case, and its Tally journal reads "taken back by a chargeback" rather than "money not received".
 
 * **Money not received** (`ReceiptReversal`, `{FAC}RR{YY}{SEQ:6}`): the payment lines asked for are taken back in full
   (what reversals have not taken already). Cash is never reversed: it was counted when the shift closed, and cash
@@ -537,6 +539,23 @@ one). See [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos) fo
 | POST | `/match` | → `PosMatchResult(checked, matched, toLookAt, message)`: matches again the transactions without a receipt or refund, and those set aside as another counter's, settled in the last 90 days, for example after a missing receipt or a counter's sale was recorded |
 | GET | `/unsettled` | → `UnsettledPosReceiptDto[]` oldest first: card and UPI receipts no report carries although the reports already go `settlementDays` past them, leaving out payments reversed as not received (receipt and bill, mode, amount, reference, card's last four digits, HC360's terminal, days waiting); with them the pharmacy's and the canteen's card and UPI payments no report carries although the reports carrying that counter's payments of that mode go `settlementDays` past them (`receiptId` and `billId` null, the invoice or bill as `receiptNumber`, `counter`, and `cancelled` when the invoice or bill was cancelled since) |
 | GET | `/training-file?date` | → `text/csv` `training-card-settlement-<date>.csv`: the training terminal's approved sales of the day as an acquirer would report them, to practise the import; 422 `billing.pos_training_server` on a live server |
+
+### Chargebacks — `/api/v1/billing/disputes`
+Every route needs `billing.gateway.reconcile` and works on the signed-in facility (422 `facility.required` without
+one). See [Chargebacks](#chargebacks) for what happens behind them.
+
+| Method | Path | Request → response |
+|---|---|---|
+| GET | `/?open&terminal` (paged, at most 100) | → `PagedResult<PaymentDisputeDto>`: `open=true` the cases not yet won or lost, by their deadline (soonest first, those without one last); `open=false` the closed ones, newest first; `terminal=true` card and UPI terminal payments, `false` the gateway's. Each with its number, where it came from (`Gateway`, `Terminal`, `Notice`), status (`Open`, `Contested`, `Won`, `Lost`), the receipt, payment line, bill, mode and reference (the gateway's payment id or the RRN), the amount taken back, the notice's reason code, reason and answer-by date with `daysLeft` (negative when late; null once answered), the evidence sent, who asked to accept the loss and `lossWaiting` while that waits for a second person, how it ended and the reversal's number |
+| GET | `/summary` | → `PaymentDisputeSummaryDto(open, openAmount, dueSoon, late)`: open cases and what they took back; those not answered whose deadline is within two days, or past |
+| GET | `/{id}` | → `PaymentDisputeDto`; 404 for another facility's case |
+| POST | `/` | `OpenPaymentDisputeRequest(receiptNumber, paymentId?, amount, reasonCode?, reason?, respondBy?)` → 201 `PaymentDisputeDto`: a case opened from the bank's or the gateway's notice. 400 `receiptNumber` for a receipt not in this facility, `paymentId` when the receipt has more than one card, UPI or online payment and none is chosen, `amount` for more than the payment; 422 `billing.dispute_not_card` for a receipt with no card, UPI, net banking, wallet or gateway payment; 409 `billing.dispute_open` while a case on the payment is open. Audited `billing.dispute.opened` |
+| POST | `/{id}/details` | `DescribePaymentDisputeRequest(reasonCode?, reason?, respondBy?, version)` → `PaymentDisputeDto`: what the notice says and the date to answer by (a new date is reminded again). Audited `billing.dispute.described` |
+| POST | `/{id}/evidence` | `PaymentDisputeEvidenceRequest(sentOn, note, version)` (note 5–500 characters) → `PaymentDisputeDto` `Contested`; 400 `sentOn` after today. Audited `billing.dispute.evidence_sent` |
+| POST | `/{id}/won` | `PaymentDisputeNoteRequest(note, version)` → `PaymentDisputeDto` `Won`; 422 `billing.dispute_loss_waiting` while accepting the loss waits for a second person. Audited `billing.dispute.won` |
+| POST | `/{id}/accept-loss` | `PaymentDisputeNoteRequest(note, version)` → 202 `ApprovalRequestDto` (kind `billing.receipt_reversal`): the receipt's payment line is asked to be reversed with reason `Chargeback`; someone else with `billing.refunds.approve` approves it, and the case is lost when they do. 422 `billing.dispute_part` when the case took back part of the payment. Audited `billing.dispute.loss_asked`, then `billing.dispute.lost` |
+
+All of them answer 422 `billing.dispute_closed` for a case won or lost, and 409 when someone changed it meanwhile.
 
 ### Patient portal — `/api/v1/portal/bills` (`patients.portal`, own/linked patients only)
 | Method | Path | Request → response |
@@ -1100,7 +1119,7 @@ or the UPI reference (UTR) when they take the payment.
 | Payment by card | else a card payment typed with the same last four digits and amount, within a day | `Matched` by the card and amount |
 | Payment | nothing | `NoReceipt` |
 | Refund | the refund paid by card or UPI whose reference is the RRN or (same amount) the approval code | `Matched`, else `NoRefund` |
-| Chargeback | nothing to match | `Review` |
+| Chargeback | the sale with the same RRN (without one, the approval code at the same terminal) that matched a receipt | followed as a [chargeback case](#chargebacks), not to look at; `Review` when the sale matched no receipt |
 | Payment or refund that matched nothing above, at any terminal | the pharmacy's or the canteen's card or UPI payment (for a refund, money it paid back by card or UPI) whose typed reference is the RRN, else is the approval code with the same amount within two days; a payment of the same mode first | `Matched` by the RRN or the approval code, with the counter and its invoice or bill, or `AmountDiffers` |
 | Any, at a TID in `otherTerminals`, that matched nothing | another counter's sale HC360 does not record, or one typed without its reference; Billing's receipts are not looked for there | `OtherCounter` |
 
@@ -1143,6 +1162,52 @@ with a 1.5 % charge on cards plus GST, under the UTR `SIMUTR<yyyyMMdd>`, so the 
 acquirer. Only a training or test server makes one (422 `billing.pos_training_server` on a hospital's live server, where
 it would settle sales no card paid); see *Simulators only on a training or test server* in
 [integrations.md](integrations.md).
+
+## Chargebacks
+A chargeback is the patient's bank taking back the money of a card, UPI or online payment through the card network, UPI
+or the payment gateway (documented gap 10). HC360 follows each as a case (`PaymentDispute`, numbered
+`billing.paymentdispute`), one per payment line of a receipt:
+
+* **From a settlement.** A gateway settlement's adjustment that takes money back on a payment id a receipt recorded
+  (`PaymentGateway` mode) opens a `Gateway` case for what it took, instead of an unexplained amount difference; one on
+  a payment HC360 never recorded stays an exception. An acquirer's report that carries a chargeback under the RRN (or,
+  without one, the approval code at the same terminal) of a sale that matched a receipt opens a `Terminal` case, and
+  the chargeback leaves the transactions to look at; one whose sale matched nothing stays to look at and is tried again
+  with each import and **Match again**. A settlement read again (each fetch of its day, **Match again**) finds its case
+  and opens no second one; a run whose exceptions clash with another's lets go of the cases it staged with them, and
+  reads them again.
+* **From the notice.** An accountant opens a `Notice` case with the receipt number, the amount and what the notice
+  says, often before any settlement carries it; the settlement that takes the money later joins that case.
+
+The accountant records the notice's reason code, reason and the date to answer by, then the evidence sent (the bill,
+the receipt, the charge slip, the patient's consent…) with the day it was sent: the case is `Contested` until the bank
+decides. It ends one of two ways:
+
+* **Won.** An accountant records how the money came back; or the gateway gives it back in a later settlement (an
+  adjustment adding money on the same payment), which wins the open case by itself and is no exception either.
+* **Lost.** Accepting the loss never closes a case by one person's word. The accountant asks; HC360 asks for the
+  receipt's payment line to be reversed with the reason `Chargeback` (*Taken back by a chargeback*), and someone else
+  who approves reversals (`billing.refunds.approve`) approves or rejects it, as any receipt reversal. Approved, the
+  receipt is reversed, the bill owes the money again, and the case is `Lost` with the reversal's number, in the same
+  unit of work. While it waits, the case cannot be recorded as won; rejected or expired, it stays open. If the gateway
+  gives the money back while it waits (the case is won by itself), approving it fails with `billing.dispute_won` and
+  the receipt is not reversed. Only a whole payment line is reversed: part of a payment taken back is put right on the
+  bill (a credit note or a new receipt).
+
+**In the books.** The receipt put the money in the Card, UPI or payment-gateway clearing ledger. The settlement that
+carried the chargeback cleared that much less of it (its gross is payments less refunds and chargebacks), so an open
+case is money still in clearing, matching what the bank holds back. A lost case's reversal journal takes it out of
+clearing against the patient's account; a won case's money comes back in a settlement, which clears it.
+
+**Told and reminded.** `GatewayReconciliationJob` tells those holding `billing.gateway.reconcile` of each case HC360
+opened from a settlement once it is saved, and, once a day, of every case not yet answered whose deadline is within
+two days or past; a deadline changed since is reminded again the same day. What was told when is kept apart from the
+case (`PaymentDisputeReminder`), and each reminder is claimed with a conditional update before anyone is told: a
+second worker or a step run again never tells the same thing twice, and telling never changes a case an accountant
+has open (its version).
+
+Cases are listed under **Chargebacks** on the card and UPI settlements screen (terminal payments) and on the
+reconciliation screen (the gateway's).
 
 ## The Tally day book
 
@@ -1248,7 +1313,8 @@ the bill's day again, never to delete it.
 * `billing.tally.check` — reconciles a posted day with its records and with Tally; not retried.
 * `billing.appointment.prepayment` — see above.
 * `GatewayReconciliationJob` — re-checks open online payments, prepaid bookings and the orders they had before, follows
-  gateway refunds, reads settlements; see [Gateway reconciliation](#gateway-reconciliation-int-pg).
+  gateway refunds, reads settlements; see [Gateway reconciliation](#gateway-reconciliation-int-pg). Every five minutes
+  it also tells of new chargeback cases and reminds of their deadlines; see [Chargebacks](#chargebacks).
 * `PosRecheckJob` — every minute where `PlatformOptions.RunsJobs` is set, follows the terminal sales the counter
   stopped polling (the screen closed, the browser crashed, the cashier moved on while the customer paid). Sales started
   more than a minute and less than two days ago that are still `Initiated` or `AwaitingCustomer`, or `Approved` without
@@ -1265,7 +1331,7 @@ the bill's day again, never to delete it.
 * In-app alerts: discount approval needed, refund awaiting approval, discharge initiated (final bill drafted), patient
   discharged with dues, admission cancelled (billing follow-up), cancelled order already billed; to holders of
   `billing.gateway.reconcile`: an online payment not recorded, an online refund failed, settled transactions that do
-  not match.
+  not match, a chargeback taken back, a chargeback's deadline near or past.
 * Realtime: `billing.bill.changed`, `billing.pos.changed` (facility group).
 
 ### Bills on WhatsApp (INT-WA)
@@ -1297,6 +1363,7 @@ estimate) or a cancelled bill gives no document and is never sent.
 | `billing.creditnote` | `{FAC}CN{YY}{SEQ:6}` | yearly |
 | `billing.receiptreversal` | `{FAC}RR{YY}{SEQ:6}` | yearly |
 | `billing.refundreversal` | `{FAC}RX{YY}{SEQ:6}` | yearly |
+| `billing.paymentdispute` | `{FAC}CB{YY}{SEQ:5}` | yearly |
 | `insurance.preauth` | `{FAC}PA{YY}{SEQ:6}` | yearly |
 | `insurance.claim` | `{FAC}CL{YY}{SEQ:6}` | yearly |
 | `doctorfees.payout` | `{FAC}DP{YY}{SEQ:5}` | yearly |
@@ -1381,7 +1448,11 @@ indexed where set). Notes and IRNs from before keep zeros and nulls.
   if the gateway carries its transactions in a new settlement instead, their lines find their receipts already matched
   by the failed one; the accountant resolves the exception with the new settlement's UTR.
 * **Part of a card or UPI report** cannot be withdrawn: the whole report is, and a corrected file imported in its place.
-* **Chargebacks and disputes** arrive as gateway adjustments and are listed as amount differences; there is no dispute
-  workflow.
+* **The gateway's own dispute records** (Razorpay's dispute webhooks and Disputes API, with the reason code, phase and
+  date to answer by) are not read yet: a gateway case is opened from the settlement's adjustment or from the notice,
+  and its deadline is typed from the notice (gap 10b). A chargeback the acquirer reverses in a later report is not yet
+  taken as money in: the accountant records the case as won.
+* **Part of a payment taken back** is not accepted by reversing the receipt (`billing.dispute_part`): the accountant
+  puts it right on the bill.
 * **Orders replaced before migration `AppointmentReplacedOrders`** are not remembered: a payment on one is found only
   by the settlement match, as a payment without a receipt that names no booking.

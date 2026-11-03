@@ -93,10 +93,11 @@ public sealed class GatewayDiscrepancyService(
             rows = rows.Where(d => d.Kind == kind);
         }
 
-        // Worst first: the kind's rank, then the most money, then the oldest.
+        // Worst first: the kind's rank, then the most money either way (money taken back is as much as money added), then
+        // the oldest.
         var ordered = status is DiscrepancyStatus.Resolved
             ? rows.OrderByDescending(d => d.ResolvedAt)
-            : rows.OrderBy(d => d.Rank).ThenByDescending(d => d.GatewayAmount ?? d.RecordedAmount).ThenBy(d => d.DetectedAt);
+            : rows.OrderBy(d => d.Rank).ThenByDescending(d => Math.Abs(d.GatewayAmount ?? d.RecordedAmount ?? 0m)).ThenBy(d => d.DetectedAt);
         var result = await ordered.ToPagedResultAsync(page, ct);
         var dtos = await ToDtosAsync(result.Items, ct);
         return new PagedResult<GatewayDiscrepancyDto>(dtos, result.Page, result.PageSize, result.TotalCount);
@@ -145,7 +146,7 @@ public sealed class GatewayDiscrepancyService(
         var open = await db.Set<GatewayDiscrepancy>().AsNoTracking()
             .Where(d => d.FacilityId == facilityId && d.Status == DiscrepancyStatus.Open)
             .GroupBy(d => d.Kind)
-            .Select(g => new { Kind = g.Key, Count = g.Count(), Amount = g.Sum(d => d.GatewayAmount ?? d.RecordedAmount ?? 0m) })
+            .Select(g => new { Kind = g.Key, Count = g.Count(), Amount = g.Sum(d => Math.Abs(d.GatewayAmount ?? d.RecordedAmount ?? 0m)) })
             .ToListAsync(ct);
         var latest = await db.Set<GatewaySettlement>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .Where(s => s.FacilityId == facilityId || s.Lines.Any(l => l.FacilityId == facilityId))

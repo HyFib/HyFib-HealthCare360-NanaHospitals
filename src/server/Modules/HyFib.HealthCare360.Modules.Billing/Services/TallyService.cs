@@ -167,7 +167,8 @@ public sealed class TallyService(
             PosSettlements = await PosSettlementService.ForDayBookAsync(db, facilityId, date, facilityCode, ct),
             // An insurer's settlement is never reversed (ReversalRules), so no reversal posts to a payer's ledger.
             ReceiptReversals = receiptReversals.Select(r => new TallyReceiptReversal(
-                r.Number, date, r.ReceiptNumber, r.Purpose, null, r.Lines.Select(l => new TallyPayment(l.Mode, l.Amount)).ToList())).ToList(),
+                r.Number, date, r.ReceiptNumber, r.Purpose, null, r.Lines.Select(l => new TallyPayment(l.Mode, l.Amount)).ToList(),
+                r.Reason == ReversalReason.Chargeback)).ToList(),
             RefundReversals = refundReversals.Select(r => new TallyRefundReversal(r.Number, date, r.RefundNumber, r.Purpose, r.Mode, r.Amount)).ToList(),
         };
     }

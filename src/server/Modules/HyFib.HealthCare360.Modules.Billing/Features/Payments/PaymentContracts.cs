@@ -224,7 +224,9 @@ public sealed class ReverseReceiptRequestValidator : AbstractValidator<ReverseRe
         RuleFor(x => x.PaymentIds).NotEmpty().WithMessage("Choose the payments whose money did not arrive.")
             .Must(p => p.Count <= 10).WithMessage("A receipt has at most 10 payments.");
         RuleForEach(x => x.PaymentIds).NotEmpty();
-        RuleFor(x => x.Reason).IsInEnum();
+        RuleFor(x => x.Reason).IsInEnum()
+            .NotEqual(ReversalReason.Chargeback)
+            .WithMessage("A payment taken back by a chargeback is reversed from its chargeback case: accept the loss there.");
         RuleFor(x => x.Note).Reversal();
     }
 }
@@ -233,7 +235,9 @@ public sealed class ReverseRefundRequestValidator : AbstractValidator<ReverseRef
 {
     public ReverseRefundRequestValidator()
     {
-        RuleFor(x => x.Reason).IsInEnum();
+        RuleFor(x => x.Reason).IsInEnum()
+            .NotEqual(ReversalReason.Chargeback)
+            .WithMessage("A chargeback takes back a payment, not a refund.");
         RuleFor(x => x.Note).Reversal();
     }
 }
