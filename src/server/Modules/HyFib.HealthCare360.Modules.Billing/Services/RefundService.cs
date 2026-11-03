@@ -212,8 +212,8 @@ public sealed class RefundService(
             }
 
             // Paid out in HC360 now; the reconciliation job follows it until the bank confirms it (or it fails).
-            reference = reversal.Value;
-            refund.StartGatewayRefund(reversal.Value, time.GetUtcNow());
+            reference = reversal.Value.RefundId;
+            refund.StartGatewayRefund(reversal.Value.RefundId, reversal.Value.Payment, time.GetUtcNow());
         }
 
         var paid = refund.MarkPaid(request.Mode, reference, currentUser.UserId, shift.Value?.Id, shift.Value?.Counter, time.GetUtcNow());
@@ -505,7 +505,7 @@ public sealed class RefundService(
             .Where(r => r.IpAccountId == ipAccountId && r.Purpose == RefundPurpose.Deposit && (r.Status == RefundStatus.Requested || r.Status == RefundStatus.Approved))
             .SumAsync(r => r.Amount, ct);
 
-    private async Task<Result<string>> RefundThroughGatewayAsync(Refund refund, CancellationToken ct)
+    private async Task<Result<(string RefundId, GatewayPaymentRef Payment)>> RefundThroughGatewayAsync(Refund refund, CancellationToken ct)
     {
         var gateway = services.GetService<IPaymentGateway>();
         if (gateway is null)
@@ -513,21 +513,22 @@ public sealed class RefundService(
             return Error.Rule("billing.gateway_not_configured", "No payment gateway is configured. Refund by another mode.");
         }
 
-        var paymentId = await GatewayPaymentForAsync(refund, ct);
-        if (paymentId is null)
+        var payment = await GatewayPaymentForAsync(refund, ct);
+        if (payment is null)
         {
             return Error.Rule("billing.gateway_payment_missing", "No online payment large enough to reverse was found. Refund by another mode.");
         }
 
-        // Keyed by the refund: a second click while the first request is still out gets the same gateway refund.
+        // Keyed by the refund: a second click while the first request is still out gets the same gateway refund. It goes
+        // to the gateway that took the payment, even after the facility has switched gateways.
         var result = await gateway.RefundAsync(
-            paymentId, refund.Amount, refund.Reason, refund.GatewayIdempotencyKey, refund.FacilityId, ct);
+            payment, refund.Amount, refund.Reason, refund.GatewayIdempotencyKey, refund.FacilityId, ct);
         if (!result.Success || string.IsNullOrWhiteSpace(result.RefundId))
         {
             return Error.Rule("billing.gateway_refund_failed", result.Error ?? "The payment gateway declined the refund.");
         }
 
-        return result.RefundId;
+        return (result.RefundId, payment);
     }
 
     /// <summary>
@@ -536,18 +537,18 @@ public sealed class RefundService(
     /// <paramref name="alreadyPaidOut"/> is set when the refund is sent again after the gateway failed it, so its amount
     /// already counts against the advance.
     /// </summary>
-    internal async Task<string?> GatewayPaymentForAsync(Refund refund, CancellationToken ct, bool alreadyPaidOut = false) =>
+    internal async Task<GatewayPaymentRef?> GatewayPaymentForAsync(Refund refund, CancellationToken ct, bool alreadyPaidOut = false) =>
         refund.Purpose == RefundPurpose.Advance
             ? await db.Set<PatientAdvance>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
                 .Where(a => a.Id == refund.AdvanceId && a.Amount - a.RefundedAmount + (alreadyPaidOut ? refund.Amount : 0m) >= refund.Amount)
-                .Select(a => a.GatewayPaymentId)
+                .Select(a => new GatewayPaymentRef(a.Provider, a.GatewayPaymentId, a.GatewayOrderId))
                 .FirstOrDefaultAsync(ct)
             : await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
                 .Where(o => o.FacilityId == refund.FacilityId)
                 .Where(o => (refund.BillId != null && o.BillId == refund.BillId) || (refund.IpAccountId != null && o.IpAccountId == refund.IpAccountId))
                 .Where(o => o.Status == GatewayOrderStatus.Paid && o.GatewayPaymentId != null && o.PaidAmount >= refund.Amount)
                 .OrderByDescending(o => o.PaidAt)
-                .Select(o => o.GatewayPaymentId)
+                .Select(o => new GatewayPaymentRef(o.Provider, o.GatewayPaymentId!, o.OrderId))
                 .FirstOrDefaultAsync(ct);
 
     internal Task NotifyApproversAsync(Refund refund, CancellationToken ct) =>

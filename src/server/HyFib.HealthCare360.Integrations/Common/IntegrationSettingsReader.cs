@@ -109,6 +109,25 @@ internal sealed class IntegrationSettingsReader(
         where TSecrets : class, new() =>
         ReadAsync<TSettings, TSecrets>(integration, facilityId, requireEnabled, CancellationToken.None).GetAwaiter().GetResult();
 
+    /// <summary>
+    /// A further secret row of an integration (such as <c>integrations.payment.cashfree.secret</c>, kept apart so that
+    /// replacing one gateway's credentials never wipes another's), for the same facility as <see cref="ReadAsync{TSettings, TSecrets}(string, Guid?, bool, CancellationToken)"/>
+    /// (the facility's row, else the row for all facilities). An unreadable row reads as missing; only its type is logged.
+    /// </summary>
+    public async Task<TSecrets?> ReadSecretAsync<TSecrets>(string key, Guid? facilityId, CancellationToken cancellationToken)
+        where TSecrets : class
+    {
+        try
+        {
+            return await settings.GetAsync<TSecrets>(key, facilityId ?? currentUser.FacilityId, cancellationToken);
+        }
+        catch (Exception ex) when (ex is JsonException or CryptographicException or FormatException)
+        {
+            logger.LogWarning("Secret setting {Key} could not be read ({ErrorType})", key, ex.GetType().Name);
+            return null;
+        }
+    }
+
     /// <summary>A plain (non-integration-shaped) setting such as the analyser list; invalid JSON reads as missing.</summary>
     public async Task<T?> ReadValueAsync<T>(string key, Guid? facilityId, CancellationToken cancellationToken)
     {

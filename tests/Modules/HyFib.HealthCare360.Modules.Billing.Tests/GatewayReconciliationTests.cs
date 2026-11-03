@@ -316,7 +316,7 @@ public sealed class GatewayReconciliationTests
     public void A_gateway_refund_is_followed_until_the_bank_confirms_it()
     {
         var refund = PaidRefund();
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", Paid, TestData.Now);
 
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Pending, error: "Could not reach Razorpay."), TestData.Now).ShouldBeFalse();
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Pending, reference: "74836287462837"), TestData.Now).ShouldBeTrue();
@@ -334,13 +334,13 @@ public sealed class GatewayReconciliationTests
     public void A_failed_gateway_refund_keeps_the_reason_and_starts_again_when_sent_again()
     {
         var refund = PaidRefund();
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", Paid, TestData.Now);
 
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Failed, error: "The bank account is closed."), TestData.Now).ShouldBeTrue();
         refund.ShouldSatisfyAllConditions(r => r.GatewayStatus.ShouldBe(PaymentRefundStatus.Failed), r => r.GatewayError.ShouldBe("The bank account is closed."));
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Processed) with { RefundId = "rfnd_Other00001" }, TestData.Now).ShouldBeFalse();
 
-        refund.StartGatewayRefund("rfnd_Again00001", TestData.Now.AddDays(40));
+        refund.StartGatewayRefund("rfnd_Again00001", Paid, TestData.Now.AddDays(40));
         refund.ShouldSatisfyAllConditions(
             r => r.GatewayRefundId.ShouldBe("rfnd_Again00001"),
             r => r.GatewayStatus.ShouldBe(PaymentRefundStatus.Pending),
@@ -353,7 +353,7 @@ public sealed class GatewayReconciliationTests
     public void A_failed_gateway_refund_is_sent_again_by_one_request_only()
     {
         var refund = PaidRefund();
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", Paid, TestData.Now);
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Failed, error: "The bank account is closed."), TestData.Now).ShouldBeTrue();
 
         refund.ClaimGatewayRetry(TestData.Now.AddHours(1)).IsSuccess.ShouldBeTrue();
@@ -380,15 +380,15 @@ public sealed class GatewayReconciliationTests
         var refund = PaidRefund();
         refund.GatewayRefundId = null;
         var first = refund.GatewayIdempotencyKey;
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", Paid, TestData.Now);
         var retry = refund.GatewayIdempotencyKey;
-        refund.StartGatewayRefund("rfnd_Again00001", TestData.Now);
+        refund.StartGatewayRefund("rfnd_Again00001", Paid, TestData.Now);
 
         first.ShouldBe(refund.Id.ToString("N"));
         retry.ShouldNotBe(first);
         retry.ShouldMatch("^[0-9a-f]{32}$");
         refund.GatewayIdempotencyKey.ShouldNotBe(retry);
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", Paid, TestData.Now);
         refund.GatewayIdempotencyKey.ShouldBe(retry, "The same attempt asked again gets the same key.");
     }
 
@@ -396,7 +396,7 @@ public sealed class GatewayReconciliationTests
     public void Only_a_failed_gateway_refund_can_be_sent_again()
     {
         var refund = PaidRefund();
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", Paid, TestData.Now);
 
         refund.CanSendGatewayRefundAgain(TestData.Now).ShouldBeFalse();
         refund.ClaimGatewayRetry(TestData.Now).Error!.Code.ShouldBe("billing.refund_not_failed");
@@ -482,6 +482,44 @@ public sealed class GatewayReconciliationTests
     }
 
     [Fact]
+    public void A_cashfree_webhook_names_its_order_payment_refund_settlement_and_dispute()
+    {
+        // Cashfree's envelope (its SDKs' payment, refund and settlement webhooks): ids as numbers or strings.
+        GatewayWebhookInfo.ReadCashfree("""
+            {"type":"PAYMENT_SUCCESS_WEBHOOK","event_time":"2026-09-25T09:41:40+05:30","data":{
+             "order":{"order_id":"CFPay_z64lc99v754g_1","order_amount":1500.5,"order_tags":{"hc360_reference":"BILL-2026-00042"}},
+             "payment":{"cf_payment_id":12376123,"payment_status":"SUCCESS","payment_amount":1500.5},
+             "customer_details":{"customer_name":"Ravi Kumar","customer_phone":"9876543210"}}}
+            """).ShouldBe(new GatewayWebhookInfo("PAYMENT_SUCCESS_WEBHOOK", "CFPay_z64lc99v754g_1", "12376123", null, null));
+        GatewayWebhookInfo.ReadCashfree("""
+            {"type":"REFUND_SUCCESS_WEBHOOK","data":{"refund":{"cf_refund_id":"refund_1553338","refund_id":"a1b2c3d4e5f60718293a4b5c6d7e8f90",
+             "order_id":"CFPay_z64lc99v754g_1","cf_payment_id":918812,"refund_status":"SUCCESS"}}}
+            """).ShouldBe(new GatewayWebhookInfo("REFUND_SUCCESS_WEBHOOK", null, "918812", "a1b2c3d4e5f60718293a4b5c6d7e8f90", null));
+        GatewayWebhookInfo.ReadCashfree("""{"type":"SETTLEMENT_WEBHOOK","data":{"settlement":{"cf_settlement_id":6121238,"transfer_utr":"N87912312"}}}""")
+            .SettlementId.ShouldBe("6121238");
+
+        // Its dispute and link events are not in the SDKs: a dispute id or link id is taken wherever it sits, and only if it is one.
+        GatewayWebhookInfo.ReadCashfree("""{"type":"DISPUTE_CREATED","data":{"dispute":{"dispute_id":433475257,"dispute_status":"CHARGEBACK_CREATED"}}}""")
+            .DisputeId.ShouldBe("433475257");
+        GatewayWebhookInfo.ReadCashfree("""{"type":"DISPUTE_CREATED","data":{"dispute":{"dispute_id":"../../x"}}}""").DisputeId.ShouldBeNull();
+        GatewayWebhookInfo.ReadCashfree("""{"type":"PAYMENT_LINK_EVENT","data":{"link_id":"hcl_0199f0a1b2c3d4e5f60718293a","link_status":"PAID"}}""")
+            .OrderId.ShouldBe("hcl_0199f0a1b2c3d4e5f60718293a");
+        GatewayWebhookInfo.ReadCashfree("""{"type":"payment.captured","data":{}}""").EventType.ShouldBeNull();
+        GatewayWebhookInfo.ReadCashfree("not json").ShouldBe(new GatewayWebhookInfo(null, null, null, null, null));
+    }
+
+    [Fact]
+    public void Ids_a_gateway_sends_as_numbers_are_candidates_too()
+    {
+        var candidates = PaymentGatewayService.ExtractCandidates("""{"data":{"payment":{"cf_payment_id":12376123,"payment_amount":150050,"dispute_id":433},"count":7}}""");
+
+        candidates.ShouldContain("12376123");
+        candidates.ShouldContain("433");
+        candidates.ShouldNotContain("150050");
+        candidates.ShouldNotContain("7");
+    }
+
+    [Fact]
     public void A_webhook_is_known_by_its_event_id_else_by_its_body()
     {
         GatewayWebhookInfo.EventIdOf("KE2cmXtQi5JDdj", "{}").ShouldBe("KE2cmXtQi5JDdj");
@@ -531,4 +569,7 @@ public sealed class GatewayReconciliationTests
             .UseSnakeCaseNamingConvention()
             .Options,
         new ModuleCatalog([new PatientsModule(), new SchedulingModule(), new BillingModule()]));
+
+    /// <summary>The Razorpay payment the refunds of these tests return money from.</summary>
+    private static readonly GatewayPaymentRef Paid = new("razorpay", "pay_A1B2C3D4E5", "order_A1B2C3D4E5");
 }

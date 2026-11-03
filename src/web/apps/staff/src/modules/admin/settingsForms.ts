@@ -1118,12 +1118,17 @@ const emailSpec: SettingsSpec = {
 
 const PAY = 'integrations.payment';
 const PAY_SECRET = 'integrations.payment.secret';
+/** Cashfree's client secret has a row of its own, so that replacing one gateway's credentials never wipes the other's. */
+const PAY_CASHFREE_SECRET = 'integrations.payment.cashfree.secret';
 const payBy = (...providers: string[]) => when(PAY, 'provider', ...providers);
 
 const paymentSpec: SettingsSpec = {
   id: 'payment',
   title: 'Payment gateway',
-  intro: 'Online payment links and portal prepayments through Razorpay. Amounts from ₹1 to ₹1,00,00,000.',
+  intro:
+    'Online payment links and portal prepayments through Razorpay or Cashfree. Amounts from ₹1 to ₹1,00,00,000. ' +
+    'New payments go through the provider chosen here; keep the other gateway set up after a switch, so the payments it ' +
+    'took are still checked, refunded and reconciled with its account.',
   prefix: PAY,
   fields: [
     { key: PAY, path: 'enabled', label: 'Take online payments', kind: 'switch' },
@@ -1134,6 +1139,7 @@ const paymentSpec: SettingsSpec = {
       kind: 'select',
       options: [
         { value: 'razorpay', label: 'Razorpay' },
+        { value: 'cashfree', label: 'Cashfree' },
         { value: 'simulator', label: 'Simulator (training: no money moves)' },
       ],
       requiredWhen: switchedOn(PAY),
@@ -1162,19 +1168,42 @@ const paymentSpec: SettingsSpec = {
     },
     {
       key: PAY,
+      path: 'cashfreeBaseUrl',
+      label: 'Cashfree address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://api.cashfree.com/pg',
+      when: payBy('cashfree'),
+      group: 'Cashfree',
+      hint: 'https://sandbox.cashfree.com/pg for Cashfree’s test mode.',
+    },
+    {
+      key: PAY,
+      path: 'cashfreeClientId',
+      label: 'Client id (App ID)',
+      kind: 'text',
+      when: payBy('cashfree'),
+      hint: 'From Cashfree’s dashboard (Developers → API keys); the client secret goes in the credentials. Webhooks go to /api/v1/billing/webhooks/cashfree on this server.',
+      pattern: {
+        regex: /^[A-Za-z0-9_-]{4,100}$/,
+        message: 'A Cashfree client id is letters and digits.',
+      },
+    },
+    {
+      key: PAY,
       path: 'paymentLinkCallbackUrl',
       label: 'Page after paying a link',
       kind: 'url',
       https: true,
-      when: payBy('razorpay'),
+      when: payBy('razorpay', 'cashfree'),
       hint: 'Optional.',
     },
     {
       key: PAY,
       path: 'notifyByRazorpay',
-      label: 'Let Razorpay also send payment links by SMS or e-mail',
+      label: 'Let the gateway also send payment links by SMS or e-mail',
       kind: 'switch',
-      when: payBy('razorpay'),
+      when: payBy('razorpay', 'cashfree'),
       hint: 'Off: HC360 sends links with its own templates.',
     },
     {
@@ -1211,6 +1240,12 @@ const paymentSpec: SettingsSpec = {
       prop: 'simulatorSecret',
       label: 'Simulator signing key',
       hint: 'Optional, simulator only: for test tools that sign simulated payments.',
+    },
+    {
+      key: PAY_CASHFREE_SECRET,
+      prop: 'clientSecret',
+      label: 'Cashfree client secret',
+      hint: 'Used by Cashfree’s API and to check its webhooks. Kept apart from Razorpay’s credentials.',
     },
   ],
 };

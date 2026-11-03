@@ -7,6 +7,7 @@ using System.Text;
 using HyFib.HealthCare360.Modules.Billing.Features.Insurance;
 using HyFib.HealthCare360.Modules.Billing.Features.Packages;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
+using HyFib.HealthCare360.Integrations.Payments;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Documents;
@@ -92,6 +93,9 @@ public sealed class HospitalServer : IAsyncLifetime
     /// <summary>The ABDM gateway the server calls (<see cref="FakeAbdmGateway"/>).</summary>
     public FakeAbdmGateway AbdmGateway { get; } = new();
 
+    /// <summary>Cashfree's API the server calls when a test sets Cashfree up (<see cref="FakeCashfree"/>).</summary>
+    public FakeCashfree Cashfree { get; } = new();
+
     /// <summary>
     /// A release signing key made for this run, which the test server trusts as it trusts HyFib's (DesktopUpdateTests).
     /// </summary>
@@ -154,6 +158,9 @@ public sealed class HospitalServer : IAsyncLifetime
         builder.Services.AddHttpClient<AbdmGatewayKeys>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
         builder.Services.AddHttpClient<AbdmDataPush>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
         builder.Services.AddHttpClient<AbhaClient>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
+
+        // Cashfree is a fake one of this run (GatewayReconciliationTests): nothing goes to the network.
+        builder.Services.AddHttpClient<CashfreeGateway>().ConfigurePrimaryHttpMessageHandler(Cashfree.Handler);
 
         // PDFs as a test asks for them in a request header (TestPdfRenderer); the server's own renderer for everything else.
         var renderer = builder.Services.Last(d => d.ServiceType == typeof(IPdfRenderer));

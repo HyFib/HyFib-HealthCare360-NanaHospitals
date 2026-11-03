@@ -127,7 +127,7 @@ public sealed class PaymentDisputeService(
     /// A dispute on a payment HC360 never recorded opens nothing (no case). Returns the case and what was done, in words;
     /// the caller saves.
     /// </summary>
-    internal async Task<(PaymentDispute? Case, string Note)> FollowGatewayDisputeAsync(GatewayDispute gatewayDispute, CancellationToken ct)
+    internal async Task<(PaymentDispute? Case, string Note)> FollowGatewayDisputeAsync(GatewayDispute gatewayDispute, string? provider, CancellationToken ct)
     {
         var dispute = await AllCases().FirstOrDefaultAsync(d => d.GatewayDisputeId == gatewayDispute.DisputeId, ct);
         var opened = false;
@@ -149,6 +149,7 @@ public sealed class PaymentDisputeService(
             }
         }
 
+        dispute.GatewayProvider ??= provider;
         var wasWon = dispute.Status == PaymentDisputeStatus.Won;
         var changed = dispute.FollowGateway(
             gatewayDispute, LastDay(gatewayDispute.RespondBy),
@@ -169,30 +170,32 @@ public sealed class PaymentDisputeService(
     /// webhook's body is not trusted beyond its id) and followed. Failed when it could not be read (the gateway delivers
     /// the event again, and the hourly read catches it); ignored when it is on a payment HC360 did not record.
     /// </summary>
-    internal async Task<(WebhookEventOutcome Outcome, string Note)> ReadGatewayDisputeAsync(string disputeId, Guid? facilityId, CancellationToken ct)
+    internal async Task<(WebhookEventOutcome Outcome, string Note)> ReadGatewayDisputeAsync(
+        string disputeId, string? provider, Guid? facilityId, CancellationToken ct)
     {
         if (services.GetService<IPaymentGateway>() is not { } gateway)
         {
             return (WebhookEventOutcome.Ignored, "No payment gateway is set up.");
         }
 
-        var read = await gateway.GetDisputeAsync(disputeId, facilityId, ct);
+        var read = await gateway.GetDisputeAsync(disputeId, provider, facilityId, ct);
         if (!read.Available || read.Disputes is not [{ } dispute] || dispute.DisputeId != disputeId)
         {
             return (WebhookEventOutcome.Failed, read.Problem ?? $"The gateway did not give dispute {disputeId}.");
         }
 
-        var (followed, note) = await FollowGatewayDisputeAsync(dispute, ct);
+        var (followed, note) = await FollowGatewayDisputeAsync(dispute, read.Provider, ct);
         await db.SaveChangesAsync(ct);
         return (followed is null ? WebhookEventOutcome.Ignored : WebhookEventOutcome.Processed, note);
     }
 
     /// <summary>
-    /// The hourly read of the facility's gateway: every dispute raised in the last <see cref="LookBackDays"/> days, then
-    /// each open case following a dispute raised before that, read again by its id (at most 50 a run). Webhooks bring a
-    /// dispute within seconds; this catches one the gateway could not deliver, and one whose webhook HC360 could not
-    /// handle. A case the webhook opened at the same moment clashes on the dispute's unique index and is read on the next
-    /// run. Returns how many disputes were read, or null when the gateway's disputes could not be read.
+    /// The hourly read of each of the facility's gateways (its own, and one it used before whose account is still set
+    /// up): every dispute raised in the last <see cref="LookBackDays"/> days, then each open case following a dispute
+    /// raised before that, read again by its id at the gateway that holds it (at most 50 a run). Webhooks bring a dispute
+    /// within seconds; this catches one the gateway could not deliver, and one whose webhook HC360 could not handle. A
+    /// case the webhook opened at the same moment clashes on the dispute's unique index and is read on the next run.
+    /// Returns how many disputes were read, or null when no gateway's disputes could be read.
     /// </summary>
     public async Task<int?> FollowGatewayDisputesAsync(Guid facilityId, CancellationToken ct)
     {
@@ -201,45 +204,57 @@ public sealed class PaymentDisputeService(
             return null;
         }
 
-        var listed = await gateway.GetDisputesAsync(time.GetUtcNow().AddDays(-LookBackDays), facilityId, ct);
-        if (!listed.Available)
+        var providers = await gateway.ProvidersAsync(facilityId, ct);
+        var read = 0;
+        var answered = 0;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var provider in providers.Count == 0 ? [null] : providers.Cast<string?>())
         {
-            logger.LogDebug("The gateway's disputes were not read for facility {FacilityId}: {Reason}", facilityId, listed.Problem);
+            var listed = await gateway.GetDisputesAsync(time.GetUtcNow().AddDays(-LookBackDays), provider, facilityId, ct);
+            if (!listed.Available)
+            {
+                logger.LogDebug("The {Provider} disputes were not read for facility {FacilityId}: {Reason}", provider ?? "gateway", facilityId, listed.Problem);
+                continue;
+            }
+
+            answered++;
+            foreach (var dispute in listed.Disputes)
+            {
+                seen.Add(dispute.DisputeId);
+                read += await FollowAndSaveAsync(dispute, listed.Provider, ct) ? 1 : 0;
+            }
+        }
+
+        if (answered == 0)
+        {
             return null;
         }
 
-        var read = 0;
-        foreach (var dispute in listed.Disputes)
-        {
-            read += await FollowAndSaveAsync(dispute, ct) ? 1 : 0;
-        }
-
-        var seen = listed.Disputes.Select(d => d.DisputeId).ToHashSet(StringComparer.Ordinal);
         var older = (await Cases(facilityId).AsNoTracking()
                 .Where(d => d.GatewayDisputeId != null && d.Status != PaymentDisputeStatus.Won && d.Status != PaymentDisputeStatus.Lost)
                 .OrderBy(d => d.OpenedAt)
-                .Select(d => d.GatewayDisputeId!)
+                .Select(d => new { Id = d.GatewayDisputeId!, d.GatewayProvider })
                 .ToListAsync(ct))
-            .Where(id => !seen.Contains(id))
+            .Where(d => !seen.Contains(d.Id))
             .Take(50)
             .ToList();
-        foreach (var id in older)
+        foreach (var older1 in older)
         {
-            var one = await gateway.GetDisputeAsync(id, facilityId, ct);
-            if (one.Available && one.Disputes is [{ } dispute] && dispute.DisputeId == id)
+            var one = await gateway.GetDisputeAsync(older1.Id, older1.GatewayProvider, facilityId, ct);
+            if (one.Available && one.Disputes is [{ } dispute] && dispute.DisputeId == older1.Id)
             {
-                read += await FollowAndSaveAsync(dispute, ct) ? 1 : 0;
+                read += await FollowAndSaveAsync(dispute, one.Provider, ct) ? 1 : 0;
             }
         }
 
         return read;
     }
 
-    private async Task<bool> FollowAndSaveAsync(GatewayDispute dispute, CancellationToken ct)
+    private async Task<bool> FollowAndSaveAsync(GatewayDispute dispute, string provider, CancellationToken ct)
     {
         try
         {
-            await FollowGatewayDisputeAsync(dispute, ct);
+            await FollowGatewayDisputeAsync(dispute, provider, ct);
             await db.SaveChangesAsync(ct);
             return true;
         }
@@ -253,7 +268,7 @@ public sealed class PaymentDisputeService(
 
     /// <summary>
     /// The last day to answer: the Indian calendar day before the gateway's deadline instant (Razorpay's
-    /// <c>respond_by</c> is the midnight that ends that day).
+    /// <c>respond_by</c> is the midnight that ends that day; Cashfree's, the last moment of the day or that midnight).
     /// </summary>
     internal static DateOnly? LastDay(DateTimeOffset? respondBy) => respondBy is { } by ? BillingTime.LocalDate(by.AddTicks(-1)) : null;
 

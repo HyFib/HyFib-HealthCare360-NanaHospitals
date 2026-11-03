@@ -12,7 +12,9 @@ public sealed record PaymentCheckout(string Provider, string OrderId, decimal Am
 /// Optional online prepayment for portal bookings (OA-03, PP-03). The gateway is a Platform abstraction that may not
 /// be configured (or may be unreachable while the hospital's internet is down): in that case the booking simply
 /// becomes "pay at hospital" — a payment problem must never cost the patient their slot. A payment is accepted only
-/// after the gateway signature ("order_id|payment_id", Razorpay convention) verifies. Nothing is posted to billing
+/// after the gateway signature ("order_id|payment_id", Razorpay convention) verifies, or the gateway that took it says
+/// so server to server (a hosted page such as Cashfree's returns no signature). The gateway of the booking's order is
+/// asked, even after the facility has switched gateways. Nothing is posted to billing
 /// here; <see cref="AppointmentPaymentCaptured"/> is raised for Billing to act on.
 /// </summary>
 public sealed class AppointmentPaymentService(
@@ -96,7 +98,7 @@ public sealed class AppointmentPaymentService(
         PaymentStatusResult status;
         try
         {
-            status = await Gateway.GetStatusAsync(orderId, appointment.FacilityId, ct);
+            status = await Gateway.GetStatusAsync(orderId, appointment.PaymentProvider, appointment.FacilityId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -130,7 +132,7 @@ public sealed class AppointmentPaymentService(
             return Error.Rule("payment.order_mismatch", "This payment does not belong to this appointment.");
         }
 
-        if (!Gateway.VerifySignature($"{orderId}|{paymentId}", signature, appointment.FacilityId))
+        if (!Gateway.VerifySignature($"{orderId}|{paymentId}", signature, appointment.PaymentProvider, appointment.FacilityId))
         {
             logger.LogWarning("Rejected payment confirmation with an invalid signature for appointment {AppointmentId}", appointment.Id);
             return Error.Forbidden("payment.invalid_signature", "The payment could not be verified. If money was deducted, it will be refunded automatically.");
@@ -140,7 +142,7 @@ public sealed class AppointmentPaymentService(
         var paidAt = time.GetUtcNow();
         try
         {
-            var status = await Gateway.GetStatusAsync(orderId, appointment.FacilityId, ct);
+            var status = await Gateway.GetStatusAsync(orderId, appointment.PaymentProvider, appointment.FacilityId, ct);
             if (status.Status is not (GatewayPaymentStatus.Captured or GatewayPaymentStatus.Pending))
             {
                 return Error.Rule("payment.not_captured", "The payment has not been completed. Please try again or pay at the hospital.");
@@ -183,7 +185,7 @@ public sealed class AppointmentPaymentService(
         PaymentStatusResult status;
         try
         {
-            status = await Gateway.GetStatusAsync(orderId, appointment.FacilityId, ct);
+            status = await Gateway.GetStatusAsync(orderId, appointment.PaymentProvider, appointment.FacilityId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -216,7 +218,7 @@ public sealed class AppointmentPaymentService(
         PaymentStatusResult status;
         try
         {
-            status = await Gateway.GetStatusAsync(order.OrderId, appointment.FacilityId, ct);
+            status = await Gateway.GetStatusAsync(order.OrderId, order.Provider ?? appointment.PaymentProvider, appointment.FacilityId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

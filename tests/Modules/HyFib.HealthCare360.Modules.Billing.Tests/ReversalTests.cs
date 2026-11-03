@@ -234,7 +234,7 @@ public sealed class ReversalTests
     private static Refund Gateway(string gatewayRefundId, PaymentRefundStatus status)
     {
         var refund = Refund(RefundStatus.Paid, PaymentMode.PaymentGateway);
-        refund.StartGatewayRefund(gatewayRefundId, Now);
+        refund.StartGatewayRefund(gatewayRefundId, new GatewayPaymentRef("razorpay", "pay_A1B2C3D4E5", "order_A1B2C3D4E5"), Now);
         refund.GatewayStatus = status;
         return refund;
     }

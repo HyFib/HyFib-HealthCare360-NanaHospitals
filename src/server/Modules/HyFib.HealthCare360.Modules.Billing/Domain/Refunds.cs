@@ -57,6 +57,18 @@ public sealed class Refund : AuditableEntity, IFacilityScoped
     public string? Counter { get; set; }
     public string? GatewayRefundId { get; set; }
 
+    /// <summary>The gateway that took the payment this refund returns: the refund is followed there, after a switch too.</summary>
+    public string? GatewayProvider { get; set; }
+
+    /// <summary>The gateway's payment this refund returns money from.</summary>
+    public string? GatewayPaymentId { get; set; }
+
+    /// <summary>HC360's gateway order (or payment link) the payment paid; some gateways (Cashfree) refund by order.</summary>
+    public string? GatewayOrderId { get; set; }
+
+    /// <summary>The payment as the gateway that took it knows it (empty for a refund sent before the payment was kept).</summary>
+    public GatewayPaymentRef GatewayPayment => new(GatewayProvider, GatewayPaymentId ?? string.Empty, GatewayOrderId);
+
     /// <summary>
     /// When the refund, recorded as paid out, was recorded as never having reached the patient (a
     /// <see cref="RefundReversal"/>): its money is back where it came from, and a new refund pays the patient. Such a refund
@@ -110,9 +122,12 @@ public sealed class Refund : AuditableEntity, IFacilityScoped
         : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{Id:N}:{GatewayRefundId}")))[..32];
 
     /// <summary>The gateway accepted the refund (first try or a retry after a failure): it is pending until the bank confirms it.</summary>
-    public void StartGatewayRefund(string gatewayRefundId, DateTimeOffset now)
+    public void StartGatewayRefund(string gatewayRefundId, GatewayPaymentRef payment, DateTimeOffset now)
     {
         GatewayRefundId = gatewayRefundId;
+        GatewayProvider = payment.Provider;
+        GatewayPaymentId = payment.PaymentId;
+        GatewayOrderId = payment.OrderId;
         GatewayStatus = PaymentRefundStatus.Pending;
         GatewayReference = null;
         GatewaySettledAt = null;

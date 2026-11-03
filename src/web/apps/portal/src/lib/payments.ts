@@ -9,8 +9,9 @@ import type { PaymentCheckout } from './types';
  *
  * Providers (Integrations/Payments): "razorpay" → Razorpay Standard Checkout (script loaded only when the patient taps
  * Pay); "simulator" → training gateway whose orders are captured at once on the server; any provider that returns
- * a hosted payment link → the page is opened in this tab, and the bill or appointment it pays is remembered so its
- * page confirms the payment when the patient comes back.
+ * a hosted payment link ("cashfree" always does: no Cashfree script runs in the portal) → the page is opened in this
+ * tab, and the bill or appointment it pays is remembered so its page confirms the payment, server to server, when the
+ * patient comes back.
  */
 
 export type CheckoutOutcome =

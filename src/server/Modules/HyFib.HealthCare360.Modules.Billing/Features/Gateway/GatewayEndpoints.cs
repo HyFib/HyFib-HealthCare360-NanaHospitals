@@ -33,6 +33,13 @@ internal static class GatewayEndpoints
             .WithTags("Billing - Payment gateway")
             .AllowAnonymous()
             .RequireRateLimiting(RateLimitPolicies.Partner);
+
+        // Cashfree's deliveries come to their own address, so they are checked with Cashfree's account and read as
+        // Cashfree writes them, whichever gateway the facility takes new payments through.
+        app.MapPost("/api/v1/billing/webhooks/cashfree", CashfreeWebhook)
+            .WithTags("Billing - Payment gateway")
+            .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicies.Partner);
     }
 
     private static async Task<IResult> StartSale(StartPosSaleRequest request, PosService pos, CancellationToken ct) => (await pos.StartAsync(request, ct)).ToOk();
@@ -77,24 +84,9 @@ internal static class GatewayEndpoints
     /// <param name="facility">Optional <c>?facility=</c> for facilities with their own merchant account; the order in the payload decides first.</param>
     private static async Task<IResult> Webhook(HttpRequest request, Guid? facility, PaymentGatewayService gateway, CancellationToken ct)
     {
-        if (request.ContentLength is > MaxWebhookChars)
+        if (await ReadBodyAsync(request, ct) is not { } payload)
         {
             return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
-        }
-
-        // Read one character past the limit (asynchronously: Kestrel forbids synchronous body reads) to detect oversize
-        // bodies without a Content-Length; the request stream stays open for the server.
-        string payload;
-        using (var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true))
-        {
-            var buffer = new char[MaxWebhookChars + 1];
-            var read = await reader.ReadBlockAsync(buffer.AsMemory(), ct);
-            if (read > MaxWebhookChars)
-            {
-                return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
-            }
-
-            payload = new string(buffer, 0, read);
         }
 
         var signature = SignatureHeaders.Select(h => request.Headers[h].ToString()).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
@@ -102,11 +94,50 @@ internal static class GatewayEndpoints
         // Razorpay names each event (the same id on every redelivery); other gateways are recognised by a hash of the body.
         var eventId = request.Headers[RazorpayEventIdHeader].ToString();
         var provider = string.IsNullOrEmpty(eventId) && string.IsNullOrEmpty(request.Headers[SignatureHeaders[0]].ToString()) ? "gateway" : "razorpay";
-        return await gateway.HandleWebhookAsync(payload, signature, eventId, provider, facility, ct) switch
+        return Answer(await gateway.HandleWebhookAsync(payload, signature, null, eventId, provider, facility, ct));
+    }
+
+    /// <summary>
+    /// Cashfree's webhook: <c>x-webhook-signature</c> over <c>x-webhook-timestamp</c> and the raw body, checked with
+    /// Cashfree's client secret in constant time, and refused when signed too long ago. Cashfree sends no event id, so a
+    /// redelivery is recognised by a hash of its body.
+    /// </summary>
+    /// <param name="facility">Optional <c>?facility=</c> for a facility with its own Cashfree account; the payment in the body decides first.</param>
+    private static async Task<IResult> CashfreeWebhook(HttpRequest request, Guid? facility, PaymentGatewayService gateway, CancellationToken ct)
+    {
+        if (await ReadBodyAsync(request, ct) is not { } payload)
         {
-            WebhookOutcome.InvalidSignature => Results.Unauthorized(),
-            WebhookOutcome.NotConfigured => Results.StatusCode(StatusCodes.Status503ServiceUnavailable),
-            var outcome => Results.Ok(new WebhookAck(outcome == WebhookOutcome.Processed)),
-        };
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
+
+        var signature = request.Headers["x-webhook-signature"].ToString();
+        var timestamp = request.Headers["x-webhook-timestamp"].ToString();
+        return Answer(await gateway.HandleWebhookAsync(
+            payload, signature, timestamp, null, PaymentGatewayService.CashfreeWebhooks, facility, ct));
+    }
+
+    private static IResult Answer(WebhookOutcome outcome) => outcome switch
+    {
+        WebhookOutcome.InvalidSignature => Results.Unauthorized(),
+        WebhookOutcome.NotConfigured => Results.StatusCode(StatusCodes.Status503ServiceUnavailable),
+        _ => Results.Ok(new WebhookAck(outcome == WebhookOutcome.Processed)),
+    };
+
+    /// <summary>
+    /// The body as text, or null when it is longer than <see cref="MaxWebhookChars"/>: one character past the limit is
+    /// read (asynchronously: Kestrel forbids synchronous body reads) to detect an oversize body without a Content-Length;
+    /// the request stream stays open for the server.
+    /// </summary>
+    private static async Task<string?> ReadBodyAsync(HttpRequest request, CancellationToken ct)
+    {
+        if (request.ContentLength is > MaxWebhookChars)
+        {
+            return null;
+        }
+
+        using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
+        var buffer = new char[MaxWebhookChars + 1];
+        var read = await reader.ReadBlockAsync(buffer.AsMemory(), ct);
+        return read > MaxWebhookChars ? null : new string(buffer, 0, read);
     }
 }
