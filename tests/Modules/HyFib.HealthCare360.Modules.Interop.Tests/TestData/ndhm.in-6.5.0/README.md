@@ -61,3 +61,8 @@ and run the Interop module tests and `AbdmExportTests`.
   against it. Added 2026-11-03 from the same package (the downloaded package's sha512 matched the integrity above; the
   `StructureDefinition-Immunization.json` and `StructureDefinition-ImmunizationRecommendation.json` already here were
   checked byte for byte against it).
+- `package/StructureDefinition-ImmunizationRecord.json`: the immunisation record profile HC360's vaccine doses must
+  meet as ABDM documents (`AbdmDocumentTests`, `AbdmExportTests`), and `example/Bundle-ImmunizationRecord-example-07.json`:
+  the guide's own immunisation record, which must validate (`Abdm/ValidatorSetupTests`). Added 2026-11-03 from the same
+  package as the vaccine codes (its sha512 matched the integrity above); the `Immunization`, `ImmunizationRecommendation`
+  and `DocumentBundle` profiles already here were checked byte for byte against it.

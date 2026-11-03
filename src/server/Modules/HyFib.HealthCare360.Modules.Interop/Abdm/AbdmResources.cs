@@ -312,6 +312,19 @@ internal static class AbdmProfiler
         return document;
     }
 
+    /// <summary>
+    /// A vaccine dose: the IG's Immunization profile, which fixes the route's code system to SNOMED CT and wants a display
+    /// on every coding. The mapper codes the vaccine and the route in SNOMED CT only, with the guide's displays; anything
+    /// else would be left out here, and the concept's text still says what it is.
+    /// </summary>
+    public static R4.Immunization Immunization(R4.Immunization immunization)
+    {
+        immunization.Meta = Profile(immunization.Meta, AbdmProfiles.Immunization);
+        Codings(immunization.VaccineCode, [FhirSystems.Snomed]);
+        Codings(immunization.Route, [FhirSystems.Snomed]);
+        return immunization;
+    }
+
     /// <summary>"Flagged by the laboratory: Haemoglobin (Low), CRP (High).", or <see cref="SeeTheResults"/>.</summary>
     public static string LabConclusion(IReadOnlyList<R4.Observation> results)
     {

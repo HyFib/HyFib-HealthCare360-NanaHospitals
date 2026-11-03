@@ -1149,3 +1149,9 @@ export const dischargeSummaryDocument = (id: string) => `/api/v1/clinical/discha
  * patient's record-sharing consent; a restricted record needs the right to open it.
  */
 export const abdmDischargeSummaryBundle = (id: string) => `/api/v1/abdm/bundles/discharge-summaries/${id}`;
+
+/**
+ * A vaccine dose given here as an ABDM immunisation record (ImmunizationRecord, with the next dose when one is due),
+ * under the same rules. A dose copied from the patient's card, or marked as entered in error, is not exported.
+ */
+export const abdmImmunizationBundle = (id: string) => `/api/v1/abdm/bundles/immunizations/${id}`;

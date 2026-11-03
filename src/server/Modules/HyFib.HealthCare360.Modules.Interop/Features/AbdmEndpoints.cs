@@ -39,6 +39,10 @@ internal static class AbdmEndpoints
         bundles.MapGet("/cardiology-reports/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
             ExportAsync(AbdmRecordType.CardiologyReport, id, pretty, service, ct));
 
+        // A vaccine dose given here, by its own id, as the FHIR API's Immunization and the patient's Immunisations tab name it.
+        bundles.MapGet("/immunizations/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
+            ExportAsync(AbdmRecordType.Immunization, id, pretty, service, ct));
+
         abdm.MapGet("/gateway", async (AbdmGatewayConfiguration gateway, CancellationToken ct) => TypedResults.Ok(await gateway.StatusAsync(ct)))
             .RequirePermission(PlatformPermissions.IntegrationsManage);
 

@@ -352,12 +352,17 @@ internal static class AbdmGatewayMessages
         _ => "U",
     };
 
-    /// <summary>The health-information type ABDM names each kind of record by.</summary>
+    /// <summary>
+    /// The health-information type ABDM names each kind of record by. Every kind is named here: a kind added without one
+    /// fails at once rather than going out as another kind.
+    /// </summary>
     public static string HiType(AbdmRecordType type) => type switch
     {
         AbdmRecordType.DischargeSummary => "DischargeSummary",
         AbdmRecordType.OpConsultation => "OPConsultation",
         AbdmRecordType.Prescription => "Prescription",
-        _ => "DiagnosticReport",
+        AbdmRecordType.LabReport or AbdmRecordType.RadiologyReport or AbdmRecordType.CardiologyReport => "DiagnosticReport",
+        AbdmRecordType.Immunization => "ImmunizationRecord",
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
     };
 }

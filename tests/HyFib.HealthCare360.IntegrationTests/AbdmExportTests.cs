@@ -9,8 +9,10 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Diagnoses;
 using HyFib.HealthCare360.Modules.Clinical.Features.DischargeSummaries;
 using HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
 using HyFib.HealthCare360.Modules.Clinical.Features.Flags;
+using HyFib.HealthCare360.Modules.Clinical.Features.Immunizations;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
+using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
@@ -23,6 +25,8 @@ using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Beds;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
+using HyFib.HealthCare360.Modules.Interop.Abdm;
+using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Auditing;
@@ -60,6 +64,7 @@ public sealed class AbdmExportTests(HospitalServer server)
     private const string PrescriptionRecord = "440545006";
     private const string DiagnosticReportRecord = "721981007";
     private const string DischargeSummaryRecord = "373942005";
+    private const string ImmunizationRecord = "41000179103";
 
     /// <summary>The CRP the lab reports, in mg/L: within the reference interval, so it needs no critical call.</summary>
     private const decimal Crp = 3.2m;
@@ -612,6 +617,108 @@ public sealed class AbdmExportTests(HospitalServer server)
             await SwitchAsync(enabled: false);
         }
     }
+
+    [Fact]
+    public async Task A_vaccine_dose_given_here_is_exported_as_an_immunisation_record_with_the_next_dose_due()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var abha = NewAbha();
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+        var someoneElse = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
+        var nurseFacility = (await nurse.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
+
+        // The patient is registered at the hospital's annexe; the nurse gives the vaccines at the main hospital.
+        var annexe = await RegisteredAtAnnexeAsync(patient.Id);
+        annexe.ShouldNotBe(nurseFacility);
+        var today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromMinutes(330)).DateTime);
+        var doses = $"/api/v1/emr/patients/{patient.Id}/immunizations";
+        RecordImmunizationRequest Td(Guid encounter) => new(
+            encounter, "Td", "TD", 1, today, "IM", "Left deltoid", "TD2608-114", "Biological E. Limited", today.AddMonths(10), null, false, today.AddDays(28), null);
+
+        // A dose cannot be put in another patient's encounter: its record would carry theirs.
+        var theirs = await ConsultAsync(doctor, someoneElse.Id, sign: true);
+        using (var refused = await nurse.SendRawAsync(HttpMethod.Post, doses, Td(theirs)))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, await refused.Content.ReadAsStringAsync(Ct));
+            (await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString().ShouldBe("immunization.encounter_not_patients");
+        }
+
+        // Td given here in the patient's consultation, the second dose due in four weeks; hepatitis B copied from the card;
+        // and an OPV recorded by mistake.
+        var consultation = await ConsultAsync(doctor, patient.Id, sign: true);
+        var td = await nurse.PostAsync<ImmunizationDto>(doses, Td(consultation));
+        var fromCard = await nurse.PostAsync<ImmunizationDto>(doses, new RecordImmunizationRequest(
+            null, "Hepatitis B", "HEPB", 1, today.AddDays(-30), "IM", null, null, null, null, "PHC Thiruvallur", true, null, null));
+        var opv = await nurse.PostAsync<ImmunizationDto>(doses, new RecordImmunizationRequest(
+            null, "Oral polio vaccine", "OPV", 1, today, "Oral", null, "OPV-26-31", "Bharat Biotech", today.AddMonths(3), null, false, null, null));
+        await nurse.PostAsync<ImmunizationDto>($"/api/v1/emr/immunizations/{opv.Id}/entered-in-error", new EnteredInErrorRequest("Recorded for the twin"));
+
+        // Each dose keeps the facility where it was recorded, not the patient's own, and that facility keeps its record.
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Immunization>().AsNoTracking()
+                .Where(i => i.PatientId == patient.Id).Select(i => i.FacilityId).Distinct().ToListAsync(Ct)).ShouldBe([nurseFacility]);
+        }
+
+        var path = $"/api/v1/abdm/bundles/immunizations/{td.Id}";
+        try
+        {
+            await SwitchAsync(enabled: true);
+
+            // Only a dose given here is the hospital's to send: not one copied from the card, nor one in error.
+            (await NotExportableAsync($"/api/v1/abdm/bundles/immunizations/{fromCard.Id}")).ShouldNotBeNull().ShouldContain("vaccination card");
+            (await NotExportableAsync($"/api/v1/abdm/bundles/immunizations/{opv.Id}")).ShouldBe("A dose marked as entered in error is not exported.");
+
+            var bundle = await ExportAsync(path, ImmunizationRecord, abha, $"immunization-{patient.Uhid}-TD-");
+            ShouldBeTheSameDocument(await ExportAsync(path, ImmunizationRecord, abha, "immunization-"), bundle);
+            var composition = Composition(bundle);
+            composition.GetProperty("status").GetString().ShouldBe("final");
+
+            // The facility where it was given keeps the record and wrote it.
+            var custodian = composition.GetProperty("custodian").GetProperty("reference").GetString()!;
+            Entry(bundle, custodian).GetProperty("id").GetString().ShouldBe(AbdmDocumentBuilder.Uuid($"Organization/{nurseFacility:D}"));
+            composition.GetProperty("author")[0].GetProperty("reference").GetString().ShouldBe(custodian);
+
+            // The dose, in the consultation it was given in, and the second dose due in four weeks.
+            var dose = Resources(bundle, "Immunization").ShouldHaveSingleItem();
+            dose.GetProperty("vaccineCode").GetProperty("coding")[0].GetProperty("code").GetString().ShouldBe("871827009");
+            dose.GetProperty("lotNumber").GetString().ShouldBe("TD2608-114");
+            dose.GetProperty("encounter").GetProperty("reference").GetString().ShouldBe(composition.GetProperty("encounter").GetProperty("reference").GetString());
+            var next = Resources(bundle, "ImmunizationRecommendation").ShouldHaveSingleItem().GetProperty("recommendation")[0];
+            next.GetProperty("dateCriterion")[0].GetProperty("value").GetString().ShouldBe(today.AddDays(28).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            next.GetProperty("doseNumberPositiveInt").GetInt32().ShouldBe(2);
+
+            var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
+            exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: immunisation record");
+            exportAudit.EntityId.ShouldBe(td.Id.ToString("D"));
+
+            // The patient's app is offered the dose given here to link to their ABHA, named by its vaccine.
+            await using var linking = server.Services.CreateAsyncScope();
+            var offered = await linking.ServiceProvider.GetRequiredService<AbdmRecordLoader>().ListExportableAsync(patient.Id, 50, Ct);
+            offered.Where(r => r.Type == AbdmRecordType.Immunization).Select(r => (r.Id, r.Label)).ShouldBe([(td.Id, (string?)"Td, dose 1")]);
+        }
+        finally
+        {
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    /// <summary>Moves the patient's registration to a new facility of the hospital, an annexe, whose id is returned.</summary>
+    private async Task<Guid> RegisteredAtAnnexeAsync(Guid patientId)
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var annexe = await admin.PostAsync<Created>("/api/v1/masters/facilities", new SaveFacilityRequest(
+            Letters(6).ToUpperInvariant(), "Nana Hospitals Annexe " + Letters(4), null, new Address { City = "Chennai", PinCode = "600002" },
+            null, null, null, null, null, null, null, null, null, null, IsActive: false, null));
+        await using var scope = server.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Patient>().Where(p => p.Id == patientId)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.RegisteredFacilityId, annexe.Id), Ct);
+        return annexe.Id;
+    }
+
+    private sealed record Created(Guid Id);
 
     [Fact]
     public async Task A_discharge_summary_is_exported_with_the_stays_diagnoses_medicines_and_lab_report_once_signed()

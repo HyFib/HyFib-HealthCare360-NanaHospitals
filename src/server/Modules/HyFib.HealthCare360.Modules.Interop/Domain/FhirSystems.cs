@@ -39,6 +39,7 @@ internal static class FhirSystems
     public const string TimingAbbreviation = "http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation";
     public const string ImmunizationOrigin = "http://terminology.hl7.org/CodeSystem/immunization-origin";
     public const string ImmunizationFunction = "http://terminology.hl7.org/CodeSystem/v2-0443";
+    public const string ImmunizationRecommendationStatus = "http://terminology.hl7.org/CodeSystem/immunization-recommendation-status";
 
     // FHIR-defined code systems of coded elements (used when a client searches with a system-qualified token).
     public const string AdministrativeGender = "http://hl7.org/fhir/administrative-gender";
