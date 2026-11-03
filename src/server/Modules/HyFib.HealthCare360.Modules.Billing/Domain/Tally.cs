@@ -367,9 +367,9 @@ public static class TallyVoucherBuilder
             entries.Credit(map.ModeLedger(clearing.Mode), clearing.Gross);
         }
 
-        var narration = settlement.Utr is null
+        var narration = settlement.Correction ?? (settlement.Utr is null
             ? $"Card and UPI settlement of {settlement.Date.ToString("dd-MM-yyyy", System.Globalization.CultureInfo.InvariantCulture)}"
-            : $"Card and UPI settlement, UTR {settlement.Utr}";
+            : $"Card and UPI settlement, UTR {settlement.Utr}");
         return entries.ToVoucher(JournalType, settlement.Date, settlement.Number, narration, settlement.Number);
     }
 

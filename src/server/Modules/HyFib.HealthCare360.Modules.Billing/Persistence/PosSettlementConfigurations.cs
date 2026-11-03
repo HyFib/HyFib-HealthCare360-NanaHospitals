@@ -13,8 +13,12 @@ internal sealed class PosSettlementImportConfiguration : IEntityTypeConfiguratio
         b.Property(x => x.FileSha256).HasMaxLength(64);
         b.Property(x => x.ImportedByName).HasMaxLength(200);
 
-        // The same report imported twice is refused, also when two people import it at once.
-        b.HasIndex(x => new { x.FacilityId, x.FileSha256 }).IsUnique();
+        // The same report again is refused while it would bring nothing, so it is not unique: one imported while a report
+        // withdrawn since had brought its transactions first is imported again for them. Two people importing the same
+        // report at once are kept apart by the transactions' own unique index.
+        b.HasIndex(x => new { x.FacilityId, x.FileSha256 });
+        b.Property(x => x.WithdrawnByName).HasMaxLength(200);
+        b.Property(x => x.WithdrawReason).HasMaxLength(500);
         b.HasIndex(x => new { x.FacilityId, x.ImportedAt });
     }
 }
@@ -38,13 +42,17 @@ internal sealed class PosSettlementLineConfiguration : IEntityTypeConfiguration<
         b.Ignore(x => x.NeedsAttention);
         b.Ignore(x => x.IsOpen);
 
-        // Reports overlap: a transaction another report already brought is not stored twice.
-        b.HasIndex(x => new { x.FacilityId, x.LineKey }).IsUnique();
+        // Reports overlap: a transaction another report already brought is not stored twice, unless that report was
+        // withdrawn as imported in error.
+        b.HasIndex(x => new { x.FacilityId, x.LineKey }).IsUnique().HasFilter("withdrawn_on IS NULL");
 
         // A receipt's payment is matched by one settled transaction at most, whoever matches at the same time.
         b.HasIndex(x => x.ReceiptPaymentId).IsUnique().HasFilter("receipt_payment_id IS NOT NULL");
         b.HasIndex(x => x.RefundId).IsUnique().HasFilter("refund_id IS NOT NULL");
         b.HasIndex(x => new { x.FacilityId, x.SettledOn });
+
+        // The day book reads a day's payouts and the reversals of reports withdrawn that day (few).
+        b.HasIndex(x => new { x.FacilityId, x.WithdrawnOn }).HasFilter("withdrawn_on IS NOT NULL");
         b.HasIndex(x => new { x.FacilityId, x.Match, x.ReviewedAt });
         b.HasIndex(x => x.ImportId);
     }

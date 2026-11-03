@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Settings;
 
@@ -20,6 +21,7 @@ public sealed class PosSettlementService(
     ICurrentUser currentUser,
     ISettingsService settings,
     TallyCorrections corrections,
+    IApprovals approvals,
     TimeProvider time)
 {
     public const int MaxListDays = 92;
@@ -65,16 +67,6 @@ public sealed class PosSettlementService(
 
         var name = Clip(string.IsNullOrWhiteSpace(acquirer) ? "Acquirer" : acquirer.Trim(), 64);
         var sha = Convert.ToHexStringLower(SHA256.HashData(content));
-        var earlier = await db.Set<PosSettlementImport>().AsNoTracking()
-            .Where(i => i.FacilityId == facilityId && i.FileSha256 == sha)
-            .Select(i => new { i.ImportedAt, i.ImportedByName })
-            .FirstOrDefaultAsync(ct);
-        if (earlier is not null)
-        {
-            return Error.Conflict("billing.pos_settlement_imported",
-                $"This report was already imported on {BillingTime.ToLocal(earlier.ImportedAt):dd-MM-yyyy HH:mm}{(earlier.ImportedByName is { } by ? " by " + by : string.Empty)}.");
-        }
-
         var setup = await SettingsAsync(facilityId, ct);
         var read = PosSettlementFile.Read(content, setup, settledOn);
         if (read.IsFailure)
@@ -82,14 +74,31 @@ public sealed class PosSettlementService(
             return read.Error!;
         }
 
+        // A transaction a withdrawn report brought is not counted as imported, so a correct report brings it again.
         var file = read.Value;
         var existing = new HashSet<string>(StringComparer.Ordinal);
         foreach (var chunk in file.Rows.Select(r => r.Key).Chunk(1000))
         {
             existing.UnionWith(await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
-                .Where(l => l.FacilityId == facilityId && chunk.Contains(l.LineKey))
+                .Where(l => l.FacilityId == facilityId && chunk.Contains(l.LineKey) && l.WithdrawnOn == null)
                 .Select(l => l.LineKey)
                 .ToListAsync(ct));
+        }
+
+        // The same report again is refused while it would bring nothing. One imported while a report withdrawn since had
+        // brought its transactions first (the acquirer's final report after its provisional one) is imported again for them.
+        if (file.Rows.All(r => existing.Contains(r.Key)))
+        {
+            var earlier = await db.Set<PosSettlementImport>().AsNoTracking()
+                .Where(i => i.FacilityId == facilityId && i.FileSha256 == sha && i.WithdrawnAt == null)
+                .OrderByDescending(i => i.ImportedAt)
+                .Select(i => new { i.ImportedAt, i.ImportedByName })
+                .FirstOrDefaultAsync(ct);
+            if (earlier is not null)
+            {
+                return Error.Conflict("billing.pos_settlement_imported",
+                    $"This report was already imported on {BillingTime.ToLocal(earlier.ImportedAt):dd-MM-yyyy HH:mm}{(earlier.ImportedByName is { } by ? " by " + by : string.Empty)}.");
+            }
         }
 
         var now = time.GetUtcNow();
@@ -140,7 +149,7 @@ public sealed class PosSettlementService(
 
         var matched = added.Count(l => l.Match == PosSettlementMatch.Matched);
         var toLookAt = added.Count(l => l.NeedsAttention);
-        return new PosSettlementImportResult(ToDto(import), file.Columns, file.Problems, matched, toLookAt, ImportMessage(import, matched, toLookAt));
+        return new PosSettlementImportResult(ToDto(import, null), file.Columns, file.Problems, matched, toLookAt, ImportMessage(import, matched, toLookAt));
     }
 
     /// <summary>Matches again the transactions that did not match, for example after a missing receipt was recorded.</summary>
@@ -182,6 +191,11 @@ public sealed class PosSettlementService(
             return Error.NotFound(nameof(PosSettlementLine), id);
         }
 
+        if (line.WithdrawnOn is not null)
+        {
+            return Error.Rule("billing.pos_settlement_withdrawn", "This transaction's report was withdrawn as imported in error.");
+        }
+
         db.SetExpectedVersion(line, request.Version);
         var reviewed = line.Review(userId, currentUser.DisplayName ?? currentUser.UserName, request.Note, time.GetUtcNow());
         if (reviewed.IsFailure)
@@ -209,10 +223,10 @@ public sealed class PosSettlementService(
             .ToListAsync(ct);
         var unsettled = await UnsettledAsync(facilityId, ct);
         var lastSettledOn = await db.Set<PosSettlementLine>().AsNoTracking()
-            .Where(l => l.FacilityId == facilityId)
+            .Where(l => l.FacilityId == facilityId && l.WithdrawnOn == null)
             .MaxAsync(l => (DateOnly?)l.SettledOn, ct);
         var lastImport = await db.Set<PosSettlementImport>().AsNoTracking()
-            .Where(i => i.FacilityId == facilityId)
+            .Where(i => i.FacilityId == facilityId && i.WithdrawnAt == null)
             .OrderByDescending(i => i.ImportedAt)
             .FirstOrDefaultAsync(ct);
         return new PosSettlementSummaryDto(
@@ -221,7 +235,7 @@ public sealed class PosSettlementService(
             unsettled.Count,
             unsettled.Sum(u => u.Amount),
             lastSettledOn,
-            lastImport is null ? null : ToDto(lastImport),
+            lastImport is null ? null : ToDto(lastImport, null),
             setup.OtherTerminals.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).ToList());
     }
 
@@ -231,7 +245,9 @@ public sealed class PosSettlementService(
             .Where(i => i.FacilityId == facilityId)
             .OrderByDescending(i => i.ImportedAt)
             .ToPagedResultAsync(page, ct);
-        return new PagedResult<PosSettlementImportDto>(result.Items.Select(ToDto).ToList(), result.Page, result.PageSize, result.TotalCount);
+        var asked = await approvals.WaitingSinceAsync(PosImportWithdrawalApproval.Key, nameof(PosSettlementImport), [.. result.Items.Select(i => i.Id)], ct);
+        return new PagedResult<PosSettlementImportDto>(
+            result.Items.Select(i => ToDto(i, asked.TryGetValue(i.Id, out var since) ? since : null)).ToList(), result.Page, result.PageSize, result.TotalCount);
     }
 
     /// <summary>The payouts of a period by day: what each UTR brought to the bank and what made it up.</summary>
@@ -239,7 +255,7 @@ public sealed class PosSettlementService(
     {
         var facilityCode = await db.Set<Facility>().Where(f => f.Id == facilityId).Select(f => f.Code).FirstOrDefaultAsync(ct);
         var payouts = await db.Set<PosSettlementLine>().AsNoTracking()
-            .Where(l => l.FacilityId == facilityId && l.SettledOn >= from && l.SettledOn <= to)
+            .Where(l => l.FacilityId == facilityId && l.SettledOn >= from && l.SettledOn <= to && l.WithdrawnOn == null)
             .GroupBy(l => new { l.SettledOn, l.Utr })
             .Select(g => new
             {
@@ -291,7 +307,7 @@ public sealed class PosSettlementService(
     public async Task<PagedResult<PosSettlementLineDto>> LinesAsync(
         Guid facilityId, PageRequest page, bool attention, DateOnly? settledOn, string? utr, bool noUtr, CancellationToken ct)
     {
-        var lines = db.Set<PosSettlementLine>().AsNoTracking().Where(l => l.FacilityId == facilityId);
+        var lines = db.Set<PosSettlementLine>().AsNoTracking().Where(l => l.FacilityId == facilityId && l.WithdrawnOn == null);
         if (attention)
         {
             lines = lines.Where(l => l.ReviewedAt == null && AttentionMatches.Contains(l.Match));
@@ -329,7 +345,7 @@ public sealed class PosSettlementService(
     {
         var days = (await SettingsAsync(facilityId, ct)).EffectiveSettlementDays;
         var coverage = await db.Set<PosSettlementLine>().AsNoTracking()
-            .Where(l => l.FacilityId == facilityId && l.Match != PosSettlementMatch.OtherCounter)
+            .Where(l => l.FacilityId == facilityId && l.Match != PosSettlementMatch.OtherCounter && l.WithdrawnOn == null)
             .GroupBy(l => l.Mode)
             .Select(g => new { Mode = g.Key, First = g.Min(l => l.TransactionOn ?? l.SettledOn), Last = g.Max(l => l.SettledOn) })
             .ToListAsync(ct);
@@ -408,11 +424,103 @@ public sealed class PosSettlementService(
     internal static async Task<IReadOnlyList<TallyPosSettlement>> ForDayBookAsync(
         HospitalDbContext db, Guid facilityId, DateOnly date, string? facilityCode, CancellationToken ct)
     {
+        // A payout's journal stays in its day, which may be in Tally already, whatever is withdrawn later: a report
+        // withdrawn as imported in error is reversed in the books of the day it is withdrawn.
         var lines = await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
-            .Where(l => l.FacilityId == facilityId && l.SettledOn == date)
+            .Where(l => l.FacilityId == facilityId && (l.SettledOn == date || l.WithdrawnOn == date))
             .ToListAsync(ct);
-        return PosSettlementJournal.Journals(lines, date, facilityCode);
+        return [.. PosSettlementJournal.Journals(lines, date, facilityCode), .. PosSettlementJournal.Withdrawals(lines, date, facilityCode)];
     }
+
+    // ---------------------------------------------------------------------------------------------------- withdrawal
+
+    /// <summary>
+    /// Asks to withdraw a report imported in error (the wrong file, facility or settlement day). Its own transactions
+    /// (those it brought first) will stop matching receipts and refunds, and their journals will be reversed in the books
+    /// of the day it is approved, by someone else who approves reversals. The approver is shown what it takes out.
+    /// </summary>
+    public async Task<Result<ApprovalRequestDto>> RequestWithdrawalAsync(Guid importId, WithdrawPosImportRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var import = await db.Set<PosSettlementImport>().AsNoTracking().FirstOrDefaultAsync(i => i.Id == importId, ct);
+        if (import is null)
+        {
+            return Error.NotFound(nameof(PosSettlementImport), importId);
+        }
+
+        if (import.WithdrawnAt is not null)
+        {
+            return AlreadyWithdrawn(import);
+        }
+
+        var lines = await db.Set<PosSettlementLine>().AsNoTracking().Where(l => l.ImportId == import.Id).ToListAsync(ct);
+        var matched = lines.Count(l => l.ReceiptId is not null || l.RefundId is not null);
+        var reviewed = lines.Count(l => l.ReviewedAt is not null);
+        var days = lines.Select(l => l.SettledOn).Distinct().Order().ToList();
+        var reason = request.Reason.Trim();
+        return await approvals.RequestAsync(
+            PosImportWithdrawalApproval.Key,
+            new ApprovalSubject(nameof(PosSettlementImport), import.Id, 0, import.FacilityId, null),
+            new PosImportWithdrawalPayload(import.Id, reason),
+            $"Withdraw {import.Acquirer}'s card and UPI report {import.FileName}",
+            [
+                new("Report", $"{import.FileName} ({import.Acquirer}), imported {BillingTime.ToLocal(import.ImportedAt):dd-MM-yyyy HH:mm}{(import.ImportedByName is { } by ? " by " + by : string.Empty)}"),
+                new("Its transactions", lines.Count == 0
+                    ? "none: every transaction in it was already brought by another report"
+                    : $"{lines.Count} (₹{Money.FormatInr(lines.Sum(l => l.Net))} paid out), settled {DaysWords(days)}"),
+                new("Matched", matched == 0 ? "none" : $"{matched} receipt(s) or refund(s), freed for a correct report"),
+                new("Reviewed", reviewed == 0 ? "none" : $"{reviewed} transaction(s) an accountant reviewed"),
+                new("In the books", "each payout's journal stays in its day; its reversal is in the books of the day this is approved"),
+            ],
+            reason,
+            ct);
+    }
+
+    /// <summary>
+    /// Withdraws an approved report, in the approval's transaction: its own transactions stop matching and are reversed
+    /// in today's books, the receipts and refunds they matched are free for a correct report (or "Match again"), and the
+    /// same file may be imported again. A report already withdrawn is refused.
+    /// </summary>
+    internal async Task<Result<string>> ApplyWithdrawalAsync(ApprovalRequest approval, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<PosImportWithdrawalPayload>(approval.Payload);
+        var import = await db.Set<PosSettlementImport>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstOrDefaultAsync(i => i.Id == asked.ImportId, ct);
+        if (import is null)
+        {
+            return Error.NotFound(nameof(PosSettlementImport), asked.ImportId);
+        }
+
+        if (import.WithdrawnAt is not null)
+        {
+            return AlreadyWithdrawn(import);
+        }
+
+        var lines = await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Where(l => l.ImportId == import.Id).ToListAsync(ct);
+        var freed = lines.Count(l => l.ReceiptId is not null || l.RefundId is not null);
+        var today = BillingTime.Today(time);
+        import.Withdraw(lines, today, time.GetUtcNow(), currentUser.DisplayName ?? currentUser.UserName, asked.Reason);
+        audit.Add(new AuditEntry(AuditCategories.Data, "billing.pos.settlement_import_withdrawn",
+            $"Withdrew {import.Acquirer}'s card and UPI settlement report {import.FileName} as imported in error: {lines.Count} transaction(s) reversed on "
+            + $"{today:dd-MM-yyyy}, {freed} receipt(s) or refund(s) freed. {asked.Reason}")
+        {
+            EntityType = nameof(PosSettlementImport),
+            EntityId = import.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { import.FileSha256, transactions = lines.Count, freed, withdrawnOn = today, reason = asked.Reason },
+        });
+        return $"Withdrew {import.FileName}: its {lines.Count} transaction(s) are reversed in the books of {today:dd MMM yyyy}, and {freed} receipt(s) or "
+               + "refund(s) are free for a correct report.";
+    }
+
+    private static Error AlreadyWithdrawn(PosSettlementImport import) => Error.Conflict("billing.pos_settlement_import_withdrawn",
+        $"The report {import.FileName} was already withdrawn on {import.WithdrawnOn:dd-MM-yyyy}.");
+
+    private static string DaysWords(IReadOnlyList<DateOnly> days) => days.Count switch
+    {
+        0 => "on no day",
+        1 => $"on {days[0]:dd-MM-yyyy}",
+        _ => $"from {days[0]:dd-MM-yyyy} to {days[^1]:dd-MM-yyyy}",
+    };
 
     // ---------------------------------------------------------------------------------------------------- matching
 
@@ -726,9 +834,15 @@ public sealed class PosSettlementService(
         }).ToList();
     }
 
-    private static PosSettlementImportDto ToDto(PosSettlementImport i) => new(
+    private static PosSettlementImportDto ToDto(PosSettlementImport i, DateTimeOffset? withdrawalAsked) => new(
         i.Id, i.Acquirer, i.FileName, i.FileSizeBytes, i.Rows, i.Added, i.AlreadyImported, i.Ignored, i.FirstSettledOn, i.LastSettledOn, i.ImportedAt,
-        i.ImportedByName);
+        i.ImportedByName)
+    {
+        WithdrawnOn = i.WithdrawnOn,
+        WithdrawnByName = i.WithdrawnByName,
+        WithdrawReason = i.WithdrawReason,
+        WithdrawalAskedAt = i.WithdrawnAt is null ? withdrawalAsked : null,
+    };
 
     private static string ImportMessage(PosSettlementImport import, int matched, int toLookAt)
     {
@@ -759,4 +873,21 @@ public sealed class PosSettlementService(
     private static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count.ToString(CultureInfo.InvariantCulture)} {noun}s";
 
     private static string Clip(string value, int max) => value.Length <= max ? value : value[..max];
+}
+
+/// <summary>The report asked to be withdrawn as imported in error, and why.</summary>
+public sealed record PosImportWithdrawalPayload(Guid ImportId, string Reason);
+
+/// <summary>A card and UPI settlement report imported in error, withdrawn: asked for by one person, made when another approves it.</summary>
+internal sealed class PosImportWithdrawalApproval(PosSettlementService settlements) : IApprovalAction
+{
+    public const string Key = "billing.pos_import_withdrawal";
+
+    public string Kind => Key;
+
+    public string Title => "Card and UPI report withdrawn";
+
+    public string ApprovePermission => BillingPermissions.RefundsApprove;
+
+    public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => settlements.ApplyWithdrawalAsync(request, ct);
 }

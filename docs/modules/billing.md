@@ -93,14 +93,14 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 | `billing.discounts.approve` | Approve discounts above a user's limit, discharge with dues, set limits | HospitalAdmin, Accountant |
 | `billing.payments.collect` | Collect payments, POS, payment links, advance adjustment, pay out approved refunds | Cashier, Billing, FrontOffice, HospitalAdmin |
 | `billing.refunds.request` | Request refunds, credit notes and write-offs, and ask to reverse money that did not move (a receipt not received, a refund not paid out) | Cashier, Billing, HospitalAdmin |
-| `billing.refunds.approve` | Approve refunds, credit notes, write-offs and reversals of money that did not move, someone else asked for | HospitalAdmin, Accountant |
+| `billing.refunds.approve` | Approve refunds, credit notes, write-offs, reversals of money that did not move, and card and UPI settlement reports withdrawn as imported in error, someone else asked for | HospitalAdmin, Accountant |
 | `billing.deposits` | Collect IP advances | Cashier, Billing, HospitalAdmin |
 | `billing.shifts` | Cashier shifts, day-end report | Cashier, Billing, FrontOffice, Accountant, HospitalAdmin |
 | `billing.tariffs.manage` | Tariff plans, prices, packages | Billing, HospitalAdmin |
 | `billing.tally.export` | Post and export the Tally day book, mark it imported and reconcile it with Tally | HospitalAdmin, Accountant |
 | `billing.tally.configure` | Set the Tally ledger names the day book posts to | HospitalAdmin, Accountant |
 | `billing.einvoice` | Keep the GST e-invoice register: the e-invoice JSON of B2B invoices, their IRNs and IRN cancellations | Billing, Accountant, Pharmacist, HospitalAdmin |
-| `billing.gateway.reconcile` | Gateway reconciliation: settlements, exceptions, record a missed online receipt, send a failed gateway refund again. Card and UPI reconciliation: import the acquirer's settlement reports, review what does not match | HospitalAdmin, Accountant |
+| `billing.gateway.reconcile` | Gateway reconciliation: settlements, exceptions, record a missed online receipt, send a failed gateway refund again. Card and UPI reconciliation: import the acquirer's settlement reports, review what does not match, ask to withdraw a report imported in error | HospitalAdmin, Accountant |
 | `insurance.payers.manage` | Insurers, TPAs, corporates, schemes, non-payable items | InsuranceDesk, HospitalAdmin |
 | `insurance.policies.manage` | Patient policies | InsuranceDesk, Billing, HospitalAdmin |
 | `insurance.preauth.manage` | Cashless pre-authorisation, enhancements | InsuranceDesk, HospitalAdmin |
@@ -524,11 +524,12 @@ one). See [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos) fo
 | Method | Path | Request → response |
 |---|---|---|
 | GET | `/summary` | → `PosSettlementSummaryDto` (expected settlement days, transactions to look at by reason with count and amount, receipts not settled with their total, the last payout day, the last report imported, the other counters' terminals) |
-| POST | `/imports` | multipart `file` (CSV or .xlsx, at most 10 MB), `acquirer` (at most 64 characters), `settledOn` (only for a report without a settlement date column) → 201 `PosSettlementImportResult(import, columns, problems, matched, toLookAt, message)`. 400 `file` when the report cannot be read (no headings found, an .xls file, too many rows; the message says why), 400 `settledOn` when it has no settlement dates and none was given, 409 `billing.pos_settlement_imported` for a report imported before (same content), 409 `billing.pos_settlement_busy` when another import or match ran at the same time. Audited `billing.pos.settlement_imported` |
-| GET | `/imports` (paged) | → `PagedResult<PosSettlementImportDto>` newest first (acquirer, file, rows, new, already imported, left out, the days paid, who imported it) |
+| POST | `/imports` | multipart `file` (CSV or .xlsx, at most 10 MB), `acquirer` (at most 64 characters), `settledOn` (only for a report without a settlement date column) → 201 `PosSettlementImportResult(import, columns, problems, matched, toLookAt, message)`. 400 `file` when the report cannot be read (no headings found, an .xls file, too many rows; the message says why), 400 `settledOn` when it has no settlement dates and none was given, 409 `billing.pos_settlement_imported` for a report imported before (same content) that would bring nothing new, 409 `billing.pos_settlement_busy` when another import or match ran at the same time. Audited `billing.pos.settlement_imported` |
+| GET | `/imports` (paged) | → `PagedResult<PosSettlementImportDto>` newest first (acquirer, file, rows, new, already imported, left out, the days paid, who imported it; `withdrawnOn`, `withdrawnByName` and `withdrawReason` once withdrawn, `withdrawalAskedAt` while a withdrawal waits for approval) |
+| POST | `/imports/{id}/withdraw` | `WithdrawPosImportRequest(reason)` (5–500 characters) → 202 `ApprovalRequestDto` (kind `billing.pos_import_withdrawal`): asks to withdraw a report imported in error; the approver is shown its transactions, what they paid out, the days, the receipts and refunds they matched and the transactions reviewed. Someone else with `billing.refunds.approve` approves it (see [A report imported in error](#card-and-upi-reconciliation-int-pos)). 404 for an unknown report, 409 `billing.pos_settlement_import_withdrawn` for one withdrawn already, 409 `approval.already_requested` while a withdrawal of it waits. Audited `billing.pos.settlement_import_withdrawn` when approved |
 | GET | `/days?from&to` (IST days, the last month by default, at most 92 days) | → `PosSettlementDayDto[]`: per day the payouts (`PosPayoutDto`: UTR, acquirer, transactions, payments, refunds and chargebacks, charges without GST, GST, paid to the bank, to look at, and the settlement journal's number) |
 | GET | `/lines?attention&settledOn&utr&noUtr` (paged) | → `PagedResult<PosSettlementLineDto>`: `attention=true` the ones to look at, worst first (no receipt, amount differs, no refund, chargeback); `settledOn` with `utr` (or `noUtr=true`) one payout's transactions. Each with its references (RRN, approval code, card's last four digits, TID), amounts, what it matched (receipt or refund number, bill, how it was found) and any review |
-| POST | `/lines/{id}/review` | `ReviewPosSettlementLineRequest(note, version)` (5–500 characters) → `PosSettlementLineDto`; 422 `billing.pos_settlement_matched` for a line that matches, `billing.pos_settlement_reviewed` for one already reviewed; 409 when someone changed it meanwhile. Audited `billing.pos.settlement_reviewed` |
+| POST | `/lines/{id}/review` | `ReviewPosSettlementLineRequest(note, version)` (5–500 characters) → `PosSettlementLineDto`; 422 `billing.pos_settlement_matched` for a line that matches, `billing.pos_settlement_reviewed` for one already reviewed, `billing.pos_settlement_withdrawn` for one whose report was withdrawn; 409 when someone changed it meanwhile. Audited `billing.pos.settlement_reviewed` |
 | POST | `/match` | → `PosMatchResult(checked, matched, toLookAt, message)`: matches again the transactions without a receipt or refund settled in the last 90 days, for example after a missing receipt was recorded |
 | GET | `/unsettled` | → `UnsettledPosReceiptDto[]` oldest first: card and UPI receipts no report carries although the reports already go `settlementDays` past them, leaving out payments reversed as not received (receipt and bill, mode, amount, reference, card's last four digits, HC360's terminal, days waiting) |
 | GET | `/training-file?date` | → `text/csv` `training-card-settlement-<date>.csv`: the training terminal's approved sales of the day as an acquirer would report them, to practise the import; 422 `billing.pos_training_server` on a live server |
@@ -982,9 +983,10 @@ the card number or anything about the customer.
 * Rows left out, each with its reason (at most 20 listed): rows without an amount, rows with neither an RRN nor an
   approval code (except chargebacks), rows whose net, charges and GST do not add up, and repeated rows. The report's
   total rows are skipped and not counted. The import says which heading it read as what (`Amount from "Txn Amount"`).
-* At most 20,000 transactions and 10 MB per file. The same file (by its SHA-256) is refused a second time. Reports
-  overlap: each transaction is stored once (`line_key`: its type and RRN, or without one its TID, approval code, amount
-  and day), so a later report adds only what is new.
+* At most 20,000 transactions and 10 MB per file. Reports overlap: each transaction is stored once (`line_key`: its
+  type and RRN, or without one its TID, approval code, amount and day), so a later report adds only what is new. The
+  same file (by its SHA-256) is refused a second time while it would bring nothing new; a transaction of a report
+  withdrawn since no longer counts as imported, so the same file imported again brings it.
 
 **Matching** (each receipt payment and refund once; a partial unique index on the matched payment and on the refund
 stops two imports taking the same one). References are compared by their letters and digits, whatever the case, so an
@@ -1015,6 +1017,19 @@ GST on them, and the Card and UPI mode ledgers ("Card Settlement Account", "UPI 
 credited with the gross (payments less refunds and chargebacks). The receipts debited those ledgers, so what stays in
 them is not settled. Importing a report queues the posted days it touches again (`TallyCorrections`); the journal
 keeps its number, so Tally alters it.
+
+**A report imported in error** (another facility's, the wrong acquirer account's, or the acquirer's provisional report
+before its final one) is withdrawn, never deleted: an accountant asks with the reason, and another person who approves
+reversals (`billing.refunds.approve`) approves it, shown what it takes out (its transactions and what they paid out,
+the days, the receipts and refunds they matched, the transactions an accountant reviewed). Then its own transactions,
+those it brought first, are `Withdrawn`: they match nothing, the receipts and refunds they matched are free for the
+correct report or **Match again**, and they leave the payouts, the lists and the coverage of "not settled". A
+transaction another report brought first stays. The payout's journal stays in the day book of its day, which may be in
+Tally already; the report's part of it is turned round in the day book of the day of the withdrawal, as a Journal
+`POS-<facility>-<UTR>-W<the report's first six id characters>` narrated "Reverses card and UPI settlement journal …
+of …: its report was withdrawn as imported in error". So the books show the payout, its reversal and the correct
+report's payout, each on its own day. A correct report imported afterwards, or before (imported again: it brought
+nothing then), brings the transactions as they were paid.
 
 **Training.** `/training-file` turns the training terminal's approved sales of a day into a report, paid the next day
 with a 1.5 % charge on cards plus GST, under the UTR `SIMUTR<yyyyMMdd>`, so the whole flow can be tried without an
@@ -1240,7 +1255,7 @@ are append-mostly and not data-audited; imports and reviews are audited. `OpBill
 * **A failed payout settled again in another settlement.** A failed settlement paid out after all is restored, but
   if the gateway carries its transactions in a new settlement instead, their lines find their receipts already matched
   by the failed one; the accountant resolves the exception with the new settlement's UTR.
-* **Withdrawing a card or UPI settlement report imported in error** is not possible yet.
+* **Part of a card or UPI report** cannot be withdrawn: the whole report is, and a corrected file imported in its place.
 * **Chargebacks and disputes** arrive as gateway adjustments and are listed as amount differences; there is no dispute
   workflow.
 * **A payment on an older order of a prepaid booking** (the patient restarted the checkout and paid both) is found by

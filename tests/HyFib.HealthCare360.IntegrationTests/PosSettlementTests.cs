@@ -242,6 +242,122 @@ public sealed class PosSettlementTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_report_imported_in_error_is_withdrawn_by_two_people_reversed_in_todays_books_and_its_receipt_matched_by_the_right_one()
+    {
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var maker = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var checker = await server.SignInAsync(HospitalServer.Users.Accountant);
+        await OpenCounterShiftAsync(billing);
+        var bill = await FinalizedBillAsync(billing);
+        var rrn = Digits(12);
+        var receipt = await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new CollectPaymentRequest(
+            bill.Id, [new PaymentLineInput(PaymentMode.Card, bill.DueAmount, rrn, Random.Shared.Next(2000, 9999).ToString(CultureInfo.InvariantCulture), "VISA", null, null, null)], null));
+        var threeDaysAgo = Today.AddDays(-3);
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var takenAt = DateTimeOffset.UtcNow.AddDays(-3);
+            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Receipt>().IgnoreQueryFilters()
+                .Where(r => r.Id == receipt.Id)
+                .ExecuteUpdateAsync(u => u.SetProperty(r => r.ReceivedAt, takenAt), Ct);
+        }
+
+        // The acquirer's provisional report, imported by mistake: the bank was not paid on its day, under its UTR. Its
+        // transaction matches the receipt, and its payout's journal is in the books of two days ago.
+        var twoDaysAgo = Today.AddDays(-2);
+        var provisionalUtr = "AXISN" + Digits(11);
+        var provisional = Report(rrn, threeDaysAgo, bill.DueAmount, twoDaysAgo, provisionalUtr);
+        var wrong = await ImportAsync(maker, provisional, "HDFC Bank", "provisional.csv");
+        wrong.Matched.ShouldBe(1);
+        var payout = (await DaysAsync(maker, twoDaysAgo)).SelectMany(d => d.Payouts).Single(p => p.Utr == provisionalUtr);
+        var journal = (await DayBookAsync(maker, twoDaysAgo)).Single(v => v.Number == payout.VoucherNumber);
+
+        // The bank's final report, imported next, brings nothing: the provisional report brought its transaction first.
+        var final = Report(rrn, threeDaysAgo, bill.DueAmount, Today.AddDays(-1), "AXISN" + Digits(11));
+        (await ImportAsync(maker, final, "HDFC Bank", "final.csv")).Import.ShouldSatisfyAllConditions(
+            i => i.Added.ShouldBe(0), i => i.AlreadyImported.ShouldBe(1));
+
+        // The accountant asks to withdraw it and says why; the approver is told what it takes out. They may not approve
+        // their own request.
+        const string reason = "The acquirer's provisional report: the bank was paid on another day, under another UTR.";
+        using var asked = await AskWithdrawalAsync(maker, wrong.Import.Id, reason);
+        asked.StatusCode.ShouldBe(HttpStatusCode.Accepted, await asked.Content.ReadAsStringAsync(Ct));
+        var approval = (await asked.Content.ReadFromJsonAsync<ApprovalRequestDto>(ApiClient.Json, Ct)).ShouldNotBeNull();
+        approval.Details.ShouldContain(d => d.Label == "Matched" && d.Value.StartsWith("1 receipt", StringComparison.Ordinal));
+        (await ImportOfAsync(maker, wrong.Import.Id)).WithdrawalAskedAt.ShouldNotBeNull();
+        using (var own = await maker.SendRawAsync(HttpMethod.Post, $"/api/v1/approvals/{approval.Id}/approve", new ApproveRequest(null, approval.Version)))
+        {
+            own.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        // Someone else who approves reversals approves it. Its transaction matches nothing more, and the receipt is free.
+        var approved = await MakerChecker.ApproveAsync(checker, approval);
+        approved.Outcome.ShouldNotBeNull().ShouldSatisfyAllConditions(
+            o => o.ShouldStartWith("Withdrew provisional.csv: its 1 transaction(s) are reversed in the books of "),
+            o => o.ShouldEndWith("and 1 receipt(s) or refund(s) are free for a correct report."));
+        (await ImportOfAsync(maker, wrong.Import.Id)).ShouldSatisfyAllConditions(
+            i => i.WithdrawnOn.ShouldBe(Today),
+            i => i.WithdrawnByName.ShouldBe(approved.DecidedByName),
+            i => i.WithdrawReason.ShouldBe(reason),
+            i => i.WithdrawalAskedAt.ShouldBeNull());
+        var withdrawn = (await LinesOfAsync(rrn)).ShouldHaveSingleItem();
+        withdrawn.ShouldSatisfyAllConditions(
+            l => l.Match.ShouldBe(PosSettlementMatch.Withdrawn),
+            l => l.WithdrawnOn.ShouldBe(Today),
+            l => l.ReceiptId.ShouldBeNull(),
+            l => l.ReceiptPaymentId.ShouldBeNull());
+
+        // The payouts no longer show it, and it cannot be reviewed.
+        (await DaysAsync(maker, twoDaysAgo)).SelectMany(d => d.Payouts).ShouldNotContain(p => p.Utr == provisionalUtr);
+        using (var review = await maker.SendRawAsync(HttpMethod.Post, $"/api/v1/billing/pos/settlements/lines/{withdrawn.Id}/review",
+                   new ReviewPosSettlementLineRequest("Looked at it.", withdrawn.Version)))
+        {
+            review.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            (await review.Content.ReadAsStringAsync(Ct)).ShouldContain("billing.pos_settlement_withdrawn");
+        }
+
+        // The books: the payout's journal stays in its day as it was, which may be in Tally already. Today's books turn it
+        // round, numbered after it and the report.
+        (await DayBookAsync(maker, twoDaysAgo)).Single(v => v.Number == payout.VoucherNumber).ShouldBeEquivalentTo(journal);
+        var reversal = (await DayBookAsync(maker, Today)).Single(v => v.Number == $"{payout.VoucherNumber}-W{wrong.Import.Id.ToString("N")[..6].ToUpperInvariant()}");
+        reversal.ShouldSatisfyAllConditions(
+            v => v.Date.ShouldBe(Today),
+            v => v.Narration.ShouldBe($"Reverses card and UPI settlement journal {payout.VoucherNumber} of "
+                                      + $"{twoDaysAgo.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture)}: its report was withdrawn as imported in error"));
+        reversal.Entries.Select(e => (e.LedgerName, !e.IsDebit, e.Amount)).ShouldBe(journal.Entries.Select(e => (e.LedgerName, e.IsDebit, e.Amount)), ignoreOrder: true);
+
+        // Asked again, it is refused.
+        using (var twice = await AskWithdrawalAsync(maker, wrong.Import.Id, reason))
+        {
+            twice.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+            (await twice.Content.ReadAsStringAsync(Ct)).ShouldContain("billing.pos_settlement_import_withdrawn");
+        }
+
+        // The bank's final report imported again now brings the transaction, under the payout the bank received, and
+        // matches it to the receipt the withdrawal freed; once more, it brings nothing and is refused.
+        var correct = await ImportAsync(maker, final, "HDFC Bank", "final.csv");
+        correct.ShouldSatisfyAllConditions(c => c.Import.Added.ShouldBe(1), c => c.Import.AlreadyImported.ShouldBe(0), c => c.Matched.ShouldBe(1));
+        var line = (await LinesOfAsync(rrn)).Single(l => l.WithdrawnOn is null);
+        line.ShouldSatisfyAllConditions(
+            l => l.Match.ShouldBe(PosSettlementMatch.Matched),
+            l => l.ReceiptId.ShouldBe(receipt.Id),
+            l => l.ImportId.ShouldBe(correct.Import.Id),
+            l => l.SettledOn.ShouldBe(Today.AddDays(-1)));
+        using (var thrice = await SendImportAsync(maker, final, "HDFC Bank", "final.csv"))
+        {
+            thrice.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+            (await thrice.Content.ReadAsStringAsync(Ct)).ShouldContain("billing.pos_settlement_imported");
+        }
+
+        // The withdrawn report no longer counts as imported: brought again, its transaction is the final report's already.
+        var again = await ImportAsync(maker, provisional, "HDFC Bank", "provisional.csv");
+        again.Import.ShouldSatisfyAllConditions(i => i.Added.ShouldBe(0), i => i.AlreadyImported.ShouldBe(1));
+
+        await using var audit = server.Services.CreateAsyncScope();
+        (await audit.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuditEvent>().AsNoTracking()
+            .CountAsync(e => e.EntityId == wrong.Import.Id.ToString() && e.Action == "billing.pos.settlement_import_withdrawn", Ct)).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task A_report_that_cannot_be_read_says_why_and_the_cashier_may_not_import()
     {
         var accounts = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
@@ -267,6 +383,35 @@ public sealed class PosSettlementTests(HospitalServer server)
             ? await lines.SingleAsync(l => l.Rrn == rrn, Ct)
             : await lines.SingleAsync(l => l.Utr == utr && l.CardLast4 == last4, Ct);
     }
+
+    /// <summary>Every line that brought the transaction, a withdrawn one among them.</summary>
+    private async Task<List<PosSettlementLine>> LinesOfAsync(string rrn)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<PosSettlementLine>().IgnoreQueryFilters().AsNoTracking()
+            .Where(l => l.Rrn == rrn)
+            .ToListAsync(Ct);
+    }
+
+    /// <summary>An acquirer's report of one card sale, with its charges and GST, paid out on <paramref name="settledOn"/> under <paramref name="utr"/>.</summary>
+    private static string Report(string rrn, DateOnly takenOn, decimal amount, DateOnly settledOn, string utr) => $"""
+        RRN,Txn Date,Card Type,Txn Amount,MDR Amount,GST,Net Amount,Settlement Date,UTR
+        {rrn},{Slashed(takenOn)},VISA,{Money(amount)},2.00,0.36,{Money(amount - 2.36m)},{Slashed(settledOn)},{utr}
+        """;
+
+    private static string Slashed(DateOnly day) => day.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+
+    private static Task<HttpResponseMessage> AskWithdrawalAsync(ApiClient client, Guid importId, string reason) =>
+        client.SendRawAsync(HttpMethod.Post, $"/api/v1/billing/pos/settlements/imports/{importId}/withdraw", new WithdrawPosImportRequest(reason));
+
+    private static async Task<PosSettlementImportDto> ImportOfAsync(ApiClient client, Guid importId) =>
+        (await client.GetAsync<PagedResult<PosSettlementImportDto>>("/api/v1/billing/pos/settlements/imports?pageSize=200")).Items.Single(i => i.Id == importId);
+
+    private static Task<List<PosSettlementDayDto>> DaysAsync(ApiClient client, DateOnly day) =>
+        client.GetAsync<List<PosSettlementDayDto>>($"/api/v1/billing/pos/settlements/days?from={day:yyyy-MM-dd}&to={day:yyyy-MM-dd}");
+
+    private static Task<List<AccountingVoucher>> DayBookAsync(ApiClient client, DateOnly day) =>
+        client.GetAsync<List<AccountingVoucher>>($"/api/v1/billing/tally/day-book?date={day:yyyy-MM-dd}");
 
     private static async Task<PosSettlementImportResult> ImportAsync(ApiClient client, string report, string acquirer, string fileName = "settlement.csv")
     {
