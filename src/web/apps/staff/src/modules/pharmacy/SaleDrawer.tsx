@@ -447,7 +447,11 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
                 />
               </Field>
               {needsReference && (
-                <Field label={mode === 'Card' ? 'Card slip number' : 'UPI transaction ID'} required>
+                <Field
+                  label={mode === 'Card' ? 'RRN or approval code' : 'UPI reference (UTR)'}
+                  hint={mode === 'Card' ? 'From the charge slip' : 'The 12-digit number on the payer’s screen'}
+                  required
+                >
                   <Input value={reference} maxLength={64} onChange={(_, d) => setReference(d.value)} />
                 </Field>
               )}
@@ -634,7 +638,11 @@ function ReturnDialog({
                 </Select>
               </Field>
               {needsReference && (
-                <Field label="Reference" required>
+                <Field
+                  label={refundMode === 'Card' ? 'RRN or approval code' : 'UPI reference (UTR)'}
+                  hint={refundMode === 'Card' ? 'From the refund slip' : 'The 12-digit number of the money sent back'}
+                  required
+                >
                   <Input value={reference} maxLength={64} onChange={(_, d) => setReference(d.value)} />
                 </Field>
               )}

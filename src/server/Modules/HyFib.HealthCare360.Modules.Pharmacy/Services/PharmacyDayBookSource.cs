@@ -4,14 +4,30 @@ using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 namespace HyFib.HealthCare360.Modules.Pharmacy.Services;
 
 /// <summary>
-/// The pharmacy counter's day for Billing's Tally day book (INT-TALLY), through the Platform contract
-/// <see cref="ICounterSalesSource"/>. In-patient issues are not here: they reach the IP bill as charges.
+/// The pharmacy counter's day for Billing's Tally day book (INT-TALLY), and its card and UPI payments for the card and
+/// UPI settlement match, through the Platform contract <see cref="ICounterSalesSource"/>. In-patient issues are not here:
+/// they reach the IP bill as charges.
 /// </summary>
 internal sealed class PharmacyDayBookSource(HospitalDbContext db) : ICounterSalesSource
 {
     public const string Key = "pharmacy";
 
     public string Counter => Key;
+
+    /// <summary>
+    /// Card and UPI payments on invoices, later collections included, and returns paid back by card or UPI. A cancelled
+    /// invoice's card payment is still here: the terminal settles it, and the money given back is the counter's.
+    /// </summary>
+    public async Task<IReadOnlyList<CounterCardPayment>> GetCardPaymentsAsync(Guid facilityId, DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken) =>
+        await (
+                from p in db.Set<PharmacyPayment>().AsNoTracking()
+                join s in db.Set<PharmacySale>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on p.PharmacySaleId equals s.Id
+                where s.FacilityId == facilityId && (p.Mode == PaymentMode.Card || p.Mode == PaymentMode.Upi) && p.ReceivedAt >= @from && p.ReceivedAt < to
+                orderby p.ReceivedAt
+                select new CounterCardPayment(
+                    p.Id, s.InvoiceNumber, p.Mode == PaymentMode.Card ? CounterPaymentMode.Card : CounterPaymentMode.Upi, p.Amount, p.Reference, p.ReceivedAt,
+                    p.IsRefund, s.Status == SaleStatus.Cancelled))
+            .ToListAsync(cancellationToken);
 
     public async Task<CounterSalesDay> GetDayAsync(Guid facilityId, DateOnly date, CancellationToken cancellationToken)
     {

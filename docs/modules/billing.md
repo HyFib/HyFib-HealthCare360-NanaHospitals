@@ -527,15 +527,15 @@ one). See [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos) fo
 
 | Method | Path | Request → response |
 |---|---|---|
-| GET | `/summary` | → `PosSettlementSummaryDto` (expected settlement days, transactions to look at by reason with count and amount, receipts not settled with their total, the last payout day, the last report imported, the other counters' terminals) |
+| GET | `/summary` | → `PosSettlementSummaryDto` (expected settlement days, transactions to look at by reason with count and amount, payments not settled (Billing's receipts and the pharmacy's and canteen's payments) with their total, the last payout day, the last report imported, the other counters' terminals) |
 | POST | `/imports` | multipart `file` (CSV or .xlsx, at most 10 MB), `acquirer` (at most 64 characters), `settledOn` (only for a report without a settlement date column) → 201 `PosSettlementImportResult(import, columns, problems, matched, toLookAt, message)`. 400 `file` when the report cannot be read (no headings found, an .xls file, too many rows; the message says why), 400 `settledOn` when it has no settlement dates and none was given, 409 `billing.pos_settlement_imported` for a report imported before (same content) that would bring nothing new, 409 `billing.pos_settlement_busy` when another import or match ran at the same time. Audited `billing.pos.settlement_imported` |
 | GET | `/imports` (paged) | → `PagedResult<PosSettlementImportDto>` newest first (acquirer, file, rows, new, already imported, left out, the days paid, who imported it; `withdrawnOn`, `withdrawnByName` and `withdrawReason` once withdrawn, `withdrawalAskedAt` while a withdrawal waits for approval) |
 | POST | `/imports/{id}/withdraw` | `WithdrawPosImportRequest(reason)` (5–500 characters) → 202 `ApprovalRequestDto` (kind `billing.pos_import_withdrawal`): asks to withdraw a report imported in error; the approver is shown its transactions, what they paid out, the days, the receipts and refunds they matched and the transactions reviewed. Someone else with `billing.refunds.approve` approves it (see [A report imported in error](#card-and-upi-reconciliation-int-pos)). 404 for an unknown report, 409 `billing.pos_settlement_import_withdrawn` for one withdrawn already, 409 `approval.already_requested` while a withdrawal of it waits. Audited `billing.pos.settlement_import_withdrawn` when approved |
 | GET | `/days?from&to` (IST days, the last month by default, at most 92 days) | → `PosSettlementDayDto[]`: per day the payouts (`PosPayoutDto`: UTR, acquirer, transactions, payments, refunds and chargebacks, charges without GST, GST, paid to the bank, to look at, and the settlement journal's number) |
-| GET | `/lines?attention&settledOn&utr&noUtr` (paged) | → `PagedResult<PosSettlementLineDto>`: `attention=true` the ones to look at, worst first (no receipt, amount differs, no refund, chargeback); `settledOn` with `utr` (or `noUtr=true`) one payout's transactions. Each with its references (RRN, approval code, card's last four digits, TID), amounts, what it matched (receipt or refund number, bill, how it was found) and any review |
+| GET | `/lines?attention&settledOn&utr&noUtr` (paged) | → `PagedResult<PosSettlementLineDto>`: `attention=true` the ones to look at, worst first (no receipt, amount differs, no refund, chargeback); `settledOn` with `utr` (or `noUtr=true`) one payout's transactions. Each with its references (RRN, approval code, card's last four digits, TID), amounts, what it matched (receipt or refund number and bill, or `counter` and `counterDocument`: the pharmacy's invoice or the canteen's bill; how it was found) and any review |
 | POST | `/lines/{id}/review` | `ReviewPosSettlementLineRequest(note, version)` (5–500 characters) → `PosSettlementLineDto`; 422 `billing.pos_settlement_matched` for a line that matches, `billing.pos_settlement_reviewed` for one already reviewed, `billing.pos_settlement_withdrawn` for one whose report was withdrawn; 409 when someone changed it meanwhile. Audited `billing.pos.settlement_reviewed` |
-| POST | `/match` | → `PosMatchResult(checked, matched, toLookAt, message)`: matches again the transactions without a receipt or refund settled in the last 90 days, for example after a missing receipt was recorded |
-| GET | `/unsettled` | → `UnsettledPosReceiptDto[]` oldest first: card and UPI receipts no report carries although the reports already go `settlementDays` past them, leaving out payments reversed as not received (receipt and bill, mode, amount, reference, card's last four digits, HC360's terminal, days waiting) |
+| POST | `/match` | → `PosMatchResult(checked, matched, toLookAt, message)`: matches again the transactions without a receipt or refund, and those set aside as another counter's, settled in the last 90 days, for example after a missing receipt or a counter's sale was recorded |
+| GET | `/unsettled` | → `UnsettledPosReceiptDto[]` oldest first: card and UPI receipts no report carries although the reports already go `settlementDays` past them, leaving out payments reversed as not received (receipt and bill, mode, amount, reference, card's last four digits, HC360's terminal, days waiting); with them the pharmacy's and the canteen's card and UPI payments no report carries although the reports carrying that counter's payments of that mode go `settlementDays` past them (`receiptId` and `billId` null, the invoice or bill as `receiptNumber`, `counter`, and `cancelled` when the invoice or bill was cancelled since) |
 | GET | `/training-file?date` | → `text/csv` `training-card-settlement-<date>.csv`: the training terminal's approved sales of the day as an acquirer would report them, to practise the import; 422 `billing.pos_training_server` on a live server |
 
 ### Patient portal — `/api/v1/portal/bills` (`patients.portal`, own/linked patients only)
@@ -1083,10 +1083,15 @@ the card number or anything about the customer.
   same file (by its SHA-256) is refused a second time while it would bring nothing new; a transaction of a report
   withdrawn since no longer counts as imported, so the same file imported again brings it.
 
-**Matching** (each receipt payment and refund once; a partial unique index on the matched payment and on the refund
-stops two imports taking the same one). References are compared by their letters and digits, whatever the case, so an
-RRN typed as "6279 1012-3456" matches 627910123456: the receipts and refunds of the report's days (from two days before
-its first transaction) are read and compared that way, and older ones by the reference as typed.
+**Matching** (each receipt payment, refund and counter payment once; a partial unique index on the matched payment, on
+the refund and on the counter payment stops two imports taking the same one). References are compared by their letters
+and digits, whatever the case, so an RRN typed as "6279 1012-3456" matches 627910123456: the receipts and refunds of the
+report's days (from two days before its first transaction) are read and compared that way, and older ones by the
+reference as typed. Billing's receipts and refunds are looked for at Billing's terminals; what is left, at any
+terminal, is looked for among the pharmacy's and the canteen's card and UPI payments and refunds of the report's days,
+read through the Platform contract `ICounterSalesSource.GetCardPaymentsAsync` (Pharmacy and SupportServices implement
+it; Billing does not reference them). The pharmacy's and the canteen's counters ask for the RRN or approval code (card)
+or the UPI reference (UTR) when they take the payment.
 
 | Settled | Matches | Shown as |
 |---|---|---|
@@ -1096,14 +1101,21 @@ its first transaction) are read and compared that way, and older ones by the ref
 | Payment | nothing | `NoReceipt` |
 | Refund | the refund paid by card or UPI whose reference is the RRN or (same amount) the approval code | `Matched`, else `NoRefund` |
 | Chargeback | nothing to match | `Review` |
-| Any, at a TID in `otherTerminals` | the pharmacy's or canteen's terminal, whose sales Billing does not record | `OtherCounter` |
+| Payment or refund that matched nothing above, at any terminal | the pharmacy's or the canteen's card or UPI payment (for a refund, money it paid back by card or UPI) whose typed reference is the RRN, else is the approval code with the same amount within two days; a payment of the same mode first | `Matched` by the RRN or the approval code, with the counter and its invoice or bill, or `AmountDiffers` |
+| Any, at a TID in `otherTerminals`, that matched nothing | another counter's sale HC360 does not record, or one typed without its reference; Billing's receipts are not looked for there | `OtherCounter` |
 
 `NoReceipt`, `AmountDiffers`, `NoRefund` and `Review` are listed to look at until an accountant reviews them with a
-note. Transactions without a receipt or refund settled in the last 90 days are matched again with each import and by
-**Match again** (after the missing receipt is recorded); one that matched stays matched.
+note. Transactions without a receipt or refund, and those set aside as another counter's, settled in the last 90 days
+are matched again with each import and by **Match again** (after the missing receipt, or the counter's sale, is
+recorded); one that matched stays matched.
 
 **Not settled.** A card or UPI receipt is listed when no report carries it although the reports of its mode already go
-`settlementDays` past it (from the first day a report covers, for the last 60 days, at most 500).
+`settlementDays` past it (from the first day a report covers, for the last 60 days, at most 500). The pharmacy's and
+the canteen's card and UPI payments are listed the same way, counted from the transactions matched with that counter's
+payments of that mode, so a counter whose terminal's reports the hospital does not import lists nothing rather than
+everything; the transactions matched with a counter's payment do not count for Billing's receipts. Money paid back is
+not listed. A payment whose invoice or bill was cancelled since is listed, marked cancelled: the terminal settles it
+unless it was voided on the terminal.
 
 **Settlement journal.** Each payout (a day's transactions under one UTR, or the day's without a UTR) is a Journal in
 the day book of its settlement day, numbered `POS-<facility>-<UTR>` (`POS-<facility>-<yyyyMMdd>` without a UTR):
@@ -1300,7 +1312,7 @@ estimate) or a cancelled bill gives no document and is never sent.
 | `billing.bills.sendOnWhatsApp` | `true` | Send the bill's PDF on WhatsApp when a payment settles it ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); the desk can still send it by hand when off |
 | `billing.gateway.reconciliation` | `{ "enabled": true, "settlementDays": 3, "checkoutExpiryHours": 48 }` | Gateway reconciliation: read settlements and list exceptions (`enabled`); an online receipt not settled after `settlementDays` (1–30) is an exception; a portal checkout nobody paid is marked expired after `checkoutExpiryHours` (1–720) |
 | `billing.pos.recheck` | `{ "timeoutMinutes": 15 }` | Terminal sales: a sale still waiting for the customer after `timeoutMinutes` (2–240) is cancelled on the terminal and marked timed out by `PosRecheckJob` |
-| `billing.pos.settlements` | `{ "settlementDays": 3, "otherTerminals": [], "columns": {} }` | Card and UPI reconciliation: a card or UPI receipt not settled after `settlementDays` (1–30) is listed; `otherTerminals` are the acquirer's TIDs of counters Billing does not record (pharmacy, canteen); `columns` adds the acquirer's headings by field (`rrn`, `approvalCode`, `amount`, `charges`, `tax`, `net`, `terminalId`, `transactionDate`, `transactionTime`, `card`, `type`, `mode`, `settlementDate`, `utr`), tried before the built-in ones |
+| `billing.pos.settlements` | `{ "settlementDays": 3, "otherTerminals": [], "columns": {} }` | Card and UPI reconciliation: a card or UPI payment not settled after `settlementDays` (1–30) is listed; `otherTerminals` are the acquirer's TIDs of the other counters (pharmacy, canteen): Billing's receipts are not looked for there, and a transaction there that no pharmacy or canteen payment names is set aside (`OtherCounter`); `columns` adds the acquirer's headings by field (`rrn`, `approvalCode`, `amount`, `charges`, `tax`, `net`, `terminalId`, `transactionDate`, `transactionTime`, `card`, `type`, `mode`, `settlementDate`, `utr`), tried before the built-in ones |
 | `gst.einvoice.from` | not set | The first invoice date GST e-invoicing applies to (`yyyy-MM-dd`); not set, the hospital does not e-invoice |
 | `doctorfees.accrual.trigger` | `finalized` | `finalized` or `paid` |
 | `doctorfees.tds.percent` | `10` | TDS (194J) on doctor payouts |
@@ -1360,8 +1372,11 @@ indexed where set). Notes and IRNs from before keep zeros and nulls.
   pays it by bank transfer outside HC360, records that in Tally, and resolves the exception with the reference.
 * **Card and UPI settlement reports are imported by hand.** HC360 does not fetch them from the acquirer (Pine Labs and
   the banks offer them as downloads or e-mails, not through the terminal API).
-* **The pharmacy's and the canteen's card sales** are not recorded with references, so they are not matched: their
-  terminals are set as `otherTerminals`, and their money still clears through the settlement journal.
+* **A pharmacy or canteen payment without its reference** (the canteen does not insist on one) is not matched, since
+  the counters keep no card digits: its transaction is set aside at the counter's terminal (or listed to look at on
+  Billing's), and the payment is listed as not settled; the accountant pairs them by amount and time. Likewise a
+  refund the acquirer reports under an RRN of its own while the pharmacist typed the sale's. The canteen records no
+  refunds: a cancelled card bill's money given back is the canteen's own business.
 * **A failed payout settled again in another settlement.** A failed settlement paid out after all is restored, but
   if the gateway carries its transactions in a new settlement instead, their lines find their receipts already matched
   by the failed one; the accountant resolves the exception with the new settlement's UTR.

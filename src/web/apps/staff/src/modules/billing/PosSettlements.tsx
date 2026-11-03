@@ -39,6 +39,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useRef, useState, type ChangeEvent } from 'react';
 import {
+  counterDocumentText,
   matchText,
   POS_LINE_TYPE_LABEL,
   POS_MATCH_LABEL,
@@ -420,14 +421,17 @@ export function PosToLookAt({ page, onPage }: { page: number; onPage: (page: num
   );
 }
 
-/** Card and UPI receipts the acquirer has not settled after the expected days, oldest first. */
+/**
+ * Card and UPI receipts the acquirer has not settled after the expected days, oldest first, with the pharmacy's and the
+ * canteen's card and UPI payments (once their terminal's reports are imported). A receipt opens its bill.
+ */
 export function PosUnsettled({ settlementDays }: { settlementDays: number }) {
   const styles = useStyles();
   const navigate = useNavigate();
   const list = useQuery(posSettlementQueries.unsettled());
   return (
     <DataTable
-      ariaLabel="Card and UPI receipts not settled"
+      ariaLabel="Card and UPI payments not settled"
       rows={list.data}
       loading={list.isLoading}
       error={list.error}
@@ -442,8 +446,13 @@ export function PosUnsettled({ settlementDays }: { settlementDays: number }) {
           header: 'Receipt',
           render: (receipt) => (
             <span className={styles.stack}>
-              <Text weight="semibold">{receipt.receiptNumber}</Text>
-              <Caption1 className={styles.muted}>{formatDateTime(receipt.receivedAt)}</Caption1>
+              <Text weight="semibold">
+                {receipt.counter ? counterDocumentText(receipt.counter, receipt.receiptNumber) : receipt.receiptNumber}
+              </Text>
+              <Caption1 className={styles.muted}>
+                {formatDateTime(receipt.receivedAt)}
+                {receipt.cancelled && ' · Cancelled since: it settles unless it was voided on the terminal'}
+              </Caption1>
             </span>
           ),
         },
@@ -481,7 +490,7 @@ export function PosUnsettled({ settlementDays }: { settlementDays: number }) {
         },
       ]}
       emptyTitle="Nothing waiting"
-      emptyDescription={`The acquirer's reports carry every card and UPI receipt older than ${settlementDays} days.`}
+      emptyDescription={`The acquirer's reports carry every card and UPI payment older than ${settlementDays} days.`}
       size="small"
     />
   );

@@ -71,6 +71,7 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.Radiographer] = SystemRoles.Radiographer,
         [Users.MisAnalyst] = SystemRoles.MisAnalyst,
         [Users.Cashier] = SystemRoles.Cashier,
+        [Users.CanteenManager] = SystemRoles.CanteenManager,
     };
 
     // A test-only password for the staff accounts, new for every run.
@@ -908,6 +909,9 @@ public sealed class HospitalServer : IAsyncLifetime
         /// refunds and credit notes, which an approver issues. Created on first use.
         /// </summary>
         public const string Cashier = "cashier";
+
+        /// <summary>Keeps the canteen's menu and bills its sales. Created on first use.</summary>
+        public const string CanteenManager = "canteen";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);

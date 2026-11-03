@@ -5168,6 +5168,20 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("charges");
 
+                    b.Property<string>("Counter")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("counter");
+
+                    b.Property<string>("CounterDocument")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("counter_document");
+
+                    b.Property<Guid?>("CounterPaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("counter_payment_id");
+
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
@@ -5293,6 +5307,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_pos_settlement_lines");
+
+                    b.HasIndex("CounterPaymentId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_pos_settlement_lines_counter_payment_id")
+                        .HasFilter("counter_payment_id IS NOT NULL");
 
                     b.HasIndex("FacilityId")
                         .HasDatabaseName("ix_pos_settlement_lines_facility_id");

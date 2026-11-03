@@ -44,7 +44,8 @@ const useStyles = makeStyles({
 
 /**
  * Card and UPI reconciliation (INT-POS): the acquirer's settlement reports matched with HC360's card and UPI receipts,
- * what does not match, the receipts not settled yet, and the payouts by day. For accountants and administrators.
+ * and the pharmacy's and canteen's card and UPI payments; what does not match, the payments not settled yet, and the
+ * payouts by day. For accountants and administrators.
  */
 function CardSettlementsPage() {
   const styles = useStyles();
@@ -95,8 +96,8 @@ function CardSettlementsPage() {
             value={summary.data.unsettled}
             hint={
               summary.data.unsettled === 0
-                ? `Receipts are expected within ${summary.data.settlementDays} days`
-                : `${formatInr(summary.data.unsettledAmount)} in receipts older than ${summary.data.settlementDays} days`
+                ? `Payments are expected within ${summary.data.settlementDays} days`
+                : `${formatInr(summary.data.unsettledAmount)} in payments older than ${summary.data.settlementDays} days`
             }
             onClick={() => void navigate({ search: { view: 'unsettled' } })}
           />

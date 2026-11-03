@@ -107,6 +107,11 @@ without a prescription (`pharmacy.prescription_required`, with the offending ite
 need the buyer's identity for the register (`pharmacy.buyer_required`). Returns refund against any due first, then
 pay out. Only unexpired stock is restocked; expired or damaged returns are refunded but not put back.
 
+A card or UPI payment, collection or refund needs its reference: the RRN or approval code from the charge slip, or the
+UPI reference (UTR). Billing's card and UPI settlement matches the acquirer's transactions with the invoice by it, and
+lists a payment no settlement carries (through the Platform contract `ICounterSalesSource`; see *Card and UPI
+reconciliation* in [billing.md](billing.md)).
+
 ### In-patient pharmacy — `/ward-indents`, `/ip-issues` (PH-03)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|

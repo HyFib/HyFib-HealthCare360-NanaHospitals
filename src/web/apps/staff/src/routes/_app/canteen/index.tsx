@@ -658,10 +658,14 @@ function CanteenPosPage() {
                 <TextField
                   control={form.control}
                   name="paymentReference"
-                  label={paymentMode === 'Upi' ? 'UPI transaction ID' : 'Card slip number'}
+                  label={paymentMode === 'Upi' ? 'UPI reference (UTR)' : 'RRN or approval code'}
                   maxLength={64}
                   autoComplete="off"
-                  hint="Optional, helps when reconciling"
+                  hint={
+                    paymentMode === 'Upi'
+                      ? 'The 12-digit number on the payer’s screen; the card and UPI settlement matches the bill by it'
+                      : 'From the charge slip; the card and UPI settlement matches the bill by it'
+                  }
                 />
               )}
               {paymentMode === 'Cash' && priced.length > 0 && (

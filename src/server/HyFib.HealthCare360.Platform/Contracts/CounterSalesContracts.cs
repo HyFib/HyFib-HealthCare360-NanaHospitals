@@ -45,10 +45,22 @@ public sealed record CounterSalesDay(string Counter, DateOnly Date, CounterDocum
 }
 
 /// <summary>
+/// A card or UPI payment taken at a counter that bills its own sales, or (<paramref name="IsRefund"/>) money it paid back by
+/// card or UPI, as the card and UPI settlement match reads it: a settled transaction names the reference the cashier typed
+/// (the terminal's RRN, or its approval code).
+/// </summary>
+/// <param name="PaymentId">The counter's own id of the payment: a settled transaction matches it once.</param>
+/// <param name="Document">The invoice or bill the payment was for, as the counter numbers it.</param>
+/// <param name="Cancelled">The document was cancelled since: its money went back at the counter, but the terminal's still settles.</param>
+public sealed record CounterCardPayment(
+    Guid PaymentId, string Document, CounterPaymentMode Mode, decimal Amount, string? Reference, DateTimeOffset At, bool IsRefund, bool Cancelled);
+
+/// <summary>
 /// A counter that bills its own customers outside the hospital bill — the pharmacy and the canteen — reports its day for
-/// the Tally day book (INT-TALLY). The owning module implements it and Billing reads every registered source, so Billing
-/// never references those modules. The day book is built in the background, where no facility filter applies:
-/// implementations filter by the facility given and use the hospital's (IST) calendar day.
+/// the Tally day book (INT-TALLY), and its card and UPI payments for the card and UPI settlement match. The owning module
+/// implements it and Billing reads every registered source, so Billing never references those modules. Both are read in
+/// the background, where no facility filter applies: implementations filter by the facility given and use the hospital's
+/// (IST) calendar day.
 /// </summary>
 public interface ICounterSalesSource
 {
@@ -56,4 +68,7 @@ public interface ICounterSalesSource
     string Counter { get; }
 
     Task<CounterSalesDay> GetDayAsync(Guid facilityId, DateOnly date, CancellationToken cancellationToken);
+
+    /// <summary>The counter's card and UPI payments, and card and UPI refunds, taken at or after <paramref name="from"/> and before <paramref name="to"/>.</summary>
+    Task<IReadOnlyList<CounterCardPayment>> GetCardPaymentsAsync(Guid facilityId, DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken);
 }

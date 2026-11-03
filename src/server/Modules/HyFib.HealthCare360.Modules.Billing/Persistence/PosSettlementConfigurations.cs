@@ -38,6 +38,8 @@ internal sealed class PosSettlementLineConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.Utr).HasMaxLength(40);
         b.Property(x => x.ReviewedByName).HasMaxLength(200);
         b.Property(x => x.ReviewNote).HasMaxLength(500);
+        b.Property(x => x.Counter).HasMaxLength(16);
+        b.Property(x => x.CounterDocument).HasMaxLength(40);
         b.Ignore(x => x.Gross);
         b.Ignore(x => x.NeedsAttention);
         b.Ignore(x => x.IsOpen);
@@ -49,6 +51,9 @@ internal sealed class PosSettlementLineConfiguration : IEntityTypeConfiguration<
         // A receipt's payment is matched by one settled transaction at most, whoever matches at the same time.
         b.HasIndex(x => x.ReceiptPaymentId).IsUnique().HasFilter("receipt_payment_id IS NOT NULL");
         b.HasIndex(x => x.RefundId).IsUnique().HasFilter("refund_id IS NOT NULL");
+
+        // So is a pharmacy or canteen payment.
+        b.HasIndex(x => x.CounterPaymentId).IsUnique().HasFilter("counter_payment_id IS NOT NULL");
         b.HasIndex(x => new { x.FacilityId, x.SettledOn });
 
         // The day book reads a day's payouts and the reversals of reports withdrawn that day (few).

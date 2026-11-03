@@ -34,8 +34,9 @@ public enum PosSettlementMatch
     Review,
 
     /// <summary>
-    /// Taken at a terminal of a counter that HC360's billing does not record, such as the pharmacy's or the canteen's
-    /// (setting <c>otherTerminals</c>). Nothing to match; the money still clears through the settlement journal.
+    /// Taken at a terminal of another counter (setting <c>otherTerminals</c>) that no payment of HC360's pharmacy or
+    /// canteen names: a counter HC360 does not record, or a sale typed without its reference. Nothing to match; the money
+    /// still clears through the settlement journal.
     /// </summary>
     OtherCounter,
 
@@ -206,6 +207,15 @@ public sealed class PosSettlementLine : Entity, IFacilityScoped, IVersioned
 
     public Guid? RefundId { get; set; }
 
+    /// <summary>
+    /// The counter that took the payment or refund it matched when that was not Billing's (<c>pharmacy</c>, <c>canteen</c>),
+    /// with the counter's own id of it (matched by one line at most) and its invoice or bill number.
+    /// </summary>
+    public string? Counter { get; set; }
+
+    public Guid? CounterPaymentId { get; set; }
+    public string? CounterDocument { get; set; }
+
     /// <summary>What HC360 recorded for the matched payment or refund.</summary>
     public decimal? RecordedAmount { get; set; }
 
@@ -285,6 +295,19 @@ public sealed class PosSettlementLine : Entity, IFacilityScoped, IVersioned
         MatchedAt = now;
     }
 
+    /// <summary>A payment (for a refund line, a refund) the pharmacy or the canteen took by card or UPI.</summary>
+    public void MatchCounter(string counter, Guid paymentId, string document, decimal recorded, PosMatchBasis basis, DateTimeOffset now)
+    {
+        Unmatch();
+        Counter = counter;
+        CounterPaymentId = paymentId;
+        CounterDocument = document;
+        RecordedAmount = recorded;
+        MatchBasis = basis;
+        Match = recorded == Amount ? PosSettlementMatch.Matched : PosSettlementMatch.AmountDiffers;
+        MatchedAt = now;
+    }
+
     public void MarkOtherCounter()
     {
         Unmatch();
@@ -305,6 +328,9 @@ public sealed class PosSettlementLine : Entity, IFacilityScoped, IVersioned
         ReceiptId = null;
         ReceiptPaymentId = null;
         RefundId = null;
+        Counter = null;
+        CounterPaymentId = null;
+        CounterDocument = null;
         RecordedAmount = null;
         MatchBasis = null;
         MatchedAt = null;
