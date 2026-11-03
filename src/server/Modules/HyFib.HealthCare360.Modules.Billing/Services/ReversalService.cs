@@ -132,6 +132,22 @@ public sealed class ReversalService(
                 $"Receipt {receipt.ReceiptNumber}, or the bills, advances and refunds it reaches, changed after this was asked for. Ask again, against them as they are now.");
         }
 
+        // Accepting a chargeback's loss waits for its approver; if the bank gave the money back meanwhile (the case was
+        // won), the receipt is not reversed.
+        if (asked.Reason == ReversalReason.Chargeback)
+        {
+            var paymentIds = asked.Lines.Select(l => l.PaymentId).ToList();
+            var won = await db.Set<PaymentDispute>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(d => paymentIds.Contains(d.ReceiptPaymentId) && d.Status == PaymentDisputeStatus.Won && d.ClosedAt > approval.RequestedAt)
+                .Select(d => d.Number)
+                .FirstOrDefaultAsync(ct);
+            if (won is not null)
+            {
+                return Error.Rule("billing.dispute_won",
+                    $"Chargeback {won} was won after the loss was asked for: the money came back, so receipt {receipt.ReceiptNumber} is not reversed.");
+            }
+        }
+
         var now = time.GetUtcNow();
         var main = await NewReceiptReversalAsync(receipt, plan.Lines, asked, approval, now, causedBy: null, ct);
         main.AdvanceId = plan.Advance?.Id ?? main.AdvanceId;
@@ -638,6 +654,7 @@ public sealed class ReversalService(
         ReversalReason.ChequeReturned => "Cheque returned",
         ReversalReason.NotSettled => "Not settled by the bank",
         ReversalReason.TrainingSimulator => "Recorded by a training simulator",
+        ReversalReason.Chargeback => "Taken back by a chargeback",
         _ => "Other",
     };
 

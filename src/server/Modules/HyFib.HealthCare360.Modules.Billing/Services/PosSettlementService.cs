@@ -23,6 +23,7 @@ public sealed class PosSettlementService(
     TallyCorrections corrections,
     IApprovals approvals,
     IEnumerable<ICounterSalesSource> counters,
+    PaymentDisputeService disputes,
     TimeProvider time)
 {
     public const int MaxListDays = 92;
@@ -218,7 +219,7 @@ public sealed class PosSettlementService(
     {
         var setup = await SettingsAsync(facilityId, ct);
         var counts = await db.Set<PosSettlementLine>().AsNoTracking()
-            .Where(l => l.FacilityId == facilityId && l.ReviewedAt == null && AttentionMatches.Contains(l.Match))
+            .Where(l => l.FacilityId == facilityId && l.ReviewedAt == null && l.DisputeId == null && AttentionMatches.Contains(l.Match))
             .GroupBy(l => l.Match)
             .Select(g => new PosSettlementCountDto(g.Key, g.Count(), g.Sum(l => l.Amount)))
             .ToListAsync(ct);
@@ -270,7 +271,7 @@ public sealed class PosSettlementService(
                 Charges = g.Sum(l => l.Charges),
                 Tax = g.Sum(l => l.Tax),
                 Net = g.Sum(l => l.Net),
-                ToLookAt = g.Count(l => l.ReviewedAt == null && AttentionMatches.Contains(l.Match)),
+                ToLookAt = g.Count(l => l.ReviewedAt == null && l.DisputeId == null && AttentionMatches.Contains(l.Match)),
             })
             .ToListAsync(ct);
         return payouts
@@ -311,7 +312,7 @@ public sealed class PosSettlementService(
         var lines = db.Set<PosSettlementLine>().AsNoTracking().Where(l => l.FacilityId == facilityId && l.WithdrawnOn == null);
         if (attention)
         {
-            lines = lines.Where(l => l.ReviewedAt == null && AttentionMatches.Contains(l.Match));
+            lines = lines.Where(l => l.ReviewedAt == null && l.DisputeId == null && AttentionMatches.Contains(l.Match));
         }
 
         if (settledOn is { } day)
@@ -590,7 +591,8 @@ public sealed class PosSettlementService(
         var since = BillingTime.Today(time).AddDays(-RematchDays);
         return await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(l => l.FacilityId == facilityId && l.SettledOn >= since
-                        && (l.Match == PosSettlementMatch.NoReceipt || l.Match == PosSettlementMatch.NoRefund || l.Match == PosSettlementMatch.OtherCounter))
+                        && (l.Match == PosSettlementMatch.NoReceipt || l.Match == PosSettlementMatch.NoRefund || l.Match == PosSettlementMatch.OtherCounter
+                            || (l.Type == PosSettlementLineType.Adjustment && l.DisputeId == null && l.ReviewedAt == null)))
             .ToListAsync(ct);
     }
 
@@ -658,6 +660,9 @@ public sealed class PosSettlementService(
         {
             line.MarkOtherCounter();
         }
+
+        // A chargeback on a payment a receipt recorded is followed as a case (once the sale's transaction has matched it).
+        await disputes.TakeTerminalChargebacksAsync(lines, ct);
     }
 
     /// <summary>

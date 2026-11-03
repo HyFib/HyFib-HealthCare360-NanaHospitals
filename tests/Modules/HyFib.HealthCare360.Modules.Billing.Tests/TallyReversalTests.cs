@@ -16,6 +16,21 @@ public sealed class TallyReversalTests
         new(Day, [], [], [], [], [], [], []) { ReceiptReversals = receipts ?? [], RefundReversals = refunds ?? [] };
 
     [Fact]
+    public void A_chargeback_taken_back_says_so_in_the_journal_with_the_same_entries()
+    {
+        var payments = new[] { new TallyPayment(PaymentMode.Card, 1500m) };
+        var notReceived = new TallyReceiptReversal("NHRR260000002", Day, "NHRC260000124", ReceiptPurpose.BillPayment, null, payments);
+        var chargeback = notReceived with { Chargeback = true };
+
+        var voucher = TallyVoucherBuilder.Build(Book([chargeback]), Ledgers).ShouldHaveSingleItem();
+        var plain = TallyVoucherBuilder.Build(Book([notReceived]), Ledgers).ShouldHaveSingleItem();
+
+        voucher.Narration.ShouldBe("Receipt NHRC260000124 reversed, NHRR260000002: taken back by a chargeback");
+        voucher.Entries.Select(e => (e.LedgerName, e.Amount, e.IsDebit)).ShouldBe(plain.Entries.Select(e => (e.LedgerName, e.Amount, e.IsDebit)));
+        voucher.Entries.Single(e => e.IsDebit).LedgerName.ShouldBe(Ledgers.PatientDebtors);
+    }
+
+    [Fact]
     public void Money_not_received_turns_the_receipt_round_by_mode_in_a_journal_of_its_own()
     {
         var reversal = new TallyReceiptReversal(

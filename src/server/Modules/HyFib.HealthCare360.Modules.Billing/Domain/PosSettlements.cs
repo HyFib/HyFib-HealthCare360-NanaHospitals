@@ -237,7 +237,10 @@ public sealed class PosSettlementLine : Entity, IFacilityScoped, IVersioned
     public decimal Gross => Type == PosSettlementLineType.Sale ? Amount : -Amount;
 
     /// <summary>Still to be looked at: it does not match, or it is a chargeback, and nobody has reviewed it.</summary>
-    public bool NeedsAttention => ReviewedAt is null && NeedsAttentionWhenUnreviewed(Match);
+    public bool NeedsAttention => ReviewedAt is null && DisputeId is null && NeedsAttentionWhenUnreviewed(Match);
+
+    /// <summary>The chargeback case that follows this chargeback (<see cref="PaymentDispute"/>); the case is what to look at then.</summary>
+    public Guid? DisputeId { get; set; }
 
     public static bool NeedsAttentionWhenUnreviewed(PosSettlementMatch match) =>
         match is PosSettlementMatch.AmountDiffers or PosSettlementMatch.NoReceipt or PosSettlementMatch.NoRefund or PosSettlementMatch.Review;

@@ -1,6 +1,8 @@
+using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.DoctorFees;
 using HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
+using HyFib.HealthCare360.Modules.Billing.Features.Payments;
 using HyFib.HealthCare360.Platform.Http;
 
 namespace HyFib.HealthCare360.Modules.Billing.Tests;
@@ -28,6 +30,20 @@ public sealed class BillingRequestValidationTests
             .ShouldBe(ConcurrencyExtensions.VersionMissing);
         new BillVersionRequestValidator().Validate(new BillVersionRequest(4711)).IsValid.ShouldBeTrue();
         new PayoutVersionRequestValidator().Validate(new PayoutVersionRequest(0)).IsValid.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_payment_is_reversed_as_taken_back_by_a_chargeback_only_from_its_case()
+    {
+        var payment = Guid.NewGuid();
+
+        new ReverseReceiptRequestValidator().Validate(new ReverseReceiptRequest([payment], ReversalReason.Chargeback, "The bank took it back."))
+            .Errors.ShouldHaveSingleItem().ErrorMessage
+            .ShouldBe("A payment taken back by a chargeback is reversed from its chargeback case: accept the loss there.");
+        new ReverseReceiptRequestValidator().Validate(new ReverseReceiptRequest([payment], ReversalReason.NotSettled, "It never reached the bank."))
+            .IsValid.ShouldBeTrue();
+        new ReverseRefundRequestValidator().Validate(new ReverseRefundRequest(ReversalReason.Chargeback, "The transfer came back."))
+            .Errors.ShouldHaveSingleItem().ErrorMessage.ShouldBe("A chargeback takes back a payment, not a refund.");
     }
 
     [Fact]

@@ -765,6 +765,13 @@ public sealed class GatewaySettlementService(
                 break;
 
             default:
+                // Money taken back (or returned) on a payment HC360 recorded is a chargeback: its case is what to follow.
+                if (await services.GetRequiredService<PaymentDisputeService>().TakeGatewayAdjustmentAsync(line, settlement.SettlementId, ct) is { } followed)
+                {
+                    await discrepancies.ClearAsync(DiscrepancyKind.AmountMismatch, line.EntityId, followed, ct);
+                    break;
+                }
+
                 exception = await discrepancies.RaiseAsync(
                     DiscrepancyKind.AmountMismatch, line.EntityId, line.FacilityId,
                     $"The gateway {(line.Gross < 0 ? "took back" : "added")} ₹{Money.FormatInr(Math.Abs(line.Gross))} in settlement {settlement.SettlementId} ({line.Type.ToString().ToLowerInvariant()} {line.EntityId}).",
@@ -795,8 +802,11 @@ public sealed class GatewaySettlementService(
         catch (DbUpdateException ex)
         {
             logger.LogInformation(ex, "Gateway exceptions were changed by a concurrent run; they are read again");
-            var staged = db.ChangeTracker.Entries<GatewayDiscrepancy>()
-                .Where(e => e.State != EntityState.Unchanged)
+
+            // The chargeback cases staged with them, their reminders and their audit are read again as well, never saved
+            // twice. The reminders are let go by name, not left to EF's handling of orphans once their case is let go.
+            var staged = db.ChangeTracker.Entries()
+                .Where(e => e.Entity is GatewayDiscrepancy or PaymentDispute or PaymentDisputeReminder or AuditEvent && e.State != EntityState.Unchanged)
                 .ToList();
             foreach (var entry in staged)
             {

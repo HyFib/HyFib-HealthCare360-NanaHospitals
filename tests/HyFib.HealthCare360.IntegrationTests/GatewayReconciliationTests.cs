@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -11,6 +12,7 @@ using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
 using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -232,6 +234,181 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
         }
 
         (await ExceptionAsync(DiscrepancyKind.RefundMismatch, failedId))!.Status.ShouldBe(DiscrepancyStatus.Open);
+    }
+
+    [Fact]
+    public async Task Money_the_gateway_took_back_is_followed_as_a_chargeback_and_won_when_it_comes_back()
+    {
+        await using var gateway = await PaymentsToSimulatorAsync();
+        var order = await PaidOrderAsync();
+        var takenId = "adj_Cb" + Letters(12);
+        var returnedId = "adj_Rt" + Letters(12);
+
+        // A later settlement takes the payment's money back: a chargeback case to follow, not an unexplained difference.
+        var taken = Settlement(order.FacilityId, Adjusted(takenId, -order.Amount, order.GatewayPaymentId!));
+        await RaiseAsync(taken);
+        var opened = (await CasesOfAsync(order.ReceiptId!.Value)).ShouldHaveSingleItem();
+        opened.ShouldSatisfyAllConditions(
+            d => d.Source.ShouldBe(PaymentDisputeSource.Gateway),
+            d => d.Status.ShouldBe(PaymentDisputeStatus.Open),
+            d => d.Amount.ShouldBe(order.Amount),
+            d => d.Mode.ShouldBe(PaymentMode.PaymentGateway),
+            d => d.PaymentReference.ShouldBe(order.GatewayPaymentId),
+            d => d.GatewaySettlementLineId.ShouldBe(taken.Lines.Single().Id),
+            d => d.OpenedByName.ShouldBeNull("HC360 opened it from the settlement."));
+        (await ExceptionAsync(DiscrepancyKind.AmountMismatch, takenId)).ShouldBeNull();
+
+        // The next fetch of the day reads the settlement again: still one case.
+        await RaiseAsync(taken, rematched: true);
+        (await CasesOfAsync(order.ReceiptId.Value)).ShouldHaveSingleItem().Id.ShouldBe(opened.Id);
+
+        // The bank decided for the hospital and the gateway gives the money back: the case is won by itself.
+        var returned = Settlement(order.FacilityId, Adjusted(returnedId, order.Amount, order.GatewayPaymentId!));
+        await RaiseAsync(returned);
+        var won = (await CasesOfAsync(order.ReceiptId.Value)).ShouldHaveSingleItem();
+        won.ShouldSatisfyAllConditions(
+            d => d.Status.ShouldBe(PaymentDisputeStatus.Won),
+            d => d.ClosedByName.ShouldBeNull(),
+            d => d.ReturnLineId.ShouldBe(returned.Lines.Single().Id),
+            d => d.Outcome.ShouldBe($"The gateway returned ₹{Money.FormatInr(order.Amount)} in settlement {returned.SettlementId} ({returnedId})."));
+
+        // Read again on the next fetch, the return is still the case's, not an unexplained addition.
+        await RaiseAsync(returned, rematched: true);
+        (await ExceptionAsync(DiscrepancyKind.AmountMismatch, returnedId)).ShouldBeNull();
+        (await AuditCountAsync("billing.dispute.opened", opened.Id)).ShouldBe(1);
+        (await AuditCountAsync("billing.dispute.won", opened.Id)).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_loss_asked_for_is_not_made_once_the_gateway_gives_the_money_back()
+    {
+        await using var gateway = await PaymentsToSimulatorAsync();
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var order = await PaidOrderAsync();
+        await RaiseAsync(Settlement(order.FacilityId, Adjusted("adj_Cb" + Letters(12), -order.Amount, order.GatewayPaymentId!)));
+        var opened = (await CasesOfAsync(order.ReceiptId!.Value)).ShouldHaveSingleItem();
+        var current = await accountant.GetAsync<PaymentDisputeDto>($"/api/v1/billing/disputes/{opened.Id}");
+
+        // The bank decided against the hospital: the accountant asks to accept the loss, which waits for a second person.
+        using var asked = await accountant.SendRawAsync(HttpMethod.Post, $"/api/v1/billing/disputes/{opened.Id}/accept-loss",
+            new PaymentDisputeNoteRequest("The bank upheld the cardholder's claim.", current.Version));
+        asked.StatusCode.ShouldBe(HttpStatusCode.Accepted, await asked.Content.ReadAsStringAsync(Ct));
+        var approval = (await asked.Content.ReadFromJsonAsync<ApprovalRequestDto>(ApiClient.Json, Ct)).ShouldNotBeNull();
+
+        // Before anyone approves it, the gateway gives the money back (the decision was reversed): the case is won.
+        await RaiseAsync(Settlement(order.FacilityId, Adjusted("adj_Rt" + Letters(12), order.Amount, order.GatewayPaymentId!)));
+        (await CasesOfAsync(order.ReceiptId.Value)).ShouldHaveSingleItem().Status.ShouldBe(PaymentDisputeStatus.Won);
+
+        // Approving the loss now would reverse a receipt whose money came back: it is refused, and nothing is reversed.
+        using var approve = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/approvals/{approval.Id}/approve", new ApproveRequest(null, approval.Version));
+        var problem = await approve.Content.ReadAsStringAsync(Ct);
+        approve.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, problem);
+        problem.ShouldContain("billing.dispute_won");
+        await using var check = server.Services.CreateAsyncScope();
+        (await check.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<ReceiptReversal>().IgnoreQueryFilters()
+            .AnyAsync(r => r.ReceiptId == order.ReceiptId, Ct)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Part_of_the_money_given_back_leaves_the_case_open_and_the_return_to_look_at()
+    {
+        await using var gateway = await PaymentsToSimulatorAsync();
+        var order = await PaidOrderAsync();
+        await RaiseAsync(Settlement(order.FacilityId, Adjusted("adj_Cb" + Letters(12), -order.Amount, order.GatewayPaymentId!)));
+        var part = Math.Round(order.Amount / 2, 2);
+        var returnedId = "adj_Rt" + Letters(12);
+
+        // The bank gave back only part of what it took: the rest is still taken back, so the case stays open to be
+        // answered or accepted, and the return is for an accountant to put against it.
+        var returned = Settlement(order.FacilityId, Adjusted(returnedId, part, order.GatewayPaymentId!));
+        await RaiseAsync(returned);
+        await RaiseAsync(returned, rematched: true);
+
+        var open = (await CasesOfAsync(order.ReceiptId!.Value)).ShouldHaveSingleItem();
+        open.ShouldSatisfyAllConditions(
+            d => d.Status.ShouldBe(PaymentDisputeStatus.Open),
+            d => d.ReturnLineId.ShouldBeNull(),
+            d => d.Amount.ShouldBe(order.Amount));
+        (await ExceptionAsync(DiscrepancyKind.AmountMismatch, returnedId)).ShouldNotBeNull().GatewayAmount.ShouldBe(part);
+    }
+
+    [Fact]
+    public async Task A_chargeback_a_concurrent_run_saved_first_leaves_nothing_of_this_runs_attempt_behind()
+    {
+        await using var gateway = await PaymentsToSimulatorAsync();
+        var order = await PaidOrderAsync();
+        var settlement = Settlement(order.FacilityId, Adjusted("adj_Cb" + Letters(12), -order.Amount, order.GatewayPaymentId!));
+
+        // This run stages the chargeback's case (and its reminder)...
+        await using var run = server.Services.CreateAsyncScope();
+        await StoreAsync(run, settlement);
+        (await run.ServiceProvider.GetRequiredService<PaymentDisputeService>()
+            .TakeGatewayAdjustmentAsync(settlement.Lines.Single(), settlement.SettlementId, Ct)).ShouldNotBeNull();
+
+        // ...while a concurrent run opens and saves the same case first.
+        await using (var other = server.Services.CreateAsyncScope())
+        {
+            var stored = await other.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<GatewaySettlement>().IgnoreQueryFilters()
+                .Include(s => s.Lines).SingleAsync(s => s.Id == settlement.Id, Ct);
+            await other.ServiceProvider.GetRequiredService<GatewaySettlementService>().RaiseExceptionsAsync([stored], null, Ct);
+        }
+
+        // This run's save clashes on the case: it lets go of all it staged, follows the saved case, and its unit of work
+        // saves cleanly afterwards (no reminder left pointing at a case that was never saved).
+        await run.ServiceProvider.GetRequiredService<GatewaySettlementService>().RaiseExceptionsAsync([settlement], null, Ct);
+        await run.ServiceProvider.GetRequiredService<HospitalDbContext>().SaveChangesAsync(Ct);
+
+        var dispute = (await CasesOfAsync(order.ReceiptId!.Value)).ShouldHaveSingleItem();
+        await using var check = server.Services.CreateAsyncScope();
+        (await check.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<PaymentDisputeReminder>().CountAsync(r => r.DisputeId == dispute.Id, Ct))
+            .ShouldBe(1);
+        (await AuditCountAsync("billing.dispute.opened", dispute.Id)).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Money_taken_back_on_a_payment_HC360_never_recorded_stays_an_exception()
+    {
+        var facilityId = await FacilityAsync();
+        var takenId = "adj_Cb" + Letters(12);
+        var settlement = Settlement(facilityId, Adjusted(takenId, -700m, "pay_Unknown" + Letters(10)));
+
+        await RaiseAsync(settlement);
+
+        var exception = (await ExceptionAsync(DiscrepancyKind.AmountMismatch, takenId)).ShouldNotBeNull();
+        exception.Status.ShouldBe(DiscrepancyStatus.Open);
+        exception.GatewayAmount.ShouldBe(-700m);
+    }
+
+    [Fact]
+    public async Task A_chargeback_staged_in_a_run_that_clashed_is_opened_once()
+    {
+        await using var gateway = await PaymentsToSimulatorAsync();
+        var order = await PaidOrderAsync();
+        var clashing = "pay_Clash" + Letters(12);
+        var settlement = Settlement(order.FacilityId, Paid(clashing, 300m), Adjusted("adj_Cb" + Letters(12), -order.Amount, order.GatewayPaymentId!));
+
+        await using var run = server.Services.CreateAsyncScope();
+        await StoreAsync(run, settlement);
+        await run.ServiceProvider.GetRequiredService<GatewayDiscrepancyService>()
+            .RaiseAsync(DiscrepancyKind.UnrecordedPayment, clashing, order.FacilityId, "Staged by this run.", _ => { }, Ct);
+
+        // A webhook saves the same exception first: this run's first save fails, the chargeback staged with it as well.
+        await using (var webhook = server.Services.CreateAsyncScope())
+        {
+            await webhook.ServiceProvider.GetRequiredService<GatewayDiscrepancyService>()
+                .RaiseAsync(DiscrepancyKind.UnrecordedPayment, clashing, order.FacilityId, "Raised by a webhook.", _ => { }, Ct);
+            await webhook.ServiceProvider.GetRequiredService<HospitalDbContext>().SaveChangesAsync(Ct);
+        }
+
+        await run.ServiceProvider.GetRequiredService<GatewaySettlementService>().RaiseExceptionsAsync([settlement], null, Ct);
+
+        var dispute = (await CasesOfAsync(order.ReceiptId!.Value)).ShouldHaveSingleItem();
+        dispute.GatewaySettlementLineId.ShouldBe(settlement.Lines.Single(l => l.Type == PaymentTransactionType.Adjustment).Id);
+        (await AuditCountAsync("billing.dispute.opened", dispute.Id)).ShouldBe(1);
+        await using var check = server.Services.CreateAsyncScope();
+        (await check.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<GatewaySettlement>().IgnoreQueryFilters()
+            .SingleAsync(s => s.Id == settlement.Id, Ct)).ExceptionsRaised.ShouldBeTrue();
     }
 
     [Fact]
@@ -641,6 +818,41 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
 
     private static PaymentSettlementItem Refunded(string refundId, decimal amount, string paymentId) =>
         new(refundId, PaymentTransactionType.Refund, paymentId, null, amount, 0m, 0m, 0m, amount, "upi", DateTimeOffset.UtcNow.AddDays(-2));
+
+    /// <summary>The gateway took money back on a payment (negative), or gave it back (positive), in a settlement.</summary>
+    private static PaymentSettlementItem Adjusted(string adjustmentId, decimal gross, string paymentId) =>
+        new(adjustmentId, PaymentTransactionType.Adjustment, paymentId, null, Math.Abs(gross), 0m, 0m, Math.Max(gross, 0m), Math.Max(-gross, 0m), null,
+            DateTimeOffset.UtcNow.AddDays(-1));
+
+    /// <summary>Stores the settlement (once) and raises its exceptions, as a fetch does; <paramref name="rematched"/> as a later fetch of its day.</summary>
+    private async Task RaiseAsync(GatewaySettlement settlement, bool rematched = false)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        GatewaySettlement stored;
+        if (rematched)
+        {
+            stored = await services.GetRequiredService<HospitalDbContext>().Set<GatewaySettlement>().IgnoreQueryFilters()
+                .Include(s => s.Lines).SingleAsync(s => s.Id == settlement.Id, Ct);
+        }
+        else
+        {
+            await StoreAsync(scope, settlement);
+            stored = settlement;
+        }
+
+        await services.GetRequiredService<GatewaySettlementService>()
+            .RaiseExceptionsAsync([stored], rematched ? new HashSet<Guid> { stored.Id } : null, Ct);
+    }
+
+    /// <summary>The chargeback cases on the payments of a receipt.</summary>
+    private async Task<List<PaymentDispute>> CasesOfAsync(Guid receiptId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<PaymentDispute>().IgnoreQueryFilters().AsNoTracking()
+            .Where(d => d.ReceiptId == receiptId)
+            .ToListAsync(Ct);
+    }
 
     /// <summary>Stores the settlement with its lines matched, as a fetch does (or as reported, unmatched).</summary>
     private static async Task StoreAsync(AsyncServiceScope scope, GatewaySettlement settlement, bool match = true)

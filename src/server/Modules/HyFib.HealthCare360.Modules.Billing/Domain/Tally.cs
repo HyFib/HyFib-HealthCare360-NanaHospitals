@@ -218,10 +218,11 @@ public sealed record TallyRefund(string Number, DateOnly Date, RefundPurpose Pur
 /// <summary>
 /// Money receipt <paramref name="ReceiptNumber"/> recorded that never arrived, reversed on <paramref name="Date"/>
 /// (<see cref="ReceiptReversal"/>): the payments taken back, by mode. An advance adjustment undone with the advance's
-/// money has only mode Advance.
+/// money has only mode Advance. <paramref name="Chargeback"/>: the money did arrive, and the patient's bank took it back.
 /// </summary>
 public sealed record TallyReceiptReversal(
-    string Number, DateOnly Date, string ReceiptNumber, ReceiptPurpose Purpose, string? PayerName, IReadOnlyList<TallyPayment> Payments);
+    string Number, DateOnly Date, string ReceiptNumber, ReceiptPurpose Purpose, string? PayerName, IReadOnlyList<TallyPayment> Payments,
+    bool Chargeback = false);
 
 /// <summary>Refund <paramref name="RefundNumber"/>, recorded as paid out by <paramref name="Mode"/>, never reached the patient (<see cref="RefundReversal"/>).</summary>
 public sealed record TallyRefundReversal(string Number, DateOnly Date, string RefundNumber, RefundPurpose Purpose, PaymentMode Mode, decimal Amount);
@@ -429,7 +430,9 @@ public static class TallyVoucherBuilder
         var entries = ReceiptEntries(reversal.Purpose, reversal.PayerName, reversal.Payments, map).Reversed();
         var narration = IsAdjustment(reversal.Payments)
             ? $"Advance adjustment of receipt {reversal.ReceiptNumber} undone, {reversal.Number}: the advance was not received"
-            : $"Receipt {reversal.ReceiptNumber} reversed, {reversal.Number}: money not received";
+            : reversal.Chargeback
+                ? $"Receipt {reversal.ReceiptNumber} reversed, {reversal.Number}: taken back by a chargeback"
+                : $"Receipt {reversal.ReceiptNumber} reversed, {reversal.Number}: money not received";
         return entries.ToVoucher(JournalType, reversal.Date, reversal.Number, narration, reversal.Number);
     }
 

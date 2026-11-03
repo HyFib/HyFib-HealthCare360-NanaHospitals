@@ -206,6 +206,7 @@ public static class PersonalDataCatalogue
                 new("billing.credit_notes", "Credit notes", Counted: false),
                 new("billing.receipt_reversals", "Payments recorded that did not arrive", Counted: false),
                 new("billing.refund_reversals", "Refunds recorded that were not paid out", Counted: false),
+                new("billing.payment_disputes", "Payments your bank took back (chargebacks)", Counted: false),
                 new("billing.patient_advances", "Advance deposits"),
                 new("billing.ip_accounts", "Hospital stay accounts", Counted: false),
                 new("billing.discount_approvals", "Discounts", Counted: false),

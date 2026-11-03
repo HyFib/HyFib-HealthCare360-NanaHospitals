@@ -29,6 +29,10 @@ public static class BillingNumberSeries
     public static NumberSeriesDefinition RefundReversal { get; } =
         new("billing.refundreversal", "Refund not paid out", "Billing", "{FAC}RX{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
 
+    /// <summary>A chargeback on a card, UPI or gateway payment (the case quoted to the bank and the gateway).</summary>
+    public static NumberSeriesDefinition PaymentDispute { get; } =
+        new("billing.paymentdispute", "Chargeback", "Billing", "{FAC}CB{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
+
     public static NumberSeriesDefinition InsuranceClaim { get; } =
         new("insurance.claim", "Insurance claim", "Insurance", "{FAC}CL{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
 
@@ -39,5 +43,5 @@ public static class BillingNumberSeries
         new("doctorfees.payout", "Doctor payout", "Doctor fees", "{FAC}DP{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
 
     internal static IEnumerable<NumberSeriesDefinition> All { get; } =
-        [OpBill, IpBill, Receipt, Refund, CreditNote, ReceiptReversal, RefundReversal, InsuranceClaim, PreAuthorisation, DoctorPayout];
+        [OpBill, IpBill, Receipt, Refund, CreditNote, ReceiptReversal, RefundReversal, PaymentDispute, InsuranceClaim, PreAuthorisation, DoctorPayout];
 }

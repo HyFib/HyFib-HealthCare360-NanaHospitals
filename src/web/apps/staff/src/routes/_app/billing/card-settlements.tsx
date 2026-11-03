@@ -13,11 +13,12 @@ import {
   PosToLookAt,
   PosUnsettled,
 } from '@/modules/billing/PosSettlements';
+import { PaymentDisputes } from '@/modules/billing/PaymentDisputes';
 import { posSettlementQueries, toLookAtCount, toLookAtHint } from '@/modules/billing/posSettlementApi';
 import { dateParam, pageParam } from '@/modules/billing/searchParams';
 import { NoAccess } from '@/modules/billing/ui';
 
-type View = 'attention' | 'unsettled' | 'payouts' | 'imports';
+type View = 'attention' | 'unsettled' | 'payouts' | 'imports' | 'chargebacks';
 
 interface CardSettlementsSearch {
   view?: Exclude<View, 'attention'>;
@@ -26,7 +27,7 @@ interface CardSettlementsSearch {
   to?: string;
 }
 
-const VIEWS = ['unsettled', 'payouts', 'imports'] as const;
+const VIEWS = ['unsettled', 'payouts', 'imports', 'chargebacks'] as const;
 
 export const Route = createFileRoute('/_app/billing/card-settlements')({
   validateSearch: (s: Record<string, unknown>): CardSettlementsSearch => ({
@@ -117,7 +118,7 @@ function CardSettlementsPage() {
         <div style={{ padding: '0 8px' }}>
           <TabList
             selectedValue={view}
-            // Four tabs do not fit a phone's width side by side: they wrap rather than widen the page.
+            // Five tabs do not fit a phone's width side by side: they wrap rather than widen the page.
             style={{ flexWrap: 'wrap' }}
             onTabSelect={(_, d) =>
               void navigate({ search: d.value === 'attention' ? {} : { view: d.value as Exclude<View, 'attention'> } })
@@ -127,6 +128,7 @@ function CardSettlementsPage() {
             <Tab value="unsettled">Not settled</Tab>
             <Tab value="payouts">Payouts</Tab>
             <Tab value="imports">Reports</Tab>
+            <Tab value="chargebacks">Chargebacks</Tab>
           </TabList>
         </div>
         {view === 'attention' && <PosToLookAt page={page} onPage={setPage} />}
@@ -139,6 +141,7 @@ function CardSettlementsPage() {
           />
         )}
         {view === 'imports' && <PosImports page={page} onPage={setPage} />}
+        {view === 'chargebacks' && <PaymentDisputes terminal />}
       </Section>
       <ImportReportDialog
         open={importing}

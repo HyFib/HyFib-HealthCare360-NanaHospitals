@@ -5034,6 +5034,264 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("payers", "billing");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.PaymentDispute", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid?>("BillId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("bill_id");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at");
+
+                    b.Property<string>("ClosedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("closed_by_name");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("EvidenceByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("evidence_by_name");
+
+                    b.Property<string>("EvidenceNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("evidence_note");
+
+                    b.Property<DateOnly?>("EvidenceSentOn")
+                        .HasColumnType("date")
+                        .HasColumnName("evidence_sent_on");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<Guid?>("GatewaySettlementLineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("gateway_settlement_line_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<DateTimeOffset?>("LossAskedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("loss_asked_at");
+
+                    b.Property<string>("LossAskedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("loss_asked_by_name");
+
+                    b.Property<Guid?>("LossSubjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("loss_subject_id");
+
+                    b.Property<string>("LossSubjectType")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("loss_subject_type");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("mode");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("number");
+
+                    b.Property<DateTimeOffset>("OpenedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opened_at");
+
+                    b.Property<string>("OpenedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("opened_by_name");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("outcome");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("PaymentReference")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("payment_reference");
+
+                    b.Property<Guid?>("PosSettlementLineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pos_settlement_line_id");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("ReasonCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("reason_code");
+
+                    b.Property<Guid>("ReceiptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("receipt_id");
+
+                    b.Property<string>("ReceiptNumber")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("receipt_number");
+
+                    b.Property<Guid>("ReceiptPaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("receipt_payment_id");
+
+                    b.Property<DateOnly?>("RespondBy")
+                        .HasColumnType("date")
+                        .HasColumnName("respond_by");
+
+                    b.Property<Guid?>("ReturnLineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("return_line_id");
+
+                    b.Property<Guid?>("ReversalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reversal_id");
+
+                    b.Property<string>("ReversalNumber")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("reversal_number");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_payment_disputes");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_payment_disputes_facility_id");
+
+                    b.HasIndex("GatewaySettlementLineId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_payment_disputes_gateway_settlement_line_id")
+                        .HasFilter("gateway_settlement_line_id IS NOT NULL");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_payment_disputes_is_deleted");
+
+                    b.HasIndex("Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_payment_disputes_number");
+
+                    b.HasIndex("PosSettlementLineId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_payment_disputes_pos_settlement_line_id")
+                        .HasFilter("pos_settlement_line_id IS NOT NULL");
+
+                    b.HasIndex("ReceiptId")
+                        .HasDatabaseName("ix_payment_disputes_receipt_id");
+
+                    b.HasIndex("ReceiptPaymentId")
+                        .HasDatabaseName("ix_payment_disputes_receipt_payment_id");
+
+                    b.HasIndex("ReturnLineId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_payment_disputes_return_line_id")
+                        .HasFilter("return_line_id IS NOT NULL");
+
+                    b.HasIndex("FacilityId", "Status")
+                        .HasDatabaseName("ix_payment_disputes_facility_id_status");
+
+                    b.ToTable("payment_disputes", "billing");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.PaymentDisputeReminder", b =>
+                {
+                    b.Property<Guid>("DisputeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("dispute_id");
+
+                    b.Property<DateTimeOffset?>("AnnouncedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("announced_at");
+
+                    b.Property<DateOnly?>("RemindedFor")
+                        .HasColumnType("date")
+                        .HasColumnName("reminded_for");
+
+                    b.Property<DateOnly?>("RemindedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("reminded_on");
+
+                    b.HasKey("DisputeId")
+                        .HasName("pk_payment_dispute_reminders");
+
+                    b.HasIndex("AnnouncedAt")
+                        .HasDatabaseName("ix_payment_dispute_reminders_announced_at")
+                        .HasFilter("announced_at IS NULL");
+
+                    b.ToTable("payment_dispute_reminders", "billing");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.PosSettlementImport", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5181,6 +5439,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid?>("CounterPaymentId")
                         .HasColumnType("uuid")
                         .HasColumnName("counter_payment_id");
+
+                    b.Property<Guid?>("DisputeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("dispute_id");
 
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
@@ -44231,6 +44493,33 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_patient_policies_payer_payer_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.PaymentDispute", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.Receipt", null)
+                        .WithMany()
+                        .HasForeignKey("ReceiptId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_payment_disputes_receipt_receipt_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.ReceiptPayment", null)
+                        .WithMany()
+                        .HasForeignKey("ReceiptPaymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_payment_disputes_receipt_payment_receipt_payment_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.PaymentDisputeReminder", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.PaymentDispute", null)
+                        .WithOne()
+                        .HasForeignKey("HyFib.HealthCare360.Modules.Billing.Domain.PaymentDisputeReminder", "DisputeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_payment_dispute_reminders_payment_disputes_dispute_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.PreAuthEnhancement", b =>
