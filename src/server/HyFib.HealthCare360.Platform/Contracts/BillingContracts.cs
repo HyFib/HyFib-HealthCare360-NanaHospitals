@@ -169,6 +169,90 @@ public sealed record PayerCoverageSummary(string? PayerName, string? PolicyNumbe
 /// <summary>A payer of the payer master: its name, the kind of payer its bills are billed as, and whether it is in use.</summary>
 public sealed record PayerSummary(Guid Id, string Name, PayerType PayerType, bool IsActive);
 
+/// <summary>How a patient stands with a payer on a day (<see cref="IPayerDirectory.StandingAsync"/>).</summary>
+public enum PayerCover
+{
+    /// <summary>No policy or membership of the patient with the payer is active and in date.</summary>
+    None = 0,
+
+    /// <summary>One is active and in date, but nobody other than whoever recorded its terms has verified it.</summary>
+    NotVerified,
+
+    /// <summary>One active and in date was verified with the payer by someone other than whoever recorded its terms.</summary>
+    Verified,
+}
+
+/// <summary>A payer and how the patient stands with it on a day: through which cover, valid until when.</summary>
+public sealed record PayerStanding(PayerSummary Payer, PayerCover Cover, DateOnly? ValidUntil);
+
+/// <summary>
+/// The rule for putting a visit, an admission or a stay on a third party's account: the desk names the payer, and a
+/// second person already stands behind it. The payer is in use and of the kind chosen, and the patient's policy or
+/// membership with it is active, in date and verified with the payer by someone other than whoever recorded its terms.
+/// The patient, staff and charity are chosen freely.
+/// </summary>
+public static class PayerChoice
+{
+    /// <summary>Whether a third party pays: an insurer, a company or a government scheme.</summary>
+    public static bool IsThirdParty(PayerType type) => type is PayerType.Insurance or PayerType.Corporate or PayerType.GovernmentScheme;
+
+    /// <summary>Why the payer cannot be chosen for the patient, or null when it can.</summary>
+    public static Error? Refusal(PayerType type, Guid? payerId, PayerStanding? standing)
+    {
+        if (!IsThirdParty(type))
+        {
+            return null;
+        }
+
+        if (payerId is null)
+        {
+            return Error.Field("payerId", $"Choose the {Kind(type)} that pays.");
+        }
+
+        if (standing is null)
+        {
+            return Error.Field("payerId", "Choose a payer of the payer master.");
+        }
+
+        var payer = standing.Payer;
+        if (!payer.IsActive)
+        {
+            return Error.Field("payerId", $"{payer.Name} is out of use.");
+        }
+
+        if (payer.PayerType != type)
+        {
+            return Error.Field("payerType", $"{payer.Name} pays as {WithArticle(payer.PayerType)}, not as {WithArticle(type)}.");
+        }
+
+        return standing.Cover switch
+        {
+            PayerCover.Verified => null,
+            PayerCover.NotVerified => Error.Rule("payer.cover_not_verified",
+                $"The patient's policy with {payer.Name} is recorded but not verified. Someone other than whoever recorded it verifies it "
+                + $"with {payer.Name} (Insurance › Patient policies); until then, the patient pays."),
+            _ => Error.Rule("payer.no_cover",
+                $"The patient has no policy or membership with {payer.Name} valid today. Record the card (Insurance › Patient policies) "
+                + "and have someone else verify it; until then, the patient pays."),
+        };
+    }
+
+    private static string Kind(PayerType type) => type switch
+    {
+        PayerType.Insurance => "insurer",
+        PayerType.Corporate => "company",
+        _ => "government scheme",
+    };
+
+    private static string WithArticle(PayerType type) => type switch
+    {
+        PayerType.Insurance => "an insurer",
+        PayerType.Corporate => "a company",
+        PayerType.GovernmentScheme => "a government scheme",
+        _ => "the patient",
+    };
+}
+
 /// <summary>A company of the payer master (category Corporate) with its contact, as a corporate health check-up names it.</summary>
 public sealed record CorporatePayer(Guid Id, string Name, string? ContactPerson, string? Phone);
 
@@ -192,6 +276,12 @@ public interface IPayerDirectory
     /// check-up desk books a company's employees without reading the rest of the payer master.
     /// </summary>
     Task<IReadOnlyList<CorporatePayer>> ListCorporateAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The payer, whatever the caller's permissions (as <see cref="FindAsync"/>), and how the patient stands with it on
+    /// <paramref name="day"/>, for <see cref="PayerChoice"/>; null when there is no such payer.
+    /// </summary>
+    Task<PayerStanding?> StandingAsync(Guid patientId, Guid payerId, DateOnly day, CancellationToken cancellationToken);
 }
 
 /// <summary>Fallbacks used until the Billing module registers its implementations.</summary>
@@ -218,6 +308,9 @@ internal sealed class NullPayerDirectory : IPayerDirectory
     public Task<PayerSummary?> FindAsync(Guid payerId, CancellationToken cancellationToken) => Task.FromResult<PayerSummary?>(null);
 
     public Task<IReadOnlyList<CorporatePayer>> ListCorporateAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<CorporatePayer>>([]);
+
+    public Task<PayerStanding?> StandingAsync(Guid patientId, Guid payerId, DateOnly day, CancellationToken cancellationToken) =>
+        Task.FromResult<PayerStanding?>(null);
 }
 
 internal sealed class NullBillingStatusProvider : IBillingStatusProvider

@@ -99,7 +99,14 @@ public sealed record PolicyDto(
     string? VerificationNotes,
     Guid? CardFileId,
     string? Notes,
-    uint Version);
+    uint Version)
+{
+    /// <summary>
+    /// Whether the signed-in user recorded the terms a verification vouches for (or last changed them), and so may not
+    /// verify it: someone else does.
+    /// </summary>
+    public bool RecordedByYou { get; init; }
+}
 
 /// <summary>Create (policy number required) or update (policy number <c>null</c> = unchanged) a patient policy.</summary>
 public sealed record SavePolicyRequest(

@@ -27,6 +27,7 @@ public sealed class AdmissionService(
     InpatientChargeService charges,
     VisitService visits,
     ICurrentUser currentUser,
+    IPayerDirectory payers,
     TimeProvider time)
 {
     public async Task<Result<AdmissionCreated>> AdmitAsync(AdmitPatientRequest request, CancellationToken ct)
@@ -50,6 +51,18 @@ public sealed class AdmissionService(
         if (patient.IsDeceased || !patient.IsActive)
         {
             return Error.Rule("patient.inactive", "Inactive or deceased patients cannot be admitted.");
+        }
+
+        // As at the OP desk, a third party pays for the stay only when a second person already stands behind it: the
+        // patient's policy or membership, in date and verified by someone other than whoever recorded it (PayerChoice).
+        // An emergency is admitted as paying, and Billing puts the stay on the payer once the policy is verified.
+        if (PayerChoice.IsThirdParty(request.PayerType))
+        {
+            var standing = request.PayerId is { } payerId ? await payers.StandingAsync(patient.Id, payerId, time.Today(), ct) : null;
+            if (PayerChoice.Refusal(request.PayerType, request.PayerId, standing) is { } refused)
+            {
+                return refused;
+            }
         }
 
         var existing = await db.Set<Admission>()
@@ -128,7 +141,7 @@ public sealed class AdmissionService(
             VisitedAt = admittedAt,
             PreviousVisitId = request.SourceVisitId,
             PayerType = request.PayerType,
-            PayerId = request.PayerId,
+            PayerId = PayerChoice.IsThirdParty(request.PayerType) ? request.PayerId : null,
             ReferralSource = request.Source == AdmissionSource.Referral ? ReferralSource.Doctor : ReferralSource.Self,
             ReferredBy = Clean(request.ReferredBy),
             ChiefComplaint = Clean(request.ProvisionalDiagnosis),
@@ -159,7 +172,7 @@ public sealed class AdmissionService(
             ProvisionalDiagnosis = Clean(request.ProvisionalDiagnosis),
             ReferredBy = Clean(request.ReferredBy),
             PayerType = request.PayerType,
-            PayerId = request.PayerId,
+            PayerId = PayerChoice.IsThirdParty(request.PayerType) ? request.PayerId : null,
             IsMlc = request.IsMlc,
             MlcNumber = Clean(request.MlcNumber),
             ExpectedDischargeDate = request.ExpectedDischargeDate,

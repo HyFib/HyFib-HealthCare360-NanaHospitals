@@ -49,6 +49,26 @@ internal sealed class PayerDirectory(HospitalDbContext db, ICurrentUser user, IP
         return payer is null ? null : new PayerSummary(payer.Id, payer.Name, payer.ToPayerType(), payer.IsActive);
     }
 
+    public async Task<PayerStanding?> StandingAsync(Guid patientId, Guid payerId, DateOnly day, CancellationToken cancellationToken)
+    {
+        if (await FindAsync(payerId, cancellationToken) is not { } payer)
+        {
+            return null;
+        }
+
+        // Verified by a second person: someone other than whoever recorded the terms it vouches for (a policy verified by
+        // its own recorder before this rule does not count).
+        var cover = await db.Set<PatientPolicy>().AsNoTracking()
+            .Where(p => p.PatientId == patientId && p.PayerId == payerId && p.IsActive && p.ValidFrom <= day && p.ValidTo >= day)
+            .Select(p => new { p.ValidTo, Verified = p.VerifiedAt != null && p.VerifiedBy != null && p.VerifiedBy != (p.TermsRecordedBy ?? p.CreatedBy) })
+            .ToListAsync(cancellationToken);
+        var verified = cover.Where(p => p.Verified).MaxBy(p => p.ValidTo);
+        return new PayerStanding(
+            payer,
+            verified is not null ? PayerCover.Verified : cover.Count > 0 ? PayerCover.NotVerified : PayerCover.None,
+            verified?.ValidTo);
+    }
+
     public async Task<IReadOnlyList<CorporatePayer>> ListCorporateAsync(CancellationToken cancellationToken) =>
         await db.Set<Payer>().AsNoTracking()
             .Where(p => p.Category == PayerCategory.Corporate && p.IsActive)

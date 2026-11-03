@@ -16,6 +16,7 @@ public sealed class VisitService(
     IRealtimePublisher realtime,
     INotificationService notifications,
     ICurrentUser currentUser,
+    IPayerDirectory payers,
     TimeProvider time)
 {
     public async Task<Result<VisitDetail>> CreateAsync(CreateVisitRequest request, CancellationToken ct)
@@ -44,6 +45,17 @@ public sealed class VisitService(
         var now = time.GetUtcNow();
         var today = time.Today();
         var dayStart = StartOfLocalDay(now);
+
+        // The desk names a third party that pays only when a second person already stands behind it: the patient's policy
+        // or membership with it, in date today and verified by someone other than whoever recorded it (PayerChoice).
+        if (PayerChoice.IsThirdParty(request.PayerType))
+        {
+            var standing = request.PayerId is { } payerId ? await payers.StandingAsync(patient.Id, payerId, today, ct) : null;
+            if (PayerChoice.Refusal(request.PayerType, request.PayerId, standing) is { } refused)
+            {
+                return refused;
+            }
+        }
 
         if (request.Type == VisitType.OutPatient)
         {
@@ -100,7 +112,8 @@ public sealed class VisitService(
             IsFreeFollowUp = previous is not null,
             PreviousVisitId = previous?.Id,
             PayerType = request.PayerType,
-            PayerId = request.PayerId,
+            // Only a third party is a payer of the payer master: the patient, staff and charity price on their own plans.
+            PayerId = PayerChoice.IsThirdParty(request.PayerType) ? request.PayerId : null,
             ReferralSource = request.ReferralSource,
             ReferredBy = request.ReferredBy?.Trim(),
             ChiefComplaint = request.ChiefComplaint?.Trim(),

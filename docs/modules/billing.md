@@ -391,8 +391,8 @@ A self-paying patient's long stay can be billed in parts, so the family pays as 
 | GET | `/policies?patientId&includeInactive` · `/policies/{id}` | policies/pre-auth/claims manage, `ip.manage`, `op.create` | → `PolicyDto[]` (number masked) |
 | GET | `/policies/search?policyNumber` | policies/claims manage | → `PolicyDto[]` (blind-index lookup) |
 | GET | `/policies/{id}/policy-number` | policies/pre-auth/claims manage | → `PolicyNumberDto` (decrypted; audited) |
-| POST · PUT | `/policies` · `/policies/{id}` | `insurance.policies.manage` | `SavePolicyRequest` → 201 / 204 |
-| POST | `/policies/{id}/verify` | `insurance.policies.manage` | `VerifyPolicyRequest` → 204 |
+| POST · PUT | `/policies` · `/policies/{id}` | `insurance.policies.manage` | `SavePolicyRequest` → 201 / 204. Changing what a verification vouches for (payer, TPA, number, member, holder, relation, validity, sum insured, co-pay, in use) withdraws it; the card's scan and the notes do not. `PolicyDto.recordedByYou`: the signed-in user recorded those terms (or last changed them) |
+| POST | `/policies/{id}/verify` | `insurance.policies.manage` | `VerifyPolicyRequest` → 204; 403 `insurance.policy_self_verify` to whoever recorded the terms or last changed them: [someone else verifies](#a-third-party-pays-only-on-a-second-persons-word) |
 | GET | `/preauths?status&patientId&admissionId` (paged) · `/preauths/{id}` | pre-auth/claims manage, `ip.manage` | → `PreAuthListItem` / `PreAuthDetail` |
 | POST · PUT | `/preauths` · `/preauths/{id}` | `insurance.preauth.manage` | `SavePreAuthRequest` → 201 / 204 (`{FAC}PA{YY}{SEQ:6}` on submit) |
 | POST | `/preauths/{id}/submit` · `/query` · `/answer` · `/approve` · `/reject` · `/enhancements` · `/enhancements/{enhancementId}/respond` · `/final-approval` | `insurance.preauth.manage` | `PreAuthTextRequest`, `ApprovePreAuthRequest`, `RejectPreAuthRequest`, `RequestEnhancementRequest`, `RespondEnhancementRequest`, `FinalApprovalRequest` → 204 |
@@ -541,6 +541,28 @@ one). See [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos) fo
 | GET | `/{id}/pdf` | → `application/pdf` `bill-<number>.pdf`: the same [printed bill](#the-printed-bill) the counter prints, for the bills listed above only (finalized, part-paid, paid, refunded); audited ("Downloaded bill … as a PDF (patient portal)"); 503 `pdf.unavailable` when the server cannot make PDFs |
 | POST | `/{id}/pay` | → `PortalPaymentOrder` (gateway checkout / link) |
 | POST | `/{id}/payments/{orderId}/verify` | → `PortalPaymentStatus` |
+
+## A third party pays only on a second person's word
+
+The desk chooses who pays for a visit (registration, an appointment's check-in), the admission desk for a stay, and the
+billing desk changes a stay's payer. An insurer, a company or a government scheme pays (and its plan prices the
+services: a company's open credit, an insurer's PPN rates) only when a second person already stands behind it
+(`PayerChoice`, with `IPayerDirectory.StandingAsync`):
+
+* **The payer is named, in use, and of the kind chosen.** "Company" with no company named, or with an insurer, is
+  refused (400 `payerId` / `payerType`): an insurer billed as a company would pay without its approval. The patient,
+  staff and charity name no payer; one sent with them is not kept, so no payer's plan prices a paying patient.
+* **The patient's policy or membership with it is in date that day, and verified with the payer by someone other than
+  whoever recorded its terms or last changed them.** Else 422 `payer.no_cover` (none recorded and valid today) or
+  `payer.cover_not_verified` (recorded, not yet so verified), each saying what to do: record the card on Insurance ›
+  Patient policies, have someone else verify it, and meanwhile register the patient as paying (an emergency is admitted
+  as paying, and the stay is put on the payer once the policy is verified).
+* **Verification is the second person's act.** Whoever recorded a policy, or last changed what a verification vouches
+  for (payer, TPA, number, member, holder, relation, validity, sum insured, co-pay, in use), may not verify it (403
+  `insurance.policy_self_verify`); such a change withdraws an earlier verification. A policy its own recorder verified
+  before this rule does not count. The policies screen tells its recorder that someone else verifies it.
+* A visit keeps the payer it was registered with; a stay already on a payer keeps it while its terms change. A company's
+  health check-up opens its visit from the company's batch (with the company's order number), not at the desk.
 
 ## PM-JAY procedures (HBP)
 AB PM-JAY pays fixed rates for the procedures of its Health Benefit Package master (HBP), which the National Health
@@ -803,6 +825,12 @@ Source keys in use: `inpatient.bed` / `inpatient.nursing` (`{admissionId}:{yyyy-
   today, the longest valid.
 * Without the Billing module the Platform's `NullPayerDirectory` returns all three as null, and the banner shows the
   payer type alone.
+* `StandingAsync(patientId, payerId, day)` → `PayerStanding {payer, cover, validUntil}` whatever the caller's
+  permissions: the payer, and whether the patient's policy with it, active and in date that day, is verified by someone
+  other than whoever recorded its terms (`Verified`), recorded but not so verified (`NotVerified`), or missing (`None`).
+  The Patients and Inpatient modules, and Billing's stay payer change, decide with `PayerChoice.Refusal` from it
+  ([a third party pays only on a second person's word](#a-third-party-pays-only-on-a-second-persons-word)). Without
+  the Billing module there is no payer, and only the patient, staff and charity may be chosen.
 
 ## Events
 
@@ -1244,8 +1272,9 @@ are append-mostly and not data-audited; imports and reviews are audited. `OpBill
   whether the hospital is public.
 * **Packages that span several visits**, such as antenatal care or a course of physiotherapy: an OP package prices one
   bill.
-* **A visit's payer** is set at the front desk without a second person; an out-patient is priced on the plan of the
-  payer chosen there. A stay's plan other than its payer's waits for approval; a visit has no plan of its own to choose.
+* **A visit's payer cannot be changed after registration.** A patient whose cover is verified later is registered
+  again, or pays. Staff concessions (the staff tariff) rest on the desk choosing "Staff"; a company's check-up batch is
+  keyed by one person from the company's list and order.
 * **A failed gateway refund paid another way.** The refund stays paid through the gateway in HC360; the accountant
   pays it by bank transfer outside HC360, records that in Tally, and resolves the exception with the reference.
 * **Card and UPI settlement reports are imported by hand.** HC360 does not fetch them from the acquirer (Pine Labs and

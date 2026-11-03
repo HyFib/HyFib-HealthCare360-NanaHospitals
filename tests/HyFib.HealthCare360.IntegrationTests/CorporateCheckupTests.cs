@@ -152,6 +152,8 @@ public sealed class CorporateCheckupTests(HospitalServer server)
         }
 
         (await frontOffice.GetAsync<BookingDto>($"/api/v1/health-checkups/bookings/{analystBooking.Id}")).Status.ShouldBe(BookingStatus.Booked);
+        // The desk opens a visit on the company only on her membership, verified by someone other than whoever recorded it.
+        await server.VerifiedPolicyAsync(analyst, company.Id);
         var companyVisit = await VisitAsync(frontOffice, analyst, PayerType.Corporate, company.Id);
         var linked = await frontOffice.PostAsync<BookingDto>(CheckIn(analystBooking), new CheckInCheckupRequest(companyVisit.Id));
         (linked.Status, linked.VisitId).ShouldBe((BookingStatus.CheckedIn, companyVisit.Id));
@@ -199,6 +201,7 @@ public sealed class CorporateCheckupTests(HospitalServer server)
         (await VisitStatusAsync(frontOffice, abandoned)).ShouldBe(VisitStatus.Cancelled);
 
         // He came in on a visit the desk opened for the company: it is the desk's to close, not the check-up's.
+        await server.VerifiedPolicyAsync(linked, company.Id);
         var deskVisit = await VisitAsync(frontOffice, linked, PayerType.Corporate, company.Id);
         var onDeskVisit = await frontOffice.PostAsync<BookingDto>(CheckIn(bookings[linked]), new CheckInCheckupRequest(deskVisit.Id));
         await frontOffice.PostAsync<BookingDto>($"{Booking(onDeskVisit)}/cancel", new CancelBookingRequest("Rescheduled by HR"));

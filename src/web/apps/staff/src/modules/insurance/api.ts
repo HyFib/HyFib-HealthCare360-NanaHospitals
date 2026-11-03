@@ -134,6 +134,8 @@ export interface PolicyDto {
   cardFileId: string | null;
   notes: string | null;
   version: number;
+  /** The signed-in user recorded the terms a verification vouches for (or last changed them): someone else verifies it. */
+  recordedByYou: boolean;
 }
 
 export interface SavePolicyRequest {

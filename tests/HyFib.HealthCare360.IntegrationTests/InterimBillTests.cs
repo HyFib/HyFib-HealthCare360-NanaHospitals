@@ -363,7 +363,14 @@ public sealed class InterimBillTests(HospitalServer server)
     private async Task<(AdmissionCreated Admission, IpAccountDetail Account)> AdmitWithAVisitAsync(
         ApiClient frontOffice, ApiClient doctor, ApiClient billing, PayerType payerType, Guid? payerId)
     {
-        var admission = await AdmitAsync(frontOffice, doctor, await RegisterPatientAsync(frontOffice), payerType, payerId, null);
+        var patient = await RegisterPatientAsync(frontOffice);
+        if (payerId is { } coveredBy)
+        {
+            // A stay goes on a payer only on the patient's policy with it, verified by someone other than whoever recorded it.
+            await server.VerifiedPolicyAsync(patient, coveredBy);
+        }
+
+        var admission = await AdmitAsync(frontOffice, doctor, patient, payerType, payerId, null);
         await RecordVisitAsync(doctor, admission.Id, null);
         var account = await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/by-admission/{admission.Id}");
         account.PayerType.ShouldBe(payerType);

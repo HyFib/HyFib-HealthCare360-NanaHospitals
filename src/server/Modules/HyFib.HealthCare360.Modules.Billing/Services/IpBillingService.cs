@@ -26,6 +26,7 @@ public sealed class IpBillingService(
     INotificationService notifications,
     IAuditLogger audit,
     ICurrentUser currentUser,
+    IPayerDirectory payers,
     TimeProvider time,
     ILogger<IpBillingService> logger)
 {
@@ -349,9 +350,10 @@ public sealed class IpBillingService(
             return Error.Field("tariffPlanId", "Choose an active tariff plan.");
         }
 
-        if (request.PolicyId is { } policyId && !await db.Set<PatientPolicy>().AnyAsync(p => p.Id == policyId && p.PatientId == account.PatientId, ct))
+        if (request.PolicyId is { } policyId
+            && !await db.Set<PatientPolicy>().AnyAsync(p => p.Id == policyId && p.PatientId == account.PatientId && p.PayerId == request.PayerId, ct))
         {
-            return Error.Field("policyId", "Choose one of this patient's policies.");
+            return Error.Field("policyId", "Choose one of this patient's policies with the payer.");
         }
 
         if (request.RepriceUnbilledCharges && await db.Set<Bill>().AnyAsync(b => b.AdmissionId == account.AdmissionId && b.Status == BillStatus.Draft, ct))
@@ -359,9 +361,22 @@ public sealed class IpBillingService(
             return Error.Rule("billing.draft_bill_exists", "Discard the admission's draft bill before re-pricing its services.");
         }
 
-        var payerPlanId = (await tariffs.ResolvePlanAsync(request.PayerType, request.PayerId, account.FacilityId, ct))?.Id;
+        // Only a third party is a payer of the payer master: the patient, staff and charity price on their own plans.
+        var askedPayerId = PayerChoice.IsThirdParty(request.PayerType) ? request.PayerId : null;
+        var payerPlanId = (await tariffs.ResolvePlanAsync(request.PayerType, askedPayerId, account.FacilityId, ct))?.Id;
         var before = StayPayerTerms.Of(account);
-        var asked = new StayPayerTerms(request.PayerType, request.PayerId, request.PolicyId, request.TariffPlanId ?? payerPlanId);
+        var asked = new StayPayerTerms(request.PayerType, askedPayerId, request.PolicyId, request.TariffPlanId ?? payerPlanId);
+
+        // Putting the stay on another third party rests on a second person, as at the admission desk (PayerChoice): the
+        // patient's policy or membership with it, in date and verified by someone other than whoever recorded it.
+        if (PayerChoice.IsThirdParty(asked.PayerType) && (asked.PayerType, asked.PayerId) != (before.PayerType, before.PayerId))
+        {
+            var standing = askedPayerId is { } newPayerId ? await payers.StandingAsync(account.PatientId, newPayerId, BillingTime.Today(time), ct) : null;
+            if (PayerChoice.Refusal(asked.PayerType, askedPayerId, standing) is { } refused)
+            {
+                return refused;
+            }
+        }
         var waiting = asked == before ? null : await stays.PendingAsync(account.Id, ct);
         if (waiting is not null && waiting.Asked != asked)
         {
