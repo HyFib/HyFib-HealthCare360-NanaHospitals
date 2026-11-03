@@ -22,7 +22,8 @@ internal sealed record AbdmTransferJob(Guid TransferId);
 /// <item><b>Health-information request</b>: checked against the consent (granted, not past its erase date, the dates
 /// asked for within its own, an https push URL outside the hospital's network, ECDH on Curve25519) and acknowledged; the
 /// transfer then runs from the outbox (<see cref="TransferAsync"/>).</item>
-/// <item><b>Transfer</b>: each consented record dated within the range is made as its ABDM document
+/// <item><b>Transfer</b>: each consented record of a kind the consent names (its HI types: a consent for prescriptions
+/// does not send a vaccine record) and dated within the range is made as its ABDM document
 /// (<see cref="AbdmBundleService.ShareAsync"/>), all are encrypted for the HIU with one fresh key pair
 /// (<see cref="IFideliusCipher"/>), posted to the HIU seven to a page, and the gateway is told which care contexts were
 /// delivered. It is audited under the patient as a disclosure. It runs once: a page the HIU refused is reported, not
@@ -52,6 +53,18 @@ internal sealed class AbdmDataFlowService(
 
     /// <summary>Documents per page posted to the HIU, as NHA's wrapper pages them.</summary>
     public const int PageSize = 7;
+
+    /// <summary>What the gateway hears of a care context whose kind of record the consent does not name.</summary>
+    public const string NotCovered = "The consent does not cover this kind of record.";
+
+    /// <summary>
+    /// Whether a consent's kinds of record (its HI types, as notified: <c>Prescription,OPConsultation</c>) include the
+    /// record's. The patient chooses them with the care contexts, and a care context may be of a kind they did not
+    /// choose; a consent that names no kind covers none.
+    /// </summary>
+    internal static bool Covers(string? hiTypes, AbdmRecordType type) =>
+        (hiTypes ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Contains(AbdmGatewayMessages.HiType(type), StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The consent manager's notification of a consent granted, or revoked, expired or denied.</summary>
     public async Task NotifyAsync(AbdmGatewayMessages.ConsentNotify call, string requestId, CancellationToken ct)
@@ -218,6 +231,12 @@ internal sealed class AbdmDataFlowService(
         foreach (var reference in references)
         {
             var careContext = linked.FirstOrDefault(c => c.ReferenceNumber == reference);
+            if (careContext is not null && !Covers(consent.HiTypes, careContext.RecordType))
+            {
+                statuses[reference] = ("ERRORED", NotCovered);
+                continue;
+            }
+
             var located = careContext is null ? null : await records.LocateAsync(careContext.RecordType, careContext.RecordId, ct);
             if (careContext is null || located is null || located.IsFailure)
             {

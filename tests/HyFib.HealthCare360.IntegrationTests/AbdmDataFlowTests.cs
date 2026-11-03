@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using HyFib.HealthCare360.Modules.Clinical.Features.Immunizations;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Features;
@@ -143,6 +144,51 @@ public sealed class AbdmDataFlowTests(HospitalServer server)
         }
     }
 
+    [Fact]
+    public async Task A_vaccine_record_is_sent_only_under_a_consent_for_immunisation_records()
+    {
+        var (patientId, address, reference) = await LinkedDoseAsync();
+        var hiu = Fidelius.Generate();
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            await AbdmLinkingTests.SetUpGatewayAsync(server, enabled: true);
+
+            // The patient chose the dose for a consent to share prescriptions: the consent does not cover it, and it is not sent.
+            var prescriptions = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.ConsentNotifyPath, Notify(prescriptions, "GRANTED", address, patientId, reference, "Prescription"));
+            var refused = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.HealthInformationRequestPath, Request(refused, prescriptions, hiu, PushUrl));
+            var notSent = await TransferAsync(refused);
+            notSent.Status.ShouldBe(AbdmTransferStatus.Failed);
+            notSent.Error.ShouldBe(AbdmDataFlowService.NotCovered);
+            Gateway.CallsTo(PushUrl).ShouldNotContain(c => c.Json().GetProperty("transactionId").GetString() == refused);
+
+            // Under a consent for immunisation records it reaches the HIU, as the guide's immunisation record.
+            var immunisations = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.ConsentNotifyPath, Notify(immunisations, "GRANTED", address, patientId, reference, "ImmunizationRecord"));
+            var transaction = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.HealthInformationRequestPath, Request(transaction, immunisations, hiu, PushUrl));
+            var sent = await TransferAsync(transaction);
+            sent.Status.ShouldBe(AbdmTransferStatus.Transferred, sent.Error);
+            var page = Gateway.Calls.Single(c => c.Path == PushUrl && c.Json().GetProperty("transactionId").GetString() == transaction).Json();
+            var entry = page.GetProperty("entries").EnumerateArray().ShouldHaveSingleItem();
+            entry.GetProperty("careContextReference").GetString().ShouldBe(reference);
+            var keyMaterial = page.GetProperty("keyMaterial");
+            var document = Fidelius.Decrypt(
+                entry.GetProperty("content").GetString()!, hiu.PrivateKey, hiu.Nonce,
+                keyMaterial.GetProperty("dhPublicKey").GetProperty("keyValue").GetString()!, keyMaterial.GetProperty("nonce").GetString()!);
+            var composition = JsonDocument.Parse(document.Value).RootElement.GetProperty("entry")[0].GetProperty("resource");
+            composition.GetProperty("type").GetProperty("coding")[0].GetProperty("code").GetString().ShouldBe("41000179103");
+        }
+        finally
+        {
+            await AbdmLinkingTests.RemoveGatewayAsync(server);
+            await SwitchAsync(enabled: false);
+        }
+    }
+
     /// <summary>A patient with an ABHA address and a signed consultation linked to it as a care context.</summary>
     private async Task<(Guid PatientId, string Address, string Reference)> LinkedConsultationAsync()
     {
@@ -151,27 +197,44 @@ public sealed class AbdmDataFlowTests(HospitalServer server)
         var address = "asha." + AbdmExportTests.Letters(8) + "@sbx";
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", AbdmExportTests.Registration(AbdmExportTests.NewAbha(), address));
         var consultation = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: true);
-        var reference = AbdmLinkingService.ReferenceNumber(AbdmRecordType.OpConsultation, consultation);
+        await LinkAsync(patient.Id, address, AbdmRecordType.OpConsultation, consultation, "Consultation note");
+        return (patient.Id, address, AbdmLinkingService.ReferenceNumber(AbdmRecordType.OpConsultation, consultation));
+    }
 
+    /// <summary>A patient with an ABHA address and a vaccine dose given here linked to it as a care context.</summary>
+    private async Task<(Guid PatientId, string Address, string Reference)> LinkedDoseAsync()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
+        var address = "kiran." + AbdmExportTests.Letters(8) + "@sbx";
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", AbdmExportTests.Registration(AbdmExportTests.NewAbha(), address));
+        var today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromMinutes(330)).DateTime);
+        var dose = await nurse.PostAsync<ImmunizationDto>($"/api/v1/emr/patients/{patient.Id}/immunizations", new RecordImmunizationRequest(
+            null, "Td", "TD", 1, today, "IM", "Left deltoid", "TD2608-114", "Biological E. Limited", today.AddMonths(10), null, false, today.AddDays(28), null));
+        await LinkAsync(patient.Id, address, AbdmRecordType.Immunization, dose.Id, "Immunisation record: Td, dose 1");
+        return (patient.Id, address, AbdmLinkingService.ReferenceNumber(AbdmRecordType.Immunization, dose.Id));
+    }
+
+    private async Task LinkAsync(Guid patientId, string address, AbdmRecordType type, Guid recordId, string display)
+    {
         await using var scope = server.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
         db.Add(new AbdmLinkedCareContext
         {
             HipId = AbdmLinkingTests.HipId,
-            PatientId = patient.Id,
+            PatientId = patientId,
             AbhaAddress = address,
-            RecordType = AbdmRecordType.OpConsultation,
-            RecordId = consultation,
-            ReferenceNumber = reference,
-            Display = "Consultation note",
+            RecordType = type,
+            RecordId = recordId,
+            ReferenceNumber = AbdmLinkingService.ReferenceNumber(type, recordId),
+            Display = display,
             Route = AbdmLinkRoute.HipInitiated,
             LinkedAt = DateTimeOffset.UtcNow,
         });
         await db.SaveChangesAsync(Ct);
-        return (patient.Id, address, reference);
     }
 
-    private static object Notify(string consentId, string status, string address, Guid patientId, string reference) => new
+    private static object Notify(string consentId, string status, string address, Guid patientId, string reference, string hiType = "OPConsultation") => new
     {
         notification = new
         {
@@ -187,7 +250,7 @@ public sealed class AbdmDataFlowTests(HospitalServer server)
                 purpose = new { text = "Care Management", code = "CAREMGT" },
                 hip = new { id = AbdmLinkingTests.HipId },
                 hiu = new { id = "IN-HIU-IT" },
-                hiTypes = new[] { "OPConsultation" },
+                hiTypes = new[] { hiType },
                 permission = new
                 {
                     accessMode = "VIEW",

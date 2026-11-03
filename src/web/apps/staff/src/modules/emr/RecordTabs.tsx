@@ -19,7 +19,14 @@ import {
   tokens,
   useRestoreFocusTarget,
 } from '@fluentui/react-components';
-import { AddRegular, DeleteRegular, DocumentTextRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  DeleteRegular,
+  DocumentArrowDownRegular,
+  DocumentTextRegular,
+  LinkRegular,
+  MoreHorizontalRegular,
+} from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDate, formatDateOnly, formatDateTime, humanize, todayIso } from '@hc360/core';
 import {
@@ -47,7 +54,17 @@ import { z } from 'zod';
 import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
 import { patientQueries } from '@/modules/patients/api';
-import { emrApi, emrKeys, emrQueries, encounterTypeLabel, type ImmunizationDto, type VaccineRoute } from './api';
+import { AbdmLinkDialog } from './AbdmLinkButton';
+import { useAbdmRecordDownload, useAbdmRecordsAvailable } from './abdmRecords';
+import {
+  abdmImmunizationBundle,
+  emrApi,
+  emrKeys,
+  emrQueries,
+  encounterTypeLabel,
+  type ImmunizationDto,
+  type VaccineRoute,
+} from './api';
 import { ReasonDialog } from './ui';
 
 const useStyles = makeStyles({
@@ -314,9 +331,14 @@ export function ImmunizationsTab({ patientId }: { patientId: string }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canRecord = usePermission('clinical.immunizations.record');
+  const abdmAvailable = useAbdmRecordsAvailable();
+  const abdmDownload = useAbdmRecordDownload();
   const [showErrors, setShowErrors] = useState(false);
   const [recording, setRecording] = useState(false);
   const [voiding, setVoiding] = useState<ImmunizationDto | null>(null);
+  const [linking, setLinking] = useState<ImmunizationDto | null>(null);
+  // Only a dose given here is the hospital's record to send through ABDM; one copied from the card, or in error, is not.
+  const exportable = (i: ImmunizationDto) => abdmAvailable && !i.isExternal && !i.isEnteredInError;
   const immunizations = useQuery(emrQueries.immunizations(patientId, showErrors));
   const markError = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => emrApi.immunizationEnteredInError(id, reason),
@@ -382,9 +404,9 @@ export function ImmunizationsTab({ patientId }: { patientId: string }) {
           },
         ]}
         rowActions={
-          canRecord
+          canRecord || abdmAvailable
             ? (i) =>
-                i.isEnteredInError ? null : (
+                i.isEnteredInError || !(canRecord || exportable(i)) ? null : (
                   <Menu>
                     <MenuTrigger disableButtonEnhancement>
                       <Button
@@ -397,9 +419,24 @@ export function ImmunizationsTab({ patientId }: { patientId: string }) {
                     </MenuTrigger>
                     <MenuPopover>
                       <MenuList>
-                        <MenuItem icon={<DeleteRegular />} onClick={() => setVoiding(i)}>
-                          Mark as entered in error
-                        </MenuItem>
+                        {exportable(i) && (
+                          <>
+                            <MenuItem
+                              icon={<DocumentArrowDownRegular />}
+                              onClick={() => abdmDownload.mutate(abdmImmunizationBundle(i.id))}
+                            >
+                              Download ABDM record
+                            </MenuItem>
+                            <MenuItem icon={<LinkRegular />} onClick={() => setLinking(i)}>
+                              Link to patient&apos;s ABHA
+                            </MenuItem>
+                          </>
+                        )}
+                        {canRecord && (
+                          <MenuItem icon={<DeleteRegular />} onClick={() => setVoiding(i)}>
+                            Mark as entered in error
+                          </MenuItem>
+                        )}
                       </MenuList>
                     </MenuPopover>
                   </Menu>
@@ -420,6 +457,12 @@ export function ImmunizationsTab({ patientId }: { patientId: string }) {
         busy={markError.isPending}
         onConfirm={(reason) => voiding && markError.mutate({ id: voiding.id, reason })}
         onCancel={() => setVoiding(null)}
+      />
+      <AbdmLinkDialog
+        record={{ type: 'Immunization', id: linking?.id ?? '' }}
+        what={`${linking?.vaccineName ?? 'vaccine'} dose`}
+        open={linking !== null}
+        onClose={() => setLinking(null)}
       />
     </>
   );

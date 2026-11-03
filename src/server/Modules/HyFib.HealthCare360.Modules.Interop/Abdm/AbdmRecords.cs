@@ -120,6 +120,9 @@ internal sealed record DischargeSummaryData(
     IReadOnlyList<LabResultRow> LabResults,
     Guid? AmendedByPractitionerId = null);
 
+/// <summary>A vaccine dose given here, as the FHIR read API serves it.</summary>
+internal sealed record ImmunizationData(AbdmContext Context, ImmunizationRow Dose);
+
 /// <summary>The names ABDM documents download under: the record's kind, its number or the UHID and day, then <c>-abdm.json</c>.</summary>
 internal static class AbdmFiles
 {
@@ -730,6 +733,92 @@ internal static class AbdmRecords
             Supporting = [.. people.All],
         };
     }
+
+    /// <summary>LOINC's "Date vaccine due": the date an immunisation recommendation is for.</summary>
+    private const string DateVaccineDueLoinc = "30980-7";
+
+    /// <summary>
+    /// A vaccine dose given here (ImmunizationRecord): the dose as the FHIR API serves it (the vaccine as the SNOMED CT
+    /// product of the guide's value set when its card code is known, the batch, expiry, manufacturer, site, route and dose
+    /// number, and who gave it, by name), and, when staff wrote when the next dose is due, the hospital's recommendation
+    /// of it (<see cref="NextDose"/>). The facility where it was given is the author and the custodian; the nurse or
+    /// doctor who gave it is the dose's administering provider. Its date is when it was recorded: a dose is not changed
+    /// afterwards, only marked as entered in error, and then not exported (<c>AbdmRecordLoader</c>).
+    /// </summary>
+    public static AbdmDocument Immunization(ImmunizationData d)
+    {
+        var row = d.Dose;
+        var people = People.Of(d.Context);
+        var hospital = people.Organization(d.Context.FacilityId);
+        var encounter = Encounter(d.Context, people);
+        var dose = AbdmProfiler.Immunization(ImmunizationMapper.Map(row));
+
+        // A dose recorded in an encounter the document does not hold does not point to it: a reference to nothing could
+        // say no more than that it is an encounter.
+        if (encounter is null)
+        {
+            dose.Encounter = null;
+        }
+
+        List<R4.Resource> entries = [dose];
+        if (row.NextDueOn is { } due)
+        {
+            entries.Add(NextDose(row, dose, due, people.Names.Organization(d.Context.FacilityId)!));
+        }
+
+        return new AbdmDocument
+        {
+            Type = AbdmRecordType.Immunization,
+
+            // Three vaccines are given at birth: the card code tells the files of one day apart.
+            FileName = AbdmFiles.Name("immunization", $"{d.Context.Patient.Uhid}-{VaccineCodes.Find(row.VaccineCode)?.Code ?? "vaccine"}", row.AdministeredOn),
+            SourceId = row.Id,
+            Profile = AbdmProfiles.ImmunizationRecord,
+            DocumentType = AbdmCodes.ImmunizationRecord,
+            Title = "Immunisation record",
+            Status = R4.CompositionStatus.Final,
+            Date = row.CreatedAt,
+            RecordUpdated = FhirElements.Latest(row.CreatedAt, row.UpdatedAt),
+            Patient = Patient(d.Context, people, [row.PatientId]),
+            Encounter = encounter,
+            Author = hospital,
+            Custodian = hospital,
+            Sections = [new AbdmSection(AbdmCodes.ImmunizationRecord, "Immunisation record", [], entries)],
+            Supporting = [.. people.All],
+        };
+    }
+
+    /// <summary>
+    /// The next dose staff wrote is due (ImmunizationRecommendation): the same vaccine, due that day (LOINC "Date vaccine
+    /// due"), the dose after this one when its number is known, on the strength of this dose. The hospital recommends it,
+    /// as of when the dose was recorded.
+    /// </summary>
+    private static R4.ImmunizationRecommendation NextDose(ImmunizationRow row, R4.Immunization dose, DateOnly due, R4.ResourceReference hospital) => new()
+    {
+        Id = dose.Id,
+        Meta = new R4.Meta { Profile = [AbdmProfiles.ImmunizationRecommendation] },
+        Patient = FhirReferences.Patient(row.PatientId),
+        Date = FhirTime.DateTime(row.CreatedAt),
+        Authority = R4.BaseExtensions.DeepCopy(hospital),
+        Recommendation =
+        [
+            new R4.ImmunizationRecommendation.RecommendationComponent
+            {
+                VaccineCode = [R4.BaseExtensions.DeepCopy(dose.VaccineCode)],
+                ForecastStatus = FhirElements.Concept(FhirSystems.ImmunizationRecommendationStatus, "due", "Due"),
+                DateCriterion =
+                [
+                    new R4.ImmunizationRecommendation.DateCriterionComponent
+                    {
+                        Code = FhirElements.Concept(FhirSystems.Loinc, DateVaccineDueLoinc, "Date vaccine due"),
+                        Value = FhirTime.Date(due),
+                    },
+                ],
+                DoseNumber = row.DoseNumber is int number && number > 0 ? new R4.PositiveInt(number + 1) : null,
+                SupportingImmunization = [new R4.ResourceReference($"Immunization/{dose.Id}") { Type = "Immunization" }],
+            },
+        ],
+    };
 
     /// <summary>LOINC's document type for cardiology studies, for the printed copy of one LOINC names no study for.</summary>
     private const string CardiologyStudiesLoinc = "26441-6";

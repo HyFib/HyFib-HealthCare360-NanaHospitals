@@ -16,6 +16,7 @@ internal static class AbdmProfiles
     public const string DiagnosticReportRecord = Base + "DiagnosticReportRecord";
     public const string OpConsultRecord = Base + "OPConsultRecord";
     public const string PrescriptionRecord = Base + "PrescriptionRecord";
+    public const string ImmunizationRecord = Base + "ImmunizationRecord";
 
     public const string Patient = Base + "Patient";
     public const string Practitioner = Base + "Practitioner";
@@ -32,6 +33,8 @@ internal static class AbdmProfiles
     public const string ImagingStudy = Base + "ImagingStudy";
     public const string DocumentReference = Base + "DocumentReference";
     public const string Binary = Base + "Binary";
+    public const string Immunization = Base + "Immunization";
+    public const string ImmunizationRecommendation = Base + "ImmunizationRecommendation";
 }
 
 /// <summary>Code systems the IG adds to the ones the FHIR facade already uses (<see cref="FhirSystems"/>).</summary>
@@ -84,6 +87,9 @@ internal static class AbdmCodes
 
     public static readonly AbdmCode ConsultationReport = Snomed("371530004", "Clinical consultation report");
     public static readonly AbdmCode PrescriptionRecord = Snomed("440545006", "Prescription record");
+
+    /// <summary>ImmunizationRecord's document type and its one section's code (the profile fixes both).</summary>
+    public static readonly AbdmCode ImmunizationRecord = Snomed("41000179103", "Immunization record");
 
     // Discharge summary and OP consultation sections.
     public static readonly AbdmCode ChiefComplaints = Snomed("422843007", "Chief complaint section");

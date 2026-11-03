@@ -30,6 +30,12 @@ internal sealed record AbdmSource(Guid PatientId, Guid FacilityId, string? NotEx
 
     /// <summary>When the record was made, which names it for the patient when it is linked to their ABHA.</summary>
     public DateTimeOffset RecordedAt { get; init; }
+
+    /// <summary>
+    /// What tells the record apart from the patient's other records of its kind on the same day, in the name the patient
+    /// sees when it is linked to their ABHA: a vaccine and its dose ("BCG", "Pentavalent, dose 2"); none for other kinds.
+    /// </summary>
+    public string? Label { get; init; }
 }
 
 /// <summary>
@@ -61,6 +67,7 @@ internal sealed class AbdmRecordLoader(
     private MedicationRequestProvider Medications => Provider<MedicationRequestProvider>();
     private DiagnosticReportProvider Reports => Provider<DiagnosticReportProvider>();
     private DocumentReferenceProvider DocumentReferences => Provider<DocumentReferenceProvider>();
+    private ImmunizationProvider Doses => Provider<ImmunizationProvider>();
 
     /// <summary>The record's patient and facility, and whether it is complete; a failure only when it does not exist.</summary>
     public async Task<Result<AbdmSource>> LocateAsync(AbdmRecordType type, Guid id, CancellationToken ct)
@@ -114,7 +121,7 @@ internal sealed class AbdmRecordLoader(
                     { RecordedAt = row.CreatedAt };
             }
 
-            default:
+            case AbdmRecordType.DischargeSummary:
             {
                 var row = await db.Set<DischargeSummary>().AsNoTracking().Where(s => s.Id == id)
                     .Select(s => new { s.PatientId, s.FacilityId, s.Status, s.CreatedAt }).FirstOrDefaultAsync(ct);
@@ -123,19 +130,51 @@ internal sealed class AbdmRecordLoader(
                         row.Status == DischargeSummaryStatus.Draft ? "Sign the discharge summary before exporting it." : null)
                     { RecordedAt = row.CreatedAt };
             }
+
+            case AbdmRecordType.Immunization:
+            {
+                var row = await db.Set<Immunization>().AsNoTracking().Where(i => i.Id == id)
+                    .Select(i => new { i.PatientId, i.FacilityId, i.IsExternal, i.IsEnteredInError, i.VaccineName, i.DoseNumber, i.CreatedAt })
+                    .FirstOrDefaultAsync(ct);
+                return row is null ? NotFound(type, id)
+                    : new AbdmSource(row.PatientId, row.FacilityId, ImmunizationNotExportable(row.IsExternal, row.IsEnteredInError))
+                    {
+                        RecordedAt = row.CreatedAt,
+                        Label = DoseLabel(row.VaccineName, row.DoseNumber),
+                    };
+            }
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports.");
         }
     }
 
     /// <summary>
-    /// The patient's records the export would send, newest first, at most <paramref name="limit"/>: signed out-patient
-    /// consultations and discharge summaries, issued prescriptions, and released lab, radiology and cardiology reports
-    /// (the same rules as <see cref="LocateAsync"/>), in every facility of the hospital. Records kept under a duplicate
-    /// UHID merged into the patient are not included; they are linked from the record staff see.
+    /// Why a dose is not exported. One marked as entered in error was never given. One copied from the patient's
+    /// vaccination card is the record of whoever gave it, which the hospital only wrote down: its ABDM record is that
+    /// provider's to share (the FHIR API still serves it, as not the hospital's own record).
     /// </summary>
-    public async Task<IReadOnlyList<(AbdmRecordType Type, Guid Id, DateTimeOffset RecordedAt)>> ListExportableAsync(Guid patientId, int limit, CancellationToken ct)
+    internal static string? ImmunizationNotExportable(bool isExternal, bool isEnteredInError) =>
+        isEnteredInError ? "A dose marked as entered in error is not exported."
+        : isExternal ? "A dose copied from the patient's vaccination card is not exported: it is the record of whoever gave it. Only doses given here are."
+        : null;
+
+    /// <summary>A dose as the patient knows it: the vaccine, and its number in the series when known ("Pentavalent, dose 2").</summary>
+    internal static string DoseLabel(string vaccineName, int? doseNumber) =>
+        doseNumber is int dose && dose > 0 ? $"{vaccineName.Trim()}, dose {dose}" : vaccineName.Trim();
+
+    /// <summary>
+    /// The patient's records the export would send, newest first, at most <paramref name="limit"/>: signed out-patient
+    /// consultations and discharge summaries, issued prescriptions, released lab, radiology and cardiology reports, and
+    /// vaccine doses given here (the same rules as <see cref="LocateAsync"/>), in every facility of the hospital, each
+    /// with its <see cref="AbdmSource.Label"/>. Records kept under a duplicate UHID merged into the patient are not
+    /// included; they are linked from the record staff see.
+    /// </summary>
+    public async Task<IReadOnlyList<(AbdmRecordType Type, Guid Id, DateTimeOffset RecordedAt, string? Label)>> ListExportableAsync(
+        Guid patientId, int limit, CancellationToken ct)
     {
-        var found = new List<(AbdmRecordType Type, Guid Id, DateTimeOffset RecordedAt)>();
-        void Add(AbdmRecordType type, IEnumerable<(Guid Id, DateTimeOffset At)> rows) => found.AddRange(rows.Select(r => (type, r.Id, r.At)));
+        var found = new List<(AbdmRecordType Type, Guid Id, DateTimeOffset RecordedAt, string? Label)>();
+        void Add(AbdmRecordType type, IEnumerable<(Guid Id, DateTimeOffset At)> rows) => found.AddRange(rows.Select(r => (type, r.Id, r.At, (string?)null)));
 
         Add(AbdmRecordType.OpConsultation, (await db.Set<ClinicalEncounter>().AsNoTracking()
             .Where(e => e.PatientId == patientId && e.Status != EncounterStatus.InProgress && e.Type != EncounterType.InPatient)
@@ -152,6 +191,10 @@ internal sealed class AbdmRecordLoader(
         Add(AbdmRecordType.CardiologyReport, (await db.Set<CardiologyReport>().AsNoTracking()
             .Where(r => r.PatientId == patientId && r.Status == DiagnosticReportStatus.Released)
             .OrderByDescending(r => r.CreatedAt).Take(limit).Select(r => new { r.Id, r.CreatedAt }).ToListAsync(ct)).Select(r => (r.Id, r.CreatedAt)));
+        found.AddRange((await db.Set<Immunization>().AsNoTracking()
+                .Where(i => i.PatientId == patientId && !i.IsExternal && !i.IsEnteredInError)
+                .OrderByDescending(i => i.CreatedAt).Take(limit).Select(i => new { i.Id, i.CreatedAt, i.VaccineName, i.DoseNumber }).ToListAsync(ct))
+            .Select(i => (AbdmRecordType.Immunization, i.Id, i.CreatedAt, (string?)DoseLabel(i.VaccineName, i.DoseNumber))));
 
         // A signed prescription is issued only where the hospital's DSC rule lets it be (the printout's rule).
         var prescriptions = await db.Set<Prescription>().AsNoTracking()
@@ -161,7 +204,7 @@ internal sealed class AbdmRecordLoader(
         {
             if (await PrescriptionNotIssuedAsync(prescription.Id, ct) is null)
             {
-                found.Add((AbdmRecordType.Prescription, prescription.Id, prescription.CreatedAt));
+                found.Add((AbdmRecordType.Prescription, prescription.Id, prescription.CreatedAt, null));
             }
         }
 
@@ -177,7 +220,9 @@ internal sealed class AbdmRecordLoader(
             AbdmRecordType.RadiologyReport => nameof(RadiologyReport),
             AbdmRecordType.CardiologyReport => nameof(CardiologyReport),
             AbdmRecordType.OpConsultation => "Encounter",
-            _ => nameof(DischargeSummary),
+            AbdmRecordType.DischargeSummary => nameof(DischargeSummary),
+            AbdmRecordType.Immunization => nameof(Immunization),
+            _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
         },
         id);
 
@@ -220,7 +265,9 @@ internal sealed class AbdmRecordLoader(
         AbdmRecordType.RadiologyReport => RadiologyReportAsync(id, source, ct),
         AbdmRecordType.CardiologyReport => CardiologyReportAsync(id, source, ct),
         AbdmRecordType.OpConsultation => ConsultationAsync(id, source, ct),
-        _ => DischargeSummaryAsync(id, source, ct),
+        AbdmRecordType.DischargeSummary => DischargeSummaryAsync(id, source, ct),
+        AbdmRecordType.Immunization => ImmunizationAsync(id, source, ct),
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
     };
 
     /// <summary>
@@ -394,6 +441,18 @@ internal sealed class AbdmRecordLoader(
         // The printed report is made from its study, as everything in cardiology is.
         var context = await ContextAsync(source, visit, encounter, [.. doctors.Values.Select(p => (Guid?)p)], [], [], CardiologyReportPdf, report.CardiologyStudyId, ct);
         return AbdmRecords.CardiologyReport(new CardiologyReportData(context, report, doctors));
+    }
+
+    /// <summary>
+    /// A dose given here, as the FHIR read API serves it (who gave it, by name), with the encounter it was given in when
+    /// staff recorded one. The hospital prints no immunisation record, so the document has no PDF.
+    /// </summary>
+    private async Task<AbdmDocument> ImmunizationAsync(Guid id, AbdmSource source, CancellationToken ct)
+    {
+        var dose = await Doses.Immunizations(i => i.Id == id).FirstAsync(ct);
+        var (visit, encounter) = await EncounterRowsAsync(dose.EncounterId, null, null, ct);
+        var context = await ContextAsync(source, visit, encounter, [], [], [], null, id, ct);
+        return AbdmRecords.Immunization(new ImmunizationData(context, dose));
     }
 
     /// <summary>

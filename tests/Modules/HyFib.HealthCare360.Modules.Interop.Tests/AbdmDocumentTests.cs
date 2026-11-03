@@ -27,7 +27,8 @@ public sealed class AbdmDocumentTests
 {
     private static R4.Bundle Build(AbdmDocument document) => AbdmDocumentBuilder.Build(document);
 
-    private static readonly string[] Samples = ["prescription", "op-consultation", "lab-report", "radiology-report", "cardiology-report", "discharge-summary"];
+    private static readonly string[] Samples =
+        ["prescription", "op-consultation", "lab-report", "radiology-report", "cardiology-report", "discharge-summary", "immunization"];
 
     public static TheoryData<string> RecordTypes => new(Samples);
 
@@ -38,6 +39,7 @@ public sealed class AbdmDocumentTests
         "lab-report" => Build(AbdmRecords.LabReport(AbdmTestData.LabReportRecord(AbdmTestData.Pdf))),
         "radiology-report" => Build(AbdmRecords.RadiologyReport(AbdmTestData.RadiologyReportRecord(AbdmTestData.Pdf))),
         "cardiology-report" => Build(AbdmRecords.CardiologyReport(AbdmTestData.CardiologyReportRecord(AbdmTestData.Pdf))),
+        "immunization" => Build(AbdmRecords.Immunization(AbdmTestData.ImmunizationRecord())),
         _ => Build(AbdmRecords.DischargeSummary(AbdmTestData.DischargeSummaryRecord(pdf: null))),
     };
 
@@ -108,6 +110,7 @@ public sealed class AbdmDocumentTests
     [InlineData("radiology-report", AbdmProfiles.DiagnosticReportRecord, "721981007", "Diagnostic studies report")]
     [InlineData("cardiology-report", AbdmProfiles.DiagnosticReportRecord, "721981007", "Diagnostic studies report")]
     [InlineData("discharge-summary", AbdmProfiles.DischargeSummaryRecord, "373942005", "Discharge summary")]
+    [InlineData("immunization", AbdmProfiles.ImmunizationRecord, "41000179103", "Immunization record")]
     public void The_composition_is_typed_with_the_snomed_code_the_ig_fixes(string name, string profile, string code, string display)
     {
         var composition = (R4.Composition)Sample(name).Entry[0].Resource;

@@ -52,6 +52,9 @@ internal static class AbdmTestData
     public static readonly Guid CardiologyStudyId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab014");
     public static readonly Guid CardiologistUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab015");
 
+    /// <summary>A Td dose given in the consultation (<see cref="EncounterId"/>).</summary>
+    public static readonly Guid DoseId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab016");
+
     private static readonly DateTimeOffset Seen = TestData.Now.AddHours(-2);
     private static readonly DateTimeOffset Admitted = TestData.Now.AddDays(-20);
     private static readonly DateTimeOffset Discharged = TestData.Now.AddDays(-15);
@@ -412,6 +415,33 @@ internal static class AbdmTestData
 
     public static CardiologyReportData CardiologyReportRecord(AbdmPdf? pdf) =>
         new(Context(visit: OpVisit(), pdf: pdf), EcgReport(), CardiologyDoctors);
+
+    /// <summary>
+    /// The first dose of Td (tetanus and adult diphtheria), given by the OPD nurse in the consultation, with the second
+    /// dose due four weeks later, as the adult schedule has it.
+    /// </summary>
+    public static ImmunizationRow TdDose() => new()
+    {
+        Id = DoseId,
+        PatientId = TestData.PatientId,
+        EncounterId = EncounterId,
+        VaccineName = "Td",
+        VaccineCode = "TD",
+        DoseNumber = 1,
+        AdministeredOn = new DateOnly(2026, 9, 25),
+        Route = "IM",
+        Site = "Left deltoid",
+        BatchNumber = "TD2608-114",
+        Manufacturer = "Biological E. Limited",
+        ExpiryDate = new DateOnly(2027, 8, 31),
+        AdministeredByUserName = "Sr. Meena Pillai",
+        IsExternal = false,
+        NextDueOn = new DateOnly(2026, 10, 23),
+        CreatedAt = Seen.AddMinutes(30),
+    };
+
+    public static ImmunizationData ImmunizationRecord(ImmunizationRow? dose = null) =>
+        new(Context(encounter: Consultation()), dose ?? TdDose());
 
     public static VisitRow StayVisit() => new()
     {

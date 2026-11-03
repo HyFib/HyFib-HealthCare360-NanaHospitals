@@ -467,8 +467,47 @@ internal static class AbdmNarrative
         R4.Observation o => Join(Text(o.Code) + ":", Value(o)),
         R4.DiagnosticReport r => Join(Text(r.Code), r.Conclusion is { } conclusion and not AbdmProfiler.SeeTheResults ? $"({conclusion})" : null),
         R4.DocumentReference d => d.Description ?? Text(d.Type),
+        R4.Immunization i => Immunization(i),
+        R4.ImmunizationRecommendation r => NextDose(r),
         _ => null,
     };
+
+    /// <summary>
+    /// "BCG, dose 1: given 2026-09-24, batch B2611-07, Intradermal route, Left upper arm": a dose as its card reads, the
+    /// route by its coded name when it has one.
+    /// </summary>
+    private static string? Immunization(R4.Immunization immunization)
+    {
+        var dose = immunization.ProtocolApplied.Select(p => p.DoseNumber).OfType<R4.PositiveInt>().FirstOrDefault()?.Value;
+        if (Text(immunization.VaccineCode) is not { } vaccine)
+        {
+            return null;
+        }
+
+        var details = new[]
+        {
+            (immunization.Occurrence as R4.FhirDateTime)?.Value is { } given ? $"given {given}" : null,
+            FhirElements.Clean(immunization.LotNumber) is { } lot ? $"batch {lot}" : null,
+            immunization.Route?.Coding.Select(c => c.Display).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d)) ?? Text(immunization.Route),
+            Text(immunization.Site),
+        }.OfType<string>().ToList();
+        var line = dose is { } number ? $"{vaccine}, dose {number}" : vaccine;
+        return details.Count == 0 ? line : $"{line}: {string.Join(", ", details)}";
+    }
+
+    /// <summary>"Next dose due 2026-11-05: BCG, dose 2".</summary>
+    private static string? NextDose(R4.ImmunizationRecommendation recommendation)
+    {
+        if (recommendation.Recommendation.FirstOrDefault() is not { } next)
+        {
+            return null;
+        }
+
+        var vaccine = next.VaccineCode.Select(Text).FirstOrDefault(t => t is not null);
+        var dose = (next.DoseNumber as R4.PositiveInt)?.Value;
+        var due = next.DateCriterion.Select(c => c.Value).FirstOrDefault(v => v is not null);
+        return Join(due is null ? "Next dose due:" : $"Next dose due {due}:", vaccine is null ? null : dose is { } number ? $"{vaccine}, dose {number}" : vaccine);
+    }
 
     /// <summary>
     /// "Viral fever (differential)", "Asthma (provisional, resolved)", "Hypertension (chronic)": a diagnosis with what its

@@ -4,9 +4,10 @@ using R4 = Hl7.Fhir.Model;
 namespace HyFib.HealthCare360.Modules.Interop.Tests.Abdm;
 
 /// <summary>
-/// The validator setup is real: the implementation guide's own discharge summary and prescription examples pass with it,
-/// and a bundle broken against the profiles fails, for each kind of rule the profiles make (cardinality, fixed values,
-/// slicing, invariants, the profiles of referenced resources, required terminology bindings checked offline).
+/// The validator setup is real: the implementation guide's own discharge summary, prescription and immunisation record
+/// examples pass with it, and a bundle broken against the profiles fails, for each kind of rule the profiles make
+/// (cardinality, fixed values, slicing, invariants, the profiles of referenced resources, required terminology bindings
+/// checked offline).
 /// </summary>
 public sealed class ValidatorSetupTests
 {
@@ -22,6 +23,19 @@ public sealed class ValidatorSetupTests
 
         result.Errors.ShouldBeEmpty(result.Describe());
         bundle.Entry.Count.ShouldBe(19, "the example is complete (Composition, Patient, Practitioner, reports, observations...)");
+    }
+
+    [Fact]
+    public void The_igs_own_immunisation_record_example_validates()
+    {
+        var bundle = AbdmProfileValidator.Example("Bundle-ImmunizationRecord-example-07.json").ShouldBeOfType<R4.Bundle>();
+
+        var result = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+
+        result.Errors.ShouldBeEmpty(result.Describe());
+        bundle.Entry.Select(e => e.Resource.TypeName).ShouldBe(
+            ["Composition", "Practitioner", "Organization", "Patient", "Immunization", "ImmunizationRecommendation", "DocumentReference"],
+            "the example is complete: the dose, the next dose due and a certificate");
     }
 
     [Theory]
