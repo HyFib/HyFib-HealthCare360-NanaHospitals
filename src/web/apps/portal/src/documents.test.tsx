@@ -324,6 +324,7 @@ const BILL: PortalBillDetail = {
       receivedAt: '2026-09-27T06:30:00Z',
     },
   ],
+  refunds: [],
 };
 
 /** The PDF of each document, with the file name the server gives it. */

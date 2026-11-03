@@ -193,6 +193,7 @@ describe('print templates escape everything they print', () => {
       },
     ],
     receipts: [receipt],
+    refunds: [],
   };
 
   it('bill and receipt', () => {

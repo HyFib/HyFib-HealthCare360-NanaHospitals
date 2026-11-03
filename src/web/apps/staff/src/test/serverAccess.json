@@ -1455,6 +1455,7 @@
     "/api/v1/portal/privacy/summary portal.access",
     "/api/v1/portal/profiles portal.access",
     "/api/v1/portal/refills portal.access",
+    "/api/v1/portal/refunds portal.access",
     "/api/v1/portal/reports portal.access",
     "/api/v1/portal/reports/cardiology/{id:guid} portal.access",
     "/api/v1/portal/reports/cardiology/{id:guid}/pdf portal.access",

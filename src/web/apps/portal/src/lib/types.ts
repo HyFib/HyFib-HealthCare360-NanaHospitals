@@ -882,6 +882,40 @@ export interface ReceiptSummary {
   receivedAt: string;
 }
 
+export type RefundPurpose = 'Bill' | 'Deposit' | 'Advance';
+export type RefundMode =
+  'Cash' | 'Card' | 'Upi' | 'NetBanking' | 'Cheque' | 'PaymentGateway' | 'Insurance' | 'Wallet' | 'Advance';
+export type PortalRefundStage =
+  | 'Requested'
+  | 'Approved'
+  | 'NotApproved'
+  | 'PaidOut'
+  | 'KeptAsAdvance'
+  | 'WithTheBank'
+  | 'Credited'
+  | 'BankReturned'
+  | 'Replaced';
+
+/** A refund as the patient sees it: where it stands and the reference to trace it by (never staff notes or names). */
+export interface PortalRefund {
+  id: string;
+  refundNumber: string;
+  patientId: string;
+  patientName: string | null;
+  billId: string | null;
+  billNumber: string | null;
+  purpose: RefundPurpose;
+  amount: number;
+  stage: PortalRefundStage;
+  requestedAt: string;
+  /** When the money left the hospital: paid at the counter, or last sent through the payment gateway. */
+  sentAt: string | null;
+  mode: RefundMode | null;
+  /** The bank's reference (ARN, RRN or UTR) for a gateway refund, or the counter's transfer or cheque reference. */
+  reference: string | null;
+  creditedAt: string | null;
+}
+
 export interface PortalBillDetail {
   id: string;
   billNumber: string | null;
@@ -901,6 +935,7 @@ export interface PortalBillDetail {
   dueAmount: number;
   lines: PortalBillLine[];
   receipts: ReceiptSummary[];
+  refunds: PortalRefund[];
 }
 
 /** POST /api/v1/portal/bills/{id}/pay: `id` is the gateway order row, `orderId` the gateway's own order id. */
