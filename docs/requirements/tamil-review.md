@@ -25,8 +25,8 @@ made in the Tamil file only. The tests check that every English text has a Tamil
 (a server message may leave one out, as `message.problem.not_found_detail` does with an English record name, as in
 Hindi), and that every Tamil text contains Tamil script (except `doc.bill.mode.upi`, which is "UPI" in every language).
 
-Not in this list: the validators' built-in messages for an empty or too-long field ("'Reason' must not be empty"),
-which come from the FluentValidation library's own translations, with the field's English name in them.
+The validators' own messages for an empty, too long or out-of-range field are in this list too (see *The validators' own
+messages* below), worded without the field's English name.
 
 Points we would most like checked:
 
@@ -360,6 +360,63 @@ Points we would most like checked:
 | 100 | `doc.bill.ack_no` | Ack no. | ஒப்புகை எண் | |
 | 101 | `doc.bill.ack_date` | Ack date | ஒப்புகை தேதி | |
 | 102 | `doc.bill.einvoice_qr` | Signed QR code of the e-invoice | மின்-விலைப்பட்டியலின் கையொப்பமிட்ட QR குறியீடு | |
+| 103 | `message.appointment.slot_unavailable_choose` | This time is not available for booking. Choose another slot. | இந்த நேரம் முன்பதிவுக்குக் கிடைக்கவில்லை. வேறொரு நேரத்தைத் தேர்ந்தெடுங்கள். | |
+| 104 | `message.appointment.overlap` | The patient already has appointment {number} at this time. | இந்த நேரத்தில் நோயாளிக்கு ஏற்கனவே {number} என்ற சந்திப்பு உள்ளது. | |
+| 105 | `message.appointment.online_window` | Online booking opens {days} days ahead. Choose an earlier date. | ஆன்லைன் முன்பதிவு {days} நாட்களுக்கு முன்பிருந்து மட்டுமே திறக்கும். முந்தைய தேதியைத் தேர்ந்தெடுங்கள். | |
+| 106 | `message.appointment.online_cutoff` | Online booking and changes close {minutes} minutes before the appointment. Please call the hospital. | சந்திப்புக்கு {minutes} நிமிடங்களுக்கு முன் ஆன்லைன் முன்பதிவும் மாற்றங்களும் நிறுத்தப்படும். தயவுசெய்து மருத்துவமனையை அழையுங்கள். | |
+| 107 | `message.appointment.cancel_reason` | Describe why the appointment is cancelled. | சந்திப்பு ஏன் ரத்துசெய்யப்படுகிறது என்பதைக் குறிப்பிடுங்கள். | |
+| 108 | `message.appointment.already_cancelled` | This appointment is already cancelled. | இந்தச் சந்திப்பு ஏற்கனவே ரத்துசெய்யப்பட்டுவிட்டது. | |
+| 109 | `message.appointment.checked_in` | The patient has already checked in. Cancel the visit instead. | நோயாளி ஏற்கனவே மருத்துவமனையில் வருகையைப் பதிவு செய்துவிட்டார். தயவுசெய்து மருத்துவமனைக் கவுண்டரில் தெரிவியுங்கள். | |
+| 110 | `message.appointment.closed` | This appointment cannot be {action}. | இந்தச் சந்திப்பில் இந்த மாற்றத்தைச் செய்ய முடியாது. | |
+| 111 | `message.appointment.closed_cancelled` | A cancelled appointment cannot be {action}. | ரத்துசெய்யப்பட்ட சந்திப்பில் இந்த மாற்றத்தைச் செய்ய முடியாது. | |
+| 112 | `message.appointment.closed_completed` | A completed appointment cannot be {action}. | முடிந்துவிட்ட சந்திப்பில் இந்த மாற்றத்தைச் செய்ய முடியாது. | |
+| 113 | `message.appointment.closed_no_show` | A no-show appointment cannot be {action}. | நோயாளி வராத சந்திப்பில் இந்த மாற்றத்தைச் செய்ய முடியாது. | |
+| 114 | `message.appointment.closed_arrived` | The patient has already arrived; the appointment cannot be {action}. | நோயாளி ஏற்கனவே மருத்துவமனைக்கு வந்துவிட்டார், எனவே இந்தச் சந்திப்பில் இந்த மாற்றத்தைச் செய்ய முடியாது. | |
+| 115 | `message.appointment.closed_rescheduled` | This appointment was rescheduled; the new appointment must be {action} instead. | இந்தச் சந்திப்பின் நேரம் மாற்றப்பட்டுவிட்டது; இந்த மாற்றத்தைப் புதிய சந்திப்பில் செய்யுங்கள். | |
+| 116 | `message.telehealth.too_early` | You can join from {minutes} minutes before the appointment time. | சந்திப்பு நேரத்துக்கு {minutes} நிமிடங்களுக்கு முன்பிருந்து நீங்கள் இணையலாம். | |
+| 117 | `message.telehealth.ended` | This consultation has ended. | இந்த ஆலோசனை முடிந்துவிட்டது. | |
+| 118 | `message.telehealth.cancelled` | This consultation was cancelled. | இந்த ஆலோசனை ரத்துசெய்யப்பட்டது. | |
+| 119 | `message.telehealth.missed` | This consultation was missed. Please book a new appointment. | இந்த ஆலோசனை தவறவிடப்பட்டது. தயவுசெய்து புதிய சந்திப்பை முன்பதிவு செய்யுங்கள். | |
+| 120 | `message.waitlist.from_today` | Choose today or a later date. | இன்றைய தேதியையோ அதற்குப் பிந்தைய தேதியையோ தேர்ந்தெடுங்கள். | |
+| 121 | `message.waitlist.max_days` | A waitlist request can cover at most {days} days. | காத்திருப்புப் பட்டியல் கோரிக்கை அதிகபட்சம் {days} நாட்களுக்கு மட்டுமே இருக்க முடியும். | |
+| 122 | `message.waitlist.already_closed` | This waitlist request is already closed. | இந்தக் காத்திருப்புப் பட்டியல் கோரிக்கை ஏற்கனவே முடிக்கப்பட்டுவிட்டது. | |
+| 123 | `message.payment.gateway_not_configured_counter` | No payment gateway is configured. Collect the payment at the counter. | ஆன்லைனில் பணம் செலுத்தும் வசதி இப்போது இல்லை. தயவுசெய்து மருத்துவமனைக் கவுண்டரில் பணம் செலுத்துங்கள். | |
+| 124 | `message.payment.gateway_unavailable_counter` | The payment gateway could not be reached. Try again or collect the payment at the counter. | பணம் செலுத்தும் கேட்வேயை அணுக முடியவில்லை. மீண்டும் முயற்சி செய்யுங்கள் அல்லது மருத்துவமனைக் கவுண்டரில் பணம் செலுத்துங்கள். | |
+| 125 | `message.payment.no_balance` | This bill has no balance to pay. | இந்த பில்லில் செலுத்த வேண்டிய தொகை எதுவும் இல்லை. | |
+| 126 | `message.portal.family_ended` | This family member can no longer see the records. | இந்தக் குடும்ப உறுப்பினர் இனி இந்தப் பதிவுகளைப் பார்க்க முடியாது. | |
+| 127 | `message.refill.not_refillable` | This prescription cannot be refilled. | இந்த மருந்துச் சீட்டுக்கு மீண்டும் மருந்து பெற முடியாது. | |
+| 128 | `message.refill.not_dispensed` | The prescription must be dispensed before it can be refilled. | மீண்டும் மருந்து பெறுவதற்கு முன், இந்த மருந்துச் சீட்டுக்கான மருந்து ஒருமுறை மருந்தகத்தில் வழங்கப்பட்டிருக்க வேண்டும். | |
+| 129 | `message.refill.none_left` | No refills are left on this prescription. Ask the doctor for a new prescription. | இந்த மருந்துச் சீட்டில் மீண்டும் மருந்து பெறும் வாய்ப்புகள் எதுவும் மீதம் இல்லை. மருத்துவரிடம் புதிய மருந்துச் சீட்டைப் பெறுங்கள். | |
+| 130 | `message.refill.expired` | The refill authorisation has expired. Ask the doctor for a new prescription. | மீண்டும் மருந்து பெறுவதற்கான அனுமதியின் காலம் முடிந்துவிட்டது. மருத்துவரிடம் புதிய மருந்துச் சீட்டைப் பெறுங்கள். | |
+| 131 | `message.records.facility` | Select a facility first. | முதலில் மருத்துவமனைக் கிளையைத் தேர்ந்தெடுங்கள். | |
+| 132 | `message.privacy.changes_limit` | List at most {count} changes. | அதிகபட்சம் {count} மாற்றங்களை மட்டும் குறிப்பிடுங்கள். | |
+| 133 | `message.privacy.changes_once` | List each detail once. | ஒவ்வொரு விவரத்தையும் ஒருமுறை மட்டும் குறிப்பிடுங்கள். | |
+| 134 | `message.privacy.nominee_name` | Enter the nominee's name. | நியமனதாரரின் பெயரை உள்ளிடுங்கள். | |
+| 135 | `message.privacy.nominee_relationship` | Say how the nominee is related to the patient. | நியமனதாரருக்கும் நோயாளிக்கும் உள்ள உறவைக் குறிப்பிடுங்கள். | |
+| 136 | `message.privacy.nominee_contact` | Enter the nominee's mobile number or e-mail address, so the hospital can reach them. | மருத்துவமனை தொடர்புகொள்ள, நியமனதாரரின் மொபைல் எண் அல்லது மின்னஞ்சல் முகவரியை உள்ளிடுங்கள். | |
+| 137 | `message.auth.otp_code` | Enter the 6-digit code sent to your mobile. | உங்கள் மொபைலுக்கு அனுப்பப்பட்ட 6 இலக்கக் குறியீட்டை உள்ளிடுங்கள். | |
+| 138 | `message.public.unknown_request` | Unknown request. | இந்தக் கோரிக்கையை அடையாளம் காண முடியவில்லை. | |
+| 139 | `message.feature.portal_off_title` | The patient portal is turned off | நோயாளி போர்ட்டல் நிறுத்தப்பட்டுள்ளது | |
+| 140 | `message.feature.portal_off` | The patient portal is not available right now. Please contact the hospital. | நோயாளி போர்ட்டல் இப்போது கிடைக்கவில்லை. தயவுசெய்து மருத்துவமனையைத் தொடர்புகொள்ளுங்கள். | |
+| 141 | `message.feature.telehealth_off_title` | Video consultations are turned off | வீடியோ ஆலோசனைகள் நிறுத்தப்பட்டுள்ளன | |
+| 142 | `message.feature.telehealth_off` | Video consultations are not available right now. Please contact the hospital to see the doctor in person. | வீடியோ ஆலோசனைகள் இப்போது கிடைக்கவில்லை. மருத்துவரை நேரில் சந்திக்க, தயவுசெய்து மருத்துவமனையைத் தொடர்புகொள்ளுங்கள். | |
+| 143 | `message.feature.abdm_off_title` | ABDM health records are turned off | ABDM சுகாதாரப் பதிவுகள் வசதி நிறுத்தப்பட்டுள்ளது | |
+| 144 | `message.feature.off` | This is not available right now. Please contact the hospital. | இந்த வசதி இப்போது கிடைக்கவில்லை. தயவுசெய்து மருத்துவமனையைத் தொடர்புகொள்ளுங்கள். | |
+
+## The validators' own messages (shown next to a field)
+
+When a field is left empty, is too long or holds a value not offered, the server's own check words the message. In Tamil
+it is worded without the field's name, because the portal shows it next to the field (`validator.*`, keyed by the
+check's name in the FluentValidation library). Words in `{braces}` are numbers HC360 fills in. Staff and English readers
+keep the library's own English.
+
+| # | Key | English | Tamil | OK? |
+|---|---|---|---|---|
+| 1 | `validator.NotEmptyValidator` | This is required. | இந்தத் தகவல் தேவை. | |
+| 2 | `validator.MaximumLengthValidator` | Keep it to {MaxLength} characters or fewer. You entered {TotalLength}. | {MaxLength} எழுத்துகளுக்கு மிகாமல் எழுதுங்கள். நீங்கள் {TotalLength} எழுத்துகள் எழுதியுள்ளீர்கள். | |
+| 3 | `validator.EnumValidator` | Choose one of the options given. | கொடுக்கப்பட்ட விருப்பங்களில் ஒன்றைத் தேர்ந்தெடுங்கள். | |
+| 4 | `validator.InclusiveBetweenValidator` | Choose a number from {From} to {To}. | {From} முதல் {To} வரையிலான ஒரு எண்ணைத் தேர்ந்தெடுங்கள். | |
+| 5 | `validator.EmailValidator` | Enter a valid e-mail address. | சரியான மின்னஞ்சல் முகவரியை உள்ளிடுங்கள். | |
 
 ## The rate list (displayed at the counter and in the wards)
 
