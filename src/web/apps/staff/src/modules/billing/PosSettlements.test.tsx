@@ -12,12 +12,14 @@ import {
   type PosSettlementImportDto,
   type PosSettlementImportResult,
   type PosSettlementLineDto,
+  type UnsettledPosReceiptDto,
 } from './posSettlementApi';
-import { ImportReportDialog, PosImports, PosToLookAt } from './PosSettlements';
+import { ImportReportDialog, PosImports, PosToLookAt, PosUnsettled } from './PosSettlements';
 
 // The server, the router and the toasts are outside the test; the screen's own behaviour is what is tested.
 const listLines = vi.hoisted(() => vi.fn());
 const listImports = vi.hoisted(() => vi.fn());
+const listUnsettled = vi.hoisted(() => vi.fn());
 vi.mock('./posSettlementApi', async (importOriginal) => {
   const actual = await importOriginal<typeof PosApi>();
   return {
@@ -39,12 +41,14 @@ vi.mock('./posSettlementApi', async (importOriginal) => {
         queryKey: [...actual.posSettlementKeys.imports(), pageNumber],
         queryFn: () => listImports(pageNumber),
       }),
+      unsettled: () => ({ queryKey: actual.posSettlementKeys.unsettled(), queryFn: () => listUnsettled() }),
     },
   };
 });
 const notify = vi.hoisted(() => ({ success: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn() }));
 vi.mock('@hc360/ui', async (importOriginal) => ({ ...(await importOriginal<typeof Ui>()), useNotify: () => notify }));
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
+const navigate = vi.hoisted(() => vi.fn());
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
 
 // Fluent's MessageBar measures itself; jsdom has no ResizeObserver.
 beforeAll(() => {
@@ -124,6 +128,8 @@ function line(patch: Partial<PosSettlementLineDto>): PosSettlementLineDto {
     billId: null,
     refundId: null,
     refundNumber: null,
+    counter: null,
+    counterDocument: null,
     needsAttention: true,
     reviewedAt: null,
     reviewedByName: null,
@@ -206,6 +212,27 @@ describe('transactions to look at', () => {
     expect(notify.success).toHaveBeenCalledWith('Marked reviewed', 'Your note is kept with the transaction.');
   });
 
+  it("names the pharmacy's invoice a transaction matched, with no bill to open", async () => {
+    listLines.mockResolvedValue(
+      page([
+        line({
+          match: 'AmountDiffers',
+          matchBasis: 'Rrn',
+          recordedAmount: 990,
+          counter: 'pharmacy',
+          counterDocument: 'PH/0042',
+        }),
+      ]),
+    );
+    const user = userEvent.setup();
+    render(wrap(<PosToLookAt page={1} onPage={vi.fn()} />));
+
+    expect(await screen.findByText('Pharmacy invoice PH/0042 (by the RRN) records another amount')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Actions for the transaction/ }));
+    expect(await screen.findByRole('menuitem', { name: 'Mark reviewed…' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Open the bill' })).not.toBeInTheDocument();
+  });
+
   it('matches again and says what happened', async () => {
     listLines.mockResolvedValue(page([]));
     vi.mocked(posSettlementApi.match).mockResolvedValue({
@@ -226,6 +253,69 @@ describe('transactions to look at', () => {
         '1 transaction now matches; 1 transaction still to look at.',
       ),
     );
+  });
+});
+
+function unsettled(patch: Partial<UnsettledPosReceiptDto>): UnsettledPosReceiptDto {
+  return {
+    receiptId: 'r1',
+    receiptNumber: 'NHRC260000012',
+    paymentId: 'p1',
+    billId: 'b1',
+    receivedAt: '2026-10-01T05:00:00Z',
+    mode: 'Card',
+    amount: 500,
+    reference: '627410000001',
+    cardLast4: '1234',
+    terminalId: null,
+    daysWaiting: 7,
+    counter: null,
+    cancelled: false,
+    ...patch,
+  };
+}
+
+describe('payments not settled', () => {
+  it("lists the pharmacy's and the canteen's with Billing's receipts, and opens only a receipt's bill", async () => {
+    listUnsettled.mockResolvedValue([
+      unsettled({}),
+      unsettled({
+        receiptId: null,
+        receiptNumber: 'PH/0042',
+        paymentId: 'p2',
+        billId: null,
+        mode: 'Upi',
+        amount: 240,
+        reference: '627510000002',
+        cardLast4: null,
+        counter: 'pharmacy',
+      }),
+      unsettled({
+        receiptId: null,
+        receiptNumber: 'CB-17',
+        paymentId: 'p3',
+        billId: null,
+        amount: 90,
+        reference: null,
+        cardLast4: null,
+        counter: 'canteen',
+        cancelled: true,
+      }),
+    ]);
+    const user = userEvent.setup();
+    render(wrap(<PosUnsettled settlementDays={3} />));
+
+    expect(await screen.findByText('NHRC260000012')).toBeInTheDocument();
+    expect(screen.getByText('Pharmacy invoice PH/0042')).toBeInTheDocument();
+    expect(screen.getByText('Canteen bill CB-17')).toBeInTheDocument();
+    // Only the cancelled bill says it was cancelled, and a payment typed without its reference says so.
+    expect(screen.getAllByText(/Cancelled since: it settles unless it was voided on the terminal/)).toHaveLength(1);
+    expect(screen.getByText('No reference recorded')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Pharmacy invoice PH/0042'));
+    expect(navigate).not.toHaveBeenCalled();
+    await user.click(screen.getByText('NHRC260000012'));
+    expect(navigate).toHaveBeenCalledWith({ to: '/billing/bills/$billId', params: { billId: 'b1' } });
   });
 });
 

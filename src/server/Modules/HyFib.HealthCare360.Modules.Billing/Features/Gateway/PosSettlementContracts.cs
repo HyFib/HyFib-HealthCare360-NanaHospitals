@@ -72,7 +72,13 @@ public sealed record PosSettlementLineDto(
     DateTimeOffset? ReviewedAt,
     string? ReviewedByName,
     string? ReviewNote,
-    uint Version);
+    uint Version)
+{
+    /// <summary>The counter whose payment or refund it matched when that was not Billing's (<c>pharmacy</c>, <c>canteen</c>), and its invoice or bill.</summary>
+    public string? Counter { get; init; }
+
+    public string? CounterDocument { get; init; }
+}
 
 /// <summary>One payout: a day's transactions under one UTR, which is one credit on the bank statement and one journal.</summary>
 /// <param name="Sales">Payments, before charges.</param>
@@ -103,10 +109,14 @@ public sealed record PosSettlementDayDto(
     int ToLookAt,
     IReadOnlyList<PosPayoutDto> Payouts);
 
-/// <summary>A card or UPI receipt the acquirer has not settled after the expected days.</summary>
+/// <summary>A card or UPI receipt the acquirer has not settled after the expected days, or a pharmacy or canteen payment.</summary>
+/// <param name="ReceiptId">Billing's receipt; null for a pharmacy or canteen payment.</param>
+/// <param name="ReceiptNumber">The receipt's number, or the pharmacy's invoice or the canteen's bill.</param>
 /// <param name="TerminalId">HC360's terminal, for a payment taken on a connected terminal.</param>
+/// <param name="Counter">The counter that took it when not Billing (<c>pharmacy</c>, <c>canteen</c>).</param>
+/// <param name="Cancelled">Its invoice or bill was cancelled since; the terminal's payment still settles.</param>
 public sealed record UnsettledPosReceiptDto(
-    Guid ReceiptId,
+    Guid? ReceiptId,
     string ReceiptNumber,
     Guid PaymentId,
     Guid? BillId,
@@ -116,7 +126,9 @@ public sealed record UnsettledPosReceiptDto(
     string? Reference,
     string? CardLast4,
     string? TerminalId,
-    int DaysWaiting);
+    int DaysWaiting,
+    string? Counter = null,
+    bool Cancelled = false);
 
 public sealed record PosSettlementCountDto(PosSettlementMatch Match, int Count, decimal Amount);
 

@@ -22,6 +22,7 @@ public sealed class PosSettlementService(
     ISettingsService settings,
     TallyCorrections corrections,
     IApprovals approvals,
+    IEnumerable<ICounterSalesSource> counters,
     TimeProvider time)
 {
     public const int MaxListDays = 92;
@@ -339,13 +340,14 @@ public sealed class PosSettlementService(
     /// <summary>
     /// Card and UPI receipts that no settled transaction carries although the acquirer's reports already go
     /// <see cref="PosSettlementSettings.SettlementDays"/> days past them (per mode, from the first day a report covers,
-    /// for the last <see cref="UnsettledWindowDays"/> days), oldest first.
+    /// for the last <see cref="UnsettledWindowDays"/> days), oldest first; the pharmacy's and the canteen's card and UPI
+    /// payments with them.
     /// </summary>
     public async Task<IReadOnlyList<UnsettledPosReceiptDto>> UnsettledAsync(Guid facilityId, CancellationToken ct)
     {
         var days = (await SettingsAsync(facilityId, ct)).EffectiveSettlementDays;
         var coverage = await db.Set<PosSettlementLine>().AsNoTracking()
-            .Where(l => l.FacilityId == facilityId && l.Match != PosSettlementMatch.OtherCounter && l.WithdrawnOn == null)
+            .Where(l => l.FacilityId == facilityId && l.Match != PosSettlementMatch.OtherCounter && l.Counter == null && l.WithdrawnOn == null)
             .GroupBy(l => l.Mode)
             .Select(g => new { Mode = g.Key, First = g.Min(l => l.TransactionOn ?? l.SettledOn), Last = g.Max(l => l.SettledOn) })
             .ToListAsync(ct);
@@ -385,7 +387,59 @@ public sealed class PosSettlementService(
                 today.DayNumber - BillingTime.LocalDate(f.ReceivedAt).DayNumber)));
         }
 
+        rows.AddRange(await UnsettledAtCountersAsync(facilityId, days, today, ct));
+
         return rows.OrderBy(r => r.ReceivedAt).Take(MaxUnsettled).ToList();
+    }
+
+    /// <summary>
+    /// The pharmacy's and the canteen's card and UPI payments that no settled transaction carries, counted like Billing's
+    /// receipts but from the reports that carry each counter's own transactions: a counter whose terminal's settlements
+    /// are not imported (another bank's) has nothing listed, rather than everything.
+    /// </summary>
+    private async Task<IEnumerable<UnsettledPosReceiptDto>> UnsettledAtCountersAsync(Guid facilityId, int days, DateOnly today, CancellationToken ct)
+    {
+        var coverage = await db.Set<PosSettlementLine>().AsNoTracking()
+            .Where(l => l.FacilityId == facilityId && l.Counter != null && l.WithdrawnOn == null)
+            .GroupBy(l => new { l.Counter, l.Mode })
+            .Select(g => new { g.Key.Counter, g.Key.Mode, First = g.Min(l => l.TransactionOn ?? l.SettledOn), Last = g.Max(l => l.SettledOn) })
+            .ToListAsync(ct);
+        var payments = new List<CounterCandidate>();
+        DateOnly? since = null;
+        foreach (var counter in counters)
+        {
+            foreach (var covered in coverage.Where(c => c.Counter == counter.Counter))
+            {
+                var first = covered.First > today.AddDays(-UnsettledWindowDays) ? covered.First : today.AddDays(-UnsettledWindowDays);
+                var last = covered.Last.AddDays(-days);
+                if (last < first)
+                {
+                    continue;
+                }
+
+                since = since is { } earlier && earlier < first ? earlier : first;
+                var (start, end) = BillingTime.Range(first, last);
+                payments.AddRange((await counter.GetCardPaymentsAsync(facilityId, start, end, ct))
+                    .Select(p => new CounterCandidate(counter.Counter, p))
+                    .Where(c => !c.Payment.IsRefund && c.Mode == covered.Mode));
+            }
+        }
+
+        if (since is not { } from || payments.Count == 0)
+        {
+            return [];
+        }
+
+        // A payment is settled no earlier than it was taken, so the transactions that carry these were settled since then.
+        var settled = (await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(l => l.FacilityId == facilityId && l.CounterPaymentId != null && l.SettledOn >= from)
+                .Select(l => l.CounterPaymentId!.Value)
+                .ToListAsync(ct))
+            .ToHashSet();
+
+        return payments.Where(p => !settled.Contains(p.Payment.PaymentId)).Select(p => new UnsettledPosReceiptDto(
+            null, p.Payment.Document, p.Payment.PaymentId, null, p.Payment.At, p.Mode, p.Payment.Amount, p.Payment.Reference, null, null,
+            today.DayNumber - BillingTime.LocalDate(p.Payment.At).DayNumber, p.Counter, p.Payment.Cancelled));
     }
 
     /// <summary>
@@ -547,6 +601,13 @@ public sealed class PosSettlementService(
 
     private sealed record PosApproval(string TransactionId, string ApprovalCode, decimal Amount, DateTimeOffset At);
 
+    private sealed record CounterCandidate(string Counter, CounterCardPayment Payment)
+    {
+        public string? Key { get; } = PosSettlementFile.Reference(Payment.Reference, 32);
+
+        public PaymentMode Mode => Payment.Mode == CounterPaymentMode.Upi ? PaymentMode.Upi : PaymentMode.Card;
+    }
+
     private sealed record RefundCandidate(Guid Id, decimal Amount, string? Reference, DateTimeOffset? PaidAt)
     {
         public string? Key { get; } = PosSettlementFile.Reference(Reference, 32);
@@ -557,36 +618,104 @@ public sealed class PosSettlementService(
     /// terminal's, or the one the cashier typed), else by its approval code and amount within two days (a connected
     /// terminal's sale, or the code typed as the reference), else a card payment by its last four digits and amount
     /// within a day. A refund matches the refund paid by card or UPI with its RRN or approval code. Each receipt payment
-    /// and refund is matched once. Lines of other counters' terminals are set aside.
+    /// and refund is matched once. What is left, at any terminal, is matched with the pharmacy's and the canteen's card
+    /// and UPI payments (<see cref="MatchCountersAsync"/>); a line of another counter's terminal that matches none of
+    /// them is set aside.
     /// </summary>
     private async Task MatchAsync(Guid facilityId, IReadOnlyList<PosSettlementLine> lines, PosSettlementSettings setup, DateTimeOffset now, CancellationToken ct)
     {
-        foreach (var line in lines)
+        // A line set aside as another counter's is looked at again: its sale may have been recorded since, or its
+        // terminal be another counter's no more.
+        foreach (var line in lines.Where(l => l.Match == PosSettlementMatch.OtherCounter))
         {
-            if (setup.IsOtherTerminal(line.TerminalId))
-            {
-                if (line.Match != PosSettlementMatch.OtherCounter)
-                {
-                    line.MarkOtherCounter();
-                }
-            }
-            else if (line.Match == PosSettlementMatch.OtherCounter)
-            {
-                line.Unmatch();
-            }
+            line.Unmatch();
         }
 
-        var sales = lines.Where(l => l.Type == PosSettlementLineType.Sale && l.Match == PosSettlementMatch.NoReceipt)
+        // Billing's receipts and refunds are taken at Billing's terminals.
+        var own = lines.Where(l => !setup.IsOtherTerminal(l.TerminalId)).ToList();
+        var sales = own.Where(l => l.Type == PosSettlementLineType.Sale && l.Match == PosSettlementMatch.NoReceipt)
             .OrderBy(l => l.TransactionAt ?? BillingTime.StartOfDay(l.SettledOn)).ThenBy(l => l.LineKey, StringComparer.Ordinal).ToList();
         if (sales.Count > 0)
         {
             await MatchSalesAsync(facilityId, sales, now, ct);
         }
 
-        var refunds = lines.Where(l => l.Type == PosSettlementLineType.Refund && l.Match == PosSettlementMatch.NoRefund).ToList();
+        var refunds = own.Where(l => l.Type == PosSettlementLineType.Refund && l.Match == PosSettlementMatch.NoRefund).ToList();
         if (refunds.Count > 0)
         {
             await MatchRefundsAsync(facilityId, refunds, now, ct);
+        }
+
+        var left = lines.Where(l => (l.Type == PosSettlementLineType.Sale && l.Match == PosSettlementMatch.NoReceipt)
+                                    || (l.Type == PosSettlementLineType.Refund && l.Match == PosSettlementMatch.NoRefund))
+            .OrderBy(l => l.TransactionAt ?? BillingTime.StartOfDay(l.SettledOn)).ThenBy(l => l.LineKey, StringComparer.Ordinal).ToList();
+        if (left.Count > 0)
+        {
+            await MatchCountersAsync(facilityId, left, now, ct);
+        }
+
+        foreach (var line in lines.Where(l => setup.IsOtherTerminal(l.TerminalId) && l.Match is not (PosSettlementMatch.Matched or PosSettlementMatch.AmountDiffers)))
+        {
+            line.MarkOtherCounter();
+        }
+    }
+
+    /// <summary>
+    /// Matches settled transactions with the card and UPI payments, and refunds, of the counters that bill their own sales
+    /// (the pharmacy, the canteen): by the RRN (UPI: the UTR) the cashier typed as the reference, else by the approval
+    /// code typed as the reference with the same amount within two days. A sale takes a payment and a refund a refund,
+    /// each once, of the same mode first. The counters record no card digits, so a payment typed without its reference is
+    /// not matched: it is listed as not settled.
+    /// </summary>
+    private async Task MatchCountersAsync(Guid facilityId, IReadOnlyList<PosSettlementLine> lines, DateTimeOffset now, CancellationToken ct)
+    {
+        // Only a payment whose reference is one of the lines' RRNs or approval codes can match: the window's others are left
+        // out before anything else is read about them.
+        var keys = lines.SelectMany(l => new[] { l.Rrn, l.ApprovalCode }).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        var (start, end) = Window(lines);
+        var candidates = new List<CounterCandidate>();
+        foreach (var counter in counters)
+        {
+            candidates.AddRange((await counter.GetCardPaymentsAsync(facilityId, start, end, ct))
+                .Select(p => new CounterCandidate(counter.Counter, p))
+                .Where(c => c.Key is not null && keys.Contains(c.Key)));
+        }
+
+        if (candidates.Count == 0)
+        {
+            return;
+        }
+
+        var taken = new HashSet<Guid>();
+        foreach (var chunk in candidates.Select(c => c.Payment.PaymentId).Distinct().Chunk(1000))
+        {
+            taken.UnionWith(await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(l => l.CounterPaymentId != null && chunk.Contains(l.CounterPaymentId.Value))
+                .Select(l => l.CounterPaymentId!.Value)
+                .ToListAsync(ct));
+        }
+
+        var byReference = candidates.Where(c => c.Key is not null)
+            .OrderBy(c => c.Payment.At).ThenBy(c => c.Payment.PaymentId)
+            .ToLookup(c => c.Key!, StringComparer.Ordinal);
+        foreach (var line in lines)
+        {
+            var refund = line.Type == PosSettlementLineType.Refund;
+            bool Free(CounterCandidate c) => !taken.Contains(c.Payment.PaymentId) && c.Payment.IsRefund == refund;
+            var byRrn = line.Rrn is { } rrn
+                ? byReference[rrn].Where(Free).OrderBy(c => c.Mode == line.Mode ? 0 : 1).FirstOrDefault()
+                : null;
+            var byCode = byRrn is null && line.ApprovalCode is { } code
+                ? byReference[code].Where(c => Free(c) && c.Payment.Amount == line.Amount && Near(line, c.Payment.At, 2)).OrderBy(c => c.Mode == line.Mode ? 0 : 1).FirstOrDefault()
+                : null;
+            if ((byRrn ?? byCode) is not { } found)
+            {
+                continue;
+            }
+
+            line.MatchCounter(found.Counter, found.Payment.PaymentId, found.Payment.Document, found.Payment.Amount,
+                byRrn is not null ? PosMatchBasis.Rrn : PosMatchBasis.ApprovalCode, now);
+            taken.Add(found.Payment.PaymentId);
         }
     }
 
@@ -830,7 +959,11 @@ public sealed class PosSettlementService(
                 l.Id, l.Acquirer, l.Type, l.Mode, l.TerminalId, l.TransactionAt, l.TransactionOn, l.Amount, l.Charges, l.Tax, l.Net, l.Rrn,
                 l.ApprovalCode, l.CardLast4, l.SettledOn, l.Utr, l.Match, l.MatchBasis, l.RecordedAmount, l.ReceiptId, receipt?.Number,
                 receipt?.BillId, l.RefundId, l.RefundId is { } refundId ? refunds.GetValueOrDefault(refundId) : null, l.NeedsAttention, l.ReviewedAt,
-                l.ReviewedByName, l.ReviewNote, l.Version);
+                l.ReviewedByName, l.ReviewNote, l.Version)
+            {
+                Counter = l.Counter,
+                CounterDocument = l.CounterDocument,
+            };
         }).ToList();
     }
 

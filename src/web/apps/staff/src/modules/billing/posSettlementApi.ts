@@ -5,8 +5,9 @@ import type { ApprovalRequestDto } from '@/modules/approvals/api';
 
 /**
  * Card and UPI terminal reconciliation: /api/v1/billing/pos/settlements (INT-POS). The acquirer's settlement reports,
- * imported by an accountant and matched with HC360's card and UPI receipts and refunds; what does not match, the
- * receipts not settled yet, and the payouts by day. Permission `billing.gateway.reconcile`.
+ * imported by an accountant and matched with HC360's card and UPI receipts and refunds, and the pharmacy's and the
+ * canteen's card and UPI payments and refunds; what does not match, the payments not settled yet, and the payouts by
+ * day. Permission `billing.gateway.reconcile`.
  */
 
 export type PosSettlementLineType = 'Sale' | 'Refund' | 'Adjustment';
@@ -36,7 +37,8 @@ export const POS_MATCH_HELP: Record<PosSettlementMatch, string> = {
     'The acquirer paid this money, but no receipt records it. Record the payment on its bill, then match again.',
   NoRefund: 'The acquirer took this money back as a refund, but no HC360 refund records it.',
   Review: 'The acquirer took money back (a chargeback or correction). Check it with the acquirer.',
-  OtherCounter: 'Taken at a terminal of a counter HC360 billing does not record, such as the pharmacy.',
+  OtherCounter:
+    "Taken at another counter's terminal, and no pharmacy or canteen payment in HC360 names it: a counter HC360 does not record, or a payment recorded without its reference.",
   Withdrawn: 'Its report was withdrawn as imported in error; a correct report may bring it again.',
 };
 
@@ -110,6 +112,10 @@ export interface PosSettlementLineDto {
   billId: string | null;
   refundId: string | null;
   refundNumber: string | null;
+  /** The counter whose payment (or refund) it matched when that was not Billing's: `pharmacy` or `canteen`. */
+  counter: string | null;
+  /** That counter's invoice or bill. */
+  counterDocument: string | null;
   needsAttention: boolean;
   reviewedAt: string | null;
   reviewedByName: string | null;
@@ -144,8 +150,11 @@ export interface PosSettlementDayDto {
   payouts: PosPayoutDto[];
 }
 
+/** A card or UPI receipt the acquirer has not settled after the expected days, or a pharmacy or canteen payment. */
 export interface UnsettledPosReceiptDto {
-  receiptId: string;
+  /** Billing's receipt; null for a pharmacy or canteen payment. */
+  receiptId: string | null;
+  /** The receipt's number, or the pharmacy's invoice or the canteen's bill. */
   receiptNumber: string;
   paymentId: string;
   billId: string | null;
@@ -156,6 +165,10 @@ export interface UnsettledPosReceiptDto {
   cardLast4: string | null;
   terminalId: string | null;
   daysWaiting: number;
+  /** The counter that took it when not Billing: `pharmacy` or `canteen`. */
+  counter: string | null;
+  /** Its invoice or bill was cancelled since: the money went back at the counter, but the terminal's payment still settles. */
+  cancelled: boolean;
 }
 
 export interface PosSettlementCountDto {
@@ -305,15 +318,45 @@ export function references(
     .join(' · ');
 }
 
-/** What a line matched, in words: the receipt or refund and how it was found, or why it did not match. */
+/** The documents of the counters that bill their own sales, by the counter's name on the server. */
+const COUNTER_DOCUMENT: Record<string, string> = {
+  pharmacy: 'pharmacy invoice',
+  canteen: 'canteen bill',
+};
+
+/**
+ * A pharmacy or canteen document in words: "Pharmacy invoice PH/0042", "Canteen bill CB-17", or for money paid back,
+ * "Refund on pharmacy invoice PH/0042".
+ */
+export function counterDocumentText(counter: string, document: string, refund = false): string {
+  const kind = COUNTER_DOCUMENT[counter] ?? counter;
+  return refund ? `Refund on ${kind} ${document}` : `${kind.charAt(0).toUpperCase()}${kind.slice(1)} ${document}`;
+}
+
+/**
+ * What a line matched, in words: the receipt or refund (or the pharmacy's or canteen's payment) and how it was found,
+ * or why it did not match.
+ */
 export function matchText(
-  line: Pick<PosSettlementLineDto, 'match' | 'matchBasis' | 'receiptNumber' | 'refundNumber' | 'recordedAmount'>,
+  line: Pick<
+    PosSettlementLineDto,
+    | 'type'
+    | 'match'
+    | 'matchBasis'
+    | 'receiptNumber'
+    | 'refundNumber'
+    | 'counter'
+    | 'counterDocument'
+    | 'recordedAmount'
+  >,
 ): string {
   const document = line.receiptNumber
     ? `Receipt ${line.receiptNumber}`
     : line.refundNumber
       ? `Refund ${line.refundNumber}`
-      : null;
+      : line.counter && line.counterDocument
+        ? counterDocumentText(line.counter, line.counterDocument, line.type === 'Refund')
+        : null;
   const basis = line.matchBasis ? ` (${POS_MATCH_BASIS_LABEL[line.matchBasis]})` : '';
   switch (line.match) {
     case 'Matched':

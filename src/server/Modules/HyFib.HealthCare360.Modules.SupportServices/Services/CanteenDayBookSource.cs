@@ -3,14 +3,28 @@ using HyFib.HealthCare360.Modules.SupportServices.Domain.Canteen;
 namespace HyFib.HealthCare360.Modules.SupportServices.Services;
 
 /// <summary>
-/// The canteen's day for Billing's Tally day book (INT-TALLY), through the Platform contract
-/// <see cref="ICounterSalesSource"/>.
+/// The canteen's day for Billing's Tally day book (INT-TALLY), and its card and UPI bills for the card and UPI
+/// settlement match, through the Platform contract <see cref="ICounterSalesSource"/>.
 /// </summary>
 internal sealed class CanteenDayBookSource(HospitalDbContext db) : ICounterSalesSource
 {
     public const string Key = "canteen";
 
     public string Counter => Key;
+
+    /// <summary>
+    /// Bills paid by card or UPI (a bill is paid one way). A cancelled bill's is still here: the terminal settles it,
+    /// and the money given back is the canteen's.
+    /// </summary>
+    public async Task<IReadOnlyList<CounterCardPayment>> GetCardPaymentsAsync(Guid facilityId, DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken) =>
+        await db.Set<CanteenSale>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(s => s.FacilityId == facilityId && (s.PaymentMode == CanteenPaymentMode.Card || s.PaymentMode == CanteenPaymentMode.Upi)
+                        && s.SoldAt >= from && s.SoldAt < to)
+            .OrderBy(s => s.SoldAt)
+            .Select(s => new CounterCardPayment(
+                s.Id, s.BillNumber, s.PaymentMode == CanteenPaymentMode.Card ? CounterPaymentMode.Card : CounterPaymentMode.Upi, s.NetAmount, s.PaymentReference,
+                s.SoldAt, false, s.Status == CanteenSaleStatus.Cancelled))
+            .ToListAsync(cancellationToken);
 
     public async Task<CounterSalesDay> GetDayAsync(Guid facilityId, DateOnly date, CancellationToken cancellationToken)
     {

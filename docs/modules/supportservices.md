@@ -137,6 +137,10 @@ changed. Delivery: Planned → Delivered or NotTaken; Delivered → Returned.
 | POST | `/sales/{id}/cancel` | `canteen.sales.cancel` | `CancelSaleRequest` → `CanteenSaleDto` (same business day only; stock restored; staff credit reversed) |
 | GET | `/reports/daily?date` | `canteen.reports.read` | → `DailySalesSummary` (bills, cancelled, taxable, CGST, SGST, round-off, net; by payment mode, customer type, category; item consumption and closing stock; `byHsnSac`: quantity, taxable, CGST, SGST and total per HSN/SAC code and GST rate, for the GSTR-1 HSN summary) |
 
+A card or UPI bill's `paymentReference` (the RRN or approval code from the charge slip, or the UPI reference) is how
+Billing's card and UPI settlement matches the acquirer's transaction with the bill; a bill without one is listed there
+as not settled. See *Card and UPI reconciliation* in [billing.md](billing.md).
+
 ### Staff credit — `/api/v1/canteen/staff-credit`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|

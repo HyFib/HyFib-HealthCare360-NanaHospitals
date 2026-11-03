@@ -911,6 +911,8 @@ const posLine = (
   billId: null,
   refundId: null,
   refundNumber: null,
+  counter: null,
+  counterDocument: null,
   needsAttention: false,
   reviewedAt: null,
   reviewedByName: null,
@@ -930,6 +932,20 @@ const POS_LINES: PosSettlementLineDto[] = [
     receiptId: id('01'),
     receiptNumber: 'NHOR260001342',
     billId: RECORD_ID,
+  }),
+  // A sale at the pharmacy's own terminal, matched with its invoice by the RRN the pharmacist typed.
+  posLine({
+    id: id('95'),
+    match: 'Matched',
+    amount: 312,
+    terminalId: 'PH-T02',
+    rrn: '429900184977',
+    approvalCode: '611977',
+    cardLast4: '9021',
+    matchBasis: 'Rrn',
+    recordedAmount: 312,
+    counter: 'pharmacy',
+    counterDocument: 'PH/2026/004417',
   }),
 ];
 
@@ -974,6 +990,8 @@ const UNSETTLED: UnsettledPosReceiptDto[] = [
     cardLast4: null,
     terminalId: 'OP-T01',
     daysWaiting: 4,
+    counter: null,
+    cancelled: false,
   },
 ];
 

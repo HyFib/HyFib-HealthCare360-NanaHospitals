@@ -116,7 +116,8 @@ export function PaymentPanel({
               </Field>
               {needsReference && (
                 <Field
-                  label={draft.mode === 'Card' ? 'Card slip number' : 'UPI transaction ID'}
+                  label={draft.mode === 'Card' ? 'RRN or approval code' : 'UPI reference (UTR)'}
+                  hint={draft.mode === 'Card' ? 'From the charge slip' : 'The 12-digit number on the payer’s screen'}
                   size="small"
                   required
                   className={styles.reference}
