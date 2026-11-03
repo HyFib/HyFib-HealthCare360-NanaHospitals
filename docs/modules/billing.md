@@ -559,13 +559,29 @@ one). See [Chargebacks](#chargebacks) for what happens behind them.
 
 All of them answer 422 `billing.dispute_closed` for a case won or lost, and 409 when someone changed it meanwhile.
 
-### Patient portal — `/api/v1/portal/bills` (`patients.portal`, own/linked patients only)
+### Patient portal — `/api/v1/portal/bills`, `/api/v1/portal/refunds` (`patients.portal`, own/linked patients only)
 | Method | Path | Request → response |
 |---|---|---|
-| GET | `/` · `/{id}` | → `PortalBillListItem[]` / `PortalBillDetail` (lines with `isReturn`, no staff names or internal codes) |
+| GET | `/` · `/{id}` | → `PortalBillListItem[]` / `PortalBillDetail` (lines with `isReturn`, the bill's own `refunds`, no staff names or internal codes) |
 | GET | `/{id}/pdf` | → `application/pdf` `bill-<number>.pdf`: the same [printed bill](#the-printed-bill) the counter prints, for the bills listed above only (finalized, part-paid, paid, refunded); audited ("Downloaded bill … as a PDF (patient portal)"); 503 `pdf.unavailable` when the server cannot make PDFs |
 | POST | `/{id}/pay` | → `PortalPaymentOrder` (gateway checkout / link) |
 | POST | `/{id}/payments/{orderId}/verify` | → `PortalPaymentStatus` |
+| GET | `/api/v1/portal/refunds?patientId=` | → `PortalRefund[]`, newest first, of the patients the account sees (or of the one asked for; 403 `portal.patient_denied` for anyone else): number, bill number, purpose, amount, `stage`, `requestedAt`, `sentAt`, `mode`, `reference`, `creditedAt` |
+
+Where a refund stands, for the patient (`PortalRefunds.StageOf`, first match):
+
+| `stage` | When | `reference` |
+|---|---|---|
+| `Requested` · `Approved` · `NotApproved` | the refund's status (the reason for a rejection is a staff note and is not sent) | none |
+| `Replaced` | paid, then recorded as not paid out (`notPaidOut`); the new refund that pays it is listed on its own | none |
+| `KeptAsAdvance` | paid as an advance (`Advance`) | none |
+| `Credited` | sent through the gateway and `Processed`; `creditedAt` is when the gateway said so | `gatewayReference` (ARN, RRN or UTR) |
+| `BankReturned` | sent through the gateway, `Failed`, and the counter can send it again: not being sent again, or a retry that stopped part way (5 minutes, the rule that lets the counter send it again) | none |
+| `WithTheBank` | sent through the gateway and waiting for the bank, or being sent again | `gatewayReference` once the gateway gives one |
+| `PaidOut` | paid at the counter | the counter's transfer, card-reversal, UPI or cheque reference; none for cash |
+
+`sentAt` is when the gateway took the refund (its latest attempt), otherwise when it was paid; `mode` is sent only once
+it is paid. The gateway's refund id and error text, the staff's names and the approver's remarks are never sent.
 
 ## A third party pays only on a second person's word
 

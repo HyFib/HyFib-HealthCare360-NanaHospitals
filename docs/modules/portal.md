@@ -89,7 +89,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `/telehealth/{sessionId}?t={joinToken}` | no | The SMS or WhatsApp join link (guest join) |
 | `/reports`, `/reports/{lab\|radiology\|cardiology}/{id}` | yes | Lab values with ranges and flags in plain words, and radiology and cardiology text. Download PDF (the hospital's official copy) or print |
 | `/prescriptions`, `/prescriptions/{id}` | yes | Prescriptions with verification QR code; Download PDF or print; refill requests. Where the hospital requires the doctor's DSC (ERX-04) and the prescription has no valid one yet, it shows no print, PDF or QR code and says, in English and Hindi, that the doctor has not digitally signed it yet; a PDF the server refuses for that reason is worded by its code in the patient's language |
-| `/bills`, `/bills/{id}` | yes | Bills, amount due, online payment; Download PDF or print a bill; receipts (print) |
+| `/bills`, `/bills/{id}` | yes | Bills, amount due, online payment; Download PDF or print a bill; receipts (print); refunds, where each stands and the reference to trace it by |
 | `/records`, `/records/discharge/{id}`, `/records/request` | yes | Health summary, discharge summaries (Download PDF or print), request a copy of records |
 | `/my-feedback`, `/my-feedback/{formId}` | yes | Feedback forms and the patient's feedback with complaint status |
 | `/profile`, `/profile/preferences` | yes | Details, family, language, SMS and WhatsApp choices, sign out. "Messages on WhatsApp" records the number's WhatsApp opt-in (or opt-out, as a STOP would), and lifts a STOP the number sent; it can be changed only when signed in with the patient's own number, and is shown read-only, with the reason, to a family member on another number |
@@ -133,7 +133,8 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | Video | `GET /api/v1/portal/telehealth/sessions`, `GET …/sessions/{id}/join`, and hub `/hubs/telehealth` |
 | Reports | `GET /api/v1/portal/reports?patientId=`, `GET /api/v1/portal/reports/{lab\|radiology\|cardiology}/{id}`, `GET …/{id}/pdf` (the id is the lab report id, or the scan or heart test's study id) |
 | Prescriptions | `GET /api/v1/portal/prescriptions?patientId=`, `GET …/{id}`, `GET …/{id}/pdf`, `GET /api/v1/portal/refills`, `POST /api/v1/portal/refills` |
-| Bills | `GET /api/v1/portal/bills?patientId=`, `GET …/{id}`, `GET …/{id}/pdf`, `POST …/{id}/pay`, `POST …/{id}/payments/{orderRowId}/verify` |
+| Bills | `GET /api/v1/portal/bills?patientId=`, `GET …/{id}` (with the bill's own `refunds`), `GET …/{id}/pdf`, `POST …/{id}/pay`, `POST …/{id}/payments/{orderRowId}/verify` |
+| Refunds | `GET /api/v1/portal/refunds?patientId=` → `PortalRefund[]`, newest first: `refundNumber`, `billNumber`, `purpose` (`Bill`, `Deposit`, `Advance`), `amount`, `stage`, `requestedAt`, `sentAt`, `mode`, `reference`, `creditedAt`; without `patientId`, every patient the account sees; 403 `portal.patient_denied` for anyone else |
 | Records | `GET /api/v1/portal/health-records?patientId=`, `GET /api/v1/portal/discharge-summaries/{id}`, `GET …/{id}/pdf`, `POST /api/v1/portal/record-requests` |
 | Feedback | `GET /api/v1/portal/feedback/forms`, `GET /api/v1/portal/feedback?patientId=`, `POST /api/v1/portal/feedback` |
 | Preferences | `GET` and `PUT /api/v1/portal/communication-preferences` |
@@ -210,8 +211,23 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
   re-check every few minutes, records the bill's receipt or confirms the booking and receipts its advance; the bill
   or appointment shows it the next time the patient looks. Receipts are dated when the gateway took the money, not
   when HC360 heard of it.
-* **Refunds** of online payments go back to the card or UPI account the patient paid from. The hospital follows each
-  one until the bank confirms it (usually 5 to 7 working days) and can give the patient the bank's reference.
+* **Refunds.** The Bills page lists the patient's refunds, newest first, and a bill's page lists that bill's own. Each
+  shows the amount, what it is for (a bill, an IP deposit or an unused advance), its number, where it stands in words,
+  and the reference to trace it by. The stages are:
+
+  | Stage | What the patient reads | Reference shown |
+  |---|---|---|
+  | Asked for | the date, and that a second person checks every refund before it is paid | none |
+  | Approved | that the hospital will pay it soon | none |
+  | Not approved | to ask at the billing counter (the reason is a staff note and is not sent) | none |
+  | Paid | paid in cash at the counter, or by bank transfer, card reversal, UPI, cheque or wallet, with the date | the counter's (transfer, card-reversal, UPI or cheque reference); none for cash |
+  | Kept as advance | kept as an advance on the account, with the date | none |
+  | With your bank | sent back through the payment gateway to the card or account that paid, with the date; banks usually take 5 to 7 working days | the bank's (ARN, RRN or UTR) once the gateway gives it |
+  | Credited | the date the bank credited it | the bank's, "your bank can trace the refund with it" |
+  | Bank could not credit | that the hospital will send it again or pay it another way (also when sending it again stopped part way); a refund sent again shows as *With your bank* | none |
+  | Paid again | that the payment did not reach the patient and a new refund pays it; the new refund is listed on its own | none |
+
+  Staff names, the approver's remarks, the gateway's own refund id and its error text are never sent to the portal.
 
 ## Printing and downloads
 
@@ -321,6 +337,8 @@ the record's preferred language, else English.
 * **The privacy centre:** request-form checks and the body it sends, server errors mapped to fields, retention in the
   patient's language from the server's periods, and the pages end to end in jsdom (hub, data summary, a new request,
   a request's detail and withdrawal, the nominee, a breach notice).
+* **Refunds:** each stage in words with its date, the bank's reference for a gateway refund and the counter's for a
+  transfer (none for cash), the list with its bill on the Bills page and without it on the bill's own page, and Hindi.
 * **WebRTC codecs and quality.**
 * **The feedback form in jsdom:** stars, the 0–10 score, the comment, and the call-back number check.
 * **Unsaved changes:** the add-family sheet asks before *Not now* or Esc throw typed details away, and the leave
@@ -331,7 +349,6 @@ the record's preferred language, else English.
 
 ## Known gaps (server follow-ups)
 
-* **Refund status in the portal.** Patients do not see where a refund stands; the hospital tells them.
 * **No server PDF for receipts or the privacy data summary.** They are printed from the page (*Documents without a
   server PDF*, above).
 * **Hindi and Tamil review.** The server's Hindi and Tamil were written by the development team and await native

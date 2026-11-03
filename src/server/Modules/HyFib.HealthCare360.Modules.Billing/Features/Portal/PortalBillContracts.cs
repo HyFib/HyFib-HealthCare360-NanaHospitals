@@ -20,7 +20,7 @@ public sealed record PortalBillListItem(
 public sealed record PortalBillLine(
     string Description, decimal Quantity, decimal UnitPrice, decimal DiscountAmount, decimal TaxAmount, decimal NetAmount, DateTimeOffset ServiceDate, bool IsReturn);
 
-/// <summary>What a patient sees of a bill: services, amounts and payments — no internal codes or staff names.</summary>
+/// <summary>What a patient sees of a bill: services, amounts, payments and refunds — no internal codes or staff names.</summary>
 public sealed record PortalBillDetail(
     Guid Id,
     string? BillNumber,
@@ -39,7 +39,8 @@ public sealed record PortalBillDetail(
     decimal PaidAmount,
     decimal DueAmount,
     IReadOnlyList<PortalBillLine> Lines,
-    IReadOnlyList<ReceiptSummary> Receipts);
+    IReadOnlyList<ReceiptSummary> Receipts,
+    IReadOnlyList<PortalRefund> Refunds);
 
 /// <summary>Hosted-checkout order for "pay now" (the checkout key is the gateway's public key, never a secret).</summary>
 public sealed record PortalPaymentOrder(Guid Id, string Provider, string OrderId, decimal Amount, string Currency, string? CheckoutKey, string? PaymentLinkUrl);

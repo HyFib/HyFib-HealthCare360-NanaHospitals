@@ -1,7 +1,7 @@
 import { Button, makeStyles, mergeClasses, Tab, TabList, tokens } from '@fluentui/react-components';
 import { ReceiptRegular, WalletRegular } from '@fluentui/react-icons';
 import { EmptyState } from '@hc360/ui';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { CardLink, TextLink } from '@/components/links';
 import { ListRow } from '@/components/ListRow';
@@ -12,6 +12,8 @@ import { useT } from '@/i18n';
 import { useFormat } from '@/i18n/useFormat';
 import { billQueries } from '@/modules/bills/api';
 import { BILL_STATUS, BILL_TYPE, isDue, totalDue } from '@/modules/bills/labels';
+import { RefundList } from '@/modules/bills/RefundList';
+import { ReportCard } from '@/modules/reports/ReportParts';
 import { useActiveProfile } from '@/shell/profileContext';
 
 export const Route = createFileRoute('/_auth/bills/')({
@@ -41,6 +43,7 @@ const useStyles = makeStyles({
   dueAmount: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
   more: { alignSelf: 'center', minWidth: '200px' },
   dueLine: { fontWeight: tokens.fontWeightSemibold, color: tokens.colorStatusWarningForeground3 },
+  refundsIntro: { margin: '0 0 12px', color: tokens.colorNeutralForeground2 },
 });
 
 function BillsPage() {
@@ -51,6 +54,7 @@ function BillsPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const { profile } = useActiveProfile();
   const bills = useInfiniteQuery(billQueries.list(profile.id));
+  const refunds = useQuery(billQueries.refunds(profile.id));
   const all = bills.data?.pages.flatMap((page) => page.items) ?? [];
   const dueBills = all.filter((bill) => isDue(bill.dueAmount));
   const rows = show === 'due' ? dueBills : all;
@@ -127,6 +131,17 @@ function BillsPage() {
           </>
         )}
       </div>
+      {refunds.isError ? (
+        <ErrorBlock error={refunds.error} onRetry={() => void refunds.refetch()} />
+      ) : (
+        refunds.isSuccess &&
+        refunds.data.length > 0 && (
+          <ReportCard title={t('refunds.title')}>
+            <p className={styles.refundsIntro}>{t('refunds.subtitle')}</p>
+            <RefundList refunds={refunds.data} showBill />
+          </ReportCard>
+        )
+      )}
       <TextLink to="/rates">{t('rates.link')}</TextLink>
     </PortalPage>
   );
