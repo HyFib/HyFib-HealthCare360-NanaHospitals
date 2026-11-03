@@ -37,6 +37,8 @@ internal static class FhirSystems
     public const string RoleCode = "http://terminology.hl7.org/CodeSystem/v3-RoleCode";
     public const string MedicationRequestCategory = "http://terminology.hl7.org/CodeSystem/medicationrequest-category";
     public const string TimingAbbreviation = "http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation";
+    public const string ImmunizationOrigin = "http://terminology.hl7.org/CodeSystem/immunization-origin";
+    public const string ImmunizationFunction = "http://terminology.hl7.org/CodeSystem/v2-0443";
 
     // FHIR-defined code systems of coded elements (used when a client searches with a system-qualified token).
     public const string AdministrativeGender = "http://hl7.org/fhir/administrative-gender";
@@ -47,6 +49,7 @@ internal static class FhirSystems
     public const string DiagnosticReportStatus = "http://hl7.org/fhir/diagnostic-report-status";
     public const string DocumentReferenceStatus = "http://hl7.org/fhir/document-reference-status";
     public const string AllergyCategory = "http://hl7.org/fhir/allergy-intolerance-category";
+    public const string ImmunizationStatus = "http://hl7.org/fhir/event-status";
 
     // Profiles.
     public const string VitalSignsProfile = "http://hl7.org/fhir/StructureDefinition/";

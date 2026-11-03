@@ -30,6 +30,7 @@ import {
   EmptyState,
   FormGrid,
   NumberField,
+  SelectField,
   StatusBadge,
   SwitchField,
   TextAreaField,
@@ -46,7 +47,7 @@ import { z } from 'zod';
 import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
 import { patientQueries } from '@/modules/patients/api';
-import { emrApi, emrKeys, emrQueries, encounterTypeLabel, type ImmunizationDto } from './api';
+import { emrApi, emrKeys, emrQueries, encounterTypeLabel, type ImmunizationDto, type VaccineRoute } from './api';
 import { ReasonDialog } from './ui';
 
 const useStyles = makeStyles({
@@ -110,7 +111,7 @@ export function EncountersTab({ patientId }: { patientId: string }) {
 const immunizationSchema = z
   .object({
     vaccineName: z.string().trim().min(1, 'Enter the vaccine.').max(200),
-    vaccineCode: z.string().max(32),
+    vaccineCode: z.string().max(32).nullable(),
     doseNumber: z.number().int().min(1).max(10).nullable(),
     administeredOn: z.string().min(1, 'Enter the date given.'),
     isExternal: z.boolean(),
@@ -144,6 +145,14 @@ const immunizationSchema = z
 
 type ImmunizationValues = z.infer<typeof immunizationSchema>;
 
+/** The route a vaccine's card code fills in, as staff write it (the server codes these). */
+const ROUTE_TEXT: Record<VaccineRoute, string> = {
+  Intradermal: 'ID',
+  Intramuscular: 'IM',
+  Subcutaneous: 'SC',
+  Oral: 'Oral',
+};
+
 function RecordImmunizationDialog({
   patientId,
   open,
@@ -174,7 +183,7 @@ function RecordImmunizationForm({ patientId, onClose }: { patientId: string; onC
     resolver: zodResolver(immunizationSchema),
     defaultValues: {
       vaccineName: '',
-      vaccineCode: '',
+      vaccineCode: null,
       doseNumber: null,
       administeredOn: today,
       isExternal: false,
@@ -189,12 +198,27 @@ function RecordImmunizationForm({ patientId, onClose }: { patientId: string; onC
     },
   });
   const isExternal = useWatch({ control: form.control, name: 'isExternal' });
+  const vaccines = useQuery(emrQueries.vaccines());
+  const vaccineCode = useWatch({ control: form.control, name: 'vaccineCode' });
+  // Choosing a card code names the vaccine (when no name was typed) and gives its usual route (unless staff changed it).
+  useEffect(() => {
+    const vaccine = vaccines.data?.find((v) => v.code === vaccineCode);
+    if (!vaccine) {
+      return;
+    }
+    if (!form.getValues('vaccineName').trim()) {
+      form.setValue('vaccineName', vaccine.name, { shouldDirty: true, shouldValidate: true });
+    }
+    if (vaccine.route && !form.getFieldState('route').isDirty) {
+      form.setValue('route', ROUTE_TEXT[vaccine.route]);
+    }
+  }, [vaccineCode, vaccines.data, form]);
   const save = useMutation({
     mutationFn: (v: ImmunizationValues) =>
       emrApi.recordImmunization(patientId, {
         encounterId: null,
         vaccineName: v.vaccineName.trim(),
-        vaccineCode: v.vaccineCode.trim() || null,
+        vaccineCode: v.vaccineCode,
         doseNumber: v.doseNumber,
         administeredOn: v.administeredOn,
         route: v.route.trim() || null,
@@ -244,7 +268,14 @@ function RecordImmunizationForm({ patientId, onClose }: { patientId: string; onC
             />
             <NumberField control={form.control} name="doseNumber" label="Dose number" min={1} max={10} />
             <DateField control={form.control} name="administeredOn" label="Given on" required max={today} />
-            <TextField control={form.control} name="vaccineCode" label="Code" maxLength={32} />
+            <SelectField
+              control={form.control}
+              name="vaccineCode"
+              label="Card code"
+              hint="Sent to other providers as its SNOMED CT code"
+              placeholder="Other, or not on the list"
+              options={(vaccines.data ?? []).map((v) => ({ value: v.code, label: `${v.code}: ${v.name}` }))}
+            />
             <TextField control={form.control} name="route" label="Route" maxLength={32} />
             <TextField control={form.control} name="site" label="Site" maxLength={64} placeholder="e.g. left deltoid" />
             {!isExternal && (

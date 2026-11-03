@@ -95,8 +95,8 @@ public sealed class InteropModuleTests
     {
         var providers = Services().Where(d => d.ServiceType == typeof(IFhirResourceProvider)).Select(d => d.ImplementationType!.Name).ToList();
 
-        providers.Count.ShouldBe(7);
-        providers.Distinct().Count().ShouldBe(7);
+        providers.Count.ShouldBe(8);
+        providers.Distinct().Count().ShouldBe(8);
     }
 
     [Fact]

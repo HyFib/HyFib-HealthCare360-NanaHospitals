@@ -144,6 +144,17 @@ internal static class SearchDefinitions
             ],
             "status",
             resource => resource is R4.DocumentReference { Status: R4.DocumentReferenceStatus.EnteredInError }),
+        new(FhirResourceTypes.Immunization,
+            "Vaccine doses given here or copied from the patient's card (primarySource false).",
+            [
+                PatientParameter, IdParameter,
+                new("status", R4.SearchParamType.Token, "completed | entered-in-error (such records are left out unless asked for)."),
+                new("vaccine-code", R4.SearchParamType.Token, "SNOMED CT vaccine product, for example http://snomed.info/sct|1861000221106 (BCG)."),
+                new("date", R4.SearchParamType.Date, "The day the dose was given."),
+                LastUpdatedParameter,
+            ],
+            "status",
+            resource => resource is R4.Immunization { Status: R4.Immunization.ImmunizationStatusCodes.EnteredInError }),
     ];
 
     public static ResourceSearchDefinition? Find(string? type) => All.FirstOrDefault(d => string.Equals(d.Type, type, StringComparison.Ordinal));

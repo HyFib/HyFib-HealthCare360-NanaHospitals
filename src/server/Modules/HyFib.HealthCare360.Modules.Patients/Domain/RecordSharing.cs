@@ -27,6 +27,9 @@ public enum SharedRecordKind
 
     /// <summary>Documents of the record: discharge summaries and documents filed with it (DocumentReference).</summary>
     Documents,
+
+    /// <summary>Vaccine doses, given here or copied from the patient's card (Immunization).</summary>
+    Immunisations,
 }
 
 /// <summary>

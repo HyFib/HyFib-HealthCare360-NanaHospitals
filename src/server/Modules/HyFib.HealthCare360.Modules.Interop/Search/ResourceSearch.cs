@@ -107,6 +107,12 @@ internal static class SearchValues
                 "status" => Literal(FhirSystems.DocumentReferenceStatus, d.Status),
                 _ => [],
             },
+            R4.Immunization i => parameter switch
+            {
+                "status" => Literal(FhirSystems.ImmunizationStatus, i.Status),
+                "vaccine-code" => Codings(i.VaccineCode),
+                _ => [],
+            },
             _ => [],
         };
     }
@@ -128,6 +134,7 @@ internal static class SearchValues
             (R4.MedicationRequest m, "authoredon") => Parse(m.AuthoredOn),
             (R4.DiagnosticReport d, "date") => DateTimeValue(d.Effective),
             (R4.DocumentReference d, "date") => d.Date is { } date ? [DateRange.Instant(date)] : [],
+            (R4.Immunization i, "date") => DateTimeValue(i.Occurrence),
             _ => [],
         };
     }

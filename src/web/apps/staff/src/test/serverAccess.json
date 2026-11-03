@@ -1155,6 +1155,7 @@
     "/api/v1/emr/patients/{patientId:guid}/vitals clinical.emr.read",
     "/api/v1/emr/templates clinical.emr.read|clinical.templates.manage",
     "/api/v1/emr/templates/{id:guid} clinical.emr.read|clinical.templates.manage",
+    "/api/v1/emr/vaccines clinical.immunizations.record",
     "/api/v1/emr/worklist clinical.emr.read",
     "/api/v1/feedback/analytics feedback.read",
     "/api/v1/feedback/complaints feedback.complaints.manage",

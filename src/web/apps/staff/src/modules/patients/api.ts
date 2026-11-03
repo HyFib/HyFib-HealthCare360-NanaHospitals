@@ -374,6 +374,7 @@ export const SHARED_RECORD_KINDS = [
   'ScansAndHeartTests',
   'VitalSigns',
   'Documents',
+  'Immunisations',
 ] as const;
 export type SharedRecordKind = (typeof SHARED_RECORD_KINDS)[number];
 

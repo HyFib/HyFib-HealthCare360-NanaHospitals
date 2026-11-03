@@ -18,6 +18,7 @@ public sealed class SharedRecordsTests
         SharedRecords.KindOf(new R4.AllergyIntolerance()).ShouldBe(SharedRecordKind.Allergies);
         SharedRecords.KindOf(new R4.MedicationRequest()).ShouldBe(SharedRecordKind.Medicines);
         SharedRecords.KindOf(new R4.DocumentReference()).ShouldBe(SharedRecordKind.Documents);
+        SharedRecords.KindOf(new R4.Immunization()).ShouldBe(SharedRecordKind.Immunisations);
     }
 
     [Theory]
@@ -49,6 +50,7 @@ public sealed class SharedRecordsTests
         SharedRecords.DateOf(new R4.MedicationRequest { AuthoredOn = "2026-09-19T18:45:00+05:30" }).ShouldBe(new DateOnly(2026, 9, 19));
         SharedRecords.DateOf(new R4.AllergyIntolerance { RecordedDate = "2026-09-18T08:00:00+05:30" }).ShouldBe(new DateOnly(2026, 9, 18));
         SharedRecords.DateOf(new R4.DocumentReference { Date = new DateTimeOffset(2026, 9, 17, 20, 0, 0, TimeSpan.Zero) }).ShouldBe(new DateOnly(2026, 9, 18));
+        SharedRecords.DateOf(new R4.Immunization { Occurrence = new R4.FhirDateTime("2026-09-16") }).ShouldBe(new DateOnly(2026, 9, 16), "the day the vaccine was given");
     }
 
     [Fact]
