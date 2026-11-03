@@ -80,7 +80,12 @@ const PAGES: PortalPage[] = [
     signedIn: false,
     ready: (page) => page.getByText('Complete blood count'),
   },
-  { name: 'bills', path: '/portal/bills', ready: (page) => page.getByText('OP2600001') },
+  {
+    name: 'bills',
+    path: '/portal/bills',
+    // The bills and, below them, the refunds: credited, with the bank and returned by the bank.
+    ready: (page) => page.getByText('Refund RF2600019', { exact: false }),
+  },
   { name: 'reports', path: '/portal/reports', ready: (page) => page.getByText('Complete blood count') },
   {
     name: 'profile',
