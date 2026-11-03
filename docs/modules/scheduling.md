@@ -24,6 +24,9 @@ Doctor OPD schedules, appointments, front-desk check-in and Online Doctor Appoin
   `WalkIn | Phone | Online | Portal | Kiosk | WhatsApp`; visit type `New | FollowUp`; `IsTelehealth`; fee quoted at
   booking (doctor's new/follow-up fee); payment `Unpaid | PaidOnline | PayAtHospital` with gateway order/payment ids;
   cancellation code + text + who; reschedule history (`RescheduledFromId`/`RescheduledToId`); reminder flags; `VisitId`.
+* **ReplacedPaymentOrder** – a gateway order the booking had before its current one (table
+  `scheduling.appointment_replaced_orders`, audited with the appointment): the provider, the order id (unique), when it
+  was replaced, and a second payment taken on it once found (payment id, amount, when the gateway took it).
 * **WaitlistEntry** – a patient waiting for a doctor within a date window and part of day
   (`Any | Morning | Afternoon | Evening`). Freed slots are offered (SMS/WhatsApp), never booked automatically.
 
@@ -141,6 +144,23 @@ instead. When the patient closes the page after paying, Billing's gateway webhoo
 `VerifyWithGatewayAsync` for the booking (found by its gateway order, indexed), so the booking is still confirmed; see
 [billing.md](billing.md#gateway-reconciliation-int-pg).
 
+**A payment started again.** Before a new order replaces the booking's order, the gateway is asked what became of it:
+one paid after all is recorded (the portal says "already paid"), and while one is still being paid, or the gateway
+cannot say, no new order is made. The order replaced is remembered (`ReplacedPaymentOrder`), because the gateway can still
+take money on it: the first checkout left open on another tab or phone, or a UPI request approved late. A payment on it
+is found by the gateway's webhook, Billing's re-check and the settlement match, which ask the gateway
+(`CheckReplacedOrderAsync`, server to server) and record it with `Appointment.TakeReplacedOrderPayment`:
+
+* **The booking was not paid online yet:** it is the booking's own payment. The order it was made on becomes the
+  booking's order again, the one that had replaced it is remembered in its place (money taken on that later is a second
+  payment), and `AppointmentPaymentCaptured` is raised as for any payment.
+* **Another payment had paid the booking:** it is a second payment. It is recorded on the replaced order and
+  `AppointmentPaidTwice` is raised; Billing keeps it as the patient's advance, linked to the booking, and asks for its
+  refund, which a second person approves. The booking keeps the payment that paid it.
+
+Recording the same payment again changes nothing; another payment on an order that already has one is refused
+(`payment.order_paid`).
+
 ## Events
 
 | Direction | Event | Notes |
@@ -148,6 +168,7 @@ instead. When the patient closes the page after paying, Billing's gateway webhoo
 | Raised | `AppointmentBooked` (Platform.Contracts) | every booking, including the new row of a reschedule; `Channel` is the enum name |
 | Raised | `AppointmentCancelled` (Platform.Contracts) | cancellation (reason text or code description) and the old row of a reschedule (`"Rescheduled to {number}"`) |
 | Raised | `AppointmentPaymentCaptured` (`Modules.Scheduling.Domain`) | verified online prepayment — for Billing to issue an advance receipt / refund after cancellation |
+| Raised | `AppointmentPaidTwice` (`Modules.Scheduling.Domain`) | a second payment, on an order the booking had before its current one, after another payment had paid it — for Billing to keep as an advance and ask for its refund |
 | Handled | `VisitCreated` (Patients) | visit with `AppointmentId` → appointment `CheckedIn` + `VisitId` (same transaction) |
 | Handled | `VisitStarted` (Patients) | the linked appointment moves to `InConsultation` (queue token started or encounter opened) |
 | Handled | `VisitCompleted` (Patients) | appointment `Completed` |
@@ -205,8 +226,7 @@ No billable service codes are seeded (consultation charges come from Billing's c
 
 ## Not covered yet
 
-* **A payment on an older order of a booking.** When a patient restarts the online payment, the booking keeps only
-  the newest gateway order. A payment made on the older one is not linked to the booking: Billing's gateway
-  reconciliation lists it and keeps it as a patient advance for staff to refund.
+* **Orders replaced before the replaced orders were kept** (migration `AppointmentReplacedOrders`) are not known: a
+  payment on one shows only in the settlement, as a payment without a receipt, as before.
 * **Cancelling unpaid online bookings.** A portal booking whose online payment was started but never made stays
   booked; nothing cancels it for non-payment (`PaymentNotReceived` exists for staff to choose).

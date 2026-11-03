@@ -186,10 +186,92 @@ public sealed class AppointmentPaymentTests
         await gateway.DidNotReceive().GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task The_gateway_is_asked_about_the_replaced_order_and_its_payment_pays_the_unpaid_booking()
+    {
+        var appointment = BookedWithOrder("order_12");
+        appointment.AttachPaymentOrder("simulator", "order_13", Start.AddDays(-2).AddMinutes(5)).IsSuccess.ShouldBeTrue();
+        var capturedAt = Start.AddDays(-1).AddHours(-2);
+        var gateway = Gateway(new PaymentStatusResult("order_12", GatewayPaymentStatus.Captured, "pay_12", 600m, "upi", null, capturedAt));
+
+        var taken = await Service(gateway).CheckReplacedOrderAsync(appointment, appointment.ReplacedOrders.Single(), TestContext.Current.CancellationToken);
+
+        taken.Value.ShouldBe(ReplacedOrderPayment.PaidTheBooking);
+        appointment.GatewayPaymentId.ShouldBe("pay_12");
+        appointment.PaidAt.ShouldBe(capturedAt);
+        await gateway.Received(1).GetStatusAsync("order_12", appointment.FacilityId, Arg.Any<CancellationToken>());
+        await gateway.DidNotReceive().GetStatusAsync("order_13", Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task A_second_payment_is_what_the_gateway_took_when_it_took_it()
+    {
+        var appointment = BookedWithOrder("order_14");
+        appointment.AttachPaymentOrder("simulator", "order_15", Start.AddDays(-2).AddMinutes(5));
+        appointment.MarkPaidOnline("order_15", "pay_15", 600m, Start.AddDays(-2).AddMinutes(6)).IsSuccess.ShouldBeTrue();
+        var capturedAt = Start.AddDays(-1).AddHours(-1);
+        var gateway = Gateway(new PaymentStatusResult("order_14", GatewayPaymentStatus.Captured, "pay_14", 550m, "upi", null, capturedAt));
+        var replaced = appointment.ReplacedOrders.Single();
+
+        var taken = await Service(gateway).CheckReplacedOrderAsync(appointment, replaced, TestContext.Current.CancellationToken);
+
+        taken.Value.ShouldBe(ReplacedOrderPayment.PaidTwice);
+        replaced.AmountPaid.ShouldBe(550m, "The amount the gateway took, not the fee.");
+        replaced.PaidAt.ShouldBe(capturedAt);
+        appointment.GatewayPaymentId.ShouldBe("pay_15");
+    }
+
+    [Theory]
+    [InlineData(GatewayPaymentStatus.Created)]
+    [InlineData(GatewayPaymentStatus.Pending)]
+    [InlineData(GatewayPaymentStatus.Expired)]
+    public async Task A_replaced_order_nobody_paid_changes_nothing(GatewayPaymentStatus status)
+    {
+        var appointment = BookedWithOrder("order_16");
+        appointment.AttachPaymentOrder("simulator", "order_17", Start.AddDays(-2).AddMinutes(5));
+        var gateway = Gateway(new PaymentStatusResult("order_16", status, status == GatewayPaymentStatus.Pending ? "pay_16" : null, null, null, null));
+
+        var taken = await Service(gateway).CheckReplacedOrderAsync(appointment, appointment.ReplacedOrders.Single(), TestContext.Current.CancellationToken);
+
+        taken.Error!.Code.ShouldBe("payment.not_captured");
+        appointment.PaymentStatus.ShouldBe(AppointmentPaymentStatus.Unpaid);
+        appointment.ReplacedOrders.Single().GatewayPaymentId.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_gateway_that_cannot_be_reached_records_nothing_about_a_replaced_order()
+    {
+        var appointment = BookedWithOrder("order_18");
+        appointment.AttachPaymentOrder("simulator", "order_19", Start.AddDays(-2).AddMinutes(5));
+        var gateway = Substitute.For<IPaymentGateway>();
+        gateway.GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).ThrowsAsync(new HttpRequestException("offline"));
+
+        var taken = await Service(gateway).CheckReplacedOrderAsync(appointment, appointment.ReplacedOrders.Single(), TestContext.Current.CancellationToken);
+
+        taken.Error!.Code.ShouldBe("payment.gateway_unavailable");
+        appointment.PaymentStatus.ShouldBe(AppointmentPaymentStatus.Unpaid);
+    }
+
+    [Fact]
+    public async Task A_second_payment_recorded_before_is_not_asked_about_again()
+    {
+        var appointment = BookedWithOrder("order_20");
+        appointment.AttachPaymentOrder("simulator", "order_21", Start.AddDays(-2).AddMinutes(5));
+        appointment.MarkPaidOnline("order_21", "pay_21", 600m, Start.AddDays(-2).AddMinutes(6));
+        var replaced = appointment.ReplacedOrders.Single();
+        appointment.TakeReplacedOrderPayment(replaced, "pay_20", 600m, Start.AddDays(-2).AddMinutes(7), Start.AddDays(-2).AddMinutes(8)).IsSuccess.ShouldBeTrue();
+        var gateway = Substitute.For<IPaymentGateway>();
+
+        var taken = await Service(gateway).CheckReplacedOrderAsync(appointment, replaced, TestContext.Current.CancellationToken);
+
+        taken.Value.ShouldBe(ReplacedOrderPayment.AlreadyRecorded);
+        await gateway.DidNotReceive().GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+    }
+
     private static Appointment BookedWithOrder(string orderId)
     {
         var appointment = Booked(Start, AppointmentChannel.Portal);
-        appointment.AttachPaymentOrder("simulator", orderId).IsSuccess.ShouldBeTrue();
+        appointment.AttachPaymentOrder("simulator", orderId, Start.AddDays(-2)).IsSuccess.ShouldBeTrue();
         return appointment;
     }
 

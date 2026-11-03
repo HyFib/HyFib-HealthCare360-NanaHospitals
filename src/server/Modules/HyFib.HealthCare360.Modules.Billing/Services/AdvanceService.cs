@@ -8,7 +8,11 @@ using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Modules.Billing.Services;
 
-/// <summary>Payload of the <c>billing.appointment.prepayment</c> outbox message: a verified online appointment payment.</summary>
+/// <summary>
+/// Payload of the <c>billing.appointment.prepayment</c> outbox message: a verified online appointment payment. A
+/// <paramref name="SecondPayment"/> was taken on an order the booking had before its current one, after another payment
+/// had paid it: it is kept as an advance and its refund asked for.
+/// </summary>
 public sealed record AppointmentPrepayment(
     Guid AppointmentId,
     string AppointmentNumber,
@@ -18,14 +22,16 @@ public sealed record AppointmentPrepayment(
     string? Provider,
     string GatewayOrderId,
     string GatewayPaymentId,
-    DateTimeOffset PaidAt);
+    DateTimeOffset PaidAt,
+    bool SecondPayment = false);
 
 /// <summary>
 /// Patient advances — the online prepayment of an appointment (OA-03). Scheduling only raises events; the money is
 /// receipted here through the outbox (so a billing problem can never undo the patient's booking, and the receipt number
 /// is allocated inside the dispatcher's transaction, gap-free). The advance is adjusted against the consultation bill
 /// when the visit is billed, follows a rescheduled booking (it is keyed by the gateway payment), and becomes a refund
-/// request — approved and paid like any refund, by default reversed on the gateway — when the booking is cancelled.
+/// request — approved and paid like any refund, by default reversed on the gateway — when the booking is cancelled, or
+/// when it was a second payment for a booking another payment had already paid.
 /// </summary>
 public sealed class AdvanceService(
     HospitalDbContext db,
@@ -45,14 +51,22 @@ public sealed class AdvanceService(
 
     /// <summary>
     /// Outbox handler body: receipts the prepayment as a patient advance (idempotent on the gateway payment id) and, when
-    /// the booking — after following any reschedules — ended up cancelled, requests a refund of what is left of it.
-    /// Stages everything in the dispatcher's unit of work; allocations happen last, so a failure never burns a number.
+    /// it was a second payment or the booking — after following any reschedules — ended up cancelled, requests a refund
+    /// of what is left of it. Stages everything in the dispatcher's unit of work; allocations happen last, so a failure
+    /// never burns a number.
     /// </summary>
     internal async Task SyncAppointmentAsync(AppointmentPrepayment payment, CancellationToken ct)
     {
         var advance = await FindAsync(payment.GatewayPaymentId, ct) ?? await RecordAsync(payment, ct);
         if (advance is null)
         {
+            return;
+        }
+
+        if (payment.SecondPayment)
+        {
+            await RequestRefundAsync(
+                advance, $"Appointment {payment.AppointmentNumber} was paid twice: payment {payment.GatewayPaymentId}, on an earlier order, is returned", ct);
             return;
         }
 
@@ -259,7 +273,10 @@ public sealed class AdvanceService(
 
         var receipt = await receipts.RecordPatientAdvanceAsync(
             payment.FacilityId, patientId, amount, payment.GatewayPaymentId, payment.GatewayOrderId,
-            $"Online prepayment for appointment {payment.AppointmentNumber}", payment.PaidAt, ct);
+            payment.SecondPayment
+                ? $"Second online payment for appointment {payment.AppointmentNumber}, on an earlier order (to be refunded)"
+                : $"Online prepayment for appointment {payment.AppointmentNumber}",
+            payment.PaidAt, ct);
         var advance = new PatientAdvance
         {
             FacilityId = payment.FacilityId,

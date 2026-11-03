@@ -198,8 +198,10 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
 
   Before the server replaces an appointment's order with a new one, it asks the gateway what became of the old one:
   a payment taken after all is recorded (the portal is told "already paid"), and while one is still being processed,
-  or the gateway cannot say, no new order is made. An appointment keeps one order, so a replaced order that was paid
-  would otherwise be found by neither the webhook nor the re-check. A payment problem never loses the booked slot.
+  or the gateway cannot say, no new order is made. The order replaced is remembered, so a patient who pays it after all
+  (the first checkout left open on another tab) is credited: the booking's own payment when nothing else paid it,
+  otherwise a second payment that the hospital refunds once a second person approves. A payment problem never loses the
+  booked slot.
 * **Return page.** `/portal/payment-return` is where the gateway sends patients back from its own page: set
   `integrations.payment.paymentLinkCallbackUrl` to `https://<portal address>/portal/payment-return`. It opens the
   bill or appointment this tab was paying for; anyone else (for example a patient who paid a link the hospital sent
