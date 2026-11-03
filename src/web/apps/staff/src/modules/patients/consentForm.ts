@@ -2,9 +2,9 @@
  * The record-consent form: its limits and rules mirror CaptureConsentRequestValidator on the server, so staff see them
  * before saving. Pure (no React, no Fluent) so it is unit-tested.
  */
-import { isApiError } from '@hc360/core';
+import { isApiError, todayIso } from '@hc360/core';
 import { z } from 'zod';
-import { CONSENT_TYPES, type CaptureConsentRequest } from './api';
+import { CONSENT_TYPES, SHARED_RECORD_KINDS, SHARING_PURPOSES, type CaptureConsentRequest } from './api';
 
 /** The server's limits for a consent and for the reason it is withdrawn. */
 export const CONSENT_LIMITS = {
@@ -14,6 +14,8 @@ export const CONSENT_LIMITS = {
   signerName: 200,
   notes: 1000,
   reason: 300,
+  /** The most partner accounts one record-sharing consent names. */
+  partners: 20,
 } as const;
 
 const text = (max: number) => z.string().trim().max(max, `Use at most ${max} characters.`);
@@ -29,10 +31,43 @@ export const consentFormSchema = z
     witnessName: text(CONSENT_LIMITS.witnessName),
     consentVersion: text(CONSENT_LIMITS.version),
     notes: text(CONSENT_LIMITS.notes),
+    /** Record sharing only: the whole record for every partner account, or only what the patient chose. */
+    sharing: z.enum(['everything', 'limited']),
+    shareWith: z.array(z.string()),
+    purposes: z.array(z.enum(SHARING_PURPOSES)),
+    kinds: z.array(z.enum(SHARED_RECORD_KINDS)),
+    /** yyyy-MM-dd or null, as the date fields give them. */
+    recordsFrom: z.string().nullable(),
+    recordsTo: z.string().nullable(),
+    until: z.string().nullable(),
   })
   .superRefine((v, ctx) => {
     if (!v.type) {
       ctx.addIssue({ code: 'custom', path: ['type'], message: 'Choose the consent.' });
+    }
+    if (limitsSharing(v)) {
+      const chosen =
+        v.shareWith.length + v.purposes.length + v.kinds.length > 0 || Boolean(v.recordsFrom || v.recordsTo || v.until);
+      if (!chosen) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['sharing'],
+          message: 'Choose what the patient agreed to share, or share the whole record.',
+        });
+      }
+      if (v.shareWith.length > CONSENT_LIMITS.partners) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['shareWith'],
+          message: `Choose at most ${CONSENT_LIMITS.partners} accounts.`,
+        });
+      }
+      if (v.recordsFrom && v.recordsTo && v.recordsFrom > v.recordsTo) {
+        ctx.addIssue({ code: 'custom', path: ['recordsTo'], message: 'Choose a day on or after the first day.' });
+      }
+      if (v.until && v.until < todayIso()) {
+        ctx.addIssue({ code: 'custom', path: ['until'], message: 'Choose today or a later day.' });
+      }
     }
     if (v.signer === 'other') {
       if (!v.signedByName) {
@@ -54,6 +89,11 @@ export const consentFormSchema = z
 
 export type ConsentFormValues = z.infer<typeof consentFormSchema>;
 
+/** A given record-sharing consent that the patient limited: only then does the form ask what it covers. */
+export function limitsSharing(v: Pick<ConsentFormValues, 'type' | 'decision' | 'sharing'>): boolean {
+  return v.type === 'DataSharing' && v.decision === 'given' && v.sharing === 'limited';
+}
+
 export function consentFormDefaults(): ConsentFormValues {
   return {
     type: null,
@@ -64,6 +104,13 @@ export function consentFormDefaults(): ConsentFormValues {
     witnessName: '',
     consentVersion: '',
     notes: '',
+    sharing: 'everything',
+    shareWith: [],
+    purposes: [],
+    kinds: [],
+    recordsFrom: null,
+    recordsTo: null,
+    until: null,
   };
 }
 
@@ -84,10 +131,30 @@ export function toCaptureRequest(v: ConsentFormValues): CaptureConsentRequest {
     signedByName: proxy ? clean(v.signedByName) : null,
     documentFileId: null,
     notes: clean(v.notes),
+    sharingScope: limitsSharing(v)
+      ? {
+          shareWith: v.shareWith.length ? v.shareWith : null,
+          purposes: v.purposes.length ? v.purposes : null,
+          kinds: v.kinds.length ? v.kinds : null,
+          recordsFrom: v.recordsFrom,
+          recordsTo: v.recordsTo,
+          until: v.until,
+        }
+      : null,
   };
 }
 
-const FORM_FIELDS = ['type', 'signedByName', 'signedByRelation', 'witnessName', 'consentVersion', 'notes'] as const;
+const FORM_FIELDS = [
+  'type',
+  'signedByName',
+  'signedByRelation',
+  'witnessName',
+  'consentVersion',
+  'notes',
+  'shareWith',
+  'recordsTo',
+  'until',
+] as const;
 export type ConsentFormField = (typeof FORM_FIELDS)[number];
 
 export interface ConsentServerErrors {
@@ -109,8 +176,10 @@ export function consentServerErrors(error: unknown): ConsentServerErrors {
     return { fields: [], other: [error.userMessage] };
   }
   const result: ConsentServerErrors = { fields: [], other: [] };
-  for (const [key, messages] of Object.entries(error.fieldErrors)) {
+  for (const [rawKey, messages] of Object.entries(error.fieldErrors)) {
     const message = messages[0] ?? error.title;
+    // The scope's fields come back under it ("sharingScope.recordsTo"); the form shows them on their own.
+    const key = rawKey.startsWith('sharingScope.') ? rawKey.slice('sharingScope.'.length) : rawKey;
     if ((FORM_FIELDS as readonly string[]).includes(key)) {
       result.fields.push([key as ConsentFormField, message]);
     } else {

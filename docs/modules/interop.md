@@ -28,7 +28,7 @@ encrypted for the hospital alone and erased at the consent's erase date (the hos
 
 | Permission | Purpose | Default roles |
 |---|---|---|
-| `fhir.read` | Read and search patient records through the FHIR API (patients with record-sharing consent only; every access is audited) | HospitalAdmin |
+| `fhir.read` | Read and search patient records through the FHIR API (what the patient's record-sharing consents let the account read; every access is audited) | HospitalAdmin |
 | `abdm.records.request` | Ask a patient, through ABDM, to let the hospital see their records at other providers, in their name as the requesting doctor (every request is audited) | Doctor |
 | `abdm.export` | Export discharge summaries, lab reports, radiology and cardiology reports, consultation notes and prescriptions as ABDM health records (every export is audited). Staff only: it does not check the record-sharing consent, so never give it to an integration service account | HospitalAdmin, MrdOfficer |
 
@@ -36,10 +36,14 @@ Integration partners (a referral hospital, a health information exchange) get th
 
 1. Create a role such as "FHIR integration" with `fhir.read`. Add `patients.restricted.read` only if restricted (VIP)
    records may also be shared. Never add `abdm.export`: the ABDM export is a staff download that does not check the
-   patient's record-sharing consent ([ABDM health records](#abdm-health-records-ehr-08)).
+   patient's record-sharing consent ([ABDM health records](#abdm-health-records-ehr-08)). The accounts of a role the
+   hospital made are the ones a patient's consent can name (*Who may read*); the built-in roles that hold `fhir.read`,
+   such as the hospital administrator's, are staff and are not offered.
 2. Create a user for the partner, give it only that role, and sign it in with `POST /api/v1/auth/login` (and
    `/api/v1/auth/refresh`). Access tokens live 10 minutes; send them as `Authorization: Bearer <token>`.
 3. The user's facility decides which visits, encounters, orders, results and reports it sees (platform facility filter).
+4. The partner states why it reads in `X-Purpose-Of-Use` with each request (for example `TREAT`), as patients'
+   consents may allow some purposes only ([Consent and access rules](#consent-and-access-rules)).
 
 ## Consent and access rules
 
@@ -50,13 +54,33 @@ Every read and search passes the same gate for the patient the data belongs to:
 | Patient does not exist | 404 | patient left out |
 | Patient record deleted | 410 `deleted` | patient left out |
 | Patient merged into another UHID | 410 `patient-merged` (names the surviving `Patient/{id}` when the caller may read it) | patient left out |
-| No active record-sharing consent | **403 `consent-required`** | **patient left out** |
+| No record-sharing consent admits the reader today, for the purpose they stated | **403 `consent-required`** | **patient left out** |
+| The consents that admit the reader do not cover the record (its kind or its date) | **403 `consent-required`** | **record left out**, with a `records-withheld` outcome |
 | Restricted (VIP) record the caller may not open | 403 `restricted-record` | patient left out |
 
 * **Consent** is the Patients module's `PatientConsent` of type **`DataSharing`** (captured under EHR-06; the existing
-  type, so no new consent type was added). A patient's record is shared while they hold a granted, unrevoked
-  `DataSharing` consent that no later recorded refusal supersedes, the same rule Engagement applies to marketing
-  consent. Withdrawing the consent (revoking it, or recording a refusal) stops sharing at once.
+  type, so no new consent type was added). A patient's record is shared under each granted, unrevoked `DataSharing`
+  consent that no later recorded refusal supersedes, the same rule Engagement applies to marketing consent.
+  Withdrawing a consent (revoking it, or recording a refusal) stops sharing at once.
+* **What a consent covers** (`RecordSharingConsent`, `SharingScope`). Each consent is one permission, as a FHIR
+  `Consent.provision` or an ABDM consent artefact is, and may be limited when it is recorded
+  ([clinical.md](clinical.md#consents-ehr-06)):
+
+  | Part | Admits or covers | Left open |
+  |---|---|---|
+  | Who may read (`shareWith`) | only the named accounts | every account with `fhir.read` |
+  | For what (`purposes`) | only a reader who states one of them in `X-Purpose-Of-Use` | any purpose, or none stated |
+  | Which records (`kinds`) | Encounter and Condition (*visits*), AllergyIntolerance, MedicationRequest, laboratory Observations and lab DiagnosticReports (*lab results*), imaging and cardiology DiagnosticReports, vital-signs Observations (vital signs, pain score, coma scale), DocumentReference | every kind |
+  | Records from / up to | records whose day (hospital time) is within: the visit's start, the diagnosis or allergy's recording, the prescription, the sample's collection or the study, the document | every date; a record without a date is left out once dates are set |
+  | Until | the consent admits nobody after its last day, without anyone withdrawing it | no end |
+
+  A reader may read what any consent that admits them covers. The patient's own details (Patient) go with any consent
+  that admits the reader: they say whose records they are. A consent recorded without a scope shares the whole
+  record with every account, as every consent did before scopes.
+* **The purpose of use** is stated with each request in `X-Purpose-Of-Use`, an HL7 v3 ActReason code: `TREAT`,
+  `ETREAT`, `CAREMGT`, `HPAYMT`, `PUBHLTH`, `HRESCH` or `PATRQT` (the codes ABDM consents use too). Any other value is
+  refused with 400 `invalid-parameter`. A consent that names purposes admits no request without one. The stated
+  purpose is in the audit entry of every read, search and refusal.
 * **Restricted records** use the platform guard `PatientAccessGuard` (EHR-07): reads and patient-scoped searches need
   `patients.restricted.read` or an active break-the-glass grant. Patient searches include restricted patients only
   for callers with `patients.restricted.read` (a break-the-glass grant opens one record, not a search).
@@ -75,11 +99,11 @@ Every read and search passes the same gate for the patient the data belongs to:
 
 | Event | Category / action | Recorded |
 |---|---|---|
-| Read | `phi` / `patient.accessed` | patient id, `fhir.{Type}`, resource id, `{ api, interaction: read, resourceType }` |
-| Search in a patient's record | `phi` / `patient.accessed` | one entry: patient id, `fhir.{Type}`, returned and total counts, parameter **names** |
+| Read | `phi` / `patient.accessed` | patient id, `fhir.{Type}`, resource id, `{ api, interaction: read, resourceType, purpose }` (the stated purpose, or "not stated") |
+| Search in a patient's record | `phi` / `patient.accessed` | one entry: patient id, `fhir.{Type}`, returned, total and withheld counts, parameter **names**, the stated purpose |
 | Patient search | `phi` / `patient.accessed` | one entry per returned patient, written in one transaction |
 | Patient search that returned nobody | `integration` / `fhir.search` | counts and parameter names |
-| Read or search refused for consent or restriction | `security` / `fhir.access_denied` (Warning) | patient id, type, id, reason |
+| Read or search refused for consent or restriction | `security` / `fhir.access_denied` (Warning) | patient id, type, id, reason (`consent-required`, `restricted-record`, or `outside-consent` for a record the reader's consents do not cover), the stated purpose |
 | ABDM health record downloaded | `phi` / `abdm.record.exported` | patient id, `DischargeSummary` or `Prescription` and its id, `{ format: fhir-r4-document, profile, document, resources }` (`document` is the bundle's identifier, `resources` its entry count) |
 | ABDM download refused for consent or restriction | `security` / `abdm.export_refused` (Warning) | patient id, `DischargeSummary` or `Prescription` and its id, reason (`consent-required`, `restricted-record`) |
 
@@ -100,6 +124,8 @@ not be decrypted (no value).
 | POST | `/{type}/_search` | `fhir.read` | same as GET; parameters as `application/x-www-form-urlencoded` (keeps identifiers out of the request line) |
 | any | anything else under `/fhir` | anonymous, rate limit `public` | `OperationOutcome` 404 (unknown interaction) or 405 (the API is read-only) |
 
+* Every read and search may carry `X-Purpose-Of-Use` (an HL7 v3 ActReason code, see
+  [Consent and access rules](#consent-and-access-rules)); an unknown code is refused with 400 `invalid-parameter`.
 * Content type `application/fhir+json; charset=utf-8`; `_pretty=true` indents. `_format` and `Accept` must allow JSON
   (406 otherwise). Responses carry `Cache-Control: no-store` (the CapabilityStatement `no-cache`).
 * Paging: `_count` (default 20, capped at **100** — the `self` link shows the size used; `0` returns only `total`) and
@@ -834,7 +860,9 @@ was decrypted by the reference CLI when this was built (a one-off check, as it n
   search parameters (including identifiers); POST `_search` keeps them only out of the first request line.
 * Sign-in is the HC360 bearer token (10-minute access token and refresh). A SMART-on-FHIR / OAuth client-credentials
   flow for system-to-system access is a follow-up.
-* Consent is all-or-nothing per patient (`DataSharing`); purpose-of-use, recipient-specific or expiring consents are a
-  follow-up.
+* A consent's purposes are what the reader states in `X-Purpose-Of-Use`; HC360 cannot check what the partner then
+  does with the record. The statement is audited with each request, and a consent can name the partner accounts too.
+* The portal's privacy summary lists a record-sharing consent as given or withdrawn, without what it covers; staff see
+  the scope on the patient's consents.
 * Maintainer: add `application/fhir+json` to the server's response-compression MIME types in `Program.cs` (FHIR
   responses are not compressed today).

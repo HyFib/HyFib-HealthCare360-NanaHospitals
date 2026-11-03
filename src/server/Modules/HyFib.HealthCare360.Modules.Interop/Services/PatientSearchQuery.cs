@@ -89,9 +89,9 @@ internal sealed class PatientCriteria
 }
 
 /// <summary>
-/// The SQL side of a Patient search: only active, unmerged patients with an active record-sharing consent, restricted
-/// (VIP) patients only for callers who may open them, then the criteria. Written against plain IQueryable, so every rule
-/// except the database-specific name match is unit-tested in memory.
+/// The SQL side of a Patient search: only active, unmerged patients with a record-sharing consent that admits this reader
+/// today for the purpose they stated, restricted (VIP) patients only for callers who may open them, then the criteria.
+/// Written against plain IQueryable, so every rule except the database-specific name match is unit-tested in memory.
 /// </summary>
 internal static class PatientSearchQuery
 {
@@ -100,11 +100,12 @@ internal static class PatientSearchQuery
         IQueryable<PatientConsent> consents,
         PatientCriteria criteria,
         bool includeRestricted,
+        SharingReader reader,
         Func<string, Expression<Func<Patient, bool>>> nameContains)
     {
         var query = patients
             .Where(p => p.IsActive && p.MergedIntoPatientId == null)
-            .Where(RecordSharingConsent.IsGranted(consents));
+            .Where(RecordSharingConsent.IsGranted(consents, reader));
         if (!includeRestricted)
         {
             // Restricted (VIP) records, and records in a sensitive category (R-4), are not listed to clients that may not open them.

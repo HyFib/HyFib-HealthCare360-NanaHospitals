@@ -208,6 +208,12 @@ internal sealed class PatientConsentConfiguration : IEntityTypeConfiguration<Pat
         b.Property(x => x.RevokedReason).HasMaxLength(300);
         b.Property(x => x.Notes).HasMaxLength(1000);
         b.Ignore(x => x.IsActive);
+        b.Ignore(x => x.IsScopedSharing);
+
+        // A record-sharing consent's scope: arrays the FHIR checks read in SQL (any element, none at all); the purposes and
+        // kinds as their names, like every enum.
+        b.PrimitiveCollection(x => x.SharePurposes).ElementType(e => e.HasConversion<string>().HasMaxLength(32));
+        b.PrimitiveCollection(x => x.ShareKinds).ElementType(e => e.HasConversion<string>().HasMaxLength(32));
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.PatientId, x.Type });
     }

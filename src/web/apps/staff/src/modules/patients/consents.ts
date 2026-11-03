@@ -3,8 +3,16 @@
  * a consent's status and who signed it, and what recording or withdrawing one changes. The server stays the authority
  * for every rule; these helpers only describe what it does.
  */
-import { formatDate, formatDateTime, humanize } from '@hc360/core';
-import type { ConsentDto, ConsentType, WhatsAppConsentDto, WhatsAppOptInSource } from './api';
+import { formatDate, formatDateOnly, formatDateTime, humanize } from '@hc360/core';
+import type {
+  ConsentDto,
+  ConsentType,
+  RecordSharingScopeDto,
+  SharedRecordKind,
+  SharingPurpose,
+  WhatsAppConsentDto,
+  WhatsAppOptInSource,
+} from './api';
 
 const CONSENT_LABELS: Record<ConsentType, string> = {
   GeneralTreatment: 'General treatment',
@@ -52,6 +60,58 @@ const TYPE_HINTS: Partial<Record<ConsentType, string>> = {
 /** What the chosen consent covers or needs, where its name does not say it. */
 export function consentTypeHint(type: string | null): string | undefined {
   return type && isKnownType(type) ? TYPE_HINTS[type] : undefined;
+}
+
+/** Why another provider may read the record, in plain words (the v3 code in brackets, as their systems name it). */
+export const SHARING_PURPOSE_LABELS: Record<SharingPurpose, string> = {
+  Treatment: 'Treating the patient (TREAT)',
+  EmergencyTreatment: 'Emergency treatment (ETREAT)',
+  CareManagement: 'Coordinating the patient’s care (CAREMGT)',
+  Payment: 'Insurance or scheme claims (HPAYMT)',
+  PublicHealth: 'Public health reporting (PUBHLTH)',
+  Research: 'Research (HRESCH)',
+  PatientRequest: 'At the patient’s own request (PATRQT)',
+};
+
+/** The kinds of records a record-sharing consent can name. */
+export const SHARED_RECORD_KIND_LABELS: Record<SharedRecordKind, string> = {
+  Visits: 'Visits, stays and diagnoses',
+  Allergies: 'Allergies',
+  Medicines: 'Prescribed medicines',
+  LabResults: 'Lab results and reports',
+  ScansAndHeartTests: 'Scan and heart test reports',
+  VitalSigns: 'Vital signs',
+  Documents: 'Discharge summaries and documents',
+};
+
+const lower = (label: string) => label.charAt(0).toLowerCase() + label.slice(1);
+
+/**
+ * What a limited record-sharing consent covers, in one line for the consent list: who may read, what for, which
+ * records, which dates, and until when. The server applies it to every FHIR read and search.
+ */
+export function sharingScopeSummary(
+  scope: RecordSharingScopeDto,
+  formatDay: (day: string) => string = formatDateOnly,
+): string {
+  const parts = [
+    scope.shareWith.length
+      ? `Shared with ${scope.shareWith.map((p) => p.name).join(', ')}`
+      : 'Shared with every partner account',
+    scope.purposes.length
+      ? `for ${scope.purposes.map((p) => lower(SHARING_PURPOSE_LABELS[p].replace(/ \([A-Z]+\)$/, ''))).join(', ')}`
+      : 'for any purpose',
+    scope.kinds.length ? `${scope.kinds.map((k) => lower(SHARED_RECORD_KIND_LABELS[k])).join(', ')}` : 'all records',
+  ];
+  let summary = `${parts[0]}, ${parts[1]}: ${parts[2]}`;
+  if (scope.recordsFrom && scope.recordsTo) {
+    summary += ` dated ${formatDay(scope.recordsFrom)} to ${formatDay(scope.recordsTo)}`;
+  } else if (scope.recordsFrom) {
+    summary += ` dated from ${formatDay(scope.recordsFrom)}`;
+  } else if (scope.recordsTo) {
+    summary += ` dated up to ${formatDay(scope.recordsTo)}`;
+  }
+  return scope.until ? `${summary}. Until ${formatDay(scope.until)}.` : `${summary}.`;
 }
 
 export type ConsentStatus = 'given' | 'refused' | 'withdrawn';

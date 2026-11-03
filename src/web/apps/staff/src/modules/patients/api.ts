@@ -349,6 +349,60 @@ export interface ConsentDto {
   notes: string | null;
   /** Given and not withdrawn. */
   isActive: boolean;
+  /** A record-sharing consent limited to some accounts, purposes, records or dates; null shares the whole record. */
+  sharingScope?: RecordSharingScopeDto | null;
+}
+
+/** Why another provider reads the record: the HL7 v3 purposes of use, as the server names them. */
+export const SHARING_PURPOSES = [
+  'Treatment',
+  'EmergencyTreatment',
+  'CareManagement',
+  'Payment',
+  'PublicHealth',
+  'Research',
+  'PatientRequest',
+] as const;
+export type SharingPurpose = (typeof SHARING_PURPOSES)[number];
+
+/** The kinds of records a record-sharing consent can name. */
+export const SHARED_RECORD_KINDS = [
+  'Visits',
+  'Allergies',
+  'Medicines',
+  'LabResults',
+  'ScansAndHeartTests',
+  'VitalSigns',
+  'Documents',
+] as const;
+export type SharedRecordKind = (typeof SHARED_RECORD_KINDS)[number];
+
+/** An account another care provider reads records with through the FHIR API. */
+export interface SharingPartner {
+  id: string;
+  name: string;
+}
+
+/** What a record-sharing consent covers; an empty or null list, or a null date, leaves that part open. */
+export interface RecordSharingScope {
+  shareWith: string[] | null;
+  purposes: SharingPurpose[] | null;
+  kinds: SharedRecordKind[] | null;
+  /** yyyy-MM-dd, hospital dates. */
+  recordsFrom: string | null;
+  recordsTo: string | null;
+  /** The last day the consent lets anyone read. */
+  until: string | null;
+}
+
+/** A record-sharing consent's scope as shown, the accounts by name. */
+export interface RecordSharingScopeDto {
+  shareWith: SharingPartner[];
+  purposes: SharingPurpose[];
+  kinds: SharedRecordKind[];
+  recordsFrom: string | null;
+  recordsTo: string | null;
+  until: string | null;
 }
 
 export interface CaptureConsentRequest {
@@ -362,6 +416,8 @@ export interface CaptureConsentRequest {
   signedByName: string | null;
   documentFileId: string | null;
   notes: string | null;
+  /** Only for a given record-sharing consent; null shares the whole record with every partner account. */
+  sharingScope?: RecordSharingScope | null;
 }
 
 /** Where a WhatsApp opt-in was given. */
@@ -543,6 +599,7 @@ export const patientKeys = {
   /** Under the patient's visits, so whatever refreshes the visits refreshes the banner's payer too. */
   payer: (id: string) => ['patients', 'visits', id, 'payer'] as const,
   consents: (id: string) => ['patients', 'consents', id] as const,
+  sharingPartners: () => ['patients', 'sharing-partners'] as const,
   whatsApp: (id: string) => ['patients', 'whatsapp', id] as const,
   portalFamily: (id: string) => ['patients', 'portal-family', id] as const,
   documents: (id: string) => ['patients', 'documents', id] as const,
@@ -593,6 +650,13 @@ export const patientQueries = {
     queryOptions({
       queryKey: patientKeys.consents(id),
       queryFn: ({ signal }) => api.get<ConsentDto[]>(`/api/v1/patients/${id}/consents`, { signal }),
+    }),
+  /** The accounts a record-sharing consent can name: other care providers' FHIR integration accounts. */
+  sharingPartners: () =>
+    queryOptions({
+      queryKey: patientKeys.sharingPartners(),
+      queryFn: ({ signal }) => api.get<SharingPartner[]>('/api/v1/patients/consents/sharing-partners', { signal }),
+      staleTime: 5 * 60_000,
     }),
   whatsApp: (id: string) =>
     queryOptions({

@@ -1,7 +1,10 @@
 using System.Reflection;
+using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Interop.Search;
 using HyFib.HealthCare360.Modules.Interop.Services;
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
 
@@ -10,11 +13,15 @@ namespace HyFib.HealthCare360.Modules.Interop.Features;
 /// <summary>
 /// HL7 FHIR R4 read API under <c>/fhir/r4</c> (EHR-05): <c>GET metadata</c> (anonymous, rate-limited), <c>GET {type}/{id}</c>,
 /// <c>GET {type}?…</c> and <c>POST {type}/_search</c>. JSON only. Every other path or method under <c>/fhir</c> gets an
-/// OperationOutcome (404 or 405), never the web app shell.
+/// OperationOutcome (404 or 405), never the web app shell. A reader states why they read in <see cref="PurposeHeader"/>,
+/// which the patient's record-sharing consent may limit.
 /// </summary>
 internal static class FhirEndpoints
 {
     public const string BasePath = "/fhir/r4";
+
+    /// <summary>The request header in which the reader states the purpose of use: an HL7 v3 ActReason code such as <c>TREAT</c>.</summary>
+    public const string PurposeHeader = "X-Purpose-Of-Use";
 
     private const string Tag = "FHIR R4";
 
@@ -46,25 +53,35 @@ internal static class FhirEndpoints
         return new FhirResult(statement, StatusCodes.Status200OK, Pretty(http.Request.Query), "no-cache");
     }
 
-    private static async Task<IResult> Read(string type, string id, HttpContext http, FhirApi api, CancellationToken ct)
+    private static async Task<IResult> Read(string type, string id, HttpContext http, FhirApi api, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         if (NotAcceptable(http) is { } refused)
         {
             return refused;
         }
 
-        var response = await api.ReadAsync(type, id, ct);
+        if (!TryReader(http, user, time, out var reader, out var unknownPurpose))
+        {
+            return unknownPurpose;
+        }
+
+        var response = await api.ReadAsync(type, id, reader, ct);
         return new FhirResult(response.Body, response.StatusCode, Pretty(http.Request.Query));
     }
 
-    private static async Task<IResult> Search(string type, HttpContext http, FhirApi api, CancellationToken ct)
+    private static async Task<IResult> Search(string type, HttpContext http, FhirApi api, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         if (!AcceptsJson(http.Request.Headers.Accept))
         {
             return Error(FhirOutcomes.NotAcceptableFormat());
         }
 
-        var response = await api.SearchAsync(type, http.Request.Query, BaseUrl(http.Request), ct);
+        if (!TryReader(http, user, time, out var reader, out var unknownPurpose))
+        {
+            return unknownPurpose;
+        }
+
+        var response = await api.SearchAsync(type, http.Request.Query, BaseUrl(http.Request), reader, ct);
         return new FhirResult(response.Body, response.StatusCode, response.Pretty);
     }
 
@@ -72,11 +89,16 @@ internal static class FhirEndpoints
     /// FHIR search by POST with an <c>application/x-www-form-urlencoded</c> body: keeps identifiers such as the ABHA
     /// number out of request lines. Parameters may also be in the URL.
     /// </summary>
-    private static async Task<IResult> SearchByPost(string type, HttpContext http, FhirApi api, CancellationToken ct)
+    private static async Task<IResult> SearchByPost(string type, HttpContext http, FhirApi api, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         if (!AcceptsJson(http.Request.Headers.Accept))
         {
             return Error(FhirOutcomes.NotAcceptableFormat());
+        }
+
+        if (!TryReader(http, user, time, out var reader, out var unknownPurpose))
+        {
+            return unknownPurpose;
         }
 
         if (!http.Request.HasFormContentType)
@@ -87,8 +109,34 @@ internal static class FhirEndpoints
 
         var form = await http.Request.ReadFormAsync(ct);
         var parameters = http.Request.Query.Concat(form).ToList();
-        var response = await api.SearchAsync(type, parameters, BaseUrl(http.Request), ct);
+        var response = await api.SearchAsync(type, parameters, BaseUrl(http.Request), reader, ct);
         return new FhirResult(response.Body, response.StatusCode, response.Pretty);
+    }
+
+    /// <summary>
+    /// Who reads (the signed-in account: every read needs <c>fhir.read</c>), the purpose they stated in
+    /// <see cref="PurposeHeader"/> (none: null), and the hospital's date today. A purpose that is not a known code is
+    /// refused rather than read as none.
+    /// </summary>
+    private static bool TryReader(HttpContext http, ICurrentUser user, TimeProvider time, out SharingReader reader, out IResult refused)
+    {
+        SharingPurpose? purpose = null;
+        var stated = http.Request.Headers[PurposeHeader].ToString();
+        if (stated.Length > 0)
+        {
+            if (!SharingPurposeCodes.TryParse(stated, out var parsed))
+            {
+                reader = null!;
+                refused = Error(FhirOutcomes.UnknownPurpose(stated));
+                return false;
+            }
+
+            purpose = parsed;
+        }
+
+        reader = new SharingReader(user.UserId ?? Guid.Empty, purpose, time.Today());
+        refused = null!;
+        return true;
     }
 
     private static IResult Unmatched(HttpContext http) =>

@@ -1383,6 +1383,7 @@
     "/api/v1/ot/utilisation ot.reports.read",
     "/api/v1/patients patients.read",
     "/api/v1/patients/by-uhid/{uhid} patients.read",
+    "/api/v1/patients/consents/sharing-partners patients.consents",
     "/api/v1/patients/downtime-blocks patients.downtime",
     "/api/v1/patients/downtime-blocks/{id:guid} patients.downtime",
     "/api/v1/patients/identity-checks/setup patients.identity.verify",

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Interop.Search;
 using HyFib.HealthCare360.Modules.Patients;
@@ -37,10 +38,10 @@ internal sealed class PatientRecords(
     /// A page of consenting patients matching the criteria. Restricted (VIP) patients are included only for callers with
     /// <c>patients.restricted.read</c>; a break-the-glass grant opens one record by id, not a search.
     /// </summary>
-    public async Task<(IReadOnlyList<R4.Patient> Page, int Total)> SearchAsync(SearchRequest request, CancellationToken ct)
+    public async Task<(IReadOnlyList<R4.Patient> Page, int Total)> SearchAsync(SearchRequest request, SharingReader reader, CancellationToken ct)
     {
         var includeRestricted = currentUser.UserId is { } userId && await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct);
-        var query = SearchQuery(request, includeRestricted);
+        var query = SearchQuery(request, includeRestricted, reader);
         var total = await query.CountAsync(ct);
         if (request.Count == 0 || total <= request.Offset)
         {
@@ -52,12 +53,13 @@ internal sealed class PatientRecords(
     }
 
     /// <summary>The SQL query of a Patient search (name words match the trigram-indexed full name with ILIKE).</summary>
-    internal IQueryable<Patient> SearchQuery(SearchRequest request, bool includeRestricted) =>
+    internal IQueryable<Patient> SearchQuery(SearchRequest request, bool includeRestricted, SharingReader reader) =>
         PatientSearchQuery.Apply(
             db.Set<Patient>().AsNoTracking(),
             db.Set<PatientConsent>(),
             PatientCriteria.From(request, protector.BlindIndexes),
             includeRestricted,
+            reader,
             word =>
             {
                 var pattern = word.ToLikePattern();

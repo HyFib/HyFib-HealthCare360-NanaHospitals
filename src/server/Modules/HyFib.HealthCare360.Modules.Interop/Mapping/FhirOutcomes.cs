@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Interop.Domain;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Mapping;
@@ -77,6 +78,19 @@ internal static class FhirOutcomes
         Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
             "The fhir.read permission is required to use the FHIR API.", PermissionRequired);
 
+    /// <summary>
+    /// A record of a patient who shares something with the reader, but not this: its kind or its date is outside every
+    /// consent that admits them. The same reason as no consent at all, so a client handles both alike.
+    /// </summary>
+    public static FhirError OutsideConsent(string resourceType, string id) =>
+        Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
+            $"{resourceType}/{Printable(id)} is not covered by the patient's record-sharing consent for you: the patient has not agreed to share this kind of record, or records of this date, with you for the purpose you stated.",
+            ConsentRequired);
+
+    /// <summary>An <c>X-Purpose-Of-Use</c> header that is not one of the v3 purposes of use a consent can name.</summary>
+    public static FhirError UnknownPurpose(string value) =>
+        BadRequest($"X-Purpose-Of-Use '{Printable(value)}' is not a purpose of use this server knows. Use one of: {string.Join(", ", SharingPurposeCodes.All)} (HL7 v3 ActReason).");
+
     public static FhirError Unexpected(string referenceId) =>
         Error(StatusCodes.Status500InternalServerError, R4.OperationOutcome.IssueType.Exception,
             $"The server could not complete the request. Quote reference {referenceId} if you contact support.", ServerError);
@@ -92,7 +106,7 @@ internal static class FhirOutcomes
                 : "This patient record was merged into another record. Search by ABHA number to find the current record.",
             PatientMerged),
         SharingDecision.NoConsent => Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
-            "The patient has not consented to sharing their health record (no active record-sharing consent is on file).", ConsentRequired),
+            "The patient has not consented to sharing their health record with you (no record-sharing consent on file admits you today for the purpose you stated).", ConsentRequired),
         SharingDecision.Restricted => Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
             "This is a restricted record. Access needs the patients.restricted.read permission or an emergency (break-the-glass) grant.", RestrictedRecord),
         _ => ResourceNotFound(resourceType, id),
