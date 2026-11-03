@@ -240,7 +240,7 @@ internal static class PayerEndpoints
         return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
     }
 
-    private static async Task<IResult> ListPolicies(Guid patientId, bool? includeInactive, HospitalDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> ListPolicies(Guid patientId, bool? includeInactive, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         var policies = db.Set<PatientPolicy>().AsNoTracking().Where(p => p.PatientId == patientId);
         if (includeInactive != true)
@@ -248,17 +248,17 @@ internal static class PayerEndpoints
             policies = policies.Where(p => p.IsActive);
         }
 
-        return TypedResults.Ok(await ToDtosAsync(db, await policies.OrderByDescending(p => p.ValidTo).ToListAsync(ct), time, ct));
+        return TypedResults.Ok(await ToDtosAsync(db, await policies.OrderByDescending(p => p.ValidTo).ToListAsync(ct), user, time, ct));
     }
 
-    private static async Task<IResult> GetPolicy(Guid id, HospitalDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> GetPolicy(Guid id, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         var policy = await db.Set<PatientPolicy>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, ct);
-        return policy is null ? Error.NotFound(nameof(PatientPolicy), id).ToProblem() : TypedResults.Ok((await ToDtosAsync(db, [policy], time, ct))[0]);
+        return policy is null ? Error.NotFound(nameof(PatientPolicy), id).ToProblem() : TypedResults.Ok((await ToDtosAsync(db, [policy], user, time, ct))[0]);
     }
 
     /// <summary>Exact search by policy/card number through the blind index (the number itself is never queried in clear).</summary>
-    private static async Task<IResult> SearchPolicies(string policyNumber, HospitalDbContext db, PolicyService policies, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> SearchPolicies(string policyNumber, HospitalDbContext db, PolicyService policies, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(policyNumber) || policyNumber.Length > 64)
         {
@@ -267,12 +267,12 @@ internal static class PayerEndpoints
 
         var indexes = policies.IndexesFor(policyNumber);
         var found = await db.Set<PatientPolicy>().AsNoTracking().Where(p => indexes.Contains(p.PolicyNumberIndex)).ToListAsync(ct);
-        return TypedResults.Ok(await ToDtosAsync(db, found, time, ct));
+        return TypedResults.Ok(await ToDtosAsync(db, found, user, time, ct));
     }
 
     private static async Task<IResult> RevealPolicyNumber(Guid id, PolicyService policies, CancellationToken ct) => (await policies.RevealAsync(id, ct)).ToOk();
 
-    private static async Task<IResult> CreatePolicy(SavePolicyRequest request, PolicyService policies, HospitalDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> CreatePolicy(SavePolicyRequest request, PolicyService policies, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         var created = await policies.CreateAsync(request, ct);
         if (created.IsFailure)
@@ -281,7 +281,7 @@ internal static class PayerEndpoints
         }
 
         var policy = await db.Set<PatientPolicy>().AsNoTracking().FirstAsync(p => p.Id == created.Value, ct);
-        return TypedResults.Created($"/api/v1/insurance/policies/{policy.Id}", (await ToDtosAsync(db, [policy], time, ct))[0]);
+        return TypedResults.Created($"/api/v1/insurance/policies/{policy.Id}", (await ToDtosAsync(db, [policy], user, time, ct))[0]);
     }
 
     private static async Task<IResult> UpdatePolicy(Guid id, SavePolicyRequest request, PolicyService policies, CancellationToken ct) =>
@@ -312,7 +312,8 @@ internal static class PayerEndpoints
         p.Id, p.Code, p.Name, p.Category, p.ContactPerson, p.Phone, p.Email, p.Address, p.Gstin, p.TariffPlanId, p.CreditDays, p.DefaultCoPayPercent,
         p.PortalUrl, p.IsActive, p.Notes, p.Version);
 
-    private static async Task<List<PolicyDto>> ToDtosAsync(HospitalDbContext db, IReadOnlyList<PatientPolicy> policies, TimeProvider time, CancellationToken ct)
+    private static async Task<List<PolicyDto>> ToDtosAsync(
+        HospitalDbContext db, IReadOnlyList<PatientPolicy> policies, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         var payerIds = policies.Select(p => p.PayerId).Concat(policies.Where(p => p.TpaId is not null).Select(p => p.TpaId!.Value)).Distinct().ToList();
         var names = await db.Set<Payer>().Where(p => payerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name, ct);
@@ -320,7 +321,10 @@ internal static class PayerEndpoints
         return policies.Select(p => new PolicyDto(
             p.Id, p.PatientId, p.PayerId, names.GetValueOrDefault(p.PayerId), p.TpaId, p.TpaId is { } tpa ? names.GetValueOrDefault(tpa) : null,
             p.PolicyNumberMasked, p.MemberId, p.PolicyHolderName, p.RelationToHolder, p.ValidFrom, p.ValidTo, p.SumInsured, p.CoPayPercent, p.IsActive,
-            p.IsValidOn(today), p.VerifiedAt, p.VerificationNotes, p.CardFileId, p.Notes, p.Version)).ToList();
+            p.IsValidOn(today), p.VerifiedAt, p.VerificationNotes, p.CardFileId, p.Notes, p.Version)
+        {
+            RecordedByYou = p.RecordedBy(user.UserId),
+        }).ToList();
     }
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

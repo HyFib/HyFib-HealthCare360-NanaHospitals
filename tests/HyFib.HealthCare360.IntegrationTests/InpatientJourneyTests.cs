@@ -75,7 +75,7 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         var insurer = payers.Single(p => p.Code == "STAR");
         var tpa = payers.Single(p => p.Code == "MEDIASSIST");
         var policyNumber = "SH/" + UniqueDigits(10);
-        var policy = await RecordPolicyAsync(billing, patient, insurer, tpa, policyNumber, today);
+        var policy = await RecordPolicyAsync(billing, tpaDesk, patient, insurer, tpa, policyNumber, today);
 
         // Front office: admits him as a cashless patient under the doctor, in a free bed of the male general ward.
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
@@ -376,15 +376,23 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         return patient;
     }
 
-    /// <summary>Records the patient's policy with its member id and co-pay, and marks it verified with the TPA.</summary>
+    /// <summary>
+    /// The billing desk records the patient's policy with its member id and co-pay; the TPA desk, another person, verifies
+    /// it with the TPA (whoever recorded it may not).
+    /// </summary>
     private static async Task<PolicyDto> RecordPolicyAsync(
-        ApiClient desk, PatientCreated patient, PayerListItem insurer, PayerListItem tpa, string policyNumber, DateOnly today)
+        ApiClient desk, ApiClient verifier, PatientCreated patient, PayerListItem insurer, PayerListItem tpa, string policyNumber, DateOnly today)
     {
         var created = await desk.PostAsync<PolicyDto>("/api/v1/insurance/policies", new SavePolicyRequest(
             PatientId: patient.Id, PayerId: insurer.Id, TpaId: tpa.Id, PolicyNumber: policyNumber, MemberId: "MA" + UniqueDigits(8),
             PolicyHolderName: null, RelationToHolder: "Self", ValidFrom: today.AddMonths(-6), ValidTo: today.AddMonths(6), SumInsured: 500_000m,
             CoPayPercent: CoPayPercent, IsActive: true, CardFileId: null, Notes: null, Version: null));
-        await desk.PostAsync($"/api/v1/insurance/policies/{created.Id}/verify", new VerifyPolicyRequest("Eligibility confirmed on the TPA portal"));
+        using (var own = await desk.SendRawAsync(HttpMethod.Post, $"/api/v1/insurance/policies/{created.Id}/verify", new VerifyPolicyRequest("Checked")))
+        {
+            own.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        await verifier.PostAsync($"/api/v1/insurance/policies/{created.Id}/verify", new VerifyPolicyRequest("Eligibility confirmed on the TPA portal"));
 
         var policy = await desk.GetAsync<PolicyDto>($"/api/v1/insurance/policies/{created.Id}");
         policy.PayerId.ShouldBe(insurer.Id);

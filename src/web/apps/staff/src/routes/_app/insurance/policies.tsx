@@ -241,7 +241,9 @@ function PoliciesPage() {
                         {formatDateTime(p.verifiedAt)}
                       </span>
                     ) : (
-                      <Text style={{ color: tokens.colorPaletteMarigoldForeground1 }}>Not yet</Text>
+                      <Text style={{ color: tokens.colorPaletteMarigoldForeground1 }}>
+                        {p.recordedByYou ? 'Not yet: someone else verifies it' : 'Not yet'}
+                      </Text>
                     ),
                 },
               ]}
@@ -263,7 +265,12 @@ function PoliciesPage() {
                             <MenuItem icon={<EditRegular />} onClick={() => setEditing(p)}>
                               Edit policy
                             </MenuItem>
-                            <MenuItem icon={<CheckmarkCircleRegular />} onClick={() => setVerifying(p)}>
+                            <MenuItem
+                              icon={<CheckmarkCircleRegular />}
+                              disabled={p.recordedByYou}
+                              secondaryContent={p.recordedByYou ? 'Someone else verifies' : undefined}
+                              onClick={() => setVerifying(p)}
+                            >
                               Mark as verified
                             </MenuItem>
                           </MenuList>

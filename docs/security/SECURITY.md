@@ -370,6 +370,10 @@ and grants nothing.
     `billing.refunds.approve` approves, shown what the report brought and matched. Its transactions are reversed in the
     books of the day it is approved, never removed (billing.md, Card and UPI reconciliation);
   - merging a duplicate patient record into another: one holder of `patients.merge` asks, another approves;
+  - a third party paying for a visit or a stay (an insurer, a company, a government scheme): the desk names it, and it
+    is accepted only on the patient's policy or membership, in date and verified with the payer by someone other than
+    whoever recorded its terms or last changed them (`PayerChoice`; `insurance.policy_self_verify`). Changing what a
+    verification vouches for withdraws it (billing.md, A third party pays only on a second person's word);
   - access given to a user or a role (see "Access is given by two people" above): one administrator asks, another who
     holds `admin.grants.approve`, and any administrative permission it gives, approves;
   - a service's own price and GST rate, which a self-pay patient pays (`masters.service_price`): one person saves the

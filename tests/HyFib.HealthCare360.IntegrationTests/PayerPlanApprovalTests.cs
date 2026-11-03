@@ -161,6 +161,10 @@ public sealed class PayerPlanApprovalTests(HospitalServer server)
         var account = stay.Account;
         var general = account.TariffPlanId;
 
+        // The patient's membership with the company, verified by someone other than whoever recorded it, lets the stay go
+        // on the company at all.
+        await server.VerifiedPolicyAsync(account.PatientId, company.Id);
+
         // Converted to the company, keeping the self-pay plan by name: another plan than the payer's, so it waits.
         using (var kept = await billing.SendRawAsync(HttpMethod.Put, $"{AccountsPath}/{account.Id}",
                    Update(account, general, estimate: 0m) with { PayerType = PayerType.Corporate, PayerId = company.Id }))
@@ -290,6 +294,150 @@ public sealed class PayerPlanApprovalTests(HospitalServer server)
             .Status.ShouldBe(ApprovalStatus.Approved);
     }
 
+    [Fact]
+    public async Task The_desk_puts_a_visit_on_a_payer_only_on_the_patients_cover_verified_by_a_second_person()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var company = await server.CreatePayerAsync(admin, Payer(null, coPay: 0m, isActive: true));
+        var insurer = (await billing.GetAsync<List<PayerListItem>>(PayersPath)).Single(p => p.Code == "STAR");
+        var patient = await RegisterAsync(frontOffice);
+
+        // A payer of the kind chosen, named: no "company" pricing without a company, nor an insurer billed as a company
+        // (which would pay without its approval).
+        using (var unnamed = await frontOffice.SendRawAsync(HttpMethod.Post, "/api/v1/visits", Visit(patient, PayerType.Corporate, null)))
+        {
+            await RefusedAsync(unnamed, HttpStatusCode.BadRequest, "Choose the company that pays.");
+        }
+
+        using (var miscast = await frontOffice.SendRawAsync(HttpMethod.Post, "/api/v1/visits", Visit(patient, PayerType.Corporate, insurer.Id)))
+        {
+            await RefusedAsync(miscast, HttpStatusCode.BadRequest, $"{insurer.Name} pays as an insurer, not as a company.");
+        }
+
+        // The company, with no membership of the patient recorded: refused, saying what to do.
+        using (var uncovered = await frontOffice.SendRawAsync(HttpMethod.Post, "/api/v1/visits", Visit(patient, PayerType.Corporate, company.Id)))
+        {
+            await RefusedAsync(uncovered, HttpStatusCode.UnprocessableEntity, "payer.no_cover");
+        }
+
+        // The billing desk records the membership: not yet; it may not verify it itself, and is told so before it tries.
+        var number = "EMP-" + Letters(8).ToUpperInvariant();
+        var policy = await billing.PostAsync<PolicyDto>("/api/v1/insurance/policies",
+            Membership(patient, company.Id, DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(6), number));
+        using (var unverified = await frontOffice.SendRawAsync(HttpMethod.Post, "/api/v1/visits", Visit(patient, PayerType.Corporate, company.Id)))
+        {
+            await RefusedAsync(unverified, HttpStatusCode.UnprocessableEntity, "payer.cover_not_verified");
+        }
+
+        (await billing.GetAsync<PolicyDto>($"/api/v1/insurance/policies/{policy.Id}")).RecordedByYou.ShouldBeTrue();
+        (await admin.GetAsync<PolicyDto>($"/api/v1/insurance/policies/{policy.Id}")).RecordedByYou.ShouldBeFalse();
+        using (var own = await billing.SendRawAsync(HttpMethod.Post, $"/api/v1/insurance/policies/{policy.Id}/verify", new VerifyPolicyRequest("Checked")))
+        {
+            await RefusedAsync(own, HttpStatusCode.Forbidden, "insurance.policy_self_verify");
+        }
+
+        // Another person verifies it with the company: the visit goes on the company.
+        await admin.PostAsync($"/api/v1/insurance/policies/{policy.Id}/verify", new VerifyPolicyRequest("Employee id confirmed with the company's HR"));
+        var visit = await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", Visit(patient, PayerType.Corporate, company.Id));
+        (visit.PayerType, visit.PayerId).ShouldBe((PayerType.Corporate, (Guid?)company.Id));
+
+        // Its card typed again unchanged, or a note, keeps the verification; extending its validity withdraws it, and
+        // whoever extended it may not verify it again: the desk is refused until someone else does.
+        var current = await billing.GetAsync<PolicyDto>($"/api/v1/insurance/policies/{policy.Id}");
+        await billing.PutAsync($"/api/v1/insurance/policies/{policy.Id}", Membership(patient, company.Id, current.ValidTo, $" {number} ", current) with { Notes = "Card seen again" });
+        current = await billing.GetAsync<PolicyDto>($"/api/v1/insurance/policies/{policy.Id}");
+        current.VerifiedAt.ShouldNotBeNull();
+        await admin.PutAsync($"/api/v1/insurance/policies/{policy.Id}", Membership(patient, company.Id, current.ValidTo.AddYears(1), null, current));
+        current = await admin.GetAsync<PolicyDto>($"/api/v1/insurance/policies/{policy.Id}");
+        (current.VerifiedAt, current.RecordedByYou).ShouldBe((null, true));
+        using (var withdrawn = await frontOffice.SendRawAsync(HttpMethod.Post, "/api/v1/visits", Visit(patient, PayerType.Corporate, company.Id)))
+        {
+            await RefusedAsync(withdrawn, HttpStatusCode.UnprocessableEntity, "payer.cover_not_verified");
+        }
+
+        using (var again = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/insurance/policies/{policy.Id}/verify", new VerifyPolicyRequest("Checked")))
+        {
+            await RefusedAsync(again, HttpStatusCode.Forbidden, "insurance.policy_self_verify");
+        }
+
+        await billing.PostAsync($"/api/v1/insurance/policies/{policy.Id}/verify", new VerifyPolicyRequest("Extension confirmed with the company's HR"));
+        (await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", Visit(patient, PayerType.Corporate, company.Id))).PayerId.ShouldBe(company.Id);
+
+        // The patient pays for a visit whatever payer is sent with it: no payer's plan without the payer.
+        var paying = await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", Visit(patient, PayerType.Self, company.Id));
+        (paying.PayerType, paying.PayerId).ShouldBe((PayerType.Self, (Guid?)null));
+
+        // A policy its own recorder marked verified before this rule does not count.
+        var another = await RegisterAsync(frontOffice);
+        var selfVerified = await billing.PostAsync<PolicyDto>("/api/v1/insurance/policies",
+            Membership(another, company.Id, DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(6), "EMP-" + Letters(8).ToUpperInvariant()));
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var recorder = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<PatientPolicy>()
+                .Where(p => p.Id == selfVerified.Id).Select(p => p.CreatedBy).SingleAsync(Ct);
+            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<PatientPolicy>().Where(p => p.Id == selfVerified.Id)
+                .ExecuteUpdateAsync(u => u.SetProperty(p => p.VerifiedAt, DateTimeOffset.UtcNow).SetProperty(p => p.VerifiedBy, recorder), Ct);
+        }
+
+        using (var legacy = await frontOffice.SendRawAsync(HttpMethod.Post, "/api/v1/visits", Visit(another, PayerType.Corporate, company.Id)))
+        {
+            await RefusedAsync(legacy, HttpStatusCode.UnprocessableEntity, "payer.cover_not_verified");
+        }
+    }
+
+    [Fact]
+    public async Task A_stay_goes_on_a_payer_only_on_the_patients_cover_verified_by_a_second_person()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var company = await server.CreatePayerAsync(admin, Payer(null, coPay: 0m, isActive: true));
+
+        // Admitted on the company with no verified membership: refused at the admission desk.
+        var patient = await RegisterAsync(frontOffice);
+        var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
+        var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWM");
+        var bed = await TestBeds.AddAsync(server, ward.Id);
+        using (var refused = await frontOffice.SendRawAsync(HttpMethod.Post, "/api/v1/inpatient/admissions", new AdmitPatientRequest(
+                   PatientId: patient, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: null,
+                   DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,
+                   ProvisionalDiagnosis: "Cellulitis of the right leg", ReferredBy: null, PayerType: PayerType.Corporate, PayerId: company.Id,
+                   PolicyNumber: null, IsMlc: false, MlcNumber: null, ExpectedDischargeDate: null, AttendantName: null, AttendantRelation: null,
+                   AttendantPhone: null, AdmittedAt: null, Notes: null)))
+        {
+            await RefusedAsync(refused, HttpStatusCode.UnprocessableEntity, "payer.no_cover");
+        }
+
+        // Admitted as paying, the stay goes on the company only once a second person has verified the membership.
+        await using var stay = await AdmitAsync();
+        var account = stay.Account;
+        using (var uncovered = await billing.SendRawAsync(HttpMethod.Put, $"{AccountsPath}/{account.Id}",
+                   Update(account, null, estimate: 0m) with { PayerType = PayerType.Corporate, PayerId = company.Id }))
+        {
+            await RefusedAsync(uncovered, HttpStatusCode.UnprocessableEntity, "payer.no_cover");
+        }
+
+        var policy = await billing.PostAsync<PolicyDto>("/api/v1/insurance/policies",
+            Membership(account.PatientId, company.Id, DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(6), "EMP-" + Letters(8).ToUpperInvariant()));
+        using (var unverified = await billing.SendRawAsync(HttpMethod.Put, $"{AccountsPath}/{account.Id}",
+                   Update(account, null, estimate: 0m) with { PayerType = PayerType.Corporate, PayerId = company.Id }))
+        {
+            await RefusedAsync(unverified, HttpStatusCode.UnprocessableEntity, "payer.cover_not_verified");
+        }
+
+        await admin.PostAsync($"/api/v1/insurance/policies/{policy.Id}/verify", new VerifyPolicyRequest("Employee id confirmed with the company's HR"));
+        using (var covered = await billing.SendRawAsync(HttpMethod.Put, $"{AccountsPath}/{account.Id}",
+                   Update(account, null, estimate: 0m) with { PayerType = PayerType.Corporate, PayerId = company.Id }))
+        {
+            covered.StatusCode.ShouldBe(HttpStatusCode.NoContent, await covered.Content.ReadAsStringAsync(Ct));
+        }
+
+        (await billing.GetAsync<IpAccountDetail>($"{AccountsPath}/{account.Id}")).PayerId.ShouldBe(company.Id);
+    }
+
     private async Task<int> AuditCountAsync(string action, Guid entityId)
     {
         await using var scope = server.Services.CreateAsyncScope();
@@ -302,9 +450,23 @@ public sealed class PayerPlanApprovalTests(HospitalServer server)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var patient = await RegisterAsync(frontOffice);
-        return (await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", new CreateVisitRequest(
-            patient, VisitType.HealthCheckup, null, null, null, PayerType.Corporate, payerId, ReferralSource.Corporate, null, null, false, null, null,
-            TokenPriority.Normal, IssueToken: false, NotifyPatient: false))).Id;
+        await server.VerifiedPolicyAsync(patient, payerId);
+        return (await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", Visit(patient, PayerType.Corporate, payerId))).Id;
+    }
+
+    private static CreateVisitRequest Visit(Guid patient, PayerType payerType, Guid? payerId) => new(
+        patient, VisitType.HealthCheckup, null, null, null, payerType, payerId, ReferralSource.Corporate, null, null, false, null, null,
+        TokenPriority.Normal, IssueToken: false, NotifyPatient: false);
+
+    private static SavePolicyRequest Membership(Guid patient, Guid payerId, DateOnly validTo, string? number, PolicyDto? policy = null) => new(
+        patient, payerId, null, number, null, null, null, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-30), validTo, 0m, 0m, IsActive: true,
+        CardFileId: null, Notes: null, Version: policy?.Version);
+
+    private static async Task RefusedAsync(HttpResponseMessage response, HttpStatusCode status, string code)
+    {
+        var body = await response.Content.ReadAsStringAsync(Ct);
+        response.StatusCode.ShouldBe(status, body);
+        body.ShouldContain(code);
     }
 
     private static async Task<Guid> RegisterAsync(ApiClient frontOffice) =>

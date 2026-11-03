@@ -132,6 +132,7 @@ const POLICIES: PolicyDto[] = [
     cardFileId: null,
     notes: null,
     version: 1,
+    recordedByYou: false,
   },
 ];
 

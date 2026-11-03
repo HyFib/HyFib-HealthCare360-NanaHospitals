@@ -4744,6 +4744,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("sum_insured");
 
+                    b.Property<Guid?>("TermsRecordedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("terms_recorded_by");
+
                     b.Property<Guid?>("TpaId")
                         .HasColumnType("uuid")
                         .HasColumnName("tpa_id");
