@@ -270,6 +270,9 @@ public static class PlatformServiceCollectionExtensions
         // A service's price changes only when two people agree.
         services.AddScoped<ServicePrices>();
         services.AddScoped<ServiceChargeSources>();
+
+        // A doctor with work ahead (appointments, admissions, surgeries) is taken out of use only once it is named.
+        services.AddScoped<PractitionerWorkSources>();
         services.AddScoped<IApprovalAction, ServicePriceApproval>();
         services.AddHttpClient(AlertHeartbeat.HttpClientName, client => client.DefaultRequestHeaders.UserAgent.ParseAdd("HyFib-HC360-Heartbeat"))
             .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);

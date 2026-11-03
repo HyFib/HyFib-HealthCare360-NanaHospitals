@@ -1,6 +1,7 @@
 import { isApiError } from '@hc360/core';
 import { toFormPath, type useNotify } from '@hc360/ui';
 import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
+import type { PractitionerWork } from './api';
 
 type Notify = ReturnType<typeof useNotify>;
 
@@ -68,6 +69,15 @@ export function showSaveError<T extends FieldValues>(
     }
   }
   notify.error(error, `Could not save the ${what}`);
+}
+
+/** The work a doctor still has ahead when the server refused to take them out of use without saying so; null otherwise. */
+export function workAheadOf(error: unknown): PractitionerWork[] | null {
+  if (!isApiError(error) || error.code !== 'practitioner.work_ahead') {
+    return null;
+  }
+  const work = (error.data as { workAhead?: PractitionerWork[] } | undefined)?.workAhead;
+  return Array.isArray(work) && work.length > 0 ? work : null;
 }
 
 /** The facility form keeps the address parts at the top level: "address.pinCode" → "pinCode". */

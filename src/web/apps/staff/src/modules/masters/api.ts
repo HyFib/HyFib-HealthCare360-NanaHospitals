@@ -149,7 +149,20 @@ export interface PractitionerDto {
 export type SavePractitionerRequest = Omit<
   PractitionerDto,
   'id' | 'displayName' | 'specialtyName' | 'departmentName' | 'version'
-> & { version: number | null };
+> & {
+  version: number | null;
+  /** Take the doctor out of use although work is still ahead (the person saw the list the server named). */
+  takeOutOfUseAnyway?: boolean;
+};
+
+/** One kind of work a doctor still has ahead, as the server names it when they are taken out of use. */
+export interface PractitionerWork {
+  kind: string;
+  count: number;
+  first: string | null;
+  numbers: string[];
+  words: string;
+}
 
 export interface ServiceItemDto {
   id: string;

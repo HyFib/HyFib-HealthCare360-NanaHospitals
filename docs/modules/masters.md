@@ -60,7 +60,7 @@ embeds), keeping PNG transparency for logos and signatures, then stored in the f
 | GET | `/specialties` · `/specialties/{id}` | masters.read | → `SpecialtyDto[]` · `SpecialtyDto` |
 | POST · PUT | `/specialties` · `/specialties/{id}` | masters.manage | `SaveSpecialtyRequest` (+`version`) → 201 · 204 |
 | GET | `/practitioners?page&pageSize&search&departmentId&specialtyId&kind&active` · `/practitioners/{id}` | masters.read | → `PagedResult<PractitionerDto>` (search: name, code, registration number) · `PractitionerDto` |
-| POST · PUT | `/practitioners` · `/practitioners/{id}` | masters.manage | `SavePractitionerRequest` (+`version`) → 201 · 204 |
+| POST · PUT | `/practitioners` · `/practitioners/{id}` | masters.manage | `SavePractitionerRequest` (+`version`; `takeOutOfUseAnyway` after a 409 `practitioner.work_ahead`) → 201 · 204 |
 | GET | `/services?page&pageSize&search&sort&desc&category&departmentId&active` · `/services/{id}` | masters.read | → `PagedResult<ServiceItemDto>` (sort: code, name, price, category) · `ServiceItemDto` |
 | POST · PUT | `/services` · `/services/{id}` | masters.manage | `SaveServiceItemRequest` (+`version`, `reason` for the approver) → 201 `{ id, approvalId }` · 204, or 202 with the `ApprovalRequestDto` when the price waits for approval; 409 `approval.already_requested` when a change to the price waits and this save does not fit it |
 | GET | `/lookups/departments?kind` · `/lookups/specialties` · `/lookups/practitioners?departmentId&search` · `/lookups/services?category&search` | masters.read | → active items for pickers (at most 50 doctors or services) |
@@ -101,6 +101,16 @@ A save replaces every field, so screens send the whole record.
   naming each ward, stay and diet; point them to another service first, or wait for the stays to end. The nursing day and
   the consultant's visit are looked up by code and charged only while in use: taking them out of use is how a hospital
   stops charging them, and is not refused.
+- **A doctor with work ahead goes out of use only once that work is named** (`IPractitionerWorkSource`, each module's
+  own): OPD appointments booked or confirmed from now on, patients checked in to see them now, patients on the waiting
+  list for a slot with them (Scheduling); video consultations no appointment stands for (Virtual care); patients admitted
+  under them as consultant, discharge started too (Inpatient); surgeries asked for, scheduled, in pre-op, in theatre or
+  postponed with them as surgeon or anaesthetist (OT). Taking the doctor out of use while any is ahead is refused (409
+  `practitioner.work_ahead`), naming each kind with how many, when the first is and the first five by number, in the
+  problem's `data.workAhead` for the screen; saving again with `takeOutOfUseAnyway` goes ahead, and the audit trail keeps
+  what was ahead and who went ahead (`practitioner.out_of_use_with_work_ahead`). Nothing booked is cancelled: the desk
+  moves the patients to another doctor or cancels with them. A doctor with nothing ahead, or put back in use, is saved
+  without a question.
 - **A service's price is approved by a second person** (maker-checker, `ServicePrices`). A self-pay patient pays the
   service's own price and GST, so a save that changes either, lets the counter type a price, allows discounts or puts
   the service in use saves everything else and asks for that (`masters.service_price`); someone else who holds
@@ -134,7 +144,8 @@ document follows its print template: the letterhead or pre-printed stationery, t
 ## Not covered yet
 
 - The facility's time zone and currency can't be edited (India only).
-- Nothing warns, before a doctor is taken out of use, how many future appointments they have.
+- Taking a doctor out of use names the work ahead but doesn't move it: their booked patients are moved or cancelled
+  at the desk, appointment by appointment.
 - Taking a service out of use is checked against what charges it by itself (wards, stays in progress, diets), not
   against the lab tests, procedures and packages that charge it when ordered: those are refused when ordered, where the
   person ordering sees it.
