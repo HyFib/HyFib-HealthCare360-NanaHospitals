@@ -60,8 +60,26 @@ public sealed record ReceiptSummary(Guid Id, string ReceiptNumber, ReceiptPurpos
 public sealed record RefundSummary(Guid Id, string RefundNumber, decimal Amount, RefundStatus Status, PaymentMode? Mode, DateTimeOffset RequestedAt, DateTimeOffset? PaidAt);
 
 /// <param name="RequestedByName">Who asked for it; <paramref name="IssuedByName"/> approved and issued it.</param>
+/// <param name="Lines">The bill lines a credit note corrects, each with its taxable value and GST; none for a write-off.</param>
+/// <param name="GstTimeBarred">Issued after the bill's GST could be reduced (CGST Act s.34(2)): it lowers the amount, not the GST.</param>
+/// <param name="EInvoice">The IRN the portal gave the credit note (a <c>CRN</c>), when it has one.</param>
 public sealed record CreditNoteDto(
-    Guid Id, string Number, CreditNoteKind Kind, decimal Amount, string Reason, DateTimeOffset IssuedAt, string? IssuedByName, string? RequestedByName);
+    Guid Id,
+    string Number,
+    CreditNoteKind Kind,
+    decimal Amount,
+    string Reason,
+    DateTimeOffset IssuedAt,
+    string? IssuedByName,
+    string? RequestedByName,
+    decimal TaxableAmount = 0m,
+    decimal GstAmount = 0m,
+    bool GstTimeBarred = false,
+    IReadOnlyList<CreditNoteLineDto>? Lines = null,
+    EInvoiceStamp? EInvoice = null);
+
+public sealed record CreditNoteLineDto(
+    Guid BillLineId, string Description, string? SacCode, decimal GstRate, decimal Amount, decimal TaxableAmount, decimal Cgst, decimal Sgst, decimal Igst);
 
 public sealed record DiscountApprovalDto(
     Guid Id,
@@ -208,7 +226,13 @@ public sealed record CancelBillRequest(string Reason, uint Version);
 public sealed record DecideDiscountRequest(string? Remarks);
 
 /// <summary>A credit note or write-off asked for on a finalized bill; it is issued when an approver approves it.</summary>
-public sealed record IssueCreditNoteRequest(CreditNoteKind Kind, decimal Amount, string Reason);
+/// <param name="Lines">
+/// The bill lines a credit note corrects and what it takes off each (GST included); <paramref name="Amount"/> is their sum.
+/// Required when the bill carries GST, since the GST credited is each line's own; not for a write-off.
+/// </param>
+public sealed record IssueCreditNoteRequest(CreditNoteKind Kind, decimal Amount, string Reason, IReadOnlyList<CreditNoteLineRequest>? Lines = null);
+
+public sealed record CreditNoteLineRequest(Guid BillLineId, decimal Amount);
 
 public sealed record DiscountLimitDto(Guid Id, Guid UserId, string? UserName, decimal MaxPercent, decimal? MaxAmount, string? Notes, uint Version);
 
@@ -271,6 +295,19 @@ public sealed class IssueCreditNoteRequestValidator : AbstractValidator<IssueCre
         RuleFor(x => x.Kind).IsInEnum();
         RuleFor(x => x.Amount).Amount();
         RuleFor(x => x.Reason).Reason();
+        RuleFor(x => x.Lines).Must(lines => lines is null || lines.Count == 0)
+            .When(x => x.Kind == CreditNoteKind.WriteOff)
+            .WithMessage("A write-off is of the balance due, not of services: leave out the lines.");
+        RuleFor(x => x.Lines).Must(lines => lines is null || lines.Count <= 200).WithMessage("Credit at most 200 services on one note.");
+        RuleFor(x => x.Lines).Must(lines => lines is null || lines.Select(l => l.BillLineId).Distinct().Count() == lines.Count)
+            .WithMessage("Name each service once.");
+        RuleFor(x => x).Must(x => x.Lines is not { Count: > 0 } lines || Money.Round(lines.Sum(l => l.Amount)) == Money.Round(x.Amount))
+            .WithName("amount").WithMessage("The amount is the sum of the services' credits.");
+        RuleForEach(x => x.Lines).ChildRules(line =>
+        {
+            line.RuleFor(l => l.BillLineId).NotEmpty().WithMessage("Choose the service.");
+            line.RuleFor(l => l.Amount).Amount();
+        });
     }
 }
 

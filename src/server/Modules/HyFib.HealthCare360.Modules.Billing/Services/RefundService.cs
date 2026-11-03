@@ -1,3 +1,4 @@
+using System.Globalization;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Payments;
@@ -254,11 +255,12 @@ public sealed class RefundService(
     /// <summary>
     /// Asks for a credit note or write-off on a finalized bill. Nothing changes until an approver, someone other than the
     /// person asking, approves it; it is then issued on the bill as it is now, or not at all
-    /// (<see cref="IssueApprovedCreditNoteAsync"/>).
+    /// (<see cref="IssueApprovedCreditNoteAsync"/>). A credit note names the services it corrects, and must when the bill
+    /// carries GST (<see cref="CreditedLinesAsync"/>); the approver sees the GST it takes off each.
     /// </summary>
     public async Task<Result<ApprovalRequestDto>> RequestCreditNoteAsync(Guid billId, IssueCreditNoteRequest request, CancellationToken ct)
     {
-        var bill = await db.Set<Bill>().AsNoTracking().FirstOrDefaultAsync(b => b.Id == billId, ct);
+        var bill = await db.Set<Bill>().AsNoTracking().Include(b => b.Lines).FirstOrDefaultAsync(b => b.Id == billId, ct);
         if (bill is null)
         {
             return Error.NotFound(nameof(Bill), billId);
@@ -271,20 +273,49 @@ public sealed class RefundService(
             return creditable.Error!;
         }
 
+        var lines = request.Lines?.Select(l => new CreditNoteLinePayload(l.BillLineId, Money.Round(l.Amount))).ToList();
+        var credited = await CreditedLinesAsync(bill, request.Kind, lines, ct);
+        if (credited.IsFailure)
+        {
+            return credited.Error!;
+        }
+
         var what = CreditNoteApproval.Words(request.Kind);
+        var timeBarred = GstTimeBarred(bill);
+        var details = new List<ApprovalDetail>
+        {
+            new("Bill", bill.BillNumber ?? bill.Id.ToString()),
+            new("Patient's share", $"₹{Money.FormatInr(bill.PatientAmount)}"),
+            new("Paid", $"₹{Money.FormatInr(bill.PaidAmount)}"),
+            new("Already credited", $"₹{Money.FormatInr(bill.CreditAmount)}"),
+            new("Balance due", $"₹{Money.FormatInr(bill.DueAmount)}"),
+            new(what, $"₹{Money.FormatInr(amount)}"),
+        };
+        var gst = 0m;
+        foreach (var (line, before, lineAmount) in credited.Value)
+        {
+            var share = timeBarred
+                ? new GstShare(lineAmount, 0m, 0m, 0m)
+                : GstCreditNotes.Share(line.NetAmount, line.TaxableAmount, before, lineAmount, bill.IsInterState);
+            gst += share.Gst;
+            details.Add(new(Shorten(line.Description), share.Gst == 0m
+                ? $"₹{Money.FormatInr(lineAmount)}"
+                : $"₹{Money.FormatInr(lineAmount)}, of it GST ₹{Money.FormatInr(share.Gst)} at {line.TaxRate.ToString("0.##", CultureInfo.InvariantCulture)}%"));
+        }
+
+        if (credited.Value.Count > 0)
+        {
+            details.Add(new("GST credited", timeBarred
+                ? $"None: the bill's GST could be reduced until {LastDayText(bill)} (CGST Act s.34(2))"
+                : $"₹{Money.FormatInr(gst)}"));
+        }
+
         return await approvals.RequestAsync(
             CreditNoteApproval.KindOf(request.Kind),
             new ApprovalSubject(nameof(Bill), bill.Id, bill.Version, bill.FacilityId, bill.PatientId),
-            new CreditNotePayload(bill.Id, request.Kind, amount, request.Reason.Trim()),
+            new CreditNotePayload(bill.Id, request.Kind, amount, request.Reason.Trim(), lines is { Count: > 0 } ? lines : null),
             $"{what} of ₹{Money.FormatInr(amount)} on bill {bill.BillNumber}",
-            [
-                new("Bill", bill.BillNumber ?? bill.Id.ToString()),
-                new("Patient's share", $"₹{Money.FormatInr(bill.PatientAmount)}"),
-                new("Paid", $"₹{Money.FormatInr(bill.PaidAmount)}"),
-                new("Already credited", $"₹{Money.FormatInr(bill.CreditAmount)}"),
-                new("Balance due", $"₹{Money.FormatInr(bill.DueAmount)}"),
-                new(what, $"₹{Money.FormatInr(amount)}"),
-            ],
+            details,
             request.Reason,
             ct);
     }
@@ -292,12 +323,13 @@ public sealed class RefundService(
     /// <summary>
     /// Issues an approved credit note or write-off, in the approval's transaction (the approval saves and commits). It is
     /// issued only on the bill as it was asked for: a bill paid, refunded or credited since was approved for a balance it
-    /// no longer has. The person who asked and the approver are both kept on the note.
+    /// no longer has. The person who asked and the approver are both kept on the note. A credit note takes the taxable value
+    /// and the GST off each line it names at the line's rate, unless the time to reduce the bill's GST has passed.
     /// </summary>
     internal async Task<Result<string>> IssueApprovedCreditNoteAsync(ApprovalRequest approval, CancellationToken ct)
     {
         var asked = ApprovalPayload.Read<CreditNotePayload>(approval.Payload);
-        var bill = await db.Set<Bill>().FirstOrDefaultAsync(b => b.Id == asked.BillId, ct);
+        var bill = await db.Set<Bill>().Include(b => b.Lines).FirstOrDefaultAsync(b => b.Id == asked.BillId, ct);
         if (bill is null)
         {
             return Error.NotFound(nameof(Bill), asked.BillId);
@@ -307,6 +339,12 @@ public sealed class RefundService(
         {
             return Error.Rule("approval.stale",
                 $"Bill {bill.BillNumber} changed after this was asked for (a payment, a refund or another credit). Ask again, against the bill as it is now.");
+        }
+
+        var lines = await CreditedLinesAsync(bill, asked.Kind, asked.Lines, ct);
+        if (lines.IsFailure)
+        {
+            return lines.Error!;
         }
 
         var credited = bill.ApplyCredit(asked.Amount);
@@ -330,9 +368,18 @@ public sealed class RefundService(
             IssuedByName = currentUser.DisplayName ?? currentUser.UserName,
             IssuedAt = time.GetUtcNow(),
         };
+        var timeBarred = GstTimeBarred(bill);
+        foreach (var (line, before, amount) in lines.Value)
+        {
+            note.Credit(line, before, amount, bill.IsInterState, timeBarred);
+        }
+
         db.Add(note);
+        var gst = note.Lines.Count == 0 ? string.Empty
+            : timeBarred ? $"; GST not reduced: the time for it ended on {LastDayText(bill)} (CGST Act s.34(2))"
+            : $"; GST ₹{Money.FormatInr(note.GstAmount)} on {note.Lines.Count} service{(note.Lines.Count == 1 ? string.Empty : "s")}";
         audit.Add(new AuditEntry(AuditCategories.Data, asked.Kind == CreditNoteKind.WriteOff ? "billing.bill.written_off" : "billing.credit_note.issued",
-            $"{note.Number}: ₹{Money.FormatInr(note.Amount)} on bill {bill.BillNumber} — {note.Reason} (asked for by {note.RequestedByName}, approved by {note.IssuedByName})")
+            $"{note.Number}: ₹{Money.FormatInr(note.Amount)} on bill {bill.BillNumber}{gst} — {note.Reason} (asked for by {note.RequestedByName}, approved by {note.IssuedByName})")
         {
             PatientId = bill.PatientId,
             EntityType = nameof(Bill),
@@ -341,6 +388,74 @@ public sealed class RefundService(
         });
         return note.Number;
     }
+
+    /// <summary>
+    /// The bill lines a credit note corrects, each with what earlier credit notes took off it and what this one takes:
+    /// lines of this bill, charged (not a return), and not credited beyond their value. A credit note on a bill with GST
+    /// must name them, since the GST it takes off is each line's own; a write-off names none.
+    /// </summary>
+    private async Task<Result<IReadOnlyList<(BillLine Line, decimal Before, decimal Amount)>>> CreditedLinesAsync(
+        Bill bill, CreditNoteKind kind, IReadOnlyList<CreditNoteLinePayload>? asked, CancellationToken ct)
+    {
+        if (asked is not { Count: > 0 })
+        {
+            if (kind == CreditNoteKind.CreditNote && bill.TaxAmount != 0m)
+            {
+                return Error.Field("lines",
+                    "Name the services this credit note corrects, with the amount on each: the bill carries GST, and the GST credited is each service's own.");
+            }
+
+            return Result<IReadOnlyList<(BillLine, decimal, decimal)>>.Ok([]);
+        }
+
+        if (kind == CreditNoteKind.WriteOff)
+        {
+            return Error.Field("lines", "A write-off is of the balance due, not of services: leave out the lines.");
+        }
+
+        var ids = asked.Select(l => l.BillLineId).ToList();
+        var before = await db.Set<CreditNoteLine>().AsNoTracking()
+            .Where(l => ids.Contains(l.BillLineId))
+            .GroupBy(l => l.BillLineId)
+            .Select(g => new { g.Key, Amount = g.Sum(l => l.Amount) })
+            .ToDictionaryAsync(g => g.Key, g => g.Amount, ct);
+        var lines = new List<(BillLine, decimal, decimal)>();
+        foreach (var (item, index) in asked.Select((item, index) => (item, index)))
+        {
+            var line = bill.Lines.FirstOrDefault(l => l.Id == item.BillLineId);
+            if (line is null)
+            {
+                return Error.Field($"lines[{index}].billLineId", "This service is not on the bill.");
+            }
+
+            if (line.Quantity < 0 || line.NetAmount <= 0m)
+            {
+                return Error.Rule("billing.credit_exceeds_line", $"{line.Description} comes to nothing on this bill, so it cannot be credited.");
+            }
+
+            var credited = before.GetValueOrDefault(line.Id);
+            var left = line.NetAmount - credited;
+            if (item.Amount > left)
+            {
+                return Error.Rule("billing.credit_exceeds_line", left <= 0m
+                    ? $"{line.Description} is already credited in full."
+                    : $"At most ₹{Money.FormatInr(left)} can be credited on {line.Description}.");
+            }
+
+            lines.Add((line, credited, item.Amount));
+        }
+
+        return lines;
+    }
+
+    /// <summary>The date the bill was invoiced, from which the time to reduce its GST runs.</summary>
+    private static DateOnly BillDate(Bill bill) => BillingTime.LocalDate(bill.FinalizedAt ?? bill.CreatedAt);
+
+    private bool GstTimeBarred(Bill bill) => BillingTime.Today(time) > GstCreditNotes.LastDay(BillDate(bill));
+
+    private static string LastDayText(Bill bill) => GstCreditNotes.LastDay(BillDate(bill)).ToString("d MMM yyyy", CultureInfo.InvariantCulture);
+
+    private static string Shorten(string text) => text.Length <= 60 ? text : text[..59] + "…";
 
     /// <summary>
     /// Creates a refund request inside the caller's transaction (number allocated there). Without a signed-in user (a

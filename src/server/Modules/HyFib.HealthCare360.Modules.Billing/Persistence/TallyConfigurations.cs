@@ -60,7 +60,9 @@ internal sealed class EInvoiceConfiguration : IEntityTypeConfiguration<EInvoice>
         b.Property(x => x.Status).HasMaxLength(16);
         b.Property(x => x.CancelReason).HasMaxLength(24);
         b.Property(x => x.CancelRemark).HasMaxLength(100);
+        b.Property(x => x.PrecedingSource).HasMaxLength(16);
         b.HasIndex(x => x.Irn).IsUnique();
+        b.HasIndex(x => new { x.PrecedingSource, x.PrecedingId }).HasFilter("preceding_id IS NOT NULL");
 
         // One live IRN per invoice; cancelled ones stay as history.
         b.HasIndex(x => new { x.Source, x.SourceId }).IsUnique().HasFilter("status = 'Registered' AND is_deleted = false");

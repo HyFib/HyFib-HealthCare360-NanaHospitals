@@ -3,8 +3,14 @@ using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Billing.Services;
 
-/// <summary>The credit note or write-off asked for, exactly as it will be issued once approved.</summary>
-public sealed record CreditNotePayload(Guid BillId, CreditNoteKind Kind, decimal Amount, string Reason);
+/// <summary>
+/// The credit note or write-off asked for, exactly as it will be issued once approved; a credit note names the bill lines
+/// it corrects (<paramref name="Lines"/>), which requests made before lines were named do not.
+/// </summary>
+public sealed record CreditNotePayload(Guid BillId, CreditNoteKind Kind, decimal Amount, string Reason, IReadOnlyList<CreditNoteLinePayload>? Lines = null);
+
+/// <summary>What a credit note takes off one bill line, GST included.</summary>
+public sealed record CreditNoteLinePayload(Guid BillLineId, decimal Amount);
 
 /// <summary>
 /// A credit note on a finalized bill (MB-05, audit finding S6): the cashier or the billing desk asks for it, and an

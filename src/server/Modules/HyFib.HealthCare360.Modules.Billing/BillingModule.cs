@@ -67,6 +67,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<TallyService>();
         services.AddScoped<EInvoiceService>();
         services.AddScoped<IEInvoiceSource, BillEInvoiceSource>();
+        services.AddScoped<IEInvoiceSource, CreditNoteEInvoiceSource>();
         services.AddScoped<IEInvoiceRegister, EInvoiceRegisterLookup>();
         services.AddScoped<ICashReceiptSource, BillingCashReceipts>();
         services.AddScoped<TallyReconciliationService>();

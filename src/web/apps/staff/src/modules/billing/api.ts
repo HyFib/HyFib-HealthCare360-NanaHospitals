@@ -135,6 +135,35 @@ export interface CreditNoteDto {
   issuedByName: string | null;
   /** Who asked for it; `issuedByName` approved and issued it. Empty on notes issued before the approval step. */
   requestedByName: string | null;
+  /** The credited value less the GST it takes back; the amount itself when it takes back none. */
+  taxableAmount: number;
+  /** The GST it takes back from the services it corrects (CGST Act s.34); 0 on a write-off. */
+  gstAmount: number;
+  /** Issued after the bill's GST could be reduced (s.34(2)): it lowers the amount, not the GST. */
+  gstTimeBarred: boolean;
+  /** The services it corrects; empty on a write-off and on notes issued before services were named. */
+  lines: CreditNoteLineDto[] | null;
+  /** The IRN the e-invoice portal gave it (a `CRN`), when it has one. */
+  eInvoice: EInvoiceStamp | null;
+}
+
+export interface CreditNoteLineDto {
+  billLineId: string;
+  description: string;
+  sacCode: string | null;
+  gstRate: number;
+  /** What it takes off the service, GST included. */
+  amount: number;
+  taxableAmount: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+}
+
+/** What a credit note takes off one service of the bill, GST included. */
+export interface CreditNoteLineRequest {
+  billLineId: string;
+  amount: number;
 }
 
 export interface DiscountApprovalDto {
@@ -929,10 +958,22 @@ export const billingApi = {
   sendOnWhatsApp: (billId: string) => api.post<void>(`/api/v1/billing/bills/${billId}/send-whatsapp`),
   /**
    * Asks for a credit note or write-off (202): an approver, someone other than the person asking, issues it from the
-   * approvals inbox, on the bill as it is now.
+   * approvals inbox, on the bill as it is now. A credit note on a bill with GST names the services it corrects
+   * (`lines`, their sum the amount): 400 `lines` without them; 422 `billing.credit_exceeds_line` past a service's value.
    */
-  requestCreditNote: (billId: string, kind: CreditNoteKind, amount: number, reason: string) =>
-    api.post<ApprovalRequestDto>(`/api/v1/billing/bills/${billId}/credit-notes`, { kind, amount, reason }),
+  requestCreditNote: (
+    billId: string,
+    kind: CreditNoteKind,
+    amount: number,
+    reason: string,
+    lines: CreditNoteLineRequest[] | null = null,
+  ) =>
+    api.post<ApprovalRequestDto>(`/api/v1/billing/bills/${billId}/credit-notes`, {
+      kind,
+      amount,
+      reason,
+      ...(lines && lines.length > 0 ? { lines } : {}),
+    }),
   adjustAdvance: (
     billId: string,
     advanceId: string,
@@ -983,6 +1024,10 @@ export const billingApi = {
  * and makes its PDF (see `@/lib/documents`).
  */
 export const billDocument = (billId: string) => `/api/v1/billing/bills/${billId}`;
+
+/** The printed credit note (or write-off note) of a bill: `…/document` to print, `…/pdf` to download. */
+export const creditNoteDocument = (billId: string, creditNoteId: string) =>
+  `/api/v1/billing/bills/${billId}/credit-notes/${creditNoteId}`;
 
 /** Catalogue search for the "add service" box (active services, at most 50). */
 export function searchServices(search: string, category?: ServiceCategory): Promise<ServiceItemDto[]> {

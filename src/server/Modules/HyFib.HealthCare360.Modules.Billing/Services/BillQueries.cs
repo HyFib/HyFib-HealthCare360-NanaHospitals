@@ -53,7 +53,12 @@ internal static class BillQueries
         var receipts = await db.Set<Receipt>().AsNoTracking().Include(r => r.Payments).Where(r => r.BillId == billId).OrderBy(r => r.ReceivedAt).ToListAsync(ct);
         var reversed = await ReversedAsync(db, receipts.Select(r => r.Id).ToList(), ct);
         var refunds = await db.Set<Refund>().AsNoTracking().Where(r => r.BillId == billId).OrderBy(r => r.RequestedAt).ToListAsync(ct);
-        var credits = await db.Set<CreditNote>().AsNoTracking().Where(c => c.BillId == billId).OrderBy(c => c.IssuedAt).ToListAsync(ct);
+        var credits = await db.Set<CreditNote>().AsNoTracking().Include(c => c.Lines).Where(c => c.BillId == billId).OrderBy(c => c.IssuedAt).ToListAsync(ct);
+        var creditIds = credits.Select(c => c.Id).ToList();
+        var creditIrns = (await db.Set<EInvoice>().AsNoTracking()
+                .Where(e => e.Source == CreditNoteEInvoiceSource.Key && creditIds.Contains(e.SourceId) && e.Status == EInvoiceStatus.Registered)
+                .ToListAsync(ct))
+            .ToDictionary(e => e.SourceId);
         var pending = await db.Set<DiscountApproval>().AsNoTracking()
             .Where(a => a.BillId == billId && a.Status == DiscountApprovalStatus.Pending)
             .OrderByDescending(a => a.RequestedAt)
@@ -68,7 +73,7 @@ internal static class BillQueries
             l.Device)).ToList();
 
         var einvoice = await db.Set<EInvoice>().AsNoTracking()
-            .FirstOrDefaultAsync(e => e.Source == "bill" && e.SourceId == bill.Id && e.Status == EInvoiceStatus.Registered, ct);
+            .FirstOrDefaultAsync(e => e.Source == BillEInvoiceSource.Key && e.SourceId == bill.Id && e.Status == EInvoiceStatus.Registered, ct);
         return new BillDetail(
             bill.Id, bill.BillNumber, bill.Type, bill.IsFinalBill, bill.Status, bill.FacilityId, bill.PatientId, patient?.Uhid, patient?.FullName,
             bill.VisitId, bill.AdmissionId, bill.IpAccountId, bill.PayerType, bill.PayerId, payerName, bill.TariffPlanId, planName, bill.PolicyId,
@@ -81,7 +86,7 @@ internal static class BillQueries
             IsTaxInvoice: bill.Lines.Any(l => l.TaxAmount > 0), bill.CreatedAt, bill.FinalizedAt, bill.CancelledAt, bill.CancelReason, bill.Notes, lines,
             receipts.Select(r => ToSummary(r, reversed.GetValueOrDefault(r.Id))).ToList(),
             refunds.Select(r => new RefundSummary(r.Id, r.RefundNumber, r.Amount, r.Status, r.Mode, r.RequestedAt, r.PaidAt)).ToList(),
-            credits.Select(c => new CreditNoteDto(c.Id, c.Number, c.Kind, c.Amount, c.Reason, c.IssuedAt, c.IssuedByName, c.RequestedByName)).ToList(),
+            credits.Select(c => ToDto(c, creditIrns.GetValueOrDefault(c.Id))).ToList(),
             pending is null ? null : ToDto(pending, bill.BillNumber, patient?.Uhid, patient?.FullName),
             package,
             bill.Version,
@@ -89,6 +94,15 @@ internal static class BillQueries
             bill.FreeTreatmentReason,
             bill.FreeTreatmentAmount);
     }
+
+    /// <summary>A credit note with the lines it corrects, their GST, and its IRN when it is a registered e-invoice.</summary>
+    internal static CreditNoteDto ToDto(CreditNote note, EInvoice? irn) => new(
+        note.Id, note.Number, note.Kind, note.Amount, note.Reason, note.IssuedAt, note.IssuedByName, note.RequestedByName,
+        note.TaxableAmount, note.GstAmount, note.GstTimeBarred,
+        note.Lines.OrderBy(l => l.SortOrder)
+            .Select(l => new CreditNoteLineDto(l.BillLineId, l.Description, l.SacCode, l.GstRate, l.Amount, l.TaxableAmount, l.CgstAmount, l.SgstAmount, l.IgstAmount))
+            .ToList(),
+        irn is null ? null : EInvoiceService.Stamp(irn));
 
     /// <summary>The package pricing a bill: the OP bill's own, or the IP account's on a final bill.</summary>
     private static async Task<BillPackageSummary?> PackageSummaryAsync(HospitalDbContext db, Bill bill, CancellationToken ct)

@@ -6,7 +6,8 @@ namespace HyFib.HealthCare360.Modules.Billing.Features.EInvoices;
 
 /// <summary>
 /// /api/v1/billing/einvoices — the GST e-invoice register: B2B tax invoices (<c>bill</c>: bills to payers registered for
-/// GST; <c>pharmacy</c>: the pharmacy's B2B sales), their e-invoice JSON for the portal, and the IRNs it gave.
+/// GST; <c>pharmacy</c>: the pharmacy's B2B sales) and the credit notes against them (<c>creditnote</c>: a bill's credit
+/// notes; <c>pharmacyreturn</c>: returns of B2B sales), their e-invoice JSON for the portal, and the IRNs it gave.
 /// </summary>
 internal static class EInvoiceEndpoints
 {
@@ -25,9 +26,9 @@ internal static class EInvoiceEndpoints
 
             return TypedResults.Ok(await einvoices.RegisterAsync(from, to, ct));
         });
-        group.MapGet("/{source:regex(^(bill|pharmacy)$)}/{id:guid}", async (string source, Guid id, EInvoiceService einvoices, CancellationToken ct) =>
+        group.MapGet("/{source:regex(^(bill|creditnote|pharmacy|pharmacyreturn)$)}/{id:guid}", async (string source, Guid id, EInvoiceService einvoices, CancellationToken ct) =>
             (await einvoices.DetailAsync(source, id, ct)).ToOk());
-        group.MapGet("/{source:regex(^(bill|pharmacy)$)}/{id:guid}/json", async (string source, Guid id, EInvoiceService einvoices, CancellationToken ct) =>
+        group.MapGet("/{source:regex(^(bill|creditnote|pharmacy|pharmacyreturn)$)}/{id:guid}/json", async (string source, Guid id, EInvoiceService einvoices, CancellationToken ct) =>
         {
             var built = await einvoices.PayloadAsync(source, id, ct);
             if (built.IsFailure)
@@ -39,11 +40,11 @@ internal static class EInvoiceEndpoints
             var json = JsonSerializer.Serialize(new[] { built.Value.Payload }, Indented);
             return TypedResults.File(Encoding.UTF8.GetBytes(json), "application/json", $"einvoice-{built.Value.Number}.json");
         });
-        group.MapPost("/{source:regex(^(bill|pharmacy)$)}/{id:guid}/irn",
+        group.MapPost("/{source:regex(^(bill|creditnote|pharmacy|pharmacyreturn)$)}/{id:guid}/irn",
                 async (string source, Guid id, RecordIrnRequest request, EInvoiceService einvoices, CancellationToken ct) =>
                     (await einvoices.RecordAsync(source, id, request, ct)).ToOk())
             .WithValidation<RecordIrnRequest>();
-        group.MapPost("/{source:regex(^(bill|pharmacy)$)}/{id:guid}/irn/cancel",
+        group.MapPost("/{source:regex(^(bill|creditnote|pharmacy|pharmacyreturn)$)}/{id:guid}/irn/cancel",
                 async (string source, Guid id, CancelIrnRequest request, EInvoiceService einvoices, CancellationToken ct) =>
                     (await einvoices.CancelAsync(source, id, request, ct)).ToOk())
             .WithValidation<CancelIrnRequest>();

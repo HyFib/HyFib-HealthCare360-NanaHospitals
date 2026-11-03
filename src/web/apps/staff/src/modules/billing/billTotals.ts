@@ -444,6 +444,50 @@ export function creditableAmount(bill: { patientAmount: number; creditAmount: nu
   return fromPaise(maxBig(toPaise(bill.patientAmount) - toPaise(bill.creditAmount), 0n));
 }
 
+/** A service a credit note can correct, and what is left of its value after earlier credit notes. */
+export interface CreditableLine {
+  id: string;
+  description: string;
+  sacCode: string | null;
+  taxRate: number;
+  netAmount: number;
+  left: number;
+}
+
+/**
+ * The services of a bill a credit note can name (`RefundService.CreditedLinesAsync`): charged lines (not returns) worth
+ * something, each with its value less what earlier credit notes took off it. Fully credited services are left out.
+ */
+export function creditableLines(bill: {
+  lines: {
+    id: string;
+    description: string;
+    sacCode: string | null;
+    taxRate: number;
+    netAmount: number;
+    isReturn: boolean;
+  }[];
+  creditNotes: { lines: { billLineId: string; amount: number }[] | null }[];
+}): CreditableLine[] {
+  const credited = new Map<string, bigint>();
+  for (const note of bill.creditNotes) {
+    for (const line of note.lines ?? []) {
+      credited.set(line.billLineId, (credited.get(line.billLineId) ?? 0n) + toPaise(line.amount));
+    }
+  }
+  return bill.lines
+    .filter((l) => !l.isReturn && l.netAmount > 0)
+    .map((l) => ({
+      id: l.id,
+      description: l.description,
+      sacCode: l.sacCode,
+      taxRate: l.taxRate,
+      netAmount: l.netAmount,
+      left: fromPaise(maxBig(toPaise(l.netAmount) - (credited.get(l.id) ?? 0n), 0n)),
+    }))
+    .filter((l) => l.left > 0);
+}
+
 /**
  * How the GST in a preview is shown: as IGST on a bill whose place of supply is another state (the server charges
  * IGST on it, and a discount does not change where the supply goes, even when the bill's tax is zero now), otherwise as

@@ -3,7 +3,7 @@ using HyFib.HealthCare360.Modules.Billing.Domain;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.EInvoices;
 
-/// <summary>Where a B2B tax invoice stands with the Invoice Registration Portal.</summary>
+/// <summary>Where a B2B tax invoice or credit note stands with the Invoice Registration Portal.</summary>
 public enum EInvoiceState
 {
     /// <summary>No IRN yet.</summary>
@@ -21,8 +21,10 @@ public enum EInvoiceState
 /// <param name="ApplicableFrom">The first invoice date e-invoicing applies to.</param>
 public sealed record EInvoiceRegister(bool Applicable, DateOnly? ApplicableFrom, DateOnly From, DateOnly To, IReadOnlyList<EInvoiceRow> Rows);
 
-/// <param name="Source"><c>bill</c> or <c>pharmacy</c>.</param>
-/// <param name="ReportBy">Thirty days after the invoice date: the latest the portal takes it from a large taxpayer.</param>
+/// <param name="Source"><c>bill</c>, <c>creditnote</c> (a bill's credit note), <c>pharmacy</c> or <c>pharmacyreturn</c>.</param>
+/// <param name="ReportBy">Thirty days after the document's date: the latest the portal takes it from a large taxpayer.</param>
+/// <param name="Type"><c>INV</c> for a tax invoice, <c>CRN</c> for a credit note.</param>
+/// <param name="Against">For a credit note: the number of the invoice it reduces.</param>
 public sealed record EInvoiceRow(
     string Source,
     Guid Id,
@@ -36,7 +38,9 @@ public sealed record EInvoiceRow(
     bool IsOverdue,
     string? Irn,
     string? AckNo,
-    DateTimeOffset? AckDate);
+    DateTimeOffset? AckDate,
+    string Type = EInvoiceDocumentTypes.Invoice,
+    string? Against = null);
 
 public sealed record EInvoiceRegistrationDto(
     string Irn,
@@ -53,8 +57,10 @@ public sealed record EInvoiceRegistrationDto(
     string QrCodeSvg,
     uint Version);
 
-/// <param name="Problems">What stops the portal from registering the invoice; empty when its JSON is ready.</param>
+/// <param name="Problems">What stops the portal from registering the document; empty when its JSON is ready.</param>
 /// <param name="Registration">The latest IRN recorded for it, live or cancelled.</param>
+/// <param name="Type"><c>INV</c> for a tax invoice, <c>CRN</c> for a credit note.</param>
+/// <param name="Against">For a credit note: the number of the invoice it reduces, and its date.</param>
 public sealed record EInvoiceDetail(
     string Source,
     Guid Id,
@@ -67,7 +73,10 @@ public sealed record EInvoiceDetail(
     decimal Total,
     EInvoiceState State,
     IReadOnlyList<string> Problems,
-    EInvoiceRegistrationDto? Registration);
+    EInvoiceRegistrationDto? Registration,
+    string Type = EInvoiceDocumentTypes.Invoice,
+    string? Against = null,
+    DateOnly? AgainstDate = null);
 
 /// <summary>The IRN the portal gave, as its acknowledgement shows: the acknowledgement number and the signed QR code.</summary>
 public sealed record RecordIrnRequest(string AckNo, string SignedQrCode);

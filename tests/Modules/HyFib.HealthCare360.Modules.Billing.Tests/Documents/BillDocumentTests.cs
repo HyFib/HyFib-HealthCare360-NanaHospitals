@@ -2,6 +2,7 @@ using System.Globalization;
 using HyFib.HealthCare360.Modules.Billing.Documents;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.SharedKernel;
@@ -347,6 +348,54 @@ public sealed class BillDocumentTests
         html.ShouldNotContain("<th class=\"num\">CGST</th>");
         html.ShouldContain("Place of supply: Kerala (32)");
     }
+
+    [Fact]
+    public void A_credit_note_prints_what_cgst_rule_53_1a_asks_of_it_with_its_irn()
+    {
+        var bill = Taxed() with { PayerType = PayerType.Corporate, PayerName = "Malabar Traders Ltd", PlaceOfSupply = "27" };
+        var html = CreditNoteDocument.Build(bill, Note(bill), new CreditNoteRecipient("Malabar Traders Ltd", "27AAACH7409R1ZB", "4/12 FC Road, Pune 411004"), Letterhead)
+            .ToHtml();
+
+        html.ShouldContain("<div class=\"h-title\">Credit note</div>");
+        html.ShouldContain("Number: <b>NHCN26000007</b>");
+        html.ShouldContain("GSTIN 27AAACN1234F1Z5");
+        html.ShouldContain("Issued to: <b>Malabar Traders Ltd</b><div>GSTIN <b>27AAACH7409R1ZB</b></div><div>4/12 FC Road, Pune 411004</div>");
+        html.ShouldContain("Against tax invoice: <b>NHOB260000001</b> of 25 Sep 2026");
+        html.ShouldContain("Place of supply: Maharashtra (27)");
+        html.ShouldContain("<td>Executive health check-up</td>");
+        html.ShouldContain("<td class=\"num\">18%</td>");
+        html.ShouldContain("<tr><td>CGST credited</td><td class=\"num\">₹9.00</td></tr>");
+        html.ShouldContain("<tr class=\"strong\"><td>Total credited</td><td class=\"num\">₹118.00</td></tr>");
+        html.ShouldContain("IRN: <span class=\"irn\">" + new string('c', 64) + "</span>");
+        html.ShouldContain("einvoice-qr");
+        html.ShouldContain("Asked for by Ravi (billing), approved by Meena (accounts).");
+        html.ShouldNotContain("GST not reduced");
+    }
+
+    [Fact]
+    public void A_late_credit_note_says_it_reduced_no_gst_and_a_write_off_that_it_is_no_tax_document()
+    {
+        var bill = Taxed();
+        var late = CreditNoteDocument.Build(bill, Note(bill) with { GstTimeBarred = true, TaxableAmount = 118m, GstAmount = 0m, EInvoice = null },
+            new CreditNoteRecipient("Ravi Kumar", null, null), Letterhead).ToHtml();
+        late.ShouldContain("<b>GST not reduced.</b> The time to reduce the GST of this bill ended on 30 Nov 2027 (CGST Act 2017, s.34(2))");
+        late.ShouldNotContain("IRN:");
+
+        var writeOff = CreditNoteDocument.Build(Bill(), new CreditNoteDto(
+                Guid.NewGuid(), "NHCN26000008", CreditNoteKind.WriteOff, 300m, Hostile, Created.AddDays(40), "Meena (accounts)", "Ravi (billing)"),
+            new CreditNoteRecipient("Ravi Kumar", null, null), Letterhead).ToHtml();
+        writeOff.ShouldContain("<div class=\"h-title\">Write-off note</div>");
+        writeOff.ShouldContain("It is not a GST credit note: it reduces no tax.");
+        writeOff.ShouldContain("Against bill: <b>NHOB260000001</b>");
+        writeOff.ShouldNotContain(Hostile);
+        writeOff.ShouldContain("&lt;script&gt;");
+    }
+
+    private static CreditNoteDto Note(BillDetail bill) => new(
+        Guid.NewGuid(), "NHCN26000007", CreditNoteKind.CreditNote, 118m, "Charged twice", Created.AddDays(1), "Meena (accounts)", "Ravi (billing)",
+        TaxableAmount: 100m, GstAmount: 18m, GstTimeBarred: false,
+        Lines: [new CreditNoteLineDto(bill.Lines[0].Id, "Executive health check-up", "999311", 18m, 118m, 100m, 9m, 9m, 0m)],
+        EInvoice: new EInvoiceStamp(new string('c', 64), "112610012345678", Created.AddDays(1), "eyJ.e30.c2ln", "data:image/svg+xml;base64,PHN2Zy8+"));
 
     private static string Render(BillDetail bill) => BillDocument.Build(bill, Letterhead).ToHtml();
 

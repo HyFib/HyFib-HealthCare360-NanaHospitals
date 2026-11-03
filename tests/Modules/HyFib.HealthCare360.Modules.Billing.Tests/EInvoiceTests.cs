@@ -154,6 +154,52 @@ public sealed class EInvoiceTests
         mismatches.ShouldContain("The code's invoice value is 2000.00, the invoice's 1062.00.");
     }
 
+    [Fact]
+    public void A_credit_note_goes_to_the_portal_as_a_crn_naming_the_invoice_it_reduces()
+    {
+        var (payload, problems) = InvoiceRegistrationPayload.Build(Seller, CreditNote());
+
+        problems.ShouldBeEmpty();
+        var json = payload.ShouldNotBeNull();
+        (json["DocDtls"]!["Typ"]!.GetValue<string>(), json["DocDtls"]!["No"]!.GetValue<string>(), json["DocDtls"]!["Dt"]!.GetValue<string>())
+            .ShouldBe(("CRN", "NHCN26000007", "29/10/2026"));
+        var invoice = json["RefDtls"]!["PrecDocDtls"]!.AsArray().ShouldHaveSingleItem()!;
+        (invoice["InvNo"]!.GetValue<string>(), invoice["InvDt"]!.GetValue<string>()).ShouldBe(("NHOB260000123", "24/10/2026"));
+        var item = json["ItemList"]![0]!;
+        (item["Qty"]!.GetValue<decimal>(), item["UnitPrice"]!.GetValue<decimal>(), item["AssAmt"]!.GetValue<decimal>(), item["IgstAmt"]!.GetValue<decimal>())
+            .ShouldBe((1m, 100m, 100m, 18m));
+        json["ValDtls"]!["TotInvVal"]!.GetValue<decimal>().ShouldBe(118m);
+        InvoiceRegistrationPayload.Build(Seller, Invoice()).Payload!.AsObject().ContainsKey("RefDtls").ShouldBeFalse("An invoice names no invoice.");
+    }
+
+    [Fact]
+    public void A_credit_note_names_an_invoice_the_portal_can_find()
+    {
+        var (none, withoutInvoice) = InvoiceRegistrationPayload.Build(Seller, CreditNote() with { Preceding = null });
+        none.ShouldBeNull();
+        withoutInvoice.ShouldContain("A credit note names the invoice it reduces.");
+
+        var (_, longNumber) = InvoiceRegistrationPayload.Build(Seller, CreditNote() with
+        {
+            Preceding = new EInvoicePreceding("bill", Guid.CreateVersion7(), "NANA-HOSPITALS-OP-26-000123", new DateOnly(2026, 10, 24)),
+        });
+        longNumber.ShouldContain(p => p.Contains("NANA-HOSPITALS-OP-26-000123 is not one", StringComparison.Ordinal));
+
+        var (_, cancelled) = InvoiceRegistrationPayload.Build(Seller, CreditNote() with { IsCancelled = true });
+        cancelled.ShouldContain("The credit note is cancelled.");
+    }
+
+    [Fact]
+    public void A_credit_notes_signed_qr_code_must_be_the_portals_crn()
+    {
+        var note = CreditNote();
+        SignedQrCode.Mismatches(SignedQrCode.Read(Qr(note, new string('c', 64), "CRN")).Value, note, Hospital).ShouldBeEmpty();
+
+        var mismatches = SignedQrCode.Mismatches(SignedQrCode.Read(Qr(note, new string('c', 64))).Value, note, Hospital);
+
+        mismatches.ShouldBe(["The code's document type is INV, the credit note's CRN."]);
+    }
+
     [Theory]
     [InlineData("not a code")]
     [InlineData("a.b.c")]
@@ -181,15 +227,26 @@ public sealed class EInvoiceTests
             new EInvoiceBuyer(KeralaBuyer, "Malabar Traders Ltd", "Malabar Traders, 4/12 MG Road, Kochi, Kerala 682016", "9876543210", null),
             placeOfSupply, items ?? [Service()], 0m, total, false);
 
+    /// <summary>A credit note of ₹118 against <see cref="Invoice"/>: ₹100 of its taxable value and ₹18 IGST.</summary>
+    private static EInvoiceDocument CreditNote() =>
+        Invoice(number: "NHCN26000007", items: [new EInvoiceItem("Executive health check-up", true, "999311", 1m, 100m, 100m, 0m, 100m, 18m, 18m, 0m, 0m, 118m)],
+            total: 118m) with
+        {
+            Source = "creditnote",
+            Date = new DateOnly(2026, 10, 29),
+            Type = EInvoiceDocumentTypes.CreditNote,
+            Preceding = new EInvoicePreceding("bill", Guid.CreateVersion7(), "NHOB260000123", new DateOnly(2026, 10, 24)),
+        };
+
     /// <summary>A signed QR code as the portal makes it: the invoice's details in the payload's <c>data</c>, signed (here, not really).</summary>
-    private static string Qr(EInvoiceDocument invoice, string irn)
+    private static string Qr(EInvoiceDocument invoice, string irn, string type = "INV")
     {
         var data = new JsonObject
         {
             ["SellerGstin"] = Hospital,
             ["BuyerGstin"] = invoice.Buyer.Gstin,
             ["DocNo"] = invoice.Number,
-            ["DocTyp"] = "INV",
+            ["DocTyp"] = type,
             ["DocDt"] = InvoiceRegistrationPayload.Date(invoice.Date),
             ["TotInvVal"] = invoice.Total,
             ["ItemCnt"] = invoice.Items.Count,

@@ -220,7 +220,9 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | POST | `/{id}/cancel` | `billing.bills.cancel` | `CancelBillRequest(reason, version)` → `BillDetail`; charges released, advances restored, cash refunds requested |
 | DELETE | `/{id}?version` | `op.create` / `ip.manage` | → 204 (discard a draft) |
 | POST | `/{id}/send-whatsapp` | `op.create` / `ip.manage` / `payments.collect` | → 204: queues the bill's PDF to the patient's mobile number on WhatsApp ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); 422 `billing.bill_not_shareable` (draft or cancelled), `billing.no_mobile`, `billing.whatsapp_opted_out` (the number replied STOP); guarded and audited ("Sent a bill to the patient on WhatsApp"). The staff app's bill page offers it as "Send on WhatsApp" in the More menu |
-| POST | `/{id}/credit-notes` | `refunds.request` / `refunds.approve` | `IssueCreditNoteRequest(kind, amount, reason)` → 202 `ApprovalRequestDto` (kind `billing.credit_note` or `billing.write_off`): asks for it; 422 `billing.credit_exceeds` / `billing.bill_not_creditable` as the bill is now, 409 `approval.already_requested` while one of the kind waits. An approver, never the person who asked, issues it at `POST /api/v1/approvals/{id}/approve` (`{FAC}CN{YY}{SEQ:6}`, both names on the note), only on the bill's version it was asked against: 422 `approval.stale` after a payment, refund or another credit |
+| POST | `/{id}/credit-notes` | `refunds.request` / `refunds.approve` | `IssueCreditNoteRequest(kind, amount, reason, lines?)` → 202 `ApprovalRequestDto` (kind `billing.credit_note` or `billing.write_off`): asks for it; 422 `billing.credit_exceeds` / `billing.bill_not_creditable` as the bill is now, 409 `approval.already_requested` while one of the kind waits. A credit note names the services it corrects (`lines`: `billLineId` and `amount`, GST included; `amount` is their sum, 400 otherwise), and must on a bill with GST (400 `lines`); 422 `billing.credit_exceeds_line` past what is left of a service after earlier credit notes, or on a return; a write-off names none (400 `lines`). The approver sees the GST each service gives back ([Credit notes are GST credit notes](#credit-notes-are-gst-credit-notes)). An approver, never the person who asked, issues it at `POST /api/v1/approvals/{id}/approve` (`{FAC}CN{YY}{SEQ:6}`, both names on the note), only on the bill's version it was asked against: 422 `approval.stale` after a payment, refund or another credit |
+| GET | `/{id}/credit-notes/{noteId}/document` | readers | → `PrintableDocumentDto`: the printed credit note (or write-off note) with what CGST rule 53(1A) asks of it, and its IRN and QR code once the portal registered it; guarded and audited ("Printed credit note …") |
+| GET | `/{id}/credit-notes/{noteId}/pdf` | readers | → `application/pdf` attachment `credit-note-<number>.pdf` (`write-off-<number>.pdf`), the same document; guarded and audited |
 | POST | `/{id}/adjust-advance` | `billing.payments.collect` | `AdjustAdvanceRequest(advanceId, amount?, version)` → 201 `ReceiptDto` (patient advance used on an OP bill) |
 
 ### Discounts — `/api/v1/billing/discount-approvals`, `/api/v1/billing/discount-limits`
@@ -490,7 +492,9 @@ holds and how posting, the checks and the transition for older days work.
 | PUT | `/ledgers` | `billing.tally.configure` | `TallyLedgerMap` → 204; validated (every name present, one line, at most 100 characters, known payment modes). Audited as `billing.tally.ledgers` |
 
 ### GST e-invoices — `/api/v1/billing/einvoices` (`billing.einvoice`)
-See [GST e-invoicing](#gst-e-invoicing). `{source}` is `bill` or `pharmacy`.
+See [GST e-invoicing](#gst-e-invoicing). `{source}` is `bill`, `creditnote` (a bill's credit note), `pharmacy` or
+`pharmacyreturn` (a return of a B2B sale). Rows and details carry `type` (`INV` or `CRN`) and, for a credit note, the
+invoice it reduces (`against`, `againstDate`).
 
 | Method | Path | Request → response |
 |---|---|---|
@@ -498,7 +502,7 @@ See [GST e-invoicing](#gst-e-invoicing). `{source}` is `bill` or `pharmacy`.
 | GET | `/{source}/{id}` | → `EInvoiceDetail`: buyer, place of supply, value, state, the problems that would make the portal refuse it, and the latest IRN with its QR code. 422 `einvoice.not_applicable` before e-invoicing applies |
 | GET | `/{source}/{id}/json` | → the INV-01 (version 1.1) JSON, as a list of one invoice for the portal's bulk upload. 422 `einvoice.invalid` with the problems; 422 `einvoice.registered` once it has an IRN |
 | POST | `/{source}/{id}/irn` | `RecordIrnRequest(ackNo, signedQrCode)` → `EInvoiceDetail`. The signed QR code must name this invoice (400 `signedQrCode` with what differs); 409 `einvoice.registered` while an IRN is live, 409 `einvoice.irn_exists` for an IRN already recorded; 422 `einvoice.document_cancelled` |
-| POST | `/{source}/{id}/irn/cancel` | `CancelIrnRequest(reason, remark, version)` → `EInvoiceDetail`. Within 24 hours of the IRN only (422 `einvoice.cancel_window`); reasons are the portal's: `Duplicate`, `DataEntryMistake`, `OrderCancelled`, `Other` |
+| POST | `/{source}/{id}/irn/cancel` | `CancelIrnRequest(reason, remark, version)` → `EInvoiceDetail`. Within 24 hours of the IRN only (422 `einvoice.cancel_window`); reasons are the portal's: `Duplicate`, `DataEntryMistake`, `OrderCancelled`, `Other`. An invoice's IRN is not cancelled while a credit note with an IRN names it (422 `einvoice.credited`) |
 
 ### Gateway reconciliation — `/api/v1/billing/gateway`
 Every route needs `billing.gateway.reconcile` and works on the signed-in facility; a user without one gets 422
@@ -717,6 +721,40 @@ from the sign-in page and *Bills*), so a patient can see what a visit costs befo
   most one of its places, and each version of the list is made once (`Services/PublicRateListPdf.cs`: kept by the
   SHA-256 of its HTML, an hour after it was last asked for), so they cannot hold up staff's.
 
+## Credit notes are GST credit notes
+A credit note corrects what a bill charged (a wrong rate, a service not given) and, under CGST Act 2017 s.34, lowers
+the taxable value and the GST of the supply with it. A write-off of a due that cannot be recovered is not one: GST was
+due on the supply whether or not it was paid, and a write-off reduces no tax.
+
+* **It names the services it corrects.** On a bill with GST a credit note lists the bill lines it corrects and what it
+  takes off each, GST included (400 `lines` without them): the GST credited is each line's own, at its own rate, so a
+  credit on an exempt service gives back no GST and one on room rent above ₹5,000 gives back its 5%. A share of the
+  whole bill would get both wrong. A line is credited at most to its value, less what earlier credit notes took off it
+  (422 `billing.credit_exceeds_line`); a return or a line that comes to nothing is not credited. On a bill without GST
+  the services may be named or not.
+* **The split is exact.** Each line's credit is split into taxable value and GST in proportion to the line
+  (`GstCreditNotes.Share`, in the shared kernel), as IGST on a supply to another state and as CGST and SGST within it.
+  Each credit's share is the difference of the shares of the running totals before and after it, so however a line is
+  credited, its credits add up to its own taxable value and GST to the paisa. The note keeps its lines
+  (`credit_note_lines`) and its CGST, SGST and IGST.
+* **Until 30 November after the financial year** (s.34(2)). The GST of a bill can be reduced by a credit note issued by
+  30 November after the end of the financial year (April to March) of the bill (`GstCreditNotes.LastDay`). One issued
+  later lowers what the patient owes and not the GST (`gstTimeBarred`): its lines carry no GST, the books take back the
+  value only, and it is not reported to the e-invoice portal. The approver is shown which it will be, and the printed
+  note says so.
+* **The approver sees the GST.** The approval request lists each service with what it takes off and the GST in it, and
+  the GST credited in all.
+* **The books.** The Tally Credit Note debits sales returns with the taxable value and the output CGST, SGST or IGST
+  ledgers with the GST ([The Tally day book](#the-tally-day-book)), so the GST in the books falls with the GST the
+  portal is told of. A write-off posts as before.
+* **The printed note** (`CreditNoteDocument`, `GET /bills/{id}/credit-notes/{noteId}/document` and `/pdf`) carries what
+  CGST rule 53(1A) asks of a credit note: the hospital's name, address and GSTIN, "Credit note", its number and date,
+  the recipient (a payer registered for GST, with its GSTIN and address; the patient otherwise), the number and date of
+  the tax invoice it reduces, each service with its taxable value, GST rate and the GST credited, and the signature
+  line; and its IRN and signed QR code once the portal registered it. A write-off prints as a write-off note, which says
+  it is not a GST credit note. On the bill page each note has Print and PDF buttons, and its GST.
+* **Notes issued before** services were named keep no lines and took back no GST; they print and post as they did.
+
 ## GST e-invoicing
 GST rule 48(4) requires a B2B tax invoice of a taxpayer above the notified turnover to carry an IRN from the Invoice
 Registration Portal (IRP). The date e-invoicing applies from is the setting `gst.einvoice.from`; before it, and when it
@@ -726,7 +764,16 @@ is not set, nothing is listed and nothing can be recorded.
   master), and the pharmacy's B2B counter sales. Each module lists its own through the Platform contract
   `IEInvoiceSource` (`BillEInvoiceSource`, `PharmacyEInvoiceSource`); Billing keeps the register (`billing.einvoices`).
   Bills of supply (no GST) and sales to patients are not e-invoices.
-* **The JSON.** `InvoiceRegistrationPayload` writes the portal's INV-01 schema, version 1.1: B2B, `INV`, the facility as
+* **Credit notes too.** A credit note against a B2B tax invoice is an e-invoice of type `CRN`: a bill's credit note
+  that names its services, issued while the bill's GST could still be reduced, on a bill that is an e-invoice
+  (`CreditNoteEInvoiceSource`, source `creditnote`), and the pharmacy's return of a B2B sale
+  (`PharmacyReturnEInvoiceSource`, source `pharmacyreturn`). It goes to the bill's or the sale's buyer, at the
+  invoice's place of supply, with each service or medicine at the taxable value and GST it takes back: a bill's service
+  as one unit at that value, a medicine at the quantity returned with the GST carved out of its refund at the sale
+  line's rate, exactly as the pharmacy's day book carves it for the accounts. A write-off, a credit note after the time
+  to reduce the GST, and a return after it are not reported.
+* **The JSON.** `InvoiceRegistrationPayload` writes the portal's INV-01 schema, version 1.1: B2B, `INV` or `CRN` (a
+  credit note names the invoice it reduces in `RefDtls.PrecDocDtls`, its number and date), the facility as
   the supplier (legal name, address line, city, PIN code and state from its GSTIN), the buyer with the place of supply,
   every line with its SAC (services, `IsServc` Y) or HSN code (medicines, unit `NOS`), quantity, unit price, discount,
   taxable value, GST rate and IGST or CGST and SGST, and the totals. A pharmacy line goes at its taxable value (MRP
@@ -748,7 +795,14 @@ is not set, nothing is listed and nothing can be recorded.
   register the same invoice number twice, so an invoice whose IRN was cancelled is cancelled here and issued again
   under a new number.
 * **Due dates.** The register shows each invoice's date 30 days on, the latest the IRP accepts from taxpayers with an
-  aggregate turnover of ₹10 crore or more; later ones are listed as overdue.
+  aggregate turnover of ₹10 crore or more; later ones are listed as overdue. A credit note has its own 30 days.
+* **A credit note goes after its invoice.** A credit note against an invoice of e-invoicing's time is not ready while
+  that invoice has no IRN: its problems say to record the invoice's IRN first (and by when the portal takes it), or,
+  once the invoice is overdue, to settle it with the hospital's GST adviser. Otherwise the portal, the buyer's GSTR-2B
+  and the hospital's GSTR-1 would hold a credit note against an invoice they never had. An invoice from before
+  e-invoicing applied has no IRN, and its credit note goes without one. The signed QR code recorded for a credit note
+  must say `CRN`, and the invoice's IRN is not cancelled while a credit note with an IRN names it (422
+  `einvoice.credited`); the register row of a credit note names its invoice.
 
 ## Contracts for other modules
 
@@ -1073,7 +1127,10 @@ it would settle sales no card paid); see *Simulators only on a training or test 
 * a Sales voucher per bill finalised (income by department, discount, CGST/SGST, round-off, patient and payer
   receivables), and a Credit Note `<bill>/C` for a bill cancelled on the day;
 * a Receipt per receipt (a Journal for an advance adjustment), a Payment per refund paid, a Credit Note per credit note
-  or write-off, a Journal per claim deduction (`<claim>/<six hex digits of the settlement>`);
+  or write-off, a Journal per claim deduction (`<claim>/<six hex digits of the settlement>`). A credit note debits sales
+  returns with its taxable value and the output CGST, SGST or IGST ledgers with the GST it takes back
+  ([Credit notes are GST credit notes](#credit-notes-are-gst-credit-notes)); a write-off debits write-offs with the
+  whole amount;
 * a Journal per reversal made on the day, numbered by the reversal: money not received (`RR…`) turns the receipt's
   entries round for the lines taken back, and a refund not paid out (`RX…`) turns its payment round. The day the
   receipt or refund was recorded keeps its own voucher;
@@ -1261,12 +1318,23 @@ facility and `line_key`; unique matched `receipt_payment_id` and `refund_id` whe
 token), and indexes on `receipt_payments.reference` and `pos_transactions.approval_code` for the matching. Both tables
 are append-mostly and not data-audited; imports and reviews are audited. `OpBillPackages` adds `bills.package_id`
 (foreign key to `packages`, restrict) and `packages.used_for` (text; packages that existed before are `InPatient`).
+`CreditNoteGst` adds `credit_note_lines` (a note's bill lines with their taxable value and GST; foreign keys to the
+note, cascade, and to the bill line, restrict; indexed by bill line), the CGST, SGST and IGST of `credit_notes` and
+`gst_time_barred`, and the invoice a credit note's IRN names on `einvoices` (`preceding_source`, `preceding_id`,
+indexed where set). Notes and IRNs from before keep zeros and nulls.
 
 ## Not covered yet
 * **Sending e-invoices to the IRP directly.** The JSON is uploaded on the portal (or through a GST suvidha provider)
   and the IRN recorded by hand; there is no API connection to the IRP, so no automatic IRN, e-way bill or GSTR-1 data.
-* **Credit notes on the IRP.** Credit notes against e-invoiced bills and pharmacy returns are not reported to the
-  portal as `CRN` documents.
+* **A credit note reduces the patient's share.** The payer's share of a bill is reduced by the payer's settlement (a
+  deduction), which takes back no GST and is not reported to the e-invoice portal; a correction of a bill the payer pays
+  in full, after its IRN can no longer be cancelled, has no credit note in HC360.
+* **Debit notes.** A price raised after the bill (a debit note, `DBN`) is not issued: the bill is cancelled and issued
+  again while that is allowed.
+* **The annual return.** The GST of a bill can be reduced until 30 November after its financial year; when the
+  hospital files its annual return earlier, that earlier date ends it (s.34(2)), and HC360 does not know it.
+* **Returns on an IP bill.** A medicine returned to the IP pharmacy is a negative line on the stay's bill, not a credit
+  note, so a B2B bill with returned services cannot be an e-invoice as it stands (its problems say so).
 * **PM-JAY's tier and incentive weights and its reservation rule.** The master's base rate is shown, not the state's
   weighted rate, and a procedure reserved for public hospitals is flagged, not refused, since HC360 does not record
   whether the hospital is public.

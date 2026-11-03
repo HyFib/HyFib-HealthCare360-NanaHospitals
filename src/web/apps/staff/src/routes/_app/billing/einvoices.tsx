@@ -24,6 +24,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
   CANCEL_REASONS,
+  documentLabel,
   EINVOICE_PERMISSION,
   einvoiceApi,
   einvoiceKeys,
@@ -32,7 +33,6 @@ import {
   STATE_LABELS,
   type EInvoiceCancelReason,
   type EInvoiceRow,
-  type EInvoiceSource,
   type EInvoiceState,
 } from '@/modules/billing/einvoiceApi';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
@@ -59,8 +59,6 @@ const TONES: Record<EInvoiceState, 'warning' | 'success' | 'danger' | 'subtle'> 
   IrnCancelled: 'danger',
   NotNeeded: 'subtle',
 };
-
-const SOURCES: Record<EInvoiceSource, string> = { bill: 'Bill', pharmacy: 'Pharmacy' };
 
 function EInvoicesPage() {
   const search = Route.useSearch();
@@ -128,7 +126,7 @@ function EInvoicesPage() {
           emptyTitle="No B2B tax invoices in these days"
           columns={[
             { key: 'date', header: 'Date', width: 110, render: (r) => formatDateOnly(r.date) },
-            { key: 'number', header: 'Invoice', width: 150, render: (r) => `${r.number} (${SOURCES[r.source]})` },
+            { key: 'number', header: 'Document', width: 190, render: (r) => documentLabel(r) },
             { key: 'buyer', header: 'Buyer', render: (r) => `${r.buyerName} · ${r.buyerGstin}` },
             { key: 'total', header: 'Value', align: 'end', width: 110, render: (r) => formatInr(r.total) },
             {
@@ -200,7 +198,7 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
       <DialogSurface style={{ maxWidth: 720 }}>
         <DialogBody>
           <DialogTitle>
-            E-invoice {row.number} · {formatDateOnly(row.date)}
+            {row.type === 'CRN' ? 'Credit note' : 'E-invoice'} {row.number} · {formatDateOnly(row.date)}
           </DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {detail.isLoading && <Spinner size="small" label="Loading the invoice…" />}
@@ -215,10 +213,17 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                   {d.buyerName} · GSTIN {d.buyerGstin} · place of supply{' '}
                   {gstStateName(d.placeOfSupply) ?? d.placeOfSupply} · {d.lines} line(s) · {formatInr(d.total)}
                 </Text>
+                {d.type === 'CRN' && d.against && (
+                  <Text>
+                    Credit note against invoice {d.against}
+                    {d.againstDate ? ` of ${formatDateOnly(d.againstDate)}` : ''}: it goes to the portal after that
+                    invoice&apos;s IRN.
+                  </Text>
+                )}
                 {d.problems.length > 0 && (
                   <MessageBar intent="warning">
                     <MessageBarBody>
-                      The portal would refuse this invoice:
+                      The portal would refuse this {d.type === 'CRN' ? 'credit note' : 'invoice'}:
                       <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
                         {d.problems.map((p) => (
                           <li key={p}>{p}</li>
