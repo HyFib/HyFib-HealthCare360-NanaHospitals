@@ -94,6 +94,7 @@ public sealed class EndpointAuthorizationTests
 
         // Provider callbacks, each verified by the provider's signature or shared secret.
         "POST /api/v1/billing/webhooks/payment-gateway",
+        "POST /api/v1/billing/webhooks/cashfree",
         "GET /api/v1/integrations/webhooks/sms/generic",
         "POST /api/v1/integrations/webhooks/sms/generic",
         "POST /api/v1/integrations/webhooks/sms/msg91",

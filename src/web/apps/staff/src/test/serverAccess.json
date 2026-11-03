@@ -1759,6 +1759,7 @@
     "POST /api/v1/billing/tally/exports billing.tally.export",
     "POST /api/v1/billing/tariffs billing.tariffs.manage",
     "POST /api/v1/billing/tariffs/{id:guid}/prices/bulk billing.tariffs.manage",
+    "POST /api/v1/billing/webhooks/cashfree -",
     "POST /api/v1/billing/webhooks/payment-gateway -",
     "POST /api/v1/blood-bank/donations/{id:guid}/components bloodbank.inventory.manage",
     "POST /api/v1/blood-bank/donors bloodbank.donors.manage",

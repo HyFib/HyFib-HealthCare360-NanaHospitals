@@ -12,6 +12,11 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
 {
     public string Key => ProviderKeys.Razorpay;
 
+    public string Name => "Razorpay";
+
+    public bool IsSetUp(PaymentSettings settings, PaymentSecrets secrets) =>
+        !string.IsNullOrWhiteSpace(settings.KeyId) && !string.IsNullOrWhiteSpace(secrets.KeySecret);
+
     public async Task<PaymentOrder> CreateOrderAsync(CreatePaymentOrder request, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
     {
         var (baseUri, keyId, keySecret) = Credentials(settings, secrets);
@@ -87,9 +92,10 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
     /// answers a repeated request with the refund it already made, and in the refund's <c>receipt</c>.
     /// </summary>
     public async Task<RefundResult> RefundAsync(
-        string paymentId, decimal amount, string reason, string? idempotencyKey, PaymentSettings settings,
+        GatewayPaymentRef payment, decimal amount, string reason, string? idempotencyKey, PaymentSettings settings,
         PaymentSecrets secrets, CancellationToken cancellationToken)
     {
+        var paymentId = payment.PaymentId;
         if (!PaymentIdPattern().IsMatch(paymentId))
         {
             return new RefundResult(false, null, "Not a Razorpay payment id.");
@@ -125,6 +131,10 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
     }
 
     public bool VerifySignature(string payload, string signature, PaymentSecrets secrets) =>
+        RazorpaySignatures.Verify(payload, signature, secrets.KeySecret, secrets.WebhookSecret);
+
+    /// <summary>Razorpay signs the raw body with the webhook secret and no timestamp (redeliveries carry the same event id).</summary>
+    public bool VerifyWebhook(string payload, string signature, string? timestamp, PaymentSecrets secrets, DateTimeOffset now) =>
         RazorpaySignatures.Verify(payload, signature, secrets.KeySecret, secrets.WebhookSecret);
 
     /// <summary>
@@ -168,7 +178,8 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
     }
 
     /// <summary><c>GET v1/refunds/{id}</c>: pending, processed or failed, with the bank's reference (ARN, RRN or UTR) once known.</summary>
-    public async Task<RefundStatusResult> GetRefundStatusAsync(string refundId, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    public async Task<RefundStatusResult> GetRefundStatusAsync(
+        string refundId, GatewayPaymentRef payment, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
     {
         if (!RefundIdPattern().IsMatch(refundId))
         {

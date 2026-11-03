@@ -106,6 +106,7 @@ public sealed class FeatureSwitchTests
     [InlineData("GET /api/v1/public/prescriptions/verify/{token}")]
     [InlineData("GET /api/v1/public/prescriptions/verify/{token}/signature.p7s")]
     [InlineData("POST /api/v1/billing/webhooks/payment-gateway")]
+    [InlineData("POST /api/v1/billing/webhooks/cashfree")]
     [InlineData("POST /api/v1/integrations/webhooks/whatsapp/")]
     [InlineData("GET /api/v1/public/unsubscribe/{token}")]
     [InlineData("POST /api/v1/public/unsubscribe/{token}")]

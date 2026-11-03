@@ -22,6 +22,7 @@ internal sealed class PaymentDisputeConfiguration : IEntityTypeConfiguration<Pay
         b.Property(x => x.Outcome).HasMaxLength(PaymentDispute.NoteMaxLength);
         b.Property(x => x.ReversalNumber).HasMaxLength(24);
         b.Property(x => x.GatewayDisputeId).HasMaxLength(64);
+        b.Property(x => x.GatewayProvider).HasMaxLength(32);
         b.Property(x => x.GatewayStatus).HasMaxLength(32);
         b.Property(x => x.GatewayPhase).HasMaxLength(32);
         b.Ignore(x => x.IsClosed);

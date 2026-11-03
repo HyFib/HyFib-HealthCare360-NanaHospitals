@@ -131,7 +131,7 @@ public sealed class RazorpayGatewayTests
     public async Task Never_puts_untrusted_ids_into_razorpay_urls(string id)
     {
         (await Gateway.GetStatusAsync(id, Settings, Secrets, Ct)).Status.ShouldBe(GatewayPaymentStatus.Failed);
-        (await Gateway.RefundAsync(id, 100m, "duplicate", null, Settings, Secrets, Ct)).Success.ShouldBeFalse();
+        (await Gateway.RefundAsync(new GatewayPaymentRef("razorpay", id, null), 100m, "duplicate", null, Settings, Secrets, Ct)).Success.ShouldBeFalse();
 
         _http.Requests.ShouldBeEmpty();
     }
@@ -142,8 +142,8 @@ public sealed class RazorpayGatewayTests
         _http.Respond(HttpStatusCode.OK, """{"id":"rfnd_FP8QHiV938haTz","entity":"refund","amount":50000,"status":"processed"}""")
             .Respond(HttpStatusCode.BadRequest, """{"error":{"code":"BAD_REQUEST_ERROR","description":"The refund amount provided is greater than amount captured"}}""");
 
-        var refund = await Gateway.RefundAsync("pay_CapturedUpi001", 500m, "Duplicate payment", null, Settings, Secrets, Ct);
-        var rejected = await Gateway.RefundAsync("pay_CapturedUpi001", 5000m, "Duplicate payment", null, Settings, Secrets, Ct);
+        var refund = await Gateway.RefundAsync(new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), 500m, "Duplicate payment", null, Settings, Secrets, Ct);
+        var rejected = await Gateway.RefundAsync(new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), 5000m, "Duplicate payment", null, Settings, Secrets, Ct);
 
         refund.ShouldBe(new RefundResult(true, "rfnd_FP8QHiV938haTz", null));
         _http.Requests[0].Uri.ShouldBe(new Uri("https://api.razorpay.com/v1/payments/pay_CapturedUpi001/refund"));
@@ -158,8 +158,8 @@ public sealed class RazorpayGatewayTests
     {
         _http.Respond(HttpStatusCode.OK, """{"id":"rfnd_FP8QHiV938haTz","entity":"refund","amount":50000,"status":"pending"}""");
 
-        var refund = await Gateway.RefundAsync("pay_CapturedUpi001", 500m, "Duplicate payment", "a1b2c3d4e5f60718293a4b5c6d7e8f90", Settings, Secrets, Ct);
-        var refused = await Gateway.RefundAsync("pay_CapturedUpi001", 500m, "Duplicate payment", "not a key!", Settings, Secrets, Ct);
+        var refund = await Gateway.RefundAsync(new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), 500m, "Duplicate payment", "a1b2c3d4e5f60718293a4b5c6d7e8f90", Settings, Secrets, Ct);
+        var refused = await Gateway.RefundAsync(new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), 500m, "Duplicate payment", "not a key!", Settings, Secrets, Ct);
 
         refund.Success.ShouldBeTrue();
         var request = _http.Requests.ShouldHaveSingleItem();
@@ -247,9 +247,9 @@ public sealed class RazorpayGatewayTests
             .Respond(HttpStatusCode.OK, """{"id":"rfnd_FP8QHiV938haTz","amount":50000,"payment_id":"pay_CapturedUpi001","acquirer_data":{"arn":null},"status":"pending"}""")
             .Respond(HttpStatusCode.OK, """{"id":"rfnd_FP8QHiV938haTz","amount":50000,"payment_id":"pay_CapturedUpi001","status":"failed"}""");
 
-        var processed = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", Settings, Secrets, Ct);
-        var pending = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", Settings, Secrets, Ct);
-        var failed = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", Settings, Secrets, Ct);
+        var processed = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), Settings, Secrets, Ct);
+        var pending = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), Settings, Secrets, Ct);
+        var failed = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), Settings, Secrets, Ct);
 
         _http.Requests[0].Uri.ShouldBe(new Uri("https://api.razorpay.com/v1/refunds/rfnd_FP8QHiV938haTz"));
         processed.ShouldBe(new RefundStatusResult(
@@ -265,7 +265,7 @@ public sealed class RazorpayGatewayTests
     [InlineData("pay_CapturedUpi001")]
     public async Task Never_puts_untrusted_refund_ids_into_razorpay_urls(string id)
     {
-        var status = await Gateway.GetRefundStatusAsync(id, Settings, Secrets, Ct);
+        var status = await Gateway.GetRefundStatusAsync(id, new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), Settings, Secrets, Ct);
 
         status.Status.ShouldBe(PaymentRefundStatus.Pending);
         status.Error.ShouldNotBeNull();

@@ -88,6 +88,9 @@ public sealed class PaymentDispute : AuditableEntity, IFacilityScoped
     /// </summary>
     public string? GatewayDisputeId { get; set; }
 
+    /// <summary>The gateway that holds <see cref="GatewayDisputeId"/> (razorpay, cashfree): the case is read there, after a switch too.</summary>
+    public string? GatewayProvider { get; set; }
+
     /// <summary>The gateway's word for where the dispute stands: <c>open</c>, <c>under_review</c>, <c>won</c>, <c>lost</c>, <c>closed</c>…</summary>
     public string? GatewayStatus { get; set; }
 

@@ -5112,6 +5112,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("gateway_phase");
 
+                    b.Property<string>("GatewayProvider")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("gateway_provider");
+
                     b.Property<Guid?>("GatewaySettlementLineId")
                         .HasColumnType("uuid")
                         .HasColumnName("gateway_settlement_line_id");
@@ -6550,6 +6555,21 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)")
                         .HasColumnName("gateway_error");
+
+                    b.Property<string>("GatewayOrderId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("gateway_order_id");
+
+                    b.Property<string>("GatewayPaymentId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("gateway_payment_id");
+
+                    b.Property<string>("GatewayProvider")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("gateway_provider");
 
                     b.Property<string>("GatewayReference")
                         .HasMaxLength(64)

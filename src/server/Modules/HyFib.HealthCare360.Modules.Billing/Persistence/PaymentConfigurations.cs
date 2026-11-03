@@ -81,6 +81,9 @@ internal sealed class RefundConfiguration : IEntityTypeConfiguration<Refund>
         b.Property(x => x.Reference).HasMaxLength(64);
         b.Property(x => x.Counter).HasMaxLength(64);
         b.Property(x => x.GatewayRefundId).HasMaxLength(128);
+        b.Property(x => x.GatewayProvider).HasMaxLength(32);
+        b.Property(x => x.GatewayPaymentId).HasMaxLength(128);
+        b.Property(x => x.GatewayOrderId).HasMaxLength(128);
         b.Property(x => x.GatewayReference).HasMaxLength(64);
         b.Property(x => x.GatewayError).HasMaxLength(300);
         b.Ignore(x => x.IsOutstanding);

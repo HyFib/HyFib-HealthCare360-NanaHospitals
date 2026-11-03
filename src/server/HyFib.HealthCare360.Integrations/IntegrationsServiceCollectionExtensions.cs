@@ -93,6 +93,8 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddSingleton<SimulatorSigningKey>();
         services.AddIntegrationHttpClient<RazorpayGateway>(CloudAttempt, CloudTotal);
         services.AddScoped<IPaymentProvider>(sp => sp.GetRequiredService<RazorpayGateway>());
+        services.AddIntegrationHttpClient<CashfreeGateway>(CloudAttempt, CloudTotal);
+        services.AddScoped<IPaymentProvider>(sp => sp.GetRequiredService<CashfreeGateway>());
         services.AddScoped<IPaymentProvider, SimulatorPaymentGateway>();
         services.AddScoped<IPaymentGateway, PaymentGatewayRouter>();
 

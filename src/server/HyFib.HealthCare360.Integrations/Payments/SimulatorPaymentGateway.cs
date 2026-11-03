@@ -23,6 +23,11 @@ internal sealed class SimulatorPaymentGateway(SimulatorInbox inbox, SimulatorSig
 {
     public string Key => ProviderKeys.Simulator;
 
+    public string Name => "the training gateway";
+
+    /// <summary>The training gateway has no account: it is used only while it is the facility's gateway.</summary>
+    public bool IsSetUp(PaymentSettings settings, PaymentSecrets secrets) => false;
+
     public Task<PaymentOrder> CreateOrderAsync(CreatePaymentOrder request, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken) =>
         CreateAsync(request, SimulatorTransactionKind.PaymentOrder, "order_sim", cancellationToken);
 
@@ -57,10 +62,11 @@ internal sealed class SimulatorPaymentGateway(SimulatorInbox inbox, SimulatorSig
     /// from the key, and the inbox refunds once per id.
     /// </summary>
     public async Task<RefundResult> RefundAsync(
-        string paymentId, decimal amount, string reason, string? idempotencyKey, PaymentSettings settings,
+        GatewayPaymentRef payment, decimal amount, string reason, string? idempotencyKey, PaymentSettings settings,
         PaymentSecrets secrets, CancellationToken cancellationToken)
     {
         var started = trace.Start();
+        var paymentId = payment.PaymentId;
         var refundId = TrainingSimulators.RefundIdPrefix + (idempotencyKey is null
             ? Guid.CreateVersion7().ToString("N")[..16]
             : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{paymentId}:{idempotencyKey}")))[..16]);
@@ -70,7 +76,8 @@ internal sealed class SimulatorPaymentGateway(SimulatorInbox inbox, SimulatorSig
     }
 
     /// <summary>Simulated refunds are processed at once. Ones made before refunds were kept count as processed too.</summary>
-    public async Task<RefundStatusResult> GetRefundStatusAsync(string refundId, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    public async Task<RefundStatusResult> GetRefundStatusAsync(
+        string refundId, GatewayPaymentRef payment, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
     {
         var refund = await inbox.FindRefundAsync(refundId, cancellationToken);
         if (refund is not null)
@@ -117,6 +124,9 @@ internal sealed class SimulatorPaymentGateway(SimulatorInbox inbox, SimulatorSig
     public async Task<IReadOnlyList<GatewayDispute>> GetDisputesAsync(
         DateTimeOffset since, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken) =>
         (await inbox.DisputesSinceAsync(since, cancellationToken)).Select(SimulatorDisputes.ToGateway).ToList();
+
+    public bool VerifyWebhook(string payload, string signature, string? timestamp, PaymentSecrets secrets, DateTimeOffset now) =>
+        VerifySignature(payload, signature, secrets);
 
     public bool VerifySignature(string payload, string signature, PaymentSecrets secrets) =>
         Signatures.VerifyHmacSha256Hex(string.IsNullOrWhiteSpace(secrets.SimulatorSecret) ? signingKey.Secret : secrets.SimulatorSecret, payload, signature);

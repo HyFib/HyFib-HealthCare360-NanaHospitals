@@ -60,6 +60,7 @@ internal static class ProviderKeys
     public const string MetaCloud = "meta";
     public const string Smtp = "smtp";
     public const string Razorpay = "razorpay";
+    public const string Cashfree = "cashfree";
     public const string PineLabs = "pinelabs";
     public const string TallyPrime = "tally";
     public const string DicomWeb = "dicomweb";

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -10,6 +11,8 @@ using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
+using HyFib.HealthCare360.Modules.Billing.Features.Payments;
+using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
@@ -914,6 +917,105 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
             token.Claims.Where(c => c.Type == HcClaims.Role).Select(c => c.Value).ToList())).Token;
     }
 
+    [Fact]
+    public async Task A_cashfree_link_is_receipted_from_its_signed_webhook_and_refunded_at_cashfree_after_a_switch()
+    {
+        await using var settings = await PaymentsToCashfreeAsync();
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var bill = await FinalizedBillAsync(billing);
+        var link = await billing.PostAsync<GatewayOrderDto>("/api/v1/billing/payment-links", new CreatePaymentLinkRequest(bill.Id, null, null, false, false));
+        link.ShouldSatisfyAllConditions(
+            l => l.Provider.ShouldBe("cashfree"),
+            l => l.OrderId.ShouldMatch("^hcl_[a-f0-9]{28}$"),
+            l => l.LinkUrl!.ShouldStartWith("https://payments.cashfree.test/links/"),
+            l => l.Status.ShouldBe(GatewayOrderStatus.Created));
+
+        // The patient pays on Cashfree's page. Its webhook names the link's order and the payment (a number), not the link
+        // HC360 made, and is signed over its timestamp and body with the client secret: the facility's open Cashfree links
+        // are asked again, and the bill's receipt is recorded with Cashfree's payment id.
+        var (cashfreeOrder, cashfreePayment) = server.Cashfree.Pay(link.OrderId);
+        var paymentId = cashfreePayment.ToString(CultureInfo.InvariantCulture);
+        var body = new JsonObject
+        {
+            ["type"] = "PAYMENT_SUCCESS_WEBHOOK",
+            ["data"] = new JsonObject
+            {
+                ["order"] = new JsonObject { ["order_id"] = cashfreeOrder },
+                ["payment"] = new JsonObject { ["cf_payment_id"] = cashfreePayment, ["payment_status"] = "SUCCESS" },
+            },
+        }.ToJsonString();
+        (await CashfreeWebhookAsync(body, DateTimeOffset.UtcNow, FakeCashfree.ClientSecret, bill.FacilityId)).ShouldBe((HttpStatusCode.OK, true));
+        var paid = await OrderOfAsync(link.Id);
+        paid.ShouldSatisfyAllConditions(
+            o => o.Status.ShouldBe(GatewayOrderStatus.Paid),
+            o => o.GatewayPaymentId.ShouldBe(paymentId),
+            o => o.ReceiptId.ShouldNotBeNull());
+
+        // The same delivery again changes nothing; one signed four days ago, or with another key, is refused.
+        (await CashfreeWebhookAsync(body, DateTimeOffset.UtcNow, FakeCashfree.ClientSecret, bill.FacilityId)).ShouldBe((HttpStatusCode.OK, false));
+        (await CashfreeWebhookAsync(body, DateTimeOffset.UtcNow.AddDays(-4), FakeCashfree.ClientSecret, bill.FacilityId)).Status.ShouldBe(HttpStatusCode.Unauthorized);
+        (await CashfreeWebhookAsync(body, DateTimeOffset.UtcNow, "someone-elses-secret", bill.FacilityId)).Status.ShouldBe(HttpStatusCode.Unauthorized);
+
+        // The facility then takes its new payments through the training gateway, keeping Cashfree's account. The bill
+        // turns out ₹1 over the tariff: a credit note approved by a second person leaves ₹1 to give back, and its refund,
+        // approved by a second person too, still goes back through Cashfree, on the link's order that took the payment
+        // and under the refund's own key, so a retry can never refund twice.
+        await SwitchToSimulatorKeepingCashfreeAsync();
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+        using (var credit = await billing.SendRawAsync(HttpMethod.Post, $"/api/v1/billing/bills/{bill.Id}/credit-notes",
+                   new IssueCreditNoteRequest(CreditNoteKind.CreditNote, 1m, "Rate charged above the tariff")))
+        {
+            credit.StatusCode.ShouldBe(HttpStatusCode.Accepted, await credit.Content.ReadAsStringAsync(Ct));
+            await MakerChecker.ApproveAsync(accountant, (await credit.Content.ReadFromJsonAsync<ApprovalRequestDto>(ApiClient.Json, Ct))!);
+        }
+
+        using var requested = await billing.SendRawAsync(HttpMethod.Post, "/api/v1/billing/refunds", new RequestRefundRequest(bill.Id, null, 1m, "Rate charged above the tariff"));
+        requested.StatusCode.ShouldBe(HttpStatusCode.Created, await requested.Content.ReadAsStringAsync(Ct));
+        var refundId = (await requested.Content.ReadFromJsonAsync<JsonObject>(ApiClient.Json, Ct))!["id"]!.GetValue<Guid>();
+        await NoContentAsync(accountant, $"/api/v1/billing/refunds/{refundId}/approve", new ApproveRefundRequest(null));
+        await OpenShiftAsync(billing);
+        await NoContentAsync(billing, $"/api/v1/billing/refunds/{refundId}/pay", new PayRefundRequest(PaymentMode.PaymentGateway, null));
+        var atCashfree = server.Cashfree.RefundsOf(cashfreeOrder).ShouldHaveSingleItem();
+        atCashfree["refund_amount"]!.GetValue<decimal>().ShouldBe(1m);
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            (await RefundAsync(scope, refundId)).ShouldSatisfyAllConditions(
+                r => r.GatewayRefundId.ShouldBe((string)atCashfree["refund_id"]!),
+                r => r.GatewayRefundId.ShouldBe(refundId.ToString("N")),
+                r => r.GatewayProvider.ShouldBe("cashfree"),
+                r => r.GatewayPaymentId.ShouldBe(paymentId),
+                r => r.GatewayOrderId.ShouldBe(link.OrderId),
+                r => r.GatewayStatus.ShouldBe(PaymentRefundStatus.Pending));
+        }
+
+        // Cashfree's refund webhooks are checked with Cashfree's secret, and only ring the bell: one saying the refund
+        // succeeded while Cashfree still holds it pending leaves it pending; once the bank has paid it, the next delivery
+        // finds it processed at Cashfree, with the bank's reference.
+        var refundKey = (string)atCashfree["refund_id"]!;
+        var cashfreeRefund = (string)atCashfree["cf_refund_id"]!;
+        var early = CashfreeRefundEvent(cashfreeRefund, refundKey, cashfreeOrder, arn: null);
+        (await CashfreeWebhookAsync(early, DateTimeOffset.UtcNow, FakeCashfree.ClientSecret, bill.FacilityId)).ShouldBe((HttpStatusCode.OK, false));
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            (await RefundAsync(scope, refundId)).GatewayStatus.ShouldBe(PaymentRefundStatus.Pending);
+        }
+
+        server.Cashfree.SettleRefund(refundKey, "SUCCESS");
+        var settled = CashfreeRefundEvent(cashfreeRefund, refundKey, cashfreeOrder, arn: "ARN");
+        (await CashfreeWebhookAsync(settled, DateTimeOffset.UtcNow, FakeCashfree.ClientSecret, bill.FacilityId)).ShouldBe((HttpStatusCode.OK, true));
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            (await RefundAsync(scope, refundId)).ShouldSatisfyAllConditions(
+                r => r.GatewayStatus.ShouldBe(PaymentRefundStatus.Processed),
+                r => r.GatewayReference!.ShouldStartWith("ARN"));
+        }
+
+        // A new link is the training gateway's, and Cashfree was asked for one refund only.
+        var next = await billing.PostAsync<GatewayOrderDto>("/api/v1/billing/payment-links", new CreatePaymentLinkRequest((await FinalizedBillAsync(billing)).Id, null, null, false, false));
+        next.Provider.ShouldBe("simulator");
+        server.Cashfree.RefundsOf(cashfreeOrder).Count.ShouldBe(1);
+    }
+
     /// <summary>A bill paid in full through a payment link on the training gateway; the link's order, as stored.</summary>
     private async Task<GatewayOrder> PaidOrderAsync()
     {
@@ -935,7 +1037,7 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
             "Duplicate payment", Guid.CreateVersion7(), "Cashier", now);
         refund.Approve(Guid.CreateVersion7(), null, now).IsSuccess.ShouldBeTrue();
         refund.MarkPaid(PaymentMode.PaymentGateway, gatewayRefundId, null, null, null, now).IsSuccess.ShouldBeTrue();
-        refund.StartGatewayRefund(gatewayRefundId, now);
+        refund.StartGatewayRefund(gatewayRefundId, new GatewayPaymentRef(order.Provider, order.GatewayPaymentId ?? string.Empty, order.OrderId), now);
         if (failed)
         {
             refund.ApplyGatewayStatus(new RefundStatusResult(gatewayRefundId, PaymentRefundStatus.Failed, 1m, null, null, now, "The bank account is closed."), now)
@@ -1172,6 +1274,99 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
             await admin.SaveSettingAsync(secretKey, new SaveSettingRequest(new JsonObject(), null, true, null));
         });
     }
+
+    /// <summary>Cashfree's refund webhook as it names a refund: Cashfree's id, HC360's key, Cashfree's order and what it says.</summary>
+    private static string CashfreeRefundEvent(string cashfreeRefundId, string refundId, string orderId, string? arn) => new JsonObject
+    {
+        ["type"] = "REFUND_STATUS_WEBHOOK",
+        ["data"] = new JsonObject
+        {
+            ["refund"] = new JsonObject
+            {
+                ["cf_refund_id"] = cashfreeRefundId,
+                ["refund_id"] = refundId,
+                ["order_id"] = orderId,
+                ["refund_status"] = "SUCCESS",
+                ["refund_arn"] = arn,
+            },
+        },
+    }.ToJsonString();
+
+    /// <summary>A Cashfree delivery to its own webhook address, signed over the timestamp and the body with <paramref name="secret"/>.</summary>
+    private async Task<(HttpStatusCode Status, bool? Processed)> CashfreeWebhookAsync(string body, DateTimeOffset signedAt, string secret, Guid facilityId)
+    {
+        var timestamp = signedAt.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/billing/webhooks/cashfree?facility={facilityId}")
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("x-webhook-timestamp", timestamp);
+        request.Headers.Add("x-webhook-signature", Convert.ToBase64String(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(timestamp + body))));
+        using var response = await server.Anonymous(ownAddress: true).Http.SendAsync(request, Ct);
+        return response.StatusCode == HttpStatusCode.OK
+            ? (response.StatusCode, (await ApiClient.ReadAsync<WebhookAck>(response, HttpMethod.Post, "webhook")).Processed)
+            : (response.StatusCode, null);
+    }
+
+    private async Task<GatewayOrder> OrderOfAsync(Guid id)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<GatewayOrder>().IgnoreQueryFilters().AsNoTracking()
+            .SingleAsync(o => o.Id == id, Ct);
+    }
+
+    private static async Task OpenShiftAsync(ApiClient billing)
+    {
+        using var current = await billing.SendRawAsync(HttpMethod.Get, "/api/v1/billing/shifts/current");
+        if (current.StatusCode == HttpStatusCode.NoContent)
+        {
+            await billing.PostAsync<ShiftDto>("/api/v1/billing/shifts/open", new OpenShiftRequest("OP counter 1", OpeningFloat: 0m));
+        }
+    }
+
+    private static async Task NoContentAsync(ApiClient client, string path, object body)
+    {
+        using var response = await client.SendRawAsync(HttpMethod.Post, path, body);
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent, await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    /// <summary>Online payments go through Cashfree (the run's fake) for the rest of the test; then the settings are put back.</summary>
+    private async Task<IAsyncDisposable> PaymentsToCashfreeAsync()
+    {
+        const string key = "integrations.payment";
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
+            .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
+        await admin.SaveSettingAsync(key, new SaveSettingRequest(new JsonObject
+        {
+            ["enabled"] = true,
+            ["provider"] = "cashfree",
+            ["cashfreeBaseUrl"] = FakeCashfree.BaseUrl,
+            ["cashfreeClientId"] = FakeCashfree.ClientId,
+        }, null, false, null));
+        await admin.SaveSettingAsync(CashfreeSecretKey, new SaveSettingRequest(new JsonObject { ["clientSecret"] = FakeCashfree.ClientSecret }, null, true, null));
+        return new Restore(async () =>
+        {
+            await admin.SaveSettingAsync(key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null));
+            await admin.SaveSettingAsync(CashfreeSecretKey, new SaveSettingRequest(new JsonObject(), null, true, null));
+        });
+    }
+
+    /// <summary>New payments to the training gateway, Cashfree's account kept set up beside it.</summary>
+    private async Task SwitchToSimulatorKeepingCashfreeAsync()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        await admin.SaveSettingAsync("integrations.payment", new SaveSettingRequest(new JsonObject
+        {
+            ["enabled"] = true,
+            ["provider"] = "simulator",
+            ["simulatorSettlementDays"] = 0,
+            ["cashfreeBaseUrl"] = FakeCashfree.BaseUrl,
+            ["cashfreeClientId"] = FakeCashfree.ClientId,
+        }, null, false, null));
+    }
+
+    private const string CashfreeSecretKey = "integrations.payment.cashfree.secret";
 
     private sealed class Restore(Func<Task> restore) : IAsyncDisposable
     {

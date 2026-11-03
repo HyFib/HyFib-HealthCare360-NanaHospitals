@@ -32,8 +32,10 @@ public sealed class GatewaySettlementService(
     public const int MaxListDays = 92;
 
     /// <summary>
-    /// Reads one day's settlements for the facility's merchant account, stores the new ones with their transactions
-    /// matched, updates the status of known ones, and lists what does not match. Safe to repeat.
+    /// Reads one day's settlements for each of the facility's merchant accounts (its gateway, and a gateway it used before
+    /// whose account is still set up), stores the new ones with their transactions matched, updates the status of known
+    /// ones, and lists what does not match. A gateway that cannot be read is said so; the others are still applied. Safe
+    /// to repeat.
     /// </summary>
     public async Task<Result<SettlementFetchResult>> FetchAsync(Guid facilityId, DateOnly day, CancellationToken ct)
     {
@@ -53,23 +55,48 @@ public sealed class GatewaySettlementService(
             return Error.Rule("billing.gateway_not_configured", "No payment gateway is configured.");
         }
 
-        PaymentSettlementReport report;
-        try
+        var providers = await gateway.ProvidersAsync(facilityId, ct);
+        var applied = new List<SettlementFetchResult>();
+        var problems = new List<string>();
+        foreach (var provider in providers.Count == 0 ? [null] : providers.Cast<string?>())
         {
-            report = await gateway.GetSettlementsAsync(day, facilityId, ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogWarning(ex, "Could not read the gateway's settlements of {Day}", day);
-            return Error.Rule("billing.gateway_unavailable", "The payment gateway could not be reached. Try again shortly.");
+            PaymentSettlementReport report;
+            try
+            {
+                report = await gateway.GetSettlementsAsync(day, provider, facilityId, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Could not read the {Provider} settlements of {Day}", provider ?? "gateway", day);
+                problems.Add("The payment gateway could not be reached. Try again shortly.");
+                continue;
+            }
+
+            if (!report.Available)
+            {
+                problems.Add(report.Problem ?? "The payment gateway's settlements could not be read.");
+                continue;
+            }
+
+            var result = await ApplyAsync(facilityId, day, report, ct);
+            if (result.IsFailure)
+            {
+                return result;
+            }
+
+            applied.Add(result.Value);
         }
 
-        if (!report.Available)
+        if (applied.Count == 0)
         {
-            return Error.Rule("billing.gateway_unavailable", report.Problem ?? "The payment gateway's settlements could not be read.");
+            return Error.Rule("billing.gateway_unavailable", problems.FirstOrDefault() ?? "The payment gateway's settlements could not be read.");
         }
 
-        return await ApplyAsync(facilityId, day, report, ct);
+        return applied.Count == 1 && problems.Count == 0
+            ? applied[0]
+            : new SettlementFetchResult(
+                day, applied.Sum(r => r.Settlements), applied.Sum(r => r.Added), applied.Sum(r => r.Updated),
+                string.Join(" ", applied.Select(r => r.Message).Concat(problems)));
     }
 
     /// <summary>

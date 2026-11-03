@@ -81,7 +81,7 @@ branch while this module is loaded. They get the behaviour in the last column in
 
 | Abstraction (Platform) | Consumers | Implementation | Until configured / on failure |
 |---|---|---|---|
-| `IPaymentGateway` | Billing payment links and portal bill payment, Scheduling portal prepayment, Billing webhook, Billing gateway reconciliation (settlements, refund status) | `PaymentGatewayRouter` → Razorpay / simulator | `CreateOrderAsync` and `CreatePaymentLinkAsync` throw `IntegrationException` (an `InvalidOperationException`) with the reason. Billing turns it into `billing.gateway_unavailable`; Scheduling switches to pay-at-hospital. `GetStatusAsync` returns `Pending` with the reason. `VerifySignature` returns false. `GetSettlementsAsync` returns a report marked unavailable with the reason; `GetRefundStatusAsync` returns `Pending` with the reason. Settlements and refund status are read even while online payments are switched off, so earlier payments are still reconciled. The signature convention is HMAC-SHA256 over `"{orderId}\|{paymentId}"` with the key secret; see below. |
+| `IPaymentGateway` | Billing payment links and portal bill payment, Scheduling portal prepayment, Billing webhooks, Billing gateway reconciliation (settlements, refund status, disputes) | `PaymentGatewayRouter` → Razorpay / Cashfree / simulator; new payments to the facility's gateway, everything else to the gateway that holds it | `CreateOrderAsync` and `CreatePaymentLinkAsync` throw `IntegrationException` (an `InvalidOperationException`) with the reason. Billing turns it into `billing.gateway_unavailable`; Scheduling switches to pay-at-hospital. `GetStatusAsync` returns `Pending` with the reason. `VerifySignature` returns false. `GetSettlementsAsync` returns a report marked unavailable with the reason; `GetRefundStatusAsync` returns `Pending` with the reason. Settlements and refund status are read even while online payments are switched off, so earlier payments are still reconciled. The signature convention is HMAC-SHA256 over `"{orderId}\|{paymentId}"` with the key secret; see below. |
 | `IPosTerminal` | Billing card/UPI sales | `PosTerminalRouter` → Pine Labs / simulator | A **declined** result with the reason ("Card/UPI POS is not configured…"). Each declined attempt gets a unique `declined-…` transaction id, and `Provider` reports the provider that handled the call (`none`, `pinelabs` or `simulator`), because Billing stores sales under a unique (provider, transaction id) index. |
 | `IAccountingExporter` | Billing Tally day book (outbox), its read-back check and the day-book file download | `AccountingExporterRouter` → Tally Prime / simulator | `GetConnectionAsync` says Not configured (no settings, or posting switched off) or Invalid (settings that cannot be used). `PushVouchersAsync` then returns a result with `NotConfigured` set and every voucher not sent, and Billing marks the day Not configured instead of retrying; Invalid settings fail the day until corrected. `ReadBackAsync` returns an unsuccessful result with the reason. `PingAsync` returns false. `BuildImportFile` always works (Tally XML) and throws only for a voucher Tally would reject. |
 | `IPacsClient` | Diagnostics radiology: linking studies with PACS (by hand and by `PacsLinkJob`), the study's series and images, and viewer links. Diagnostics cardiology: sending a study's DICOM device files (`StoreAsync`) and its viewer link | `PacsClientRouter` → DICOMweb / simulator | `FindStudiesAsync`, `FindSeriesAsync`, `FindInstancesAsync` and `RetrieveImageAsync` throw **`HttpRequestException`** with a staff-facing reason: not configured, disabled, unreachable, an HTTP error, a UID that is not a DICOM UID, or an answer that is not a JPEG or PNG image within the size limit. Diagnostics reports it as `pacs.unreachable`. `StoreAsync` throws only when PACS is not configured or disabled, or the study has no valid UID or patient ID (`pacs.unavailable`); a file the PACS refuses or cannot be reached for gets its own `PacsStoreOutcome`. `StoreDestinationAsync` names where objects go now (the provider and the STOW-RS root, or `simulator`), so a caller can tell an outcome from another PACS; it throws like `StoreAsync`. Every call names the facility whose settings apply (null: the signed-in facility), because background linking has none. `BuildViewerUrl` returns null without a viewer template (`pacs.viewer_not_configured`). |
@@ -117,7 +117,7 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | `integrations.sms` | `enabled`, `provider` (`msg91` \| `twilio` \| `generic` \| `simulator`), `senderId`, `dltEntityId`, `msg91 { baseUrl, templateIds{dlt→msg91}, textVariable, shortUrl }`, `twilio { baseUrl, accountSid, from, messagingServiceSid, statusCallbackUrl }`, `generic { url, method, contentType, bodyTemplate, headers, apiKeyHeader, apiKeyPrefix, messageIdPath, successContains }`, `webhookAllowedIps[]` | `msg91AuthKey`, `twilioAuthToken`, `genericApiKey`, `webhookToken` |
 | `integrations.whatsapp` | `enabled`, `provider` (`meta` \| `simulator`), `graphBaseUrl`, `apiVersion` (`v21.0`), `phoneNumberId`, `businessAccountId`, `languageCodes { "en": "en_US" }`, `maxDocumentMegabytes` (20), `testTemplateName` (`hello_world`), `testTemplateLanguage` | `accessToken`, `appSecret`, `verifyToken` |
 | `integrations.email` | `enabled`, `provider` (`smtp` \| `simulator`), `host`, `port` (587), `useStartTls` (true), `fromAddress`, `fromName`, `userName`, `timeoutSeconds` (20), `maxAttachmentMegabytes` (15) | `userName`, `password` |
-| `integrations.payment` | `enabled`, `provider` (`razorpay` \| `simulator`), `baseUrl`, `keyId`, `paymentLinkCallbackUrl` (`https://<portal address>/portal/payment-return`), `notifyByRazorpay` (false), `paymentLinkExpiryHours` (72), `simulatorSettlementDays` (1; 0 to 7) | `keySecret`, `webhookSecret`, `simulatorSecret` |
+| `integrations.payment` | `enabled`, `provider` (`razorpay` \| `cashfree` \| `simulator`: the gateway new payments go through), `baseUrl`, `keyId` (Razorpay), `cashfreeBaseUrl` (`https://api.cashfree.com/pg`; `https://sandbox.cashfree.com/pg` for its test mode), `cashfreeClientId`, `paymentLinkCallbackUrl` (`https://<portal address>/portal/payment-return`), `notifyByRazorpay` (false; Razorpay's and Cashfree's own SMS/e-mail), `paymentLinkExpiryHours` (72), `simulatorSettlementDays` (1; 0 to 7) | `keySecret`, `webhookSecret`, `simulatorSecret`; Cashfree's `clientSecret` in its own row, `integrations.payment.cashfree.secret`, so replacing one gateway's credentials never wipes the other's |
 | `integrations.pos` | `enabled`, `provider` (`pinelabs` \| `simulator`), `baseUrl`, `uploadPath`, `statusPath`, `cancelPath`, `merchantId`, `userId`, `autoCancelMinutes` (5), `terminals[] { id, name, imei, storePosCode }`, `paymentModes { all, card, upi }`, `pendingResponseCodes` ([1001]), `simulatorApproveAfterSeconds` (8) | `securityToken` |
 | `integrations.tally` | `enabled`, `provider` (`tally` \| `simulator`), `url` (`http://localhost:9000`), `companyName`, `ledgerMap { hc360 → tally }`, `costCategory`, `batchSize` (50) | none (Tally's XML port has no authentication) |
 | `integrations.pacs` | `enabled`, `provider` (`dicomweb` \| `simulator`), `qidoUrl` (the DICOMweb root), `wadoUrl` (WADO-RS root when it differs; empty means `qidoUrl`), `stowUrl` (STOW-RS root when it differs; empty means `qidoUrl`), `authType` (`none` \| `basic` \| `bearer`), `userName`, `viewerUrlTemplate` (`{studyUid}`, `{accession}`), `limit` (50, at most 500 studies per search), `timeZone` (`Asia/Kolkata`, for study times sent without an offset) | `password`, `bearerToken` |
@@ -305,13 +305,60 @@ and Windows Server 2022 machine has.
     such as a retry after a timeout or a second click, with the refund it already made.
   * **Refund status** (`GetRefundStatusAsync`): `GET v1/refunds/{id}` → `pending`, `processed` or `failed`, with the
     bank's reference (`acquirer_data.arn`, else `rrn` or `utr`). Normal-speed refunds take 5 to 7 working days.
+* **Cashfree** (from its official SDKs, cashfree-pg Node 6.0.6 and Python 6.0.1, API version `2026-01-01`, sent as
+  `x-api-version` with `x-client-id`, `x-client-secret` and a fresh `x-request-id`). Amounts travel in rupees.
+  * **Every Cashfree payment is a payment link HC360 names** (`POST /links`, `link_id` `hcl_` and 28 hex digits): the
+    links sent by SMS or WhatsApp and the portal's checkout alike, which opens Cashfree's hosted page (the SDKs document
+    no in-page checkout, so no Cashfree script runs in HC360's pages). The patient's mobile is required (ten digits for
+    an Indian number); the name is sent without special characters; HC360's reference goes in `link_notes`.
+  * **Status**: `GET /links/{link_id}`, the link's orders (`GET /links/{link_id}/orders?status=ALL`, the newest ten) and
+    their payments (`GET /orders/{order_id}/payments`). A `SUCCESS` payment is the link's, whatever the link says; then a
+    cancelled or expired link (`link_status`, or `link_expiry_time` passed); then a payment the bank has not finished
+    (`PENDING`); then the last failed attempt (`FAILED`, `USER_DROPPED`, …), with the link still open for another. The
+    payment id is Cashfree's `cf_payment_id`, which comes as a number or a string.
+  * **Refunds** are by order (`POST /orders/{order_id}/refunds` on the link's order that holds the payment). HC360's
+    idempotency key is the refund's own `refund_id` and, as a UUID made from it, its `x-idempotency-key`; when Cashfree
+    answers 409 (it holds that refund already), the refund is read back by its id and returned, so a retry never
+    refunds twice. **Refund status**: `GET /orders/{order_id}/refunds/{refund_id}`: `SUCCESS` → processed (with
+    `refund_arn`), `PENDING`/`ONHOLD` → pending, `CANCELLED`/`FAILED` → failed.
+  * **Settlements**: every page of `POST /settlements` from the day before to the day after, the settlements processed
+    (or, not yet processed, initiated) on the Indian day asked, each with every page of its events
+    (`POST /settlement/recon` by `cf_settlement_ids`, else by UTR). Payments and refunds are kept by `cf_payment_id` and
+    `refund_id`; chargebacks, disputes, their reversals and other adjustments as adjustments
+    (`cfevt_<type>_<event_id>`), money in or out by their kind, then their sale type or sign. Node's and Python's shapes
+    differ (`settlement_utr`/`utr`, `payment_group`/`payment_mode`, a refund as a list or an object); both are read.
+  * **Disputes**: `GET /disputes/{dispute_id}` (a number). Status `<TYPE>_<STAGE>`: created → open; documents received
+    or under review → under review; merchant won → won; merchant lost or accepted → lost; insufficient evidence or
+    anything new → for a person. Cashfree lists no disputes by date, so the hourly read pages the account's events of
+    the last three days (`POST /recon`) for disputes and chargebacks and reads each order's disputes
+    (`GET /orders/{order_id}/disputes`); each open case is read again by its id, and a dispute's settlement opens or
+    joins its case as with Razorpay.
+  * **Webhooks** come to `/api/v1/billing/webhooks/cashfree` (add `?facility=<id>` for a facility with its own
+    account). `x-webhook-signature` is the Base64 HMAC-SHA256, keyed with the client secret, of `x-webhook-timestamp`
+    followed by the raw body; HC360 compares it in constant time and refuses a delivery signed more than three days ago
+    or five minutes ahead (the SDKs check neither). A webhook is only a doorbell: its ids (strings or numbers, anywhere
+    in the body) find HC360's links, refunds and cases, which are read again from Cashfree; one naming nothing HC360
+    holds has the facility's open Cashfree links and bookings of the last week asked again (the newest 20 of each).
+* **A facility that switches gateways keeps the old one's account.** New orders and links go to the gateway
+  `provider` names; a call about something a gateway already holds names that gateway (`GatewayOrder.Provider`,
+  `Appointment.PaymentProvider`, `PatientAdvance.Provider`, `Refund.GatewayProvider`, `PaymentDispute.GatewayProvider`;
+  the `CashfreeGateway` migration gives earlier gateway refunds and cases theirs, Razorpay or the training gateway by
+  their ids; a record still without one goes to the facility's gateway), and is answered with that gateway's account from
+  the same settings. `ProvidersAsync` lists the facility's gateway first, then every other gateway whose account is
+  still set up; settlements and disputes are read for each. A record of a gateway whose account was removed is refused
+  with a message saying so, never sent to another gateway.
 * **Every `IPaymentGateway` call names a facility.** A facility may have its own merchant account, and webhooks,
   patient checkouts and background re-checks have no signed-in facility, so callers pass the order's facility. Null
   means the signed-in facility, then the all-facility settings.
 * **Channel messages carry the facility too.** `SmsMessage`, `WhatsAppTemplateMessage`, `WhatsAppDocumentMessage` and
   `EmailMessage` have a `FacilityId`, set by the platform's outbox handlers, so queued notifications use that
   facility's provider settings.
-* **`IPaymentGateway.VerifySignature(payload, signature, facilityId)`** is a hex HMAC-SHA256, compared in constant time:
+* **`IPaymentGateway.VerifyWebhook(provider, payload, signature, timestamp, facilityId)`** returns the gateway whose
+  account signed a webhook, or null. Cashfree's route is checked with Cashfree's account only. The shared route
+  (Razorpay's format, which the training gateway signs the same way) is checked with the facility's gateway, then each
+  other gateway still set up, so a late delivery from the one used before a switch still verifies; the gateway that
+  signed it is the one a dispute the webhook names is read from.
+* **`IPaymentGateway.VerifySignature(payload, signature, provider, facilityId)`** is a hex HMAC-SHA256, compared in constant time (Cashfree has no checkout signature: it answers false, and its payments are confirmed server to server):
   * `"{orderId}|{paymentId}"` (Checkout) and `"{plinkId}|{referenceId}|{status}|{paymentId}"` (payment-link callback)
     are verified with the **key secret**. This is exactly the convention Scheduling's portal prepayment and Billing
     use.
@@ -1320,8 +1367,15 @@ if the sandbox requires it. Also not built: loading a pre-authorisation, claim o
 the builders, sending it, and recording the insurer's answer on Billing's records.
 
 ### Not covered yet: payment gateway
-* **PayU** and other gateways: only Razorpay (and the simulator) implement `IPaymentProvider`, settlements and refund
-  status included.
+* **PayU** and other gateways: only Razorpay, Cashfree (and the simulator) implement `IPaymentProvider`, settlements
+  and refund status included.
+* **Cashfree's in-page checkout** (cashfree.js and `payment_session_id`) is not used: its SDKs do not document it, so
+  the portal opens Cashfree's hosted page for a link. **Answering a Cashfree dispute** (accepting it, uploading
+  documents) is done in Cashfree's dashboard, as with Razorpay.
+* **Cashfree facts the SDKs leave open** and HC360 reads defensively (check them in Cashfree's sandbox before going
+  live): whether ids come as numbers or strings; the unit of `x-webhook-timestamp` and whether retries sign again; the
+  names of the dispute, payment-link and failed-payment webhooks; the date format of the settlement filters; whether
+  `refund_details.refund_id` in a settlement is the merchant's id; `link_status` values beyond `ACTIVE`.
 * **Instant (on-demand) settlements** are read like any other settlement; HC360 does not request them.
 * **Settlement webhooks** (`settlement.processed`) are recorded but not acted on; the hourly reconciliation job reads
   the settlements instead.

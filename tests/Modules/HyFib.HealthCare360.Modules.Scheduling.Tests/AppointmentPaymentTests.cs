@@ -25,7 +25,7 @@ public sealed class AppointmentPaymentTests
         appointment.PaymentStatus.ShouldBe(AppointmentPaymentStatus.PaidOnline);
         appointment.GatewayPaymentId.ShouldBe("pay_1");
         appointment.Status.ShouldBe(AppointmentStatus.Confirmed);
-        await gateway.Received(1).GetStatusAsync("order_1", appointment.FacilityId, Arg.Any<CancellationToken>());
+        await gateway.Received(1).GetStatusAsync("order_1", Arg.Any<string?>(), appointment.FacilityId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class AppointmentPaymentTests
     {
         var appointment = BookedWithOrder("order_7");
         var gateway = Gateway(new PaymentStatusResult("order_7", status, null, null, null, "Closed."));
-        gateway.VerifySignature("order_7|pay_7", "sig", appointment.FacilityId).Returns(true);
+        gateway.VerifySignature("order_7|pay_7", "sig", Arg.Any<string?>(), appointment.FacilityId).Returns(true);
 
         var result = await Service(gateway).ConfirmAsync(appointment, "order_7", "pay_7", "sig", TestContext.Current.CancellationToken);
 
@@ -90,7 +90,7 @@ public sealed class AppointmentPaymentTests
     {
         var appointment = BookedWithOrder("order_3");
         var gateway = Substitute.For<IPaymentGateway>();
-        gateway.GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).ThrowsAsync(new HttpRequestException("offline"));
+        gateway.GetStatusAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).ThrowsAsync(new HttpRequestException("offline"));
 
         var result = await Service(gateway).VerifyWithGatewayAsync(appointment, TestContext.Current.CancellationToken);
 
@@ -106,7 +106,7 @@ public sealed class AppointmentPaymentTests
         var result = await Service(gateway).VerifyWithGatewayAsync(appointment, TestContext.Current.CancellationToken);
 
         result.Error!.Code.ShouldBe("payment.not_started");
-        await gateway.DidNotReceive().GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await gateway.DidNotReceive().GetStatusAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public sealed class AppointmentPaymentTests
         var result = await Service(gateway).VerifyWithGatewayAsync(appointment, TestContext.Current.CancellationToken);
 
         result.IsSuccess.ShouldBeTrue();
-        await gateway.DidNotReceive().GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await gateway.DidNotReceive().GetStatusAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public sealed class AppointmentPaymentTests
     {
         var appointment = BookedWithOrder("order_10");
         var gateway = Substitute.For<IPaymentGateway>();
-        gateway.GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).ThrowsAsync(new HttpRequestException("offline"));
+        gateway.GetStatusAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).ThrowsAsync(new HttpRequestException("offline"));
 
         var result = await Service(gateway).SettleOutstandingOrderAsync(appointment, TestContext.Current.CancellationToken);
 
@@ -183,7 +183,7 @@ public sealed class AppointmentPaymentTests
 
         (await Service(gateway).SettleOutstandingOrderAsync(appointment, TestContext.Current.CancellationToken)).IsSuccess.ShouldBeTrue();
 
-        await gateway.DidNotReceive().GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await gateway.DidNotReceive().GetStatusAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -199,8 +199,8 @@ public sealed class AppointmentPaymentTests
         taken.Value.ShouldBe(ReplacedOrderPayment.PaidTheBooking);
         appointment.GatewayPaymentId.ShouldBe("pay_12");
         appointment.PaidAt.ShouldBe(capturedAt);
-        await gateway.Received(1).GetStatusAsync("order_12", appointment.FacilityId, Arg.Any<CancellationToken>());
-        await gateway.DidNotReceive().GetStatusAsync("order_13", Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await gateway.Received(1).GetStatusAsync("order_12", Arg.Any<string?>(), appointment.FacilityId, Arg.Any<CancellationToken>());
+        await gateway.DidNotReceive().GetStatusAsync("order_13", Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -244,7 +244,7 @@ public sealed class AppointmentPaymentTests
         var appointment = BookedWithOrder("order_18");
         appointment.AttachPaymentOrder("simulator", "order_19", Start.AddDays(-2).AddMinutes(5));
         var gateway = Substitute.For<IPaymentGateway>();
-        gateway.GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).ThrowsAsync(new HttpRequestException("offline"));
+        gateway.GetStatusAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).ThrowsAsync(new HttpRequestException("offline"));
 
         var taken = await Service(gateway).CheckReplacedOrderAsync(appointment, appointment.ReplacedOrders.Single(), TestContext.Current.CancellationToken);
 
@@ -265,7 +265,7 @@ public sealed class AppointmentPaymentTests
         var taken = await Service(gateway).CheckReplacedOrderAsync(appointment, replaced, TestContext.Current.CancellationToken);
 
         taken.Value.ShouldBe(ReplacedOrderPayment.AlreadyRecorded);
-        await gateway.DidNotReceive().GetStatusAsync(Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await gateway.DidNotReceive().GetStatusAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     private static Appointment BookedWithOrder(string orderId)
@@ -278,7 +278,7 @@ public sealed class AppointmentPaymentTests
     private static IPaymentGateway Gateway(PaymentStatusResult status)
     {
         var gateway = Substitute.For<IPaymentGateway>();
-        gateway.GetStatusAsync(status.OrderId, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(status);
+        gateway.GetStatusAsync(status.OrderId, Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(status);
         return gateway;
     }
 

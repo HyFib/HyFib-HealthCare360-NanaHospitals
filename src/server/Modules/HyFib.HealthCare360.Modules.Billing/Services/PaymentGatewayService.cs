@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
@@ -152,7 +153,7 @@ public sealed class PaymentGatewayService(
         PaymentStatusResult status;
         try
         {
-            status = await gateway.GetStatusAsync(order.OrderId, order.FacilityId, ct);
+            status = await gateway.GetStatusAsync(order.OrderId, order.Provider, order.FacilityId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -220,8 +221,16 @@ public sealed class PaymentGatewayService(
             : (WebhookEventOutcome.Failed, fetched.Error!.Message);
     }
 
+    /// <summary>The webhook route of Cashfree's deliveries (its account's signature, its body's shape).</summary>
+    public const string CashfreeWebhooks = "cashfree";
+
+    /// <param name="provider">
+    /// Who sent it: <c>razorpay</c> (Razorpay's headers), <see cref="CashfreeWebhooks"/> (Cashfree's route), or
+    /// <c>gateway</c> (the facility's own gateway, such as the training gateway).
+    /// </param>
+    /// <param name="timestamp">The delivery's signed time, for a gateway that signs one (Cashfree).</param>
     public async Task<WebhookOutcome> HandleWebhookAsync(
-        string payload, string? signature, string? eventId, string provider, Guid? facilityHint, CancellationToken ct)
+        string payload, string? signature, string? timestamp, string? eventId, string provider, Guid? facilityHint, CancellationToken ct)
     {
         var gateway = services.GetService<IPaymentGateway>();
         if (gateway is null)
@@ -262,13 +271,18 @@ public sealed class PaymentGatewayService(
                 .FirstOrDefaultAsync(ct)
             : null;
         var facilityId = order?.FacilityId ?? booking?.FacilityId ?? replaced?.FacilityId ?? refund?.FacilityId ?? paidAt ?? facilityHint;
-        if (string.IsNullOrWhiteSpace(signature) || !gateway.VerifySignature(payload, signature, facilityId))
+        // The gateway whose account signed the delivery sent it: Cashfree on its own route; on the shared route (Razorpay's
+        // format, which the training gateway signs the same way) the facility's gateway, or one it used before a switch.
+        var sender = string.IsNullOrWhiteSpace(signature)
+            ? null
+            : gateway.VerifyWebhook(provider == CashfreeWebhooks ? provider : null, payload, signature, timestamp, facilityId);
+        if (sender is null)
         {
             logger.LogWarning("Rejected a payment-gateway webhook with a missing or invalid signature");
             return WebhookOutcome.InvalidSignature;
         }
 
-        var info = GatewayWebhookInfo.Read(payload);
+        var info = provider == CashfreeWebhooks ? GatewayWebhookInfo.ReadCashfree(payload) : GatewayWebhookInfo.Read(payload);
         var logged = await webhookLog.BeginAsync(provider, GatewayWebhookInfo.EventIdOf(eventId, payload), info, facilityId, ct);
         if (logged is not { } eventRowId)
         {
@@ -279,10 +293,11 @@ public sealed class PaymentGatewayService(
         string? note = null;
         try
         {
-            if (info.DisputeId is { } disputeId && info.EventType is { } type && type.StartsWith("payment.dispute.", StringComparison.Ordinal))
+            if (info.DisputeId is { } disputeId
+                && (provider == CashfreeWebhooks || (info.EventType is { } type && type.StartsWith("payment.dispute.", StringComparison.Ordinal))))
             {
-                // A dispute's event names the dispute; what it says is read from the gateway, not from the event.
-                (outcome, note) = await disputes.ReadGatewayDisputeAsync(disputeId, facilityId, ct);
+                // A dispute's event names the dispute; what it says is read from the gateway that sent it, not from the event.
+                (outcome, note) = await disputes.ReadGatewayDisputeAsync(disputeId, sender, facilityId, ct);
             }
             else if (order is not null)
             {
@@ -322,6 +337,13 @@ public sealed class PaymentGatewayService(
             {
                 (outcome, note) = await ReadSettlementAsync(info.SettlementId, facilityId, ct);
             }
+            else if (outcome == WebhookEventOutcome.Ignored && provider == CashfreeWebhooks && order is null && booking is null && replaced is null
+                     && refund is null && info.DisputeId is null)
+            {
+                // Cashfree's payment events name the link's order, not the link HC360 made: the facility's open
+                // Cashfree links and bookings are asked again instead.
+                (outcome, note) = await SyncOpenCashfreeAsync(facilityId, ct);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -336,8 +358,54 @@ public sealed class PaymentGatewayService(
     }
 
     /// <summary>
-    /// Provider-neutral: the ids and references present in a signed payload (at most 200 strings, depth-limited). Only
-    /// used to find which of our orders to re-check with the gateway.
+    /// A Cashfree webhook naming nothing HC360 holds: the facility's Cashfree links still awaiting payment (the newest
+    /// <see cref="OpenCashfreeChecks"/> of the last week) and its bookings awaiting a Cashfree payment are asked again,
+    /// server to server. Processed when one of them turned out paid.
+    /// </summary>
+    private async Task<(WebhookEventOutcome Outcome, string? Note)> SyncOpenCashfreeAsync(Guid? facilityId, CancellationToken ct)
+    {
+        if (facilityId is not { } facility)
+        {
+            return (WebhookEventOutcome.Ignored, "Names no order HC360 holds, and no facility to look in.");
+        }
+
+        var since = time.GetUtcNow().AddDays(-7);
+        var orders = await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(o => o.FacilityId == facility && o.Provider == CashfreeWebhooks && o.CreatedAt >= since
+                        && (o.Status == GatewayOrderStatus.Created || o.Status == GatewayOrderStatus.Failed))
+            .OrderByDescending(o => o.CreatedAt)
+            .Take(OpenCashfreeChecks)
+            .ToListAsync(ct);
+        var paid = 0;
+        foreach (var open in orders)
+        {
+            var synced = await SyncAsync(open, ct);
+            paid += synced.IsSuccess && synced.Value.Status == GatewayOrderStatus.Paid ? 1 : 0;
+        }
+
+        var bookings = await db.Set<Appointment>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(a => a.FacilityId == facility && a.PaymentProvider == CashfreeWebhooks && a.GatewayOrderId != null
+                        && a.PaymentStatus == AppointmentPaymentStatus.Unpaid && a.CreatedAt >= since)
+            .OrderByDescending(a => a.CreatedAt)
+            .Take(OpenCashfreeChecks)
+            .ToListAsync(ct);
+        foreach (var booking in bookings)
+        {
+            paid += (await prepayments.ConfirmAsync(booking, ct)).IsSuccess ? 1 : 0;
+        }
+
+        return paid > 0
+            ? (WebhookEventOutcome.Processed, $"{paid} open Cashfree payment(s) found paid.")
+            : (WebhookEventOutcome.Ignored, $"Asked Cashfree again about {orders.Count + bookings.Count} open payment(s); none paid yet.");
+    }
+
+    /// <summary>The most open Cashfree links (and bookings) one unplaced webhook asks about again.</summary>
+    internal const int OpenCashfreeChecks = 20;
+
+    /// <summary>
+    /// Provider-neutral: the ids and references present in a signed payload (at most 200 strings, depth-limited; and a
+    /// whole number under a name ending in <c>_id</c>, since Cashfree sends some ids as numbers, never an amount). Only used
+    /// to find which of our orders to re-check with the gateway.
     /// </summary>
     internal static IReadOnlyList<string> ExtractCandidates(string payload)
     {
@@ -359,7 +427,7 @@ public sealed class PaymentGatewayService(
         o.Id, o.Provider, o.Kind, o.OrderId, o.Amount, o.Currency, o.Status, o.LinkUrl, o.CheckoutKey, o.BillId, o.IpAccountId, o.ReceiptId, o.Channel,
         o.CreatedAt, o.PaidAt, o.LastError, o.GatewayPaymentId);
 
-    private static void Collect(JsonElement element, HashSet<string> values, int depth)
+    private static void Collect(JsonElement element, HashSet<string> values, int depth, string? name = null)
     {
         if (depth > 16 || values.Count >= MaxCandidates)
         {
@@ -371,7 +439,7 @@ public sealed class PaymentGatewayService(
             case JsonValueKind.Object:
                 foreach (var property in element.EnumerateObject())
                 {
-                    Collect(property.Value, values, depth + 1);
+                    Collect(property.Value, values, depth + 1, property.Name);
                 }
 
                 break;
@@ -386,6 +454,11 @@ public sealed class PaymentGatewayService(
 
             case JsonValueKind.String when element.GetString() is { Length: > 3 and <= 128 } text:
                 values.Add(text);
+                break;
+
+            case JsonValueKind.Number when name is not null && name.EndsWith("_id", StringComparison.Ordinal)
+                                           && element.TryGetInt64(out var number) && number > 0:
+                values.Add(number.ToString(CultureInfo.InvariantCulture));
                 break;
         }
     }
