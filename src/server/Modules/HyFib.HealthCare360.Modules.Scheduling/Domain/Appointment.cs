@@ -134,6 +134,9 @@ public sealed class Appointment : AuditableEntity, IFacilityScoped
     public decimal? AmountPaid { get; set; }
     public DateTimeOffset? PaidAt { get; set; }
 
+    /// <summary>The gateway orders this booking had before <see cref="GatewayOrderId"/>, which may still be paid.</summary>
+    public List<ReplacedPaymentOrder> ReplacedOrders { get; } = [];
+
     public Guid? VisitId { get; set; }
     public DateTimeOffset? CheckedInAt { get; set; }
     public DateTimeOffset? ConsultationStartedAt { get; set; }
@@ -386,7 +389,11 @@ public sealed class Appointment : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    public Result AttachPaymentOrder(string provider, string orderId)
+    /// <summary>
+    /// The gateway order the patient pays this booking with. An order it replaces is remembered (see
+    /// <see cref="ReplacedOrders"/>): the gateway can still take money on it.
+    /// </summary>
+    public Result AttachPaymentOrder(string provider, string orderId, DateTimeOffset now)
     {
         if (PaymentStatus == AppointmentPaymentStatus.PaidOnline)
         {
@@ -398,10 +405,72 @@ public sealed class Appointment : AuditableEntity, IFacilityScoped
             return NotOpen("paid for");
         }
 
+        Remember(GatewayOrderId, orderId, now);
         PaymentProvider = provider;
         GatewayOrderId = orderId;
         PaymentStatus = AppointmentPaymentStatus.Unpaid;
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Records a payment the gateway took on <paramref name="order"/>, an order this booking had before its current one.
+    /// A booking no other payment has paid takes it as its own: that order becomes the booking's again, and the one that
+    /// had replaced it is remembered in its place, so money taken on that one later is found too. On a booking another
+    /// payment already paid, it is a second payment: recorded on the order and raised (<see cref="AppointmentPaidTwice"/>)
+    /// for Billing to keep as an advance and refund. Recording the same payment again changes nothing.
+    /// </summary>
+    public Result<ReplacedOrderPayment> TakeReplacedOrderPayment(
+        ReplacedPaymentOrder order, string paymentId, decimal amount, DateTimeOffset paidAt, DateTimeOffset now)
+    {
+        if (order.AppointmentId != Id)
+        {
+            return Error.Rule("payment.order_mismatch", "This payment does not belong to this appointment.");
+        }
+
+        if (order.GatewayPaymentId is { } recorded)
+        {
+            return string.Equals(recorded, paymentId, StringComparison.Ordinal)
+                ? ReplacedOrderPayment.AlreadyRecorded
+                : Error.Conflict("payment.order_paid", "Another payment is already recorded on this order.");
+        }
+
+        if (PaymentStatus == AppointmentPaymentStatus.PaidOnline)
+        {
+            if (string.Equals(GatewayPaymentId, paymentId, StringComparison.Ordinal))
+            {
+                return ReplacedOrderPayment.AlreadyRecorded;
+            }
+
+            order.GatewayPaymentId = paymentId;
+            order.AmountPaid = Money.Round(amount);
+            order.PaidAt = paidAt;
+            Raise(new AppointmentPaidTwice(
+                Id, Number, PatientId, FacilityId, order.AmountPaid.Value, order.Provider ?? PaymentProvider, order.OrderId, paymentId, paidAt));
+            return ReplacedOrderPayment.PaidTwice;
+        }
+
+        ReplacedOrders.Remove(order);
+        Remember(GatewayOrderId, order.OrderId, now);
+        PaymentProvider = order.Provider ?? PaymentProvider;
+        GatewayOrderId = order.OrderId;
+        var paid = MarkPaidOnline(order.OrderId, paymentId, amount, paidAt);
+        return paid.IsFailure ? paid.Error! : ReplacedOrderPayment.PaidTheBooking;
+    }
+
+    /// <summary>Remembers the booking's order <paramref name="previous"/> when <paramref name="next"/> takes its place.</summary>
+    private void Remember(string? previous, string next, DateTimeOffset now)
+    {
+        if (previous is not null && !string.Equals(previous, next, StringComparison.Ordinal))
+        {
+            ReplacedOrders.Add(new ReplacedPaymentOrder
+            {
+                AppointmentId = Id,
+                FacilityId = FacilityId,
+                Provider = PaymentProvider,
+                OrderId = previous,
+                ReplacedAt = now,
+            });
+        }
     }
 
     /// <summary>
@@ -487,6 +556,22 @@ public sealed record AppointmentPaymentCaptured(
     string AppointmentNumber,
     Guid PatientId,
     Guid PractitionerId,
+    Guid FacilityId,
+    decimal Amount,
+    string? Provider,
+    string GatewayOrderId,
+    string GatewayPaymentId,
+    DateTimeOffset PaidAt) : DomainEvent;
+
+/// <summary>
+/// A booking another payment had already paid online was paid again, on an order it had before its current one (the
+/// patient restarted the payment and paid both). Billing keeps the second payment as a patient advance and asks for its
+/// refund, which a second person approves.
+/// </summary>
+public sealed record AppointmentPaidTwice(
+    Guid AppointmentId,
+    string AppointmentNumber,
+    Guid PatientId,
     Guid FacilityId,
     decimal Amount,
     string? Provider,

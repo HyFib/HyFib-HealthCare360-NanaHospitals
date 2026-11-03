@@ -42,9 +42,14 @@ internal sealed class SimulatorPaymentGateway(SimulatorInbox inbox, SimulatorSig
             SimulatorTransactionStatus.Refunded => GatewayPaymentStatus.Refunded,
             SimulatorTransactionStatus.Captured => GatewayPaymentStatus.Captured,
             SimulatorTransactionStatus.Cancelled => GatewayPaymentStatus.Cancelled,
+
+            // An order nobody has paid, as Razorpay reports one whose checkout was closed unpaid.
+            SimulatorTransactionStatus.Created => GatewayPaymentStatus.Created,
             _ => GatewayPaymentStatus.Pending,
         };
-        return new PaymentStatusResult(orderId, status, transaction.PaymentId, transaction.Amount - transaction.RefundedAmount, "simulator", null, transaction.CreatedAt);
+        return new PaymentStatusResult(
+            orderId, status, status == GatewayPaymentStatus.Created ? null : transaction.PaymentId, transaction.Amount - transaction.RefundedAmount,
+            "simulator", null, transaction.CreatedAt);
     }
 
     /// <summary>

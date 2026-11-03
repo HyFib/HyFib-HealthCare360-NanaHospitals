@@ -840,7 +840,10 @@ public sealed class GatewaySettlementService(
             lines.Where(l => l.OrderId is not null).Select(l => l.OrderId!).Distinct().ToList(),
             ct);
 
-    /// <summary>Where unmatched money was meant to go: the payment link or checkout, or the prepaid booking, that took it.</summary>
+    /// <summary>
+    /// Where unmatched money was meant to go: the payment link or checkout, or the prepaid booking, that took it, also by
+    /// an order the booking had before its current one.
+    /// </summary>
     private async Task<SettlementTargets> FindTargetsAsync(IReadOnlyList<string> paymentIds, IReadOnlyList<string> orderIds, CancellationToken ct)
     {
         if (paymentIds.Count == 0 && orderIds.Count == 0)
@@ -856,7 +859,11 @@ public sealed class GatewaySettlementService(
             .Where(a => (a.GatewayOrderId != null && orderIds.Contains(a.GatewayOrderId)) || (a.GatewayPaymentId != null && paymentIds.Contains(a.GatewayPaymentId)))
             .Select(a => new SettlementTarget(a.FacilityId, a.GatewayOrderId, a.GatewayPaymentId, null, a.Id, null, null))
             .ToListAsync(ct);
-        return new SettlementTargets(orders, bookings);
+        var earlier = await db.Set<ReplacedPaymentOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(o => orderIds.Contains(o.OrderId) || (o.GatewayPaymentId != null && paymentIds.Contains(o.GatewayPaymentId)))
+            .Select(o => new SettlementTarget(o.FacilityId, o.OrderId, o.GatewayPaymentId, null, o.AppointmentId, null, null))
+            .ToListAsync(ct);
+        return new SettlementTargets(orders, [.. bookings, .. earlier]);
     }
 
     private static string Describe(int settlements, int added, int opened) => settlements switch

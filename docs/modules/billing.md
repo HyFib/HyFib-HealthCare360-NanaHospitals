@@ -306,7 +306,7 @@ note of 10 to 500 characters saying how it was found.
 | POST | `/payment-links` | `payments.collect` / `deposits` | `CreatePaymentLinkRequest` → 201 `GatewayOrderDto` (SMS/WhatsApp template `payment.link`) |
 | GET | `/payment-links?billId&ipAccountId&status` (paged) | `payments.collect` / `charges.read` | → `PagedResult<GatewayOrderDto>` (`paidAt` = when the gateway took the payment; `lastError` = why it failed, expired or was cancelled, or why its paid receipt could not be recorded yet; `paymentId`) |
 | POST | `/payment-links/{id}/refresh` | `payments.collect` / `deposits` | → `GatewayOrderDto` (asks the gateway for the real status: records a captured payment, or marks the order `Failed`, `Expired` or `Cancelled`; for a paid order whose receipt could not be recorded, it tries again) |
-| POST | `/api/v1/billing/webhooks/payment-gateway` (optional `?facility=<id>`) | anonymous, rate limit `partner`; the signature is checked with the merchant account of the facility that owns the order, prepaid booking or refund named in the payload (`?facility=` only when the payload names none of them) | raw provider JSON (≤ 64 KB) → 200 `WebhookAck`; 401 bad signature (`X-Razorpay-Signature` / `X-PayU-Signature` / `X-Webhook-Signature` / `X-Signature`), 503 no gateway, 413 too large. The status is always re-fetched from the gateway; receipts are idempotent on the gateway payment id. Each verified event is kept by its id (`X-Razorpay-Event-Id`, else a SHA-256 of the body) in `gateway_webhook_events`: a redelivery of an event already handled gets `processed: false` and changes nothing. A webhook for a portal booking's prepayment confirms the booking and receipts its advance; one for a gateway refund updates the refund's status. |
+| POST | `/api/v1/billing/webhooks/payment-gateway` (optional `?facility=<id>`) | anonymous, rate limit `partner`; the signature is checked with the merchant account of the facility that owns the order, prepaid booking or refund named in the payload (`?facility=` only when the payload names none of them) | raw provider JSON (≤ 64 KB) → 200 `WebhookAck`; 401 bad signature (`X-Razorpay-Signature` / `X-PayU-Signature` / `X-Webhook-Signature` / `X-Signature`), 503 no gateway, 413 too large. The status is always re-fetched from the gateway; receipts are idempotent on the gateway payment id. Each verified event is kept by its id (`X-Razorpay-Event-Id`, else a SHA-256 of the body) in `gateway_webhook_events`: a redelivery of an event already handled gets `processed: false` and changes nothing. A webhook for a portal booking's prepayment confirms the booking and receipts its advance, also for an order the booking had before its current one (the booking's own payment, or a second payment kept as an advance with its refund asked for); one for a gateway refund updates the refund's status. |
 
 ### Cash counter — `/api/v1/billing/shifts`, day-end
 | Method | Path | Permission | Request → response |
@@ -517,7 +517,7 @@ Every route needs `billing.gateway.reconcile` and works on the signed-in facilit
 | POST | `/settlements/fetch` | `FetchSettlementsRequest(date)` → `SettlementFetchResult(date, settlements, added, updated, message)`; reads that day from the gateway now (today or up to a year back). 422 `billing.gateway_unavailable` with the gateway's reason |
 | GET | `/exceptions?status&kind` (paged) | → `PagedResult<GatewayDiscrepancyDto>`: open ones worst first (kind, then amount, then age); `status=Resolved` newest first with who resolved it and the note |
 | GET | `/exceptions/{id}` | → `GatewayDiscrepancyDto` (summary in words, amounts in HC360 and at the gateway, bill, receipt, refund and appointment by number, `canRecordReceipt`, `version`) |
-| POST | `/exceptions/{id}/record-receipt` | → `DiscrepancyActionResult(message, discrepancy)`; only for money taken without a receipt. Records the receipt against its bill, admission or booking after asking the gateway; if that can no longer take it (a closed admission, an older order of a booking), keeps it as a patient advance. 422 `billing.payment_unlinked` when HC360 does not know what the payment was for. Audited `billing.gateway.receipt_recorded` |
+| POST | `/exceptions/{id}/record-receipt` | → `DiscrepancyActionResult(message, discrepancy)`; only for money taken without a receipt. Records the receipt against its bill, admission or booking after asking the gateway; a payment on an order a booking had before its current one is recorded as its webhook would have (the booking's own, or a second payment kept as an advance with its refund asked for); if the bill, admission or booking can no longer take it (a closed admission), keeps it as a patient advance. 422 `billing.payment_unlinked` when HC360 does not know what the payment was for. Audited `billing.gateway.receipt_recorded` |
 | POST | `/exceptions/{id}/retry` | → `DiscrepancyActionResult`; by kind: asks the gateway again, reads the settlements of the next five days again, sends a failed gateway refund again (audited `billing.refund.gateway_retried`; 422 `billing.refund_retrying` while another request is sending it), or matches the settled transaction again. 422 `billing.nothing_to_retry` for a settlement-level difference |
 | POST | `/exceptions/{id}/resolve` | `ResolveDiscrepancyRequest(note, version)` (5–500 characters) → `GatewayDiscrepancyDto`; 409 when someone changed it meanwhile. Audited `billing.gateway.exception_resolved` |
 
@@ -921,6 +921,7 @@ Handled (all inside the raising transaction; handlers stage changes and never sa
 | `PatientDischarged` | Closes a settled account or alerts billing about dues |
 | `PatientsMerged` | Re-points every billing row (incl. advances, policies, claims) to the surviving UHID |
 | `AppointmentPaymentCaptured` (Scheduling) | Queues `billing.appointment.prepayment` (outbox) |
+| `AppointmentPaidTwice` (Scheduling) | Queues the same message for the second payment, which is kept as an advance with its refund asked for |
 | `AppointmentCancelled` | For a cancelled (not rescheduled) prepaid booking, queues the same message to refund it |
 | `BillFinalized`, `BillPaid`, `BillCancelled`, `BillPaymentReversed` | Doctor-fee accrual (idempotent per bill line; a line whose accrual was reversed accrues again) and reversal |
 
@@ -937,6 +938,18 @@ booking ends up cancelled, a refund request (purpose `Advance`) is raised for ap
 A portal patient who pays and then closes the page is still credited: the gateway's webhook for the booking's order,
 or the reconciliation job, confirms the booking through Scheduling's `AppointmentPaymentService` and receipts the
 advance at once (`PrepaymentChecker`). The advance is dated when the gateway took the money.
+
+**A booking paid twice.** A patient who starts the payment again gets a new gateway order, and Scheduling remembers the
+one it replaced (`ReplacedPaymentOrder`): the first checkout, left open on another tab or phone, can still be paid. The
+gateway's webhook for that order, the reconciliation job (every run for two hours after the order was replaced, then
+hourly for three days) or "Record the receipt" on the settlement's exception asks the gateway about it
+(`PrepaymentChecker.ConfirmReplacedOrderAsync`). Money taken on it pays a booking nothing else has paid. On a booking
+another payment already paid, it is a **second payment**: receipted at once as a patient advance linked to the booking
+("Second online payment for appointment …, on an earlier order (to be refunded)"), dated when the gateway took it, with
+a refund request of all of it raised for approval ("Appointment … was paid twice: payment … , on an earlier order, is
+returned"). A second person approves it, and paid by `PaymentGateway` it is reversed on that payment; the payment that
+paid the booking stays. Each step is keyed on the gateway payment id, so a webhook delivered again, the job and the
+settlement record nothing twice.
 
 ## Gateway reconciliation (INT-PG)
 
@@ -970,7 +983,7 @@ its own receipts; the facility holding the settlement also takes any settlement-
 difference. A facility that does not hold a settlement sees only its own transactions and their totals in it, and
 each facility is alerted about the exceptions that are its own.
 
-**Matching** (by gateway id, prepaid bookings included): a payment line matches the receipt payment whose
+**Matching** (by gateway id, prepaid bookings and the orders they had before included): a payment line matches the receipt payment whose
 `ExternalId` is that payment id (mode `PaymentGateway`); a refund line matches the refund whose `GatewayRefundId` is
 that refund id. A line is `Matched`, `AmountDiffers`, `NoReceipt`, `NoRefund`, or `NotApplicable` (an adjustment or
 transfer by the gateway). Recording a receipt later matches the line again and raises or clears its exceptions (an
@@ -1222,8 +1235,8 @@ the bill's day again, never to delete it.
   `PlatformOptions.RunsJobs`), posts again a day someone posted before it ended, and queues again days stuck in Queued.
 * `billing.tally.check` — reconciles a posted day with its records and with Tally; not retried.
 * `billing.appointment.prepayment` — see above.
-* `GatewayReconciliationJob` — re-checks open online payments and prepaid bookings, follows gateway refunds, reads
-  settlements; see [Gateway reconciliation](#gateway-reconciliation-int-pg).
+* `GatewayReconciliationJob` — re-checks open online payments, prepaid bookings and the orders they had before, follows
+  gateway refunds, reads settlements; see [Gateway reconciliation](#gateway-reconciliation-int-pg).
 * `PosRecheckJob` — every minute where `PlatformOptions.RunsJobs` is set, follows the terminal sales the counter
   stopped polling (the screen closed, the browser crashed, the cashier moved on while the customer paid). Sales started
   more than a minute and less than two days ago that are still `Initiated` or `AwaitingCustomer`, or `Approved` without
@@ -1355,5 +1368,5 @@ indexed where set). Notes and IRNs from before keep zeros and nulls.
 * **Part of a card or UPI report** cannot be withdrawn: the whole report is, and a corrected file imported in its place.
 * **Chargebacks and disputes** arrive as gateway adjustments and are listed as amount differences; there is no dispute
   workflow.
-* **A payment on an older order of a prepaid booking** (the patient restarted the checkout and paid both) is found by
-  the settlement match, and "Record the receipt" keeps it as a patient advance for staff to refund.
+* **Orders replaced before migration `AppointmentReplacedOrders`** are not remembered: a payment on one is found only
+  by the settlement match, as a payment without a receipt that names no booking.

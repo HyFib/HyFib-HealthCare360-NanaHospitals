@@ -231,6 +231,7 @@ public sealed class PaymentGatewayService(
         var candidates = ExtractCandidates(payload);
         GatewayOrder? order = null;
         Appointment? booking = null;
+        ReplacedPaymentOrder? replaced = null;
         Refund? refund = null;
         if (candidates.Count > 0)
         {
@@ -240,11 +241,17 @@ public sealed class PaymentGatewayService(
                 ? null
                 : await db.Set<Appointment>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
                     .FirstOrDefaultAsync(a => a.GatewayOrderId != null && candidates.Contains(a.GatewayOrderId), ct);
+
+            // An order a booking had before its current one: the patient may have paid it after all.
+            replaced = order is not null || booking is not null
+                ? null
+                : await db.Set<ReplacedPaymentOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                    .FirstOrDefaultAsync(o => candidates.Contains(o.OrderId), ct);
             refund = await db.Set<Refund>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
                 .FirstOrDefaultAsync(r => r.GatewayRefundId != null && candidates.Contains(r.GatewayRefundId), ct);
         }
 
-        var facilityId = order?.FacilityId ?? booking?.FacilityId ?? refund?.FacilityId ?? facilityHint;
+        var facilityId = order?.FacilityId ?? booking?.FacilityId ?? replaced?.FacilityId ?? refund?.FacilityId ?? facilityHint;
         if (string.IsNullOrWhiteSpace(signature) || !gateway.VerifySignature(payload, signature, facilityId))
         {
             logger.LogWarning("Rejected a payment-gateway webhook with a missing or invalid signature");
@@ -278,6 +285,16 @@ public sealed class PaymentGatewayService(
                     : confirmed.Error!.Code == "payment.not_captured" ? WebhookEventOutcome.Ignored
                     : WebhookEventOutcome.Failed;
                 note = confirmed.IsSuccess ? $"Prepaid booking {booking.Number} confirmed." : confirmed.Error!.Message;
+            }
+            else if (replaced is not null)
+            {
+                var owner = await db.Set<Appointment>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                    .FirstAsync(a => a.Id == replaced.AppointmentId, ct);
+                var taken = await prepayments.ConfirmReplacedOrderAsync(owner, replaced, ct);
+                outcome = taken.IsSuccess ? WebhookEventOutcome.Processed
+                    : taken.Error!.Code == "payment.not_captured" ? WebhookEventOutcome.Ignored
+                    : WebhookEventOutcome.Failed;
+                note = taken.IsSuccess ? taken.Value : taken.Error!.Message;
             }
 
             if (refund is not null && await refundTracker.FollowAsync(refund, ct))

@@ -28,9 +28,10 @@ public sealed class GatewayDiscrepancyActions(
     private const int RecheckDays = 5;
 
     /// <summary>
-    /// Records the receipt for money the gateway took that no receipt records. The gateway is asked first; if the bill
-    /// or admission can no longer take the money (or the payment was made on an older order of a booking), it is kept as
-    /// a patient advance, to be adjusted or refunded.
+    /// Records the receipt for money the gateway took that no receipt records. The gateway is asked first; a payment on
+    /// an order a booking had before its current one pays the booking, or is a second payment kept as an advance with its
+    /// refund asked for; if the bill, admission or booking can no longer take the money, it is kept as a patient advance,
+    /// to be adjusted or refunded.
     /// </summary>
     public async Task<Result<DiscrepancyActionResult>> RecordReceiptAsync(Guid id, CancellationToken ct)
     {
@@ -134,6 +135,28 @@ public sealed class GatewayDiscrepancyActions(
             if (booking is null)
             {
                 return Error.NotFound(nameof(Appointment), appointmentId);
+            }
+
+            // Paid on an order the booking had before its current one: recorded as the webhook would have, as the
+            // booking's own payment when nothing else paid it, or as a second payment with its refund asked for.
+            var earlier = discrepancy.OrderId is { } orderId && orderId != booking.GatewayOrderId
+                ? await db.Set<ReplacedPaymentOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                    .FirstOrDefaultAsync(o => o.AppointmentId == booking.Id && o.OrderId == orderId, ct)
+                : null;
+            if (earlier is not null)
+            {
+                var taken = await prepayments.ConfirmReplacedOrderAsync(booking, earlier, ct);
+                if (taken.IsSuccess && await ReceiptForAsync(paymentId, ct) is not null)
+                {
+                    return taken.Value;
+                }
+
+                if (!allowAdvance)
+                {
+                    return taken.IsFailure
+                        ? taken.Error!
+                        : Error.Rule("billing.receipt_not_recorded", "The gateway reports another payment on this order. Record the receipt to keep this one as an advance.");
+                }
             }
 
             var ownPayment = booking.GatewayPaymentId == paymentId

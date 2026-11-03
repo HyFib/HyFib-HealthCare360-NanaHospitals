@@ -155,7 +155,7 @@ public sealed class AppointmentTests
     public void Rescheduling_carries_an_online_prepayment_to_the_new_booking()
     {
         var original = Booked(Start, AppointmentChannel.Portal);
-        original.AttachPaymentOrder("razorpay", "order_1").IsSuccess.ShouldBeTrue();
+        original.AttachPaymentOrder("razorpay", "order_1", Start.AddDays(-3)).IsSuccess.ShouldBeTrue();
         original.MarkPaidOnline("order_1", "pay_1", 600m, Start.AddDays(-2)).IsSuccess.ShouldBeTrue();
         var replacement = Booked(Start.AddDays(1), AppointmentChannel.Portal, number: "NHAP260000002");
 
@@ -171,7 +171,7 @@ public sealed class AppointmentTests
     public void Verified_online_payment_confirms_the_booking_and_notifies_billing()
     {
         var appointment = Booked(Start, AppointmentChannel.Portal);
-        appointment.AttachPaymentOrder("razorpay", "order_9");
+        appointment.AttachPaymentOrder("razorpay", "order_9", Start.AddDays(-3));
         appointment.ClearDomainEvents();
 
         appointment.MarkPaidOnline("order_9", "pay_9", 600m, Start.AddDays(-1)).IsSuccess.ShouldBeTrue();
@@ -187,7 +187,7 @@ public sealed class AppointmentTests
     public void Payment_for_another_order_is_rejected_and_repeats_are_harmless()
     {
         var appointment = Booked(Start, AppointmentChannel.Portal);
-        appointment.AttachPaymentOrder("razorpay", "order_9");
+        appointment.AttachPaymentOrder("razorpay", "order_9", Start.AddDays(-3));
 
         appointment.MarkPaidOnline("order_X", "pay_9", 600m, Start).Error!.Code.ShouldBe("payment.order_mismatch");
         appointment.MarkPaidOnline("order_9", "pay_9", 600m, Start).IsSuccess.ShouldBeTrue();
@@ -199,7 +199,7 @@ public sealed class AppointmentTests
     public void Choosing_to_pay_at_the_hospital_never_downgrades_a_paid_booking()
     {
         var appointment = Booked(Start, AppointmentChannel.Portal);
-        appointment.AttachPaymentOrder("razorpay", "order_9");
+        appointment.AttachPaymentOrder("razorpay", "order_9", Start.AddDays(-3));
         appointment.MarkPaidOnline("order_9", "pay_9", 600m, Start);
 
         appointment.ChoosePayAtHospital();

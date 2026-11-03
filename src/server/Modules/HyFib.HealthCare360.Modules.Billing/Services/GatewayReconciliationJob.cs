@@ -138,6 +138,52 @@ public sealed class GatewayReconciliationRunner(
         return checkedCount;
     }
 
+    /// <summary>
+    /// Orders bookings had before their current one, which the patient may still pay (a checkout left open on another
+    /// tab or phone): asked about like an unpaid booking's, every run for two hours after they were replaced and then
+    /// hourly for three days, so money taken on one is recorded even if its webhook never comes, as the booking's
+    /// payment or as a second payment kept as an advance with its refund asked for. The settlement match finds any
+    /// paid later.
+    /// </summary>
+    public async Task<int> RecheckReplacedOrdersAsync(CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        var since = now.AddDays(-3);
+        var open = await db.Set<ReplacedPaymentOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(o => o.GatewayPaymentId == null && o.ReplacedAt >= since)
+            .OrderByDescending(o => o.ReplacedAt)
+            .Select(o => new { o.Id, o.ReplacedAt })
+            .Take(Batch * 4)
+            .ToListAsync(ct);
+        var checkedCount = 0;
+        foreach (var due in open.Where(o => IsBookingDue(o.ReplacedAt, now)).Take(Batch))
+        {
+            // Loaded one at a time, with its booking: a step that fails clears the unit of work.
+            var order = await db.Set<ReplacedPaymentOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .FirstOrDefaultAsync(o => o.Id == due.Id && o.GatewayPaymentId == null, ct);
+            var booking = order is null
+                ? null
+                : await db.Set<Appointment>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstOrDefaultAsync(a => a.Id == order.AppointmentId, ct);
+            if (order is null || booking is null)
+            {
+                continue;
+            }
+
+            checkedCount++;
+            try
+            {
+                await prepayments.ConfirmReplacedOrderAsync(booking, order, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Could not re-check earlier gateway order {OrderId} of appointment {AppointmentId}", order.OrderId, booking.Id);
+                db.ChangeTracker.Clear();
+            }
+        }
+
+        return checkedCount;
+    }
+
     /// <summary>Gateway refunds sent in the last month (paid out or sent again) the bank has not confirmed.</summary>
     public async Task<int> FollowRefundsAsync(CancellationToken ct)
     {
@@ -255,9 +301,9 @@ public sealed class GatewayReconciliationRunner(
 
 /// <summary>
 /// The gateway reconciliation job (INT-PG): every 5 minutes it asks the gateway about payments still open (links,
-/// portal checkouts, prepaid bookings); hourly, and once at start, it follows gateway refunds, reads the settlements of
-/// today and yesterday, and lists receipts still unsettled. Runs only on nodes that run jobs
-/// (<see cref="PlatformOptions.RunsJobs"/>); every step is idempotent, so a second worker does no harm.
+/// portal checkouts, prepaid bookings and the orders they had before); hourly, and once at start, it follows gateway
+/// refunds, reads the settlements of today and yesterday, and lists receipts still unsettled. Runs only on nodes that
+/// run jobs (<see cref="PlatformOptions.RunsJobs"/>); every step is idempotent, so a second worker does no harm.
 /// </summary>
 internal sealed class GatewayReconciliationJob(
     IServiceScopeFactory scopeFactory,
@@ -280,6 +326,7 @@ internal sealed class GatewayReconciliationJob(
             first = false;
             await StepAsync("re-check open online payments", (runner, ct) => runner.RecheckOrdersAsync(ct), stoppingToken);
             await StepAsync("re-check prepaid bookings", (runner, ct) => runner.RecheckBookingsAsync(ct), stoppingToken);
+            await StepAsync("re-check bookings' earlier orders", (runner, ct) => runner.RecheckReplacedOrdersAsync(ct), stoppingToken);
             if (hourly)
             {
                 await StepAsync("follow gateway refunds", (runner, ct) => runner.FollowRefundsAsync(ct), stoppingToken);

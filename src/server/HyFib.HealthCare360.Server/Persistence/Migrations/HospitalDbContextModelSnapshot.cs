@@ -29708,6 +29708,73 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("doctor_schedules", "scheduling");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Scheduling.Domain.ReplacedPaymentOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal?>("AmountPaid")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount_paid");
+
+                    b.Property<Guid>("AppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("appointment_id");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("GatewayPaymentId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("gateway_payment_id");
+
+                    b.Property<string>("OrderId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("order_id");
+
+                    b.Property<DateTimeOffset?>("PaidAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("paid_at");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("provider");
+
+                    b.Property<DateTimeOffset>("ReplacedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("replaced_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_appointment_replaced_orders");
+
+                    b.HasIndex("AppointmentId")
+                        .HasDatabaseName("ix_appointment_replaced_orders_appointment_id");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_appointment_replaced_orders_facility_id");
+
+                    b.HasIndex("GatewayPaymentId")
+                        .HasDatabaseName("ix_appointment_replaced_orders_gateway_payment_id")
+                        .HasFilter("gateway_payment_id IS NOT NULL");
+
+                    b.HasIndex("OrderId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_appointment_replaced_orders_order_id");
+
+                    b.HasIndex("ReplacedAt")
+                        .HasDatabaseName("ix_appointment_replaced_orders_replaced_at")
+                        .HasFilter("gateway_payment_id IS NULL");
+
+                    b.ToTable("appointment_replaced_orders", "scheduling");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Scheduling.Domain.ScheduleException", b =>
                 {
                     b.Property<Guid>("Id")
@@ -45944,6 +46011,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_appointments_patients_patient_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Scheduling.Domain.ReplacedPaymentOrder", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Scheduling.Domain.Appointment", null)
+                        .WithMany("ReplacedOrders")
+                        .HasForeignKey("AppointmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_appointment_replaced_orders_appointments_appointment_id");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Scheduling.Domain.WaitlistEntry", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
@@ -47110,6 +47187,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Quality.Domain.Investigation", b =>
                 {
                     b.Navigation("Factors");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Scheduling.Domain.Appointment", b =>
+                {
+                    b.Navigation("ReplacedOrders");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.GoodsReceiptNote", b =>
