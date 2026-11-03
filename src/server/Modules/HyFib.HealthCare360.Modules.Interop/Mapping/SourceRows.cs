@@ -446,3 +446,35 @@ internal sealed record DischargeSummaryRow
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
+/// <summary>
+/// A signed clinical note (Clinical <c>ClinicalNote</c>): progress, procedure, referral, counselling or other. Its
+/// encounter and admission are kept only when they are the patient's own.
+/// </summary>
+internal sealed record ClinicalNoteRow
+{
+    public required Guid Id { get; init; }
+    public required Guid PatientId { get; init; }
+    public Guid FacilityId { get; init; }
+    public Guid? EncounterId { get; init; }
+    public Guid? AdmissionId { get; init; }
+    public ClinicalNoteType Type { get; init; }
+    public string? Title { get; init; }
+    public string Body { get; init; } = string.Empty;
+    public Guid? AuthorPractitionerId { get; init; }
+
+    /// <summary>The account that wrote the note, by name (for a note written by staff who are not practitioners).</summary>
+    public string? AuthorUserName { get; init; }
+
+    /// <summary>The practitioner of the account that signed the note, when it is one.</summary>
+    public Guid? SignedByPractitionerId { get; init; }
+
+    public string? SignedByUserName { get; init; }
+
+    /// <summary>The note this one is an addendum to.</summary>
+    public Guid? AmendsNoteId { get; init; }
+
+    public DateTimeOffset SignedAt { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
+}
+

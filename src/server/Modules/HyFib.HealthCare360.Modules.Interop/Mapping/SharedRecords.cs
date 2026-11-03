@@ -24,15 +24,15 @@ internal static class SharedRecords
             ? SharedRecordKind.LabResults
             : SharedRecordKind.VitalSigns,
         R4.DiagnosticReport report => HasCategory(report.Category, "LAB") ? SharedRecordKind.LabResults : SharedRecordKind.ScansAndHeartTests,
-        R4.DocumentReference => SharedRecordKind.Documents,
+        R4.DocumentReference document => KindOf(document),
         R4.Immunization => SharedRecordKind.Immunisations,
         _ => throw new ArgumentOutOfRangeException(nameof(resource), resource.TypeName, "Not a clinical resource of the FHIR API."),
     };
 
     /// <summary>
     /// The day (hospital time) the record is of: when the visit began, the diagnosis or allergy was recorded, the
-    /// medicine prescribed, the sample collected or the scan taken, the document written or the vaccine given. Null when
-    /// it has none.
+    /// medicine prescribed, the sample collected or the scan taken, the document written (a note signed) or the vaccine
+    /// given. Null when it has none.
     /// </summary>
     public static DateOnly? DateOf(R4.Resource resource) => resource switch
     {
@@ -46,6 +46,15 @@ internal static class SharedRecords
         R4.Immunization immunization => Effective(immunization.Occurrence),
         _ => null,
     };
+
+    /// <summary>
+    /// A counselling note (whatever its id: the type decides, so it is never shared as something milder), a clinical note,
+    /// or a document of the record (a discharge summary or a document filed with it).
+    /// </summary>
+    private static SharedRecordKind KindOf(R4.DocumentReference document) =>
+        DocumentReferenceMapper.IsCounsellingNote(document) ? SharedRecordKind.CounsellingNotes
+        : FhirIds.TryParse(document.Id, FhirIds.ClinicalNote, out _) ? SharedRecordKind.ClinicalNotes
+        : SharedRecordKind.Documents;
 
     private static bool HasCategory(List<R4.CodeableConcept> categories, string code) =>
         categories.Any(category => category.Coding.Any(coding => string.Equals(coding.Code, code, StringComparison.Ordinal)));

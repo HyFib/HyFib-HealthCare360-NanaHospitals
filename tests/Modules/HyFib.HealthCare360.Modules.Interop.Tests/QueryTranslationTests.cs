@@ -107,6 +107,18 @@ public sealed class QueryTranslationTests : IDisposable
     }
 
     [Fact]
+    public void The_note_query_shares_signed_notes_only_with_the_patients_own_encounter_and_stay()
+    {
+        var sql = new DocumentReferenceProvider(_db, References).SignedNotes(n => n.PatientId == TestData.PatientId).ToQueryString();
+
+        sql.ShouldContain("is_signed");
+        sql.ShouldContain("signed_at");
+        sql.ShouldContain("clinical.encounters");
+        sql.ShouldContain("inpatient.admissions");
+        sql.ShouldContain("display_name");
+    }
+
+    [Fact]
     public void A_prescriptions_lines_translate_whatever_its_status()
     {
         var sql = MedicationRequestProvider.LineRows(

@@ -209,7 +209,16 @@ describe('what a record-sharing consent covers (gap #28)', () => {
       'Shared with every partner account, for any purpose: prescribed medicines.',
     );
     expect(sharingScopeSummary({ ...open, recordsFrom: '2026-01-01', recordsTo: '2026-06-30' }, day)).toBe(
-      'Shared with every partner account, for any purpose: all records dated <2026-01-01> to <2026-06-30>.',
+      'Shared with every partner account, for any purpose: all records but counselling notes dated <2026-01-01> to <2026-06-30>.',
+    );
+  });
+
+  it('says counselling notes are shared only when the consent names them', () => {
+    expect(sharingScopeSummary(open, day)).toBe(
+      'Shared with every partner account, for any purpose: all records but counselling notes.',
+    );
+    expect(sharingScopeSummary({ ...open, kinds: ['ClinicalNotes', 'CounsellingNotes'] }, day)).toBe(
+      'Shared with every partner account, for any purpose: progress, procedure and referral notes, counselling notes.',
     );
   });
 

@@ -125,7 +125,10 @@ public sealed class PatientConsent : AuditableEntity
     /// <summary>Record sharing only: what the record may be read for (<see cref="SharingPurpose"/>). Empty: any purpose.</summary>
     public List<SharingPurpose> SharePurposes { get; set; } = [];
 
-    /// <summary>Record sharing only: the kinds of records shared (<see cref="SharedRecordKind"/>). Empty: all of them.</summary>
+    /// <summary>
+    /// Record sharing only: the kinds of records shared (<see cref="SharedRecordKind"/>). Empty: all of them but those a
+    /// consent must name (<see cref="SharedRecordKinds.NamedOnly"/>).
+    /// </summary>
     public List<SharedRecordKind> ShareKinds { get; set; } = [];
 
     /// <summary>Record sharing only: the first day (hospital time) of the records shared; earlier ones are not.</summary>

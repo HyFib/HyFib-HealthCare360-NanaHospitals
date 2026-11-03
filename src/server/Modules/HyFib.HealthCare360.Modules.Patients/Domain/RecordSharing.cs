@@ -30,6 +30,27 @@ public enum SharedRecordKind
 
     /// <summary>Vaccine doses, given here or copied from the patient's card (Immunization).</summary>
     Immunisations,
+
+    /// <summary>Signed clinical notes: progress, procedure and referral notes, and other notes (DocumentReference).</summary>
+    ClinicalNotes,
+
+    /// <summary>
+    /// Signed counselling notes (DocumentReference). Shared only under a consent that names them
+    /// (<see cref="SharedRecordKinds.NamedOnly"/>).
+    /// </summary>
+    CounsellingNotes,
+}
+
+/// <summary>Rules on the kinds of records a record-sharing consent names.</summary>
+public static class SharedRecordKinds
+{
+    /// <summary>
+    /// Kinds a consent shares only when it names them: a consent that leaves the kinds open shares every other kind.
+    /// A counselling note holds what the patient told the counsellor in confidence, about an HIV test (HIV and AIDS
+    /// (Prevention and Control) Act 2017, s.8), their mental health (Mental Healthcare Act 2017, s.23) or their family,
+    /// so agreeing to share "all records" is not taken to mean it.
+    /// </summary>
+    public static bool NamedOnly(SharedRecordKind kind) => kind == SharedRecordKind.CounsellingNotes;
 }
 
 /// <summary>

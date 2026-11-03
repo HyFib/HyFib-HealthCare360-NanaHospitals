@@ -264,14 +264,17 @@ internal static class DiagnosticReportMapper
         return text.ToString();
     }
 
-    /// <summary>A UTF-8 plain-text rendering of a report, embedded in the resource.</summary>
-    public static R4.Attachment TextAttachment(string text, string title, DateTimeOffset? created)
+    /// <summary>
+    /// A UTF-8 plain-text rendering of a report, embedded in the resource: in English unless <paramref name="language"/>
+    /// says otherwise (null: not stated).
+    /// </summary>
+    public static R4.Attachment TextAttachment(string text, string title, DateTimeOffset? created, string? language = "en")
     {
         var bytes = Encoding.UTF8.GetBytes(text);
         return new R4.Attachment
         {
             ContentType = "text/plain; charset=utf-8",
-            Language = "en",
+            Language = language,
             Data = bytes,
             SizeUnsignedInt = bytes.Length,
             Title = title,

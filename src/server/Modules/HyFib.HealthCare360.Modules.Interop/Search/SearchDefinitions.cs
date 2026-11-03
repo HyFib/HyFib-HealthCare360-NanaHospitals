@@ -134,11 +134,13 @@ internal static class SearchDefinitions
                 LastUpdatedParameter,
             ]),
         new(FhirResourceTypes.DocumentReference,
-            "Documents attached to the record (doc-{id}; metadata only) and signed discharge summaries (ds-{id}; full text).",
+            "Documents attached to the record (doc-{id}; metadata only), signed discharge summaries (ds-{id}; full text) and signed "
+            + "clinical notes (note-{id}; full text, an addendum relatesTo the note it appends to).",
             [
                 PatientParameter, SubjectParameter, IdParameter,
-                new("type", R4.SearchParamType.Token, "LOINC document type, for example http://loinc.org|18842-5 (discharge summary)."),
-                new("date", R4.SearchParamType.Date, "When the document reference was created or the summary signed."),
+                new("type", R4.SearchParamType.Token,
+                    "LOINC document type, for example http://loinc.org|18842-5 (discharge summary) or http://loinc.org|11506-3 (progress note)."),
+                new("date", R4.SearchParamType.Date, "When the document reference was created, or the summary or note signed."),
                 new("status", R4.SearchParamType.Token, "current."),
                 LastUpdatedParameter,
             ],

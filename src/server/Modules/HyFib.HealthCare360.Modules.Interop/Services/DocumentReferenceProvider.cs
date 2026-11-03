@@ -1,14 +1,19 @@
 using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Files;
+using HyFib.HealthCare360.Platform.Identity;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
 
-/// <summary>DocumentReference: clinical documents attached to the patient record (Patients) and signed discharge summaries (Clinical).</summary>
+/// <summary>
+/// DocumentReference: clinical documents attached to the patient record (Patients), signed discharge summaries and signed
+/// clinical notes (Clinical).
+/// </summary>
 internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceDirectoryLoader references) : IFhirResourceProvider
 {
     public string ResourceType => FhirResourceTypes.DocumentReference;
@@ -42,6 +47,20 @@ internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceD
             return summaries.Count == 0 ? ResourceLookup.Missing : ResourceLookup.Found((await MapSummariesAsync(summaries, ct))[0], state!.PatientId);
         }
 
+        if (FhirIds.TryParse(id, FhirIds.ClinicalNote, out var noteId))
+        {
+            var state = await db.Set<ClinicalNote>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+                .Where(n => n.Id == noteId).Select(n => new RowState(n.PatientId, n.IsDeleted)).FirstOrDefaultAsync(ct);
+            if (ResourceLookup.Unavailable(state) is { } unavailable)
+            {
+                return unavailable;
+            }
+
+            // A draft is answered as no note at all.
+            var notes = await SignedNotes(n => n.Id == noteId).ToListAsync(ct);
+            return notes.Count == 0 ? ResourceLookup.Missing : ResourceLookup.Found((await MapNotesAsync(notes, ct))[0], state!.PatientId);
+        }
+
         return ResourceLookup.Missing;
     }
 
@@ -49,7 +68,40 @@ internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceD
     {
         var documents = await PatientDocuments(d => d.PatientId == patientId).ToListAsync(ct);
         var summaries = await SignedSummaries(s => s.PatientId == patientId).ToListAsync(ct);
-        return [.. documents.Select(DocumentReferenceMapper.FromPatientDocument), .. await MapSummariesAsync(summaries, ct)];
+        var notes = await SignedNotes(n => n.PatientId == patientId).ToListAsync(ct);
+        return [.. documents.Select(DocumentReferenceMapper.FromPatientDocument), .. await MapSummariesAsync(summaries, ct), .. await MapNotesAsync(notes, ct)];
+    }
+
+    /// <summary>
+    /// Signed clinical notes, addenda included; a draft is never shared. A note's encounter and stay are kept only when
+    /// they are the patient's own, so a note filed against someone else's never points another provider at it. Its author
+    /// and signer are named from their accounts (a nurse is not a practitioner), the signer's practitioner looked up.
+    /// </summary>
+    internal IQueryable<ClinicalNoteRow> SignedNotes(Expression<Func<ClinicalNote, bool>> filter)
+    {
+        var users = db.Set<User>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]);
+        var encounters = db.Set<Encounter>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
+        var admissions = db.Set<Admission>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
+        return db.Set<ClinicalNote>().AsNoTracking().Where(filter).Where(n => n.IsSigned && n.SignedAt != null)
+            .Select(n => new ClinicalNoteRow
+            {
+                Id = n.Id,
+                PatientId = n.PatientId,
+                FacilityId = n.FacilityId,
+                EncounterId = encounters.Any(e => e.Id == n.EncounterId && e.PatientId == n.PatientId) ? n.EncounterId : null,
+                AdmissionId = admissions.Any(a => a.Id == n.AdmissionId && a.PatientId == n.PatientId) ? n.AdmissionId : null,
+                Type = n.Type,
+                Title = n.Title,
+                Body = n.Body,
+                AuthorPractitionerId = n.AuthorPractitionerId,
+                AuthorUserName = users.Where(u => u.Id == n.AuthorUserId).Select(u => u.DisplayName).FirstOrDefault(),
+                SignedByPractitionerId = users.Where(u => u.Id == n.SignedByUserId).Select(u => u.PractitionerId).FirstOrDefault(),
+                SignedByUserName = users.Where(u => u.Id == n.SignedByUserId).Select(u => u.DisplayName).FirstOrDefault(),
+                AmendsNoteId = n.AmendsNoteId,
+                SignedAt = n.SignedAt!.Value,
+                CreatedAt = n.CreatedAt,
+                UpdatedAt = n.UpdatedAt,
+            });
     }
 
     /// <summary>Clinical documents with their stored file's content type and size (identity and insurance documents stay).</summary>
@@ -122,5 +174,22 @@ internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceD
 
         var refs = await references.LoadAsync(ids, ct);
         return [.. summaries.Select(s => (R4.Resource)DocumentReferenceMapper.FromDischargeSummary(s, refs))];
+    }
+
+    private async Task<List<R4.Resource>> MapNotesAsync(IReadOnlyList<ClinicalNoteRow> notes, CancellationToken ct)
+    {
+        if (notes.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = new ReferenceIds();
+        foreach (var note in notes)
+        {
+            ids.Practitioner(note.AuthorPractitionerId, note.SignedByPractitionerId).Facility(note.FacilityId).Admission(note.AdmissionId);
+        }
+
+        var refs = await references.LoadAsync(ids, ct);
+        return [.. notes.Select(n => (R4.Resource)DocumentReferenceMapper.FromClinicalNote(n, refs))];
     }
 }

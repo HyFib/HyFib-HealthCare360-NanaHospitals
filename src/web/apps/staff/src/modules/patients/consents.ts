@@ -4,14 +4,15 @@
  * for every rule; these helpers only describe what it does.
  */
 import { formatDate, formatDateOnly, formatDateTime, humanize } from '@hc360/core';
-import type {
-  ConsentDto,
-  ConsentType,
-  RecordSharingScopeDto,
-  SharedRecordKind,
-  SharingPurpose,
-  WhatsAppConsentDto,
-  WhatsAppOptInSource,
+import {
+  NAMED_ONLY_RECORD_KINDS,
+  type ConsentDto,
+  type ConsentType,
+  type RecordSharingScopeDto,
+  type SharedRecordKind,
+  type SharingPurpose,
+  type WhatsAppConsentDto,
+  type WhatsAppOptInSource,
 } from './api';
 
 const CONSENT_LABELS: Record<ConsentType, string> = {
@@ -83,9 +84,14 @@ export const SHARED_RECORD_KIND_LABELS: Record<SharedRecordKind, string> = {
   VitalSigns: 'Vital signs',
   Documents: 'Discharge summaries and documents',
   Immunisations: 'Vaccines given',
+  ClinicalNotes: 'Progress, procedure and referral notes',
+  CounsellingNotes: 'Counselling notes',
 };
 
 const lower = (label: string) => label.charAt(0).toLowerCase() + label.slice(1);
+
+/** What a consent that names no kinds of records shares: all of them but those it must name. */
+export const ALL_RECORDS_LABEL = `all records but ${NAMED_ONLY_RECORD_KINDS.map((k) => lower(SHARED_RECORD_KIND_LABELS[k])).join(', ')}`;
 
 /**
  * What a limited record-sharing consent covers, in one line for the consent list: who may read, what for, which
@@ -102,7 +108,9 @@ export function sharingScopeSummary(
     scope.purposes.length
       ? `for ${scope.purposes.map((p) => lower(SHARING_PURPOSE_LABELS[p].replace(/ \([A-Z]+\)$/, ''))).join(', ')}`
       : 'for any purpose',
-    scope.kinds.length ? `${scope.kinds.map((k) => lower(SHARED_RECORD_KIND_LABELS[k])).join(', ')}` : 'all records',
+    scope.kinds.length
+      ? `${scope.kinds.map((k) => lower(SHARED_RECORD_KIND_LABELS[k])).join(', ')}`
+      : ALL_RECORDS_LABEL,
   ];
   let summary = `${parts[0]}, ${parts[1]}: ${parts[2]}`;
   if (scope.recordsFrom && scope.recordsTo) {
