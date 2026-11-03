@@ -23,7 +23,7 @@ import {
 import { ImagePicker } from './ImageField';
 import type * as Images from './images';
 import { prepareImage, uploadImage } from './images';
-import { PractitionerFields } from './PractitionerEditor';
+import { PractitionerFields, WorkAheadDialog } from './PractitionerEditor';
 import { ServiceFields } from './ServiceEditor';
 
 // The editors' contents are tested without their drawers, which flake in jsdom. Images are not really shrunk or
@@ -188,6 +188,51 @@ describe('the practitioner editor', () => {
     const group = screen.getByRole('group', { name: /Consults at/ });
     expect(within(group).getAllByRole('checkbox')).toHaveLength(2);
     expect(within(group).queryByText(/Old wing/)).not.toBeInTheDocument();
+  });
+});
+
+describe('taking a doctor with work ahead out of use', () => {
+  const work = [
+    {
+      kind: 'appointments',
+      count: 7,
+      first: '2026-11-10T04:30:00Z',
+      numbers: ['APT-1', 'APT-2'],
+      words: '7 OPD appointment(s) booked from 10 Nov 2026',
+    },
+    {
+      kind: 'waitlist',
+      count: 2,
+      first: null,
+      numbers: [],
+      words: '2 patient(s) on the waiting list for a slot with them',
+    },
+  ];
+
+  it('names each kind of work with the first few by number, and goes ahead only when asked', async () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    wrap(<WorkAheadDialog work={work} busy={false} onCancel={onCancel} onConfirm={onConfirm} />);
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'This doctor still has work ahead' });
+    const items = within(dialog)
+      .getAllByRole('listitem')
+      .map((item) => item.textContent);
+    expect(items).toEqual([
+      '7 OPD appointment(s) booked from 10 Nov 2026 (APT-1, APT-2, …)',
+      '2 patient(s) on the waiting list for a slot with them',
+    ]);
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Take out of use anyway' }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not shown while nothing is ahead', () => {
+    wrap(<WorkAheadDialog work={null} busy={false} onCancel={vi.fn()} onConfirm={vi.fn()} />);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 });
 

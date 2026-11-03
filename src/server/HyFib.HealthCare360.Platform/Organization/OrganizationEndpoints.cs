@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using FluentValidation;
 using HyFib.HealthCare360.Platform.Approvals;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Files;
@@ -55,7 +56,7 @@ public sealed record SavePractitionerRequest(
     string? RegistrationNumber, string? HprId, Guid? SpecialtyId, Guid? DepartmentId, PractitionerKind Kind, string? Phone, string? Email,
     decimal ConsultationFeeNew, decimal ConsultationFeeFollowUp, int FollowUpValidityDays, IReadOnlyList<string>? Languages, string? Bio,
     Guid? PhotoFileId, Guid? SignatureFileId, bool AvailableForOnlineBooking, bool AvailableForTelehealth, IReadOnlyList<Guid>? FacilityIds,
-    bool IsActive, uint? Version);
+    bool IsActive, uint? Version, bool TakeOutOfUseAnyway = false);
 
 /// <param name="PendingPrice">The price terms waiting for a second person (maker-checker), on a single service's read.</param>
 public sealed record ServiceItemDto(
@@ -302,9 +303,11 @@ internal static class OrganizationEndpoints
                     ? TypedResults.Ok(dto)
                     : Error.NotFound(nameof(Practitioner), id).ToProblem())
             .RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapPost("/practitioners", (SavePractitionerRequest r, HospitalDbContext db, CancellationToken ct) => SavePractitioner(null, r, db, ct))
+        masters.MapPost("/practitioners", (SavePractitionerRequest r, HospitalDbContext db, PractitionerWorkSources work, IAuditLogger audit, CancellationToken ct) =>
+                SavePractitioner(null, r, db, work, audit, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SavePractitionerRequest>();
-        masters.MapPut("/practitioners/{id:guid}", (Guid id, SavePractitionerRequest r, HospitalDbContext db, CancellationToken ct) => SavePractitioner(id, r, db, ct))
+        masters.MapPut("/practitioners/{id:guid}", (Guid id, SavePractitionerRequest r, HospitalDbContext db, PractitionerWorkSources work, IAuditLogger audit, CancellationToken ct) =>
+                SavePractitioner(id, r, db, work, audit, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SavePractitionerRequest>().RequireVersion();
 
         masters.MapGet("/services", ListServices).RequirePermission(PlatformPermissions.MastersRead);
@@ -712,7 +715,8 @@ internal static class OrganizationEndpoints
         return q;
     }
 
-    private static async Task<IResult> SavePractitioner(Guid? id, SavePractitionerRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> SavePractitioner(
+        Guid? id, SavePractitionerRequest request, HospitalDbContext db, PractitionerWorkSources workSources, IAuditLogger audit, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         Practitioner practitioner;
@@ -757,9 +761,32 @@ internal static class OrganizationEndpoints
             return invalid.ToProblem();
         }
 
+        // A doctor with appointments, patients admitted under them or surgeries ahead is taken out of use only once the
+        // person has seen what is ahead: nobody can book or assign the doctor again, and it all has to be moved.
+        IReadOnlyList<PractitionerWork> workAhead = [];
+        if (id is not null && practitioner.IsActive && !request.IsActive)
+        {
+            workAhead = await workSources.WorkAheadAsync(practitioner.Id, ct);
+            if (workAhead.Count > 0 && !request.TakeOutOfUseAnyway)
+            {
+                return PractitionerWorkSources.WorkAhead(practitioner.DisplayName, workAhead).ToProblem();
+            }
+        }
+
         if (id is null)
         {
             db.Add(practitioner);
+        }
+
+        if (workAhead.Count > 0)
+        {
+            audit.Add(new AuditEntry(AuditCategories.Admin, "practitioner.out_of_use_with_work_ahead",
+                $"{practitioner.DisplayName} taken out of use with {string.Join("; ", workAhead.Select(w => w.Words))} ahead")
+            {
+                EntityType = nameof(Practitioner),
+                EntityId = practitioner.Id.ToString(),
+                Details = new { workAhead },
+            });
         }
 
         practitioner.Title = Clean(request.Title) ?? string.Empty;

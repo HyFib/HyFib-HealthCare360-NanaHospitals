@@ -26,6 +26,7 @@ public sealed class SpecialtyCareModule : IModule
         SpecialtyCareRealtimeTopics.Register(services);
         services.AddScoped<SpecialtyChargeService>();
         services.AddScoped<SurgeryService>();
+        services.AddScoped<IPractitionerWorkSource, SurgeryPractitionerWork>();
         services.AddScoped<OtClinicalService>();
         services.AddScoped<OtReportingService>();
         services.AddScoped<DialysisService>();

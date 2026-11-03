@@ -2,6 +2,7 @@ import { Checkbox, makeStyles } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   CheckboxGroup,
+  ConfirmDialog,
   FormGrid,
   FullRow,
   NumberField,
@@ -22,6 +23,7 @@ import {
   refreshAfterMasterChange,
   type FacilityDto,
   type PractitionerDto,
+  type PractitionerWork,
   type SpecialtyDto,
 } from './api';
 import {
@@ -37,11 +39,12 @@ import { ImageField } from './ImageField';
 import { GENDER_LABELS, GENDERS, isDoctor, PRACTITIONER_KIND_LABELS, PRACTITIONER_KINDS, TITLES } from './labels';
 import { LoadingDrawer, MasterDrawer } from './MasterDrawer';
 import { EditorForm, EditorSection } from './parts';
-import { showSaveError } from './saveErrors';
+import { showSaveError, workAheadOf } from './saveErrors';
 import { useEditorGuard } from './useEditorGuard';
 
 const useStyles = makeStyles({
   facilities: { display: 'flex', flexDirection: 'column', gap: '2px' },
+  work: { margin: 0, paddingLeft: '20px' },
 });
 
 /** Add a doctor or other clinician (`practitionerId` null), or change one. */
@@ -73,18 +76,39 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
   });
   // The version the form was filled from, not a newer one read since (REL-04).
   const [loadedVersion] = useState(practitioner?.version ?? null);
+  // What the doctor still has ahead, when the server asked first before taking them out of use.
+  const [workAhead, setWorkAhead] = useState<{ values: PractitionerForm; work: PractitionerWork[] } | null>(null);
   const save = useMutation({
-    mutationFn: (values: PractitionerForm) =>
-      mastersApi.savePractitioner(practitioner?.id ?? null, toPractitionerRequest(values, practitioner, loadedVersion)),
-    onSuccess: () => {
-      notify.success(
-        practitioner ? 'Saved' : 'Added',
-        'Booking, billing and documents use the new details from now on.',
-      );
+    mutationFn: ({ values, anyway }: { values: PractitionerForm; anyway: boolean }) =>
+      mastersApi.savePractitioner(practitioner?.id ?? null, {
+        ...toPractitionerRequest(values, practitioner, loadedVersion),
+        ...(anyway ? { takeOutOfUseAnyway: true } : {}),
+      }),
+    onSuccess: (_, { anyway }) => {
+      setWorkAhead(null);
+      if (anyway) {
+        notify.warning(
+          'Taken out of use',
+          'Nobody can book or assign this doctor now. Move or cancel what was still booked with them: their appointments, ' +
+            'the patients admitted under them and their surgeries.',
+        );
+      } else {
+        notify.success(
+          practitioner ? 'Saved' : 'Added',
+          'Booking, billing and documents use the new details from now on.',
+        );
+      }
       refreshAfterMasterChange(queryClient);
     },
-    onError: (error) =>
-      showSaveError(error, { form, notify, what: 'record', onConflict: () => refreshAfterMasterChange(queryClient) }),
+    onError: (error, { values }) => {
+      const work = workAheadOf(error);
+      if (work) {
+        setWorkAhead({ values, work });
+        return;
+      }
+      setWorkAhead(null);
+      showSaveError(error, { form, notify, what: 'record', onConflict: () => refreshAfterMasterChange(queryClient) });
+    },
   });
   const guard = useEditorGuard({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
 
@@ -103,8 +127,16 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
       guard={guard}
       busy={save.isPending}
       submitLabel={practitioner ? 'Save' : 'Add'}
-      onSubmit={form.handleSubmit((values) => save.mutate(values, { onSuccess: guard.close }))}
+      onSubmit={form.handleSubmit((values) => save.mutate({ values, anyway: false }, { onSuccess: guard.close }))}
     >
+      <WorkAheadDialog
+        work={workAhead?.work ?? null}
+        busy={save.isPending}
+        onCancel={() => setWorkAhead(null)}
+        onConfirm={() =>
+          workAhead && save.mutate({ values: workAhead.values, anyway: true }, { onSuccess: guard.close })
+        }
+      />
       <PractitionerFields
         control={form.control}
         editing={practitioner !== null}
@@ -114,6 +146,46 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
         facilities={facilities.data ?? []}
       />
     </MasterDrawer>
+  );
+}
+
+/**
+ * Asks before taking a doctor out of use while work is still ahead, as the server named it: each kind of work with the
+ * first few by number. Going ahead saves again, saying so.
+ */
+export function WorkAheadDialog({
+  work,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  work: PractitionerWork[] | null;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const styles = useStyles();
+  return (
+    <ConfirmDialog
+      open={work !== null}
+      title="This doctor still has work ahead"
+      confirmLabel="Take out of use anyway"
+      destructive
+      busy={busy}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    >
+      <p>Out of use, nobody can book or assign them again. Still ahead:</p>
+      <ul className={styles.work}>
+        {work?.map((w) => (
+          <li key={w.kind}>
+            {w.words}
+            {w.numbers.length > 0 && ` (${w.numbers.join(', ')}${w.count > w.numbers.length ? ', …' : ''})`}
+          </li>
+        ))}
+      </ul>
+      <p>These have to be moved to another doctor or cancelled.</p>
+    </ConfirmDialog>
   );
 }
 
