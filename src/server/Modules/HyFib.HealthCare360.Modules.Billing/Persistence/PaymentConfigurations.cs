@@ -170,9 +170,30 @@ internal sealed class CreditNoteConfiguration : IEntityTypeConfiguration<CreditN
         b.Property(x => x.RequestedByName).HasMaxLength(200);
         b.Property(x => x.IssuedByName).HasMaxLength(200);
         b.HasOne<Bill>().WithMany().HasForeignKey(x => x.BillId).OnDelete(DeleteBehavior.Restrict);
+        b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.CreditNoteId).OnDelete(DeleteBehavior.Cascade);
+        b.Ignore(x => x.GstAmount);
+        b.Ignore(x => x.TaxableAmount);
         b.HasIndex(x => x.Number).IsUnique();
         b.HasIndex(x => x.BillId);
         b.HasIndex(x => new { x.FacilityId, x.IssuedAt });
+    }
+}
+
+internal sealed class CreditNoteLineConfiguration : IEntityTypeConfiguration<CreditNoteLine>
+{
+    public void Configure(EntityTypeBuilder<CreditNoteLine> b)
+    {
+        b.ToTable("credit_note_lines", BillingSchema.Name);
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Description).HasMaxLength(300);
+        b.Property(x => x.SacCode).HasMaxLength(16);
+        b.Property(x => x.GstRate).HasPrecision(5, 2);
+        b.Ignore(x => x.GstAmount);
+
+        // What earlier credit notes took off a bill line, so a line is never credited beyond its value.
+        b.HasOne<BillLine>().WithMany().HasForeignKey(x => x.BillLineId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.BillLineId);
+        b.HasIndex(x => x.CreditNoteId);
     }
 }
 

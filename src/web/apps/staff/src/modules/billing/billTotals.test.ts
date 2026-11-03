@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   allowedWithoutApproval,
   calculateBillTotals,
+  creditableLines,
   gstBreakdown,
   inferTariffPercent,
   NO_BILL_DISCOUNT,
@@ -399,5 +400,35 @@ describe('the GST a discount preview shows', () => {
 
   it('shows it as IGST on a bill to another state, as the bill charges it', () => {
     expect(gstBreakdown({ isInterState: true }, totals)).toEqual([{ label: 'IGST', amount: 180 }]);
+  });
+});
+
+describe('the services a credit note can correct', () => {
+  const line = (id: string, netAmount: number, taxRate: number, isReturn = false) => ({
+    id,
+    description: `Service ${id}`,
+    sacCode: '999312',
+    taxRate,
+    netAmount,
+    isReturn,
+  });
+
+  it('are the charged services with what earlier credit notes left of them', () => {
+    const lines = creditableLines({
+      lines: [line('room', 6300, 5), line('dressing', 250, 0), line('returned', -50, 0, true), line('free', 0, 0)],
+      creditNotes: [
+        { lines: [{ billLineId: 'room', amount: 1050 }] },
+        {
+          lines: [
+            { billLineId: 'room', amount: 0.1 },
+            { billLineId: 'dressing', amount: 250 },
+          ],
+        },
+        { lines: null },
+      ],
+    });
+
+    expect(lines.map((l) => [l.id, l.left])).toEqual([['room', 5249.9]]);
+    expect(lines[0]).toMatchObject({ taxRate: 5, netAmount: 6300, sacCode: '999312' });
   });
 });

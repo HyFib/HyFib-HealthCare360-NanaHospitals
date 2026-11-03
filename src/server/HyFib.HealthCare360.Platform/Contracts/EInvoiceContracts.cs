@@ -23,10 +23,27 @@ public sealed record EInvoiceItem(
     decimal Sgst,
     decimal TotalItemValue);
 
+/// <summary>The e-invoice's document type, the portal's <c>DocDtls.Typ</c>.</summary>
+public static class EInvoiceDocumentTypes
+{
+    /// <summary>A tax invoice.</summary>
+    public const string Invoice = "INV";
+
+    /// <summary>A credit note against a tax invoice (GST rule 48(4) makes it an e-invoice too).</summary>
+    public const string CreditNote = "CRN";
+}
+
 /// <summary>
-/// A B2B tax invoice ready for the Invoice Registration Portal, as its module priced it.
+/// The tax invoice a credit note reduces, as the portal's <c>PrecDocDtls</c> names it (number and date), and where HC360
+/// keeps it (<paramref name="Source"/> and <paramref name="Id"/>), so its own IRN can be looked up.
+/// </summary>
+public sealed record EInvoicePreceding(string Source, Guid Id, string Number, DateOnly Date);
+
+/// <summary>
+/// A B2B tax invoice or credit note ready for the Invoice Registration Portal, as its module priced it.
 /// <paramref name="Problem"/>: why it cannot be an e-invoice as it stands (a return line, for instance), checked before
-/// the payload; null when it can.
+/// the payload; null when it can. <paramref name="Type"/>: <see cref="EInvoiceDocumentTypes"/>; a credit note names the
+/// invoice it reduces in <paramref name="Preceding"/>.
 /// </summary>
 public sealed record EInvoiceDocument(
     string Source,
@@ -40,25 +57,44 @@ public sealed record EInvoiceDocument(
     decimal RoundOff,
     decimal Total,
     bool IsCancelled,
-    string? Problem = null);
-
-/// <summary>A B2B tax invoice in a register of invoices that need an IRN.</summary>
-public sealed record EInvoiceCandidate(string Source, Guid Id, string Number, DateOnly Date, string BuyerGstin, string BuyerName, decimal Total, bool IsCancelled);
+    string? Problem = null,
+    string Type = EInvoiceDocumentTypes.Invoice,
+    EInvoicePreceding? Preceding = null);
 
 /// <summary>
-/// A module whose B2B tax invoices are e-invoices (GST rule 48(4)): bills to payers registered for GST, and the pharmacy's
-/// B2B sales. Billing keeps the e-invoice register and reads every registered source, so it never references the others.
-/// Implementations filter by the facility given and use the hospital's (IST) calendar day.
+/// A B2B tax invoice or credit note in a register of documents that need an IRN; a credit note names the invoice it
+/// reduces (<paramref name="PrecedingNumber"/>).
+/// </summary>
+public sealed record EInvoiceCandidate(
+    string Source,
+    Guid Id,
+    string Number,
+    DateOnly Date,
+    string BuyerGstin,
+    string BuyerName,
+    decimal Total,
+    bool IsCancelled,
+    string Type = EInvoiceDocumentTypes.Invoice,
+    string? PrecedingNumber = null);
+
+/// <summary>
+/// A module whose B2B tax invoices or credit notes are e-invoices (GST rule 48(4)): bills to payers registered for GST
+/// and the credit notes on them, and the pharmacy's B2B sales and their returns. Billing keeps the e-invoice register and
+/// reads every registered source, so it never references the others. Implementations filter by the facility given and use
+/// the hospital's (IST) calendar day.
 /// </summary>
 public interface IEInvoiceSource
 {
-    /// <summary>Stable key: <c>bill</c> or <c>pharmacy</c>. It names the invoice in the register and in its address.</summary>
+    /// <summary>
+    /// Stable key: <c>bill</c>, <c>creditnote</c>, <c>pharmacy</c> or <c>pharmacyreturn</c>. It names the document in the
+    /// register and in its address.
+    /// </summary>
     string Source { get; }
 
-    /// <summary>The B2B tax invoices of <paramref name="from"/> to <paramref name="to"/>, cancelled ones included.</summary>
+    /// <summary>The B2B documents of <paramref name="from"/> to <paramref name="to"/>, cancelled ones included.</summary>
     Task<IReadOnlyList<EInvoiceCandidate>> ListAsync(Guid facilityId, DateOnly from, DateOnly to, CancellationToken cancellationToken);
 
-    /// <summary>The invoice, or null when there is none or it is not a B2B tax invoice.</summary>
+    /// <summary>The document, or null when there is none or it is not a B2B e-invoice.</summary>
     Task<EInvoiceDocument?> FindAsync(Guid id, CancellationToken cancellationToken);
 }
 

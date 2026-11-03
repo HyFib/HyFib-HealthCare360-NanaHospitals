@@ -3,12 +3,16 @@ import { api } from '@/lib/api';
 
 /**
  * GST e-invoice register: /api/v1/billing/einvoices (GST rule 48(4)). B2B tax invoices (`bill`: bills to payers
- * registered for GST; `pharmacy`: the pharmacy's B2B sales) are downloaded as the portal's JSON, uploaded to the
- * Invoice Registration Portal, and the IRN it gives back is recorded with its signed QR code. Permission
- * `billing.einvoice`.
+ * registered for GST; `pharmacy`: the pharmacy's B2B sales) and the credit notes against them (`creditnote`: a bill's
+ * credit notes; `pharmacyreturn`: returns of B2B sales) are downloaded as the portal's JSON, uploaded to the Invoice
+ * Registration Portal, and the IRN it gives back is recorded with its signed QR code. A credit note (`CRN`) names the
+ * invoice it reduces and goes after it. Permission `billing.einvoice`.
  */
 
-export type EInvoiceSource = 'bill' | 'pharmacy';
+export type EInvoiceSource = 'bill' | 'pharmacy' | 'creditnote' | 'pharmacyreturn';
+
+/** The portal's document type: a tax invoice or a credit note against one. */
+export type EInvoiceType = 'INV' | 'CRN';
 
 /** Mirrors `EInvoiceState`. */
 export type EInvoiceState = 'Pending' | 'Registered' | 'IrnCancelled' | 'NotNeeded';
@@ -31,6 +35,9 @@ export interface EInvoiceRow {
   irn: string | null;
   ackNo: string | null;
   ackDate: string | null;
+  type: EInvoiceType;
+  /** For a credit note: the number of the invoice it reduces. */
+  against: string | null;
 }
 
 export interface EInvoiceRegister {
@@ -71,9 +78,13 @@ export interface EInvoiceDetail {
   lines: number;
   total: number;
   state: EInvoiceState;
-  /** What stops the portal from registering the invoice; empty when its JSON is ready. */
+  /** What stops the portal from registering the document; empty when its JSON is ready. */
   problems: string[];
   registration: EInvoiceRegistration | null;
+  type: EInvoiceType;
+  /** For a credit note: the invoice it reduces, and its date. */
+  against: string | null;
+  againstDate: string | null;
 }
 
 /** The IRN printed on an invoice (`EInvoiceStamp`), on bills and pharmacy sales that have one. */
@@ -86,6 +97,26 @@ export interface EInvoiceStamp {
 }
 
 export const EINVOICE_PERMISSION = 'billing.einvoice';
+
+/** Where each document comes from, as the register names it. */
+export const SOURCE_LABELS: Record<EInvoiceSource, string> = {
+  bill: 'Bill',
+  pharmacy: 'Pharmacy',
+  creditnote: 'Credit note',
+  pharmacyreturn: 'Pharmacy return',
+};
+
+/** "NHCN26000001 (Credit note against NHOB260000123)": the document, its kind, and the invoice a credit note reduces. */
+export function documentLabel(row: {
+  number: string;
+  source: EInvoiceSource;
+  type: EInvoiceType;
+  against: string | null;
+}): string {
+  return row.type === 'CRN' && row.against
+    ? `${row.number} (${SOURCE_LABELS[row.source]} against ${row.against})`
+    : `${row.number} (${SOURCE_LABELS[row.source]})`;
+}
 
 export const CANCEL_REASONS: { value: EInvoiceCancelReason; label: string }[] = [
   { value: 'Duplicate', label: 'Duplicate' },

@@ -226,7 +226,11 @@ public sealed record TallyReceiptReversal(
 /// <summary>Refund <paramref name="RefundNumber"/>, recorded as paid out by <paramref name="Mode"/>, never reached the patient (<see cref="RefundReversal"/>).</summary>
 public sealed record TallyRefundReversal(string Number, DateOnly Date, string RefundNumber, RefundPurpose Purpose, PaymentMode Mode, decimal Amount);
 
-public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKind Kind, decimal Amount);
+/// <summary>
+/// A credit note or write-off of the day. <paramref name="Cgst"/>, <paramref name="Sgst"/> and <paramref name="Igst"/>: the
+/// output GST a credit note takes back (CGST Act s.34), from the lines it corrects; none on a write-off.
+/// </summary>
+public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKind Kind, decimal Amount, decimal Cgst = 0m, decimal Sgst = 0m, decimal Igst = 0m);
 
 /// <param name="PractitionerCode">The doctor's master code; it makes the accrual journal's number stable across re-posts.</param>
 /// <param name="PractitionerId">Tells apart two doctors who share a code (or, without codes, a name).</param>
@@ -483,10 +487,19 @@ public static class TallyVoucherBuilder
         return entries;
     }
 
+    /// <summary>
+    /// A credit note takes back what it credits: the taxable part from sales returns and the GST from the output GST
+    /// ledgers it was credited to on the bill, so the GST in the books falls with the GST the portal is told of. A
+    /// write-off reduces no GST.
+    /// </summary>
     private static AccountingVoucher? CreditNote(TallyCreditNote note, TallyLedgerMap map)
     {
         var entries = new EntryList();
-        entries.Debit(note.Kind == CreditNoteKind.WriteOff ? map.WriteOffs : map.CreditNotes, note.Amount);
+        var gst = note.Cgst + note.Sgst + note.Igst;
+        entries.Debit(note.Kind == CreditNoteKind.WriteOff ? map.WriteOffs : map.CreditNotes, note.Amount - gst);
+        entries.Debit(map.OutputCgst, note.Cgst);
+        entries.Debit(map.OutputSgst, note.Sgst);
+        entries.Debit(map.OutputIgst, note.Igst);
         entries.Credit(map.PatientDebtors, note.Amount);
         return entries.ToVoucher(CreditNoteType, note.Date, note.Number, $"{(note.Kind == CreditNoteKind.WriteOff ? "Write-off" : "Credit note")} {note.Number}", note.Number);
     }

@@ -170,6 +170,32 @@ public sealed class TallyVoucherBuilderTests
     }
 
     [Fact]
+    public void A_credit_note_takes_back_the_output_gst_it_credits_and_a_write_off_none()
+    {
+        var vouchers = TallyVoucherBuilder.Build(Book(creditNotes:
+        [
+            new TallyCreditNote("CN3", Day, CreditNoteKind.CreditNote, 1100m, Cgst: 25m, Sgst: 25m),
+            new TallyCreditNote("CN4", Day, CreditNoteKind.CreditNote, 590m, Igst: 90m),
+            new TallyCreditNote("CN5", Day, CreditNoteKind.WriteOff, 300m),
+        ]), Ledgers);
+
+        var intraState = vouchers.Single(v => v.Number == "CN3");
+        ShouldBalance(intraState);
+        (Entry(intraState, "Sales Returns & Allowances").Amount, Entry(intraState, "Sales Returns & Allowances").IsDebit).ShouldBe((1050m, true));
+        (Entry(intraState, "Output CGST").Amount, Entry(intraState, "Output CGST").IsDebit).ShouldBe((25m, true));
+        (Entry(intraState, "Output SGST").Amount, Entry(intraState, "Output SGST").IsDebit).ShouldBe((25m, true));
+        (Entry(intraState, "Patient Receivables").Amount, Entry(intraState, "Patient Receivables").IsDebit).ShouldBe((1100m, false));
+        intraState.Entries.ShouldNotContain(e => e.LedgerName == "Output IGST");
+
+        var interState = vouchers.Single(v => v.Number == "CN4");
+        ShouldBalance(interState);
+        (Entry(interState, "Sales Returns & Allowances").Amount, Entry(interState, "Output IGST").Amount).ShouldBe((500m, 90m));
+
+        var writeOff = vouchers.Single(v => v.Number == "CN5");
+        writeOff.Entries.Select(e => e.LedgerName).ShouldBe(["Bad Debts Written Off", "Patient Receivables"], ignoreOrder: true);
+    }
+
+    [Fact]
     public void Doctor_fees_are_journalised_per_doctor_and_reversals_flip_sides()
     {
         var vouchers = TallyVoucherBuilder.Build(Book(fees: [new TallyDoctorFee("Dr. Arjun Mehta", 1_200m), new TallyDoctorFee("Dr. Kavya Nair", -400m)]), Ledgers);

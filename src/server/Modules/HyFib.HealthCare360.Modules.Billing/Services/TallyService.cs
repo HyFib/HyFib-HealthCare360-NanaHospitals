@@ -151,7 +151,7 @@ public sealed class TallyService(
             disallowances.Select(d => new TallyDisallowance(
                 TallyVoucherBuilder.ClaimDeductionReference(d.ClaimNumber, d.Id, settlementsByClaim[d.ClaimId]), date, payers.GetValueOrDefault(d.PayerId), d.DeductionAmount)).ToList(),
             refunds.Select(r => new TallyRefund(r.RefundNumber, date, r.Purpose, r.Mode!.Value, r.Amount)).ToList(),
-            creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount)).ToList(),
+            creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount, c.CgstAmount, c.SgstAmount, c.IgstAmount)).ToList(),
             fees.Where(f => f.Amount != 0).Select(f => new TallyDoctorFee(
                 doctors.GetValueOrDefault(f.PractitionerId)?.DisplayName ?? "Doctor",
                 f.Amount,

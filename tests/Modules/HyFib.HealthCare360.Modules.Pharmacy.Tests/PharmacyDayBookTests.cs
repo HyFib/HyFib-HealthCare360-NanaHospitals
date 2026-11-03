@@ -82,6 +82,28 @@ public sealed class PharmacyDayBookTests
     }
 
     [Fact]
+    public void A_return_after_the_time_to_reduce_the_sales_gst_takes_back_the_value_and_not_the_gst()
+    {
+        var paid = Sale("NHPH260000002", 112m, 1, 12m, new SalePayment(PaymentMode.Upi, 112m, "UPI1"));
+        var refund = paid.Items[0].Return(1).Value;
+        var saleReturn = new PharmacySaleReturn
+        {
+            RefundAmount = refund,
+            CashRefund = refund,
+            RefundMode = PaymentMode.Cash,
+            Items = [new PharmacySaleReturnItem { SaleItemId = paid.Items[0].Id, RefundAmount = refund, Quantity = 1 }],
+        };
+        var rates = new Dictionary<Guid, decimal> { [paid.Items[0].Id] = 12m };
+
+        var late = PharmacyDayBook.Day(Today, [], [saleReturn], rates, [], timeBarredItems: new HashSet<Guid> { paid.Items[0].Id });
+        var inTime = PharmacyDayBook.Day(Today, [], [saleReturn], rates, []);
+
+        late.Returns.Tax.ShouldBe([new CounterTaxLine(12m, 112m, 0m, 0m)]);
+        inTime.Returns.Tax.ShouldBe([new CounterTaxLine(12m, 100m, 6m, 6m)]);
+        late.Returns.Total.ShouldBe(inTime.Returns.Total, "The money returned is the same; only the GST in it is not taken back.");
+    }
+
+    [Fact]
     public void A_quiet_day_is_empty() =>
         PharmacyDayBook.Day(Today, [], [], new Dictionary<Guid, decimal>(), []).IsEmpty.ShouldBeTrue();
 }

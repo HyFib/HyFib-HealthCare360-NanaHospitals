@@ -29,12 +29,16 @@ internal sealed class PharmacyDayBookSource(HospitalDbContext db) : ICounterSale
         var rates = await db.Set<PharmacySaleItem>().AsNoTracking()
             .Where(i => returnedItems.Contains(i.Id))
             .ToDictionaryAsync(i => i.Id, i => i.GstRate, cancellationToken);
-        var interState = (await (
+        var returnedSales = await (
                 from i in db.Set<PharmacySaleItem>().AsNoTracking()
                 join s in db.Set<PharmacySale>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on i.PharmacySaleId equals s.Id
-                where returnedItems.Contains(i.Id) && s.IsInterState
-                select i.Id)
-            .ToListAsync(cancellationToken)).ToHashSet();
+                where returnedItems.Contains(i.Id)
+                select new { i.Id, s.IsInterState, s.SoldAt })
+            .ToListAsync(cancellationToken);
+        var interState = returnedSales.Where(r => r.IsInterState).Select(r => r.Id).ToHashSet();
+
+        // A return after the time to reduce the sale's GST has passed (CGST Act s.34(2)) takes back the value, not the GST.
+        var timeBarred = returnedSales.Where(r => date > GstCreditNotes.LastDay(HospitalClock.ToLocalDate(r.SoldAt))).Select(r => r.Id).ToHashSet();
 
         // Balances on account paid at the counter on the day: payments after the sale, of invoices still standing.
         var collected = await (
@@ -45,7 +49,7 @@ internal sealed class PharmacyDayBookSource(HospitalDbContext db) : ICounterSale
                 select new PharmacyCollection(payment.Mode, payment.Amount))
             .ToListAsync(cancellationToken);
 
-        return PharmacyDayBook.Day(date, sales, returns, rates, collected, interState);
+        return PharmacyDayBook.Day(date, sales, returns, rates, collected, interState, timeBarred);
     }
 }
 
@@ -58,8 +62,10 @@ internal sealed record PharmacyCollection(PaymentMode Mode, decimal Amount);
 /// <item>Invoices sold that day, at their GST rates. Money taken with the invoice counts as paid at the counter; the
 /// rest of the invoice went on the patient's account. A same-day cancellation removes the invoice, with its payments
 /// and its refund, so it never reaches the books.</item>
-/// <item>Returns booked that day: the GST is carved out of each line's refund at the line's rate. Money paid back counts
-/// by mode; what was set against a balance due comes off the account.</item>
+/// <item>Returns booked that day: the GST is carved out of each line's refund at the line's rate, as the return's credit
+/// note to a registered buyer tells the Invoice Registration Portal; a return after the time to reduce the sale's GST
+/// (CGST Act s.34(2)) takes back the value alone. Money paid back counts by mode; what was set against a balance due
+/// comes off the account.</item>
 /// <item>Balances on account paid later, by mode.</item>
 /// </list>
 /// </summary>
@@ -71,7 +77,8 @@ internal static class PharmacyDayBook
         IReadOnlyList<PharmacySaleReturn> returns,
         IReadOnlyDictionary<Guid, decimal> returnedItemRates,
         IReadOnlyList<PharmacyCollection> collected,
-        IReadOnlySet<Guid>? interStateItems = null)
+        IReadOnlySet<Guid>? interStateItems = null,
+        IReadOnlySet<Guid>? timeBarredItems = null)
     {
         var standing = sales.Where(s => s.Status != SaleStatus.Cancelled).ToList();
         var sold = new CounterDocuments(
@@ -86,7 +93,9 @@ internal static class PharmacyDayBook
             Tax(returns.SelectMany(r => r.Items).Select(i =>
             {
                 var rate = returnedItemRates.GetValueOrDefault(i.SaleItemId);
-                var split = GstCalculator.FromInclusive(i.RefundAmount, rate, interStateItems?.Contains(i.SaleItemId) == true);
+                var split = timeBarredItems?.Contains(i.SaleItemId) == true
+                    ? new TaxBreakup(Money.Round(i.RefundAmount), 0m, 0m, 0m, 0m)
+                    : GstCalculator.FromInclusive(i.RefundAmount, rate, interStateItems?.Contains(i.SaleItemId) == true);
                 return (rate, split.Taxable, split.Cgst, split.Sgst, split.Igst);
             })),
             0m,

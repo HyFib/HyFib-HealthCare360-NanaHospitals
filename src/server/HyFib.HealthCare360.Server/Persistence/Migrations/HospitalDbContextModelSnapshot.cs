@@ -2048,6 +2048,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("bill_id");
 
+                    b.Property<decimal>("CgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("cgst_amount");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -2067,6 +2072,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
+
+                    b.Property<bool>("GstTimeBarred")
+                        .HasColumnType("boolean")
+                        .HasColumnName("gst_time_barred");
+
+                    b.Property<decimal>("IgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("igst_amount");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
@@ -2116,6 +2130,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("requested_by_name");
 
+                    b.Property<decimal>("SgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("sgst_amount");
+
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -2150,6 +2169,77 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_credit_notes_facility_id_issued_at");
 
                     b.ToTable("credit_notes", "billing");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.CreditNoteLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("BillLineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("bill_line_id");
+
+                    b.Property<decimal>("CgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("cgst_amount");
+
+                    b.Property<Guid>("CreditNoteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_note_id");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("description");
+
+                    b.Property<decimal>("GstRate")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("gst_rate");
+
+                    b.Property<decimal>("IgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("igst_amount");
+
+                    b.Property<string>("SacCode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("sac_code");
+
+                    b.Property<decimal>("SgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("sgst_amount");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<decimal>("TaxableAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("taxable_amount");
+
+                    b.HasKey("Id")
+                        .HasName("pk_credit_note_lines");
+
+                    b.HasIndex("BillLineId")
+                        .HasDatabaseName("ix_credit_note_lines_bill_line_id");
+
+                    b.HasIndex("CreditNoteId")
+                        .HasDatabaseName("ix_credit_note_lines_credit_note_id");
+
+                    b.ToTable("credit_note_lines", "billing");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.DiscountApproval", b =>
@@ -2888,6 +2978,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
 
+                    b.Property<Guid?>("PrecedingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("preceding_id");
+
+                    b.Property<string>("PrecedingSource")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("preceding_source");
+
                     b.Property<string>("RecordedByName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2945,6 +3044,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("FacilityId", "DocumentDate")
                         .HasDatabaseName("ix_einvoices_facility_id_document_date");
+
+                    b.HasIndex("PrecedingSource", "PrecedingId")
+                        .HasDatabaseName("ix_einvoices_preceding_source_preceding_id")
+                        .HasFilter("preceding_id IS NOT NULL");
 
                     b.HasIndex("Source", "SourceId")
                         .IsUnique()
@@ -43913,6 +44016,23 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_credit_notes_bills_bill_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.CreditNoteLine", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.BillLine", null)
+                        .WithMany()
+                        .HasForeignKey("BillLineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_credit_note_lines_bill_lines_bill_line_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.CreditNote", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("CreditNoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_credit_note_lines_credit_notes_credit_note_id");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.DiscountApproval", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.Bill", null)
@@ -46802,6 +46922,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.CashierShift", b =>
                 {
                     b.Navigation("Totals");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.CreditNote", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.DoctorPayout", b =>

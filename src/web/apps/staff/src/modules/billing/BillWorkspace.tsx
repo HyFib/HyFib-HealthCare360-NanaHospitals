@@ -43,7 +43,7 @@ import { useState } from 'react';
 import { useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
 import { PendingApprovals } from '@/modules/approvals/PendingApprovals';
-import { billDocument, billingApi, billingQueries, type BillDetail, type BillLineDto } from './api';
+import { billDocument, billingApi, billingQueries, creditNoteDocument, type BillDetail, type BillLineDto } from './api';
 import { BillLinesTable } from './BillLinesTable';
 import { BillPackagePanel } from './BillPackagePanel';
 import { BillTotalsCard } from './BillTotalsCard';
@@ -127,7 +127,7 @@ export function BillWorkspace({
   const queryClient = useQueryClient();
   const refresh = useRefreshBilling();
   const { printBill, printReceiptById, prefs } = useBillingPrint();
-  const { downloadPdf } = useServerDocuments();
+  const { print, downloadPdf } = useServerDocuments();
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [reversing, setReversing] = useState<string | null>(null);
@@ -434,7 +434,48 @@ export function BillWorkspace({
                     render: (c) =>
                       `${c.reason}${c.requestedByName ? ` · asked for by ${c.requestedByName}, approved by ${c.issuedByName ?? '—'}` : c.issuedByName ? ` · ${c.issuedByName}` : ''}`,
                   },
+                  {
+                    key: 'gst',
+                    header: 'GST taken back',
+                    align: 'end',
+                    priority: 'low',
+                    render: (c) =>
+                      c.gstTimeBarred ? (
+                        <Tooltip
+                          content="Issued after the bill's GST could be reduced (CGST Act s.34(2))"
+                          relationship="description"
+                        >
+                          <Text>Not reduced</Text>
+                        </Tooltip>
+                      ) : c.gstAmount ? (
+                        <Amount value={c.gstAmount} />
+                      ) : (
+                        '—'
+                      ),
+                  },
                   { key: 'amount', header: 'Amount', align: 'end', render: (c) => <Amount value={c.amount} strong /> },
+                  {
+                    key: 'print',
+                    header: 'Print',
+                    render: (c) => (
+                      <div className={styles.row}>
+                        <Button
+                          size="small"
+                          icon={<PrintRegular />}
+                          aria-label={`Print ${CREDIT_NOTE_KIND_LABEL[c.kind].toLowerCase()} ${c.number}`}
+                          disabled={print.isPending}
+                          onClick={() => print.mutate(creditNoteDocument(bill.id, c.id))}
+                        />
+                        <Button
+                          size="small"
+                          icon={<ArrowDownloadRegular />}
+                          aria-label={`Download ${CREDIT_NOTE_KIND_LABEL[c.kind].toLowerCase()} ${c.number} as a PDF`}
+                          disabled={downloadPdf.isPending}
+                          onClick={() => downloadPdf.mutate(creditNoteDocument(bill.id, c.id))}
+                        />
+                      </div>
+                    ),
+                  },
                 ]}
               />
             )}
