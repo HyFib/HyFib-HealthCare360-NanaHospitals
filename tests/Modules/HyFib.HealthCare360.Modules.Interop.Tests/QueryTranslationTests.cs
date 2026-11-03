@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Clinical;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics;
 using HyFib.HealthCare360.Modules.Inpatient;
+using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Platform.Modules;
@@ -117,8 +118,16 @@ public sealed class QueryTranslationTests : IDisposable
     }
 
     [Fact]
-    public void The_consent_history_query_reads_data_sharing_consents() =>
-        new PatientSharingService(_db, null!).Consents(TestData.PatientId).ToQueryString().ShouldContain("'DataSharing'");
+    public void The_consent_history_query_reads_data_sharing_consents_with_their_scopes()
+    {
+        var sql = new PatientSharingService(_db, null!).Consents(TestData.PatientId).ToQueryString();
+
+        sql.ShouldContain("'DataSharing'");
+        sql.ShouldContain("share_with");
+        sql.ShouldContain("share_purposes");
+        sql.ShouldContain("share_kinds");
+        sql.ShouldContain("share_until");
+    }
 
     [Fact]
     public void The_patient_search_filters_consent_and_restriction_in_sql()
@@ -127,14 +136,19 @@ public sealed class QueryTranslationTests : IDisposable
         protector.BlindIndexes(Arg.Any<string>()).Returns(["index"]);
         var records = new PatientRecords(_db, protector, Substitute.For<IPermissionService>(), Substitute.For<ICurrentUser>(), References, NullLogger<PatientRecords>.Instance);
 
-        var sql = Where(records.SearchQuery(TestData.Search("Patient", "name=meera kul&identifier=91-1234-5678-9012&birthdate=ge1980"), includeRestricted: false));
+        var sql = Where(records.SearchQuery(
+            TestData.Search("Patient", "name=meera kul&identifier=91-1234-5678-9012&birthdate=ge1980"), includeRestricted: false, RecordSharingConsentTests.Reader));
 
         sql.ShouldContain("'DataSharing'");
+        sql.ShouldContain("cardinality(p0.share_with) = 0", Case.Insensitive);
+        sql.ShouldContain("= ANY (p0.share_with)", Case.Insensitive);
+        sql.ShouldContain("= ANY (p0.share_purposes)", Case.Insensitive);
+        sql.ShouldContain("share_until IS NULL", Case.Insensitive);
         sql.ShouldContain("is_vip");
         sql.ShouldContain("merged_into_patient_id IS NULL");
         sql.ShouldContain("ILIKE @", Case.Sensitive);
         sql.ShouldNotContain("meera", Case.Insensitive);
-        Where(records.SearchQuery(TestData.Search("Patient", "name=meera"), includeRestricted: true)).ShouldNotContain("is_vip");
+        Where(records.SearchQuery(TestData.Search("Patient", "name=meera"), includeRestricted: true, RecordSharingConsentTests.Reader)).ShouldNotContain("is_vip");
     }
 
     /// <summary>The filter part of the SQL (the select list names every column; parameter values are comments above it).</summary>

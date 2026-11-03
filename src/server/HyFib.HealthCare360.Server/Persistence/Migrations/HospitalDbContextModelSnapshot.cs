@@ -25078,6 +25078,33 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(300)")
                         .HasColumnName("revoked_reason");
 
+                    b.PrimitiveCollection<string[]>("ShareKinds")
+                        .IsRequired()
+                        .HasColumnType("character varying(32)[]")
+                        .HasColumnName("share_kinds");
+
+                    b.PrimitiveCollection<string[]>("SharePurposes")
+                        .IsRequired()
+                        .HasColumnType("character varying(32)[]")
+                        .HasColumnName("share_purposes");
+
+                    b.Property<DateOnly?>("ShareRecordsFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("share_records_from");
+
+                    b.Property<DateOnly?>("ShareRecordsTo")
+                        .HasColumnType("date")
+                        .HasColumnName("share_records_to");
+
+                    b.Property<DateOnly?>("ShareUntil")
+                        .HasColumnType("date")
+                        .HasColumnName("share_until");
+
+                    b.PrimitiveCollection<List<Guid>>("ShareWith")
+                        .IsRequired()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("share_with");
+
                     b.Property<string>("SignedByName")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")

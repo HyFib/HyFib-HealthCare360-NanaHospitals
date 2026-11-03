@@ -817,6 +817,17 @@ on the patient profile and in the chart's **Consents** tab.
 
 * **Recording** (`patients.consents`): the consent, the decision (given or refused), who signed (the patient, or a
   named relative or guardian with the relation), the witness, the form's version and notes.
+* **What a record-sharing consent covers.** A given *Sharing records with other care providers* consent shares the
+  whole record with every partner account, or only what the patient chose: which partner accounts may read
+  (`GET /api/v1/patients/consents/sharing-partners`, `patients.consents`: other providers' integration accounts, given
+  `fhir.read` by a role the hospital made), what for (the HL7 v3 purposes of use: treatment, emergency treatment, care
+  coordination, insurance or scheme claims, public health, research, the patient's own request), which kinds of
+  records (visits and diagnoses, allergies, medicines, lab results, scan and heart test reports, vital signs,
+  documents), the records' first and last days, and the last day it lets anyone read. It is recorded as
+  `CaptureConsentRequest.sharingScope` and listed as `ConsentDto.sharingScope`, the accounts by name. 400 when a scope
+  comes with another consent or a refusal, or its records end before they start; 400 `consent.sharing_ended` for a last
+  day already past; 400 `consent.sharing_partner` for an account that is not a partner. The FHIR API applies it to
+  every read and search ([interop.md](interop.md#consent-and-access-rules)).
 * **Withdrawing** (`patients.consents`, a reason of up to 300 characters): only a consent that was given and not
   withdrawn; a refusal has nothing to withdraw (422 `consent.not_granted`), and a withdrawal is final
   (422 `consent.revoked`). The consent stays in the list, marked withdrawn, with when, by whom

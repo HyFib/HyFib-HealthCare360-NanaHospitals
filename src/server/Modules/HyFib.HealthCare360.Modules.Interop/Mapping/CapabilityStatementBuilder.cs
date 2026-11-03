@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Search;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Mapping;
@@ -46,9 +47,13 @@ internal static class CapabilityStatementBuilder
             {
                 Cors = false,
                 Description = "Bearer access tokens issued by HC360 (POST /api/v1/auth/login). The caller needs the fhir.read permission. "
-                              + "Records are returned only for patients with an active record-sharing (DataSharing) consent; restricted (VIP) "
-                              + "records also need patients.restricted.read or an emergency (break-the-glass) grant. Every read and search is "
-                              + "recorded in the tamper-evident audit trail.",
+                              + "Records are returned only for patients with a record-sharing (DataSharing) consent that admits the caller today: "
+                              + "a consent may name the accounts that may read, the purposes of use, the kinds of records, the records' dates "
+                              + "and its last day. State the purpose of use in the X-Purpose-Of-Use header (HL7 v3 ActReason: "
+                              + string.Join(", ", SharingPurposeCodes.All) + "); a consent that names purposes admits no request without one. "
+                              + "Records outside every consent that admits the caller are left out of searches and refused on read "
+                              + "(403 consent-required). Restricted (VIP) records also need patients.restricted.read or an emergency "
+                              + "(break-the-glass) grant. Every read and search is recorded in the tamper-evident audit trail with the stated purpose.",
             },
         };
 

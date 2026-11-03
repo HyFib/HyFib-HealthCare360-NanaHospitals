@@ -11,32 +11,40 @@ public sealed class RecordSharingConsentTests
 {
     private static readonly DateTimeOffset Monday = new(2026, 9, 21, 5, 0, 0, TimeSpan.Zero);
 
+    /// <summary>The integration accounts of two other providers, and the hospital's date the checks run on.</summary>
+    internal static readonly Guid PartnerA = Guid.Parse("0192a1b2-0000-7000-8000-00000000a001");
+    internal static readonly Guid PartnerB = Guid.Parse("0192a1b2-0000-7000-8000-00000000b002");
+    internal static readonly DateOnly Today = new(2026, 9, 24);
+
+    /// <summary>Partner A, reading for treatment.</summary>
+    internal static SharingReader Reader { get; } = new(PartnerA, SharingPurpose.Treatment, Today);
+
     [Fact]
     public void The_record_sharing_consent_is_the_data_sharing_consent() =>
         RecordSharingConsent.Type.ShouldBe(ConsentType.DataSharing);
 
     [Fact]
-    public void No_consent_on_file_means_no_sharing() => RecordSharingConsent.IsGranted([]).ShouldBeFalse();
+    public void No_consent_on_file_means_no_sharing() => RecordSharingConsent.IsGranted([], Reader).ShouldBeFalse();
 
     [Fact]
     public void A_granted_consent_allows_sharing() =>
-        RecordSharingConsent.IsGranted([new ConsentFact(true, Monday, null)]).ShouldBeTrue();
+        RecordSharingConsent.IsGranted([new ConsentFact(true, Monday, null)], Reader).ShouldBeTrue();
 
     [Fact]
     public void A_revoked_consent_does_not() =>
-        RecordSharingConsent.IsGranted([new ConsentFact(true, Monday, Monday.AddDays(1))]).ShouldBeFalse();
+        RecordSharingConsent.IsGranted([new ConsentFact(true, Monday, Monday.AddDays(1))], Reader).ShouldBeFalse();
 
     [Fact]
     public void A_later_refusal_supersedes_an_earlier_grant() =>
-        RecordSharingConsent.IsGranted([new ConsentFact(true, Monday, null), new ConsentFact(false, Monday.AddDays(1), null)]).ShouldBeFalse();
+        RecordSharingConsent.IsGranted([new ConsentFact(true, Monday, null), new ConsentFact(false, Monday.AddDays(1), null)], Reader).ShouldBeFalse();
 
     [Fact]
     public void A_grant_after_a_refusal_restores_sharing() =>
-        RecordSharingConsent.IsGranted([new ConsentFact(false, Monday, null), new ConsentFact(true, Monday.AddDays(1), null)]).ShouldBeTrue();
+        RecordSharingConsent.IsGranted([new ConsentFact(false, Monday, null), new ConsentFact(true, Monday.AddDays(1), null)], Reader).ShouldBeTrue();
 
     [Fact]
     public void A_refusal_alone_is_not_a_consent() =>
-        RecordSharingConsent.IsGranted([new ConsentFact(false, Monday, null)]).ShouldBeFalse();
+        RecordSharingConsent.IsGranted([new ConsentFact(false, Monday, null)], Reader).ShouldBeFalse();
 
     [Fact]
     public void The_query_form_applies_the_same_rules_per_patient_and_only_to_data_sharing()
@@ -54,9 +62,154 @@ public sealed class RecordSharingConsentTests
             Consent(patients[4], ConsentType.DataSharing, true, Monday.AddDays(1)),
         ];
 
-        var shared = patients.AsQueryable().Where(RecordSharingConsent.IsGranted(consents.AsQueryable())).Select(p => p.Uhid).ToList();
+        var shared = patients.AsQueryable().Where(RecordSharingConsent.IsGranted(consents.AsQueryable(), Reader)).Select(p => p.Uhid).ToList();
 
         shared.ShouldBe(["A", "E"]);
+    }
+
+    [Fact]
+    public void A_consent_without_a_scope_admits_every_account_for_any_purpose_or_none_and_covers_every_record()
+    {
+        foreach (var reader in new[] { Reader, new SharingReader(PartnerB, SharingPurpose.Payment, Today), new SharingReader(PartnerB, null, Today) })
+        {
+            var scopes = RecordSharingConsent.ScopesFor([new ConsentFact(true, Monday, null)], reader);
+
+            scopes.ShouldHaveSingleItem().ShouldBe(SharingScope.Everything);
+            Enum.GetValues<SharedRecordKind>().ShouldAllBe(kind => scopes[0].Covers(kind, null));
+        }
+    }
+
+    [Fact]
+    public void A_consent_naming_accounts_admits_only_them()
+    {
+        var scope = Scope(shareWith: [PartnerA]);
+
+        scope.Admits(Reader).ShouldBeTrue();
+        scope.Admits(Reader with { UserId = PartnerB }).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_consent_naming_purposes_admits_only_a_reader_who_states_one_of_them()
+    {
+        var scope = Scope(purposes: [SharingPurpose.Treatment, SharingPurpose.EmergencyTreatment]);
+
+        scope.Admits(Reader).ShouldBeTrue();
+        scope.Admits(Reader with { Purpose = SharingPurpose.EmergencyTreatment }).ShouldBeTrue();
+        scope.Admits(Reader with { Purpose = SharingPurpose.Payment }).ShouldBeFalse("an insurer reading for a claim is not treating the patient");
+        scope.Admits(Reader with { Purpose = null }).ShouldBeFalse("a reader who states no purpose cannot be held to one");
+    }
+
+    [Fact]
+    public void A_consent_lets_anyone_read_until_the_end_of_its_last_day()
+    {
+        var scope = Scope(until: Today);
+
+        scope.Admits(Reader).ShouldBeTrue();
+        scope.Admits(Reader with { Today = Today.AddDays(1) }).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Kinds_and_dates_limit_the_records_a_consent_covers()
+    {
+        var scope = Scope(kinds: [SharedRecordKind.LabResults, SharedRecordKind.Medicines], from: new DateOnly(2026, 1, 1), to: new DateOnly(2026, 6, 30));
+
+        scope.Covers(SharedRecordKind.LabResults, new DateOnly(2026, 3, 1)).ShouldBeTrue();
+        scope.Covers(SharedRecordKind.Medicines, new DateOnly(2026, 1, 1)).ShouldBeTrue("the first day is included");
+        scope.Covers(SharedRecordKind.Medicines, new DateOnly(2026, 6, 30)).ShouldBeTrue("the last day is included");
+        scope.Covers(SharedRecordKind.Visits, new DateOnly(2026, 3, 1)).ShouldBeFalse("visits are not named");
+        scope.Covers(SharedRecordKind.LabResults, new DateOnly(2025, 12, 31)).ShouldBeFalse("before the first day");
+        scope.Covers(SharedRecordKind.LabResults, new DateOnly(2026, 7, 1)).ShouldBeFalse("after the last day");
+        scope.Covers(SharedRecordKind.LabResults, null).ShouldBeFalse("a record without a date cannot be shown to be within the dates");
+        Scope(kinds: [SharedRecordKind.LabResults]).Covers(SharedRecordKind.LabResults, null).ShouldBeTrue("without dates, the date does not matter");
+        Scope(from: new DateOnly(2026, 1, 1)).Covers(SharedRecordKind.Documents, new DateOnly(2027, 1, 1)).ShouldBeTrue("open after the first day");
+    }
+
+    [Fact]
+    public void A_reader_reads_what_any_consent_that_admits_them_covers()
+    {
+        ConsentFact[] history =
+        [
+            new(true, Monday, null, Scope(shareWith: [PartnerA], kinds: [SharedRecordKind.LabResults])),
+            new(true, Monday.AddDays(1), null, Scope(shareWith: [PartnerA], kinds: [SharedRecordKind.Medicines], until: Today)),
+            new(true, Monday.AddDays(2), null, Scope(shareWith: [PartnerB], kinds: [SharedRecordKind.Visits])),
+        ];
+
+        var scopes = RecordSharingConsent.ScopesFor(history, Reader);
+
+        scopes.Count.ShouldBe(2);
+        scopes.Any(s => s.Covers(SharedRecordKind.LabResults, Today)).ShouldBeTrue();
+        scopes.Any(s => s.Covers(SharedRecordKind.Medicines, Today)).ShouldBeTrue();
+        scopes.Any(s => s.Covers(SharedRecordKind.Visits, Today)).ShouldBeFalse("only partner B may read the visits");
+        RecordSharingConsent.ScopesFor(history, Reader with { Today = Today.AddDays(1) }).ShouldHaveSingleItem().Kinds.ShouldBe([SharedRecordKind.LabResults]);
+    }
+
+    [Fact]
+    public void A_later_refusal_ends_every_scoped_consent_before_it()
+    {
+        ConsentFact[] history =
+        [
+            new(true, Monday, null, Scope(shareWith: [PartnerA])),
+            new(false, Monday.AddDays(1), null),
+            new(true, Monday.AddDays(2), null, Scope(shareWith: [PartnerB])),
+        ];
+
+        RecordSharingConsent.IsGranted(history, Reader).ShouldBeFalse();
+        RecordSharingConsent.IsGranted(history, Reader with { UserId = PartnerB }).ShouldBeTrue("given again after the refusal, for partner B");
+    }
+
+    [Fact]
+    public void The_query_form_admits_readers_as_the_scopes_do()
+    {
+        Patient[] patients = [Patient("ANY"), Patient("A-ONLY"), Patient("B-ONLY"), Patient("TREAT"), Patient("PAY"), Patient("ENDED"), Patient("TODAY"), Patient("LAB")];
+        var consents = new[]
+        {
+            Consent(patients[0], ConsentType.DataSharing, true, Monday),
+            Scoped(Consent(patients[1], ConsentType.DataSharing, true, Monday), c => c.ShareWith = [PartnerA]),
+            Scoped(Consent(patients[2], ConsentType.DataSharing, true, Monday), c => c.ShareWith = [PartnerB]),
+            Scoped(Consent(patients[3], ConsentType.DataSharing, true, Monday), c => c.SharePurposes = [SharingPurpose.Treatment]),
+            Scoped(Consent(patients[4], ConsentType.DataSharing, true, Monday), c => c.SharePurposes = [SharingPurpose.Payment]),
+            Scoped(Consent(patients[5], ConsentType.DataSharing, true, Monday), c => c.ShareUntil = Today.AddDays(-1)),
+            Scoped(Consent(patients[6], ConsentType.DataSharing, true, Monday), c => c.ShareUntil = Today),
+            Scoped(Consent(patients[7], ConsentType.DataSharing, true, Monday), c => c.ShareKinds = [SharedRecordKind.LabResults]),
+        }.AsQueryable();
+
+        List<string> Shared(SharingReader reader) => [.. patients.AsQueryable().Where(RecordSharingConsent.IsGranted(consents, reader)).Select(p => p.Uhid)];
+
+        Shared(Reader).ShouldBe(["ANY", "A-ONLY", "TREAT", "TODAY", "LAB"]);
+        Shared(new SharingReader(PartnerB, SharingPurpose.Payment, Today)).ShouldBe(["ANY", "B-ONLY", "PAY", "TODAY", "LAB"]);
+        Shared(new SharingReader(PartnerB, null, Today)).ShouldBe(["ANY", "B-ONLY", "TODAY", "LAB"], "a consent naming purposes admits no reader who states none");
+    }
+
+    [Theory]
+    [InlineData("TREAT", SharingPurpose.Treatment)]
+    [InlineData(" etreat ", SharingPurpose.EmergencyTreatment)]
+    [InlineData("CAREMGT", SharingPurpose.CareManagement)]
+    [InlineData("HPAYMT", SharingPurpose.Payment)]
+    [InlineData("PUBHLTH", SharingPurpose.PublicHealth)]
+    [InlineData("HRESCH", SharingPurpose.Research)]
+    [InlineData("PATRQT", SharingPurpose.PatientRequest)]
+    public void Reads_the_v3_purposes_of_use(string code, SharingPurpose expected)
+    {
+        SharingPurposeCodes.TryParse(code, out var purpose).ShouldBeTrue();
+        purpose.ShouldBe(expected);
+        SharingPurposeCodes.CodeOf(expected).ShouldBe(code.Trim().ToUpperInvariant());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("TREATMENT")]
+    [InlineData("TREAT,HPAYMT")]
+    [InlineData("0")]
+    public void Refuses_anything_else_as_a_purpose(string code) => SharingPurposeCodes.TryParse(code, out _).ShouldBeFalse();
+
+    internal static SharingScope Scope(
+        Guid[]? shareWith = null, SharingPurpose[]? purposes = null, SharedRecordKind[]? kinds = null, DateOnly? from = null, DateOnly? to = null, DateOnly? until = null) =>
+        new(shareWith ?? [], purposes ?? [], kinds ?? [], from, to, until);
+
+    private static PatientConsent Scoped(PatientConsent consent, Action<PatientConsent> scope)
+    {
+        scope(consent);
+        return consent;
     }
 
     [Theory]
@@ -101,7 +254,8 @@ public sealed class PatientSearchQueryTests
     {
         var request = TestData.Search("Patient", query);
         var criteria = PatientCriteria.From(request, abha => ["idx:" + abha]);
-        return [.. PatientSearchQuery.Apply(patients.AsQueryable(), consents.AsQueryable(), criteria, includeRestricted, Contains).Select(p => p.Uhid)];
+        return [.. PatientSearchQuery.Apply(patients.AsQueryable(), consents.AsQueryable(), criteria, includeRestricted, RecordSharingConsentTests.Reader, Contains)
+            .Select(p => p.Uhid)];
     }
 
     private static (List<Patient> Patients, List<PatientConsent> Consents) Consenting(params Patient[] patients) =>

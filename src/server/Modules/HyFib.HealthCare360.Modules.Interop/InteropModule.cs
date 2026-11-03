@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Features;
 using HyFib.HealthCare360.Modules.Interop.Services;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Interop;
 
@@ -24,6 +25,7 @@ public sealed class InteropModule : IModule
     {
         services.AddScoped<ReferenceDirectoryLoader>();
         services.AddScoped<PatientSharingService>();
+        services.AddScoped<ISharingPartnerDirectory, SharingPartnerDirectory>();
         services.AddScoped<FhirAuditTrail>();
         services.AddScoped<PatientRecords>();
         services.AddScoped<IFhirResourceProvider, EncounterProvider>();
