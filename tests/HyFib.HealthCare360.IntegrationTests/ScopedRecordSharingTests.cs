@@ -31,8 +31,8 @@ public sealed class ScopedRecordSharingTests(HospitalServer server)
     public async Task A_provider_reads_only_what_the_patient_agreed_to_share_with_them()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
-        var (clinic, clinicId, clinicName) = await PartnerAsync();
-        var (insurer, insurerId, _) = await PartnerAsync();
+        var (clinic, clinicId, clinicName) = await PartnerAsync(server);
+        var (insurer, insurerId, _) = await PartnerAsync(server);
         var hospitalAdmin = await (await server.SignInAsync(HospitalServer.Users.HospitalAdmin)).GetAsync<AuthUser>("/api/v1/auth/me");
 
         // The consent form offers the other providers' accounts, not the hospital administrator, whose built-in role also reads FHIR.
@@ -100,7 +100,7 @@ public sealed class ScopedRecordSharingTests(HospitalServer server)
     public async Task A_consent_without_a_scope_shares_the_whole_record_until_it_is_withdrawn()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
-        var (insurer, _, _) = await PartnerAsync();
+        var (insurer, _, _) = await PartnerAsync(server);
         var hospitalAdmin = await (await server.SignInAsync(HospitalServer.Users.HospitalAdmin)).GetAsync<AuthUser>("/api/v1/auth/me");
         var patient = await RegisterAsync(frontOffice);
         var records = await RecordsAsync(patient, hospitalAdmin.FacilityId);
@@ -123,7 +123,7 @@ public sealed class ScopedRecordSharingTests(HospitalServer server)
     public async Task A_scope_is_recorded_only_as_the_patient_can_mean_it()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
-        var (_, clinicId, _) = await PartnerAsync();
+        var (_, clinicId, _) = await PartnerAsync(server);
         var hospitalAdmin = await (await server.SignInAsync(HospitalServer.Users.HospitalAdmin)).GetAsync<AuthUser>("/api/v1/auth/me");
         var patient = await RegisterAsync(frontOffice);
         var today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(Ist).DateTime);
@@ -149,7 +149,7 @@ public sealed class ScopedRecordSharingTests(HospitalServer server)
     }
 
     /// <summary>Another provider's integration account: its own role with fhir.read only, as the set-up says.</summary>
-    private async Task<(ApiClient Client, Guid UserId, string Name)> PartnerAsync()
+    internal static async Task<(ApiClient Client, Guid UserId, string Name)> PartnerAsync(HospitalServer server)
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var roleName = "FHIR partner " + suffix;
@@ -204,13 +204,13 @@ public sealed class ScopedRecordSharingTests(HospitalServer server)
         await db.SaveChangesAsync(Ct);
     }
 
-    private sealed record FhirAnswer(int Status, string? Issue, JsonElement Body)
+    internal sealed record FhirAnswer(int Status, string? Issue, JsonElement Body)
     {
         /// <summary>The status and the refusal's reason, to compare in one go.</summary>
         public (int Status, string? Issue) Refusal => (Status, Issue);
     }
 
-    private static async Task<FhirAnswer> FhirAsync(ApiClient client, string path, string? purpose)
+    internal static async Task<FhirAnswer> FhirAsync(ApiClient client, string path, string? purpose)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/fhir/r4/" + path);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/fhir+json"));
@@ -228,7 +228,7 @@ public sealed class ScopedRecordSharingTests(HospitalServer server)
     }
 
     /// <summary>The ids of a search bundle's matches.</summary>
-    private static List<string> Matches(JsonElement bundle) =>
+    internal static List<string> Matches(JsonElement bundle) =>
         bundle.TryGetProperty("entry", out var entries)
             ? [.. entries.EnumerateArray()
                 .Where(e => e.GetProperty("search").GetProperty("mode").GetString() == "match")
@@ -236,11 +236,11 @@ public sealed class ScopedRecordSharingTests(HospitalServer server)
             : [];
 
     /// <summary>Whether the bundle says records were withheld.</summary>
-    private static bool Withheld(JsonElement bundle) =>
+    internal static bool Withheld(JsonElement bundle) =>
         bundle.TryGetProperty("entry", out var entries)
         && entries.EnumerateArray().Any(e => e.GetProperty("search").GetProperty("mode").GetString() == "outcome");
 
-    private static async Task<Guid> RegisterAsync(ApiClient frontOffice)
+    internal static async Task<Guid> RegisterAsync(ApiClient frontOffice)
     {
         var phone = "9" + string.Concat(Enumerable.Range(0, 9).Select(_ => (char)('0' + Random.Shared.Next(10))));
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
@@ -254,5 +254,5 @@ public sealed class ScopedRecordSharingTests(HospitalServer server)
         return patient.Id;
     }
 
-    private sealed record Created(Guid Id);
+    internal sealed record Created(Guid Id);
 }

@@ -124,7 +124,7 @@ public sealed class CapabilityStatementTests
 
     [Fact]
     public void Serialises_as_valid_fhir_json() =>
-        JsonSerializer.Deserialize<R4.CapabilityStatement>(FhirJson.Serialize(Statement), FhirJson.Options(false))!.Rest[0].Resource.Count.ShouldBe(8);
+        JsonSerializer.Deserialize<R4.CapabilityStatement>(FhirJson.Serialize(Statement), FhirJson.Options(false))!.Rest[0].Resource.Count.ShouldBe(9);
 }
 
 public sealed class FhirResultTests

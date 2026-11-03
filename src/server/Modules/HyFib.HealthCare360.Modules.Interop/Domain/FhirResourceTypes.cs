@@ -11,9 +11,10 @@ internal static class FhirResourceTypes
     public const string MedicationRequest = "MedicationRequest";
     public const string DiagnosticReport = "DiagnosticReport";
     public const string DocumentReference = "DocumentReference";
+    public const string Immunization = "Immunization";
 
     public static IReadOnlyList<string> Names { get; } =
-        [Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport, DocumentReference];
+        [Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport, DocumentReference, Immunization];
 
     /// <summary>Resource type names are case-sensitive in FHIR.</summary>
     public static bool IsServed(string? type) => type is not null && Names.Contains(type, StringComparer.Ordinal);

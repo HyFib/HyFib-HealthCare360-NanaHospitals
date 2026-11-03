@@ -224,6 +224,40 @@ internal sealed record AllergyRow
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
+/// <summary>
+/// Clinical module <see cref="Immunization"/>: a vaccine dose given here or copied from the patient's card, with the
+/// name of the account that recorded a dose given here.
+/// </summary>
+internal sealed record ImmunizationRow
+{
+    public required Guid Id { get; init; }
+    public required Guid PatientId { get; init; }
+    public Guid? EncounterId { get; init; }
+    public string VaccineName { get; init; } = string.Empty;
+    public string? VaccineCode { get; init; }
+    public int? DoseNumber { get; init; }
+    public DateOnly AdministeredOn { get; init; }
+    public string? Route { get; init; }
+    public string? Site { get; init; }
+    public string? BatchNumber { get; init; }
+    public string? Manufacturer { get; init; }
+    public DateOnly? ExpiryDate { get; init; }
+
+    /// <summary>The account that gave a dose given here (its display name).</summary>
+    public string? AdministeredByUserName { get; init; }
+
+    /// <summary>Who gave a dose given elsewhere, as written on the card (or noted for a dose given here).</summary>
+    public string? AdministeredBy { get; init; }
+
+    public bool IsExternal { get; init; }
+    public DateOnly? NextDueOn { get; init; }
+    public string? Notes { get; init; }
+    public bool IsEnteredInError { get; init; }
+    public string? EnteredInErrorReason { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
+}
+
 /// <summary>One medicine line of a signed (or signed-then-cancelled) Clinical e-prescription.</summary>
 internal sealed record PrescriptionItemRow
 {

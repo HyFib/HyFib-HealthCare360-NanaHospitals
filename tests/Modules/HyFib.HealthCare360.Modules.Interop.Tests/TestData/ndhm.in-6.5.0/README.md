@@ -55,3 +55,9 @@ and run the Interop module tests and `AbdmExportTests`.
   which the response reader is checked against figure by figure.
 - `package/CodeSystem-ndhm-program-code.json`: the government programme codes, against which the `AB-PMJAY` code and
   display on PM-JAY claims are checked (`Nhcx/NhcxClaimBundleTests`). Added 2026-10-27 from the same package.
+- `package/ValueSet-ndhm-vaccine-codes.json`: the guide's vaccine codes (179 SNOMED CT vaccine products, listed one by
+  one). Every card code HC360 sends as SNOMED CT (`VaccineCodes`, `src/server/Modules/HyFib.HealthCare360.Modules.Clinical/Domain/VaccineCodes.cs`)
+  must be one of them, with the guide's display (`VaccineCodeTests`), and the validator checks an immunisation's vaccine
+  against it. Added 2026-11-03 from the same package (the downloaded package's sha512 matched the integrity above; the
+  `StructureDefinition-Immunization.json` and `StructureDefinition-ImmunizationRecommendation.json` already here were
+  checked byte for byte against it).

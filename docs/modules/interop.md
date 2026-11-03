@@ -1,8 +1,8 @@
 # Interop module (`interop`) — HL7 FHIR R4 read API and ABDM health records
 
 Read-only HL7 FHIR R4 API that lets other providers read a patient's record, **subject to the patient's consent**
-(SRS **EHR-05**): Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport
-and DocumentReference under `/fhir/r4`. It is built with the Firely .NET SDK (`Hl7.Fhir.R4` 6.6.0), returns JSON only
+(SRS **EHR-05**): Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport,
+DocumentReference and Immunization under `/fhir/r4`. It is built with the Firely .NET SDK (`Hl7.Fhir.R4` 6.6.0), returns JSON only
 and writes nothing.
 
 It also exports discharge summaries, lab reports, radiology and cardiology reports, consultation notes and prescriptions as **ABDM health records**
@@ -70,8 +70,8 @@ Every read and search passes the same gate for the patient the data belongs to:
   |---|---|---|
   | Who may read (`shareWith`) | only the named accounts | every account with `fhir.read` |
   | For what (`purposes`) | only a reader who states one of them in `X-Purpose-Of-Use` | any purpose, or none stated |
-  | Which records (`kinds`) | Encounter and Condition (*visits*), AllergyIntolerance, MedicationRequest, laboratory Observations and lab DiagnosticReports (*lab results*), imaging and cardiology DiagnosticReports, vital-signs Observations (vital signs, pain score, coma scale), DocumentReference | every kind |
-  | Records from / up to | records whose day (hospital time) is within: the visit's start, the diagnosis or allergy's recording, the prescription, the sample's collection or the study, the document | every date; a record without a date is left out once dates are set |
+  | Which records (`kinds`) | Encounter and Condition (*visits*), AllergyIntolerance, MedicationRequest, laboratory Observations and lab DiagnosticReports (*lab results*), imaging and cardiology DiagnosticReports, vital-signs Observations (vital signs, pain score, coma scale), DocumentReference, Immunization (*vaccines given*) | every kind |
+  | Records from / up to | records whose day (hospital time) is within: the visit's start, the diagnosis or allergy's recording, the prescription, the sample's collection or the study, the document, the day a vaccine was given | every date; a record without a date is left out once dates are set |
   | Until | the consent admits nobody after its last day, without anyone withdrawing it | no end |
 
   A reader may read what any consent that admits them covers. The patient's own details (Patient) go with any consent
@@ -173,6 +173,7 @@ All types also take `_id` and `_lastUpdated` (meta.lastUpdated).
 | MedicationRequest | `patient`/`subject`, `status`, `intent`, `category`, `authoredon` |
 | DiagnosticReport | `patient`/`subject`, `category` (`LAB`, `RAD`, `EC`, `CUS`, `OTH`), `code`, `date`, `status` |
 | DocumentReference | `patient`/`subject`, `type` (LOINC), `date`, `status` |
+| Immunization | `patient`, `status` (`entered-in-error` only when asked for), `vaccine-code` (SNOMED CT), `date` (the day given) |
 
 ## Resource ids
 
@@ -186,6 +187,7 @@ All types also take `_id` and `_lastUpdated` (meta.lastUpdated).
 | MedicationRequest | `{prescriptionItemId}` | Clinical `PrescriptionItem` + `Prescription` |
 | DiagnosticReport | `lab-{labReportId}`, `rad-{radiologyReportId}`, `card-{cardiologyReportId}` | Diagnostics reports |
 | DocumentReference | `doc-{documentId}`, `ds-{dischargeSummaryId}` | Patients `PatientDocument` (+ stored file metadata), Clinical `DischargeSummary` |
+| Immunization | `{immunizationId}` | Clinical `Immunization` |
 
 `meta.lastUpdated` is the source rows' audit timestamp (`UpdatedAt`, else `CreatedAt`; the latest of the rows a
 resource is built from). Times are written in IST (+05:30), clinical times to the second.
@@ -293,6 +295,26 @@ duration. Requester = prescribing doctor; encounter = the clinical encounter, el
 * Discharge summaries (`ds-`): LOINC 18842-5; docStatus final or amended; author and authenticator = the signing
   doctor; context = the admission's encounter and stay period; the whole summary embedded as UTF-8 text (diagnoses and
   ICD-10 codes, complaints, course, procedures, investigations, condition at discharge, medications, advice, follow-up).
+
+### Immunization
+* Every dose staff record on the patient's **Immunisations** tab, given here or copied from the patient's card.
+* `vaccineCode`: the SNOMED CT vaccine product of the card code staff chose (`VaccineCodes`: the National Immunisation
+  Schedule's BCG, hepatitis B, bOPV, pentavalent, rotavirus, fIPV and IPV, PCV, MR, JE, DPT, Td and TT, and the usual
+  adult, travel and private vaccines), always one of the ABDM guide's vaccine codes (`ndhm-vaccine-codes`) with its
+  display, and the name staff recorded as text. A dose recorded without a code, or with one HC360 does not know, is
+  sent by its name only: HC360 never guesses a code.
+* `occurrenceDateTime` = the day given; `recorded` = when it was recorded; `lotNumber`, `expirationDate`,
+  `manufacturer` (name), `site` (as written); `route` coded in SNOMED CT (372464004 intradermal, 78421000
+  intramuscular, 34206005 subcutaneous, 26643006 oral: the ABDM guide's profile fixes the route's system to SNOMED CT)
+  when staff wrote one of those in any usual spelling ("ID", "I.M.", "s.c.", "oral drops"), else as written;
+  `protocolApplied.doseNumber`.
+* `performer` (function `AP`, administering provider): the account that recorded a dose given here, else who gave it
+  as written on the card. Named only, as no Practitioner is served.
+* A dose copied from a card is not the hospital's own record: `primarySource` false and `reportOrigin` `record`
+  (written record).
+* A dose marked as entered in error is `entered-in-error`, with the reason as a note: a read by id still returns it, so
+  a provider that read it learns it is wrong; searches leave it out unless `status` asks for it.
+* Every mapping meets the ABDM guide's Immunization profile (checked in the tests), though the API claims no profile.
 
 ## ABDM health records (EHR-08)
 
@@ -840,9 +862,8 @@ was decrypted by the reference CLI when this was built (a one-off check, as it n
   hospital's NHA credentials and a sandbox run, user-initiated linking from the patient's PHR app, and the consent
   notification and encrypted transfer of consented records to the HIU, and scan and share at the registration desk.
   Checking a patient's ABHA with ABDM is built. Not met: creating an ABHA for a patient at the desk (Aadhaar OTP enrolment)
-  ([ABDM gateway](#abdm-gateway)); and cardiology reports (ECG,
-  echo, TMT, Holter, ABPM: their own studies, with no imaging study) are not exported as ABDM documents, nor are immunisations, wellness and
-  invoice records. The FHIR read API's resources keep the ABDM-friendly identifiers (ABHA number, HFR id) but claim no
+  ([ABDM gateway](#abdm-gateway)); and immunisation, wellness and invoice records are not exported as ABDM documents
+  (immunisations are served by the FHIR API). The FHIR read API's resources keep the ABDM-friendly identifiers (ABHA number, HFR id) but claim no
   NRCeS profiles; the ABDM documents do.
 * A doctor without an HPR ID in the practitioner master is identified in ABDM documents and NHCX claims by medical
   council registration number and HC360 code only. HC360 checks that an HPR ID has 14 digits; it does not look it up
@@ -854,8 +875,9 @@ was decrypted by the reference CLI when this was built (a one-off check, as it n
 * Practitioner, Organization and Location are not served by the FHIR API: references carry a display name (and the
   HPR ID for doctors, the HFR id for facilities). ABDM documents carry their doctor and hospital as entries. Binary is not served, so uploaded
   documents are metadata only.
-* Not exported yet: immunizations, procedures, clinical notes, antibiotic susceptibilities, RPM device readings,
-  vital-sign interpretation flags, the primary-diagnosis rank.
+* Not exported yet: procedures, clinical notes, antibiotic susceptibilities, RPM device readings, vital-sign
+  interpretation flags, the primary-diagnosis rank. Immunisations are served by the FHIR API, not yet as ABDM
+  immunisation records (`ImmunizationRecord`); an `ImmunizationRecommendation` for the next dose due is not served.
 * Offset paging: rows added or changed between two page requests can shift the pages. The `next` links repeat the
   search parameters (including identifiers); POST `_search` keeps them only out of the first request line.
 * Sign-in is the HC360 bearer token (10-minute access token and refresh). A SMART-on-FHIR / OAuth client-credentials

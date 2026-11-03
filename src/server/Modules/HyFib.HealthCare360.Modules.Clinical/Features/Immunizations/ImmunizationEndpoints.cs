@@ -12,6 +12,7 @@ internal static class ImmunizationEndpoints
         var group = app.MapGroup("/api/v1/emr").WithTags("EMR");
 
         group.MapGet("/patients/{patientId:guid}/immunizations", List).RequirePermission(ClinicalPermissions.EmrRead);
+        group.MapGet("/vaccines", Vaccines).RequirePermission(ClinicalPermissions.ImmunizationsRecord);
         group.MapPost("/patients/{patientId:guid}/immunizations", Record).RequirePermission(ClinicalPermissions.ImmunizationsRecord)
             .WithValidation<RecordImmunizationRequest>();
         group.MapPost("/immunizations/{id:guid}/entered-in-error", EnteredInError).RequirePermission(ClinicalPermissions.ImmunizationsRecord)
@@ -34,6 +35,10 @@ internal static class ImmunizationEndpoints
 
         return TypedResults.Ok((await rows.OrderByDescending(i => i.AdministeredOn).ToListAsync(ct)).Select(ToDto).ToList());
     }
+
+    /// <summary>The vaccines a dose can be recorded as by card code; HC360 sends other providers their SNOMED CT codes.</summary>
+    private static IResult Vaccines() =>
+        TypedResults.Ok(VaccineCodes.All.Select(v => new VaccineChoiceDto(v.Code, v.Name, v.Route)).ToList());
 
     private static async Task<IResult> Record(Guid patientId, RecordImmunizationRequest request, ClinicalAccess access, HospitalDbContext db, ICurrentUser user,
         CancellationToken ct)

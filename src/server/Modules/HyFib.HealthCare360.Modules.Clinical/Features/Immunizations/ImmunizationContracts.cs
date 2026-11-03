@@ -18,6 +18,12 @@ public sealed record RecordImmunizationRequest(
     DateOnly? NextDueOn,
     string? Notes);
 
+/// <summary>
+/// A vaccine the immunisation form offers by its card code (<see cref="Domain.VaccineCodes"/>): its name, and how it is
+/// usually given when that does not depend on the product.
+/// </summary>
+public sealed record VaccineChoiceDto(string Code, string Name, Domain.VaccineRoute? Route);
+
 public sealed record ImmunizationDto(
     Guid Id,
     Guid PatientId,

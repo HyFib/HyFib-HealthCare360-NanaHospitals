@@ -82,6 +82,7 @@ export const SHARED_RECORD_KIND_LABELS: Record<SharedRecordKind, string> = {
   ScansAndHeartTests: 'Scan and heart test reports',
   VitalSigns: 'Vital signs',
   Documents: 'Discharge summaries and documents',
+  Immunisations: 'Vaccines given',
 };
 
 const lower = (label: string) => label.charAt(0).toLowerCase() + label.slice(1);

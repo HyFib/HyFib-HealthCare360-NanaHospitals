@@ -591,6 +591,16 @@ export interface ImmunizationDto {
   enteredInErrorReason: string | null;
 }
 
+/** How a vaccine is usually given, as the immunisation form fills the route in. */
+export type VaccineRoute = 'Intradermal' | 'Intramuscular' | 'Subcutaneous' | 'Oral';
+
+/** A vaccine the form offers by its card code; the server sends other providers its SNOMED CT code. */
+export interface VaccineChoice {
+  code: string;
+  name: string;
+  route: VaccineRoute | null;
+}
+
 export type RecordImmunizationRequest = Omit<
   ImmunizationDto,
   'id' | 'patientId' | 'isEnteredInError' | 'enteredInErrorReason'
@@ -840,6 +850,7 @@ export const emrKeys = {
     ['emr', 'patient', patientId, 'notes', encounterId, page] as const,
   immunizations: (patientId: string, includeErrors: boolean) =>
     ['emr', 'patient', patientId, 'immunizations', includeErrors] as const,
+  vaccines: ['emr', 'vaccines'] as const,
   admissions: (patientId: string) => ['emr', 'patient', patientId, 'admissions'] as const,
   /** Under the patient key, so a change to the patient's record refreshes it. */
   previousVisit: (patientId: string, encounterId: string) =>
@@ -955,6 +966,13 @@ export const emrQueries = {
           signal,
         }),
       placeholderData: keepPreviousData,
+    }),
+  /** The vaccines a dose can be recorded as by card code (a fixed list: kept for the session). */
+  vaccines: () =>
+    queryOptions({
+      queryKey: emrKeys.vaccines,
+      queryFn: ({ signal }) => api.get<VaccineChoice[]>('/api/v1/emr/vaccines', { signal }),
+      staleTime: Infinity,
     }),
   immunizations: (patientId: string, includeErrors = false) =>
     queryOptions({
