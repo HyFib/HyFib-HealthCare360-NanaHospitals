@@ -43,7 +43,9 @@ Integration partners (a referral hospital, a health information exchange) get th
    such as the hospital administrator's, are staff and are not offered.
 2. Create a user for the partner, give it only that role, and sign it in with `POST /api/v1/auth/login` (and
    `/api/v1/auth/refresh`). Access tokens live 10 minutes; send them as `Authorization: Bearer <token>`.
-3. The user's facility decides which visits, encounters, orders, results and reports it sees (platform facility filter).
+3. The user's facility decides which visits, encounters, orders, results, reports, clinical notes and procedures it
+   sees (platform facility filter): those recorded at another facility of the hospital are not served, though staff
+   see a patient's clinical notes and procedures from every facility.
 4. The partner states why it reads in `X-Purpose-Of-Use` with each request (for example `TREAT`), as patients'
    consents may allow some purposes only ([Consent and access rules](#consent-and-access-rules)).
 
@@ -384,8 +386,10 @@ duration. Requester = prescribing doctor; encounter = the clinical encounter, el
 * Every mapping meets the ABDM guide's Immunization profile (checked in the tests), though the API claims no profile.
 
 ### Procedure
-* Every procedure on the patient's record: recorded on the chart, and every operation recorded when the theatre
-  completed it.
+* Every procedure recorded at the partner's facility ([set-up](#permission-and-set-up), step 3): on the chart, and
+  every operation recorded when the theatre completed it. A procedure on the chart is the facility's where it was
+  recorded, an operation the theatre's. Staff see a patient's procedures from every facility; the API serves the
+  partner's facility's own, as it does clinical notes.
 * `code`: the procedure's name only. The ABDM guide's Procedure profile fixes the system of every coding of a
   procedure (code, body site, outcome, category) to SNOMED CT; HC360 codes a procedure in ICD-10-PCS (the procedure
   catalogue) or names it in words, and holds no SNOMED CT map for it. So an ICD-10-PCS code is never sent under SNOMED

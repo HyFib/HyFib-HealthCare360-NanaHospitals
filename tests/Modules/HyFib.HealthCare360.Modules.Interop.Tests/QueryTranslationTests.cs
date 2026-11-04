@@ -151,6 +151,16 @@ public sealed class QueryTranslationTests : IDisposable
         sql.ShouldNotContain("clinical.encounters", Case.Insensitive, "the encounter is read apart, with the facility filter off for it alone");
     }
 
+    [Fact]
+    public void The_procedure_query_leaves_out_removed_procedures_and_other_facilities_procedures()
+    {
+        // Staff see a patient's procedures from every facility; a partner sees its own facility's, as for clinical notes.
+        var sql = new ProcedureProvider(_db, References).Procedures(p => p.PatientId == TestData.PatientId).ToQueryString();
+
+        sql.ShouldContain("clinical.procedure_records");
+        KeepsFilters(sql, "p", facility: true);
+    }
+
     /// <summary>
     /// The query reads its own table with the platform's filters on: removed rows left out, and other facilities' rows
     /// when the table is a facility's. A query that ignores a filter for a table it joins (to name a removed account, say)
