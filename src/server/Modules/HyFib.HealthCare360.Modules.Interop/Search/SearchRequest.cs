@@ -143,9 +143,9 @@ internal static class SearchRequestParser
                 $"{definition.Type} searches need a patient: add patient=Patient/{{id}} (search Patient by identifier first).", FhirOutcomes.PatientRequired));
         }
 
-        if (!definition.IsPatientScoped && !criteria.Any(c => SearchDefinitions.PatientSelectors.Contains(c.Parameter, StringComparer.Ordinal)))
+        if (definition.Selectors is { } selectors && !criteria.Any(c => selectors.Contains(c.Parameter, StringComparer.Ordinal)))
         {
-            return Fail(FhirOutcomes.BadRequest($"Patient searches need at least one of: {string.Join(", ", SearchDefinitions.PatientSelectors)}."));
+            return Fail(FhirOutcomes.BadRequest($"{definition.Type} searches need at least one of: {string.Join(", ", selectors)}."));
         }
 
         var size = count is null ? SearchDefinitions.DefaultCount : Math.Min(count.Value, SearchDefinitions.MaxCount);

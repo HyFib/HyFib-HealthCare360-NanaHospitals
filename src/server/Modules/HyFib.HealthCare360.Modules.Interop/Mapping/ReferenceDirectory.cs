@@ -11,9 +11,8 @@ internal sealed record PractitionerInfo(string Name, string? HprId);
 
 /// <summary>
 /// Display names for the people, departments and facilities a page of resources refers to, loaded once per request.
-/// The facade does not serve Practitioner or Organization resources, so these become display references (with the HPR
-/// ID for practitioners and the HFR id for facilities, which ABDM systems recognise); an ABDM document, which includes
-/// them, links them (<see cref="Linked"/>).
+/// A practitioner or facility becomes a reference to its Practitioner or Organization resource (<see cref="Linked"/>),
+/// with its name and the HPR ID of a practitioner or the HFR id of a facility, which ABDM systems recognise.
 /// It also maps admissions to the in-patient visit that represents them as an Encounter.
 /// </summary>
 internal sealed class ReferenceDirectory
@@ -31,8 +30,8 @@ internal sealed class ReferenceDirectory
 
     /// <summary>
     /// Practitioner and Organization references also carry a literal reference (<c>Practitioner/{id}</c>,
-    /// <c>Organization/{id}</c>): set for ABDM documents, which include those resources and resolve every reference.
-    /// The FHIR read API, which does not serve them, leaves it off.
+    /// <c>Organization/{id}</c>), which resolves: the FHIR read API serves both (the loader links them), and ABDM
+    /// documents include them. Off only where the referenced resource cannot be had.
     /// </summary>
     public bool Linked { get; init; }
 

@@ -24,6 +24,7 @@ internal sealed record FhirResponse(int StatusCode, R4.Resource Body, bool Prett
 /// </summary>
 internal sealed class FhirApi(
     IEnumerable<IFhirResourceProvider> providers,
+    IEnumerable<IFhirDirectoryProvider> directory,
     PatientRecords patients,
     PatientSharingService sharing,
     FhirAuditTrail audit,
@@ -31,11 +32,18 @@ internal sealed class FhirApi(
 {
     private readonly Dictionary<string, IFhirResourceProvider> _providers = providers.ToDictionary(p => p.ResourceType, StringComparer.Ordinal);
 
+    private readonly Dictionary<string, IFhirDirectoryProvider> _directory = directory.ToDictionary(p => p.ResourceType, StringComparer.Ordinal);
+
     public async Task<FhirResponse> ReadAsync(string type, string id, SharingReader reader, CancellationToken ct)
     {
         if (!FhirResourceTypes.IsServed(type))
         {
             return FhirResponse.From(FhirOutcomes.UnknownType(type));
+        }
+
+        if (FhirResourceTypes.IsDirectory(type))
+        {
+            return await ReadDirectoryAsync(type, id, reader, ct);
         }
 
         return type == FhirResourceTypes.Patient ? await ReadPatientAsync(id, reader, ct) : await ReadClinicalAsync(type, id, reader, ct);
@@ -55,9 +63,44 @@ internal sealed class FhirApi(
             return FhirResponse.From(parsed.Error!);
         }
 
+        if (FhirResourceTypes.IsDirectory(definition.Type))
+        {
+            return await SearchDirectoryAsync(request, baseUrl, reader, ct);
+        }
+
         return definition.IsPatientScoped
             ? await SearchPatientRecordAsync(request, baseUrl, reader, ct)
             : await SearchPatientsAsync(request, baseUrl, reader, ct);
+    }
+
+    /// <summary>
+    /// A practitioner or facility of the hospital. It is in no patient's record, so no consent is asked; the read is
+    /// audited as an integration event, not PHI access. A deleted one is Gone, as records still refer to it.
+    /// </summary>
+    private async Task<FhirResponse> ReadDirectoryAsync(string type, string id, SharingReader reader, CancellationToken ct)
+    {
+        var lookup = await _directory[type].FindAsync(id, ct);
+        if (lookup.IsDeleted)
+        {
+            return FhirResponse.From(FhirOutcomes.Error(StatusCodes.Status410Gone, R4.OperationOutcome.IssueType.Deleted, $"{type}/{id} was deleted.", FhirOutcomes.Deleted));
+        }
+
+        if (lookup.Resource is null)
+        {
+            return FhirResponse.From(FhirOutcomes.ResourceNotFound(type, FhirOutcomes.Printable(id)));
+        }
+
+        await audit.DirectoryAsync("read", type, id, 1, 1, [], reader, ct);
+        return FhirResponse.Ok(lookup.Resource);
+    }
+
+    /// <summary>A search of the hospital's directory, run in memory over its live entries (a few hundred at most).</summary>
+    private async Task<FhirResponse> SearchDirectoryAsync(SearchRequest request, string baseUrl, SharingReader reader, CancellationToken ct)
+    {
+        var type = request.Definition.Type;
+        var page = ResourceSearch.Execute(await _directory[type].ListAsync(ct), request);
+        await audit.DirectoryAsync("search", type, null, page.Resources.Count, page.Total, request.ParameterNames, reader, ct);
+        return FhirResponse.Ok(SearchBundles.Build(baseUrl, request, page, time.GetUtcNow()), request.Pretty);
     }
 
     private async Task<FhirResponse> ReadPatientAsync(string id, SharingReader reader, CancellationToken ct)
