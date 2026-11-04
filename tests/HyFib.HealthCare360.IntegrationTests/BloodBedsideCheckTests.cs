@@ -186,6 +186,89 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
         (await closed.Content.ReadAsStringAsync(Ct)).ShouldContain("patient.restricted");
     }
 
+    [Fact]
+    public async Task A_unit_is_not_started_once_the_stay_has_ended()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var nurse = await RecordingNurseAsync();
+        var officer = await BloodBankOfficerAsync();
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+        var admission = await AdmitAsync(frontOffice, doctor, patient.Id);
+        var issue = await IssueUnitAsync(officer.Client, doctor, patient.Id, admission.Id, BloodGroup.APositive, emergency: false);
+        await ConsentAsync(frontOffice, patient.Id);
+
+        // A unit issued but never started does not hold the discharge: it goes back to the blood bank.
+        await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/initiate",
+            new InitiateDischargeRequest(null, "Haemoglobin corrected without the unit"));
+        await ApproveDuesAsync(billing, admission.Id);
+        (await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/complete", Discharge())).Status
+            .ShouldBe(AdmissionStatus.Discharged);
+
+        // A bedside dialog left open from before the discharge cannot start it now.
+        var witness = await nurse.PostAsync<WitnessConfirmed>(Witness, Confirm(HospitalServer.Users.SecondNurse, patient.Id));
+        (await RefusalAsync(nurse, $"{Bank}/issues/{issue.Id}/transfusion", Start(patient.Uhid, issue.UnitNumber, witness))).ShouldBe("bloodbank.stay_ended");
+        (await nurse.GetAsync<PatientBloodUnits>($"{Bank}/patients/{patient.Id}/units")).Units.Single(u => u.IssueId == issue.Id).Transfusion.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task A_unit_taken_back_to_stock_while_its_start_waits_is_not_started_too()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var nurse = await RecordingNurseAsync();
+        var officer = await BloodBankOfficerAsync();
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+        var admission = await AdmitAsync(frontOffice, doctor, patient.Id);
+        var issue = await IssueUnitAsync(officer.Client, doctor, patient.Id, admission.Id, BloodGroup.BNegative, emergency: false);
+        await ConsentAsync(frontOffice, patient.Id);
+        var witness = await nurse.PostAsync<WitnessConfirmed>(Witness, Confirm(HospitalServer.Users.SecondNurse, patient.Id));
+
+        // The test holds the stay's lock, as a discharge being saved would: the start reads the unit, then waits for it.
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        await using var holding = await db.Database.BeginTransactionAsync(Ct);
+        var key = StayLockKey(admission.Id);
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({key})", Ct);
+        var starting = nurse.SendRawAsync(HttpMethod.Post, $"{Bank}/issues/{issue.Id}/transfusion", Start(patient.Uhid, issue.UnitNumber, witness));
+        await WaitForLockWaiterAsync(key);
+
+        // Meanwhile the blood bank takes the unit back to stock, which the start has already read as issued.
+        using (var returned = await officer.Client.SendRawAsync(HttpMethod.Post, $"{Bank}/issues/{issue.Id}/return",
+                   new ReturnBloodRequest(TemperatureMaintained: true, Notes: null)))
+        {
+            returned.EnsureSuccessStatusCode();
+        }
+
+        await holding.CommitAsync(Ct);
+        using var started = await starting;
+        started.StatusCode.ShouldBe(HttpStatusCode.Conflict, "the unit went back to stock while the start waited, so only the return is kept");
+        var unit = (await nurse.GetAsync<PatientBloodUnits>($"{Bank}/patients/{patient.Id}/units")).Units.Single(u => u.IssueId == issue.Id);
+        (unit.ReturnedAt is not null, unit.Transfusion).ShouldBe((true, (TransfusionDto?)null));
+    }
+
+    /// <summary>The advisory lock key of a stay, as <c>EncounterLocks</c> takes it.</summary>
+    private static long StayLockKey(Guid admissionId) =>
+        System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"encounter:{admissionId:N}")));
+
+    /// <summary>Waits until a session waits for the stay's lock (PostgreSQL shows a bigint key as its high and low halves).</summary>
+    private async Task WaitForLockWaiterAsync(long key)
+    {
+        var (high, low) = ((long)(uint)(key >> 32), (long)(uint)key);
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        while (await db.Database.SqlQuery<int>(
+                   $"SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND classid::bigint = {high} AND objid::bigint = {low} AND objsubid = 1")
+                   .SingleAsync(Ct) == 0)
+        {
+            waited.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(30), "the start should wait for the stay's lock");
+            await Task.Delay(50, Ct);
+        }
+    }
+
     /// <summary>A unit of <paramref name="group"/> packed red cells collected, tested, asked for, cross-matched (or released in an emergency) and issued.</summary>
     private async Task<BloodIssueDto> IssueUnitAsync(ApiClient officer, ApiClient doctor, Guid patientId, Guid admissionId, BloodGroup group, bool emergency)
     {

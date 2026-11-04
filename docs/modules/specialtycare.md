@@ -142,6 +142,8 @@ tab, the nurse who starts it:
 
 The server refuses the start when:
 
+* the patient's stay has ended (`bloodbank.stay_ended`): a unit issued but never started does not hold the discharge,
+  and goes back to the blood bank, so a bedside dialog left open from before cannot start it after;
 * the unit has expired (`bloodbank.unit_expired`);
 * its cross-match is more than 72 hours old, unless it was released in an emergency (`bloodbank.crossmatch_expired`);
 * it left the blood bank more than 4 hours ago, so it cannot be given in time and goes back to be discarded
@@ -152,7 +154,10 @@ The server refuses the start when:
   is audited as a warning (`bloodbank.consent_deferred`).
 
 While it runs, observations are added (at 15 minutes, and later), the unit cannot be returned to stock, and the stay
-cannot be discharged (`discharge.transfusion_running`). It ends completed or stopped, with the volume given and the
+cannot be discharged (`discharge.transfusion_running`). Each holds when both happen at the same moment: the start is
+saved under the stay's lock, which the discharge takes before it asks for the running units, so one of the two sees the
+other; and the start writes the issue, as a return does, so of a start and a return saved together the second is
+refused on the issue's version (409). It ends completed or stopped, with the volume given and the
 observations at the end; a stop says why (`bloodbank.transfusion_stopped`, a warning), and a reaction is reported as
 before. With the issue, the transfusion says what became of each unit: returned, or transfused.
 

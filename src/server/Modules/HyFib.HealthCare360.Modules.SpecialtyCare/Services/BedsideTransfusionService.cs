@@ -63,16 +63,43 @@ public sealed class BedsideTransfusionService(
     }
 
     /// <summary>
-    /// The bedside check and the start. Refused, before anything is saved, for another patient's wristband or another bag
-    /// (each audited as a near miss), a unit no longer usable, or no consent; the witness's confirmation is spent in the
-    /// same save as the start.
+    /// The bedside check and the start. Refused, before anything is saved, once the stay has ended, for another patient's
+    /// wristband or another bag (each audited as a near miss), a unit no longer usable, or no consent; the witness's
+    /// confirmation is spent in the same save as the start.
+    /// <para>
+    /// Two things that may happen to the unit at the same moment are each kept to one. The start is saved under the stay's
+    /// lock (<see cref="EncounterLocks"/>), held to the commit, which the discharge takes before it asks for the stay's
+    /// running units (<see cref="TransfusionDischargeHolds"/>): a discharge saved at the same moment either commits first,
+    /// and the stay is found ended here, or waits and then finds this unit running. And the start writes the issue, as a
+    /// return to stock does, so of a start and a return saved at the same moment the second is refused on the issue's
+    /// version (409).
+    /// </para>
     /// </summary>
     public async Task<Result<TransfusionDto>> StartAsync(Guid issueId, StartTransfusionRequest request, CancellationToken ct)
     {
-        var issue = await db.Set<BloodIssue>().AsNoTracking().FirstOrDefaultAsync(i => i.Id == issueId, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var issue = await db.Set<BloodIssue>().FirstOrDefaultAsync(i => i.Id == issueId, ct);
         if (issue is null)
         {
             return Error.NotFound(nameof(BloodIssue), issueId);
+        }
+
+        var bloodRequest = await db.Set<BloodRequest>().AsNoTracking().Where(r => r.Id == issue.RequestId)
+            .Select(r => new { r.AdmissionId, r.CreatedAt }).FirstAsync(ct);
+        DateTimeOffset? admittedAt = null;
+        if (bloodRequest.AdmissionId is { } stayId)
+        {
+            // Read under the lock: the discharge closes the stay (PatientDischarged) in the transaction that holds it.
+            await EncounterLocks.LockAsync(db, [stayId], ct);
+            var stay = await db.Set<AdmissionRecord>().AsNoTracking().Where(a => a.Id == stayId)
+                .Select(a => new { a.AdmittedAt, a.DischargedAt }).FirstOrDefaultAsync(ct);
+            if (stay?.DischargedAt is not null)
+            {
+                return Error.Rule("bloodbank.stay_ended",
+                    $"The patient's stay has ended: unit {issue.UnitNumber} is not started after the discharge. Return it to the blood bank.");
+            }
+
+            admittedAt = stay?.AdmittedAt;
         }
 
         if (issue.IsReturned)
@@ -112,9 +139,6 @@ public sealed class BedsideTransfusionService(
             return usable.Error!;
         }
 
-        var bloodRequest = await db.Set<BloodRequest>().AsNoTracking().Where(r => r.Id == issue.RequestId)
-            .Select(r => new { r.AdmissionId, r.CreatedAt }).FirstAsync(ct);
-        var admittedAt = bloodRequest.AdmissionId is { } admissionId ? (await AdmittedAtAsync([admissionId], ct)).GetValueOrDefault(admissionId) : null;
         var consent = ConsentFor(await ConsentsAsync(issue.PatientId, ct), BedsideCheck.ConsentSince(bloodRequest.CreatedAt, admittedAt));
         var consented = BedsideCheck.Consent(consent is not null, issue.IsEmergencyRelease, request.ConsentDeferredReason);
         if (consented.IsFailure)
@@ -147,6 +171,9 @@ public sealed class BedsideTransfusionService(
         (transfusion.WitnessUserId, transfusion.WitnessName) = (witness.Value.UserId, witness.Value.Name);
         transfusion.Observations.Add(Observation(transfusion.Id, TransfusionObservationKind.Baseline, now, request.Baseline, userName));
         db.Add(transfusion);
+
+        // Written with the start so that a return to stock saved meanwhile, which writes the issue too, conflicts with it.
+        issue.UpdatedAt = now;
         audit.Add(new AuditEntry(AuditCategories.Clinical, "bloodbank.transfusion_started",
             $"Unit {issue.UnitNumber} checked at the bedside with {witness.Value.Name} and started")
         {
@@ -168,6 +195,7 @@ public sealed class BedsideTransfusionService(
         }
 
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return ToDto(transfusion);
     }
 
