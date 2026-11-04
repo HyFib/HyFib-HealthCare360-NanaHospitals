@@ -134,6 +134,12 @@ const DEATH: DeathRecordDto = {
   errorReason: null,
   canMarkInError: true,
   version: 4,
+  // Confirmed by a second doctor, so that reporting it to the Registrar is offered.
+  confirmationRequired: true,
+  confirmationWaitingSince: null,
+  confirmedBy: 'Dr. Meera Iyer',
+  confirmerRegistrationNumber: 'KMC 2011/06/2231',
+  confirmedAt: daysAgo(0.5),
 };
 
 const DEATHS: DeathRegister = {
@@ -157,6 +163,7 @@ const DEATHS: DeathRegister = {
       overdue: false,
       reportedOn: dateAgo(3),
       registrationNumber: 'D-2026-33-00610',
+      awaitingConfirmation: false,
     },
     {
       id: RECORD_ID,
@@ -175,6 +182,7 @@ const DEATHS: DeathRegister = {
       overdue: false,
       reportedOn: null,
       registrationNumber: null,
+      awaitingConfirmation: false,
     },
   ],
   medicoLegal: 0,

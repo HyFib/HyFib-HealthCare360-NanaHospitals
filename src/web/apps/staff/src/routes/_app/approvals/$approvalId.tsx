@@ -45,6 +45,9 @@ function subjectLink(
       return canManageMasters
         ? { label: 'Open the service', to: '/setup/services', search: { edit: request.subjectId } }
         : null;
+    // A death certificate to confirm: the certificate itself, opened (and audited) as the patient's record.
+    case 'DeathRecord':
+      return { label: 'Open the death certificate', to: `/mrd/deaths/${request.subjectId}` };
     default:
       return null;
   }

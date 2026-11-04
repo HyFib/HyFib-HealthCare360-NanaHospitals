@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.VitalRegistration;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Messaging;
@@ -16,7 +17,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
 /// Births and deaths over the real API: recorded and certified by the staff allowed to, marking the patient deceased,
-/// listed in the month's registers and reported to the Registrar, and an entry made on the wrong patient taken back.
+/// listed in the month's registers and reported to the Registrar (a death once a second doctor confirms its certificate),
+/// and an entry made on the wrong patient taken back.
 /// </summary>
 public sealed class BirthsAndDeathsTests(HospitalServer server)
 {
@@ -63,9 +65,13 @@ public sealed class BirthsAndDeathsTests(HospitalServer server)
             notTheDoctors.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         }
 
+        // A second doctor confirms the certificate before it is reported (DeathCertificateConfirmationTests).
         var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(5.5));
+        (await RefusalAsync(mrd, HttpMethod.Post, $"/api/v1/mrd/deaths/{death.Id}/report", new ReportToRegistrarRequest(today, "D-2026-TN-00417", death.Version)))
+            .ShouldBe("death.not_confirmed");
+        var confirmed = await DeathCertificateConfirmationTests.ConfirmAsync(server, death);
         var reported = await mrd.PostAsync<DeathRecordDto>($"/api/v1/mrd/deaths/{death.Id}/report",
-            new ReportToRegistrarRequest(today, "D-2026-TN-00417", death.Version));
+            new ReportToRegistrarRequest(today, "D-2026-TN-00417", confirmed.Version));
         (reported.Status, reported.RegistrationNumber).ShouldBe((VitalReportStatus.Reported, "D-2026-TN-00417"));
         (await RefusalAsync(doctor, HttpMethod.Put, $"/api/v1/mrd/deaths/{death.Id}", certificate with { Version = reported.Version }))
             .ShouldBe("vital.reported");
@@ -97,6 +103,9 @@ public sealed class BirthsAndDeathsTests(HospitalServer server)
         var death = await doctor.PostAsync<DeathRecordDto>("/api/v1/mrd/deaths", certificate with { Pregnancy = PregnancyAtDeath.NotPregnant });
         (await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{woman.Id}")).IsDeceased.ShouldBeTrue();
 
+        // The doctor first withdraws the second doctor's confirmation they asked for: nothing changes under a waiting request.
+        var asked = await DeathCertificateConfirmationTests.WaitingRequestAsync(doctor, death.Id);
+        await doctor.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}/withdraw", new WithdrawApprovalRequest(asked.Version));
         var undone = await doctor.PostAsync<DeathRecordDto>($"/api/v1/mrd/deaths/{death.Id}/entered-in-error",
             new VitalEntryErrorRequest("Certified on the wrong patient", death.Version));
         undone.Status.ShouldBe(VitalReportStatus.EnteredInError);
