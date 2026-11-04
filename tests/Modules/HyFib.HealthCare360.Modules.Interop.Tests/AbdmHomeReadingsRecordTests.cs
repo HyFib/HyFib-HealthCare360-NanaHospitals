@@ -197,20 +197,23 @@ public sealed class AbdmHomeReadingsRecordTests
     [Fact]
     public void A_month_of_more_readings_than_a_document_holds_goes_in_parts_never_parting_a_blood_pressure()
     {
-        // A monitor sending every few minutes: pairs of blood pressure readings, more than one document holds.
+        // A weight, then a monitor sending every few minutes: pairs of blood pressure readings, more than one document
+        // holds. The weight puts the pairs off by one, so the limit falls inside a pair: the 500th, readings 1,000 and 1,001.
         var pairs = (AbdmRecords.MaxReadingsPerDocument / 2) + 10;
         var readings = Enumerable.Range(0, pairs).SelectMany(i => new[]
         {
             AbdmTestData.Reading(0x200 + (2 * i), RpmReadingType.SystolicBp, 120m, AbdmTestData.Ist(9, 1, 6, 0).AddMinutes(10 * i), ReadingSeverity.Normal, null),
             AbdmTestData.Reading(0x201 + (2 * i), RpmReadingType.DiastolicBp, 80m, AbdmTestData.Ist(9, 1, 6, 0).AddMinutes(10 * i), ReadingSeverity.Normal, null),
-        }).ToList();
+        }).Prepend(AbdmTestData.Reading(0x1f0, RpmReadingType.Weight, 71.8m, AbdmTestData.Ist(9, 1, 5, 30), ReadingSeverity.Normal, null)).ToList();
 
         var parts = AbdmRecords.Parts(readings);
 
         parts.Count.ShouldBe(2);
         parts.ShouldAllBe(p => p.Count <= AbdmRecords.MaxReadingsPerDocument);
         parts.SelectMany(p => p).Select(r => r.Id).ShouldBe(readings.OrderBy(r => r.MeasuredAt).ThenBy(r => r.Id).Select(r => r.Id));
-        parts.ShouldAllBe(p => p.GroupBy(r => r.MeasuredAt).All(g => g.Count() == 2), "a panel's two readings stay together");
+        parts[0].Count.ShouldBe(AbdmRecords.MaxReadingsPerDocument - 1, "the pair the limit falls in starts the next part");
+        parts.SelectMany((p, i) => p.Select(r => (r.MeasuredAt, Part: i))).GroupBy(r => r.MeasuredAt)
+            .ShouldAllBe(instant => instant.Select(r => r.Part).Distinct().Count() == 1, "a panel's two readings stay together");
         parts[0][^1].MeasuredAt.ShouldBeLessThan(parts[1][0].MeasuredAt);
 
         // Each part names itself; the first keeps the month's identity as the month grows into more parts.
