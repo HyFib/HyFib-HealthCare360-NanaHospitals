@@ -159,6 +159,16 @@ internal static class SearchDefinitions
             ],
             "status",
             resource => resource is R4.Immunization { Status: R4.Immunization.ImmunizationStatusCodes.EnteredInError }),
+        new(FhirResourceTypes.Procedure,
+            "Procedures recorded on the chart, and operations recorded when the theatre completed them (category 387713003 Surgical procedure). The procedure is named, not coded: the ABDM guide fixes its code system to SNOMED CT, and HC360 codes procedures in ICD-10-PCS.",
+            [
+                PatientParameter, IdParameter,
+                new("status", R4.SearchParamType.Token, "completed | entered-in-error (such records are left out unless asked for)."),
+                new("date", R4.SearchParamType.Date, "When the procedure was performed."),
+                LastUpdatedParameter,
+            ],
+            "status",
+            resource => resource is R4.Procedure { Status: R4.EventStatus.EnteredInError }),
     ];
 
     public static ResourceSearchDefinition? Find(string? type) => All.FirstOrDefault(d => string.Equals(d.Type, type, StringComparison.Ordinal));

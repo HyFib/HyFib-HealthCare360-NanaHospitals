@@ -117,6 +117,14 @@ in (its admission and visit are copied). A correction changes the fields and lea
 for the audit trail but off the timeline. Operations completed in the theatre arrive on their own (`Source`
 `OperationTheatre`, see *Events*). The chart's *Procedures* tab lists, records, corrects and voids them.
 
+A procedure that reveals what a sensitive diagnosis would puts the patient's record in its category in the same save,
+recorded, corrected to it or completed in theatre (`SensitiveCategories.FromIcd10Pcs`): one ending a pregnancy (ICD-10-PCS
+root operation Abortion, `10A`, every approach and device; the catalogue's suction evacuation is one) the MTP category,
+as an O04 diagnosis does; electroconvulsive therapy (`GZB`) the mental health category, as an F20–F69 diagnosis does.
+A record is never taken out of a category here (a doctor does that with a reason). A procedure named in words without a
+code puts the record in no category; the MTP register does for a termination. The `SensitiveProcedures` migration puts
+the records already kept in the category, leaving out procedures marked as entered in error.
+
 #### Results on the patient's record (IMG-02, IMG-03)
 
 A lab, imaging or cardiology report is on the chart once Diagnostics releases it (`DiagnosticReportReleased`, see

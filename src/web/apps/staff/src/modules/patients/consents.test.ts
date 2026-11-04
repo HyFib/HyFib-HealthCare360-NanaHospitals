@@ -227,6 +227,15 @@ describe('what a record-sharing consent covers (gap #28)', () => {
     SHARED_RECORD_KINDS.forEach((k) => expect(SHARED_RECORD_KIND_LABELS[k]).toBeTruthy());
   });
 
+  it('tells the patient the procedures done apart from the notes written about them (gap #26)', () => {
+    expect(sharingScopeSummary({ ...open, kinds: ['Procedures'] }, day)).toBe(
+      'Shared with every partner account, for any purpose: procedures and operations.',
+    );
+    expect(sharingScopeSummary({ ...open, kinds: ['ClinicalNotes', 'Procedures'] }, day)).toBe(
+      'Shared with every partner account, for any purpose: progress, procedure and referral notes, procedures and operations.',
+    );
+  });
+
   it('tells the patient which kinds carry the readings of their home-monitoring devices', () => {
     expect(SHARED_RECORD_KIND_LABELS.VitalSigns).toMatch(/at home/);
     expect(SHARED_RECORD_KIND_LABELS.LabResults).toMatch(/home glucose/);

@@ -86,6 +86,7 @@ export const SHARED_RECORD_KIND_LABELS: Record<SharedRecordKind, string> = {
   Immunisations: 'Vaccines given',
   ClinicalNotes: 'Progress, procedure and referral notes',
   CounsellingNotes: 'Counselling notes',
+  Procedures: 'Procedures and operations',
 };
 
 const lower = (label: string) => label.charAt(0).toLowerCase() + label.slice(1);

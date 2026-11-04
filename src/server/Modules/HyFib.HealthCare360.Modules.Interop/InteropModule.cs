@@ -36,6 +36,7 @@ public sealed class InteropModule : IModule
         services.AddScoped<IFhirResourceProvider, DiagnosticReportProvider>();
         services.AddScoped<IFhirResourceProvider, DocumentReferenceProvider>();
         services.AddScoped<IFhirResourceProvider, ImmunizationProvider>();
+        services.AddScoped<IFhirResourceProvider, ProcedureProvider>();
         services.AddScoped<FhirApi>();
         FhirAuthorizationResultHandler.Register(services);
 

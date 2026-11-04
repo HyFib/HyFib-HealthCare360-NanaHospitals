@@ -39,6 +39,9 @@ public enum SharedRecordKind
     /// (<see cref="SharedRecordKinds.NamedOnly"/>).
     /// </summary>
     CounsellingNotes,
+
+    /// <summary>Procedures done for the patient, operations included (Procedure).</summary>
+    Procedures,
 }
 
 /// <summary>Rules on the kinds of records a record-sharing consent names.</summary>
