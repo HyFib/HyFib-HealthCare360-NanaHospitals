@@ -44,7 +44,7 @@ internal sealed class FeedbackNpsReport : ReportDefinition
         var departmentId = ctx.Args.DepartmentId;
         var groupBy = ctx.Args.Text(ReportKeys.GroupBy) ?? ByDepartment;
         var responses =
-            from r in ctx.Db.Set<FeedbackResponse>().AsNoTracking()
+            from r in ctx.Db.Set<FeedbackResponse>().AsNoTracking().NotRemoved()
             join f in ctx.Db.Set<FeedbackForm>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]) on r.FormId equals f.Id
             where r.SubmittedAt >= start && r.SubmittedAt < end && (departmentId == null || r.DepartmentId == departmentId)
             select new { r.DepartmentId, r.Channel, FormType = f.Type, r.Nps, r.OverallRating, r.IsLowScore };
@@ -156,7 +156,7 @@ internal sealed class HrHeadcountReport : ReportDefinition
         var today = ctx.Today;
         var departmentId = ctx.Args.DepartmentId;
         var staff =
-            from e in ctx.Db.Set<Employee>().AsNoTracking()
+            from e in ctx.Db.Set<Employee>().AsNoTracking().NotRemoved()
             join d in ctx.Db.Set<Designation>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]) on e.DesignationId equals (Guid?)d.Id into designations
             from d in designations.DefaultIfEmpty()
             where departmentId == null || e.DepartmentId == departmentId

@@ -27,9 +27,8 @@ internal static class SelfServiceEndpoints
         me.MapGet("/leave/balances", async (int? year, CurrentEmployee current, LeaveService leave, TimeProvider time, CancellationToken ct) =>
             await WithEmployeeAsync(current, ct, async id => TypedResults.Ok(await leave.BalancesAsync(id, year ?? time.LocalToday().Year, ct))));
         me.MapGet("/leave/requests", async (CurrentEmployee current, HospitalDbContext db, CancellationToken ct) =>
-            await WithEmployeeAsync(current, ct, async id => TypedResults.Ok(await LeaveEndpoints
-                .Project(db.Set<LeaveRequest>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().Where(l => l.EmployeeId == id), db)
-                .Take(100).ToListAsync(ct))));
+            await WithEmployeeAsync(current, ct, async id => TypedResults.Ok(await LeaveEndpoints.FirstAsync(
+                db.Set<LeaveRequest>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().Where(l => l.EmployeeId == id), db, 100, ct))));
         me.MapPost("/leave/requests", async (ApplyLeaveRequest r, CurrentEmployee current, LeaveService leave, CancellationToken ct) =>
                 await WithEmployeeAsync(current, ct, async id => (await leave.ApplyAsync(id, r, ct)).ToCreated(requestId => $"/api/v1/hr/me/leave/requests/{requestId}")))
             .WithValidation<ApplyLeaveRequest>();
@@ -38,9 +37,8 @@ internal static class SelfServiceEndpoints
             .WithValidation<CancelLeaveRequest>();
 
         me.MapGet("/attendance/regularisations", async (CurrentEmployee current, HospitalDbContext db, CancellationToken ct) =>
-            await WithEmployeeAsync(current, ct, async id => TypedResults.Ok(await AttendanceEndpoints
-                .ProjectRegularisations(db.Set<AttendanceRegularisation>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().Where(r => r.EmployeeId == id), db)
-                .Take(100).ToListAsync(ct))));
+            await WithEmployeeAsync(current, ct, async id => TypedResults.Ok(await AttendanceEndpoints.FirstRegularisationsAsync(
+                db.Set<AttendanceRegularisation>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().Where(r => r.EmployeeId == id), db, 100, ct))));
         me.MapPost("/attendance/regularisations", async (RequestRegularisationRequest r, CurrentEmployee current, RegularisationService service, CancellationToken ct) =>
                 await WithEmployeeAsync(current, ct, async id => (await service.RequestAsync(id, r, ct)).ToCreated(requestId => $"/api/v1/hr/me/attendance/regularisations/{requestId}")))
             .WithValidation<RequestRegularisationRequest>();
@@ -61,7 +59,7 @@ internal static class SelfServiceEndpoints
                 var team = Reportees(db, id);
                 var requests = db.Set<LeaveRequest>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
                     .Where(l => (status == null || l.Status == status) && team.Contains(l.EmployeeId));
-                return TypedResults.Ok(await LeaveEndpoints.Project(requests, db).Take(200).ToListAsync(ct));
+                return TypedResults.Ok(await LeaveEndpoints.FirstAsync(requests, db, 200, ct));
             }));
         me.MapPost("/team/leave-requests/{requestId:guid}/approve", async (Guid requestId, DecisionRequest r, LeaveService leave, CancellationToken ct) =>
                 (await leave.DecideAsync(requestId, approve: true, r.Note, ct)).ToNoContent())
@@ -75,7 +73,7 @@ internal static class SelfServiceEndpoints
                 var team = Reportees(db, id);
                 var requests = db.Set<AttendanceRegularisation>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
                     .Where(r => (status == null || r.Status == status) && team.Contains(r.EmployeeId));
-                return TypedResults.Ok(await AttendanceEndpoints.ProjectRegularisations(requests, db).Take(200).ToListAsync(ct));
+                return TypedResults.Ok(await AttendanceEndpoints.FirstRegularisationsAsync(requests, db, 200, ct));
             }));
         me.MapPost("/team/regularisations/{requestId:guid}/approve", async (Guid requestId, DecisionRequest r, RegularisationService service, CancellationToken ct) =>
                 (await service.DecideAsync(requestId, approve: true, r.Note, ct)).ToNoContent())

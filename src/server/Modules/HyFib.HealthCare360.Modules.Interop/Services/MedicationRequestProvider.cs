@@ -20,8 +20,10 @@ internal sealed class MedicationRequestProvider(HospitalDbContext db, ReferenceD
             return ResourceLookup.Missing;
         }
 
+        // Removed lines and prescriptions too, only to tell a removed line (410) from one that never was (404); what is shared
+        // is read below with every filter.
         var state = await (from i in db.Set<PrescriptionItem>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
-                           join p in db.Set<Prescription>() on i.PrescriptionId equals p.Id
+                           join p in db.Set<Prescription>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]) on i.PrescriptionId equals p.Id
                            where i.Id == itemId
                            select new RowState(p.PatientId, i.IsDeleted)).FirstOrDefaultAsync(ct);
         if (ResourceLookup.Unavailable(state) is { } unavailable)

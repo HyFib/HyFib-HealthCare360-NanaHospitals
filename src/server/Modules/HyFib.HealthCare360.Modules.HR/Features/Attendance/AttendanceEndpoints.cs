@@ -159,13 +159,34 @@ internal static class AttendanceEndpoints
             requests = requests.Where(r => r.Status == status);
         }
 
-        return TypedResults.Ok(await ProjectRegularisations(requests, db).ToPagedResultAsync(page, ct));
+        return TypedResults.Ok(await PageRegularisationsAsync(requests, db, page, ct));
     }
 
-    internal static IQueryable<RegularisationDto> ProjectRegularisations(IQueryable<AttendanceRegularisation> requests, HospitalDbContext db) =>
+    /// <summary>
+    /// A page of regularisation requests for the HR, team and self-service lists: pending first, then the latest day. The
+    /// requests keep the filters their caller gave them; who asked is named apart, from any facility (<see cref="EmployeeNames"/>).
+    /// </summary>
+    internal static async Task<PagedResult<RegularisationDto>> PageRegularisationsAsync(
+        IQueryable<AttendanceRegularisation> requests, HospitalDbContext db, PageRequest page, CancellationToken ct)
+    {
+        var rows = await Regularisations(requests).ToPagedResultAsync(page, ct);
+        return rows with { Items = await NamedAsync(db, rows.Items, ct) };
+    }
+
+    /// <summary>The first <paramref name="count"/> regularisation requests, as <see cref="PageRegularisationsAsync"/> orders and names them.</summary>
+    internal static async Task<List<RegularisationDto>> FirstRegularisationsAsync(
+        IQueryable<AttendanceRegularisation> requests, HospitalDbContext db, int count, CancellationToken ct) =>
+        await NamedAsync(db, await Regularisations(requests).Take(count).ToListAsync(ct), ct);
+
+    private static IQueryable<RegularisationDto> Regularisations(IQueryable<AttendanceRegularisation> requests) =>
         from r in requests
-        join e in db.Set<Employee>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on r.EmployeeId equals e.Id
         orderby r.Status == ApprovalStatus.Pending descending, r.Date descending
-        select new RegularisationDto(r.Id, r.EmployeeId, e.EmployeeCode, e.FullName, r.Date, r.Kind, r.RequestedIn, r.RequestedOut, r.Reason, r.Status,
+        select new RegularisationDto(r.Id, r.EmployeeId, string.Empty, string.Empty, r.Date, r.Kind, r.RequestedIn, r.RequestedOut, r.Reason, r.Status,
             r.CreatedAt, r.DecidedAt, r.DecisionNote);
+
+    private static async Task<List<RegularisationDto>> NamedAsync(HospitalDbContext db, IReadOnlyList<RegularisationDto> rows, CancellationToken ct)
+    {
+        var names = await EmployeeNames.ByIdAsync(db, rows.Select(r => r.EmployeeId), ct);
+        return [.. rows.Select(r => names.TryGetValue(r.EmployeeId, out var name) ? r with { EmployeeCode = name.Code, EmployeeName = name.Name } : r)];
+    }
 }

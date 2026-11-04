@@ -83,7 +83,8 @@ internal static class CapaEndpoints
             capas = capas.Where(c => c.CapaNumber == term.ToUpper() || EF.Functions.ILike(c.Action, like, QueryExtensions.LikeEscape));
         }
 
-        return TypedResults.Ok(await Project(capas, db, today).ToPagedResultAsync(page, ct));
+        var rows = await Project(capas, db, today).ToPagedResultAsync(page, ct);
+        return TypedResults.Ok(rows with { Items = await WithIncidentNumbersAsync(db, rows.Items, ct) });
     }
 
     /// <summary>The caller's own actions, in any facility (owners are often clinicians who move between branches).</summary>
@@ -91,7 +92,7 @@ internal static class CapaEndpoints
     {
         var capas = db.Set<Domain.Capa>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .Where(c => c.OwnerUserId == user.UserId && (includeClosed == true || c.Status == CapaStatus.Open || c.Status == CapaStatus.InProgress));
-        return TypedResults.Ok(await Project(capas, db, time.LocalToday()).Take(200).ToListAsync(ct));
+        return TypedResults.Ok(await WithIncidentNumbersAsync(db, await Project(capas, db, time.LocalToday()).Take(200).ToListAsync(ct), ct));
     }
 
     private static async Task<IResult> Get(Guid id, HospitalDbContext db, ICurrentUser user, IPermissionService permissions, TimeProvider time, CancellationToken ct)
@@ -115,11 +116,24 @@ internal static class CapaEndpoints
         from c in capas
         join u in db.Set<User>() on c.OwnerUserId equals u.Id into owners
         from u in owners.DefaultIfEmpty()
-        join i in db.Set<Incident>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on c.IncidentId equals i.Id into incidents
-        from i in incidents.DefaultIfEmpty()
         orderby c.Status == CapaStatus.Verified || c.Status == CapaStatus.Cancelled, c.DueDate
         select new CapaListItem(
-            c.Id, c.CapaNumber, c.Source, c.IncidentId, i != null ? i.IncidentNumber : null, c.RiskId, c.Type, c.Action, c.OwnerUserId,
+            c.Id, c.CapaNumber, c.Source, c.IncidentId, null, c.RiskId, c.Type, c.Action, c.OwnerUserId,
             u != null ? u.DisplayName : null, c.DueDate, c.Status,
             (c.Status == CapaStatus.Open || c.Status == CapaStatus.InProgress) && c.DueDate < today, c.EffectivenessCheckDue);
+
+    /// <summary>
+    /// The incidents' numbers, from any facility, read apart: EF Core ignores a query filter for the whole query, so reading
+    /// them with the actions took the facility filter off the actions too, and the list showed every facility's.
+    /// </summary>
+    private static async Task<List<CapaListItem>> WithIncidentNumbersAsync(HospitalDbContext db, IReadOnlyList<CapaListItem> capas, CancellationToken ct)
+    {
+        var ids = capas.Select(c => c.IncidentId).OfType<Guid>().Distinct().ToList();
+        var numbers = ids.Count == 0
+            ? []
+            : await db.Set<Incident>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(i => ids.Contains(i.Id))
+                .ToDictionaryAsync(i => i.Id, i => i.IncidentNumber, ct);
+        return [.. capas.Select(c => c.IncidentId is { } incident && numbers.TryGetValue(incident, out var number) ? c with { IncidentNumber = number } : c)];
+    }
 }

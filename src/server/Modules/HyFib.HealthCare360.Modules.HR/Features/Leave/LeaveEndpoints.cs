@@ -180,15 +180,35 @@ internal static class LeaveEndpoints
             requests = requests.Where(l => l.FromDate <= to);
         }
 
-        return TypedResults.Ok(await Project(requests, db).ToPagedResultAsync(page, ct));
+        return TypedResults.Ok(await PageAsync(requests, db, page, ct));
     }
 
-    /// <summary>Shared projection for HR, team and self-service lists (pending first, then newest).</summary>
-    internal static IQueryable<LeaveRequestDto> Project(IQueryable<LeaveRequest> requests, HospitalDbContext db) =>
+    /// <summary>
+    /// A page of leave requests for the HR, team and self-service lists: pending first, then newest. The requests keep the
+    /// filters their caller gave them; who asked is named apart, from any facility (<see cref="EmployeeNames"/>).
+    /// </summary>
+    internal static async Task<PagedResult<LeaveRequestDto>> PageAsync(
+        IQueryable<LeaveRequest> requests, HospitalDbContext db, PageRequest page, CancellationToken ct)
+    {
+        var rows = await Rows(requests, db).ToPagedResultAsync(page, ct);
+        return rows with { Items = await NamedAsync(db, rows.Items, ct) };
+    }
+
+    /// <summary>The first <paramref name="count"/> leave requests, as <see cref="PageAsync"/> orders and names them.</summary>
+    internal static async Task<List<LeaveRequestDto>> FirstAsync(
+        IQueryable<LeaveRequest> requests, HospitalDbContext db, int count, CancellationToken ct) =>
+        await NamedAsync(db, await Rows(requests, db).Take(count).ToListAsync(ct), ct);
+
+    private static IQueryable<LeaveRequestDto> Rows(IQueryable<LeaveRequest> requests, HospitalDbContext db) =>
         from l in requests
-        join e in db.Set<Employee>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on l.EmployeeId equals e.Id
         join t in db.Set<LeaveType>() on l.LeaveTypeId equals t.Id
         orderby l.Status == ApprovalStatus.Pending descending, l.AppliedAt descending
-        select new LeaveRequestDto(l.Id, l.EmployeeId, e.EmployeeCode, e.FullName, l.LeaveTypeId, t.Code, l.FromDate, l.FromSession, l.ToDate,
+        select new LeaveRequestDto(l.Id, l.EmployeeId, string.Empty, string.Empty, l.LeaveTypeId, t.Code, l.FromDate, l.FromSession, l.ToDate,
             l.ToSession, l.Days, l.Reason, l.Status, l.AppliedAt, l.DecidedAt, l.DecisionNote, l.AttachmentFileId);
+
+    private static async Task<List<LeaveRequestDto>> NamedAsync(HospitalDbContext db, IReadOnlyList<LeaveRequestDto> rows, CancellationToken ct)
+    {
+        var names = await EmployeeNames.ByIdAsync(db, rows.Select(r => r.EmployeeId), ct);
+        return [.. rows.Select(r => names.TryGetValue(r.EmployeeId, out var name) ? r with { EmployeeCode = name.Code, EmployeeName = name.Name } : r)];
+    }
 }
