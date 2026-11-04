@@ -52,6 +52,7 @@ internal static class FhirSystems
     public const string DocumentReferenceStatus = "http://hl7.org/fhir/document-reference-status";
     public const string AllergyCategory = "http://hl7.org/fhir/allergy-intolerance-category";
     public const string ImmunizationStatus = "http://hl7.org/fhir/event-status";
+    public const string ProcedureStatus = "http://hl7.org/fhir/event-status";
 
     // Profiles.
     public const string VitalSignsProfile = "http://hl7.org/fhir/StructureDefinition/";

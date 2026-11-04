@@ -27,13 +27,14 @@ internal static class SharedRecords
         R4.DiagnosticReport report => HasCategory(report.Category, "LAB") ? SharedRecordKind.LabResults : SharedRecordKind.ScansAndHeartTests,
         R4.DocumentReference document => KindOf(document),
         R4.Immunization => SharedRecordKind.Immunisations,
+        R4.Procedure => SharedRecordKind.Procedures,
         _ => throw new ArgumentOutOfRangeException(nameof(resource), resource.TypeName, "Not a clinical resource of the FHIR API."),
     };
 
     /// <summary>
     /// The day (hospital time) the record is of: when the visit began, the diagnosis or allergy was recorded, the
-    /// medicine prescribed, the sample collected or the scan taken, the document written (a note signed) or the vaccine
-    /// given. Null when it has none.
+    /// medicine prescribed, the sample collected or the scan taken, the document written (a note signed), the vaccine
+    /// given or the procedure performed. Null when it has none.
     /// </summary>
     public static DateOnly? DateOf(R4.Resource resource) => resource switch
     {
@@ -45,6 +46,7 @@ internal static class SharedRecords
         R4.DiagnosticReport report => Effective(report.Effective) ?? Day(report.Issued),
         R4.DocumentReference document => Day(document.Date),
         R4.Immunization immunization => Effective(immunization.Occurrence),
+        R4.Procedure procedure => Effective(procedure.Performed),
         _ => null,
     };
 

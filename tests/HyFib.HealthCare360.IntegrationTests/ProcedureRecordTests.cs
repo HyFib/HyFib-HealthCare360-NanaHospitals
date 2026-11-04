@@ -14,6 +14,7 @@ using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SensitiveCategory = HyFib.HealthCare360.Modules.Patients.Domain.SensitiveCategory;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -210,6 +211,28 @@ public sealed class ProcedureRecordTests(HospitalServer server)
         (await doctor.GetAsync<List<ProcedureDto>>($"/api/v1/emr/patients/{patientId}/procedures")).Count.ShouldBe(1);
         var ip = await doctor.GetAsync<PagedResult<TimelineEntry>>($"/api/v1/emr/patients/{patientId}/timeline?encounterTypes=InPatient&types=Procedure");
         ip.Items.ShouldHaveSingleItem().Title.ShouldBe("0FT44ZZ Laparoscopic cholecystectomy");
+    }
+
+    [Fact]
+    public async Task An_operation_that_ends_a_pregnancy_closes_the_record_when_the_theatre_completes_it()
+    {
+        var patientId = await RegisterPatientAsync();
+        var facilityId = await FacilityAsync();
+        var surgeonId = await DoctorsPractitionerAsync();
+
+        // A suction evacuation booked in theatre with its catalogue code (ICD-10-PCS 10A07Z6), completed: the operation is
+        // recorded, and the record goes into the MTP category in the same save, as a diagnosis of a medical abortion puts it.
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var procedures = scope.ServiceProvider.GetRequiredService<ProcedureService>();
+            await procedures.RecordSurgeryAsync(new SurgeryCompleted(Guid.CreateVersion7(), "OT-T" + Random.Shared.Next(100_000, 999_999).ToString(CultureInfo.InvariantCulture),
+                facilityId, patientId, null, null, "10A07Z6", "Suction evacuation", ProcedureSide.NotApplicable, surgeonId, DateTimeOffset.UtcNow.AddHours(-1),
+                DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
+            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        (await admin.GetAsync<SensitiveCategoriesDto>($"/api/v1/patients/{patientId}/sensitive-categories")).Categories.ShouldBe([SensitiveCategory.Mtp]);
     }
 
     private async Task<Guid> AddEncounterAsync(Guid patientId, EncounterType type, DateTimeOffset startedAt, Guid? admissionId = null)

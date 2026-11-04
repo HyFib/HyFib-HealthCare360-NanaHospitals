@@ -335,7 +335,8 @@ and grants nothing.
   - An HIV (B20–B24, Z21), mental-illness (F20–F69), medical-abortion (O04) or sexual-abuse (T74.2, T76.2, Y05, Z04.4)
     diagnosis puts the record in the category, and so does a released HIV test result outside its normal answers
     (reactive or indeterminate), or one corrected to it (a result reported under an HIV panel, such as a band of an HIV
-    confirmation, is one), and a sexual assault entered in the MLC register;
+    confirmation, is one), a sexual assault entered in the MLC register, and a procedure that ends a pregnancy
+    (ICD-10-PCS 10A) or is electroconvulsive therapy (GZB), recorded on the chart or completed in theatre;
     a doctor (`patients.sensitive.manage`) can add or remove one with a reason, audited as a security event.
   - The clinical record (notes, diagnoses, encounters, prescriptions written, nursing and MAR, OT, dialysis, teleconsults,
     emergency cases with their MLC, files) then opens only to staff holding the category: `patients.sensitive.hiv`, `.mental_health` and

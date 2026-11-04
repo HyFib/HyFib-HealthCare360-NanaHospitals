@@ -2,8 +2,8 @@
 
 Read-only HL7 FHIR R4 API that lets other providers read a patient's record, **subject to the patient's consent**
 (SRS **EHR-05**): Patient, Encounter, Observation (the clinic's vital signs, lab results and the readings of the patient's
-home-monitoring devices), Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport, DocumentReference and
-Immunization under `/fhir/r4`. It is built with the Firely .NET SDK (`Hl7.Fhir.R4` 6.6.0), returns JSON only
+home-monitoring devices), Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport, DocumentReference,
+Immunization and Procedure under `/fhir/r4`. It is built with the Firely .NET SDK (`Hl7.Fhir.R4` 6.6.0), returns JSON only
 and writes nothing.
 
 It also exports discharge summaries, lab reports, radiology and cardiology reports, consultation notes, prescriptions and the vaccine doses given here as **ABDM health records**
@@ -72,8 +72,8 @@ Every read and search passes the same gate for the patient the data belongs to:
   |---|---|---|
   | Who may read (`shareWith`) | only the named accounts | every account with `fhir.read` |
   | For what (`purposes`) | only a reader who states one of them in `X-Purpose-Of-Use` | any purpose, or none stated |
-  | Which records (`kinds`) | Encounter and Condition (*visits*), AllergyIntolerance, MedicationRequest, laboratory Observations and lab DiagnosticReports (*lab results*, a glucose by glucometer at home included), imaging and cardiology DiagnosticReports and an ECG patch's rhythm (*scans and heart tests*), vital-signs Observations (vital signs, pain score, coma scale, those measured at home), DocumentReference of documents and discharge summaries (*documents*), Immunization (*vaccines given*), DocumentReference of signed progress, procedure, referral and other notes (*clinical notes*), DocumentReference of signed counselling notes (*counselling notes*) | every kind but counselling notes |
-  | Records from / up to | records whose day (hospital time) is within: the visit's start, the diagnosis or allergy's recording, the prescription, the sample's collection or the study, the document (a note: the day it was signed), the day a vaccine was given, the day a reading was measured | every date; a record without a date is left out once dates are set |
+  | Which records (`kinds`) | Encounter and Condition (*visits*), AllergyIntolerance, MedicationRequest, laboratory Observations and lab DiagnosticReports (*lab results*, a glucose by glucometer at home included), imaging and cardiology DiagnosticReports and an ECG patch's rhythm (*scans and heart tests*), vital-signs Observations (vital signs, pain score, coma scale, those measured at home), DocumentReference of documents and discharge summaries (*documents*), Immunization (*vaccines given*), DocumentReference of signed progress, procedure, referral and other notes (*clinical notes*), DocumentReference of signed counselling notes (*counselling notes*), Procedure (*procedures*, operations included) | every kind but counselling notes |
+  | Records from / up to | records whose day (hospital time) is within: the visit's start, the diagnosis or allergy's recording, the prescription, the sample's collection or the study, the document (a note: the day it was signed), the day a vaccine was given, the day a reading was measured, the day a procedure was performed | every date; a record without a date is left out once dates are set |
   | Until | the consent admits nobody after its last day, without anyone withdrawing it | no end |
 
   A reader may read what any consent that admits them covers. The patient's own details (Patient) go with any consent
@@ -195,6 +195,7 @@ All types also take `_id` and `_lastUpdated` (meta.lastUpdated).
 | DiagnosticReport | `patient`/`subject`, `category` (`LAB`, `RAD`, `EC`, `CUS`, `OTH`), `code`, `date`, `status` |
 | DocumentReference | `patient`/`subject`, `type` (LOINC: 18842-5 a discharge summary, 11506-3 a progress note, 28570-0 a procedure note, 57133-1 a referral note or letter, 47042-7 a counselling note, 34109-9 another note), `date` (the reference created, a summary or note signed), `status` |
 | Immunization | `patient`, `status` (`entered-in-error` only when asked for), `vaccine-code` (SNOMED CT), `date` (the day given) |
+| Procedure | `patient`, `status` (`entered-in-error` only when asked for), `date` (when it was performed) |
 
 ## Resource ids
 
@@ -209,6 +210,7 @@ All types also take `_id` and `_lastUpdated` (meta.lastUpdated).
 | DiagnosticReport | `lab-{labReportId}`, `rad-{radiologyReportId}`, `card-{cardiologyReportId}` | Diagnostics reports |
 | DocumentReference | `doc-{documentId}`, `ds-{dischargeSummaryId}`, `note-{noteId}` | Patients `PatientDocument` (+ stored file metadata), Clinical `DischargeSummary`, Clinical `ClinicalNote` (signed only) |
 | Immunization | `{immunizationId}` | Clinical `Immunization` |
+| Procedure | `{procedureId}` | Clinical `ProcedureRecord` |
 
 `meta.lastUpdated` is the source rows' audit timestamp (`UpdatedAt`, else `CreatedAt`; the latest of the rows a
 resource is built from). Times are written in IST (+05:30), clinical times to the second.
@@ -380,6 +382,31 @@ duration. Requester = prescribing doctor; encounter = the clinical encounter, el
 * A dose marked as entered in error is `entered-in-error`, with the reason as a note: a read by id still returns it, so
   a provider that read it learns it is wrong; searches leave it out unless `status` asks for it.
 * Every mapping meets the ABDM guide's Immunization profile (checked in the tests), though the API claims no profile.
+
+### Procedure
+* Every procedure on the patient's record: recorded on the chart, and every operation recorded when the theatre
+  completed it.
+* `code`: the procedure's name only. The ABDM guide's Procedure profile fixes the system of every coding of a
+  procedure (code, body site, outcome, category) to SNOMED CT; HC360 codes a procedure in ICD-10-PCS (the procedure
+  catalogue) or names it in words, and holds no SNOMED CT map for it. So an ICD-10-PCS code is never sent under SNOMED
+  CT's system, as a diagnosis in an unknown code system goes by its title ([Condition](#condition)).
+* `category`: SNOMED CT 387713003 *Surgical procedure* for an operation the theatre completed; none for a procedure on
+  the chart, which may be minor or diagnostic.
+* `performedDateTime` = when it was performed; `encounter` = the clinician's encounter, else the visit, else the stay's
+  in-patient visit.
+* `performer.actor`: the practitioner, by name with their HPR ID, when they have a record here; else the name written
+  for a performer from elsewhere. Named only, as no Practitioner is served.
+* `bodySite` and `outcome` as written, the side included in the body site ("Knee, left"; "Right side" when only the
+  side was recorded); `note`: the notes.
+* A corrected record is `completed`, with "Corrected:" and the reason as a note. A record marked as entered in error is
+  `entered-in-error`, with the reason: a read by id still returns it, so a provider that read it learns it is wrong;
+  searches leave it out unless `status` asks for it.
+* A procedure that ends a pregnancy (ICD-10-PCS 10A) or is electroconvulsive therapy (GZB) puts the patient's record
+  in the MTP or mental health category in the save that records it, as the matching diagnosis does (see the Clinical
+  module's *Procedures*). From then on the record is restricted: a read is refused (403 `restricted-record`) and a search
+  returns nothing, withheld, for the procedure and for everything shared before. So such a procedure never leaves under
+  a consent, even one that names procedures.
+* Every mapping meets the ABDM guide's Procedure profile (checked in the tests), though the API claims no profile.
 
 ## ABDM health records (EHR-08)
 
@@ -963,7 +990,7 @@ was decrypted by the reference CLI when this was built (a one-off check, as it n
   not told when a linked programme has new readings (ABDM's care-context notify), so a PHR app shows the programme's
   readings as of its last request. The patient's other wellness data (steps, sleep, diet, women's health) is not kept by
   HC360, so those sections of the guide's wellness record are never filled.
-* Not exported yet: procedures, antibiotic susceptibilities, vital-sign
+* Not exported yet: procedures in ABDM documents (the FHIR API serves them), antibiotic susceptibilities, vital-sign
   interpretation flags, the primary-diagnosis rank. A dose copied from the patient's card is served by the FHIR API but
   not exported as an ABDM immunisation record (it is the record of whoever gave it), and the FHIR API serves no
   `ImmunizationRecommendation` (the ABDM document carries the next dose due). A dose marked as entered in error after it

@@ -525,3 +525,37 @@ internal sealed record DeviceReadingRow
     /// <summary>The account that entered a reading by hand.</summary>
     public string? RecordedByUserName { get; init; }
 }
+
+/// <summary>
+/// Clinical module <see cref="ProcedureRecord"/>: a procedure recorded on the chart, or an operation recorded when the
+/// theatre completed it. The code is the procedure catalogue's (ICD-10-PCS) when one was chosen; the name is always set.
+/// </summary>
+internal sealed record ProcedureRow
+{
+    public required Guid Id { get; init; }
+    public required Guid PatientId { get; init; }
+    public Guid? EncounterId { get; init; }
+    public Guid? VisitId { get; init; }
+    public Guid? AdmissionId { get; init; }
+    public DateTimeOffset PerformedAt { get; init; }
+    public string? Code { get; init; }
+    public string? CodeSystem { get; init; }
+    public string Display { get; init; } = string.Empty;
+    public Guid? PerformerPractitionerId { get; init; }
+
+    /// <summary>A performer from elsewhere, who has no practitioner record here.</summary>
+    public string? PerformerName { get; init; }
+
+    public Platform.Contracts.ProcedureSide Side { get; init; }
+    public string? BodySite { get; init; }
+    public string? Outcome { get; init; }
+    public string? Notes { get; init; }
+    public ProcedureSource Source { get; init; }
+    public ProcedureStatus Status { get; init; }
+
+    /// <summary>Why the record was last corrected, or why it was marked as entered in error.</summary>
+    public string? StatusReason { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
+}

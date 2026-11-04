@@ -34,6 +34,24 @@ public sealed class SensitiveCategoryTests
     public void A_diagnosis_puts_the_record_in_its_category(string? code, SensitiveCategory expected) =>
         SensitiveCategories.FromIcd(code).ShouldBe(expected);
 
+    /// <summary>The ICD-10-PCS tables (FY2027): 10A is the root operation Abortion, GZB electroconvulsive therapy.</summary>
+    [Theory]
+    [InlineData("10A07Z6", SensitiveCategory.Mtp)]
+    [InlineData("10A07ZX", SensitiveCategory.Mtp)]
+    [InlineData("10A00ZZ", SensitiveCategory.Mtp)]
+    [InlineData(" 10a08zz ", SensitiveCategory.Mtp)]
+    [InlineData("GZB0ZZZ", SensitiveCategory.MentalHealth)]
+    [InlineData("GZB4ZZZ", SensitiveCategory.MentalHealth)]
+    [InlineData("10D17ZZ", SensitiveCategory.None)]
+    [InlineData("10E0XZZ", SensitiveCategory.None)]
+    [InlineData("GZ50ZZZ", SensitiveCategory.None)]
+    [InlineData("0DTJ4ZZ", SensitiveCategory.None)]
+    [InlineData("10A", SensitiveCategory.None)]
+    [InlineData("O04.9", SensitiveCategory.None)]
+    [InlineData(null, SensitiveCategory.None)]
+    public void A_procedure_puts_the_record_in_the_category_its_diagnosis_would(string? code, SensitiveCategory expected) =>
+        SensitiveCategories.FromIcd10Pcs(code).ShouldBe(expected);
+
     [Fact]
     public void Categories_are_described_in_plain_words()
     {
