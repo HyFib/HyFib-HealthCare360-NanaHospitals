@@ -8698,6 +8698,24 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("certifier_registration_number");
 
+                    b.Property<DateTimeOffset?>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<string>("ConfirmedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("confirmed_by");
+
+                    b.Property<Guid?>("ConfirmedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("confirmed_by_user_id");
+
+                    b.Property<string>("ConfirmerRegistrationNumber")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("confirmer_registration_number");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");

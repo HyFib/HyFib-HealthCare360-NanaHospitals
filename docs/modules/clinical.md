@@ -45,6 +45,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | `mrd.records` | Charts, deficiencies, record requests, archival, morbidity report | MrdOfficer, HospitalAdmin |
 | `mrd.births.record` | Record births in the hospital (Form 1; Form 3 for a still birth) | Doctor, Nurse, MrdOfficer |
 | `mrd.deaths.certify` | Certify the cause of death (MCCD, Form 4) | Doctor |
+| `mrd.deaths.confirm` | Confirm, as a second doctor, a death certificate another doctor certified, before it is reported | Doctor |
 | `mrd.vital.register` | The births and deaths registers, and reporting them to the Registrar | MrdOfficer, HospitalAdmin |
 | `mrd.idsp.report` | Notifiable diseases (IDSP): the cases, the weekly P and L forms to IHIP, the outbreak alerts | MrdOfficer, QualityManager |
 | `clinical.er.board` | The ER board and the cases on it | Doctor, Nurse, FrontOffice, HospitalAdmin |
@@ -505,16 +506,34 @@ through the Civil Registration System; medical records enters the registration n
 cannot change here (422 `vital.reported`: a correction goes through the Registrar). Reads go through the chart check and
 are audited; the registers' CSV export is audited.
 
+A death certificate is confirmed by a second doctor before it is reported (maker-checker, kind
+`mrd.death_certificate`, `DeathCertificateApproval`): certifying it (or correcting it, which takes any confirmation
+away) asks in the same transaction, and a doctor with `mrd.deaths.confirm`, never the one who certified it, confirms the
+certificate as it then stands from their Approvals (`approval.stale` if it changed since it was asked for). The request
+names the register number, the time of death, Part I and II, the manner, the medico-legal mark, pregnancy and the
+certifier, but not the patient: the confirming doctor opens the certificate, as the patient's record, to see who it is,
+and one who may not open a restricted patient's record does not confirm it (the request stays for another). The
+confirming doctor is printed on Form 4 with the registration number of their practitioner record (403
+`death.registration_missing` when it has none). The death itself is recorded at once (the patient is deceased, and the
+mortuary, hearse and bookings follow); only the report waits: 422 `death.not_confirmed` until it is confirmed, the
+certificate prints "NOT YET CONFIRMED" and the register shows it. While the request waits, the certificate is not
+corrected or marked entered in error (409 `death.confirmation_waiting`): the certifying doctor withdraws the request, or
+the confirming doctor returns it. A certificate saved before the facility asked for confirmations, or whose request was
+returned, withdrawn or ran out (seven days), is asked for again by its certifier (`POST /mrd/deaths/{id}/confirmation`).
+A facility with one doctor sets `mrd.deathCertificateConfirmation` to `false`: one doctor's certificate is then reported
+as certified.
+
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
 | GET | `/mrd/births?year&month` · `/mrd/births/export` | mrd.vital.register | → `BirthRegister` (rows with `dueBy`, `overdue`; live and still births) / CSV |
 | GET | `/mrd/births/{id}` · `/document` | mrd.births.record or mrd.vital.register | → `BirthRecordDto` / the printable Form 1 or Form 3 |
 | POST · PUT | `/mrd/births` · `/mrd/births/{id}` | mrd.births.record | `SaveBirthRequest` (mother, baby's record, time of birth, outcome, sex, weight, weeks, method, attendant, names, mother's age, live children, informant, still-birth cause; PUT with `version`) |
 | GET | `/mrd/deaths?year&month` · `/mrd/deaths/export` | mrd.vital.register | → `DeathRegister` (rows with the underlying cause, `dueBy`, `overdue`) / CSV |
-| GET | `/mrd/deaths/{id}` · `/document` | mrd.deaths.certify or mrd.vital.register | → `DeathRecordDto` / the printable MCCD |
-| POST · PUT | `/mrd/deaths` · `/mrd/deaths/{id}` | mrd.deaths.certify | `SaveDeathRequest` (patient, time of death, age when no date of birth, causes, other conditions, manner, medico-legal, pregnancy, registration number; PUT with `version`). 409 `death.exists` for a second certificate |
-| POST | `/mrd/{births\|deaths}/{id}/report` | mrd.vital.register | `ReportToRegistrarRequest{reportedOn, registrationNumber, version}` |
-| POST | `/mrd/{births\|deaths}/{id}/entered-in-error` | as GET of one, and only by whoever recorded or certified it | `VitalEntryErrorRequest{reason, version}`: out of the register; a death's deceased mark is taken back; 403 `vital.not_own_entry` |
+| GET | `/mrd/deaths/{id}` · `/document` | mrd.deaths.certify, mrd.deaths.confirm or mrd.vital.register | → `DeathRecordDto` (with `confirmationRequired`, `confirmationWaitingSince`, `confirmedBy`, `confirmerRegistrationNumber`, `confirmedAt`) / the printable MCCD |
+| POST · PUT | `/mrd/deaths` · `/mrd/deaths/{id}` | mrd.deaths.certify | `SaveDeathRequest` (patient, time of death, age when no date of birth, causes, other conditions, manner, medico-legal, pregnancy, registration number; PUT with `version`). 409 `death.exists` for a second certificate; asks a second doctor's confirmation; PUT 409 `death.confirmation_waiting` while one waits |
+| POST | `/mrd/deaths/{id}/confirmation` | mrd.deaths.certify, only the certifying doctor | `AskDeathConfirmationRequest{version}`: asks for the certificate as it stands. 403 `vital.not_own_entry`; 422 `death.confirmation_off`, `death.confirmed`; 409 `approval.already_requested` |
+| POST | `/mrd/{births\|deaths}/{id}/report` | mrd.vital.register | `ReportToRegistrarRequest{reportedOn, registrationNumber, version}`; a death 422 `death.not_confirmed` until a second doctor confirms it |
+| POST | `/mrd/{births\|deaths}/{id}/entered-in-error` | as GET of one, and only by whoever recorded or certified it | `VitalEntryErrorRequest{reason, version}`: out of the register; a death's deceased mark is taken back; 403 `vital.not_own_entry`; 409 `death.confirmation_waiting` while a confirmation waits |
 
 #### Notifiable diseases (IDSP, `/idsp`, tag Disease Surveillance, permission `mrd.idsp.report`)
 A diagnosis (not a differential) whose ICD-10 code is on the IDSP list (`IdspDiseases`) opens a case on the week's

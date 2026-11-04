@@ -44,10 +44,13 @@ internal sealed class DeathRecordConfiguration : IEntityTypeConfiguration<DeathR
         b.Property(x => x.OtherConditions).HasMaxLength(1000);
         b.Property(x => x.CertifiedBy).HasMaxLength(200);
         b.Property(x => x.CertifierRegistrationNumber).HasMaxLength(64);
+        b.Property(x => x.ConfirmedBy).HasMaxLength(200);
+        b.Property(x => x.ConfirmerRegistrationNumber).HasMaxLength(64);
         b.Property(x => x.RegistrationNumber).HasMaxLength(64);
         b.Property(x => x.ErrorReason).HasMaxLength(500);
         b.Ignore(x => x.DeathDate);
         b.Ignore(x => x.UnderlyingCause);
+        b.Ignore(x => x.IsConfirmed);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.SerialNumber).IsUnique();
         b.HasIndex(x => new { x.FacilityId, x.Status, x.DiedAt });

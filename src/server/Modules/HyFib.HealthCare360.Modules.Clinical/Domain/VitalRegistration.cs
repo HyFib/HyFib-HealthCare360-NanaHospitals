@@ -231,8 +231,9 @@ public sealed class BirthRecord : AuditableEntity, IFacilityScoped
 
 /// <summary>
 /// A death in the hospital with its medical certificate of cause of death (MCCD, Form 4; RBD Act s.10(3)), which the
-/// doctor who attended the patient in the last illness signs. Recording it marks the patient deceased. Reported to the
-/// Registrar within 21 days.
+/// doctor who attended the patient in the last illness signs. Recording it marks the patient deceased. Where the facility
+/// asks for it (on unless switched off), a second doctor confirms the certificate before it is reported, and a
+/// correction takes the confirmation away. Reported to the Registrar within 21 days.
 /// </summary>
 public sealed class DeathRecord : AuditableEntity, IFacilityScoped
 {
@@ -257,6 +258,16 @@ public sealed class DeathRecord : AuditableEntity, IFacilityScoped
     public string CertifierRegistrationNumber { get; private set; } = string.Empty;
     public Guid? CertifiedByUserId { get; private set; }
     public DateTimeOffset CertifiedAt { get; private set; }
+
+    /// <summary>The second doctor who confirmed the certificate as it stands: never the one who certified it. Null until then.</summary>
+    public Guid? ConfirmedByUserId { get; private set; }
+    public string? ConfirmedBy { get; private set; }
+
+    /// <summary>The confirming doctor's registration number, from their practitioner record when they confirmed.</summary>
+    public string? ConfirmerRegistrationNumber { get; private set; }
+    public DateTimeOffset? ConfirmedAt { get; private set; }
+
+    public bool IsConfirmed => ConfirmedAt is not null;
 
     public DateOnly? ReportedOn { get; private set; }
     public string? RegistrationNumber { get; private set; }
@@ -327,13 +338,61 @@ public sealed class DeathRecord : AuditableEntity, IFacilityScoped
         CertifierRegistrationNumber = c.CertifierRegistrationNumber.Trim();
         CertifiedByUserId = by;
         CertifiedAt = now;
+
+        // What a second doctor confirmed is no longer what the certificate says.
+        (ConfirmedByUserId, ConfirmedBy, ConfirmerRegistrationNumber, ConfirmedAt) = (null, null, null, null);
         return Result.Success();
     }
 
-    public Result Report(RegistrarReport report, DateOnly today) => VitalRegistration.Report(Status, report, DeathDate, today, (on, number) =>
+    /// <summary>
+    /// A second doctor confirms the certificate as it stands, while it is still to be reported: never the doctor who
+    /// certified it, and only with their registration number. A doctor who may not confirm it is refused (403), so the
+    /// request stays for another.
+    /// </summary>
+    public Result Confirm(Guid by, string name, string? registrationNumber, DateTimeOffset now)
     {
-        (ReportedOn, RegistrationNumber, Status) = (on, number, VitalReportStatus.Reported);
-    });
+        if (Status != VitalReportStatus.Recorded)
+        {
+            return VitalRegistration.Closed(Status);
+        }
+
+        if (IsCertifiedBy(by))
+        {
+            return Error.Forbidden("death.own_certificate", "The doctor who certified a death does not also confirm the certificate: another doctor does.");
+        }
+
+        if (string.IsNullOrWhiteSpace(registrationNumber))
+        {
+            return Error.Forbidden("death.registration_missing",
+                "Your practitioner record has no registration number, and a doctor who confirms a death certificate is named on it with theirs. Ask the administrator to add it.");
+        }
+
+        if (IsConfirmed)
+        {
+            return Error.Rule("death.confirmed", $"This certificate is already confirmed, by {ConfirmedBy}.");
+        }
+
+        (ConfirmedByUserId, ConfirmedBy, ConfirmerRegistrationNumber, ConfirmedAt) = (by, name.Trim(), registrationNumber.Trim(), now);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Reports the death to the Registrar. Where the facility asks for a second doctor's confirmation
+    /// (<paramref name="confirmationRequired"/>), only a confirmed certificate is reported.
+    /// </summary>
+    public Result Report(RegistrarReport report, DateOnly today, bool confirmationRequired)
+    {
+        if (confirmationRequired && Status == VitalReportStatus.Recorded && !IsConfirmed)
+        {
+            return Error.Rule("death.not_confirmed",
+                "A second doctor has not yet confirmed this certificate. It is reported to the Registrar once it is confirmed.");
+        }
+
+        return VitalRegistration.Report(Status, report, DeathDate, today, (on, number) =>
+        {
+            (ReportedOn, RegistrationNumber, Status) = (on, number, VitalReportStatus.Reported);
+        });
+    }
 
     /// <summary>Only the doctor who certified the death may mark it entered in error; anyone else asks them.</summary>
     public Result MarkEnteredInError(string reason, Guid? by) =>

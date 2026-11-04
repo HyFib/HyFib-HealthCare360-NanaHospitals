@@ -49,6 +49,9 @@ public static class ClinicalPermissions
     /// <summary>Certify the cause of a death (MCCD, Form 4): the doctor who attended the patient in the last illness.</summary>
     public const string DeathsCertify = "mrd.deaths.certify";
 
+    /// <summary>Confirm, as a second doctor, a death certificate another doctor certified, before it is reported.</summary>
+    public const string DeathsConfirm = "mrd.deaths.confirm";
+
     /// <summary>The births and deaths registers, and reporting each event to the Registrar.</summary>
     public const string VitalRegister = "mrd.vital.register";
 
@@ -120,6 +123,7 @@ public static class ClinicalPermissions
         new(BirthsRecord, Records, "Record births in the hospital (Form 1, and Form 3 for a still birth)",
             [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.MrdOfficer]),
         new(DeathsCertify, Records, "Certify the cause of death (MCCD, Form 4)", [SystemRoles.Doctor]),
+        new(DeathsConfirm, Records, "Confirm, as a second doctor, a death certificate another doctor certified, before it is reported", [SystemRoles.Doctor]),
         new(VitalRegister, Records, "The births and deaths registers, and reporting them to the Registrar within 21 days",
             [SystemRoles.MrdOfficer, SystemRoles.HospitalAdmin]),
         new(IdspReport, Surveillance, "Notifiable diseases (IDSP): the cases, the weekly P and L forms to IHIP, and the outbreak alerts",

@@ -75,7 +75,7 @@ internal static class VitalRegistrationDocuments
         var body = Html.Of($"""
             {DocumentParts.Letterhead(letterhead)}
             {DocumentParts.Title("FORM 4 — Medical certificate of cause of death")}
-            {DocumentParts.Banner(Banner(d.Status, d.ErrorReason))}
+            {DocumentParts.Banner(Banner(d.Status, d.ErrorReason) ?? Unconfirmed(d))}
             {DocumentParts.Fields([
                 ("Death register no.", d.SerialNumber),
                 ("Name of the deceased", $"{d.PatientName} (UHID {d.Uhid})"),
@@ -93,13 +93,7 @@ internal static class VitalRegistrationDocuments
                   ("Part II — other significant conditions", d.OtherConditions),
                   ("Manner of death", Manner(d.Manner)),
                   ("Medico-legal case", d.MedicoLegal ? "Yes" : "No"),
-                  ("If a woman, pregnancy", d.Pregnancy switch
-                  {
-                      PregnancyAtDeath.NotPregnant => "Not pregnant",
-                      PregnancyAtDeath.Pregnant => "Pregnant at the time of death",
-                      PregnancyAtDeath.WithinSixWeeksOfDelivery => "Within six weeks of the end of a pregnancy",
-                      _ => null,
-                  }),
+                  ("If a woman, pregnancy", Pregnancy(d.Pregnancy)),
               ])}
             </section>
             <section class="section">
@@ -108,6 +102,8 @@ internal static class VitalRegistrationDocuments
                   ("Doctor", d.CertifiedBy),
                   ("Registration no.", d.CertifierRegistrationNumber),
                   ("Certified on", DocumentFormat.DateTime(d.CertifiedAt)),
+                  ("Confirmed by", d.ConfirmedBy is { } confirmer ? $"{confirmer}, registration no. {d.ConfirmerRegistrationNumber}" : null),
+                  ("Confirmed on", d.ConfirmedAt is { } confirmed ? DocumentFormat.DateTime(confirmed) : null),
                   ("To be reported by", DocumentFormat.Date(d.DueBy)),
                   ("Registrar's registration no.", d.RegistrationNumber),
               ])}
@@ -126,8 +122,22 @@ internal static class VitalRegistrationDocuments
         _ => manner.ToString(),
     };
 
+    public static string? Pregnancy(PregnancyAtDeath pregnancy) => pregnancy switch
+    {
+        PregnancyAtDeath.NotPregnant => "Not pregnant",
+        PregnancyAtDeath.Pregnant => "Pregnant at the time of death",
+        PregnancyAtDeath.WithinSixWeeksOfDelivery => "Within six weeks of the end of a pregnancy",
+        _ => null,
+    };
+
     private static string? Banner(VitalReportStatus status, string? reason) =>
         status == VitalReportStatus.EnteredInError ? $"ENTERED IN ERROR — {reason}" : null;
+
+    /// <summary>A certificate the facility asks a second doctor to confirm says it is not yet confirmed, until it is.</summary>
+    private static string? Unconfirmed(DeathRecordDto d) =>
+        d.Status == VitalReportStatus.Recorded && d.ConfirmationRequired && d.ConfirmedAt is null
+            ? "NOT YET CONFIRMED by a second doctor: not to be reported to the Registrar until it is"
+            : null;
 
     private static PrintableDocument Document(string title, string file, Html body, string footer, DocumentLetterhead letterhead) => new()
     {

@@ -161,6 +161,14 @@ export interface DeathRecordDto {
   /** Whether this user may mark it entered in error: it is still only recorded, and they recorded or certified it. */
   canMarkInError: boolean;
   version: number;
+  /** Whether the facility asks a second doctor to confirm a certificate before it is reported. */
+  confirmationRequired: boolean;
+  /** When the certifying doctor asked for the confirmation still waiting; null when none waits. */
+  confirmationWaitingSince: string | null;
+  /** The second doctor who confirmed the certificate as it stands, with their registration number; null until then. */
+  confirmedBy: string | null;
+  confirmerRegistrationNumber: string | null;
+  confirmedAt: string | null;
 }
 
 /** A birth to record, or to correct (`version`: the record as read) until it is reported. */
@@ -247,6 +255,8 @@ export interface DeathRegisterRow {
   overdue: boolean;
   reportedOn: string | null;
   registrationNumber: string | null;
+  /** Still to be confirmed by a second doctor before it is reported (where the facility asks for that). */
+  awaitingConfirmation: boolean;
 }
 
 /** The month's births, live and still, without those entered in error. */
@@ -328,6 +338,9 @@ export const vitalApi = {
     api.post<DeathRecordDto>(`${death(id)}/report`, request),
   deathInError: (id: string, reason: string, version: number) =>
     api.post<DeathRecordDto>(`${death(id)}/entered-in-error`, { reason, version }),
+  /** The certifying doctor asks a second doctor to confirm the certificate as it stands. */
+  askDeathConfirmation: (id: string, version: number) =>
+    api.post<DeathRecordDto>(`${death(id)}/confirmation`, { version }),
   exportDeaths: (year: number, month: number) => api.blob(`${deaths}/export`, { query: { year, month } }),
 };
 
@@ -340,6 +353,8 @@ export const VITAL_PERMISSIONS = {
   birthsRecord: 'mrd.births.record',
   /** Certify and correct deaths (the MCCD), and mark one entered in error (doctors). */
   deathsCertify: 'mrd.deaths.certify',
+  /** Confirm, as a second doctor, a certificate another doctor certified, before it is reported (doctors). */
+  deathsConfirm: 'mrd.deaths.confirm',
   /** The month's registers, their export and the report to the Registrar (medical records, administration). */
   register: 'mrd.vital.register',
 } as const;
@@ -347,4 +362,8 @@ export const VITAL_PERMISSIONS = {
 /** Who may open a birth (server `VitalRegistrationEndpoints.BirthReaders`); only whoever recorded it marks it entered in error. */
 export const BIRTH_READERS = [VITAL_PERMISSIONS.birthsRecord, VITAL_PERMISSIONS.register] as const;
 /** Who may open a death certificate (server `DeathReaders`); only the certifying doctor marks it entered in error. */
-export const DEATH_READERS = [VITAL_PERMISSIONS.deathsCertify, VITAL_PERMISSIONS.register] as const;
+export const DEATH_READERS = [
+  VITAL_PERMISSIONS.deathsCertify,
+  VITAL_PERMISSIONS.deathsConfirm,
+  VITAL_PERMISSIONS.register,
+] as const;

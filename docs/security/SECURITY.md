@@ -420,6 +420,12 @@ and grants nothing.
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
     a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.
     A corrected critical value is asked for with the documented call, registered when the correction is made.
+  - a death certificate (MCCD, Form 4; `mrd.death_certificate`): the doctor who certifies it asks, and a second doctor
+    (`mrd.deaths.confirm`) confirms the certificate as it stands before it is reported to the Registrar. The confirming
+    doctor must be able to open the patient's record, and is printed on the certificate with the registration number of
+    their practitioner record. A correction takes the confirmation away and asks again; the certificate is not changed
+    while a request waits. The death itself (the patient deceased) is recorded at once. On unless the facility sets
+    `mrd.deathCertificateConfirmation` to `false`, as one with a single doctor does.
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was
@@ -435,7 +441,9 @@ and grants nothing.
   - whoever raised a purchase requisition or order cannot approve it (`requisition.approve_own`, `po.approve_own`);
   - a lab that sets `lab.separateVerifier` (per facility, off by default for a lab with one pathologist) refuses
     verification of a result by whoever entered it (`lab.verify_own_result`), and a correction of a released report
-    waits for a second pathologist (see Maker-checker).
+    waits for a second pathologist (see Maker-checker);
+  - the doctor who certified a death does not also confirm the certificate (`death.own_certificate`, and
+    `approval.self` on the request).
 - **Attendance terminals that push** are registered with the IP address they push from, and punches from any other
   address are refused. A terminal registered before the address was required is held to the first address it calls from.
 - **Switched-off controls are shown.** Outside development, System health shows a critical warning while two-step sign-in

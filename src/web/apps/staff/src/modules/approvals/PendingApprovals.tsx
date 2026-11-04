@@ -6,15 +6,15 @@ import { approvalQueries } from './api';
 
 /**
  * The changes waiting for a second person's approval on one record (a bill's credit note or money not received, a
- * patient's merge, a lab report's correction, a refund not paid out), so the desk does not ask twice and sees why
- * nothing has changed yet. The server lists only what
+ * patient's merge, a lab report's correction, a refund not paid out, a death certificate's confirmation), so the desk
+ * does not ask twice and sees why nothing has changed yet. The server lists only what
  * the user asked for or may decide.
  */
 export function PendingApprovals({
   subjectType,
   subjectId,
 }: {
-  subjectType: 'Bill' | 'Patient' | 'LabReport' | 'Refund' | 'IpAccount' | 'PatientAdvance';
+  subjectType: 'Bill' | 'Patient' | 'LabReport' | 'Refund' | 'IpAccount' | 'PatientAdvance' | 'DeathRecord';
   subjectId: string;
 }) {
   const navigate = useNavigate();

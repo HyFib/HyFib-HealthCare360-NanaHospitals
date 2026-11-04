@@ -94,12 +94,15 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
 
 /**
  * Who may ask for or decide a change of each kind: the inbox is for them. Kept with the server's kinds
- * (IApprovalAction): credit notes and write-offs, money not received and refunds not paid out, patient merges, and lab
- * report corrections.
+ * (IApprovalAction): credit notes and write-offs, money not received and refunds not paid out, patient merges, lab
+ * report corrections, and death certificates a second doctor confirms.
  */
 export const APPROVAL_PERMISSIONS = [
   'billing.refunds.request',
   'billing.refunds.approve',
   'patients.merge',
   'lab.results.verify',
+  // A doctor who certifies a death withdraws a confirmation they asked for; a second doctor confirms it.
+  'mrd.deaths.certify',
+  'mrd.deaths.confirm',
 ] as const;
