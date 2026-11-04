@@ -30,6 +30,8 @@ using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Modules.VirtualCare.Domain;
+using HyFib.HealthCare360.Modules.VirtualCare.Features.Rpm;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
@@ -67,6 +69,11 @@ public sealed class AbdmExportTests(HospitalServer server)
     private const string DischargeSummaryRecord = "373942005";
     private const string ImmunizationRecord = "41000179103";
     private const string HealthDocumentRecord = "419891008";
+
+    /// <summary>The IG types a wellness record by its text alone.</summary>
+    private const string WellnessRecord = "Wellness Record";
+
+    private static readonly TimeSpan Ist = TimeSpan.FromMinutes(330);
 
     /// <summary>The CRP the lab reports, in mg/L: within the reference interval, so it needs no critical call.</summary>
     private const decimal Crp = 3.2m;
@@ -791,6 +798,115 @@ public sealed class AbdmExportTests(HospitalServer server)
         }
     }
 
+    [Fact]
+    public async Task Home_readings_are_exported_a_month_at_a_time_as_wellness_records_of_the_readings_measured_in_it()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var abha = NewAbha();
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+        var enrollment = await EnrolAsync(doctor, patient.Id);
+        var path = $"/api/v1/abdm/bundles/home-readings/{enrollment}";
+
+        // This month and the one before, in India: a blood pressure and a glucose last month, a pulse at its last second,
+        // and a weight at the first second of this one.
+        var thisMonth = ReadingsSpan.Of(DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(Ist).DateTime));
+        var lastMonth = ReadingsSpan.Of(thisMonth.Month.AddMonths(-1));
+        var pressure = new DateTimeOffset(lastMonth.Month.AddDays(2).ToDateTime(new TimeOnly(8, 0)), Ist);
+        var pulse = lastMonth.End.AddSeconds(-1);
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            (await NotExportableAsync(path)).ShouldBe("No readings have been received in this programme yet.");
+
+            await ReadAsync(server, enrollment,
+                (RpmReadingType.SystolicBp, 150m, pressure), (RpmReadingType.DiastolicBp, 95m, pressure),
+                (RpmReadingType.Glucose, 182m, pressure.AddDays(7)), (RpmReadingType.HeartRate, 70m, pulse), (RpmReadingType.Weight, 71.5m, thisMonth.Start));
+
+            // With no month named, the month of the latest reading: only the weight.
+            var latest = await ExportAsync(path, WellnessRecord, abha, $"home-readings-{patient.Uhid}-{thisMonth.Month:yyyy-MM}");
+            var composition = Composition(latest);
+            composition.GetProperty("title").GetString().ShouldEndWith(thisMonth.Month.ToString("MMMM yyyy", CultureInfo.InvariantCulture));
+            composition.GetProperty("section").EnumerateArray().Select(s => s.GetProperty("title").GetString()).ShouldBe(["Body Measurement"]);
+            var period = composition.GetProperty("event")[0].GetProperty("period");
+            period.GetProperty("start").GetString().ShouldBe(thisMonth.Month.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+
+            // Last month, named: the blood pressure as one panel, the pulse measured in its last second, and the glucose.
+            var earlier = await ExportAsync($"{path}?month={lastMonth.Month:yyyy-MM}", WellnessRecord, abha, $"home-readings-{patient.Uhid}-{lastMonth.Month:yyyy-MM}");
+            ShouldBeTheSameDocument(await ExportAsync($"{path}?month={lastMonth.Month:yyyy-MM}", WellnessRecord, abha, "home-readings-"), earlier);
+            var sections = Composition(earlier).GetProperty("section").EnumerateArray().ToList();
+            sections.Select(s => s.GetProperty("title").GetString()).ShouldBe(["Vital Signs", "General Assessment"]);
+            var vitals = sections[0].GetProperty("entry").EnumerateArray().Select(e => Entry(earlier, e.GetProperty("reference").GetString()!)).ToList();
+            vitals.Select(v => v.GetProperty("code").GetProperty("coding")[0].GetProperty("code").GetString()).ShouldBe(["85354-9", "8867-4"]);
+            vitals[1].GetProperty("effectiveDateTime").GetString().ShouldBe(pulse.ToOffset(Ist).ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture));
+            vitals[0].GetProperty("meta").GetProperty("profile")[0].GetString().ShouldBe(AbdmProfiles.ObservationVitalSigns);
+            sections[1].GetProperty("text").GetProperty("div").GetString().ShouldNotBeNull().ShouldContain("beyond the critical limits set for the patient");
+
+            // A month with no readings, and a month that is not one.
+            (await NotExportableAsync($"{path}?month=2020-01")).ShouldBe("No readings were measured in January 2020.");
+            var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+            using (var badMonth = await admin.SendRawAsync(HttpMethod.Get, $"{path}?month=September"))
+            {
+                badMonth.StatusCode.ShouldBe(HttpStatusCode.BadRequest, await badMonth.Content.ReadAsStringAsync(Ct));
+            }
+
+            var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
+            exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: home readings");
+            exportAudit.EntityId.ShouldBe(enrollment.ToString("D"));
+
+            // The patient's app is offered the programme to link, by its kind, from the day they were enrolled.
+            await using var linking = server.Services.CreateAsyncScope();
+            var offered = (await linking.ServiceProvider.GetRequiredService<AbdmRecordLoader>().ListExportableAsync(patient.Id, 50, Ct))
+                .Where(r => r.Type == AbdmRecordType.HomeReadings).ToList();
+            offered.Select(r => (r.Id, r.Label)).ShouldBe([(enrollment, (string?)"Hypertension monitoring")]);
+        }
+        finally
+        {
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    /// <summary>The doctor enrols the patient in hypertension home monitoring, with themself as the care team.</summary>
+    internal static async Task<Guid> EnrolAsync(ApiClient doctor, Guid patientId)
+    {
+        var practitioner = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
+        var program = (await doctor.GetAsync<List<RpmProgramDto>>("/api/v1/rpm/programs")).Single(p => p.Code == "HTN");
+        return (await doctor.PostAsync<Created>("/api/v1/rpm/enrollments",
+            new EnrollPatientRequest(patientId, program.Id, [practitioner], practitioner, StartDate: null, Goals: null, Notes: null))).Id;
+    }
+
+    /// <summary>
+    /// Readings of the enrolment's devices, each received a minute after it was measured, written as the intake writes them
+    /// (it takes only the last 30 days' readings, so older ones are written here). Over 150 systolic, 90 diastolic or 180
+    /// glucose is outside the limits.
+    /// </summary>
+    internal static async Task ReadAsync(HospitalServer server, Guid enrollment, params (RpmReadingType Type, decimal Value, DateTimeOffset MeasuredAt)[] readings)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var owner = await db.Set<RpmEnrollment>().IgnoreQueryFilters().Where(e => e.Id == enrollment).Select(e => new { e.FacilityId, e.PatientId }).SingleAsync(Ct);
+        db.AddRange(readings.Select(r => new RpmReading
+        {
+            FacilityId = owner.FacilityId,
+            EnrollmentId = enrollment,
+            PatientId = owner.PatientId,
+            Type = r.Type,
+            Value = r.Value,
+            Unit = ReadingUnits.CanonicalUnit(r.Type),
+            MeasuredAt = r.MeasuredAt.ToUniversalTime(),
+            ReceivedAt = r.MeasuredAt.ToUniversalTime().AddMinutes(1),
+            Severity = (r.Type, r.Value) switch
+            {
+                (RpmReadingType.Glucose, > 180m) => ReadingSeverity.Critical,
+                (RpmReadingType.SystolicBp, >= 150m) or (RpmReadingType.DiastolicBp, > 90m) => ReadingSeverity.Warning,
+                _ => ReadingSeverity.Normal,
+            },
+            Source = ReadingSource.Device,
+        }));
+        await db.SaveChangesAsync(Ct);
+    }
+
     /// <summary>Moves the patient's registration to a new facility of the hospital, an annexe, whose id is returned.</summary>
     private async Task<Guid> RegisteredAtAnnexeAsync(Guid patientId)
     {
@@ -1429,7 +1545,8 @@ public sealed class AbdmExportTests(HospitalServer server)
         var entries = bundle.GetProperty("entry").EnumerateArray().ToList();
         var composition = entries[0].GetProperty("resource");
         composition.GetProperty("resourceType").GetString().ShouldBe("Composition");
-        composition.GetProperty("type").GetProperty("coding")[0].GetProperty("code").GetString().ShouldBe(documentType);
+        var type = composition.GetProperty("type");
+        (type.TryGetProperty("coding", out var coding) ? coding[0].GetProperty("code").GetString() : type.GetProperty("text").GetString()).ShouldBe(documentType);
         Resources(bundle, "Patient").ShouldHaveSingleItem().GetProperty("identifier").EnumerateArray()
             .Single(i => i.GetProperty("system").GetString() == "https://healthid.ndhm.gov.in").GetProperty("value").GetString()
             .ShouldBe(Abha.Format(abha));

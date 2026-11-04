@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
@@ -8,6 +9,7 @@ using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Features;
 using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -241,6 +243,158 @@ public sealed class AbdmDataFlowTests(HospitalServer server)
         }
     }
 
+    [Fact]
+    public async Task Home_readings_are_sent_a_document_a_month_and_only_those_measured_in_the_dates_asked_for()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var address = "uma." + AbdmExportTests.Letters(8) + "@sbx";
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", AbdmExportTests.Registration(AbdmExportTests.NewAbha(), address));
+        var enrollment = await AbdmExportTests.EnrolAsync(doctor, patient.Id);
+        await LinkAsync(patient.Id, address, AbdmRecordType.HomeReadings, enrollment, "Home readings: Hypertension monitoring");
+        var reference = AbdmLinkingService.ReferenceNumber(AbdmRecordType.HomeReadings, enrollment);
+
+        // Last month in India: a weight on the 3rd, a blood pressure on the 10th, a pulse at its last second; this month a
+        // glucose at its first second and a temperature at noon on the 1st.
+        var ist = TimeSpan.FromMinutes(330);
+        var thisMonth = ReadingsSpan.Of(DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(ist).DateTime));
+        var lastMonth = ReadingsSpan.Of(thisMonth.Month.AddMonths(-1));
+        DateTimeOffset At(DateOnly day, int hour) => new(day.ToDateTime(new TimeOnly(hour, 0)), ist);
+        await AbdmExportTests.ReadAsync(server, enrollment,
+            (RpmReadingType.Weight, 70.2m, At(lastMonth.Month.AddDays(2), 8)),
+            (RpmReadingType.SystolicBp, 132m, At(lastMonth.Month.AddDays(9), 8)), (RpmReadingType.DiastolicBp, 84m, At(lastMonth.Month.AddDays(9), 8)),
+            (RpmReadingType.HeartRate, 71m, lastMonth.End.AddSeconds(-1)),
+            (RpmReadingType.Glucose, 112m, thisMonth.Start), (RpmReadingType.Temperature, 36.8m, At(thisMonth.Month, 12)));
+        var hiu = Fidelius.Generate();
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            await AbdmLinkingTests.SetUpGatewayAsync(server, enabled: true);
+
+            // Chosen for a consent to share consultations, the programme is not sent: the consent does not cover its kind.
+            var consultations = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.ConsentNotifyPath, Notify(consultations, "GRANTED", address, patient.Id, reference, "OPConsultation"));
+            var refused = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.HealthInformationRequestPath, Request(refused, consultations, hiu, PushUrl));
+            (await TransferAsync(refused)).Error.ShouldBe(AbdmDataFlowService.NotCovered);
+
+            // Under a consent for wellness records, the HIU asks from the 5th of last month to 11 am on the 1st of this:
+            // the weight of the 3rd and the temperature at noon are outside it; the glucose of this month's first second is in.
+            var wellness = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.ConsentNotifyPath, Notify(wellness, "GRANTED", address, patient.Id, reference, "WellnessRecord"));
+            var from = At(lastMonth.Month.AddDays(4), 0);
+            var to = At(thisMonth.Month, 11);
+            var transaction = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.HealthInformationRequestPath, Request(transaction, wellness, hiu, PushUrl, from, to));
+            var sent = await TransferAsync(transaction);
+            sent.Status.ShouldBe(AbdmTransferStatus.Transferred, sent.Error);
+
+            // A document for each month, both under the programme's care context, each cut where the dates cut it.
+            var page = Gateway.Calls.Single(c => c.Path == PushUrl && c.Json().GetProperty("transactionId").GetString() == transaction).Json();
+            var keyMaterial = page.GetProperty("keyMaterial");
+            var documents = page.GetProperty("entries").EnumerateArray().Select(entry =>
+            {
+                entry.GetProperty("careContextReference").GetString().ShouldBe(reference);
+                var json = Fidelius.Decrypt(entry.GetProperty("content").GetString()!, hiu.PrivateKey, hiu.Nonce,
+                    keyMaterial.GetProperty("dhPublicKey").GetProperty("keyValue").GetString()!, keyMaterial.GetProperty("nonce").GetString()!);
+                return JsonDocument.Parse(json.Value).RootElement;
+            }).ToList();
+            documents.Count.ShouldBe(2);
+            var compositions = documents.Select(d => d.GetProperty("entry")[0].GetProperty("resource")).ToList();
+            compositions.Select(c => c.GetProperty("type").GetProperty("text").GetString()).ShouldAllBe(t => t == "Wellness Record");
+            compositions.Select(c => c.GetProperty("title").GetString()!.Split(", ")[^1])
+                .ShouldBe([lastMonth.Month.ToString("MMMM yyyy", CultureInfo.InvariantCulture), thisMonth.Month.ToString("MMMM yyyy", CultureInfo.InvariantCulture)]);
+            var periods = compositions.Select(c => c.GetProperty("event")[0].GetProperty("period")).ToList();
+            (periods[0].GetProperty("start").GetString(), periods[0].GetProperty("end").GetString())
+                .ShouldBe((FhirTime.DateTime(from), lastMonth.Month.AddMonths(1).AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+            (periods[1].GetProperty("start").GetString(), periods[1].GetProperty("end").GetString())
+                .ShouldBe((thisMonth.Month.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), FhirTime.DateTime(to)));
+            List<string?> Codes(JsonElement document) =>
+            [
+                .. document.GetProperty("entry").EnumerateArray().Select(e => e.GetProperty("resource"))
+                    .Where(r => r.GetProperty("resourceType").GetString() == "Observation")
+                    .Select(r => r.GetProperty("code").GetProperty("coding")[0].GetProperty("code").GetString()),
+            ];
+            Codes(documents[0]).ShouldBe(["85354-9", "8867-4"], ignoreOrder: true, "the blood pressure and the pulse; not the weight of the 3rd");
+            Codes(documents[1]).ShouldBe(["41653-7"], "the glucose; not the temperature at noon");
+
+            // Dates in which nothing was measured: nothing to send, and the gateway is told so.
+            var empty = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.HealthInformationRequestPath,
+                Request(empty, wellness, hiu, PushUrl, At(lastMonth.Month, 0), At(lastMonth.Month.AddDays(1), 0)));
+            var nothing = await TransferAsync(empty);
+            nothing.Status.ShouldBe(AbdmTransferStatus.Failed);
+            nothing.Error.ShouldBe(AbdmBundleService.NoReadingsInDates);
+        }
+        finally
+        {
+            await AbdmLinkingTests.RemoveGatewayAsync(server);
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    [Fact]
+    public async Task A_programme_whose_months_fill_more_than_one_page_is_delivered_only_when_every_page_is_accepted()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var address = "vani." + AbdmExportTests.Letters(8) + "@sbx";
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", AbdmExportTests.Registration(AbdmExportTests.NewAbha(), address));
+        var enrollment = await AbdmExportTests.EnrolAsync(doctor, patient.Id);
+        await LinkAsync(patient.Id, address, AbdmRecordType.HomeReadings, enrollment, "Home readings: Hypertension monitoring");
+        var reference = AbdmLinkingService.ReferenceNumber(AbdmRecordType.HomeReadings, enrollment);
+
+        // A weight on the 10th of each of the months before this one in India: a document a month, one more than a page holds.
+        var ist = TimeSpan.FromMinutes(330);
+        var thisMonth = ReadingsSpan.Of(DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(ist).DateTime)).Month;
+        await AbdmExportTests.ReadAsync(server, enrollment,
+        [
+            .. Enumerable.Range(1, AbdmDataFlowService.PageSize + 1).Select(back =>
+                (RpmReadingType.Weight, 70m + back, new DateTimeOffset(thisMonth.AddMonths(-back).AddDays(9).ToDateTime(new TimeOnly(8, 0)), ist))),
+        ]);
+        var hiu = Fidelius.Generate();
+        var transaction = Guid.NewGuid().ToString();
+
+        // The HIU refuses the first page and accepts the second.
+        static bool IsPage(GatewayCall call, string transaction, int number) =>
+            call.Path == PushUrl && call.Json() is var page
+            && page.GetProperty("transactionId").GetString() == transaction && page.GetProperty("pageNumber").GetInt32() == number;
+        Gateway.Answer(call => IsPage(call, transaction, 0) ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) : null);
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            await AbdmLinkingTests.SetUpGatewayAsync(server, enabled: true);
+            var wellness = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.ConsentNotifyPath, Notify(wellness, "GRANTED", address, patient.Id, reference, "WellnessRecord"));
+            await CallAsync(AbdmGatewayCallbackEndpoints.HealthInformationRequestPath, Request(transaction, wellness, hiu, PushUrl));
+            var transfer = await TransferAsync(transaction);
+
+            // Both pages were sent, each holding documents of the programme only.
+            var pages = Gateway.CallsTo(PushUrl).Where(c => IsPage(c, transaction, 0) || IsPage(c, transaction, 1)).Select(c => c.Json()).ToList();
+            pages.Select(p => (p.GetProperty("pageNumber").GetInt32(), p.GetProperty("pageCount").GetInt32(), p.GetProperty("entries").GetArrayLength()))
+                .ShouldBe([(0, 2, AbdmDataFlowService.PageSize), (1, 2, 1)]);
+            pages.SelectMany(p => p.GetProperty("entries").EnumerateArray()).ShouldAllBe(e => e.GetProperty("careContextReference").GetString() == reference);
+
+            // The second page went through, but the programme did not all arrive: the gateway hears it errored.
+            transfer.Status.ShouldBe(AbdmTransferStatus.Failed);
+            transfer.Error.ShouldBe("The HIU did not accept the page.");
+            var status = Gateway.CallsTo(HttpAbdmGatewayClient.TransferNotifyPath)
+                .Single(c => c.Json().GetProperty("notification").GetProperty("transactionId").GetString() == transaction).Json()
+                .GetProperty("notification").GetProperty("statusNotification");
+            status.GetProperty("sessionStatus").GetString().ShouldBe("FAILED");
+            var programme = status.GetProperty("statusResponses").EnumerateArray().ShouldHaveSingleItem();
+            (programme.GetProperty("careContextReference").GetString(), programme.GetProperty("hiStatus").GetString()).ShouldBe((reference, "ERRORED"));
+        }
+        finally
+        {
+            Gateway.Answer(null);
+            await AbdmLinkingTests.RemoveGatewayAsync(server);
+            await SwitchAsync(enabled: false);
+        }
+    }
+
     /// <summary>A patient with an ABHA address and a signed progress note, with a signed addendum, linked to it as a care context.</summary>
     private async Task<(Guid PatientId, string Address, string Reference)> LinkedNoteAsync()
     {
@@ -330,13 +484,17 @@ public sealed class AbdmDataFlowTests(HospitalServer server)
         },
     };
 
-    private static object Request(string transactionId, string consentId, FideliusKeyPair hiu, string pushUrl) => new
+    private static object Request(string transactionId, string consentId, FideliusKeyPair hiu, string pushUrl, DateTimeOffset? from = null, DateTimeOffset? to = null) => new
     {
         transactionId,
         hiRequest = new
         {
             consent = new { id = consentId },
-            dateRange = new { from = "2000-01-01T00:00:00.000Z", to = DateTimeOffset.UtcNow.AddHours(1).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'") },
+            dateRange = new
+            {
+                from = (from ?? new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero)).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
+                to = (to ?? DateTimeOffset.UtcNow.AddHours(1)).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
+            },
             dataPushUrl = pushUrl,
             keyMaterial = new
             {

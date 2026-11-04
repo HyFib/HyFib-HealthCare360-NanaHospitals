@@ -29,6 +29,7 @@ import {
 import {
   AddRegular,
   DeleteRegular,
+  DocumentArrowDownRegular,
   EditRegular,
   LinkRegular,
   MoreHorizontalRegular,
@@ -53,6 +54,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { AbdmLinkDialog } from '@/modules/emr/AbdmLinkButton';
+import { useAbdmRecordsAvailable } from '@/modules/emr/abdmRecords';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { addDays, formatDayMedium } from '@/modules/scheduling/dates';
 import { useToday } from '@/modules/scheduling/useNow';
@@ -66,6 +69,7 @@ import {
   type RpmEnrollmentDetail,
   type RpmReadingType,
 } from '@/modules/virtualcare/rpm/api';
+import { AbdmReadingsDialog } from '@/modules/virtualcare/rpm/AbdmReadings';
 import { AlertsTable } from '@/modules/virtualcare/rpm/AlertsTable';
 import { AssignDeviceDialog, DeviceKeyDialog, RegisterDeviceDialog } from '@/modules/virtualcare/rpm/DeviceDialogs';
 import { EditEnrollmentDialog, RecordReadingsDialog } from '@/modules/virtualcare/rpm/EnrollmentDialogs';
@@ -79,6 +83,7 @@ import {
   sourceLabel,
 } from '@/modules/virtualcare/rpm/labels';
 import { ThresholdsDialog } from '@/modules/virtualcare/rpm/ThresholdsDialog';
+import { readingMonths } from '@/modules/virtualcare/rpm/readingMonths';
 import { describeLimits } from '@/modules/virtualcare/rpm/thresholds';
 import { AdherenceChart, TrendChart } from '@/modules/virtualcare/rpm/TrendChart';
 import { useRpmLive } from '@/modules/virtualcare/rpm/useRpmLive';
@@ -179,7 +184,12 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
   const canManage = usePermission('rpm.manage');
   const today = useToday();
   const days: RangeDays = search.days ?? 30;
-  const [dialog, setDialog] = useState<'readings' | 'limits' | 'edit' | 'give' | 'register' | 'delete' | null>(null);
+  const [dialog, setDialog] = useState<
+    'readings' | 'limits' | 'edit' | 'give' | 'register' | 'delete' | 'abdm' | 'abha' | null
+  >(null);
+  // A programme with readings goes to ABDM as wellness records (gap #27): a month at a time, or linked whole.
+  const abdmAvailable = useAbdmRecordsAvailable();
+  const abdm = abdmAvailable && e.lastReadingAt !== null;
   const [moving, setMoving] = useState<RpmDeviceDto | null>(null);
   const [issued, setIssued] = useState<DeviceKeyIssued | null>(null);
 
@@ -249,6 +259,16 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
                   >
                     Patient profile
                   </MenuItem>
+                  {abdm && (
+                    <MenuItem icon={<DocumentArrowDownRegular />} onClick={() => setDialog('abdm')}>
+                      Download ABDM record
+                    </MenuItem>
+                  )}
+                  {abdm && (
+                    <MenuItem icon={<LinkRegular />} onClick={() => setDialog('abha')}>
+                      Link to patient&apos;s ABHA
+                    </MenuItem>
+                  )}
                   {canManage && (
                     <MenuItem icon={<DeleteRegular />} onClick={() => setDialog('delete')}>
                       Delete enrolment
@@ -565,6 +585,20 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
         Only an enrolment made by mistake, with no readings or alerts, can be deleted. To stop monitoring, set it to
         completed or withdrawn instead.
       </ConfirmDialog>
+      {abdm && e.lastReadingAt && dialog === 'abdm' && (
+        <AbdmReadingsDialog
+          enrollmentId={e.id}
+          months={readingMonths(e.startDate, e.lastReadingAt)}
+          open
+          onClose={() => setDialog(null)}
+        />
+      )}
+      <AbdmLinkDialog
+        record={{ type: 'HomeReadings', id: e.id }}
+        what="programme, with every reading taken in it,"
+        open={dialog === 'abha'}
+        onClose={() => setDialog(null)}
+      />
     </Page>
   );
 }

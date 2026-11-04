@@ -30,7 +30,7 @@ public sealed class AbdmDocumentTests
     private static readonly string[] Samples =
     [
         "prescription", "op-consultation", "lab-report", "radiology-report", "cardiology-report", "discharge-summary", "immunization",
-        "clinical-note",
+        "clinical-note", "home-readings",
     ];
 
     public static TheoryData<string> RecordTypes => new(Samples);
@@ -44,6 +44,7 @@ public sealed class AbdmDocumentTests
         "cardiology-report" => Build(AbdmRecords.CardiologyReport(AbdmTestData.CardiologyReportRecord(AbdmTestData.Pdf))),
         "immunization" => Build(AbdmRecords.Immunization(AbdmTestData.ImmunizationRecord())),
         "clinical-note" => Build(AbdmRecords.ClinicalNote(AbdmTestData.ClinicalNoteRecord())),
+        "home-readings" => Build(AbdmRecords.HomeReadings(AbdmTestData.HomeReadingsRecord())),
         _ => Build(AbdmRecords.DischargeSummary(AbdmTestData.DischargeSummaryRecord(pdf: null))),
     };
 
@@ -66,7 +67,10 @@ public sealed class AbdmDocumentTests
         composition.Author.ShouldHaveSingleItem().Reference.ShouldNotBeNull();
         composition.Custodian.Reference.ShouldBe(FullUrl<R4.Organization>(bundle, o => o.Name == "Nana Hospitals, Pune"));
         composition.Text.Div.ShouldStartWith("<div xmlns=\"http://www.w3.org/1999/xhtml\">");
-        composition.Section.ShouldAllBe(s => s.Code.Coding.Count == 1 && s.Text != null && (s.Entry.Count > 0 || s.Text.Div.Contains("<p>")));
+        composition.Section.ShouldAllBe(s => s.Text != null && (s.Entry.Count > 0 || s.Text.Div.Contains("<p>")));
+
+        // Coded as the guide codes its sections; a wellness record's it tells apart by title alone.
+        composition.Section.ShouldAllBe(s => name == "home-readings" ? s.Code == null : s.Code.Coding.Count == 1);
     }
 
     [Theory]

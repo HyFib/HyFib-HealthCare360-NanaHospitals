@@ -7,7 +7,7 @@ Telehealth video consultations (WebRTC signalling, waiting room, chat) and Remot
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare` (layer 5, references Patients and Scheduling) |
 | Schema | `virtualcare` — `telehealth_sessions`, `telehealth_participants`, `telehealth_messages`, `rpm_programs`, `rpm_enrollments`, `rpm_devices`, `rpm_readings`, `rpm_thresholds`, `rpm_alerts` |
 | Requirements | TEL-01..06, RPM-01..05 |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.VirtualCare.Tests` (join tokens, session state machine, thresholds, units, adherence, FHIR and device parsers, device keys, ICE settings, alerts, permissions, prescription notice channels); end to end, `TeleconsultationJourneyTests`, `RpmAlertJourneyTests` (an alert sent to the care team by SMS and WhatsApp, and a failed send tried again) and `DeviceReadingSharingTests` (readings shared with another provider through the FHIR API, and moved by a merge of duplicate records) in `tests/HyFib.HealthCare360.IntegrationTests` |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.VirtualCare.Tests` (join tokens, session state machine, thresholds, units, adherence, FHIR and device parsers, device keys, ICE settings, alerts, permissions, prescription notice channels); end to end, `TeleconsultationJourneyTests`, `RpmAlertJourneyTests` (an alert sent to the care team by SMS and WhatsApp, and a failed send tried again) `DeviceReadingSharingTests` (readings shared with another provider through the FHIR API, and moved by a merge of duplicate records), and `AbdmExportTests` and `AbdmDataFlowTests` (home readings as ABDM wellness records, a month at a time) in `tests/HyFib.HealthCare360.IntegrationTests` |
 
 ## Telehealth
 
@@ -158,7 +158,10 @@ accepted.
 **Shared with other providers.** The readings are served by the FHIR API as Observations (`rpm-{readingId}`), coded as
 the clinic's vital signs are, under the patient's record-sharing consent: vital signs with the vital signs, a glucose
 with the lab results, an ECG patch's rhythm with the heart tests ([interop.md](interop.md#observation--home-monitoring-rpm--remote-patient-monitoring)).
-What HC360 serves, this intake reads back as the reading it was (`DeviceReadingObservationsTests`).
+What HC360 serves, this intake reads back as the reading it was (`DeviceReadingObservationsTests`). Through ABDM, an
+enrolment is one care context on the patient's ABHA, sent under a consent for wellness records as a document for each
+month of readings in the dates the consent asks for; staff download a month's, or link the programme, from the
+enrolment ([interop.md](interop.md#abdm-health-records-ehr-08)).
 
 **Alert routing (RPM-03).** New or escalated alerts: SMS/WhatsApp `rpm.alert` to the active care-team practitioners with
 a mobile number (first name + UHID only), queued in the outbox in the ingestion transaction; in-app notification to every

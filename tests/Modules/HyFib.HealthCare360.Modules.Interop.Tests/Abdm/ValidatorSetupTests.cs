@@ -14,6 +14,7 @@ public sealed class ValidatorSetupTests
     private const string Example = "Bundle-DischargeSummary-example-04.json";
     private const string PrescriptionExample = "Bundle-Prescription-example-06.json";
     private const string HealthDocumentExample = "Bundle-HealthDocumentRecord-example-01.json";
+    private const string WellnessExample = "Bundle-WellnessRecord-example-01.json";
 
     [Fact]
     public void The_igs_own_discharge_summary_example_validates()
@@ -173,6 +174,65 @@ public sealed class ValidatorSetupTests
                 break;
             case "no author":
                 composition.Author.Clear();
+                break;
+        }
+
+        var result = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+
+        TestContext.Current.SendDiagnosticMessage($"{breakage}: {result.Describe()}");
+        result.Errors.ShouldNotBeEmpty();
+        result.Errors.ShouldContain(e => (e.Details.Text ?? e.Diagnostics ?? string.Empty).Contains(expected), result.Describe());
+    }
+
+    [Fact]
+    public void The_igs_own_wellness_record_example_validates()
+    {
+        var bundle = AbdmProfileValidator.Example(WellnessExample).ShouldBeOfType<R4.Bundle>();
+
+        var result = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+
+        result.Errors.ShouldBeEmpty(result.Describe());
+        ((R4.Composition)bundle.Entry[0].Resource).Section.Select(s => s.Title).ShouldBe(
+            ["Vital Signs", "Body Measurement", "Physical Activity", "General Assessment", "Women Health", "Lifestyle", "Document Reference"],
+            "every section the guide has");
+    }
+
+    /// <summary>
+    /// WellnessRecord's own rules are checked, not skipped: its type fixed as text, a patient, at least one section, and
+    /// what each section's entries must be (a vital sign valued by a number or text, an entry that refers to its resource).
+    /// </summary>
+    [Theory]
+    [InlineData("a type of other text", "is not exactly equal to fixed value 'Wellness Record'")]
+    [InlineData("no patient", "Missing required member: 'subject'")]
+    [InlineData("no section", "Missing required member: 'section'")]
+    [InlineData("a vital sign valued as a code", "is of type 'CodeableConcept', which is not one of the allowed choice types ('Quantity','string')")]
+    [InlineData("a vital sign that is not an observation", "is not one of the allowed target types ('Observation'). (for slice VitalSigns)")]
+    [InlineData("a vital-signs entry naming nothing", "Missing required member: 'reference' (for slice VitalSigns)")]
+    public void A_wellness_record_broken_against_the_profiles_fails(string breakage, string expected)
+    {
+        var bundle = AbdmProfileValidator.Example(WellnessExample).ShouldBeOfType<R4.Bundle>();
+        var composition = (R4.Composition)bundle.Entry[0].Resource;
+        var vitals = composition.Section.Single(s => s.Title == "Vital Signs");
+        switch (breakage)
+        {
+            case "a type of other text":
+                composition.Type.Text = "Wellness record";
+                break;
+            case "no patient":
+                composition.Subject = null;
+                break;
+            case "no section":
+                composition.Section.Clear();
+                break;
+            case "a vital sign valued as a code":
+                var heartRate = (R4.Observation)bundle.Entry.Single(e => e.FullUrl == vitals.Entry[1].Reference).Resource;
+                heartRate.Value = new R4.CodeableConcept { Text = "Atrial fibrillation suspected" };
+                break;
+            case "a vital sign that is not an observation":
+                vitals.Entry[0] = new R4.ResourceReference(composition.Subject.Reference) { Type = "Patient" };
+                break;
+            case "a vital-signs entry naming nothing":
+                vitals.Entry[0] = new R4.ResourceReference { Display = "Respiratory rate" };
                 break;
         }
 

@@ -32,15 +32,21 @@ public enum AbdmRecordType
     /// (HealthDocumentRecord). A counselling note is not exported.
     /// </summary>
     ClinicalNote,
+
+    /// <summary>
+    /// The readings a patient took at home in a remote monitoring programme (WellnessRecord): one care context for the
+    /// enrolment, sent as a document for each month of readings in the dates asked for.
+    /// </summary>
+    HomeReadings,
 }
 
 /// <summary>
-/// A section of a document: the IG's section code, its title, the free text written in it (one paragraph per line), the
-/// resources it lists, and the heading its narrative puts over those resources after free text ("Diagnoses:"). A section
-/// has free text, entries or both.
+/// A section of a document: the IG's section code (none where the IG tells its sections apart by title alone), its title,
+/// the free text written in it (one paragraph per line), the resources it lists, and the heading its narrative puts over
+/// those resources after free text ("Diagnoses:"). A section has free text, entries or both.
 /// </summary>
 internal sealed record AbdmSection(
-    AbdmCode Code, string Title, IReadOnlyList<string> Text, IReadOnlyList<R4.Resource> Entries, string? EntriesHeading = null)
+    AbdmCode? Code, string Title, IReadOnlyList<string> Text, IReadOnlyList<R4.Resource> Entries, string? EntriesHeading = null)
 {
     public bool IsEmpty => Text.Count == 0 && Entries.Count == 0;
 
@@ -67,19 +73,37 @@ internal sealed record AbdmDocument
     public required Guid SourceId { get; init; }
 
     /// <summary>
+    /// Which of the record's documents this is, when a record makes more than one: the span of home readings it holds
+    /// (<see cref="AbdmRecordType.HomeReadings"/>). It is part of the document's identity.
+    /// </summary>
+    public string? Part { get; init; }
+
+    /// <summary>
     /// The name to save it under, as its PDF is named: <c>prescription-NHRX260000123-abdm.json</c>,
     /// <c>lab-report-LR2600042-abdm.json</c>, <c>radiology-report-NHRD260000042-abdm.json</c> (the accession number),
     /// <c>consultation-NH-000123-2026-09-25-abdm.json</c>, <c>discharge-summary-NH-000123-2026-09-25-abdm.json</c>,
-    /// <c>progress-note-NH-000123-2026-09-25-abdm.json</c> (the UHID and the day in IST).
+    /// <c>progress-note-NH-000123-2026-09-25-abdm.json</c> (the UHID and the day in IST),
+    /// <c>home-readings-NH-000123-2026-09-abdm.json</c> (the UHID and the month).
     /// </summary>
     public required string FileName { get; init; }
 
     /// <summary>The Composition profile (DischargeSummaryRecord, …).</summary>
     public required string Profile { get; init; }
 
-    public required AbdmCode DocumentType { get; init; }
+    /// <summary>The document's type, as the IG codes it; none where the IG names the type by its text alone.</summary>
+    public required AbdmCode? DocumentType { get; init; }
+
+    /// <summary>The type's text, where the IG fixes it apart from the title ("Wellness Record"); else the title.</summary>
+    public string? TypeText { get; init; }
+
     public required string Title { get; init; }
     public required R4.CompositionStatus Status { get; init; }
+
+    /// <summary>
+    /// The time the document covers (the Composition's event period), where it is a span of a record rather than a record
+    /// completed at once: the home readings measured within it.
+    /// </summary>
+    public R4.Period? Covers { get; init; }
 
     /// <summary>When the record was completed: signed, released or amended.</summary>
     public required DateTimeOffset Date { get; init; }

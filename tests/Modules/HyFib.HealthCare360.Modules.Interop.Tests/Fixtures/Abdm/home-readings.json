@@ -1,0 +1,906 @@
+{
+  "resourceType": "Bundle",
+  "id": "641573e4-2463-8e99-88fb-5c371c310019",
+  "meta": {
+    "versionId": "1790053200000-e24fa60da0fe80d4",
+    "lastUpdated": "2026-09-22T10:30:00+05:30",
+    "profile": [
+      "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
+    ],
+    "security": [
+      {
+        "system": "http://terminology.hl7.org/CodeSystem/v3-Confidentiality",
+        "code": "V",
+        "display": "very restricted"
+      }
+    ]
+  },
+  "identifier": {
+    "system": "urn:ietf:rfc:3986",
+    "value": "urn:uuid:641573e4-2463-8e99-88fb-5c371c310019"
+  },
+  "type": "document",
+  "timestamp": "2026-09-22T10:30:00+05:30",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:3d7448d6-b114-81a8-a0b9-3d9b301ba5d7",
+      "resource": {
+        "resourceType": "Composition",
+        "id": "3d7448d6-b114-81a8-a0b9-3d9b301ba5d7",
+        "meta": {
+          "versionId": "1790053200000-e24fa60da0fe80d4",
+          "lastUpdated": "2026-09-22T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/WellnessRecord"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Home readings: Hypertension home monitoring, September 2026</p><p>Date: 2026-09-20T23:52:00+05:30</p><p>Covers: 2026-09-01 to 2026-09-30</p><p>Vital Signs</p><p>Body Measurement</p><p>General Assessment</p><p>Other Observations</p></div>"
+        },
+        "identifier": {
+          "system": "urn:ietf:rfc:3986",
+          "value": "urn:uuid:3d7448d6-b114-81a8-a0b9-3d9b301ba5d7"
+        },
+        "status": "final",
+        "type": {
+          "text": "Wellness Record"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a",
+          "type": "Patient",
+          "display": "Meera Anil Kulkarni"
+        },
+        "date": "2026-09-20T23:52:00+05:30",
+        "author": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "title": "Home readings: Hypertension home monitoring, September 2026",
+        "custodian": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "display": "Nana Hospitals, Pune"
+        },
+        "event": [
+          {
+            "period": {
+              "start": "2026-09-01",
+              "end": "2026-09-30"
+            }
+          }
+        ],
+        "section": [
+          {
+            "title": "Vital Signs",
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>02 Sep 2026, 7:30 am: Blood pressure: 150 / 95 mmHg, outside the limits set for the patient</p><p>02 Sep 2026, 7:30 am: Heart rate: 78 beats/minute</p><p>03 Sep 2026, 8:00 am: Oxygen saturation (SpO2): 97 %</p><p>05 Sep 2026, 9:15 pm: Body temperature: 37.9 °C (read out by the patient, entered by Priya Nair)</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:c927400f-62f1-8d1f-9d3a-1e62f84df010",
+                "type": "Observation",
+                "display": "Blood pressure: 150 / 95 mmHg"
+              },
+              {
+                "reference": "urn:uuid:01636492-a677-8c49-a205-017b00c48fd2",
+                "type": "Observation",
+                "display": "Heart rate: 78 beats/minute"
+              },
+              {
+                "reference": "urn:uuid:586a7749-5056-88d9-bc10-58723d0acc8c",
+                "type": "Observation",
+                "display": "Oxygen saturation (SpO2): 97 %"
+              },
+              {
+                "reference": "urn:uuid:331991f9-1197-8f58-9a34-ecfdea0b9f42",
+                "type": "Observation",
+                "display": "Body temperature: 37.9 °C"
+              }
+            ]
+          },
+          {
+            "title": "Body Measurement",
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>10 Sep 2026, 7:00 am: Body weight: 72.4 kg</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:654a2188-6c91-8ace-ba47-dbdcc4fcb34f",
+                "type": "Observation",
+                "display": "Body weight: 72.4 kg"
+              }
+            ]
+          },
+          {
+            "title": "General Assessment",
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>12 Sep 2026, 7:05 am: Blood glucose: 182 mg/dL, beyond the critical limits set for the patient</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:cdb7e2d0-5a6a-8e2a-9db8-27cb1e75467a",
+                "type": "Observation",
+                "display": "Blood glucose: 182 mg/dL"
+              }
+            ]
+          },
+          {
+            "title": "Other Observations",
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>20 Sep 2026, 11:50 pm: Heart rhythm: Atrial fibrillation suspected, beyond the critical limits set for the patient</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:03941844-c9a5-8aa2-8dba-1d4f67d81700",
+                "type": "Observation",
+                "display": "Heart rhythm"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "4e080a21-3966-8efc-9236-64b034d9a58a",
+        "meta": {
+          "lastUpdated": "2026-09-22T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Patient"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Meera Anil Kulkarni UHID NH-UH-2600123</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MR",
+                  "display": "Medical record number"
+                }
+              ]
+            },
+            "system": "urn:hc360:uhid",
+            "value": "NH-UH-2600123"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "https://nrces.in/ndhm/fhir/r4/CodeSystem/ndhm-identifier-type-code",
+                  "code": "ABHA",
+                  "display": "Ayushman Bharat Health Account (ABHA) ID"
+                }
+              ],
+              "text": "ABHA number"
+            },
+            "system": "https://healthid.ndhm.gov.in",
+            "value": "91-1234-5678-9010"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "text": "Meera Anil Kulkarni",
+            "family": "Kulkarni",
+            "given": [
+              "Meera",
+              "Anil"
+            ],
+            "prefix": [
+              "Mrs"
+            ]
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+919876543210",
+            "use": "mobile",
+            "rank": 1
+          },
+          {
+            "system": "email",
+            "value": "meera@example.org",
+            "use": "home",
+            "rank": 2
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1984-04-12",
+        "address": [
+          {
+            "use": "home",
+            "type": "physical",
+            "text": "12 MG Road, Pune, Pune, Maharashtra, 411001",
+            "line": [
+              "12 MG Road"
+            ],
+            "city": "Pune",
+            "district": "Pune",
+            "state": "Maharashtra",
+            "postalCode": "411001",
+            "country": "India"
+          }
+        ],
+        "maritalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus",
+              "code": "M",
+              "display": "Married"
+            }
+          ]
+        },
+        "managingOrganization": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "identifier": {
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          "display": "Nana Hospitals, Pune"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "8878f630-7199-8fcb-8182-a92e8749eb27",
+        "meta": {
+          "lastUpdated": "2022-09-25T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Nana Hospitals, Pune</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PRN",
+                  "display": "Provider number"
+                }
+              ]
+            },
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "XX",
+                  "display": "Organization identifier"
+                }
+              ]
+            },
+            "system": "urn:hc360:facility",
+            "value": "NHP"
+          }
+        ],
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "prov",
+                "display": "Healthcare Provider"
+              }
+            ]
+          }
+        ],
+        "name": "Nana Hospitals, Pune",
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+912026001234",
+            "use": "work"
+          },
+          {
+            "system": "email",
+            "value": "records@nanahospitals.example",
+            "use": "work"
+          }
+        ],
+        "address": [
+          {
+            "use": "work",
+            "type": "physical",
+            "text": "1 Hospital Road, Pune, Pune, Maharashtra, 411001",
+            "line": [
+              "1 Hospital Road"
+            ],
+            "city": "Pune",
+            "district": "Pune",
+            "state": "Maharashtra",
+            "postalCode": "411001",
+            "country": "India"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:c927400f-62f1-8d1f-9d3a-1e62f84df010",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "c927400f-62f1-8d1f-9d3a-1e62f84df010",
+        "meta": {
+          "lastUpdated": "2026-09-02T07:32:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationVitalSigns"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>02 Sep 2026, 7:30 am: Blood pressure: 150 / 95 mmHg, outside the limits set for the patient</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "85354-9",
+              "display": "Blood pressure panel with all children optional"
+            }
+          ],
+          "text": "Blood pressure"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "effectiveDateTime": "2026-09-02T07:30:00+05:30",
+        "issued": "2026-09-02T07:32:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+          }
+        ],
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "A",
+                "display": "Abnormal"
+              }
+            ],
+            "text": "Outside the limits set for the patient"
+          }
+        ],
+        "device": {
+          "type": "Device",
+          "display": "Omron HEM-7156 blood pressure monitor (serial OM2609-0041)"
+        },
+        "component": [
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8480-6",
+                  "display": "Systolic blood pressure"
+                }
+              ],
+              "text": "Systolic blood pressure"
+            },
+            "valueQuantity": {
+              "value": 150,
+              "unit": "mmHg",
+              "system": "http://unitsofmeasure.org",
+              "code": "mm[Hg]"
+            },
+            "interpretation": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                    "code": "A",
+                    "display": "Abnormal"
+                  }
+                ],
+                "text": "Outside the limits set for the patient"
+              }
+            ]
+          },
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8462-4",
+                  "display": "Diastolic blood pressure"
+                }
+              ],
+              "text": "Diastolic blood pressure"
+            },
+            "valueQuantity": {
+              "value": 95,
+              "unit": "mmHg",
+              "system": "http://unitsofmeasure.org",
+              "code": "mm[Hg]"
+            },
+            "interpretation": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                    "code": "A",
+                    "display": "Abnormal"
+                  }
+                ],
+                "text": "Outside the limits set for the patient"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:01636492-a677-8c49-a205-017b00c48fd2",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "01636492-a677-8c49-a205-017b00c48fd2",
+        "meta": {
+          "lastUpdated": "2026-09-02T07:32:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationVitalSigns"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>02 Sep 2026, 7:30 am: Heart rate: 78 beats/minute</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8867-4",
+              "display": "Heart rate"
+            }
+          ],
+          "text": "Heart rate"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "effectiveDateTime": "2026-09-02T07:30:00+05:30",
+        "issued": "2026-09-02T07:32:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+          }
+        ],
+        "valueQuantity": {
+          "value": 78,
+          "unit": "beats/minute",
+          "system": "http://unitsofmeasure.org",
+          "code": "/min"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ],
+            "text": "Within the limits set for the patient"
+          }
+        ],
+        "device": {
+          "type": "Device",
+          "display": "Omron HEM-7156 blood pressure monitor (serial OM2609-0041)"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:586a7749-5056-88d9-bc10-58723d0acc8c",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "586a7749-5056-88d9-bc10-58723d0acc8c",
+        "meta": {
+          "lastUpdated": "2026-09-03T08:02:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationVitalSigns"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>03 Sep 2026, 8:00 am: Oxygen saturation (SpO2): 97 %</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "59408-5",
+              "display": "Oxygen saturation in Arterial blood by Pulse oximetry"
+            },
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood"
+            }
+          ],
+          "text": "Oxygen saturation (SpO2)"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "effectiveDateTime": "2026-09-03T08:00:00+05:30",
+        "issued": "2026-09-03T08:02:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+          }
+        ],
+        "valueQuantity": {
+          "value": 97,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ],
+            "text": "Within the limits set for the patient"
+          }
+        ],
+        "device": {
+          "type": "Device",
+          "display": "BPL Smart Oxy pulse oximeter (serial BPL-55120)"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:331991f9-1197-8f58-9a34-ecfdea0b9f42",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "331991f9-1197-8f58-9a34-ecfdea0b9f42",
+        "meta": {
+          "lastUpdated": "2026-09-05T21:17:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationVitalSigns"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>05 Sep 2026, 9:15 pm: Body temperature: 37.9 °C (read out by the patient, entered by Priya Nair)</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8310-5",
+              "display": "Body temperature"
+            }
+          ],
+          "text": "Body temperature"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "effectiveDateTime": "2026-09-05T21:15:00+05:30",
+        "issued": "2026-09-05T21:17:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+          }
+        ],
+        "valueQuantity": {
+          "value": 37.9,
+          "unit": "°C",
+          "system": "http://unitsofmeasure.org",
+          "code": "Cel"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ],
+            "text": "Within the limits set for the patient"
+          }
+        ],
+        "note": [
+          {
+            "text": "Read out by the patient and entered by Priya Nair."
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:654a2188-6c91-8ace-ba47-dbdcc4fcb34f",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "654a2188-6c91-8ace-ba47-dbdcc4fcb34f",
+        "meta": {
+          "lastUpdated": "2026-09-10T07:02:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationBodyMeasurement"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>10 Sep 2026, 7:00 am: Body weight: 72.4 kg</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "29463-7",
+              "display": "Body weight"
+            }
+          ],
+          "text": "Body weight"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "effectiveDateTime": "2026-09-10T07:00:00+05:30",
+        "issued": "2026-09-10T07:02:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+          }
+        ],
+        "valueQuantity": {
+          "value": 72.4,
+          "unit": "kg",
+          "system": "http://unitsofmeasure.org",
+          "code": "kg"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ],
+            "text": "Within the limits set for the patient"
+          }
+        ],
+        "device": {
+          "type": "Device",
+          "display": "Omron HN-289 weighing scale (serial OM2607-7781)"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:cdb7e2d0-5a6a-8e2a-9db8-27cb1e75467a",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "cdb7e2d0-5a6a-8e2a-9db8-27cb1e75467a",
+        "meta": {
+          "lastUpdated": "2026-09-12T07:07:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationGeneralAssessment"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>12 Sep 2026, 7:05 am: Blood glucose: 182 mg/dL, beyond the critical limits set for the patient</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory",
+                "display": "Laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "41653-7",
+              "display": "Glucose [Mass/volume] in Capillary blood by Glucometer"
+            }
+          ],
+          "text": "Blood glucose"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "effectiveDateTime": "2026-09-12T07:05:00+05:30",
+        "issued": "2026-09-12T07:07:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+          }
+        ],
+        "valueQuantity": {
+          "value": 182,
+          "unit": "mg/dL",
+          "system": "http://unitsofmeasure.org",
+          "code": "mg/dL"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "AA",
+                "display": "Critical abnormal"
+              }
+            ],
+            "text": "Beyond the critical limits set for the patient"
+          }
+        ],
+        "device": {
+          "type": "Device",
+          "display": "Accu-Chek Instant glucometer (serial AC-30981)"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:03941844-c9a5-8aa2-8dba-1d4f67d81700",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "03941844-c9a5-8aa2-8dba-1d4f67d81700",
+        "meta": {
+          "lastUpdated": "2026-09-20T23:52:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>20 Sep 2026, 11:50 pm: Heart rhythm: Atrial fibrillation suspected, beyond the critical limits set for the patient</p></div>"
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "procedure",
+                "display": "Procedure"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8884-9",
+              "display": "Heart rate rhythm"
+            }
+          ],
+          "text": "Heart rhythm"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "effectiveDateTime": "2026-09-20T23:50:00+05:30",
+        "issued": "2026-09-20T23:52:00+05:30",
+        "performer": [
+          {
+            "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+          }
+        ],
+        "valueCodeableConcept": {
+          "text": "Atrial fibrillation suspected"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "AA",
+                "display": "Critical abnormal"
+              }
+            ],
+            "text": "Beyond the critical limits set for the patient"
+          }
+        ],
+        "device": {
+          "type": "Device",
+          "display": "Cardiotrack Patch 2 ECG patch (serial CT-00412)"
+        }
+      }
+    }
+  ]
+}

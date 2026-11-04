@@ -244,20 +244,23 @@ internal sealed class AbdmDataFlowService(
                 continue;
             }
 
-            if ((transfer.DateFrom is { } from && located.Value.RecordedAt < from) || (transfer.DateTo is { } to && located.Value.RecordedAt > to))
+            // A record is in the dates or not; home readings go by when each was measured, and the documents hold only
+            // those measured in the dates (AbdmBundleService.ShareAsync).
+            if (careContext.RecordType != AbdmRecordType.HomeReadings
+                && ((transfer.DateFrom is { } from && located.Value.RecordedAt < from) || (transfer.DateTo is { } to && located.Value.RecordedAt > to)))
             {
                 statuses[reference] = ("ERRORED", "The record is outside the dates asked for.");
                 continue;
             }
 
-            var shared = await bundles.ShareAsync(careContext.RecordType, careContext.RecordId, ct);
+            var shared = await bundles.ShareAsync(careContext.RecordType, careContext.RecordId, transfer.DateFrom, transfer.DateTo, ct);
             if (shared.IsFailure)
             {
                 statuses[reference] = ("ERRORED", shared.Error!.Message);
                 continue;
             }
 
-            documents.Add((reference, FhirJson.Serialize(shared.Value.Bundle)));
+            documents.AddRange(shared.Value.Select(e => (reference, FhirJson.Serialize(e.Bundle))));
         }
 
         var pagesSent = 0;
@@ -292,7 +295,16 @@ internal sealed class AbdmDataFlowService(
                     pagesSent += pushed ? 1 : 0;
                     foreach (var entry in chunks[page])
                     {
-                        statuses[entry.CareContextReference] = pushed ? ("DELIVERED", "Delivered") : ("ERRORED", "The HIU did not accept the page.");
+                        // A care context's documents can fill more than one page (a year of home readings): it is
+                        // delivered only when every page that holds one of them was accepted.
+                        if (!pushed)
+                        {
+                            statuses[entry.CareContextReference] = ("ERRORED", "The HIU did not accept the page.");
+                        }
+                        else
+                        {
+                            statuses.TryAdd(entry.CareContextReference, ("DELIVERED", "Delivered"));
+                        }
                     }
                 }
             }

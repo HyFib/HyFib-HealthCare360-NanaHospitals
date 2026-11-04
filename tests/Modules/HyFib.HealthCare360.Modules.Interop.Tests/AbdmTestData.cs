@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.SharedKernel;
 using Modality = HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.Modality;
 
@@ -62,6 +63,13 @@ internal static class AbdmTestData
     public static readonly Guid NoteId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab017");
     public static readonly Guid AddendumId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab018");
     public static readonly Guid DoctorUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab019");
+
+    /// <summary>The patient's enrolment in hypertension home monitoring, and the account of the nurse who enters readings by phone.</summary>
+    public static readonly Guid EnrollmentId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab01a");
+    public static readonly Guid NurseUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab01b");
+
+    /// <summary>The name of the programme the patient is enrolled in, as the hospital wrote it.</summary>
+    public const string Programme = "Hypertension home monitoring";
 
     private static readonly DateTimeOffset Seen = TestData.Now.AddHours(-2);
     private static readonly DateTimeOffset Admitted = TestData.Now.AddDays(-20);
@@ -495,6 +503,62 @@ internal static class AbdmTestData
 
     public static ClinicalNoteData ClinicalNoteRecord(params ClinicalNoteRow[] addenda) =>
         new(Context(encounter: Consultation()), ProgressNote(), addenda);
+
+    /// <summary>An instant in India in 2026 (IST, UTC+05:30).</summary>
+    public static DateTimeOffset Ist(int month, int day, int hour, int minute, int second = 0) =>
+        new(2026, month, day, hour, minute, second, TimeSpan.FromMinutes(330));
+
+    /// <summary>
+    /// The patient's September readings at home, each received two minutes after it was measured: a blood pressure (high)
+    /// and pulse the monitor took together; an SpO2; a temperature the patient read out on a call, which a nurse entered;
+    /// a weight; a fasting glucose beyond the critical limit; and an ECG patch's rhythm (atrial fibrillation suspected).
+    /// </summary>
+    public static IReadOnlyList<DeviceReadingRow> HomeReadings() =>
+    [
+        Reading(0x101, RpmReadingType.SystolicBp, 150m, Ist(9, 2, 7, 30), ReadingSeverity.Warning, BpMonitor),
+        Reading(0x102, RpmReadingType.DiastolicBp, 95m, Ist(9, 2, 7, 30), ReadingSeverity.Warning, BpMonitor),
+        Reading(0x103, RpmReadingType.HeartRate, 78m, Ist(9, 2, 7, 30), ReadingSeverity.Normal, BpMonitor),
+        Reading(0x104, RpmReadingType.SpO2, 97m, Ist(9, 3, 8, 0), ReadingSeverity.Normal, Oximeter),
+        Reading(0x105, RpmReadingType.Temperature, 37.9m, Ist(9, 5, 21, 15), ReadingSeverity.Normal, null) with
+        {
+            Source = ReadingSource.Manual,
+            RecordedByUserId = NurseUserId,
+            RecordedByUserName = "Priya Nair",
+        },
+        Reading(0x106, RpmReadingType.Weight, 72.4m, Ist(9, 10, 7, 0), ReadingSeverity.Normal, Scale),
+        Reading(0x107, RpmReadingType.Glucose, 182m, Ist(9, 12, 7, 5), ReadingSeverity.Critical, Glucometer),
+        Reading(0x108, RpmReadingType.EcgRhythm, 2m, Ist(9, 20, 23, 50), ReadingSeverity.Critical, Patch) with { TextValue = "Atrial fibrillation suspected" },
+    ];
+
+    /// <summary>The September readings as one document: the whole month, or <paramref name="span"/>.</summary>
+    public static HomeReadingsData HomeReadingsRecord(IReadOnlyList<DeviceReadingRow>? readings = null, ReadingsSpan? span = null) =>
+        new(Context(), EnrollmentId, Programme, span ?? ReadingsSpan.Of(new DateOnly(2026, 9, 1)), readings ?? HomeReadings());
+
+    /// <summary>A reading from the patient's devices, numbered for its id.</summary>
+    public static DeviceReadingRow Reading(
+        int number, RpmReadingType type, decimal value, DateTimeOffset measuredAt, ReadingSeverity severity, (RpmDeviceType Type, string Maker, string Model, string Serial)? device) => new()
+        {
+            Id = Guid.Parse($"01923a4b-0000-7000-8000-0000000bd{number:x3}"),
+            PatientId = TestData.PatientId,
+            EnrollmentId = EnrollmentId,
+            Type = type,
+            Value = value,
+            MeasuredAt = measuredAt.ToUniversalTime(),
+            ReceivedAt = measuredAt.ToUniversalTime().AddMinutes(2),
+            Severity = severity,
+            Source = ReadingSource.Device,
+            DeviceId = device is null ? null : Guid.Parse($"01923a4b-0000-7000-8000-0000000be{(int)device.Value.Type:x3}"),
+            DeviceType = device?.Type,
+            DeviceManufacturer = device?.Maker,
+            DeviceModel = device?.Model,
+            DeviceSerial = device?.Serial,
+        };
+
+    private static readonly (RpmDeviceType, string, string, string) BpMonitor = (RpmDeviceType.BpMonitor, "Omron", "HEM-7156", "OM2609-0041");
+    private static readonly (RpmDeviceType, string, string, string) Oximeter = (RpmDeviceType.PulseOximeter, "BPL", "Smart Oxy", "BPL-55120");
+    private static readonly (RpmDeviceType, string, string, string) Scale = (RpmDeviceType.WeightScale, "Omron", "HN-289", "OM2607-7781");
+    private static readonly (RpmDeviceType, string, string, string) Glucometer = (RpmDeviceType.Glucometer, "Accu-Chek", "Instant", "AC-30981");
+    private static readonly (RpmDeviceType, string, string, string) Patch = (RpmDeviceType.EcgPatch, "Cardiotrack", "Patch 2", "CT-00412");
 
     public static VisitRow StayVisit() => new()
     {

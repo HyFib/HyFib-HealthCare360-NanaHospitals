@@ -72,3 +72,11 @@ and run the Interop module tests and `AbdmExportTests`.
   (`Abdm/ValidatorSetupTests`). Added 2026-11-04 from the same package (its sha512 matched the integrity above); every
   file already here was checked byte for byte against it, the `DocumentReference`, `Patient`, `Practitioner`,
   `PractitionerRole`, `Organization` and `Encounter` profiles it points to among them.
+- `package/StructureDefinition-WellnessRecord.json`: the wellness record profile HC360's home readings must meet as ABDM
+  documents (`AbdmDocumentTests`, `AbdmHomeReadingsRecordTests`, `AbdmExportTests`), with the profiles its sections ask
+  of their entries that were not here yet (`StructureDefinition-ObservationGeneralAssessment.json`,
+  `…ObservationPhysicalActivity.json`, `…ObservationWomenHealth.json` and `…ObservationLifestyle.json`: Firely compiles
+  every profile a section entry may target), and `example/Bundle-WellnessRecord-example-01.json`: the guide's own
+  wellness record, which must validate (`Abdm/ValidatorSetupTests`). Added 2026-11-04 from the same package (its sha512
+  matched the integrity above, and each file matched the package's byte for byte); every file already here was checked
+  byte for byte against it, the `ObservationVitalSigns` and `ObservationBodyMeasurement` profiles among them.

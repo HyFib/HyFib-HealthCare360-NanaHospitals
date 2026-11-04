@@ -13,7 +13,8 @@ export type AbdmLinkRecordType =
   | 'RadiologyReport'
   | 'CardiologyReport'
   | 'Immunization'
-  | 'ClinicalNote';
+  | 'ClinicalNote'
+  | 'HomeReadings';
 
 export interface AbdmLinkRecord {
   type: AbdmLinkRecordType;
