@@ -101,6 +101,7 @@ export function WardMarDue({
         scheduledAt: item.scheduledAt,
         version: item.version,
         admissionId: item.admissionId,
+        patientId: item.patientId,
         patientName: item.patientName,
         bedLabel: item.bedLabel,
         isOverdue: item.isOverdue,

@@ -79,6 +79,15 @@ internal static class AuthEndpoints
             .RequireAddressRateLimit(ClusterRateLimits.SignIn)
             .WithValidation<SetPinRequest>();
 
+        // A second member of staff gives their own user name and password at the signed-in user's screen to witness what
+        // that user does (WitnessConfirmation). On the auth path, so the app sends no Idempotency-Key and the request,
+        // password and all, is never hashed into the idempotency store.
+        group.MapPost("/witness", async (ConfirmWitnessRequest request, AuthService auth, CancellationToken ct) =>
+                (await auth.ConfirmWitnessAsync(request, ct)).ToOk())
+            .RequireAuthorization()
+            .RequireAddressRateLimit(ClusterRateLimits.SignIn)
+            .WithValidation<ConfirmWitnessRequest>();
+
         // Locking and unlocking are among the few things a locked session may do (SessionLock).
         group.MapPost("/lock", async (AuthService auth, CancellationToken ct) => (await auth.LockAsync(ct)).ToNoContent())
             .RequireAuthorization();

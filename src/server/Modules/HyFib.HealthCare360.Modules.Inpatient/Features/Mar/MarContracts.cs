@@ -69,15 +69,20 @@ public sealed record AddAdHocDoseRequest(
     bool GivenNow,
     string? Reason,
     string? BatchNumber,
-    string? WitnessName,
+    Guid? WitnessConfirmationId,
     string? Notes);
 
+/// <summary>
+/// A dose as given, held, refused or missed. <paramref name="WitnessConfirmationId"/>: for a dose that is witnessed, a second
+/// nurse's confirmation, given at this screen with their own user name and password (<c>POST /api/v1/auth/witness</c>,
+/// purpose <c>mar.dose</c>).
+/// </summary>
 public sealed record RecordAdministrationRequest(
     MarStatus Outcome,
     DateTimeOffset? AdministeredAt,
     string? Reason,
     string? BatchNumber,
-    string? WitnessName,
+    Guid? WitnessConfirmationId,
     string? Notes,
     uint Version);
 
@@ -134,7 +139,7 @@ public sealed class AddAdHocDoseRequestValidator : AbstractValidator<AddAdHocDos
             .WithMessage("The dose time must be within the last 24 hours or the next day.");
         RuleFor(x => x.Reason).SafeText(300);
         RuleFor(x => x.BatchNumber).MaximumLength(64);
-        RuleFor(x => x.WitnessName).MaximumLength(200);
+        RuleFor(x => x.WitnessConfirmationId).OptionalId();
         RuleFor(x => x.Notes).SafeText(500);
     }
 }
@@ -148,7 +153,7 @@ public sealed class RecordAdministrationRequestValidator : AbstractValidator<Rec
         RuleFor(x => x.Reason).NotEmpty().When(x => x.Outcome != MarStatus.Given).WithMessage("Give a reason when a dose is not given.");
         RuleFor(x => x.Reason).SafeText(300);
         RuleFor(x => x.BatchNumber).MaximumLength(64);
-        RuleFor(x => x.WitnessName).MaximumLength(200);
+        RuleFor(x => x.WitnessConfirmationId).OptionalId();
         RuleFor(x => x.Notes).SafeText(500);
     }
 }

@@ -1702,6 +1702,7 @@
     "POST /api/v1/auth/unlock/webauthn/options -",
     "POST /api/v1/auth/webauthn/credentials -",
     "POST /api/v1/auth/webauthn/credentials/options -",
+    "POST /api/v1/auth/witness -",
     "POST /api/v1/beds inpatient.masters.manage",
     "POST /api/v1/beds/bulk inpatient.masters.manage",
     "POST /api/v1/beds/housekeeping/{taskId:guid}/complete beds.housekeeping",

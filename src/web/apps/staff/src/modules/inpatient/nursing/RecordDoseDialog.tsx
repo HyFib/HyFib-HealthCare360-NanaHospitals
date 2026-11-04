@@ -24,13 +24,14 @@ import {
   CheckmarkCircleRegular,
   DismissCircleRegular,
   HandRightRegular,
-  ShieldKeyholeRegular,
   SubtractCircleRegular,
 } from '@fluentui/react-icons';
 import { formatTime, isApiError } from '@hc360/core';
 import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactElement } from 'react';
+import type { WitnessConfirmed } from '@/modules/witness/api';
+import { WitnessPanel } from '@/modules/witness/WitnessPanel';
 import { nursingApi, nursingKeys, type MarOutcome } from '../nursingApi';
 import { fromIstInput, toIstInput } from '../time';
 
@@ -42,6 +43,8 @@ export interface DoseToRecord {
   scheduledAt: string;
   version: number;
   admissionId: string;
+  /** Whose dose it is: a witness confirms for this patient's dose only. */
+  patientId: string;
   patientName?: string;
   bedLabel?: string | null;
   isOverdue?: boolean;
@@ -109,7 +112,8 @@ const useStyles = makeStyles({
 
 /**
  * Records one dose on the MAR (given, held, refused or missed). Two taps for the common case: the outcome is chosen
- * on the list, Enter confirms. Anything but "given" needs a reason; controlled drugs need a witness. A dose is recorded
+ * on the list, Enter confirms. Anything but "given" needs a reason; a controlled drug given needs a second nurse, who
+ * confirms at this screen with their own user name and password (WitnessPanel). A dose is recorded
  * once: if someone else recorded it meanwhile, the chart refreshes instead of overwriting.
  */
 export function RecordDoseDialog({
@@ -130,7 +134,7 @@ export function RecordDoseDialog({
   const [limits] = useState(() => ({ now: toIstInput(new Date()) }));
   const [administeredAt, setAdministeredAt] = useState(limits.now);
   const [batch, setBatch] = useState(dose.batchNumber ?? '');
-  const [witness, setWitness] = useState('');
+  const [witness, setWitness] = useState<WitnessConfirmed | null>(null);
   const [notes, setNotes] = useState('');
   const [witnessRequired, setWitnessRequired] = useState(Boolean(dose.isControlledDrug));
 
@@ -141,7 +145,7 @@ export function RecordDoseDialog({
         administeredAt: outcome === 'Given' && earlier ? fromIstInput(administeredAt) : null,
         reason: reason.trim() || null,
         batchNumber: batch.trim() || null,
-        witnessName: witness.trim() || null,
+        witnessConfirmationId: witness?.confirmationId ?? null,
         notes: notes.trim() || null,
         version: dose.version,
       }),
@@ -159,6 +163,10 @@ export function RecordDoseDialog({
       if (isApiError(error) && error.code === 'mar.witness_required') {
         setWitnessRequired(true);
       }
+      // Run out, or used meanwhile: the witness confirms again.
+      if (isApiError(error) && error.code === 'witness.confirmation_unusable') {
+        setWitness(null);
+      }
       if (isApiError(error) && (error.isConflict || error.code === 'mar.already_recorded')) {
         void queryClient.invalidateQueries({ queryKey: nursingKeys.all });
       }
@@ -169,7 +177,7 @@ export function RecordDoseDialog({
   const needsWitness = outcome === 'Given' && witnessRequired;
   const valid =
     (!needsReason || reason.trim().length > 0) &&
-    (!needsWitness || witness.trim().length > 0) &&
+    (!needsWitness || witness !== null) &&
     (!earlier || fromIstInput(administeredAt) !== null);
   const alreadyDone =
     isApiError(record.error) && (record.error.isConflict || record.error.code === 'mar.already_recorded');
@@ -182,7 +190,15 @@ export function RecordDoseDialog({
   };
 
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ outcome, reason, earlier, administeredAt, batch, witness, notes }),
+    dirty: useValuesChanged({
+      outcome,
+      reason,
+      earlier,
+      administeredAt,
+      batch,
+      witness: witness?.confirmationId ?? '',
+      notes,
+    }),
     busy: record.isPending,
     onClose,
   });
@@ -275,19 +291,15 @@ export function RecordDoseDialog({
                         placeholder="From the strip or vial"
                       />
                     </Field>
-                    <Field
-                      label="Witness (second nurse)"
-                      required={needsWitness}
-                      hint={needsWitness ? 'Required for controlled drugs' : 'Needed for controlled drugs'}
-                    >
-                      <Input
-                        value={witness}
-                        onChange={(_, d) => setWitness(d.value)}
-                        maxLength={200}
-                        contentBefore={needsWitness ? <ShieldKeyholeRegular /> : undefined}
-                      />
-                    </Field>
                   </div>
+                  {needsWitness && (
+                    <WitnessPanel
+                      purpose="mar.dose"
+                      patientId={dose.patientId}
+                      witness={witness}
+                      onChange={setWitness}
+                    />
+                  )}
                 </>
               )}
 

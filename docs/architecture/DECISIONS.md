@@ -104,3 +104,26 @@ because Redis is away. Each cluster-store call is one statement on the database,
 every request. A copy of the database alone opens no encrypted value. The shared folder and the cluster key
 certificate become things to back up and protect. Partitioned tables cannot be the target of a foreign key, and the
 audit chain position is kept unique by its trigger and the sealer's lock rather than by an index.
+
+## ADR-014 — A witness proves who they are at another user's screen
+**Status:** Accepted (maker-checker at the bedside: controlled drugs on the MAR first, the bedside transfusion check next)
+**Context:** A controlled drug given, or a unit of blood checked at the bedside, needs a second person there and then:
+an approval in an inbox later is too late. Until now the MAR took the witness's name as typed, so anyone could write
+any name. The second person is at the first one's screen, which is signed in as the first one. A password sent with the
+record itself would pass through a clinical module, and the idempotency store keeps a fast, unsalted hash of every
+keyed request body for a day.
+**Decision:** The witness gives their own user name and password at that screen, and their authenticator code when
+their account has one, to `POST /api/v1/auth/witness`. It is checked as sign-in checks it: the same answer for an
+unknown, inactive or locked account; a wrong password or code counted towards their lockout under the account's row
+lock; codes not reused; an account that must change its password or set up two-step sign-in refused. It is audited
+against the witness's account. They must hold the purpose's permission (the module registers the purpose,
+`WitnessPurpose`), may work in the facility, and are never the signed-in user. Nothing is signed in: no session, cookie
+or token. The answer is a `WitnessConfirmation`, a random id good once, for the signed-in user, the facility, the purpose
+and the patient, for five minutes. The module uses it in its own save (`IWitnessConfirmations.UseAsync`), so it is spent
+only when the record is, and its row version stops a second use. The app sends no idempotency key on `/api/v1/auth/*`,
+so the password is never hashed into the idempotency store.
+**Consequences:** A witness's identity on a record is as good as a sign-in, and the records name an account, not a typed
+name. Witnessing adds one step at the bedside, typing a password on a colleague's screen. Wrong passwords there lock the
+witness's account like wrong passwords at sign-in, so someone guessing cannot use it, and every attempt is in the audit
+trail. A PIN or a badge could later replace the password for this step, behind a facility setting; the confirmation
+model stays the same.

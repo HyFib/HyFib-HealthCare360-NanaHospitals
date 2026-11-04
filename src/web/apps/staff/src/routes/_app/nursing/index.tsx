@@ -396,7 +396,9 @@ function PatientChart({
           </TabList>
         </div>
         <div style={{ padding: 16 }} key={`${admissionId}-${current}`}>
-          {current === 'mar' && <PatientMar admissionId={admissionId} patientName={occupant.patientName} />}
+          {current === 'mar' && (
+            <PatientMar admissionId={admissionId} patientId={occupant.patientId} patientName={occupant.patientName} />
+          )}
           {current === 'medicines' && <MedicationOrders admissionId={admissionId} />}
           {current === 'notes' && <NursingNotes admissionId={admissionId} canWrite={canChart} />}
           {current === 'handover' && <PatientHandovers admissionId={admissionId} canWrite={canChart} />}

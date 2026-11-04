@@ -443,7 +443,14 @@ and grants nothing.
     verification of a result by whoever entered it (`lab.verify_own_result`), and a correction of a released report
     waits for a second pathologist (see Maker-checker);
   - the doctor who certified a death does not also confirm the certificate (`death.own_certificate`, and
-    `approval.self` on the request).
+    `approval.self` on the request);
+  - a controlled drug given on the MAR is witnessed by a second nurse who proves who they are at the recording nurse's
+    screen, never the nurse recording it (`witness.self`). The witness gives their own user name and password there, and
+    their authenticator code when their account has one (`POST /api/v1/auth/witness`, ADR-014). It is checked as
+    sign-in checks it: wrong ones count towards their lockout, nothing is accepted while the account is locked, and an
+    unknown account gets the same answer. Every attempt is audited against the witness's account. Nothing is signed
+    in. The confirmation it returns is good once, for that nurse, that patient and five minutes, and the dose names the
+    witness's account.
 - **Attendance terminals that push** are registered with the IP address they push from, and punches from any other
   address are refused. A terminal registered before the address was required is held to the first address it calls from.
 - **Switched-off controls are shown.** Outside development, System health shows a critical warning while two-step sign-in

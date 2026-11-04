@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Nursing;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Rounds;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Numbering;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -72,6 +73,7 @@ public sealed class InpatientModule : IModule
         services.Replace(ServiceDescriptor.Scoped<IRoomClassDirectory, RoomClassDirectory>());
         services.Replace(ServiceDescriptor.Scoped<IAdmissionDirectory, AdmissionDirectory>());
         services.AddScoped<MarService>();
+        services.AddWitnessPurpose(MarService.DoseWitness);
         services.AddScoped<AdmissionAccess>();
         services.AddScoped<WardRoundQueries>();
         services.AddHostedService<BedDayChargeJob>();

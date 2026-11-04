@@ -39,6 +39,7 @@ public sealed class AuditCoverageTests
         ["UserSession"] = "A sign-in session: signing in, out, locking and ending are audited (auth.*).",
         ["RefreshToken"] = "A session's rotating token, stored hashed; reuse is audited (auth.refresh_reuse_detected).",
         ["AuthChallenge"] = "A pending second sign-in step or one-time code, stored hashed and spent within minutes; sign-ins are audited (auth.*).",
+        ["WitnessConfirmation"] = "A witness's confirmation, spent within minutes; giving and refusing one are audited (auth.witness_*) and the record it is used for names the witness.",
         ["WebAuthnCredential"] = "A device's public unlock key; adding and removing it are audited (auth.biometric_unlock_added/removed).",
         ["DeviceEnrollmentCode"] = "A one-time enrolment code, stored hashed; making and using it are audited (device.*).",
         ["BreakGlassAccess"] = "An emergency opening's time box; the opening and its reason are audited (patient.break_glass).",
