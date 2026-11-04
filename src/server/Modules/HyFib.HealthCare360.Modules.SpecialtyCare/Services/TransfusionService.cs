@@ -302,6 +302,13 @@ public sealed class TransfusionService(
             return Error.NotFound(nameof(BloodIssue), issueId);
         }
 
+        // A unit started on the ward has been given, in full or in part: it is not stock again.
+        if (await db.Set<Transfusion>().AnyAsync(t => t.IssueId == issueId, ct))
+        {
+            return Error.Rule("bloodbank.transfusion_started",
+                $"Unit {issue.UnitNumber} was started on the ward and cannot be returned to stock. End the transfusion there, and report a reaction if there was one.");
+        }
+
         var unit = await db.Set<BloodComponent>().FirstAsync(c => c.Id == issue.ComponentId, ct);
         var bloodRequest = await db.Set<BloodRequest>().FirstAsync(r => r.Id == issue.RequestId, ct);
         var now = time.GetUtcNow();

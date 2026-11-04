@@ -460,6 +460,11 @@ and grants nothing.
     witness's account. A high-alert medicine given is witnessed the same way. A ward order takes both flags from the
     drug master when it names an item of it, whatever the order form sent, and so does the order made for a medicine
     the pharmacy issues without a prescription line.
+  - a unit of blood is started on the ward only after a bedside check by two staff, the second proving who they are at
+    the first one's screen in the same way (purpose `blood.bedside_check`, `bloodbank.transfuse`). The patient's
+    wristband and the bag are read and compared with the issue on the server; another patient's or another unit is
+    refused and audited as a near miss. The patient's consent for the stay, the unit's expiry, its cross-match and its 4
+    hours out of the blood bank are checked there too.
 - **Attendance terminals that push** are registered with the IP address they push from, and punches from any other
   address are refused. A terminal registered before the address was required is held to the first address it calls from.
 - **Switched-off controls are shown.** Outside development, System health shows a critical warning while two-step sign-in

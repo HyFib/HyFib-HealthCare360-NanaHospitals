@@ -155,3 +155,32 @@ public enum ReactionStatus
     UnderInvestigation,
     Closed,
 }
+
+/// <summary>Where a unit's transfusion stands, from the bedside check on.</summary>
+public enum TransfusionStatus
+{
+    /// <summary>Checked at the bedside by two staff and started.</summary>
+    InProgress = 0,
+
+    /// <summary>Given in full, or as much as was ordered.</summary>
+    Completed,
+
+    /// <summary>Stopped before the end: a reaction, or another reason the staff gave.</summary>
+    Stopped,
+}
+
+/// <summary>When a set of observations was taken during a transfusion (BSH 2017: before, at 15 minutes, at the end).</summary>
+public enum TransfusionObservationKind
+{
+    /// <summary>Before the start, as part of the bedside check.</summary>
+    Baseline = 0,
+
+    /// <summary>About 15 minutes after the start, when severe reactions usually show.</summary>
+    FifteenMinutes,
+
+    /// <summary>Any later set while it runs.</summary>
+    Later,
+
+    /// <summary>At the end, or when it was stopped.</summary>
+    End,
+}

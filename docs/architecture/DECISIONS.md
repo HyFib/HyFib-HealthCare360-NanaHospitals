@@ -106,7 +106,7 @@ certificate become things to back up and protect. Partitioned tables cannot be t
 audit chain position is kept unique by its trigger and the sealer's lock rather than by an index.
 
 ## ADR-014 — A witness proves who they are at another user's screen
-**Status:** Accepted (maker-checker at the bedside: controlled drugs on the MAR first, the bedside transfusion check next)
+**Status:** Accepted (maker-checker at the bedside: controlled drugs and high-alert medicines on the MAR, `mar.dose`; the bedside transfusion check, `blood.bedside_check`)
 **Context:** A controlled drug given, or a unit of blood checked at the bedside, needs a second person there and then:
 an approval in an inbox later is too late. Until now the MAR took the witness's name as typed, so anyone could write
 any name. The second person is at the first one's screen, which is signed in as the first one. A password sent with the

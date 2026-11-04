@@ -80,6 +80,41 @@ public sealed class ValidatorTests
     }
 
     [Fact]
+    public void The_bedside_check_needs_what_was_read_the_witness_and_a_full_set_of_observations()
+    {
+        var validator = new StartTransfusionRequestValidator();
+        var vitals = new TransfusionObservationValues(36.8m, 84, 118, 76, 16, null);
+        var check = new StartTransfusionRequest("UH-000123", "NH26000123-R", Guid.CreateVersion7(), vitals, null);
+
+        validator.Validate(check).IsValid.ShouldBeTrue();
+        validator.Validate(check with { WristbandUhid = " " }).IsValid.ShouldBeFalse();
+        validator.Validate(check with { BagUnitNumber = "" }).IsValid.ShouldBeFalse();
+        validator.Validate(check with { WitnessConfirmationId = Guid.Empty }).IsValid.ShouldBeFalse();
+        validator.Validate(check with { Baseline = vitals with { PulsePerMinute = null } }).IsValid.ShouldBeFalse();
+        validator.Validate(check with { Baseline = vitals with { DiastolicMmHg = 118 } }).IsValid.ShouldBeFalse();
+        validator.Validate(check with { Baseline = vitals with { TemperatureC = 47m } }).IsValid.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_transfusion_is_observed_and_ended_no_later_than_now_and_a_stop_says_why()
+    {
+        var vitals = new TransfusionObservationValues(36.8m, 84, 118, 76, 16, 97);
+        var observe = new RecordTransfusionObservationRequestValidator(Time);
+        var end = new EndTransfusionRequestValidator(Time);
+
+        observe.Validate(new RecordTransfusionObservationRequest(TransfusionObservationKind.FifteenMinutes, null, vitals, 1)).IsValid.ShouldBeTrue();
+        observe.Validate(new RecordTransfusionObservationRequest(TransfusionObservationKind.Baseline, null, vitals, 1)).IsValid.ShouldBeFalse();
+        observe.Validate(new RecordTransfusionObservationRequest(TransfusionObservationKind.Later, TestData.Now.AddHours(1), vitals, 1)).IsValid
+            .ShouldBeFalse();
+
+        var completed = new EndTransfusionRequest(null, Stopped: false, StopReason: null, VolumeMl: 280, vitals, 1);
+        end.Validate(completed).IsValid.ShouldBeTrue();
+        end.Validate(completed with { Stopped = true }).IsValid.ShouldBeFalse();
+        end.Validate(completed with { Stopped = true, StopReason = "Fever and rigors" }).IsValid.ShouldBeTrue();
+        end.Validate(completed with { EndedAt = TestData.Now.AddHours(1) }).IsValid.ShouldBeFalse();
+    }
+
+    [Fact]
     public void Transfusion_reaction_cannot_be_dated_in_the_future()
     {
         var validator = new ReportReactionRequestValidator(Time);
