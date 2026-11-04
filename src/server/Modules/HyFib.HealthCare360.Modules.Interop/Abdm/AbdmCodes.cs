@@ -37,6 +37,7 @@ internal static class AbdmProfiles
     public const string DocumentReference = Base + "DocumentReference";
     public const string Binary = Base + "Binary";
     public const string Immunization = Base + "Immunization";
+    public const string Procedure = Base + "Procedure";
     public const string ImmunizationRecommendation = Base + "ImmunizationRecommendation";
 }
 
@@ -110,6 +111,7 @@ internal static class AbdmCodes
     public static readonly AbdmCode MedicationHistory = Snomed("1003606003", "Medication history section");
     public static readonly AbdmCode MedicationSummary = Snomed("721912009", "Medication summary document");
     public static readonly AbdmCode PastProcedures = Snomed("1003640003", "History of past procedure section");
+    public static readonly AbdmCode ClinicalProcedureReport = Snomed("371525003", "Clinical procedure report");
     public static readonly AbdmCode CarePlan = Snomed("734163000", "Care plan");
     public static readonly AbdmCode FollowUp = Snomed("390906007", "Follow-up encounter");
     public static readonly AbdmCode Referral = Snomed("306206005", "Referral to service");

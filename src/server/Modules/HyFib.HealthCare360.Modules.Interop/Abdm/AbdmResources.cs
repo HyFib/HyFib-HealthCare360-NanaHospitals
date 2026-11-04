@@ -232,6 +232,18 @@ internal static class AbdmProfiler
         return condition;
     }
 
+    /// <summary>
+    /// A procedure: the IG's Procedure profile, which fixes the system of every coding to SNOMED CT. The mapper sends the
+    /// procedure by name (its code is ICD-10-PCS) and only an operation's category as a coding.
+    /// </summary>
+    public static R4.Procedure Procedure(R4.Procedure procedure)
+    {
+        procedure.Meta = Profile(procedure.Meta, AbdmProfiles.Procedure);
+        Codings(procedure.Code, [FhirSystems.Snomed]);
+        Codings(procedure.Category, [FhirSystems.Snomed]);
+        return procedure;
+    }
+
     public static R4.AllergyIntolerance Allergy(R4.AllergyIntolerance allergy)
     {
         allergy.Meta = Profile(allergy.Meta, AbdmProfiles.AllergyIntolerance);

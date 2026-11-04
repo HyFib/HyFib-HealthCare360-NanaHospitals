@@ -13,6 +13,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Immunizations;
 using HyFib.HealthCare360.Modules.Clinical.Features.Notes;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
+using HyFib.HealthCare360.Modules.Clinical.Features.Procedures;
 using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
@@ -192,8 +193,8 @@ public sealed class AbdmExportTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var abha = NewAbha();
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
-        var signed = await ConsultAsync(doctor, patient.Id, sign: true);
-        var unsigned = await ConsultAsync(doctor, patient.Id, sign: false);
+        var signed = await ConsultAsync(doctor, patient.Id, sign: true, procedure: true);
+        var unsigned = await ConsultAsync(doctor, patient.Id, sign: false, procedure: true);
         var path = $"/api/v1/abdm/bundles/op-consultations/{signed}";
 
         // Off by default: nothing is exported, for anyone.
@@ -223,6 +224,14 @@ public sealed class AbdmExportTests(HospitalServer server)
                 var identifiers = resources.Single(r => r.GetProperty("resourceType").GetString() == "Patient").GetProperty("identifier").EnumerateArray();
                 identifiers.Single(i => i.GetProperty("system").GetString() == "https://healthid.ndhm.gov.in").GetProperty("value").GetString()
                     .ShouldBe(Abha.Format(abha));
+
+                // The abscess drained in this consultation, under the IG's Procedure section (SNOMED CT 371525003); not the
+                // one drained in the patient's other consultation.
+                resources.Single(r => r.GetProperty("resourceType").GetString() == "Procedure").GetProperty("code").GetProperty("text").GetString()
+                    .ShouldBe("Incision and drainage of abscess");
+                composition.GetProperty("section").EnumerateArray()
+                    .Single(s => s.GetProperty("code").GetProperty("coding")[0].GetProperty("code").GetString() == "371525003")
+                    .GetProperty("entry").GetArrayLength().ShouldBe(1);
                 resources.ShouldContain(r => r.GetProperty("resourceType").GetString() == "Condition");
                 version = bundle.GetProperty("meta").GetProperty("versionId").GetString();
             }
@@ -945,6 +954,10 @@ public sealed class AbdmExportTests(HospitalServer server)
             await ReleaseAsync(await CrpAsync(patient, admission));
             var paracetamol = await DrugAsync(doctor, "Paracetamol", "DRG-PCM500");
             await SignAsync(doctor, await PrescribeAsync(doctor, patient.Id, note, Tablet(paracetamol, DoseFrequency.TDS, days: 3, "After food")));
+
+            // A pleural tap during the stay, recorded on the chart in the admission note's encounter.
+            await doctor.PostAsync<ProcedureDto>($"/api/v1/emr/patients/{patient.Id}/procedures", new RecordProcedureRequest(
+                note, DateTimeOffset.UtcNow.AddHours(-1), null, "Diagnostic pleural tap", null, null, ProcedureSide.Left, "Chest", "Straw-coloured fluid", null));
             var admissionNote = await doctor.GetAsync<EncounterDetail>($"/api/v1/emr/encounters/{note}");
             await doctor.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{note}/sign", new SignEncounterRequest(admissionNote.Version));
 
@@ -965,6 +978,7 @@ public sealed class AbdmExportTests(HospitalServer server)
                 .ShouldBe("R50.9");
             Resources(bundle, "MedicationRequest").ShouldHaveSingleItem().GetProperty("medicationCodeableConcept").GetProperty("text").GetString()
                 .ShouldBe(paracetamol.Name);
+            Resources(bundle, "Procedure").ShouldHaveSingleItem().GetProperty("code").GetProperty("text").GetString().ShouldBe("Diagnostic pleural tap");
 
             // The section reads whole: the doctor's list of medicines on discharge, then what was prescribed during the stay.
             var medications = Composition(bundle).GetProperty("section").EnumerateArray().Single(s => s.GetProperty("title").GetString() == "Medications");
@@ -1201,7 +1215,7 @@ public sealed class AbdmExportTests(HospitalServer server)
     }
 
     /// <summary>A consultation without a visit: complaint, assessment and a coded diagnosis; signed or left open.</summary>
-    internal static async Task<Guid> ConsultAsync(ApiClient doctor, Guid patientId, bool sign)
+    internal static async Task<Guid> ConsultAsync(ApiClient doctor, Guid patientId, bool sign, bool procedure = false)
     {
         var encounter = await doctor.PostAsync<EncounterDetail>("/api/v1/emr/encounters", new StartEncounterRequest(
             patientId, VisitId: null, AdmissionId: null, Type: null, DepartmentId: null, PractitionerId: null, TemplateId: null,
@@ -1212,6 +1226,14 @@ public sealed class AbdmExportTests(HospitalServer server)
             ReferralDepartmentId: null, ReferralPractitionerId: null, ReferralExternal: null, ReferralReason: null, encounter.Version));
         await doctor.PostAsync<DiagnosisDto>($"/api/v1/emr/encounters/{encounter.Id}/diagnoses",
             new AddDiagnosisRequest("R50.9", Title: null, DiagnosisType.Provisional, IsPrimary: true, OnsetDate: null, DiagnosisStatus.Active, Notes: null));
+        if (procedure)
+        {
+            // An abscess drained in the consultation, described in words.
+            await doctor.PostAsync<ProcedureDto>($"/api/v1/emr/patients/{patientId}/procedures", new RecordProcedureRequest(
+                encounter.Id, DateTimeOffset.UtcNow.AddMinutes(-5), null, "Incision and drainage of abscess", null, null, ProcedureSide.Right, "Axilla",
+                "Pus drained", null));
+        }
+
         if (sign)
         {
             await doctor.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{encounter.Id}/sign", new SignEncounterRequest(encounter.Version));

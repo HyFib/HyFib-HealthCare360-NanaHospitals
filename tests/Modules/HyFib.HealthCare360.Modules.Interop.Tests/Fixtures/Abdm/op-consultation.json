@@ -1,8 +1,8 @@
 {
   "resourceType": "Bundle",
-  "id": "ba1f26e2-42dd-837d-9f59-dc59eb55f724",
+  "id": "491b8a46-71bf-8441-ae5f-597c7fdbe8ee",
   "meta": {
-    "versionId": "1790306700000-5ac9b4fa5bce6784",
+    "versionId": "1790306700000-b016f2ebe670367e",
     "lastUpdated": "2026-09-25T08:55:00+05:30",
     "profile": [
       "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
@@ -17,7 +17,7 @@
   },
   "identifier": {
     "system": "urn:ietf:rfc:3986",
-    "value": "urn:uuid:ba1f26e2-42dd-837d-9f59-dc59eb55f724"
+    "value": "urn:uuid:491b8a46-71bf-8441-ae5f-597c7fdbe8ee"
   },
   "type": "document",
   "timestamp": "2026-09-25T08:55:00+05:30",
@@ -28,7 +28,7 @@
         "resourceType": "Composition",
         "id": "c5c1e0cf-6fb9-8ad7-ae3b-f75aed00dc26",
         "meta": {
-          "versionId": "1790306700000-5ac9b4fa5bce6784",
+          "versionId": "1790306700000-b016f2ebe670367e",
           "lastUpdated": "2026-09-25T08:55:00+05:30",
           "profile": [
             "https://nrces.in/ndhm/fhir/r4/StructureDefinition/OPConsultRecord"
@@ -36,7 +36,7 @@
         },
         "text": {
           "status": "generated",
-          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Consultation report</p><p>Date: 2026-09-25T08:55:00+05:30</p><p>Chief complaints</p><p>Medical history</p><p>Physical examination</p><p>Allergies</p><p>Medications</p><p>Follow up</p><p>Referral</p><p>Assessment and plan</p></div>"
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Consultation report</p><p>Date: 2026-09-25T08:55:00+05:30</p><p>Chief complaints</p><p>Medical history</p><p>Physical examination</p><p>Allergies</p><p>Medications</p><p>Follow up</p><p>Procedures</p><p>Referral</p><p>Assessment and plan</p></div>"
         },
         "identifier": {
           "system": "urn:ietf:rfc:3986",
@@ -257,6 +257,29 @@
               "status": "additional",
               "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Follow-up on 2026-09-28</p><p>Come back if the fever lasts beyond two more days.</p></div>"
             }
+          },
+          {
+            "title": "Procedures",
+            "code": {
+              "coding": [
+                {
+                  "system": "http://snomed.info/sct",
+                  "code": "371525003",
+                  "display": "Clinical procedure report"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Incision and drainage of abscess: performed 2026-09-25T08:45:00+05:30, Axilla, right, by Dr. Asha Rao. Outcome: Pus drained; wound packed</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:8258c6a9-8634-8612-b94a-82f7d210e8b9",
+                "type": "Procedure",
+                "display": "Incision and drainage of abscess: performed 2026-09-25T08:45:00+05:30, Axilla, right, by Dr. Asha Rao. Outcome: Pus drained; wound packed"
+              }
+            ]
           },
           {
             "title": "Referral",
@@ -1553,6 +1576,54 @@
             "system": "http://unitsofmeasure.org",
             "code": "d"
           }
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:8258c6a9-8634-8612-b94a-82f7d210e8b9",
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "8258c6a9-8634-8612-b94a-82f7d210e8b9",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Procedure"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Incision and drainage of abscess: performed 2026-09-25T08:45:00+05:30, Axilla, right, by Dr. Asha Rao. Outcome: Pus drained; wound packed</p></div>"
+        },
+        "status": "completed",
+        "code": {
+          "text": "Incision and drainage of abscess"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:dbf41942-bf97-82f5-9e81-d98a1c6bfbc4"
+        },
+        "performedDateTime": "2026-09-25T08:45:00+05:30",
+        "performer": [
+          {
+            "actor": {
+              "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+              "type": "Practitioner",
+              "identifier": {
+                "system": "https://doctor.ndhm.gov.in",
+                "value": "21-1521-3828-3227"
+              },
+              "display": "Dr. Asha Rao"
+            }
+          }
+        ],
+        "bodySite": [
+          {
+            "text": "Axilla, right"
+          }
+        ],
+        "outcome": {
+          "text": "Pus drained; wound packed"
         }
       }
     }

@@ -64,6 +64,7 @@ internal sealed class AbdmRecordLoader(
     private const string CardiologyReportPdf = "diagnostics.cardiology-report";
 
     private EncounterProvider Encounters => Provider<EncounterProvider>();
+    private ProcedureProvider ProcedureRecords => Provider<ProcedureProvider>();
     private ConditionProvider Conditions => Provider<ConditionProvider>();
     private AllergyIntoleranceProvider Allergies => Provider<AllergyIntoleranceProvider>();
     private ObservationProvider Observations => Provider<ObservationProvider>();
@@ -497,11 +498,13 @@ internal sealed class AbdmRecordLoader(
         var vitals = await Observations.Vitals(v => v.EncounterId == id && !v.IsEnteredInError).ToListAsync(ct);
         var lines = await Medications.SignedLines(i => true, p => p.EncounterId == id).ToListAsync(ct);
         var allergies = await Allergies.Allergies(a => a.PatientId == source.PatientId && a.Status != AllergyStatus.EnteredInError).ToListAsync(ct);
+        var procedures = await ProcedureRecords.Procedures(p => p.EncounterId == id).ToListAsync(ct);
         var (visit, encounter) = await EncounterRowsAsync(id, null, null, ct);
         var context = await ContextAsync(source, visit, encounter,
-            [note.PractitionerId, note.SignedByPractitionerId, note.AmendedByPractitionerId, note.ReferralPractitionerId, .. lines.Select(l => (Guid?)l.PractitionerId)],
+            [note.PractitionerId, note.SignedByPractitionerId, note.AmendedByPractitionerId, note.ReferralPractitionerId, .. lines.Select(l => (Guid?)l.PractitionerId),
+                .. procedures.Select(p => p.PerformerPractitionerId)],
             [.. lines.Select(l => l.AdmissionId)], [note.ReferralDepartmentId], [], null, id, ct);
-        return AbdmRecords.Consultation(new ConsultationData(context, note, diagnoses, vitals, lines, allergies));
+        return AbdmRecords.Consultation(new ConsultationData(context, note, diagnoses, vitals, lines, allergies, procedures));
     }
 
     private async Task<AbdmDocument> DischargeSummaryAsync(Guid id, AbdmSource source, CancellationToken ct)
@@ -521,6 +524,10 @@ internal sealed class AbdmRecordLoader(
             .ToListAsync(ct);
         var allergies = await Allergies.Allergies(a => a.PatientId == source.PatientId && a.Status != AllergyStatus.EnteredInError).ToListAsync(ct);
 
+        // The stay's procedures: recorded in one of its encounters, or for the stay (an operation the theatre completed).
+        var procedures = await ProcedureRecords.Procedures(p => p.AdmissionId == summary.AdmissionId || (p.EncounterId != null && encounterIds.Contains(p.EncounterId.Value)))
+            .ToListAsync(ct);
+
         // The stay's lab reports: those ordered in its in-patient visit, under the patient's UHID or a duplicate's.
         Guid[] reportPatients = [source.PatientId, .. source.Duplicates];
         var reports = stayVisitId is { } stayVisit
@@ -536,10 +543,10 @@ internal sealed class AbdmRecordLoader(
 
         var (visit, encounter) = await EncounterRowsAsync(stayVisitId is null ? summary.EncounterId : null, stayVisitId, null, ct);
         var context = await ContextAsync(source, visit, encounter,
-            [summary.PractitionerId, summary.SignedByPractitionerId, amender, .. lines.Select(l => (Guid?)l.PractitionerId)],
+            [summary.PractitionerId, summary.SignedByPractitionerId, amender, .. lines.Select(l => (Guid?)l.PractitionerId), .. procedures.Select(p => p.PerformerPractitionerId)],
             [summary.AdmissionId, .. lines.Select(l => l.AdmissionId)], [], [], DischargeSummaryPdf, id, ct);
         context = context with { ReferralLabs = await ReferralLabsAsync(results, ct) };
-        return AbdmRecords.DischargeSummary(new DischargeSummaryData(context, summary, diagnoses, lines, allergies, reports, results, amender));
+        return AbdmRecords.DischargeSummary(new DischargeSummaryData(context, summary, diagnoses, lines, allergies, reports, results, amender, procedures));
     }
 
     /// <summary>The referral laboratories that performed the results (a laboratory deleted since still did).</summary>

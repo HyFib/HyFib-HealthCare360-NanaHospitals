@@ -238,11 +238,27 @@ public sealed class AbdmDocumentTests
         var composition = (R4.Composition)bundle.Entry[0].Resource;
 
         composition.Section.Select(s => s.Code.Coding[0].Code).ShouldBe(
-            ["422843007", "371529009", "425044008", "722446000", "721912009", "390906007", "306206005", "51847-2"]);
+            ["422843007", "371529009", "425044008", "722446000", "721912009", "390906007", "371525003", "306206005", "51847-2"]);
         composition.Encounter.Reference.ShouldBe(FullUrl<R4.Encounter>(bundle));
         composition.Section[0].Text.Div.ShouldContain("Chief complaint: Fever for three days");
-        composition.Section[6].Text.Div.ShouldContain("Referred to Dr. Vikram Shah: Palpitations on exertion");
-        composition.Section[7].Text.Div.ShouldContain("Assessment: Acute febrile illness, probably viral.");
+        composition.Section[7].Text.Div.ShouldContain("Referred to Dr. Vikram Shah: Palpitations on exertion");
+        composition.Section[8].Text.Div.ShouldContain("Assessment: Acute febrile illness, probably viral.");
+
+        // The abscess drained in the consultation, by name, under the IG's Procedure section; done by the doctor of the note.
+        var procedure = bundle.Entry.Select(e => e.Resource).OfType<R4.Procedure>().ShouldHaveSingleItem();
+        composition.Section[6].Entry.ShouldHaveSingleItem().Reference.ShouldBe(FullUrl<R4.Procedure>(bundle));
+        procedure.Meta.Profile.ShouldBe([AbdmProfiles.Procedure]);
+        (procedure.Code.Text, procedure.Code.Coding.Count).ShouldBe(("Incision and drainage of abscess", 0));
+        procedure.BodySite.ShouldHaveSingleItem().Text.ShouldBe("Axilla, right");
+        procedure.Performer.ShouldHaveSingleItem().Actor.Reference.ShouldBe(FullUrl<R4.Practitioner>(bundle));
+        procedure.Encounter.Reference.ShouldBe(composition.Encounter.Reference);
+        procedure.Meta.LastUpdated.ShouldBeNull("an entry carries no change time: its latest change may be after the document");
+
+        // It reads whole on its own, and in the section, which has no text of its own: what, when, where, by whom, how it went.
+        var line = $"Incision and drainage of abscess: performed {((R4.FhirDateTime)procedure.Performed).Value}, Axilla, right, by Dr. Asha Rao. "
+            + "Outcome: Pus drained; wound packed";
+        procedure.Text.Div.ShouldContain($"<p>{line}</p>");
+        composition.Section[6].Text.Div.ShouldContain($"<p>{line}</p>");
 
         var conditions = bundle.Entry.Select(e => e.Resource).OfType<R4.Condition>().ToList();
         conditions.Count.ShouldBe(2);
@@ -594,12 +610,53 @@ public sealed class AbdmDocumentTests
         report.Conclusion.ShouldBe("Flagged by the laboratory: Troponin I (Critical high).");
         bundle.Entry.Select(e => e.Resource).OfType<R4.MedicationRequest>().ShouldHaveSingleItem().Category[0].Coding[0].Code.ShouldBe("inpatient");
 
+        // The stent the cardiologist placed in the cath lab: a surgical procedure, by name (its code is ICD-10-PCS), under the
+        // doctor's own words in the Procedures section.
+        var stent = bundle.Entry.Select(e => e.Resource).OfType<R4.Procedure>().ShouldHaveSingleItem();
+        composition.Section[4].Entry.ShouldHaveSingleItem().Reference.ShouldBe(FullUrl<R4.Procedure>(bundle));
+        composition.Section[4].Text.Div.ShouldContain(
+            "<p>Recorded during the stay:</p><p>Coronary angioplasty with a drug-eluting stent to one artery: performed "
+            + $"{((R4.FhirDateTime)stent.Performed).Value}, Left anterior descending artery, by Dr. Vikram Shah. Outcome: TIMI 3 flow restored</p>");
+        (stent.Code.Text, stent.Code.Coding.Count).ShouldBe(("Coronary angioplasty with a drug-eluting stent to one artery", 0));
+        stent.Category.Coding.ShouldHaveSingleItem().Code.ShouldBe("387713003");
+        stent.Performer.ShouldHaveSingleItem().Actor.Reference.ShouldBe(FullUrl<R4.Practitioner>(bundle, p => p.Name[0].Text == "Dr. Vikram Shah"));
+        stent.Encounter.Reference.ShouldBe(composition.Encounter.Reference);
+
         // Without a PDF the summary travels as its text, so the document still carries it whole.
         var summary = bundle.Entry.Select(e => e.Resource).OfType<R4.DocumentReference>().ShouldHaveSingleItem();
         var attachment = summary.Content.ShouldHaveSingleItem().Attachment;
         attachment.ContentType.ShouldBe("text/plain; charset=utf-8");
-        System.Text.Encoding.UTF8.GetString(attachment.Data).ShouldContain("Course in hospital: Managed medically in the CCU.");
+        System.Text.Encoding.UTF8.GetString(attachment.Data).ShouldContain("Course in hospital: Admitted to the CCU.");
         composition.Section[7].Text.Div.ShouldContain("Condition at discharge: Stable, pain free.");
+    }
+
+    [Fact]
+    public void A_document_holds_the_procedures_recorded_by_its_date_in_the_order_done_and_never_one_recorded_in_error()
+    {
+        var sample = AbdmTestData.DischargeSummaryRecord(pdf: null);
+        var signed = sample.Summary.SignedAt!.Value;
+        var stent = AbdmTestData.StayProcedure();
+        var bundle = Build(AbdmRecords.DischargeSummary(sample with
+        {
+            Procedures =
+            [
+                stent,
+                stent with { Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac0a2"), Display = "Recorded for the wrong patient", Status = ProcedureStatus.EnteredInError },
+                stent with { Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac0a3"), Display = "Recorded after the summary was signed", CreatedAt = signed.AddMinutes(1) },
+                stent with
+                {
+                    Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac0a4"), Code = null, CodeSystem = null, Display = "Temporary transvenous pacing",
+                    PerformedAt = stent.PerformedAt.AddHours(-1),
+                },
+            ],
+        }));
+
+        // The pacing wire went in an hour before the stent, so the section lists it first, whatever order they came in.
+        var composition = (R4.Composition)bundle.Entry[0].Resource;
+        composition.Section[4].Entry.Select(r => ((R4.Procedure)bundle.Entry.Single(e => e.FullUrl == r.Reference).Resource).Code.Text)
+            .ShouldBe(["Temporary transvenous pacing", stent.Display]);
+        var validation = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+        validation.Errors.ShouldBeEmpty(validation.Describe());
     }
 
     [Fact]
