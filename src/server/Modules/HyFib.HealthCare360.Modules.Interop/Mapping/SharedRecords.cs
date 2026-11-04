@@ -18,10 +18,11 @@ internal static class SharedRecords
         R4.AllergyIntolerance => SharedRecordKind.Allergies,
         R4.MedicationRequest => SharedRecordKind.Medicines,
 
-        // A lab result, or a measurement of the vital-signs set (vital signs, the pain score, the coma scale); a bedside
-        // glucose by glucometer is coded as a laboratory observation and goes with the lab results.
-        R4.Observation observation => HasCategory(observation.Category, VitalSignObservations.Laboratory)
-            ? SharedRecordKind.LabResults
+        // A lab result, a heart test's finding or a measurement of the vital-signs set (vital signs, the pain score, the
+        // coma scale). A glucose by glucometer, at the bedside or at home, is coded as a laboratory observation and goes
+        // with the lab results; an ECG patch's rhythm is a procedure's finding and goes with the heart tests.
+        R4.Observation observation => HasCategory(observation.Category, VitalSignObservations.Laboratory) ? SharedRecordKind.LabResults
+            : HasCategory(observation.Category, VitalSignObservations.Procedure) ? SharedRecordKind.ScansAndHeartTests
             : SharedRecordKind.VitalSigns,
         R4.DiagnosticReport report => HasCategory(report.Category, "LAB") ? SharedRecordKind.LabResults : SharedRecordKind.ScansAndHeartTests,
         R4.DocumentReference document => KindOf(document),

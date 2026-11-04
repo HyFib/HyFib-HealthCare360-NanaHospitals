@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Modules.Interop.Search;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
@@ -29,10 +30,10 @@ internal sealed class ConditionProvider(HospitalDbContext db) : IFhirResourcePro
         return diagnosis is null ? ResourceLookup.Missing : ResourceLookup.Found(ConditionMapper.Map(diagnosis), diagnosis.PatientId);
     }
 
-    public async Task<IReadOnlyList<R4.Resource>> ListForPatientAsync(Guid patientId, CancellationToken ct)
+    public async Task<SearchCandidates> ListForPatientAsync(Guid patientId, SearchRequest request, PatientAccess access, CancellationToken ct)
     {
         var diagnoses = await Diagnoses(d => d.PatientId == patientId).ToListAsync(ct);
-        return [.. diagnoses.Select(ConditionMapper.Map)];
+        return new SearchCandidates([.. diagnoses.Select(ConditionMapper.Map)]);
     }
 
     internal IQueryable<DiagnosisRow> Diagnoses(Expression<Func<Diagnosis, bool>> filter) =>

@@ -1,4 +1,6 @@
+using System.Globalization;
 using HyFib.HealthCare360.Modules.Interop.Domain;
+using HyFib.HealthCare360.Modules.Interop.Mapping;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Search;
@@ -78,12 +80,12 @@ internal static class SearchDefinitions
                 LastUpdatedParameter,
             ]),
         new(FhirResourceTypes.Observation,
-            "Vital signs (vs-{id}-{measurement}) and released laboratory results (lab-{id}).",
+            string.Create(CultureInfo.InvariantCulture, $"Vital signs (vs-{{id}}-{{measurement}}), released laboratory results (lab-{{id}}) and readings of home-monitoring devices (rpm-{{id}}; a search reaching more than {DeviceReadingObservations.MaxPerSearch:N0} of them is refused as too costly: narrow its date range)."),
             [
                 PatientParameter, SubjectParameter, IdParameter,
-                new("category", R4.SearchParamType.Token, "vital-signs | laboratory | survey | exam."),
+                new("category", R4.SearchParamType.Token, "vital-signs | laboratory | survey | exam | procedure (an ECG patch's rhythm)."),
                 new("code", R4.SearchParamType.Token, "LOINC code, for example http://loinc.org|8867-4, or an HC360 test code (urn:hc360:lab-test)."),
-                new("date", R4.SearchParamType.Date, "effectiveDateTime (recording or sample collection time)."),
+                new("date", R4.SearchParamType.Date, "effectiveDateTime (recording, sample collection or measurement time)."),
                 new("status", R4.SearchParamType.Token, "final | amended | entered-in-error (entered-in-error is left out unless asked for)."),
                 LastUpdatedParameter,
             ],

@@ -31,6 +31,7 @@ internal static class FhirOutcomes
     public const string PermissionRequired = "permission-required";
     public const string ReadOnly = "read-only";
     public const string RecordsWithheld = "records-withheld";
+    public const string TooManyRecords = "too-many-records";
     public const string ServerError = "server-error";
 
     public static R4.OperationOutcome Create(R4.OperationOutcome.IssueSeverity severity, R4.OperationOutcome.IssueType type, string message, string reason)
@@ -113,12 +114,25 @@ internal static class FhirOutcomes
     };
 
     /// <summary>
-    /// Added to a patient-scoped search that returned nothing because the patient's records may not be shared. The same
-    /// wording is used whatever the reason (no consent, restricted, unknown patient), so it reveals nothing further.
+    /// Added to a patient-scoped search that left records out: all of them, because the patient's records may not be
+    /// shared with the reader, or some, because the consents admitting the reader do not cover them. The same wording is
+    /// used whatever the reason (no consent, restricted, unknown patient, a kind or a date not covered), so it reveals
+    /// nothing further.
     /// </summary>
     public static R4.OperationOutcome Withheld() => Create(R4.OperationOutcome.IssueSeverity.Information, R4.OperationOutcome.IssueType.Suppressed,
-        "No records were returned for this patient. Records are shared only for patients with an active record-sharing consent, and restricted records need additional authorisation.",
+        "Records of this patient may have been left out. Records are shared only under an active record-sharing consent that covers them, and restricted records need additional authorisation.",
         RecordsWithheld);
+
+    /// <summary>
+    /// A search inside a patient's record that would reach more records than one answer holds (years of home-monitoring
+    /// readings, a few every day). It is refused rather than cut short, so a client never takes part of the record for
+    /// all of it, and it gives no count. Only records the reader may see count toward the limit, so a refusal says
+    /// nothing of the others.
+    /// </summary>
+    public static FhirError TooCostly(string resourceType) =>
+        Error(StatusCodes.Status400BadRequest, R4.OperationOutcome.IssueType.TooCostly,
+            $"This {resourceType} search reaches more of the patient's records than one answer can hold. Narrow it: search a shorter 'date' range (for example date=ge2026-01-01&date=lt2026-04-01), or a 'category' or 'code'.",
+            TooManyRecords);
 
     /// <summary>Echoes a client-supplied value safely (bounded and printable).</summary>
     public static string Printable(string value)

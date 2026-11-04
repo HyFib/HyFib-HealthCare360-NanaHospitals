@@ -5,6 +5,8 @@ using HyFib.HealthCare360.Modules.Inpatient;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Modules.Patients;
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.VirtualCare;
 using HyFib.HealthCare360.Platform.Modules;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
@@ -29,7 +31,7 @@ public sealed class QueryTranslationTests : IDisposable
             .UseSnakeCaseNamingConvention()
             .Options;
         _db = new HospitalDbContext(options, new ModuleCatalog(
-            [new PatientsModule(), new ClinicalModule(), new DiagnosticsModule(), new InpatientModule(), new InteropModule()]));
+            [new PatientsModule(), new ClinicalModule(), new DiagnosticsModule(), new InpatientModule(), new VirtualCareModule(), new InteropModule()]));
     }
 
     public void Dispose() => _db.Dispose();
@@ -58,6 +60,35 @@ public sealed class QueryTranslationTests : IDisposable
         results.ShouldContain("'Verified'");
         results.ShouldContain("'Released'");
         results.ShouldContain("LEFT JOIN");
+        KeepsFilters(results, "l", facility: true);
+        results.ShouldNotContain("lab_tests", Case.Insensitive, "the test master is read apart, with the soft-delete filter off for it alone");
+    }
+
+    /// <summary>
+    /// A search's home-monitoring readings: its types and measurement window and the consents' kinds and days are all in
+    /// the SQL, with instants as UTC parameters (Npgsql refuses any other offset for timestamptz), so readings outside them
+    /// are never loaded; the readings are read with the facility filter on, the device apart.
+    /// </summary>
+    [Fact]
+    public void Device_reading_queries_put_the_search_and_the_consent_in_sql()
+    {
+        var provider = new ObservationProvider(_db);
+        var request = TestData.Search(FhirResourceTypes.Observation, $"patient={TestData.PatientId}&category=vital-signs&date=ge2026-10-01&date=lt2026-11-01");
+        var access = new PatientAccess(SharingDecision.Allowed, null,
+            [new SharingScope([], [], [SharedRecordKind.VitalSigns], new DateOnly(2026, 10, 10), new DateOnly(2026, 12, 31), null)]);
+
+        var (covered, uncovered) = provider.Readings(TestData.PatientId, request, access).ShouldNotBeNull();
+
+        var sql = ObservationProvider.DeviceReadings(covered).ToQueryString();
+        sql.ShouldContain("virtualcare.rpm_readings");
+        sql.ShouldContain("measured_at >=");
+        sql.ShouldContain("measured_at <");
+        sql.ShouldContain("'2026-10-09T18:30:00.0000000+00:00'", Case.Sensitive, "the consent's first day starts at IST midnight, sent in UTC");
+        sql.ShouldContain("'2026-09-30T18:29:59.0000000+00:00'", Case.Sensitive, "the search's window, a second wider, sent in UTC");
+        sql.ShouldContain("@ef_filter__", Case.Sensitive, "the readings keep the facility filter");
+        sql.ShouldNotContain("rpm_devices", Case.Insensitive, "the device is read apart, with the filters off for it alone");
+        uncovered.ToQueryString().ShouldContain("NOT (");
+        provider.Readings(TestData.PatientId, TestData.Search(FhirResourceTypes.Observation, $"patient={TestData.PatientId}&category=survey"), access).ShouldBeNull();
     }
 
     [Fact]
@@ -103,19 +134,35 @@ public sealed class QueryTranslationTests : IDisposable
         var documents = provider.PatientDocuments(d => d.PatientId == TestData.PatientId).ToQueryString();
         documents.ShouldContain("'IdProof'");
         documents.ShouldContain("'InsuranceCard'");
+        KeepsFilters(documents, "p", facility: false);
+        documents.ShouldNotContain("stored_files", Case.Insensitive, "the file is read apart, with the soft-delete filter off for it alone");
         provider.SignedSummaries(s => s.PatientId == TestData.PatientId).ToQueryString().ShouldContain("'Draft'");
     }
 
     [Fact]
-    public void The_note_query_shares_signed_notes_only_with_the_patients_own_encounter_and_stay()
+    public void The_note_query_shares_signed_notes_only_and_leaves_out_removed_notes_and_other_facilities_notes()
     {
         var sql = new DocumentReferenceProvider(_db, References).SignedNotes(n => n.PatientId == TestData.PatientId).ToQueryString();
 
         sql.ShouldContain("is_signed");
         sql.ShouldContain("signed_at");
-        sql.ShouldContain("clinical.encounters");
-        sql.ShouldContain("inpatient.admissions");
-        sql.ShouldContain("display_name");
+        KeepsFilters(sql, "c", facility: true);
+        sql.ShouldNotContain("identity.users", Case.Insensitive, "the accounts are read apart, with the soft-delete filter off for them alone");
+        sql.ShouldNotContain("clinical.encounters", Case.Insensitive, "the encounter is read apart, with the facility filter off for it alone");
+    }
+
+    /// <summary>
+    /// The query reads its own table with the platform's filters on: removed rows left out, and other facilities' rows
+    /// when the table is a facility's. A query that ignores a filter for a table it joins (to name a removed account, say)
+    /// ignores it for every table it reads, so such lookups are made apart.
+    /// </summary>
+    private static void KeepsFilters(string sql, string alias, bool facility)
+    {
+        sql.ShouldContain($"NOT ({alias}.is_deleted)", Case.Sensitive, "removed rows are left out");
+        if (facility)
+        {
+            sql.ShouldContain("@ef_filter__", Case.Sensitive, "other facilities' rows are left out");
+        }
     }
 
     [Fact]

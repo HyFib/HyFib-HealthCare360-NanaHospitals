@@ -295,7 +295,7 @@ internal sealed class AbdmRecordLoader(
     private async Task<AbdmDocument> LabReportAsync(Guid id, AbdmSource source, CancellationToken ct)
     {
         var report = (await Reports.CompleteAsync(await Reports.LabReports(r => r.Id == id).ToListAsync(ct), ct)).First();
-        var results = await Observations.ReleasedResults(r => r.LabOrderId == report.LabOrderId).ToListAsync(ct);
+        var results = await Observations.ReleasedResultsAsync(r => r.LabOrderId == report.LabOrderId, ct);
         var (visit, encounter) = await EncounterRowsAsync(null, report.VisitId, null, ct);
         var context = await ContextAsync(source, visit, encounter, [], [], [], LabReportPdf, id, ct);
         context = context with { ReferralLabs = await ReferralLabsAsync(results, ct) };
@@ -384,7 +384,7 @@ internal sealed class AbdmRecordLoader(
             ? await Reports.CompleteAsync(await StayReports(stayVisit).Where(r => reportPatients.Contains(r.PatientId)).ToListAsync(ct), ct)
             : [];
         Guid[] orders = [.. reports.Select(r => r.LabOrderId).Distinct()];
-        var results = orders.Length == 0 ? [] : await Observations.ReleasedResults(r => orders.Contains(r.LabOrderId)).ToListAsync(ct);
+        var results = orders.Length == 0 ? [] : await Observations.ReleasedResultsAsync(r => orders.Contains(r.LabOrderId), ct);
 
         var amender = summary.Status == DischargeSummaryStatus.Amended
             ? await AmenderAsync(

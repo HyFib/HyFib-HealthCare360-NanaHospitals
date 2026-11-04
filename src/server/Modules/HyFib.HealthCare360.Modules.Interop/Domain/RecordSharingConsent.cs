@@ -41,9 +41,12 @@ internal sealed record SharingScope(
     /// shared.
     /// </summary>
     public bool Covers(SharedRecordKind kind, DateOnly? date) =>
-        (Kinds.Count == 0 ? !SharedRecordKinds.NamedOnly(kind) : Kinds.Contains(kind))
+        CoversKind(kind)
         && ((RecordsFrom is null && RecordsTo is null)
             || (date is { } day && (RecordsFrom is null || day >= RecordsFrom) && (RecordsTo is null || day <= RecordsTo)));
+
+    /// <summary>Whether records of this kind are shared under the consent, on the days it covers.</summary>
+    public bool CoversKind(SharedRecordKind kind) => Kinds.Count == 0 ? !SharedRecordKinds.NamedOnly(kind) : Kinds.Contains(kind);
 }
 
 /// <summary>

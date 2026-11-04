@@ -200,7 +200,7 @@ describe('what a record-sharing consent covers (gap #28)', () => {
         day,
       ),
     ).toBe(
-      'Shared with Apollo Clinic, for treating the patient: allergies, lab results and reports dated from <2026-01-01>. Until <2026-12-31>.',
+      'Shared with Apollo Clinic, for treating the patient: allergies, lab results and reports (with home glucose readings) dated from <2026-01-01>. Until <2026-12-31>.',
     );
   });
 
@@ -225,6 +225,12 @@ describe('what a record-sharing consent covers (gap #28)', () => {
   it('names every purpose and kind of record the server knows', () => {
     SHARING_PURPOSES.forEach((p) => expect(SHARING_PURPOSE_LABELS[p]).toMatch(/\([A-Z]+\)$/));
     SHARED_RECORD_KINDS.forEach((k) => expect(SHARED_RECORD_KIND_LABELS[k]).toBeTruthy());
+  });
+
+  it('tells the patient which kinds carry the readings of their home-monitoring devices', () => {
+    expect(SHARED_RECORD_KIND_LABELS.VitalSigns).toMatch(/at home/);
+    expect(SHARED_RECORD_KIND_LABELS.LabResults).toMatch(/home glucose/);
+    expect(SHARED_RECORD_KIND_LABELS.ScansAndHeartTests).toMatch(/ECG patch/);
   });
 });
 

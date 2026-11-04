@@ -18,5 +18,6 @@
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Clinical\HyFib.HealthCare360.Modules.Clinical.csproj" />
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Diagnostics\HyFib.HealthCare360.Modules.Diagnostics.csproj" />
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Inpatient\HyFib.HealthCare360.Modules.Inpatient.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.VirtualCare\HyFib.HealthCare360.Modules.VirtualCare.csproj" />
   </ItemGroup>
 </Project>

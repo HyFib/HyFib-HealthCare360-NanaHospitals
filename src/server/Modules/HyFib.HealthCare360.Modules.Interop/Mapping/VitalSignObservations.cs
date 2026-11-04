@@ -25,6 +25,7 @@ internal static class VitalSignObservations
     public const string Laboratory = "laboratory";
     public const string Survey = "survey";
     public const string Exam = "exam";
+    public const string Procedure = "procedure";
 
     public static readonly VitalSignKind BloodPressure = new("bp", [("85354-9", "Blood pressure panel with all children optional")], "Blood pressure", VitalSigns, "bp");
     public static readonly VitalSignKind HeartRate = new("hr", [("8867-4", "Heart rate")], "Heart rate", VitalSigns, "heartrate");
@@ -182,6 +183,7 @@ internal static class VitalSignObservations
         Laboratory => "Laboratory",
         Survey => "Survey",
         Exam => "Exam",
+        Procedure => "Procedure",
         _ => code,
     });
 

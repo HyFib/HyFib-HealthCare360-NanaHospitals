@@ -824,7 +824,8 @@ on the patient profile and in the chart's **Consents** tab.
   `fhir.read` by a role the hospital made), what for (the HL7 v3 purposes of use: treatment, emergency treatment, care
   coordination, insurance or scheme claims, public health, research, the patient's own request), which kinds of
   records (visits and diagnoses, allergies, medicines, lab results, scan and heart test reports, vital signs,
-  documents), the records' first and last days, and the last day it lets anyone read. It is recorded as
+  documents; a patient's home-monitoring readings go with the vital signs, a home glucose with the lab results and an
+  ECG patch's rhythm with the heart tests, as the labels say), the records' first and last days, and the last day it lets anyone read. It is recorded as
   `CaptureConsentRequest.sharingScope` and listed as `ConsentDto.sharingScope`, the accounts by name. 400 when a scope
   comes with another consent or a refusal, or its records end before they start; 400 `consent.sharing_ended` for a last
   day already past; 400 `consent.sharing_partner` for an account that is not a partner. The FHIR API applies it to
