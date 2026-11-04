@@ -458,7 +458,8 @@ and grants nothing.
     unknown account gets the same answer. Every attempt is audited against the witness's account. Nothing is signed
     in. The confirmation it returns is good once, for that nurse, that patient and five minutes, and the dose names the
     witness's account. A high-alert medicine given is witnessed the same way. A ward order takes both flags from the
-    drug master when it names an item of it, whatever the order form sent.
+    drug master when it names an item of it, whatever the order form sent, and so does the order made for a medicine
+    the pharmacy issues without a prescription line.
 - **Attendance terminals that push** are registered with the IP address they push from, and punches from any other
   address are refused. A terminal registered before the address was required is held to the first address it calls from.
 - **Switched-off controls are shown.** Outside development, System health shows a critical warning while two-step sign-in

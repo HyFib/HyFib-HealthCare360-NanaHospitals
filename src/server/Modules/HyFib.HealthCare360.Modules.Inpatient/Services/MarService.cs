@@ -16,10 +16,10 @@ public sealed class MarService(
     HospitalDbContext db, ISettingsService settings, ICurrentUser currentUser, IWitnessConfirmations witnesses, TimeProvider time)
 {
     /// <summary>
-    /// What a second nurse witnesses on the MAR: a controlled drug given. Whoever keeps the MAR (nurses, doctors) may
-    /// witness, at the recording nurse's screen, with their own user name and password.
+    /// What a second nurse witnesses on the MAR: a controlled drug or a high-alert medicine given. Whoever keeps the MAR
+    /// (nurses, doctors) may witness, at the recording nurse's screen, with their own user name and password.
     /// </summary>
-    public static readonly WitnessPurpose DoseWitness = new("mar.dose", InpatientPermissions.NursingMar, "a controlled drug given");
+    public static readonly WitnessPurpose DoseWitness = new("mar.dose", InpatientPermissions.NursingMar, "a controlled drug or high-alert medicine given");
 
     /// <summary>Facility setting: minutes after the scheduled time before a due dose shows as overdue (default 30).</summary>
     public const string GraceSetting = "inpatient.marGraceMinutes";
@@ -379,8 +379,9 @@ public sealed class MarService(
 
     /// <summary>
     /// Schedules the next 24 hours of doses for each dispensed line. Lines without a charted prescription line are
-    /// charted as a single dose to confirm with the doctor (never a guessed schedule); for patients already in discharge
-    /// such lines are treated as take-home medicines and not put on the ward MAR.
+    /// charted as a single dose to confirm with the doctor (never a guessed schedule), on an order that takes the drug's
+    /// class from the master as one typed on the ward does; for patients already in discharge such lines are treated as
+    /// take-home medicines and not put on the ward MAR.
     /// </summary>
     public async Task ChartDispenseAsync(MedicationDispensed dispensed, CancellationToken ct)
     {
@@ -399,6 +400,8 @@ public sealed class MarService(
         var orders = await db.Set<MedicationOrder>()
             .Where(o => o.AdmissionId == admissionId && o.PrescriptionLineId != null && lineIds.Contains(o.PrescriptionLineId.Value))
             .ToListAsync(ct);
+        var drugs = await DrugClassesAsync(
+            [.. dispensed.Lines.Where(l => orders.TrueForAll(o => o.PrescriptionLineId != l.PrescriptionLineId)).Select(l => l.ItemId).Distinct()], ct);
 
         foreach (var line in dispensed.Lines)
         {
@@ -415,6 +418,8 @@ public sealed class MarService(
                 continue;
             }
 
+            // A controlled or high-alert medicine issued this way is witnessed when given, as the master says.
+            var drug = drugs.GetValueOrDefault(line.ItemId);
             var pharmacyOrder = new MedicationOrder
             {
                 FacilityId = admission.Value.FacilityId,
@@ -422,6 +427,8 @@ public sealed class MarService(
                 PatientId = admission.Value.PatientId,
                 DrugItemId = line.ItemId,
                 DrugName = Fit(line.ItemName, 200) ?? "Medicine",
+                IsControlledDrug = drug.Controlled,
+                IsHighAlert = drug.HighAlert,
                 Dose = AsDirected,
                 Frequency = AsDirected,
                 StartAt = dispensed.DispensedAt,

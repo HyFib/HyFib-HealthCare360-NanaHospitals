@@ -7,7 +7,11 @@ using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Mar;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Inpatient;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
+using HyFib.HealthCare360.Modules.SupplyChain.Features.Receipts;
+using HyFib.HealthCare360.Modules.SupplyChain.Features.Stores;
+using HyFib.HealthCare360.Modules.SupplyChain.Features.Vendors;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Identity;
@@ -172,6 +176,40 @@ public sealed class MarWitnessTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_medicine_the_pharmacy_issues_without_a_prescription_line_is_witnessed_as_the_drug_master_says()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
+        var nurse = await RecordingNurseAsync();
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+        var admission = await AdmitAsync(frontOffice, doctor, patient.Id);
+        var insulin = await DrugClassApprovalTests.CreateAsync(admin, "Insulin regular", DrugSchedule.H, controlled: false, highAlert: true);
+        var morphine = await DrugClassApprovalTests.CreateAsync(admin, "Morphine", DrugSchedule.X, controlled: true, highAlert: false);
+        var store = (await admin.GetAsync<List<StoreDto>>("/api/v1/inventory/stores")).Single(s => s.Code == "IPPH").Id;
+        await ReceiveAsync(admin, store, insulin);
+        await ReceiveAsync(admin, store, morphine);
+
+        // Issued straight to the patient, with no prescription line: the ward's orders take the drug master's class.
+        await pharmacist.PostAsync<IpIssueCreated>("/api/v1/pharmacy/ip-issues", new IpIssueRequest(
+            store, null, null, patient.Id, admission.Id, admission.VisitId,
+            [new IpIssueLineInput(insulin, 1m, null, null, null, null, false), new IpIssueLineInput(morphine, 1m, null, null, null, null, false)],
+            ConfirmControlledDrugs: true));
+        var orders = await nurse.GetAsync<List<MedicationOrderDto>>($"/api/v1/nursing/admissions/{admission.Id}/medication-orders");
+        var (insulinOrder, morphineOrder) = (orders.Single(o => o.DrugItemId == insulin), orders.Single(o => o.DrugItemId == morphine));
+        (insulinOrder.IsHighAlert, insulinOrder.IsControlledDrug, morphineOrder.IsControlledDrug).ShouldBe((true, false, true));
+
+        // Their doses, to be confirmed with the doctor, are not recorded as given without a witness.
+        var chart = await nurse.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admission.Id}/mar");
+        foreach (var order in new[] { insulinOrder, morphineOrder })
+        {
+            var dose = chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due);
+            (await RefusalAsync(nurse, $"/api/v1/nursing/mar/{dose.Id}/record", Given(dose, null))).ShouldBe("mar.witness_required");
+        }
+    }
+
+    [Fact]
     public async Task A_witness_whose_account_has_an_authenticator_gives_its_code_too_and_a_code_is_good_once()
     {
         const string name = "it-witness-code";
@@ -309,6 +347,18 @@ public sealed class MarWitnessTests(HospitalServer server)
             Frequency: "STAT", DurationDays: 1, StartAt: null, Instructions: null, IsControlledDrug: true, OrderedByPractitionerId: null));
         var chart = await nurse.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admissionId}/mar");
         return chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due);
+    }
+
+    /// <summary>Ten of the drug received into the store from a vendor's invoice and posted to stock.</summary>
+    private static async Task ReceiveAsync(ApiClient storeKeeper, Guid storeId, Guid itemId)
+    {
+        var vendor = (await storeKeeper.GetAsync<PagedResult<VendorListItem>>("/api/v1/purchase/vendors?pageSize=100")).Items.Single(v => v.Code == "VEN-SBPD");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        using var received = await storeKeeper.SendRawAsync(HttpMethod.Post, "/api/v1/purchase/grns", new CreateGoodsReceiptRequest(
+            vendor.Id, storeId, null, $"INV-{Letters(10)}", today, today, null,
+            [new GoodsReceiptLineInput(itemId, null, $"B{Letters(8)}", null, today.AddYears(2), 10m, 0m, 100m, 150m, 0m, null, AcceptShortExpiry: true)],
+            Post: true));
+        received.EnsureSuccessStatusCode();
     }
 
     private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
