@@ -6,9 +6,11 @@ using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
+using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
@@ -160,10 +162,43 @@ internal sealed class AbdmRecordLoader(
                     };
             }
 
+            case AbdmRecordType.HomeReadings:
+            {
+                var row = await db.Set<RpmEnrollment>().AsNoTracking().Where(e => e.Id == id)
+                    .Select(e => new { e.PatientId, e.FacilityId, e.StartDate, e.ProgramId }).FirstOrDefaultAsync(ct);
+                if (row is null)
+                {
+                    return NotFound(type, id);
+                }
+
+                var kind = await db.Set<RpmProgram>().AsNoTracking().Where(p => p.Id == row.ProgramId).Select(p => (RpmProgramKind?)p.Kind).FirstOrDefaultAsync(ct);
+                var anyReading = await db.Set<RpmReading>().AsNoTracking().AnyAsync(r => r.EnrollmentId == id, ct);
+                return new AbdmSource(row.PatientId, row.FacilityId, anyReading ? null : AbdmBundleService.NoReadingsYet)
+                {
+                    // The programme is the care context, from the day the patient was enrolled.
+                    RecordedAt = FhirTime.StartOfDay(row.StartDate),
+                    Label = ProgrammeLabel(kind),
+                };
+            }
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports.");
         }
     }
+
+    /// <summary>
+    /// A monitoring programme as the patient knows it among their records, by its kind ("Hypertension monitoring"),
+    /// never its name, which the hospital writes as it likes and ABDM keeps with the care context; a programme of the
+    /// hospital's own kind is named by the record's kind ("home readings") alone.
+    /// </summary>
+    internal static string? ProgrammeLabel(RpmProgramKind? kind) => kind switch
+    {
+        RpmProgramKind.Hypertension => "Hypertension monitoring",
+        RpmProgramKind.Diabetes => "Diabetes monitoring",
+        RpmProgramKind.Cardiac => "Heart monitoring",
+        RpmProgramKind.PostDischarge => "Monitoring after discharge",
+        _ => null,
+    };
 
     /// <summary>
     /// Why a dose is not exported. One marked as entered in error was never given. One copied from the patient's
@@ -239,6 +274,11 @@ internal sealed class AbdmRecordLoader(
                 .Where(n => n.PatientId == patientId && n.IsSigned && n.SignedAt != null && n.AmendsNoteId == null && n.Type != ClinicalNoteType.Counselling)
                 .OrderByDescending(n => n.SignedAt).Take(limit).Select(n => new { n.Id, SignedAt = n.SignedAt!.Value, n.Type }).ToListAsync(ct))
             .Select(n => (AbdmRecordType.ClinicalNote, n.Id, n.SignedAt, (string?)NoteLabel(n.Type, n.SignedAt))));
+        found.AddRange((await db.Set<RpmEnrollment>().AsNoTracking()
+                .Where(e => e.PatientId == patientId && db.Set<RpmReading>().Any(r => r.EnrollmentId == e.Id))
+                .Join(db.Set<RpmProgram>(), e => e.ProgramId, p => p.Id, (e, p) => new { e.Id, e.StartDate, p.Kind })
+                .OrderByDescending(e => e.StartDate).Take(limit).ToListAsync(ct))
+            .Select(e => (AbdmRecordType.HomeReadings, e.Id, FhirTime.StartOfDay(e.StartDate), ProgrammeLabel(e.Kind))));
 
         // A signed prescription is issued only where the hospital's DSC rule lets it be (the printout's rule).
         var prescriptions = await db.Set<Prescription>().AsNoTracking()
@@ -267,6 +307,7 @@ internal sealed class AbdmRecordLoader(
             AbdmRecordType.DischargeSummary => nameof(DischargeSummary),
             AbdmRecordType.Immunization => nameof(Immunization),
             AbdmRecordType.ClinicalNote => "Note",
+            AbdmRecordType.HomeReadings => "Enrollment",
             _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
         },
         id);
@@ -313,8 +354,64 @@ internal sealed class AbdmRecordLoader(
         AbdmRecordType.DischargeSummary => DischargeSummaryAsync(id, source, ct),
         AbdmRecordType.Immunization => ImmunizationAsync(id, source, ct),
         AbdmRecordType.ClinicalNote => ClinicalNoteAsync(id, source, ct),
+        AbdmRecordType.HomeReadings => throw new InvalidOperationException("Home readings are made into documents a span at a time (HomeReadingsAsync)."),
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
     };
+
+    /// <summary>The day (in IST) the enrolment's latest reading was measured; none when it has none.</summary>
+    public async Task<DateOnly?> LatestReadingDayAsync(Guid enrollmentId, CancellationToken ct) =>
+        await db.Set<RpmReading>().AsNoTracking().Where(r => r.EnrollmentId == enrollmentId)
+            .MaxAsync(r => (DateTimeOffset?)r.MeasuredAt, ct) is { } last ? FhirTime.IstDate(last) : null;
+
+    /// <summary>
+    /// The months (their first days, in IST) from the first to the last of the enrolment's readings measured from
+    /// <paramref name="from"/> to <paramref name="to"/> (both inclusive, either open), oldest first; none when no reading is.
+    /// </summary>
+    public async Task<IReadOnlyList<DateOnly>> ReadingMonthsAsync(Guid enrollmentId, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct)
+    {
+        var readings = db.Set<RpmReading>().AsNoTracking()
+            .Where(r => r.EnrollmentId == enrollmentId && (from == null || r.MeasuredAt >= from) && (to == null || r.MeasuredAt <= to));
+        var first = await readings.MinAsync(r => (DateTimeOffset?)r.MeasuredAt, ct);
+        var last = await readings.MaxAsync(r => (DateTimeOffset?)r.MeasuredAt, ct);
+        if (first is null || last is null)
+        {
+            return [];
+        }
+
+        var months = new List<DateOnly>();
+        var lastMonth = ReadingsSpan.Of(FhirTime.IstDate(last.Value)).Month;
+        for (var month = ReadingsSpan.Of(FhirTime.IstDate(first.Value)).Month; month <= lastMonth; month = month.AddMonths(1))
+        {
+            months.Add(month);
+        }
+
+        return months;
+    }
+
+    /// <summary>
+    /// The documents of the enrolment's readings in a span (<see cref="ReadingsSpan"/>), as the FHIR read API serves them
+    /// (<see cref="ObservationProvider.DeviceReadingRowsAsync"/>): one, or for a month of more readings than one document
+    /// holds, parts in the order measured (<see cref="AbdmRecords.Parts"/>); none when the span holds no reading.
+    /// </summary>
+    public async Task<IReadOnlyList<AbdmDocument>> HomeReadingsAsync(Guid enrollmentId, AbdmSource source, ReadingsSpan span, CancellationToken ct)
+    {
+        var lower = span.From ?? span.Start;
+        var end = span.End;
+        var to = span.To;
+        var rows = await Observations.DeviceReadingRowsAsync(db.Set<RpmReading>().AsNoTracking()
+            .Where(r => r.EnrollmentId == enrollmentId && r.MeasuredAt >= lower && r.MeasuredAt < end && (to == null || r.MeasuredAt <= to)), ct);
+        if (rows.Count == 0)
+        {
+            return [];
+        }
+
+        var programme = await db.Set<RpmEnrollment>().AsNoTracking().Where(e => e.Id == enrollmentId)
+            .Join(db.Set<RpmProgram>(), e => e.ProgramId, p => p.Id, (e, p) => p.Name).FirstOrDefaultAsync(ct);
+        var context = await ContextAsync(source, null, null, [], [], [], [], null, enrollmentId, ct);
+        var parts = AbdmRecords.Parts(rows);
+        return [.. parts.Select((part, i) => AbdmRecords.HomeReadings(
+            new HomeReadingsData(context, enrollmentId, programme ?? string.Empty, span, part) { Part = i + 1, Parts = parts.Count }))];
+    }
 
     /// <summary>
     /// Why the hospital may not issue this signed prescription, by the DSC rule of its printout and PDF (a doctor's DSC

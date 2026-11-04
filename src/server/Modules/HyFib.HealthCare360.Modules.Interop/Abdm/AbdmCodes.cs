@@ -18,6 +18,7 @@ internal static class AbdmProfiles
     public const string PrescriptionRecord = Base + "PrescriptionRecord";
     public const string ImmunizationRecord = Base + "ImmunizationRecord";
     public const string HealthDocumentRecord = Base + "HealthDocumentRecord";
+    public const string WellnessRecord = Base + "WellnessRecord";
 
     public const string Patient = Base + "Patient";
     public const string Practitioner = Base + "Practitioner";
@@ -29,6 +30,7 @@ internal static class AbdmProfiles
     public const string Observation = Base + "Observation";
     public const string ObservationVitalSigns = Base + "ObservationVitalSigns";
     public const string ObservationBodyMeasurement = Base + "ObservationBodyMeasurement";
+    public const string ObservationGeneralAssessment = Base + "ObservationGeneralAssessment";
     public const string DiagnosticReportLab = Base + "DiagnosticReportLab";
     public const string DiagnosticReportImaging = Base + "DiagnosticReportImaging";
     public const string ImagingStudy = Base + "ImagingStudy";

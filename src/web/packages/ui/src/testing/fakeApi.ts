@@ -28,6 +28,8 @@ export function problem(status: number, title: string): Response {
 /**
  * A `fetch` that answers from `answers`, keyed by method and path ("GET /api/v1/patients"); the query string is
  * ignored. A key may end in "/*" to answer every path below it. Anything else is a 404, and is listed in `unanswered`.
+ * As `fetch` does, a request whose signal is already aborted is refused with the abort's reason, unsent and uncounted:
+ * the API client tries a 503 again after a pause, and the screen that asked may have closed meanwhile.
  */
 export function createFakeFetch(answers: FakeAnswers) {
   const requests: FakeRequest[] = [];
@@ -43,6 +45,9 @@ export function createFakeFetch(answers: FakeAnswers) {
     return prefix === undefined ? undefined : answers[prefix];
   };
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    if (init?.signal?.aborted) {
+      throw init.signal.reason;
+    }
     const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const url = new URL(raw, 'https://hc360.test');
     const method = (init?.method ?? 'GET').toUpperCase();

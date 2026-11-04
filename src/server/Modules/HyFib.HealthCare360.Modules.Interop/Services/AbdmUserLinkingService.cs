@@ -53,7 +53,8 @@ internal static class AbdmCareContexts
     /// <summary>
     /// A record as a care context: its reference and what the patient sees, for example "Lab report, 12 Oct 2026", or
     /// with what tells it apart from the patient's other records of that kind on the same day ("Immunisation record:
-    /// BCG, 24 Sep 2026"; three vaccines are given at birth).
+    /// BCG, 24 Sep 2026"; three vaccines are given at birth). Home readings run on from when the patient was enrolled
+    /// ("Home readings: Hypertension monitoring, from 02 Sep 2026").
     /// </summary>
     public static AbdmLinkedRecord Describe(AbdmRecordType type, Guid id, DateTimeOffset recordedAt, string? label = null)
     {
@@ -64,7 +65,8 @@ internal static class AbdmCareContexts
             what += ": " + (named.Length > MaxLabel ? named[..(MaxLabel - 1)].TrimEnd() + "…" : named);
         }
 
-        return new AbdmLinkedRecord(type, id, AbdmLinkingService.ReferenceNumber(type, id), $"{what}, {DocumentFormat.Date(recordedAt)}");
+        var when = type == AbdmRecordType.HomeReadings ? $"from {DocumentFormat.Date(recordedAt)}" : DocumentFormat.Date(recordedAt);
+        return new AbdmLinkedRecord(type, id, AbdmLinkingService.ReferenceNumber(type, id), $"{what}, {when}");
     }
 }
 

@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Platform.Documents;
 using Modality = HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.Modality;
 using R4 = Hl7.Fhir.Model;
@@ -129,6 +130,76 @@ internal sealed record ImmunizationData(AbdmContext Context, ImmunizationRow Dos
 /// API serves it: its encounter and stay kept only when they are the patient's own, its writer and signer named.
 /// </summary>
 internal sealed record ClinicalNoteData(AbdmContext Context, ClinicalNoteRow Note, IReadOnlyList<ClinicalNoteRow> Addenda);
+
+/// <summary>
+/// The home readings of a monitoring programme that one document holds (<see cref="ReadingsSpan"/>), with the programme's
+/// name, each as the FHIR read API serves it: the device that sent it, and who entered one read out on the phone. A month
+/// of more readings than one document holds goes in parts (<see cref="AbdmRecords.Parts"/>): this is part
+/// <see cref="Part"/> of <see cref="Parts"/>.
+/// </summary>
+internal sealed record HomeReadingsData(AbdmContext Context, Guid EnrollmentId, string Programme, ReadingsSpan Span, IReadOnlyList<DeviceReadingRow> Readings)
+{
+    public int Part { get; init; } = 1;
+    public int Parts { get; init; } = 1;
+}
+
+/// <summary>
+/// The readings one document holds: those measured in a calendar month in IST (<see cref="Month"/>, its first day), cut
+/// where the dates asked for begin after the month does (<see cref="From"/>) or end before it (<see cref="To"/>), both
+/// inclusive as a consent's dates are. A month is the unit, so no document grows with the years a programme runs: a year
+/// of readings at a few a day in one document would be megabytes for a PHR app to open.
+/// </summary>
+internal sealed record ReadingsSpan
+{
+    private ReadingsSpan(DateOnly month, DateTimeOffset? from, DateTimeOffset? to)
+    {
+        Month = month;
+        From = from;
+        To = to;
+    }
+
+    public DateOnly Month { get; }
+
+    /// <summary>The first instant it holds, when the dates asked for begin after the month does.</summary>
+    public DateTimeOffset? From { get; }
+
+    /// <summary>The last instant it holds, when the dates asked for end before the month does.</summary>
+    public DateTimeOffset? To { get; }
+
+    /// <summary>The month's first instant: midnight IST on its first day.</summary>
+    public DateTimeOffset Start => FhirTime.StartOfDay(Month);
+
+    /// <summary>The next month's first instant, which the month ends before.</summary>
+    public DateTimeOffset End => FhirTime.StartOfDay(Month.AddMonths(1));
+
+    /// <summary>The span as part of a document's identity: the month, and where the dates asked for cut it.</summary>
+    public string Key =>
+        Month.ToString("yyyy-MM", CultureInfo.InvariantCulture)
+        + (From is { } from ? "/from-" + from.UtcTicks.ToString(CultureInfo.InvariantCulture) : string.Empty)
+        + (To is { } to ? "/to-" + to.UtcTicks.ToString(CultureInfo.InvariantCulture) : string.Empty);
+
+    /// <summary>The time it covers: the month's days, or the instants the dates asked for cut it at.</summary>
+    public R4.Period Period => new()
+    {
+        Start = From is { } from ? FhirTime.DateTime(from) : FhirTime.Date(Month),
+        End = To is { } to ? FhirTime.DateTime(to) : FhirTime.Date(Month.AddMonths(1).AddDays(-1)),
+    };
+
+    /// <summary>
+    /// The readings of the month <paramref name="day"/> is in, measured from <paramref name="from"/> to
+    /// <paramref name="to"/> (either open): a cut is kept only where it falls inside the month.
+    /// </summary>
+    public static ReadingsSpan Of(DateOnly day, DateTimeOffset? from = null, DateTimeOffset? to = null)
+    {
+        var month = new DateOnly(day.Year, day.Month, 1);
+        var start = FhirTime.StartOfDay(month);
+        var end = FhirTime.StartOfDay(month.AddMonths(1));
+        return new ReadingsSpan(month, from is { } f && f > start ? f : null, to is { } t && t < end ? t : null);
+    }
+
+    /// <summary>Whether a reading measured then is in it.</summary>
+    public bool Holds(DateTimeOffset measuredAt) => measuredAt >= (From ?? Start) && measuredAt < End && (To is null || measuredAt <= To);
+}
 
 /// <summary>The names ABDM documents download under: the record's kind, its number or the UHID and day, then <c>-abdm.json</c>.</summary>
 internal static class AbdmFiles
@@ -898,6 +969,159 @@ internal static class AbdmRecords
         var signer = names.Practitioner(note.SignedByPractitionerId)?.Display ?? FhirElements.Clean(note.SignedByUserName);
         var at = DocumentFormat.DateTime(note.SignedAt);
         return signer is null ? $"{what}, signed on {at}" : $"{what}, signed by {signer} on {at}";
+    }
+
+    /// <summary>The WellnessRecord's type, which the IG fixes as text alone.</summary>
+    public const string WellnessRecordType = "Wellness Record";
+
+    /// <summary>
+    /// The most readings one document of home readings holds: a few months of a programme's readings at the rate any
+    /// programme asks for, and about a megabyte of FHIR. Devices send as often as they are set to, so a month can hold
+    /// more; it then goes in parts.
+    /// </summary>
+    public const int MaxReadingsPerDocument = 1000;
+
+    /// <summary>
+    /// The readings in the order they were measured, in parts of at most <see cref="MaxReadingsPerDocument"/>: one part
+    /// when they fit. Readings measured at the same instant stay in one part, so a blood pressure's systolic and diastolic
+    /// readings are never sent apart.
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyList<DeviceReadingRow>> Parts(IEnumerable<DeviceReadingRow> readings)
+    {
+        var parts = new List<IReadOnlyList<DeviceReadingRow>>();
+        var part = new List<DeviceReadingRow>();
+        foreach (var instant in readings.OrderBy(r => r.MeasuredAt).ThenBy(r => r.Id).GroupBy(r => r.MeasuredAt))
+        {
+            if (part.Count > 0 && part.Count + instant.Count() > MaxReadingsPerDocument)
+            {
+                parts.Add(part);
+                part = [];
+            }
+
+            part.AddRange(instant);
+        }
+
+        if (part.Count > 0)
+        {
+            parts.Add(part);
+        }
+
+        return parts;
+    }
+
+    /// <summary>
+    /// The IG's WellnessRecord sections a home reading goes in, each with the profile it asks of its entries: blood
+    /// pressure, heart rate, oxygen saturation and temperature are vital signs; weight is a body measurement; a glucometer
+    /// reading is a general assessment (the IG's value set for it names blood glucose); an ECG patch's rhythm is none of
+    /// those, so it goes in the section for other observations.
+    /// </summary>
+    internal static (string Title, string Profile) WellnessSection(RpmReadingType type) => type switch
+    {
+        RpmReadingType.SystolicBp or RpmReadingType.DiastolicBp or RpmReadingType.HeartRate or RpmReadingType.SpO2 or RpmReadingType.Temperature
+            => ("Vital Signs", AbdmProfiles.ObservationVitalSigns),
+        RpmReadingType.Weight => ("Body Measurement", AbdmProfiles.ObservationBodyMeasurement),
+        RpmReadingType.Glucose => ("General Assessment", AbdmProfiles.ObservationGeneralAssessment),
+        RpmReadingType.EcgRhythm => ("Other Observations", AbdmProfiles.Observation),
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of home reading."),
+    };
+
+    /// <summary>
+    /// A month of the readings a patient took at home in a remote monitoring programme (WellnessRecord), or the part of it
+    /// in the dates a consent asks for (<see cref="ReadingsSpan"/>, which the Composition's event period states). Each
+    /// reading is as the FHIR API serves it: the patient measured it, with the device named; one read out on the phone
+    /// says who entered it; each stood against the limits the care team set (normal, outside them, beyond the critical
+    /// ones). They go in the IG's sections for them (<see cref="WellnessSection"/>), in the order they were measured, and
+    /// each section's narrative is its readings with the time each was measured in IST, as a chart of them reads. No one
+    /// signs a reading: the facility that runs the programme is the author and the custodian, and the document is dated
+    /// when it received the latest of them.
+    /// </summary>
+    public static AbdmDocument HomeReadings(HomeReadingsData d)
+    {
+        if (d.Readings.Count == 0)
+        {
+            throw new InvalidOperationException("A document of home readings needs a reading.");
+        }
+
+        var people = People.Of(d.Context);
+        var hospital = people.Organization(d.Context.FacilityId);
+        var rows = d.Readings.ToDictionary(r => FhirIds.Of(FhirIds.DeviceReading, r.Id));
+        var sections = new List<AbdmSection>();
+        foreach (var group in d.Readings.GroupBy(r => WellnessSection(r.Type)).OrderBy(g => SectionOrder(g.Key.Title)))
+        {
+            // A blood pressure panel goes under its systolic reading's id (its diastolic one's, taken alone): both were
+            // measured at the same instant, which orders it.
+            var observations = DeviceReadingObservations.Map([.. group])
+                .OrderBy(o => rows[o.Id!].MeasuredAt).ThenBy(o => o.Id, StringComparer.Ordinal)
+                .Select(o => AbdmProfiler.Observation(o, group.Key.Profile))
+                .ToList();
+            var lines = new List<string>();
+            foreach (var observation in observations)
+            {
+                var line = ReadingLine(observation, rows[observation.Id!]);
+                observation.Text = AbdmNarrative.Generated([line]);
+                lines.Add(line);
+            }
+
+            sections.Add(new AbdmSection(null, group.Key.Title, lines, observations) { TextIsEntries = true });
+        }
+
+        var received = d.Readings.Max(r => r.ReceivedAt);
+        var month = d.Span.Month.ToString("MMMM yyyy", CultureInfo.InvariantCulture);
+        var title = FhirElements.Clean(d.Programme) is { } programme ? $"Home readings: {programme}, {month}" : $"Home readings, {month}";
+        var part = d.Parts > 1 ? $"-part-{d.Part}" : string.Empty;
+        return new AbdmDocument
+        {
+            Type = AbdmRecordType.HomeReadings,
+            FileName = AbdmFiles.Name("home-readings", $"{d.Context.Patient.Uhid}-{d.Span.Month.ToString("yyyy-MM", CultureInfo.InvariantCulture)}{part}"),
+            SourceId = d.EnrollmentId,
+
+            // A month's first part keeps the month's identity as the month grows into more parts.
+            Part = d.Part > 1 ? $"{d.Span.Key}/part-{d.Part}" : d.Span.Key,
+            Profile = AbdmProfiles.WellnessRecord,
+            DocumentType = null,
+            TypeText = WellnessRecordType,
+            Title = d.Parts > 1 ? $"{title} (part {d.Part} of {d.Parts})" : title,
+            Status = R4.CompositionStatus.Final,
+            Covers = d.Span.Period,
+            Date = received,
+            RecordUpdated = received,
+            Patient = Patient(d.Context, people, d.Readings.Select(r => r.PatientId)),
+            Author = hospital,
+            Custodian = hospital,
+            Sections = sections,
+            Supporting = [.. people.All],
+        };
+    }
+
+    /// <summary>The IG's order of the WellnessRecord sections.</summary>
+    private static int SectionOrder(string title) => title switch
+    {
+        "Vital Signs" => 0,
+        "Body Measurement" => 1,
+        "General Assessment" => 2,
+        _ => 3,
+    };
+
+    /// <summary>
+    /// "25 Sep 2026, 7:30 am: Blood pressure: 150 / 95 mmHg, outside the limits set for the patient": a reading as a
+    /// chart of them reads, when it was measured in IST, how it stood when it was not normal, and who entered one read out
+    /// on the phone.
+    /// </summary>
+    private static string ReadingLine(R4.Observation observation, DeviceReadingRow row)
+    {
+        var what = observation.Value is R4.CodeableConcept rhythm
+            ? $"{observation.Code.Text}: {rhythm.Text}"
+            : AbdmNarrative.Summary(observation) ?? observation.Code.Text;
+        var stood = observation.Interpretation.FirstOrDefault()?.Coding.FirstOrDefault()?.Code switch
+        {
+            "A" => ", outside the limits set for the patient",
+            "AA" => ", beyond the critical limits set for the patient",
+            _ => string.Empty,
+        };
+        var entered = row.Source != ReadingSource.Manual ? string.Empty
+            : FhirElements.Clean(row.RecordedByUserName) is { } who ? $" (read out by the patient, entered by {who})"
+            : " (read out by the patient, entered by hand)";
+        return $"{DocumentFormat.DateTime(row.MeasuredAt)}: {what}{stood}{entered}";
     }
 
     /// <summary>LOINC's document type for cardiology studies, for the printed copy of one LOINC names no study for.</summary>

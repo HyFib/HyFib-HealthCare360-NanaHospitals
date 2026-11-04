@@ -262,6 +262,17 @@ internal static class AbdmProfiler
     }
 
     /// <summary>
+    /// An observation with the profile the document's section asks of its entries (a home glucometer reading in a
+    /// wellness record's general assessment), its codings limited as <see cref="Observation(R4.Observation)"/> limits them.
+    /// </summary>
+    public static R4.Observation Observation(R4.Observation observation, string profile)
+    {
+        Codings(observation.Code, [FhirSystems.Loinc, FhirSystems.Snomed]);
+        observation.Meta = Profile(observation.Meta, profile);
+        return observation;
+    }
+
+    /// <summary>
     /// A laboratory report: the IG's DiagnosticReportLab profile wants a SNOMED CT service section, someone who
     /// interpreted the results (the laboratory, <paramref name="laboratory"/>), and a conclusion. Reports carry no
     /// written conclusion, so it names the results the laboratory flagged (the observations' interpretation), or only

@@ -29,7 +29,7 @@ internal static partial class AbdmDocumentBuilder
     public static R4.Bundle Build(AbdmDocument document)
     {
         var resources = Resources(document);
-        var compositionKey = $"Composition/{document.Type}/{FhirIds.Of(document.SourceId)}";
+        var compositionKey = $"Composition/{document.Type}/{FhirIds.Of(document.SourceId)}{Part(document)}";
         var ids = resources.ToDictionary(Key, r => Uuid(Key(r)), StringComparer.Ordinal);
         ids[compositionKey] = Uuid(compositionKey);
 
@@ -61,7 +61,7 @@ internal static partial class AbdmDocumentBuilder
         composition.Meta!.LastUpdated = FhirTime.ToMilliseconds(lastUpdated);
         var version = Version(lastUpdated, resources.Prepend(composition));
         composition.Meta.VersionId = version;
-        var bundleId = Uuid($"Bundle/{document.Type}/{FhirIds.Of(document.SourceId)}/{version}");
+        var bundleId = Uuid($"Bundle/{document.Type}/{FhirIds.Of(document.SourceId)}{Part(document)}/{version}");
         var bundle = new R4.Bundle
         {
             Id = bundleId,
@@ -100,6 +100,9 @@ internal static partial class AbdmDocumentBuilder
     }
 
     public static string Urn(string uuid) => "urn:uuid:" + uuid;
+
+    /// <summary>The part of a record a document is, in its identity: none for a record made into one document.</summary>
+    private static string Part(AbdmDocument document) => document.Part is { } part ? "/" + part : string.Empty;
 
     /// <summary>
     /// The document's version: its latest change in Unix milliseconds, and the first 8 bytes of a SHA-256 hash of its
@@ -261,7 +264,7 @@ internal static partial class AbdmDocumentBuilder
             Meta = new R4.Meta { Profile = [document.Profile] },
             Identifier = new R4.Identifier(AbdmSystems.Uri, Urn(id)),
             Status = document.Status,
-            Type = document.DocumentType.Concept(document.Title),
+            Type = document.DocumentType?.Concept(document.TypeText ?? document.Title) ?? new R4.CodeableConcept { Text = document.TypeText ?? document.Title },
             Subject = Reference(document.Patient),
             Encounter = document.Encounter is { } encounter ? Reference(encounter) : null,
             Date = FhirTime.DateTime(document.Date),
@@ -269,6 +272,11 @@ internal static partial class AbdmDocumentBuilder
             Title = document.Title,
             Custodian = Reference(document.Custodian),
         };
+
+        if (document.Covers is { } period)
+        {
+            composition.Event.Add(new R4.Composition.EventComponent { Period = period });
+        }
 
         if (document.AmendedBy is { } amender && Key(amender) != Key(document.Author))
         {
@@ -290,7 +298,7 @@ internal static partial class AbdmDocumentBuilder
             composition.Section.Add(new R4.Composition.SectionComponent
             {
                 Title = section.Title,
-                Code = section.Code.Concept(),
+                Code = section.Code?.Concept(),
                 Text = SectionText(section),
                 Entry = section.Entries.Select(Reference).ToList(),
             });
@@ -300,6 +308,7 @@ internal static partial class AbdmDocumentBuilder
         [
             document.Title,
             $"Date: {FhirTime.DateTime(document.Date)}",
+            .. document.Covers is { } covers ? [$"Covers: {covers.Start} to {covers.End}"] : Array.Empty<string>(),
             .. composition.Section.Select(s => s.Title).OfType<string>(),
         ]);
         return composition;

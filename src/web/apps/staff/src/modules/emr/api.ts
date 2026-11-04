@@ -1161,3 +1161,6 @@ export const abdmImmunizationBundle = (id: string) => `/api/v1/abdm/bundles/immu
  * the same rules. A counselling note is not exported, and an addendum goes with the note it adds to.
  */
 export const abdmClinicalNoteBundle = (id: string) => `/api/v1/abdm/bundles/clinical-notes/${id}`;
+/** A remote monitoring enrolment's home readings measured in a month (yyyy-MM). */
+export const abdmHomeReadingsBundle = (id: string, month: string) =>
+  `/api/v1/abdm/bundles/home-readings/${id}?month=${month}`;
