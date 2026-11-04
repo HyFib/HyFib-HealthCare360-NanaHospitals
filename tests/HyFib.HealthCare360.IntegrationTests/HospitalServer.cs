@@ -91,6 +91,13 @@ public sealed class HospitalServer : IAsyncLifetime
 
     public IServiceProvider Services => App.Services;
 
+    /// <summary>
+    /// Today in the hospital's calendar (IST), on the server's clock. No test starts near midnight
+    /// (<see cref="AwayFromMidnightInIndiaAttribute"/>), so a test reads the same day from its start to its end.
+    /// </summary>
+    public DateOnly Today =>
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(Services.GetRequiredService<TimeProvider>().GetUtcNow(), HospitalTimeZone.Zone).DateTime);
+
     /// <summary>The ABDM gateway the server calls (<see cref="FakeAbdmGateway"/>).</summary>
     public FakeAbdmGateway AbdmGateway { get; } = new();
 

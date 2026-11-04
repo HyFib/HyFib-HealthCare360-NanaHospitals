@@ -85,7 +85,7 @@ public sealed class AutomaticChargeTests(HospitalServer server)
         var ward = await WardAsync(admin, bedCharge);
 
         // Admitted yesterday morning, so yesterday's bed day is due.
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var yesterday = today.AddDays(-1);
         var admission = await AdmitAsync(frontOffice, doctor, ward.Id, IndiaClock.AtLocal(yesterday, new TimeOnly(9, 0)));
 
@@ -143,7 +143,7 @@ public sealed class AutomaticChargeTests(HospitalServer server)
         var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
         var bedCharge = await BedServiceAsync(admin);
         var ward = await WardAsync(admin, bedCharge);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var admission = await AdmitAsync(frontOffice, doctor, ward.Id, IndiaClock.AtLocal(today.AddDays(-1), new TimeOnly(9, 0)));
 
         // The patient absconds: the stay ends first, and its days are posted after. Billing refuses yesterday's (the bed's
@@ -177,7 +177,7 @@ public sealed class AutomaticChargeTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var bedCharge = await BedServiceAsync(admin);
         var ward = await WardAsync(admin, bedCharge);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var admission = await AdmitAsync(frontOffice, doctor, ward.Id, IndiaClock.AtLocal(today.AddDays(-1), new TimeOnly(9, 0)));
         await SetInUseAsync(bedCharge.Id, false);
         await PostDueBedDaysAsync(admission.Id);
@@ -318,20 +318,6 @@ public sealed class AutomaticChargeTests(HospitalServer server)
     private static async Task<List<ChargeDto>> ChargesAsync(ApiClient billing, Guid admissionId) =>
         (await billing.GetAsync<PagedResult<ChargeDto>>($"/api/v1/billing/charges?admissionId={admissionId}&pageSize=200"))
         .Items.Where(c => c.Status != ChargeStatus.Cancelled).ToList();
-
-    /// <summary>Today in the hospital's calendar (IST), waiting out the last two minutes of a day so no midnight falls inside the test.</summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var now = clock.GetUtcNow();
-        var untilMidnight = IndiaClock.StartOfDayUtc(IndiaClock.LocalDate(now).AddDays(1)) - now;
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, Ct);
-        }
-
-        return IndiaClock.LocalDate(clock.GetUtcNow());
-    }
 
     private static string Tag() => Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
 

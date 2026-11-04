@@ -26,7 +26,7 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
 
         // The doctor and his sharing rules: 40 % of what procedures are billed at, except suturing, which earns him a fixed
         // ₹150 for each one. These are his own rules, so they win over the hospital's default for procedures.
@@ -179,22 +179,6 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
     }
 
     // ---------------------------------------------------------------------- look-ups
-
-    /// <summary>
-    /// Today in the hospital's calendar (IST). Fees are dated the day they are earned, so the test must not straddle
-    /// midnight: started in the last two minutes of a day, it waits for the next.
-    /// </summary>
-    internal async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var untilMidnight = BillingTime.StartOfDay(BillingTime.Today(clock).AddDays(1)) - clock.GetUtcNow();
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, TestContext.Current.CancellationToken);
-        }
-
-        return BillingTime.Today(clock);
-    }
 
     internal static string StatementPath(Guid doctorId, DateOnly from, DateOnly to) =>
         $"{Fees}/statements?practitionerId={doctorId}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}";

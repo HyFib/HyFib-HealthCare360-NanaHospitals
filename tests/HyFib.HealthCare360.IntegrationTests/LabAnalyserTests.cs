@@ -9,11 +9,13 @@ using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Astm;
 using HyFib.HealthCare360.Integrations.Laboratory.Relay;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Quality;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabOrders;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabSamples;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.QualityControl;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.UnmatchedResults;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
@@ -205,6 +207,7 @@ public sealed class LabAnalyserTests(HospitalServer server)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        await Em360RanGlucoseQcTodayAsync(lab);
         var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
         await EnableGatewayAsync(admin);
         const string connections = "/api/v1/integrations/lab/connections";
@@ -419,7 +422,8 @@ public sealed class LabAnalyserTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
 
-        // A back-up chemistry analyser, auto-validation on, beside the EM 360 that ran this morning's glucose QC.
+        // A back-up chemistry analyser, auto-validation on, beside the EM 360, which ran today's glucose QC.
+        await Em360RanGlucoseQcTodayAsync(lab);
         var backup = "QCB" + Letters(5).ToUpperInvariant();
         await admin.PostAsync<JsonObject>("/api/v1/lab/instruments", new SaveLabInstrumentRequest(
             backup, "Back-up chemistry analyser", "Erba", "Chem 7", LabSection.Biochemistry, InstrumentProtocol.Astm,
@@ -550,6 +554,7 @@ public sealed class LabAnalyserTests(HospitalServer server)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        await Em360RanGlucoseQcTodayAsync(lab);
         var preliminary = await ReceivedFastingSugarSampleAsync(admin, lab);
         var otherUnit = await ReceivedFastingSugarSampleAsync(admin, lab);
 
@@ -702,6 +707,24 @@ public sealed class LabAnalyserTests(HospitalServer server)
         await AssignAsync(lab, early.Id, (await SheetAsync(lab, ahead)).Lines.ShouldHaveSingleItem().ResultId);
         (await SheetAsync(lab, ahead)).Lines.ShouldHaveSingleItem().EnteredAt.ShouldNotBeNull()
             .ShouldBeInRange(before.AddSeconds(-1), DateTimeOffset.UtcNow.AddSeconds(1));
+    }
+
+    /// <summary>
+    /// The EM 360 runs each of its glucose controls today, on its target mean, so today's QC for glucose on it is accepted
+    /// and its results may auto-validate. The demo seed runs them on the morning the server starts, which is yesterday once
+    /// a run of the tests goes past midnight in India.
+    /// </summary>
+    private static async Task Em360RanGlucoseQcTodayAsync(ApiClient lab)
+    {
+        var fbs = (await lab.GetAsync<PagedResult<LabTestListItem>>("/api/v1/lab/tests?search=LAB-FBS")).Items.Single(t => t.Code == "LAB-FBS");
+        var controls = (await lab.GetAsync<List<QcLotDto>>($"/api/v1/lab/qc/lots?labTestId={fbs.Id}"))
+            .Where(l => l.InstrumentCode == "EM360" && !l.IsExpired).ToList();
+        controls.ShouldNotBeEmpty();
+        foreach (var control in controls)
+        {
+            var run = await lab.PostAsync<QcRunDto>("/api/v1/lab/qc/runs", new RecordQcRunRequest(control.Id, control.TargetMean, null));
+            run.Outcome.ShouldBe(QcOutcome.Accepted);
+        }
     }
 
     /// <summary>A walk-in fasting blood sugar, collected and received in the lab (the counter's payment gate waived).</summary>

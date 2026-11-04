@@ -30,7 +30,7 @@ public sealed class ShareRuleApprovalTests(HospitalServer server)
     public async Task A_new_rule_shares_nothing_until_a_second_person_approves_it()
     {
         var (admin, billing, accountant, fees) = await PeopleAsync();
-        var today = await fees.HospitalDayAsync();
+        var today = server.Today;
         var doctor = await DoctorFeeStatementTests.DoctorAsync(admin);
         var debridement = await DoctorFeeStatementTests.ServiceAsync(server, admin, "Wound debridement", 2000m);
 
@@ -80,7 +80,7 @@ public sealed class ShareRuleApprovalTests(HospitalServer server)
     public async Task A_new_share_waits_and_the_approver_is_told_what_it_would_have_changed_on_the_last_90_days_bills()
     {
         var (admin, billing, accountant, fees) = await PeopleAsync();
-        var today = await fees.HospitalDayAsync();
+        var today = server.Today;
         var doctor = await DoctorFeeStatementTests.DoctorAsync(admin);
         var debridement = await DoctorFeeStatementTests.ServiceAsync(server, admin, "Wound debridement", 2000m);
         var ruleId = await DoctorFeeStatementTests.RuleAsync(server, accountant, doctor.Id, null, ServiceCategory.Procedure, ShareMethod.Percentage, 20m, today);
@@ -126,7 +126,7 @@ public sealed class ShareRuleApprovalTests(HospitalServer server)
     public async Task Taking_a_doctors_own_rule_out_of_use_waits_because_their_lines_fall_back_to_the_hospitals_default()
     {
         var (admin, billing, accountant, fees) = await PeopleAsync();
-        var today = await fees.HospitalDayAsync();
+        var today = server.Today;
         var doctor = await DoctorFeeStatementTests.DoctorAsync(admin);
         var debridement = await DoctorFeeStatementTests.ServiceAsync(server, admin, "Wound debridement", 2000m);
         var ruleId = await DoctorFeeStatementTests.RuleAsync(server, accountant, doctor.Id, null, ServiceCategory.Procedure, ShareMethod.Percentage, 20m, today);
@@ -170,7 +170,7 @@ public sealed class ShareRuleApprovalTests(HospitalServer server)
     public async Task An_approval_is_not_made_over_a_rule_changed_after_it_was_asked_for()
     {
         var (admin, _, accountant, fees) = await PeopleAsync();
-        var today = await fees.HospitalDayAsync();
+        var today = server.Today;
         var doctor = await DoctorFeeStatementTests.DoctorAsync(admin);
         var ruleId = await DoctorFeeStatementTests.RuleAsync(server, accountant, doctor.Id, null, ServiceCategory.Procedure, ShareMethod.Percentage, 20m, today);
         var rule = await RuleAsync(accountant, doctor.Id, ruleId);

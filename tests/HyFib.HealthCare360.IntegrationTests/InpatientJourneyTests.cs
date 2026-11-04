@@ -60,7 +60,7 @@ public sealed class InpatientJourneyTests(HospitalServer server)
 
         // The stay began at 10:00 (IST) the day before yesterday and ends today. The admission is recorded as a late entry,
         // which the API allows up to three days back, so the stay really crosses two midnights.
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var admittedAt = IndiaClock.AtLocal(today.AddDays(-2), new TimeOnly(10, 0));
         DateOnly[] nights = [today.AddDays(-2), today.AddDays(-1)];
 
@@ -511,23 +511,6 @@ public sealed class InpatientJourneyTests(HospitalServer server)
     }
 
     // ---------------------------------------------------------------------- look-ups and checks
-
-    /// <summary>
-    /// Today in the hospital's calendar (IST). The bed-day rule counts midnights, so the journey must not straddle one:
-    /// started in the last two minutes of a day, it waits for the next.
-    /// </summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var now = clock.GetUtcNow();
-        var untilMidnight = IndiaClock.StartOfDayUtc(IndiaClock.LocalDate(now).AddDays(1)) - now;
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, TestContext.Current.CancellationToken);
-        }
-
-        return IndiaClock.LocalDate(clock.GetUtcNow());
-    }
 
     /// <summary>A bed of the ward added for this admission or transfer (<see cref="TestBeds"/>), so it is free.</summary>
     private async Task<Guid> FreeBedAsync(Guid wardId) => (await TestBeds.AddAsync(server, wardId)).BedId;

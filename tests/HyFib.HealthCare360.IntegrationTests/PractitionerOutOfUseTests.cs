@@ -113,8 +113,11 @@ public sealed class PractitionerOutOfUseTests(HospitalServer server)
         var patient = await RegisterPatientAsync(frontOffice);
 
         // Yesterday's appointment that was never attended, yesterday's check-in nobody closed, and one cancelled for next week.
-        await AppointmentAsync(doctorId, patient, DateTimeOffset.UtcNow.AddDays(-1));
-        await AppointmentAsync(doctorId, patient, DateTimeOffset.UtcNow.AddDays(-1).AddMinutes(30), AppointmentStatus.CheckedIn);
+        // Yesterday in the hospital's calendar: the clinic counts its check-ins from midnight in India, and a day before now
+        // is still today there in the last half hour before midnight.
+        var yesterday = new DateTimeOffset(server.Today.AddDays(-1).ToDateTime(new TimeOnly(10, 0)), TimeSpan.FromHours(5.5));
+        await AppointmentAsync(doctorId, patient, yesterday);
+        await AppointmentAsync(doctorId, patient, yesterday.AddMinutes(30), AppointmentStatus.CheckedIn);
         await AppointmentAsync(doctorId, patient, DateTimeOffset.UtcNow.AddDays(7), AppointmentStatus.Cancelled);
 
         using var saved = await SaveAsync(admin, doctorId, isActive: false, anyway: false);

@@ -75,9 +75,11 @@ jobs:
         shell: pwsh
         run: tests/deploy/Enable-TestWindowsSignIn.ps1
 
-      # A hung run fails in half an hour instead of the runner's six. Each test assembly also writes a JUnit report.
+      # A hung run fails in 35 minutes instead of the runner's six hours. The journeys take 20 to 25, and up to 7 more when
+      # the run crosses midnight in India, where no journey starts (AwayFromMidnightInIndiaAttribute). Each test assembly
+      # also writes a JUnit report.
       - name: Test
-        run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 30m --report-xunit-junit --results-directory "${{ runner.temp }}/test-results"
+        run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 35m --report-xunit-junit --results-directory "${{ runner.temp }}/test-results"
 
       # A failed journey's report is followed by everything the server under test logged meanwhile, tens of thousands of
       # lines that bury the test's name and message. They are here again, alone, as the job's last lines.

@@ -33,7 +33,7 @@ public sealed class RoomRentGstTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var dayBefore = today.AddDays(-2);
 
         // Three patients admitted the day before yesterday, recorded as late entries: one to a deluxe suite, one to the
@@ -154,20 +154,6 @@ public sealed class RoomRentGstTests(HospitalServer server)
     private sealed class Restore(Func<Task> restore) : IAsyncDisposable
     {
         public async ValueTask DisposeAsync() => await restore();
-    }
-
-    /// <summary>Today in the hospital's calendar (IST); started in the last two minutes of a day, it waits for the next.</summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var now = clock.GetUtcNow();
-        var untilMidnight = IndiaClock.StartOfDayUtc(IndiaClock.LocalDate(now).AddDays(1)) - now;
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, Ct);
-        }
-
-        return IndiaClock.LocalDate(clock.GetUtcNow());
     }
 
     private static string Letters(int length) => new([.. Enumerable.Range(0, length).Select(_ => (char)('A' + Random.Shared.Next(26)))]);

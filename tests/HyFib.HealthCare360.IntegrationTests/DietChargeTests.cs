@@ -40,7 +40,7 @@ public sealed class DietChargeTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
                          ?? throw new InvalidOperationException("The hospital administrator has no facility.");
 
@@ -89,7 +89,7 @@ public sealed class DietChargeTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
 
         // The diet has a charge service; only the setting keeps it off the bill.
         var admission = await AdmitAsync(admittedAt: null);
@@ -158,23 +158,6 @@ public sealed class DietChargeTests(HospitalServer server)
 
     private static Task SetDietChargesAsync(ApiClient admin, Guid facilityId, bool enabled) =>
         admin.SaveSettingAsync(MealPlanService.DietChargesSetting, new SaveSettingRequest(JsonValue.Create(enabled), facilityId, false, null));
-
-    /// <summary>
-    /// Today in the hospital's calendar (IST). Diet charges are per calendar day, so the test must not straddle midnight:
-    /// started in the last two minutes of a day, it waits for the next.
-    /// </summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var now = clock.GetUtcNow();
-        var untilMidnight = IndiaClock.StartOfDayUtc(IndiaClock.LocalDate(now).AddDays(1)) - now;
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, Ct);
-        }
-
-        return IndiaClock.LocalDate(clock.GetUtcNow());
-    }
 
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));
 

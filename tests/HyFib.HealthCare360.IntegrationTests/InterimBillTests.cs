@@ -48,7 +48,7 @@ public sealed class InterimBillTests(HospitalServer server)
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
 
         // Admitted at 10:00 (IST) the day before yesterday, recorded as a late entry, so the stay crosses two midnights.
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var dayBefore = today.AddDays(-2);
         var yesterday = today.AddDays(-1);
         var patientId = await RegisterPatientAsync(frontOffice);
@@ -194,7 +194,7 @@ public sealed class InterimBillTests(HospitalServer server)
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
 
         // Admitted at 10:00 (IST) yesterday, recorded as a late entry, so the stay crosses one midnight.
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var admission = await AdmitAsync(
             frontOffice, doctor, await RegisterPatientAsync(frontOffice), PayerType.Self, null, IndiaClock.AtLocal(today.AddDays(-1), new TimeOnly(10, 0)));
         var account = await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/by-admission/{admission.Id}");
@@ -460,23 +460,6 @@ public sealed class InterimBillTests(HospitalServer server)
     }
 
     // ---------------------------------------------------------------------- look-ups
-
-    /// <summary>
-    /// Today in the hospital's calendar (IST). Bed days are charged at midnight, so the test must not straddle one:
-    /// started in the last two minutes of a day, it waits for the next.
-    /// </summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var now = clock.GetUtcNow();
-        var untilMidnight = IndiaClock.StartOfDayUtc(IndiaClock.LocalDate(now).AddDays(1)) - now;
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, Ct);
-        }
-
-        return IndiaClock.LocalDate(clock.GetUtcNow());
-    }
 
     private static async Task<List<ChargeDto>> ChargesAsync(ApiClient billing, Guid admissionId) =>
         (await billing.GetAsync<PagedResult<ChargeDto>>($"/api/v1/billing/charges?admissionId={admissionId}&pageSize=200"))
