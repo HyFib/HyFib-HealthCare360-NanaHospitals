@@ -242,6 +242,55 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_refund_that_failed_is_paid_another_way_once_recorded_as_not_paid_out_and_its_exception_closes()
+    {
+        await using var gateway = await PaymentsToSimulatorAsync();
+        var order = await PaidOrderAsync();
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+
+        // The bill paid online is cancelled, and an accountant approves the refund of what was paid.
+        var bill = await billing.GetAsync<BillDetail>($"/api/v1/billing/bills/{order.BillId}");
+        bill = await admin.PostAsync<BillDetail>($"/api/v1/billing/bills/{bill.Id}/cancel", new CancelBillRequest("Billed to the wrong patient", bill.Version));
+        var refundId = bill.Refunds.ShouldHaveSingleItem().Id;
+        using (var approved = await accountant.SendRawAsync(HttpMethod.Post, $"/api/v1/billing/refunds/{refundId}/approve", new ApproveRefundRequest(null)))
+        {
+            approved.StatusCode.ShouldBe(HttpStatusCode.NoContent, await approved.Content.ReadAsStringAsync(Ct));
+        }
+
+        // It is paid out through the gateway as paying it there does (RefundService): sent, recorded as paid and applied to
+        // the bill. The training gateway knows no such refund and reports it failed: the accountants are told.
+        var failedId = "rfnd_Failed" + Letters(10);
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            var refund = await RefundAsync(scope, refundId);
+            var now = DateTimeOffset.UtcNow;
+            refund.StartGatewayRefund(failedId, new GatewayPaymentRef(order.Provider, order.GatewayPaymentId ?? string.Empty, order.OrderId), now);
+            refund.MarkPaid(PaymentMode.PaymentGateway, failedId, null, null, null, now).IsSuccess.ShouldBeTrue();
+            (await db.Set<Bill>().IgnoreQueryFilters().SingleAsync(b => b.Id == order.BillId, Ct)).ApplyRefund(refund.Amount).IsSuccess.ShouldBeTrue();
+            await db.SaveChangesAsync(Ct);
+            (await scope.ServiceProvider.GetRequiredService<GatewayRefundTracker>().FollowAsync(refund, Ct)).ShouldBeTrue();
+        }
+
+        (await ExceptionAsync(DiscrepancyKind.RefundMismatch, failedId))!.Status.ShouldBe(DiscrepancyStatus.Open);
+
+        // The counter records the refund as not paid out, to pay the patient another way, and an accountant approves: the
+        // exception closes by itself and says why.
+        using (var asked = await billing.SendRawAsync(HttpMethod.Post, $"/api/v1/billing/refunds/{refundId}/not-paid",
+                   new ReverseRefundRequest(ReversalReason.NotSettled, "The gateway could not pay it back; it goes by bank transfer.")))
+        {
+            asked.StatusCode.ShouldBe(HttpStatusCode.Accepted, await asked.Content.ReadAsStringAsync(Ct));
+            await MakerChecker.ApproveAsync(accountant, (await asked.Content.ReadFromJsonAsync<ApprovalRequestDto>(ApiClient.Json, Ct))!);
+        }
+
+        var closed = (await ExceptionAsync(DiscrepancyKind.RefundMismatch, failedId))!;
+        (closed.Status, closed.ResolvedAutomatically).ShouldBe((DiscrepancyStatus.Resolved, true));
+        closed.Resolution.ShouldNotBeNull().ShouldContain("was recorded as not paid out");
+    }
+
+    [Fact]
     public async Task Money_the_gateway_took_back_is_followed_as_a_chargeback_and_won_when_it_comes_back()
     {
         await using var gateway = await PaymentsToSimulatorAsync();

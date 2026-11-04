@@ -1041,7 +1041,7 @@ only the one that clashed is merely refreshed.
 | 2 | `UnsettledReceipt` | an online receipt is not in any settlement `settlementDays` after the payment, while the gateway has settled something newer (receipts of the last month are looked at) | a settlement carries the payment, or the payment is reversed as not received |
 | 2 | `FailedSettlement` | a settlement paid out fails afterwards; its journal is reversed in the books of the day it is learnt (accountants get an alert) | the gateway pays the settlement out after all (its journal is restored); "Read the settlements again" reads its day |
 | 3 | `AmountMismatch` | a settled payment's amount differs from its receipt; the gateway adjusted a settlement; a settlement's payout differs from its transactions | the amounts agree on a later match |
-| 4 | `RefundMismatch` | a settled refund is unknown to HC360 or has a different amount; a gateway refund failed (accountants get an alert) | the refund matches, or the bank confirms it; a failed refund only when it is sent again or the bank confirms it, never by a settlement line |
+| 4 | `RefundMismatch` | a settled refund is unknown to HC360 or has a different amount; a gateway refund failed (accountants get an alert) | the refund matches, or the bank confirms it; a failed refund only when it is sent again, recorded as not paid out ([Money that did not move](#money-that-did-not-move), once a second person approves) or the bank confirms it, never by a settlement line |
 
 An exception a person resolved stays resolved; one HC360 cleared opens again if the cause comes back. Accountants
 can record the receipt, try again or resolve it with a note (see the endpoints above); every action that records
@@ -1491,8 +1491,6 @@ indexed where set). Notes and IRNs from before keep zeros and nulls.
 * **A visit's payer cannot be changed after registration.** A patient whose cover is verified later is registered
   again, or pays. Staff concessions (the staff tariff) rest on the desk choosing "Staff"; a company's check-up batch is
   keyed by one person from the company's list and order.
-* **A failed gateway refund paid another way.** The refund stays paid through the gateway in HC360; the accountant
-  pays it by bank transfer outside HC360, records that in Tally, and resolves the exception with the reference.
 * **Card and UPI settlement reports are imported by hand.** HC360 does not fetch them from the acquirer (Pine Labs and
   the banks offer them as downloads or e-mails, not through the terminal API).
 * **A pharmacy or canteen payment without its reference** (the canteen does not insist on one) is not matched, since
