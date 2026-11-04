@@ -266,7 +266,8 @@ export interface AddAdHocDoseRequest {
   givenNow: boolean;
   reason: string | null;
   batchNumber: string | null;
-  witnessName: string | null;
+  /** A second nurse's confirmation at this screen (WitnessPanel), for a controlled drug given. */
+  witnessConfirmationId: string | null;
   notes: string | null;
 }
 
@@ -275,7 +276,8 @@ export interface RecordAdministrationRequest {
   administeredAt: string | null;
   reason: string | null;
   batchNumber: string | null;
-  witnessName: string | null;
+  /** A second nurse's confirmation at this screen (WitnessPanel), for a controlled drug given. */
+  witnessConfirmationId: string | null;
   notes: string | null;
   version: number;
 }

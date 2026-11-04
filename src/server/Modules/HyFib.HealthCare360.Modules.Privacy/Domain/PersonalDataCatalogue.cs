@@ -150,6 +150,9 @@ public static class PersonalDataCatalogue
                 new("inpatient.nursing_assessments", "Nursing assessments"),
                 new("inpatient.medication_orders", "Medicine orders during stays"),
                 new("inpatient.medication_administrations", "Medicines given to you"),
+                // A second nurse confirming at the screen, with their own password, a controlled medicine given to you: who,
+                // when, and the dose it was used for. Listed, not counted: the dose is counted above.
+                new("identity.witness_confirmations", "A second nurse's confirmations of controlled medicines given to you", Counted: false),
                 new("inpatient.intake_output_entries", "Fluid intake and output"),
                 new("inpatient.consultant_visits", "Doctors' rounds", Counted: false),
                 new("inpatient.shift_handovers", "Nursing handovers", Counted: false),

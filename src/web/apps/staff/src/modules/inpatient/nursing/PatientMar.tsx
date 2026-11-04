@@ -37,6 +37,8 @@ import {
   type MedicationOrderDto,
 } from '../nursingApi';
 import { addDays, fromIstInput, istDate, toIstInput } from '../time';
+import type { WitnessConfirmed } from '@/modules/witness/api';
+import { WitnessPanel } from '@/modules/witness/WitnessPanel';
 import { RecordDoseDialog, type DoseToRecord } from './RecordDoseDialog';
 
 const useStyles = makeStyles({
@@ -67,7 +69,15 @@ function statusTone(entry: MarEntryDto): 'success' | 'danger' | 'warning' | 'inf
 }
 
 /** One patient's Medication Administration Record for a day (plus older doses still waiting to be recorded). */
-export function PatientMar({ admissionId, patientName }: { admissionId: string; patientName: string }) {
+export function PatientMar({
+  admissionId,
+  patientId,
+  patientName,
+}: {
+  admissionId: string;
+  patientId: string;
+  patientName: string;
+}) {
   const styles = useStyles();
   const canRecord = usePermission('nursing.mar');
   const today = todayIso();
@@ -89,6 +99,7 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
         scheduledAt: entry.scheduledAt,
         version: entry.version,
         admissionId,
+        patientId,
         patientName,
         isOverdue: entry.isOverdue,
         isControlledDrug: entry.medicationOrderId ? controlled.has(entry.medicationOrderId) : undefined,
@@ -220,6 +231,7 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
       {adHoc && (
         <AdHocDoseDialog
           admissionId={admissionId}
+          patientId={patientId}
           orders={(orders.data ?? []).filter((o) => o.status === 'Active')}
           onClose={() => setAdHoc(false)}
         />
@@ -228,13 +240,18 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
   );
 }
 
-/** An SOS/STAT or otherwise unscheduled dose; "given now" records it as given in the same step. */
-function AdHocDoseDialog({
+/**
+ * An SOS/STAT or otherwise unscheduled dose; "given now" records it as given in the same step, with a second nurse's
+ * confirmation at this screen when the drug is controlled (WitnessPanel).
+ */
+export function AdHocDoseDialog({
   admissionId,
+  patientId,
   orders,
   onClose,
 }: {
   admissionId: string;
+  patientId: string;
   orders: MedicationOrderDto[];
   onClose: () => void;
 }) {
@@ -252,7 +269,7 @@ function AdHocDoseDialog({
   const [scheduledAt, setScheduledAt] = useState(limits.now);
   const [reason, setReason] = useState('');
   const [batch, setBatch] = useState('');
-  const [witness, setWitness] = useState('');
+  const [witness, setWitness] = useState<WitnessConfirmed | null>(null);
   const [notes, setNotes] = useState('');
 
   const pickOrder = (id: string) => {
@@ -273,7 +290,7 @@ function AdHocDoseDialog({
         givenNow,
         reason: reason.trim() || null,
         batchNumber: batch.trim() || null,
-        witnessName: witness.trim() || null,
+        witnessConfirmationId: witness?.confirmationId ?? null,
         notes: notes.trim() || null,
       }),
     onSuccess: () => {
@@ -281,17 +298,34 @@ function AdHocDoseDialog({
       void queryClient.invalidateQueries({ queryKey: nursingKeys.admission(admissionId) });
       onClose();
     },
+    onError: (error) => {
+      // Run out, or used meanwhile: the witness confirms again.
+      if (isApiError(error) && error.code === 'witness.confirmation_unusable') {
+        setWitness(null);
+      }
+    },
   });
 
   const needsWitness = givenNow && Boolean(order?.isControlledDrug);
   const valid =
     (order !== null || drugName.trim().length > 0) &&
     dose.trim().length > 0 &&
-    (!needsWitness || witness.trim().length > 0) &&
+    (!needsWitness || witness !== null) &&
     (givenNow || fromIstInput(scheduledAt) !== null);
 
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ orderId, drugName, dose, route, givenNow, scheduledAt, reason, batch, witness, notes }),
+    dirty: useValuesChanged({
+      orderId,
+      drugName,
+      dose,
+      route,
+      givenNow,
+      scheduledAt,
+      reason,
+      batch,
+      witness: witness?.confirmationId ?? '',
+      notes,
+    }),
     busy: add.isPending,
     onClose,
   });
@@ -360,18 +394,12 @@ function AdHocDoseDialog({
                 </Field>
               )}
               {givenNow && (
-                <div className={styles.two}>
-                  <Field label="Batch number">
-                    <Input value={batch} onChange={(_, d) => setBatch(d.value)} maxLength={64} />
-                  </Field>
-                  <Field
-                    label="Witness (second nurse)"
-                    required={needsWitness}
-                    hint={needsWitness ? 'Required: controlled drug' : undefined}
-                  >
-                    <Input value={witness} onChange={(_, d) => setWitness(d.value)} maxLength={200} />
-                  </Field>
-                </div>
+                <Field label="Batch number">
+                  <Input value={batch} onChange={(_, d) => setBatch(d.value)} maxLength={64} />
+                </Field>
+              )}
+              {needsWitness && (
+                <WitnessPanel purpose="mar.dose" patientId={patientId} witness={witness} onChange={setWitness} />
               )}
               <Field label="Notes">
                 <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} maxLength={500} rows={2} />

@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Mar;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Inpatient.Services;
@@ -10,8 +11,15 @@ namespace HyFib.HealthCare360.Modules.Inpatient.Services;
 /// when the IP pharmacy dispenses them, the next 24 hours of doses are scheduled on the ward's medication rounds; nurses
 /// record each dose once. Methods used by domain-event handlers only stage changes (the raising module commits them).
 /// </summary>
-public sealed class MarService(HospitalDbContext db, ISettingsService settings, ICurrentUser currentUser, TimeProvider time)
+public sealed class MarService(
+    HospitalDbContext db, ISettingsService settings, ICurrentUser currentUser, IWitnessConfirmations witnesses, TimeProvider time)
 {
+    /// <summary>
+    /// What a second nurse witnesses on the MAR: a controlled drug given. Whoever keeps the MAR (nurses, doctors) may
+    /// witness, at the recording nurse's screen, with their own user name and password.
+    /// </summary>
+    public static readonly WitnessPurpose DoseWitness = new("mar.dose", InpatientPermissions.NursingMar, "a controlled drug given");
+
     /// <summary>Facility setting: minutes after the scheduled time before a due dose shows as overdue (default 30).</summary>
     public const string GraceSetting = "inpatient.marGraceMinutes";
 
@@ -166,9 +174,15 @@ public sealed class MarService(HospitalDbContext db, ISettingsService settings, 
         db.SetExpectedVersion(entry, request.Version);
         var requiresWitness = entry.MedicationOrderId is { } orderId
                               && await db.Set<MedicationOrder>().Where(o => o.Id == orderId).Select(o => o.IsControlledDrug).FirstOrDefaultAsync(ct);
+        var witness = await WitnessAsync(request.WitnessConfirmationId, entry, ct);
+        if (witness.IsFailure)
+        {
+            return witness.Error!;
+        }
+
         var now = time.GetUtcNow();
         var recorded = entry.Record(
-            new MarOutcome(request.Outcome, request.AdministeredAt, request.Reason, request.BatchNumber, request.WitnessName, request.Notes),
+            new MarOutcome(request.Outcome, request.AdministeredAt, request.Reason, request.BatchNumber, witness.Value, request.Notes),
             currentUser.UserId, currentUser.DisplayName, requiresWitness, now);
         if (recorded.IsFailure)
         {
@@ -216,8 +230,14 @@ public sealed class MarService(HospitalDbContext db, ISettingsService settings, 
 
         if (request.GivenNow)
         {
+            var witness = await WitnessAsync(request.WitnessConfirmationId, entry, ct);
+            if (witness.IsFailure)
+            {
+                return witness.Error!;
+            }
+
             var recorded = entry.Record(
-                new MarOutcome(MarStatus.Given, entry.ScheduledAt, request.Reason, request.BatchNumber, request.WitnessName, request.Notes),
+                new MarOutcome(MarStatus.Given, entry.ScheduledAt, request.Reason, request.BatchNumber, witness.Value, request.Notes),
                 currentUser.UserId, currentUser.DisplayName, order?.IsControlledDrug ?? false, now);
             if (recorded.IsFailure)
             {
@@ -227,6 +247,21 @@ public sealed class MarService(HospitalDbContext db, ISettingsService settings, 
 
         await db.SaveChangesAsync(ct);
         return ToDto(entry, now, await GraceAsync(admission.FacilityId, ct));
+    }
+
+    /// <summary>
+    /// The second nurse who witnessed the dose, from their confirmation at this screen; none when none was sent. The
+    /// confirmation is spent with the dose's save, so a dose not recorded leaves it for another try.
+    /// </summary>
+    private async Task<Result<MarWitness?>> WitnessAsync(Guid? confirmationId, MedicationAdministration entry, CancellationToken ct)
+    {
+        if (confirmationId is not { } id)
+        {
+            return Result<MarWitness?>.Ok(null);
+        }
+
+        var used = await witnesses.UseAsync(id, DoseWitness.Key, entry.PatientId, nameof(MedicationAdministration), entry.Id, ct);
+        return used.IsFailure ? used.Error! : new MarWitness(used.Value.UserId, used.Value.Name);
     }
 
     // ------------------------------------------------------------------ integration events (stage only, never save)

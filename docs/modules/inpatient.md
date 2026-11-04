@@ -172,9 +172,18 @@ after discharge). Vitals are owned by Clinical and are not duplicated here.
 | POST | `/medication-orders/{id}/stop` | `nursing.mar` | `StopMedicationOrderRequest` → `MedicationOrderDto` (future doses cancelled) |
 | POST | `/medication-orders/{id}/schedule` | `nursing.mar` | → `ScheduleResult` (extend 24 h) |
 | GET | `/admissions/{admissionId}/mar?date` | `nursing.mar` or `nursing.chart` | → `MarEntryDto[]` (day + older undocumented doses, `isOverdue`) |
-| POST | `/admissions/{admissionId}/mar` | `nursing.mar` | `AddAdHocDoseRequest` (SOS/STAT; `givenNow`) → 201 `MarEntryDto`; after the discharge (late entries, 24 h) only a dose given before it, with its time, else 422 `medication.discharged` |
-| POST | `/mar/{id}/record` | `nursing.mar` | `RecordAdministrationRequest` (outcome Given/Held/Refused/Missed, administeredAt, reason — required unless given, batch, witness — required for controlled drugs, notes, `version`) → `MarEntryDto` |
+| POST | `/admissions/{admissionId}/mar` | `nursing.mar` | `AddAdHocDoseRequest` (SOS/STAT; `givenNow`; `witnessConfirmationId` as below) → 201 `MarEntryDto`; after the discharge (late entries, 24 h) only a dose given before it, with its time, else 422 `medication.discharged` |
+| POST | `/mar/{id}/record` | `nursing.mar` | `RecordAdministrationRequest` (outcome Given/Held/Refused/Missed, administeredAt, reason — required unless given, batch, `witnessConfirmationId` — required for a controlled drug given, notes, `version`) → `MarEntryDto` (`witnessName`) |
 | GET | `/wards/{wardId}/mar/due?withinMinutes` | `nursing.mar` | → `WardMarItem[]` (ward due/overdue worklist) |
+
+A controlled drug given (an order marked controlled: Schedule H1 or X, or NDPS) is witnessed by a second nurse, who
+proves who they are at the recording nurse's screen (ADR-014). They type their own user name and password there, and
+their authenticator code when their account has one (`POST /api/v1/auth/witness`, purpose `mar.dose`, with the
+patient). Whoever keeps the MAR may witness (`nursing.mar`: nurses and doctors), never the nurse recording. The answer is
+a confirmation the recording nurse sends with the dose as `witnessConfirmationId`. It is good once, for that nurse, that
+patient and five minutes. It is spent in the dose's own save (422 `witness.confirmation_unusable` otherwise). The dose
+then names the witness's account (`WitnessUserId`) and name: not a name typed, as before (doses recorded before keep
+theirs). Without one, 422 `mar.witness_required`. The witness's password never reaches this module.
 
 Frequencies understood: OD/QD/Daily, BD/BID, TDS/TID, QID/QDS, HS/Nocte, `1-0-1`-style patterns (3 or 4 parts,
 fractions allowed), `Q4H`/`6 hourly`…, STAT (one dose), SOS/PRN/"As directed" (never auto-scheduled).

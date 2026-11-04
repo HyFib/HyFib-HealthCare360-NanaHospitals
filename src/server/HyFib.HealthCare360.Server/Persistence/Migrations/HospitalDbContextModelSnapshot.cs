@@ -22130,6 +22130,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("witness_name");
 
+                    b.Property<Guid?>("WitnessUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("witness_user_id");
+
                     b.HasKey("Id")
                         .HasName("pk_medication_administrations");
 
@@ -42648,6 +42652,79 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_webauthn_credentials_user_id");
 
                     b.ToTable("webauthn_credentials", "identity");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Platform.Identity.WitnessConfirmation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid?>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<Guid>("ForUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("for_user_id");
+
+                    b.Property<Guid?>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("purpose");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid?>("UsedForId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("used_for_id");
+
+                    b.Property<string>("UsedForType")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("used_for_type");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<string>("WitnessName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("witness_name");
+
+                    b.Property<Guid>("WitnessUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("witness_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_witness_confirmations");
+
+                    b.HasIndex("WitnessUserId")
+                        .HasDatabaseName("ix_witness_confirmations_witness_user_id");
+
+                    b.HasIndex("UsedForType", "UsedForId")
+                        .HasDatabaseName("ix_witness_confirmations_used_for_type_used_for_id");
+
+                    b.ToTable("witness_confirmations", "identity");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Integrations.IntegrationLog", b =>

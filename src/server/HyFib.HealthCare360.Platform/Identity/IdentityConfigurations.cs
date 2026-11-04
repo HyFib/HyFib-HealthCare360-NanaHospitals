@@ -121,6 +121,20 @@ internal sealed class AuthChallengeConfiguration : IEntityTypeConfiguration<Auth
     }
 }
 
+internal sealed class WitnessConfirmationConfiguration : IEntityTypeConfiguration<WitnessConfirmation>
+{
+    public void Configure(EntityTypeBuilder<WitnessConfirmation> b)
+    {
+        b.ToTable("witness_confirmations", "identity");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.WitnessName).HasMaxLength(128);
+        b.Property(x => x.Purpose).HasMaxLength(64);
+        b.Property(x => x.UsedForType).HasMaxLength(64);
+        b.HasIndex(x => x.WitnessUserId);
+        b.HasIndex(x => new { x.UsedForType, x.UsedForId });
+    }
+}
+
 internal sealed class WebAuthnCredentialConfiguration : IEntityTypeConfiguration<WebAuthnCredential>
 {
     public void Configure(EntityTypeBuilder<WebAuthnCredential> b)

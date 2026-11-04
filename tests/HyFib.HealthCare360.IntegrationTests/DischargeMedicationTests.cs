@@ -102,7 +102,7 @@ public sealed class DischargeMedicationTests(HospitalServer server)
 
     private static AddAdHocDoseRequest AdHoc(bool givenNow, DateTimeOffset? at) => new(
         MedicationOrderId: null, DrugName: "Ondansetron 4 mg Injection", Dose: "4 mg", Route: "IV", ScheduledAt: at, GivenNow: givenNow,
-        Reason: null, BatchNumber: null, WitnessName: null, Notes: null);
+        Reason: null, BatchNumber: null, WitnessConfirmationId: null, Notes: null);
 
     private static async Task ShouldBeRefusedAsync(ApiClient nurse, string path, object body)
     {

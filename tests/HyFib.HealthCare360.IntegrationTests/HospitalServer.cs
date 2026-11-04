@@ -68,6 +68,7 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.CssdTechnician] = SystemRoles.CssdTechnician,
         [Users.CardiologyTechnician] = SystemRoles.CardiologyTechnician,
         [Users.SecondDoctor] = SystemRoles.Doctor,
+        [Users.SecondNurse] = SystemRoles.Nurse,
         [Users.Accountant] = SystemRoles.Accountant,
         [Users.Radiographer] = SystemRoles.Radiographer,
         [Users.MisAnalyst] = SystemRoles.MisAnalyst,
@@ -269,6 +270,19 @@ public sealed class HospitalServer : IAsyncLifetime
     {
         ArgumentNullException.ThrowIfNull(client);
         var http = CreateHttpClient();
+        http.DefaultRequestHeaders.Authorization = client.Http.DefaultRequestHeaders.Authorization;
+        return new ApiClient(http);
+    }
+
+    /// <summary>
+    /// The sign-in of <paramref name="client"/>, its bearer token, from the test's own address: for a test whose calls
+    /// count against an address's sign-in limit (a witness typing their password at this user's screen), so that they do
+    /// not use up the address the other tests sign in from.
+    /// </summary>
+    public ApiClient FromOwnAddress(ApiClient client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        var http = CreateHttpClient(ownAddress: true);
         http.DefaultRequestHeaders.Authorization = client.Http.DefaultRequestHeaders.Authorization;
         return new ApiClient(http);
     }
@@ -898,6 +912,9 @@ public sealed class HospitalServer : IAsyncLifetime
         /// <see cref="Doctor"/>'s. Created on first use.
         /// </summary>
         public const string SecondDoctor = "doctor2";
+
+        /// <summary>A second nurse, who witnesses <see cref="Nurse"/>'s controlled doses at her screen. Created on first use.</summary>
+        public const string SecondNurse = "nurse2";
 
         /// <summary>
         /// Keeps the accounts: prepares doctor payouts, which someone else (the hospital administrator) approves. Created on

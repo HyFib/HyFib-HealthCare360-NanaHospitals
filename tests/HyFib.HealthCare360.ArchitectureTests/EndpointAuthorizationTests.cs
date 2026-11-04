@@ -171,6 +171,11 @@ public sealed class EndpointAuthorizationTests
         "DELETE /api/v1/auth/webauthn/credentials/{id:guid}",
         "POST /api/v1/auth/switch-facility",
 
+        // A second member of staff witnesses at the caller's screen (staff only; patients are refused): their own password
+        // is checked as at sign-in, with the same lockout and rate limit, and the purpose's permission and facility are
+        // checked against the witness. The confirmation it returns is good only for the caller, that patient and minutes.
+        "POST /api/v1/auth/witness",
+
         // The caller's own notifications.
         "GET /api/v1/notifications/",
         "GET /api/v1/notifications/unread-count",

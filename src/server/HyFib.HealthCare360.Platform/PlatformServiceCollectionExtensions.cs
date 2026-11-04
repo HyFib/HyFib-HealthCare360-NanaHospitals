@@ -148,6 +148,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddSingleton<ISessionValidator>(sp => sp.GetRequiredService<SessionValidator>());
         services.AddSingleton<IClusterCache>(sp => sp.GetRequiredService<SessionValidator>());
         services.AddScoped<AuthService>();
+        services.AddScoped<IWitnessConfirmations, WitnessConfirmations>();
         services.AddScoped<WebAuthnUnlockService>();
         services.AddScoped<LoadTestAccounts>();
 

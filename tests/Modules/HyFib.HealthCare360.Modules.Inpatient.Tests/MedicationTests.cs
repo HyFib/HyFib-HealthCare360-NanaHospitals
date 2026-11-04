@@ -99,7 +99,9 @@ public sealed class MedicationTests
         var dose = Due(At(25, 9));
 
         dose.Record(Given(), null, null, requiresWitness: true, At(25, 9)).Error!.Code.ShouldBe("mar.witness_required");
-        dose.Record(Given() with { WitnessName = "Sr. Mary" }, null, null, requiresWitness: true, At(25, 9)).IsSuccess.ShouldBeTrue();
+        var witness = new MarWitness(Guid.Parse("01923a4b-0000-7000-8000-0000000000a7"), "Sr. Mary");
+        dose.Record(Given() with { Witness = witness }, null, null, requiresWitness: true, At(25, 9)).IsSuccess.ShouldBeTrue();
+        (dose.WitnessUserId, dose.WitnessName).ShouldBe((witness.UserId, "Sr. Mary"));
     }
 
     [Fact]

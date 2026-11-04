@@ -103,6 +103,13 @@ public sealed class MedicationAdministration : AuditableEntity, IFacilityScoped
     public string? RecordedByName { get; set; }
     public string? Reason { get; set; }
     public string? BatchNumber { get; set; }
+
+    /// <summary>
+    /// The second nurse who witnessed the dose, who proved who they are at the recording nurse's screen
+    /// (<see cref="MarWitness"/>). Doses recorded before that was asked for name a witness by the name typed, with no account.
+    /// </summary>
+    public Guid? WitnessUserId { get; set; }
+
     public string? WitnessName { get; set; }
     public string? Notes { get; set; }
 
@@ -123,7 +130,7 @@ public sealed class MedicationAdministration : AuditableEntity, IFacilityScoped
         RecordedByName = userName;
         Reason = Clean(outcome.Reason);
         BatchNumber = Clean(outcome.BatchNumber) ?? BatchNumber;
-        WitnessName = Clean(outcome.WitnessName);
+        (WitnessUserId, WitnessName) = (outcome.Witness?.UserId, outcome.Witness?.Name);
         Notes = Clean(outcome.Notes);
         return Result.Success();
     }
@@ -141,11 +148,15 @@ public sealed class MedicationAdministration : AuditableEntity, IFacilityScoped
 }
 
 /// <summary>What the nurse recorded for a dose.</summary>
-public sealed record MarOutcome(MarStatus Status, DateTimeOffset? AdministeredAt, string? Reason, string? BatchNumber, string? WitnessName, string? Notes);
+public sealed record MarOutcome(MarStatus Status, DateTimeOffset? AdministeredAt, string? Reason, string? BatchNumber, MarWitness? Witness, string? Notes);
+
+/// <summary>A second nurse who witnessed a dose, and proved who they are at the recording nurse's screen: never that nurse.</summary>
+public sealed record MarWitness(Guid UserId, string Name);
 
 /// <summary>
 /// MAR recording rules. A dose is recorded once (corrections are nursing notes, never overwrites); anything other than
-/// "given" needs a reason; controlled drugs need a witness; and administration cannot be documented in the future.
+/// "given" needs a reason; controlled drugs given need a witness who proved who they are; and administration cannot be
+/// documented in the future.
 /// </summary>
 public static class MarRules
 {
@@ -174,9 +185,10 @@ public static class MarRules
             return Error.Rule("mar.reason_required", "Give a reason when a dose is held, refused or missed.");
         }
 
-        if (outcome.Status == MarStatus.Given && requiresWitness && string.IsNullOrWhiteSpace(outcome.WitnessName))
+        if (outcome.Status == MarStatus.Given && requiresWitness && outcome.Witness is null)
         {
-            return Error.Rule("mar.witness_required", "Controlled drugs must be witnessed. Enter the name of the witnessing nurse.");
+            return Error.Rule("mar.witness_required",
+                "Controlled drugs are witnessed: a second nurse confirms at this screen with their own user name and password.");
         }
 
         if (outcome.AdministeredAt is { } at && at > now + ClockTolerance)
