@@ -29,7 +29,7 @@ public sealed class DietProductionTests(HospitalServer server)
     {
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
-        var tomorrow = (await HospitalDayAsync()).AddDays(1);
+        var tomorrow = server.Today.AddDays(1);
         var types = await doctor.GetAsync<List<DietTypeDto>>("/api/v1/dietary/diet-types");
         DietTypeDto Type(string code) => types.Single(t => t.Code == code);
 
@@ -137,23 +137,6 @@ public sealed class DietProductionTests(HospitalServer server)
             IsMlc: false, MlcNumber: null, ExpectedDischargeDate: null, AttendantName: null, AttendantRelation: null, AttendantPhone: null,
             AdmittedAt: null, Notes: null));
         return (admission.Id, bed.Label);
-    }
-
-    /// <summary>
-    /// Today in the hospital's calendar (IST). The list is read for tomorrow, so the test must not straddle midnight:
-    /// started in the last two minutes of a day, it waits for the next.
-    /// </summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var now = clock.GetUtcNow();
-        var untilMidnight = IndiaClock.StartOfDayUtc(IndiaClock.LocalDate(now).AddDays(1)) - now;
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, TestContext.Current.CancellationToken);
-        }
-
-        return IndiaClock.LocalDate(clock.GetUtcNow());
     }
 
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));

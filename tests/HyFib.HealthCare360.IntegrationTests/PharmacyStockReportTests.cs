@@ -30,7 +30,7 @@ public sealed class PharmacyStockReportTests(HospitalServer server)
         // purchase approver's permissions and plays both parts; the pharmacist reads the reports.
         var storeKeeper = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var suffix = Letters(6);
 
         var store = await StoreAsync(storeKeeper, $"PH{suffix}", $"Ward pharmacy {suffix}");
@@ -187,22 +187,6 @@ public sealed class PharmacyStockReportTests(HospitalServer server)
     /// <summary>The store's reorder report, cut down to the test's own medicines (every active item has a row in a store without it).</summary>
     private static async Task<List<ReorderRow>> ReorderAsync(ApiClient pharmacist, Guid storeId, Guid[] ours) =>
         (await pharmacist.GetAsync<List<ReorderRow>>($"{Reports}/reorder?storeId={storeId}")).Where(r => ours.Contains(r.ItemId)).ToList();
-
-    /// <summary>
-    /// Today in the hospital's calendar (IST). Expiry is counted in days, so the test must not straddle midnight: started
-    /// in the last two minutes of a day, it waits for the next.
-    /// </summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var untilMidnight = HospitalClock.StartOfDayUtc(HospitalClock.Today(clock).AddDays(1)) - clock.GetUtcNow();
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, TestContext.Current.CancellationToken);
-        }
-
-        return HospitalClock.Today(clock);
-    }
 
     private static string Letters(int length) => new([.. Enumerable.Range(0, length).Select(_ => (char)('A' + Random.Shared.Next(26)))]);
 }

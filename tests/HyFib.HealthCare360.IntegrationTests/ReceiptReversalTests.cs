@@ -42,7 +42,7 @@ public sealed class ReceiptReversalTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         GatewayOrderDto order;
         await using (await PaymentsToSimulatorAsync(admin))
         {
@@ -117,7 +117,7 @@ public sealed class ReceiptReversalTests(HospitalServer server)
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
         var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         await OpenShiftAsync(billing);
 
         // ₹600 paid by cheque; the bill is cancelled, which asks for the ₹600 back, and it is refunded by bank transfer.
@@ -175,7 +175,7 @@ public sealed class ReceiptReversalTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
 
         // ₹800 prepaid online for an appointment, as the gateway's confirmation records it; ₹100 of it pays the registration
         // bill, and a refund of the other ₹700 waits for approval.
@@ -289,7 +289,7 @@ public sealed class ReceiptReversalTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         await OpenShiftAsync(billing);
 
         await using (await FeesOnPaymentAsync(admin))
@@ -455,20 +455,6 @@ public sealed class ReceiptReversalTests(HospitalServer server)
         using var response = await client.SendRawAsync(HttpMethod.Post, path, body);
         response.StatusCode.ShouldBe(status, await response.Content.ReadAsStringAsync(Ct));
         return (await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString();
-    }
-
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        // A reversal is dated the day it is made: these tests read the day's books, so none runs across midnight.
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var (_, midnight) = BillingTime.Range(BillingTime.Today(clock), BillingTime.Today(clock));
-        var untilMidnight = midnight - clock.GetUtcNow();
-        if (untilMidnight < TimeSpan.FromMinutes(3))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, Ct);
-        }
-
-        return BillingTime.Today(clock);
     }
 
     private static PaymentLineInput Cheque(decimal amount, DateOnly date) => new(PaymentMode.Cheque, amount, null, null, null, Digits(6), "State Bank of India", date);
