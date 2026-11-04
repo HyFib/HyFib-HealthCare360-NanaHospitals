@@ -17,6 +17,7 @@ internal static class AbdmProfiles
     public const string OpConsultRecord = Base + "OPConsultRecord";
     public const string PrescriptionRecord = Base + "PrescriptionRecord";
     public const string ImmunizationRecord = Base + "ImmunizationRecord";
+    public const string HealthDocumentRecord = Base + "HealthDocumentRecord";
 
     public const string Patient = Base + "Patient";
     public const string Practitioner = Base + "Practitioner";
@@ -90,6 +91,12 @@ internal static class AbdmCodes
 
     /// <summary>ImmunizationRecord's document type and its one section's code (the profile fixes both).</summary>
     public static readonly AbdmCode ImmunizationRecord = Snomed("41000179103", "Immunization record");
+
+    /// <summary>
+    /// HealthDocumentRecord's document type and its one section's code (the profile fixes both): a record kept as a
+    /// document, which a clinical note is.
+    /// </summary>
+    public static readonly AbdmCode RecordArtifact = Snomed("419891008", "Record artifact");
 
     // Discharge summary and OP consultation sections.
     public static readonly AbdmCode ChiefComplaints = Snomed("422843007", "Chief complaint section");

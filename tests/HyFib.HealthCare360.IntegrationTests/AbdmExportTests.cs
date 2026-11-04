@@ -10,6 +10,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.DischargeSummaries;
 using HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
 using HyFib.HealthCare360.Modules.Clinical.Features.Flags;
 using HyFib.HealthCare360.Modules.Clinical.Features.Immunizations;
+using HyFib.HealthCare360.Modules.Clinical.Features.Notes;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
@@ -65,6 +66,7 @@ public sealed class AbdmExportTests(HospitalServer server)
     private const string DiagnosticReportRecord = "721981007";
     private const string DischargeSummaryRecord = "373942005";
     private const string ImmunizationRecord = "41000179103";
+    private const string HealthDocumentRecord = "419891008";
 
     /// <summary>The CRP the lab reports, in mg/L: within the reference interval, so it needs no critical call.</summary>
     private const decimal Crp = 3.2m;
@@ -705,17 +707,107 @@ public sealed class AbdmExportTests(HospitalServer server)
         }
     }
 
+    [Fact]
+    public async Task A_signed_note_is_exported_as_a_health_document_carrying_every_addendum_signed_to_it_wherever_it_was_written()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var abha = NewAbha();
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+        var hospital = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
+        var consultation = await ConsultAsync(doctor, patient.Id, sign: true);
+        var notes = $"/api/v1/emr/patients/{patient.Id}/notes";
+        const string Review = "Afebrile since morning. Chest clear.\n\nPlan: stop the antibiotic after today's dose.";
+        Task<ClinicalNoteDto> Signed(ClinicalNoteDto note) =>
+            doctor.PostAsync<ClinicalNoteDto>($"/api/v1/emr/notes/{note.Id}/sign", new SignNoteRequest(note.Version));
+        Task<ClinicalNoteDto> AddTo(Guid noteId, string body) => doctor.PostAsync<ClinicalNoteDto>($"/api/v1/emr/notes/{noteId}/addendum", new AddendumRequest(body));
+
+        // A progress note in the consultation and an addendum to it, signed, and another to that addendum, signed and kept by
+        // the hospital's annexe, where it was written (the record staff see adds to a note from any facility); an addendum
+        // still a draft; a counselling note; and a procedure note left as a draft.
+        var note = await Signed(await doctor.PostAsync<ClinicalNoteDto>(notes,
+            new WriteNoteRequest(consultation, null, ClinicalNoteType.ProgressNote, "Day 2 review", Review)));
+        var addendum = await Signed(await AddTo(note.Id, "Rash on both forearms since last night."));
+        var later = await Signed(await AddTo(addendum.Id, "Rash fading; antihistamine stopped."));
+        await AddTo(note.Id, "Not signed yet.");
+        var counselling = await Signed(await doctor.PostAsync<ClinicalNoteDto>(notes,
+            new WriteNoteRequest(consultation, null, ClinicalNoteType.Counselling, null, "Talked through the result with her.")));
+        var draft = await doctor.PostAsync<ClinicalNoteDto>(notes, new WriteNoteRequest(consultation, null, ClinicalNoteType.Procedure, "Ascitic tap", "Planned."));
+        var annexe = await AnnexeAsync();
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<ClinicalNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .Where(n => n.Id == later.Id).ExecuteUpdateAsync(s => s.SetProperty(n => n.FacilityId, annexe), Ct);
+        }
+
+        var path = $"/api/v1/abdm/bundles/clinical-notes/{note.Id}";
+        try
+        {
+            await SwitchAsync(enabled: true);
+
+            // A counselling note never goes, a draft is not yet the hospital's record, and an addendum goes with its note.
+            (await NotExportableAsync($"/api/v1/abdm/bundles/clinical-notes/{counselling.Id}")).ShouldNotBeNull().ShouldContain("counselling note");
+            (await NotExportableAsync($"/api/v1/abdm/bundles/clinical-notes/{draft.Id}")).ShouldBe("Sign the note before exporting it.");
+            (await NotExportableAsync($"/api/v1/abdm/bundles/clinical-notes/{addendum.Id}")).ShouldNotBeNull().ShouldContain("with the note it adds to");
+
+            var bundle = await ExportAsync(path, HealthDocumentRecord, abha, $"progress-note-{patient.Uhid}-");
+            ShouldBeTheSameDocument(await ExportAsync(path, HealthDocumentRecord, abha, "progress-note-"), bundle);
+            var composition = Composition(bundle);
+            composition.GetProperty("status").GetString().ShouldBe("amended");
+            composition.GetProperty("title").GetString().ShouldBe("Progress note");
+            composition.GetProperty("encounter").GetProperty("reference").GetString().ShouldNotBeNull();
+
+            // The note, then its two signed addenda in the order they were signed, each appending to the one it adds to, each
+            // kept by the facility where it was written: the later addendum by the annexe.
+            var entries = composition.GetProperty("section").EnumerateArray().ShouldHaveSingleItem().GetProperty("entry").EnumerateArray()
+                .Select(e => e.GetProperty("reference").GetString()!).ToList();
+            var documents = entries.Select(e => Entry(bundle, e)).ToList();
+            documents.Select(d => d.GetProperty("description").GetString())
+                .ShouldBe(["Day 2 review", "Addendum to Day 2 review", "Addendum to Addendum to Day 2 review"]);
+            Encoding.UTF8.GetString(documents[0].GetProperty("content")[0].GetProperty("attachment").GetProperty("data").GetBytesFromBase64())
+                .ShouldBe(Review, "the note as it was signed");
+            documents[1].GetProperty("relatesTo")[0].GetProperty("target").GetProperty("reference").GetString().ShouldBe(entries[0]);
+            documents[2].GetProperty("relatesTo")[0].GetProperty("target").GetProperty("reference").GetString().ShouldBe(entries[1]);
+            string Keeper(JsonElement document) => Entry(bundle, document.GetProperty("custodian").GetProperty("reference").GetString()!).GetProperty("id").GetString()!;
+            documents.Select(Keeper).ShouldBe([.. new[] { hospital, hospital, annexe }.Select(f => AbdmDocumentBuilder.Uuid($"Organization/{f:D}"))]);
+            Entry(bundle, composition.GetProperty("custodian").GetProperty("reference").GetString()!).GetProperty("id").GetString()
+                .ShouldBe(AbdmDocumentBuilder.Uuid($"Organization/{hospital:D}"));
+
+            var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
+            exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: clinical note");
+            exportAudit.EntityId.ShouldBe(note.Id.ToString("D"));
+
+            // The patient's app is offered the note to link, by its kind and when it was signed: not the counselling note,
+            // the draft, or an addendum on its own.
+            await using var linking = server.Services.CreateAsyncScope();
+            var offered = (await linking.ServiceProvider.GetRequiredService<AbdmRecordLoader>().ListExportableAsync(patient.Id, 50, Ct))
+                .Where(r => r.Type == AbdmRecordType.ClinicalNote).ToList();
+            offered.Select(r => r.Id).ShouldBe([note.Id]);
+            offered[0].Label.ShouldNotBeNull().ShouldStartWith("Progress note, signed at ");
+        }
+        finally
+        {
+            await SwitchAsync(enabled: false);
+        }
+    }
+
     /// <summary>Moves the patient's registration to a new facility of the hospital, an annexe, whose id is returned.</summary>
     private async Task<Guid> RegisteredAtAnnexeAsync(Guid patientId)
     {
-        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        var annexe = await admin.PostAsync<Created>("/api/v1/masters/facilities", new SaveFacilityRequest(
-            Letters(6).ToUpperInvariant(), "Nana Hospitals Annexe " + Letters(4), null, new Address { City = "Chennai", PinCode = "600002" },
-            null, null, null, null, null, null, null, null, null, null, IsActive: false, null));
+        var annexe = await AnnexeAsync();
         await using var scope = server.Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Patient>().Where(p => p.Id == patientId)
-            .ExecuteUpdateAsync(s => s.SetProperty(p => p.RegisteredFacilityId, annexe.Id), Ct);
-        return annexe.Id;
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.RegisteredFacilityId, annexe), Ct);
+        return annexe;
+    }
+
+    /// <summary>A new facility of the hospital, an annexe.</summary>
+    private async Task<Guid> AnnexeAsync()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        return (await admin.PostAsync<Created>("/api/v1/masters/facilities", new SaveFacilityRequest(
+            Letters(6).ToUpperInvariant(), "Nana Hospitals Annexe " + Letters(4), null, new Address { City = "Chennai", PinCode = "600002" },
+            null, null, null, null, null, null, null, null, null, null, IsActive: false, null))).Id;
     }
 
     private sealed record Created(Guid Id);

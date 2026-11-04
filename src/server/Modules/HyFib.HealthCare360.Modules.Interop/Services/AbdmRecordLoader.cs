@@ -33,7 +33,8 @@ internal sealed record AbdmSource(Guid PatientId, Guid FacilityId, string? NotEx
 
     /// <summary>
     /// What tells the record apart from the patient's other records of its kind on the same day, in the name the patient
-    /// sees when it is linked to their ABHA: a vaccine and its dose ("BCG", "Pentavalent, dose 2"); none for other kinds.
+    /// sees when it is linked to their ABHA: a vaccine and its dose ("BCG", "Pentavalent, dose 2"), a note's kind and when
+    /// it was signed ("Progress note, signed at 3:45 pm"); none for other kinds.
     /// </summary>
     public string? Label { get; init; }
 }
@@ -144,6 +145,21 @@ internal sealed class AbdmRecordLoader(
                     };
             }
 
+            case AbdmRecordType.ClinicalNote:
+            {
+                var row = await db.Set<ClinicalNote>().AsNoTracking().Where(n => n.Id == id)
+                    .Select(n => new { n.PatientId, n.FacilityId, n.Type, n.IsSigned, n.SignedAt, n.AmendsNoteId, n.CreatedAt })
+                    .FirstOrDefaultAsync(ct);
+                return row is null ? NotFound(type, id)
+                    : new AbdmSource(row.PatientId, row.FacilityId,
+                        NoteNotExportable(row.Type, isSigned: row.IsSigned && row.SignedAt is not null, isAddendum: row.AmendsNoteId is not null))
+                    {
+                        // A note is the hospital's record from when it is signed.
+                        RecordedAt = row.SignedAt ?? row.CreatedAt,
+                        Label = NoteLabel(row.Type, row.SignedAt ?? row.CreatedAt),
+                    };
+            }
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports.");
         }
@@ -164,11 +180,35 @@ internal sealed class AbdmRecordLoader(
         doseNumber is int dose && dose > 0 ? $"{vaccineName.Trim()}, dose {dose}" : vaccineName.Trim();
 
     /// <summary>
+    /// Why a note is not exported. A counselling note is kept to those caring for the patient: an ABDM consent names the
+    /// kinds of record it lets go (its HI types), and none names counselling notes apart from the patient's other health
+    /// documents, so one exported would go wherever a consent for those lets them go. An addendum goes with the note it
+    /// adds to, which carries every addendum signed to it. A draft is not yet the hospital's record.
+    /// </summary>
+    internal static string? NoteNotExportable(ClinicalNoteType type, bool isSigned, bool isAddendum) =>
+        type == ClinicalNoteType.Counselling
+            ? "A counselling note is not exported: an ABDM consent cannot keep counselling notes apart from the patient's other health documents."
+        : isAddendum ? "An addendum is exported with the note it adds to. Export that note: it carries every addendum signed to it."
+        : !isSigned ? "Sign the note before exporting it."
+        : null;
+
+    /// <summary>
+    /// A note as the patient knows it among the day's others: its kind and when it was signed, in IST ("Progress note,
+    /// signed at 3:45 pm"), never its title, which is the writer's free text and goes no further than the record. A note
+    /// of no stated kind is named by the time alone, as the record's kind already says "clinical note".
+    /// </summary>
+    internal static string NoteLabel(ClinicalNoteType type, DateTimeOffset signedAt) =>
+        type == ClinicalNoteType.Other
+            ? $"signed at {DocumentFormat.Time(signedAt)}"
+            : $"{DocumentReferenceMapper.NoteName(type)}, signed at {DocumentFormat.Time(signedAt)}";
+
+    /// <summary>
     /// The patient's records the export would send, newest first, at most <paramref name="limit"/>: signed out-patient
-    /// consultations and discharge summaries, issued prescriptions, released lab, radiology and cardiology reports, and
-    /// vaccine doses given here (the same rules as <see cref="LocateAsync"/>), in every facility of the hospital, each
-    /// with its <see cref="AbdmSource.Label"/>. Records kept under a duplicate UHID merged into the patient are not
-    /// included; they are linked from the record staff see.
+    /// consultations and discharge summaries, issued prescriptions, released lab, radiology and cardiology reports,
+    /// vaccine doses given here, and signed clinical notes other than counselling notes and addenda (the same rules as
+    /// <see cref="LocateAsync"/>), in every facility of the hospital, each with its <see cref="AbdmSource.Label"/>.
+    /// Records kept under a duplicate UHID merged into the patient are not included; they are linked from the record staff
+    /// see.
     /// </summary>
     public async Task<IReadOnlyList<(AbdmRecordType Type, Guid Id, DateTimeOffset RecordedAt, string? Label)>> ListExportableAsync(
         Guid patientId, int limit, CancellationToken ct)
@@ -195,6 +235,10 @@ internal sealed class AbdmRecordLoader(
                 .Where(i => i.PatientId == patientId && !i.IsExternal && !i.IsEnteredInError)
                 .OrderByDescending(i => i.CreatedAt).Take(limit).Select(i => new { i.Id, i.CreatedAt, i.VaccineName, i.DoseNumber }).ToListAsync(ct))
             .Select(i => (AbdmRecordType.Immunization, i.Id, i.CreatedAt, (string?)DoseLabel(i.VaccineName, i.DoseNumber))));
+        found.AddRange((await db.Set<ClinicalNote>().AsNoTracking()
+                .Where(n => n.PatientId == patientId && n.IsSigned && n.SignedAt != null && n.AmendsNoteId == null && n.Type != ClinicalNoteType.Counselling)
+                .OrderByDescending(n => n.SignedAt).Take(limit).Select(n => new { n.Id, SignedAt = n.SignedAt!.Value, n.Type }).ToListAsync(ct))
+            .Select(n => (AbdmRecordType.ClinicalNote, n.Id, n.SignedAt, (string?)NoteLabel(n.Type, n.SignedAt))));
 
         // A signed prescription is issued only where the hospital's DSC rule lets it be (the printout's rule).
         var prescriptions = await db.Set<Prescription>().AsNoTracking()
@@ -222,6 +266,7 @@ internal sealed class AbdmRecordLoader(
             AbdmRecordType.OpConsultation => "Encounter",
             AbdmRecordType.DischargeSummary => nameof(DischargeSummary),
             AbdmRecordType.Immunization => nameof(Immunization),
+            AbdmRecordType.ClinicalNote => "Note",
             _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
         },
         id);
@@ -267,6 +312,7 @@ internal sealed class AbdmRecordLoader(
         AbdmRecordType.OpConsultation => ConsultationAsync(id, source, ct),
         AbdmRecordType.DischargeSummary => DischargeSummaryAsync(id, source, ct),
         AbdmRecordType.Immunization => ImmunizationAsync(id, source, ct),
+        AbdmRecordType.ClinicalNote => ClinicalNoteAsync(id, source, ct),
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
     };
 
@@ -287,7 +333,7 @@ internal sealed class AbdmRecordLoader(
             .FirstAsync(ct);
         var lines = await Medications.SignedLines(i => true, p => p.Id == id).ToListAsync(ct);
         var (visit, encounter) = await EncounterRowsAsync(header.EncounterId, header.VisitId, header.AdmissionId, ct);
-        var context = await ContextAsync(source, visit, encounter, [header.PractitionerId], [header.AdmissionId], [], PrescriptionPdf, id, ct);
+        var context = await ContextAsync(source, visit, encounter, [header.PractitionerId], [header.AdmissionId], [], [], PrescriptionPdf, id, ct);
         return AbdmRecords.Prescription(new PrescriptionData(
             context, id, header.PrescriptionNumber, header.PractitionerId, header.PrescribedAt, header.SignedAt, header.Advice, header.CreatedAt, header.UpdatedAt, lines));
     }
@@ -297,7 +343,7 @@ internal sealed class AbdmRecordLoader(
         var report = (await Reports.CompleteAsync(await Reports.LabReports(r => r.Id == id).ToListAsync(ct), ct)).First();
         var results = await Observations.ReleasedResultsAsync(r => r.LabOrderId == report.LabOrderId, ct);
         var (visit, encounter) = await EncounterRowsAsync(null, report.VisitId, null, ct);
-        var context = await ContextAsync(source, visit, encounter, [], [], [], LabReportPdf, id, ct);
+        var context = await ContextAsync(source, visit, encounter, [], [], [], [], LabReportPdf, id, ct);
         context = context with { ReferralLabs = await ReferralLabsAsync(results, ct) };
         return AbdmRecords.LabReport(new LabReportData(context, report, results));
     }
@@ -310,7 +356,7 @@ internal sealed class AbdmRecordLoader(
         var (visit, encounter) = await EncounterRowsAsync(null, report.VisitId, null, ct);
 
         // The printed report is made from its imaging study, as everything in radiology is.
-        var context = await ContextAsync(source, visit, encounter, [.. doctors.Values.Select(p => (Guid?)p)], [], [], RadiologyReportPdf, report.ImagingStudyId, ct);
+        var context = await ContextAsync(source, visit, encounter, [.. doctors.Values.Select(p => (Guid?)p)], [], [], [], RadiologyReportPdf, report.ImagingStudyId, ct);
         return AbdmRecords.RadiologyReport(new RadiologyReportData(context, report, doctors));
     }
 
@@ -357,7 +403,7 @@ internal sealed class AbdmRecordLoader(
         var (visit, encounter) = await EncounterRowsAsync(id, null, null, ct);
         var context = await ContextAsync(source, visit, encounter,
             [note.PractitionerId, note.SignedByPractitionerId, note.AmendedByPractitionerId, note.ReferralPractitionerId, .. lines.Select(l => (Guid?)l.PractitionerId)],
-            [.. lines.Select(l => l.AdmissionId)], [note.ReferralDepartmentId], null, id, ct);
+            [.. lines.Select(l => l.AdmissionId)], [note.ReferralDepartmentId], [], null, id, ct);
         return AbdmRecords.Consultation(new ConsultationData(context, note, diagnoses, vitals, lines, allergies));
     }
 
@@ -394,7 +440,7 @@ internal sealed class AbdmRecordLoader(
         var (visit, encounter) = await EncounterRowsAsync(stayVisitId is null ? summary.EncounterId : null, stayVisitId, null, ct);
         var context = await ContextAsync(source, visit, encounter,
             [summary.PractitionerId, summary.SignedByPractitionerId, amender, .. lines.Select(l => (Guid?)l.PractitionerId)],
-            [summary.AdmissionId, .. lines.Select(l => l.AdmissionId)], [], DischargeSummaryPdf, id, ct);
+            [summary.AdmissionId, .. lines.Select(l => l.AdmissionId)], [], [], DischargeSummaryPdf, id, ct);
         context = context with { ReferralLabs = await ReferralLabsAsync(results, ct) };
         return AbdmRecords.DischargeSummary(new DischargeSummaryData(context, summary, diagnoses, lines, allergies, reports, results, amender));
     }
@@ -439,7 +485,7 @@ internal sealed class AbdmRecordLoader(
         var (visit, encounter) = await EncounterRowsAsync(null, report.VisitId, null, ct);
 
         // The printed report is made from its study, as everything in cardiology is.
-        var context = await ContextAsync(source, visit, encounter, [.. doctors.Values.Select(p => (Guid?)p)], [], [], CardiologyReportPdf, report.CardiologyStudyId, ct);
+        var context = await ContextAsync(source, visit, encounter, [.. doctors.Values.Select(p => (Guid?)p)], [], [], [], CardiologyReportPdf, report.CardiologyStudyId, ct);
         return AbdmRecords.CardiologyReport(new CardiologyReportData(context, report, doctors));
     }
 
@@ -451,8 +497,37 @@ internal sealed class AbdmRecordLoader(
     {
         var dose = await Doses.Immunizations(i => i.Id == id).FirstAsync(ct);
         var (visit, encounter) = await EncounterRowsAsync(dose.EncounterId, null, null, ct);
-        var context = await ContextAsync(source, visit, encounter, [], [], [], null, id, ct);
+        var context = await ContextAsync(source, visit, encounter, [], [], [], [], null, id, ct);
         return AbdmRecords.Immunization(new ImmunizationData(context, dose));
+    }
+
+    /// <summary>
+    /// A signed note with every addendum signed to it since, an addendum to an addendum included, from whichever facility
+    /// it was written in (<see cref="DocumentReferenceProvider.SignedAddendaAsync"/>), and the encounter or stay the note
+    /// was written in. Each part names its own writer, signer and facility. The hospital prints no clinical note, so the
+    /// document has no PDF.
+    /// </summary>
+    private async Task<AbdmDocument> ClinicalNoteAsync(Guid id, AbdmSource source, CancellationToken ct)
+    {
+        var note = (await DocumentReferences.SignedNotesAsync(n => n.Id == id, ct)).Single();
+        var addenda = new List<ClinicalNoteRow>();
+        var seen = new HashSet<Guid> { id };
+        for (Guid[] parents = [id]; parents.Length > 0;)
+        {
+            // An addendum to a counselling note is one too, and stays with it.
+            var found = (await DocumentReferences.SignedAddendaAsync(parents, ct))
+                .Where(a => a.Type != ClinicalNoteType.Counselling && seen.Add(a.Id))
+                .ToList();
+            addenda.AddRange(found);
+            parents = [.. found.Select(a => a.Id)];
+        }
+
+        var (visit, encounter) = await EncounterRowsAsync(note.EncounterId, null, note.AdmissionId, ct);
+        List<ClinicalNoteRow> parts = [note, .. addenda];
+        var context = await ContextAsync(source, visit, encounter,
+            [.. parts.SelectMany(p => new[] { p.AuthorPractitionerId, p.SignedByPractitionerId })],
+            [.. parts.Select(p => p.AdmissionId)], [], [.. parts.Select(p => (Guid?)p.FacilityId)], null, id, ct);
+        return AbdmRecords.ClinicalNote(new ClinicalNoteData(context, note, addenda));
     }
 
     /// <summary>
@@ -501,14 +576,16 @@ internal sealed class AbdmRecordLoader(
     }
 
     /// <summary>
-    /// The patient, the names every row refers to, the doctors' and facility's master details and the printed PDF
+    /// The patient, the names every row refers to, the doctors' and facilities' master details (the record's facility, and
+    /// <paramref name="facilities"/> where parts of it were written: a note's addenda) and the printed PDF
     /// (<paramref name="pdfKind"/> null for none).
     /// </summary>
     private async Task<AbdmContext> ContextAsync(
         AbdmSource source, VisitRow? visit, ClinicalEncounterRow? encounter, IEnumerable<Guid?> practitioners, IEnumerable<Guid?> admissions,
-        IEnumerable<Guid?> departments, string? pdfKind, Guid id, CancellationToken ct)
+        IEnumerable<Guid?> departments, IEnumerable<Guid?> facilities, string? pdfKind, Guid id, CancellationToken ct)
     {
-        var ids = new ReferenceIds().Facility(source.FacilityId).Practitioner([.. practitioners]).Admission([.. admissions]).Department([.. departments]);
+        var ids = new ReferenceIds().Facility(source.FacilityId).Facility([.. facilities]).Practitioner([.. practitioners]).Admission([.. admissions])
+            .Department([.. departments]);
         if (visit is not null)
         {
             ids.Practitioner(visit.PractitionerId, visit.Admission?.AdmittingPractitionerId, visit.Admission?.ConsultantPractitionerId)

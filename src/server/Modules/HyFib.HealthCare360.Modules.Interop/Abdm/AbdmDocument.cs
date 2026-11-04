@@ -26,6 +26,12 @@ public enum AbdmRecordType
 
     /// <summary>A vaccine dose given here, with the next dose when one is due (ImmunizationRecord).</summary>
     Immunization,
+
+    /// <summary>
+    /// A signed progress, procedure, referral or other clinical note, with the addenda signed to it since
+    /// (HealthDocumentRecord). A counselling note is not exported.
+    /// </summary>
+    ClinicalNote,
 }
 
 /// <summary>
@@ -37,6 +43,12 @@ internal sealed record AbdmSection(
     AbdmCode Code, string Title, IReadOnlyList<string> Text, IReadOnlyList<R4.Resource> Entries, string? EntriesHeading = null)
 {
     public bool IsEmpty => Text.Count == 0 && Entries.Count == 0;
+
+    /// <summary>
+    /// Whether the free text is what the entries hold, so the narrative does not list them again after it: a note's
+    /// section, whose text is the note and its addenda as signed, and whose entries are those documents.
+    /// </summary>
+    public bool TextIsEntries { get; init; }
 }
 
 /// <summary>
@@ -57,8 +69,8 @@ internal sealed record AbdmDocument
     /// <summary>
     /// The name to save it under, as its PDF is named: <c>prescription-NHRX260000123-abdm.json</c>,
     /// <c>lab-report-LR2600042-abdm.json</c>, <c>radiology-report-NHRD260000042-abdm.json</c> (the accession number),
-    /// <c>consultation-NH-000123-2026-09-25-abdm.json</c>, <c>discharge-summary-NH-000123-2026-09-25-abdm.json</c> (the
-    /// UHID and the day in IST).
+    /// <c>consultation-NH-000123-2026-09-25-abdm.json</c>, <c>discharge-summary-NH-000123-2026-09-25-abdm.json</c>,
+    /// <c>progress-note-NH-000123-2026-09-25-abdm.json</c> (the UHID and the day in IST).
     /// </summary>
     public required string FileName { get; init; }
 

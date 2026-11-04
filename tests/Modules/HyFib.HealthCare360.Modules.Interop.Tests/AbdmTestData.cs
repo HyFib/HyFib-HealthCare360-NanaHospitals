@@ -55,6 +55,14 @@ internal static class AbdmTestData
     /// <summary>A Td dose given in the consultation (<see cref="EncounterId"/>).</summary>
     public static readonly Guid DoseId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab016");
 
+    /// <summary>
+    /// A progress note Dr. Asha Rao wrote in the consultation, the cardiologist's addendum to it, and Dr. Rao's user
+    /// account.
+    /// </summary>
+    public static readonly Guid NoteId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab017");
+    public static readonly Guid AddendumId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab018");
+    public static readonly Guid DoctorUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab019");
+
     private static readonly DateTimeOffset Seen = TestData.Now.AddHours(-2);
     private static readonly DateTimeOffset Admitted = TestData.Now.AddDays(-20);
     private static readonly DateTimeOffset Discharged = TestData.Now.AddDays(-15);
@@ -442,6 +450,51 @@ internal static class AbdmTestData
 
     public static ImmunizationData ImmunizationRecord(ImmunizationRow? dose = null) =>
         new(Context(encounter: Consultation()), dose ?? TdDose());
+
+    /// <summary>
+    /// The progress note Dr. Asha Rao wrote in the consultation and signed at 9:20 IST, in two paragraphs, as the FHIR API
+    /// serves it (who wrote and signed it named from their accounts).
+    /// </summary>
+    public static ClinicalNoteRow ProgressNote() => new()
+    {
+        Id = NoteId,
+        PatientId = TestData.PatientId,
+        FacilityId = TestData.FacilityId,
+        EncounterId = EncounterId,
+        Type = ClinicalNoteType.ProgressNote,
+        Title = "Fever review",
+        Body = "Fever settled since last evening; tolerating oral fluids.\r\n\r\nPlan: paracetamol only when needed. Review with the CBC report.",
+        AuthorPractitionerId = TestData.DoctorId,
+        AuthorUserId = DoctorUserId,
+        AuthorUserName = "Asha Rao",
+        SignedByUserId = DoctorUserId,
+        SignedByPractitionerId = TestData.DoctorId,
+        SignedByUserName = "Asha Rao",
+        SignedAt = Seen.AddMinutes(50),
+        CreatedAt = Seen.AddMinutes(40),
+        UpdatedAt = Seen.AddMinutes(50),
+    };
+
+    /// <summary>The cardiologist's addendum to the progress note, signed the next morning at 8:30 IST.</summary>
+    public static ClinicalNoteRow Addendum() => ProgressNote() with
+    {
+        Id = AddendumId,
+        Title = "Addendum to Fever review",
+        Body = "ECG reviewed: sinus rhythm, no ischaemic change. No cardiology follow-up needed.",
+        AuthorPractitionerId = CardiologistId,
+        AuthorUserId = CardiologistUserId,
+        AuthorUserName = "Vikram Shah",
+        SignedByUserId = CardiologistUserId,
+        SignedByPractitionerId = CardiologistId,
+        SignedByUserName = "Vikram Shah",
+        AmendsNoteId = NoteId,
+        SignedAt = Seen.AddDays(1),
+        CreatedAt = Seen.AddDays(1).AddMinutes(-10),
+        UpdatedAt = Seen.AddDays(1),
+    };
+
+    public static ClinicalNoteData ClinicalNoteRecord(params ClinicalNoteRow[] addenda) =>
+        new(Context(encounter: Consultation()), ProgressNote(), addenda);
 
     public static VisitRow StayVisit() => new()
     {

@@ -280,6 +280,7 @@ internal sealed class AbdmLinkingService(
         AbdmRecordType.OpConsultation => "op-consultation",
         AbdmRecordType.Prescription => "prescription",
         AbdmRecordType.Immunization => "immunization",
+        AbdmRecordType.ClinicalNote => "clinical-note",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
     } + "/" + id.ToString("D");
 

@@ -148,6 +148,7 @@ internal sealed class AbdmBundleService(
         AbdmRecordType.OpConsultation => "consultation note",
         AbdmRecordType.Prescription => "prescription",
         AbdmRecordType.Immunization => "immunisation record",
+        AbdmRecordType.ClinicalNote => "clinical note",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
     };
 
