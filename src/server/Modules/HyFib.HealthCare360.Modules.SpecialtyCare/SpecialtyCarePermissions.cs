@@ -37,6 +37,7 @@ public static class SpecialtyCarePermissions
     public const string BloodBankIssue = "bloodbank.units.issue";
     public const string BloodBankReactions = "bloodbank.reactions.report";
     public const string BloodBankReactionsInvestigate = "bloodbank.reactions.investigate";
+    public const string BloodBankTransfuse = "bloodbank.transfuse";
 
     // ------------------------------------------------------------------ termination of pregnancy (MTP Act; gap R-2c)
     public const string MtpRead = "mtp.read";
@@ -77,6 +78,10 @@ public static class SpecialtyCarePermissions
         new(BloodBankIssue, BloodBank, "Issue blood units and accept returns", [SystemRoles.BloodBankOfficer]),
         new(BloodBankReactions, BloodBank, "Report transfusion reactions", [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.BloodBankOfficer]),
         new(BloodBankReactionsInvestigate, BloodBank, "Investigate and close transfusion reaction reports", [SystemRoles.BloodBankOfficer]),
+
+        // The two staff at the bedside: one starts the unit, the other witnesses the check at the same screen.
+        new(BloodBankTransfuse, BloodBank, "Check a unit of blood at the bedside, start and end its transfusion, and witness another's check",
+            [SystemRoles.Nurse, SystemRoles.Doctor]),
 
         // MTP Act s.5A: no one but a person authorised may learn of a termination. No clinical role holds these by default:
         // grant mtp.certify, with patients.sensitive.mtp, to the gynaecologists the place's approval names.

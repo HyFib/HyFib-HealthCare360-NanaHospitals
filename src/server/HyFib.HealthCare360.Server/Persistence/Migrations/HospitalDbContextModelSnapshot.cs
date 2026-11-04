@@ -31539,6 +31539,261 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("donor_screenings", "specialtycare");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank.Transfusion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ComponentType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("component_type");
+
+                    b.Property<string>("ConsentDeferredReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("consent_deferred_reason");
+
+                    b.Property<Guid?>("ConsentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("consent_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<string>("EndedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("ended_by_name");
+
+                    b.Property<Guid?>("EndedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ended_by_user_id");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid>("IssueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("issue_id");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("request_id");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("StartedByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("started_by_name");
+
+                    b.Property<Guid?>("StartedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("started_by_user_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("StopReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("stop_reason");
+
+                    b.Property<string>("UnitNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("unit_number");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<int?>("VolumeMl")
+                        .HasColumnType("integer")
+                        .HasColumnName("volume_ml");
+
+                    b.Property<string>("WitnessName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("witness_name");
+
+                    b.Property<Guid>("WitnessUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("witness_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_transfusions");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_transfusions_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_transfusions_is_deleted");
+
+                    b.HasIndex("IssueId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_transfusions_issue_id");
+
+                    b.HasIndex("RequestId")
+                        .HasDatabaseName("ix_transfusions_request_id");
+
+                    b.HasIndex("PatientId", "StartedAt")
+                        .HasDatabaseName("ix_transfusions_patient_id_started_at");
+
+                    b.HasIndex("Status", "RequestId")
+                        .HasDatabaseName("ix_transfusions_status_request_id");
+
+                    b.ToTable("transfusions", "specialtycare");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank.TransfusionObservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<int?>("DiastolicMmHg")
+                        .HasColumnType("integer")
+                        .HasColumnName("diastolic_mm_hg");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("kind");
+
+                    b.Property<int?>("PulsePerMinute")
+                        .HasColumnType("integer")
+                        .HasColumnName("pulse_per_minute");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recorded_at");
+
+                    b.Property<string>("RecordedByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("recorded_by_name");
+
+                    b.Property<Guid?>("RecordedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("recorded_by_user_id");
+
+                    b.Property<int?>("RespiratoryRate")
+                        .HasColumnType("integer")
+                        .HasColumnName("respiratory_rate");
+
+                    b.Property<int?>("SpO2Percent")
+                        .HasColumnType("integer")
+                        .HasColumnName("sp_o2percent");
+
+                    b.Property<int?>("SystolicMmHg")
+                        .HasColumnType("integer")
+                        .HasColumnName("systolic_mm_hg");
+
+                    b.Property<decimal?>("TemperatureC")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("temperature_c");
+
+                    b.Property<Guid>("TransfusionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("transfusion_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_transfusion_observations");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_transfusion_observations_is_deleted");
+
+                    b.HasIndex("TransfusionId", "RecordedAt")
+                        .HasDatabaseName("ix_transfusion_observations_transfusion_id_recorded_at");
+
+                    b.ToTable("transfusion_observations", "specialtycare");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank.TransfusionReaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -46621,6 +46876,40 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_donor_screenings_donors_donor_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank.Transfusion", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank.BloodIssue", null)
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_transfusions_blood_issues_issue_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_transfusions_patients_patient_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank.BloodRequest", null)
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_transfusions_blood_requests_request_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank.TransfusionObservation", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank.Transfusion", null)
+                        .WithMany("Observations")
+                        .HasForeignKey("TransfusionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_transfusion_observations_transfusions_transfusion_id");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank.TransfusionReaction", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank.BloodIssue", null)
@@ -47688,6 +47977,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Scheduling.Domain.Appointment", b =>
                 {
                     b.Navigation("ReplacedOrders");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank.Transfusion", b =>
+                {
+                    b.Navigation("Observations");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.GoodsReceiptNote", b =>

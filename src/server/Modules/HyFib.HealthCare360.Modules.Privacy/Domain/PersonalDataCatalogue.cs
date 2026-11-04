@@ -171,6 +171,7 @@ public static class PersonalDataCatalogue
                 new("specialtycare.blood_requests", "Blood requests"),
                 new("specialtycare.crossmatches", "Blood cross-matches", Counted: false),
                 new("specialtycare.blood_issues", "Blood transfusions"),
+                new("specialtycare.transfusions", "Blood transfusions: the bedside check, observations and how each ended", Counted: false),
                 new("specialtycare.transfusion_reactions", "Transfusion reactions"),
                 new("specialtycare.donations", "Blood donated for you", Counted: false, Column: "replacement_for_patient_id"),
                 new("specialtycare.dialysis_profiles", "Dialysis plan", Counted: false),

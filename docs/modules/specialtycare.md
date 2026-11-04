@@ -119,10 +119,47 @@ and write a PHI-access audit entry. Donor detail views write a `donor.accessed` 
 | GET | `/requests/{id}/compatible-units` | `bloodbank.crossmatch.perform` | → `CompatibleUnitDto[]` (compatible, in date, first-expiry-first-out) |
 | POST | `/requests/{id}/crossmatches` | `bloodbank.crossmatch.perform` | `RecordCrossMatchRequest` (componentId, method, result) → `CrossMatchDto`; a compatible result reserves the unit |
 | POST | `/requests/{id}/issues` | `bloodbank.units.issue` | `IssueBloodRequest` (componentId, issuedToName) → `BloodIssueDto` |
-| POST | `/issues/{id}/return` | `bloodbank.units.issue` | `ReturnBloodRequest` (temperatureMaintained, notes) → `BloodIssueDto` (restocked or discarded) |
+| POST | `/issues/{id}/return` | `bloodbank.units.issue` | `ReturnBloodRequest` (temperatureMaintained, notes) → `BloodIssueDto` (restocked or discarded). Refused once the unit was started on the ward (`bloodbank.transfusion_started`) |
+| GET | `/patients/{patientId}/units` | `bloodbank.transfuse` or `bloodbank.read` | → `PatientBloodUnits`: the patient's units issued, newest first, each with when it must be started by, until when its cross-match stands, the consent a start would rely on and its transfusion (audited as a read of the patient's record) |
+| POST | `/issues/{id}/transfusion` | `bloodbank.transfuse` | `StartTransfusionRequest` (wristbandUhid, bagUnitNumber, witnessConfirmationId, baseline observations, consentDeferredReason) → 201 `TransfusionDto`. The bedside check, below |
+| POST | `/transfusions/{id}/observations` | `bloodbank.transfuse` | `RecordTransfusionObservationRequest` (kind FifteenMinutes/Later, recordedAt, values, version) → `TransfusionDto` |
+| POST | `/transfusions/{id}/end` | `bloodbank.transfuse` | `EndTransfusionRequest` (endedAt, stopped, stopReason, volumeMl, observations, version) → `TransfusionDto` |
 | POST | `/issues/{id}/reactions` | `bloodbank.reactions.report` | `ReportReactionRequest` (onset, symptoms[], vitals, transfusionStopped, volume, actions, severity) → 201 `{id}`; alerts investigators |
 | GET | `/reactions?status=` | `bloodbank.read` | → paged `TransfusionReactionDto` |
 | POST | `/reactions/{id}/investigate` · `/close` | `bloodbank.reactions.investigate` | `CloseReactionRequest` (type (HvPI classification), severity, findings, reportedToHaemovigilance) → 204 |
+
+**The bedside check.** A unit is started on the ward only after two staff check it at the bedside, against the
+patient and the issue (BSH guideline on the administration of blood components, 2017). On the nursing chart's *Blood*
+tab, the nurse who starts it:
+
+* reads the patient's wristband and the bag, by scanning them or typing what they say. The server compares them with
+  the issue. Another patient's wristband (`bloodbank.wrong_patient`) or another bag (`bloodbank.wrong_unit`) starts
+  nothing, and each is audited as a near miss (`bloodbank.bedside_mismatch`, a warning);
+* takes the observations before the start: temperature, pulse, blood pressure, respiratory rate, and SpO₂ when measured;
+* has the second member of staff confirm at the same screen with their own user name and password, as a witness on
+  the MAR does (ADR-014; purpose `blood.bedside_check`). The witness holds `bloodbank.transfuse` and is never the one
+  starting it. The confirmation is spent in the start's own save.
+
+The server refuses the start when:
+
+* the patient's stay has ended (`bloodbank.stay_ended`): a unit issued but never started does not hold the discharge,
+  and goes back to the blood bank, so a bedside dialog left open from before cannot start it after;
+* the unit has expired (`bloodbank.unit_expired`);
+* its cross-match is more than 72 hours old, unless it was released in an emergency (`bloodbank.crossmatch_expired`);
+* it left the blood bank more than 4 hours ago, so it cannot be given in time and goes back to be discarded
+  (`bloodbank.out_of_storage_too_long`);
+* the patient's consent to transfusion is not recorded for this stay (`bloodbank.consent_required`): given since the
+  admission, or, for blood asked for outside an admission, in the day before the request. A unit released in an
+  emergency may start without it when the nurse says why it cannot be taken now; the start then records the reason and
+  is audited as a warning (`bloodbank.consent_deferred`).
+
+While it runs, observations are added (at 15 minutes, and later), the unit cannot be returned to stock, and the stay
+cannot be discharged (`discharge.transfusion_running`). Each holds when both happen at the same moment: the start is
+saved under the stay's lock, which the discharge takes before it asks for the running units, so one of the two sees the
+other; and the start writes the issue, as a return does, so of a start and a return saved together the second is
+refused on the issue's version (409). It ends completed or stopped, with the volume given and the
+observations at the end; a stop says why (`bloodbank.transfusion_stopped`, a warning), and a reaction is reported as
+before. With the issue, the transfusion says what became of each unit: returned, or transfused.
 
 **Unit labels (BB-03).** From a donation's components and from a unit, the staff app prints a label per unit,
 without a dialog, on the workstation's label printer: blood group with POS or NEG in full, component and volume, the
@@ -168,6 +205,7 @@ case, its print and the register export are audited.
 | `bloodbank.read` | BloodBankOfficer, Doctor, Nurse, HospitalAdmin |
 | `bloodbank.donors.manage`, `bloodbank.inventory.manage`, `bloodbank.crossmatch.perform`, `bloodbank.units.issue`, `bloodbank.reactions.investigate` | BloodBankOfficer |
 | `bloodbank.requests.create`, `bloodbank.reactions.report` | Doctor, Nurse, BloodBankOfficer |
+| `bloodbank.transfuse` (check a unit at the bedside, start and end it, witness another's check) | Nurse, Doctor |
 | `mtp.read`, `mtp.register` | MrdOfficer |
 | `mtp.certify` | none: grant it, with `patients.sensitive.mtp`, to the gynaecologists the place's approval names |
 
@@ -194,6 +232,10 @@ its day holds nothing; the discharge deals with it as above. Receiving the patie
 take the stay's lock (`EncounterLocks`) and read the case again under it, in the transaction that saves them, as the
 discharge asks the theatre under it: a discharge saved at the same moment either waits for the theatre and is refused,
 or commits first, and the theatre then finds the case cancelled or given back.
+
+A unit of blood being transfused holds the stay the same way (`TransfusionDischargeHolds`): the discharge is refused
+with 422 `discharge.transfusion_running` ("Unit {no.} is being transfused: end it on the ward, completed or stopped,
+before the discharge"). A unit issued but not started holds nothing; it goes back to the blood bank.
 
 ## Charges (`IChargePoster`, idempotent on SourceModule + SourceReference)
 | SourceModule | SourceReference | Service code | When |
@@ -238,5 +280,5 @@ With `SeedDemoData`: theatres OT-1 (Major), OT-2 (Ortho), OT-3 (Minor); dialysis
 `theatres`, `surgery_bookings` (pre-op and WHO checklists as `jsonb`), `anaesthesia_records` (vitals, drugs and fluids as `jsonb`), `operation_notes`,
 `surgery_materials`, `dialysis_machines`, `dialysis_profiles`, `dialyzers`, `dialysis_sessions` (filtered unique indexes: one active session per
 machine per shift and per patient per shift), `physio_referrals`, `physio_assessments`, `physio_treatment_plans`, `physio_sessions`, `donors`,
-`donor_screenings`, `donations`, `blood_components`, `blood_requests`, `crossmatches`, `blood_issues`, `transfusion_reactions`, `admissions`,
+`donor_screenings`, `donations`, `blood_components`, `blood_requests`, `crossmatches`, `blood_issues`, `transfusions` (one per issue), `transfusion_observations`, `transfusion_reactions`, `admissions`,
 `mtp_cases` (opinions as `jsonb`).

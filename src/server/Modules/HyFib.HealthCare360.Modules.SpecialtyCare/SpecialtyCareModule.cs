@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Dialysis;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Physio;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare;
@@ -33,11 +34,14 @@ public sealed class SpecialtyCareModule : IModule
         services.AddScoped<PhysioService>();
         services.AddScoped<DonorService>();
         services.AddScoped<TransfusionService>();
+        services.AddScoped<BedsideTransfusionService>();
+        services.AddWitnessPurpose(BedsideTransfusionService.BedsideWitness);
         services.AddScoped<BloodInventoryService>();
         services.AddScoped<MtpService>();
 
         // A patient in pre-op or on the table holds the discharge (Inpatient asks every source).
         services.AddScoped<IDischargeHoldSource, TheatreDischargeHolds>();
+        services.AddScoped<IDischargeHoldSource, TransfusionDischargeHolds>();
 
         // Daily expiry housekeeping; it checks PlatformOptions.RunsJobs itself so API-only nodes stay idle.
         services.AddHostedService<BloodUnitExpiryJob>();
@@ -55,6 +59,7 @@ public sealed class SpecialtyCareModule : IModule
         DonorEndpoints.Map(endpoints);
         InventoryEndpoints.Map(endpoints);
         TransfusionEndpoints.Map(endpoints);
+        BedsideEndpoints.Map(endpoints);
         MtpEndpoints.Map(endpoints);
     }
 }

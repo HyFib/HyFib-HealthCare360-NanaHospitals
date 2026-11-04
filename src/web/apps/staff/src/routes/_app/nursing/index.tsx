@@ -28,6 +28,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBlood } from '@/modules/blood-bank/PatientBlood';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { inpatientQueries, PAYER_LABEL, type BedBoardItem, type BedOccupant } from '@/modules/inpatient/api';
 import { bedAlertBadge, bedAlertInfo } from '@/modules/inpatient/bedState';
@@ -43,8 +44,8 @@ import { WardMarDue } from '@/modules/inpatient/nursing/WardMarDue';
 import { nursingQueries } from '@/modules/inpatient/nursingApi';
 import { dutyDate, SHIFT_LABEL, shiftAt } from '@/modules/inpatient/time';
 
-type ChartTab = 'mar' | 'medicines' | 'notes' | 'handover' | 'io' | 'risk';
-const CHART_TABS: ChartTab[] = ['mar', 'medicines', 'notes', 'handover', 'io', 'risk'];
+type ChartTab = 'mar' | 'medicines' | 'blood' | 'notes' | 'handover' | 'io' | 'risk';
+const CHART_TABS: ChartTab[] = ['mar', 'medicines', 'blood', 'notes', 'handover', 'io', 'risk'];
 
 interface NursingSearch {
   wardId?: string;
@@ -136,6 +137,7 @@ function NursingStationPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const canChart = usePermission('nursing.chart');
   const canMar = usePermission('nursing.mar');
+  const canTransfuse = usePermission('bloodbank.transfuse');
   const canReadAdmissions = usePermission('inpatient.admissions.read');
   const [storedWard, setStoredWard] = useStoredState(WARD_KEY);
   const [term, setTerm] = useState('');
@@ -299,6 +301,7 @@ function NursingStationPage() {
               tab={search.tab ?? (canMar ? 'mar' : 'notes')}
               canChart={canChart}
               canMar={canMar}
+              canTransfuse={canTransfuse}
               onTab={(tab) => void navigate({ search: (prev) => ({ ...prev, tab }), replace: true })}
               onBack={() => openPatient(undefined)}
               onOpenAdmission={() =>
@@ -336,6 +339,7 @@ function PatientChart({
   tab,
   canChart,
   canMar,
+  canTransfuse,
   onTab,
   onBack,
   onOpenAdmission,
@@ -344,6 +348,7 @@ function PatientChart({
   tab: ChartTab;
   canChart: boolean;
   canMar: boolean;
+  canTransfuse: boolean;
   onTab: (tab: ChartTab) => void;
   onBack: () => void;
   onOpenAdmission: () => void;
@@ -355,6 +360,7 @@ function PatientChart({
   const tabs: { id: ChartTab; label: string; show: boolean }[] = [
     { id: 'mar', label: 'MAR', show: canView },
     { id: 'medicines', label: 'Medicines', show: canView },
+    { id: 'blood', label: 'Blood', show: canTransfuse },
     { id: 'notes', label: 'Notes', show: canChart },
     { id: 'handover', label: 'Handover', show: canChart },
     { id: 'io', label: 'Intake / output', show: canChart },
@@ -400,6 +406,7 @@ function PatientChart({
             <PatientMar admissionId={admissionId} patientId={occupant.patientId} patientName={occupant.patientName} />
           )}
           {current === 'medicines' && <MedicationOrders admissionId={admissionId} />}
+          {current === 'blood' && <PatientBlood patientId={occupant.patientId} canTransfuse={canTransfuse} />}
           {current === 'notes' && <NursingNotes admissionId={admissionId} canWrite={canChart} />}
           {current === 'handover' && <PatientHandovers admissionId={admissionId} canWrite={canChart} />}
           {current === 'io' && <IntakeOutput admissionId={admissionId} canWrite={canChart} />}

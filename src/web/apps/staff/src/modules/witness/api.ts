@@ -1,7 +1,7 @@
 import { api } from '@/lib/api';
 
 /** What a witness confirms: the server's witness purposes (`WitnessPurpose`). */
-export type WitnessPurposeKey = 'mar.dose';
+export type WitnessPurposeKey = 'mar.dose' | 'blood.bedside_check';
 
 export interface ConfirmWitnessRequest {
   userName: string;
