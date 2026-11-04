@@ -363,6 +363,7 @@ internal static class AbdmGatewayMessages
         AbdmRecordType.Prescription => "Prescription",
         AbdmRecordType.LabReport or AbdmRecordType.RadiologyReport or AbdmRecordType.CardiologyReport => "DiagnosticReport",
         AbdmRecordType.Immunization => "ImmunizationRecord",
+        AbdmRecordType.ClinicalNote => "HealthDocumentRecord",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
     };
 }

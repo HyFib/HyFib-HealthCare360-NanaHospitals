@@ -1155,3 +1155,9 @@ export const abdmDischargeSummaryBundle = (id: string) => `/api/v1/abdm/bundles/
  * under the same rules. A dose copied from the patient's card, or marked as entered in error, is not exported.
  */
 export const abdmImmunizationBundle = (id: string) => `/api/v1/abdm/bundles/immunizations/${id}`;
+
+/**
+ * A signed clinical note as an ABDM health document (HealthDocumentRecord), carrying every addendum signed to it, under
+ * the same rules. A counselling note is not exported, and an addendum goes with the note it adds to.
+ */
+export const abdmClinicalNoteBundle = (id: string) => `/api/v1/abdm/bundles/clinical-notes/${id}`;

@@ -43,6 +43,11 @@ internal static class AbdmEndpoints
         bundles.MapGet("/immunizations/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
             ExportAsync(AbdmRecordType.Immunization, id, pretty, service, ct));
 
+        // A signed clinical note by its own id, as the FHIR API's DocumentReference and the patient's Notes tab name it; it
+        // carries the addenda signed to it.
+        bundles.MapGet("/clinical-notes/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
+            ExportAsync(AbdmRecordType.ClinicalNote, id, pretty, service, ct));
+
         abdm.MapGet("/gateway", async (AbdmGatewayConfiguration gateway, CancellationToken ct) => TypedResults.Ok(await gateway.StatusAsync(ct)))
             .RequirePermission(PlatformPermissions.IntegrationsManage);
 

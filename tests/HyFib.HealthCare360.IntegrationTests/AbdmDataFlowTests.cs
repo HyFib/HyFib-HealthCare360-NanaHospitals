@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json;
+using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Immunizations;
+using HyFib.HealthCare360.Modules.Clinical.Features.Notes;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Features;
@@ -187,6 +189,72 @@ public sealed class AbdmDataFlowTests(HospitalServer server)
             await AbdmLinkingTests.RemoveGatewayAsync(server);
             await SwitchAsync(enabled: false);
         }
+    }
+
+    [Fact]
+    public async Task A_clinical_note_is_sent_with_its_addendum_only_under_a_consent_for_health_documents()
+    {
+        var (patientId, address, reference) = await LinkedNoteAsync();
+        var hiu = Fidelius.Generate();
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            await AbdmLinkingTests.SetUpGatewayAsync(server, enabled: true);
+
+            // The patient chose the note for a consent to share consultations: the consent does not cover it, and it is not sent.
+            var consultations = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.ConsentNotifyPath, Notify(consultations, "GRANTED", address, patientId, reference, "OPConsultation"));
+            var refused = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.HealthInformationRequestPath, Request(refused, consultations, hiu, PushUrl));
+            var notSent = await TransferAsync(refused);
+            notSent.Status.ShouldBe(AbdmTransferStatus.Failed);
+            notSent.Error.ShouldBe(AbdmDataFlowService.NotCovered);
+            Gateway.CallsTo(PushUrl).ShouldNotContain(c => c.Json().GetProperty("transactionId").GetString() == refused);
+
+            // Under a consent for health documents it reaches the HIU as the guide's health document, the addendum signed
+            // since in it.
+            var documents = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.ConsentNotifyPath, Notify(documents, "GRANTED", address, patientId, reference, "HealthDocumentRecord"));
+            var transaction = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.HealthInformationRequestPath, Request(transaction, documents, hiu, PushUrl));
+            var sent = await TransferAsync(transaction);
+            sent.Status.ShouldBe(AbdmTransferStatus.Transferred, sent.Error);
+            var page = Gateway.Calls.Single(c => c.Path == PushUrl && c.Json().GetProperty("transactionId").GetString() == transaction).Json();
+            var entry = page.GetProperty("entries").EnumerateArray().ShouldHaveSingleItem();
+            entry.GetProperty("careContextReference").GetString().ShouldBe(reference);
+            var keyMaterial = page.GetProperty("keyMaterial");
+            var document = Fidelius.Decrypt(
+                entry.GetProperty("content").GetString()!, hiu.PrivateKey, hiu.Nonce,
+                keyMaterial.GetProperty("dhPublicKey").GetProperty("keyValue").GetString()!, keyMaterial.GetProperty("nonce").GetString()!);
+            var bundle = JsonDocument.Parse(document.Value).RootElement;
+            var composition = bundle.GetProperty("entry")[0].GetProperty("resource");
+            composition.GetProperty("type").GetProperty("coding")[0].GetProperty("code").GetString().ShouldBe("419891008");
+            composition.GetProperty("status").GetString().ShouldBe("amended");
+            bundle.GetProperty("entry").EnumerateArray().Count(e => e.GetProperty("resource").GetProperty("resourceType").GetString() == "DocumentReference")
+                .ShouldBe(2, "the note and its addendum");
+        }
+        finally
+        {
+            await AbdmLinkingTests.RemoveGatewayAsync(server);
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    /// <summary>A patient with an ABHA address and a signed progress note, with a signed addendum, linked to it as a care context.</summary>
+    private async Task<(Guid PatientId, string Address, string Reference)> LinkedNoteAsync()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var address = "ravi." + AbdmExportTests.Letters(8) + "@sbx";
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", AbdmExportTests.Registration(AbdmExportTests.NewAbha(), address));
+        Task<ClinicalNoteDto> Signed(ClinicalNoteDto note) =>
+            doctor.PostAsync<ClinicalNoteDto>($"/api/v1/emr/notes/{note.Id}/sign", new SignNoteRequest(note.Version));
+        var note = await Signed(await doctor.PostAsync<ClinicalNoteDto>($"/api/v1/emr/patients/{patient.Id}/notes",
+            new WriteNoteRequest(null, null, ClinicalNoteType.ProgressNote, null, "Review after the antibiotics: better.")));
+        await Signed(await doctor.PostAsync<ClinicalNoteDto>($"/api/v1/emr/notes/{note.Id}/addendum", new AddendumRequest("Cough settled too.")));
+        await LinkAsync(patient.Id, address, AbdmRecordType.ClinicalNote, note.Id, "Clinical note: Progress note");
+        return (patient.Id, address, AbdmLinkingService.ReferenceNumber(AbdmRecordType.ClinicalNote, note.Id));
     }
 
     /// <summary>A patient with an ABHA address and a signed consultation linked to it as a care context.</summary>

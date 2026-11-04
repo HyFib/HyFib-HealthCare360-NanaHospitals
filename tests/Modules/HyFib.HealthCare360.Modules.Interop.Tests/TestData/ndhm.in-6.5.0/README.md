@@ -66,3 +66,9 @@ and run the Interop module tests and `AbdmExportTests`.
   the guide's own immunisation record, which must validate (`Abdm/ValidatorSetupTests`). Added 2026-11-03 from the same
   package as the vaccine codes (its sha512 matched the integrity above); the `Immunization`, `ImmunizationRecommendation`
   and `DocumentBundle` profiles already here were checked byte for byte against it.
+- `package/StructureDefinition-HealthDocumentRecord.json`: the health document profile HC360's signed clinical notes
+  must meet as ABDM documents (`AbdmDocumentTests`, `AbdmExportTests`), and
+  `example/Bundle-HealthDocumentRecord-example-01.json`: the guide's own health document, which must validate
+  (`Abdm/ValidatorSetupTests`). Added 2026-11-04 from the same package (its sha512 matched the integrity above); every
+  file already here was checked byte for byte against it, the `DocumentReference`, `Patient`, `Practitioner`,
+  `PractitionerRole`, `Organization` and `Encounter` profiles it points to among them.

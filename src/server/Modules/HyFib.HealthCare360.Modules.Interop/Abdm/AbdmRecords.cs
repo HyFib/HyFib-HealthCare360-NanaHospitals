@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Platform.Documents;
 using Modality = HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.Modality;
 using R4 = Hl7.Fhir.Model;
 
@@ -122,6 +123,12 @@ internal sealed record DischargeSummaryData(
 
 /// <summary>A vaccine dose given here, as the FHIR read API serves it.</summary>
 internal sealed record ImmunizationData(AbdmContext Context, ImmunizationRow Dose);
+
+/// <summary>
+/// A signed clinical note and the addenda signed to it since (an addendum to one of them included), each as the FHIR read
+/// API serves it: its encounter and stay kept only when they are the patient's own, its writer and signer named.
+/// </summary>
+internal sealed record ClinicalNoteData(AbdmContext Context, ClinicalNoteRow Note, IReadOnlyList<ClinicalNoteRow> Addenda);
 
 /// <summary>The names ABDM documents download under: the record's kind, its number or the UHID and day, then <c>-abdm.json</c>.</summary>
 internal static class AbdmFiles
@@ -819,6 +826,79 @@ internal static class AbdmRecords
             },
         ],
     };
+
+    /// <summary>
+    /// A signed clinical note (HealthDocumentRecord): the note as the FHIR API serves it (LOINC's document type for its
+    /// kind, the text exactly as signed, who wrote and signed it, the facility that keeps it, its encounter), then each
+    /// addendum signed to it since, oldest first, which appends to the note it adds to. The hospital prints no clinical
+    /// note, so each document is the signed text, and the section's narrative is that text: the note's, then each
+    /// addendum's, each after who signed it and when. The doctor who wrote the note is its author (the facility, for a
+    /// note written by staff who are not doctors), and the doctor who signed it attests it; once an addendum is signed the
+    /// note is amended, dated and attested as of the latest addendum, whose writer is an author of that version too.
+    /// </summary>
+    public static AbdmDocument ClinicalNote(ClinicalNoteData d)
+    {
+        var note = d.Note;
+        var people = People.Of(d.Context);
+        var hospital = people.Organization(d.Context.FacilityId);
+        List<ClinicalNoteRow> parts = [note, .. d.Addenda.OrderBy(a => a.SignedAt).ThenBy(a => a.Id)];
+        var latest = parts[^1];
+        var amended = parts.Count > 1;
+        var kind = DocumentReferenceMapper.NoteName(note.Type);
+        var encounter = Encounter(d.Context, people);
+        var documents = new List<R4.Resource>();
+        var text = new List<string>();
+        foreach (var part in parts)
+        {
+            var document = AbdmProfiler.DocumentReference(DocumentReferenceMapper.FromClinicalNote(part, people.Names));
+
+            // A note written in an encounter the document does not hold does not point to it (its context is that encounter
+            // alone): a reference to nothing could say no more than that it is an encounter.
+            if (encounter is null)
+            {
+                document.Context = null;
+            }
+
+            documents.Add(document);
+            text.Add(Signed(part.Id == note.Id ? kind : "Addendum", part, people.Names));
+            text.Add(part.Body);
+        }
+
+        var attester = people.Find(latest.SignedByPractitionerId);
+        return new AbdmDocument
+        {
+            Type = AbdmRecordType.ClinicalNote,
+            FileName = AbdmFiles.Name(kind.ToLowerInvariant().Replace(' ', '-'), d.Context.Patient.Uhid, FhirTime.IstDate(note.SignedAt)),
+            SourceId = note.Id,
+            Profile = AbdmProfiles.HealthDocumentRecord,
+            DocumentType = AbdmCodes.RecordArtifact,
+            Title = kind,
+            Status = amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
+            Date = latest.SignedAt,
+            RecordUpdated = parts.Max(p => FhirElements.Latest(p.CreatedAt, p.UpdatedAt)),
+            Patient = Patient(d.Context, people, [note.PatientId]),
+            Encounter = encounter,
+            Author = (R4.Resource?)Writer(note, people) ?? hospital,
+            AmendedBy = amended ? Writer(latest, people) : null,
+            Attester = attester,
+            AttestedAt = attester is null ? null : latest.SignedAt,
+            Custodian = hospital,
+            Sections = [new AbdmSection(AbdmCodes.RecordArtifact, FhirElements.Clean(note.Title) ?? kind, text, documents) { TextIsEntries = true }],
+            Supporting = [.. people.All],
+        };
+    }
+
+    /// <summary>The doctor who wrote a note, else the doctor who signed it, when the document knows them.</summary>
+    private static R4.Practitioner? Writer(ClinicalNoteRow note, People people) =>
+        people.Find(note.AuthorPractitionerId) ?? people.Find(note.SignedByPractitionerId);
+
+    /// <summary>"Progress note, signed by Dr Asha Rao on 04 Nov 2026, 3:45 pm": who signed a note (by name) and when, in IST.</summary>
+    private static string Signed(string what, ClinicalNoteRow note, ReferenceDirectory names)
+    {
+        var signer = names.Practitioner(note.SignedByPractitionerId)?.Display ?? FhirElements.Clean(note.SignedByUserName);
+        var at = DocumentFormat.DateTime(note.SignedAt);
+        return signer is null ? $"{what}, signed on {at}" : $"{what}, signed by {signer} on {at}";
+    }
 
     /// <summary>LOINC's document type for cardiology studies, for the printed copy of one LOINC names no study for.</summary>
     private const string CardiologyStudiesLoinc = "26441-6";

@@ -308,10 +308,16 @@ internal static partial class AbdmDocumentBuilder
     /// <summary>
     /// A section's narrative, which must read whole on its own (it is what a doctor attests): its free text, then a line
     /// for each entry, under the section's heading for them when there is free text. With free text it is <c>additional</c>
-    /// (it says more than the entries), else <c>generated</c> from them.
+    /// (it says more than the entries), else <c>generated</c> from them. A section whose free text is what its entries hold
+    /// (<see cref="AbdmSection.TextIsEntries"/>: a note and its addenda as signed) has that text alone, <c>generated</c>.
     /// </summary>
     private static R4.Narrative SectionText(AbdmSection section)
     {
+        if (section.TextIsEntries && section.Text.Count > 0)
+        {
+            return AbdmNarrative.Generated(section.Text);
+        }
+
         var entries = section.Entries.Select(e => AbdmNarrative.Summary(e)).OfType<string>().ToList();
         if (section.Text.Count == 0)
         {

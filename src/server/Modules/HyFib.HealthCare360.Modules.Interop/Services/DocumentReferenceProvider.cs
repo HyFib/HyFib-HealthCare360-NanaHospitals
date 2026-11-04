@@ -78,7 +78,33 @@ internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceD
     /// checked and named by <see cref="SignedNotesAsync"/>.
     /// </summary>
     internal IQueryable<ClinicalNoteRow> SignedNotes(Expression<Func<ClinicalNote, bool>> filter) =>
-        db.Set<ClinicalNote>().AsNoTracking().Where(filter).Where(n => n.IsSigned && n.SignedAt != null)
+        Rows(db.Set<ClinicalNote>().AsNoTracking().Where(filter));
+
+    /// <summary>
+    /// The signed notes, each with its encounter and stay kept only when they are the patient's own (in whichever
+    /// facility), so a note filed against someone else's never points another provider at it, and its author and signer
+    /// named from their accounts, a removed account too (a nurse is not a practitioner), the signer's practitioner looked
+    /// up. Those are read apart: a query that ignores a filter ignores it for every table it reads, so ignoring the
+    /// facility filter for the encounter in the notes' query would read other facilities' notes, and ignoring the
+    /// soft-delete filter for the accounts would read removed notes.
+    /// </summary>
+    internal async Task<List<ClinicalNoteRow>> SignedNotesAsync(Expression<Func<ClinicalNote, bool>> filter, CancellationToken ct) =>
+        await CheckedAsync(await SignedNotes(filter).ToListAsync(ct), ct);
+
+    /// <summary>
+    /// The signed addenda to any of <paramref name="noteIds"/>, checked and named as <see cref="SignedNotesAsync"/> does,
+    /// from every facility: an addendum is part of the note it adds to wherever it was written, as the record staff see
+    /// lists the patient's notes from every facility and adds to them. Only the notes are read from every facility; their
+    /// encounters, stays and accounts are read apart, as always.
+    /// </summary>
+    internal async Task<List<ClinicalNoteRow>> SignedAddendaAsync(Guid[] noteIds, CancellationToken ct) =>
+        await CheckedAsync(
+            await Rows(db.Set<ClinicalNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(n => n.AmendsNoteId != null && noteIds.Contains(n.AmendsNoteId.Value))).ToListAsync(ct),
+            ct);
+
+    private static IQueryable<ClinicalNoteRow> Rows(IQueryable<ClinicalNote> notes) =>
+        notes.Where(n => n.IsSigned && n.SignedAt != null)
             .Select(n => new ClinicalNoteRow
             {
                 Id = n.Id,
@@ -98,17 +124,9 @@ internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceD
                 UpdatedAt = n.UpdatedAt,
             });
 
-    /// <summary>
-    /// The signed notes, each with its encounter and stay kept only when they are the patient's own (in whichever
-    /// facility), so a note filed against someone else's never points another provider at it, and its author and signer
-    /// named from their accounts, a removed account too (a nurse is not a practitioner), the signer's practitioner looked
-    /// up. Those are read apart: a query that ignores a filter ignores it for every table it reads, so ignoring the
-    /// facility filter for the encounter in the notes' query would read other facilities' notes, and ignoring the
-    /// soft-delete filter for the accounts would read removed notes.
-    /// </summary>
-    internal async Task<List<ClinicalNoteRow>> SignedNotesAsync(Expression<Func<ClinicalNote, bool>> filter, CancellationToken ct)
+    /// <summary>The notes with their encounters, stays and accounts checked and named (<see cref="SignedNotesAsync"/>).</summary>
+    private async Task<List<ClinicalNoteRow>> CheckedAsync(List<ClinicalNoteRow> notes, CancellationToken ct)
     {
-        var notes = await SignedNotes(filter).ToListAsync(ct);
         if (notes.Count == 0)
         {
             return notes;
