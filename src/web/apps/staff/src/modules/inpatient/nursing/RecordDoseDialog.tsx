@@ -49,7 +49,8 @@ export interface DoseToRecord {
   bedLabel?: string | null;
   isOverdue?: boolean;
   /** Known from the medication order; undefined when unknown (ward round), the server then enforces it. */
-  isControlledDrug?: boolean;
+  /** A controlled drug or a high-alert medicine: a dose given is witnessed (the server asks if this is not known). */
+  needsWitness?: boolean;
   batchNumber?: string | null;
 }
 
@@ -136,7 +137,7 @@ export function RecordDoseDialog({
   const [batch, setBatch] = useState(dose.batchNumber ?? '');
   const [witness, setWitness] = useState<WitnessConfirmed | null>(null);
   const [notes, setNotes] = useState('');
-  const [witnessRequired, setWitnessRequired] = useState(Boolean(dose.isControlledDrug));
+  const [witnessRequired, setWitnessRequired] = useState(Boolean(dose.needsWitness));
 
   const record = useMutation({
     mutationFn: () =>

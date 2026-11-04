@@ -23,7 +23,8 @@ public sealed record MedicationOrderDto(
     DateTimeOffset? LastDispensedAt,
     DateTimeOffset? StoppedAt,
     string? StopReason,
-    IReadOnlyList<TimeOnly> RoundTimes);
+    IReadOnlyList<TimeOnly> RoundTimes,
+    bool IsHighAlert = false);
 
 public sealed record AddMedicationOrderRequest(
     Guid? DrugItemId,
@@ -37,7 +38,8 @@ public sealed record AddMedicationOrderRequest(
     DateTimeOffset? StartAt,
     string? Instructions,
     bool IsControlledDrug,
-    Guid? OrderedByPractitionerId);
+    Guid? OrderedByPractitionerId,
+    bool IsHighAlert = false);
 
 public sealed record StopMedicationOrderRequest(string Reason);
 
@@ -99,7 +101,8 @@ public sealed record WardMarItem(
     DateTimeOffset ScheduledAt,
     bool IsOverdue,
     int MinutesLate,
-    uint Version);
+    uint Version,
+    bool NeedsWitness = false);
 
 public sealed record ScheduleResult(Guid MedicationOrderId, int DosesAdded);
 

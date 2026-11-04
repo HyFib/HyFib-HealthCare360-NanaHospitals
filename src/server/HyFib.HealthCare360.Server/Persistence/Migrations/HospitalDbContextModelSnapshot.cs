@@ -22238,6 +22238,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
 
+                    b.Property<bool>("IsHighAlert")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_high_alert");
+
                     b.Property<DateTimeOffset?>("LastDispensedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_dispensed_at");
@@ -35115,6 +35119,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
+
+                    b.Property<bool>("IsHighAlert")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_high_alert");
 
                     b.Property<string>("Manufacturer")
                         .HasMaxLength(120)

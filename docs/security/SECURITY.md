@@ -378,6 +378,13 @@ and grants nothing.
     holds `admin.grants.approve`, and any administrative permission it gives, approves;
   - a service's own price and GST rate, which a self-pay patient pays (`masters.service_price`): one person saves the
     service, another who holds `masters.prices.approve` (accountants and hospital administrators by default) approves.
+  - a drug handled less strictly in the item master (`inventory.drug_class`): no longer controlled (NDPS), no longer
+    high-alert, or on a lower schedule. Whoever keeps the item master (`inventory.items.manage`: store keepers, purchase
+    officers) asks with the reason, and someone else who holds `inventory.drug_class.approve` (pharmacists and hospital
+    administrators by default) approves. The approver is told what the change switches off: the statutory register, the
+    witness at the bedside, the prescription. The rest of the item is saved at once, and the drug keeps its class until
+    approved. An approval is refused (`approval.stale`) when the class changed after it was asked for. Made stricter, a
+    class applies at once.
     A new price or GST rate, a price the counter may type, discounts allowed and a service put in use wait; what only
     narrows them (no counter price, no discounts, out of use) applies at once. While a change waits, any other change to
     the price is refused (`approval.already_requested`), the price in use put back included. A new service is made out
@@ -450,7 +457,9 @@ and grants nothing.
     sign-in checks it: wrong ones count towards their lockout, nothing is accepted while the account is locked, and an
     unknown account gets the same answer. Every attempt is audited against the witness's account. Nothing is signed
     in. The confirmation it returns is good once, for that nurse, that patient and five minutes, and the dose names the
-    witness's account.
+    witness's account. A high-alert medicine given is witnessed the same way. A ward order takes both flags from the
+    drug master when it names an item of it, whatever the order form sent, and so does the order made for a medicine
+    the pharmacy issues without a prescription line.
 - **Attendance terminals that push** are registered with the IP address they push from, and punches from any other
   address are refused. A terminal registered before the address was required is held to the first address it calls from.
 - **Switched-off controls are shown.** Outside development, System health shows a critical warning while two-step sign-in

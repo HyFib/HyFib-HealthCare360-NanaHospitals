@@ -45,7 +45,7 @@ const morphine: DoseToRecord = {
   admissionId: 'a1',
   patientId: 'p1',
   patientName: 'Ravi Kumar',
-  isControlledDrug: true,
+  needsWitness: true,
 };
 
 const morphineOrder: NursingApi.MedicationOrderDto = {
@@ -63,6 +63,7 @@ const morphineOrder: NursingApi.MedicationOrderDto = {
   endAt: null,
   instructions: null,
   isControlledDrug: true,
+  isHighAlert: false,
   isAsNeeded: false,
   source: 'Manual',
   status: 'Active',
@@ -187,8 +188,20 @@ describe('a controlled dose witnessed at the screen', () => {
     expect(screen.queryByText(CONFIRMED.name)).not.toBeInTheDocument();
   });
 
+  it('is asked for when the server says the dose needs one, though the list it came from did not say so', async () => {
+    recordDose.mockRejectedValue(
+      new ApiError({ status: 422, title: 'Cannot complete this action', code: 'mar.witness_required' }),
+    );
+    open({ ...morphine, drugName: 'Insulin Regular 100 IU/ml', needsWitness: undefined });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Record given' }));
+
+    expect(await screen.findByLabelText(/Witness's user name/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record given' })).toBeDisabled();
+  });
+
   it('is not asked for when the drug is not controlled', () => {
-    open({ ...morphine, drugName: 'Paracetamol 1 g Injection', isControlledDrug: false });
+    open({ ...morphine, drugName: 'Paracetamol 1 g Injection', needsWitness: false });
 
     expect(screen.queryByLabelText(/Witness's user name/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Record given' })).toBeEnabled();
@@ -230,6 +243,13 @@ describe('an extra dose of a controlled drug given now', () => {
 
     expect(await screen.findByLabelText(/Witness's user name/)).toBeInTheDocument();
     expect(screen.queryByText(CONFIRMED.name)).not.toBeInTheDocument();
+  });
+
+  it('is asked for a high-alert medicine as well, though it is not controlled', () => {
+    openExtra({ ...morphineOrder, drugName: 'Insulin Regular 100 IU/ml', isControlledDrug: false, isHighAlert: true });
+
+    expect(screen.getByLabelText(/Witness's user name/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record as given' })).toBeDisabled();
   });
 
   it('is not asked for when the drug is not controlled', () => {

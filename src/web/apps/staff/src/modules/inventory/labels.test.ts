@@ -5,7 +5,9 @@ import {
   requiresPrescription,
   requiresRegister,
   scheduleLabel,
+  weakensClass,
   workflowTone,
+  type DrugSchedule,
 } from './labels';
 
 describe('drug schedule rules (Item.NeedsPrescription / NeedsRegister)', () => {
@@ -36,5 +38,27 @@ describe('ledger reference names', () => {
     expect(referenceModuleLabel('pharmacy.ip_issue')).toBe('IP issue');
     expect(referenceModuleLabel('cssd.pack_use')).toBe('Pack use');
     expect(referenceModuleLabel(null)).toBe('—');
+  });
+});
+
+describe('a drug handled less strictly (DrugSafetyClass.IsWeakenedBy)', () => {
+  const drug = (schedule: DrugSchedule, isControlled = false, isHighAlert = false) => ({
+    schedule,
+    isControlled,
+    isHighAlert,
+  });
+
+  it('is no longer controlled, no longer high-alert, or on a lower schedule, whatever is made stricter with it', () => {
+    expect(weakensClass(drug('X', true), drug('X'))).toBe(true);
+    expect(weakensClass(drug('H', false, true), drug('H'))).toBe(true);
+    expect(weakensClass(drug('X'), drug('H1'))).toBe(true);
+    expect(weakensClass(drug('H'), drug('None'))).toBe(true);
+    expect(weakensClass(drug('H', true), drug('X', false, true))).toBe(true);
+  });
+
+  it('is not one handled as strictly or more strictly, nor one moved among schedules that prescribe nothing', () => {
+    expect(weakensClass(drug('H'), drug('H'))).toBe(false);
+    expect(weakensClass(drug('H'), drug('H1', true, true))).toBe(false);
+    expect(weakensClass(drug('G'), drug('Otc'))).toBe(false);
   });
 });

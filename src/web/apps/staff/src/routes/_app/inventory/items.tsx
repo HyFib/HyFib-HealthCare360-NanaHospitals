@@ -21,7 +21,7 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { isApiError, useDebouncedValue } from '@hc360/core';
+import { formatDateTime, isApiError, useDebouncedValue } from '@hc360/core';
 import {
   applyServerErrors,
   DataTable,
@@ -33,6 +33,7 @@ import {
   Section,
   SelectField,
   SwitchField,
+  TextAreaField,
   TextField,
   useNotify,
   useUnsavedChanges,
@@ -63,6 +64,7 @@ import {
   scheduleLabel,
   VED_CLASSES,
   vedLabel,
+  weakensClass,
   type DrugSchedule,
   type ItemType,
 } from '@/modules/inventory/labels';
@@ -219,7 +221,12 @@ function ItemsPage() {
               render: (i) => (
                 <span>
                   <Text weight="semibold">{i.name}</Text>{' '}
-                  <ItemFlags schedule={i.schedule} isControlled={i.isControlled} isColdChain={i.isColdChain} />
+                  <ItemFlags
+                    schedule={i.schedule}
+                    isControlled={i.isControlled}
+                    isColdChain={i.isColdChain}
+                    isHighAlert={i.isHighAlert}
+                  />
                   {!i.isActive && (
                     <Badge size="small" appearance="tint" style={{ marginLeft: 6 }}>
                       Inactive
@@ -306,6 +313,8 @@ const itemSchema = z
     gstRate: z.string().refine((v) => isStandardGstRate(Number(v)), 'Use a notified GST rate.'),
     schedule: z.enum(DRUG_SCHEDULES),
     isControlled: z.boolean(),
+    isHighAlert: z.boolean(),
+    classChangeReason: z.string().trim().max(500),
     isColdChain: z.boolean(),
     vedClass: z.enum(VED_CLASSES),
     reorderLevel: z.number({ error: 'Enter a number (0 if none).' }).min(0),
@@ -351,6 +360,8 @@ function toForm(item: ItemDetail | null): ItemValues {
     gstRate: String(item?.gstRate ?? 5),
     schedule: item?.schedule ?? 'None',
     isControlled: item?.isControlled ?? false,
+    isHighAlert: item?.isHighAlert ?? false,
+    classChangeReason: '',
     isColdChain: item?.isColdChain ?? false,
     vedClass: item?.vedClass ?? 'Essential',
     reorderLevel: item?.reorderLevel ?? 0,
@@ -415,10 +426,12 @@ function ItemEditor({
   });
   // The version the form was filled from, not a newer one read since (REL-04).
   const [loadedVersion] = useState(item?.version ?? null);
-  const [schedule, isControlled, type, baseUnit, purchaseUnit] = useWatch({
+  const [schedule, isControlled, isHighAlert, type, baseUnit, purchaseUnit] = useWatch({
     control: form.control,
-    name: ['schedule', 'isControlled', 'type', 'baseUnit', 'purchaseUnit'],
+    name: ['schedule', 'isControlled', 'isHighAlert', 'type', 'baseUnit', 'purchaseUnit'],
   });
+  // An existing drug handled less strictly keeps its class until a pharmacist approves the change (maker-checker).
+  const weakened = item !== null && weakensClass(item, { schedule, isControlled, isHighAlert });
   const readOnly = !canManage;
 
   const save = useMutation({
@@ -440,6 +453,8 @@ function ItemEditor({
         gstRate: Number(values.gstRate),
         schedule: values.schedule,
         isControlled: values.isControlled,
+        isHighAlert: values.type === 'Drug' && values.isHighAlert,
+        classChangeReason: values.classChangeReason || null,
         isColdChain: values.isColdChain,
         vedClass: values.vedClass,
         reorderLevel: values.reorderLevel,
@@ -456,8 +471,15 @@ function ItemEditor({
       };
       return inventoryApi.saveItem(item?.id ?? null, body);
     },
-    onSuccess: () => {
-      notify.success(item ? 'Item saved' : 'Item added');
+    onSuccess: (saved) => {
+      if (saved.approval) {
+        notify.info(
+          'Item saved',
+          'Its classification stays as it was until a pharmacist approves the change in Approvals.',
+        );
+      } else {
+        notify.success(item ? 'Item saved' : 'Item added');
+      }
       void queryClient.invalidateQueries({ queryKey: inventoryKeys.items });
       onClose();
     },
@@ -628,7 +650,41 @@ function ItemEditor({
                 hint="Always recorded in the controlled-drug register"
               />
               <SwitchField control={form.control} name="isColdChain" label="Cold chain (2–8 °C)" disabled={readOnly} />
+              {type === 'Drug' && (
+                <SwitchField
+                  control={form.control}
+                  name="isHighAlert"
+                  label="High-alert medicine"
+                  disabled={readOnly}
+                  hint="Insulin, heparin, concentrated potassium chloride, opioids, chemotherapy… Each dose given on a ward is witnessed by a second nurse."
+                />
+              )}
             </FormGrid>
+            {item?.pendingClass && (
+              <MessageBar intent="info" layout="multiline">
+                <MessageBarBody>
+                  {`${item.pendingClass.requestedBy} asked on ${formatDateTime(item.pendingClass.requestedAt)} for this drug to be handled less strictly; it stays as it is until a pharmacist approves it in Approvals.`}
+                </MessageBarBody>
+              </MessageBar>
+            )}
+            {weakened && !readOnly && (
+              <>
+                <MessageBar intent="warning" layout="multiline">
+                  <MessageBarBody>
+                    This drug would be handled less strictly. The rest of the item is saved at once; its classification
+                    waits for a pharmacist to approve it.
+                  </MessageBarBody>
+                </MessageBar>
+                <TextAreaField
+                  control={form.control}
+                  name="classChangeReason"
+                  label="Why the change"
+                  rows={2}
+                  maxLength={500}
+                  hint="The pharmacist who approves it reads this."
+                />
+              </>
+            )}
             {type === 'Drug' && (
               <div className={styles.rules}>
                 <Badge appearance="tint" color={rx ? 'warning' : 'success'}>

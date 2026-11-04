@@ -43,8 +43,17 @@ public sealed class MedicationOrder : AuditableEntity, IFacilityScoped
     public DateTimeOffset? EndAt { get; set; }
     public string? Instructions { get; set; }
 
-    /// <summary>Schedule H1/X or narcotic: administration needs a witness (second nurse).</summary>
+    /// <summary>
+    /// Schedule H1/X or narcotic: administration needs a witness (second nurse). From the drug master when the order names
+    /// an item of it (an order typed by name keeps what it was given).
+    /// </summary>
     public bool IsControlledDrug { get; set; }
+
+    /// <summary>
+    /// A high-alert medicine (insulin, heparin, concentrated potassium chloride…), from the drug master when the order names
+    /// an item of it: administration needs a witness (second nurse), as a controlled drug's does.
+    /// </summary>
+    public bool IsHighAlert { get; set; }
 
     public MedicationOrderSource Source { get; set; }
     public MedicationOrderStatus Status { get; set; }

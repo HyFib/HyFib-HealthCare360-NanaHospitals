@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
+using HyFib.HealthCare360.Modules.SupplyChain.Services;
 
 namespace HyFib.HealthCare360.Modules.SupplyChain.Features.Items;
 
@@ -22,7 +23,8 @@ public sealed record ItemListItem(
     string PurchaseUnit,
     decimal GstRate,
     decimal ReorderLevel,
-    bool IsActive);
+    bool IsActive,
+    bool IsHighAlert = false);
 
 public sealed record ItemDetail(
     Guid Id,
@@ -55,7 +57,9 @@ public sealed record ItemDetail(
     bool RequiresRegister,
     uint Version,
     string? Specification,
-    decimal? CeilingPrice);
+    decimal? CeilingPrice,
+    bool IsHighAlert = false,
+    PendingDrugClass? PendingClass = null);
 
 public sealed record SaveItemRequest(
     string Code,
@@ -85,7 +89,9 @@ public sealed record SaveItemRequest(
     bool IsActive,
     uint? Version,
     string? Specification = null,
-    decimal? CeilingPrice = null);
+    decimal? CeilingPrice = null,
+    bool IsHighAlert = false,
+    string? ClassChangeReason = null);
 
 /// <summary>Picker row: the item plus its sellable stock in the chosen store (when a store is given).</summary>
 public sealed record ItemLookup(
@@ -104,7 +110,8 @@ public sealed record ItemLookup(
     decimal GstRate,
     decimal? Available,
     decimal? Mrp,
-    DateOnly? NearestExpiry);
+    DateOnly? NearestExpiry,
+    bool IsHighAlert = false);
 
 internal static class CatalogRules
 {
@@ -148,5 +155,6 @@ public sealed class SaveItemRequestValidator : AbstractValidator<SaveItemRequest
         RuleFor(x => x.Specification).SafeText(200);
         RuleFor(x => x.CeilingPrice).GreaterThan(0).LessThanOrEqualTo(10_000_000).When(x => x.CeilingPrice is not null);
         RuleFor(x => x.Barcode).MaximumLength(64);
+        RuleFor(x => x.ClassChangeReason).SafeText(500);
     }
 }

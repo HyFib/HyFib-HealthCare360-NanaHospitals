@@ -1,9 +1,17 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Mar;
+using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Inpatient;
+using HyFib.HealthCare360.Modules.SupplyChain.Domain;
+using HyFib.HealthCare360.Modules.SupplyChain.Features.Receipts;
+using HyFib.HealthCare360.Modules.SupplyChain.Features.Stores;
+using HyFib.HealthCare360.Modules.SupplyChain.Features.Vendors;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Identity;
@@ -115,6 +123,93 @@ public sealed class MarWitnessTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_medicine_the_drug_master_marks_high_alert_or_controlled_is_witnessed_whatever_the_order_said()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var nurse = await RecordingNurseAsync();
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+        var admission = await AdmitAsync(frontOffice, doctor, patient.Id);
+        var insulin = await DrugClassApprovalTests.CreateAsync(admin, "Insulin regular", DrugSchedule.H, controlled: false, highAlert: true);
+        var morphine = await DrugClassApprovalTests.CreateAsync(admin, "Morphine", DrugSchedule.X, controlled: true, highAlert: false);
+        var midazolam = await DrugClassApprovalTests.CreateAsync(admin, "Midazolam", DrugSchedule.H1, controlled: false, highAlert: false);
+
+        // Ordered on the ward as neither controlled nor high-alert: the orders take what the master says. Schedule H1 is
+        // kept in a register, so it is witnessed as a controlled drug is.
+        var insulinDose = await WardDoseAsync(nurse, admission.Id, insulin, "Insulin regular 100 IU/ml", "8 IU", "SC");
+        var morphineDose = await WardDoseAsync(nurse, admission.Id, morphine, "Morphine 10 mg/ml", "2 mg", "IV");
+        await WardDoseAsync(nurse, admission.Id, midazolam, "Midazolam 1 mg/ml", "1 mg", "IV");
+        var orders = await nurse.GetAsync<List<MedicationOrderDto>>($"/api/v1/nursing/admissions/{admission.Id}/medication-orders");
+        (orders.Single(o => o.DrugItemId == insulin).IsHighAlert, orders.Single(o => o.DrugItemId == insulin).IsControlledDrug).ShouldBe((true, false));
+        orders.Single(o => o.DrugItemId == morphine).IsControlledDrug.ShouldBeTrue();
+        orders.Single(o => o.DrugItemId == midazolam).IsControlledDrug.ShouldBeTrue();
+
+        // The ward's medication round says so before anyone records the dose.
+        var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "SPW");
+        var round = await nurse.GetAsync<List<WardMarItem>>($"/api/v1/nursing/wards/{ward.Id}/mar/due?withinMinutes=60");
+        round.Single(r => r.EntryId == insulinDose.Id).NeedsWitness.ShouldBeTrue();
+
+        (await RefusalAsync(nurse, $"/api/v1/nursing/mar/{insulinDose.Id}/record", Given(insulinDose, null))).ShouldBe("mar.witness_required");
+        (await RefusalAsync(nurse, $"/api/v1/nursing/mar/{morphineDose.Id}/record", Given(morphineDose, null))).ShouldBe("mar.witness_required");
+        var confirmed = await nurse.PostAsync<WitnessConfirmed>(Witness, Confirm(HospitalServer.Users.SecondNurse, patient.Id));
+        (await nurse.PostAsync<MarEntryDto>($"/api/v1/nursing/mar/{insulinDose.Id}/record", Given(insulinDose, confirmed.ConfirmationId)))
+            .Status.ShouldBe(MarStatus.Given);
+
+        // An extra dose of the high-alert order, given at once, as well.
+        (await RefusalAsync(nurse, $"/api/v1/nursing/admissions/{admission.Id}/mar", Extra(insulinDose.MedicationOrderId, null)))
+            .ShouldBe("mar.witness_required");
+
+        // So does an order charted from a signed in-patient prescription that names the drug.
+        var draft = await doctor.PostAsync<PrescriptionDto>("/api/v1/clinical/prescriptions", new CreatePrescriptionRequest(
+            patient.Id, EncounterId: null, VisitId: null, AdmissionId: admission.Id, IsInpatient: true, PractitionerId: null, Notes: null, Advice: null,
+            RefillsAllowed: 0,
+            [
+                new PrescriptionItemRequest(
+                    insulin, "Insulin regular 100 IU/ml", "Insulin regular", Strength: null, "Injection", Route: "SC", Dose: "6 IU", DoseFrequency.BD,
+                    CustomFrequency: null, DosesPerDay: null, 2, Quantity: 4, Instructions: null, IsControlledDrug: false, ControlledSchedule: null),
+            ]));
+        await doctor.PostAsync<SignPrescriptionResult>($"/api/v1/clinical/prescriptions/{draft.Id}/sign",
+            new SignPrescriptionRequest(OverrideReason: null, AcknowledgeWarnings: true, ConfirmControlledDrugs: false, draft.Version));
+        (await nurse.GetAsync<List<MedicationOrderDto>>($"/api/v1/nursing/admissions/{admission.Id}/medication-orders"))
+            .Single(o => o.PrescriptionId == draft.Id).IsHighAlert.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_medicine_the_pharmacy_issues_without_a_prescription_line_is_witnessed_as_the_drug_master_says()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
+        var nurse = await RecordingNurseAsync();
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+        var admission = await AdmitAsync(frontOffice, doctor, patient.Id);
+        var insulin = await DrugClassApprovalTests.CreateAsync(admin, "Insulin regular", DrugSchedule.H, controlled: false, highAlert: true);
+        var morphine = await DrugClassApprovalTests.CreateAsync(admin, "Morphine", DrugSchedule.X, controlled: true, highAlert: false);
+        var store = (await admin.GetAsync<List<StoreDto>>("/api/v1/inventory/stores")).Single(s => s.Code == "IPPH").Id;
+        await ReceiveAsync(admin, store, insulin);
+        await ReceiveAsync(admin, store, morphine);
+
+        // Issued straight to the patient, with no prescription line: the ward's orders take the drug master's class.
+        await pharmacist.PostAsync<IpIssueCreated>("/api/v1/pharmacy/ip-issues", new IpIssueRequest(
+            store, null, null, patient.Id, admission.Id, admission.VisitId,
+            [new IpIssueLineInput(insulin, 1m, null, null, null, null, false), new IpIssueLineInput(morphine, 1m, null, null, null, null, false)],
+            ConfirmControlledDrugs: true));
+        var orders = await nurse.GetAsync<List<MedicationOrderDto>>($"/api/v1/nursing/admissions/{admission.Id}/medication-orders");
+        var (insulinOrder, morphineOrder) = (orders.Single(o => o.DrugItemId == insulin), orders.Single(o => o.DrugItemId == morphine));
+        (insulinOrder.IsHighAlert, insulinOrder.IsControlledDrug, morphineOrder.IsControlledDrug).ShouldBe((true, false, true));
+
+        // Their doses, to be confirmed with the doctor, are not recorded as given without a witness.
+        var chart = await nurse.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admission.Id}/mar");
+        foreach (var order in new[] { insulinOrder, morphineOrder })
+        {
+            var dose = chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due);
+            (await RefusalAsync(nurse, $"/api/v1/nursing/mar/{dose.Id}/record", Given(dose, null))).ShouldBe("mar.witness_required");
+        }
+    }
+
+    [Fact]
     public async Task A_witness_whose_account_has_an_authenticator_gives_its_code_too_and_a_code_is_good_once()
     {
         const string name = "it-witness-code";
@@ -210,9 +305,14 @@ public sealed class MarWitnessTests(HospitalServer server)
 
     /// <summary>
     /// The nurse who records the dose, from the test's own address: each witness's password counts against the address
-    /// it is typed at, as a sign-in does, and the other tests sign in from the shared one.
+    /// it is typed at, as a sign-in does, and the other tests sign in from the shared one. The second nurse's account is
+    /// made on its first sign-in, so it is signed in here first, whichever test runs first.
     /// </summary>
-    private async Task<ApiClient> RecordingNurseAsync() => server.FromOwnAddress(await server.SignInAsync(HospitalServer.Users.Nurse));
+    private async Task<ApiClient> RecordingNurseAsync()
+    {
+        await server.SignInAsync(HospitalServer.Users.SecondNurse);
+        return server.FromOwnAddress(await server.SignInAsync(HospitalServer.Users.Nurse));
+    }
 
     /// <summary>A witness's user name and password (the test accounts all have the same), as the witness types them.</summary>
     private object Confirm(string userName, Guid? patientId, string? password = null, string? code = null, string purpose = "mar.dose") =>
@@ -226,6 +326,19 @@ public sealed class MarWitnessTests(HospitalServer server)
         MedicationOrderId: orderId, DrugName: null, Dose: "2 mg", Route: "IV", ScheduledAt: null, GivenNow: true,
         Reason: null, BatchNumber: "B-NDPS-7", WitnessConfirmationId: witness, Notes: null);
 
+    /// <summary>
+    /// A drug of the master ordered on the ward to be given at once, as the form sends it: neither controlled nor
+    /// high-alert. Its one dose is due now.
+    /// </summary>
+    private static async Task<MarEntryDto> WardDoseAsync(ApiClient nurse, Guid admissionId, Guid itemId, string name, string dose, string route)
+    {
+        var order = await nurse.PostAsync<MedicationOrderDto>($"/api/v1/nursing/admissions/{admissionId}/medication-orders", new AddMedicationOrderRequest(
+            DrugItemId: itemId, DrugName: name, GenericName: null, Strength: null, Dose: dose, Route: route, Frequency: "STAT", DurationDays: 1,
+            StartAt: null, Instructions: null, IsControlledDrug: false, OrderedByPractitionerId: null));
+        var chart = await nurse.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admissionId}/mar");
+        return chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due);
+    }
+
     /// <summary>A controlled drug ordered on the ward to be given at once: its one dose is due now.</summary>
     private static async Task<MarEntryDto> StatDoseAsync(ApiClient nurse, Guid admissionId)
     {
@@ -234,6 +347,18 @@ public sealed class MarWitnessTests(HospitalServer server)
             Frequency: "STAT", DurationDays: 1, StartAt: null, Instructions: null, IsControlledDrug: true, OrderedByPractitionerId: null));
         var chart = await nurse.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admissionId}/mar");
         return chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due);
+    }
+
+    /// <summary>Ten of the drug received into the store from a vendor's invoice and posted to stock.</summary>
+    private static async Task ReceiveAsync(ApiClient storeKeeper, Guid storeId, Guid itemId)
+    {
+        var vendor = (await storeKeeper.GetAsync<PagedResult<VendorListItem>>("/api/v1/purchase/vendors?pageSize=100")).Items.Single(v => v.Code == "VEN-SBPD");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        using var received = await storeKeeper.SendRawAsync(HttpMethod.Post, "/api/v1/purchase/grns", new CreateGoodsReceiptRequest(
+            vendor.Id, storeId, null, $"INV-{Letters(10)}", today, today, null,
+            [new GoodsReceiptLineInput(itemId, null, $"B{Letters(8)}", null, today.AddYears(2), 10m, 0m, 100m, 150m, 0m, null, AcceptShortExpiry: true)],
+            Post: true));
+        received.EnsureSuccessStatusCode();
     }
 
     private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)

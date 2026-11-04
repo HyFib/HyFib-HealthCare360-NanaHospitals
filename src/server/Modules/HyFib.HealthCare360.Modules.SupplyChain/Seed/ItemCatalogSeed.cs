@@ -34,6 +34,13 @@ internal sealed record SeedItem(
 /// </summary>
 internal static class ItemCatalogSeed
 {
+    /// <summary>
+    /// The catalogue's high-alert medicines (ISMP's list for acute care): insulins, heparin, an opioid given by injection
+    /// (morphine) and a sedative for moderate sedation (midazolam). A new installation starts with them flagged; each
+    /// hospital flags its own items after that.
+    /// </summary>
+    internal static readonly HashSet<string> HighAlert = ["DRG-INSR", "DRG-INS3070", "DRG-HEP5000", "DRG-MORPH10", "DRG-MIDAZ1"];
+
     public static IReadOnlyList<(string Code, string Name, ItemType Type)> Categories { get; } =
     [
         ("TAB", "Tablets & Capsules", ItemType.Drug),

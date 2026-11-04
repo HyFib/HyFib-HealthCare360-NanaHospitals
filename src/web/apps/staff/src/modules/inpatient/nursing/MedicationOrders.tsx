@@ -134,6 +134,11 @@ export function MedicationOrders({ admissionId }: { admissionId: string }) {
                     Controlled
                   </Badge>
                 )}
+                {o.isHighAlert && (
+                  <Badge size="small" color="severe" appearance="tint" style={{ marginLeft: 6 }}>
+                    High alert
+                  </Badge>
+                )}
                 {o.genericName && <Caption1 block>{o.genericName}</Caption1>}
                 {o.instructions && <Caption1 block>{o.instructions}</Caption1>}
               </span>

@@ -35,6 +35,7 @@ const due = (
   isOverdue: false,
   minutesLate: 0,
   version: 1,
+  needsWitness: false,
   ...overrides,
 });
 
@@ -163,6 +164,7 @@ const order = (
   endAt: null,
   instructions: null,
   isControlledDrug: false,
+  isHighAlert: false,
   isAsNeeded: false,
   source: 'Prescription',
   status: 'Active',

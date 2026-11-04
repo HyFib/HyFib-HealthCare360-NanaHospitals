@@ -213,6 +213,8 @@ export interface MedicationOrderDto {
   endAt: string | null;
   instructions: string | null;
   isControlledDrug: boolean;
+  /** A high-alert medicine (from the drug master): its doses are witnessed, as a controlled drug's are. */
+  isHighAlert: boolean;
   isAsNeeded: boolean;
   source: MedicationOrderSource;
   status: MedicationOrderStatus;
@@ -236,6 +238,8 @@ export interface AddMedicationOrderRequest {
   instructions: string | null;
   isControlledDrug: boolean;
   orderedByPractitionerId: string | null;
+  /** A high-alert medicine typed by name; one picked from the drug master takes the master's flag whatever this says. */
+  isHighAlert?: boolean;
 }
 
 export interface MarEntryDto {
@@ -296,6 +300,8 @@ export interface WardMarItem {
   isOverdue: boolean;
   minutesLate: number;
   version: number;
+  /** The order is a controlled drug or a high-alert medicine: a dose given is witnessed by a second nurse. */
+  needsWitness: boolean;
 }
 
 // ------------------------------------------------------------------ queries
