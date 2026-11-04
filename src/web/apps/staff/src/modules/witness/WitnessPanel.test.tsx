@@ -30,6 +30,8 @@ function renderPanel(witness: WitnessApi.WitnessConfirmed | null, onChange = vi.
           }}
         >
           <WitnessPanel purpose="mar.dose" patientId="p1" witness={witness} onChange={onChange} />
+          {/* As in the dose dialogs: the record's own submit button, which Enter in a field would otherwise press. */}
+          <button type="submit">Record given</button>
         </form>
       </FluentProvider>
     </QueryClientProvider>,
