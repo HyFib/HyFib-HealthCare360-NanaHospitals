@@ -81,6 +81,8 @@ const serve = (paymentsOpen: number) => {
   server = fakeServer({
     [`GET ${RECORDS}`]: view(paymentsOpen),
     [`GET ${RECORDS}/payments/open`]: paymentsOpen ? [OPEN_PAYMENT] : [],
+    // The receipts page a record links to: it reads the letterhead for its prints as soon as it opens.
+    'GET /api/v1/print/letterhead': { name: 'Nana Hospitals, Pune' },
     [`POST ${RECORDS}/sign-off`]: {
       signedOffAt: '2026-10-29T05:00:00Z',
       signedOffBy: 'IT Officer',
@@ -138,6 +140,8 @@ describe('simulator records screen', SCREEN_TESTS, () => {
     await user.click(await within(open).findByRole('button', { name: 'Open the receipt: NHPRC26000124' }, SLOW));
     await waitFor(() => expect(router.state.location.pathname).toBe('/billing/receipts'), SLOW);
     expect(router.state.location.search).toMatchObject({ q: 'NHPRC26000124', from: '2026-10-29', to: '2026-10-29' });
+    // The receipts page opens with what it asks for answered (afterEach), however quickly the test got here.
+    expect(await screen.findByRole('heading', { name: 'Receipts' }, SLOW)).toBeInTheDocument();
     expect(server.requests.filter((request) => request.method === 'POST')).toEqual([]);
   });
 
