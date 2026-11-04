@@ -40,6 +40,20 @@ public static class QueryExtensions
     }
 
     /// <summary>
+    /// <paramref name="source"/> without its removed rows, said in the query itself: for a query in which another source is
+    /// read with its removed rows (<c>IgnoreQueryFilters</c> with <see cref="HospitalDbContext.SoftDeleteFilter"/>). EF Core
+    /// ignores a filter for the whole query, so the soft-delete filter is off for every source of such a query; this source
+    /// keeps its removed rows out in so many words. Its other filters (the facility's) stay as they are.
+    /// </summary>
+    public static IQueryable<T> NotRemoved<T>(this IQueryable<T> source)
+        where T : class, ISoftDeletable
+    {
+        var row = Expression.Parameter(typeof(T), "row");
+        var notRemoved = Expression.Lambda<Func<T, bool>>(Expression.Not(Expression.Property(row, nameof(ISoftDeletable.IsDeleted))), row);
+        return source.IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).Where(notRemoved);
+    }
+
+    /// <summary>
     /// The escape character of the patterns <see cref="ToLikePattern"/> and <see cref="ToLikeLiteral"/> build: pass it as
     /// the third argument of <c>EF.Functions.ILike</c>. Without it Npgsql writes <c>ESCAPE ''</c>, the backslashes are then
     /// matched as themselves, and a search for a term with <c>%</c>, <c>_</c> or <c>\</c> (a gateway reference such as

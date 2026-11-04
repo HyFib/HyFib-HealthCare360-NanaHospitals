@@ -371,11 +371,15 @@ internal sealed class CriticalValuesReport : ReportDefinition
     public override async Task<ReportData> RunAsync(ReportContext ctx, CancellationToken ct)
     {
         var (start, end) = (ctx.Args.Start, ctx.Args.End);
+
+        // A patient record merged into another is removed, and its results stay listed under it. EF Core ignores a query
+        // filter for the whole query, so the results and the calls say they leave their own removed rows out: values from a
+        // tube rejected as haemolysed or clotted are removed and must reach no report.
         var patients = ctx.Db.Set<Patient>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]);
         var lab = await ctx.ListAsync(
-            from r in ctx.Db.Set<LabResult>().AsNoTracking()
+            from r in ctx.Db.Set<LabResult>().AsNoTracking().NotRemoved()
             join p in patients on r.PatientId equals p.Id
-            join c in ctx.Db.Set<CriticalCallLog>() on (Guid?)r.Id equals c.LabResultId into calls
+            join c in ctx.Db.Set<CriticalCallLog>().NotRemoved() on (Guid?)r.Id equals c.LabResultId into calls
             from c in calls.DefaultIfEmpty()
             where (r.Flag == ResultFlag.CriticalLow || r.Flag == ResultFlag.CriticalHigh || r.Flag == ResultFlag.Critical)
                   && r.EnteredAt >= start && r.EnteredAt < end
@@ -386,7 +390,7 @@ internal sealed class CriticalValuesReport : ReportDefinition
                 c != null && c.ReadBackConfirmed),
             ct);
         var findings = await ctx.ListAsync(
-            from c in ctx.Db.Set<CriticalCallLog>().AsNoTracking()
+            from c in ctx.Db.Set<CriticalCallLog>().AsNoTracking().NotRemoved()
             join p in patients on c.PatientId equals p.Id
             where c.Kind != DiagnosticKind.Laboratory && c.InformedAt >= start && c.InformedAt < end
             orderby c.InformedAt descending

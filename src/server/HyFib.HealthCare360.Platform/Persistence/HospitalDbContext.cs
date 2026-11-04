@@ -53,7 +53,7 @@ public sealed class HospitalDbContext : DbContext
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) =>
-        optionsBuilder.AddInterceptors(TransactionEnds.Instance);
+        optionsBuilder.AddInterceptors(TransactionEnds.Instance, QueryFilterGuard.Instance);
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

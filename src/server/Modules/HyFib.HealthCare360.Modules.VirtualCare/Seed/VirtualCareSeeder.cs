@@ -90,7 +90,9 @@ internal sealed class VirtualCareSeeder(IOptions<PlatformOptions> options, TimeP
     /// <summary>Demo telehealth appointments are seeded without events (no SMS), so their sessions are created here.</summary>
     private static async Task SeedTelehealthSessionsAsync(HospitalDbContext db, CancellationToken ct)
     {
-        var withSession = db.Set<TelehealthSession>().IgnoreQueryFilters().Where(s => s.AppointmentId != null).Select(s => s.AppointmentId);
+        // Every session, removed ones too, read apart: in the appointments' query it would read removed appointments too.
+        var withSession = await db.Set<TelehealthSession>().IgnoreQueryFilters().Where(s => s.AppointmentId != null).Select(s => s.AppointmentId)
+            .ToListAsync(ct);
         var appointments = await db.Set<Appointment>()
             .Where(a => a.IsTelehealth && (a.Status == AppointmentStatus.Booked || a.Status == AppointmentStatus.Confirmed) && !withSession.Contains(a.Id))
             .ToListAsync(ct);

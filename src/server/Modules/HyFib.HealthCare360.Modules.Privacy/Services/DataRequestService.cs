@@ -238,16 +238,25 @@ public sealed class DataRequestService(
                 from r in requests
                 join p in db.Set<Patient>() on r.PatientId equals p.Id into patients
                 from p in patients.DefaultIfEmpty()
-                join u in db.Set<User>().IgnoreQueryFilters() on r.AssignedToUserId equals u.Id into users
-                from u in users.DefaultIfEmpty()
                 orderby r.Status == DataRequestStatus.Submitted || r.Status == DataRequestStatus.InProgress descending, r.DueAt
-                select new { Request = r, Uhid = p != null ? p.Uhid : null, Assignee = u != null ? u.DisplayName : null })
+                select new { Request = r, Uhid = p != null ? p.Uhid : null })
             .ToPagedResultAsync(page, ct);
+
+        // The assignees are named apart, removed accounts too: EF Core ignores a query filter for the whole query, so reading
+        // them with the requests took the facility and soft-delete filters off the requests too, and the register listed
+        // every facility's.
+        var assigneeIds = rows.Items.Select(x => x.Request.AssignedToUserId).OfType<Guid>().Distinct().ToList();
+        var assignees = assigneeIds.Count == 0
+            ? []
+            : await db.Set<User>().IgnoreQueryFilters().AsNoTracking()
+                .Where(u => assigneeIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
 
         return rows.Map(x => new DataRequestListItem(
             x.Request.Id, x.Request.RequestNumber, x.Request.Type, x.Request.Status, x.Request.Channel, x.Request.PatientId, x.Uhid,
             x.Request.PrincipalName, x.Request.RequestedBy, x.Request.ReceivedAt, x.Request.DueAt, x.Request.IsOverdue(now),
-            x.Request.IsIdentityVerified, x.Request.AssignedToUserId, x.Assignee, x.Request.ClosedAt));
+            x.Request.IsIdentityVerified, x.Request.AssignedToUserId,
+            x.Request.AssignedToUserId is { } assignee ? assignees.GetValueOrDefault(assignee) : null, x.Request.ClosedAt));
     }
 
     public async Task<DataRequestDetail?> DetailAsync(Guid id, CancellationToken ct)
