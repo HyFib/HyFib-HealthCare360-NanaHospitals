@@ -86,7 +86,8 @@ export function PatientMar({
   const orders = useQuery(nursingQueries.orders(admissionId, false));
   const [recording, setRecording] = useState<{ dose: DoseToRecord; outcome: MarOutcome } | null>(null);
   const [adHoc, setAdHoc] = useState(false);
-  const controlled = new Set((orders.data ?? []).filter((o) => o.isControlledDrug).map((o) => o.id));
+  // A controlled drug or a high-alert medicine: a dose given is witnessed by a second nurse.
+  const witnessed = new Set((orders.data ?? []).filter((o) => o.isControlledDrug || o.isHighAlert).map((o) => o.id));
 
   const open = (entry: MarEntryDto, outcome: MarOutcome) =>
     setRecording({
@@ -102,7 +103,7 @@ export function PatientMar({
         patientId,
         patientName,
         isOverdue: entry.isOverdue,
-        isControlledDrug: entry.medicationOrderId ? controlled.has(entry.medicationOrderId) : undefined,
+        needsWitness: entry.medicationOrderId ? witnessed.has(entry.medicationOrderId) : undefined,
         batchNumber: entry.batchNumber,
       },
     });
@@ -306,7 +307,7 @@ export function AdHocDoseDialog({
     },
   });
 
-  const needsWitness = givenNow && Boolean(order?.isControlledDrug);
+  const needsWitness = givenNow && Boolean(order?.isControlledDrug || order?.isHighAlert);
   const valid =
     (order !== null || drugName.trim().length > 0) &&
     dose.trim().length > 0 &&

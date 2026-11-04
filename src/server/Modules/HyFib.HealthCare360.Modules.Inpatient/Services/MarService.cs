@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Mar;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Settings;
 
@@ -88,6 +89,7 @@ public sealed class MarService(
 
         var now = time.GetUtcNow();
         var start = request.StartAt ?? now;
+        var drug = request.DrugItemId is { } itemId ? (await DrugClassesAsync([itemId], ct)).GetValueOrDefault(itemId) : default;
         var order = new MedicationOrder
         {
             FacilityId = admission.FacilityId,
@@ -104,7 +106,8 @@ public sealed class MarService(
             StartAt = start,
             EndAt = request.DurationDays is > 0 ? start.AddDays(request.DurationDays.Value) : null,
             Instructions = Clean(request.Instructions),
-            IsControlledDrug = request.IsControlledDrug,
+            IsControlledDrug = request.IsControlledDrug || drug.Controlled,
+            IsHighAlert = request.IsHighAlert || drug.HighAlert,
             Source = MedicationOrderSource.Manual,
             Status = MedicationOrderStatus.Active,
             OrderedByPractitionerId = request.OrderedByPractitionerId ?? currentUser.PractitionerId,
@@ -173,7 +176,7 @@ public sealed class MarService(
 
         db.SetExpectedVersion(entry, request.Version);
         var requiresWitness = entry.MedicationOrderId is { } orderId
-                              && await db.Set<MedicationOrder>().Where(o => o.Id == orderId).Select(o => o.IsControlledDrug).FirstOrDefaultAsync(ct);
+                              && await db.Set<MedicationOrder>().Where(o => o.Id == orderId).Select(o => o.IsControlledDrug || o.IsHighAlert).FirstOrDefaultAsync(ct);
         var witness = await WitnessAsync(request.WitnessConfirmationId, entry, ct);
         if (witness.IsFailure)
         {
@@ -238,7 +241,7 @@ public sealed class MarService(
 
             var recorded = entry.Record(
                 new MarOutcome(MarStatus.Given, entry.ScheduledAt, request.Reason, request.BatchNumber, witness.Value, request.Notes),
-                currentUser.UserId, currentUser.DisplayName, order?.IsControlledDrug ?? false, now);
+                currentUser.UserId, currentUser.DisplayName, order is not null && (order.IsControlledDrug || order.IsHighAlert), now);
             if (recorded.IsFailure)
             {
                 return recorded.Error!;
@@ -264,6 +267,24 @@ public sealed class MarService(
         return used.IsFailure ? used.Error! : new MarWitness(used.Value.UserId, used.Value.Name);
     }
 
+    /// <summary>
+    /// How the drug master classes these items: a controlled drug (Schedule H1 or X, or NDPS), and a high-alert medicine.
+    /// An order copies it when it is made, so a dose given is witnessed whatever the form said; an order typed by name,
+    /// naming no item, keeps what it was given.
+    /// </summary>
+    private async Task<Dictionary<Guid, (bool Controlled, bool HighAlert)>> DrugClassesAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken ct)
+    {
+        if (itemIds.Count == 0)
+        {
+            return [];
+        }
+
+        var items = await db.Set<Item>().AsNoTracking().Where(i => itemIds.Contains(i.Id))
+            .Select(i => new { i.Id, i.Schedule, i.IsControlled, i.IsHighAlert })
+            .ToListAsync(ct);
+        return items.ToDictionary(i => i.Id, i => (Item.NeedsRegister(i.Schedule, i.IsControlled), i.IsHighAlert));
+    }
+
     // ------------------------------------------------------------------ integration events (stage only, never save)
 
     /// <summary>Charts the lines of a signed in-patient prescription; doses are scheduled when pharmacy dispenses them.</summary>
@@ -286,8 +307,10 @@ public sealed class MarService(
             .Select(o => o.PrescriptionLineId!.Value)
             .ToListAsync(ct);
 
+        var drugs = await DrugClassesAsync([.. signed.Lines.Where(l => l.DrugItemId is not null).Select(l => l.DrugItemId!.Value).Distinct()], ct);
         foreach (var line in signed.Lines.Where(l => !charted.Contains(l.LineId)))
         {
+            var drug = line.DrugItemId is { } itemId ? drugs.GetValueOrDefault(itemId) : default;
             db.Add(new MedicationOrder
             {
                 FacilityId = admission.Value.FacilityId,
@@ -306,7 +329,9 @@ public sealed class MarService(
                 StartAt = signed.SignedAt,
                 EndAt = line.DurationDays > 0 ? signed.SignedAt.AddDays(line.DurationDays) : null,
                 Instructions = Fit(line.Instructions, 500),
+                // The line is controlled as the master said at signing (Clinical reads it again then); high-alert is the master's here.
                 IsControlledDrug = line.IsControlledDrug,
+                IsHighAlert = drug.HighAlert,
                 Source = MedicationOrderSource.Prescription,
                 Status = MedicationOrderStatus.Active,
                 OrderedByPractitionerId = signed.PractitionerId,
@@ -422,21 +447,38 @@ public sealed class MarService(
                 join p in db.Set<Patient>() on m.PatientId equals p.Id
                 join b in db.Set<Bed>() on a.BedId equals b.Id into beds
                 from b in beds.DefaultIfEmpty()
+                join o in db.Set<MedicationOrder>() on m.MedicationOrderId equals (Guid?)o.Id into orders
+                from o in orders.DefaultIfEmpty()
                 where a.WardId == wardId && (a.Status == AdmissionStatus.Admitted || a.Status == AdmissionStatus.DischargeInitiated)
                       && m.Status == MarStatus.Due && m.ScheduledAt < until
                 orderby m.ScheduledAt
-                select new { m.Id, m.AdmissionId, m.PatientId, p.Uhid, p.FullName, BedLabel = b != null ? b.Label : null, m.DrugName, m.Dose, m.Route, m.ScheduledAt, m.Version })
+                select new
+                {
+                    m.Id,
+                    m.AdmissionId,
+                    m.PatientId,
+                    p.Uhid,
+                    p.FullName,
+                    BedLabel = b != null ? b.Label : null,
+                    m.DrugName,
+                    m.Dose,
+                    m.Route,
+                    m.ScheduledAt,
+                    m.Version,
+                    NeedsWitness = o != null && (o.IsControlledDrug || o.IsHighAlert),
+                })
             .Take(500)
             .ToListAsync(ct);
         var grace = await GraceAsync(currentUser.FacilityId, ct);
         return rows.Select(r => new WardMarItem(r.Id, r.AdmissionId, r.PatientId, r.Uhid, r.FullName, r.BedLabel, r.DrugName, r.Dose, r.Route, r.ScheduledAt,
-                MarRules.IsOverdue(MarStatus.Due, r.ScheduledAt, now, grace), (int)Math.Max(0, (now - r.ScheduledAt).TotalMinutes), r.Version))
+                MarRules.IsOverdue(MarStatus.Due, r.ScheduledAt, now, grace), (int)Math.Max(0, (now - r.ScheduledAt).TotalMinutes), r.Version, r.NeedsWitness))
             .ToList();
     }
 
     internal static MedicationOrderDto ToDto(MedicationOrder o) => new(
         o.Id, o.PrescriptionId, o.DrugItemId, o.DrugName, o.GenericName, o.Strength, o.Dose, o.Route, o.Frequency, o.DurationDays, o.StartAt, o.EndAt,
-        o.Instructions, o.IsControlledDrug, o.IsAsNeeded, o.Source, o.Status, o.LastDispensedAt, o.StoppedAt, o.StopReason, DoseSchedule.TimesOfDay(o.Frequency));
+        o.Instructions, o.IsControlledDrug, o.IsAsNeeded, o.Source, o.Status, o.LastDispensedAt, o.StoppedAt, o.StopReason, DoseSchedule.TimesOfDay(o.Frequency),
+        o.IsHighAlert);
 
     internal static MarEntryDto ToDto(MedicationAdministration m, DateTimeOffset now, TimeSpan grace) => new(
         m.Id, m.MedicationOrderId, m.DrugName, m.Dose, m.Route, m.ScheduledAt, m.Status, m.IsOverdue(now, grace), m.IsAdHoc, m.AdministeredAt,

@@ -1,5 +1,5 @@
 import { Badge, Caption1, makeStyles, Text, tokens, Tooltip } from '@fluentui/react-components';
-import { ShieldKeyholeRegular, WeatherSnowflakeRegular } from '@fluentui/react-icons';
+import { ShieldKeyholeRegular, WarningRegular, WeatherSnowflakeRegular } from '@fluentui/react-icons';
 import { formatDateOnly } from '@hc360/core';
 import { StatusBadge } from '@hc360/ui';
 import type { ReactNode } from 'react';
@@ -62,24 +62,41 @@ export function ScheduleBadge({
   );
 }
 
-/** Prescription, register and cold-chain markers for an item. */
+/** A high-alert medicine: its doses on the ward are witnessed by a second nurse. */
+export function HighAlertBadge() {
+  return (
+    <Tooltip
+      content="High-alert medicine: a dose given on the ward is witnessed by a second nurse"
+      relationship="description"
+    >
+      <Badge size="small" appearance="filled" color="severe" icon={<WarningRegular />}>
+        High alert
+      </Badge>
+    </Tooltip>
+  );
+}
+
+/** Prescription, register, high-alert and cold-chain markers for an item. */
 export function ItemFlags({
   schedule,
   isControlled,
   isColdChain,
+  isHighAlert,
 }: {
   schedule: DrugSchedule | null | undefined;
   isControlled: boolean;
   isColdChain?: boolean;
+  isHighAlert?: boolean;
 }) {
   const styles = useStyles();
   const rxOnly = schedule ? requiresPrescription(schedule, isControlled) : isControlled;
-  if (!rxOnly && !isColdChain && !isControlled) {
+  if (!rxOnly && !isColdChain && !isControlled && !isHighAlert) {
     return null;
   }
   return (
     <span className={styles.flags}>
       <ScheduleBadge schedule={schedule} isControlled={isControlled} />
+      {isHighAlert && <HighAlertBadge />}
       {isColdChain && (
         <Tooltip content="Cold chain: keep at 2–8 °C" relationship="label">
           <Badge size="small" appearance="tint" color="informative" icon={<WeatherSnowflakeRegular />}>

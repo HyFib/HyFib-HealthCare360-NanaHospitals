@@ -45,6 +45,24 @@ export function requiresRegister(schedule: DrugSchedule, isControlled: boolean):
   return isControlled || schedule === 'H1' || schedule === 'X';
 }
 
+/** How strict a schedule is (DrugSafetyClass.Strictness): X above H1 above H above the rest. */
+const STRICTNESS: Partial<Record<DrugSchedule, number>> = { X: 3, H1: 2, H: 1 };
+
+/**
+ * DrugSafetyClass.IsWeakenedBy: whether a drug's new classification handles it less strictly in any way (no longer
+ * controlled, no longer high-alert, or a lower schedule). On an existing drug that waits for a pharmacist's approval.
+ */
+export function weakensClass(
+  before: { schedule: DrugSchedule; isControlled: boolean; isHighAlert: boolean },
+  after: { schedule: DrugSchedule; isControlled: boolean; isHighAlert: boolean },
+): boolean {
+  return (
+    (before.isControlled && !after.isControlled) ||
+    (before.isHighAlert && !after.isHighAlert) ||
+    (STRICTNESS[after.schedule] ?? 0) < (STRICTNESS[before.schedule] ?? 0)
+  );
+}
+
 export const VED_CLASSES = ['Vital', 'Essential', 'Desirable'] as const;
 export type VedClass = (typeof VED_CLASSES)[number];
 export const vedLabel: Record<VedClass, string> = {

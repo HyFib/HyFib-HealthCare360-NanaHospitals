@@ -88,6 +88,7 @@ const ITEM_LIST: ItemListItem[] = ITEMS.map((item) => ({
   gstRate: item.gstRate,
   reorderLevel: item.reorderLevel,
   isActive: item.isActive,
+  isHighAlert: item.isHighAlert,
 }));
 
 const STOCK: StockSummaryRow[] = [

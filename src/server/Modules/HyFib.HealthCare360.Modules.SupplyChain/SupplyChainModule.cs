@@ -18,6 +18,12 @@ namespace HyFib.HealthCare360.Modules.SupplyChain;
 public static class SupplyChainPermissions
 {
     public const string ItemsManage = "inventory.items.manage";
+
+    /// <summary>
+    /// Approve a drug handled less strictly (no longer controlled or high-alert, or on a lower schedule), asked for by
+    /// someone else who keeps the item master (<see cref="Services.DrugClassApprovals"/>).
+    /// </summary>
+    public const string DrugClassApprove = "inventory.drug_class.approve";
     public const string StockRead = "inventory.stock.read";
     public const string IndentsRaise = "inventory.indents.raise";
     public const string IndentsIssue = "inventory.indents.issue";
@@ -44,6 +50,10 @@ public static class SupplyChainPermissions
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
         new(ItemsManage, "Inventory", "Maintain the item master, categories and stores", [.. StoreStaff, SystemRoles.PurchaseOfficer]),
+
+        // The pharmacist decides whether a drug may be handled less strictly; the store or purchase officer asks.
+        new(DrugClassApprove, "Inventory", "Approve a drug made less strictly handled: no longer controlled or high-alert, or a lower schedule (not your own)",
+            [SystemRoles.Pharmacist, SystemRoles.HospitalAdmin]),
         new(StockRead, "Inventory", "View stock, batches, the stock ledger and inventory reports",
             [.. StoreStaff, SystemRoles.PurchaseOfficer, SystemRoles.Pharmacist]),
 
@@ -79,6 +89,7 @@ public sealed class SupplyChainModule : IModule
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<StockService>();
+        services.AddScoped<DrugClassApprovals>();
         services.AddScoped<PurchaseService>();
         services.AddScoped<GoodsReceiptService>();
         services.AddScoped<IndentService>();

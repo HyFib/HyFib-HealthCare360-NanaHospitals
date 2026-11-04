@@ -76,6 +76,7 @@ internal sealed class SupplyChainSeeder(IOptions<PlatformOptions> options, Stock
                 GstRate = seed.Gst,
                 Schedule = seed.Schedule,
                 IsControlled = seed.Controlled,
+                IsHighAlert = ItemCatalogSeed.HighAlert.Contains(seed.Code),
                 IsColdChain = seed.ColdChain,
                 VedClass = seed.Ved,
                 ReorderLevel = seed.ReorderLevel,

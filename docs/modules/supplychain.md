@@ -55,7 +55,7 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 | GET | `/items?page&type&categoryId&schedule&controlledOnly&includeInactive` | Catalog readers | → paged `ItemListItem` (trigram name search; sort code/name/genericName/type/gstRate) |
 | GET | `/items/lookup?search&storeId&type&take` | Catalog readers | → `ItemLookup[]` (≤ 50, with available stock, MRP and nearest expiry in `storeId`) |
 | GET | `/items/by-code/{code}` · `/items/{id}` | Catalog readers | → `ItemDetail` |
-| POST · PUT | `/items` · `/items/{id}` | `inventory.items.manage` | `SaveItemRequest` (code, name, genericName, brandName, type, categoryId, strength, dosageForm, packSize, baseUnit, purchaseUnit, purchaseUnitFactor, hsnCode, gstRate ∈ {0, 0.25, 3, 5, 12, 18, 28, 40}, schedule None/Otc/G/H/H1/X, isControlled, isColdChain, vedClass, reorder/min/max levels, manufacturer (or importer), barcode, isActive, version, specification, ceilingPrice) → 201 `{id}` · 204. `specification` says what a device is, as its bill prints it (for a stent, bare-metal or drug-eluting first, then material and size). `ceilingPrice` is the NPPA ceiling price of a unit of a price-controlled implant (a coronary stent, a knee implant), GST included: only an implant carries one, and it is more than 0 (`ceilingPrice`, 400). No patient is charged more for a unit, whatever an older pack's MRP: the OT and the IP pharmacy price within it, and Billing refuses more. NPPA revises it, so the store updates it |
+| POST · PUT | `/items` · `/items/{id}` | `inventory.items.manage` | `SaveItemRequest` (code, name, genericName, brandName, type, categoryId, strength, dosageForm, packSize, baseUnit, purchaseUnit, purchaseUnitFactor, hsnCode, gstRate ∈ {0, 0.25, 3, 5, 12, 18, 28, 40}, schedule None/Otc/G/H/H1/X, isControlled, isHighAlert, isColdChain, vedClass, reorder/min/max levels, manufacturer (or importer), barcode, isActive, version, specification, ceilingPrice) → 201 `{id}` · 204. `specification` says what a device is, as its bill prints it (for a stent, bare-metal or drug-eluting first, then material and size). `ceilingPrice` is the NPPA ceiling price of a unit of a price-controlled implant (a coronary stent, a knee implant), GST included: only an implant carries one, and it is more than 0 (`ceilingPrice`, 400). No patient is charged more for a unit, whatever an older pack's MRP: the OT and the IP pharmacy price within it, and Billing refuses more. NPPA revises it, so the store updates it |
 | GET | `/stores?type&includeInactive` | Catalog readers or `inventory.adjustments.approve` | → `StoreDto[]` (central, pharmacy, ward, OT, lab, canteen, CSSD) |
 | GET | `/stores/{id}` | Catalog readers | → `StoreDto` |
 | POST · PUT | `/stores` · `/stores/{id}` | `inventory.items.manage` | `SaveStoreRequest` (code, name, type, departmentId, inChargeUserId, location, isActive, version) → 201 `{id}` · 204 |
@@ -284,10 +284,40 @@ calibrations due within 7 days or overdue, and warranties or AMC/CMC contracts l
 
 Numbers are taken inside the insert transaction, so they stay gap-free.
 
+## A drug handled less strictly waits for a pharmacist
+
+A drug's class is its schedule, whether it is a controlled (NDPS) drug, and whether it is a high-alert medicine
+(`DrugSafetyClass`). On an item already in the master, saving it **less strict** in any of these ways waits for a
+second person (`inventory.drug_class`, maker-checker):
+
+* no longer controlled;
+* no longer high-alert;
+* a lower schedule (X above H1 above H above the rest).
+
+The rest of the item is saved at once, and `PUT /items/{id}` answers 202 with the request (`classChangeReason` is the
+reason the approver reads). Until it is approved, the drug keeps its class: its register entries, the witness at the
+bedside and the prescription it needs all stay. Someone else who holds `inventory.drug_class.approve` (pharmacists and
+hospital administrators by default) approves it in Approvals. The request shows what the change switches off.
+
+While a change waits:
+
+* a save asking for another, still less strict class is refused (409 `inventory.drug_class_waiting`);
+* a save asking for the same one, or keeping the current one, saves the rest;
+* a stricter class applies at once. The waiting request is then refused when approved (`approval.stale`), because the
+  class it would replace has changed.
+
+A request nobody decides before it runs out no longer holds anything: the drug keeps its class, and saving the change
+again asks anew.
+
+Made stricter, and on a new item, the class applies at once. `GET /items/{id}` shows the waiting change
+(`pendingClass`). The ward's medicine orders copy the class when they are made (inpatient.md), so a change reaches
+orders made after it.
+
 ## Seed data (`SupplyChainSeeder`, order 150, idempotent by code)
 
 * Every installation: 13 item categories and about 79 items (6-digit HSN, GST mostly 5%, Drugs & Cosmetics
-  schedules; tramadol and alprazolam H1 controlled, morphine X controlled, midazolam H1, insulin cold chain), plus
+  schedules; tramadol and alprazolam H1 controlled, morphine X controlled, midazolam H1, insulin cold chain; insulins,
+  heparin, morphine and midazolam high-alert in a new installation), plus
   stores `CS` Central Store, `OPPH` OP Pharmacy, `IPPH` IP Pharmacy, `ICUS` ICU Store and `OTS` OT Store.
 * With `SeedDemoData`: 5 vendors, opening stock through `StockService` (including near-expiry and expired
   batches), and 10 assets with PM plans, contracts, calibrations and one open breakdown ticket.

@@ -1,6 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type {
   AbcClass,
   AbcVedCategory,
@@ -68,6 +69,22 @@ export interface ItemListItem {
   gstRate: number;
   reorderLevel: number;
   isActive: boolean;
+  isHighAlert: boolean;
+}
+
+/** A drug's classification: its schedule, whether it is controlled (NDPS), and whether it is a high-alert medicine. */
+export interface DrugSafetyClass {
+  schedule: DrugSchedule;
+  isControlled: boolean;
+  isHighAlert: boolean;
+}
+
+/** A drug made less strictly handled, waiting for a second person (a pharmacist) to approve it. */
+export interface PendingDrugClass {
+  approvalId: string;
+  asked: DrugSafetyClass;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface ItemDetail {
@@ -105,11 +122,26 @@ export interface ItemDetail {
   specification: string | null;
   /** For a price-controlled implant (coronary stent, knee implant), the NPPA ceiling price of a unit with GST. */
   ceilingPrice: number | null;
+  /** A high-alert medicine (insulin, heparin, concentrated potassium chloride…): its doses on the ward are witnessed. */
+  isHighAlert: boolean;
+  /** A less strict classification asked for and waiting for a pharmacist's approval; the item keeps its own till then. */
+  pendingClass: PendingDrugClass | null;
 }
 
-export type SaveItemRequest = Omit<ItemDetail, 'id' | 'requiresPrescription' | 'requiresRegister' | 'version'> & {
+export type SaveItemRequest = Omit<
+  ItemDetail,
+  'id' | 'requiresPrescription' | 'requiresRegister' | 'version' | 'pendingClass'
+> & {
   version: number | null;
+  /** Why a drug is to be handled less strictly; the pharmacist who approves it reads this. */
+  classChangeReason?: string | null;
 };
+
+/** What saving an item did: its id, and the request a less strict classification waits on. */
+export interface ItemSaved {
+  id: string;
+  approval: ApprovalRequestDto | null;
+}
 
 /** Picker row: the item plus its sellable stock in the chosen store. */
 export interface ItemLookup {
@@ -129,6 +161,7 @@ export interface ItemLookup {
   available: number | null;
   mrp: number | null;
   nearestExpiry: string | null;
+  isHighAlert: boolean;
 }
 
 export interface StoreDto {
@@ -833,10 +866,14 @@ export const inventoryApi = {
     id
       ? (await api.put<void>(`${BASE}/categories/${id}`, body), id)
       : (await api.post<{ id: string }>(`${BASE}/categories`, body)).id,
-  saveItem: async (id: string | null, body: SaveItemRequest): Promise<string> =>
+  /**
+   * Creates (id null) or updates an item. On an existing drug, a less strict classification waits for a second person:
+   * the rest is saved, and the request it waits on comes back (202).
+   */
+  saveItem: async (id: string | null, body: SaveItemRequest): Promise<ItemSaved> =>
     id
-      ? (await api.put<void>(`${BASE}/items/${id}`, body), id)
-      : (await api.post<{ id: string }>(`${BASE}/items`, body)).id,
+      ? { id, approval: (await api.put<ApprovalRequestDto | undefined>(`${BASE}/items/${id}`, body)) ?? null }
+      : { id: (await api.post<{ id: string }>(`${BASE}/items`, body)).id, approval: null },
   itemByCode: (code: string) => api.get<ItemDetail>(`${BASE}/items/by-code/${encodeURIComponent(code)}`),
   saveStore: async (id: string | null, body: SaveStoreRequest): Promise<string> =>
     id

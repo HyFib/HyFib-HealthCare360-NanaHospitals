@@ -289,6 +289,8 @@ const drug = (
   version: 1,
   specification: null,
   ceilingPrice: null,
+  isHighAlert: false,
+  pendingClass: null,
   ...overrides,
 });
 

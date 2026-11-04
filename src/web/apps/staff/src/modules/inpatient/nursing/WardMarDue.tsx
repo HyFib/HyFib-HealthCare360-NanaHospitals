@@ -105,6 +105,7 @@ export function WardMarDue({
         patientName: item.patientName,
         bedLabel: item.bedLabel,
         isOverdue: item.isOverdue,
+        needsWitness: item.needsWitness,
       },
     });
 

@@ -92,6 +92,14 @@ public sealed class Item : AuditableEntity
     /// <summary>NDPS narcotic/psychotropic: register entry and balance tracking on every movement.</summary>
     public bool IsControlled { get; set; }
 
+    /// <summary>
+    /// A high-alert medicine (ISMP): one that does serious harm when given in error, such as insulin, heparin and other
+    /// anticoagulants, concentrated electrolytes (potassium chloride), opioids, chemotherapy, neuromuscular blockers and IV
+    /// inotropes. Each hospital flags its own items. A dose given on the ward is witnessed by a second nurse, as a
+    /// controlled drug's is.
+    /// </summary>
+    public bool IsHighAlert { get; set; }
+
     /// <summary>Must be stored at 2–8 °C (insulin, vaccines); shown on picking lists and labels.</summary>
     public bool IsColdChain { get; set; }
 
@@ -152,9 +160,9 @@ public sealed class Item : AuditableEntity
             return Error.Field("minimumStock", "Minimum stock cannot be more than maximum stock.");
         }
 
-        if ((IsControlled || Schedule != DrugSchedule.None) && Type != ItemType.Drug)
+        if ((IsControlled || IsHighAlert || Schedule != DrugSchedule.None) && Type != ItemType.Drug)
         {
-            return Error.Field("schedule", "Only drugs can carry a schedule or the controlled-drug flag.");
+            return Error.Field("schedule", "Only drugs can carry a schedule, the controlled-drug flag or the high-alert flag.");
         }
 
         if (CeilingPrice is not null && (Type != ItemType.Implant || CeilingPrice <= 0))
@@ -166,4 +174,55 @@ public sealed class Item : AuditableEntity
             ? Result.Success()
             : Error.Field("gstRate", "Use a notified GST rate (0, 0.25, 3, 5, 12, 18, 28 or 40%).");
     }
+}
+
+/// <summary>
+/// How strictly a drug is handled: its schedule (H, H1 and X need a prescription; H1 and X a register), whether it is a
+/// controlled (NDPS) drug, and whether it is a high-alert medicine. On an item already in the master, any of these made
+/// less strict waits for a second person (<see cref="Services.DrugClassApprovals"/>): one person unticking "controlled"
+/// would otherwise switch off the NDPS register and the witness at the bedside at once. Made stricter, it applies at once.
+/// </summary>
+public sealed record DrugSafetyClass(DrugSchedule Schedule, bool IsControlled, bool IsHighAlert)
+{
+    public static DrugSafetyClass Of(Item item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        return new(item.Schedule, item.IsControlled, item.IsHighAlert);
+    }
+
+    /// <summary>Whether <paramref name="next"/> handles the drug less strictly than this in any way.</summary>
+    public bool IsWeakenedBy(DrugSafetyClass next)
+    {
+        ArgumentNullException.ThrowIfNull(next);
+        return (IsControlled && !next.IsControlled) || (IsHighAlert && !next.IsHighAlert) || Strictness(next.Schedule) < Strictness(Schedule);
+    }
+
+    public void ApplyTo(Item item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        (item.Schedule, item.IsControlled, item.IsHighAlert) = (Schedule, IsControlled, IsHighAlert);
+    }
+
+    /// <summary>The class in words, for the approval and the audit trail: "Schedule H1, controlled (NDPS), high-alert".</summary>
+    public string Words()
+    {
+        List<string> parts = [Schedule switch
+        {
+            DrugSchedule.None => "No schedule",
+            DrugSchedule.Otc => "Over the counter",
+            _ => "Schedule " + Schedule,
+        }];
+        parts.Add(IsControlled ? "controlled (NDPS)" : "not controlled");
+        parts.Add(IsHighAlert ? "high-alert" : "not high-alert");
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>How strict a schedule is: X (kept apart, with a register) above H1 (a register) above H (a prescription) above the rest.</summary>
+    internal static int Strictness(DrugSchedule schedule) => schedule switch
+    {
+        DrugSchedule.X => 3,
+        DrugSchedule.H1 => 2,
+        DrugSchedule.H => 1,
+        _ => 0,
+    };
 }
