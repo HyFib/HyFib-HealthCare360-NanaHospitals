@@ -15,18 +15,20 @@ internal static class FhirResourceTypes
     public const string Procedure = "Procedure";
     public const string Practitioner = "Practitioner";
     public const string Organization = "Organization";
+    public const string Location = "Location";
 
     public static IReadOnlyList<string> Names { get; } =
     [
         Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport, DocumentReference, Immunization, Procedure,
-        Practitioner, Organization,
+        Practitioner, Organization, Location,
     ];
 
     /// <summary>
-    /// The hospital's directory: its practitioners and its facilities. They are in no patient's record, so they are read
-    /// without a patient's consent, and what the records say of the people and places in them can be looked up.
+    /// The hospital's directory: its practitioners, its facilities and the places of care in them (wards, rooms and beds).
+    /// They are in no patient's record, so they are read without a patient's consent, and what the records say of the
+    /// people and places in them can be looked up.
     /// </summary>
-    public static IReadOnlyList<string> Directory { get; } = [Practitioner, Organization];
+    public static IReadOnlyList<string> Directory { get; } = [Practitioner, Organization, Location];
 
     /// <summary>Resource type names are case-sensitive in FHIR.</summary>
     public static bool IsServed(string? type) => type is not null && Names.Contains(type, StringComparer.Ordinal);

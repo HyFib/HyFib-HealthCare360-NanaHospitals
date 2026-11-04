@@ -3,8 +3,8 @@
 Read-only HL7 FHIR R4 API that lets other providers read a patient's record, **subject to the patient's consent**
 (SRS **EHR-05**): Patient, Encounter, Observation (the clinic's vital signs, lab results and the readings of the patient's
 home-monitoring devices), Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport, DocumentReference,
-Immunization and Procedure under `/fhir/r4`, with the hospital's own directory, Practitioner and Organization, which is
-no patient's and needs no consent ([Practitioner and Organization](#practitioner-and-organization)). It is built with the
+Immunization and Procedure under `/fhir/r4`, with the hospital's own directory, Practitioner, Organization and Location,
+which is no patient's and needs no consent ([Practitioner, Organization and Location](#practitioner-organization-and-location)). It is built with the
 Firely .NET SDK (`Hl7.Fhir.R4` 6.6.0), returns JSON only and writes nothing.
 
 It also exports discharge summaries, lab reports, radiology and cardiology reports, consultation notes, prescriptions and the vaccine doses given here as **ABDM health records**
@@ -126,7 +126,7 @@ Every read and search passes the same gate for the patient the data belongs to:
 | Search in a patient's record | `phi` / `patient.accessed` | one entry: patient id, `fhir.{Type}`, returned, total and withheld counts, parameter **names**, the stated purpose |
 | Patient search | `phi` / `patient.accessed` | one entry per returned patient, written in one transaction |
 | Patient search that returned nobody | `integration` / `fhir.search` | counts and parameter names |
-| Read or search of the directory (Practitioner, Organization) | `integration` / `fhir.directory` | `fhir.{Type}`, the resource id of a read, returned and total counts, parameter **names**, the stated purpose; no patient. A read that finds a deleted entry or none is recorded too (`gone`, `not-found`) |
+| Read or search of the directory (Practitioner, Organization, Location) | `integration` / `fhir.directory` | `fhir.{Type}`, the resource id of a read, returned and total counts, parameter **names**, the stated purpose; no patient. A read that finds a deleted entry or none is recorded too (`gone`, `not-found`) |
 | Read or search refused for consent or restriction | `security` / `fhir.access_denied` (Warning) | patient id, type, id, reason (`consent-required`, `restricted-record`, or `outside-consent` for a record the reader's consents do not cover), the stated purpose |
 | ABDM health record downloaded | `phi` / `abdm.record.exported` | patient id, `DischargeSummary` or `Prescription` and its id, `{ format: fhir-r4-document, profile, document, resources }` (`document` is the bundle's identifier, `resources` its entry count) |
 | ABDM download refused for consent or restriction | `security` / `abdm.export_refused` (Warning) | patient id, `DischargeSummary` or `Prescription` and its id, reason (`consent-required`, `restricted-record`) |
@@ -142,7 +142,7 @@ not be decrypted (no value).
 
 | Method | Path | Access | Response |
 |---|---|---|---|
-| GET | `/metadata` | anonymous, rate limit `public` | `CapabilityStatement` (FHIR 4.0.1, JSON, read + search-type for the twelve types, every search parameter) |
+| GET | `/metadata` | anonymous, rate limit `public` | `CapabilityStatement` (FHIR 4.0.1, JSON, read + search-type for the thirteen types, every search parameter) |
 | GET | `/{type}/{id}` | `fhir.read` | the resource, or an `OperationOutcome` |
 | GET | `/{type}?…` | `fhir.read` | `searchset` `Bundle` |
 | POST | `/{type}/_search` | `fhir.read` | same as GET; parameters as `application/x-www-form-urlencoded` (keeps identifiers out of the request line) |
@@ -157,7 +157,7 @@ not be decrypted (no value).
   `match` entry per resource with its `fullUrl`.
 * The types of a patient's record are searched **one patient at a time** (`patient`/`subject` = `Patient/{id}`, `{id}`
   or an absolute URL). Patient and Practitioner searches need a selector ([search parameters](#search-parameters));
-  the facilities may be listed. Results are newest first by the resource's main date, then by id (the directory by id).
+  the facilities and the places of care may be listed. Results are newest first by the resource's main date, then by id (the directory by id).
 * Parameters are checked strictly: an unknown parameter, a modifier (`:exact`, `:text`…), a malformed value or a second
   patient is a 400 `OperationOutcome` instead of being ignored, so a mistyped filter never widens the result.
 * Dates take `eq` (default), `ne`, `gt`, `ge`, `lt` and `le` with FHIR range semantics at the value's precision
@@ -203,6 +203,7 @@ All types also take `_id` and `_lastUpdated` (meta.lastUpdated).
 | Procedure | `patient`, `status` (`entered-in-error` only when asked for), `date` (when it was performed) |
 | Practitioner | `identifier` (HPR ID `https://doctor.ndhm.gov.in`, council registration `urn:hc360:medical-council-registration`, staff code `urn:hc360:practitioner`; a bare value tries each), `name` (each word must start a word of the name), `active`. At least one of `_id`, `identifier` or `name`: a practitioner is looked up, the staff are never listed |
 | Organization | `identifier` (HFR ID `https://facility.ndhm.gov.in`, facility code `urn:hc360:facility`), `name`, `active` |
+| Location | `identifier` (ward code `urn:hc360:ward`, bed label `urn:hc360:bed`), `name`, `type` (v3 RoleCode `HU`, `ICU`, `PEDICU`, `PEDNICU`, `ER`), `partof` (`Location/ward-{id}` or `Location/room-{id}`; a bare id or an absolute URL also), `organization` (`Organization/{id}`), `status` (`active`, `inactive`) |
 
 ## Resource ids
 
@@ -220,6 +221,7 @@ All types also take `_id` and `_lastUpdated` (meta.lastUpdated).
 | Procedure | `{procedureId}` | Clinical `ProcedureRecord` |
 | Practitioner | `{practitionerId}` | the practitioner master (Platform `Practitioner`) |
 | Organization | `{facilityId}` | the facility master (Platform `Facility`) |
+| Location | `ward-{wardId}`, `room-{roomId}`, `bed-{bedId}` | Inpatient `Ward`, `Room`, `Bed` |
 
 `meta.lastUpdated` is the source rows' audit timestamp (`UpdatedAt`, else `CreatedAt`; the latest of the rows a
 resource is built from). Times are written in IST (+05:30), clinical times to the second.
@@ -252,6 +254,9 @@ resource is built from). Times are written in IST (+05:30), clinical times to th
   (`urn:hc360:admission-number`); admitting (ADM) and treating (ATND) doctors; `hospitalization.admitSource`
   (OutPatient outp, Emergency emd, Referral mp, Direct other, TransferIn hosp-trans) and `dischargeDisposition`
   (Normal home, Referred other-hcf, LAMA/DAMA/Absconded aadvice with the text, Expired exp).
+* Where the patient stayed (`location`, the read API only: ABDM documents name no ward or bed): for each stay in one bed,
+  in order (Inpatient bed assignments), the ward the bed was in then (`Location/ward-{id}`, physical type `wa`) and the
+  bed (`Location/bed-{id}`, `bd`), each with the stay's period and `completed`, or `active` for where the patient is now.
 * **Clinical encounter** (`enc-`): `partOf` the visit (or the admission's visit), class from its type, in-progress
   until signed (then finished, period end = signing), the doctor as primary performer (PPRF), chief complaint.
 
@@ -419,21 +424,32 @@ duration. Requester = prescribing doctor; encounter = the clinical encounter, el
   a consent, even one that names procedures.
 * Every mapping meets the ABDM guide's Procedure profile (checked in the tests), though the API claims no profile.
 
-### Practitioner and Organization
+### Practitioner, Organization and Location
 
 The hospital's directory: who and where the people and places in the records are. It is in no patient's record, so a
 reader needs `fhir.read` and no consent, and every read and search is audited as an integration event, not PHI access.
-Every reference to a practitioner or a facility in the other resources is literal (`Practitioner/{id}`,
-`Organization/{id}`), with the name and the HPR or HFR id, and resolves here.
+Every reference to a practitioner, a facility, a ward or a bed in the other resources is literal (`Practitioner/{id}`,
+`Organization/{id}`, `Location/{id}`), with the name (and the HPR or HFR id), and resolves here.
 
 * **Practitioner**: as the ABDM documents carry them (NRCeS Practitioner profile, claimed): name, gender,
   qualification, HPR ID, council registration with the council, and staff code; `active` false once taken out of use.
   Never a phone number, e-mail, photograph or signature: who a practitioner is, not how to reach them.
 * **Organization**: as the ABDM documents carry it (NRCeS Organization profile, claimed): name, type `prov`, HFR ID,
   facility code, and the facility's own phone, e-mail and address; `active` false once out of use.
-* A search needs `_id`, `identifier` or `name` for Practitioner, so the staff cannot be listed; the facilities can be.
-* Deleted (a practitioner or facility recorded by mistake): Gone (410) by id, as records may still refer to it; never in
-  a search.
+* **Location** (base R4: the guide has no Location profile): the wards (`ward-`), the rooms in them (`room-`) and their
+  beds (`bed-`), of the reader's facility, as the stays that name them are.
+  * The name (a room's is its ward's and its number); the ward code or the bed label as an identifier.
+  * `type`: the kind of ward as a v3 service delivery location type (the binding is extensible), with the ward type in
+    words: `ICU`, `PEDICU` (paediatric) and `PEDNICU` (neonatal) intensive care, `ER` the emergency ward, and `HU`
+    (hospital unit) every other ward, whose kind the value set has no code for. A room or a bed has its ward's.
+  * `physicalType` `wa`, `ro` or `bd`; `partOf`: a room its ward, a bed its room or, in an open ward, its ward;
+    `managingOrganization` the facility; `status` active, or inactive once out of use.
+  * Never free text (a ward's notes, a room's description, why a bed is blocked, which may name a patient) and never
+    occupancy (`operationalStatus`): what and where a place is, not what happens in it.
+* A search needs `_id`, `identifier` or `name` for Practitioner, so the staff cannot be listed; the facilities and the
+  places of care can be.
+* Deleted (a practitioner, facility or place recorded by mistake): Gone (410) by id, as records may still refer to it;
+  never in a search.
 * A nurse or other account that wrote or gave something, and is not in the practitioner master, is named only.
 
 ## ABDM health records (EHR-08)
@@ -1011,8 +1027,8 @@ was decrypted by the reference CLI when this was built (a one-off check, as it n
   list its recipient, as HC360 does not know who receives the file.
 * No `vread`/history, `_include`/`_revinclude`, `_sort`, `_summary`, `_elements`, XML, or bulk export (`$export`);
   clinical searches are per patient.
-* Location is not served by the FHIR API (the ABDM guide, 6.5.0, has no Location profile). Binary is not served, so
-  uploaded documents are metadata only.
+* Binary is not served, so uploaded documents are metadata only. Operating theatres are not Locations yet, so a
+  procedure names no place; ABDM documents name no ward or bed; and a Location carries no occupancy.
 * A counselling note is served by the FHIR API under a consent that names counselling notes, but never exported as an
   ABDM document (an ABDM consent cannot keep it apart from the patient's other health documents). A clinical note's
   ABDM document carries its text, not a printed copy, as the hospital prints no clinical note.

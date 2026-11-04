@@ -168,6 +168,18 @@ internal static class SearchRequestParser
         return type == FhirResourceTypes.Patient && id.Length > 0 ? id : null;
     }
 
+    /// <summary>A reference as <c>{Type}/{id}</c>: an absolute URL loses its base; <c>{Type}/{id}</c> and a bare <c>{id}</c> stay as they are.</summary>
+    public static string RelativeReference(string reference)
+    {
+        if (!reference.Contains("://", StringComparison.Ordinal))
+        {
+            return reference;
+        }
+
+        var parts = reference.TrimEnd('/').Split('/');
+        return parts.Length >= 2 ? $"{parts[^2]}/{parts[^1]}" : reference;
+    }
+
     public static bool IsJson(string format)
     {
         var mediaType = format.Split(';', 2)[0].Trim();
@@ -208,6 +220,16 @@ internal static class SearchRequestParser
                 }
 
                 return new StringCriterion(parameter.Name, words);
+
+            case Hl7.Fhir.Model.SearchParamType.Reference:
+                var references = TokenValue.SplitOr(value).Select(v => RelativeReference(TokenValue.Unescape(v).Trim())).ToList();
+                if (references.Count == 0 || references.Any(r => r.Length == 0))
+                {
+                    error = $"'{parameter.Name}' needs a reference ({{Type}}/{{id}} or {{id}}).";
+                    return null;
+                }
+
+                return new TokenCriterion(parameter.Name, [.. references.Select(r => new TokenValue(null, r))]);
 
             default:
                 var tokens = TokenValue.SplitOr(value).Select(TokenValue.Parse).ToList();

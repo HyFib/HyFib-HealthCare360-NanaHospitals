@@ -118,7 +118,10 @@ internal sealed class EncounterProvider(HospitalDbContext db, ReferenceDirectory
             UpdatedAt = a.UpdatedAt,
         }));
 
-    /// <summary>Attaches the admission of each in-patient visit (an admission is anchored to its visit).</summary>
+    /// <summary>
+    /// Attaches the admission of each in-patient visit (an admission is anchored to its visit), with the beds of its stay,
+    /// which become the Encounter's locations.
+    /// </summary>
     private async Task<List<VisitRow>> WithAdmissionsAsync(List<VisitRow> visits, CancellationToken ct)
     {
         if (visits.Count == 0)
@@ -128,7 +131,21 @@ internal sealed class EncounterProvider(HospitalDbContext db, ReferenceDirectory
 
         var admissions = await Admissions([.. visits.Select(v => v.Id)]).ToListAsync(ct);
         var byVisit = admissions.GroupBy(a => a.VisitId).ToDictionary(g => g.Key, g => g.OrderBy(a => a.Admission.AdmittedAt).Last().Admission);
-        return [.. visits.Select(v => byVisit.TryGetValue(v.Id, out var admission) ? v with { Admission = admission } : v)];
+        var beds = await BedStaysAsync([.. byVisit.Values.Select(a => a.Id)], ct);
+        return [.. visits.Select(v => byVisit.TryGetValue(v.Id, out var admission) ? v with { Admission = admission with { Beds = [.. beds[admission.Id]] } } : v)];
+    }
+
+    /// <summary>Each stay's beds in the order the patient lay in them (Inpatient bed assignments: a row per bed, closed when they left it).</summary>
+    private async Task<ILookup<Guid, BedStayRow>> BedStaysAsync(Guid[] admissionIds, CancellationToken ct)
+    {
+        var stays = admissionIds.Length == 0
+            ? []
+            : await db.Set<BedAssignment>().AsNoTracking()
+                .Where(b => admissionIds.Contains(b.AdmissionId))
+                .OrderBy(b => b.FromAt).ThenBy(b => b.Id)
+                .Select(b => new { b.AdmissionId, b.BedId, b.WardId, b.FromAt, b.ToAt })
+                .ToListAsync(ct);
+        return stays.ToLookup(s => s.AdmissionId, s => new BedStayRow(s.BedId, s.WardId, s.FromAt, s.ToAt));
     }
 
     private async Task<List<R4.Resource>> MapAsync(IReadOnlyList<VisitRow> visits, IReadOnlyList<ClinicalEncounterRow> encounters, CancellationToken ct)
@@ -139,6 +156,10 @@ internal sealed class EncounterProvider(HospitalDbContext db, ReferenceDirectory
             ids.Practitioner(v.PractitionerId, v.Admission?.AdmittingPractitionerId, v.Admission?.ConsultantPractitionerId)
                 .Department(v.DepartmentId, v.Admission?.DepartmentId)
                 .Facility(v.FacilityId);
+            foreach (var stay in v.Admission?.Beds ?? [])
+            {
+                ids.Ward(stay.WardId).Bed(stay.BedId);
+            }
         }
 
         foreach (var e in encounters)
