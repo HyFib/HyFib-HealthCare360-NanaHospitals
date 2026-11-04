@@ -27,7 +27,7 @@ public sealed class PatientDocumentTests(HospitalServer server)
     private static readonly TimeSpan IndiaOffset = TimeSpan.FromMinutes(330);
 
     // The file store takes a file by what it is, and "%PDF-" is what a PDF starts with.
-    private static readonly byte[] OutsideReport = "%PDF-1.7\n% MRI brain, outside report\n%%EOF\n"u8.ToArray();
+    internal static readonly byte[] OutsideReport = "%PDF-1.7\n% MRI brain, outside report\n%%EOF\n"u8.ToArray();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -227,7 +227,7 @@ public sealed class PatientDocumentTests(HospitalServer server)
         problem.ShouldContain("\"source\"");
     }
 
-    private static AttachDocumentRequest OutsideReportFrom(Guid fileId) =>
+    internal static AttachDocumentRequest OutsideReportFrom(Guid fileId) =>
         new(fileId, PatientDocumentType.ExternalReport, "MRI brain", new DateOnly(2026, 8, 14), "Apollo Diagnostics, Pune", null);
 
     private async Task<PatientCreated> RegisterPatientAsync(bool isVip)
@@ -244,7 +244,7 @@ public sealed class PatientDocumentTests(HospitalServer server)
     }
 
     /// <summary>Uploads the outside report as the staff app does before attaching it.</summary>
-    private static async Task<Guid> UploadAsync(ApiClient client, Guid? patientId)
+    internal static async Task<Guid> UploadAsync(ApiClient client, Guid? patientId)
     {
         using var form = new MultipartFormDataContent();
         var file = new ByteArrayContent(OutsideReport);

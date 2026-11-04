@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Modules.Interop.Search;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Identity;
@@ -30,7 +31,7 @@ internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceD
                 return unavailable;
             }
 
-            var documents = await PatientDocuments(d => d.Id == documentId).ToListAsync(ct);
+            var documents = await PatientDocumentsAsync(d => d.Id == documentId, ct);
             return documents.Count == 0 ? ResourceLookup.Missing : ResourceLookup.Found(DocumentReferenceMapper.FromPatientDocument(documents[0]), state!.PatientId);
         }
 
@@ -57,72 +58,132 @@ internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceD
             }
 
             // A draft is answered as no note at all.
-            var notes = await SignedNotes(n => n.Id == noteId).ToListAsync(ct);
+            var notes = await SignedNotesAsync(n => n.Id == noteId, ct);
             return notes.Count == 0 ? ResourceLookup.Missing : ResourceLookup.Found((await MapNotesAsync(notes, ct))[0], state!.PatientId);
         }
 
         return ResourceLookup.Missing;
     }
 
-    public async Task<IReadOnlyList<R4.Resource>> ListForPatientAsync(Guid patientId, CancellationToken ct)
+    public async Task<SearchCandidates> ListForPatientAsync(Guid patientId, SearchRequest request, PatientAccess access, CancellationToken ct)
     {
-        var documents = await PatientDocuments(d => d.PatientId == patientId).ToListAsync(ct);
+        var documents = await PatientDocumentsAsync(d => d.PatientId == patientId, ct);
         var summaries = await SignedSummaries(s => s.PatientId == patientId).ToListAsync(ct);
-        var notes = await SignedNotes(n => n.PatientId == patientId).ToListAsync(ct);
-        return [.. documents.Select(DocumentReferenceMapper.FromPatientDocument), .. await MapSummariesAsync(summaries, ct), .. await MapNotesAsync(notes, ct)];
+        var notes = await SignedNotesAsync(n => n.PatientId == patientId, ct);
+        return new SearchCandidates([.. documents.Select(DocumentReferenceMapper.FromPatientDocument), .. await MapSummariesAsync(summaries, ct), .. await MapNotesAsync(notes, ct)]);
     }
 
     /// <summary>
-    /// Signed clinical notes, addenda included; a draft is never shared. A note's encounter and stay are kept only when
-    /// they are the patient's own, so a note filed against someone else's never points another provider at it. Its author
-    /// and signer are named from their accounts (a nurse is not a practitioner), the signer's practitioner looked up.
+    /// Signed clinical notes, addenda included; a draft is never shared. The note's encounter, stay and accounts are
+    /// checked and named by <see cref="SignedNotesAsync"/>.
     /// </summary>
-    internal IQueryable<ClinicalNoteRow> SignedNotes(Expression<Func<ClinicalNote, bool>> filter)
-    {
-        var users = db.Set<User>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]);
-        var encounters = db.Set<Encounter>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
-        var admissions = db.Set<Admission>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
-        return db.Set<ClinicalNote>().AsNoTracking().Where(filter).Where(n => n.IsSigned && n.SignedAt != null)
+    internal IQueryable<ClinicalNoteRow> SignedNotes(Expression<Func<ClinicalNote, bool>> filter) =>
+        db.Set<ClinicalNote>().AsNoTracking().Where(filter).Where(n => n.IsSigned && n.SignedAt != null)
             .Select(n => new ClinicalNoteRow
             {
                 Id = n.Id,
                 PatientId = n.PatientId,
                 FacilityId = n.FacilityId,
-                EncounterId = encounters.Any(e => e.Id == n.EncounterId && e.PatientId == n.PatientId) ? n.EncounterId : null,
-                AdmissionId = admissions.Any(a => a.Id == n.AdmissionId && a.PatientId == n.PatientId) ? n.AdmissionId : null,
+                EncounterId = n.EncounterId,
+                AdmissionId = n.AdmissionId,
                 Type = n.Type,
                 Title = n.Title,
                 Body = n.Body,
                 AuthorPractitionerId = n.AuthorPractitionerId,
-                AuthorUserName = users.Where(u => u.Id == n.AuthorUserId).Select(u => u.DisplayName).FirstOrDefault(),
-                SignedByPractitionerId = users.Where(u => u.Id == n.SignedByUserId).Select(u => u.PractitionerId).FirstOrDefault(),
-                SignedByUserName = users.Where(u => u.Id == n.SignedByUserId).Select(u => u.DisplayName).FirstOrDefault(),
+                AuthorUserId = n.AuthorUserId,
+                SignedByUserId = n.SignedByUserId,
                 AmendsNoteId = n.AmendsNoteId,
                 SignedAt = n.SignedAt!.Value,
                 CreatedAt = n.CreatedAt,
                 UpdatedAt = n.UpdatedAt,
             });
+
+    /// <summary>
+    /// The signed notes, each with its encounter and stay kept only when they are the patient's own (in whichever
+    /// facility), so a note filed against someone else's never points another provider at it, and its author and signer
+    /// named from their accounts, a removed account too (a nurse is not a practitioner), the signer's practitioner looked
+    /// up. Those are read apart: a query that ignores a filter ignores it for every table it reads, so ignoring the
+    /// facility filter for the encounter in the notes' query would read other facilities' notes, and ignoring the
+    /// soft-delete filter for the accounts would read removed notes.
+    /// </summary>
+    internal async Task<List<ClinicalNoteRow>> SignedNotesAsync(Expression<Func<ClinicalNote, bool>> filter, CancellationToken ct)
+    {
+        var notes = await SignedNotes(filter).ToListAsync(ct);
+        if (notes.Count == 0)
+        {
+            return notes;
+        }
+
+        Guid[] encounterIds = [.. notes.Select(n => n.EncounterId).OfType<Guid>().Distinct()];
+        Guid[] admissionIds = [.. notes.Select(n => n.AdmissionId).OfType<Guid>().Distinct()];
+        Guid[] userIds = [.. notes.SelectMany(n => new[] { n.AuthorUserId, n.SignedByUserId }).OfType<Guid>().Distinct()];
+        var encounters = encounterIds.Length == 0
+            ? []
+            : await db.Set<Encounter>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(e => encounterIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id, e => e.PatientId, ct);
+        var admissions = admissionIds.Length == 0
+            ? []
+            : await db.Set<Admission>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(a => admissionIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.PatientId, ct);
+        var users = userIds.Length == 0
+            ? []
+            : await db.Set<User>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+                .Where(u => userIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => new NoteAccount(u.DisplayName, u.PractitionerId), ct);
+        return
+        [
+            .. notes.Select(n => n with
+            {
+                EncounterId = n.EncounterId is { } encounter && encounters.GetValueOrDefault(encounter) == n.PatientId ? encounter : null,
+                AdmissionId = n.AdmissionId is { } admission && admissions.GetValueOrDefault(admission) == n.PatientId ? admission : null,
+                AuthorUserName = Account(users, n.AuthorUserId)?.Name,
+                SignedByUserName = Account(users, n.SignedByUserId)?.Name,
+                SignedByPractitionerId = Account(users, n.SignedByUserId)?.PractitionerId,
+            }),
+        ];
     }
 
-    /// <summary>Clinical documents with their stored file's content type and size (identity and insurance documents stay).</summary>
+    private static NoteAccount? Account(Dictionary<Guid, NoteAccount> users, Guid? userId) =>
+        userId is { } id ? users.GetValueOrDefault(id) : null;
+
+    /// <summary>
+    /// Clinical documents (identity and insurance documents stay); the stored file's content type and size are added by
+    /// <see cref="PatientDocumentsAsync"/>.
+    /// </summary>
     internal IQueryable<PatientDocumentRow> PatientDocuments(Expression<Func<PatientDocument, bool>> filter) =>
-        from d in db.Set<PatientDocument>().AsNoTracking().Where(filter)
-        where d.Type != PatientDocumentType.IdProof && d.Type != PatientDocumentType.InsuranceCard
-        join f in db.Set<StoredFile>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]) on d.FileId equals f.Id into files
-        from f in files.DefaultIfEmpty()
-        select new PatientDocumentRow
+        db.Set<PatientDocument>().AsNoTracking().Where(filter)
+            .Where(d => d.Type != PatientDocumentType.IdProof && d.Type != PatientDocumentType.InsuranceCard)
+            .Select(d => new PatientDocumentRow
+            {
+                Id = d.Id,
+                PatientId = d.PatientId,
+                Type = d.Type,
+                Title = d.Title,
+                DocumentDate = d.DocumentDate,
+                Source = d.Source,
+                FileId = d.FileId,
+                CreatedAt = d.CreatedAt,
+                UpdatedAt = d.UpdatedAt,
+            });
+
+    /// <summary>
+    /// The documents with their stored file's content type and size, a file since removed included. The files are read
+    /// apart: a query that ignores a filter ignores it for every table it reads, so ignoring the soft-delete filter for
+    /// the files in the documents' query would read removed documents too.
+    /// </summary>
+    internal async Task<List<PatientDocumentRow>> PatientDocumentsAsync(Expression<Func<PatientDocument, bool>> filter, CancellationToken ct)
+    {
+        var documents = await PatientDocuments(filter).ToListAsync(ct);
+        Guid[] fileIds = [.. documents.Select(d => d.FileId).Distinct()];
+        if (fileIds.Length == 0)
         {
-            Id = d.Id,
-            PatientId = d.PatientId,
-            Type = d.Type,
-            Title = d.Title,
-            DocumentDate = d.DocumentDate,
-            Source = d.Source,
-            ContentType = f.ContentType,
-            SizeBytes = (long?)f.SizeBytes,
-            CreatedAt = d.CreatedAt,
-            UpdatedAt = d.UpdatedAt,
-        };
+            return documents;
+        }
+
+        var files = await db.Set<StoredFile>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+            .Where(f => fileIds.Contains(f.Id)).Select(f => new { f.Id, f.ContentType, f.SizeBytes }).ToDictionaryAsync(f => f.Id, ct);
+        return [.. documents.Select(d => files.TryGetValue(d.FileId, out var file) ? d with { ContentType = file.ContentType, SizeBytes = file.SizeBytes } : d)];
+    }
 
     /// <summary>Signed or amended discharge summaries; drafts are not shared.</summary>
     internal IQueryable<DischargeSummaryRow> SignedSummaries(Expression<Func<DischargeSummary, bool>> filter) =>
@@ -192,4 +253,7 @@ internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceD
         var refs = await references.LoadAsync(ids, ct);
         return [.. notes.Select(n => (R4.Resource)DocumentReferenceMapper.FromClinicalNote(n, refs))];
     }
+
+    /// <summary>An account as a note names it.</summary>
+    private sealed record NoteAccount(string? Name, Guid? PractitionerId);
 }

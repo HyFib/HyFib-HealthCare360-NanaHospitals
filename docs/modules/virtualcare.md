@@ -7,7 +7,7 @@ Telehealth video consultations (WebRTC signalling, waiting room, chat) and Remot
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare` (layer 5, references Patients and Scheduling) |
 | Schema | `virtualcare` — `telehealth_sessions`, `telehealth_participants`, `telehealth_messages`, `rpm_programs`, `rpm_enrollments`, `rpm_devices`, `rpm_readings`, `rpm_thresholds`, `rpm_alerts` |
 | Requirements | TEL-01..06, RPM-01..05 |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.VirtualCare.Tests` (join tokens, session state machine, thresholds, units, adherence, FHIR and device parsers, device keys, ICE settings, alerts, permissions, prescription notice channels); end to end, `TeleconsultationJourneyTests` and `RpmAlertJourneyTests` (an alert sent to the care team by SMS and WhatsApp, and a failed send tried again) in `tests/HyFib.HealthCare360.IntegrationTests` |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.VirtualCare.Tests` (join tokens, session state machine, thresholds, units, adherence, FHIR and device parsers, device keys, ICE settings, alerts, permissions, prescription notice channels); end to end, `TeleconsultationJourneyTests`, `RpmAlertJourneyTests` (an alert sent to the care team by SMS and WhatsApp, and a failed send tried again) and `DeviceReadingSharingTests` (readings shared with another provider through the FHIR API, and moved by a merge of duplicate records) in `tests/HyFib.HealthCare360.IntegrationTests` |
 
 ## Telehealth
 
@@ -149,8 +149,16 @@ refused. Bodies accepted (≤ 500 readings):
 ```
 
 or a FHIR R4 `Observation` / `Bundle` of Observations identified by LOINC (`8480-6`, `8462-4`, `85354-9` panel
-components, `8867-4`, `59408-5`/`2708-6`, `2339-0`/`2345-7`/`41653-7`/`15074-8`, `29463-7`, `8310-5`, `8601-7`
-with `valueCodeableConcept`). 422 when the device is not assigned; 400 when nothing could be accepted.
+components, `8867-4`, `59408-5`/`2708-6`, `2339-0`/`2345-7`/`41653-7`/`15074-8`, `29463-7`, `8310-5`, `8601-7`/`8884-9`
+with `valueCodeableConcept`). A quantity's unit is read from its UCUM `code` when it has one (`/min`, `Cel`, `mm[Hg]`),
+else from its `unit` label: a label is worded for a person ("beats/minute" in ABDM's own heart rate example) and once
+had such a reading refused as an unsupported unit. 422 when the device is not assigned; 400 when nothing could be
+accepted.
+
+**Shared with other providers.** The readings are served by the FHIR API as Observations (`rpm-{readingId}`), coded as
+the clinic's vital signs are, under the patient's record-sharing consent: vital signs with the vital signs, a glucose
+with the lab results, an ECG patch's rhythm with the heart tests ([interop.md](interop.md#observation--home-monitoring-rpm--remote-patient-monitoring)).
+What HC360 serves, this intake reads back as the reading it was (`DeviceReadingObservationsTests`).
 
 **Alert routing (RPM-03).** New or escalated alerts: SMS/WhatsApp `rpm.alert` to the active care-team practitioners with
 a mobile number (first name + UHID only), queued in the outbox in the ingestion transaction; in-app notification to every
@@ -165,6 +173,7 @@ and the alert stays open in the queue meanwhile (`RpmAlertJourneyTests`).
 | `AppointmentCancelled` | cancels the not-yet-started session, invalidates the link, tells waiting clients |
 | `VisitCreated` (Patients) | links the visit to the appointment's session |
 | `PrescriptionSharedWithPatient` (Clinical) | for a teleconsultation visit: `prescription.shared` to the patient by SMS, at the moment Clinical sends the WhatsApp message it sends for every OP prescription — at signing, or, where the hospital requires the doctor's DSC, once signed with it; once per prescription |
+| `PatientsMerged` (Patients) | in the merge's transaction, across facilities: the duplicate's enrolments with their readings and alerts, the devices assigned to it and its telehealth sessions move to the surviving record, so its charts, alerts and shared record (FHIR) hold everything measured under the duplicate and its devices go on filing readings under the survivor. Set-based statements (readings run to thousands), so one audit entry `virtualcare.records_moved` names the enrolments, alerts, devices and sessions moved and the number of readings (a reading belongs to its enrolment). An enrolment moves as it is: if both records were enrolled in one programme, the survivor has two open enrolments in it for the care team to close one |
 
 No events are raised. Real time: `telehealth.changed` on `Topics.Facility(facilityId)` (`{ id, status, practitionerId }`).
 

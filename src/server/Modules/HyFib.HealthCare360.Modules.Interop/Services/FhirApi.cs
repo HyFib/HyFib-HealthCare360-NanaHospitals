@@ -129,7 +129,8 @@ internal sealed class FhirApi(
 
     /// <summary>
     /// A search inside one patient's record: only the records the consents admitting the reader cover. A patient whose
-    /// record may not be shared yields an empty bundle; records left out are said to be withheld, never counted.
+    /// record may not be shared yields an empty bundle; records left out are said to be withheld, never counted. A search
+    /// that would reach more records than one answer holds is refused, asking for a narrower one.
     /// </summary>
     private async Task<FhirResponse> SearchPatientRecordAsync(SearchRequest request, string baseUrl, SharingReader reader, CancellationToken ct)
     {
@@ -148,9 +149,14 @@ internal sealed class FhirApi(
             return FhirResponse.Ok(empty, request.Pretty);
         }
 
-        var all = await _providers[type].ListForPatientAsync(patientId, ct);
-        var shared = all.Where(resource => access.Covers(SharedRecords.KindOf(resource), SharedRecords.DateOf(resource))).ToList();
-        var withheld = all.Count - shared.Count;
+        var candidates = await _providers[type].ListForPatientAsync(patientId, request, access, ct);
+        if (candidates.Refusal is { } refusal)
+        {
+            return FhirResponse.From(refusal);
+        }
+
+        var shared = candidates.Resources.Where(resource => access.Covers(SharedRecords.KindOf(resource), SharedRecords.DateOf(resource))).ToList();
+        var withheld = candidates.Resources.Count - shared.Count + candidates.Withheld;
         var page = ResourceSearch.Execute(shared, request);
         await audit.SearchAsync(type, patientId, page.Resources.Count, page.Total, withheld, request.ParameterNames, reader, ct);
         return FhirResponse.Ok(SearchBundles.Build(baseUrl, request, page, time.GetUtcNow(), withheld > 0 ? FhirOutcomes.Withheld() : null), request.Pretty);

@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 
 namespace HyFib.HealthCare360.Modules.Interop.Mapping;
 
@@ -141,6 +142,9 @@ internal sealed record LabResultRow
     public Guid? VisitId { get; init; }
     public string TestCode { get; init; } = string.Empty;
     public string TestName { get; init; } = string.Empty;
+    /// <summary>The test in the test master, whose LOINC code and name are looked up apart.</summary>
+    public Guid LabTestId { get; init; }
+
     public string? Loinc { get; init; }
 
     /// <summary>The LOINC name of <see cref="Loinc"/> in the test master (the code's display), when the laboratory gave it.</summary>
@@ -410,6 +414,10 @@ internal sealed record PatientDocumentRow
     public string Title { get; init; } = string.Empty;
     public DateOnly? DocumentDate { get; init; }
     public string? Source { get; init; }
+
+    /// <summary>The stored file, whose type and size are looked up apart (<see cref="ContentType"/>, <see cref="SizeBytes"/>).</summary>
+    public Guid FileId { get; init; }
+
     public string? ContentType { get; init; }
     public long? SizeBytes { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
@@ -462,6 +470,11 @@ internal sealed record ClinicalNoteRow
     public string Body { get; init; } = string.Empty;
     public Guid? AuthorPractitionerId { get; init; }
 
+    /// <summary>The accounts that wrote and signed the note, whose names are looked up apart.</summary>
+    public Guid? AuthorUserId { get; init; }
+
+    public Guid? SignedByUserId { get; init; }
+
     /// <summary>The account that wrote the note, by name (for a note written by staff who are not practitioners).</summary>
     public string? AuthorUserName { get; init; }
 
@@ -478,3 +491,37 @@ internal sealed record ClinicalNoteRow
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
+/// <summary>
+/// A reading from remote patient monitoring (VirtualCare <c>RpmReading</c>): a device at the patient's home, or a nurse who
+/// entered what the patient read out. The value is in its canonical unit (mmHg, beats/min, %, mg/dL, kg, °C; an ECG
+/// rhythm's class 0, 1 or 2).
+/// </summary>
+internal sealed record DeviceReadingRow
+{
+    public required Guid Id { get; init; }
+    public required Guid PatientId { get; init; }
+    public Guid EnrollmentId { get; init; }
+    public RpmReadingType Type { get; init; }
+    public decimal Value { get; init; }
+
+    /// <summary>What the device made of it (an ECG patch: "Atrial fibrillation suspected").</summary>
+    public string? TextValue { get; init; }
+
+    public DateTimeOffset MeasuredAt { get; init; }
+    public DateTimeOffset ReceivedAt { get; init; }
+    public ReadingSeverity Severity { get; init; }
+    public ReadingSource Source { get; init; }
+
+    /// <summary>The device that sent it and the account that entered it by hand, looked up apart.</summary>
+    public Guid? DeviceId { get; init; }
+
+    public Guid? RecordedByUserId { get; init; }
+
+    public RpmDeviceType? DeviceType { get; init; }
+    public string? DeviceManufacturer { get; init; }
+    public string? DeviceModel { get; init; }
+    public string? DeviceSerial { get; init; }
+
+    /// <summary>The account that entered a reading by hand.</summary>
+    public string? RecordedByUserName { get; init; }
+}

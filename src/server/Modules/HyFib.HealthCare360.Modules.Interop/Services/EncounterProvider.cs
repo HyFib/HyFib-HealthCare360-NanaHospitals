@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Modules.Interop.Search;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using ClinicalEncounter = HyFib.HealthCare360.Modules.Clinical.Domain.Encounter;
 using R4 = Hl7.Fhir.Model;
@@ -47,11 +48,11 @@ internal sealed class EncounterProvider(HospitalDbContext db, ReferenceDirectory
         return ResourceLookup.Missing;
     }
 
-    public async Task<IReadOnlyList<R4.Resource>> ListForPatientAsync(Guid patientId, CancellationToken ct)
+    public async Task<SearchCandidates> ListForPatientAsync(Guid patientId, SearchRequest request, PatientAccess access, CancellationToken ct)
     {
         var visits = await WithAdmissionsAsync(await Visits(v => v.PatientId == patientId).ToListAsync(ct), ct);
         var encounters = await Encounters(e => e.PatientId == patientId).ToListAsync(ct);
-        return await MapAsync(visits, encounters, ct);
+        return new SearchCandidates(await MapAsync(visits, encounters, ct));
     }
 
     internal IQueryable<VisitRow> Visits(Expression<Func<Visit, bool>> filter) => VisitRows(db.Set<Visit>().AsNoTracking().Where(filter));

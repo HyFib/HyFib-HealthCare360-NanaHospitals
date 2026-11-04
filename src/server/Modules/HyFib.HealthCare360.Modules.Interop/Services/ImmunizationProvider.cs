@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Modules.Interop.Search;
 using HyFib.HealthCare360.Platform.Identity;
 using R4 = Hl7.Fhir.Model;
 
@@ -33,10 +34,10 @@ internal sealed class ImmunizationProvider(HospitalDbContext db) : IFhirResource
         return immunization is null ? ResourceLookup.Missing : ResourceLookup.Found(ImmunizationMapper.Map(immunization), immunization.PatientId);
     }
 
-    public async Task<IReadOnlyList<R4.Resource>> ListForPatientAsync(Guid patientId, CancellationToken ct)
+    public async Task<SearchCandidates> ListForPatientAsync(Guid patientId, SearchRequest request, PatientAccess access, CancellationToken ct)
     {
         var immunizations = await Immunizations(i => i.PatientId == patientId).ToListAsync(ct);
-        return [.. immunizations.Select(ImmunizationMapper.Map)];
+        return new SearchCandidates([.. immunizations.Select(ImmunizationMapper.Map)]);
     }
 
     internal IQueryable<ImmunizationRow> Immunizations(Expression<Func<Immunization, bool>> filter)
