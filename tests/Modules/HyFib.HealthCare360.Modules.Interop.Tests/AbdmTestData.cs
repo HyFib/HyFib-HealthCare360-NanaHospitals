@@ -328,7 +328,45 @@ internal static class AbdmTestData
         "Drink plenty of fluids and rest.", Seen.AddMinutes(20), Seen.AddMinutes(22), PrescriptionLines());
 
     public static ConsultationData ConsultationRecord() => new(
-        Context(encounter: Consultation()), Note(), ConsultationDiagnoses(), Vitals(), PrescriptionLines(), Allergies());
+        Context(encounter: Consultation()), Note(), ConsultationDiagnoses(), Vitals(), PrescriptionLines(), Allergies(), [ConsultationProcedure()]);
+
+    /// <summary>An abscess drained in the consultation, described in words by the doctor who did it.</summary>
+    public static ProcedureRow ConsultationProcedure() => new()
+    {
+        Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac0a0"),
+        PatientId = TestData.PatientId,
+        EncounterId = EncounterId,
+        VisitId = OpVisitId,
+        PerformedAt = Seen.AddMinutes(15),
+        Display = "Incision and drainage of abscess",
+        PerformerPractitionerId = TestData.DoctorId,
+        Side = Platform.Contracts.ProcedureSide.Right,
+        BodySite = "Axilla",
+        Outcome = "Pus drained; wound packed",
+        Source = ProcedureSource.Recorded,
+        Status = ProcedureStatus.Completed,
+        CreatedAt = Seen.AddMinutes(18),
+    };
+
+    /// <summary>A stent placed in the cath lab during the stay, by the cardiologist, as the theatre recorded it.</summary>
+    public static ProcedureRow StayProcedure() => new()
+    {
+        Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac0a1"),
+        PatientId = TestData.PatientId,
+        AdmissionId = AdmissionId,
+        VisitId = StayVisitId,
+        PerformedAt = Admitted.AddHours(20),
+        Code = "027034Z",
+        CodeSystem = CodeReleases.Icd10Pcs,
+        Display = "Coronary angioplasty with a drug-eluting stent to one artery",
+        PerformerPractitionerId = CardiologistId,
+        Side = Platform.Contracts.ProcedureSide.NotApplicable,
+        BodySite = "Left anterior descending artery",
+        Outcome = "TIMI 3 flow restored",
+        Source = ProcedureSource.OperationTheatre,
+        Status = ProcedureStatus.Completed,
+        CreatedAt = Admitted.AddHours(22),
+    };
 
     public static LabReportRow LabReport() => new()
     {
@@ -604,8 +642,8 @@ internal static class AbdmTestData
         Diagnoses = "Non-ST elevation myocardial infarction",
         DiagnosisCodes = ["I21.4"],
         PresentingComplaints = "Central chest pain for two hours, sweating.",
-        CourseInHospital = "Managed medically in the CCU. Pain settled; no arrhythmia. Coronary angiography advised as an out-patient.",
-        Procedures = "None",
+        CourseInHospital = "Admitted to the CCU. Coronary angiography showed a tight LAD stenosis, treated with one drug-eluting stent. Pain settled; no arrhythmia.",
+        Procedures = "Coronary angiography; PCI to the LAD with one drug-eluting stent.",
         InvestigationsSummary = "Troponin I raised; ECG with ST depression in V4 to V6.",
         ConditionAtDischarge = "Stable, pain free.",
         Medications = "Aspirin 75 mg once daily; Atorvastatin 40 mg at night.",
@@ -679,7 +717,8 @@ internal static class AbdmTestData
                 ReleasedAt = Admitted.AddHours(2),
                 CreatedAt = Admitted.AddHours(1),
             },
-        ]);
+        ],
+        Procedures: [StayProcedure()]);
 
     private static PrescriptionItemRow Line(
         int sequence, Guid id, string drug, string generic, string strength, string form, string dose, DoseFrequency frequency, int days, decimal quantity,

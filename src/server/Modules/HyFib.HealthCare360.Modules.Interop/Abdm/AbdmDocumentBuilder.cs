@@ -484,8 +484,30 @@ internal static class AbdmNarrative
         R4.DocumentReference d => d.Description ?? Text(d.Type),
         R4.Immunization i => Immunization(i),
         R4.ImmunizationRecommendation r => NextDose(r),
+        R4.Procedure p => Procedure(p),
         _ => null,
     };
+
+    /// <summary>
+    /// "Incision and drainage of abscess: performed 2026-10-15T10:15:00+05:30, Axilla, right, by Dr. Asha Rao. Outcome:
+    /// Pus drained": a procedure with when, where and by whom it was done, and how it went, as the chart lists it.
+    /// </summary>
+    private static string? Procedure(R4.Procedure procedure)
+    {
+        if (Text(procedure.Code) is not { } name)
+        {
+            return null;
+        }
+
+        var details = new[]
+        {
+            (procedure.Performed as R4.FhirDateTime)?.Value is { } performed ? $"performed {performed}" : null,
+            procedure.BodySite.Select(Text).FirstOrDefault(t => t is not null),
+            FhirElements.Clean(procedure.Performer.FirstOrDefault()?.Actor?.Display) is { } performer ? $"by {performer}" : null,
+        }.OfType<string>().ToList();
+        var line = details.Count == 0 ? name : $"{name}: {string.Join(", ", details)}";
+        return Text(procedure.Outcome) is { } outcome ? $"{line}. Outcome: {outcome}" : line;
+    }
 
     /// <summary>
     /// "BCG, dose 1: given 2026-09-24, batch B2611-07, Intradermal route, Left upper arm": a dose as its card reads, the

@@ -99,18 +99,20 @@ internal sealed record ConsultationNote
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
-/// <summary>A consultation with its diagnoses, vital signs, prescriptions and the patient's allergies.</summary>
+/// <summary>A consultation with its diagnoses, vital signs, prescriptions, procedures and the patient's allergies.</summary>
 internal sealed record ConsultationData(
     AbdmContext Context,
     ConsultationNote Note,
     IReadOnlyList<DiagnosisRow> Diagnoses,
     IReadOnlyList<VitalSignsRow> Vitals,
     IReadOnlyList<PrescriptionItemRow> Lines,
-    IReadOnlyList<AllergyRow> Allergies);
+    IReadOnlyList<AllergyRow> Allergies,
+    IReadOnlyList<ProcedureRow>? Procedures = null);
 
 /// <summary>
-/// A signed discharge summary with the stay's diagnoses, prescriptions and lab reports, the patient's allergies, and the
-/// doctor who made the latest amendment, when its author is a doctor.
+/// A signed discharge summary with the stay's diagnoses, prescriptions, lab reports and procedures (operations the
+/// theatre completed included), the patient's allergies, and the doctor who made the latest amendment, when its author
+/// is a doctor.
 /// </summary>
 internal sealed record DischargeSummaryData(
     AbdmContext Context,
@@ -120,7 +122,8 @@ internal sealed record DischargeSummaryData(
     IReadOnlyList<AllergyRow> Allergies,
     IReadOnlyList<LabReportRow> LabReports,
     IReadOnlyList<LabResultRow> LabResults,
-    Guid? AmendedByPractitionerId = null);
+    Guid? AmendedByPractitionerId = null,
+    IReadOnlyList<ProcedureRow>? Procedures = null);
 
 /// <summary>A vaccine dose given here, as the FHIR read API serves it.</summary>
 internal sealed record ImmunizationData(AbdmContext Context, ImmunizationRow Dose);
@@ -254,6 +257,10 @@ internal static class AbdmAsOf
 
     public static List<VitalSignsRow> Vitals(IEnumerable<VitalSignsRow> rows, DateTimeOffset asOf) =>
         [.. rows.Where(v => v.CreatedAt <= asOf && !v.IsEnteredInError)];
+
+    /// <summary>Procedures recorded by then; one corrected since shows as it is now, and one recorded in error is left out.</summary>
+    public static List<ProcedureRow> Procedures(IEnumerable<ProcedureRow> rows, DateTimeOffset asOf) =>
+        [.. rows.Where(p => p.CreatedAt <= asOf && p.Status != ProcedureStatus.EnteredInError)];
 
     /// <summary>Lines of prescriptions signed by then and not cancelled by then.</summary>
     public static List<PrescriptionItemRow> Lines(IEnumerable<PrescriptionItemRow> rows, DateTimeOffset asOf) =>
@@ -475,7 +482,8 @@ internal static class AbdmRecords
 
     /// <summary>
     /// A signed consultation (OPConsultRecord): complaint and diagnoses, history, examination with the vital signs,
-    /// allergies, medicines prescribed, follow-up and referral, then the assessment and plan in a section of its own (the
+    /// allergies, medicines prescribed, follow-up, the procedures done in the consultation (the IG's Procedure section,
+    /// SNOMED CT 371525003) and referral, then the assessment and plan in a section of its own (the
     /// IG has none; its slicing is open at the end). An amended note is attested by the doctor who amended it.
     /// </summary>
     public static AbdmDocument Consultation(ConsultationData d)
@@ -495,6 +503,7 @@ internal static class AbdmRecords
 
         var requests = Undated(MedicationRequests(AbdmAsOf.Lines(d.Lines, date), people, date));
         var allergies = Undated(Allergies(AbdmAsOf.Allergies(d.Allergies, date)));
+        var procedures = Undated(Procedures(AbdmAsOf.Procedures(d.Procedures ?? [], date), people));
         var author = people.Practitioner(note.SignedByPractitionerId ?? note.PractitionerId);
         var amended = note.Status == EncounterStatus.Amended;
         var amender = amended ? people.Find(note.AmendedByPractitionerId) : null;
@@ -517,6 +526,7 @@ internal static class AbdmRecords
             new(AbdmCodes.FollowUp, "Follow up", Lines(
                 note.FollowUpDate is { } followUp ? $"Follow-up on {FhirTime.Date(followUp)}" : null,
                 FhirElements.Clean(note.FollowUpAdvice)), []),
+            new(AbdmCodes.ClinicalProcedureReport, "Procedures", [], procedures),
             new(AbdmCodes.Referral, "Referral", Lines(referral), []),
             new(AbdmCodes.AssessmentAndPlan, "Assessment and plan", Lines(Field("Assessment", note.Assessment), Field("Plan", note.Plan)), []),
         ];
@@ -548,7 +558,8 @@ internal static class AbdmRecords
     /// A signed discharge summary (DischargeSummaryRecord): the stay as the encounter; complaints and the diagnoses
     /// recorded during the stay (the IG has no diagnosis section; its examples put them here); allergies; the stay's lab
     /// reports; the medicines prescribed during the stay, each active or completed as of the summary's date, under the
-    /// doctor's own list of medicines on discharge; procedures; the care plan; the summary itself (the printed PDF, else
+    /// doctor's own list of medicines on discharge; the procedures done during the stay (operations the theatre completed
+    /// included) under the doctor's own words; the care plan; the summary itself (the printed PDF, else
     /// its text); and the hospital course in a section of its own at the end. An amended summary is attested by the doctor
     /// who amended it.
     /// </summary>
@@ -561,6 +572,7 @@ internal static class AbdmRecords
         var conditions = Undated(Conditions(AbdmAsOf.Diagnoses(d.Diagnoses, date)));
         var requests = Undated(MedicationRequests(AbdmAsOf.Lines(d.Lines, date), people, date));
         var allergies = Undated(Allergies(AbdmAsOf.Allergies(d.Allergies, date)));
+        var procedures = Undated(Procedures(AbdmAsOf.Procedures(d.Procedures ?? [], date), people));
         var reports = new List<R4.DiagnosticReport>();
         var results = new List<R4.Observation>();
         var (heldReports, heldResults) = AbdmAsOf.LabReports(d.LabReports, d.LabResults, date);
@@ -607,7 +619,7 @@ internal static class AbdmRecords
             new(AbdmCodes.Investigations, "Investigations", Lines(Field("Investigations", summary.InvestigationsSummary)), reports, "Lab reports:"),
             new(AbdmCodes.MedicationHistory, "Medications", Lines(Field("Medications on discharge", summary.Medications)), requests,
                 "Prescribed during the stay:"),
-            new(AbdmCodes.PastProcedures, "Procedures", Lines(Field("Procedures", summary.Procedures)), []),
+            new(AbdmCodes.PastProcedures, "Procedures", Lines(Field("Procedures", summary.Procedures)), procedures, "Recorded during the stay:"),
             new(AbdmCodes.CarePlan, "Care plan", Lines(
                 Field("Advice", summary.Advice),
                 summary.FollowUpDate is { } followUp ? $"Follow-up on {FhirTime.Date(followUp)}" : null,
@@ -706,6 +718,15 @@ internal static class AbdmRecords
     [
         .. diagnoses.OrderByDescending(d => d.IsPrimary).ThenBy(d => d.RecordedAt).ThenBy(d => d.Id)
             .Select(d => AbdmProfiler.Condition(ConditionMapper.Map(d))),
+    ];
+
+    /// <summary>
+    /// Procedures in the order they were done, as the FHIR read API serves them under the IG's Procedure profile: by name
+    /// (the IG allows SNOMED CT codes only), the performer a practitioner of the document or the name written.
+    /// </summary>
+    private static List<R4.Procedure> Procedures(IReadOnlyList<ProcedureRow> procedures, People people) =>
+    [
+        .. procedures.OrderBy(p => p.PerformedAt).ThenBy(p => p.Id).Select(p => AbdmProfiler.Procedure(ProcedureMapper.Map(p, people.Names))),
     ];
 
     /// <summary>Allergies, except those recorded in error.</summary>
