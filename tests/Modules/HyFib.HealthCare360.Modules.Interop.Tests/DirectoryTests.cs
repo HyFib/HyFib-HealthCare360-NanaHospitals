@@ -92,6 +92,16 @@ public sealed class DirectoryTests
     }
 
     [Fact]
+    public void A_facility_taken_out_of_use_is_served_and_found_as_not_active()
+    {
+        var closed = OrganizationDirectory.Map(Pune with { IsActive = false });
+
+        closed.Active.ShouldBe(false);
+        ResourceSearch.Matches(closed, TestData.Search(FhirResourceTypes.Organization, "active=false")).ShouldBeTrue();
+        ResourceSearch.Matches(closed, TestData.Search(FhirResourceTypes.Organization, "active=true")).ShouldBeFalse();
+    }
+
+    [Fact]
     public void The_directory_is_in_no_patients_record()
     {
         foreach (var type in FhirResourceTypes.Directory)
