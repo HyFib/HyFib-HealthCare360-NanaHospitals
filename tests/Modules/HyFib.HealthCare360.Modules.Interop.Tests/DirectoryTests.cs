@@ -186,6 +186,24 @@ public sealed class DirectoryTests
         inWard.ManagingOrganization.Reference.ShouldBe($"Organization/{TestData.FacilityId:D}");
     }
 
+    [Fact]
+    public void A_room_or_bed_changes_when_the_ward_or_room_it_takes_its_name_kind_or_place_from_changes()
+    {
+        var renamedWard = SemiPrivate with { Name = "Semi-Private Wing", UpdatedAt = TestData.Now.AddDays(-1) };
+        var renumberedRoom = Room201 with { UpdatedAt = TestData.Now.AddHours(-2) };
+
+        var room = LocationMapper.Room(Room201, renamedWard);
+        (room.Name, room.Meta.LastUpdated).ShouldBe(("Semi-Private Wing, room 201", renamedWard.UpdatedAt));
+        LocationMapper.Bed(RoomBed, renamedWard, Room201).Meta.LastUpdated.ShouldBe(renamedWard.UpdatedAt);
+        LocationMapper.Bed(RoomBed, renamedWard, renumberedRoom).Meta.LastUpdated.ShouldBe(renumberedRoom.UpdatedAt);
+        LocationMapper.Bed(IcuBed, Icu, null).Meta.LastUpdated.ShouldBe(IcuBed.UpdatedAt, "its own change, the ward unchanged since");
+
+        // A client syncing by _lastUpdated sees the room again once its ward is renamed.
+        const string since = "_lastUpdated=ge2026-09-23T05:00:00Z"; // two days before TestData.Now
+        ResourceSearch.Matches(LocationMapper.Room(Room201, SemiPrivate), TestData.Search(FhirResourceTypes.Location, since)).ShouldBeFalse();
+        ResourceSearch.Matches(room, TestData.Search(FhirResourceTypes.Location, since)).ShouldBeTrue();
+    }
+
     [Theory]
     [InlineData(WardType.General, "HU", "General ward")]
     [InlineData(WardType.SemiPrivate, "HU", "Semi-private ward")]

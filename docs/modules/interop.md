@@ -444,6 +444,8 @@ Every reference to a practitioner, a facility, a ward or a bed in the other reso
     (hospital unit) every other ward, whose kind the value set has no code for. A room or a bed has its ward's.
   * `physicalType` `wa`, `ro` or `bd`; `partOf`: a room its ward, a bed its room or, in an open ward, its ward;
     `managingOrganization` the facility; `status` active, or inactive once out of use.
+  * `meta.lastUpdated`: a room's or bed's own last change, or its ward's (and a bed's room's) when later, as its name,
+    kind and `partOf` come from them: a renamed ward is a change to each of its rooms and beds for a `_lastUpdated` search.
   * Never free text (a ward's notes, a room's description, why a bed is blocked, which may name a patient) and never
     occupancy (`operationalStatus`): what and where a place is, not what happens in it.
 * A search needs `_id`, `identifier` or `name` for Practitioner, so the staff cannot be listed; the facilities and the

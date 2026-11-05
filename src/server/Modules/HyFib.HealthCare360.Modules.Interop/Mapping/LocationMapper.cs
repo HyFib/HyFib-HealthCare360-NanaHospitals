@@ -65,7 +65,9 @@ internal static class LocationMapper
 
     public static R4.Location Room(RoomRow room, WardRow ward)
     {
-        var location = Place(FhirIds.Of(FhirIds.Room, room.Id), RoomName(room, ward), "ro", "Room", ward.Type, room.FacilityId, room.IsActive, room.CreatedAt, room.UpdatedAt);
+        var location = Place(
+            FhirIds.Of(FhirIds.Room, room.Id), RoomName(room, ward), "ro", "Room", ward.Type, room.FacilityId, room.IsActive, room.CreatedAt,
+            Latest(room.UpdatedAt, ward.UpdatedAt));
         location.PartOf = Reference(FhirIds.Of(FhirIds.Ward, ward.Id), ward.Name);
         return location;
     }
@@ -73,7 +75,9 @@ internal static class LocationMapper
     /// <summary>A bed is part of its room, or of its ward when the ward has no rooms; it does the work of its ward.</summary>
     public static R4.Location Bed(BedRow bed, WardRow ward, RoomRow? room)
     {
-        var location = Place(FhirIds.Of(FhirIds.Bed, bed.Id), bed.Label, "bd", "Bed", ward.Type, bed.FacilityId, bed.IsActive, bed.CreatedAt, bed.UpdatedAt);
+        var location = Place(
+            FhirIds.Of(FhirIds.Bed, bed.Id), bed.Label, "bd", "Bed", ward.Type, bed.FacilityId, bed.IsActive, bed.CreatedAt,
+            Latest(bed.UpdatedAt, ward.UpdatedAt, room?.UpdatedAt));
         location.Identifier.Add(new R4.Identifier(FhirSystems.Bed, bed.Label) { Use = R4.Identifier.IdentifierUse.Usual });
         location.PartOf = room is null
             ? Reference(FhirIds.Of(FhirIds.Ward, ward.Id), ward.Name)
@@ -118,6 +122,13 @@ internal static class LocationMapper
     };
 
     public static string RoomName(RoomRow room, WardRow ward) => $"{ward.Name}, room {room.Number}";
+
+    /// <summary>
+    /// When a room or bed last changed as served: its own row, or the ward (and room) it takes its name, kind and
+    /// <c>partOf</c> from, so a renamed ward advances <c>meta.lastUpdated</c> and an incremental <c>_lastUpdated</c> search
+    /// sees its rooms and beds again.
+    /// </summary>
+    private static DateTimeOffset? Latest(params DateTimeOffset?[] changes) => changes.Max();
 
     private static R4.Location Place(
         string id, string name, string physicalType, string physicalTypeDisplay, WardType wardType, Guid facilityId, bool isActive,
