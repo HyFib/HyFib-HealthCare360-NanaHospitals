@@ -13,6 +13,9 @@ internal sealed record DateCriterion(string Parameter, DateParameter Value) : Se
 
 internal sealed record StringCriterion(string Parameter, IReadOnlyList<string> AnyOf) : SearchCriterion(Parameter);
 
+/// <summary>One rule of <c>_sort</c>: a search parameter, in increasing order, or decreasing when written with a leading '-'.</summary>
+internal sealed record SortRule(string Parameter, Hl7.Fhir.Model.SearchParamType Type, bool Descending);
+
 /// <summary>A validated search.</summary>
 /// <param name="PatientId">The <c>patient</c>/<c>subject</c> id for patient-scoped types (as sent; may not be a GUID).</param>
 /// <param name="LinkParameters">The accepted parameters as sent (without paging), echoed in the bundle links.</param>
@@ -25,6 +28,9 @@ internal sealed record SearchRequest(
     bool Pretty,
     IReadOnlyList<KeyValuePair<string, string>> LinkParameters)
 {
+    /// <summary>The order asked for with <c>_sort</c>, in priority order; empty for the type's default order.</summary>
+    public IReadOnlyList<SortRule> Sort { get; init; } = [];
+
     public bool Has(string parameter) => Criteria.Any(c => c.Parameter == parameter);
 
     /// <summary>Names of the parameters used (for the audit trail; values may be PHI and are never recorded).</summary>
@@ -48,6 +54,7 @@ internal static class SearchRequestParser
         var criteria = new List<SearchCriterion>();
         var echo = new List<KeyValuePair<string, string>>();
         string? patient = null;
+        List<SortRule>? sort = null;
         int? count = null;
         var offset = 0;
         var pretty = false;
@@ -104,6 +111,21 @@ internal static class SearchRequestParser
                         echo.Add(new(key, value));
                         continue;
 
+                    case SearchDefinitions.Sort:
+                        if (sort is not null)
+                        {
+                            return Fail(FhirOutcomes.BadRequest("_sort is given once, as a comma-separated list in priority order."));
+                        }
+
+                        sort = ParseSort(definition, value, out var sortError);
+                        if (sort is null)
+                        {
+                            return Fail(FhirOutcomes.BadRequest(sortError!));
+                        }
+
+                        echo.Add(new(key, value));
+                        continue;
+
                     case SearchDefinitions.Patient or SearchDefinitions.Subject when definition.Find(key) is not null:
                         if (patient is not null || TokenValue.SplitOr(value).Count > 1)
                         {
@@ -149,7 +171,49 @@ internal static class SearchRequestParser
         }
 
         var size = count is null ? SearchDefinitions.DefaultCount : Math.Min(count.Value, SearchDefinitions.MaxCount);
-        return new SearchParse(new SearchRequest(definition, patient, criteria, size, offset, pretty, echo), null);
+        return new SearchParse(new SearchRequest(definition, patient, criteria, size, offset, pretty, echo) { Sort = sort ?? [] }, null);
+    }
+
+    /// <summary>
+    /// <c>_sort</c>: search parameters of the type, comma-separated in priority order, each with a leading '-' for decreasing
+    /// order. A parameter that has no order (a reference, an identifier) or one named twice is refused.
+    /// </summary>
+    private static List<SortRule>? ParseSort(ResourceSearchDefinition definition, string value, out string? error)
+    {
+        var rules = new List<SortRule>();
+        foreach (var item in value.Split(',', StringSplitOptions.TrimEntries))
+        {
+            var descending = item.StartsWith('-');
+            var name = descending ? item[1..] : item;
+            if (name.Length == 0)
+            {
+                error = "_sort is a comma-separated list of search parameters, each with a leading '-' for decreasing order.";
+                return null;
+            }
+
+            if (definition.Find(name) is not { } parameter)
+            {
+                error = $"'{FhirOutcomes.Printable(name)}' is not a search parameter of {definition.Type}, so it cannot order the results.";
+                return null;
+            }
+
+            if (SearchDefinitions.WhyNotSortable(parameter) is { } reason)
+            {
+                error = $"Results cannot be ordered by '{name}': {reason}.";
+                return null;
+            }
+
+            if (rules.Any(rule => rule.Parameter == name))
+            {
+                error = $"'{name}' is in _sort twice.";
+                return null;
+            }
+
+            rules.Add(new SortRule(name, parameter.Type, descending));
+        }
+
+        error = null;
+        return rules;
     }
 
     /// <summary>Accepts <c>Patient/{id}</c>, <c>{id}</c> or an absolute URL ending in <c>Patient/{id}</c>; other types are refused.</summary>

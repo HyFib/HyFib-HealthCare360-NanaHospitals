@@ -43,8 +43,9 @@ internal static class CapabilityStatementBuilder
             Mode = R4.CapabilityStatement.RestfulCapabilityMode.Server,
             Documentation = "Read-only. Searches (GET or POST _search) page with _count (default "
                             + $"{SearchDefinitions.DefaultCount}, at most {SearchDefinitions.MaxCount}) and _offset; the types of a patient's record "
-                            + "are searched for one patient at a time, and Patient and Practitioner searches need a selector. Unknown parameters and "
-                            + "modifiers are rejected with an OperationOutcome.",
+                            + "are searched for one patient at a time, and Patient and Practitioner searches need a selector. Results are newest first; "
+                            + "_sort orders them by a type's date, string and code parameters instead (comma-separated in priority order, '-' for "
+                            + "decreasing; not by a reference or an identifier). Unknown parameters and modifiers are rejected with an OperationOutcome.",
             Security = new R4.CapabilityStatement.SecurityComponent
             {
                 Cors = false,

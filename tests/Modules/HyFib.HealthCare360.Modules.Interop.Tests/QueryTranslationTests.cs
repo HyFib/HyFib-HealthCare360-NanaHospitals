@@ -220,6 +220,24 @@ public sealed class QueryTranslationTests : IDisposable
         Where(records.SearchQuery(TestData.Search("Patient", "name=meera"), includeRestricted: true, RecordSharingConsentTests.Reader)).ShouldNotContain("is_vip");
     }
 
+    [Fact]
+    public void A_patient_search_is_ordered_in_sql_by_the_values_it_is_served_with()
+    {
+        string Order(string sort)
+        {
+            var sql = PatientSearchQuery.Ordered(_db.Set<Patients.Domain.Patient>(), TestData.Search("Patient", $"name=meera&_sort={sort}").Sort).ToQueryString();
+            return sql[sql.IndexOf("ORDER BY", StringComparison.Ordinal)..];
+        }
+
+        var order = Order("name,-birthdate,gender,_lastUpdated,_id");
+        order.ShouldContain("lower(", Case.Insensitive);
+        order.ShouldContain("COLLATE \"C\"");
+        order.ShouldContain("make_date(", Case.Insensitive);
+        order.ShouldContain("date_of_birth IS NULL", Case.Insensitive);
+        Order("birthdate").ShouldContain("make_date(", Case.Insensitive);
+        Order("gender").ShouldEndWith("END, p.registered_at DESC, p.id", Case.Sensitive, "then newest registrations first, then by id");
+    }
+
     /// <summary>The filter part of the SQL (the select list names every column; parameter values are comments above it).</summary>
     private static string Where(IQueryable<Patients.Domain.Patient> query)
     {

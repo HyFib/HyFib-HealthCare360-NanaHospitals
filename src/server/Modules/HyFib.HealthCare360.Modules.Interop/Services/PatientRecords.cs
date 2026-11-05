@@ -48,7 +48,7 @@ internal sealed class PatientRecords(
             return ([], total);
         }
 
-        var page = await PatientSearchQuery.Ordered(query).Skip(request.Offset).Take(request.Count).ToListAsync(ct);
+        var page = await PatientSearchQuery.Ordered(query, request.Sort).Skip(request.Offset).Take(request.Count).ToListAsync(ct);
         return (await MapAsync(page, ct), total);
     }
 
