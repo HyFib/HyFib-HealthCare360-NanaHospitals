@@ -18,6 +18,9 @@ internal sealed class FhirAuditTrail(IAuditLogger audit, HospitalDbContext db)
     public const string SearchWithoutMatch = "fhir.search";
     public const string DirectoryAccessed = "fhir.directory";
 
+    /// <summary>The audit trail's entity id column holds 64 characters.</summary>
+    private const int MaxAuditedId = 64;
+
     public Task ReadAsync(string resourceType, string id, Guid patientId, SharingReader reader, CancellationToken ct) =>
         audit.WriteAsync(new AuditEntry(AuditCategories.PhiAccess, PatientAccessed, $"FHIR R4 read {resourceType}")
         {
@@ -66,16 +69,20 @@ internal sealed class FhirAuditTrail(IAuditLogger audit, HospitalDbContext db)
     }
 
     /// <summary>
-    /// A read or search of the hospital's directory (Practitioner, Organization). It names staff and facilities, not a
-    /// patient, so it is an integration event, not PHI access; a search records its parameter names only.
+    /// A read or search of the hospital's directory. It names staff, facilities and places, not a patient, so it is an
+    /// integration event, not PHI access; a search records its parameter names only. A read that found nothing says why
+    /// (<paramref name="outcome"/>: <c>gone</c> or <c>not-found</c>), and keeps the id asked for when it fits the trail's id
+    /// column (the route takes any text).
     /// </summary>
     public Task DirectoryAsync(
-        string interaction, string resourceType, string? id, int returned, int total, IReadOnlyList<string> parameters, SharingReader reader, CancellationToken ct) =>
-        audit.WriteAsync(new AuditEntry(AuditCategories.Integration, DirectoryAccessed, $"FHIR R4 {interaction} {resourceType}: {returned} of {total} returned")
+        string interaction, string resourceType, string? id, int returned, int total, IReadOnlyList<string> parameters, string? outcome,
+        SharingReader reader, CancellationToken ct) =>
+        audit.WriteAsync(new AuditEntry(AuditCategories.Integration, DirectoryAccessed,
+            $"FHIR R4 {interaction} {resourceType}: {returned} of {total} returned" + (outcome is null ? string.Empty : $" ({outcome})"))
         {
             EntityType = EntityType(resourceType),
-            EntityId = id,
-            Details = new { api = "fhir-r4", interaction, resourceType, returned, total, parameters, purpose = PurposeOf(reader) },
+            EntityId = id is { Length: <= MaxAuditedId } && !id.Any(char.IsControl) ? id : null,
+            Details = new { api = "fhir-r4", interaction, resourceType, returned, total, parameters, outcome, purpose = PurposeOf(reader) },
         }, ct);
 
     /// <summary>A read or search refused because of the consent or restricted-record rules.</summary>

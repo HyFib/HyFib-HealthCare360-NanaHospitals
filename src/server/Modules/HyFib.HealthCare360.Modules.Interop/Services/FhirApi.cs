@@ -74,12 +74,15 @@ internal sealed class FhirApi(
     }
 
     /// <summary>
-    /// A practitioner or facility of the hospital. It is in no patient's record, so no consent is asked; the read is
-    /// audited as an integration event, not PHI access. A deleted one is Gone, as records still refer to it.
+    /// An entry of the hospital's directory. It is in no patient's record, so no consent is asked; the read is audited as an
+    /// integration event, not PHI access, whatever it finds, so a lookup of a deleted or unknown id is on the trail too. A
+    /// deleted one is Gone, as records still refer to it.
     /// </summary>
     private async Task<FhirResponse> ReadDirectoryAsync(string type, string id, SharingReader reader, CancellationToken ct)
     {
         var lookup = await _directory[type].FindAsync(id, ct);
+        var found = lookup.Resource is null ? 0 : 1;
+        await audit.DirectoryAsync("read", type, id, found, found, [], lookup.IsDeleted ? "gone" : found == 0 ? "not-found" : null, reader, ct);
         if (lookup.IsDeleted)
         {
             return FhirResponse.From(FhirOutcomes.Error(StatusCodes.Status410Gone, R4.OperationOutcome.IssueType.Deleted, $"{type}/{id} was deleted.", FhirOutcomes.Deleted));
@@ -90,7 +93,6 @@ internal sealed class FhirApi(
             return FhirResponse.From(FhirOutcomes.ResourceNotFound(type, FhirOutcomes.Printable(id)));
         }
 
-        await audit.DirectoryAsync("read", type, id, 1, 1, [], reader, ct);
         return FhirResponse.Ok(lookup.Resource);
     }
 
@@ -99,7 +101,7 @@ internal sealed class FhirApi(
     {
         var type = request.Definition.Type;
         var page = ResourceSearch.Execute(await _directory[type].ListAsync(ct), request);
-        await audit.DirectoryAsync("search", type, null, page.Resources.Count, page.Total, request.ParameterNames, reader, ct);
+        await audit.DirectoryAsync("search", type, null, page.Resources.Count, page.Total, request.ParameterNames, null, reader, ct);
         return FhirResponse.Ok(SearchBundles.Build(baseUrl, request, page, time.GetUtcNow()), request.Pretty);
     }
 

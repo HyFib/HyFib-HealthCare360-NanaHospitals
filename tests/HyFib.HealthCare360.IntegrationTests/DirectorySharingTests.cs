@@ -93,7 +93,13 @@ public sealed class DirectorySharingTests(HospitalServer server)
         // Records still name the deleted doctor: read by id, they are gone; a search never finds them.
         (await FhirAsync(partner, $"Practitioner/{deletedId}", null)).Status.ShouldBe(410);
         Matches((await FhirAsync(partner, $"Practitioner?_id={deletedId}", null)).Body).ShouldBeEmpty();
-        (await FhirAsync(partner, $"Practitioner/{Guid.CreateVersion7()}", null)).Status.ShouldBe(404);
+        var unknown = Guid.CreateVersion7();
+        (await FhirAsync(partner, $"Practitioner/{unknown}", null)).Status.ShouldBe(404);
+
+        // A lookup that finds a deleted doctor, or none, is on the audit trail too: a probe for ids is seen.
+        (await DirectoryAuditAsync("Practitioner", deletedId.ToString("D"))).ShouldHaveSingleItem().Summary.ShouldEndWith("(gone)");
+        (await DirectoryAuditAsync("Practitioner", unknown.ToString("D"))).ShouldHaveSingleItem().Summary.ShouldEndWith("(not-found)");
+        (await FhirAsync(partner, $"Practitioner/{new string('x', 200)}", null)).Status.ShouldBe(404, "an id too long for the trail is still answered");
     }
 
     private async Task<List<AuditEvent>> DirectoryAuditAsync(string type, string id)

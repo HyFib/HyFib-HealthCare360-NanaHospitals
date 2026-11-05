@@ -126,7 +126,7 @@ Every read and search passes the same gate for the patient the data belongs to:
 | Search in a patient's record | `phi` / `patient.accessed` | one entry: patient id, `fhir.{Type}`, returned, total and withheld counts, parameter **names**, the stated purpose |
 | Patient search | `phi` / `patient.accessed` | one entry per returned patient, written in one transaction |
 | Patient search that returned nobody | `integration` / `fhir.search` | counts and parameter names |
-| Read or search of the directory (Practitioner, Organization) | `integration` / `fhir.directory` | `fhir.{Type}`, the resource id of a read, returned and total counts, parameter **names**, the stated purpose; no patient |
+| Read or search of the directory (Practitioner, Organization) | `integration` / `fhir.directory` | `fhir.{Type}`, the resource id of a read, returned and total counts, parameter **names**, the stated purpose; no patient. A read that finds a deleted entry or none is recorded too (`gone`, `not-found`) |
 | Read or search refused for consent or restriction | `security` / `fhir.access_denied` (Warning) | patient id, type, id, reason (`consent-required`, `restricted-record`, or `outside-consent` for a record the reader's consents do not cover), the stated purpose |
 | ABDM health record downloaded | `phi` / `abdm.record.exported` | patient id, `DischargeSummary` or `Prescription` and its id, `{ format: fhir-r4-document, profile, document, resources }` (`document` is the bundle's identifier, `resources` its entry count) |
 | ABDM download refused for consent or restriction | `security` / `abdm.export_refused` (Warning) | patient id, `DischargeSummary` or `Prescription` and its id, reason (`consent-required`, `restricted-record`) |
