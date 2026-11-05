@@ -192,7 +192,7 @@ internal static class DocumentReferenceMapper
 
     private static R4.Coding Restricted() => FhirElements.Coding(FhirSystems.Confidentiality, "R", "restricted");
 
-    /// <summary>Someone named only (an account that is not a practitioner): no Practitioner is served to point at.</summary>
+    /// <summary>Someone named only (an account that is not a practitioner): there is no Practitioner to point at.</summary>
     private static R4.ResourceReference? Named(string? name) =>
         FhirElements.Clean(name) is { } display ? new R4.ResourceReference { Display = display } : null;
 

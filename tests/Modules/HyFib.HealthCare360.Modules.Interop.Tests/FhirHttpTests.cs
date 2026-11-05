@@ -46,10 +46,11 @@ public sealed class FhirOutcomeTests
     [Fact]
     public void Unknown_types_are_404_and_list_the_served_types()
     {
-        var error = FhirOutcomes.UnknownType("Practitioner");
+        var error = FhirOutcomes.UnknownType("Location");
 
         error.StatusCode.ShouldBe(404);
         error.Outcome.Issue[0].Diagnostics.ShouldContain("DocumentReference");
+        error.Outcome.Issue[0].Diagnostics.ShouldContain("Practitioner");
     }
 
     [Fact]
@@ -124,7 +125,7 @@ public sealed class CapabilityStatementTests
 
     [Fact]
     public void Serialises_as_valid_fhir_json() =>
-        JsonSerializer.Deserialize<R4.CapabilityStatement>(FhirJson.Serialize(Statement), FhirJson.Options(false))!.Rest[0].Resource.Count.ShouldBe(10);
+        JsonSerializer.Deserialize<R4.CapabilityStatement>(FhirJson.Serialize(Statement), FhirJson.Options(false))!.Rest[0].Resource.Count.ShouldBe(12);
 }
 
 public sealed class FhirResultTests

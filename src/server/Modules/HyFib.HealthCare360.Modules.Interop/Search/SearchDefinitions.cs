@@ -11,17 +11,19 @@ internal sealed record SearchParameterDefinition(string Name, R4.SearchParamType
 /// <summary>
 /// What a resource type supports. <paramref name="StatusParameter"/> and <paramref name="IsEnteredInError"/> describe
 /// records recorded by mistake: searches leave them out unless the client asks for that status explicitly (reads by id
-/// always return them, so receivers can retract data they synchronised earlier).
+/// always return them, so receivers can retract data they synchronised earlier). A search of a type with
+/// <paramref name="Selectors"/> needs one of them, so the API cannot be used to list every one.
 /// </summary>
 internal sealed record ResourceSearchDefinition(
     string Type,
     string Documentation,
     IReadOnlyList<SearchParameterDefinition> Parameters,
     string? StatusParameter = null,
-    Func<R4.Resource, bool>? IsEnteredInError = null)
+    Func<R4.Resource, bool>? IsEnteredInError = null,
+    IReadOnlyList<string>? Selectors = null)
 {
-    /// <summary>Every type except Patient is searched within one patient's record.</summary>
-    public bool IsPatientScoped => Type != FhirResourceTypes.Patient;
+    /// <summary>The types of a patient's record are searched within one patient's record; Patient and the hospital's directory are not.</summary>
+    public bool IsPatientScoped => Type != FhirResourceTypes.Patient && !FhirResourceTypes.IsDirectory(Type);
 
     public SearchParameterDefinition? Find(string name) => Parameters.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
 }
@@ -47,6 +49,9 @@ internal static class SearchDefinitions
     /// <summary>Patient searches need at least one of these, so the API cannot be used to list every patient.</summary>
     public static readonly string[] PatientSelectors = [Id, "identifier", "name", "birthdate", LastUpdated];
 
+    /// <summary>Practitioner searches need at least one of these: a practitioner is looked up, the staff are not listed.</summary>
+    public static readonly string[] PractitionerSelectors = [Id, "identifier", "name"];
+
     private static readonly SearchParameterDefinition IdParameter = new(Id, R4.SearchParamType.Token, "Logical id (comma-separated for several).");
 
     private static readonly SearchParameterDefinition LastUpdatedParameter = new(LastUpdated, R4.SearchParamType.Date,
@@ -69,7 +74,8 @@ internal static class SearchDefinitions
                 new("birthdate", R4.SearchParamType.Date, "Date of birth: yyyy, yyyy-MM or yyyy-MM-dd with a prefix. Estimated dates of birth are published with the year only."),
                 new("gender", R4.SearchParamType.Token, "male | female | other | unknown."),
                 LastUpdatedParameter,
-            ]),
+            ],
+            Selectors: PatientSelectors),
         new(FhirResourceTypes.Encounter,
             "Front-office visits (visit-{id}; in-patient visits carry the admission) and clinicians' encounters (enc-{id}, partOf the visit).",
             [
@@ -169,6 +175,25 @@ internal static class SearchDefinitions
             ],
             "status",
             resource => resource is R4.Procedure { Status: R4.EventStatus.EnteredInError }),
+        new(FhirResourceTypes.Practitioner,
+            "The hospital's practitioners, as its ABDM documents carry them (NRCeS Practitioner profile): name, gender, qualification, HPR ID, council registration and staff code. Never a phone number or e-mail. No consent is needed: nothing here is a patient's. A search needs _id, identifier or name.",
+            [
+                IdParameter,
+                new("identifier", R4.SearchParamType.Token, "HPR ID (https://doctor.ndhm.gov.in|21-1521-3828-3227), council registration (urn:hc360:medical-council-registration) or staff code (urn:hc360:practitioner); a value without a system matches any."),
+                new("name", R4.SearchParamType.String, "Words of the name: each must start a word of it (case-insensitive)."),
+                new("active", R4.SearchParamType.Token, "true | false: in use, or taken out of use."),
+                LastUpdatedParameter,
+            ],
+            Selectors: PractitionerSelectors),
+        new(FhirResourceTypes.Organization,
+            "The hospital's facilities (NRCeS Organization profile): name, HFR ID, facility code, and the facility's own phone, e-mail and address. No consent is needed: nothing here is a patient's.",
+            [
+                IdParameter,
+                new("identifier", R4.SearchParamType.Token, "HFR ID (https://facility.ndhm.gov.in|IN2710000123) or facility code (urn:hc360:facility); a value without a system matches either."),
+                new("name", R4.SearchParamType.String, "Words of the name: each must start a word of it (case-insensitive)."),
+                new("active", R4.SearchParamType.Token, "true | false: in use, or taken out of use."),
+                LastUpdatedParameter,
+            ]),
     ];
 
     public static ResourceSearchDefinition? Find(string? type) => All.FirstOrDefault(d => string.Equals(d.Type, type, StringComparison.Ordinal));

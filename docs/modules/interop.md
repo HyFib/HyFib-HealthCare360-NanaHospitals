@@ -3,8 +3,9 @@
 Read-only HL7 FHIR R4 API that lets other providers read a patient's record, **subject to the patient's consent**
 (SRS **EHR-05**): Patient, Encounter, Observation (the clinic's vital signs, lab results and the readings of the patient's
 home-monitoring devices), Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport, DocumentReference,
-Immunization and Procedure under `/fhir/r4`. It is built with the Firely .NET SDK (`Hl7.Fhir.R4` 6.6.0), returns JSON only
-and writes nothing.
+Immunization and Procedure under `/fhir/r4`, with the hospital's own directory, Practitioner and Organization, which is
+no patient's and needs no consent ([Practitioner and Organization](#practitioner-and-organization)). It is built with the
+Firely .NET SDK (`Hl7.Fhir.R4` 6.6.0), returns JSON only and writes nothing.
 
 It also exports discharge summaries, lab reports, radiology and cardiology reports, consultation notes, prescriptions and the vaccine doses given here as **ABDM health records**
 (SRS **EHR-08**): FHIR documents of the NRCeS implementation guide for the Ayushman Bharat Digital Mission, carrying the
@@ -125,6 +126,7 @@ Every read and search passes the same gate for the patient the data belongs to:
 | Search in a patient's record | `phi` / `patient.accessed` | one entry: patient id, `fhir.{Type}`, returned, total and withheld counts, parameter **names**, the stated purpose |
 | Patient search | `phi` / `patient.accessed` | one entry per returned patient, written in one transaction |
 | Patient search that returned nobody | `integration` / `fhir.search` | counts and parameter names |
+| Read or search of the directory (Practitioner, Organization) | `integration` / `fhir.directory` | `fhir.{Type}`, the resource id of a read, returned and total counts, parameter **names**, the stated purpose; no patient. A read that finds a deleted entry or none is recorded too (`gone`, `not-found`) |
 | Read or search refused for consent or restriction | `security` / `fhir.access_denied` (Warning) | patient id, type, id, reason (`consent-required`, `restricted-record`, or `outside-consent` for a record the reader's consents do not cover), the stated purpose |
 | ABDM health record downloaded | `phi` / `abdm.record.exported` | patient id, `DischargeSummary` or `Prescription` and its id, `{ format: fhir-r4-document, profile, document, resources }` (`document` is the bundle's identifier, `resources` its entry count) |
 | ABDM download refused for consent or restriction | `security` / `abdm.export_refused` (Warning) | patient id, `DischargeSummary` or `Prescription` and its id, reason (`consent-required`, `restricted-record`) |
@@ -140,7 +142,7 @@ not be decrypted (no value).
 
 | Method | Path | Access | Response |
 |---|---|---|---|
-| GET | `/metadata` | anonymous, rate limit `public` | `CapabilityStatement` (FHIR 4.0.1, JSON, read + search-type for the eight types, every search parameter) |
+| GET | `/metadata` | anonymous, rate limit `public` | `CapabilityStatement` (FHIR 4.0.1, JSON, read + search-type for the twelve types, every search parameter) |
 | GET | `/{type}/{id}` | `fhir.read` | the resource, or an `OperationOutcome` |
 | GET | `/{type}?…` | `fhir.read` | `searchset` `Bundle` |
 | POST | `/{type}/_search` | `fhir.read` | same as GET; parameters as `application/x-www-form-urlencoded` (keeps identifiers out of the request line) |
@@ -153,8 +155,9 @@ not be decrypted (no value).
 * Paging: `_count` (default 20, capped at **100** — the `self` link shows the size used; `0` returns only `total`) and
   `_offset`. Bundles have `total`, `self`, `previous` and `next` links (which repeat the search parameters), and one
   `match` entry per resource with its `fullUrl`.
-* Every type except Patient is searched **one patient at a time** (`patient`/`subject` = `Patient/{id}`, `{id}` or an
-  absolute URL). Results are newest first by the resource's main date, then by id.
+* The types of a patient's record are searched **one patient at a time** (`patient`/`subject` = `Patient/{id}`, `{id}`
+  or an absolute URL). Patient and Practitioner searches need a selector ([search parameters](#search-parameters));
+  the facilities may be listed. Results are newest first by the resource's main date, then by id (the directory by id).
 * Parameters are checked strictly: an unknown parameter, a modifier (`:exact`, `:text`…), a malformed value or a second
   patient is a 400 `OperationOutcome` instead of being ignored, so a mistyped filter never widens the result.
 * Dates take `eq` (default), `ne`, `gt`, `ge`, `lt` and `le` with FHIR range semantics at the value's precision
@@ -198,6 +201,8 @@ All types also take `_id` and `_lastUpdated` (meta.lastUpdated).
 | DocumentReference | `patient`/`subject`, `type` (LOINC: 18842-5 a discharge summary, 11506-3 a progress note, 28570-0 a procedure note, 57133-1 a referral note or letter, 47042-7 a counselling note, 34109-9 another note), `date` (the reference created, a summary or note signed), `status` |
 | Immunization | `patient`, `status` (`entered-in-error` only when asked for), `vaccine-code` (SNOMED CT), `date` (the day given) |
 | Procedure | `patient`, `status` (`entered-in-error` only when asked for), `date` (when it was performed) |
+| Practitioner | `identifier` (HPR ID `https://doctor.ndhm.gov.in`, council registration `urn:hc360:medical-council-registration`, staff code `urn:hc360:practitioner`; a bare value tries each), `name` (each word must start a word of the name), `active`. At least one of `_id`, `identifier` or `name`: a practitioner is looked up, the staff are never listed |
+| Organization | `identifier` (HFR ID `https://facility.ndhm.gov.in`, facility code `urn:hc360:facility`), `name`, `active` |
 
 ## Resource ids
 
@@ -213,6 +218,8 @@ All types also take `_id` and `_lastUpdated` (meta.lastUpdated).
 | DocumentReference | `doc-{documentId}`, `ds-{dischargeSummaryId}`, `note-{noteId}` | Patients `PatientDocument` (+ stored file metadata), Clinical `DischargeSummary`, Clinical `ClinicalNote` (signed only) |
 | Immunization | `{immunizationId}` | Clinical `Immunization` |
 | Procedure | `{procedureId}` | Clinical `ProcedureRecord` |
+| Practitioner | `{practitionerId}` | the practitioner master (Platform `Practitioner`) |
+| Organization | `{facilityId}` | the facility master (Platform `Facility`) |
 
 `meta.lastUpdated` is the source rows' audit timestamp (`UpdatedAt`, else `CreatedAt`; the latest of the rows a
 resource is built from). Times are written in IST (+05:30), clinical times to the second.
@@ -233,7 +240,7 @@ resource is built from). Times are written in IST (+05:30), clinical times to th
 | `maritalStatus` | v3 MaritalStatus S, M, D, W, L; Unknown → NullFlavor UNK |
 | `contact` | emergency contact (v2-0131 `C`, relation as text, phone); guardian with the v3 RoleCode of the "S/O, D/O, W/O…" relation (PRN, HUSB, WIFE, CHILD, GUARD) |
 | `communication` | preferred language as BCP-47 (en, hi, ta, te, kn, ml, mr, bn, gu, pa, or, ur, as), preferred = true |
-| `managingOrganization` | registering facility (display name, HFR id `https://facility.ndhm.gov.in`) |
+| `managingOrganization` | registering facility: `Organization/{id}`, display name, HFR id (`https://facility.ndhm.gov.in`) |
 
 ### Encounter
 * **Visit** (`visit-`): class (v3 ActCode) OutPatient/HealthCheckup AMB, InPatient IMP, Emergency EMER, DayCare SS,
@@ -378,7 +385,7 @@ duration. Requester = prescribing doctor; encounter = the clinical encounter, el
   when staff wrote one of those in any usual spelling ("ID", "I.M.", "s.c.", "oral drops"), else as written;
   `protocolApplied.doseNumber`.
 * `performer` (function `AP`, administering provider): the account that recorded a dose given here, else who gave it
-  as written on the card. Named only, as no Practitioner is served.
+  as written on the card. Named only: an account or a card names no practitioner record.
 * A dose copied from a card is not the hospital's own record: `primarySource` false and `reportOrigin` `record`
   (written record).
 * A dose marked as entered in error is `entered-in-error`, with the reason as a note: a read by id still returns it, so
@@ -398,8 +405,8 @@ duration. Requester = prescribing doctor; encounter = the clinical encounter, el
   the chart, which may be minor or diagnostic.
 * `performedDateTime` = when it was performed; `encounter` = the clinician's encounter, else the visit, else the stay's
   in-patient visit.
-* `performer.actor`: the practitioner, by name with their HPR ID, when they have a record here; else the name written
-  for a performer from elsewhere. Named only, as no Practitioner is served.
+* `performer.actor`: the practitioner (`Practitioner/{id}`, by name with their HPR ID) when they have a record here;
+  else the name written for a performer from elsewhere, by name only.
 * `bodySite` and `outcome` as written, the side included in the body site ("Knee, left"; "Right side" when only the
   side was recorded); `note`: the notes.
 * A corrected record is `completed`, with "Corrected:" and the reason as a note. A record marked as entered in error is
@@ -411,6 +418,23 @@ duration. Requester = prescribing doctor; encounter = the clinical encounter, el
   returns nothing, withheld, for the procedure and for everything shared before. So such a procedure never leaves under
   a consent, even one that names procedures.
 * Every mapping meets the ABDM guide's Procedure profile (checked in the tests), though the API claims no profile.
+
+### Practitioner and Organization
+
+The hospital's directory: who and where the people and places in the records are. It is in no patient's record, so a
+reader needs `fhir.read` and no consent, and every read and search is audited as an integration event, not PHI access.
+Every reference to a practitioner or a facility in the other resources is literal (`Practitioner/{id}`,
+`Organization/{id}`), with the name and the HPR or HFR id, and resolves here.
+
+* **Practitioner**: as the ABDM documents carry them (NRCeS Practitioner profile, claimed): name, gender,
+  qualification, HPR ID, council registration with the council, and staff code; `active` false once taken out of use.
+  Never a phone number, e-mail, photograph or signature: who a practitioner is, not how to reach them.
+* **Organization**: as the ABDM documents carry it (NRCeS Organization profile, claimed): name, type `prov`, HFR ID,
+  facility code, and the facility's own phone, e-mail and address; `active` false once out of use.
+* A search needs `_id`, `identifier` or `name` for Practitioner, so the staff cannot be listed; the facilities can be.
+* Deleted (a practitioner or facility recorded by mistake): Gone (410) by id, as records may still refer to it; never in
+  a search.
+* A nurse or other account that wrote or gave something, and is not in the practitioner master, is named only.
 
 ## ABDM health records (EHR-08)
 
@@ -979,7 +1003,7 @@ was decrypted by the reference CLI when this was built (a one-off check, as it n
   notification and encrypted transfer of consented records to the HIU, and scan and share at the registration desk.
   Checking a patient's ABHA with ABDM is built. Not met: creating an ABHA for a patient at the desk (Aadhaar OTP enrolment)
   ([ABDM gateway](#abdm-gateway)); and invoice records are not exported as ABDM documents. The FHIR read API's resources keep the ABDM-friendly identifiers (ABHA number, HFR id) but claim no
-  NRCeS profiles; the ABDM documents do.
+  NRCeS profiles, Practitioner and Organization aside; the ABDM documents do.
 * A doctor without an HPR ID in the practitioner master is identified in ABDM documents and NHCX claims by medical
   council registration number and HC360 code only. HC360 checks that an HPR ID has 14 digits; it does not look it up
   in the registry.
@@ -987,9 +1011,8 @@ was decrypted by the reference CLI when this was built (a one-off check, as it n
   list its recipient, as HC360 does not know who receives the file.
 * No `vread`/history, `_include`/`_revinclude`, `_sort`, `_summary`, `_elements`, XML, or bulk export (`$export`);
   clinical searches are per patient.
-* Practitioner, Organization and Location are not served by the FHIR API: references carry a display name (and the
-  HPR ID for doctors, the HFR id for facilities). ABDM documents carry their doctor and hospital as entries. Binary is not served, so uploaded
-  documents are metadata only.
+* Location is not served by the FHIR API (the ABDM guide, 6.5.0, has no Location profile). Binary is not served, so
+  uploaded documents are metadata only.
 * A counselling note is served by the FHIR API under a consent that names counselling notes, but never exported as an
   ABDM document (an ABDM consent cannot keep it apart from the patient's other health documents). A clinical note's
   ABDM document carries its text, not a printed copy, as the hospital prints no clinical note.

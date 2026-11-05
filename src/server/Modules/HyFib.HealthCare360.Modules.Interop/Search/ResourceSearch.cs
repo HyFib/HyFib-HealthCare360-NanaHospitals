@@ -8,9 +8,10 @@ namespace HyFib.HealthCare360.Modules.Interop.Search;
 internal sealed record SearchPage(IReadOnlyList<R4.Resource> Resources, int Total);
 
 /// <summary>
-/// Evaluates a patient-scoped search in memory over the FHIR resources mapped from one patient's record (a bounded set),
-/// so the search semantics are defined once on FHIR elements, whatever table a resource came from. Results are newest
-/// first (by the type's main date), then by id, which makes offset paging stable.
+/// Evaluates a search in memory over a bounded set of FHIR resources (those mapped from one patient's record, or the
+/// hospital's directory), so the search semantics are defined once on FHIR elements, whatever table a resource came
+/// from. Results are newest first (by the type's main date), then by id, which makes offset paging stable; the
+/// directory, which has no main date, is by id.
 /// </summary>
 internal static class ResourceSearch
 {
@@ -42,8 +43,19 @@ internal static class ResourceSearch
     {
         TokenCriterion token => SearchValues.Tokens(resource, token.Parameter).Any(t => token.AnyOf.Any(v => v.Matches(t.System, t.Code))),
         DateCriterion date => SearchValues.Dates(resource, date.Parameter).Any(range => date.Value.Matches(range)),
+        StringCriterion text => text.AnyOf.Any(query => StartsWords(SearchValues.Strings(resource, text.Parameter), query)),
         _ => false,
     };
+
+    /// <summary>Each word of <paramref name="query"/> starts a word of the values (case-insensitive): "asha r" finds Dr. Asha Rao.</summary>
+    private static bool StartsWords(IEnumerable<string> values, string query)
+    {
+        var words = Words(string.Join(' ', values));
+        var wanted = Words(query);
+        return wanted.Count > 0 && wanted.All(w => words.Any(word => word.StartsWith(w, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static List<string> Words(string text) => [.. text.Split([' ', '.', ',', '-', '\'', '(', ')'], StringSplitOptions.RemoveEmptyEntries)];
 }
 
 /// <summary>The values a FHIR resource has for each search parameter.</summary>
@@ -118,9 +130,31 @@ internal static class SearchValues
                 "status" => Literal(FhirSystems.ProcedureStatus, p.Status),
                 _ => [],
             },
+            R4.Practitioner p => parameter switch
+            {
+                "identifier" => p.Identifier.Select(i => (i.System, i.Value)),
+                "active" => Active(p.Active),
+                _ => [],
+            },
+            R4.Organization o => parameter switch
+            {
+                "identifier" => o.Identifier.Select(i => (i.System, i.Value)),
+                "active" => Active(o.Active),
+                _ => [],
+            },
             _ => [],
         };
     }
+
+    /// <summary>The words a string parameter is matched against (a name's text, family, given names and prefixes).</summary>
+    public static IEnumerable<string> Strings(R4.Resource resource, string parameter) => (resource, parameter) switch
+    {
+        (R4.Practitioner p, "name") => p.Name.SelectMany(n => new[] { n.Text, n.Family }.Concat(n.Given).Concat(n.Prefix)).OfType<string>(),
+        (R4.Organization o, "name") => o.Name is { } name ? [name] : [],
+        _ => [],
+    };
+
+    private static IEnumerable<(string? System, string? Code)> Active(bool? active) => [(null, active == false ? "false" : "true")];
 
     public static IEnumerable<DateRange> Dates(R4.Resource resource, string parameter)
     {
@@ -152,7 +186,7 @@ internal static class SearchValues
         {
             R4.Condition => "recorded-date",
             R4.MedicationRequest => "authoredon",
-            R4.Patient => null,
+            R4.Patient or R4.Practitioner or R4.Organization => null,
             _ => "date",
         };
 

@@ -81,6 +81,7 @@ internal sealed class ReferenceDirectoryLoader(HospitalDbContext db)
             Departments = departments.ToDictionary(d => d.Id, d => d.Name),
             Facilities = facilities.ToDictionary(f => f.Id, f => new FacilityInfo(f.Name, f.HfrId)),
             AdmissionVisits = admissions.ToDictionary(a => a.Id, a => a.VisitId),
+            Linked = true,
         };
     }
 
@@ -105,6 +106,8 @@ internal sealed class ReferenceDirectoryLoader(HospitalDbContext db)
                     RegistrationCouncil = p.RegistrationCouncil,
                     RegistrationNumber = p.RegistrationNumber,
                     HprId = p.HprId,
+                    IsActive = p.IsActive,
+                    IsDeleted = p.IsDeleted,
                     CreatedAt = p.CreatedAt,
                     UpdatedAt = p.UpdatedAt,
                 })
@@ -128,6 +131,8 @@ internal sealed class ReferenceDirectoryLoader(HospitalDbContext db)
                     Phone = f.Phone,
                     Email = f.Email,
                     Address = f.Address,
+                    IsActive = f.IsActive,
+                    IsDeleted = f.IsDeleted,
                     CreatedAt = f.CreatedAt,
                     UpdatedAt = f.UpdatedAt,
                 })

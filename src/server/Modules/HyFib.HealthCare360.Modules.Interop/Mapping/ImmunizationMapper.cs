@@ -106,7 +106,7 @@ internal static class ImmunizationMapper
 
     /// <summary>
     /// Who gave the dose, as the administering provider: the account that recorded a dose given here, else the vaccinator
-    /// or centre written for a dose given elsewhere. Named only (HC360 serves no Practitioner).
+    /// or centre written for a dose given elsewhere. Named only: an account or a card names no practitioner record.
     /// </summary>
     private static R4.Immunization.PerformerComponent? Performer(ImmunizationRow i)
     {

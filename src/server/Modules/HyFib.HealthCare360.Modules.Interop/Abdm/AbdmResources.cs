@@ -18,6 +18,8 @@ internal sealed record PractitionerRow
     public string? RegistrationCouncil { get; init; }
     public string? RegistrationNumber { get; init; }
     public string? HprId { get; init; }
+    public bool IsActive { get; init; } = true;
+    public bool IsDeleted { get; init; }
     public required DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }
@@ -32,6 +34,8 @@ internal sealed record FacilityRow
     public string? Phone { get; init; }
     public string? Email { get; init; }
     public Address Address { get; init; } = new();
+    public bool IsActive { get; init; } = true;
+    public bool IsDeleted { get; init; }
     public required DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }
