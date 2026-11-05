@@ -175,11 +175,20 @@ describe('the bedside check of a unit of blood', () => {
     );
   });
 
-  it('says a unit out for more than 4 hours is too late, and does not start it', () => {
+  it('says a unit out for more than 4 hours is too late, and does not start it even when everything else is done', async () => {
+    confirm.mockResolvedValue(CONFIRMED);
+    start.mockResolvedValue({});
     open(unit({ startBy: new Date(Date.now() - 60_000).toISOString() }));
 
     expect(screen.getByText('Too late to start')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Start transfusion' })).toBeDisabled();
+    // Read, observed, consented and witnessed: only the time stands in the way.
+    await readAndObserve();
+    await witnessConfirms();
+
+    const startButton = screen.getByRole('button', { name: 'Start transfusion' });
+    expect(startButton).toBeDisabled();
+    await userEvent.click(startButton);
+    expect(start).not.toHaveBeenCalled();
   });
 
   it('asks the witness again when the confirmation ran out before the start was saved', async () => {
