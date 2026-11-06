@@ -169,6 +169,39 @@ public sealed class AuditTriggerTests(HospitalServer server)
     }
 
     /// <summary>
+    /// A start that puts a trigger back takes the audit trail before its months, as an audit write does. Alone, DROP
+    /// TRIGGER takes each month first and the table last: a write that held the table and waited for its month then
+    /// waited for the start as the start waited for it, and PostgreSQL ended one of them (40P01, deadlock detected).
+    /// </summary>
+    [Fact]
+    public async Task A_start_that_puts_a_trigger_back_takes_the_audit_trail_before_its_months_as_a_write_does()
+    {
+        await using var database = await UpgradedDatabaseAsync();
+        var connectionString = database.ConnectionString;
+        var asTheyShouldBe = await TriggersAsync(connectionString);
+        await ExecuteAsync(connectionString, """
+            DROP TRIGGER trg_check_audit_chain_link ON audit.audit_events;
+            CREATE CONSTRAINT TRIGGER trg_check_audit_chain_link AFTER UPDATE ON audit.audit_events DEFERRABLE INITIALLY DEFERRED
+                FOR EACH ROW WHEN (false) EXECUTE FUNCTION audit.check_audit_chain_link();
+            """);
+
+        // A write that holds the audit trail and is about to take its month, as an INSERT is between the two.
+        await using var writer = await OpenAsync(connectionString);
+        await using var writing = await writer.BeginTransactionAsync(Ct);
+        await ExecuteAsync(writer, "LOCK TABLE ONLY audit.audit_events IN ROW EXCLUSIVE MODE");
+
+        var start = StartNodeAsync(connectionString);
+        (await SecondNode.EventuallyAsync(async () => start.IsCompleted || await IsWaitingForLockAsync(connectionString), TimeSpan.FromSeconds(30), Ct))
+            .ShouldBeTrue();
+
+        // The start waits holding nothing, so the write takes its month and ends; then the start puts the trigger back.
+        await ExecuteAsync(writer, $"LOCK TABLE {ThisMonthsPartition} IN ROW EXCLUSIVE MODE");
+        await writing.CommitAsync(Ct);
+        await start;
+        (await TriggersAsync(connectionString)).ShouldBe(asTheyShouldBe);
+    }
+
+    /// <summary>
     /// A database as a hospital's is after the upgrade that partitioned the audit trail by month (SCAL-04), started once:
     /// an audit event a year ago and one this month, each in its month's partition, and the triggers made.
     /// </summary>

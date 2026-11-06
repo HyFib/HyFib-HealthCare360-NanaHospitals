@@ -307,6 +307,7 @@ internal static class PlatformSql
             wanted record;
             found record;
             target regclass;
+            locked boolean := false;
         BEGIN
             -- pg_get_triggerdef names a function in full only when it is not on the search path.
             PERFORM set_config('search_path', 'pg_catalog', true);
@@ -338,6 +339,14 @@ internal static class PlatformSql
                   INTO found
                   FROM pg_trigger g
                  WHERE g.tgrelid = wanted.relation AND g.tgname = wanted.trigger_name;
+                IF NOT locked AND (found.definition IS DISTINCT FROM format(wanted.definition, wanted.name) OR found.enabled <> 'O') THEN
+                    -- Before the first change, the audit trail and with it every month, in the order an audit write takes
+                    -- them. Alone, DROP TRIGGER locks each month and only then the table, and ALTER or CREATE a month's
+                    -- trigger locks that month: a write that holds the table and waits for its month would then wait for
+                    -- this, as this waits for it, and PostgreSQL would end one of them (40P01, deadlock detected).
+                    LOCK TABLE audit.audit_events IN ACCESS EXCLUSIVE MODE;
+                    locked := true;
+                END IF;
                 IF found.definition IS DISTINCT FROM format(wanted.definition, wanted.name) THEN
                     -- A partition's copy of a row trigger cannot be made alone: the table's is made again, with its copies.
                     target := CASE WHEN wanted.inherited THEN 'audit.audit_events'::regclass ELSE wanted.relation END;
