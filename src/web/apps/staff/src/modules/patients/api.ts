@@ -491,6 +491,55 @@ export interface LinkFamilyMemberRequest {
   identityChecked: boolean;
 }
 
+/** The channels a link to the patient portal goes on (PP-01). */
+export const PORTAL_LINK_CHANNELS = ['Sms', 'WhatsApp'] as const;
+export type PortalLinkChannel = (typeof PORTAL_LINK_CHANNELS)[number];
+
+/** Opened: a sign-in code was asked for through it; it keeps working until it expires. */
+export type PortalLinkState = 'Active' | 'Opened' | 'Expired' | 'Revoked';
+
+/** A link to the portal sent to the patient's registered number. Neither the link nor its token is ever shown. */
+export interface PortalLinkDto {
+  id: string;
+  sentAt: string;
+  sentByName: string | null;
+  channels: PortalLinkChannel[];
+  /** The number it went to, masked (+91******3210). */
+  maskedPhone: string;
+  expiresAt: string;
+  openedAt: string | null;
+  state: PortalLinkState;
+  revokedAt: string | null;
+  /** `replaced` (a newer link was sent) or `number_changed` (the patient's number changed). */
+  revokedReason: string | null;
+}
+
+/** Why no link can be sent now, by code (`portal.link_sensitive`, `portal.link_no_mobile`…) and in words. */
+export interface PortalLinkRefusal {
+  code: string;
+  message: string;
+}
+
+/** The latest links sent to the patient (5 at most), and what a new one would go to. */
+export interface PatientPortalLinksDto {
+  /** The patient's number, masked; null without one. */
+  maskedPhone: string | null;
+  /** For staff who may send links: why none can be sent now; null when one can. */
+  cannotSend: PortalLinkRefusal | null;
+  /** The number replied STOP on WhatsApp: a link goes by SMS only. */
+  whatsAppStopped: boolean;
+  links: PortalLinkDto[];
+}
+
+/** The link sent: SMS only when WhatsApp was stopped for the number, which `notice` then says. */
+export interface PortalLinkSent {
+  id: string;
+  channels: PortalLinkChannel[];
+  expiresAt: string;
+  maskedPhone: string;
+  notice: string | null;
+}
+
 export const PATIENT_DOCUMENT_TYPES = [
   'IdProof',
   'InsuranceCard',
@@ -612,6 +661,7 @@ export const patientKeys = {
   sharingPartners: () => ['patients', 'sharing-partners'] as const,
   whatsApp: (id: string) => ['patients', 'whatsapp', id] as const,
   portalFamily: (id: string) => ['patients', 'portal-family', id] as const,
+  portalLinks: (id: string) => ['patients', 'portal-links', id] as const,
   documents: (id: string) => ['patients', 'documents', id] as const,
   photo: (fileId: string) => ['patients', 'photo', fileId] as const,
   identityChecks: (id: string) => ['patients', 'identity-checks', id] as const,
@@ -677,6 +727,12 @@ export const patientQueries = {
     queryOptions({
       queryKey: patientKeys.portalFamily(id),
       queryFn: ({ signal }) => api.get<PatientPortalAccessDto>(`/api/v1/patients/${id}/portal-family`, { signal }),
+    }),
+  /** The links to the portal sent to the patient's number (needs `patients.read`). */
+  portalLinks: (id: string) =>
+    queryOptions({
+      queryKey: patientKeys.portalLinks(id),
+      queryFn: ({ signal }) => api.get<PatientPortalLinksDto>(`/api/v1/patients/${id}/portal-links`, { signal }),
     }),
   documents: (id: string) =>
     queryOptions({
@@ -768,6 +824,18 @@ export const portalFamilyApi = {
     api.post<{ id: string }>(`/api/v1/patients/${patientId}/portal-family`, request),
   revoke: (linkId: string, reason: string) =>
     api.post<void>(`/api/v1/patients/portal-family/${linkId}/revoke`, { reason }),
+};
+
+/**
+ * Sending a link to the patient portal to the patient's registered number needs `patients.register`. A new link replaces
+ * the one sent before. The server answers 422 with `portal.link_no_address` (the portal is off or has no public
+ * address), `portal.link_inactive`, `portal.link_no_mobile`, `portal.link_sensitive` (a protected category: portal
+ * access is given at the desk), `portal.link_whatsapp_stopped` (WhatsApp alone, to a number that replied STOP) and
+ * `portal.link_throttled` (3 links in 24 hours).
+ */
+export const portalLinkApi = {
+  send: (patientId: string, channels: PortalLinkChannel[]) =>
+    api.post<PortalLinkSent>(`/api/v1/patients/${patientId}/portal-link`, { channels }),
 };
 
 /**

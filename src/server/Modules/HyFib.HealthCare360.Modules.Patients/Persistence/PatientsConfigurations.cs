@@ -169,6 +169,24 @@ internal sealed class PortalFamilyLinkConfiguration : IEntityTypeConfiguration<P
     }
 }
 
+internal sealed class PortalLinkConfiguration : IEntityTypeConfiguration<PortalLink>
+{
+    public void Configure(EntityTypeBuilder<PortalLink> b)
+    {
+        b.ToTable("portal_links", PatientsSchema.Name);
+        b.Property(x => x.Phone).HasMaxLength(20);
+        b.Property(x => x.TokenHash).HasMaxLength(64);
+        b.Property(x => x.RevokedReason).HasMaxLength(32);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+
+        // Every opening of a link looks it up by its token's hash.
+        b.HasIndex(x => x.TokenHash).IsUnique();
+
+        // The patient's links, newest first: the list on the record, the 24-hour count and the links a new one replaces.
+        b.HasIndex(x => new { x.PatientId, x.CreatedAt });
+    }
+}
+
 internal sealed class BreakGlassAccessConfiguration : IEntityTypeConfiguration<BreakGlassAccess>
 {
     public void Configure(EntityTypeBuilder<BreakGlassAccess> b)

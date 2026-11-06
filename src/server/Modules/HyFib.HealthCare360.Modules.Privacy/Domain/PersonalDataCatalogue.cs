@@ -271,6 +271,7 @@ public static class PersonalDataCatalogue
                 new("identity.users", "Portal account"),
                 new("patients.portal_family_links", "Family members who see your records in the portal"),
                 new("patients.portal_family_codes", "Codes sent to let a family member see your records", Counted: false),
+                new("patients.portal_links", "Links to the patient portal sent to your mobile number"),
             ]),
         new("safety", "Patient safety reports",
             "Reports of incidents or near misses during your care.",

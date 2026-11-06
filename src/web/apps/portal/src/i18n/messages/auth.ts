@@ -33,6 +33,13 @@ export const authMessages = defineMessages({
     'auth.secure': 'Your connection to the hospital is encrypted.',
     'auth.checkDocument': 'Check a prescription or report',
     'auth.signedInLoading': 'Signing you in…',
+    'auth.link.title': 'Open your patient portal',
+    'auth.link.sendTo': 'We will send a sign-in code by SMS to {phone}, the number the hospital has for you.',
+    'auth.link.notYours': 'Not your number? Sign in with your own number instead.',
+    'auth.link.invalid.title': 'This link no longer works',
+    'auth.link.invalid.body':
+      'A link to the portal works for 7 days, and only the latest one the hospital sent you works. You can still sign in with your mobile number.',
+    'auth.link.signIn': 'Sign in with your mobile number',
   },
   hi: {
     'auth.title': 'साइन इन करें',
@@ -65,6 +72,13 @@ export const authMessages = defineMessages({
     'auth.secure': 'अस्पताल से आपका कनेक्शन एन्क्रिप्टेड है।',
     'auth.checkDocument': 'पर्चा या रिपोर्ट जाँचें',
     'auth.signedInLoading': 'साइन इन हो रहा है…',
+    'auth.link.title': 'अपना रोगी पोर्टल खोलें',
+    'auth.link.sendTo': 'हम {phone} पर SMS से साइन इन का कोड भेजेंगे — यही नंबर अस्पताल के पास आपके नाम से दर्ज है।',
+    'auth.link.notYours': 'यह आपका नंबर नहीं है? अपने नंबर से साइन इन करें।',
+    'auth.link.invalid.title': 'यह लिंक अब काम नहीं करता',
+    'auth.link.invalid.body':
+      'पोर्टल का लिंक 7 दिन तक काम करता है, और अस्पताल का भेजा सबसे नया लिंक ही काम करता है। आप अब भी अपने मोबाइल नंबर से साइन इन कर सकते हैं।',
+    'auth.link.signIn': 'मोबाइल नंबर से साइन इन करें',
   },
   ta: {
     'auth.title': 'உள்நுழையுங்கள்',
@@ -98,5 +112,13 @@ export const authMessages = defineMessages({
     'auth.secure': 'மருத்துவமனையுடனான உங்கள் இணைப்பு மறையாக்கம் செய்யப்பட்டுள்ளது.',
     'auth.checkDocument': 'மருந்துச் சீட்டு அல்லது அறிக்கையைச் சரிபாருங்கள்',
     'auth.signedInLoading': 'உள்நுழைகிறது…',
+    'auth.link.title': 'உங்கள் நோயாளி போர்ட்டலைத் திறங்கள்',
+    'auth.link.sendTo':
+      'மருத்துவமனையில் உங்கள் பெயரில் பதிவான {phone} எண்ணுக்கு உள்நுழைவதற்கான OTP-ஐ SMS மூலம் அனுப்புவோம்.',
+    'auth.link.notYours': 'இது உங்கள் எண் இல்லையா? உங்கள் சொந்த எண்ணுடன் உள்நுழையுங்கள்.',
+    'auth.link.invalid.title': 'இந்த இணைப்பு இனி வேலை செய்யாது',
+    'auth.link.invalid.body':
+      'போர்ட்டல் இணைப்பு 7 நாட்கள் மட்டுமே வேலை செய்யும்; மருத்துவமனை கடைசியாக அனுப்பிய இணைப்பு மட்டுமே வேலை செய்யும். உங்கள் மொபைல் எண்ணுடன் இப்போதும் உள்நுழையலாம்.',
+    'auth.link.signIn': 'மொபைல் எண்ணுடன் உள்நுழையுங்கள்',
   },
 });

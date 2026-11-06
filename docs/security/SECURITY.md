@@ -265,6 +265,7 @@ What they all share:
 | **Lock screen** | The PIN (4 to 6 digits, not all the same or in sequence), the password, or, where the hospital turned it on, a device set up for it: a WebAuthn signature of a one-time challenge by the device's Windows Hello or fingerprint reader, which verifies the person first. It opens only the session it locked | 5 wrong ones (PINs, passwords and refused device answers together) end the session |
 | **Password prompts** before sensitive actions | The password again, from a signed-in staff member | Wrong ones count toward the account lock |
 | **Patient portal sign-in** | A 6-digit code sent by SMS to the registered number, valid 5 minutes: one factor (AAL1), as strong as the phone number | 5 tries per code; 3 codes per number in 15 minutes (the refusal, `auth.otp_throttled`, gives `retryAfterSeconds` until the next is allowed, and the portal counts down to it); a proof of work for asking for a code and for giving it (Anti-automation, below) |
+| **Link to the portal** (staff send it to the patient's registered number) | Not a credential. A 128-bit token, stored as its SHA-256, valid 7 days, until a newer link is sent, and only while the record still has the number it went to (and is in use and in no protected category). It lets whoever opens it see the hospital and the number masked, and send the portal sign-in's code to that number; signing in then takes the code, as above | Too large to guess; any token that does not work gets one 404; asking for a code takes a proof of work and the sign-in's limits (5 code requests per address and 3 codes per number in 15 minutes); staff may send 3 links per patient in 24 hours |
 | **Video consultation guests** | The 256-bit token in the link sent to the patient, valid until 2 hours after the consultation's scheduled end. A guest waits until the doctor admits them, and the link reveals only the patient's first name | Too large to guess; 5 failed joins per connection |
 | **Enrolling a workstation or lab PC** | A code an administrator makes: 8 characters from 31 (about 40 bits), good for one device, for 30 minutes by default (5 minutes to 24 hours) | Too many to try in its lifetime at 60 a minute per address |
 | **HC360 Desktop and lab agents** | The device's id and its 256-bit secret, kept with DPAPI. Lab agents never sign anyone in, and relay only their own analysers. HC360 Desktop asks for and downloads its update with the same credential; what it gets is HyFib's signed package, which it checks itself (Release signing key, below). Revoking the device stops it | Too large to guess; the update allows 30 requests in 15 minutes per device |
@@ -485,6 +486,21 @@ and grants nothing.
   - The patient, the account holder or staff can end a link, and it stops on the next request. Making and ending links
     are audited, and a patient merge or the erasure that closes a portal account carries them along or ends them.
   - Signing in counts as proof of identity (for a privacy request, say) only for patients on the account's own number.
+- **Links to the portal** (PP-01). Staff who register patients (`patients.register`, and who may open the record) can
+  send a link to the portal to the mobile number registered for the patient, by SMS, WhatsApp or both, from the
+  patient's record. The link is not a credential: it only starts the portal's sign-in for that number. Opening it shows
+  the hospital and the number masked; asking for a code through it sends the code to the registered number with the
+  sign-in's own limits, and only the code signs anyone in. So a link forwarded, or read off a shared phone, gets nobody
+  in who does not hold the patient's phone.
+  - The token is 128 random bits, kept only as its SHA-256 (masked in the audit trail like other secrets), and never
+    shown to staff. A new link stops the earlier ones; a change of the patient's number stops them too, and so does the
+    record being merged, marked deceased or inactive, or put in a protected category: every use checks the record as it
+    is now and that it still has the number the link went to. Unknown, expired and stopped links all get the same 404.
+  - No link is sent for a record in a protected category (HIV, mental health, MTP, sexual violence): a message to a
+    phone may be read by someone else, so staff give portal access at the desk after checking that the number is the
+    patient's own. Nor to a number that replied STOP on WhatsApp by WhatsApp alone (SMS still works).
+  - At most 3 links per patient in 24 hours, counted under a lock so sends at once from two desks cannot get past it.
+    Each send is on the patient's record history (`portal.link.sent`), and the link's own row is in the data audit.
 - Every access to a patient record is audited, and so is every way staff see one: a patient search (what was searched
   for, how many matched and which patients were shown, `patient.searched`), the summary the banner shows and a lookup
   by UHID (`PatientAccessAuditTests`).

@@ -112,6 +112,7 @@ public sealed class PatientsModule : IModule
         services.AddScoped<VisitService>();
         services.AddScoped<PortalPatientScope>();
         services.AddScoped<PortalFamilyService>();
+        services.AddScoped<PortalLinkService>();
         services.AddScoped<IPortalAccountResolver, PortalAccountResolver>();
         services.AddScoped<IPatientLanguageSource, PatientLanguageSource>();
         services.AddScoped<IdentityCheckService>();
@@ -125,6 +126,7 @@ public sealed class PatientsModule : IModule
         QueueEndpoints.Map(endpoints);
         FrontOfficeEndpoints.Map(endpoints);
         PortalFamilyEndpoints.Map(endpoints);
+        PortalLinkEndpoints.Map(endpoints);
         IdentityCheckEndpoints.Map(endpoints);
         DowntimeUhidEndpoints.Map(endpoints);
     }

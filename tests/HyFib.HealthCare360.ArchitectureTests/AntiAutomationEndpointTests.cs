@@ -14,6 +14,7 @@ public sealed class AntiAutomationEndpointTests
     [Theory]
     [InlineData("POST", "/api/v1/auth/otp/request", AntiAutomationActions.Otp)]
     [InlineData("POST", "/api/v1/auth/otp/verify", AntiAutomationActions.Otp)]
+    [InlineData("POST", "/api/v1/public/portal-links/{token}/otp", AntiAutomationActions.Otp)]
     [InlineData("POST", "/api/v1/public/feedback/forms/{token}", AntiAutomationActions.Feedback)]
     [InlineData("POST", "/api/v1/public/feedback/invitations/{token}", AntiAutomationActions.Feedback)]
     public void Abusable_anonymous_endpoints_ask_for_a_proof_of_work(string method, string route, string action) =>
@@ -41,6 +42,7 @@ public sealed class AntiAutomationEndpointTests
     [InlineData("POST", "/api/v1/auth/refresh")]
     [InlineData("POST", "/api/v1/public/challenge")]
     [InlineData("POST", "/api/v1/public/unsubscribe/{token}")]
+    [InlineData("GET", "/api/v1/public/portal-links/{token}")]
     public void Others_do_not(string method, string route) =>
         Endpoint(method, route).Metadata.GetMetadata<RequiresProofOfWorkMetadata>().ShouldBeNull();
 

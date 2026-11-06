@@ -14,6 +14,7 @@ import {
   MessageBarBody,
   MessageBarTitle,
   Spinner,
+  Subtitle2,
   Text,
   tokens,
 } from '@fluentui/react-components';
@@ -57,8 +58,10 @@ import {
   toLinkRequest,
   type ShareFormValues,
 } from './portalAccess';
+import { PortalLinksSection } from './PortalLinksSection';
 
 const useStyles = makeStyles({
+  heading: { margin: '0 0 8px' },
   intro: { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px', maxWidth: '72ch' },
   toolbar: { display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' },
   cell: {
@@ -84,6 +87,7 @@ interface Ending {
  * family members on other numbers. Staff with `patients.consents` share the records with a family member's number once
  * they have checked who both people are and the patient (or their guardian) has agreed, and stop sharing when asked.
  * Links made in the portal, with a code sent to the patient's number, show here too. An ended link stays as history.
+ * Above them, the links to the portal sent to the patient's own number (PortalLinksSection).
  */
 export function PortalAccessPanel({ patientId }: { patientId: string }) {
   const styles = useStyles();
@@ -128,6 +132,10 @@ export function PortalAccessPanel({ patientId }: { patientId: string }) {
 
   return (
     <>
+      <PortalLinksSection patientId={patientId} />
+      <Subtitle2 as="h2" className={styles.heading}>
+        Who sees the records in the portal
+      </Subtitle2>
       <div className={styles.intro}>
         {access.data && <Text>{ownNumberText(access.data)}</Text>}
         <Caption1 className={styles.muted}>

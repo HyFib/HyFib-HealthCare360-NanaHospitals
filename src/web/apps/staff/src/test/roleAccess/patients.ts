@@ -5,6 +5,7 @@ import type {
   PatientDocumentDto,
   PatientPayer,
   PatientPortalAccessDto,
+  PatientPortalLinksDto,
   VisitListItem,
   WhatsAppConsentDto,
 } from '@/modules/patients/api';
@@ -14,7 +15,8 @@ import { FACILITY_ID, paged, STAFF_USER, type FakeAnswers } from '../fakeApi';
 import { RECORD_ID } from '../roleAccessIds';
 
 // The patient record opened as RECORD_ID (Sunil Deshmukh), with what its tabs read: an open visit the desk can still
-// close or cancel, consents, WhatsApp choices, portal family links, documents and identity checks.
+// close or cancel, consents, WhatsApp choices, portal family links, links to the portal sent to the patient, documents
+// and identity checks.
 
 const now = Date.now();
 const minutesAgo = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
@@ -188,6 +190,39 @@ const PORTAL: PatientPortalAccessDto = {
   ],
 };
 
+/** A link to the portal sent yesterday and opened, and one it replaced. */
+const PORTAL_LINKS: PatientPortalLinksDto = {
+  maskedPhone: '+91******4321',
+  cannotSend: null,
+  whatsAppStopped: false,
+  links: [
+    {
+      id: id('l2'),
+      sentAt: minutesAgo(60 * 24),
+      sentByName: 'Pooja Nair',
+      channels: ['Sms', 'WhatsApp'],
+      maskedPhone: '+91******4321',
+      expiresAt: minutesAgo(-60 * 24 * 6),
+      openedAt: minutesAgo(60 * 23),
+      state: 'Opened',
+      revokedAt: null,
+      revokedReason: null,
+    },
+    {
+      id: id('l1'),
+      sentAt: minutesAgo(60 * 25),
+      sentByName: 'Pooja Nair',
+      channels: ['Sms'],
+      maskedPhone: '+91******4321',
+      expiresAt: minutesAgo(-60 * 24 * 6 + 60),
+      openedAt: null,
+      state: 'Revoked',
+      revokedAt: minutesAgo(60 * 24),
+      revokedReason: 'replaced',
+    },
+  ],
+};
+
 const DOCUMENTS: PatientDocumentDto[] = [
   {
     id: id('d1'),
@@ -263,6 +298,7 @@ export const ANSWERS: FakeAnswers = {
   [`GET /api/v1/patients/${RECORD_ID}/consents`]: CONSENTS,
   [`GET /api/v1/patients/${RECORD_ID}/whatsapp`]: WHATSAPP,
   [`GET /api/v1/patients/${RECORD_ID}/portal-family`]: PORTAL,
+  [`GET /api/v1/patients/${RECORD_ID}/portal-links`]: PORTAL_LINKS,
   [`GET /api/v1/patients/${RECORD_ID}/documents`]: DOCUMENTS,
   [`GET /api/v1/patients/${RECORD_ID}/identity-checks`]: IDENTITY_CHECKS,
   [`GET /api/v1/patients/${RECORD_ID}/journey`]: patientJourneys(RECORD_ID),

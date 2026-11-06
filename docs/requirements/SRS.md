@@ -269,7 +269,7 @@ Priority uses MoSCoW. "Must" items make up the release-1 scope.
 #### 4.3.3 Patient Portal
 | ID | Requirement | Priority |
 |---|---|---|
-| PP-01 | Patient login by mobile OTP; link family members. | Must |
+| PP-01 | Patient login by mobile OTP, also from a link staff send to the registered number by SMS or WhatsApp (the link only sends the code to that number); link family members. | Must |
 | PP-02 | View appointments, prescriptions, lab/radiology reports, discharge summaries and bills; download PDFs. | Must |
 | PP-03 | Book, reschedule or cancel appointments online and pay online (payment gateway). | Must |
 | PP-04 | Join telehealth consultations. | Must |
