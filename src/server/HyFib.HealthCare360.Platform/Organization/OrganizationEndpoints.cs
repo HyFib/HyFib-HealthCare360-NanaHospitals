@@ -335,9 +335,16 @@ internal static class OrganizationEndpoints
                     .Select(s => new LookupItem(s.Id, s.Code, s.Name)).ToListAsync(ct)))
             .RequirePermission(PlatformPermissions.MastersRead);
         lookups.MapGet("/local-languages", LocalLanguagesAtFacilities).RequirePermission(PlatformPermissions.MastersRead);
-        lookups.MapGet("/practitioners", async (Guid? departmentId, string? search, HospitalDbContext db, ICurrentUser user, CancellationToken ct) =>
+        // kind narrows the list to those kinds (the OT's nurse picker asks for nurses and OT technicians); none gives every kind.
+        lookups.MapGet("/practitioners", async (
+                Guid? departmentId, string? search, PractitionerKind[]? kind, HospitalDbContext db, ICurrentUser user, CancellationToken ct) =>
             {
                 var query = db.Set<Practitioner>().Where(p => p.IsActive && (departmentId == null || p.DepartmentId == departmentId));
+                if (kind is { Length: > 0 })
+                {
+                    query = query.Where(p => kind.Contains(p.Kind));
+                }
+
                 if (user.FacilityId is { } facilityId)
                 {
                     query = query.Where(p => p.FacilityIds.Count == 0 || p.FacilityIds.Contains(facilityId));

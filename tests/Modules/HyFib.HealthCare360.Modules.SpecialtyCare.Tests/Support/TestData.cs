@@ -20,7 +20,7 @@ internal static class TestData
     {
         PatientId = Guid.CreateVersion7(),
         SurgeonId = Guid.CreateVersion7(),
-        AnaesthetistId = anaesthesia == AnaesthesiaType.Local ? null : Guid.CreateVersion7(),
+        AnaesthetistId = anaesthesia is AnaesthesiaType.Local or AnaesthesiaType.Topical ? null : Guid.CreateVersion7(),
         AnaesthesiaType = anaesthesia,
         ProcedureName = "Laparoscopic cholecystectomy",
         Status = SurgeryStatus.Requested,

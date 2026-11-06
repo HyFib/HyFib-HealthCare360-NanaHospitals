@@ -9,8 +9,11 @@ import type { ChargeOutcome, ChargeStatus } from './shared/types';
 export const THEATRE_TYPES = ['Major', 'Minor', 'Cardiac', 'Ortho', 'Emergency'] as const;
 export type TheatreType = (typeof THEATRE_TYPES)[number];
 
-export const ANAESTHESIA_TYPES = ['GA', 'Spinal', 'Epidural', 'Regional', 'Local', 'Sedation'] as const;
+export const ANAESTHESIA_TYPES = ['GA', 'Spinal', 'Epidural', 'Regional', 'Local', 'Sedation', 'Topical'] as const;
 export type AnaesthesiaType = (typeof ANAESTHESIA_TYPES)[number];
+
+/** Local and topical anaesthesia are given by the surgeon; every other technique needs a named anaesthetist (as on the server). */
+export const givenBySurgeon = (type: AnaesthesiaType): boolean => type === 'Local' || type === 'Topical';
 
 export const SURGERY_PRIORITIES = ['Elective', 'Urgent', 'Emergency'] as const;
 export type SurgeryPriority = (typeof SURGERY_PRIORITIES)[number];
@@ -242,6 +245,9 @@ export interface SurgeryDetail {
   chargeStatus: ChargeStatus;
   chargeError: string | null;
   version: number;
+  /** The assisting nurse / OT in-charge (a nurse or OT technician from the practitioner master). */
+  nurseId: string | null;
+  nurseName: string | null;
 }
 
 export interface CreateSurgeryBookingRequest {
@@ -263,6 +269,7 @@ export interface CreateSurgeryBookingRequest {
   scheduledStart: string | null;
   scheduledEnd: string | null;
   notes: string | null;
+  nurseId: string | null;
 }
 
 export interface UpdateSurgeryPlanRequest {
@@ -279,6 +286,7 @@ export interface UpdateSurgeryPlanRequest {
   preferredDate: string | null;
   notes: string | null;
   version: number;
+  nurseId: string | null;
 }
 
 export interface ScheduleSurgeryRequest {

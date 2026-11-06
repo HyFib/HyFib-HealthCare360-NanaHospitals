@@ -55,7 +55,7 @@ public sealed class PractitionerOutOfUseTests(HospitalServer server)
             d => d.ShouldContain("1 OPD appointment(s) booked from"),
             d => d.ShouldContain("1 video consultation(s) from"),
             d => d.ShouldContain("1 patient(s) admitted under them"),
-            d => d.ShouldContain("1 surgery booking(s) with them as surgeon or anaesthetist"));
+            d => d.ShouldContain("1 surgery booking(s) with them as surgeon, anaesthetist or OT nurse"));
         var work = problem.GetProperty("data").GetProperty("workAhead").EnumerateArray()
             .ToDictionary(w => w.GetProperty("kind").GetString()!, w => w.GetProperty("numbers").EnumerateArray().Select(n => n.GetString()).ToList());
         work.Keys.ShouldBe(["appointments", "telehealth", "admissions", "surgeries"], ignoreOrder: true);

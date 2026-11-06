@@ -22,7 +22,8 @@ public sealed record CreateSurgeryBookingRequest(
     Guid? TheatreId,
     DateTimeOffset? ScheduledStart,
     DateTimeOffset? ScheduledEnd,
-    string? Notes);
+    string? Notes,
+    Guid? NurseId = null);
 
 public sealed record UpdateSurgeryPlanRequest(
     Guid? ProcedureServiceItemId,
@@ -37,7 +38,8 @@ public sealed record UpdateSurgeryPlanRequest(
     SurgeryPriority Priority,
     DateOnly? PreferredDate,
     string? Notes,
-    uint Version);
+    uint Version,
+    Guid? NurseId = null);
 
 public sealed record ScheduleSurgeryRequest(Guid TheatreId, DateTimeOffset ScheduledStart, DateTimeOffset ScheduledEnd, uint Version);
 
@@ -114,7 +116,9 @@ public sealed record SurgeryDetail(
     int PostponeCount,
     ChargeStatus ChargeStatus,
     string? ChargeError,
-    uint Version);
+    uint Version,
+    Guid? NurseId = null,
+    string? NurseName = null);
 
 public sealed class CreateSurgeryBookingRequestValidator : AbstractValidator<CreateSurgeryBookingRequest>
 {

@@ -8,6 +8,15 @@ public enum AnaesthesiaType
     Regional,
     Local,
     Sedation,
+
+    /// <summary>Applied to a surface (eye drops, a spray, a gel) by the surgeon, as the OT register lists it apart from local infiltration.</summary>
+    Topical,
+}
+
+public static class AnaesthesiaTypes
+{
+    /// <summary>Local and topical anaesthesia are given by the surgeon; every other technique needs a named anaesthetist.</summary>
+    public static bool GivenBySurgeon(AnaesthesiaType type) => type is AnaesthesiaType.Local or AnaesthesiaType.Topical;
 }
 
 public enum SurgeryPriority

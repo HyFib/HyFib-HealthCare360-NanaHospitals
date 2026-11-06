@@ -397,6 +397,7 @@ function Details({
             : null}
         </Detail>
         <Detail label="Anaesthetist">{b.anaesthetistName}</Detail>
+        <Detail label="Assisting nurse / OT in-charge">{b.nurseName}</Detail>
         <Detail label="Anaesthesia">{anaesthesiaLabel[b.anaesthesiaType]}</Detail>
         <Detail label="Theatre">{b.theatreName}</Detail>
         <Detail label="Slot">

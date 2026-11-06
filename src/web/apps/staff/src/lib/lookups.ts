@@ -39,6 +39,13 @@ export function searchPractitioners(search: string, departmentId?: string | null
   return api.get<LookupItem[]>('/api/v1/masters/lookups/practitioners', { query: { search, departmentId } });
 }
 
+/** Nurses and OT technicians: who may be the assisting nurse / OT in-charge of an operation. */
+export function searchOtNurses(search: string): Promise<LookupItem[]> {
+  return api.get<LookupItem[]>('/api/v1/masters/lookups/practitioners', {
+    query: { search, kind: ['Nurse', 'Technician'] },
+  });
+}
+
 /** Query key of the public settings: invalidate it after changing a `ui.*` setting or a feature switch. */
 export const PUBLIC_SETTINGS_KEY = ['settings', 'public'] as const;
 

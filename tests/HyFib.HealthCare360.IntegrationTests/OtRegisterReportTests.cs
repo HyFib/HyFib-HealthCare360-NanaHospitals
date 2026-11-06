@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Analytics;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
@@ -39,14 +40,53 @@ public sealed class OtRegisterReportTests(HospitalServer server)
         var admission = await AdmitAsync(frontOffice, doctor, patientId);
         var anaesthetist = await PractitionerAsync(management, "MD (Anaesthesia)");
         var assistant = await PractitionerAsync(management, "MS (General Surgery)");
+        var otNurse = await PractitionerAsync(management, "B.Sc. Nursing", PractitionerKind.Nurse, "Tamil Nadu Nurses and Midwives Council");
+
+        // The booking's nurse picker lists nurses and OT technicians; the same search without the kinds still finds the doctor.
+        async Task<List<Guid>> PickAsync(string name, string kinds) =>
+            [.. (await doctor.GetAsync<List<JsonElement>>($"/api/v1/masters/lookups/practitioners?search={Uri.EscapeDataString(name)}{kinds}"))
+                .Select(p => p.GetProperty("id").GetGuid())];
+        (await PickAsync(otNurse.Name, "&kind=Nurse&kind=Technician")).ShouldContain(otNurse.Id);
+        (await PickAsync(anaesthetist.Name, "&kind=Nurse&kind=Technician")).ShouldNotContain(anaesthetist.Id);
+        (await PickAsync(anaesthetist.Name, "")).ShouldContain(anaesthetist.Id);
 
         // The surgeon books an emergency hernia repair under general anaesthesia, with an anaesthetist and an assistant.
         var surgeonId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var hernia = (await doctor.GetAsync<List<ServiceItemDto>>("/api/v1/masters/lookups/services?search=PROC-HERNIA")).Single(s => s.Code == "PROC-HERNIA");
-        var booking = await doctor.PostAsync<SurgeryCreated>(Bookings, new CreateSurgeryBookingRequest(
+        CreateSurgeryBookingRequest Repair(Guid nurseId) => new(
             patientId, AdmissionId: null, VisitId: null, hernia.Id, ProcedureCode: null, "Inguinal hernia repair with mesh", Laterality.Right,
             "Obstructed right inguinal hernia", surgeonId, [assistant.Id], anaesthetist.Id, AnaesthesiaType.GA, SurgeryPriority.Emergency,
-            PreferredDate: null, TheatreId: null, ScheduledStart: null, ScheduledEnd: null, Notes: null));
+            PreferredDate: null, TheatreId: null, ScheduledStart: null, ScheduledEnd: null, Notes: null, NurseId: nurseId);
+
+        // The assisting nurse / OT in-charge is a nurse or OT technician, not a doctor.
+        using (var doctorAsNurse = await doctor.SendRawAsync(HttpMethod.Post, Bookings, Repair(anaesthetist.Id)))
+        {
+            doctorAsNurse.StatusCode.ShouldBe(HttpStatusCode.BadRequest, await doctorAsNurse.Content.ReadAsStringAsync(Ct));
+            (await doctorAsNurse.Content.ReadAsStringAsync(Ct)).ShouldContain("nurseId");
+        }
+
+        // Nor a nurse who is no longer in use.
+        var former = await PractitionerAsync(management, "GNM", PractitionerKind.Nurse, "Tamil Nadu Nurses and Midwives Council");
+        using (var retired = await SetInUseAsync(management, former.Id, false))
+        {
+            retired.IsSuccessStatusCode.ShouldBeTrue(await retired.Content.ReadAsStringAsync(Ct));
+        }
+
+        using (var formerAsNurse = await doctor.SendRawAsync(HttpMethod.Post, Bookings, Repair(former.Id)))
+        {
+            formerAsNurse.StatusCode.ShouldBe(HttpStatusCode.BadRequest, await formerAsNurse.Content.ReadAsStringAsync(Ct));
+            (await formerAsNurse.Content.ReadAsStringAsync(Ct)).ShouldContain("nurseId");
+        }
+
+        var booking = await doctor.PostAsync<SurgeryCreated>(Bookings, Repair(otNurse.Id));
+        (await doctor.GetAsync<SurgeryDetail>($"{Bookings}/{booking.Id}")).NurseName.ShouldBe(otNurse.Name);
+
+        // A nurse with an operation ahead is not taken out of use without saying so.
+        using (var outOfUse = await SetInUseAsync(management, otNurse.Id, false))
+        {
+            outOfUse.StatusCode.ShouldBe(HttpStatusCode.Conflict, await outOfUse.Content.ReadAsStringAsync(Ct));
+        }
+
         var (theatreId, wentIn) = await OnTheTableAsync(doctor, booking.Id);
 
         // The anaesthesia record and the operation note, each signed; then the patient leaves the theatre for the ICU.
@@ -87,6 +127,7 @@ public sealed class OtRegisterReportTests(HospitalServer server)
         row["surgeon"].ShouldNotBeNull().ShouldContain("· operation note signed by ");
         row["anaesthetist"].ShouldNotBeNull().ShouldStartWith($"{anaesthetist.Name}, MD (Anaesthesia), Reg. {anaesthetist.Registration} (Tamil Nadu Medical Council) · anaesthesia record signed by ");
         row["assistants"].ShouldBe($"{assistant.Name}, MS (General Surgery), Reg. {assistant.Registration} (Tamil Nadu Medical Council)");
+        row["nurse"].ShouldBe($"{otNurse.Name}, B.Sc. Nursing, Reg. {otNurse.Registration} (Tamil Nadu Nurses and Midwives Council)");
         row["remarks"].ShouldBe("Emergency. Complications: None");
 
         var cancelled = (await RegisterAsync(management, theatreId, wentIn)).Single(r => r["caseNumber"] == called.BookingNumber);
@@ -196,17 +237,33 @@ public sealed class OtRegisterReportTests(HospitalServer server)
         return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Ward>().Where(w => w.Code == code).Select(w => w.Name).FirstAsync(Ct);
     }
 
-    /// <summary>A doctor added to the practitioner master by management, with a qualification and a council registration.</summary>
-    private static async Task<(Guid Id, string Name, string Registration)> PractitionerAsync(ApiClient management, string qualification)
+    /// <summary>
+    /// A doctor (or, with <paramref name="kind"/>, a nurse) added to the practitioner master by management, with a qualification
+    /// and a council registration.
+    /// </summary>
+    private static async Task<(Guid Id, string Name, string Registration)> PractitionerAsync(
+        ApiClient management, string qualification, PractitionerKind kind = PractitionerKind.Consultant, string council = "Tamil Nadu Medical Council")
     {
         var (lastName, registration) = ("Register" + Letters(6), Digits(6));
+        var title = kind == PractitionerKind.Nurse ? "Sr." : "Dr.";
         var created = await management.PostAsync<JsonElement>("/api/v1/masters/practitioners", new SavePractitionerRequest(
-            Code: $"OR{Letters(8)}", Title: "Dr.", FirstName: "Kavitha", LastName: lastName, Gender: Gender.Female, Qualification: qualification,
-            RegistrationCouncil: "Tamil Nadu Medical Council", RegistrationNumber: registration, HprId: null, SpecialtyId: null, DepartmentId: null,
-            Kind: PractitionerKind.Consultant, Phone: null, Email: null, ConsultationFeeNew: 0m, ConsultationFeeFollowUp: 0m, FollowUpValidityDays: 0,
+            Code: $"OR{Letters(8)}", Title: title, FirstName: "Kavitha", LastName: lastName, Gender: Gender.Female, Qualification: qualification,
+            RegistrationCouncil: council, RegistrationNumber: registration, HprId: null, SpecialtyId: null, DepartmentId: null,
+            Kind: kind, Phone: null, Email: null, ConsultationFeeNew: 0m, ConsultationFeeFollowUp: 0m, FollowUpValidityDays: 0,
             Languages: null, Bio: null, PhotoFileId: null, SignatureFileId: null, AvailableForOnlineBooking: false, AvailableForTelehealth: false,
             FacilityIds: null, IsActive: true, Version: null));
-        return (created.GetProperty("id").GetGuid(), $"Dr. Kavitha {lastName}", registration);
+        return (created.GetProperty("id").GetGuid(), $"{title} Kavitha {lastName}", registration);
+    }
+
+    /// <summary>The practitioner's record saved as read, in use or not.</summary>
+    private static async Task<HttpResponseMessage> SetInUseAsync(ApiClient management, Guid practitionerId, bool isActive)
+    {
+        var p = await management.GetAsync<PractitionerDto>($"/api/v1/masters/practitioners/{practitionerId}");
+        return await management.SendRawAsync(HttpMethod.Put, $"/api/v1/masters/practitioners/{practitionerId}", new SavePractitionerRequest(
+            p.Code, p.Title, p.FirstName, p.LastName, p.Gender, p.Qualification, p.RegistrationCouncil, p.RegistrationNumber, p.HprId,
+            p.SpecialtyId, p.DepartmentId, p.Kind, p.Phone, p.Email, p.ConsultationFeeNew, p.ConsultationFeeFollowUp, p.FollowUpValidityDays,
+            p.Languages, p.Bio, p.PhotoFileId, p.SignatureFileId, p.AvailableForOnlineBooking, p.AvailableForTelehealth, p.FacilityIds,
+            isActive, p.Version));
     }
 
     /// <summary>Front office: admits the patient under the doctor to a bed of the male general ward added for it (<see cref="TestBeds"/>).</summary>

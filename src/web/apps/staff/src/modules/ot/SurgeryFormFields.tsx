@@ -30,9 +30,10 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useWatch, type UseFormReturn } from 'react-hook-form';
-import { searchPractitioners } from '@/lib/lookups';
+import { searchOtNurses, searchPractitioners } from '@/lib/lookups';
 import {
   ANAESTHESIA_TYPES,
+  givenBySurgeon,
   LATERALITIES,
   otQueries,
   searchProcedures,
@@ -201,12 +202,14 @@ export function PlanFields({
   form,
   surgeonName,
   anaesthetistName,
+  nurseName,
   assistantNames,
   showPreferredDate,
 }: {
   form: Form;
   surgeonName?: string | null;
   anaesthetistName?: string | null;
+  nurseName?: string | null;
   assistantNames?: Record<string, string>;
   showPreferredDate: boolean;
 }) {
@@ -221,6 +224,10 @@ export function PlanFields({
   const [anaesthetistItems] = useState<LookupItem[] | undefined>(() => {
     const id = form.getValues('anaesthetistId');
     return id && anaesthetistName ? [{ id, code: '', name: anaesthetistName }] : undefined;
+  });
+  const [nurseItems] = useState<LookupItem[] | undefined>(() => {
+    const id = form.getValues('nurseId');
+    return id && nurseName ? [{ id, code: '', name: nurseName }] : undefined;
   });
   const side = laterality ? sideShort(laterality) : null;
 
@@ -273,12 +280,21 @@ export function PlanFields({
         initialItems={anaesthetistItems}
         placeholder="Type a name"
         hint={
-          anaesthesiaType === 'Local'
-            ? 'Not needed for local anaesthesia given by the surgeon.'
+          givenBySurgeon(anaesthesiaType)
+            ? 'Not needed for local or topical anaesthesia given by the surgeon.'
             : 'Must be a different doctor from the surgeon.'
         }
       />
       <AssistantsPicker form={form} knownNames={assistantNames} />
+      <LookupField
+        control={control}
+        name="nurseId"
+        label="Assisting nurse / OT in-charge"
+        load={searchOtNurses}
+        initialItems={nurseItems}
+        placeholder="Type a name"
+        hint="A nurse or OT technician. Named in the OT register with their qualification and registration."
+      />
       <ChoiceField
         control={control}
         name="priority"
