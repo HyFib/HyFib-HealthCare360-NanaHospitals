@@ -39,6 +39,7 @@ internal static class SearchDefinitions
     public const string Pretty = "_pretty";
     public const string Id = "_id";
     public const string LastUpdated = "_lastUpdated";
+    public const string Sort = "_sort";
 
     /// <summary>Page size when <c>_count</c> is not given.</summary>
     public const int DefaultCount = 20;
@@ -51,6 +52,19 @@ internal static class SearchDefinitions
 
     /// <summary>Practitioner searches need at least one of these: a practitioner is looked up, the staff are not listed.</summary>
     public static readonly string[] PractitionerSelectors = [Id, "identifier", "name"];
+
+    /// <summary>
+    /// Why a parameter cannot order results (<c>_sort</c>), or null when it can: dates, strings and codes order, a reference
+    /// has no order of its own, and identifiers of different systems have none between them.
+    /// </summary>
+    public static string? WhyNotSortable(SearchParameterDefinition parameter) => parameter.Type switch
+    {
+        R4.SearchParamType.Date or R4.SearchParamType.String => null,
+        R4.SearchParamType.Token when parameter.Name != "identifier" => null,
+        R4.SearchParamType.Token => "identifiers of different systems have no order between them",
+        R4.SearchParamType.Reference => "a reference has no order of its own",
+        _ => "its values have no order",
+    };
 
     private static readonly SearchParameterDefinition IdParameter = new(Id, R4.SearchParamType.Token, "Logical id (comma-separated for several).");
 

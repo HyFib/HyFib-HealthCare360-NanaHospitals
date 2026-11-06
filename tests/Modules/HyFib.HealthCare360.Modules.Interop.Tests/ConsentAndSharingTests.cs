@@ -397,6 +397,61 @@ public sealed class PatientSearchQueryTests
         var newer = RecordSharingConsentTests.Patient("NEW");
         newer.RegisteredAt = Monday.AddDays(1);
 
-        PatientSearchQuery.Ordered(new[] { older, newer }.AsQueryable()).Select(p => p.Uhid).ShouldBe(["NEW", "OLD"]);
+        PatientSearchQuery.Ordered(new[] { older, newer }.AsQueryable(), []).Select(p => p.Uhid).ShouldBe(["NEW", "OLD"]);
     }
+
+    [Fact]
+    public void Sorts_patients_by_the_birth_date_they_are_served_with_an_estimated_one_as_its_whole_year()
+    {
+        // Served as "1980-06-15", "1980-10-01", "1980" (from a stated age, stored as 1980-09-01) and with no birth date.
+        // The year starts before both days and ends after both: first either way. By the stored day it would sit between them.
+        var june = RecordSharingConsentTests.Patient("JUNE");
+        june.DateOfBirth = new DateOnly(1980, 6, 15);
+        var october = RecordSharingConsentTests.Patient("OCTOBER");
+        october.DateOfBirth = new DateOnly(1980, 10, 1);
+        var estimated = RecordSharingConsentTests.Patient("ESTIMATED");
+        (estimated.DateOfBirth, estimated.IsDateOfBirthEstimated) = (new DateOnly(1980, 9, 1), true);
+        var unknown = RecordSharingConsentTests.Patient("UNKNOWN");
+        var patients = new[] { june, unknown, estimated, october }.AsQueryable();
+
+        Sorted(patients, "_sort=birthdate").ShouldBe(["ESTIMATED", "JUNE", "OCTOBER", "UNKNOWN"]);
+        Sorted(patients, "_sort=-birthdate").ShouldBe(["ESTIMATED", "OCTOBER", "JUNE", "UNKNOWN"]);
+    }
+
+    [Fact]
+    public void Sorts_patients_by_gender_code_last_update_and_id()
+    {
+        var male = RecordSharingConsentTests.Patient("MALE");
+        male.Gender = Gender.Male;
+        var unknown = RecordSharingConsentTests.Patient("UNKNOWN");
+        unknown.Gender = Gender.Unknown;
+        var female = RecordSharingConsentTests.Patient("FEMALE");
+        female.Gender = Gender.Female;
+        (female.CreatedAt, female.UpdatedAt) = (Monday, Monday.AddDays(2));
+        (male.CreatedAt, unknown.CreatedAt) = (Monday.AddDays(1), Monday);
+        var patients = new[] { male, unknown, female }.AsQueryable();
+
+        Sorted(patients, "_sort=gender").ShouldBe(["FEMALE", "MALE", "UNKNOWN"]);
+        Sorted(patients, "_sort=-_lastUpdated").ShouldBe(["FEMALE", "MALE", "UNKNOWN"]);
+        Sorted(patients, "_sort=_id").ShouldBe([.. patients.OrderBy(p => p.Id).Select(p => p.Uhid)]);
+    }
+
+    [Fact]
+    public void Patients_changed_within_the_same_millisecond_tie_on_last_update_and_fall_back_to_newest_registration()
+    {
+        // Both are served with the same meta.lastUpdated, to the millisecond. The microseconds stored apart must not order
+        // them: they tie, and the patient registered later comes first.
+        var changed = Monday.AddDays(3);
+        var earlier = RecordSharingConsentTests.Patient("EARLIER");
+        (earlier.RegisteredAt, earlier.UpdatedAt) = (Monday, changed.AddTicks(9_000));
+        var later = RecordSharingConsentTests.Patient("LATER");
+        (later.RegisteredAt, later.UpdatedAt) = (Monday.AddHours(1), changed.AddTicks(1_000));
+        var patients = new[] { earlier, later }.AsQueryable();
+
+        Sorted(patients, "_sort=-_lastUpdated").ShouldBe(["LATER", "EARLIER"]);
+        Sorted(patients, "_sort=_lastUpdated").ShouldBe(["LATER", "EARLIER"]);
+    }
+
+    private static List<string> Sorted(IQueryable<Patients.Domain.Patient> patients, string sort) =>
+        [.. PatientSearchQuery.Ordered(patients, TestData.Search("Patient", $"name=patient&{sort}").Sort).Select(p => p.Uhid)];
 }

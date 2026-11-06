@@ -64,6 +64,101 @@ public sealed class ResourceSearchTests
     }
 
     [Fact]
+    public void Sorts_by_code_then_newest_first_and_by_id()
+    {
+        // A vital sign's code is its LOINC code: blood pressure 85354-9, pulse 8867-4. The glucose result carries LOINC 1558-6
+        // and the lab's own code FBS: the least of them counts in increasing order, the greatest in decreasing order. The
+        // two pulses tie, and fall back to the default order, newest first.
+        Search("_sort=code").Resources.Select(Code).ShouldBe(["1558-6", "85354-9", "8867-4 Wed", "8867-4 Mon"]);
+        Search("_sort=-code").Resources.Select(Code).ShouldBe(["1558-6", "8867-4 Wed", "8867-4 Mon", "85354-9"]);
+        Search("_sort=code,date").Resources.Select(Code).ShouldBe(["1558-6", "85354-9", "8867-4 Mon", "8867-4 Wed"]);
+    }
+
+    [Fact]
+    public void Sorts_by_date_oldest_first_and_the_same_time_by_id()
+    {
+        var monday = Search("_sort=date").Resources.Take(2).Select(r => r.Id).ToList();
+
+        Search("_sort=date").Resources.Select(Code).ShouldBe(["85354-9", "8867-4 Mon", "1558-6", "8867-4 Wed"]);
+        monday.ShouldBe(monday.Order(StringComparer.Ordinal));
+        Search("_sort=-date").Resources.Select(Code).ShouldBe(["8867-4 Wed", "1558-6", "85354-9", "8867-4 Mon"]);
+    }
+
+    [Fact]
+    public void A_resource_without_the_value_comes_last_whichever_the_order()
+    {
+        var resources = Observations();
+        var undated = (R4.Observation)resources.Single(r => r is R4.Observation { Code.Coding: [{ Code: "1558-6" }, ..] });
+        undated.Effective = null;
+
+        Search("_sort=date", resources).Resources[^1].ShouldBeSameAs(undated);
+        Search("_sort=-date", resources).Resources[^1].ShouldBeSameAs(undated);
+    }
+
+    [Fact]
+    public void Pages_through_the_asked_order()
+    {
+        var all = Search("_sort=-code&_count=100").Resources.Select(r => r.Id).ToList();
+        var pages = new[] { 0, 2 }.SelectMany(offset => Search($"_sort=-code&_count=2&_offset={offset}").Resources).Select(r => r.Id).ToList();
+
+        pages.ShouldBe(all);
+    }
+
+    [Fact]
+    public void A_period_counts_by_its_start_in_increasing_order_and_by_its_end_in_decreasing_order()
+    {
+        R4.Encounter Stay(string id, string start, string? end) =>
+            new() { Id = id, Period = new R4.Period { Start = start, End = end }, Status = R4.Encounter.EncounterStatus.Finished };
+        List<R4.Resource> stays = [Stay("long", "2026-09-01", "2026-09-10"), Stay("short", "2026-09-03", "2026-09-04"), Stay("ongoing", "2026-09-05", null)];
+
+        Ids(ResourceSearch.Execute(stays, TestData.Search("Encounter", $"{Patient}&_sort=date"))).ShouldBe(["long", "short", "ongoing"]);
+        Ids(ResourceSearch.Execute(stays, TestData.Search("Encounter", $"{Patient}&_sort=-date"))).ShouldBe(["ongoing", "long", "short"]);
+        Ids(ResourceSearch.Execute(stays, TestData.Search("Encounter", Patient))).ShouldBe(["ongoing", "short", "long"]);
+    }
+
+    [Fact]
+    public void Sorts_people_by_family_name_then_given_names_whatever_their_case()
+    {
+        R4.Practitioner Doctor(string id, string given, string family) =>
+            new() { Id = id, Name = [new R4.HumanName { Text = $"Dr. {given} {family}", Family = family, Given = [given], Prefix = ["Dr."] }] };
+        List<R4.Resource> doctors = [Doctor("p1", "Asha", "Rao"), Doctor("p2", "Ravi", "Kumar"), Doctor("p3", "anil", "Kumar")];
+
+        Ids(ResourceSearch.Execute(doctors, TestData.Search("Practitioner", "_id=p1,p2,p3&_sort=name"))).ShouldBe(["p3", "p2", "p1"]);
+        Ids(ResourceSearch.Execute(doctors, TestData.Search("Practitioner", "_id=p1,p2,p3&_sort=-name"))).ShouldBe(["p1", "p2", "p3"]);
+    }
+
+    [Fact]
+    public void Sorts_places_and_facilities_by_name_whatever_its_case_and_codes_as_written()
+    {
+        // Lower-cased, "general ward" comes after "Emergency" and before "ICU"; as written it would come last ('g' > 'I').
+        // The ids are in the other order, so an order that fell back to them would show.
+        List<R4.Resource> places =
+        [
+            new R4.Location { Id = "l1", Name = "ICU", Type = [new R4.CodeableConcept("http://example.org/kind", "b")] },
+            new R4.Location { Id = "l2", Name = "general ward", Type = [new R4.CodeableConcept("http://example.org/kind", "a")] },
+            new R4.Location { Id = "l3", Name = "Emergency", Type = [new R4.CodeableConcept("http://example.org/kind", "C")] },
+        ];
+        List<R4.Resource> facilities =
+            [new R4.Organization { Id = "o1", Name = "north wing" }, new R4.Organization { Id = "o2", Name = "Main campus" }];
+
+        Ids(ResourceSearch.Execute(places, TestData.Search("Location", "_sort=name"))).ShouldBe(["l3", "l2", "l1"]);
+        Ids(ResourceSearch.Execute(places, TestData.Search("Location", "_sort=-name"))).ShouldBe(["l1", "l2", "l3"]);
+        Ids(ResourceSearch.Execute(facilities, TestData.Search("Organization", "_sort=name"))).ShouldBe(["o2", "o1"]);
+
+        // A code is compared as written, character by character: "C" before "a" and "b". Lower-cased, it would be last.
+        Ids(ResourceSearch.Execute(places, TestData.Search("Location", "_sort=type"))).ShouldBe(["l3", "l2", "l1"]);
+    }
+
+    private static string Code(R4.Resource resource)
+    {
+        var observation = (R4.Observation)resource;
+        var code = observation.Code.Coding[0].Code!;
+        return code == "8867-4" ? $"{code} {(observation.Effective.ToString()!.StartsWith("2026-09-23", StringComparison.Ordinal) ? "Wed" : "Mon")}" : code;
+    }
+
+    private static List<string> Ids(SearchPage page) => [.. page.Resources.Select(r => r.Id)];
+
+    [Fact]
     public void Filters_by_category()
     {
         Search("category=vital-signs").Total.ShouldBe(3);

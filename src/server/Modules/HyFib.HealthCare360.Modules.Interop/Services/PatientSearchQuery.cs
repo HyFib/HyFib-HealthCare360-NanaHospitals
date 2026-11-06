@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Search;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Persistence;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
 
@@ -145,9 +146,71 @@ internal static class PatientSearchQuery
         return query;
     }
 
-    /// <summary>Newest registrations first, then by id (stable paging; never sorted by an enum column).</summary>
-    public static IQueryable<Patient> Ordered(IQueryable<Patient> patients) =>
-        patients.OrderByDescending(p => p.RegisteredAt).ThenBy(p => p.Id);
+    /// <summary>
+    /// The order asked for with <c>_sort</c>, by the values the Patient resource is served with (as the in-memory search
+    /// orders the other types); then newest registrations first, then by id (stable paging; never sorted by an enum
+    /// column as stored). A patient without the value comes last, whichever the direction.
+    /// </summary>
+    public static IQueryable<Patient> Ordered(IQueryable<Patient> patients, IReadOnlyList<SortRule> sort)
+    {
+        IOrderedQueryable<Patient>? ordered = null;
+        foreach (var rule in sort)
+        {
+            var descending = rule.Descending;
+            ordered = rule.Parameter switch
+            {
+                "name" => By(patients, ordered, NameKey, descending),
+                "birthdate" => By(patients, By(patients, ordered, p => p.DateOfBirth == null, false), descending ? BirthDateEnd : BirthDateStart, descending),
+                "gender" => By(patients, ordered, GenderKey, descending),
+                SearchDefinitions.LastUpdated => By(patients, ordered, LastUpdatedKey, descending),
+                SearchDefinitions.Id => By(patients, ordered, p => p.Id, descending),
+                _ => throw new ArgumentOutOfRangeException(nameof(sort), rule.Parameter, "Not a sortable Patient parameter."),
+            };
+        }
+
+        return ordered is null
+            ? patients.OrderByDescending(p => p.RegisteredAt).ThenBy(p => p.Id)
+            : ordered.ThenByDescending(p => p.RegisteredAt).ThenBy(p => p.Id);
+    }
+
+    /// <summary>
+    /// The name as served (family name, then given names), lower-cased and compared byte by byte, so the database orders
+    /// names as the in-memory search does, whatever its collation.
+    /// </summary>
+    private static readonly Expression<Func<Patient, string>> NameKey = p => EF.Functions.Collate(
+        ((p.LastName != null ? p.LastName + " " : "") + p.FirstName + (p.MiddleName != null ? " " + p.MiddleName : "")).ToLower(), "C");
+
+    /// <summary>
+    /// The last change as served (<c>meta.lastUpdated</c>): the later of the registration and the last update, to the
+    /// millisecond. Two patients changed within the same millisecond read the same, so they tie, and fall back to the
+    /// default order, rather than being told apart by microseconds the reader cannot see.
+    /// </summary>
+    private static readonly Expression<Func<Patient, DateTimeOffset>> LastUpdatedKey = p =>
+        SqlTime.ToMilliseconds(p.UpdatedAt != null && p.UpdatedAt > p.CreatedAt ? p.UpdatedAt.Value : p.CreatedAt);
+
+    /// <summary>
+    /// The start and the end of the birth date as served: the day, or for a date of birth estimated from a stated age, the
+    /// whole year (it is published with the year only).
+    /// </summary>
+    private static readonly Expression<Func<Patient, DateOnly?>> BirthDateStart = p =>
+        p.DateOfBirth == null ? null
+        : p.IsDateOfBirthEstimated ? new DateOnly(p.DateOfBirth.Value.Year, 1, 1)
+        : p.DateOfBirth.Value;
+
+    private static readonly Expression<Func<Patient, DateOnly?>> BirthDateEnd = p =>
+        p.DateOfBirth == null ? null
+        : p.IsDateOfBirthEstimated ? new DateOnly(p.DateOfBirth.Value.Year + 1, 1, 1)
+        : p.DateOfBirth.Value.AddDays(1);
+
+    /// <summary>The FHIR code's place in alphabetical order: female, male, other, unknown.</summary>
+    private static readonly Expression<Func<Patient, int>> GenderKey = p =>
+        p.Gender == Gender.Female ? 0 : p.Gender == Gender.Male ? 1 : p.Gender == Gender.Other ? 2 : 3;
+
+    private static IOrderedQueryable<Patient> By<TKey>(
+        IQueryable<Patient> patients, IOrderedQueryable<Patient>? ordered, Expression<Func<Patient, TKey>> key, bool descending) =>
+        ordered is null
+            ? descending ? patients.OrderByDescending(key) : patients.OrderBy(key)
+            : descending ? ordered.ThenByDescending(key) : ordered.ThenBy(key);
 
     private static Expression<Func<Patient, bool>> Is(Gender gender) => p => p.Gender == gender;
 

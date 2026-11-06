@@ -58,6 +58,7 @@ public sealed class HospitalDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasPostgresExtension("pg_trgm");
+        SqlTime.Map(modelBuilder);
 
         foreach (var assembly in _modules.Assemblies)
         {

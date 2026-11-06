@@ -17,6 +17,37 @@ public sealed class SearchRequestParserTests
     }
 
     [Fact]
+    public void Reads_the_sort_rules_in_priority_order_and_keeps_them_in_the_links()
+    {
+        var request = TestData.Search("Observation", $"patient={PatientRef}&_sort=-date, code");
+
+        request.Sort.ShouldBe([
+            new SortRule("date", Hl7.Fhir.Model.SearchParamType.Date, Descending: true),
+            new SortRule("code", Hl7.Fhir.Model.SearchParamType.Token, Descending: false),
+        ]);
+        request.LinkParameters.ShouldContain(new KeyValuePair<string, string>("_sort", "-date, code"));
+        TestData.Search("Observation", $"patient={PatientRef}").Sort.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("Observation", "_sort=weight", "'weight' is not a search parameter of Observation, so it cannot order the results.")]
+    [InlineData("Observation", "_sort=patient", "Results cannot be ordered by 'patient': a reference has no order of its own.")]
+    [InlineData("Location", "_sort=partof", "Results cannot be ordered by 'partof': a reference has no order of its own.")]
+    [InlineData("Patient", "name=meera&_sort=identifier", "Results cannot be ordered by 'identifier': identifiers of different systems have no order between them.")]
+    [InlineData("Observation", "_sort=date,-date", "'date' is in _sort twice.")]
+    [InlineData("Observation", "_sort=date,", "_sort is a comma-separated list of search parameters, each with a leading '-' for decreasing order.")]
+    [InlineData("Observation", "_sort=-", "_sort is a comma-separated list of search parameters, each with a leading '-' for decreasing order.")]
+    [InlineData("Observation", "_sort=", "_sort is a comma-separated list of search parameters, each with a leading '-' for decreasing order.")]
+    [InlineData("Observation", "_sort=%20&_sort=date", "_sort is a comma-separated list of search parameters, each with a leading '-' for decreasing order.")]
+    [InlineData("Observation", "_sort=date&_sort=code", "_sort is given once, as a comma-separated list in priority order.")]
+    public void Refuses_an_order_it_cannot_follow(string type, string query, string message)
+    {
+        var error = Error(type, type == "Observation" ? $"patient={PatientRef}&{query}" : query);
+
+        (error.StatusCode, error.Outcome.Issue[0].Diagnostics).ShouldBe((400, message));
+    }
+
+    [Fact]
     public void Defaults_to_twenty_results_per_page() => TestData.Search("Observation", $"patient={PatientRef}").Count.ShouldBe(20);
 
     [Theory]
