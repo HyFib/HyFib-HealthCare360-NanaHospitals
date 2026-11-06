@@ -63,6 +63,12 @@ Each entry records a decision, its context, and the consequences. New decisions 
 **Decision:** Audit rows are inserted without locks, and a sealer job computes a SHA-256 chain in sequence order. A database trigger forbids UPDATE (except sealing a null hash) and DELETE. Each sealed row also carries an HMAC of its hash under a key kept outside the database (escrowed in backups), and the chain's end is anchored, at most hourly, in an append-only file outside the database and in the server log.
 **Consequences:** It is tamper-evident without serialising business transactions. Verification is available on demand. Whoever can write the database cannot compute new seals over changed rows, and a chain cut short or made again no longer matches the anchors. An export of the chain can be checked by an auditor without the database (`audit verify-export`). A database restored from a backup older than the latest anchor fails verification: the records after the backup are gone, which is what it should say.
 
+## ADR-015 — The audit trail is kept permanently
+**Status:** Accepted (the hospital's decision, 6 November 2026)
+**Context:** SRS SEC-04 asked for the audit trail to be kept 10 years. The hospital chose to keep it permanently, and to say so in what patients are told about their data.
+**Decision:** The retention schedule keeps the audit trail permanently, and the setting cannot shorten it. The data summary (staff app and patient portal, in English, Hindi and Tamil) and the answer to an erasure request say that the record access log is kept permanently and never edited. An erasure request is not held back by it: the audit trail is never erased by a request, so the request keeps the medical records, bills and message log until their own periods end.
+**Consequences:** The audit table grows without end; its monthly partitions and indexes keep the recent months fast. Removing old months, if the hospital ever needs to, is a separate, two-person action by super administrators that exports and re-anchors what it removes; it is not built yet.
+
 ## ADR-011 — AI assistant is provider-pluggable, off by default, human-in-the-loop
 **Status:** Accepted
 **Decision:** Speech-to-text providers are Windows offline speech (Desktop) or a configured cloud/on-prem service. Text structuring and intent parsing go through an `IAiTextService` whose default provider is Anthropic Claude. Prompts strip direct identifiers. Output is always a draft that the clinician must accept, and every call is audited.

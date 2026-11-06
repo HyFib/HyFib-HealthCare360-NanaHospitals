@@ -47,8 +47,12 @@ function keptSummary(a: { keepUntil: string | null; keepPermanently: boolean }):
   }
   return a.keepUntil
     ? `The rest is kept until ${formatDateOnly(a.keepUntil)}, as the law requires.`
-    : 'Nothing else has to be kept.';
+    : 'Nothing else has to be kept as the law requires.';
 }
+
+/** The hospital's own decision, said apart from what the law keeps (which is all the request's dates describe). */
+const AUDIT_TRAIL_KEPT =
+  'The audit trail (the record access log) is never erased by a request: the hospital keeps it permanently and never edits it.';
 
 /**
  * Erasure requests: what can go at once, what the law requires the hospital to keep (and until when), and what was
@@ -106,8 +110,9 @@ export function ErasurePanel({
             <Text>
               {request.retainedPermanently || request.retainedUntil
                 ? `${keptUntilText(request.retainedUntil, request.retainedPermanently)}, as the law requires. The retention review lists it until then.`
-                : 'Nothing had to be kept.'}
+                : 'Nothing had to be kept as the law requires.'}
             </Text>
+            <Text>{AUDIT_TRAIL_KEPT}</Text>
           </div>
         </div>
       </Section>
@@ -310,7 +315,8 @@ function OpenErasure({
         <Text as="p" weight="semibold">
           This cannot be undone.
         </Text>
-        <Text as="p">Medical records, bills and the audit trail are kept as the law requires.</Text>
+        <Text as="p">Medical records and bills are kept as the law requires.</Text>
+        <Text as="p">{AUDIT_TRAIL_KEPT}</Text>
       </ConfirmDialog>
     </Section>
   );

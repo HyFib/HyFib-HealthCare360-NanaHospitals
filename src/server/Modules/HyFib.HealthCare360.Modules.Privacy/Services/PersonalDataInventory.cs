@@ -25,8 +25,11 @@ public sealed record DataSummary(
     PrivacyContact Contact,
     RetentionPeriods Periods);
 
-/// <summary>The retention periods in force, so a client can say "how long we keep it" in the patient's language.</summary>
-public sealed record RetentionPeriods(int OutpatientYears, int InpatientYears, int FinanceYears, int MessageLogDays, int AuditYears);
+/// <summary>
+/// The retention periods in force, so a client can say "how long we keep it" in the patient's language. <c>AuditYears</c>
+/// is null while the audit trail is kept permanently.
+/// </summary>
+public sealed record RetentionPeriods(int OutpatientYears, int InpatientYears, int FinanceYears, int MessageLogDays, int? AuditYears);
 
 /// <summary>
 /// The registration details as held. National identifiers appear only as the hospital stores them: masked. A date of birth

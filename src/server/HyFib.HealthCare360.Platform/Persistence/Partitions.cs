@@ -36,7 +36,7 @@ public static class PartitionedTables
 {
     public const string AuditEvents = "audit.audit_events";
 
-    /// <summary>The append-only, hash-chained audit trail, kept at least ten years (SEC-04).</summary>
+    /// <summary>The append-only, hash-chained audit trail, kept permanently (SEC-04).</summary>
     public static readonly PartitionedTable Audit = new("audit", "audit_events", "occurred_at", AppendOnly: true);
 
     /// <summary>Every SMS, WhatsApp message and e-mail sent to patients and staff.</summary>

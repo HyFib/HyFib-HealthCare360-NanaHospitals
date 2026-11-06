@@ -83,6 +83,33 @@ public sealed class ErasureTextTests
             .ShouldEndWith("Kept as the law requires: medical records permanently.");
 
     [Fact]
+    public void The_record_access_log_is_said_apart_as_the_hospitals_own_decision() =>
+        ErasureService.Describe(
+            [ErasureService.Messages],
+            [
+                new ErasureHoldItem("finance", "Bills and payments", "", new DateOnly(2034, 9, 30), false),
+                new ErasureHoldItem(ErasureService.AuditHold, "Record access log", "", null, true),
+            ])
+            .ShouldBe("Erased: optional messages stopped. Kept as the law requires: bills and payments until 30 Sep 2034. "
+                      + "The record access log is kept permanently and never edited.");
+
+    [Fact]
+    public void A_record_access_log_kept_permanently_keeps_nothing_else_back()
+    {
+        ErasureHoldItem[] holds =
+        [
+            new("records", "Medical records", "", new DateOnly(2031, 3, 12), false),
+            new("finance", "Bills and payments", "", new DateOnly(2034, 9, 30), false),
+            new(ErasureService.AuditHold, "Record access log", "", null, true),
+        ];
+
+        ErasureService.KeepUntil(holds).ShouldBe(new DateOnly(2034, 9, 30));
+        ErasureService.KeepPermanently(holds).ShouldBeFalse();
+        ErasureService.KeepPermanently([.. holds, new("records", "Medical records", "", null, true)]).ShouldBeTrue();
+        ErasureService.KeepUntil([holds[2]]).ShouldBeNull();
+    }
+
+    [Fact]
     public void Only_the_listed_items_can_be_erased()
     {
         ErasureService.IsKnownItem(ErasureService.Feedback).ShouldBeTrue();

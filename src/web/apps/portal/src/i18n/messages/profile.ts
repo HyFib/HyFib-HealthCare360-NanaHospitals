@@ -39,7 +39,7 @@ export const profileMessages = defineMessages({
       'Hospital staff who care for you or handle your bills. The payment partner sees only what it needs to take a payment, and SMS and WhatsApp partners see only the messages they deliver. The hospital does not sell your data or use it for advertising.',
     'privacy.keep.title': 'How long it is kept',
     'privacy.keep.body':
-      'Medical records are kept for as long as the law and medical rules require. Security records are kept for a limited time and then deleted.',
+      'Medical records are kept for as long as the law and medical rules require. The log of who opened or changed your record, with the time and network address, is kept permanently and never changed: the hospital decided to keep it so. Other security records, such as sign-in sessions, are kept for a limited time and then deleted.',
     'privacy.family.title': 'Family members',
     'privacy.family.body':
       'Everyone registered at the hospital with your mobile number appears in your portal. A family member with their own number appears too once they agree, by giving you a code sent to their number or at the front desk. In your profile you can see who else sees your records, and stop it at any time. If someone should not be linked to your number, ask the front desk to change it.',
@@ -100,7 +100,7 @@ export const profileMessages = defineMessages({
       'अस्पताल के वे कर्मचारी जो आपकी देखभाल करते हैं या आपके बिल देखते हैं। पेमेंट पार्टनर केवल वही देखता है जो भुगतान लेने के लिए ज़रूरी है, और SMS व WhatsApp पार्टनर केवल वे संदेश देखते हैं जो वे पहुँचाते हैं। अस्पताल आपका डेटा न बेचता है और न ही विज्ञापन के लिए उपयोग करता है।',
     'privacy.keep.title': 'इसे कितने समय तक रखा जाता है',
     'privacy.keep.body':
-      'मेडिकल रिकॉर्ड उतने समय तक रखे जाते हैं जितना कानून और चिकित्सा नियम कहते हैं। सुरक्षा रिकॉर्ड सीमित समय तक रखे जाते हैं और फिर हटा दिए जाते हैं।',
+      'मेडिकल रिकॉर्ड उतने समय तक रखे जाते हैं जितना कानून और चिकित्सा नियम कहते हैं। आपका रिकॉर्ड किसने खोला या बदला, इसका लॉग, समय और नेटवर्क पते के साथ, हमेशा रखा जाता है और इसमें कभी बदलाव नहीं किया जाता: यह अस्पताल का फ़ैसला है। बाकी सुरक्षा रिकॉर्ड, जैसे साइन-इन सत्र, सीमित समय तक रखे जाते हैं और फिर हटा दिए जाते हैं।',
     'privacy.family.title': 'परिवार के सदस्य',
     'privacy.family.body':
       'अस्पताल में आपके मोबाइल नंबर से पंजीकृत हर व्यक्ति आपके पोर्टल में दिखता है। अपने अलग नंबर वाले परिवार के सदस्य भी दिखते हैं, जब वे सहमति दें: उनके नंबर पर भेजा गया कोड आपको देकर, या फ्रंट डेस्क पर। अपनी प्रोफ़ाइल में आप देख सकते हैं कि आपके रिकॉर्ड और कौन देखता है, और इसे कभी भी बंद कर सकते हैं। अगर किसी को आपके नंबर से नहीं जुड़ा होना चाहिए, तो फ्रंट डेस्क से इसे बदलवाएँ।',
@@ -167,7 +167,7 @@ export const profileMessages = defineMessages({
       'உங்களுக்குச் சிகிச்சை அளிக்கும் அல்லது உங்கள் பில்களைக் கையாளும் மருத்துவமனை ஊழியர்கள். பணம் செலுத்தும் கூட்டாளர் பணம் பெறத் தேவையானதை மட்டுமே பார்க்கிறார்; SMS மற்றும் WhatsApp கூட்டாளர்கள் தாங்கள் அனுப்பும் செய்திகளை மட்டுமே பார்க்கிறார்கள். மருத்துவமனை உங்கள் தரவை விற்பதில்லை, விளம்பரத்துக்கும் பயன்படுத்துவதில்லை.',
     'privacy.keep.title': 'எவ்வளவு காலம் வைக்கப்படுகிறது',
     'privacy.keep.body':
-      'மருத்துவப் பதிவுகள் சட்டமும் மருத்துவ விதிகளும் கோரும் காலம் வரை வைக்கப்படுகின்றன. பாதுகாப்புப் பதிவுகள் குறிப்பிட்ட காலம் வரை வைக்கப்பட்டுப் பின்னர் அழிக்கப்படுகின்றன.',
+      'மருத்துவப் பதிவுகள் சட்டமும் மருத்துவ விதிகளும் கோரும் காலம் வரை வைக்கப்படுகின்றன. உங்கள் பதிவை யார் திறந்தார்கள் அல்லது மாற்றினார்கள் என்பதன் பதிவேடு, நேரம் மற்றும் நெட்வொர்க் முகவரியுடன், நிரந்தரமாக, ஒருபோதும் மாற்றப்படாமல் வைக்கப்படுகிறது: இது மருத்துவமனையின் முடிவு. உள்நுழைவு அமர்வுகள் போன்ற மற்ற பாதுகாப்புப் பதிவுகள் குறிப்பிட்ட காலம் வரை வைக்கப்பட்டுப் பின்னர் அழிக்கப்படுகின்றன.',
     'privacy.family.title': 'குடும்ப உறுப்பினர்கள்',
     'privacy.family.body':
       'உங்கள் மொபைல் எண்ணுடன் மருத்துவமனையில் பதிவு செய்த அனைவரும் உங்கள் போர்டலில் தெரிவார்கள். சொந்த எண் உள்ள குடும்ப உறுப்பினரும் ஒப்புதல் அளித்த பிறகு தெரிவார்; அவருடைய எண்ணுக்கு அனுப்பப்பட்ட குறியீட்டை உங்களிடம் தருவதன் மூலமோ வரவேற்பு மேசையிலோ அவர் ஒப்புதல் அளிக்கலாம். உங்கள் பதிவுகளை வேறு யார் பார்க்கிறார்கள் என்பதை உங்கள் சுயவிவரத்தில் பார்க்கலாம், எப்போது வேண்டுமானாலும் அதை நிறுத்தலாம். யாராவது உங்கள் எண்ணுடன் இணைக்கப்படக் கூடாது என்றால், அதை மாற்ற வரவேற்பு மேசையில் கேளுங்கள்.',

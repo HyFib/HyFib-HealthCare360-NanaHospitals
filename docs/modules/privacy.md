@@ -91,7 +91,7 @@ What is kept (`holds`):
 |---|---|
 | Medical records | Permanently if any visit or chart is medico-legal; otherwise until the latest of the last visit plus the out-patient period, the last discharge plus the in-patient period, and any chart's retention date |
 | Bills | The last bill plus the finance period |
-| The audit trail | The last access plus 10 years |
+| The audit trail | Permanently (the hospital keeps it permanently; see the retention table). It is shown to the principal, but holds nothing else back: the request keeps the rest until the latest of the other holds, as the audit trail is never erased by a request anyway |
 | The message log | The last message plus the log period |
 
 The request records what was erased and until when the rest is kept. The retention review lists it until then.
@@ -193,7 +193,7 @@ true until the report is recorded.
 | `records.inpatient` | 5 years | 5 | Reviewed by MRD |
 | `records.mlc` | permanently | — | Kept |
 | `finance` | 8 years | 8 | Kept (used for erasure holds) |
-| `audit` | 10 years | 10 | Kept (tamper-evident, never edited) |
+| `audit` | permanently | — | Kept (tamper-evident, never edited); not editable. The hospital decided to keep it permanently (SRS SEC-04 asks for 10 years at the least) |
 | `backups` | from `HealthCare360:Backup:RetentionDays` | — | Deleted by the backup job |
 
 The logs are kept 366 days, not 365: a year has at most 366 days, so every line is kept the full year the DPDP Rules 2025
@@ -280,4 +280,13 @@ withdrawing it ends the earlier ones.
 - **Consent managers** (Rules r4), **Significant Data Fiduciary** duties (DPIA and audit), and **cross-border
   transfer** rules.
 - **Erasure and the audit trail.** Erasure never touches the audit trail: it is append-only and hash-chained, and its
-  change details keep the old values. Erased data also stays in backups until they expire (30 days by default).
+  change details keep the old values. The hospital keeps it permanently, and everything that tells a patient about it
+  says so, apart from what the law keeps, since the law does not require it: the data summary ("Permanently, and never
+  edited"), the erasure answer ("The record access log is kept permanently and never edited"), the portal's erasure form
+  (the access log is under the list of what the law keeps, as the hospital's own decision, and the confirmation names it
+  apart), a completed request in the portal and in the staff app (said even when the law keeps nothing else), and the
+  portal's public privacy notice (the access log, with times and network addresses, kept permanently; other security
+  records deleted after a while). A request's `retainedUntil` and `retainedPermanently` describe what the law keeps
+  only. The printed privacy notice must say the same: when the hospital updates its text, it raises
+  `privacy.noticeVersion` so patients are shown the new version. Erased data also stays in backups until they expire
+  (30 days by default).

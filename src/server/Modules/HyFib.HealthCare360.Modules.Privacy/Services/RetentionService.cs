@@ -273,7 +273,7 @@ public sealed class RetentionService(
         await ValueAsync(RetentionSchedule.Get(RetentionSchedule.InpatientRecords), ct) ?? RecordRetention.MinimumInpatientYears,
         await ValueAsync(RetentionSchedule.Get(RetentionSchedule.Finance), ct) ?? 8,
         await ValueAsync(RetentionSchedule.Get(RetentionSchedule.MessageLog), ct) ?? RetentionSchedule.LogDays,
-        await ValueAsync(RetentionSchedule.Get(RetentionSchedule.Audit), ct) ?? 10);
+        await ValueAsync(RetentionSchedule.Get(RetentionSchedule.Audit), ct));
 
     /// <summary>
     /// "How long we keep it" for each group of the data summary, in words, with the periods in force.
@@ -288,7 +288,9 @@ public sealed class RetentionService(
             [PersonalDataRetention.Finance] = string.Create(CultureInfo.InvariantCulture, $"{finance} years from the bill date, as tax law requires."),
             [PersonalDataRetention.MessageLog] = string.Create(CultureInfo.InvariantCulture,
                 $"The message log for {messages} days; feedback, complaints and follow-up calls with your medical records."),
-            [PersonalDataRetention.Audit] = string.Create(CultureInfo.InvariantCulture, $"{auditYears} years."),
+            [PersonalDataRetention.Audit] = auditYears is { } years
+                ? string.Create(CultureInfo.InvariantCulture, $"{years} years.")
+                : "Permanently, and never edited.",
             [PersonalDataRetention.WhileInUse] = "While the account is open.",
             [PersonalDataRetention.WithRecords] = "As long as the records they relate to.",
         };

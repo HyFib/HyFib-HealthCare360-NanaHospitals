@@ -137,7 +137,7 @@ export function erasureOutcome(
   },
   t: Translate,
   f: Pick<Formatters, 'calendarDate'>,
-): { erased: string[]; kept: string | null } | null {
+): { erased: string[]; kept: string | null; accessLog: string } | null {
   if (request.type !== 'Erasure') {
     return null;
   }
@@ -151,7 +151,9 @@ export function erasureOutcome(
   } else if (request.retainedUntil) {
     kept = t('myPrivacy.request.keptUntil', { date: f.calendarDate(request.retainedUntil) });
   }
-  return erased.length > 0 || kept ? { erased, kept } : null;
+  // The access log is never erased by a request and is kept permanently, as the hospital decided: said apart from what
+  // the law keeps, which is all that retainedUntil and retainedPermanently describe.
+  return erased.length > 0 || kept ? { erased, kept, accessLog: t('myPrivacy.request.accessLogKept') } : null;
 }
 
 export function fieldLabel(field: string, t: Translate): string {
@@ -491,7 +493,9 @@ export function retentionText(
       case 'MessageLog':
         return t('myPrivacy.retention.messages', { days: f.number(periods.messageLogDays) });
       case 'Audit':
-        return t('myPrivacy.retention.years', { years: f.number(periods.auditYears) });
+        return periods.auditYears == null
+          ? t('myPrivacy.retention.permanently')
+          : t('myPrivacy.retention.years', { years: f.number(periods.auditYears) });
     }
   }
   return category.retention;
