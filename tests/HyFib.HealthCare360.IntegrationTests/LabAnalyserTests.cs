@@ -583,6 +583,7 @@ public sealed class LabAnalyserTests(HospitalServer server)
         using (var twice = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore", new IgnoreAnalyserChannelRequest(why)))
         {
             twice.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+            (await twice.Content.ReadAsStringAsync(Ct)).ShouldContain("lab.channel_ignored", Case.Sensitive, "said as already ignored, not as a clash in the database");
         }
 
         // Taken back, it waits to be mapped again; both decisions are in the audit trail.
