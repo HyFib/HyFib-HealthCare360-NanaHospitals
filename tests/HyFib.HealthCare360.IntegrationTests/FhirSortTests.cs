@@ -1,7 +1,10 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using static HyFib.HealthCare360.IntegrationTests.ScopedRecordSharingTests;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -40,6 +43,15 @@ public sealed class FhirSortTests(HospitalServer server)
         (await Sorted("-birthdate")).ShouldBe([estimated, october, june]);
         (await Sorted("gender,-name")).ShouldBe([estimated, june, october]);
 
+        // Changed within the same millisecond, the three are served with the same last update. They tie, and fall back to
+        // the newest registration first, not to the microseconds PostgreSQL keeps apart.
+        var changed = DateTimeOffset.UtcNow.AddDays(1);
+        changed = changed.AddTicks(-(changed.Ticks % TimeSpan.TicksPerMillisecond));
+        await SetUpdatedAtAsync(estimated, changed.AddTicks(9_000));
+        await SetUpdatedAtAsync(june, changed.AddTicks(5_000));
+        await SetUpdatedAtAsync(october, changed.AddTicks(1_000));
+        (await Sorted("-_lastUpdated")).ShouldBe([october, june, estimated]);
+
         // One at a time, by the links: the same order, and every link keeps the order asked for.
         var paged = new List<string>();
         var path = $"Patient?name={family}&_sort=-birthdate&_count=1";
@@ -57,6 +69,14 @@ public sealed class FhirSortTests(HospitalServer server)
 
         // An order it cannot follow is refused, never ignored.
         (await FhirAsync(partner, $"Patient?name={family}&_sort=identifier", "TREAT")).Refusal.ShouldBe((400, "invalid-parameter"));
+    }
+
+    /// <summary>Sets when a patient was last changed, to the microsecond, as the database keeps it.</summary>
+    private async Task SetUpdatedAtAsync(string patientId, DateTimeOffset at)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Database.ExecuteSqlAsync(
+            $"UPDATE patients.patients SET updated_at = {at} WHERE id = {Guid.Parse(patientId)}", TestContext.Current.CancellationToken);
     }
 
     /// <summary>A patient registered at the front desk, with a consent to share their records.</summary>

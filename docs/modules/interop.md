@@ -161,7 +161,8 @@ not be decrypted (no value).
 * Ordering (`_sort`): a comma-separated list of the type's search parameters in priority order, each with a leading `-`
   for decreasing order (`_sort=-date,code`), given once. Dates, strings and codes order, `_id` and `_lastUpdated`
   included; a reference (`patient`, `partof`…) or an `identifier` is refused with 400 (`invalid-parameter`), as is a
-  parameter named twice. The value is the one the resource is served with:
+  parameter named twice or a `_sort` left empty (an empty value of any other parameter is left out). The value is the
+  one the resource is served with:
   * where it has several (codes, names, the instants of a period or of a date at its precision), the one that comes
     first in the asked order counts: the earliest start in increasing order, the latest end in decreasing order, so an
     ongoing stay is the latest of all, and a birth date estimated from a stated age (served as its year) counts as the
@@ -173,7 +174,8 @@ not be decrypted (no value).
     links repeat `_sort`.
 
   Patient searches are ordered in PostgreSQL by the same values (the name lower-cased and compared byte by byte,
-  whatever the database's collation); the other types in memory.
+  whatever the database's collation; the last update cut to the millisecond it is served with, so two patients changed
+  within one millisecond tie); the other types in memory.
 * Parameters are checked strictly: an unknown parameter, a modifier (`:exact`, `:text`…), a malformed value or a second
   patient is a 400 `OperationOutcome` instead of being ignored, so a mistyped filter never widens the result.
 * Dates take `eq` (default), `ne`, `gt`, `ge`, `lt` and `le` with FHIR range semantics at the value's precision

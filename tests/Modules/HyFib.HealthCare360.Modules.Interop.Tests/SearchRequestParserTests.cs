@@ -37,6 +37,8 @@ public sealed class SearchRequestParserTests
     [InlineData("Observation", "_sort=date,-date", "'date' is in _sort twice.")]
     [InlineData("Observation", "_sort=date,", "_sort is a comma-separated list of search parameters, each with a leading '-' for decreasing order.")]
     [InlineData("Observation", "_sort=-", "_sort is a comma-separated list of search parameters, each with a leading '-' for decreasing order.")]
+    [InlineData("Observation", "_sort=", "_sort is a comma-separated list of search parameters, each with a leading '-' for decreasing order.")]
+    [InlineData("Observation", "_sort=%20&_sort=date", "_sort is a comma-separated list of search parameters, each with a leading '-' for decreasing order.")]
     [InlineData("Observation", "_sort=date&_sort=code", "_sort is given once, as a comma-separated list in priority order.")]
     public void Refuses_an_order_it_cannot_follow(string type, string query, string message)
     {

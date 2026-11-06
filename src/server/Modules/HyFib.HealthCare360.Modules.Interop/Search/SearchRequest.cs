@@ -49,6 +49,8 @@ internal static class SearchRequestParser
 {
     private static readonly string[] JsonFormats = ["json", "application/json", "application/fhir+json", "application/json+fhir", "text/json"];
 
+    private const string SortListMessage = "_sort is a comma-separated list of search parameters, each with a leading '-' for decreasing order.";
+
     public static SearchParse Parse(ResourceSearchDefinition definition, IEnumerable<KeyValuePair<string, StringValues>> parameters)
     {
         var criteria = new List<SearchCriterion>();
@@ -65,6 +67,13 @@ internal static class SearchRequestParser
             {
                 if (string.IsNullOrWhiteSpace(raw))
                 {
+                    // An empty value is left out, but not an empty order: a client that asked for one would take the
+                    // default order for the one it asked for.
+                    if (key == SearchDefinitions.Sort)
+                    {
+                        return Fail(FhirOutcomes.BadRequest(SortListMessage));
+                    }
+
                     continue;
                 }
 
@@ -187,7 +196,7 @@ internal static class SearchRequestParser
             var name = descending ? item[1..] : item;
             if (name.Length == 0)
             {
-                error = "_sort is a comma-separated list of search parameters, each with a leading '-' for decreasing order.";
+                error = SortListMessage;
                 return null;
             }
 

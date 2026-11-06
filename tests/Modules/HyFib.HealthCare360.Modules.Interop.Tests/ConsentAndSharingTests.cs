@@ -436,6 +436,22 @@ public sealed class PatientSearchQueryTests
         Sorted(patients, "_sort=_id").ShouldBe([.. patients.OrderBy(p => p.Id).Select(p => p.Uhid)]);
     }
 
+    [Fact]
+    public void Patients_changed_within_the_same_millisecond_tie_on_last_update_and_fall_back_to_newest_registration()
+    {
+        // Both are served with the same meta.lastUpdated, to the millisecond. The microseconds stored apart must not order
+        // them: they tie, and the patient registered later comes first.
+        var changed = Monday.AddDays(3);
+        var earlier = RecordSharingConsentTests.Patient("EARLIER");
+        (earlier.RegisteredAt, earlier.UpdatedAt) = (Monday, changed.AddTicks(9_000));
+        var later = RecordSharingConsentTests.Patient("LATER");
+        (later.RegisteredAt, later.UpdatedAt) = (Monday.AddHours(1), changed.AddTicks(1_000));
+        var patients = new[] { earlier, later }.AsQueryable();
+
+        Sorted(patients, "_sort=-_lastUpdated").ShouldBe(["LATER", "EARLIER"]);
+        Sorted(patients, "_sort=_lastUpdated").ShouldBe(["LATER", "EARLIER"]);
+    }
+
     private static List<string> Sorted(IQueryable<Patients.Domain.Patient> patients, string sort) =>
         [.. PatientSearchQuery.Ordered(patients, TestData.Search("Patient", $"name=patient&{sort}").Sort).Select(p => p.Uhid)];
 }

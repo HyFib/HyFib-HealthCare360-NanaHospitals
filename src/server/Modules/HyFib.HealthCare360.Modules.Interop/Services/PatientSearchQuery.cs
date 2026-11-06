@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Search;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Persistence;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
 
@@ -161,7 +162,7 @@ internal static class PatientSearchQuery
                 "name" => By(patients, ordered, NameKey, descending),
                 "birthdate" => By(patients, By(patients, ordered, p => p.DateOfBirth == null, false), descending ? BirthDateEnd : BirthDateStart, descending),
                 "gender" => By(patients, ordered, GenderKey, descending),
-                SearchDefinitions.LastUpdated => By(patients, ordered, p => p.UpdatedAt != null && p.UpdatedAt > p.CreatedAt ? p.UpdatedAt.Value : p.CreatedAt, descending),
+                SearchDefinitions.LastUpdated => By(patients, ordered, LastUpdatedKey, descending),
                 SearchDefinitions.Id => By(patients, ordered, p => p.Id, descending),
                 _ => throw new ArgumentOutOfRangeException(nameof(sort), rule.Parameter, "Not a sortable Patient parameter."),
             };
@@ -178,6 +179,14 @@ internal static class PatientSearchQuery
     /// </summary>
     private static readonly Expression<Func<Patient, string>> NameKey = p => EF.Functions.Collate(
         ((p.LastName != null ? p.LastName + " " : "") + p.FirstName + (p.MiddleName != null ? " " + p.MiddleName : "")).ToLower(), "C");
+
+    /// <summary>
+    /// The last change as served (<c>meta.lastUpdated</c>): the later of the registration and the last update, to the
+    /// millisecond. Two patients changed within the same millisecond read the same, so they tie, and fall back to the
+    /// default order, rather than being told apart by microseconds the reader cannot see.
+    /// </summary>
+    private static readonly Expression<Func<Patient, DateTimeOffset>> LastUpdatedKey = p =>
+        SqlTime.ToMilliseconds(p.UpdatedAt != null && p.UpdatedAt > p.CreatedAt ? p.UpdatedAt.Value : p.CreatedAt);
 
     /// <summary>
     /// The start and the end of the birth date as served: the day, or for a date of birth estimated from a stated age, the

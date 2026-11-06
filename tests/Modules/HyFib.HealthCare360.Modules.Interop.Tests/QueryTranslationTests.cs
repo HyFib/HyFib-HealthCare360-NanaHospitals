@@ -235,6 +235,7 @@ public sealed class QueryTranslationTests : IDisposable
         order.ShouldContain("make_date(", Case.Insensitive);
         order.ShouldContain("date_of_birth IS NULL", Case.Insensitive);
         Order("birthdate").ShouldContain("make_date(", Case.Insensitive);
+        Order("-_lastUpdated").ShouldContain("date_trunc('milliseconds',", Case.Sensitive, "to the millisecond it is served with");
         Order("gender").ShouldEndWith("END, p.registered_at DESC, p.id", Case.Sensitive, "then newest registrations first, then by id");
     }
 
