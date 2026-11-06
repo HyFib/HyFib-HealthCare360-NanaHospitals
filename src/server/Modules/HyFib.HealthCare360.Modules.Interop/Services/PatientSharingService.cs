@@ -17,7 +17,8 @@ internal sealed record PatientAccess(SharingDecision Decision, Guid? MergedIntoP
 }
 
 /// <summary>
-/// Applies the sharing rules (<see cref="PatientSharingRules"/>) to a patient and a reader: lifecycle (deleted, merged),
+/// Applies the sharing rules (<see cref="PatientSharingRules"/>) to a patient and a reader: the reader's facility (a
+/// patient not registered there and never seen there is not found, <see cref="ReaderFacility"/>), lifecycle (deleted, merged),
 /// the record-sharing consents that admit the reader today for the purpose they stated (<see cref="RecordSharingConsent"/>)
 /// and the platform's restricted-record guard (<see cref="PatientAccessGuard"/>, EHR-07: permission or an audited
 /// break-the-glass grant).
@@ -28,9 +29,11 @@ internal sealed class PatientSharingService(HospitalDbContext db, PatientAccessG
     {
         var patient = await db.Set<Patient>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
             .Where(p => p.Id == patientId)
-            .Select(p => new { p.IsDeleted, p.MergedIntoPatientId })
+            .Select(p => new { p.IsDeleted, p.MergedIntoPatientId, p.RegisteredFacilityId })
             .FirstOrDefaultAsync(ct);
-        if (patient is null)
+
+        // Another facility's patient is not the reader's, whatever their consent says: not found, so nothing is revealed.
+        if (patient is null || !await ReaderFacility.SeesPatientAsync(db, patientId, patient.RegisteredFacilityId, ct))
         {
             return new PatientAccess(SharingDecision.NotFound);
         }

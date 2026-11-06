@@ -6,12 +6,14 @@ using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Interop.Search;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Platform.Identity;
+using ClinicalEncounter = HyFib.HealthCare360.Modules.Clinical.Domain.Encounter;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
 
 /// <summary>
-/// Observations: Clinical vital signs, released Diagnostics laboratory results and VirtualCare home-monitoring readings.
+/// Observations: Clinical vital signs, released Diagnostics laboratory results and VirtualCare home-monitoring readings, of
+/// the reader's facility only (<see cref="ReaderFacility"/>; the results and readings by the platform's facility filter).
 /// </summary>
 internal sealed class ObservationProvider(HospitalDbContext db) : IFhirResourceProvider
 {
@@ -26,14 +28,13 @@ internal sealed class ObservationProvider(HospitalDbContext db) : IFhirResourceP
                 return ResourceLookup.Missing;
             }
 
-            var state = await db.Set<VitalSigns>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
-                .Where(v => v.Id == vitalsId).Select(v => new RowState(v.PatientId, v.IsDeleted)).FirstOrDefaultAsync(ct);
+            var state = await VitalsStateOf(vitalsId).FirstOrDefaultAsync(ct);
             if (ResourceLookup.Unavailable(state) is { } unavailable)
             {
                 return unavailable;
             }
 
-            var row = await Vitals(v => v.Id == vitalsId).FirstOrDefaultAsync(ct);
+            var row = await VitalRows(ReadersVitals().Where(v => v.Id == vitalsId)).FirstOrDefaultAsync(ct);
             var observation = row is null ? null : VitalSignObservations.Map(row).FirstOrDefault(o => o.Id == id);
             return observation is null ? ResourceLookup.Missing : ResourceLookup.Found(observation, state!.PatientId);
         }
@@ -82,7 +83,7 @@ internal sealed class ObservationProvider(HospitalDbContext db) : IFhirResourceP
             return readings;
         }
 
-        var vitals = await Vitals(v => v.PatientId == patientId).ToListAsync(ct);
+        var vitals = await VitalRows(ReadersVitals().Where(v => v.PatientId == patientId)).ToListAsync(ct);
         var results = await ReleasedResultsAsync(r => r.PatientId == patientId, ct);
         return new SearchCandidates([.. vitals.SelectMany(VitalSignObservations.Map), .. results.Select(LabObservations.Map), .. readings.Resources], readings.Withheld);
     }
@@ -214,8 +215,35 @@ internal sealed class ObservationProvider(HospitalDbContext db) : IFhirResourceP
 
     private static string? Name(Dictionary<Guid, string?> users, Guid? userId) => userId is { } id ? users.GetValueOrDefault(id) : null;
 
-    internal IQueryable<VitalSignsRow> Vitals(Expression<Func<VitalSigns, bool>> filter) =>
-        db.Set<VitalSigns>().AsNoTracking().Where(filter).Select(v => new VitalSignsRow
+    /// <summary>Vital signs as rows, of every facility (the ABDM export reads a patient's own encounters by id).</summary>
+    internal IQueryable<VitalSignsRow> Vitals(Expression<Func<VitalSigns, bool>> filter) => VitalRows(db.Set<VitalSigns>().Where(filter));
+
+    /// <summary>
+    /// The patient and removal of a set of vital signs of the reader's facility, removed rows included (to answer 410): each
+    /// source says itself that it is read past its soft-delete filter, and the encounter keeps its facility filter.
+    /// </summary>
+    internal IQueryable<RowState> VitalsStateOf(Guid vitalsId) =>
+        db.Set<VitalSigns>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+            .Where(v => v.Id == vitalsId)
+            .Where(VitalsAtReadersFacility(db.Set<ClinicalEncounter>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter])))
+            .Select(v => new RowState(v.PatientId, v.IsDeleted));
+
+    /// <summary>The vital signs taken at the reader's facility.</summary>
+    internal IQueryable<VitalSigns> ReadersVitals() => db.Set<VitalSigns>().Where(VitalsAtReadersFacility(db.Set<ClinicalEncounter>()));
+
+    /// <summary>
+    /// Vital signs taken at the reader's facility: the facility of the person who took them, or, for a set recorded without
+    /// one, the facility of its encounter. A set with neither is no facility's.
+    /// </summary>
+    private Expression<Func<VitalSigns, bool>> VitalsAtReadersFacility(IQueryable<ClinicalEncounter> encounters)
+    {
+        var facility = ReaderFacility.Of(db);
+        return v => v.FacilityId == facility
+                    || (v.FacilityId == null && encounters.Any(e => e.Id == v.EncounterId && e.FacilityId == facility));
+    }
+
+    private static IQueryable<VitalSignsRow> VitalRows(IQueryable<VitalSigns> vitals) =>
+        vitals.AsNoTracking().Select(v => new VitalSignsRow
         {
             Id = v.Id,
             PatientId = v.PatientId,

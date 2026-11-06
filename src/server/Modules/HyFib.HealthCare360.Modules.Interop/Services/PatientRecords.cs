@@ -52,10 +52,13 @@ internal sealed class PatientRecords(
         return (await MapAsync(page, ct), total);
     }
 
-    /// <summary>The SQL query of a Patient search (name words match the trigram-indexed full name with ILIKE).</summary>
+    /// <summary>
+    /// The SQL query of a Patient search (name words match the trigram-indexed full name with ILIKE), over the patients of
+    /// the reader's facility only (<see cref="ReaderFacility"/>).
+    /// </summary>
     internal IQueryable<Patient> SearchQuery(SearchRequest request, bool includeRestricted, SharingReader reader) =>
         PatientSearchQuery.Apply(
-            db.Set<Patient>().AsNoTracking(),
+            db.Set<Patient>().AsNoTracking().Where(ReaderFacility.SeesPatient(db)),
             db.Set<PatientConsent>(),
             PatientCriteria.From(request, protector.BlindIndexes),
             includeRestricted,

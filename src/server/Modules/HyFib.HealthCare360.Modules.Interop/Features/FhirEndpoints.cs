@@ -53,7 +53,7 @@ internal static class FhirEndpoints
         return new FhirResult(statement, StatusCodes.Status200OK, Pretty(http.Request.Query), "no-cache");
     }
 
-    private static async Task<IResult> Read(string type, string id, HttpContext http, FhirApi api, ICurrentUser user, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Read(string type, string id, HttpContext http, FhirApi api, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         if (NotAcceptable(http) is { } refused)
         {
@@ -65,11 +65,16 @@ internal static class FhirEndpoints
             return unknownPurpose;
         }
 
+        if (await NoFacilityAsync(db, user, ct) is { } noFacility)
+        {
+            return noFacility;
+        }
+
         var response = await api.ReadAsync(type, id, reader, ct);
         return new FhirResult(response.Body, response.StatusCode, Pretty(http.Request.Query));
     }
 
-    private static async Task<IResult> Search(string type, HttpContext http, FhirApi api, ICurrentUser user, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Search(string type, HttpContext http, FhirApi api, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         if (!AcceptsJson(http.Request.Headers.Accept))
         {
@@ -79,6 +84,11 @@ internal static class FhirEndpoints
         if (!TryReader(http, user, time, out var reader, out var unknownPurpose))
         {
             return unknownPurpose;
+        }
+
+        if (await NoFacilityAsync(db, user, ct) is { } noFacility)
+        {
+            return noFacility;
         }
 
         var response = await api.SearchAsync(type, http.Request.Query, BaseUrl(http.Request), reader, ct);
@@ -89,7 +99,7 @@ internal static class FhirEndpoints
     /// FHIR search by POST with an <c>application/x-www-form-urlencoded</c> body: keeps identifiers such as the ABHA
     /// number out of request lines. Parameters may also be in the URL.
     /// </summary>
-    private static async Task<IResult> SearchByPost(string type, HttpContext http, FhirApi api, ICurrentUser user, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> SearchByPost(string type, HttpContext http, FhirApi api, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         if (!AcceptsJson(http.Request.Headers.Accept))
         {
@@ -99,6 +109,11 @@ internal static class FhirEndpoints
         if (!TryReader(http, user, time, out var reader, out var unknownPurpose))
         {
             return unknownPurpose;
+        }
+
+        if (await NoFacilityAsync(db, user, ct) is { } noFacility)
+        {
+            return noFacility;
         }
 
         if (!http.Request.HasFormContentType)
@@ -138,6 +153,13 @@ internal static class FhirEndpoints
         refused = null!;
         return true;
     }
+
+    /// <summary>
+    /// A reader reads for the facility of its session, which must be one its account is assigned to (#251): otherwise
+    /// 403 <c>facility-required</c>, before anything is looked up.
+    /// </summary>
+    private static async Task<IResult?> NoFacilityAsync(HospitalDbContext db, ICurrentUser user, CancellationToken ct) =>
+        await ReaderFacility.IsAssignedAsync(db, user.UserId, ct) ? null : Error(FhirOutcomes.NoFacility());
 
     private static IResult Unmatched(HttpContext http) =>
         HttpMethods.IsGet(http.Request.Method) || HttpMethods.IsHead(http.Request.Method)
