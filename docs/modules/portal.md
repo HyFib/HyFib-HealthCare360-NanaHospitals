@@ -49,6 +49,18 @@ and `npx eslint apps/portal`.
   `POST /api/v1/auth/otp/verify`. The page never says whether a number is registered. The resend button backs off
   (30 s, 60 s, 2 min, then 5 min), so patients do not hit the server limit. A code that seems to expire implausibly (a
   wrong phone clock) falls back to a five-minute countdown.
+* **A link sent to the patient's number (PP-01).** Staff send a link to the portal from the patient's record (the staff
+  console's "Portal access" tab, "Send portal link") by SMS, WhatsApp or both, to the mobile number registered for the
+  patient: `{portal.baseUrl}/portal/link/{token}`. The page (`/link/{token}`) shows the hospital and the number masked
+  and changes nothing when it opens. "Send code" asks for a code through the link (`POST
+  /api/v1/public/portal-links/{token}/otp`, with the same proof of work as the sign-in page's request and its limit of
+  three codes per number in 15 minutes); the code goes to the same registered number, and the patient enters it in the
+  sign-in page's own code step (`modules/signIn/CodeStep`, shared with `/sign-in`), checked by
+  `POST /api/v1/auth/otp/verify`. Once signed in, the patient is where the sign-in goes (home) and the page forgets the
+  token. The link itself signs nobody in: whoever holds it can only send a code to the patient's own number. A link
+  works for 7 days, until a newer one is sent, and only while the record still has the number it went to and is in no
+  protected category; anything else shows "This link no longer works" with a button to the normal sign-in. Someone
+  already signed in on the phone goes straight to home.
 * **Tokens.** The access token stays in memory (core session). The refresh token is the server's HttpOnly cookie. The
   portal and the staff console have addresses of their own, but browsers send a host's cookies to all its ports, so each
   keeps its own refresh cookie and each address reads only its own app's: signing in to one never signs the other out,
@@ -82,6 +94,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | Path | Sign-in | Purpose |
 |---|---|---|
 | `/sign-in` | no | Phone number, then OTP. `?redirect=` accepts same-app paths only |
+| `/link/{token}` | no | A link to the portal sent to the patient's registered number: the hospital and the number masked, "Send code", then the sign-in page's code step |
 | `/home` | yes | Greeting; video consultation ready to join; quick actions; next appointment; amount due; recent reports and prescriptions |
 | `/doctors`, `/doctors/{practitionerId}` | no | Find a doctor and book. The list takes `?q=`, `?specialtyId=`, `?facilityId=`, `?language=` and `?video=true`. The doctor page takes `?mode=video`, `?branch=`, `?reschedule={appointmentId}` and `?slot=`. Choosing a time while signed out goes to sign-in and returns to the same time |
 | `/appointments`, `/appointments/{id}` | yes | Upcoming and past, waiting list, pay, reschedule, cancel, join video |
@@ -113,6 +126,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `{portal.baseUrl}/portal/feedback/{token}` | `/feedback/{token}` | Kept in this tab's session storage and replaced by `_` in the address bar before the page renders |
 | `{portal.baseUrl}/portal/feedback/form/{token}` | `/feedback/form/{token}` | Stays in the address bar. It names a form, not a person, and kiosks bookmark and reload it |
 | `{portal.baseUrl}/portal/unsubscribe/{token}` | `/unsubscribe/{token}` | Same as the personal feedback link |
+| `{portal.baseUrl}/portal/link/{token}` | `/link/{token}` | Same as the personal feedback link, and forgotten once the patient has signed in |
 | `{portal.baseUrl}/portal/doctors/{practitionerId}` | `/doctors/{practitionerId}` | No token |
 | `{portal.baseUrl}/portal/telehealth/{sessionId}?t={token}` | `/telehealth/{sessionId}` | Moved from `?t=` to this tab's session storage. The address bar keeps the session id only |
 | `{portal.baseUrl}/portal/verify/prescription/{token}` | `/verify/prescription/{token}` | Stays: a printed QR code is meant to be shared, and the answer holds no personal data |
@@ -124,6 +138,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 |---|---|
 | System | `GET /api/v1/system/info` (hospital name, and whether the portal and video consultations are switched on), `GET /health/live` (connection check) |
 | Anti-automation | `POST /api/v1/public/challenge {action: otp\|feedback, subject?}` → `{required, challenge, bits, expiresAt, algorithm}`; the proof goes in `X-HC360-Proof: {challenge}:{nonce}` |
+| Link to the portal (public) | `GET /api/v1/public/portal-links/{token}` → `{hospital, maskedPhone, expiresAt}`; `POST …/{token}/otp` (proof of work, action `otp`, no subject) → `{challengeId, expiresAt, maskedPhone}` as the sign-in's code request answers (422 `auth.otp_throttled` after three codes to the number in 15 minutes); 404 "This link no longer works." for any token that does not work now. Then `POST /api/v1/auth/otp/verify` |
 | Profiles | `GET /api/v1/portal/profiles` |
 | Family on other numbers | `GET /api/v1/portal/family/` → `{linked[{linkId, patientId, fullName, uhid, relation, source, linkedAt}], sharedWith[{linkId, patientId, patientName, accountPhoneMasked, relation, linkedAt}]}`; `POST /api/v1/portal/family/codes {uhid, phone, relation}` → `{codeId, expiresAt}` (the same answer whether or not they match; 422 `portal.family_code_throttled`, `portal.family_own_number`; 409 `portal.family_already_linked`); `POST …/codes/{codeId}/verify {code}` → the relative (400 on a wrong code, 422 `portal.family_code_expired` once it is used up); `POST …/links/{linkId}/end` → 204 |
 | Doctors (public) | `GET /api/v1/public/doctors/filters`, `GET /api/v1/public/doctors`, `GET /api/v1/public/doctors/{id}`, `GET /api/v1/public/doctors/{id}/slots` |
@@ -307,6 +322,12 @@ the record's preferred language, else English.
 * **Payment pages.** Only `https` payment pages are opened.
 * **After sign-out.** The query cache is cleared on sign-out and on a family switch. After 20 minutes without activity
   the patient is signed out.
+* **Links to the portal.** A link is not a credential: it only lets whoever opens it send a sign-in code to the
+  number registered for the patient, which signs them in only if they hold that phone. The server keeps only the
+  SHA-256 of the token (128 random bits), and its answers carry the hospital and the masked number only. Unknown,
+  expired, replaced and changed-record links all get the same 404. Asking for a code through a link spends a proof of
+  work and counts against the sign-in's limits per address and per number, and a failed request (an unknown token)
+  raises the work asked of the address. The token is taken out of the address bar at once and forgotten after sign-in.
 * **Family codes.** The code goes only to the relative's own registered number, and the first answer is the same
   whether or not the UHID and the number match, so the page cannot be used to find out whose number is whose. The code
   field has no one-time-code autofill, because the code arrives on the relative's phone. The server stores codes
@@ -343,6 +364,10 @@ the record's preferred language, else English.
 * **The feedback form in jsdom:** stars, the 0–10 score, the comment, and the call-back number check.
 * **Unsaved changes:** the add-family sheet asks before *Not now* or Esc throw typed details away, and the leave
   question stays or leaves.
+* **A link to the portal end to end in jsdom** (`modules/signIn/linkPage.test.tsx`): the page shows the hospital and the
+  masked number and asks for nothing more on opening, the token leaves the address bar, "Send code" sends a proof with
+  the request, the code step signs the patient in and the token is forgotten, Hindi, and a link that no longer works
+  (unknown, malformed, or stopped after the page opened) offers the normal sign-in.
 * **Public pages end to end in jsdom** (router, layouts and queries against a fake server). Feedback and unsubscribe
   links open without sign-in and their tokens leave the address bar. The prescription and report checks, the privacy
   notice, and the redirect of signed-out visitors to sign-in are covered too.

@@ -242,10 +242,18 @@ public sealed class PatientRegistrationService(
         }
 
         db.SetExpectedVersion(patient, request.Version);
+        var previousPhone = patient.Phone;
         Apply(patient, input, time.Today(), isNew: false);
         patient.IsDeceased = request.IsDeceased;
         patient.DeceasedAt = request.IsDeceased ? request.DeceasedAt ?? patient.DeceasedAt ?? time.GetUtcNow() : null;
         patient.IsActive = request.IsActive;
+
+        // Portal links sent to the old number stop with the change, and the record's list of links says why. (Opening a
+        // link checks that the record still has the number it went to, so one is never used after the change either way.)
+        if (patient.Phone != previousPhone)
+        {
+            await PortalLinkService.RevokeLiveLinksAsync(db, patient.Id, PortalLink.NumberChangedReason, time.GetUtcNow(), ct);
+        }
 
         try
         {

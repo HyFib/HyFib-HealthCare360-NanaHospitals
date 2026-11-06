@@ -364,6 +364,7 @@
   "message.portal.family_same_number": "यह रोगी इसी मोबाइल नंबर से पंजीकृत है, इसलिए इस नंबर का पोर्टल खाता यह रिकॉर्ड पहले से देख सकता है।",
   "message.portal.family_uhid": "अस्पताल कार्ड या बिल पर छपा UHID दर्ज करें।",
   "message.portal.family_ended": "परिवार का यह सदस्य अब ये रिकॉर्ड नहीं देख सकता।",
+  "message.portal.link_not_usable": "यह लिंक अब काम नहीं करता।",
   "message.prescription.not_printable": "केवल हस्ताक्षरित पर्चे ही प्रिंट या साझा किए जा सकते हैं।",
   "message.prescription.dsc_not_signed": "आपके डॉक्टर ने अभी इस पर्चे पर डिजिटल हस्ताक्षर नहीं किए हैं।",
   "message.prescription.cannot_issue": "यह पर्चा अभी जारी नहीं किया जा सकता। कृपया अस्पताल से संपर्क करें।",

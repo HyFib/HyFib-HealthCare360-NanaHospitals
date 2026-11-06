@@ -63,6 +63,12 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/public/feedback/invitations/{token}",
         "GET /api/v1/public/unsubscribe/{token}",
         "POST /api/v1/public/unsubscribe/{token}",
+
+        // A link to the portal sent to the patient's registered number: shows the hospital and the number masked, and asks
+        // for a sign-in code to that number only (with a proof of work and the sign-in's limit per address). It signs no one in.
+        "GET /api/v1/public/portal-links/{token}",
+        "POST /api/v1/public/portal-links/{token}/otp",
+
         "GET /api/v1/public/prescriptions/verify/{token}",
         "GET /api/v1/public/prescriptions/verify/{token}/signature.p7s",
         "GET /api/v1/lab/reports/verify/{code}",

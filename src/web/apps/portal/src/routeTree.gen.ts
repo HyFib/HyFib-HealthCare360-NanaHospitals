@@ -18,6 +18,7 @@ import { Route as OpenPaymentReturnRouteImport } from './routes/_open/payment-re
 import { Route as OpenPrivacyRouteImport } from './routes/_open/privacy'
 import { Route as OpenRatesRouteImport } from './routes/_open/rates'
 import { Route as FeedbackTokenRouteImport } from './routes/feedback/$token'
+import { Route as LinkTokenRouteImport } from './routes/link/$token'
 import { Route as TelehealthSessionIdRouteImport } from './routes/telehealth/$sessionId'
 import { Route as UnsubscribeTokenRouteImport } from './routes/unsubscribe/$token'
 import { Route as AuthAppointmentsIndexRouteImport } from './routes/_auth/appointments/index'
@@ -92,6 +93,11 @@ const OpenRatesRoute = OpenRatesRouteImport.update({
 const FeedbackTokenRoute = FeedbackTokenRouteImport.update({
   id: '/feedback/$token',
   path: '/feedback/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LinkTokenRoute = LinkTokenRouteImport.update({
+  id: '/link/$token',
+  path: '/link/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TelehealthSessionIdRoute = TelehealthSessionIdRouteImport.update({
@@ -270,6 +276,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof OpenPrivacyRoute
   '/rates': typeof OpenRatesRoute
   '/feedback/$token': typeof FeedbackTokenRoute
+  '/link/$token': typeof LinkTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
   '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/appointments/$appointmentId': typeof AuthAppointmentsAppointmentIdRoute
@@ -311,6 +318,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof OpenPrivacyRoute
   '/rates': typeof OpenRatesRoute
   '/feedback/$token': typeof FeedbackTokenRoute
+  '/link/$token': typeof LinkTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
   '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/appointments/$appointmentId': typeof AuthAppointmentsAppointmentIdRoute
@@ -355,6 +363,7 @@ export interface FileRoutesById {
   '/_open/privacy': typeof OpenPrivacyRoute
   '/_open/rates': typeof OpenRatesRoute
   '/feedback/$token': typeof FeedbackTokenRoute
+  '/link/$token': typeof LinkTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
   '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/_auth/appointments/$appointmentId': typeof AuthAppointmentsAppointmentIdRoute
@@ -398,6 +407,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/rates'
     | '/feedback/$token'
+    | '/link/$token'
     | '/telehealth/$sessionId'
     | '/unsubscribe/$token'
     | '/appointments/$appointmentId'
@@ -439,6 +449,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/rates'
     | '/feedback/$token'
+    | '/link/$token'
     | '/telehealth/$sessionId'
     | '/unsubscribe/$token'
     | '/appointments/$appointmentId'
@@ -482,6 +493,7 @@ export interface FileRouteTypes {
     | '/_open/privacy'
     | '/_open/rates'
     | '/feedback/$token'
+    | '/link/$token'
     | '/telehealth/$sessionId'
     | '/unsubscribe/$token'
     | '/_auth/appointments/$appointmentId'
@@ -522,6 +534,7 @@ export interface RootRouteChildren {
   OpenRoute: typeof OpenRouteWithChildren
   SignInRoute: typeof SignInRoute
   FeedbackTokenRoute: typeof FeedbackTokenRoute
+  LinkTokenRoute: typeof LinkTokenRoute
   TelehealthSessionIdRoute: typeof TelehealthSessionIdRoute
   UnsubscribeTokenRoute: typeof UnsubscribeTokenRoute
   FeedbackFormTokenRoute: typeof FeedbackFormTokenRoute
@@ -590,6 +603,13 @@ declare module '@tanstack/react-router' {
       path: '/feedback/$token'
       fullPath: '/feedback/$token'
       preLoaderRoute: typeof FeedbackTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/link/$token': {
+      id: '/link/$token'
+      path: '/link/$token'
+      fullPath: '/link/$token'
+      preLoaderRoute: typeof LinkTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/telehealth/$sessionId': {
@@ -907,6 +927,7 @@ const rootRouteChildren: RootRouteChildren = {
   OpenRoute: OpenRouteWithChildren,
   SignInRoute: SignInRoute,
   FeedbackTokenRoute: FeedbackTokenRoute,
+  LinkTokenRoute: LinkTokenRoute,
   TelehealthSessionIdRoute: TelehealthSessionIdRoute,
   UnsubscribeTokenRoute: UnsubscribeTokenRoute,
   FeedbackFormTokenRoute: FeedbackFormTokenRoute,

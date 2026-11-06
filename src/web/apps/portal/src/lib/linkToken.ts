@@ -1,13 +1,14 @@
 /**
- * Personal link tokens (a feedback invitation, an unsubscribe link). The page reads the token from the address once,
- * keeps it in this tab only (memory and session storage), and puts a placeholder in the address bar, so the token does
- * not linger in history, screenshots, synced tabs or anything that reads the address later. A reload keeps working in
- * the same tab; the placeholder address opened anywhere else simply asks for the original link.
+ * Personal link tokens (a feedback invitation, an unsubscribe link, a link to the portal sent to the patient's number).
+ * The page reads the token from the address once, keeps it in this tab only (memory and session storage), and puts a
+ * placeholder in the address bar, so the token does not linger in history, screenshots, synced tabs or anything that
+ * reads the address later. A reload keeps working in the same tab; the placeholder address opened anywhere else simply
+ * asks for the original link.
  */
 
 export const TOKEN_PLACEHOLDER = '_';
 
-export type LinkTokenScope = 'feedback' | 'unsubscribe';
+export type LinkTokenScope = 'feedback' | 'unsubscribe' | 'portal';
 
 const memory = new Map<LinkTokenScope, string>();
 const storageKey = (scope: LinkTokenScope) => `hc360:portal:link:${scope}`;

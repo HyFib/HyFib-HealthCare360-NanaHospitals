@@ -110,6 +110,9 @@ public static class WhatsAppOptOutPolicy
         // Asked for by someone else, and sent only by SMS.
         "portal.family_code",
 
+        // Sent by staff when the patient asks at the desk; the portal's own sign-in needs no link.
+        "portal.link",
+
         // Asked for from the patient's ABHA app, and sent only by SMS.
         "abdm.link_code",
 

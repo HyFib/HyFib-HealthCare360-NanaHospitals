@@ -7,27 +7,42 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as PatientsApi from './api';
-import { portalFamilyApi, type PatientPortalAccessDto, type PortalFamilyLinkDto } from './api';
+import {
+  portalFamilyApi,
+  portalLinkApi,
+  type PatientPortalAccessDto,
+  type PatientPortalLinksDto,
+  type PortalFamilyLinkDto,
+  type PortalLinkDto,
+} from './api';
 import { PortalAccessPanel, ShareForm } from './PortalAccessPanel';
 
 // The server, the toasts and the signed-in user are outside the test; the panel's own behaviour is what is tested.
 const readAccess = vi.hoisted(() => vi.fn());
+const readLinks = vi.hoisted(() => vi.fn());
 vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof PatientsApi>();
   return {
     ...actual,
     portalFamilyApi: { link: vi.fn(), revoke: vi.fn() },
+    portalLinkApi: { send: vi.fn() },
     patientQueries: {
       ...actual.patientQueries,
       portalFamily: (id: string) => ({ queryKey: actual.patientKeys.portalFamily(id), queryFn: () => readAccess(id) }),
+      portalLinks: (id: string) => ({ queryKey: actual.patientKeys.portalLinks(id), queryFn: () => readLinks(id) }),
     },
   };
 });
 const notify = vi.hoisted(() => ({ success: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn() }));
 vi.mock('@hc360/ui', async (importOriginal) => ({ ...(await importOriginal<typeof Ui>()), useNotify: () => notify }));
-const permissions = vi.hoisted(() => ({ manage: true }));
+const permissions = vi.hoisted(() => ({ manage: true, register: true }));
 vi.mock('@/lib/permissions', () => ({
-  usePermission: (permission: string) => permission !== 'patients.consents' || permissions.manage,
+  usePermission: (permission: string) =>
+    permission === 'patients.consents'
+      ? permissions.manage
+      : permission === 'patients.register'
+        ? permissions.register
+        : true,
 }));
 
 function renderWithProviders(ui: ReactNode) {
@@ -59,6 +74,26 @@ function link(patch: Partial<PortalFamilyLinkDto>): PortalFamilyLinkDto {
 
 function access(links: PortalFamilyLinkDto[]): PatientPortalAccessDto {
   return { ownPhone: '+919800000001', links };
+}
+
+function sentLink(patch: Partial<PortalLinkDto>): PortalLinkDto {
+  return {
+    id: 'pl1',
+    sentAt: '2026-11-05T04:30:00Z',
+    sentByName: 'Asha Nair',
+    channels: ['Sms'],
+    maskedPhone: '+91******0001',
+    expiresAt: '2026-11-12T04:30:00Z',
+    openedAt: null,
+    state: 'Active',
+    revokedAt: null,
+    revokedReason: null,
+    ...patch,
+  };
+}
+
+function portalLinks(patch: Partial<PatientPortalLinksDto> = {}): PatientPortalLinksDto {
+  return { maskedPhone: '+91******0001', cannotSend: null, whatsAppStopped: false, links: [], ...patch };
 }
 
 describe('ShareForm', () => {
@@ -126,8 +161,10 @@ describe('ShareForm', () => {
 describe('PortalAccessPanel', () => {
   beforeEach(() => {
     readAccess.mockReset();
+    readLinks.mockReset().mockResolvedValue(portalLinks());
     vi.mocked(portalFamilyApi.revoke).mockReset().mockResolvedValue(undefined);
     permissions.manage = true;
+    permissions.register = true;
   });
 
   it('lists who sees the records, and offers to stop only a link in force', async () => {
@@ -196,5 +233,131 @@ describe('PortalAccessPanel', () => {
     await screen.findByText('+91 98111 22233');
     expect(screen.queryByRole('button', { name: 'Share with a family member' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Stop sharing/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('Links to the portal', () => {
+  beforeEach(() => {
+    readAccess.mockReset().mockResolvedValue(access([]));
+    readLinks.mockReset();
+    vi.mocked(portalLinkApi.send).mockReset();
+    permissions.manage = true;
+    permissions.register = true;
+  });
+
+  it('lists the latest links: when and by whom, how, to which number and whether they still work', async () => {
+    readLinks.mockResolvedValue(
+      portalLinks({
+        links: [
+          sentLink({ id: 'pl3', channels: ['Sms', 'WhatsApp'], state: 'Opened', openedAt: '2026-11-05T05:00:00Z' }),
+          sentLink({ id: 'pl2', state: 'Revoked', revokedAt: '2026-11-05T04:30:00Z', revokedReason: 'replaced' }),
+          sentLink({ id: 'pl1', state: 'Revoked', revokedReason: 'number_changed', sentByName: null }),
+        ],
+      }),
+    );
+    renderWithProviders(<PortalAccessPanel patientId="p1" />);
+
+    const table = await screen.findByRole('table', { name: 'Links to the portal sent to the patient' });
+    await within(table).findByText('SMS and WhatsApp');
+    const [, opened, replaced, numberChanged] = within(table).getAllByRole('row');
+    expect(opened).toHaveTextContent('by Asha Nair');
+    expect(opened).toHaveTextContent('+91******0001');
+    expect(within(opened!).getByText('Opened')).toBeInTheDocument();
+    expect(opened).toHaveTextContent(/works until/);
+    expect(replaced).toHaveTextContent('SMS');
+    expect(within(replaced!).getByText('Stopped')).toBeInTheDocument();
+    expect(replaced).toHaveTextContent('A newer link replaced it');
+    expect(numberChanged).toHaveTextContent('The patient’s mobile number changed');
+    expect(numberChanged).not.toHaveTextContent('by ');
+    expect(screen.getByRole('button', { name: 'Send portal link' })).toBeEnabled();
+  });
+
+  it('sends a link by the channels chosen and says how it went', async () => {
+    const user = userEvent.setup();
+    readLinks.mockResolvedValue(portalLinks());
+    vi.mocked(portalLinkApi.send).mockResolvedValue({
+      id: 'new',
+      channels: ['Sms', 'WhatsApp'],
+      expiresAt: '2026-11-13T04:30:00Z',
+      maskedPhone: '+91******0001',
+      notice: null,
+    });
+    renderWithProviders(<PortalAccessPanel patientId="p1" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Send portal link' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('+91******0001');
+    expect(within(dialog).getByRole('checkbox', { name: 'SMS' })).toBeChecked();
+    await user.click(within(dialog).getByRole('checkbox', { name: 'WhatsApp' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => expect(portalLinkApi.send).toHaveBeenCalledWith('p1', ['Sms', 'WhatsApp']));
+    expect(await screen.findByText('Portal link sent')).toBeInTheDocument();
+    expect(screen.getByText(/^Sent by SMS and WhatsApp to \+91\*{6}0001\. It works until/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    // The list is read again for the new link.
+    await waitFor(() => expect(readLinks.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('cannot send without a channel, and shows the server’s refusal in the dialog', async () => {
+    const user = userEvent.setup();
+    readLinks.mockResolvedValue(portalLinks());
+    vi.mocked(portalLinkApi.send).mockRejectedValueOnce(
+      new ApiError({
+        status: 422,
+        title: 'Not allowed',
+        code: 'portal.link_throttled',
+        detail:
+          'This patient has been sent 3 portal links in the last 24 hours. Help them sign in at the desk, or send one tomorrow.',
+      }),
+    );
+    renderWithProviders(<PortalAccessPanel patientId="p1" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Send portal link' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('checkbox', { name: 'SMS' }));
+    expect(within(dialog).getByRole('button', { name: 'Send' })).toBeDisabled();
+    await user.click(within(dialog).getByRole('checkbox', { name: 'SMS' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Send' }));
+
+    expect(await within(dialog).findByText('The link was not sent')).toBeInTheDocument();
+    expect(within(dialog).getByText(/3 portal links in the last 24 hours/)).toBeInTheDocument();
+  });
+
+  it('offers only SMS when the number stopped WhatsApp', async () => {
+    const user = userEvent.setup();
+    readLinks.mockResolvedValue(portalLinks({ whatsAppStopped: true }));
+    renderWithProviders(<PortalAccessPanel patientId="p1" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Send portal link' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('checkbox', { name: 'WhatsApp' })).toBeDisabled();
+    expect(dialog).toHaveTextContent('This number replied STOP on WhatsApp, so the link goes by SMS.');
+  });
+
+  it('says why no link can be sent for a record in a protected category', async () => {
+    readLinks.mockResolvedValue(
+      portalLinks({
+        cannotSend: {
+          code: 'portal.link_sensitive',
+          message:
+            'This record is in a protected category. Give portal access at the front desk after checking that the number is the patient’s own.',
+        },
+      }),
+    );
+    renderWithProviders(<PortalAccessPanel patientId="p1" />);
+
+    const button = await screen.findByRole('button', { name: 'Send portal link' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleDescription(/This record is in a protected category/);
+  });
+
+  it('shows the links but no send button to staff who do not register patients', async () => {
+    permissions.register = false;
+    readLinks.mockResolvedValue(portalLinks({ links: [sentLink({})] }));
+    renderWithProviders(<PortalAccessPanel patientId="p1" />);
+
+    await screen.findByText('Not opened yet');
+    expect(screen.queryByRole('button', { name: 'Send portal link' })).not.toBeInTheDocument();
   });
 });

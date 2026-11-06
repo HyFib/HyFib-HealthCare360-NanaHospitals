@@ -1,9 +1,12 @@
 import { ApiError } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
-import type { PortalFamilyLinkDto } from './api';
+import type { PortalFamilyLinkDto, PortalLinkDto } from './api';
 import {
+  channelsText,
   endedText,
+  linkSentText,
   linkSourceText,
+  linkStateDetail,
   ownNumberText,
   shareFormDefaults,
   shareFormSchema,
@@ -123,5 +126,52 @@ describe('the words for a link', () => {
     expect(endedText(link({ revokedAt: '2026-10-02T05:00:00Z', revokedByName: 'Asha Nair' }))).toMatch(
       /^Ended .+ by Asha Nair$/,
     );
+  });
+});
+
+describe('the words for a link to the portal', () => {
+  const sent = (patch: Partial<PortalLinkDto>): PortalLinkDto => ({
+    id: 'pl1',
+    sentAt: '2026-11-05T04:30:00Z',
+    sentByName: 'Asha Nair',
+    channels: ['Sms'],
+    maskedPhone: '+91******0001',
+    expiresAt: '2026-11-12T04:30:00Z',
+    openedAt: null,
+    state: 'Active',
+    revokedAt: null,
+    revokedReason: null,
+    ...patch,
+  });
+
+  it('names the channels it went on', () => {
+    expect(channelsText(['Sms'])).toBe('SMS');
+    expect(channelsText(['WhatsApp'])).toBe('WhatsApp');
+    expect(channelsText(['Sms', 'WhatsApp'])).toBe('SMS and WhatsApp');
+  });
+
+  it('says until when a link works, when it was opened, and why it stopped', () => {
+    expect(linkStateDetail(sent({}))).toMatch(/^Works until /);
+    expect(linkStateDetail(sent({ state: 'Opened', openedAt: '2026-11-05T05:00:00Z' }))).toMatch(
+      /^Opened .+; works until /,
+    );
+    expect(linkStateDetail(sent({ state: 'Expired' }))).toMatch(/^Expired /);
+    expect(linkStateDetail(sent({ state: 'Revoked', revokedReason: 'replaced' }))).toBe('A newer link replaced it');
+    expect(linkStateDetail(sent({ state: 'Revoked', revokedReason: 'number_changed' }))).toBe(
+      'The patient’s mobile number changed',
+    );
+  });
+
+  it('says how a link went, and why only by SMS', () => {
+    const result = {
+      id: 'n',
+      channels: ['Sms' as const],
+      expiresAt: '2026-11-12T04:30:00Z',
+      maskedPhone: '+91******0001',
+    };
+    expect(linkSentText({ ...result, notice: null })).toMatch(/^Sent by SMS to \+91\*{6}0001\. It works until .+\.$/);
+    expect(
+      linkSentText({ ...result, notice: 'This number replied STOP on WhatsApp, so the link went by SMS only.' }),
+    ).toMatch(/\. This number replied STOP on WhatsApp, so the link went by SMS only\.$/);
   });
 });

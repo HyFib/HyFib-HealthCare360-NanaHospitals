@@ -19,6 +19,7 @@ public sealed class BrowserProofHandler(HttpMessageHandler inner) : DelegatingHa
         ("/api/v1/auth/otp/", AntiAutomationActions.Otp),
         ("/api/v1/public/feedback/forms/", AntiAutomationActions.Feedback),
         ("/api/v1/public/feedback/invitations/", AntiAutomationActions.Feedback),
+        ("/api/v1/public/portal-links/", AntiAutomationActions.Otp),
     ];
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
