@@ -300,8 +300,19 @@ public sealed class Appointment : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
+    /// <summary>
+    /// Cancels the booking. <see cref="CancellationReason.PaymentNotReceived"/> is a person's decision at the hospital,
+    /// never HC360's: a booking whose online payment was started and never made stays booked, because a payment problem
+    /// must never cost the patient their slot (gap #35, decided by the hospital). So that reason needs a member of staff
+    /// who is signed in, and nothing that runs on its own (a job, an event handler, the gateway's answer) can give it.
+    /// </summary>
     public Result Cancel(CancellationReason code, string? reason, CancellationSource by, Guid? userId, DateTimeOffset now)
     {
+        if (code == CancellationReason.PaymentNotReceived && (by != CancellationSource.Staff || userId is null))
+        {
+            return Error.Rule("appointment.payment_cancel_staff_only", "Only hospital staff can cancel an appointment because the payment was not received.");
+        }
+
         if (Status == AppointmentStatus.Cancelled)
         {
             return Error.Rule("appointment.already_cancelled", "This appointment is already cancelled.");

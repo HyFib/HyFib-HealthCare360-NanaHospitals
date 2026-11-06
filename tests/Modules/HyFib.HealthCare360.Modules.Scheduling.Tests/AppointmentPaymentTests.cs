@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Services;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Integrations;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -83,6 +84,31 @@ public sealed class AppointmentPaymentTests
 
         result.Error!.Code.ShouldBe("payment.not_captured");
         appointment.PaymentStatus.ShouldNotBe(AppointmentPaymentStatus.PaidOnline);
+    }
+
+    /// <summary>
+    /// Gap #35, decided by the hospital: a payment that failed, ran out of time or was given up on never costs the
+    /// patient the slot. The booking stays booked and unpaid, its reminders still go out, and it can be paid again.
+    /// </summary>
+    [Theory]
+    [InlineData(GatewayPaymentStatus.Created)]
+    [InlineData(GatewayPaymentStatus.Failed)]
+    [InlineData(GatewayPaymentStatus.Expired)]
+    [InlineData(GatewayPaymentStatus.Cancelled)]
+    public async Task A_payment_that_was_never_made_never_costs_the_patient_the_slot(GatewayPaymentStatus status)
+    {
+        var appointment = BookedWithOrder("order_8");
+        appointment.ClearDomainEvents();
+        var gateway = Gateway(new PaymentStatusResult("order_8", status, null, null, null, "Not paid."));
+
+        (await Service(gateway).VerifyWithGatewayAsync(appointment, TestContext.Current.CancellationToken)).Error!.Code.ShouldBe("payment.not_captured");
+
+        appointment.Status.ShouldBe(AppointmentStatus.Booked);
+        appointment.HoldsSeat.ShouldBeTrue();
+        appointment.PaymentStatus.ShouldBe(AppointmentPaymentStatus.Unpaid);
+        appointment.DomainEvents.OfType<AppointmentCancelled>().ShouldBeEmpty();
+        ReminderPolicy.Decide(appointment, Start.AddHours(-23)).SendDayBefore.ShouldBeTrue();
+        appointment.AttachPaymentOrder("simulator", "order_9", Start.AddDays(-1)).IsSuccess.ShouldBeTrue();
     }
 
     [Fact]

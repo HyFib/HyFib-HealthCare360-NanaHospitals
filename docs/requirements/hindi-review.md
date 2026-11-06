@@ -390,6 +390,7 @@ Points we would most like checked:
 | 142 | `message.feature.telehealth_off` | Video consultations are not available right now. Please contact the hospital to see the doctor in person. | वीडियो परामर्श अभी उपलब्ध नहीं है। डॉक्टर से अस्पताल में मिलने के लिए कृपया अस्पताल से संपर्क करें। | |
 | 143 | `message.feature.abdm_off_title` | ABDM health records are turned off | ABDM स्वास्थ्य रिकॉर्ड की सुविधा बंद है | |
 | 144 | `message.feature.off` | This is not available right now. Please contact the hospital. | यह सुविधा अभी उपलब्ध नहीं है। कृपया अस्पताल से संपर्क करें। | |
+| 145 | `message.appointment.payment_cancel_staff_only` | Only hospital staff can cancel an appointment because the payment was not received. | भुगतान न मिलने के कारण अपॉइंटमेंट केवल अस्पताल का स्टाफ़ ही रद्द कर सकता है। | |
 
 ## The validators' own messages (shown next to a field)
 

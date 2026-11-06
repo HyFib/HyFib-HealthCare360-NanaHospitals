@@ -319,6 +319,7 @@
   "message.appointment.cancel_reason": "Describe why the appointment is cancelled.",
   "message.appointment.already_cancelled": "This appointment is already cancelled.",
   "message.appointment.checked_in": "The patient has already checked in. Cancel the visit instead.",
+  "message.appointment.payment_cancel_staff_only": "Only hospital staff can cancel an appointment because the payment was not received.",
   "message.appointment.closed": "This appointment cannot be {action}.",
   "message.appointment.closed_cancelled": "A cancelled appointment cannot be {action}.",
   "message.appointment.closed_completed": "A completed appointment cannot be {action}.",
