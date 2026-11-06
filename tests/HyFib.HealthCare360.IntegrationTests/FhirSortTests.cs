@@ -71,6 +71,38 @@ public sealed class FhirSortTests(HospitalServer server)
         (await FhirAsync(partner, $"Patient?name={family}&_sort=identifier", "TREAT")).Refusal.ShouldBe((400, "invalid-parameter"));
     }
 
+    [Fact]
+    public async Task A_birth_date_estimated_from_an_age_is_found_by_the_year_it_is_served_with_not_the_day_stored_behind_it()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var (partner, _, _) = await PartnerAsync(server);
+        var family = "Birthq" + string.Concat(Enumerable.Range(0, 8).Select(_ => (char)('a' + Random.Shared.Next(26))));
+
+        // Registered from a stated age, the birth date is stored as a day but served as its year; the other was born on
+        // a day of that year.
+        var estimated = await RegisterAsync(frontOffice, "Chitra", family, Gender.Female, null, ageYears: 46);
+        var year = int.Parse((await FhirAsync(partner, $"Patient/{estimated}", "TREAT")).Body.GetProperty("birthDate").GetString()!,
+            System.Globalization.CultureInfo.InvariantCulture);
+        var june = await RegisterAsync(frontOffice, "Anand", family, Gender.Male, new DateOnly(year, 6, 15), null);
+        DateOnly stored;
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            stored = (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Patient>().AsNoTracking()
+                .Where(p => p.Id == Guid.Parse(estimated)).Select(p => p.DateOfBirth).SingleAsync(TestContext.Current.CancellationToken))!.Value;
+        }
+
+        async Task<List<string>> Found(string birthdate) =>
+            Matches((await FhirAsync(partner, $"Patient?name={family}&birthdate={birthdate}", "TREAT")).Body);
+
+        (await Found($"{year}")).ShouldBe([estimated, june], ignoreOrder: true, "the year holds both");
+        (await Found($"{year}-06-15")).ShouldBe([june]);
+        (await Found(stored.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)))
+            .ShouldNotContain(estimated, "the day stored behind an estimate is not what is served");
+        (await Found($"lt{year}-02-01")).ShouldBe([estimated], "the served year starts on 1 January, whatever day is stored");
+        (await Found($"gt{year}-11-30")).ShouldBe([estimated], "and ends on 31 December");
+        (await Found($"ge{year + 1}")).ShouldBeEmpty();
+    }
+
     /// <summary>Sets when a patient was last changed, to the microsecond, as the database keeps it.</summary>
     private async Task SetUpdatedAtAsync(string patientId, DateTimeOffset at)
     {

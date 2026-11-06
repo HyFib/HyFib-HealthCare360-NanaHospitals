@@ -214,14 +214,50 @@ internal static class PatientSearchQuery
 
     private static Expression<Func<Patient, bool>> Is(Gender gender) => p => p.Gender == gender;
 
-    private static Expression<Func<Patient, bool>> BirthDate(DateParameter date)
+    /// <summary>
+    /// The birth date as it is served, a period: the day, or the whole year for one estimated from a stated age. It is
+    /// matched by FHIR's rules for a period (<see cref="DateParameter.Matches"/>), so a year matches a search that holds
+    /// all of it, or that it reaches into, not one that holds the day stored behind it.
+    /// </summary>
+    internal static Expression<Func<Patient, bool>> BirthDate(DateParameter date)
     {
-        var (from, before, negate) = date.InstantBounds();
-        DateOnly? fromDate = from is { } f ? DateOnly.FromDateTime(f.ToOffset(FhirTime.Ist).DateTime) : null;
-        DateOnly? beforeDate = before is { } b ? DateOnly.FromDateTime(b.ToOffset(FhirTime.Ist).DateTime) : null;
-        return negate
-            ? p => p.DateOfBirth != null && (p.DateOfBirth < fromDate || p.DateOfBirth >= beforeDate)
-            : p => p.DateOfBirth != null && (fromDate == null || p.DateOfBirth >= fromDate) && (beforeDate == null || p.DateOfBirth < beforeDate);
+        // The period's ends are midnights in IST, so a search bound with a time is the same test on its date: the start
+        // rounded up to a midnight, the end rounded down.
+        var start = Midnight(date.Range.Start, up: true);
+        var end = Midnight(date.Range.End, up: false);
+        return date.Prefix switch
+        {
+            SearchPrefix.Eq => OnBirthPeriod((from, to) => start <= from && to <= end),
+            SearchPrefix.Ne => OnBirthPeriod((from, to) => !(start <= from && to <= end)),
+            SearchPrefix.Gt => OnBirthPeriod((from, to) => to > end),
+            SearchPrefix.Lt => OnBirthPeriod((from, to) => from < start),
+            SearchPrefix.Ge => OnBirthPeriod((from, to) => to > end || (start <= from && to <= end)),
+            SearchPrefix.Le => OnBirthPeriod((from, to) => from < start || (start <= from && to <= end)),
+            _ => p => false,
+        };
+    }
+
+    /// <summary>The IST date of the midnight at or after (<paramref name="up"/>) or at or before an instant.</summary>
+    private static DateOnly Midnight(DateTimeOffset instant, bool up)
+    {
+        var local = instant.ToOffset(FhirTime.Ist);
+        var date = DateOnly.FromDateTime(local.DateTime);
+        return up && local.TimeOfDay > TimeSpan.Zero ? date.AddDays(1) : date;
+    }
+
+    /// <summary>A test on the served birth period [from, to) of a patient whose date of birth is known.</summary>
+    private static Expression<Func<Patient, bool>> OnBirthPeriod(Expression<Func<DateOnly, DateOnly, bool>> test)
+    {
+        var patient = Expression.Parameter(typeof(Patient), "p");
+        Expression Served(Expression<Func<Patient, DateOnly?>> bound) =>
+            Expression.Convert(new ParameterRebinder(bound.Parameters[0], patient).Visit(bound.Body), typeof(DateOnly));
+        var body = new Substitution(new Dictionary<ParameterExpression, Expression>
+        {
+            [test.Parameters[0]] = Served(BirthDateStart),
+            [test.Parameters[1]] = Served(BirthDateEnd),
+        }).Visit(test.Body);
+        var known = Expression.NotEqual(Expression.Property(patient, nameof(Patient.DateOfBirth)), Expression.Constant(null, typeof(DateOnly?)));
+        return Expression.Lambda<Func<Patient, bool>>(Expression.AndAlso(known, body), patient);
     }
 
     private static Expression<Func<Patient, bool>> LastUpdated(DateParameter date)
@@ -257,5 +293,11 @@ internal static class PatientSearchQuery
     private sealed class ParameterRebinder(ParameterExpression from, ParameterExpression to) : ExpressionVisitor
     {
         protected override Expression VisitParameter(ParameterExpression node) => node == from ? to : base.VisitParameter(node);
+    }
+
+    private sealed class Substitution(Dictionary<ParameterExpression, Expression> replacements) : ExpressionVisitor
+    {
+        protected override Expression VisitParameter(ParameterExpression node) =>
+            replacements.TryGetValue(node, out var replacement) ? replacement : base.VisitParameter(node);
     }
 }
