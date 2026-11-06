@@ -44,6 +44,7 @@ public sealed class ReportCatalogTests
     [InlineData("dead-stock")]
     [InlineData("purchase-vs-consumption")]
     [InlineData("ot-utilisation")]
+    [InlineData("ot-register")]
     [InlineData("dialysis-sessions")]
     [InlineData("blood-bank-stock")]
     [InlineData("incident-rates")]
@@ -86,7 +87,7 @@ public sealed class ReportCatalogTests
     {
         var patientLevel = Reports.Where(r => r.ContainsPatientIdentifiers).ToList();
 
-        patientLevel.Select(r => r.Id).ShouldBe(["adverse-discharges", "critical-values"], ignoreOrder: true);
+        patientLevel.Select(r => r.Id).ShouldBe(["adverse-discharges", "critical-values", "ot-register"], ignoreOrder: true);
         patientLevel.ShouldAllBe(r => r.Permissions.SequenceEqual(new[] { AnalyticsPermissions.ClinicalRead }));
         patientLevel.ShouldAllBe(r => !r.CanSchedule);
         patientLevel.ShouldAllBe(r => r.Columns.Any(c => c.IsPatientIdentifier));

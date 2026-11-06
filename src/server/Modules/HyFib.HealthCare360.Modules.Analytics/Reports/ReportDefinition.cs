@@ -30,9 +30,16 @@ internal sealed class EfReportQueryExecutor : IReportQueryExecutor
 /// arguments and "now". The context's facility filter already limits every facility-owned table, so reports never filter
 /// by facility themselves.
 /// </summary>
-internal sealed class ReportContext(HospitalDbContext db, ReportArguments args, DateTimeOffset now, IReportQueryExecutor executor, int rowCap)
+internal sealed class ReportContext(
+    HospitalDbContext db, ReportArguments args, DateTimeOffset now, IReportQueryExecutor executor, int rowCap, ReportActor? viewer = null)
 {
     public HospitalDbContext Db => db;
+
+    /// <summary>
+    /// Whether the member of staff running the report holds <paramref name="permission"/>. A patient-level report reads it to
+    /// show each patient as that person may see them (contact details, restricted records); a scheduled or KPI run holds none.
+    /// </summary>
+    public bool ViewerHas(string permission) => viewer?.Has(permission) == true;
 
     public ReportArguments Args => args;
 

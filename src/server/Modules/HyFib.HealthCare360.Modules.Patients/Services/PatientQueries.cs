@@ -202,7 +202,8 @@ public sealed class PatientAccessGuard(
         return true;
     }
 
-    internal static readonly (SensitiveCategory Category, string Permission)[] CategoryPermissions =
+    /// <summary>The permission that opens a record in each sensitive category (R-4), also read by the OT register.</summary>
+    public static IReadOnlyList<(SensitiveCategory Category, string Permission)> CategoryPermissions { get; } =
     [
         (SensitiveCategory.Hiv, PatientsPermissions.SensitiveHiv),
         (SensitiveCategory.MentalHealth, PatientsPermissions.SensitiveMentalHealth),

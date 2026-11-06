@@ -94,6 +94,7 @@ internal sealed class ReportCatalog
 
         // OT, dialysis and blood bank
         new OtUtilisationReport(),
+        new OtRegisterReport(),
         new DialysisSessionsReport(),
         new BloodBankStockReport(),
         new BloodUsageReport(),
