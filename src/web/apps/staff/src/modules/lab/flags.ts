@@ -367,17 +367,68 @@ export function isFinalOnAnalyser(status: string | null | undefined): boolean {
   return value === '' || value.toUpperCase() === 'F';
 }
 
+const SUPERSCRIPTS = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+
+/** Spellings of one unit, after `unitKey` has read the notation alike (the server's AnalyserUnits.Aliases). */
+const UNIT_ALIASES: Record<string, string> = {
+  'K/UL': '10^3/UL',
+  'THOU/UL': '10^3/UL',
+  'THOUSAND/UL': '10^3/UL',
+  'THOUSANDS/UL': '10^3/UL',
+  '10^9/L': '10^3/UL',
+  'M/UL': '10^6/UL',
+  'MILL/UL': '10^6/UL',
+  'MILLION/UL': '10^6/UL',
+  'MILLIONS/UL': '10^6/UL',
+  '10^12/L': '10^6/UL',
+  'LAKH/UL': '10^5/UL',
+  'LAKHS/UL': '10^5/UL',
+  SEC: 'S',
+  SECS: 'S',
+  SECOND: 'S',
+  SECONDS: 'S',
+  'MM/H': 'MM/HR',
+  'MM/1STHR': 'MM/HR',
+  'MG%': 'MG/DL',
+  'GM%': 'G/DL',
+  'G%': 'G/DL',
+  'GM/DL': 'G/DL',
+  'IU/L': 'U/L',
+};
+
 /**
- * The analyser's unit is the test's, whatever the case, the spaces and the micro sign (µ, μ or u): "mg/dl" is
- * "mg/dL". An analyser that sent no unit has nothing to compare.
+ * One spelling for every way of writing a unit, as the server reads it (AnalyserUnits.Canonical): no spaces, upper
+ * case, the micro sign as u, powers of ten as 10^n (10³, 10*3, 10E3, x10^3), a cubic millimetre as a microlitre.
+ */
+export function unitKey(unit: string | null | undefined): string {
+  let text = '';
+  let inExponent = false;
+  for (const c of unit ?? '') {
+    if (/\s/.test(c)) continue;
+    const superscript = SUPERSCRIPTS.indexOf(c);
+    if (superscript >= 0) {
+      text += (inExponent ? '' : '^') + String(superscript);
+      inExponent = true;
+      continue;
+    }
+    inExponent = false;
+    text += c === '\u00b5' || c === '\u03bc' ? 'u' : c === '\u00d7' ? 'x' : c;
+  }
+  let key = text.toUpperCase();
+  if (key.startsWith('X10')) key = key.slice(1);
+  if (key.startsWith('10*') || (key.startsWith('10E') && /^[0-9]$/.test(key.charAt(3)))) key = `10^${key.slice(3)}`;
+  key = key.replaceAll('/CUMM', '/UL').replaceAll('/MM^3', '/UL').replaceAll('/MM3', '/UL');
+  if (key.startsWith('CELLS/')) key = key.slice('CELLS'.length);
+  return UNIT_ALIASES[key] ?? key;
+}
+
+/**
+ * The analyser's unit is the test's, however it is spelt: "mg/dl" is "mg/dL", "10^3/uL" and "K/uL" are 10³/µL, "s" is
+ * "seconds" (the server's AnalyserUnits rule; both are tested against lab/unitSpellings.json). An analyser that sent
+ * no unit has nothing to compare.
  */
 export function isSameUnit(analyserUnit: string | null | undefined, testUnit: string | null | undefined): boolean {
-  const key = (unit: string | null | undefined) =>
-    (unit ?? '')
-      .replace(/\s/g, '')
-      .replace(/[\u00b5\u03bc]/g, 'u')
-      .toUpperCase();
-  return !analyserUnit?.trim() || key(analyserUnit) === key(testUnit);
+  return !analyserUnit?.trim() || unitKey(analyserUnit) === unitKey(testUnit);
 }
 
 type ReviewedLine = Pick<

@@ -383,7 +383,7 @@ internal sealed class LabResultService(
                     r.InstrumentComment, r.HeldReasons, r.Method, r.Remarks, r.Organism, r.ColonyCount,
                     r.Susceptibilities.Where(s => !s.IsDeleted).OrderBy(s => s.DisplayOrder)
                         .Select(s => new SusceptibilityDto(s.Antibiotic, s.Interpretation, s.Mic)).ToList(),
-                    r.EnteredAt, r.VerifiedAt, called.Contains(r.Id), r.Version);
+                    r.EnteredAt, r.VerifiedAt, called.Contains(r.Id), r.Version, r.InstrumentValue);
             })
             .ToList();
     }

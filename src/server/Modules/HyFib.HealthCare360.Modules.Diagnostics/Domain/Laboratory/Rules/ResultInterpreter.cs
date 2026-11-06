@@ -39,9 +39,11 @@ internal static class ResultInterpreter
                 return InterpretNumeric(test, range, raw, reference);
 
             case LabResultType.Options:
+                // The test's own answer, or the same answer written as analysers write it ("Neg" for Nil, "++" for 2+).
                 var chosen = test.Options.Count == 0
                     ? raw
-                    : test.Options.FirstOrDefault(o => string.Equals(o, raw, StringComparison.OrdinalIgnoreCase));
+                    : test.Options.FirstOrDefault(o => string.Equals(o, raw, StringComparison.OrdinalIgnoreCase))
+                      ?? AnalyserAnswers.Match(test.Options, raw);
                 return chosen is null
                     ? Error.Field("value", $"Choose one of: {string.Join(", ", test.Options)}.")
                     : new InterpretedResult(chosen, null, TextFlag(range, chosen), reference);

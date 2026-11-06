@@ -186,6 +186,7 @@ internal sealed class LabResultConfiguration : IEntityTypeConfiguration<LabResul
         b.Property(x => x.InstrumentFlags).HasMaxLength(64);
         b.Property(x => x.InstrumentStatus).HasMaxLength(16);
         b.Property(x => x.InstrumentComment).HasMaxLength(500);
+        b.Property(x => x.InstrumentValue).HasMaxLength(LabResult.InstrumentValueLength);
         b.Property(x => x.Remarks).HasMaxLength(1000);
         b.Property(x => x.Organism).HasMaxLength(200);
         b.Property(x => x.ColonyCount).HasMaxLength(100);

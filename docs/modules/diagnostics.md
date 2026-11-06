@@ -117,7 +117,7 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/worklist?section&status&priority` | results.enter or results.verify | → `PagedResult<WorklistItem>` (STAT first, then tubes with unverified critical values; pending/entered/verified/critical counts) |
-| GET | `/samples/{id}/results` | results.enter or results.verify | → `ResultSheet` (`ResultSheetLine`: value, flag, isCritical, referenceText, previous value, delta %, autoValidated, what the analyser said (instrumentCode, instrumentUnit, instrumentFlags, instrumentStatus, instrumentComment), heldReasons (why it was not auto-validated), susceptibilities, hasCriticalCall, version) |
+| GET | `/samples/{id}/results` | results.enter or results.verify | → `ResultSheet` (`ResultSheetLine`: value, flag, isCritical, referenceText, previous value, delta %, autoValidated, what the analyser said (instrumentCode, instrumentUnit, instrumentFlags, instrumentStatus, instrumentComment, and instrumentValue, its own word for an answer read as one of the test's), heldReasons (why it was not auto-validated), susceptibilities, hasCriticalCall, version) |
 | POST | `/results` | `lab.results.enter` | `EnterResultsRequest` (`ResultEntry[]`: resultId, value, remarks, organism, colonyCount, susceptibilities) → `ResultSheetLine[]` (flags, reference text and delta computed server-side) |
 | POST | `/results/verify` | `lab.results.verify` | `VerifyResultsRequest` (resultIds, qcOverrideReason, criticalCall `CriticalCallDetails`, release) → `VerificationOutcome`; 422 `lab.qc_lockout` (data: locked assays) or `lab.critical_call_required` |
 | POST | `/results/{id}/reopen` | `lab.results.verify` | `ReopenResultRequest` (reason) → 204 (unreleased results only; released ones are amended) |
@@ -322,12 +322,25 @@ diagnostics screen.
   band); an unknown age only matches all-age intervals. Flags are computed on the unrounded value (a potassium of 6.54
   prints "6.5" but is CriticalHigh against 6.5). Comparator values (`<0.005`, `>600`, `≤`/`≥`) and Indian digit grouping
   (`1,20,000`) are parsed. Answer-type results flag Abnormal/Critical from the interval's normal/critical answer lists.
+  An answer written as strip readers and immunoassay analysers write it is read as the test's own answer
+  (`AnalyserAnswers`) when it names the same grade and exactly one of the test's answers does: `Neg`, `Negative`,
+  `Absent` or `Not detected` for Nil or Negative, `+-`, `±` or `TR` for Trace, `+`, `++`, `+++`, `++++` (or `+1`…`+4`)
+  for 1+ to 4+, `Pos`, `Present` or `Detected` for Positive, `Norm` for Normal. A grade the test does not offer (`1+`
+  for a test answered Negative or Positive) or a concentration (`250 mg/dL`) is not turned into an answer: that needs
+  the strip maker's chart, so the result waits among the unmatched results. An analyser's own word for an answer read
+  this way is kept on the result (`instrumentValue`, shown on the result sheet as "Analyser sent “NEG”").
 * **Delta check**: % change against the patient's last verified result of the analyte within `lab.deltaCheckWindowDays`
   (default 30); threshold per test or `lab.deltaCheckPercent` (default 50). A change away from zero is always flagged.
 * **Auto-validation** (`AutoValidationPolicy`, analyser results): numeric, in range (Normal), test and analyser allow it,
   QC accepted today on that analyser (below), delta passed, and the analyser raised no flag (none or `N`), sent the
-  value in the test's unit and reported it as final. Units are compared whatever the case, the spaces and the micro
-  sign (`mg/dl` is `mg/dL`, `µIU/mL` is `uIU/mL`); an analyser that sends no unit is not compared. The final status is
+  value in the test's unit and reported it as final. A unit is the test's however it is spelt (`AnalyserUnits`):
+  whatever the case, the spaces and the micro sign (`mg/dl` is `mg/dL`, `µIU/mL` is `uIU/mL`); powers of ten written
+  10³, `10^3`, `10*3` (UCUM), `10E3` or `x10^3`; `K/uL` and `10^9/L` for 10³/µL, `M/uL` and `10^12/L` for 10⁶/µL;
+  `/cumm` and `/mm3` for `/µL`; `s`, `sec` and `seconds`; `mm/h` for `mm/hr`; `mg%` for mg/dL and `gm%` for g/dL;
+  `IU/L` for U/L. Only spellings of the same quantity in the same scale are taken as the test's unit: g/L, mmol/L or
+  mEq/L against g/dL, mg/dL or mmol/L are not. The staff app's review hints read units with the same rule, and both are
+  tested against one list of spellings (`src/web/apps/staff/src/modules/lab/unitSpellings.json`). An analyser that
+  sends no unit is not compared. The final status is
   `F` (ASTM R.9, HL7 OBX-11), or none, which many ASTM analysers send; `P` (preliminary), `S` (partial), `C`
   (correction), HL7 `R` (not verified on the analyser) or any other is not taken as final. Anything else waits for a
   pathologist: the reasons are stored on the result (`heldReasons`) and the result sheet shows them under the test,
@@ -566,7 +579,7 @@ acknowledged:
 | `SampleNotInLab` | The tube is not collected yet, rejected or cancelled |
 | `NoMatchingTest` | None of the tube's tests maps any channel the message sent for it (when some do, the others are only logged, as analysers send whole profiles) |
 | `DiffersFromVerified` | The test is verified and the analyser sent another value, or the same value with another unit, flags, status or comment (a correction, status `C`), or for a result typed in or from another analyser. Only the reading on the test sent again (after a lost acknowledgement) changes nothing |
-| `InvalidValue` | The value is not one the test can hold (not a number for a numeric test, not one of its answers) |
+| `InvalidValue` | The value is not one the test can hold (not a number for a numeric test, not one of its answers, nor one of them as analysers write it) |
 | `RepeatedInMessage` | The message gave the test twice, the second time with another value or the same value read otherwise; the first is on the test |
 
 The same result sent again for the same sample id (the same channel, value, unit, flags, status, comment and time, as

@@ -17,6 +17,7 @@ import {
   reviewHints,
   selectRange,
 } from './flags';
+import unitSpellings from './unitSpellings.json';
 
 function range(partial: Partial<ReferenceRangeDto>): ReferenceRangeDto {
   return {
@@ -350,5 +351,34 @@ describe('analyser readings', () => {
     expect(isSameUnit(null, 'g/dL')).toBe(true);
     expect(isSameUnit('%', null)).toBe(false);
     expect(isSameUnit('mmol/L', 'mg/dL')).toBe(false);
+  });
+
+  // The server's AnalyserUnitsTests read the same pairs, so the app's hints and the server's auto-validation agree.
+  it.each(unitSpellings.same)('takes %j as the test unit %j, as the server does', (analyser, test) => {
+    expect(isSameUnit(analyser, test)).toBe(true);
+  });
+
+  it.each(unitSpellings.different)('does not take %j as the test unit %j, as the server does not', (analyser, test) => {
+    expect(isSameUnit(analyser, test)).toBe(false);
+  });
+
+  it('gives no unit hint for a white cell count sent as 10^9/L against 10³/µL, and one for another scale', () => {
+    const line = {
+      resultType: 'Numeric' as const,
+      status: 'Entered' as const,
+      autoValidated: false,
+      hasCriticalCall: false,
+      remarks: null,
+      unit: '10³/µL',
+      instrumentUnit: '10^9/L',
+      instrumentFlags: null,
+      instrumentStatus: null,
+      instrumentComment: null,
+    };
+    const normal = { flag: 'Normal' as const, deltaExceeded: false, invalid: null };
+    expect(reviewHints(line, normal)).toEqual([]);
+    expect(reviewHints({ ...line, instrumentUnit: '10^6/uL' }, normal)).toEqual([
+      'Analyser sent 10^6/uL, the test is in 10³/µL',
+    ]);
   });
 });
