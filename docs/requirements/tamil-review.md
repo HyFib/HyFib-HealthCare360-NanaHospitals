@@ -402,6 +402,7 @@ Points we would most like checked:
 | 142 | `message.feature.telehealth_off` | Video consultations are not available right now. Please contact the hospital to see the doctor in person. | வீடியோ ஆலோசனைகள் இப்போது கிடைக்கவில்லை. மருத்துவரை நேரில் சந்திக்க, தயவுசெய்து மருத்துவமனையைத் தொடர்புகொள்ளுங்கள். | |
 | 143 | `message.feature.abdm_off_title` | ABDM health records are turned off | ABDM சுகாதாரப் பதிவுகள் வசதி நிறுத்தப்பட்டுள்ளது | |
 | 144 | `message.feature.off` | This is not available right now. Please contact the hospital. | இந்த வசதி இப்போது கிடைக்கவில்லை. தயவுசெய்து மருத்துவமனையைத் தொடர்புகொள்ளுங்கள். | |
+| 145 | `message.appointment.payment_cancel_staff_only` | Only hospital staff can cancel an appointment because the payment was not received. | கட்டணம் பெறப்படவில்லை என்பதற்காகச் சந்திப்பை மருத்துவமனை ஊழியர்கள் மட்டுமே ரத்துசெய்ய முடியும். | |
 
 ## The validators' own messages (shown next to a field)
 

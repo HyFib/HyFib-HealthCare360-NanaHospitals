@@ -319,6 +319,7 @@
   "message.appointment.cancel_reason": "बताएँ कि अपॉइंटमेंट क्यों रद्द किया जा रहा है।",
   "message.appointment.already_cancelled": "यह अपॉइंटमेंट पहले ही रद्द हो चुका है।",
   "message.appointment.checked_in": "रोगी अस्पताल में पहले ही चेक-इन कर चुके हैं। कृपया अस्पताल के काउंटर पर बताएँ।",
+  "message.appointment.payment_cancel_staff_only": "भुगतान न मिलने के कारण अपॉइंटमेंट केवल अस्पताल का स्टाफ़ ही रद्द कर सकता है।",
   "message.appointment.closed": "इस अपॉइंटमेंट में यह बदलाव नहीं किया जा सकता।",
   "message.appointment.closed_cancelled": "रद्द किए गए अपॉइंटमेंट में यह बदलाव नहीं किया जा सकता।",
   "message.appointment.closed_completed": "पूरे हो चुके अपॉइंटमेंट में यह बदलाव नहीं किया जा सकता।",

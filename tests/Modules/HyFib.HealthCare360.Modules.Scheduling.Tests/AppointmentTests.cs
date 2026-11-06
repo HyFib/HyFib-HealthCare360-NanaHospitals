@@ -60,6 +60,46 @@ public sealed class AppointmentTests
         appointment.Status.ShouldBe(AppointmentStatus.Booked);
     }
 
+    /// <summary>
+    /// Gap #35, decided by the hospital: a booking is never cancelled for non-payment by HC360. "Payment not received" is
+    /// a person's decision at the desk, so the patient, and anything that runs on its own with no one signed in, is
+    /// refused that reason, and the booking keeps its slot.
+    /// </summary>
+    [Theory]
+    [InlineData(CancellationSource.Patient, true)]
+    [InlineData(CancellationSource.System, false)]
+    [InlineData(CancellationSource.System, true)]
+    [InlineData(CancellationSource.Staff, false)]
+    public void Payment_not_received_is_a_reason_only_signed_in_staff_can_give(CancellationSource by, bool signedIn)
+    {
+        var appointment = Booked(Start, AppointmentChannel.Portal);
+        appointment.ClearDomainEvents();
+
+        var result = appointment.Cancel(CancellationReason.PaymentNotReceived, null, by, signedIn ? Guid.CreateVersion7() : null, Start.AddHours(-3));
+
+        result.Error!.Code.ShouldBe("appointment.payment_cancel_staff_only");
+        result.Error.Type.ShouldBe(ErrorType.BusinessRule);
+        appointment.Status.ShouldBe(AppointmentStatus.Booked);
+        appointment.HoldsSeat.ShouldBeTrue();
+        appointment.CancelReasonCode.ShouldBeNull();
+        appointment.DomainEvents.OfType<AppointmentCancelled>().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Staff_at_the_desk_may_cancel_a_booking_because_the_payment_was_not_received()
+    {
+        var appointment = Booked(Start, AppointmentChannel.Portal);
+        appointment.ClearDomainEvents();
+        var clerk = Guid.CreateVersion7();
+
+        appointment.Cancel(CancellationReason.PaymentNotReceived, null, CancellationSource.Staff, clerk, Start.AddHours(-3)).IsSuccess.ShouldBeTrue();
+
+        appointment.Status.ShouldBe(AppointmentStatus.Cancelled);
+        appointment.CancelledBy.ShouldBe(CancellationSource.Staff);
+        appointment.CancelledByUserId.ShouldBe(clerk);
+        appointment.DomainEvents.OfType<AppointmentCancelled>().ShouldHaveSingleItem().Reason.ShouldBe("Payment not received");
+    }
+
     [Fact]
     public void A_checked_in_appointment_cannot_be_cancelled()
     {

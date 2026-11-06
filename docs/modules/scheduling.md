@@ -47,6 +47,13 @@ Doctor OPD schedules, appointments, front-desk check-in and Online Doctor Appoin
   `isTelehealth: false` moves it to an in-person visit, and cancelling works as always.
 * Rescheduling books the new slot and marks the old row `Rescheduled` in the same transaction; online prepayment moves
   to the new booking; the freed slot is offered to the waitlist.
+* **An unpaid booking is never cancelled for non-payment by HC360** (gap #35, decided by the hospital on
+  2026-11-06). A portal booking whose online payment was started and never made stays booked and keeps its slot:
+  a payment that failed, expired or was abandoned changes nothing, reminders go out as for any booking, and the
+  patient can pay again online until the slot (`canPay`, while a gateway is set up) or pay at the hospital. Only a
+  member of staff who is signed in can cancel with `PaymentNotReceived`; the domain refuses that reason from the
+  patient or from anything that runs on its own (422 `appointment.payment_cancel_staff_only`), so no job, event
+  handler or gateway answer can give it.
 * Check-in is allowed on the appointment day only. It calls `VisitService.CreateAsync` (visit + queue token; no token
   for telehealth). If the patient already has an open OP visit today in that department, the appointment is linked to
   it (`linkedExistingVisit: true`).
@@ -228,5 +235,3 @@ No billable service codes are seeded (consultation charges come from Billing's c
 
 * **Orders replaced before the replaced orders were kept** (migration `AppointmentReplacedOrders`) are not known: a
   payment on one shows only in the settlement, as a payment without a receipt, as before.
-* **Cancelling unpaid online bookings.** A portal booking whose online payment was started but never made stays
-  booked; nothing cancels it for non-payment (`PaymentNotReceived` exists for staff to choose).
