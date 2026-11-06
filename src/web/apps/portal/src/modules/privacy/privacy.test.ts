@@ -46,8 +46,10 @@ import { dataSummaryDocument } from './print';
 
 const en = createTranslator('en');
 const hi = createTranslator('hi');
+const ta = createTranslator('ta');
 const fen = formattersFor('en');
 const fhi = formattersFor('hi');
+const fta = formattersFor('ta');
 const TODAY = '2026-09-30';
 const EVIL = '<img src=x onerror=alert(1)>';
 
@@ -144,6 +146,8 @@ describe('privacy requests', () => {
     expect(erasureOutcome(erasure, en, fen)).toEqual({
       erased: ['Optional messages were stopped.', 'Your portal account was closed.', 'somethingNew'],
       kept: `Some records must be kept until ${fen.calendarDate('2034-10-01')}, as the law requires.`,
+      accessLog:
+        'The access log that shows who opened or changed your record is kept permanently and never changed, as the hospital decided.',
     });
     expect(erasureOutcome({ ...erasure, retainedPermanently: true }, hi, fhi)?.kept).toBe(
       'कानून के अनुसार कुछ रिकॉर्ड हमेशा रखने होंगे।',
@@ -151,6 +155,12 @@ describe('privacy requests', () => {
     expect(
       erasureOutcome({ ...erasure, erasedItems: [], retainedUntil: null, retainedPermanently: false }, en, fen),
     ).toBeNull();
+    // Nothing kept by law, but the access log is: the patient is not told that nothing was kept.
+    const lawKeepsNothing = erasureOutcome({ ...erasure, retainedUntil: null, retainedPermanently: false }, hi, fhi);
+    expect(lawKeepsNothing?.kept).toBeNull();
+    expect(lawKeepsNothing?.accessLog).toBe(
+      'वह लॉग जो दिखाता है कि आपका रिकॉर्ड किसने खोला या बदला, हमेशा रखा जाता है और इसमें कभी बदलाव नहीं किया जाता। यह अस्पताल का फ़ैसला है।',
+    );
     expect(erasureOutcome({ ...erasure, type: 'Correction' }, en, fen)).toBeNull();
   });
 
@@ -415,6 +425,7 @@ describe('the data summary', () => {
     expect(retentionText(category('x', 'Audit'), forever, hi, fhi)).toBe(
       'हमेशा के लिए, और इसमें कभी बदलाव नहीं किया जाता।',
     );
+    expect(retentionText(category('x', 'Audit'), forever, ta, fta)).toBe('நிரந்தரமாக, ஒருபோதும் திருத்தப்படாமல்.');
   });
 
   it('keeps the server sentence for a kind it does not know, or when the periods are missing', () => {

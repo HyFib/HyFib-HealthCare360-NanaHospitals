@@ -530,6 +530,11 @@ describe('Your privacy', () => {
     expect(
       screen.getByText(`Some records must be kept until ${en.calendarDate('2034-10-01')}, as the law requires.`),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The access log that shows who opened or changed your record is kept permanently and never changed, as the hospital decided.',
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText(REPLY)).toBeInTheDocument();
     expect(screen.getByText('Data erased')).toBeInTheDocument();
     expect(screen.queryByText(ERASED_TEXT)).not.toBeInTheDocument();
@@ -680,7 +685,22 @@ describe('making a request', () => {
       await screen.findByRole('heading', { name: 'Ask us to erase your data', level: 1 }, SLOW),
     ).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'What we can erase' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'What the law requires us to keep' })).toBeInTheDocument();
+    const lawKeeps = screen.getByRole('heading', { name: 'What the law requires us to keep' }).closest('section')!;
+    expect(
+      within(lawKeeps)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      'Your medical records, for the years that medical rules require. Records of medico-legal cases are kept permanently.',
+      'Your bills and payments, for the years that tax law requires.',
+    ]);
+    // The access log is kept permanently by the hospital's decision, not the law's, and is said so apart from the list.
+    expect(within(lawKeeps).getByText(/This is the hospital's own decision, not the law's/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'I understand that the hospital must keep my medical records and bills for as long as the law requires, and keeps the access log permanently.',
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/you will be signed out on every phone and computer/)).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: /^Me/ }));
     await user.type(screen.getByRole('textbox', { name: /What would you like us to erase/ }), 'Stop all messages.');

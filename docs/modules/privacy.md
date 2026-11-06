@@ -280,7 +280,13 @@ withdrawing it ends the earlier ones.
 - **Consent managers** (Rules r4), **Significant Data Fiduciary** duties (DPIA and audit), and **cross-border
   transfer** rules.
 - **Erasure and the audit trail.** Erasure never touches the audit trail: it is append-only and hash-chained, and its
-  change details keep the old values. The hospital keeps it permanently, and the data summary and erasure answers say
-  so ("Permanently, and never edited"; "The record access log is kept permanently and never edited"). The printed privacy
-  notice must say the same: when the hospital updates its text, it raises `privacy.noticeVersion` so patients are shown
-  the new version. Erased data also stays in backups until they expire (30 days by default).
+  change details keep the old values. The hospital keeps it permanently, and everything that tells a patient about it
+  says so, apart from what the law keeps, since the law does not require it: the data summary ("Permanently, and never
+  edited"), the erasure answer ("The record access log is kept permanently and never edited"), the portal's erasure form
+  (the access log is under the list of what the law keeps, as the hospital's own decision, and the confirmation names it
+  apart), a completed request in the portal and in the staff app (said even when the law keeps nothing else), and the
+  portal's public privacy notice (the access log, with times and network addresses, kept permanently; other security
+  records deleted after a while). A request's `retainedUntil` and `retainedPermanently` describe what the law keeps
+  only. The printed privacy notice must say the same: when the hospital updates its text, it raises
+  `privacy.noticeVersion` so patients are shown the new version. Erased data also stays in backups until they expire
+  (30 days by default).

@@ -245,6 +245,10 @@ function RequestDetail({ request, back }: { request: PortalDataRequestDetail; ba
               <span>{erasure.kept}</span>
             </p>
           )}
+          <p className={styles.kept}>
+            <LockClosedRegular className={styles.keptIcon} aria-hidden />
+            <span>{erasure.accessLog}</span>
+          </p>
         </ReportCard>
       )}
 
