@@ -239,7 +239,10 @@ internal static class PlatformSql
     /// <summary>The advisory lock that has nodes starting at the same time put the triggers right one at a time.</summary>
     internal const long AdvisoryLockKey = 4_247_364;
 
-    /// <summary>How long making a trigger again waits for its lock, and audit writes behind it; then start-up stops.</summary>
+    /// <summary>
+    /// How long putting a trigger back waits for the audit trail's locks in all (the table's, then each month's), and audit
+    /// writes behind it; then start-up stops.
+    /// </summary>
     public static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(2);
 
     public const string PostMigrationScript = """
@@ -307,6 +310,10 @@ internal static class PlatformSql
             wanted record;
             found record;
             target regclass;
+            locked boolean := false;
+            part record;
+            allowed text;
+            deadline timestamptz;
         BEGIN
             -- pg_get_triggerdef names a function in full only when it is not on the search path.
             PERFORM set_config('search_path', 'pg_catalog', true);
@@ -338,6 +345,35 @@ internal static class PlatformSql
                   INTO found
                   FROM pg_trigger g
                  WHERE g.tgrelid = wanted.relation AND g.tgname = wanted.trigger_name;
+                IF NOT locked AND (found.definition IS DISTINCT FROM format(wanted.definition, wanted.name) OR found.enabled <> 'O') THEN
+                    -- Before the first change, the audit trail and then every month, in the order an audit write takes
+                    -- them. Alone, DROP TRIGGER locks each month and only then the table, and ALTER or CREATE a month's
+                    -- trigger locks that month: a write that holds the table and waits for its month would then wait for
+                    -- this, as this waits for it, and PostgreSQL would end one of them (40P01, deadlock detected).
+                    -- From the table's lock on, every audit write waits behind this, so the months share what is left of
+                    -- lock_timeout: PostgreSQL would give each lock all of it, and a write could wait for every month.
+                    allowed := current_setting('lock_timeout');
+                    deadline := clock_timestamp() + allowed::interval;
+                    LOCK TABLE ONLY audit.audit_events IN ACCESS EXCLUSIVE MODE;
+                    FOR part IN
+                        WITH RECURSIVE parts (relid, depth) AS (
+                            SELECT i.inhrelid, 1 FROM pg_inherits i WHERE i.inhparent = 'audit.audit_events'::regclass
+                            UNION ALL
+                            SELECT i.inhrelid, parts.depth + 1 FROM pg_inherits i JOIN parts ON i.inhparent = parts.relid)
+                        SELECT parts.relid::regclass AS relation FROM parts ORDER BY parts.depth, parts.relid
+                    LOOP
+                        IF allowed::interval > interval '0' THEN
+                            IF clock_timestamp() >= deadline THEN
+                                RAISE EXCEPTION 'canceling statement due to lock timeout' USING ERRCODE = 'lock_not_available';
+                            END IF;
+                            PERFORM set_config('lock_timeout',
+                                ceil(extract(epoch FROM deadline - clock_timestamp()) * 1000)::bigint || 'ms', true);
+                        END IF;
+                        EXECUTE format('LOCK TABLE ONLY %s IN ACCESS EXCLUSIVE MODE', part.relation);
+                    END LOOP;
+                    PERFORM set_config('lock_timeout', allowed, true);
+                    locked := true;
+                END IF;
                 IF found.definition IS DISTINCT FROM format(wanted.definition, wanted.name) THEN
                     -- A partition's copy of a row trigger cannot be made alone: the table's is made again, with its copies.
                     target := CASE WHEN wanted.inherited THEN 'audit.audit_events'::regclass ELSE wanted.relation END;
