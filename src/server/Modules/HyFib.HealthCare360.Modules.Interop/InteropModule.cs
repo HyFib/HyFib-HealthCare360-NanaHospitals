@@ -8,7 +8,7 @@ namespace HyFib.HealthCare360.Modules.Interop;
 /// <summary>
 /// HL7 FHIR R4 read facade (EHR-05): Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest,
 /// DiagnosticReport, DocumentReference, Immunization and Procedure for other providers, subject to the patient's
-/// record-sharing consent, and the hospital's Practitioner and Organization directory, which needs none. ABDM
+/// record-sharing consent, and the hospital's Practitioner, Organization and Location directory, which needs none. ABDM
 /// health records (EHR-08, behind the <c>features.abdm</c> switch): discharge summaries, lab reports, consultation notes
 /// and prescriptions as FHIR documents of the NRCeS implementation guide, and the ABDM gateway client: records linked to a
 /// patient's ABHA (HIP-initiated and user-initiated linking) and sent, encrypted, to other providers under the
@@ -40,6 +40,7 @@ public sealed class InteropModule : IModule
         services.AddScoped<IFhirResourceProvider, ProcedureProvider>();
         services.AddScoped<IFhirDirectoryProvider, PractitionerDirectory>();
         services.AddScoped<IFhirDirectoryProvider, OrganizationDirectory>();
+        services.AddScoped<IFhirDirectoryProvider, LocationDirectory>();
         services.AddScoped<FhirApi>();
         FhirAuthorizationResultHandler.Register(services);
 

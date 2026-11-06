@@ -25,8 +25,8 @@ internal static class CapabilityStatementBuilder
             Date = FhirTime.Date(DateOnly.FromDateTime(now.ToOffset(FhirTime.Ist).DateTime)),
             Publisher = "HyFib",
             Description = "Read and search access to patient records for other providers (SRS EHR-05). Only patients with an active "
-                          + "record-sharing consent are returned, and every access is audited. The hospital's practitioners and facilities "
-                          + "(Practitioner, Organization) are read without one: nothing in them is a patient's.",
+                          + "record-sharing consent are returned, and every access is audited. The hospital's practitioners, facilities and "
+                          + "places of care (Practitioner, Organization, Location) are read without one: nothing in them is a patient's.",
             Kind = R4.CapabilityStatementKind.Instance,
             Software = new R4.CapabilityStatement.SoftwareComponent { Name = SoftwareName, Version = softwareVersion },
             Implementation = new R4.CapabilityStatement.ImplementationComponent
@@ -56,7 +56,7 @@ internal static class CapabilityStatementBuilder
                               + "Records outside every consent that admits the caller are left out of searches and refused on read "
                               + "(403 consent-required). Counselling notes go only under a consent that names them, labelled restricted "
                               + "(v3 confidentiality R). Restricted (VIP) records also need patients.restricted.read or an emergency "
-                              + "(break-the-glass) grant. Practitioner and Organization need no consent. Every read and search is recorded in the "
+                              + "(break-the-glass) grant. Practitioner, Organization and Location need no consent. Every read and search is recorded in the "
                               + "tamper-evident audit trail with the stated purpose.",
             },
         };

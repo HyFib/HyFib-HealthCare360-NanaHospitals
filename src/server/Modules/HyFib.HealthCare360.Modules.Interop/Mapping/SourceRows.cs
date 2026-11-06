@@ -66,6 +66,9 @@ internal sealed record AdmissionRow
     public DateTimeOffset? CancelledAt { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
+
+    /// <summary>The beds of the stay, in order: loaded for the read API's Encounter only (ABDM documents carry no location).</summary>
+    public IReadOnlyList<BedStayRow> Beds { get; init; } = [];
 }
 
 /// <summary>Patients module <see cref="Visit"/>, with its admission when it is an in-patient stay.</summary>

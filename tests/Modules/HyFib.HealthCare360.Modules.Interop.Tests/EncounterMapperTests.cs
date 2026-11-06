@@ -112,6 +112,36 @@ public sealed class EncounterMapperTests
         encounter.Hospitalization.DischargeDisposition.Coding.ShouldHaveSingleItem().Code.ShouldBe("home");
         encounter.Participant.ShouldContain(p => p.Type[0].Coding[0].Code == "ADM");
         encounter.Meta.LastUpdated.ShouldBe(TestData.Now.AddMinutes(-5));
+        encounter.Location.ShouldBeEmpty("an admission loaded without its beds (as for an ABDM document) names no place");
+    }
+
+    [Fact]
+    public void A_stay_names_the_ward_and_bed_of_each_part_of_it_with_when_and_the_last_is_where_the_patient_is()
+    {
+        Guid icu = Guid.Parse("01923a4b-0000-7000-8000-00000000c101"), icuBed = Guid.Parse("01923a4b-0000-7000-8000-00000000c104");
+        Guid ward = Guid.Parse("01923a4b-0000-7000-8000-00000000c106"), bed = Guid.Parse("01923a4b-0000-7000-8000-00000000c107");
+        var refs = new ReferenceDirectory
+        {
+            Wards = new Dictionary<Guid, string> { [icu] = "Intensive Care Unit", [ward] = "General Ward - Female" },
+            Beds = new Dictionary<Guid, string> { [icuBed] = "ICU-03", [bed] = "GWF-07" },
+            Linked = true,
+        };
+        var movedOut = TestData.Now.AddDays(-2);
+        var stay = Admission(AdmissionStatus.Admitted, null) with
+        {
+            Beds = [new BedStayRow(icuBed, icu, TestData.Now.AddDays(-4), movedOut), new BedStayRow(bed, ward, movedOut, null)],
+        };
+
+        var encounter = EncounterMapper.FromVisit(Visit(VisitType.InPatient, VisitStatus.InProgress) with { Admission = stay }, refs);
+
+        encounter.Location.Select(l => (l.Location.Reference, l.Location.Display, l.Status, l.PhysicalType.Coding[0].Code, l.Period.Start, l.Period.End))
+            .ShouldBe([
+                ($"Location/ward-{icu:D}", "Intensive Care Unit", R4.Encounter.EncounterLocationStatus.Completed, "wa", "2026-09-21T10:30:00+05:30", "2026-09-23T10:30:00+05:30"),
+                ($"Location/bed-{icuBed:D}", "ICU-03", R4.Encounter.EncounterLocationStatus.Completed, "bd", "2026-09-21T10:30:00+05:30", "2026-09-23T10:30:00+05:30"),
+                ($"Location/ward-{ward:D}", "General Ward - Female", R4.Encounter.EncounterLocationStatus.Active, "wa", "2026-09-23T10:30:00+05:30", null),
+                ($"Location/bed-{bed:D}", "GWF-07", R4.Encounter.EncounterLocationStatus.Active, "bd", "2026-09-23T10:30:00+05:30", null),
+            ]);
+        encounter.Location.ShouldAllBe(l => l.Location.Type == "Location" && l.PhysicalType.Coding[0].System == "http://terminology.hl7.org/CodeSystem/location-physical-type");
     }
 
     [Fact]

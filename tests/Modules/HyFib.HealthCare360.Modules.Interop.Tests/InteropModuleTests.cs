@@ -102,7 +102,7 @@ public sealed class InteropModuleTests
     [Fact]
     public void Registers_one_provider_per_directory_resource_type() =>
         Services().Where(d => d.ServiceType == typeof(IFhirDirectoryProvider)).Select(d => d.ImplementationType!.Name)
-            .ShouldBe([nameof(PractitionerDirectory), nameof(OrganizationDirectory)], ignoreOrder: true);
+            .ShouldBe([nameof(PractitionerDirectory), nameof(OrganizationDirectory), nameof(LocationDirectory)], ignoreOrder: true);
 
     [Fact]
     public void Decorates_the_authorization_result_handler_already_registered()

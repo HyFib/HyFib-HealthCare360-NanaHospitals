@@ -11,6 +11,8 @@ internal sealed class ReferenceIds
     public HashSet<Guid> Departments { get; } = [];
     public HashSet<Guid> Facilities { get; } = [];
     public HashSet<Guid> Admissions { get; } = [];
+    public HashSet<Guid> Wards { get; } = [];
+    public HashSet<Guid> Beds { get; } = [];
 
     public ReferenceIds Practitioner(params Guid?[] ids) => Add(Practitioners, ids);
 
@@ -19,6 +21,10 @@ internal sealed class ReferenceIds
     public ReferenceIds Facility(params Guid?[] ids) => Add(Facilities, ids);
 
     public ReferenceIds Admission(params Guid?[] ids) => Add(Admissions, ids);
+
+    public ReferenceIds Ward(params Guid?[] ids) => Add(Wards, ids);
+
+    public ReferenceIds Bed(params Guid?[] ids) => Add(Beds, ids);
 
     private ReferenceIds Add(HashSet<Guid> set, Guid?[] ids)
     {
@@ -35,8 +41,8 @@ internal sealed class ReferenceIds
 }
 
 /// <summary>
-/// Loads practitioner, department and facility names (and admission → visit links) for one page in a few small
-/// queries. Deleted masters still resolve, so historical records keep their doctor's name.
+/// Loads practitioner, department, facility, ward and bed names (and admission → visit links) for one page in a few
+/// small queries. Deleted masters still resolve, so historical records keep their doctor's name and their bed.
 /// </summary>
 internal sealed class ReferenceDirectoryLoader(HospitalDbContext db)
 {
@@ -46,6 +52,8 @@ internal sealed class ReferenceDirectoryLoader(HospitalDbContext db)
         var departmentIds = ids.Departments.ToList();
         var facilityIds = ids.Facilities.ToList();
         var admissionIds = ids.Admissions.ToList();
+        var wardIds = ids.Wards.ToList();
+        var bedIds = ids.Beds.ToList();
 
         var practitioners = practitionerIds.Count == 0
             ? []
@@ -75,12 +83,28 @@ internal sealed class ReferenceDirectoryLoader(HospitalDbContext db)
                 .Select(a => new { a.Id, a.VisitId })
                 .ToListAsync(ct);
 
+        var wards = wardIds.Count == 0
+            ? []
+            : await db.Set<Ward>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+                .Where(w => wardIds.Contains(w.Id))
+                .Select(w => new { w.Id, w.Name })
+                .ToListAsync(ct);
+
+        var beds = bedIds.Count == 0
+            ? []
+            : await db.Set<Bed>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+                .Where(b => bedIds.Contains(b.Id))
+                .Select(b => new { b.Id, b.Label })
+                .ToListAsync(ct);
+
         return new ReferenceDirectory
         {
             Practitioners = practitioners.ToDictionary(p => p.Id, p => new PractitionerInfo(p.DisplayName, p.HprId)),
             Departments = departments.ToDictionary(d => d.Id, d => d.Name),
             Facilities = facilities.ToDictionary(f => f.Id, f => new FacilityInfo(f.Name, f.HfrId)),
             AdmissionVisits = admissions.ToDictionary(a => a.Id, a => a.VisitId),
+            Wards = wards.ToDictionary(w => w.Id, w => w.Name),
+            Beds = beds.ToDictionary(b => b.Id, b => b.Label),
             Linked = true,
         };
     }

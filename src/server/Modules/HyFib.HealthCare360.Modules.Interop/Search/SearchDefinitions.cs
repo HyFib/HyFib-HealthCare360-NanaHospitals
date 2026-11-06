@@ -194,6 +194,18 @@ internal static class SearchDefinitions
                 new("active", R4.SearchParamType.Token, "true | false: in use, or taken out of use."),
                 LastUpdatedParameter,
             ]),
+        new(FhirResourceTypes.Location,
+            "The places of care of the reader's facility: its wards (ward-{id}), the rooms in them (room-{id}) and their beds (bed-{id}), base FHIR R4 (the ABDM guide has no Location profile). An in-patient Encounter names the ward and the bed of each part of the stay. No consent is needed: nothing here is a patient's.",
+            [
+                IdParameter,
+                new("identifier", R4.SearchParamType.Token, "Ward code (urn:hc360:ward) or bed label (urn:hc360:bed); a value without a system matches either."),
+                new("name", R4.SearchParamType.String, "Words of the name: each must start a word of it (case-insensitive)."),
+                new("type", R4.SearchParamType.Token, "Kind of ward (v3 RoleCode): HU hospital unit, ICU, PEDICU, PEDNICU or ER; a room or bed has its ward's."),
+                new("partof", R4.SearchParamType.Reference, "The ward or room a place is in: Location/ward-{id} or Location/room-{id}."),
+                new("organization", R4.SearchParamType.Reference, "The facility: Organization/{id}."),
+                new("status", R4.SearchParamType.Token, "active | inactive: in use, or taken out of use."),
+                LastUpdatedParameter,
+            ]),
     ];
 
     public static ResourceSearchDefinition? Find(string? type) => All.FirstOrDefault(d => string.Equals(d.Type, type, StringComparison.Ordinal));

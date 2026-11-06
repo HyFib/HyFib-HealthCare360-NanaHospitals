@@ -9,8 +9,8 @@ namespace HyFib.HealthCare360.Modules.Interop.Mapping;
 /// <summary>
 /// Encounters come from two places. A front-office visit (<c>Encounter/visit-{id}</c>) is the hospital encounter; for
 /// an in-patient visit it carries the admission (period, admit source, discharge disposition, admitting and treating
-/// doctors). A clinician's encounter note (<c>Encounter/enc-{id}</c>) is a sub-encounter <c>partOf</c> its visit or
-/// admission.
+/// doctors) and, in the read API, where the patient stayed: the ward and the bed of each part of the stay. A
+/// clinician's encounter note (<c>Encounter/enc-{id}</c>) is a sub-encounter <c>partOf</c> its visit or admission.
 /// </summary>
 internal static class EncounterMapper
 {
@@ -50,6 +50,11 @@ internal static class EncounterMapper
                 AdmitSource = AdmitSource(admission.Source, admission.Type),
                 DischargeDisposition = admission.DischargedAt is not null && admission.DischargeType is { } discharge ? DischargeDisposition(discharge) : null,
             };
+            foreach (var stay in admission.Beds)
+            {
+                AddLocation(encounter, refs.Ward(stay.WardId), "wa", "Ward", stay);
+                AddLocation(encounter, refs.Bed(stay.BedId), "bd", "Bed", stay);
+            }
         }
 
         return encounter;
@@ -165,6 +170,26 @@ internal static class EncounterMapper
         AdmissionType.TransferIn => "Transfer-in admission",
         _ => "Elective admission",
     };
+
+    /// <summary>
+    /// Where the patient was: the ward they were in then (a bed may move to another ward later) and the bed, with when,
+    /// and whether they are still there.
+    /// </summary>
+    private static void AddLocation(R4.Encounter encounter, R4.ResourceReference? place, string physicalType, string display, BedStayRow stay)
+    {
+        if (place is null)
+        {
+            return;
+        }
+
+        encounter.Location.Add(new R4.Encounter.LocationComponent
+        {
+            Location = place,
+            Status = stay.To is null ? R4.Encounter.EncounterLocationStatus.Active : R4.Encounter.EncounterLocationStatus.Completed,
+            PhysicalType = FhirElements.Concept(FhirSystems.LocationPhysicalType, physicalType, display),
+            Period = Period(stay.From, stay.To),
+        });
+    }
 
     private static R4.Period Period(DateTimeOffset start, DateTimeOffset? end) => new()
     {

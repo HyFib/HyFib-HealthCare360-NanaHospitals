@@ -142,6 +142,15 @@ internal static class SearchValues
                 "active" => Active(o.Active),
                 _ => [],
             },
+            R4.Location l => parameter switch
+            {
+                "identifier" => l.Identifier.Select(i => (i.System, i.Value)),
+                "type" => Codings(l.Type),
+                "status" => Literal(FhirSystems.LocationStatus, l.Status),
+                "partof" => Reference(l.PartOf),
+                "organization" => Reference(l.ManagingOrganization),
+                _ => [],
+            },
             _ => [],
         };
     }
@@ -151,10 +160,15 @@ internal static class SearchValues
     {
         (R4.Practitioner p, "name") => p.Name.SelectMany(n => new[] { n.Text, n.Family }.Concat(n.Given).Concat(n.Prefix)).OfType<string>(),
         (R4.Organization o, "name") => o.Name is { } name ? [name] : [],
+        (R4.Location l, "name") => l.Name is { } name ? [name] : [],
         _ => [],
     };
 
     private static IEnumerable<(string? System, string? Code)> Active(bool? active) => [(null, active == false ? "false" : "true")];
+
+    /// <summary>A reference matches as <c>{Type}/{id}</c> or as the bare id (the search value is made relative first).</summary>
+    private static IEnumerable<(string? System, string? Code)> Reference(R4.ResourceReference? reference) =>
+        reference?.Reference is { } target ? [(null, target), (null, target[(target.IndexOf('/', StringComparison.Ordinal) + 1)..])] : [];
 
     public static IEnumerable<DateRange> Dates(R4.Resource resource, string parameter)
     {
@@ -186,7 +200,7 @@ internal static class SearchValues
         {
             R4.Condition => "recorded-date",
             R4.MedicationRequest => "authoredon",
-            R4.Patient or R4.Practitioner or R4.Organization => null,
+            R4.Patient or R4.Practitioner or R4.Organization or R4.Location => null,
             _ => "date",
         };
 
