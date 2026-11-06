@@ -19,7 +19,7 @@ import { todayIso } from '@hc360/core';
 import { useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { otApi, otKeys, type SurgeryDetail } from './api';
+import { givenBySurgeon, otApi, otKeys, type SurgeryDetail } from './api';
 import { planGate, procedureWithSide, slotConflicts } from './logic';
 import { ConflictAlert } from './OtBadges';
 import { applyFormErrors } from './shared/errors';
@@ -84,8 +84,8 @@ export function ScheduleDialog({
   const moving = booking.status === 'Scheduled';
   const teamMissing = !booking.surgeonId
     ? 'No operating surgeon is chosen.'
-    : booking.anaesthesiaType !== 'Local' && !booking.anaesthetistId
-      ? 'No anaesthetist is chosen (needed for every technique except local anaesthesia).'
+    : !givenBySurgeon(booking.anaesthesiaType) && !booking.anaesthetistId
+      ? 'No anaesthetist is chosen (needed for every technique except local and topical anaesthesia).'
       : null;
 
   const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: schedule.isPending, onClose });
@@ -189,6 +189,7 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                 form={form}
                 surgeonName={booking.surgeonName}
                 anaesthetistName={booking.anaesthetistName}
+                nurseName={booking.nurseName}
                 showPreferredDate={!holdsSlot}
               />
               {conflicts ? (

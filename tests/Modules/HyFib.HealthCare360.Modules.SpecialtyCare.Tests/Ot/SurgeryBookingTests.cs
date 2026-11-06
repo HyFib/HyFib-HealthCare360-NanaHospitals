@@ -20,7 +20,9 @@ public sealed class SurgeryBookingTests
     [InlineData(AnaesthesiaType.GA)]
     [InlineData(AnaesthesiaType.Spinal)]
     [InlineData(AnaesthesiaType.Sedation)]
-    public void Scheduling_needs_an_anaesthetist_except_for_local_anaesthesia(AnaesthesiaType type)
+    [InlineData(AnaesthesiaType.Regional)]
+    [InlineData(AnaesthesiaType.Epidural)]
+    public void Scheduling_needs_an_anaesthetist_except_for_local_and_topical_anaesthesia(AnaesthesiaType type)
     {
         var booking = TestData.NewBooking(type);
         booking.AnaesthetistId = null;
@@ -28,10 +30,13 @@ public sealed class SurgeryBookingTests
         booking.Schedule(Theatre, TestData.Now.AddHours(1), TestData.Now.AddHours(2), TestData.Now).Error!.Fields!.ShouldContainKey("anaesthetistId");
     }
 
-    [Fact]
-    public void Local_anaesthesia_case_can_be_scheduled_without_anaesthetist()
+    [Theory]
+    [InlineData(AnaesthesiaType.Local)]
+    [InlineData(AnaesthesiaType.Topical)]
+    public void Local_or_topical_anaesthesia_case_can_be_scheduled_without_anaesthetist(AnaesthesiaType type)
     {
-        var booking = TestData.NewBooking(AnaesthesiaType.Local);
+        var booking = TestData.NewBooking(type);
+        booking.AnaesthetistId = null;
 
         booking.Schedule(Theatre, TestData.Now.AddHours(1), TestData.Now.AddHours(2), TestData.Now).IsSuccess.ShouldBeTrue();
 

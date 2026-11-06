@@ -75,6 +75,7 @@ export const anaesthesiaLabel: Record<AnaesthesiaType, string> = {
   Regional: 'Regional block',
   Local: 'Local (given by the surgeon)',
   Sedation: 'Sedation',
+  Topical: 'Topical (given by the surgeon)',
 };
 
 export const anaesthesiaShort: Record<AnaesthesiaType, string> = {
@@ -84,6 +85,7 @@ export const anaesthesiaShort: Record<AnaesthesiaType, string> = {
   Regional: 'Block',
   Local: 'Local',
   Sedation: 'Sedation',
+  Topical: 'Topical',
 };
 
 export const theatreTypeLabel: Record<TheatreType, string> = {

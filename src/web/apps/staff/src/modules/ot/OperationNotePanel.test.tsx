@@ -74,6 +74,8 @@ const booking: SurgeryDetail = {
   chargeStatus: 'NotDue',
   chargeError: null,
   version: 11,
+  nurseId: null,
+  nurseName: null,
 };
 
 const note: OperationNoteDto = {

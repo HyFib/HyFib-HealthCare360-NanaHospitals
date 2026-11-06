@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Analytics.Reports;
 using HyFib.HealthCare360.Modules.Analytics.Reports.Definitions;
+using HyFib.HealthCare360.Modules.Analytics.Tests.TestSupport;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre;
 
@@ -18,6 +19,7 @@ public sealed class OtRegisterTests
     private static readonly Guid Surgeon = Guid.CreateVersion7();
     private static readonly Guid Anaesthetist = Guid.CreateVersion7();
     private static readonly Guid Assistant = Guid.CreateVersion7();
+    private static readonly Guid Nurse = Guid.CreateVersion7();
     private static readonly Guid Ward = Guid.CreateVersion7();
     private static readonly Guid Icu = Guid.CreateVersion7();
 
@@ -26,6 +28,7 @@ public sealed class OtRegisterTests
         [Surgeon] = new(Surgeon, "Dr. Arun Kumar", "MS, MCh (Surgical Gastroenterology)", "TNMC", "84512"),
         [Anaesthetist] = new(Anaesthetist, "Dr. Meena Raj", "MD (Anaesthesia)", "TNMC", "90211"),
         [Assistant] = new(Assistant, "Dr. Vivek S", "MBBS", null, "112233"),
+        [Nurse] = new(Nurse, "Sr. Lakshmi P", "B.Sc. Nursing", "TNNMC", "NR-56789"),
     };
 
     private static readonly OtRegister.Viewer Doctor = new(FullContacts: false, ReadRestricted: false, SensitiveCategory.None);
@@ -41,7 +44,7 @@ public sealed class OtRegisterTests
         [
             "S.No", "OT case no.", "OT", "Date", "Time from", "Time to", "Duration", "IP no.", "UHID", "Transferred to", "Name", "Age / sex", "Address",
             "ID no.", "Mobile no.", "Provisional diagnosis", "Name of the surgery", "Final diagnosis & operating notes", "Anaesthesia given",
-            "Drug name & dose", "Surgeon", "Anaesthetist", "Assisting doctor", "Remarks",
+            "Drug name & dose", "Surgeon", "Anaesthetist", "Assisting doctor", "Assisting nurse / OT in-charge", "Remarks",
         ]);
         Register.Columns.Where(c => c.IsPatientIdentifier).Select(c => c.Key).ShouldBe(["uhid", "patient"]);
     }
@@ -53,6 +56,7 @@ public sealed class OtRegisterTests
     [InlineData(AnaesthesiaType.Regional, "Nerve block")]
     [InlineData(AnaesthesiaType.Sedation, "IV / monitored sedation")]
     [InlineData(AnaesthesiaType.Local, "Local")]
+    [InlineData(AnaesthesiaType.Topical, "Topical")]
     public void Anaesthesia_is_written_in_the_registers_words(AnaesthesiaType type, string written) =>
         OtRegister.AnaesthesiaLabel(type).ShouldBe(written);
 
@@ -157,6 +161,7 @@ public sealed class OtRegisterTests
             "Dr. Arun Kumar, MS, MCh (Surgical Gastroenterology), Reg. 84512 (TNMC) · operation note signed by Dr. Arun Kumar, 06 Nov 2026, 11:40 am");
         Cell(row, "anaesthetist").ShouldBe("Dr. Meena Raj, MD (Anaesthesia), Reg. 90211 (TNMC) · anaesthesia record signed by Dr. Meena Raj, 06 Nov 2026, 11:30 am");
         Cell(row, "assistants").ShouldBe("Dr. Vivek S, MBBS, Reg. 112233");
+        Cell(row, "nurse").ShouldBe("Sr. Lakshmi P, B.Sc. Nursing, Reg. NR-56789 (TNNMC)");
         Cell(row, "remarks").ShouldBe("Emergency. Complications: Hypotension after induction, treated");
     }
 
@@ -256,6 +261,68 @@ public sealed class OtRegisterTests
         Cell(row, "surgery").ShouldBe("Emergency laparotomy, perforated duodenal ulcer closure, right");
     }
 
+    [Fact]
+    public void Topical_anaesthesia_is_the_surgeons_and_a_case_without_a_named_nurse_says_so()
+    {
+        var row = Row(Case() with { AnaesthesiaType = AnaesthesiaType.Topical, AnaesthetistId = null, NurseId = null }, Patient(), Note(), null, Doctor);
+
+        Cell(row, "anaesthesia").ShouldBe("Topical");
+        Cell(row, "anaesthetist").ShouldBe("Topical by the surgeon");
+        Cell(row, "nurse").ShouldBe("—");
+    }
+
+    [Fact]
+    public void A_completed_case_lacks_signed_records_until_its_note_and_any_anaesthetists_record_are_signed()
+    {
+        OtRegister.LacksSignedRecords(Case(), Note(), Record()).ShouldBeFalse();
+        OtRegister.LacksSignedRecords(Case(), Note() with { SignedAt = null }, Record()).ShouldBeTrue();
+        OtRegister.LacksSignedRecords(Case(), null, Record()).ShouldBeTrue();
+        OtRegister.LacksSignedRecords(Case(), Note(), Record() with { SignedAt = null }).ShouldBeTrue();
+        OtRegister.LacksSignedRecords(Case(), Note(), null).ShouldBeTrue();
+
+        // Local and topical anaesthesia are the surgeon's: the signed operation note is the record of them.
+        var bySurgeon = Case() with { AnaesthetistId = null };
+        OtRegister.LacksSignedRecords(bySurgeon with { AnaesthesiaType = AnaesthesiaType.Local }, Note(), null).ShouldBeFalse();
+        OtRegister.LacksSignedRecords(bySurgeon with { AnaesthesiaType = AnaesthesiaType.Topical }, Note(), null).ShouldBeFalse();
+
+        // Booked under local, but the anaesthesia record says general anaesthesia was given: that record must be signed.
+        OtRegister.LacksSignedRecords(bySurgeon with { AnaesthesiaType = AnaesthesiaType.Local }, Note(), Record() with { SignedAt = null }).ShouldBeTrue();
+
+        // A case still in the theatre is not counted yet.
+        OtRegister.LacksSignedRecords(Case() with { Status = SurgeryStatus.InProgress, CompletedAt = null }, null, null).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task The_headline_counts_the_completed_cases_still_without_their_signed_records()
+    {
+        // Two operations completed with neither note nor anaesthesia record yet (one under topical anaesthesia, which needs
+        // only the note), one still in the theatre.
+        var cases = new List<OtRegister.Case>
+        {
+            Case(),
+            Case() with { AnaesthesiaType = AnaesthesiaType.Topical, AnaesthetistId = null },
+            Case() with { Status = SurgeryStatus.InProgress, CompletedAt = null },
+        };
+        var definition = new OtRegisterReport();
+        var arguments = ReportParameterBinder.Bind(definition.Descriptor, null, ReportTestHarness.Today).Value;
+        using var db = ReportTestHarness.CreateContext(ReportTestHarness.FacilityId);
+
+        var data = await definition.RunAsync(
+            new ReportContext(db, arguments, ReportTestHarness.Now, new CasesOnly(cases), 100), TestContext.Current.CancellationToken);
+
+        data.Rows.Count.ShouldBe(3);
+        data.Summary.Single(f => f.Key == "cases").Value.ShouldBe(3);
+        data.Summary.Single(f => f.Key == "completed").Value.ShouldBe(2);
+        data.Summary.Single(f => f.Key == "unsigned").Value.ShouldBe(2);
+    }
+
+    /// <summary>Answers the register's booking query with the given cases and every other query with nothing.</summary>
+    private sealed class CasesOnly(List<OtRegister.Case> cases) : IReportQueryExecutor
+    {
+        public Task<List<T>> ListAsync<T>(IQueryable<T> query, CancellationToken ct) =>
+            Task.FromResult(typeof(T) == typeof(OtRegister.Case) ? cases.Cast<T>().ToList() : []);
+    }
+
     private static object?[] Row(OtRegister.Case c, OtRegister.Person patient, OtRegister.Note? note, OtRegister.Anaesthesia? record, OtRegister.Viewer viewer) =>
         OtRegister.Row(7, c, "OT-1", "NHIP26000456", "SICU", patient, note, record, Team, viewer);
 
@@ -264,7 +331,7 @@ public sealed class OtRegisterTests
     private static OtRegister.Case Case() => new(
         Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7(), "NHOT26000123", Guid.CreateVersion7(), SurgeryStatus.Completed,
         SurgeryPriority.Emergency, In, Out, "Exploratory laparotomy", Laterality.NotApplicable, "Peritonitis", Surgeon, [Assistant], Anaesthetist,
-        AnaesthesiaType.GA, null);
+        AnaesthesiaType.GA, null, Nurse);
 
     private static OtRegister.Person Patient() => new(
         Guid.CreateVersion7(), "NH26000099", "Murugan Selvam", Gender.Male, new DateOnly(1972, 3, 1),

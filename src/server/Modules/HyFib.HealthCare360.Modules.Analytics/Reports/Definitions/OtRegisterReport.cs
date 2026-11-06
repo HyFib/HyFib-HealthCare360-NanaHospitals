@@ -59,6 +59,7 @@ internal sealed class OtRegisterReport : ReportDefinition
             C.Text("surgeon", "Surgeon"),
             C.Text("anaesthetist", "Anaesthetist"),
             C.Text("assistants", "Assisting doctor"),
+            C.Text("nurse", "Assisting nurse / OT in-charge"),
             C.Text("remarks", "Remarks"),
         ],
         null,
@@ -78,7 +79,8 @@ internal sealed class OtRegisterReport : ReportDefinition
                 .OrderBy(b => b.InRoomAt ?? b.StartedAt).ThenBy(b => b.BookingNumber)
                 .Select(b => new OtRegister.Case(
                     b.Id, b.PatientId, b.AdmissionId, b.BookingNumber, b.TheatreId, b.Status, b.Priority, (b.InRoomAt ?? b.StartedAt)!.Value, b.CompletedAt,
-                    b.ProcedureName, b.Laterality, b.Diagnosis, b.SurgeonId, b.AssistantIds, b.AnaesthetistId, b.AnaesthesiaType, b.CancelReason)),
+                    b.ProcedureName, b.Laterality, b.Diagnosis, b.SurgeonId, b.AssistantIds, b.AnaesthetistId, b.AnaesthesiaType, b.CancelReason,
+                    b.NurseId)),
             ct);
 
         var bookingIds = cases.Select(c => c.Id).ToList();
@@ -128,7 +130,7 @@ internal sealed class OtRegisterReport : ReportDefinition
         var wards = await Names.WardsAsync(ctx, beds.SelectMany(g => g).Select(b => (Guid?)b.WardId), ct);
         var theatres = await TheatreCodesAsync(ctx, cases.Select(c => c.TheatreId), ct);
 
-        var clinicianIds = cases.SelectMany(c => c.AssistantIds.Select(id => (Guid?)id).Append(c.SurgeonId).Append(c.AnaesthetistId))
+        var clinicianIds = cases.SelectMany(c => c.AssistantIds.Select(id => (Guid?)id).Append(c.SurgeonId).Append(c.AnaesthetistId).Append(c.NurseId))
             .Concat(anaesthesia.Values.Select(r => r.AnaesthetistId)).OfType<Guid>().Distinct().ToList();
         var clinicians = (await ctx.LookupAsync(
                 ctx.Db.Set<Practitioner>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking().Where(p => clinicianIds.Contains(p.Id))
@@ -152,8 +154,7 @@ internal sealed class OtRegisterReport : ReportDefinition
             var admission = c.AdmissionId is { } admissionId ? admissions.GetValueOrDefault(admissionId) : null;
             var ward = c.AdmissionId is { } stay && c.CompletedAt is { } left ? OtRegister.WardAfter([.. beds[stay]], c.EnteredAt, left) : null;
             var transferred = c.AdmissionId is null ? "Not admitted" : ward is { } wardId ? Labels.Name(wards, wardId) : OtRegister.None;
-            if (c.Status == SurgeryStatus.Completed
-                && (note?.SignedAt is null || (record?.SignedAt is null && (record?.Technique ?? c.AnaesthesiaType) != AnaesthesiaType.Local)))
+            if (OtRegister.LacksSignedRecords(c, note, record))
             {
                 unsigned++;
             }
@@ -199,7 +200,7 @@ internal static class OtRegister
     public sealed record Case(
         Guid Id, Guid PatientId, Guid? AdmissionId, string BookingNumber, Guid? TheatreId, SurgeryStatus Status, SurgeryPriority Priority,
         DateTimeOffset EnteredAt, DateTimeOffset? CompletedAt, string ProcedureName, Laterality Laterality, string? Diagnosis, Guid? SurgeonId,
-        List<Guid> AssistantIds, Guid? AnaesthetistId, AnaesthesiaType AnaesthesiaType, string? CancelReason);
+        List<Guid> AssistantIds, Guid? AnaesthetistId, AnaesthesiaType AnaesthesiaType, string? CancelReason, Guid? NurseId = null);
 
     public sealed record Note(
         Guid BookingId, string? PreOperativeDiagnosis, string? PostOperativeDiagnosis, string ProcedurePerformed, string? Findings, string? Complications,
@@ -221,8 +222,17 @@ internal static class OtRegister
     public sealed record Viewer(bool FullContacts, bool ReadRestricted, SensitiveCategory Categories);
 
     /// <summary>
-    /// The register's own words for the technique (General, Spinal, Epidural, Nerve block, IV / monitored, Local), as the paper
-    /// lists them.
+    /// A completed case still missing a signed operation note, or a signed anaesthesia record where an anaesthetist gave the
+    /// anaesthesia (local and topical are the surgeon's, written on the operation note): the deficiency an MRD audit looks for.
+    /// The technique the anaesthesia record holds wins over the one booked.
+    /// </summary>
+    public static bool LacksSignedRecords(Case c, Note? note, Anaesthesia? record) =>
+        c.Status == SurgeryStatus.Completed
+        && (note?.SignedAt is null || (record?.SignedAt is null && !AnaesthesiaTypes.GivenBySurgeon(record?.Technique ?? c.AnaesthesiaType)));
+
+    /// <summary>
+    /// The register's own words for the technique (General, Spinal, Epidural, Nerve block, IV / monitored, Local, Topical), as
+    /// the paper lists them.
     /// </summary>
     public static string AnaesthesiaLabel(AnaesthesiaType type) => type switch
     {
@@ -232,6 +242,7 @@ internal static class OtRegister
         AnaesthesiaType.Regional => "Nerve block",
         AnaesthesiaType.Local => "Local",
         AnaesthesiaType.Sedation => "IV / monitored sedation",
+        AnaesthesiaType.Topical => "Topical",
         _ => type.ToString(),
     };
 
@@ -351,11 +362,12 @@ internal static class OtRegister
             AnaesthesiaLabel(technique),
             clinical ? Drugs(record) : Withheld,
             Signed(Credentials(c.SurgeonId is { } surgeon ? clinicians.GetValueOrDefault(surgeon) : null), "operation note", note?.SignedAt, note?.SignedByName, note is not null),
-            technique == AnaesthesiaType.Local && (record?.AnaesthetistId ?? c.AnaesthetistId) is null
-                ? "Local by the surgeon"
+            AnaesthesiaTypes.GivenBySurgeon(technique) && (record?.AnaesthetistId ?? c.AnaesthetistId) is null
+                ? $"{AnaesthesiaLabel(technique)} by the surgeon"
                 : Signed(Credentials((record?.AnaesthetistId ?? c.AnaesthetistId) is { } anaesthetist ? clinicians.GetValueOrDefault(anaesthetist) : null),
                     "anaesthesia record", record?.SignedAt, record?.SignedByName, record is not null),
             c.AssistantIds.Count == 0 ? None : string.Join("; ", c.AssistantIds.Select(a => Credentials(clinicians.GetValueOrDefault(a)))),
+            c.NurseId is { } nurse ? Credentials(clinicians.GetValueOrDefault(nurse)) : None,
             Remarks(c, note, record, clinical),
         ];
     }

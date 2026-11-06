@@ -3,6 +3,7 @@ import {
   ANAESTHESIA_TYPES,
   LATERALITIES,
   SURGERY_PRIORITIES,
+  givenBySurgeon,
   type CreateSurgeryBookingRequest,
   type SurgeryDetail,
   type UpdateSurgeryPlanRequest,
@@ -26,6 +27,7 @@ const baseSchema = z.object({
   surgeonId: z.string().nullable(),
   anaesthetistId: z.string().nullable(),
   assistantIds: z.array(z.string()).max(10, 'Add at most 10 assistants.'),
+  nurseId: z.string().nullable(),
   anaesthesiaType: z.enum(ANAESTHESIA_TYPES),
   priority: z.enum(SURGERY_PRIORITIES),
   preferredDate: z.string().nullable(),
@@ -62,8 +64,11 @@ export function surgeryFormSchema(mode: SurgeryFormMode, options: { requireTeam?
       if (needsTeam && !v.surgeonId) {
         issue('surgeonId', 'Choose the operating surgeon.');
       }
-      if (needsTeam && v.anaesthesiaType !== 'Local' && !v.anaesthetistId) {
-        issue('anaesthetistId', 'Choose the anaesthetist (required for every technique except local anaesthesia).');
+      if (needsTeam && !givenBySurgeon(v.anaesthesiaType) && !v.anaesthetistId) {
+        issue(
+          'anaesthetistId',
+          'Choose the anaesthetist (required for every technique except local and topical anaesthesia).',
+        );
       }
     }
 
@@ -93,6 +98,7 @@ export const emptySurgeryForm: SurgeryFormValues = {
   surgeonId: null,
   anaesthetistId: null,
   assistantIds: [],
+  nurseId: null,
   anaesthesiaType: 'GA',
   priority: 'Elective',
   preferredDate: null,
@@ -115,6 +121,7 @@ export function surgeryFormFromDetail(d: SurgeryDetail): SurgeryFormValues {
     surgeonId: d.surgeonId,
     anaesthetistId: d.anaesthetistId,
     assistantIds: d.assistantIds,
+    nurseId: d.nurseId,
     anaesthesiaType: d.anaesthesiaType,
     priority: d.priority,
     preferredDate: d.preferredDate,
@@ -161,6 +168,7 @@ export function toCreateRequest(v: SurgeryFormValues): CreateSurgeryBookingReque
     scheduledStart: slot?.start ?? null,
     scheduledEnd: slot?.end ?? null,
     notes: orNull(v.notes),
+    nurseId: v.nurseId,
   };
 }
 
@@ -189,5 +197,6 @@ export function toUpdateRequest(v: SurgeryFormValues, version: number): UpdateSu
     preferredDate: v.preferredDate,
     notes: orNull(v.notes),
     version,
+    nurseId: v.nurseId,
   };
 }

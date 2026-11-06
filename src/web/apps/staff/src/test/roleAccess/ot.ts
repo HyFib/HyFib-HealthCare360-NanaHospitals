@@ -290,6 +290,8 @@ const SURGERY: SurgeryDetail = {
   chargeStatus: 'NotDue',
   chargeError: null,
   version: 4,
+  nurseId: null,
+  nurseName: null,
 };
 
 const MATERIALS: SurgeryMaterialDto[] = [

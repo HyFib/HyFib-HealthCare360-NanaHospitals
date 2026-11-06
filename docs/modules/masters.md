@@ -63,7 +63,7 @@ embeds), keeping PNG transparency for logos and signatures, then stored in the f
 | POST · PUT | `/practitioners` · `/practitioners/{id}` | masters.manage | `SavePractitionerRequest` (+`version`; `takeOutOfUseAnyway` after a 409 `practitioner.work_ahead`) → 201 · 204 |
 | GET | `/services?page&pageSize&search&sort&desc&category&departmentId&active` · `/services/{id}` | masters.read | → `PagedResult<ServiceItemDto>` (sort: code, name, price, category) · `ServiceItemDto` |
 | POST · PUT | `/services` · `/services/{id}` | masters.manage | `SaveServiceItemRequest` (+`version`, `reason` for the approver) → 201 `{ id, approvalId }` · 204, or 202 with the `ApprovalRequestDto` when the price waits for approval; 409 `approval.already_requested` when a change to the price waits and this save does not fit it |
-| GET | `/lookups/departments?kind` · `/lookups/specialties` · `/lookups/practitioners?departmentId&search` · `/lookups/services?category&search` | masters.read | → active items for pickers (at most 50 doctors or services) |
+| GET | `/lookups/departments?kind` · `/lookups/specialties` · `/lookups/practitioners?departmentId&search&kind` (`kind` repeated to narrow to those kinds, e.g. `kind=Nurse&kind=Technician` for the OT nurse picker) · `/lookups/services?category&search` | masters.read | → active items for pickers (at most 50 doctors or services) |
 | GET | `/lookups/local-languages` | masters.read | → `LocalLanguageItem[]`: the languages a service may be named in (`code`, `name`), `atFacility` when one is an active facility's local language (billing.md, *The rate list*) |
 
 A save replaces every field, so screens send the whole record.
@@ -105,7 +105,7 @@ A save replaces every field, so screens send the whole record.
   own): OPD appointments booked or confirmed from now on, patients checked in to see them now, patients on the waiting
   list for a slot with them (Scheduling); video consultations no appointment stands for (Virtual care); patients admitted
   under them as consultant, discharge started too (Inpatient); surgeries asked for, scheduled, in pre-op, in theatre or
-  postponed with them as surgeon or anaesthetist (OT). Taking the doctor out of use while any is ahead is refused (409
+  postponed with them as surgeon, anaesthetist or assisting nurse / OT in-charge (OT). Taking the doctor out of use while any is ahead is refused (409
   `practitioner.work_ahead`), naming each kind with how many, when the first is and the first five by number, in the
   problem's `data.workAhead` for the screen; saving again with `takeOutOfUseAnyway` goes ahead, and the audit trail keeps
   what was ahead and who went ahead (`practitioner.out_of_use_with_work_ahead`). Nothing booked is cancelled: the desk

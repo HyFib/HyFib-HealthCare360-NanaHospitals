@@ -158,7 +158,7 @@ internal static class SurgeryEndpoints
 
         await audit.PatientRecordAccessedAsync(booking.PatientId, $"Viewed surgery {booking.BookingNumber}", ct);
         var patients = await PatientQueries.SummariesAsync(db, [booking.PatientId], time.Today(), await contacts.FullAsync(ct), ct);
-        var names = await SpecialtyLookups.PractitionerNamesAsync(db, [booking.SurgeonId, booking.AnaesthetistId], ct);
+        var names = await SpecialtyLookups.PractitionerNamesAsync(db, [booking.SurgeonId, booking.AnaesthetistId, booking.NurseId], ct);
         var theatre = booking.TheatreId is { } theatreId
             ? await db.Set<OperationTheatre>().AsNoTracking().Where(t => t.Id == theatreId).Select(t => t.Name).FirstOrDefaultAsync(ct)
             : null;
@@ -220,7 +220,8 @@ internal static class SurgeryEndpoints
             b.IsPhaseComplete(p.Key),
             p.Key switch { SafetyPhase.SignIn => b.SignInCompletedAt, SafetyPhase.TimeOut => b.TimeOutCompletedAt, _ => b.SignOutCompletedAt },
             p.Value.Select(i => ToItem(i, b.SafetyChecks.FirstOrDefault(e => e.Phase == p.Key && e.Key == i.Key))).ToList())).ToList(),
-        b.Notes, b.CancelReason, b.PostponeReason, b.PostponeCount, b.ChargeStatus, b.ChargeError, b.Version);
+        b.Notes, b.CancelReason, b.PostponeReason, b.PostponeCount, b.ChargeStatus, b.ChargeError, b.Version,
+        b.NurseId, b.NurseId is { } n ? names.GetValueOrDefault(n) : null);
 
     private static ChecklistItemDto ToItem(ChecklistItemDefinition definition, ChecklistEntry? entry) => new(
         definition.Key, definition.Text, definition.AllowsNotApplicable, entry?.State ?? ChecklistItemState.Pending, entry?.Remarks,

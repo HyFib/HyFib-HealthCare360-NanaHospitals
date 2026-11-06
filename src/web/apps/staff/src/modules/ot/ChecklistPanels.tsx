@@ -22,6 +22,7 @@ import { useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
+  givenBySurgeon,
   otApi,
   otKeys,
   type ChecklistInput,
@@ -30,7 +31,7 @@ import {
   type SafetyPhase,
   type SurgeryDetail,
 } from './api';
-import { anaesthesiaLabel, phaseLabel, phaseMoment } from './labels';
+import { anaesthesiaLabel, anaesthesiaShort, phaseLabel, phaseMoment } from './labels';
 import { phaseGate, preOpGate } from './logic';
 import { SideBadge } from './OtBadges';
 import { ActionError, WhoWhen } from './shared/feedback';
@@ -320,8 +321,13 @@ export function IdentityCheck({ booking }: { booking: SurgeryDetail }) {
         <Caption1 className={styles.identityLabel}>Team</Caption1>
         <Text block>Surgeon: {booking.surgeonName ?? '—'}</Text>
         <Text block>
-          Anaesthetist: {booking.anaesthetistName ?? (booking.anaesthesiaType === 'Local' ? 'Not needed (local)' : '—')}
+          Anaesthetist:{' '}
+          {booking.anaesthetistName ??
+            (givenBySurgeon(booking.anaesthesiaType)
+              ? `Not needed (${anaesthesiaShort[booking.anaesthesiaType].toLowerCase()})`
+              : '—')}
         </Text>
+        <Text block>Nurse / OT in-charge: {booking.nurseName ?? '—'}</Text>
         <Caption1>{anaesthesiaLabel[booking.anaesthesiaType]}</Caption1>
       </div>
     </div>

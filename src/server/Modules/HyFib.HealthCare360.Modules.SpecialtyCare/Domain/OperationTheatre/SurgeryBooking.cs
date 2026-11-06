@@ -30,6 +30,13 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
     public Guid? SurgeonId { get; set; }
     public List<Guid> AssistantIds { get; set; } = [];
     public Guid? AnaesthetistId { get; set; }
+
+    /// <summary>
+    /// The assisting (scrub) nurse or OT in-charge for the case: a nurse or OT technician from the practitioner master, so the
+    /// OT register names them with their qualification and registration.
+    /// </summary>
+    public Guid? NurseId { get; set; }
+
     public AnaesthesiaType AnaesthesiaType { get; set; }
     public SurgeryPriority Priority { get; set; }
 
@@ -66,8 +73,8 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
     public ChargeStatus ChargeStatus { get; set; }
     public string? ChargeError { get; set; }
 
-    /// <summary>Local anaesthesia is given by the surgeon; every other technique needs a named anaesthetist.</summary>
-    public bool RequiresAnaesthetist => AnaesthesiaType != AnaesthesiaType.Local;
+    /// <summary>Local and topical anaesthesia are given by the surgeon; every other technique needs a named anaesthetist.</summary>
+    public bool RequiresAnaesthetist => !AnaesthesiaTypes.GivenBySurgeon(AnaesthesiaType);
 
     public bool IsClosed => Status is SurgeryStatus.Completed or SurgeryStatus.Cancelled;
 
@@ -112,7 +119,7 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
 
         if (RequiresAnaesthetist && AnaesthetistId is null)
         {
-            return Error.Field("anaesthetistId", "Choose the anaesthetist (required for every technique except local anaesthesia).");
+            return Error.Field("anaesthetistId", "Choose the anaesthetist (required for every technique except local and topical anaesthesia).");
         }
 
         TheatreId = theatreId;

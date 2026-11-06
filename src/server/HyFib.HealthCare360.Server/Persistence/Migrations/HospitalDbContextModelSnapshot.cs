@@ -33272,6 +33272,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(2000)")
                         .HasColumnName("notes");
 
+                    b.Property<Guid?>("NurseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("nurse_id");
+
                     b.Property<Guid?>("OrderItemId")
                         .HasColumnType("uuid")
                         .HasColumnName("order_item_id");

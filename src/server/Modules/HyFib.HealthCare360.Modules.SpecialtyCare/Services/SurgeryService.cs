@@ -25,7 +25,8 @@ public sealed class SurgeryService(
             return Error.Rule("facility.required", "Select a facility first.");
         }
 
-        var checks = await ValidateReferencesAsync(request.PatientId, request.SurgeonId, request.AnaesthetistId, request.AssistantIds, request.ProcedureServiceItemId, ct);
+        var checks = await ValidateReferencesAsync(
+            request.PatientId, request.SurgeonId, request.AnaesthetistId, request.AssistantIds, request.NurseId, request.ProcedureServiceItemId, ct);
         if (checks.IsFailure)
         {
             return checks.Error!;
@@ -42,7 +43,7 @@ public sealed class SurgeryService(
             PreferredDate = request.PreferredDate,
         };
         await ApplyPlanAsync(booking, request.ProcedureServiceItemId, request.ProcedureCode, request.ProcedureName, request.Laterality, request.Diagnosis,
-            request.SurgeonId, request.AssistantIds, request.AnaesthetistId, request.AnaesthesiaType, request.Priority, request.Notes, ct);
+            request.SurgeonId, request.AssistantIds, request.AnaesthetistId, request.NurseId, request.AnaesthesiaType, request.Priority, request.Notes, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (request.TheatreId is { } theatreId)
@@ -77,7 +78,8 @@ public sealed class SurgeryService(
             return editable;
         }
 
-        var checks = await ValidateReferencesAsync(booking.PatientId, request.SurgeonId, request.AnaesthetistId, request.AssistantIds, request.ProcedureServiceItemId, ct);
+        var checks = await ValidateReferencesAsync(
+            booking.PatientId, request.SurgeonId, request.AnaesthetistId, request.AssistantIds, request.NurseId, request.ProcedureServiceItemId, ct);
         if (checks.IsFailure)
         {
             return checks;
@@ -86,7 +88,7 @@ public sealed class SurgeryService(
         db.SetExpectedVersion(booking, request.Version);
         booking.PreferredDate = request.PreferredDate;
         await ApplyPlanAsync(booking, request.ProcedureServiceItemId, request.ProcedureCode, request.ProcedureName, request.Laterality, request.Diagnosis,
-            request.SurgeonId, request.AssistantIds, request.AnaesthetistId, request.AnaesthesiaType, request.Priority, request.Notes, ct);
+            request.SurgeonId, request.AssistantIds, request.AnaesthetistId, request.NurseId, request.AnaesthesiaType, request.Priority, request.Notes, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (SurgeryScheduling.IsBlocking(booking.Status))
@@ -254,7 +256,7 @@ public sealed class SurgeryService(
 
         if (booking.RequiresAnaesthetist && booking.AnaesthetistId is null)
         {
-            return Error.Field("anaesthetistId", "Choose the anaesthetist (required for every technique except local anaesthesia).");
+            return Error.Field("anaesthetistId", "Choose the anaesthetist (required for every technique except local and topical anaesthesia).");
         }
 
         if (booking.ToSlot() is not { } slot)
@@ -288,7 +290,7 @@ public sealed class SurgeryService(
     }
 
     private async Task<Result> ValidateReferencesAsync(
-        Guid patientId, Guid? surgeonId, Guid? anaesthetistId, IReadOnlyList<Guid>? assistants, Guid? procedureItemId, CancellationToken ct)
+        Guid patientId, Guid? surgeonId, Guid? anaesthetistId, IReadOnlyList<Guid>? assistants, Guid? nurseId, Guid? procedureItemId, CancellationToken ct)
     {
         var patient = await SpecialtyLookups.EnsurePatientAsync(db, patientId, ct);
         if (patient.IsFailure)
@@ -309,6 +311,14 @@ public sealed class SurgeryService(
             return Error.Field("anaesthetistId", "The anaesthetist must be a different doctor from the operating surgeon.");
         }
 
+        // The OT register names the assisting nurse or OT in-charge with a nursing qualification and registration: a nurse or
+        // an OT technician from the practitioner master, still in use.
+        if (nurseId is { } nurse && !await db.Set<Practitioner>().AnyAsync(
+                p => p.Id == nurse && p.IsActive && (p.Kind == PractitionerKind.Nurse || p.Kind == PractitionerKind.Technician), ct))
+        {
+            return Error.Field("nurseId", "Choose a nurse or OT technician who is in use.");
+        }
+
         return procedureItemId is { } itemId && !await db.Set<ServiceItem>().AnyAsync(s => s.Id == itemId && s.IsActive, ct)
             ? Error.Field("procedureServiceItemId", "Choose an active procedure from the service catalogue.")
             : Result.Success();
@@ -316,8 +326,8 @@ public sealed class SurgeryService(
 
     private async Task ApplyPlanAsync(
         SurgeryBooking booking, Guid? procedureItemId, string? procedureCode, string procedureName, Laterality laterality, string? diagnosis,
-        Guid? surgeonId, IReadOnlyList<Guid>? assistants, Guid? anaesthetistId, AnaesthesiaType anaesthesia, SurgeryPriority priority, string? notes,
-        CancellationToken ct)
+        Guid? surgeonId, IReadOnlyList<Guid>? assistants, Guid? anaesthetistId, Guid? nurseId, AnaesthesiaType anaesthesia, SurgeryPriority priority,
+        string? notes, CancellationToken ct)
     {
         booking.ProcedureServiceItemId = procedureItemId;
         booking.ProcedureCode = string.IsNullOrWhiteSpace(procedureCode)
@@ -329,6 +339,7 @@ public sealed class SurgeryService(
         booking.SurgeonId = surgeonId;
         booking.AssistantIds = (assistants ?? []).Distinct().Where(a => a != surgeonId).ToList();
         booking.AnaesthetistId = anaesthetistId;
+        booking.NurseId = nurseId;
         booking.AnaesthesiaType = anaesthesia;
         booking.Priority = priority;
         booking.Notes = Clean(notes);
