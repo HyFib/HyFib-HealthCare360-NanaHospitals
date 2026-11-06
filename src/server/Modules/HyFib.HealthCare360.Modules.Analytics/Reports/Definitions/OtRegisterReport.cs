@@ -362,10 +362,7 @@ internal static class OtRegister
             AnaesthesiaLabel(technique),
             clinical ? Drugs(record) : Withheld,
             Signed(Credentials(c.SurgeonId is { } surgeon ? clinicians.GetValueOrDefault(surgeon) : null), "operation note", note?.SignedAt, note?.SignedByName, note is not null),
-            AnaesthesiaTypes.GivenBySurgeon(technique) && (record?.AnaesthetistId ?? c.AnaesthetistId) is null
-                ? $"{AnaesthesiaLabel(technique)} by the surgeon"
-                : Signed(Credentials((record?.AnaesthetistId ?? c.AnaesthetistId) is { } anaesthetist ? clinicians.GetValueOrDefault(anaesthetist) : null),
-                    "anaesthesia record", record?.SignedAt, record?.SignedByName, record is not null),
+            Anaesthetist(c, technique, record, clinicians),
             c.AssistantIds.Count == 0 ? None : string.Join("; ", c.AssistantIds.Select(a => Credentials(clinicians.GetValueOrDefault(a)))),
             c.NurseId is { } nurse ? Credentials(clinicians.GetValueOrDefault(nurse)) : None,
             Remarks(c, note, record, clinical),
@@ -390,6 +387,20 @@ internal static class OtRegister
         : string.Join("; ", record.Drugs.OrderBy(d => d.At).Select(d => $"{d.Drug.Trim()} {d.Dose.Trim()}".Trim()));
 
     /// <summary>The team member, then the signature their record carries: who signed it and when, or that it is not yet signed.</summary>
+    /// <summary>
+    /// The anaesthetist column. Local and topical anaesthesia are the surgeon's: the column names an anaesthetist only when the
+    /// booking named one (standing by), not whoever saved the anaesthesia record, which takes the saver as its anaesthetist.
+    /// Any other technique names the anaesthetist the record holds, else the one booked.
+    /// </summary>
+    private static string Anaesthetist(Case c, AnaesthesiaType technique, Anaesthesia? record, IReadOnlyDictionary<Guid, Clinician> clinicians)
+    {
+        var anaesthetist = AnaesthesiaTypes.GivenBySurgeon(technique) ? c.AnaesthetistId : record?.AnaesthetistId ?? c.AnaesthetistId;
+        return anaesthetist is null && AnaesthesiaTypes.GivenBySurgeon(technique)
+            ? $"{AnaesthesiaLabel(technique)} by the surgeon"
+            : Signed(Credentials(anaesthetist is { } id ? clinicians.GetValueOrDefault(id) : null),
+                "anaesthesia record", record?.SignedAt, record?.SignedByName, record is not null);
+    }
+
     private static string Signed(string member, string document, DateTimeOffset? signedAt, string? signedBy, bool written) =>
         !written ? $"{member} · {document} not written"
         : signedAt is { } at ? $"{member} · {document} signed by {signedBy ?? "staff"}, {DocumentFormat.DateTime(at)}"

@@ -272,6 +272,20 @@ public sealed class OtRegisterTests
     }
 
     [Fact]
+    public void Surgeon_given_anaesthesia_names_only_an_anaesthetist_the_booking_named_not_whoever_saved_the_record()
+    {
+        // The surgeon wrote the topical drops in the anaesthesia record, which takes whoever saves it as its anaesthetist.
+        var bySurgeon = Record() with { AnaesthetistId = Surgeon, Technique = AnaesthesiaType.Topical, SignedAt = null, SignedByName = null };
+        var topical = Row(Case() with { AnaesthesiaType = AnaesthesiaType.Topical, AnaesthetistId = null }, Patient(), Note(), bySurgeon, Doctor);
+        Cell(topical, "anaesthetist").ShouldBe("Topical by the surgeon");
+
+        // Under local anaesthesia with an anaesthetist booked to stand by, the column names them, whoever saved the record.
+        var standingBy = Row(
+            Case() with { AnaesthesiaType = AnaesthesiaType.Local }, Patient(), Note(), bySurgeon with { Technique = AnaesthesiaType.Local }, Doctor);
+        ((string?)Cell(standingBy, "anaesthetist")).ShouldStartWith("Dr. Meena Raj, MD (Anaesthesia), Reg. 90211 (TNMC)");
+    }
+
+    [Fact]
     public void A_completed_case_lacks_signed_records_until_its_note_and_any_anaesthetists_record_are_signed()
     {
         OtRegister.LacksSignedRecords(Case(), Note(), Record()).ShouldBeFalse();
