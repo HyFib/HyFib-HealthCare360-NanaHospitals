@@ -277,7 +277,11 @@ public static class PersonalDataCatalogue
             "Reports of incidents or near misses during your care.",
             "To learn from incidents and keep patients safe.",
             "Patient safety and NABH accreditation.", PersonalDataRetention.WithRecords,
-            [new("quality.incidents", "Safety reports that mention you")]),
+            [
+                new("quality.incidents", "Safety reports that mention you"),
+                // Sent outside the hospital naming you by initials, age and sex only (MvPI's reporting form).
+                new("quality.mvpi_reports", "Reports of a problem with a medical device used in your care (MvPI)"),
+            ]),
         new("ai", "AI assistant",
             "Times staff used the AI assistant while working on your record. Names and numbers are removed before anything is sent to it.",
             "To help staff write notes and find information; a clinician checks every result.",

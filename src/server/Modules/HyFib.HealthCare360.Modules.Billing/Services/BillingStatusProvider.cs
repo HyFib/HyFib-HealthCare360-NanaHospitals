@@ -72,6 +72,24 @@ internal sealed class BillingStatusProvider(HospitalDbContext db, ChargeRefusals
     }
 
     /// <summary>
+    /// The last 20 devices charged to the patient, in every facility of the group (UHIDs are shared, and a device implanted
+    /// at one hospital may fail at another). An implant is one billed under an implant service (<see cref="ChargeService.ImplantServiceCodes"/>).
+    /// </summary>
+    public async Task<IReadOnlyList<ChargedDevice>> GetDevicesAsync(Guid patientId, CancellationToken cancellationToken)
+    {
+        var rows = await db.Set<Charge>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(c => c.PatientId == patientId && c.Status != ChargeStatus.Cancelled && c.Device != null && c.Quantity > 0)
+            .OrderByDescending(c => c.ServiceDate)
+            .Take(20)
+            .Select(c => new { c.Description, c.Device, c.ServiceCode, c.ServiceDate })
+            .ToListAsync(cancellationToken);
+        return rows.Select(r => new ChargedDevice(
+                r.Description, r.Device!, ChargeService.ImplantServiceCodes.Contains(r.ServiceCode),
+                DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(r.ServiceDate, HospitalTimeZone.Zone).DateTime)))
+            .ToList();
+    }
+
+    /// <summary>
     /// Unbilled services, final bill and patient dues of an admission. A charge reserved by a draft bill still counts as
     /// unbilled: only a finalized bill clears a service.
     /// </summary>

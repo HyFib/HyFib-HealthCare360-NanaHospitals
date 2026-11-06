@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Quality.Features.Dashboard;
 using HyFib.HealthCare360.Modules.Quality.Features.Downtime;
 using HyFib.HealthCare360.Modules.Quality.Features.Incidents;
 using HyFib.HealthCare360.Modules.Quality.Features.Indicators;
+using HyFib.HealthCare360.Modules.Quality.Features.Mvpi;
 using HyFib.HealthCare360.Modules.Quality.Features.Risks;
 using HyFib.HealthCare360.Modules.Quality.Services;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -14,6 +15,10 @@ public static class QualityPermissions
     /// <summary>Every staff member may report incidents (and progress CAPAs they own).</summary>
     public const string IncidentsReport = "quality.incidents.report";
 
+    /// <summary>
+    /// The incident register: review, grade and investigate incidents, and report adverse events with medical devices to
+    /// the Materiovigilance Programme of India (MvPI) from them.
+    /// </summary>
     public const string IncidentsManage = "quality.incidents.manage";
     public const string CapaManage = "quality.capa.manage";
     public const string RisksManage = "quality.risks.manage";
@@ -27,7 +32,7 @@ public static class QualityPermissions
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
         new(IncidentsReport, "Quality", "Report incidents and near misses (optionally anonymously); work on own corrective actions", PlatformPermissions.AllStaff),
-        new(IncidentsManage, "Quality", "Review, grade and investigate incidents; receive sentinel-event alerts", Quality),
+        new(IncidentsManage, "Quality", "Review, grade and investigate incidents; receive sentinel-event alerts; report device adverse events to MvPI", Quality),
         new(CapaManage, "Quality", "Plan corrective/preventive actions and verify their effectiveness", Quality),
         new(RisksManage, "Quality", "Maintain the risk register", Quality),
         new(IndicatorsManage, "Quality", "Define quality indicators and record their values", Quality),
@@ -35,7 +40,10 @@ public static class QualityPermissions
     ];
 }
 
-/// <summary>IRMS: incident reporting, root-cause analysis, CAPA, risk register and NABH quality indicators (SRS IRMS-01..06).</summary>
+/// <summary>
+/// IRMS: incident reporting, root-cause analysis, CAPA, risk register and NABH quality indicators (SRS IRMS-01..06), and
+/// device adverse event reports to the Materiovigilance Programme of India.
+/// </summary>
 public sealed class QualityModule : IModule
 {
     public string Name => "quality";
@@ -49,6 +57,8 @@ public sealed class QualityModule : IModule
         services.AddScoped<IncidentService>();
         services.AddScoped<CapaService>();
         services.AddScoped<AnonymousReportingScope>();
+        services.AddScoped<MvpiService>();
+        services.AddScoped<MvpiAccess>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -60,5 +70,6 @@ public sealed class QualityModule : IModule
         IndicatorEndpoints.Map(endpoints);
         QualityDashboardEndpoints.Map(endpoints);
         DowntimeEndpoints.Map(endpoints);
+        MvpiEndpoints.Map(endpoints);
     }
 }

@@ -15,7 +15,10 @@ public static class QualityClock
         }
     });
 
-    public static DateOnly LocalToday(this TimeProvider time) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(time.GetUtcNow(), IndiaZone.Value).DateTime);
+    public static DateOnly LocalToday(this TimeProvider time) => LocalDate(time.GetUtcNow());
+
+    /// <summary>The local (IST) calendar day of an instant: an incident at 1 am IST happened that day, not the day before.</summary>
+    public static DateOnly LocalDate(DateTimeOffset instant) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, IndiaZone.Value).DateTime);
 
     /// <summary>UTC instant at which the local <paramref name="date"/> starts.</summary>
     public static DateTimeOffset StartOfDayUtc(DateOnly date)

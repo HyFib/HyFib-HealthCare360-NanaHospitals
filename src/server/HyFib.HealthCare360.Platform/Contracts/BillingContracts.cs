@@ -156,7 +156,21 @@ public interface IBillingStatusProvider
     /// until they are charged, so a refused day never holds a stay's final bill, or its discharge, for good.
     /// </summary>
     Task<IReadOnlyList<Guid>> GetStaysWithRefusedChargesAsync(IReadOnlyCollection<string> sourceModules, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The medical devices charged to the patient (implants, stents, catheters from stock), newest first, in every facility,
+    /// with what the bill says of each: brand, maker, batch, serial. Quality fills a device adverse event report (MvPI)
+    /// from them. Cancelled charges and credits (a pack returned unused) are left out.
+    /// </summary>
+    Task<IReadOnlyList<ChargedDevice>> GetDevicesAsync(Guid patientId, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// A medical device charged to a patient: the charge's description (the item's name), what the bill says of the device,
+/// whether it was billed as an implant (from the surgery record or the IP pharmacy's implant issue), and the day it was
+/// used, in IST.
+/// </summary>
+public sealed record ChargedDevice(string Description, DeviceDetails Device, bool IsImplant, DateOnly UsedOn);
 
 /// <summary>
 /// A payer's name, and the patient's policy, membership or scheme card with it, for the patient banner (UX-04). Each
@@ -325,4 +339,7 @@ internal sealed class NullBillingStatusProvider : IBillingStatusProvider
 
     public Task<IReadOnlyList<Guid>> GetStaysWithRefusedChargesAsync(IReadOnlyCollection<string> sourceModules, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<Guid>>([]);
+
+    public Task<IReadOnlyList<ChargedDevice>> GetDevicesAsync(Guid patientId, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<ChargedDevice>>([]);
 }

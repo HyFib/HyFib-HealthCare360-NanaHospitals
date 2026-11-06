@@ -57,6 +57,7 @@ const schema = z.object({
   keepPatient: z.boolean(),
   patient: z.object({ id: z.string(), uhid: z.string(), fullName: z.string() }).nullable(),
   staff: z.array(z.object({ id: z.string(), name: z.string() })).max(20),
+  involvesDevice: z.boolean(),
 });
 
 type Values = z.infer<typeof schema>;
@@ -108,6 +109,7 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
       keepPatient: Boolean(incident.patientId),
       patient: null,
       staff: incident.involvedStaff,
+      involvesDevice: incident.involvesDevice,
     },
   });
   const [severity, sentinelKind, flag, keepPatient] = useWatch({
@@ -129,6 +131,7 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
         patientId: v.patient?.id ?? (v.keepPatient ? incident.patientId : null),
         involvedStaffUserIds: v.staff.map((s) => s.id),
         version: incident.version,
+        involvesDevice: v.involvesDevice,
       });
       notify.success(
         'Incident updated',
@@ -181,6 +184,12 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
               options={SENTINEL_KINDS.map((k) => ({ value: k, label: sentinelKindLabel[k] }))}
             />
             <SwitchField control={form.control} name="flagAsSentinel" label="Treat as sentinel event" />
+            <SwitchField
+              control={form.control}
+              name="involvesDevice"
+              label="A medical device was involved"
+              hint="An implant, instrument, monitor or consumable: it may be reported to MvPI."
+            />
             <TextField control={form.control} name="location" label="Where" required maxLength={150} />
             <SelectField
               control={form.control}

@@ -41,6 +41,7 @@ import { CapaStatusBadge, IncidentStatusBadge, SentinelBadge, SeverityBadge } fr
 import { CapaDialog } from '@/modules/quality/CapaDialog';
 import { IncidentEditDialog } from '@/modules/quality/IncidentEditDialog';
 import { InvestigationEditor } from '@/modules/quality/InvestigationEditor';
+import { IncidentMvpiPanel } from '@/modules/quality/MvpiReports';
 import {
   incidentStatusLabel,
   incidentTypeLabel,
@@ -160,6 +161,12 @@ function IncidentView({ incident: i }: { incident: IncidentDetail }) {
         )}
         <Caption1 className={styles.muted}>{i.assignedTo ? `With ${i.assignedTo.name}` : 'Not assigned yet'}</Caption1>
       </div>
+
+      <IncidentMvpiPanel
+        incident={i}
+        onReport={() => void navigate({ to: '/quality/mvpi', search: { incidentId: i.id } })}
+        onOpen={(id) => void navigate({ to: '/quality/mvpi', search: { report: id } })}
+      />
 
       {i.isSentinel && !progress.rcaCompleted && !closed && (
         <MessageBar intent="error" layout="multiline">
@@ -324,6 +331,7 @@ function Overview({ incident: i }: { incident: IncidentDetail }) {
       </Detail>
       <Detail label="Staff involved">{i.involvedStaff.map((p) => p.name).join(', ')}</Detail>
       <Detail label="Never event">{i.sentinelKind ? sentinelKindLabel[i.sentinelKind] : null}</Detail>
+      <Detail label="Medical device involved">{i.isDeviceRelated ? 'Yes' : 'No'}</Detail>
       {i.lastStatusNote && (
         <Detail label="Latest note" wide>
           {i.lastStatusNote}

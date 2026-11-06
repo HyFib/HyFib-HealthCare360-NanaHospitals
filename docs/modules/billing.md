@@ -902,6 +902,10 @@ Source keys in use: `inpatient.bed` / `inpatient.nursing` (`{admissionId}:{yyyy-
   [packageBookingId.ToString()])`. Component tests (`ServiceOrderPlaced.IsPackageComponent`) are never charged
   individually by Billing.
 * `GetOutstandingAsync(patientId)` → the patient's unpaid share of finalized bills (all facilities).
+* `GetDevicesAsync(patientId)` → the last 20 devices charged to the patient (charges with `Device` details, not cancelled,
+  not credits), newest first, in every facility: the charge's description, its `DeviceDetails` (brand, maker,
+  specification, batch, serial), whether it was billed under an implant service (`OT-IMPLANT`, `PHARM-IMPL`) and the IST
+  day it was used. Quality fills in the device of an MvPI report from them (`quality.md`).
 * `GetDischargeClearanceAsync(admissionId)` → cleared when every IP charge is on a finalized bill, the final bill exists
   and the patient's share is paid, or management approved discharge with dues (for the discharge under way: a revoked
   discharge withdraws the approval).

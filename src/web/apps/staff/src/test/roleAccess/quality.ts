@@ -15,6 +15,7 @@ import type {
   ScorecardRow,
 } from '@/modules/quality/api';
 import type { DowntimeEvent, DowntimeSummary } from '@/modules/quality/downtimeApi';
+import { blankDevice, type MvpiReport, type MvpiReportListItem } from '@/modules/quality/mvpi';
 import { riskRating } from '@/modules/quality/rules';
 import { paged, STAFF_USER, type FakeAnswers } from '../fakeApi';
 import { RECORD_ID } from '../roleAccessIds';
@@ -76,6 +77,9 @@ const INCIDENT: IncidentDetail = {
       isOverdue: false,
     },
   ],
+  involvesDevice: false,
+  isDeviceRelated: false,
+  mvpiReports: [],
   version: 4,
 };
 
@@ -578,7 +582,104 @@ const DOWNTIME_SUMMARY: DowntimeSummary = {
   lastDrillAt: '2026-07-14T05:00:00Z',
 };
 
+// ---------------------------------------------------------------------------------------------------- MvPI
+
+/** A failed knee implant reported from an equipment failure: a draft with all MvPI asks for (it can be sent), and one sent. */
+const MVPI_DRAFT: MvpiReport = {
+  id: RECORD_ID,
+  number: 'NHMDAE2600004',
+  status: 'Draft',
+  reportedOn: dateAgo(1),
+  incidentId: id('1c15'),
+  incidentNumber: 'INC-26-00061',
+  followUpOfId: null,
+  followUpOfNumber: null,
+  followUpOfReference: null,
+  followUps: [],
+  patientId: id('1'),
+  noPatient: false,
+  patientInitials: 'L. N.',
+  uhid: 'NH26000611',
+  ageYears: 67,
+  sex: 'Female',
+  weightKg: 64,
+  eventOn: dateAgo(2),
+  awareOn: dateAgo(2),
+  location: 'Ward 3, bed 12',
+  description: 'The tibial component of the knee implant loosened six weeks after surgery; revision planned.',
+  seriousness: 'Hospitalisation, RequiredIntervention',
+  deathOn: null,
+  outcome: 'NotRecovered',
+  device: {
+    ...blankDevice(),
+    name: 'Attune',
+    genericName: 'Knee implant system',
+    riskClass: 'C',
+    manufacturer: 'DePuy Synthes',
+    lotNumber: 'KN2407',
+    serialNumber: 'SN-A1',
+    implantable: true,
+    implantedOn: dateAgo(44),
+    use: 'SingleUse',
+    keptAt: 'Biomedical quarantine shelf 2',
+  },
+  reporterName: STAFF_USER.displayName,
+  reporterDesignation: 'Quality manager',
+  reporterDepartment: 'Quality',
+  submittedOn: null,
+  submittedByName: null,
+  reference: null,
+  referenceCorrectionReason: null,
+  referenceCorrectedByName: null,
+  referenceCorrectedAt: null,
+  missing: {},
+  version: 3,
+};
+
+const MVPI_REPORTS: MvpiReportListItem[] = [
+  {
+    id: RECORD_ID,
+    number: MVPI_DRAFT.number,
+    status: 'Draft',
+    reportedOn: MVPI_DRAFT.reportedOn,
+    eventOn: MVPI_DRAFT.eventOn,
+    patientInitials: 'L. N.',
+    uhid: 'NH26000611',
+    noPatient: false,
+    deviceName: 'Attune',
+    manufacturer: 'DePuy Synthes',
+    serious: true,
+    outcome: 'NotRecovered',
+    incidentNumber: 'INC-26-00061',
+    followUpOfNumber: null,
+    submittedOn: null,
+    reference: null,
+    reporterName: STAFF_USER.displayName,
+  },
+  {
+    id: id('3d02'),
+    number: 'NHMDAE2600002',
+    status: 'Submitted',
+    reportedOn: dateAgo(30),
+    eventOn: dateAgo(31),
+    patientInitials: null,
+    uhid: null,
+    noPatient: true,
+    deviceName: 'IntelliVue MX450',
+    manufacturer: 'Philips',
+    serious: false,
+    outcome: 'Unknown',
+    incidentNumber: null,
+    followUpOfNumber: null,
+    submittedOn: dateAgo(29),
+    reference: 'MDAE-TN-2026-0042',
+    reporterName: STAFF_USER.displayName,
+  },
+];
+
 export const ANSWERS: FakeAnswers = {
+  'GET /api/v1/quality/mvpi': MVPI_REPORTS,
+  [`GET /api/v1/quality/mvpi/${RECORD_ID}`]: MVPI_DRAFT,
   'GET /api/v1/quality/downtime': DOWNTIME,
   'GET /api/v1/quality/downtime/summary': DOWNTIME_SUMMARY,
   'GET /api/v1/quality/dashboard': DASHBOARD,
