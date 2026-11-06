@@ -349,16 +349,15 @@ public sealed class MarWitnessTests(HospitalServer server)
         return chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due);
     }
 
-    /// <summary>Ten of the drug received into the store from a vendor's invoice and posted to stock.</summary>
-    private static async Task ReceiveAsync(ApiClient storeKeeper, Guid storeId, Guid itemId)
+    /// <summary>Ten of the drug received into the store from a vendor's invoice, and approved into stock by someone else.</summary>
+    private async Task ReceiveAsync(ApiClient storeKeeper, Guid storeId, Guid itemId)
     {
         var vendor = (await storeKeeper.GetAsync<PagedResult<VendorListItem>>("/api/v1/purchase/vendors?pageSize=100")).Items.Single(v => v.Code == "VEN-SBPD");
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        using var received = await storeKeeper.SendRawAsync(HttpMethod.Post, "/api/v1/purchase/grns", new CreateGoodsReceiptRequest(
+        await GoodsReceipts.IntoStockAsync(server, storeKeeper, new CreateGoodsReceiptRequest(
             vendor.Id, storeId, null, $"INV-{Letters(10)}", today, today, null,
             [new GoodsReceiptLineInput(itemId, null, $"B{Letters(8)}", null, today.AddYears(2), 10m, 0m, 100m, 150m, 0m, null, AcceptShortExpiry: true)],
-            Post: true));
-        received.EnsureSuccessStatusCode();
+            SendForApproval: true));
     }
 
     private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)

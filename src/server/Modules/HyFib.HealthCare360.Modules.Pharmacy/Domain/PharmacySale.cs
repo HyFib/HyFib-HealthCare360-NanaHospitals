@@ -31,6 +31,10 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
     public Guid? PractitionerId { get; set; }
     public string? PrescriberName { get; set; }
     public string? PrescriberRegistrationNumber { get; set; }
+
+    /// <summary>The date written on an outside prescription sold against at the counter: the paper the sale is matched to.</summary>
+    public DateOnly? PrescriptionDate { get; set; }
+
     public DateTimeOffset SoldAt { get; set; }
     public Guid? SoldByUserId { get; set; }
     public string? CounsellingNotes { get; set; }

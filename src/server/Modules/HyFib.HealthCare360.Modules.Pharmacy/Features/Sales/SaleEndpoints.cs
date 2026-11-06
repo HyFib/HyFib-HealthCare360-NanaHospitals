@@ -190,7 +190,8 @@ internal static class SaleEndpoints
             sale.Version,
             sale.BuyerAddress,
             sale.BuyerGstin is null ? null : await einvoices.FindAsync(PharmacyEInvoiceSource.Key, sale.Id, ct),
-            sale.FreeTreatmentReason));
+            sale.FreeTreatmentReason,
+            sale.PrescriptionDate));
     }
 
     private static async Task<IResult> Returns(Guid id, HospitalDbContext db, CancellationToken ct)

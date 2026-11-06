@@ -434,6 +434,11 @@ and grants nothing.
     their practitioner record. A correction takes the confirmation away and asks again; the certificate is not changed
     while a request waits. The death itself (the patient deceased) is recorded at once. On unless the facility sets
     `mrd.deathCertificateConfirmation` to `false`, as one with a single doctor does.
+  - a goods receipt posted into stock (`purchase.grn`): the store enters the receipt and sends it for approval, and
+    someone who holds `purchase.grn.approve` (purchase officers and hospital administrators by default) checks it against
+    the supplier's invoice and approves it, which posts it. The request shows the invoice's total as printed beside the
+    total worked out from the lines. Whoever entered the receipt never posts it either (`grn.post_own`), even when
+    someone else sent it, and a receipt cancelled after it was sent posts nothing (`approval.stale`).
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was

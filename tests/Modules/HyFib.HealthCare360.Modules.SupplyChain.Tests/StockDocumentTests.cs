@@ -31,6 +31,21 @@ public sealed class StockDocumentTests
     }
 
     [Fact]
+    public void Whoever_entered_a_goods_receipt_does_not_post_it_into_stock()
+    {
+        var keeper = Guid.CreateVersion7();
+        var grn = new GoodsReceiptNote { Number = "GRN2600001", ReceivedOn = Today, CreatedBy = keeper };
+        grn.Lines.Add(GrnLine());
+
+        grn.MarkPosted(keeper, Now).Error!.Code.ShouldBe("grn.post_own");
+        (grn.Status, grn.PostedAt).ShouldBe((GoodsReceiptStatus.Draft, (DateTimeOffset?)null));
+
+        var checker = Guid.CreateVersion7();
+        grn.MarkPosted(checker, Now).IsSuccess.ShouldBeTrue();
+        (grn.Status, grn.PostedByUserId).ShouldBe((GoodsReceiptStatus.Posted, (Guid?)checker));
+    }
+
+    [Fact]
     public void Grn_rate_cannot_exceed_mrp_and_medicines_need_batch_and_mrp()
     {
         GrnLine(rate: 80m, mrp: 70m).Validate(Today).Error!.Code.ShouldBe("grn.rate_above_mrp");

@@ -21,7 +21,11 @@ public sealed record GoodsReceiptLineInput(
     decimal? GstRate,
     bool AcceptShortExpiry);
 
-/// <param name="Post">Post stock immediately; otherwise the GRN stays a draft for verification.</param>
+/// <param name="SendForApproval">
+/// Ask, as the GRN is saved, for someone other than whoever entered it to check it against the supplier's invoice and post
+/// it into stock (<see cref="SupplyChainPermissions.GrnApprove"/>); otherwise it stays a draft until asked for.
+/// </param>
+/// <param name="VendorInvoiceAmount">The invoice's total as the supplier printed it, for the checker to compare.</param>
 public sealed record CreateGoodsReceiptRequest(
     Guid VendorId,
     Guid StoreId,
@@ -31,9 +35,11 @@ public sealed record CreateGoodsReceiptRequest(
     DateOnly? ReceivedOn,
     string? Remarks,
     IReadOnlyList<GoodsReceiptLineInput> Lines,
-    bool Post);
+    bool SendForApproval,
+    decimal? VendorInvoiceAmount = null);
 
-public sealed record GoodsReceiptCreated(Guid Id, string Number, GoodsReceiptStatus Status, decimal NetAmount);
+/// <param name="ApprovalId">The request for a second person to post it, when one was asked for.</param>
+public sealed record GoodsReceiptCreated(Guid Id, string Number, GoodsReceiptStatus Status, decimal NetAmount, Guid? ApprovalId = null);
 
 public sealed record GoodsReceiptListItem(
     Guid Id,
@@ -100,7 +106,9 @@ public sealed record GoodsReceiptDetail(
     decimal RoundOff,
     decimal NetAmount,
     IReadOnlyList<GoodsReceiptLineDto> Lines,
-    uint Version);
+    uint Version,
+    decimal? VendorInvoiceAmount = null,
+    DateTimeOffset? ApprovalWaitingSince = null);
 
 public sealed class CreateGoodsReceiptRequestValidator : AbstractValidator<CreateGoodsReceiptRequest>
 {
@@ -110,6 +118,7 @@ public sealed class CreateGoodsReceiptRequestValidator : AbstractValidator<Creat
         RuleFor(x => x.StoreId).NotEmpty();
         RuleFor(x => x.VendorInvoiceNumber).NotEmpty().MaximumLength(40).WithMessage("Enter the vendor's invoice number.");
         RuleFor(x => x.Remarks).SafeText(1000);
+        RuleFor(x => x.VendorInvoiceAmount).GreaterThanOrEqualTo(0).WithMessage("Enter the invoice total as printed, or leave it empty.");
         RuleFor(x => x.Lines).NotEmpty().WithMessage("Add at least one received item.")
             .Must(l => l.Count <= 300).WithMessage("A GRN can have at most 300 lines.");
         RuleForEach(x => x.Lines).ChildRules(line =>

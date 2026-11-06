@@ -48,6 +48,9 @@ function subjectLink(
     // A death certificate to confirm: the certificate itself, opened (and audited) as the patient's record.
     case 'DeathRecord':
       return { label: 'Open the death certificate', to: `/mrd/deaths/${request.subjectId}` };
+    // A goods receipt to post: its lines, batches and totals, to check against the supplier's invoice.
+    case 'GoodsReceiptNote':
+      return { label: 'Open the goods receipt', to: `/purchase/grns/${request.subjectId}` };
     default:
       return null;
   }

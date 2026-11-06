@@ -33,6 +33,9 @@ public static class SupplyChainPermissions
     public const string PurchaseManage = "purchase.manage";
     public const string PurchaseApprove = "purchase.approve";
     public const string GrnReceive = "purchase.grn.receive";
+
+    /// <summary>Checks a goods receipt against the supplier's invoice and posts it into stock: never the one who entered it.</summary>
+    public const string GrnApprove = "purchase.grn.approve";
     public const string AssetsRead = "assets.read";
     public const string AssetsManage = "assets.manage";
     public const string AssetsMaintenance = "assets.maintenance";
@@ -40,7 +43,7 @@ public static class SupplyChainPermissions
     /// <summary>Everyone who picks items or stores on a screen (indents, POs, GRNs, counts, transfers).</summary>
     internal static readonly string[] CatalogReaders = [ItemsManage, StockRead, IndentsRaise, IndentsIssue, Transfers, Counts, PurchaseManage, GrnReceive];
 
-    internal static readonly string[] VendorReaders = [PurchaseManage, PurchaseApprove, GrnReceive, AssetsManage, AssetsMaintenance];
+    internal static readonly string[] VendorReaders = [PurchaseManage, PurchaseApprove, GrnReceive, GrnApprove, AssetsManage, AssetsMaintenance];
 
     internal static readonly string[] AssetReaders = [AssetsRead, AssetsManage, AssetsMaintenance];
 
@@ -68,6 +71,10 @@ public static class SupplyChainPermissions
         new(PurchaseManage, "Purchase", "Vendors, purchase requisitions and purchase orders", [.. StoreStaff, SystemRoles.PurchaseOfficer]),
         new(PurchaseApprove, "Purchase", "Approve purchase requisitions and purchase orders", [SystemRoles.HospitalAdmin]),
         new(GrnReceive, "Purchase", "Receive goods against vendor invoices (GRN)", StoreStaff),
+
+        // Maker-checker: the store keeper receives, someone else checks the receipt against the invoice and posts it.
+        new(GrnApprove, "Purchase", "Check goods receipts against the supplier's invoice and post them into stock (not your own)",
+            [SystemRoles.HospitalAdmin, SystemRoles.PurchaseOfficer]),
 
         // Ward staff must be able to see equipment and report breakdowns (AST-04).
         new(AssetsRead, "Assets", "View the asset register and report equipment breakdowns",
