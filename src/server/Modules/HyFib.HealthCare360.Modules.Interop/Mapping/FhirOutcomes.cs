@@ -29,6 +29,7 @@ internal static class FhirOutcomes
     public const string NotAcceptable = "not-acceptable";
     public const string AuthenticationRequired = "authentication-required";
     public const string PermissionRequired = "permission-required";
+    public const string FacilityRequired = "facility-required";
     public const string ReadOnly = "read-only";
     public const string RecordsWithheld = "records-withheld";
     public const string TooManyRecords = "too-many-records";
@@ -78,6 +79,15 @@ internal static class FhirOutcomes
     public static FhirError NoPermission() =>
         Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
             "The fhir.read permission is required to use the FHIR API.", PermissionRequired);
+
+    /// <summary>
+    /// A reader whose session is not at a facility its account is assigned to (#251): a partner reads one facility's
+    /// records, and an account the hospital assigned to none may sign in anywhere, so it is not that partner.
+    /// </summary>
+    public static FhirError NoFacility() =>
+        Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
+            "This account is not linked to a facility, so it cannot read records. The hospital links each partner's account to the facility whose records it reads; ask the hospital to assign one, then sign in again.",
+            FacilityRequired);
 
     /// <summary>
     /// A record of a patient who shares something with the reader, but not this: its kind or its date is outside every

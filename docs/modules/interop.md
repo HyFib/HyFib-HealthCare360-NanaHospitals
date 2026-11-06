@@ -44,9 +44,25 @@ Integration partners (a referral hospital, a health information exchange) get th
    such as the hospital administrator's, are staff and are not offered.
 2. Create a user for the partner, give it only that role, and sign it in with `POST /api/v1/auth/login` (and
    `/api/v1/auth/refresh`). Access tokens live 10 minutes; send them as `Authorization: Bearer <token>`.
-3. The user's facility decides which visits, encounters, orders, results, reports, clinical notes and procedures it
-   sees (platform facility filter): those recorded at another facility of the hospital are not served, though staff
-   see a patient's clinical notes and procedures from every facility.
+3. Assign the user to **one** facility: the partner reads that facility's records and patients only (#251, decided
+   by the hospital), whatever a patient's consent says. A request from an account assigned to no facility, or from a
+   session at a facility it is not assigned to, is refused with 403 `facility-required` before anything is looked up
+   (an account assigned to none may sign in at any facility, so it is no facility's partner). What "the facility's"
+   means for each kind of record:
+   * visits, encounters, orders, lab results and reports, imaging and cardiology reports, prescriptions, discharge
+     summaries, clinical notes, procedures, home readings, wards, rooms and beds: recorded there (platform facility
+     filter);
+   * vital signs: taken there (the facility of the person who took them), or, for a set recorded without one, taken in
+     one of its encounters;
+   * conditions: diagnosed in one of its encounters;
+   * vaccine doses: recorded there, given there or copied from a card there;
+   * documents: uploaded there (the facility of the staff who stored the file);
+   * patients: registered there, or with a visit, an encounter or a stay there; another facility's patient is not
+     found (404) and no search lists them;
+   * allergies are the patient's, not a facility's, and are read whole.
+
+   Staff see a patient's clinical notes, procedures, vital signs, diagnoses and doses from every facility; the ABDM
+   export, a staff download for the patient's own locker, is not limited this way.
 4. The partner states why it reads in `X-Purpose-Of-Use` with each request (for example `TREAT`), as patients'
    consents may allow some purposes only ([Consent and access rules](#consent-and-access-rules)).
 
@@ -57,6 +73,7 @@ Every read and search passes the same gate for the patient the data belongs to:
 | Rule | Read (`GET {type}/{id}`) | Search |
 |---|---|---|
 | Patient does not exist | 404 | patient left out |
+| Patient neither registered nor ever seen (a visit, an encounter or a stay) at the reader's facility | 404 | patient left out |
 | Patient record deleted | 410 `deleted` | patient left out |
 | Patient merged into another UHID | 410 `patient-merged` (names the surviving `Patient/{id}` when the caller may read it) | patient left out |
 | No record-sharing consent admits the reader today, for the purpose they stated | **403 `consent-required`** | **patient left out** |
@@ -192,7 +209,7 @@ Every error is an `OperationOutcome` whose `issue.details.coding` (`urn:hc360:fh
 | 400 | invalid / not-supported | `invalid-parameter`, `unsupported-parameter`, `patient-required` |
 | 400 | too-costly | `too-many-records`: an Observation search that would load more than 5,000 home-monitoring readings; narrow its `date` range, `category` or `code` |
 | 401 | login (with the scheme's `WWW-Authenticate`) | `authentication-required` |
-| 403 | forbidden | `permission-required`, `consent-required`, `restricted-record` |
+| 403 | forbidden | `permission-required`, `facility-required` (an account not assigned to the facility of its session), `consent-required`, `restricted-record` |
 | 404 | not-found / not-supported | `not-found`, `unknown-resource-type` |
 | 405 | not-supported | `read-only` |
 | 406 | not-supported | `not-acceptable` |
@@ -396,7 +413,8 @@ duration. Requester = prescribing doctor; encounter = the clinical encounter, el
     profile.
 
 ### Immunization
-* Every dose staff record on the patient's **Immunisations** tab, given here or copied from the patient's card.
+* Every dose staff record on the patient's **Immunisations** tab at the reader's facility, given there or copied from
+  the patient's card there (doses recorded at another facility of the hospital are that facility's).
 * `vaccineCode`: the SNOMED CT vaccine product of the card code staff chose (`VaccineCodes`: the National Immunisation
   Schedule's BCG, hepatitis B, bOPV, pentavalent, rotavirus, fIPV and IPV, PCV, MR, JE, DPT, Td and TT, and the usual
   adult, travel and private vaccines), always one of the ABDM guide's vaccine codes (`ndhm-vaccine-codes`) with its

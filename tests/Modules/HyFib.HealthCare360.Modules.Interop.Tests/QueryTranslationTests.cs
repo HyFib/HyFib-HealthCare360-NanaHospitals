@@ -98,6 +98,49 @@ public sealed class QueryTranslationTests : IDisposable
         new AllergyIntoleranceProvider(_db).Allergies(a => a.PatientId == TestData.PatientId).ToQueryString().ShouldContain("allergen");
     }
 
+    /// <summary>
+    /// A FHIR reader reads its own facility's records only (#251), and each limit is in the SQL. Vital signs must have
+    /// been taken there, or in one of its encounters; diagnoses made in its encounters; doses recorded there; and patients
+    /// registered or seen there. The lookups that tell a removed record (410) from a missing one read the record past its
+    /// soft-delete filter and keep the encounter's facility filter.
+    /// </summary>
+    [Fact]
+    public void A_readers_records_and_patients_are_its_facilitys_in_sql()
+    {
+        var observations = new ObservationProvider(_db);
+        var vitals = observations.ReadersVitals().ToQueryString();
+        vitals.ShouldContain("v.facility_id = @");
+        vitals.ShouldContain("v.facility_id IS NULL");
+        vitals.ShouldContain("clinical.encounters");
+        KeepsFilters(vitals, "e", facility: true);
+        var vitalsState = observations.VitalsStateOf(TestData.PatientId).ToQueryString();
+        vitalsState.ShouldContain("clinical.encounters");
+        vitalsState.ShouldContain("@ef_filter__", Case.Sensitive, "the encounter keeps its facility filter");
+        vitalsState.ShouldNotContain("NOT (v.is_deleted)", Case.Sensitive, "a removed set is read, to answer 410");
+
+        var conditions = new ConditionProvider(_db);
+        var diagnoses = conditions.ReadersDiagnoses().ToQueryString();
+        diagnoses.ShouldContain("clinical.encounters");
+        diagnoses.ShouldContain("e.facility_id = @");
+        KeepsFilters(diagnoses, "e", facility: true);
+        var diagnosisState = conditions.StateOf(TestData.PatientId).ToQueryString();
+        diagnosisState.ShouldContain("@ef_filter__", Case.Sensitive, "the encounter keeps its facility filter");
+        diagnosisState.ShouldNotContain("NOT (d.is_deleted)", Case.Sensitive, "a removed diagnosis is read, to answer 410");
+
+        var doses = new ImmunizationProvider(_db);
+        doses.ReadersImmunizations(i => i.PatientId == TestData.PatientId).ToQueryString().ShouldContain("i.facility_id = @");
+        doses.StateOf(TestData.PatientId).ToQueryString().ShouldContain("i.facility_id = @");
+
+        var protector = Substitute.For<IFieldProtector>();
+        protector.BlindIndexes(Arg.Any<string>()).Returns(["index"]);
+        var records = new PatientRecords(_db, protector, Substitute.For<IPermissionService>(), Substitute.For<ICurrentUser>(), References, NullLogger<PatientRecords>.Instance);
+        var patients = records.SearchQuery(TestData.Search("Patient", "name=meera"), includeRestricted: false, RecordSharingConsentTests.Reader).ToQueryString();
+        patients.ShouldContain("registered_facility_id = @");
+        patients.ShouldContain("patients.visits");
+        patients.ShouldContain("clinical.encounters");
+        patients.ShouldContain("inpatient.admissions");
+    }
+
     [Fact]
     public void Prescription_query_shares_signed_prescriptions_only()
     {

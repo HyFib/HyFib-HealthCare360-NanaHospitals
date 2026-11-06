@@ -23,15 +23,16 @@ internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceD
     {
         if (FhirIds.TryParse(id, FhirIds.PatientDocument, out var documentId))
         {
-            var state = await db.Set<PatientDocument>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+            var document = await db.Set<PatientDocument>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
                 .Where(d => d.Id == documentId && d.Type != PatientDocumentType.IdProof && d.Type != PatientDocumentType.InsuranceCard)
-                .Select(d => new RowState(d.PatientId, d.IsDeleted)).FirstOrDefaultAsync(ct);
+                .Select(d => new { State = new RowState(d.PatientId, d.IsDeleted), d.FileId }).FirstOrDefaultAsync(ct);
+            var state = document is not null && (await AtReadersFacilityAsync([document.FileId], ct)).Count == 1 ? document.State : null;
             if (ResourceLookup.Unavailable(state) is { } unavailable)
             {
                 return unavailable;
             }
 
-            var documents = await PatientDocumentsAsync(d => d.Id == documentId, ct);
+            var documents = await ReadersDocumentsAsync(d => d.Id == documentId, ct);
             return documents.Count == 0 ? ResourceLookup.Missing : ResourceLookup.Found(DocumentReferenceMapper.FromPatientDocument(documents[0]), state!.PatientId);
         }
 
@@ -67,7 +68,7 @@ internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceD
 
     public async Task<SearchCandidates> ListForPatientAsync(Guid patientId, SearchRequest request, PatientAccess access, CancellationToken ct)
     {
-        var documents = await PatientDocumentsAsync(d => d.PatientId == patientId, ct);
+        var documents = await ReadersDocumentsAsync(d => d.PatientId == patientId, ct);
         var summaries = await SignedSummaries(s => s.PatientId == patientId).ToListAsync(ct);
         var notes = await SignedNotesAsync(n => n.PatientId == patientId, ct);
         return new SearchCandidates([.. documents.Select(DocumentReferenceMapper.FromPatientDocument), .. await MapSummariesAsync(summaries, ct), .. await MapNotesAsync(notes, ct)]);
@@ -201,6 +202,34 @@ internal sealed class DocumentReferenceProvider(HospitalDbContext db, ReferenceD
         var files = await db.Set<StoredFile>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
             .Where(f => fileIds.Contains(f.Id)).Select(f => new { f.Id, f.ContentType, f.SizeBytes }).ToDictionaryAsync(f => f.Id, ct);
         return [.. documents.Select(d => files.TryGetValue(d.FileId, out var file) ? d with { ContentType = file.ContentType, SizeBytes = file.SizeBytes } : d)];
+    }
+
+    /// <summary>
+    /// The documents uploaded at the reader's facility (<see cref="ReaderFacility"/>): a document is the facility's whose
+    /// staff stored its file. Discharge summaries and clinical notes are their facility's by the platform's filter.
+    /// </summary>
+    private async Task<List<PatientDocumentRow>> ReadersDocumentsAsync(Expression<Func<PatientDocument, bool>> filter, CancellationToken ct)
+    {
+        var documents = await PatientDocumentsAsync(filter, ct);
+        var here = await AtReadersFacilityAsync([.. documents.Select(d => d.FileId)], ct);
+        return [.. documents.Where(d => here.Contains(d.FileId))];
+    }
+
+    /// <summary>
+    /// Which of these stored files were uploaded at the reader's facility, read in a query of its own: a file is read past
+    /// its soft-delete filter (as <see cref="PatientDocumentsAsync"/> reads it), which must not lift the documents' filters.
+    /// </summary>
+    private async Task<HashSet<Guid>> AtReadersFacilityAsync(Guid[] fileIds, CancellationToken ct)
+    {
+        if (fileIds.Length == 0)
+        {
+            return [];
+        }
+
+        var facility = ReaderFacility.Of(db);
+        var here = await db.Set<StoredFile>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
+            .Where(f => fileIds.Contains(f.Id) && f.FacilityId == facility).Select(f => f.Id).ToListAsync(ct);
+        return [.. here];
     }
 
     /// <summary>Signed or amended discharge summaries; drafts are not shared.</summary>
