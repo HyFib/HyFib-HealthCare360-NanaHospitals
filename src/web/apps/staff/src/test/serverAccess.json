@@ -2441,5 +2441,28 @@
     "PUT /api/v1/rpm/programs/{id:guid} rpm.manage",
     "PUT /api/v1/scheduling/exceptions/{id:guid} scheduling.schedules.manage",
     "PUT /api/v1/scheduling/schedules/{id:guid} scheduling.schedules.manage"
-  ]
+  ],
+  "approvals": {
+    "billing.credit_note": "billing.refunds.approve",
+    "billing.hbp_master": "masters.prices.approve",
+    "billing.ip_plan": "billing.discounts.approve",
+    "billing.package": "masters.prices.approve",
+    "billing.pos_import_withdrawal": "billing.refunds.approve",
+    "billing.receipt_reversal": "billing.refunds.approve",
+    "billing.refund_reversal": "billing.refunds.approve",
+    "billing.tariff_plan": "masters.prices.approve",
+    "billing.tariff_prices": "masters.prices.approve",
+    "billing.write_off": "billing.refunds.approve",
+    "diagnostics.lab_amendment": "lab.results.verify",
+    "doctorfees.rule": "masters.prices.approve",
+    "identity.role_grant": "admin.grants.approve",
+    "identity.user_grant": "admin.grants.approve",
+    "insurance.non_payable": "masters.prices.approve",
+    "insurance.payer_terms": "masters.prices.approve",
+    "inventory.drug_class": "inventory.drug_class.approve",
+    "masters.service_price": "masters.prices.approve",
+    "mrd.death_certificate": "mrd.deaths.confirm",
+    "patients.merge": "patients.merge",
+    "purchase.grn": "purchase.grn.approve"
+  }
 }
