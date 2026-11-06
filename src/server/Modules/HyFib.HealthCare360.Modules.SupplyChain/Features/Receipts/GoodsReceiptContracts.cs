@@ -118,7 +118,8 @@ public sealed class CreateGoodsReceiptRequestValidator : AbstractValidator<Creat
         RuleFor(x => x.StoreId).NotEmpty();
         RuleFor(x => x.VendorInvoiceNumber).NotEmpty().MaximumLength(40).WithMessage("Enter the vendor's invoice number.");
         RuleFor(x => x.Remarks).SafeText(1000);
-        RuleFor(x => x.VendorInvoiceAmount).GreaterThanOrEqualTo(0).WithMessage("Enter the invoice total as printed, or leave it empty.");
+        RuleFor(x => x.VendorInvoiceAmount).GreaterThanOrEqualTo(0).WithMessage("Enter the invoice total as printed, or leave it empty.")
+            .PrecisionScale(18, 2, true).WithMessage("Use at most 2 decimal places.");
         RuleFor(x => x.Lines).NotEmpty().WithMessage("Add at least one received item.")
             .Must(l => l.Count <= 300).WithMessage("A GRN can have at most 300 lines.");
         RuleForEach(x => x.Lines).ChildRules(line =>
