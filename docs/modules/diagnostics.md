@@ -70,6 +70,9 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 | PUT | `/tests/{id}/ranges` | `lab.masters.manage` | `SetRangesRequest` (`ReferenceRangeDto[]`: gender, ageFromDays, ageToDays, low, high, criticalLow, criticalHigh, text, normalValues, criticalValues) → 204 |
 | GET | `/instruments?includeInactive` | masters.manage or qc.manage | → `LabInstrumentDto[]` |
 | POST · PUT | `/instruments` · `/instruments/{id}` | `lab.masters.manage` | `SaveLabInstrumentRequest` (code, name, manufacturer, model, section, protocol Hl7/Astm, isBidirectional, autoValidationEnabled, location, isActive, version) → 201 / 204; codes are unique across facilities (409 `lab.instrument_code_exists`) |
+| GET | `/instruments/channels` | masters.manage or qc.manage | → `AnalyserChannelDto[]`: the channels the facility's analysers in use send that no active test maps now (see *Channels no test maps*), by analyser and channel code: first and last sent, times, last value and unit, `mapping` (how to write it in a test's channels, the analyser's own code first; null when it cannot be written) and `ignored` (reason, by whom, when) |
+| POST | `/instruments/channels/{id}/ignore` | `lab.masters.manage` | `IgnoreAnalyserChannelRequest` (reason, 5 to 300 characters) → 204; 422 `lab.channel_mapped` (a test maps it now), 409 `lab.channel_ignored`; audited as `IgnoredAnalyserChannel.create` |
+| DELETE | `/instruments/channels/{id}/ignore` | `lab.masters.manage` | → 204, the channel waits to be mapped again; 404 when it is not ignored; audited as `IgnoredAnalyserChannel.delete` |
 | GET | `/referral-labs?includeInactive` | masters.manage, samples.receive or orders.read | → `ReferralLabDto[]` |
 | POST · PUT | `/referral-labs` · `/referral-labs/{id}` | `lab.masters.manage` | `SaveReferralLabRequest` (code, name, contact, accreditationNumber, tatDays) → 201 / 204 |
 
@@ -577,7 +580,7 @@ acknowledged:
 | `NoSampleId` | The analyser named no sample (an ASTM order record without O.3 or O.4, an HL7 order with none of the sample-id fields, results without an order record) |
 | `UnknownSample` | No tube of the analyser's facility has the barcode |
 | `SampleNotInLab` | The tube is not collected yet, rejected or cancelled |
-| `NoMatchingTest` | None of the tube's tests maps any channel the message sent for it (when some do, the others are only logged, as analysers send whole profiles) |
+| `NoMatchingTest` | None of the tube's tests maps any channel the message sent for it (when some do, the others are only logged, as analysers send whole profiles; a channel no test maps at all is listed under *Channels no test maps*) |
 | `DiffersFromVerified` | The test is verified and the analyser sent another value, or the same value with another unit, flags, status or comment (a correction, status `C`), or for a result typed in or from another analyser. Only the reading on the test sent again (after a lost acknowledgement) changes nothing |
 | `InvalidValue` | The value is not one the test can hold (not a number for a numeric test, not one of its answers, nor one of them as analysers write it) |
 | `RepeatedInMessage` | The message gave the test twice, the second time with another value or the same value read otherwise; the first is on the test |
@@ -591,6 +594,23 @@ and delta-checked, with the analyser's reading and the time it measured the samp
 and is never auto-validated, since a person chose where it goes. Or
 discards it with a reason (a control run, a duplicate, a rerun on its own tube). Both are audited
 (`lab.unmatched.assigned`, `lab.unmatched.discarded`), and the rows keep who did it and when.
+
+**Channels no test maps** (`AnalyserChannel`, table `diagnostics.lab_analyser_channels`, facility-scoped, not in the
+data audit: the analyser's own messages, counted on each). Analysers send whole profiles, so a channel that maps a test
+the tube did not need is expected and only logged. A channel that no active test in the catalogue maps at all is a
+value the analyser measures and no report shows: a new analyser's own codes, an assay loaded on it that Lab setup has
+no test for, or a test mapped under another code. For each message, once it is handled, `AnalyserChannelSightings`
+notes every channel of the readings that went on no test of the tube (all of them when the message named no known
+sample in the lab) that no active test maps, by analyser and channel: first and last sent, how often, the last value
+and unit. One statement per message (`INSERT … ON CONFLICT`), after the results are saved; it never fails the message,
+and two messages at once only count a channel twice. The first time an analyser sends a channel, holders of
+`lab.masters.manage` in its facility get one notification naming every new channel (link: Lab setup › Analysers).
+Whether a channel is mapped is worked out when the list is read, so mapping it in a test is all it takes for it to
+leave the list (and un-mapping it brings it back). **Lab setup › Analysers** counts the channels to map on each
+analyser and lists them with what each last read and the mapping to add to the right test (`H500:RDW-CV`); a channel
+whose code holds characters a mapping cannot (`/`, a space, `:`) is said to be unmappable, for the analyser's engineer
+to send under another code. Whoever manages the masters can decide that a channel goes on no report (a research
+parameter, a flag sent as a channel), with the reason (`IgnoredAnalyserChannel`, audited), and take that back.
 
 **Order download** (`AnalyserOrders`, LIS-04). In the same unit of work as the change, Diagnostics adds one
 `lab.analyser.order` outbox message (`InstrumentOrderRequest`: barcode, action, analysers with channel codes), so

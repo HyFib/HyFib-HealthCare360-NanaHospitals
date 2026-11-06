@@ -1,4 +1,5 @@
 import type {
+  AnalyserChannelDto,
   LabInstrumentDto,
   LabOrderDetail,
   LabOrderItemDto,
@@ -153,6 +154,23 @@ const INSTRUMENTS: LabInstrumentDto[] = [
     location: 'Haematology bench',
     isActive: true,
     version: 2,
+  },
+];
+
+// The XN-550 sends RDW-CV, which no test maps yet.
+const CHANNELS: AnalyserChannelDto[] = [
+  {
+    id: id('12'),
+    instrumentId: id('11'),
+    instrumentCode: 'XN550',
+    channelCode: 'RDW-CV',
+    firstSeenAt: minutesAgo(600),
+    lastSeenAt: minutesAgo(20),
+    timesSeen: 14,
+    lastValue: '13.2',
+    lastUnit: '%',
+    mapping: 'XN550:RDW-CV',
+    ignored: null,
   },
 ];
 
@@ -833,6 +851,7 @@ export const ANSWERS: FakeAnswers = {
   'GET /api/v1/lab/tests': paged(TESTS),
   [`GET /api/v1/lab/tests/${RECORD_ID}`]: CBC_DETAIL,
   'GET /api/v1/lab/instruments': INSTRUMENTS,
+  'GET /api/v1/lab/instruments/channels': CHANNELS,
   'GET /api/v1/lab/referral-labs': REFERRAL_LABS,
   'GET /api/v1/lab/orders': paged(ORDERS),
   [`GET /api/v1/lab/orders/${RECORD_ID}`]: ORDER,

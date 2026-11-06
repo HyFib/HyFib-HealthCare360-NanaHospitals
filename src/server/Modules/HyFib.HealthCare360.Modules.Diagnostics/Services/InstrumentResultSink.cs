@@ -10,7 +10,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// <item>Only registered, active analysers are accepted, and only for tubes of their own facility.</item>
 /// <item>Channels map to analytes by <c>INSTRUMENT:CHANNEL</c> (preferred) or plain <c>CHANNEL</c> codes. Only analytes
 /// ordered on the scanned tube are filled. Channels no test on the tube maps are logged when others in the message
-/// matched: analysers send whole profiles, of which a tube may need one test.</item>
+/// matched: analysers send whole profiles, of which a tube may need one test. A channel no active test in the catalogue
+/// maps at all is listed for the lab to map or ignore (<see cref="AnalyserChannelSightings"/>).</item>
 /// <item>Every other result is kept. One that cannot go on an open test (no sample id, a sample unknown or not in the
 /// lab, a tube none of whose tests maps any channel sent, a value the test cannot hold, another value or another
 /// reading of it for a verified test or for a test the message gave already) is stored among the unmatched results
@@ -37,6 +38,7 @@ internal sealed class InstrumentResultSink(
     DiagnosticsLookups lookups,
     DiagnosticsRealtime realtime,
     AnalyserOrders analyserOrders,
+    AnalyserChannelSightings sightings,
     TimeProvider time,
     ILogger<InstrumentResultSink> logger) : IInstrumentResultSink
 {
@@ -51,9 +53,32 @@ internal sealed class InstrumentResultSink(
             return Error.Rule("lab.instrument_unknown", $"Analyser '{message.InstrumentCode}' is not registered or is inactive.");
         }
 
+        // The readings no test on the tube maps, checked against the whole catalogue once the message is handled.
+        var notOnTube = new List<InstrumentResult>();
+        var received = await ReceiveAsync(instrument, message, notOnTube, cancellationToken);
+        if (received.IsSuccess)
+        {
+            try
+            {
+                await sightings.NoteAsync(instrument, notOnTube, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The results are saved: a failure here (the list or its notice) must not make the analyser send them again.
+                logger.LogWarning(ex, "Could not note the channels analyser {Instrument} sent that no test maps", instrument.Code);
+            }
+        }
+
+        return received;
+    }
+
+    private async Task<Result> ReceiveAsync(
+        LabInstrument instrument, InstrumentResultMessage message, List<InstrumentResult> notOnTube, CancellationToken cancellationToken)
+    {
         var barcode = message.SampleBarcode.Trim();
         if (barcode.Length == 0)
         {
+            notOnTube.AddRange(message.Results);
             return await KeepAllAsync(instrument, message, tube: null, UnmatchedResultReason.NoSampleId,
                 $"{instrument.Code} sent the result without a sample id.", cancellationToken);
         }
@@ -61,6 +86,7 @@ internal sealed class InstrumentResultSink(
         var tube = await db.Set<LabSample>().FirstOrDefaultAsync(s => s.Barcode == barcode, cancellationToken);
         if (tube is null || tube.FacilityId != instrument.FacilityId)
         {
+            notOnTube.AddRange(message.Results);
             return await KeepAllAsync(instrument, message, tube: null, UnmatchedResultReason.UnknownSample,
                 $"No sample of {instrument.Code}'s facility has the barcode {barcode}.", cancellationToken);
         }
@@ -80,6 +106,7 @@ internal sealed class InstrumentResultSink(
         }
         else if (tube.Status is not (SampleStatus.Received or SampleStatus.InProcess or SampleStatus.Completed))
         {
+            notOnTube.AddRange(message.Results);
             return await KeepAllAsync(instrument, message, tube, UnmatchedResultReason.SampleNotInLab,
                 $"Sample {barcode} is {tube.Status.ToString().ToLowerInvariant()}, not in the lab.", cancellationToken);
         }
@@ -164,6 +191,7 @@ internal sealed class InstrumentResultSink(
             recorded.Add(target);
         }
 
+        notOnTube.AddRange(unmapped);
         if (recorded.Count == 0 && unchanged == 0 && unplaced.Count == 0)
         {
             // None of the tube's tests maps any channel sent: kept for a person, who can tell what the analyser ran.

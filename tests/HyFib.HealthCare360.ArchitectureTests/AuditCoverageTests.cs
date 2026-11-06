@@ -30,6 +30,7 @@ public sealed class AuditCoverageTests
         ["ServerNode"] = "Each server's live System health report, rewritten every minute.",
         ["LabGatewayNode"] = "Each server's live analyser and worklist status, rewritten within seconds.",
         ["LabOrderDownload"] = "An order queued for an analyser until it connects (barcode and channel codes); the lab order is audited.",
+        ["AnalyserChannel"] = "A channel an analyser sends that no test maps, as its messages show it (counted on each); ignoring one is audited (IgnoredAnalyserChannel).",
         ["WifiSample"] = "A sample of the Server Node's Wi-Fi link, kept 30 days for the health dashboard.",
         ["BackupRun"] = "The backup history; each backup's outcome and every recovery key action is audited (backup.*).",
         ["SeededGrant"] = "The seeder's note of default grants it applied; the grants are audited as role.permissions_changed.",

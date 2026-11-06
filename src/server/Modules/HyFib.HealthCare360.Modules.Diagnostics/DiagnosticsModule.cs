@@ -146,6 +146,7 @@ public sealed class DiagnosticsModule : IModule
 
         // Lab-equipment gateway (Integrations) hands analyser results and host queries to the LIS.
         services.AddScoped<IInstrumentResultSink, InstrumentResultSink>();
+        services.AddScoped<AnalyserChannelSightings>();
 
         // The DICOM modality worklist server (Integrations) reads the studies still to be done.
         services.AddScoped<IModalityWorklistSource, ModalityWorklistSource>();
