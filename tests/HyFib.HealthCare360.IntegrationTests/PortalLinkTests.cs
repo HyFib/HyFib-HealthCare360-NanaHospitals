@@ -166,6 +166,11 @@ public sealed class PortalLinkTests(HospitalServer server)
         // The panel says why before anyone tries, to those who may send links.
         var links = await frontOffice.GetAsync<PatientPortalLinksDto>(ListPath(patient.Id));
         links.CannotSend.ShouldNotBeNull().Code.ShouldBe("portal.link_sensitive");
+
+        // Staff who may read the record but not send links are not told why: the reason would say that it is in a protected category.
+        var asReader = await doctor.GetAsync<PatientPortalLinksDto>(ListPath(patient.Id));
+        asReader.CannotSend.ShouldBeNull("the doctor may read the record but not send links");
+        asReader.Links.ShouldNotBeEmpty();
     }
 
     [Fact]

@@ -131,11 +131,22 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fakeServer);
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // The page finishes loading before it goes. The first test ends once the address is the home page, while the home page
+  // is still loading: left running, that load reaches the real fetch once the fake server is unstubbed, and can answer
+  // after the test file's window is gone, which fails the run ("window is not defined") although every test passed.
+  const opened = router;
+  router = null;
+  if (opened) {
+    await waitFor(() => expect([opened.state.status, opened.state.isLoading]).toEqual(['idle', false]), SLOW);
+  }
   vi.unstubAllGlobals();
   sessionStorage.clear();
   useLanguageStore.getState().setLanguage('en');
 });
+
+/** The router of the page the test opened. */
+let router: ReturnType<typeof createPortalRouter> | null = null;
 
 function openAt(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -143,7 +154,7 @@ function openAt(path: string) {
   render(
     <QueryClientProvider client={queryClient}>
       <FluentProvider theme={webLightTheme}>
-        <RouterProvider router={createPortalRouter(queryClient, history)} />
+        <RouterProvider router={(router = createPortalRouter(queryClient, history))} />
       </FluentProvider>
     </QueryClientProvider>,
   );
