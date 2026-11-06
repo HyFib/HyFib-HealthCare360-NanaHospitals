@@ -1,11 +1,14 @@
 using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
+using HyFib.HealthCare360.Modules.Diagnostics.Services;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 
 /// <summary>
 /// /api/v1/lab/tests, /instruments, /referral-labs: the test master with panels and reference intervals (LIS-01),
-/// analysers connected through the equipment gateway (INT-LAB) and reference laboratories (LIS-08).
+/// analysers connected through the equipment gateway (INT-LAB), the channels they send that no test maps, and reference
+/// laboratories (LIS-08).
 /// </summary>
 internal static class LabMasterEndpoints
 {
@@ -37,6 +40,12 @@ internal static class LabMasterEndpoints
             .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveLabInstrumentRequest>();
         instruments.MapPut("/{id:guid}", (Guid id, SaveLabInstrumentRequest request, HospitalDbContext db, ICurrentUser user, CancellationToken ct) => SaveInstrument(id, request, db, user, ct))
             .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveLabInstrumentRequest>().RequireVersion();
+
+        var channels = app.MapGroup("/api/v1/lab/instruments/channels").WithTags("Laboratory masters");
+        channels.MapGet("/", ListChannels).RequireAnyPermission(DiagnosticsPermissions.LabMastersManage, DiagnosticsPermissions.LabQcManage);
+        channels.MapPost("/{id:guid}/ignore", IgnoreChannel)
+            .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<IgnoreAnalyserChannelRequest>();
+        channels.MapDelete("/{id:guid}/ignore", StopIgnoringChannel).RequirePermission(DiagnosticsPermissions.LabMastersManage);
 
         var referralLabs = app.MapGroup("/api/v1/lab/referral-labs").WithTags("Laboratory masters");
         referralLabs.MapGet("/", ListReferralLabs)
@@ -356,6 +365,115 @@ internal static class LabMasterEndpoints
             .Select(i => new LabInstrumentDto(
                 i.Id, i.Code, i.Name, i.Manufacturer, i.Model, i.Section, i.Protocol, i.IsBidirectional, i.AutoValidationEnabled, i.Location, i.IsActive, i.Version))
             .ToListAsync(ct));
+
+    // ------------------------------------------------------------------ channels no test maps
+
+    /// <summary>
+    /// The channels the facility's analysers in use send that no active test maps now: a channel mapped since it was
+    /// sent is left out, so mapping it in a test is all it takes. Each with how to write its mapping, and the lab's
+    /// decision to ignore it where there is one.
+    /// </summary>
+    private static async Task<IResult> ListChannels(HospitalDbContext db, DiagnosticsLookups lookups, CancellationToken ct)
+    {
+        var instruments = await db.Set<LabInstrument>().AsNoTracking()
+            .Where(i => i.IsActive)
+            .ToDictionaryAsync(i => i.Id, i => i.Code, ct);
+        var ids = instruments.Keys.ToList();
+        var sent = await db.Set<AnalyserChannel>().AsNoTracking().Where(c => ids.Contains(c.InstrumentId)).ToListAsync(ct);
+        var catalogue = await MappingsAsync(db, ct);
+        var ignored = await db.Set<IgnoredAnalyserChannel>().AsNoTracking().Where(i => ids.Contains(i.InstrumentId)).ToListAsync(ct);
+        var names = await lookups.UserNamesAsync(ignored.Select(i => i.CreatedBy), ct);
+
+        return TypedResults.Ok(sent
+            .Where(c => !ChannelMappings.MapsAny(catalogue, instruments[c.InstrumentId], c.ChannelCode))
+            .OrderBy(c => instruments[c.InstrumentId], StringComparer.Ordinal)
+            .ThenBy(c => c.ChannelCode, StringComparer.Ordinal)
+            .Select(c =>
+            {
+                var code = instruments[c.InstrumentId];
+                var decision = ignored.FirstOrDefault(i => i.InstrumentId == c.InstrumentId && i.ChannelCode == c.ChannelCode);
+                return new AnalyserChannelDto(
+                    c.Id, c.InstrumentId, code, c.ChannelCode, c.FirstSeenAt, c.LastSeenAt, c.TimesSeen, c.LastValue, c.LastUnit,
+                    MappingOf(code, c.ChannelCode),
+                    decision is null
+                        ? null
+                        : new IgnoredAnalyserChannelDto(decision.Reason, decision.CreatedBy is { } by ? names.GetValueOrDefault(by) : null, decision.CreatedAt));
+            })
+            .ToList());
+    }
+
+    /// <summary>
+    /// The lab decides a channel goes on no report: a research parameter, or a flag the analyser sends as a channel. It
+    /// is then listed as ignored, not waiting to be mapped. A channel a test maps now has nothing to ignore.
+    /// </summary>
+    private static async Task<IResult> IgnoreChannel(Guid id, IgnoreAnalyserChannelRequest request, HospitalDbContext db, CancellationToken ct)
+    {
+        var channel = await db.Set<AnalyserChannel>().AsNoTracking().FirstOrDefaultAsync(c => c.Id == id, ct);
+        var instrument = channel is null ? null : await db.Set<LabInstrument>().AsNoTracking().FirstOrDefaultAsync(i => i.Id == channel.InstrumentId, ct);
+        if (channel is null || instrument is null)
+        {
+            return Error.NotFound(nameof(AnalyserChannel), id).ToProblem();
+        }
+
+        if (ChannelMappings.MapsAny(await MappingsAsync(db, ct), instrument.Code, channel.ChannelCode))
+        {
+            return Error.Rule("lab.channel_mapped", $"A test maps {instrument.Code}'s channel {channel.ChannelCode} now, so there is nothing to ignore.").ToProblem();
+        }
+
+        if (await db.Set<IgnoredAnalyserChannel>().AnyAsync(i => i.InstrumentId == channel.InstrumentId && i.ChannelCode == channel.ChannelCode, ct))
+        {
+            return Error.Conflict("lab.channel_ignored", $"{instrument.Code}'s channel {channel.ChannelCode} is ignored already.").ToProblem();
+        }
+
+        db.Add(new IgnoredAnalyserChannel
+        {
+            FacilityId = channel.FacilityId,
+            InstrumentId = channel.InstrumentId,
+            ChannelCode = channel.ChannelCode,
+            Reason = request.Reason.Trim(),
+        });
+        await db.SaveChangesAsync(ct);
+        return TypedResults.NoContent();
+    }
+
+    /// <summary>The lab takes its decision back: the channel waits to be mapped again.</summary>
+    private static async Task<IResult> StopIgnoringChannel(Guid id, HospitalDbContext db, CancellationToken ct)
+    {
+        var channel = await db.Set<AnalyserChannel>().AsNoTracking().FirstOrDefaultAsync(c => c.Id == id, ct);
+        var decision = channel is null
+            ? null
+            : await db.Set<IgnoredAnalyserChannel>().FirstOrDefaultAsync(i => i.InstrumentId == channel.InstrumentId && i.ChannelCode == channel.ChannelCode, ct);
+        if (decision is null)
+        {
+            return Error.NotFound(nameof(IgnoredAnalyserChannel), id).ToProblem();
+        }
+
+        db.Remove(decision);
+        await db.SaveChangesAsync(ct);
+        return TypedResults.NoContent();
+    }
+
+    /// <summary>The channel codes of every active test, one list per test.</summary>
+    private static Task<List<List<string>>> MappingsAsync(HospitalDbContext db, CancellationToken ct) =>
+        db.Set<LabTest>().AsNoTracking()
+            .Where(t => t.IsActive && t.InstrumentChannelCodes.Count > 0)
+            .Select(t => t.InstrumentChannelCodes)
+            .ToListAsync(ct);
+
+    /// <summary>
+    /// The analyser's own mapping when it can be written, else the plain code, else null. A channel with ':' in it
+    /// cannot be mapped at all: a mapping reads what is before the ':' as the analyser.
+    /// </summary>
+    internal static string? MappingOf(string instrumentCode, string channelCode)
+    {
+        if (channelCode.Contains(':', StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var own = $"{instrumentCode}:{channelCode}";
+        return MasterRules.IsChannelMapping(own) ? own : MasterRules.IsChannelMapping(channelCode) ? channelCode : null;
+    }
 
     private static async Task<IResult> SaveInstrument(Guid? id, SaveLabInstrumentRequest request, HospitalDbContext db, ICurrentUser user, CancellationToken ct)
     {

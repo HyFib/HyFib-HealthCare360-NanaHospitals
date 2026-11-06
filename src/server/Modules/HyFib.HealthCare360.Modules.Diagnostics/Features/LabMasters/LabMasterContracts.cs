@@ -134,6 +134,28 @@ public sealed record SaveLabInstrumentRequest(
     bool IsActive,
     uint? Version);
 
+/// <summary>
+/// A channel an analyser sends that no active test maps. <c>Mapping</c> is how to write it in a test's channel codes,
+/// the analyser's own code first (<c>H500:RDW-CV</c>), or null when its characters cannot be written as a mapping.
+/// <c>Ignored</c> is the lab's decision not to map it, while it stands.
+/// </summary>
+public sealed record AnalyserChannelDto(
+    Guid Id,
+    Guid InstrumentId,
+    string InstrumentCode,
+    string ChannelCode,
+    DateTimeOffset FirstSeenAt,
+    DateTimeOffset LastSeenAt,
+    int TimesSeen,
+    string? LastValue,
+    string? LastUnit,
+    string? Mapping,
+    IgnoredAnalyserChannelDto? Ignored);
+
+public sealed record IgnoredAnalyserChannelDto(string Reason, string? IgnoredBy, DateTimeOffset IgnoredAt);
+
+public sealed record IgnoreAnalyserChannelRequest(string Reason);
+
 public sealed record ReferralLabDto(
     Guid Id,
     string Code,
@@ -242,6 +264,13 @@ public sealed class SaveLabInstrumentRequestValidator : AbstractValidator<SaveLa
         RuleFor(x => x.Section).IsInEnum();
         RuleFor(x => x.Protocol).IsInEnum();
     }
+}
+
+public sealed class IgnoreAnalyserChannelRequestValidator : AbstractValidator<IgnoreAnalyserChannelRequest>
+{
+    public IgnoreAnalyserChannelRequestValidator() =>
+        RuleFor(x => x.Reason).NotEmpty().MinimumLength(5).WithMessage("Say why the channel goes on no report (at least 5 characters).")
+            .SafeText(IgnoredAnalyserChannel.ReasonLength);
 }
 
 public sealed class SaveReferralLabRequestValidator : AbstractValidator<SaveReferralLabRequest>

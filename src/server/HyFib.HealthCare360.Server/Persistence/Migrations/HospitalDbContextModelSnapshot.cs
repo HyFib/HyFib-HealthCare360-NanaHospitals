@@ -15162,6 +15162,138 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("report_templates", "diagnostics");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.AnalyserChannel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ChannelCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("channel_code");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<DateTimeOffset>("FirstSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_seen_at");
+
+                    b.Property<Guid>("InstrumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("instrument_id");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<string>("LastUnit")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("last_unit");
+
+                    b.Property<string>("LastValue")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("last_value");
+
+                    b.Property<int>("TimesSeen")
+                        .HasColumnType("integer")
+                        .HasColumnName("times_seen");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lab_analyser_channels");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_lab_analyser_channels_facility_id");
+
+                    b.HasIndex("InstrumentId", "ChannelCode")
+                        .IsUnique()
+                        .HasDatabaseName("ix_lab_analyser_channels_instrument_id_channel_code");
+
+                    b.ToTable("lab_analyser_channels", "diagnostics");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.IgnoredAnalyserChannel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ChannelCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("channel_code");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<Guid>("InstrumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("instrument_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lab_ignored_analyser_channels");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_lab_ignored_analyser_channels_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_lab_ignored_analyser_channels_is_deleted");
+
+                    b.HasIndex("InstrumentId", "ChannelCode")
+                        .IsUnique()
+                        .HasDatabaseName("ix_lab_ignored_analyser_channels_instrument_id_channel_code")
+                        .HasFilter("is_deleted = false");
+
+                    b.ToTable("lab_ignored_analyser_channels", "diagnostics");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.LabInstrument", b =>
                 {
                     b.Property<Guid>("Id")
@@ -45645,6 +45777,26 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasForeignKey("TemplateId")
                         .OnDelete(DeleteBehavior.SetNull)
                         .HasConstraintName("fk_radiology_reports_report_template_template_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.AnalyserChannel", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.LabInstrument", null)
+                        .WithMany()
+                        .HasForeignKey("InstrumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_lab_analyser_channels_lab_instrument_instrument_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.IgnoredAnalyserChannel", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.LabInstrument", null)
+                        .WithMany()
+                        .HasForeignKey("InstrumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_lab_ignored_analyser_channels_lab_instrument_instrument_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.LabOrder", b =>

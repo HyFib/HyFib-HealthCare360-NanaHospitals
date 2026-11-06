@@ -23,6 +23,7 @@ using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Messaging;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
@@ -505,6 +506,112 @@ public sealed class LabAnalyserTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Channels_an_analyser_sends_that_no_test_maps_are_listed_until_mapped_or_ignored_and_the_lab_is_told_once()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+
+        // A chemistry analyser of the test's own, sending its whole profile for a tube that needs the fasting sugar.
+        var analyser = "CHM" + Letters(5).ToUpperInvariant();
+        await admin.PostAsync<JsonObject>("/api/v1/lab/instruments", new SaveLabInstrumentRequest(
+            analyser, "Chemistry analyser", "HORIBA", "Yumizen C150", LabSection.Biochemistry, InstrumentProtocol.Astm,
+            IsBidirectional: false, AutoValidationEnabled: true, Location: null, IsActive: true, Version: null));
+        await MapChannelAsync(admin, "LAB-FBS", analyser, "GLU");
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+
+        // GLU goes on the tube; CHOL maps a test the tube did not need; CA, CHOL-T and NA/K map no test at all.
+        (await AnalyserSendsAsync(analyser, $"O|1|{tube.Barcode}||^^^GLU|R",
+            "R|1|^^^GLU|95|mg/dL||N||F", "R|2|^^^CHOL|180|mg/dL||N||F", "R|3|^^^CA|9.1|mg/dL||N||F",
+            "R|4|^^^CHOL-T|182|mg/dL||N||F", "R|5|^^^NA/K|33.6|||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+
+        (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Value.ShouldBe("95");
+        var listed = await ChannelsAsync(lab, analyser);
+        listed.Select(c => c.ChannelCode).ShouldBe(["CA", "CHOL-T", "NA/K"]);
+        var calcium = listed[0];
+        (calcium.TimesSeen, calcium.LastValue, calcium.LastUnit, calcium.Mapping, calcium.Ignored)
+            .ShouldBe((1, "9.1", "mg/dL", $"{analyser}:CA", (IgnoredAnalyserChannelDto?)null));
+        listed[2].Mapping.ShouldBeNull("a mapping cannot hold '/', so the lab is told rather than shown a code it cannot save");
+
+        // Whoever manages the masters is told once, with every channel the analyser sent for the first time.
+        var told = await ToldAsync(admin, analyser);
+        told.ShouldHaveSingleItem().Body.ShouldNotBeNull().ShouldContain("CA, CHOL-T, NA/K");
+        told[0].Link.ShouldBe("/lab/setup?tab=analysers");
+
+        // A message without a sample id is kept for the lab, and its channels are noted too: CA again, PHOS for the first time.
+        (await AnalyserSendsAsync(analyser, "O|1||||R", "R|1|^^^CA|9.4|mg/dL||N||F", "R|2|^^^PHOS|3.8|mg/dL||N||F"))
+            .ShouldNotBeNull().Accepted.ShouldBeTrue();
+        listed = await ChannelsAsync(lab, analyser);
+        listed.Select(c => c.ChannelCode).ShouldBe(["CA", "CHOL-T", "NA/K", "PHOS"]);
+        (listed[0].TimesSeen, listed[0].LastValue).ShouldBe((2, "9.4"));
+        listed[0].LastSeenAt.ShouldBeGreaterThan(calcium.LastSeenAt);
+        listed[0].FirstSeenAt.ShouldBe(calcium.FirstSeenAt);
+        told = await ToldAsync(admin, analyser);
+        told.Count.ShouldBe(2);
+        told[0].Body.ShouldNotBeNull().ShouldContain("sent PHOS, which");
+
+        // Mapped in a test as the list says to write it, CHOL-T leaves the list, and has nothing left to ignore.
+        var cholesterol = listed[1];
+        await MapChannelAsync(admin, "CHOL", analyser, "CHOL-T");
+        (await ChannelsAsync(lab, analyser)).Select(c => c.ChannelCode).ShouldBe(["CA", "NA/K", "PHOS"]);
+        using (var mapped = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/instruments/channels/{cholesterol.Id}/ignore",
+                   new IgnoreAnalyserChannelRequest("Reported from the CHOL channel.")))
+        {
+            mapped.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            (await mapped.Content.ReadAsStringAsync(Ct)).ShouldContain("lab.channel_mapped");
+        }
+
+        // A technician sees the list but does not decide what goes on no report; whoever manages the masters does, with why.
+        var ratio = listed[2];
+        var why = "A ratio the analyser works out; the report shows sodium and potassium.";
+        using (var refused = await lab.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore", new IgnoreAnalyserChannelRequest(why)))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        using (var unsaid = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore", new IgnoreAnalyserChannelRequest("No")))
+        {
+            unsaid.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        }
+
+        using (var ignored = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore", new IgnoreAnalyserChannelRequest(why)))
+        {
+            ignored.StatusCode.ShouldBe(HttpStatusCode.NoContent, await ignored.Content.ReadAsStringAsync(Ct));
+        }
+
+        var decision = (await ChannelsAsync(lab, analyser)).Single(c => c.ChannelCode == "NA/K").Ignored.ShouldNotBeNull();
+        (decision.Reason, decision.IgnoredBy).ShouldBe((why, (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).DisplayName));
+        using (var twice = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore", new IgnoreAnalyserChannelRequest(why)))
+        {
+            twice.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        }
+
+        // Taken back, it waits to be mapped again; both decisions are in the audit trail.
+        using (var back = await admin.SendRawAsync(HttpMethod.Delete, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore"))
+        {
+            back.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+
+        (await ChannelsAsync(lab, analyser)).Single(c => c.ChannelCode == "NA/K").Ignored.ShouldBeNull();
+        using (var none = await admin.SendRawAsync(HttpMethod.Delete, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore"))
+        {
+            none.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        }
+
+        var trail = (await admin.GetAsync<PagedResult<AuditEventDto>>("/api/v1/admin/audit?entityType=IgnoredAnalyserChannel&pageSize=200")).Items
+            .Where(e => e.Details?.Contains(ratio.InstrumentId.ToString(), StringComparison.Ordinal) == true)
+            .Select(e => e.Action)
+            .ToList();
+        trail.ShouldBe(["IgnoredAnalyserChannel.delete", "IgnoredAnalyserChannel.create"], ignoreOrder: true);
+
+        // An analyser taken out of use sends nothing more: its channels leave the list with it.
+        var saved = (await admin.GetAsync<List<LabInstrumentDto>>("/api/v1/lab/instruments")).Single(i => i.Code == analyser);
+        await admin.PutAsync($"/api/v1/lab/instruments/{saved.Id}", new SaveLabInstrumentRequest(
+            saved.Code, saved.Name, saved.Manufacturer, saved.Model, saved.Section, saved.Protocol, saved.IsBidirectional,
+            saved.AutoValidationEnabled, saved.Location, IsActive: false, saved.Version));
+        (await ChannelsAsync(lab, analyser)).ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task Results_under_an_order_record_without_a_sample_id_are_kept_for_the_lab_to_assign_never_dropped()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
@@ -848,6 +955,25 @@ public sealed class LabAnalyserTests(HospitalServer server)
 
         var instrument = new LabInstrumentSettings { Code = code, Name = code, Protocol = LabProtocol.Astm };
         return await server.Services.GetRequiredService<ILabMessageProcessor>().SubmitResultsAsync(instrument, results, raw, Ct);
+    }
+
+    /// <summary>The channels <paramref name="analyser"/> sends that no test maps, as Lab setup lists them.</summary>
+    private static async Task<List<AnalyserChannelDto>> ChannelsAsync(ApiClient api, string analyser) =>
+        [.. (await api.GetAsync<List<AnalyserChannelDto>>("/api/v1/lab/instruments/channels")).Where(c => c.InstrumentCode == analyser)];
+
+    /// <summary>
+    /// The notifications <paramref name="user"/> was sent about channels <paramref name="analyser"/> sends that no test
+    /// maps, newest first: read where they are kept, as other tests notify the same user meanwhile.
+    /// </summary>
+    private async Task<List<UserNotification>> ToldAsync(ApiClient user, string analyser)
+    {
+        var userId = (await user.GetAsync<AuthUser>("/api/v1/auth/me")).Id;
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        return await db.Set<UserNotification>().AsNoTracking()
+            .Where(n => n.UserId == userId && EF.Functions.Like(n.Title, analyser + " sends %"))
+            .OrderByDescending(n => n.CreatedAt)
+            .ToListAsync(Ct);
     }
 
     private static Task<ResultSheet> SheetAsync(ApiClient api, CreatedSample tube) => api.GetAsync<ResultSheet>($"/api/v1/lab/samples/{tube.Id}/results");

@@ -252,6 +252,31 @@ export interface LabInstrumentDto {
 
 export type SaveLabInstrumentRequest = Omit<LabInstrumentDto, 'id' | 'version'> & { version: number | null };
 
+/** The lab's decision that an analyser's channel goes on no report, with why. */
+export interface IgnoredAnalyserChannelDto {
+  reason: string;
+  ignoredBy: string | null;
+  ignoredAt: string;
+}
+
+/**
+ * A channel an analyser sends that no active test maps: its values go on no report until a test maps it. `mapping` is
+ * how to write it in a test's channel codes (null when its characters cannot be written as a mapping).
+ */
+export interface AnalyserChannelDto {
+  id: string;
+  instrumentId: string;
+  instrumentCode: string;
+  channelCode: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  timesSeen: number;
+  lastValue: string | null;
+  lastUnit: string | null;
+  mapping: string | null;
+  ignored: IgnoredAnalyserChannelDto | null;
+}
+
 // ---------------------------------------------------------------------------------------------------- connections
 
 /**
@@ -1149,6 +1174,13 @@ export const labQueries = {
         api.get<LabInstrumentDto[]>('/api/v1/lab/instruments', { query: { includeInactive }, signal }),
       staleTime: 10 * 60_000,
     }),
+  /** The channels the analysers in use send that no active test maps, with the lab's decisions to ignore some. */
+  analyserChannels: () =>
+    queryOptions({
+      queryKey: ['lab', 'masters', 'analyser-channels'],
+      queryFn: ({ signal }) => api.get<AnalyserChannelDto[]>('/api/v1/lab/instruments/channels', { signal }),
+      staleTime: 60_000,
+    }),
   connections: () =>
     queryOptions({
       queryKey: labKeys.connections,
@@ -1380,6 +1412,10 @@ export const labApi = {
     id
       ? api.put<undefined>(`/api/v1/lab/instruments/${id}`, request)
       : api.post<Created>('/api/v1/lab/instruments', request),
+  /** The channel goes on no report: listed as ignored, with the reason, until the decision is taken back. */
+  ignoreAnalyserChannel: (id: string, reason: string) =>
+    api.post<void>(`/api/v1/lab/instruments/channels/${id}/ignore`, { reason }),
+  stopIgnoringAnalyserChannel: (id: string) => api.delete<void>(`/api/v1/lab/instruments/channels/${id}/ignore`),
   saveReferralLab: (id: string | null, request: SaveReferralLabRequest): Promise<Created | undefined> =>
     id
       ? api.put<undefined>(`/api/v1/lab/referral-labs/${id}`, request)
