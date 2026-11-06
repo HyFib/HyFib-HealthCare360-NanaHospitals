@@ -58,7 +58,15 @@ internal sealed class InstrumentResultSink(
         var received = await ReceiveAsync(instrument, message, notOnTube, cancellationToken);
         if (received.IsSuccess)
         {
-            await sightings.NoteAsync(instrument, notOnTube, cancellationToken);
+            try
+            {
+                await sightings.NoteAsync(instrument, notOnTube, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The results are saved: a failure here (the list or its notice) must not make the analyser send them again.
+                logger.LogWarning(ex, "Could not note the channels analyser {Instrument} sent that no test maps", instrument.Code);
+            }
         }
 
         return received;

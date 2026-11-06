@@ -612,6 +612,26 @@ public sealed class LabAnalyserTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Two_messages_at_once_with_a_new_channel_count_it_twice_and_tell_the_lab_once()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var analyser = "IMM" + Letters(5).ToUpperInvariant();
+        await admin.PostAsync<JsonObject>("/api/v1/lab/instruments", new SaveLabInstrumentRequest(
+            analyser, "Immunoassay analyser", "Boditech", "AFIAS-1", LabSection.Biochemistry, InstrumentProtocol.Astm,
+            IsBidirectional: false, AutoValidationEnabled: true, Location: null, IsActive: true, Version: null));
+
+        // Two results without a sample id, each kept for the lab, sent on two connections at the same moment.
+        var sends = await Task.WhenAll(
+            AnalyserSendsAsync(analyser, "O|1||||R", "R|1|^^^TNI|0.02|ng/mL||N||F"),
+            AnalyserSendsAsync(analyser, "O|1||||R", "R|1|^^^TNI|0.03|ng/mL||N||F"));
+
+        sends.ShouldAllBe(outcome => outcome != null && outcome.Accepted);
+        (await ChannelsAsync(lab, analyser)).ShouldHaveSingleItem().TimesSeen.ShouldBe(2);
+        (await ToldAsync(admin, analyser)).ShouldHaveSingleItem().Body.ShouldNotBeNull().ShouldContain("sent TNI, which");
+    }
+
+    [Fact]
     public async Task Results_under_an_order_record_without_a_sample_id_are_kept_for_the_lab_to_assign_never_dropped()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);

@@ -46,27 +46,12 @@ internal sealed class AnalyserChannelSightings(
             return;
         }
 
-        var known = await db.Set<AnalyserChannel>().AsNoTracking()
-            .Where(c => c.InstrumentId == instrument.Id && unmapped.Contains(c.ChannelCode))
-            .Select(c => c.ChannelCode)
-            .ToListAsync(ct);
-        var ids = unmapped.Select(_ => Guid.CreateVersion7()).ToArray();
-        var codes = unmapped.ToArray();
         var values = unmapped.Select(c => TextLimits.ClipOrNull(sent[c].Value.Trim(), AnalyserChannel.ValueLength)).ToArray();
         var units = unmapped.Select(c => TextLimits.ClipOrNull(sent[c].Units?.Trim(), AnalyserChannel.UnitLength)).ToArray();
-        var now = time.GetUtcNow();
+        List<string> first;
         try
         {
-            // One statement for the message, so two messages of one analyser at once count each channel twice, never fail.
-            await db.Database.ExecuteSqlAsync($"""
-                INSERT INTO diagnostics.lab_analyser_channels
-                    (id, facility_id, instrument_id, channel_code, first_seen_at, last_seen_at, times_seen, last_value, last_unit)
-                SELECT u.id, {instrument.FacilityId}, {instrument.Id}, u.channel_code, {now}, {now}, 1, u.last_value, u.last_unit
-                FROM unnest({ids}, {codes}, {values}, {units}) AS u (id, channel_code, last_value, last_unit)
-                ON CONFLICT (instrument_id, channel_code) DO UPDATE
-                SET last_seen_at = EXCLUDED.last_seen_at, times_seen = lab_analyser_channels.times_seen + 1,
-                    last_value = EXCLUDED.last_value, last_unit = EXCLUDED.last_unit
-                """, ct);
+            first = await UpsertAsync(instrument, unmapped, values, units, ct);
         }
         catch (DbException ex)
         {
@@ -76,7 +61,6 @@ internal sealed class AnalyserChannelSightings(
             return;
         }
 
-        var first = unmapped.Except(known, StringComparer.Ordinal).ToList();
         if (first.Count > 0)
         {
             await notifications.NotifyPermissionHoldersAsync(
@@ -90,5 +74,62 @@ internal sealed class AnalyserChannelSightings(
                 "warning",
                 ct);
         }
+    }
+
+    /// <summary>
+    /// Counts the channels against the analyser in one statement and returns those it inserted, sent for the first time.
+    /// The row lock decides between two messages at once: the second counts the channel twice, and only the first finds
+    /// it new, so whoever manages the masters is told once.
+    /// </summary>
+    private async Task<List<string>> UpsertAsync(
+        LabInstrument instrument, IReadOnlyList<string> channels, string?[] values, string?[] units, CancellationToken ct)
+    {
+        var connection = db.Database.GetDbConnection();
+        await db.Database.OpenConnectionAsync(ct);
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO diagnostics.lab_analyser_channels
+                    (id, facility_id, instrument_id, channel_code, first_seen_at, last_seen_at, times_seen, last_value, last_unit)
+                SELECT u.id, @facility, @instrument, u.channel_code, @now, @now, 1, u.last_value, u.last_unit
+                FROM unnest(@ids, @codes, @values, @units) AS u (id, channel_code, last_value, last_unit)
+                ON CONFLICT (instrument_id, channel_code) DO UPDATE
+                SET last_seen_at = EXCLUDED.last_seen_at, times_seen = lab_analyser_channels.times_seen + 1,
+                    last_value = EXCLUDED.last_value, last_unit = EXCLUDED.last_unit
+                RETURNING channel_code, times_seen
+                """;
+            Add(command, "facility", instrument.FacilityId);
+            Add(command, "instrument", instrument.Id);
+            Add(command, "now", time.GetUtcNow());
+            Add(command, "ids", channels.Select(_ => Guid.CreateVersion7()).ToArray());
+            Add(command, "codes", channels.ToArray());
+            Add(command, "values", values);
+            Add(command, "units", units);
+
+            var first = new List<string>();
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (reader.GetInt32(1) == 1)
+                {
+                    first.Add(reader.GetString(0));
+                }
+            }
+
+            return [.. first.Order(StringComparer.Ordinal)];
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync();
+        }
+    }
+
+    private static void Add(DbCommand command, string name, object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 }
