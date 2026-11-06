@@ -95,7 +95,8 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
 /**
  * Who may ask for or decide a change of each kind: the inbox is for them. Kept with the server's kinds
  * (IApprovalAction): credit notes and write-offs, money not received and refunds not paid out, patient merges, lab
- * report corrections, death certificates a second doctor confirms, and goods receipts posted into stock.
+ * report corrections, death certificates a second doctor confirms, goods receipts posted into stock, and the masters,
+ * access and plans approved only here. Every kind's approving permission is in it (approvalsMenu.test.ts).
  */
 export const APPROVAL_PERMISSIONS = [
   'billing.refunds.request',
@@ -108,4 +109,11 @@ export const APPROVAL_PERMISSIONS = [
   // The store sends a goods receipt for approval (and may withdraw it); someone else checks it and posts it into stock.
   'purchase.grn.receive',
   'purchase.grn.approve',
+  // Approved only here: prices, tariffs, packages, fee-sharing and payer plans; access given to a user or a role; a
+  // drug handled less strictly; the plan a stay is billed on. Every approving permission the server has is in this list
+  // (approvalsMenu.test.ts checks it against serverAccess.json), so whoever may approve a change can find it.
+  'masters.prices.approve',
+  'admin.grants.approve',
+  'inventory.drug_class.approve',
+  'billing.discounts.approve',
 ] as const;

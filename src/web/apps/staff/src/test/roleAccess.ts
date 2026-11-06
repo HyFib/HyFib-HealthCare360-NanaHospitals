@@ -42,6 +42,8 @@ interface ServerAccess {
   reads: string[];
   /** "POST /api/v1/mrd/records/{id:guid}/complete mrd.records", as for reads. */
   writes: string[];
+  /** Each kind of change a second person approves ("purchase.grn"), with the permission its approver holds. */
+  approvals: Record<string, string>;
 }
 
 /** The rule of a route that asks for no permission (StaffAccessFixtureTests.NoPermission). */
