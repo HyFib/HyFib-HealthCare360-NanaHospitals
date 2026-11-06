@@ -40,7 +40,9 @@ public sealed class PrivacyTests(HospitalServer server)
         summary.Categories.Select(c => c.Key).ShouldContain("registration");
         summary.Consents.ShouldContain(c => c.Type == nameof(ConsentType.SmsWhatsAppUpdates) && c.Granted);
         summary.Categories.Single(c => c.Key == "registration").RetentionKind.ShouldBe(PersonalDataRetention.MedicalRecords);
-        summary.Periods.ShouldBe(new RetentionPeriods(3, 5, 8, 366, 10));
+        summary.Periods.ShouldBe(new RetentionPeriods(3, 5, 8, 366, AuditYears: null), "The audit trail is kept permanently: it has no period.");
+        summary.Categories.Where(c => c.RetentionKind == PersonalDataRetention.Audit)
+            .ShouldAllBe(c => c.Retention == "Permanently, and never edited.");
 
         var created = await portal.PostAsync<PortalRequestCreated>("/api/v1/portal/privacy/requests", new PortalDataRequestCreate(
             patient.Id, DataRequestType.Correction, RequesterRelation.Self, null, null,
@@ -113,7 +115,9 @@ public sealed class PrivacyTests(HospitalServer server)
         assessment.Options.Single(o => o.Item == ErasureService.NomineeItem).Available.ShouldBeTrue();
         assessment.Options.Single(o => o.Item == ErasureService.PortalAccount).Available.ShouldBeTrue();
         assessment.Options.Single(o => o.Item == ErasureService.Feedback).Available.ShouldBeTrue("The patient has an unused feedback link.");
-        assessment.Holds.ShouldContain(h => h.Key == "audit", "Opening the record left a trace in the audit trail, which is kept.");
+        var accessLog = assessment.Holds.Single(h => h.Key == "audit");
+        (accessLog.Permanently, accessLog.Until).ShouldBe((true, (DateOnly?)null), "Opening the record left a trace in the audit trail, which is kept permanently.");
+        assessment.KeepPermanently.ShouldBeFalse("The access log, kept permanently, holds nothing else back: the patient has no medico-legal case.");
 
         var outcome = await officer.PostAsync<ErasureOutcome>($"/api/v1/privacy/requests/{created.Id}/erasure",
             new EraseDataRequest([ErasureService.Messages, ErasureService.Feedback, ErasureService.NomineeItem, ErasureService.PortalAccount]));

@@ -491,7 +491,9 @@ export function retentionText(
       case 'MessageLog':
         return t('myPrivacy.retention.messages', { days: f.number(periods.messageLogDays) });
       case 'Audit':
-        return t('myPrivacy.retention.years', { years: f.number(periods.auditYears) });
+        return periods.auditYears == null
+          ? t('myPrivacy.retention.permanently')
+          : t('myPrivacy.retention.years', { years: f.number(periods.auditYears) });
     }
   }
   return category.retention;

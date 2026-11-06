@@ -33,6 +33,16 @@ public sealed class RetentionTests
         mlc.Effective(5).ShouldBeNull();
     }
 
+    [Fact]
+    public void The_audit_trail_is_kept_permanently_and_no_setting_shortens_it()
+    {
+        var audit = RetentionSchedule.Get(RetentionSchedule.Audit);
+        audit.Action.ShouldBe(RetentionAction.Keep);
+        audit.Editable.ShouldBeFalse();
+        audit.DefaultValue.ShouldBeNull();
+        audit.Effective(5).ShouldBeNull("a stored period, from before the hospital chose to keep it permanently, is not applied");
+    }
+
     [Theory]
     [InlineData(null, 3)]
     [InlineData(10, 10)]

@@ -230,7 +230,8 @@ export interface DataSummary {
     inpatientYears: number;
     financeYears: number;
     messageLogDays: number;
-    auditYears: number;
+    /** Null while the audit trail is kept permanently. */
+    auditYears: number | null;
   };
 }
 

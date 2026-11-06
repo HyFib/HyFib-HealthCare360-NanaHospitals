@@ -50,7 +50,7 @@ public sealed class ErasureService(
     {
         var options = await OptionsAsync(patientId, ct);
         var holds = await HoldsAsync(patientId, ct);
-        return new ErasureAssessment(options, holds, holds.Where(h => !h.Permanently).Max(h => h.Until), holds.Any(h => h.Permanently));
+        return new ErasureAssessment(options, holds, KeepUntil(holds), KeepPermanently(holds));
     }
 
     /// <summary>
@@ -105,8 +105,8 @@ public sealed class ErasureService(
         }
 
         var holds = await HoldsAsync(patientId, ct);
-        var keepUntil = holds.Where(h => !h.Permanently).Max(h => h.Until);
-        var keepPermanently = holds.Any(h => h.Permanently);
+        var keepUntil = KeepUntil(holds);
+        var keepPermanently = KeepPermanently(holds);
         var summary = Describe(chosen, holds);
         var recorded = request.RecordErasure(chosen, summary, keepUntil, keepPermanently, currentUser.UserId, now);
         if (recorded.IsFailure)
@@ -233,13 +233,16 @@ public sealed class ErasureService(
                 $"Tax law requires financial records to be kept for {financeYears} years."), HospitalDate(billed).AddYears(financeYears), Permanently: false));
         }
 
-        var auditYears = await retention.ValueAsync(RetentionSchedule.Get(RetentionSchedule.Audit), ct) ?? 10;
+        var auditYears = await retention.ValueAsync(RetentionSchedule.Get(RetentionSchedule.Audit), ct);
         var lastAccess = await db.Set<AuditEvent>().AsNoTracking().Where(a => a.PatientId == patientId).MaxAsync(a => (DateTimeOffset?)a.OccurredAt, ct);
         if (lastAccess is { } accessed)
         {
-            holds.Add(new("audit", "Record access log", string.Create(CultureInfo.InvariantCulture,
-                $"The tamper-evident log of who opened or changed the record is kept for {auditYears} years and never edited."),
-                HospitalDate(accessed).AddYears(auditYears), Permanently: false));
+            holds.Add(auditYears is { } years
+                ? new(AuditHold, "Record access log", string.Create(CultureInfo.InvariantCulture,
+                    $"The tamper-evident log of who opened or changed the record is kept for {years} years and never edited."),
+                    HospitalDate(accessed).AddYears(years), Permanently: false)
+                : new(AuditHold, "Record access log",
+                    "The tamper-evident log of who opened or changed the record is kept permanently and never edited.", null, Permanently: true));
         }
 
         var messageDays = await retention.ValueAsync(RetentionSchedule.Get(RetentionSchedule.MessageLog), ct) ?? RetentionSchedule.LogDays;
@@ -255,6 +258,20 @@ public sealed class ErasureService(
         return holds;
     }
 
+    /// <summary>The hold of the record access log (the audit trail).</summary>
+    internal const string AuditHold = "audit";
+
+    /// <summary>
+    /// Until when the request keeps what it could not erase. The audit trail is never erased by a request, so its own
+    /// period holds nothing else back: kept permanently, it would keep the medical records and bills past theirs.
+    /// </summary>
+    internal static DateOnly? KeepUntil(IReadOnlyList<ErasureHoldItem> holds) =>
+        holds.Where(h => h.Key != AuditHold && !h.Permanently).Max(h => h.Until);
+
+    /// <summary>Whether something the request could not erase is kept permanently (a medico-legal case), the audit trail aside.</summary>
+    internal static bool KeepPermanently(IReadOnlyList<ErasureHoldItem> holds) =>
+        holds.Any(h => h.Key != AuditHold && h.Permanently);
+
     /// <summary>The line recorded on the request (and shown to the principal) for what was erased and what is kept.</summary>
     internal static string Describe(IReadOnlyList<string> erased, IReadOnlyList<ErasureHoldItem> holds)
     {
@@ -266,11 +283,20 @@ public sealed class ErasureService(
             PortalAccount => "portal account closed",
             _ => i,
         });
-        var kept = holds.Select(h => h.Permanently
+        static string Kept(ErasureHoldItem h) => h.Permanently
             ? $"{h.Title.ToLowerInvariant()} permanently"
-            : $"{h.Title.ToLowerInvariant()} until {h.Until!.Value.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)}");
+            : $"{h.Title.ToLowerInvariant()} until {h.Until!.Value.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)}";
+        var byLaw = holds.Where(h => h.Key != AuditHold).Select(Kept).ToList();
         var text = $"Erased: {string.Join("; ", done)}.";
-        return holds.Count == 0 ? text : $"{text} Kept as the law requires: {string.Join("; ", kept)}.";
+        if (byLaw.Count > 0)
+        {
+            text += $" Kept as the law requires: {string.Join("; ", byLaw)}.";
+        }
+
+        // The hospital's own decision, not the law's: said apart, so the principal is not told the law requires it.
+        return holds.FirstOrDefault(h => h.Key == AuditHold) is { } log
+            ? $"{text} The record access log is kept {(log.Permanently ? "permanently" : $"until {log.Until!.Value.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)}")} and never edited."
+            : text;
     }
 
     private static DateOnly? Latest(params DateOnly?[] dates) => dates.Max();

@@ -409,6 +409,14 @@ describe('the data summary', () => {
     expect(say('Audit', hi, fhi)).toBe('12 साल।');
   });
 
+  it('says the audit trail is kept permanently when it has no period, in each language', () => {
+    const forever = { ...PERIODS, auditYears: null };
+    expect(retentionText(category('x', 'Audit'), forever, en, fen)).toBe('Permanently, and never edited.');
+    expect(retentionText(category('x', 'Audit'), forever, hi, fhi)).toBe(
+      'हमेशा के लिए, और इसमें कभी बदलाव नहीं किया जाता।',
+    );
+  });
+
   it('keeps the server sentence for a kind it does not know, or when the periods are missing', () => {
     const unknown = category('x', 'Genomics' as SummaryCategory['retentionKind'], 'Kept for ever.');
     expect(retentionText(unknown, PERIODS, hi, fhi)).toBe('Kept for ever.');

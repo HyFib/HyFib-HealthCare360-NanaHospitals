@@ -260,6 +260,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.retention.messages':
       'The message log for {days} days; feedback, complaints and follow-up calls with your medical records.',
     'myPrivacy.retention.years': '{years} years.',
+    'myPrivacy.retention.permanently': 'Permanently, and never edited.',
     'myPrivacy.retention.whileInUse': 'While the account is open.',
     'myPrivacy.retention.withRecords': 'As long as the records they relate to.',
 
@@ -751,6 +752,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.retention.messages':
       'संदेशों का लॉग {days} दिनों तक; फ़ीडबैक, शिकायतें और फ़ॉलो-अप कॉल आपके मेडिकल रिकॉर्ड के साथ।',
     'myPrivacy.retention.years': '{years} साल।',
+    'myPrivacy.retention.permanently': 'हमेशा के लिए, और इसमें कभी बदलाव नहीं किया जाता।',
     'myPrivacy.retention.whileInUse': 'जब तक खाता खुला है।',
     'myPrivacy.retention.withRecords': 'जब तक उनसे जुड़े रिकॉर्ड रखे जाते हैं।',
 
@@ -1261,6 +1263,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.retention.messages':
       'செய்திப் பதிவேடு {days} நாட்கள்; கருத்துகள், புகார்கள் மற்றும் தொடர் கவனிப்பு அழைப்புகள் உங்கள் மருத்துவப் பதிவுகளுடன்.',
     'myPrivacy.retention.years': '{years} ஆண்டுகள்.',
+    'myPrivacy.retention.permanently': 'நிரந்தரமாக, ஒருபோதும் திருத்தப்படாமல்.',
     'myPrivacy.retention.whileInUse': 'கணக்கு செயலில் இருக்கும் வரை.',
     'myPrivacy.retention.withRecords': 'அவை தொடர்புடைய பதிவுகள் வைக்கப்படும் காலம் வரை.',
 
