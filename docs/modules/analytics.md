@@ -31,7 +31,7 @@ Every read endpoint needs *any* of the three read permissions; each report then 
 | Finance | revenue, collections, dues, discounts, refunds, doctor fees, pharmacy sales & margin | `finance.read` |
 | Stock | near-expiry, dead stock, purchase vs consumption | `mis.read`, `finance.read` |
 | MIS | HR head count, attendance | `mis.read` |
-| Clinical (patient-level) | adverse discharges register, critical values register | `clinical.read` |
+| Clinical (patient-level) | adverse discharges register, critical values register, OT register | `clinical.read` |
 
 Patient-level reports additionally always need `analytics.clinical.read`, can never be scheduled or put on a dashboard,
 and every page view and export is audited per patient (see *Audit*).
@@ -210,6 +210,7 @@ bills are excluded and returns reduce revenue.*
 | Id | Title | Inputs | Definition |
 |---|---|---|---|
 | `ot-utilisation` | OT utilisation | Period, Facility, Theatre, Planned OT minutes per day (default 480) | Actual minutes = in room → out of room for completed cases; **utilisation % = actual minutes ÷ (days × planned minutes)**; first case on time = in room within 15 min of the scheduled start; turnover = gap between consecutive cases (gaps over 2 h are idle time) |
+| `ot-register` | OT register *(patient list)* | Period, Facility, Theatre | The paper OT register's columns, in its order, one row per patient taken into a theatre in the period (WHO Sign-in, else the start of surgery), in the order they went in; a case cancelled after Sign-in stays with its reason. **Nothing is typed for it**: times and the OT case number from the booking; surgery, diagnoses, findings and the surgeon's signature from the operation note (the booking's plan while there is none); technique in the register's words (General, Spinal, Epidural, Nerve block, IV / monitored sedation, Local), drugs with their doses and the anaesthetist's signature from the anaesthesia record; qualification and council registration from the practitioner master; **transferred to** = the ward of the first bed the patient moved to within 6 h of leaving the theatre, else the bed held then. Contact details show in full only with `patients.contact.read`; a restricted (VIP) patient shows as initials without contact details, and the clinical columns of a record in a confidential category (HIV, mental health, MTP, sexual violence) read "Withheld: confidential record" for staff not holding that category (no word of which). Headline figures include completed cases without a signed note or anaesthesia record. Audited per patient |
 | `dialysis-sessions` | Dialysis sessions | Period, Facility, Show by (date/shift/machine) | Sessions scheduled in the period; completion % = completed ÷ (sessions − cancelled); average duration and ultrafiltration over completed sessions |
 | `blood-bank-stock` | Blood bank stock (now) | Facility | Units by blood group and component: available, reserved (cross-matched), quarantine (screening incomplete), expiring within 72 h |
 | `blood-usage` | Blood usage and wastage | Period, Facility | Prepared, cross-matched, issued, returned, discarded, expired by component; **C/T ratio = cross-matched ÷ issued**; wastage % = (discarded + expired) ÷ prepared |

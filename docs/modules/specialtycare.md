@@ -58,6 +58,10 @@ and write a PHI-access audit entry. Donor detail views write a `donor.accessed` 
 | DELETE | `/bookings/{id}/materials/{materialId}` | `ot.materials.record` | → 204 (withdraws the charge first, then returns the item to the OT store) |
 | GET | `/api/v1/patients/{patientId}/surgeries` | `ot.read` | → paged surgery history |
 
+**The OT register** is the Analytics report `ot-register` ([analytics.md](analytics.md)): the paper register's columns,
+written from the booking, the operation note, the anaesthesia record, the practitioner master and the stay's beds, on
+screen and in Excel, CSV and PDF. It needs `analytics.clinical.read` and is audited per patient.
+
 ### Dialysis — `/api/v1/dialysis` (tag *Dialysis*)
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|

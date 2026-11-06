@@ -98,6 +98,36 @@ public sealed class ReportQueryTranslationTests
         }
     }
 
+    [Fact]
+    public async Task The_ot_register_reads_each_source_with_its_own_filters()
+    {
+        var sql = await SqlOfAsync("ot-register");
+
+        // Who went into a theatre in the period (WHO Sign-in, or the start of surgery), whatever became of the case, at this
+        // facility, the removed bookings left out.
+        var cases = sql[0][sql[0].IndexOf("WHERE", StringComparison.Ordinal)..];
+        cases.ShouldContain("COALESCE(s.in_room_at, s.started_at) >= @start");
+        cases.ShouldContain("COALESCE(s.in_room_at, s.started_at) < @end");
+        cases.ShouldNotContain("status");
+        cases.ShouldContain("facility_id");
+        cases.ShouldContain("is_deleted");
+
+        // A merged patient's removed row is still read, and no more of it than the register shows: never the ABHA cipher.
+        var patients = sql.Single(s => s.Contains("FROM patients.patients", StringComparison.Ordinal));
+        patients[patients.IndexOf("WHERE", StringComparison.Ordinal)..].ShouldNotContain("is_deleted");
+        patients.ShouldNotContain("cipher");
+        patients.ShouldNotContain("aadhaar_index");
+        patients.ShouldContain("address_line1");
+
+        // A practitioner who has since left still names their row.
+        var team = sql.Single(s => s.Contains("FROM org.practitioners", StringComparison.Ordinal));
+        team.ShouldNotContain("is_deleted");
+
+        // The beds a stay moved through keep the facility's filter.
+        var beds = sql.Single(s => s.Contains("bed_assignments", StringComparison.Ordinal));
+        beds.ShouldContain("facility_id");
+    }
+
     private static async Task<List<string>> SqlOfAsync(string reportId)
     {
         var definition = new ReportCatalog().Find(reportId)!;
