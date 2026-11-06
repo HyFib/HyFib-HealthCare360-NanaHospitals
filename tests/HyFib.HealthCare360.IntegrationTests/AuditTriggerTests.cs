@@ -202,6 +202,53 @@ public sealed class AuditTriggerTests(HospitalServer server)
     }
 
     /// <summary>
+    /// A start that puts a trigger back waits for the audit trail's locks <see cref="PlatformSql.LockTimeout"/> in all, not
+    /// that long for each: from the table's lock on, every audit write waits behind it. Here a write holds the table for
+    /// part of the timeout and a report holds last year's month past what is left; each wait alone is shorter than the
+    /// timeout. The start gives up when the timeout has run out, changing nothing, rather than when the report ends.
+    /// </summary>
+    [Fact]
+    public async Task A_start_waits_for_the_audit_trail_and_its_months_no_longer_than_the_lock_timeout_in_all()
+    {
+        await using var database = await UpgradedDatabaseAsync();
+        var connectionString = database.ConnectionString;
+        var asTheyShouldBe = await TriggersAsync(connectionString);
+        await ExecuteAsync(connectionString, """
+            DROP TRIGGER trg_check_audit_chain_link ON audit.audit_events;
+            CREATE CONSTRAINT TRIGGER trg_check_audit_chain_link AFTER UPDATE ON audit.audit_events DEFERRABLE INITIALLY DEFERRED
+                FOR EACH ROW WHEN (false) EXECUTE FUNCTION audit.check_audit_chain_link();
+            """);
+        var changed = await TriggersAsync(connectionString);
+
+        await using var writer = await OpenAsync(connectionString);
+        await using var writing = await writer.BeginTransactionAsync(Ct);
+        await ExecuteAsync(writer, "LOCK TABLE ONLY audit.audit_events IN ROW EXCLUSIVE MODE");
+        await using var report = await OpenAsync(connectionString);
+        await using var reading = await report.BeginTransactionAsync(Ct);
+        await ExecuteAsync(report, $"LOCK TABLE ONLY {LastYearsPartition} IN ROW EXCLUSIVE MODE");
+
+        var start = StartNodeAsync(connectionString);
+        (await SecondNode.EventuallyAsync(async () => start.IsCompleted || await IsWaitingForLockAsync(connectionString), TimeSpan.FromSeconds(30), Ct))
+            .ShouldBeTrue();
+        var waiting = Stopwatch.StartNew();
+        await Task.Delay(PlatformSql.LockTimeout * 0.4, Ct);
+        await writing.CommitAsync(Ct);
+        var reportEnds = PlatformSql.LockTimeout * 1.2 - waiting.Elapsed;
+        if (reportEnds > TimeSpan.Zero)
+        {
+            await Task.Delay(reportEnds, Ct);
+        }
+
+        await reading.CommitAsync(Ct);
+        var stopped = await Should.ThrowAsync<DatabaseUpgradeException>(() => start);
+        stopped.Message.ShouldBe(DatabaseInitializer.AuditInUseMessage);
+        (await TriggersAsync(connectionString)).ShouldBe(changed, "a start that stops changes nothing");
+
+        await StartNodeAsync(connectionString);
+        (await TriggersAsync(connectionString)).ShouldBe(asTheyShouldBe);
+    }
+
+    /// <summary>
     /// A database as a hospital's is after the upgrade that partitioned the audit trail by month (SCAL-04), started once:
     /// an audit event a year ago and one this month, each in its month's partition, and the triggers made.
     /// </summary>
