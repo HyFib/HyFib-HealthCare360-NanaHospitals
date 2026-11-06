@@ -10,6 +10,8 @@ export const SUPPLY_PERMISSIONS = {
   purchaseManage: 'purchase.manage',
   purchaseApprove: 'purchase.approve',
   grnReceive: 'purchase.grn.receive',
+  /** Checks a goods receipt against the supplier's invoice and posts it into stock (never one's own). */
+  grnApprove: 'purchase.grn.approve',
   assetsRead: 'assets.read',
   assetsManage: 'assets.manage',
   assetsMaintenance: 'assets.maintenance',
@@ -51,8 +53,9 @@ export const VENDOR_READERS = [
   S.purchaseManage,
   S.purchaseApprove,
   S.grnReceive,
+  S.grnApprove,
   S.assetsManage,
   S.assetsMaintenance,
 ] as const;
-export const PURCHASE_READERS = [S.purchaseManage, S.purchaseApprove, S.grnReceive] as const;
+export const PURCHASE_READERS = [S.purchaseManage, S.purchaseApprove, S.grnReceive, S.grnApprove] as const;
 export const ASSET_READERS = [S.assetsRead, S.assetsManage, S.assetsMaintenance] as const;

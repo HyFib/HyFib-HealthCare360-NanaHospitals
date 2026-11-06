@@ -95,7 +95,7 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
 /**
  * Who may ask for or decide a change of each kind: the inbox is for them. Kept with the server's kinds
  * (IApprovalAction): credit notes and write-offs, money not received and refunds not paid out, patient merges, lab
- * report corrections, and death certificates a second doctor confirms.
+ * report corrections, death certificates a second doctor confirms, and goods receipts posted into stock.
  */
 export const APPROVAL_PERMISSIONS = [
   'billing.refunds.request',
@@ -105,4 +105,7 @@ export const APPROVAL_PERMISSIONS = [
   // A doctor who certifies a death withdraws a confirmation they asked for; a second doctor confirms it.
   'mrd.deaths.certify',
   'mrd.deaths.confirm',
+  // The store sends a goods receipt for approval (and may withdraw it); someone else checks it and posts it into stock.
+  'purchase.grn.receive',
+  'purchase.grn.approve',
 ] as const;

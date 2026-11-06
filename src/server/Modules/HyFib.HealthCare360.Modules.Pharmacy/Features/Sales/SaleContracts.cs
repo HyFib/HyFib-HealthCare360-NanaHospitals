@@ -113,7 +113,8 @@ public sealed record PharmacySaleDetail(
     uint Version,
     string? BuyerAddress = null,
     EInvoiceStamp? EInvoice = null,
-    string? FreeTreatmentReason = null);
+    string? FreeTreatmentReason = null,
+    DateOnly? PrescriptionDate = null);
 
 public sealed record CollectPaymentRequest(PaymentMode Mode, decimal Amount, string? Reference);
 

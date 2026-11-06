@@ -8,13 +8,7 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import {
-  BoxCheckmarkRegular,
-  DismissCircleRegular,
-  OpenRegular,
-  PrintRegular,
-  TagRegular,
-} from '@fluentui/react-icons';
+import { DismissCircleRegular, SendRegular, OpenRegular, PrintRegular, TagRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatInr, isApiError } from '@hc360/core';
 import { ConfirmDialog, DataTable, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -22,6 +16,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
+import { PendingApprovals } from '@/modules/approvals/PendingApprovals';
 import { formatPercent, formatQty } from '@/modules/inventory/format';
 import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
@@ -62,18 +57,19 @@ function GrnPage() {
   const facilityGstin = useFacilityGstin();
   const canReceive = usePermission(S.grnReceive);
   const grn = useQuery(purchaseQueries.grn(grnId));
-  const [dialog, setDialog] = useState<'post' | 'cancel' | null>(null);
+  const [dialog, setDialog] = useState<'ask' | 'cancel' | null>(null);
   const [tagging, setTagging] = useState(false);
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: purchaseKeys.all });
     void queryClient.invalidateQueries({ queryKey: ['inventory'] });
   };
-  const post = useMutation({
-    mutationFn: () => purchaseApi.postGrn(grnId),
+  const ask = useMutation({
+    mutationFn: () => purchaseApi.askGrnApproval(grnId),
     onSuccess: () => {
       setDialog(null);
-      notify.success('Goods receipt posted', 'The batches are now in stock.');
+      notify.success('Sent for approval', 'The batches go into stock when someone other than you approves it.');
       refresh();
+      void queryClient.invalidateQueries({ queryKey: ['approvals'] });
     },
     onError: () => setDialog(null),
   });
@@ -163,27 +159,33 @@ function GrnPage() {
                 <Button icon={<DismissCircleRegular />} onClick={() => setDialog('cancel')}>
                   Cancel draft
                 </Button>
-                <Button appearance="primary" icon={<BoxCheckmarkRegular />} onClick={() => setDialog('post')}>
-                  Post into stock
-                </Button>
+                {!g.approvalWaitingSince && (
+                  <Button appearance="primary" icon={<SendRegular />} onClick={() => setDialog('ask')}>
+                    Send for approval
+                  </Button>
+                )}
               </>
             )}
           </>
         }
       />
-      {g.status === 'Draft' && (
+      {g.status === 'Draft' && g.approvalWaitingSince && (
+        <PendingApprovals subjectType="GoodsReceiptNote" subjectId={g.id} />
+      )}
+      {g.status === 'Draft' && !g.approvalWaitingSince && (
         <MessageBar intent="warning">
           <MessageBarBody>
             <MessageBarTitle>Not in stock yet</MessageBarTitle>
-            This receipt is a draft. Check the goods against it, then post it to add the batches to stock.
+            This receipt is a draft. Send it for approval: someone other than whoever entered it checks it against the
+            supplier&apos;s invoice and posts it into stock.
           </MessageBarBody>
         </MessageBar>
       )}
-      {post.error && (
+      {ask.error && (
         <MessageBar intent="error">
           <MessageBarBody>
-            <MessageBarTitle>Not posted</MessageBarTitle>
-            {isApiError(post.error) ? post.error.userMessage : 'Try again.'}
+            <MessageBarTitle>Not sent for approval</MessageBarTitle>
+            {isApiError(ask.error) ? ask.error.userMessage : 'Try again.'}
           </MessageBarBody>
         </MessageBar>
       )}
@@ -201,6 +203,15 @@ function GrnPage() {
               <Detail label="Invoice">
                 {g.vendorInvoiceNumber}
                 {g.vendorInvoiceDate ? ` dated ${formatDateOnly(g.vendorInvoiceDate)}` : ''}
+              </Detail>
+              <Detail label="Invoice total as printed">
+                {g.vendorInvoiceAmount === null
+                  ? 'Not entered'
+                  : `${formatInr(g.vendorInvoiceAmount)} · ${
+                      g.vendorInvoiceAmount === g.netAmount
+                        ? 'matches the lines'
+                        : `the lines come to ${formatInr(g.netAmount)}`
+                    }`}
               </Detail>
               <Detail label="Received on">{formatDateOnly(g.receivedOn)}</Detail>
               <Detail label="Store">{g.storeName}</Detail>
@@ -300,15 +311,15 @@ function GrnPage() {
         </aside>
       </div>
       <ConfirmDialog
-        open={dialog === 'post'}
-        title="Post this receipt into stock?"
-        confirmLabel="Post"
-        busy={post.isPending}
-        onConfirm={() => post.mutate()}
+        open={dialog === 'ask'}
+        title="Send this receipt for approval?"
+        confirmLabel="Send for approval"
+        busy={ask.isPending}
+        onConfirm={() => ask.mutate()}
         onCancel={() => setDialog(null)}
       >
-        The batches are added to {g.storeName} with their expiry and MRP, and the purchase order is updated. A posted
-        receipt cannot be changed.
+        Someone other than whoever entered it checks it against the supplier&apos;s invoice and approves it; the batches
+        then go into {g.storeName} with their expiry and MRP, and the purchase order is updated.
       </ConfirmDialog>
       {dialog === 'cancel' && (
         <ReasonDialog

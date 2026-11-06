@@ -288,6 +288,12 @@ public sealed class DispensingService(
             return discount.Error!;
         }
 
+        // A prescription is presented after it is written: a date after today is a slip in the entry, not a prescription.
+        if (request.Prescription?.PrescriptionDate is { } written && written > HospitalClock.Today(time))
+        {
+            return Error.Field("prescription.prescriptionDate", "The prescription's date can't be after today.");
+        }
+
         PatientSnapshot? patient = null;
         if (request.PatientId is { } patientId)
         {
@@ -343,6 +349,7 @@ public sealed class DispensingService(
             PrescriptionNumber = request.Prescription?.Reference?.Trim(),
             PrescriberName = request.Prescription?.PrescriberName.Trim(),
             PrescriberRegistrationNumber = request.Prescription?.PrescriberRegistrationNumber?.Trim(),
+            PrescriptionDate = request.Prescription?.PrescriptionDate,
             SoldAt = now,
             SoldByUserId = currentUser.UserId,
             DiscountPercent = request.DiscountPercent,

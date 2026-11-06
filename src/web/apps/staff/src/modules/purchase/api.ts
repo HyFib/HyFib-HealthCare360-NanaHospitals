@@ -266,6 +266,10 @@ export interface GoodsReceiptDetail {
   netAmount: number;
   lines: GoodsReceiptLineDto[];
   version: number;
+  /** The invoice's total as the supplier printed it, when entered: what the checker compares with `netAmount`. */
+  vendorInvoiceAmount: number | null;
+  /** Since when a request for a second person to post it into stock has been waiting, if one is. */
+  approvalWaitingSince: string | null;
 }
 
 export interface GoodsReceiptLineInput {
@@ -292,7 +296,9 @@ export interface CreateGoodsReceiptRequest {
   receivedOn: string | null;
   remarks: string | null;
   lines: GoodsReceiptLineInput[];
-  post: boolean;
+  /** Ask, as it is saved, for someone else to check it against the invoice and post it into stock. */
+  sendForApproval: boolean;
+  vendorInvoiceAmount: number | null;
 }
 
 export interface GoodsReceiptCreated {
@@ -300,6 +306,8 @@ export interface GoodsReceiptCreated {
   number: string;
   status: GoodsReceiptStatus;
   netAmount: number;
+  /** The request for a second person to post it, when one was asked for. */
+  approvalId: string | null;
 }
 
 // ---------------------------------------------------------------------------------------------- queries
@@ -416,6 +424,7 @@ export const purchaseApi = {
   closeOrder: (id: string, reason: string) => api.post<void>(`${BASE}/orders/${id}/close`, { reason }),
   cancelOrder: (id: string, reason: string) => api.post<void>(`${BASE}/orders/${id}/cancel`, { reason }),
   createGrn: (body: CreateGoodsReceiptRequest) => api.post<GoodsReceiptCreated>(`${BASE}/grns`, body),
-  postGrn: (id: string) => api.post<void>(`${BASE}/grns/${id}/post`),
+  /** Asks for someone other than whoever entered it to check the receipt and post it into stock (an approval). */
+  askGrnApproval: (id: string) => api.post<unknown>(`${BASE}/grns/${id}/approval`),
   cancelGrn: (id: string, reason: string) => api.post<void>(`${BASE}/grns/${id}/cancel`, { reason }),
 };

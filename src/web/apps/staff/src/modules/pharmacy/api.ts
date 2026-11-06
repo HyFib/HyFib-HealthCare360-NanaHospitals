@@ -308,6 +308,8 @@ export interface PharmacySaleDetail {
   eInvoice?: EInvoiceStamp | null;
   /** Why the medicines were given free of cost by law (BNSS 2023 s.397, with the MLC entry); no payment was taken. */
   freeTreatmentReason?: string | null;
+  /** The date written on the outside prescription sold against at the counter. */
+  prescriptionDate?: string | null;
 }
 
 export interface SaleReturnRequest {

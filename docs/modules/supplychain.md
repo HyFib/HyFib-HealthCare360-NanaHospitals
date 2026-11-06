@@ -28,7 +28,8 @@ are local (IST) calendar dates through `HospitalClock` / `TimeProvider`.
 | `inventory.counts` | Physical stock counts; raise adjustments | StoreKeeper, HospitalAdmin |
 | `purchase.manage` | Vendors, requisitions, purchase orders | StoreKeeper, HospitalAdmin, PurchaseOfficer |
 | `purchase.approve` | Approve/reject requisitions and orders | HospitalAdmin |
-| `purchase.grn.receive` | Goods receipt against vendor invoices | StoreKeeper, HospitalAdmin |
+| `purchase.grn.receive` | Goods receipt against vendor invoices; send a receipt for approval | StoreKeeper, HospitalAdmin |
+| `purchase.grn.approve` | Check a goods receipt against the supplier's invoice and post it into stock (never one's own) | HospitalAdmin, PurchaseOfficer |
 | `assets.read` | Asset register; report equipment breakdowns | BiomedicalEngineer, HospitalAdmin, StoreKeeper, PurchaseOfficer, Nurse |
 | `assets.manage` | Register assets and contracts; decide condemnation; dispose | BiomedicalEngineer, HospitalAdmin |
 | `assets.maintenance` | PM plans/visits, tickets, calibration; daily reminder | BiomedicalEngineer, HospitalAdmin |
@@ -38,7 +39,8 @@ Reader sets used below:
   `inventory.indents.issue`, `inventory.transfers`, `inventory.counts`, `purchase.manage`, `purchase.grn.receive`.
 * **Batch readers**: any of `inventory.stock.read`, `inventory.indents.issue`, `inventory.transfers`,
   `inventory.counts`, `purchase.grn.receive`, `inventory.adjustments.approve`.
-* **Vendor readers**: any of `purchase.manage`, `purchase.approve`, `purchase.grn.receive`, `assets.manage`, `assets.maintenance`.
+* **Vendor readers**: any of `purchase.manage`, `purchase.approve`, `purchase.grn.receive`, `purchase.grn.approve`,
+  `assets.manage`, `assets.maintenance`.
 * **Asset readers**: any of `assets.read`, `assets.manage`, `assets.maintenance`.
 
 ## Endpoints
@@ -129,15 +131,34 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 ### Goods receipt — `/api/v1/purchase/grns`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/?page&status&vendorId&storeId&from&to` · `/{id}` | any of `purchase.grn.receive`, `purchase.manage`, `purchase.approve` | → paged `GoodsReceiptListItem` · `GoodsReceiptDetail` (each line with the item's code and base unit, for pharmacy tags) |
-| POST | `/` | `purchase.grn.receive` | `CreateGoodsReceiptRequest` (vendorId, storeId, purchaseOrderId?, vendorInvoiceNumber, vendorInvoiceDate, receivedOn, remarks, lines[itemId, purchaseOrderLineId?, batchNumber, manufactureDate, expiryDate, quantity, freeQuantity, rate, mrp, discountPercent, gstRate, acceptShortExpiry], post) → 201 `GoodsReceiptCreated` (id, number, status, netAmount) |
-| POST | `/{id}/post` · `/{id}/cancel` | `purchase.grn.receive` | — · `InventoryReasonRequest` → 204 |
+| GET | `/?page&status&vendorId&storeId&from&to` · `/{id}` | any of `purchase.grn.receive`, `purchase.grn.approve`, `purchase.manage`, `purchase.approve` | → paged `GoodsReceiptListItem` · `GoodsReceiptDetail` (each line with the item's code and base unit, for pharmacy tags; `vendorInvoiceAmount`, the invoice's total as printed; `approvalWaitingSince` while a request to post it waits) |
+| POST | `/` | `purchase.grn.receive` | `CreateGoodsReceiptRequest` (vendorId, storeId, purchaseOrderId?, vendorInvoiceNumber, vendorInvoiceDate, receivedOn, remarks, lines[itemId, purchaseOrderLineId?, batchNumber, manufactureDate, expiryDate, quantity, freeQuantity, rate, mrp, discountPercent, gstRate, acceptShortExpiry], sendForApproval, vendorInvoiceAmount?) → 201 `GoodsReceiptCreated` (id, number, status `Draft`, netAmount, approvalId when sent for approval) |
+| POST | `/{id}/approval` | `purchase.grn.receive` | — → `ApprovalRequestDto`: asks for a second person to post a draft into stock (below) |
+| POST | `/{id}/cancel` | `purchase.grn.receive` | `InventoryReasonRequest` → 204 (a draft only; one sent for approval then posts nothing, `approval.stale`) |
 
 GRN checks: duplicate vendor invoice (unique vendor + invoice number unless cancelled); the vendor's drug licence
 must be valid on the receipt date for drug items; an expired batch is refused; a batch expiring within 90 days
 needs `acceptShortExpiry`; a drug's or an implant's batch needs the MRP printed on its pack (`grn.mrp_required`: an
 implant's MRP is the most its bill may charge, NPPA); rate ≤ MRP; purchase units are converted to base units, free goods
 lower the unit cost, and re-receipt of the same batch number/expiry/MRP averages the cost.
+
+### A goods receipt goes into stock when someone else approves it
+
+The store enters the receipt as a draft: nothing is in stock. It is sent for approval as it is saved
+(`sendForApproval`) or later (`/{id}/approval`), as `purchase.grn` in the approvals inbox (`/api/v1/approvals`), and
+someone who holds `purchase.grn.approve` approves it, which posts it into stock (batches, ledger, the purchase order's
+received quantities) as that person. The request shows what they check it against: the supplier, the invoice number
+and date, the store and order, the number of lines, the total worked out from the lines beside the invoice's total as
+printed (`vendorInvoiceAmount`, as the store entered it) and the difference, and the goods accepted though expiring
+within 90 days.
+
+Two people are kept apart:
+- whoever **asked** never approves (`approval.self`, as for every approval);
+- whoever **entered** the receipt never posts it either (`grn.post_own`, 403), even when someone else sent it for
+  approval; the request then waits for a third person.
+
+The receipt is posted as it was sent: one cancelled since posts nothing (`approval.stale`). A posted receipt is
+corrected with a stock adjustment, a draft by cancelling it.
 
 Pharmacy tags (INT-BAR): a posted receipt prints a tag per line (Print tags), with the medicine, batch, expiry, MRP per
 base unit and a barcode of the item code and batch (`PCM500#AB1234`); so does a batch on the stock screen (Tags). An

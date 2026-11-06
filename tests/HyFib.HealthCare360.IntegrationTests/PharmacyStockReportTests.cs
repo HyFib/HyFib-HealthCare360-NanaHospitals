@@ -172,13 +172,10 @@ public sealed class PharmacyStockReportTests(HospitalServer server)
     private static GoodsReceiptLineInput Line(Guid itemId, string batch, DateOnly expiry, decimal packs, decimal rate, decimal mrp) =>
         new(itemId, null, batch, null, expiry, packs, 0m, rate, mrp, 0m, null, AcceptShortExpiry: true);
 
-    /// <summary>Store keeper: receives a vendor invoice into the store on a day, and posts it to stock.</summary>
-    private static async Task ReceiveAsync(ApiClient storeKeeper, Guid vendorId, Guid storeId, DateOnly receivedOn, params GoodsReceiptLineInput[] lines)
-    {
-        var receipt = await storeKeeper.PostAsync<GoodsReceiptCreated>("/api/v1/purchase/grns", new CreateGoodsReceiptRequest(
-            vendorId, storeId, null, $"INV-{Letters(10)}", receivedOn, receivedOn, null, lines, Post: true));
-        receipt.Status.ShouldBe(GoodsReceiptStatus.Posted);
-    }
+    /// <summary>Store keeper: receives a vendor invoice into the store on a day; someone else approves it into stock.</summary>
+    private async Task ReceiveAsync(ApiClient storeKeeper, Guid vendorId, Guid storeId, DateOnly receivedOn, params GoodsReceiptLineInput[] lines) =>
+        await GoodsReceipts.IntoStockAsync(server, storeKeeper, new CreateGoodsReceiptRequest(
+            vendorId, storeId, null, $"INV-{Letters(10)}", receivedOn, receivedOn, null, lines, SendForApproval: true));
 
     /// <summary>On hand, reserved, available, expired, nearest expiry, value at cost and the below-reorder flag of a stock row.</summary>
     private static (decimal, decimal, decimal, decimal, DateOnly, decimal, bool) Position(StockSummaryRow row) =>

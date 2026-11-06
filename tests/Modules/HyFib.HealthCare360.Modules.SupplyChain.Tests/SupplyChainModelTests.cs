@@ -73,7 +73,7 @@ public sealed class SupplyChainModelTests
     {
         var permissions = new SupplyChainModule().Permissions.ToList();
 
-        permissions.Count.ShouldBe(14);
+        permissions.Count.ShouldBe(15);
         permissions.Select(p => p.Name).Distinct().Count().ShouldBe(permissions.Count);
         permissions.ShouldAllBe(p => p.DefaultRoles != null && p.DefaultRoles.Length > 0);
         permissions.Single(p => p.Name == SupplyChainPermissions.StockRead).DefaultRoles!.ShouldContain("Pharmacist");
@@ -86,5 +86,11 @@ public sealed class SupplyChainModelTests
         drugClass.ShouldContain("Pharmacist");
         drugClass.ShouldNotContain("StoreKeeper");
         drugClass.ShouldNotContain("PurchaseOfficer");
+
+        // A purchase officer checks goods receipts against the supplier's invoice and posts them; the store keeper who
+        // receives the goods does not post them.
+        var grnApprove = permissions.Single(p => p.Name == SupplyChainPermissions.GrnApprove).DefaultRoles!;
+        grnApprove.ShouldContain("PurchaseOfficer");
+        grnApprove.ShouldNotContain("StoreKeeper");
     }
 }

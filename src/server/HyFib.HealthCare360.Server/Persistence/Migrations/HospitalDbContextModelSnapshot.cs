@@ -27138,6 +27138,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("prescriber_registration_number");
 
+                    b.Property<DateOnly?>("PrescriptionDate")
+                        .HasColumnType("date")
+                        .HasColumnName("prescription_date");
+
                     b.Property<Guid?>("PrescriptionId")
                         .HasColumnType("uuid")
                         .HasColumnName("prescription_id");
@@ -34889,6 +34893,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid>("VendorId")
                         .HasColumnType("uuid")
                         .HasColumnName("vendor_id");
+
+                    b.Property<decimal?>("VendorInvoiceAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("vendor_invoice_amount");
 
                     b.Property<DateOnly?>("VendorInvoiceDate")
                         .HasColumnType("date")
