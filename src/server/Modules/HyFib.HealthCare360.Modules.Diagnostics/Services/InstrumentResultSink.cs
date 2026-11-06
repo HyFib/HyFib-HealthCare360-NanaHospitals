@@ -281,12 +281,15 @@ internal sealed class InstrumentResultSink(
             .Select(x => x.Result)
             .FirstOrDefault();
 
-    /// <summary>What the analyser said besides the value, cut to what the record keeps.</summary>
+    /// <summary>What the analyser said besides the value, cut to what the record keeps, and the value as it sent it.</summary>
     private static AnalyserReading Reading(InstrumentResult reading) => new(
         TextLimits.ClipOrNull(reading.Units, 32),
         TextLimits.ClipOrNull(reading.Flags, 64),
         TextLimits.ClipOrNull(reading.Status, 16),
-        TextLimits.ClipOrNull(reading.Comment, 500));
+        TextLimits.ClipOrNull(reading.Comment, 500))
+    {
+        Value = reading.Value,
+    };
 
     private Task<Result> KeepAllAsync(
         LabInstrument instrument, InstrumentResultMessage message, LabSample? tube, UnmatchedResultReason reason, string detail, CancellationToken ct) =>

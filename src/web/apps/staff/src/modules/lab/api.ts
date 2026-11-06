@@ -709,6 +709,8 @@ export interface ResultSheetLine {
   instrumentFlags: string | null;
   instrumentStatus: string | null;
   instrumentComment: string | null;
+  /** The analyser's own word for an answer the server read as one of the test's ("Neg" kept as Nil). */
+  instrumentValue?: string | null;
   /** Why the analyser's result was not auto-verified, as the server found it when the result came. */
   heldReasons: string[];
   method: string | null;

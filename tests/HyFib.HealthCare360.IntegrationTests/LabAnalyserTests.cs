@@ -446,6 +446,65 @@ public sealed class LabAnalyserTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_value_in_another_spelling_of_the_tests_unit_is_auto_validated_and_one_in_another_unit_waits()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        await Em360RanGlucoseQcTodayAsync(lab);
+        var inPerCent = await ReceivedFastingSugarSampleAsync(admin, lab);
+        var inMillimoles = await ReceivedFastingSugarSampleAsync(admin, lab);
+
+        // mg% is milligrams per 100 mL, the test's mg/dL as Indian analysers print it; mmol/L is another unit.
+        (await AnalyserSendsAsync("EM360", $"O|1|{inPerCent.Barcode}||^^^GLU|R", "R|1|^^^GLU|92|mg%||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await AnalyserSendsAsync("EM360", $"O|1|{inMillimoles.Barcode}||^^^GLU|R", "R|1|^^^GLU|5.1|mmol/L||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+
+        var trusted = (await SheetAsync(lab, inPerCent)).Lines.ShouldHaveSingleItem();
+        (trusted.Status, trusted.AutoValidated, trusted.InstrumentUnit).ShouldBe((LabResultStatus.Verified, true, "mg%"));
+        var held = (await SheetAsync(lab, inMillimoles)).Lines.ShouldHaveSingleItem();
+        held.Status.ShouldBe(LabResultStatus.Entered);
+        held.HeldReasons.ShouldContain("The analyser sent the value in mmol/L, not in the test's unit, mg/dL.");
+    }
+
+    [Fact]
+    public async Task A_strip_readers_words_go_on_the_urine_tests_as_their_answers_and_the_readers_own_word_is_kept()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+
+        // A urine strip reader of the test's own, its protein and nitrite channels mapped as the masters screen maps them.
+        var reader = "URS" + Letters(5).ToUpperInvariant();
+        await admin.PostAsync<JsonObject>("/api/v1/lab/instruments", new SaveLabInstrumentRequest(
+            reader, "Urine strip reader", "ACON", "U120", LabSection.ClinicalPathology, InstrumentProtocol.Astm,
+            IsBidirectional: false, AutoValidationEnabled: true, Location: null, IsActive: true, Version: null));
+        await MapChannelAsync(admin, "UR-PROT", reader, "PRO");
+        await MapChannelAsync(admin, "UR-NIT", reader, "NIT");
+        await MapChannelAsync(admin, "UR-GLU", reader, "GLU");
+        var urine = await ReceivedSampleAsync(admin, lab, "LAB-URINE-RE");
+
+        // "NEG", "POS" and "++" in the reader's words; a glucose as a concentration needs the strip maker's chart.
+        (await AnalyserSendsAsync(reader, $"O|1|{urine.Barcode}||^^^PRO|R",
+            "R|1|^^^PRO|NEG|||||F", "R|2|^^^NIT|POS|||||F", "R|3|^^^GLU|250 mg/dL|||||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+
+        var sheet = await SheetAsync(lab, urine);
+        var protein = sheet.Lines.Single(l => l.TestCode == "UR-PROT");
+        (protein.Value, protein.InstrumentValue, protein.InstrumentCode).ShouldBe(("Nil", "NEG", reader));
+        var nitrite = sheet.Lines.Single(l => l.TestCode == "UR-NIT");
+        (nitrite.Value, nitrite.InstrumentValue, nitrite.Flag).ShouldBe(("Positive", "POS", ResultFlag.Abnormal));
+        sheet.Lines.Single(l => l.TestCode == "UR-GLU").Value.ShouldBeNull();
+        var kept = (await UnmatchedAsync(lab, reader)).ShouldHaveSingleItem();
+        (kept.Reason, kept.Value).ShouldBe((UnmatchedResultReason.InvalidValue, "250 mg/dL"));
+        await DiscardAsync(lab, kept.Id);
+
+        // A reading sent without a sample id, put on the right tube's protein by the technician: read the same way.
+        var second = await ReceivedSampleAsync(admin, lab, "LAB-URINE-RE");
+        (await AnalyserSendsAsync(reader, "O|1||||R", "R|1|^^^PRO|TR|||||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        var sentAlone = (await UnmatchedAsync(lab, reader)).ShouldHaveSingleItem();
+        await AssignAsync(lab, sentAlone.Id, (await SheetAsync(lab, second)).Lines.Single(l => l.TestCode == "UR-PROT").ResultId);
+        var assigned = (await SheetAsync(lab, second)).Lines.Single(l => l.TestCode == "UR-PROT");
+        (assigned.Value, assigned.InstrumentValue, assigned.Status).ShouldBe(("Trace", "TR", LabResultStatus.Entered));
+    }
+
+    [Fact]
     public async Task Results_under_an_order_record_without_a_sample_id_are_kept_for_the_lab_to_assign_never_dropped()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
@@ -728,12 +787,30 @@ public sealed class LabAnalyserTests(HospitalServer server)
     }
 
     /// <summary>A walk-in fasting blood sugar, collected and received in the lab (the counter's payment gate waived).</summary>
-    private async Task<CreatedSample> ReceivedFastingSugarSampleAsync(ApiClient admin, ApiClient lab)
+    private Task<CreatedSample> ReceivedFastingSugarSampleAsync(ApiClient admin, ApiClient lab) => ReceivedSampleAsync(admin, lab, "LAB-FBS");
+
+    /// <summary>
+    /// Maps the analyte <paramref name="code"/> to <paramref name="instrument"/>'s channel as well, as the masters screen
+    /// saves it: an analyser of the test's own, so other tests' analysers are untouched.
+    /// </summary>
+    private static async Task MapChannelAsync(ApiClient admin, string code, string instrument, string channel)
+    {
+        var listed = (await admin.GetAsync<PagedResult<LabTestListItem>>($"/api/v1/lab/tests?search={code}")).Items.Single(t => t.Code == code);
+        var t = await admin.GetAsync<LabTestDetail>($"/api/v1/lab/tests/{listed.Id}");
+        await admin.PutAsync($"/api/v1/lab/tests/{t.Id}", new SaveLabTestRequest(
+            t.Code, t.Name, t.ShortName, t.Section, t.SpecimenType, t.Container, t.Method, t.TatHours, t.Loinc, t.LoincName, t.ServiceItemId,
+            t.IsOrderable, t.IsPanel, t.ResultType, t.Unit, t.Decimals, t.Options, [.. t.InstrumentChannelCodes, $"{instrument}:{channel}"], t.QcGroup,
+            t.DeltaThresholdPercent, t.AllowAutoValidation, t.Preparation, t.DrawSeparately, t.Interpretation, t.DefaultReferralLabId, t.DisplayOrder,
+            t.IsActive, t.Version));
+    }
+
+    /// <summary>A walk-in order for the test <paramref name="code"/>, its one tube collected and received in the lab.</summary>
+    private async Task<CreatedSample> ReceivedSampleAsync(ApiClient admin, ApiClient lab, string code)
     {
         var patient = await RegisterPatientAsync();
-        var fbs = (await lab.GetAsync<PagedResult<LabTestListItem>>("/api/v1/lab/tests?search=LAB-FBS")).Items.Single(t => t.Code == "LAB-FBS");
+        var test = (await lab.GetAsync<PagedResult<LabTestListItem>>($"/api/v1/lab/tests?search={code}")).Items.Single(t => t.Code == code);
         var order = await lab.PostAsync<LabOrderCreated>("/api/v1/lab/orders", new CreateLabOrderRequest(
-            patient.Id, null, [fbs.Id], OrderPriority.Routine, LabOrderSource.WalkIn, null, null, null));
+            patient.Id, null, [test.Id], OrderPriority.Routine, LabOrderSource.WalkIn, null, null, null));
         var tube = order.Samples.ShouldHaveSingleItem();
 
         // A walk-in test is drawn only once paid; these tests are about the analyser, so the counter waives that here.
@@ -786,6 +863,14 @@ public sealed class LabAnalyserTests(HospitalServer server)
     {
         using var assigned = await lab.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/unmatched-results/{unmatchedId}/assign", new AssignUnmatchedResultRequest(resultId));
         assigned.StatusCode.ShouldBe(HttpStatusCode.NoContent, await assigned.Content.ReadAsStringAsync(Ct));
+    }
+
+    /// <summary>A lab user sets aside for good an analyser result kept for the lab, with the reason.</summary>
+    private static async Task DiscardAsync(ApiClient lab, Guid unmatchedId)
+    {
+        using var discarded = await lab.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/unmatched-results/{unmatchedId}/discard",
+            new DiscardUnmatchedResultRequest("A strip concentration, read against the strip maker's chart by hand."));
+        discarded.StatusCode.ShouldBe(HttpStatusCode.NoContent, await discarded.Content.ReadAsStringAsync(Ct));
     }
 
     /// <summary>A time as an analyser in the lab writes it (ASTM, the lab's zone).</summary>

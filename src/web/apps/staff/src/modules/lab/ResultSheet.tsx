@@ -976,6 +976,11 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
                         </td>
                         <td className={mergeClasses(styles.td, styles.valueCell)}>
                           {editable(line) ? valueEditor(line, interp) : valueDisplay(line)}
+                          {line.instrumentValue && (
+                            <Caption1 block className={styles.muted}>
+                              Analyser sent “{line.instrumentValue}”
+                            </Caption1>
+                          )}
                           {line.instrumentComment && (
                             <Caption1 block className={styles.muted}>
                               Analyser comment: {line.instrumentComment}

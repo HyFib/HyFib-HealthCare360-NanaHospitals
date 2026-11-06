@@ -187,6 +187,39 @@ public sealed class LabResultTests
     }
 
     [Fact]
+    public void An_answer_read_from_the_analysers_own_word_keeps_that_word_and_nothing_else_does()
+    {
+        var result = Result();
+        result.ResultType = LabResultType.Options;
+        var answer = new ResultCapture(new InterpretedResult("Nil", null, ResultFlag.Normal, "Nil"), DeltaOutcome.None, null, null, null, null, "U120");
+
+        result.Record(answer with { Reading = new AnalyserReading(null, null, null, null) { Value = " Neg " } }, null, Now);
+        result.InstrumentValue.ShouldBe("Neg");
+
+        // Sent as the test writes it, whatever the case: nothing to keep.
+        result.Record(answer with { Reading = new AnalyserReading(null, null, null, null) { Value = "NIL" } }, null, Now);
+        result.InstrumentValue.ShouldBeNull();
+
+        // A word longer than the column is cut, not refused.
+        result.Record(answer with { Reading = new AnalyserReading(null, null, null, null) { Value = new string('n', 80) } }, null, Now);
+        result.InstrumentValue.ShouldBe(new string('n', LabResult.InstrumentValueLength));
+
+        // Typed in: the analyser's word goes with its value.
+        result.Record(answer with { InstrumentCode = null }, UserId, Now.AddMinutes(1));
+        result.InstrumentValue.ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_numbers_analyser_spelling_is_not_kept_as_another_word()
+    {
+        var result = Result();
+
+        result.Record(Capture("4.2", 4.2m) with { InstrumentCode = "EM360", Reading = new AnalyserReading("mmol/L", null, "F", null) { Value = "4.20" } }, null, Now);
+
+        result.InstrumentValue.ShouldBeNull();
+    }
+
+    [Fact]
     public void The_same_reading_sent_again_is_recognised_and_another_value_or_flag_is_not()
     {
         var result = Result();
