@@ -115,7 +115,9 @@ public sealed class OtRegisterReportTests(HospitalServer server)
                 .ExecuteUpdateAsync(p => p.SetProperty(x => x.SensitiveCategories, SensitiveCategory.MentalHealth), Ct);
         }
 
-        var withheld = (await RegisterAsync(analyst, theatreId, wentIn)).Single(r => r["caseNumber"] == booking.BookingNumber);
+        var closed = await RegisterAsync(analyst, theatreId, wentIn);
+        closed.Single(r => r["caseNumber"] == called.BookingNumber)["remarks"].ShouldBe("Cancelled after Sign-in (reason withheld: confidential record)");
+        var withheld = closed.Single(r => r["caseNumber"] == booking.BookingNumber);
         foreach (var key in new[] { "provisionalDiagnosis", "surgery", "finalDiagnosis", "drugs" })
         {
             withheld[key].ShouldBe("Withheld: confidential record", key);

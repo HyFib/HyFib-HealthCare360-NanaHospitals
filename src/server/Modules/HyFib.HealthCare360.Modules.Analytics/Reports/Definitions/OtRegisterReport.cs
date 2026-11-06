@@ -393,7 +393,10 @@ internal static class OtRegister
 
         if (c.Status == SurgeryStatus.Cancelled)
         {
-            remarks.Add($"Cancelled after Sign-in: {c.CancelReason ?? "no reason recorded"}");
+            // The reason is what a clinician wrote ("BP 210/110 on the table"): part of the record, withheld with it.
+            remarks.Add(clinical
+                ? $"Cancelled after Sign-in: {c.CancelReason ?? "no reason recorded"}"
+                : "Cancelled after Sign-in (reason withheld: confidential record)");
         }
 
         if (clinical)

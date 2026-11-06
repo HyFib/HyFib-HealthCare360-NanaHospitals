@@ -222,6 +222,11 @@ public sealed class OtRegisterTests
         Cell(row, "timeTo").ShouldBe("Cancelled");
         Cell(row, "duration").ShouldBe("—");
         Cell(row, "remarks").ShouldBe("Emergency. Cancelled after Sign-in: BP 210/120 on the table");
+
+        // What the clinician wrote is the record's: withheld with it from staff the record is closed to.
+        var confidential = Row(Case() with { Status = SurgeryStatus.Cancelled, CompletedAt = null, CancelReason = "BP 210/120 on the table" },
+            Patient() with { SensitiveCategories = SensitiveCategory.MentalHealth }, null, null, Doctor);
+        Cell(confidential, "remarks").ShouldBe("Emergency. Cancelled after Sign-in (reason withheld: confidential record)");
     }
 
     [Fact]
