@@ -219,6 +219,17 @@ public sealed class PatientRegistrationService(
             return Error.Rule("patient.merged", "This record was merged into another patient and can no longer be edited.");
         }
 
+        // The portal signs in with the registered number, so a new one is made only with a code sent to it
+        // (PatientPhoneChangeService). Sending the number on file back, or no number to remove it, is still an edit. A form
+        // loaded before the number changed is out of date as a whole: a conflict, so it reloads, not a refusal of its number.
+        if (Phone.Normalize(request.Phone) is { } phone && phone != patient.Phone)
+        {
+            return request.Version != patient.Version
+                ? Error.ConcurrencyConflict
+                : Error.Validation("patient.phone_needs_code", PatientPhoneChangeService.NeedsCodeMessage,
+                    new Dictionary<string, string[]> { ["phone"] = [PatientPhoneChangeService.NeedsCodeMessage] });
+        }
+
         // A new or changed ABHA address must be in ABDM's format; one already on file (an old @ndhm handle, say) is kept.
         if (Abha.NormalizeAddress(request.AbhaAddress) is { } abhaAddress
             && abhaAddress != Abha.NormalizeAddress(patient.AbhaAddress)
@@ -248,8 +259,8 @@ public sealed class PatientRegistrationService(
         patient.DeceasedAt = request.IsDeceased ? request.DeceasedAt ?? patient.DeceasedAt ?? time.GetUtcNow() : null;
         patient.IsActive = request.IsActive;
 
-        // Portal links sent to the old number stop with the change, and the record's list of links says why. (Opening a
-        // link checks that the record still has the number it went to, so one is never used after the change either way.)
+        // Portal links sent to the number stop when it is removed, and the record's list of links says why. (Opening a link
+        // checks that the record still has the number it went to, so one is never used after that either way.)
         if (patient.Phone != previousPhone)
         {
             await PortalLinkService.RevokeLiveLinksAsync(db, patient.Id, PortalLink.NumberChangedReason, time.GetUtcNow(), ct);
@@ -374,6 +385,13 @@ public sealed class PatientRegistrationService(
         foreach (var check in await db.Set<PatientIdentityCheck>().Where(c => c.PatientId == sourceId).ToListAsync(ct))
         {
             check.PatientId = target.Id;
+        }
+
+        // The duplicate's number changes go with its record; one still waiting for its code ends (it was for the duplicate's number).
+        foreach (var change in await db.Set<PatientPhoneChange>().Where(c => c.PatientId == sourceId).ToListAsync(ct))
+        {
+            change.Supersede();
+            change.PatientId = target.Id;
         }
 
         await MovePortalFamilyLinksAsync(source, target, ct);

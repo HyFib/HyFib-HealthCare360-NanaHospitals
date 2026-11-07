@@ -61,6 +61,16 @@ and `npx eslint apps/portal`.
   works for 7 days, until a newer one is sent, and only while the record still has the number it went to and is in no
   protected category; anything else shows "This link no longer works" with a button to the normal sign-in. Someone
   already signed in on the phone goes straight to home.
+* **A change of the registered number (PP-01).** The portal signs in with the mobile number on the patient's record, so
+  staff cannot change it alone: the edit (`PUT /api/v1/patients/{id}`) refuses a new number (400 on `phone`,
+  `patient.phone_needs_code`). The staff console's edit screen shows the number read-only with "Change number", which
+  sends a 6-digit code by SMS to the new number (`POST /api/v1/patients/{id}/phone-change`, template
+  `patients.phone_code`); nothing goes to the old number. The number changes when staff enter the code the patient reads
+  out (`POST …/phone-change/{changeId}/confirm`). In the same transaction the links sent to the old number stop; the
+  family members the old number's account saw move to the new number's account when no other patient in use keeps the
+  old number (a relative the new number sees already, or the patient themself, ends instead); and when the old number
+  then reaches no patient at all, its portal account is signed out everywhere and forgets the patient's name, so whoever
+  gets the number next (a recycled SIM) sees nothing of the patient.
 * **Tokens.** The access token stays in memory (core session). The refresh token is the server's HttpOnly cookie. The
   portal and the staff console have addresses of their own, but browsers send a host's cookies to all its ports, so each
   keeps its own refresh cookie and each address reads only its own app's: signing in to one never signs the other out,
@@ -332,6 +342,13 @@ the record's preferred language, else English.
   expired, replaced and changed-record links all get the same 404. Asking for a code through a link spends a proof of
   work and counts against the sign-in's limits per address and per number, and a failed request (an unknown token)
   raises the work asked of the address. The token is taken out of the address bar at once and forgotten after sign-in.
+* **Changing the registered number.** A new number becomes the patient's only with a code sent to it and entered at the
+  desk. Codes are stored hashed (salted with the change), work for 10 minutes and 5 tries, are judged one at a time
+  under the change's row lock and used once; a number gets 3 in 15 minutes, counted under a lock on it (422
+  `patient.phone_code_throttled` with `retryAfterSeconds`); a newer code supersedes a waiting one; and the change is
+  made only while the record still has the number it had when the code was sent (409 `patient.phone_changed_meanwhile`
+  otherwise). Both steps are on the record's history (`patient.phone_code_sent`, `patient.phone_changed`), the numbers
+  masked and never the code.
 * **Family codes.** The code goes only to the relative's own registered number, and the first answer is the same
   whether or not the UHID and the number match, so the page cannot be used to find out whose number is whose. The code
   field has no one-time-code autofill, because the code arrives on the relative's phone. The server stores codes

@@ -162,17 +162,16 @@ public sealed class AbdmExportTests(HospitalServer server)
                 .ExecuteUpdateAsync(s => s.SetProperty(p => p.AbhaAddress, legacy), Ct);
         }
 
-        // The form sends it back with every edit: a new phone number is saved and the address is kept.
+        // The form sends it back with every edit: another detail is saved and the address is kept.
         var record = await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}");
         record.AbhaAddress.ShouldBe(legacy);
-        var phone = "9" + Digits(9);
-        await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(record, phone, legacy));
+        await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(record, legacy) with { Occupation = "Teacher" });
         record = await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}");
-        record.Phone.ShouldBe(Phone.Normalize(phone), "Phone numbers are stored in E.164.");
+        record.Occupation.ShouldBe("Teacher");
         record.AbhaAddress.ShouldBe(legacy);
 
         // A changed address must be an ABHA address.
-        using (var refused = await frontOffice.SendRawAsync(HttpMethod.Put, $"/api/v1/patients/{patient.Id}", Edit(record, phone, "meera." + Letters(6) + "@ndhm")))
+        using (var refused = await frontOffice.SendRawAsync(HttpMethod.Put, $"/api/v1/patients/{patient.Id}", Edit(record, "meera." + Letters(6) + "@ndhm")))
         {
             refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
             var problem = await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
@@ -180,7 +179,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         }
 
         var current = "meera." + Letters(6) + "@abdm";
-        await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(record, phone, current));
+        await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(record, current));
         (await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}")).AbhaAddress.ShouldBe(current);
         (await AuditAsync(patient.Id, "patient.abha_changed")).ShouldNotBeNull().Summary.ShouldBe("ABHA address changed");
     }
@@ -1764,10 +1763,10 @@ public sealed class AbdmExportTests(HospitalServer server)
         Category: null, AbhaNumber: abha, AbhaAddress: address, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
         ConfirmedNotDuplicate: true);
 
-    /// <summary>The record as the edit screen sends it back, with a new phone number and ABHA address.</summary>
-    private static UpdatePatientRequest Edit(PatientDetail p, string phone, string? abhaAddress) => new(
+    /// <summary>The record as the edit screen sends it back, with a new ABHA address.</summary>
+    private static UpdatePatientRequest Edit(PatientDetail p, string? abhaAddress) => new(
         p.Title, p.FirstName, p.MiddleName, p.LastName, p.Gender, p.DateOfBirth, AgeYears: null, AgeMonths: null,
-        Phone: phone, p.AlternatePhone, p.Email, p.Address, p.BloodGroup, p.MaritalStatus, p.GuardianName, p.GuardianRelation,
+        p.Phone, p.AlternatePhone, p.Email, p.Address, p.BloodGroup, p.MaritalStatus, p.GuardianName, p.GuardianRelation,
         p.EmergencyContactName, p.EmergencyContactPhone, p.EmergencyContactRelation, p.Occupation, p.Religion, p.Nationality,
         p.PreferredLanguage, p.Category, AbhaNumber: null, AbhaAddress: abhaAddress, AadhaarNumber: null, p.PhotoFileId, p.IsVip,
         p.IsDeceased, p.DeceasedAt, p.Notes, p.IsActive, p.Version);

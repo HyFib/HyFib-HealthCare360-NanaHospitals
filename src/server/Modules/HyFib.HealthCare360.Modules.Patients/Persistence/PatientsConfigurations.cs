@@ -187,6 +187,25 @@ internal sealed class PortalLinkConfiguration : IEntityTypeConfiguration<PortalL
     }
 }
 
+internal sealed class PatientPhoneChangeConfiguration : IEntityTypeConfiguration<PatientPhoneChange>
+{
+    public void Configure(EntityTypeBuilder<PatientPhoneChange> b)
+    {
+        b.ToTable("patient_phone_changes", PatientsSchema.Name);
+        b.Property(x => x.Phone).HasMaxLength(20);
+        b.Property(x => x.PreviousPhone).HasMaxLength(20);
+        b.Property(x => x.CodeHash).HasMaxLength(64);
+        b.Ignore(x => x.AttemptsLeft);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+
+        // The patient's latest change (the one a new code supersedes, the dialog's pending one), and the data summary's count.
+        b.HasIndex(x => new { x.PatientId, x.CreatedAt });
+
+        // The codes a number was sent in the last 15 minutes, whichever patient they were for.
+        b.HasIndex(x => new { x.Phone, x.CreatedAt });
+    }
+}
+
 internal sealed class BreakGlassAccessConfiguration : IEntityTypeConfiguration<BreakGlassAccess>
 {
     public void Configure(EntityTypeBuilder<BreakGlassAccess> b)

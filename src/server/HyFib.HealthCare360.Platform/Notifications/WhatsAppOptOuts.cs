@@ -116,6 +116,9 @@ public static class WhatsAppOptOutPolicy
         // Asked for from the patient's ABHA app, and sent only by SMS.
         "abdm.link_code",
 
+        // Asked for at the desk to confirm a patient's new mobile number, and sent only by SMS.
+        "patients.phone_code",
+
         // Alerts to staff numbers: they also go by SMS and in-app.
         "rpm.alert", "lab.critical", "system.alert",
 

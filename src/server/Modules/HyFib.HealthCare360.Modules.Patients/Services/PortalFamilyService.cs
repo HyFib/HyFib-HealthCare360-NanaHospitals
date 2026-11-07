@@ -346,6 +346,70 @@ public sealed class PortalFamilyService(
         return links.Count;
     }
 
+    /// <summary>
+    /// Carries the family links along when <paramref name="patient"/>'s registered number changes from
+    /// <paramref name="oldPhone"/> to <paramref name="newPhone"/> (<see cref="PatientPhoneChangeService"/>); saved with the
+    /// caller's unit of work.
+    /// <list type="bullet">
+    /// <item>A link that let the new number see the patient ends: the number now sees the record without one.</item>
+    /// <item>The relatives the old number's account saw move to the new number's, but only when no other patient in use
+    /// is registered with the old number: otherwise the account is still theirs, and the links stay with it. A relative the
+    /// new number sees already, and a link to the patient themself, end instead.</item>
+    /// </list>
+    /// Returns how many links moved.
+    /// </summary>
+    internal async Task<int> FollowNumberChangeAsync(Patient patient, string? oldPhone, string newPhone, CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        var toNewNumber = await db.Set<PortalFamilyLink>()
+            .Where(l => l.PatientId == patient.Id && l.AccountPhone == newPhone && l.RevokedAt == null)
+            .ToListAsync(ct);
+        foreach (var link in toNewNumber)
+        {
+            link.Revoke("The patient is now registered with this number, which sees the record without a link.", currentUser.UserId, now);
+            Audit(link, "portal.family.ended",
+                $"The portal account of {Phone.Mask(link.AccountPhone)} sees the record as the patient's own number now; the family link ended");
+        }
+
+        if (oldPhone is null
+            || await db.Set<Patient>().AnyAsync(p => p.Phone == oldPhone && p.Id != patient.Id && p.IsActive && p.MergedIntoPatientId == null, ct))
+        {
+            return 0;
+        }
+
+        var held = await db.Set<PortalFamilyLink>().Where(l => l.AccountPhone == oldPhone && l.RevokedAt == null).ToListAsync(ct);
+        if (held.Count == 0)
+        {
+            return 0;
+        }
+
+        var relatives = held.Select(l => l.PatientId).ToList();
+        var seenAlready = (await db.Set<PortalFamilyLink>()
+                .Where(l => l.AccountPhone == newPhone && l.RevokedAt == null && relatives.Contains(l.PatientId))
+                .Select(l => l.PatientId)
+                .ToListAsync(ct))
+            .Concat(await db.Set<Patient>().Where(p => relatives.Contains(p.Id) && p.Phone == newPhone).Select(p => p.Id).ToListAsync(ct))
+            .ToHashSet();
+        var moved = 0;
+        foreach (var link in held)
+        {
+            if (link.PatientId == patient.Id || seenAlready.Contains(link.PatientId))
+            {
+                link.Revoke($"The patient's number changed to {Phone.Mask(newPhone)}, which already sees this record.", currentUser.UserId, now);
+                Audit(link, "portal.family.ended",
+                    $"The portal account of {Phone.Mask(oldPhone)} no longer sees the record; its holder's number changed to {Phone.Mask(newPhone)}, which sees it already");
+                continue;
+            }
+
+            link.AccountPhone = newPhone;
+            moved++;
+            Audit(link, "portal.family.moved",
+                $"The portal account of {Phone.Mask(oldPhone)} moved to {Phone.Mask(newPhone)} with its holder's change of number, and still sees the record");
+        }
+
+        return moved;
+    }
+
     // ------------------------------------------------------------------ shared
 
     private static Error NotSignedIn => Error.Forbidden("portal.account_required", "Sign in to the patient portal first.");

@@ -46,14 +46,24 @@ public sealed class PortalPatientScope(HospitalDbContext db, ICurrentUser curren
             return _cached = [];
         }
 
-        var linked = db.Set<PortalFamilyLink>().Where(l => l.AccountPhone == phone && l.RevokedAt == null).Select(l => l.PatientId);
-        var reached = await db.Set<Patient>()
-            .Where(p => (p.Phone == phone || linked.Contains(p.Id)) && p.IsActive && p.MergedIntoPatientId == null)
+        var reached = await ReachedBy(db, phone)
             .OrderBy(p => p.Phone == phone ? 0 : 1)
             .ThenBy(p => p.RegisteredAt)
             .Select(p => new Reached(p.Id, p.Phone == phone, p.SensitiveCategories))
             .ToListAsync(ct);
         return _cached = Shown(reached);
+    }
+
+    /// <summary>
+    /// The patients the portal account of <paramref name="phone"/> reaches: the active records registered with the number,
+    /// and those a family link in force gives it, before any is hidden (<see cref="SharedNumbers"/>). None means the number
+    /// reaches nobody's records any more (a change of a patient's number, for one, ends the old number's sessions then:
+    /// <see cref="PatientPhoneChangeService"/>).
+    /// </summary>
+    internal static IQueryable<Patient> ReachedBy(HospitalDbContext db, string phone)
+    {
+        var linked = db.Set<PortalFamilyLink>().Where(l => l.AccountPhone == phone && l.RevokedAt == null).Select(l => l.PatientId);
+        return db.Set<Patient>().Where(p => (p.Phone == phone || linked.Contains(p.Id)) && p.IsActive && p.MergedIntoPatientId == null);
     }
 
     /// <summary>

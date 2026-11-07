@@ -146,6 +146,17 @@ function EditForm({ patient }: { patient: PatientDetail }) {
         submitLabel="Save changes"
         onFormReady={setForm}
         identifierHints={{ abha: patient.abhaNumberMasked, aadhaarLast4: patient.aadhaarLast4 }}
+        changePhone={{
+          patientId: patient.id,
+          otherChanges:
+            removeAbha ||
+            removeAadhaar ||
+            isActive !== patient.isActive ||
+            isDeceased !== patient.isDeceased ||
+            deceasedAt !== toLocalInput(patient.deceasedAt),
+          // The record's version moved on: the form reloads with the new number (keyed by version).
+          onChanged: () => void queryClient.invalidateQueries({ queryKey: patientKeys.all }),
+        }}
         secondaryActions={
           <Button
             appearance="subtle"
