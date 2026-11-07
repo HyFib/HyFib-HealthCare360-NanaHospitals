@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Domain.Safety;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -449,7 +450,9 @@ public sealed class PrescriptionService(
 
         var patient = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == prescription.PatientId)
             .Select(p => new { p.Phone, p.Email, p.FullName, p.PreferredLanguage }).FirstOrDefaultAsync(ct);
-        if (patient?.Phone is null)
+        // A record in a protected category is not sent to a number another patient shares (SharedNumbers): the
+        // prescription's PDF would tell whoever holds the phone. The patient takes the printed copy.
+        if (patient?.Phone is null || await SharedNumbers.HiddenFromNumberAsync(db, prescription.PatientId, ct))
         {
             prescription.ReleasePatientNotice();
             return;
