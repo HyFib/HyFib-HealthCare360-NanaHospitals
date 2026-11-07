@@ -60,7 +60,7 @@ public static class BillingPermissions
             [SystemRoles.Cashier, SystemRoles.Billing, SystemRoles.FrontOffice, SystemRoles.HospitalAdmin]),
         new(RefundsRequest, "Billing", "Request refunds, credit notes and write-offs, and ask to reverse money that did not move (a receipt not received, a refund not paid out)",
             [SystemRoles.Cashier, SystemRoles.Billing, SystemRoles.HospitalAdmin]),
-        new(RefundsApprove, "Billing", "Approve refunds, credit notes, write-offs, reversals of money that did not move, and card and UPI settlement reports withdrawn as imported in error, someone else asked for", Approvers),
+        new(RefundsApprove, "Billing", "Approve refunds (the pharmacy's invoice cancellations and returns paying money out or writing stock off included), credit notes, write-offs, reversals of money that did not move, and card and UPI settlement reports withdrawn as imported in error, someone else asked for", Approvers),
         new(Deposits, "Billing", "Collect in-patient advances (deposits)", [SystemRoles.Cashier, SystemRoles.Billing, SystemRoles.HospitalAdmin]),
         new(Shifts, "Billing", "Open and close cashier shifts; day-end collection report",
             [SystemRoles.Cashier, SystemRoles.Billing, SystemRoles.FrontOffice, SystemRoles.Accountant, SystemRoles.HospitalAdmin]),

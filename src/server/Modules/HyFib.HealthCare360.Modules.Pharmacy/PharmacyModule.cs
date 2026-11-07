@@ -34,6 +34,13 @@ public static class PharmacyPermissions
     /// <summary>Pharmacovigilance: every report, the causality assessment and sending it to the ADR monitoring centre.</summary>
     public const string AdrManage = "pharmacy.adr.manage";
 
+    /// <summary>
+    /// Billing's permission to approve refunds, credit notes and write-offs (accountants and hospital administrators by
+    /// default). It approves the pharmacy's cancellations and the returns that pay money out or write stock off too, so
+    /// every refund waits in one inbox for the same people. Named here because the pharmacy does not reference Billing.
+    /// </summary>
+    public const string RefundsApprove = "billing.refunds.approve";
+
     /// <summary>Anyone working a pharmacy counter (stock pickers, queue, batch lists).</summary>
     internal static readonly string[] CounterStaff = [QueueRead, Dispense, Sales, IpIssue];
 
@@ -44,8 +51,8 @@ public static class PharmacyPermissions
         new(QueueRead, "Pharmacy", "View the e-prescription queue and pharmacy stock", Pharmacy),
         new(Dispense, "Pharmacy", "Dispense prescriptions (FEFO batches, substitution, counselling)", Pharmacy),
         new(Sales, "Pharmacy", "Counter sales, GST invoices and collection of dues", Pharmacy),
-        new(Returns, "Pharmacy", "Sales returns and same-day invoice cancellation", Pharmacy),
-        new(IpIssue, "Pharmacy", "Issue medicines to admitted patients and accept ward returns", Pharmacy),
+        new(Returns, "Pharmacy", "Sales returns and same-day invoice cancellation (a cancellation, and a return paying money out or writing stock off, waits for someone who approves refunds)", Pharmacy),
+        new(IpIssue, "Pharmacy", "Issue medicines to admitted patients, accept ward returns, and approve another pharmacist's ward return not restocked", Pharmacy),
         new(IpIndent, "Pharmacy", "Raise ward indents for admitted patients", [.. Pharmacy, SystemRoles.Nurse]),
         new(Registers, "Pharmacy", "View and export the Schedule H/H1/X and narcotic registers", Pharmacy),
         new(Refills, "Pharmacy", "Authorise, approve and reject prescription refills", Pharmacy),

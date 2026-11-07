@@ -10,6 +10,7 @@ import { usePermission } from '@/lib/permissions';
 import { approvalQueries, type ApprovalRequestDto } from '@/modules/approvals/api';
 import { Detail, DetailGrid } from '@/modules/billing/ui';
 import { MASTERS_MANAGE } from '@/modules/masters/api';
+import { PHARMACY_PERMISSIONS } from '@/modules/pharmacy/permissions';
 
 export const Route = createFileRoute('/_app/approvals/$approvalId')({
   component: ApprovalPage,
@@ -22,6 +23,7 @@ export const Route = createFileRoute('/_app/approvals/$approvalId')({
 function subjectLink(
   request: ApprovalRequestDto,
   canManageMasters: boolean,
+  can: { pharmacySales: boolean; wardIssues: boolean },
 ): { label: string; to: string; search?: Record<string, string> } | null {
   switch (request.subjectType) {
     case 'Bill':
@@ -55,6 +57,17 @@ function subjectLink(
     // list shows the change waiting. Only those who may change settings decide it, and they may open the list.
     case 'SystemSetting':
       return { label: 'Open the settings', to: '/admin/settings' };
+    // A pharmacy cancellation or return: the invoice with its items, payments and returns, for whoever may read it. An
+    // accountant, who approves refunds but does not open pharmacy invoices, decides from what the request says.
+    case 'PharmacySale':
+      return can.pharmacySales
+        ? { label: 'Open the invoice', to: '/pharmacy/sales', search: { id: request.subjectId } }
+        : null;
+    // A ward return not restocked: the issue to the ward with its returns.
+    case 'IpIssue':
+      return can.wardIssues
+        ? { label: 'Open the issue', to: '/pharmacy/ip-issues', search: { id: request.subjectId } }
+        : null;
     default:
       return null;
   }
@@ -67,6 +80,8 @@ function ApprovalPage() {
   const request = useQuery(approvalQueries.detail(approvalId));
   const [decision, setDecision] = useState<Decision | null>(null);
   const canManageMasters = usePermission(MASTERS_MANAGE);
+  const canReadPharmacySales = usePermission([PHARMACY_PERMISSIONS.sales, PHARMACY_PERMISSIONS.returns]);
+  const canReadWardIssues = usePermission([PHARMACY_PERMISSIONS.ipIssue, PHARMACY_PERMISSIONS.ipIndent]);
   const back = () => void navigate({ to: '/approvals' });
 
   if (request.isLoading) {
@@ -82,7 +97,10 @@ function ApprovalPage() {
   }
 
   const r = request.data;
-  const subject = subjectLink(r, canManageMasters);
+  const subject = subjectLink(r, canManageMasters, {
+    pharmacySales: canReadPharmacySales,
+    wardIssues: canReadWardIssues,
+  });
   return (
     <Page maxWidth={900}>
       <PageHeader

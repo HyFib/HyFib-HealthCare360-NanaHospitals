@@ -33,3 +33,9 @@ export const IP_READERS = [PHARMACY_PERMISSIONS.ipIssue, PHARMACY_PERMISSIONS.ip
 
 /** Readers of invoices (sales list, detail, returns). */
 export const SALE_READERS = [PHARMACY_PERMISSIONS.sales, PHARMACY_PERMISSIONS.returns] as const;
+
+/**
+ * Billing's permission to approve refunds (accountants and hospital administrators by default): it approves the
+ * pharmacy's cancellations and the returns that pay money out or write stock off, as it approves every other refund.
+ */
+export const REFUNDS_APPROVE = 'billing.refunds.approve';

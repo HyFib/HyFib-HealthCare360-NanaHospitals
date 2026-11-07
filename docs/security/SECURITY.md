@@ -473,6 +473,25 @@ and grants nothing.
     The Features screen's switches are not guarded: one switched off stops a service, never a control. Lab setup's
     analyser list (`integrations.lab.instruments`) keeps its own screen and permission: it saves only analysers Lab setup
     has, each bound to its allowed addresses and audited, while the same key through the settings API waits.
+  - money out of the pharmacy (`pharmacy.sale_cancel`, `pharmacy.sale_return`): a same-day invoice cancelled, and a
+    return that pays money out or writes stock off, are asked for by a pharmacist (`pharmacy.returns`) who neither sold
+    the invoice nor took its payment, and approved by someone else who approves every other refund
+    (`billing.refunds.approve`: accountants and hospital administrators by default), never by whoever sold it either.
+    The endpoint answers 202 with the request, and nothing moves until it is approved: no refund, no stock back, no
+    register entry. The approver reads the invoice, the patient, the items and quantities, the amount, how the money
+    goes back ("₹400.00 in cash, ₹600.00 back to the card (RRN …)"), whether the stock goes back, and the reason. Money
+    goes back the way it came: each refund names the payment it pays back (`refund_of_payment_id`), in that payment's
+    mode and under its reference, so a card or UPI payment is never paid out of the till and the card and UPI settlement
+    matches the refund; a partial return is shared among the payments in proportion. A cancellation is approved only on
+    the invoice's own day, and a request is made only over the invoice as it was asked (`approval.stale` after a
+    payment, a return, an IRN, a line expiring or midnight). A return not restocked is a write-off: it comes back into
+    its batch and goes out again as a write-off, in the stock ledger and, for a controlled drug, the register. A return
+    restocked and set wholly against the balance due is made at once (pharmacy.md, Refunds and write-offs wait for a
+    second person);
+  - a ward return not restocked (`pharmacy.ward_return`): one pharmacist who issues to the wards asks, and another
+    (`pharmacy.ip.issue`) approves, after opening the patient's record; nothing is credited or written off until then. A
+    controlled drug is entered in the register as returned from the ward and written off, recorded by the approving
+    pharmacist with the one who asked. A ward return restocked is made at once.
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was
@@ -487,6 +506,9 @@ and grants nothing.
     already need a second person (a discount needs one only above the cashier's own limit; a holder of
     `billing.discounts.approve` still discounts alone, see MAKER-CHECKER.md, slice 6);
   - whoever raised a purchase requisition or order cannot approve it (`requisition.approve_own`, `po.approve_own`);
+  - whoever sold a pharmacy invoice, or took a payment on it, does not ask for its cancellation or take a return of it,
+    nor approve either (`pharmacy.cancel_own_sale`, `pharmacy.return_own_sale`, 403 whatever else they may do), and the
+    pharmacist who asks for a ward return not restocked does not approve it (`approval.self`);
   - a lab that sets `lab.separateVerifier` (per facility, off by default for a lab with one pathologist) refuses
     verification of a result by whoever entered it (`lab.verify_own_result`), and a correction of a released report
     waits for a second pathologist (see Maker-checker);

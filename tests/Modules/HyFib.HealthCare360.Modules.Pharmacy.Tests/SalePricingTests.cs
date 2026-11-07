@@ -98,11 +98,11 @@ public sealed class SalePricingTests
         sale.Complete([new(PaymentMode.Cash, 35m, null), new(PaymentMode.Credit, 10m, null)], creditAllowed: true, Now, null);
 
         var refund = sale.Items[0].Return(10).Value;
-        var (adjusted, cash) = sale.ApplyReturn(refund, PaymentMode.Cash, null, Now, null).Value;
+        var (adjusted, paidBack) = sale.ApplyReturn(refund, Now, null).Value;
 
         refund.ShouldBe(22.50m);
         adjusted.ShouldBe(10m);
-        cash.ShouldBe(12.50m);
+        paidBack.Sum(p => p.Amount).ShouldBe(12.50m);
         sale.DueAmount.ShouldBe(0m);
         sale.Items[0].Return(11).Error!.Code.ShouldBe("return.exceeds_sold");
     }
@@ -116,7 +116,7 @@ public sealed class SalePricingTests
 
         var returned = Sale((2.25m, 20));
         returned.Complete([new(PaymentMode.Cash, 45m, null)], false, Now, null);
-        returned.ApplyReturn(returned.Items[0].Return(2).Value, PaymentMode.Cash, null, Now, null);
+        returned.ApplyReturn(returned.Items[0].Return(2).Value, Now, null);
         returned.Cancel("wrong patient", Today, Today, Now, null).Error!.Code.ShouldBe("sale.has_returns");
 
         var sale = Sale((2.25m, 20));

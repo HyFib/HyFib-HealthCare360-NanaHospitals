@@ -242,8 +242,9 @@ public sealed class CreditNoteGstTests(HospitalServer server)
                 [new SalePayment(PharmacyPaymentMode.Cash, price, null)], false,
                 new B2bBuyer(EInvoicing.KeralaCompany, "Sree Clinic", "32", "Sree Clinic, 22 Beach Road, Kozhikode 673001")));
         var sale = await pharmacist.GetAsync<PharmacySaleDetail>($"/api/v1/pharmacy/sales/{sold.Id}");
-        var returned = await pharmacist.PostAsync<SaleReturnCreated>($"/api/v1/pharmacy/sales/{sold.Id}/returns",
-            new SaleReturnRequest([new SaleReturnLine(sale.Items.Single().Id, 1m, true)], "One strip unopened", PharmacyPaymentMode.Cash, null));
+        // Another pharmacist takes the strip back (whoever sold it may not), and the accountant approves the cash paid back.
+        var returned = await server.ReturnSaleAsync(await server.SignInAsync(HospitalServer.Users.SecondPharmacist), sold.Id,
+            new SaleReturnRequest([new SaleReturnLine(sale.Items.Single().Id, 1m, true)], "One strip unopened"));
 
         var row = (await pharmacist.GetAsync<EInvoiceRegister>(Register)).Rows.Single(r => r.Id == returned.Id);
         (row.Source, row.Type, row.Against, row.Number, row.Total).ShouldBe(("pharmacyreturn", "CRN", sale.InvoiceNumber, returned.ReturnNumber, returned.RefundAmount));

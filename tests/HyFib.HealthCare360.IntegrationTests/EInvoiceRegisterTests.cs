@@ -149,7 +149,9 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         var sale = await pharmacist.GetAsync<PharmacySaleDetail>($"/api/v1/pharmacy/sales/{sold.Id}");
         sale.EInvoice.ShouldNotBeNull().Irn.ShouldBe(irn);
         sale.BuyerAddress.ShouldBe("Sree Clinic, 22 Beach Road, Kozhikode 673001");
-        using var cancel = await pharmacist.SendRawAsync(HttpMethod.Post, $"/api/v1/pharmacy/sales/{sold.Id}/cancel", new { Reason = "Wrong buyer" });
+        // Asked for by another pharmacist (whoever sold it may not ask), the cancellation is refused while the IRN stands.
+        var secondPharmacist = await server.SignInAsync(HospitalServer.Users.SecondPharmacist);
+        using var cancel = await secondPharmacist.SendRawAsync(HttpMethod.Post, $"/api/v1/pharmacy/sales/{sold.Id}/cancel", new { Reason = "Wrong buyer" });
         (await ProblemCodeAsync(cancel)).ShouldBe("einvoice.active");
     }
 

@@ -31,8 +31,11 @@ internal static class InpatientEndpoints
         group.MapPost("/ip-issues", async (IpIssueRequest r, InpatientPharmacyService ip, CancellationToken ct) =>
                 (await ip.IssueAsync(r, ct)).ToCreated(d => $"/api/v1/pharmacy/ip-issues/{d.Id}"))
             .RequirePermission(PharmacyPermissions.IpIssue).WithValidation<IpIssueRequest>();
+        // Restocked, a ward return is made at once (201); with a line not restocked it waits for a second pharmacist (202).
         group.MapPost("/ip-issues/{id:guid}/returns", async (Guid id, WardReturnRequest r, InpatientPharmacyService ip, CancellationToken ct) =>
-                (await ip.ReturnAsync(id, r, ct)).ToCreated(d => $"/api/v1/pharmacy/ip-issues/{id}"))
+                (await ip.ReturnAsync(id, r, ct)).ToHttpResult(outcome => outcome.Asked is { } asked
+                    ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)
+                    : TypedResults.Created($"/api/v1/pharmacy/ip-issues/{id}", outcome.Created)))
             .RequirePermission(PharmacyPermissions.IpIssue).WithValidation<WardReturnRequest>();
     }
 
@@ -151,7 +154,8 @@ internal static class InpatientEndpoints
     }
 
     private static async Task<IResult> GetIssue(
-        Guid id, HospitalDbContext db, PatientAccessGuard guard, PatientContactAccess contacts, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+        Guid id, HospitalDbContext db, PatientAccessGuard guard, PatientContactAccess contacts, IAuditLogger audit, InpatientPharmacyService ip, TimeProvider time,
+        CancellationToken ct)
     {
         var issue = await db.Set<IpIssue>().AsNoTracking().Include(i => i.Lines).FirstOrDefaultAsync(i => i.Id == id, ct);
         if (issue is null)
@@ -185,6 +189,7 @@ internal static class InpatientEndpoints
             returns.Select(r => new WardReturnDto(
                 r.Id, r.Number, r.ReturnedAt, r.Reason, r.CreditAmount,
                 r.Lines.Select(l => new WardReturnLineDto(l.IpIssueLineId, l.ItemName, l.BatchNumber, l.Quantity, l.CreditAmount, l.Restocked, l.ChargeReversal)).ToList()))
-                .ToList()));
+                .ToList(),
+            await ip.PendingReturnsAsync(issue.Id, ct)));
     }
 }
