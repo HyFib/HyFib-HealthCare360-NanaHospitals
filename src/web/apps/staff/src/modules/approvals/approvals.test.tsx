@@ -73,6 +73,33 @@ const GOODS_RECEIPT: ApprovalRequestDto = {
   requestedByName: 'Suresh Iyer',
 };
 
+/** A guarded setting another administrator asked to change: the setting, what it controls, the value now and asked. */
+const SETTING_CHANGE: ApprovalRequestDto = {
+  ...CREDIT_NOTE,
+  kind: 'settings.change',
+  title: 'Change to a setting',
+  summary: 'Second pathologist for lab corrections: on → off (Nana Hospitals, Pune)',
+  details: [
+    { label: 'Setting', value: 'Second pathologist for lab corrections (lab.separateVerifier)' },
+    {
+      label: 'What it controls',
+      value:
+        'Whether a second pathologist verifies what one entered, and releases the correction of a report already released. Off, one pathologist does both alone.',
+    },
+    { label: 'Applies to', value: 'Nana Hospitals, Pune' },
+    { label: 'In force now', value: 'on' },
+    { label: 'Asked for', value: 'off' },
+  ],
+  reason: 'Dr Rao is on leave this month; Dr Menon reports alone.',
+  subjectType: 'SystemSetting',
+  subjectId: '0192a000-0000-7000-8000-00000000d301',
+  patientId: null,
+  requestedByName: 'Hospital Admin',
+};
+
+/** Changes system settings: approves a change to a guarded setting that another administrator asked for. */
+const SETTINGS_ADMIN = { ...STAFF_USER, roles: ['HospitalAdmin'], permissions: ['admin.settings.manage'] };
+
 /** Approves refunds, credit notes and write-offs that someone else asked for. */
 const ACCOUNTANT = { ...STAFF_USER, roles: ['Accountant'], permissions: ['billing.refunds.approve'] };
 
@@ -154,6 +181,24 @@ describe('the approvals inbox', SCREEN_TESTS, () => {
     await user.click(screen.getByRole('button', { name: 'Open the goods receipt' }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe(`/purchase/grns/${GRN_ID}`));
+    expect(posts()).toHaveLength(0);
+  });
+
+  it('shows another administrator a setting asked to change, in words, and opens the settings', async () => {
+    serve(SETTING_CHANGE, () => ({ ...SETTING_CHANGE, status: 'Approved', canDecide: false }));
+    const { router } = openScreen(`/approvals/${REQUEST_ID}`, SETTINGS_ADMIN);
+    const user = userEvent.setup();
+
+    expect(
+      await screen.findByText('Second pathologist for lab corrections (lab.separateVerifier)', {}, SLOW),
+    ).toBeInTheDocument();
+    expect(screen.getByText('In force now')).toBeInTheDocument();
+    expect(screen.getByText('Asked for')).toBeInTheDocument();
+    expect(screen.getByText(/Dr Rao is on leave this month/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Approve/ })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Open the settings' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/admin/settings'));
     expect(posts()).toHaveLength(0);
   });
 

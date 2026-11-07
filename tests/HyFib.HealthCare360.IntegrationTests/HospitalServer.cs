@@ -737,6 +737,36 @@ public sealed class HospitalServer : IAsyncLifetime
         return await maker.GetAsync<PackageDetail>($"/api/v1/billing/packages/{created.Id}");
     }
 
+    /// <summary>
+    /// A setting saved through the admin API as the settings screen saves it, with the version of the value saved now (or
+    /// none when there is none yet), a change that waits for a second administrator (a control switched off, a limit
+    /// raised, where money, patients' data or alerts go: SettingGuard) approved by the other administrator: the setting is
+    /// then as the test asked, as it would have been in one step.
+    /// </summary>
+    public async Task SaveSettingAsync(ApiClient maker, string key, SaveSettingRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        ArgumentNullException.ThrowIfNull(request);
+        var path = $"/api/v1/admin/settings/{key}";
+        var asked = request with { Version = await maker.SettingVersionAsync(key, request.FacilityId), Reason = request.Reason ?? "Set up for the tests." };
+        using var response = await maker.SendRawAsync(HttpMethod.Put, path, asked);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"Saving setting {key}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)}");
+        }
+
+        if (response.StatusCode == HttpStatusCode.Accepted)
+        {
+            await ApproveSettingAsync((await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Put, path)).Id);
+        }
+    }
+
+    /// <summary>
+    /// A change to a setting approved as whichever of the seed's two administrators (the Super Administrator and the hospital
+    /// administrator, both of whom may change settings) did not ask for it.
+    /// </summary>
+    public Task ApproveSettingAsync(Guid approvalId) => ApproveGrantAsync(approvalId);
+
     /// <summary>A member of staff created through the admin API, their roles and facilities approved by the other administrator.</summary>
     public async Task<TemporaryPasswordResponse> CreateUserAsync(ApiClient maker, CreateUserRequest request)
     {

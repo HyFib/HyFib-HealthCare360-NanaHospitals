@@ -180,6 +180,10 @@ What a hospital supplies:
 | `ai.speech.secret` (encrypted) | Optional bearer key for the Whisper-compatible server |
 | `ai.limits` | `{ perUserPerHour: 60, perUserPerDay: 300 }` |
 
+Turning AI on, and any change to `ai.provider`, `ai.openai`, `ai.speech` or a key, waits for a second administrator who
+may change settings (`settings.change`, SECURITY.md, Maker-checker): each decides where clinical text and dictation
+go. Turning AI off, the model, the time limit and the limits are saved at once.
+
 Malformed values disable the feature instead of failing the request. They are logged by key, never by value.
 
 ## Endpoints

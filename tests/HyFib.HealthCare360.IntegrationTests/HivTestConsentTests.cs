@@ -150,6 +150,6 @@ public sealed class HivTestConsentTests(HospitalServer server)
     private static async Task<Guid> TestIdAsync(ApiClient lab, string code) =>
         (await lab.GetAsync<PagedResult<LabTestListItem>>($"/api/v1/lab/tests?search={code}")).Items.Single(t => t.Code == code).Id;
 
-    private static Task SetPaymentGateAsync(ApiClient admin, Guid facilityId, bool required) =>
-        admin.SaveSettingAsync("lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
+    private Task SetPaymentGateAsync(ApiClient admin, Guid facilityId, bool required) =>
+        server.SaveSettingAsync(admin, "lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
 }

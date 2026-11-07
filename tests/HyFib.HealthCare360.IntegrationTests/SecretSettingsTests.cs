@@ -21,7 +21,7 @@ public sealed class SecretSettingsTests(HospitalServer server)
         var key = $"integrations.test{Guid.NewGuid():N}.secret";
         const string credential = "plain-api-key-0000";
 
-        await admin.SaveSettingAsync(key,
+        await server.SaveSettingAsync(admin, key,
             new SaveSettingRequest(JsonNode.Parse($$"""{"apiKey":"{{credential}}"}"""), null, false, null));
         try
         {

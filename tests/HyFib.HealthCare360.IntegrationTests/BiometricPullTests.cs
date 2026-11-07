@@ -316,8 +316,8 @@ public sealed class BiometricPullTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={Key}"))
             .FirstOrDefault(s => s.Key == Key && s.FacilityId is null)?.Value;
-        await admin.SaveSettingAsync(Key, new SaveSettingRequest(value, null, false, null));
-        return new Restore(() => admin.SaveSettingAsync(Key,
+        await server.SaveSettingAsync(admin, Key, new SaveSettingRequest(value, null, false, null));
+        return new Restore(() => server.SaveSettingAsync(admin, Key,
             new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
     }
 

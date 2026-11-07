@@ -1650,6 +1650,7 @@
     "POST /api/v1/admin/notification-templates admin.notifications.manage",
     "POST /api/v1/admin/roles admin.roles.manage",
     "POST /api/v1/admin/sessions/end-all admin.system.manage",
+    "POST /api/v1/admin/settings/{key}/check admin.settings.manage",
     "POST /api/v1/admin/system/alert-drills admin.system.read,admin.system.manage",
     "POST /api/v1/admin/system/alert-drills/{id:guid}/acknowledge admin.system.read",
     "POST /api/v1/admin/system/alerts/{id:guid}/acknowledge admin.system.read",
@@ -2488,6 +2489,7 @@
     "masters.service_price": "masters.prices.approve",
     "mrd.death_certificate": "mrd.deaths.confirm",
     "patients.merge": "patients.merge",
-    "purchase.grn": "purchase.grn.approve"
+    "purchase.grn": "purchase.grn.approve",
+    "settings.change": "admin.settings.manage"
   }
 }
