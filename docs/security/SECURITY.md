@@ -266,6 +266,7 @@ What they all share:
 | **Password prompts** before sensitive actions | The password again, from a signed-in staff member | Wrong ones count toward the account lock |
 | **Patient portal sign-in** | A 6-digit code sent by SMS to the registered number, valid 5 minutes: one factor (AAL1), as strong as the phone number | 5 tries per code; 3 codes per number in 15 minutes (the refusal, `auth.otp_throttled`, gives `retryAfterSeconds` until the next is allowed, and the portal counts down to it); a proof of work for asking for a code and for giving it (Anti-automation, below) |
 | **Link to the portal** (staff send it to the patient's registered number) | Not a credential. A 128-bit token, stored as its SHA-256, valid 7 days, until a newer link is sent, and only while the record still has the number it went to (and is in use and in no protected category). It lets whoever opens it see the hospital and the number masked, and send the portal sign-in's code to that number; signing in then takes the code, as above | Too large to guess; any token that does not work gets one 404; asking for a code takes a proof of work and the sign-in's limits (5 code requests per address and 3 codes per number in 15 minutes); staff may send 3 links per patient in 24 hours |
+| **Changing a patient's registered number** (staff, at the desk) | Not a sign-in, but it decides where the portal's sign-in code goes. A new number becomes the patient's only with a 6-digit code sent by SMS to that number and entered by staff who edit patients (`patients.register` and `patients.contact.read`), as the patient reads it out; valid 10 minutes, stored salted and hashed. Nothing goes to the old number | 5 tries per code, judged one at a time; 3 codes per number in 15 minutes (`patient.phone_code_throttled` with `retryAfterSeconds`); made only while the record still has the number it had when the code was sent |
 | **Video consultation guests** | The 256-bit token in the link sent to the patient, valid until 2 hours after the consultation's scheduled end. A guest waits until the doctor admits them, and the link reveals only the patient's first name | Too large to guess; 5 failed joins per connection |
 | **Enrolling a workstation or lab PC** | A code an administrator makes: 8 characters from 31 (about 40 bits), good for one device, for 30 minutes by default (5 minutes to 24 hours) | Too many to try in its lifetime at 60 a minute per address |
 | **HC360 Desktop and lab agents** | The device's id and its 256-bit secret, kept with DPAPI. Lab agents never sign anyone in, and relay only their own analysers. HC360 Desktop asks for and downloads its update with the same credential; what it gets is HyFib's signed package, which it checks itself (Release signing key, below). Revoking the device stops it | Too large to guess; the update allows 30 requests in 15 minutes per device |
@@ -508,6 +509,24 @@ and grants nothing.
     patient's own. Nor to a number that replied STOP on WhatsApp by WhatsApp alone (SMS still works).
   - At most 3 links per patient in 24 hours, counted under a lock so sends at once from two desks cannot get past it.
     Each send is on the patient's record history (`portal.link.sent`), and the link's own row is in the data audit.
+- **Changing the registered number** (PP-01). The portal signs in with the mobile number on the patient's record, so a
+  desk that could change it alone would hand the patient's records to whoever holds the number it typed (a
+  social-engineering call, a recycled SIM). The edit (`PUT /api/v1/patients/{id}`) refuses a new number; staff who edit
+  patients use Change number, which sends a 6-digit code by SMS to the new number only, and the number changes when they
+  enter the code the patient reads out (`PatientPhoneChangeService`). Nothing is sent to the old number: the hospital
+  chose a code to the new number over a notice to the old one. Removing the number, or sending it back unchanged, is
+  still an edit.
+  - Codes are kept only as SHA-256 salted with the change's id, work for 10 minutes and 5 tries, are judged one at a time
+    under the change's row lock, and are used once. A number gets 3 codes in 15 minutes, counted under a lock on the
+    number, whichever patients they were for; a newer code supersedes one still waiting; and the change is made only
+    while the record still has the number it had when the code was sent (409 otherwise: send a new code).
+  - What the change ends, in the same transaction: the links to the portal sent to the old number; the family members
+    the old number's portal account saw move to the new number when no other patient in use keeps the old number (they
+    stay with the account when one does, since it is still that patient's); and when the old number then reaches no
+    patient's records at all, its portal sessions end at once, on every server, and the account forgets the patient's
+    name and record, so whoever holds the number next signs in to nothing of theirs.
+  - Both steps are on the patient's record history (`patient.phone_code_sent`; `patient.phone_changed`, a warning naming
+    who asked and who confirmed), with the numbers masked and never the code.
 - Every access to a patient record is audited, and so is every way staff see one: a patient search (what was searched
   for, how many matched and which patients were shown, `patient.searched`), the summary the banner shows and a lookup
   by UHID (`PatientAccessAuditTests`).

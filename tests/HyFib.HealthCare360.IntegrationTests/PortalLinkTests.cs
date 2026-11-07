@@ -137,8 +137,11 @@ public sealed class PortalLinkTests(HospitalServer server)
         await frontOffice.PostAsync<PortalLinkSent>(SendPath(patient.Id), new SendPortalLinkRequest([NotificationChannel.Sms]));
         var token = await LatestTokenAsync(phone);
 
-        var detail = await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}");
-        await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(detail) with { Phone = NewMobile() });
+        // The number changes as the desk changes it: with a code sent by SMS to the new number (PatientPhoneChangeTests).
+        var newPhone = Phone.Normalize(NewMobile())!;
+        var sent = await frontOffice.PostAsync<PhoneChangeDto>($"/api/v1/patients/{patient.Id}/phone-change", new RequestPhoneChangeRequest(newPhone));
+        await frontOffice.PostAsync<PhoneChangeConfirmed>($"/api/v1/patients/{patient.Id}/phone-change/{sent.ChangeId}/confirm",
+            new ConfirmPhoneChangeRequest(await PhoneCodeAsync(newPhone)));
 
         await ShouldNotWorkAsync(server.AnonymousOnPortal(ownAddress: true), token, "the record no longer has the number it went to");
         var link = (await frontOffice.GetAsync<PatientPortalLinksDto>(ListPath(patient.Id))).Links.ShouldHaveSingleItem();
@@ -312,6 +315,19 @@ public sealed class PortalLinkTests(HospitalServer server)
         return messages.Select(m => m.Read<NotificationDelivery>()).Where(d => d.TemplateKey == "portal.link" && d.To == to).ToList();
     }
 
+    /// <summary>The code sent to confirm a patient's new number, from the outbox.</summary>
+    private async Task<string> PhoneCodeAsync(string phone)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var messages = await db.Set<OutboxMessage>().AsNoTracking()
+            .Where(m => m.Type == NotificationService.SmsType)
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(200)
+            .ToListAsync(Ct);
+        return messages.Select(m => m.Read<NotificationDelivery>()).First(d => d.TemplateKey == "patients.phone_code" && d.To == phone).Values["code"];
+    }
+
     private async Task<List<AuditEvent>> AuditOfLinkAsync(Guid linkId, Guid patientId)
     {
         await using var scope = server.Services.CreateAsyncScope();
@@ -335,13 +351,6 @@ public sealed class PortalLinkTests(HospitalServer server)
             ConfirmedNotDuplicate: false));
         return (patient, Phone.Normalize(phone)!);
     }
-
-    private static UpdatePatientRequest Edit(PatientDetail p) => new(
-        p.Title, p.FirstName, p.MiddleName, p.LastName, p.Gender, p.DateOfBirth, null, null, p.Phone, p.AlternatePhone,
-        p.Email, p.Address, p.BloodGroup, p.MaritalStatus, p.GuardianName, p.GuardianRelation, p.EmergencyContactName,
-        p.EmergencyContactPhone, p.EmergencyContactRelation, p.Occupation, p.Religion, p.Nationality, p.PreferredLanguage,
-        p.Category, null, p.AbhaAddress, null, p.PhotoFileId, p.IsVip, p.IsDeceased, p.DeceasedAt, p.Notes,
-        p.IsActive, p.Version);
 
     private static string NewMobile() => "9" + string.Concat(Enumerable.Range(0, 9).Select(_ => (char)('0' + Random.Shared.Next(10))));
 

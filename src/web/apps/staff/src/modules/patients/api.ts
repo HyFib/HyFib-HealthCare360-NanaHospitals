@@ -667,6 +667,7 @@ export const patientKeys = {
   identityChecks: (id: string) => ['patients', 'identity-checks', id] as const,
   identitySetup: ['patients', 'identity-setup'] as const,
   sensitive: (id: string) => ['patients', 'sensitive', id] as const,
+  phoneChange: (id: string) => ['patients', 'phone-change', id] as const,
 };
 
 export const patientQueries = {
@@ -836,6 +837,39 @@ export const portalFamilyApi = {
 export const portalLinkApi = {
   send: (patientId: string, channels: PortalLinkChannel[]) =>
     api.post<PortalLinkSent>(`/api/v1/patients/${patientId}/portal-link`, { channels }),
+};
+
+/** A change of the patient's mobile number waiting for its code: the new number masked, the code's expiry and tries left. */
+export interface PhoneChange {
+  changeId: string;
+  maskedPhone: string;
+  expiresAt: string;
+  attemptsLeft: number;
+}
+
+/** The number changed, and what followed: family members' records moved with it, the old number's portal signed out. */
+export interface PhoneChangeConfirmed {
+  maskedPhone: string;
+  familyLinksMoved: number;
+  oldNumberSignedOut: boolean;
+}
+
+/**
+ * Changing the patient's registered mobile number (needs `patients.register` and `patients.contact.read`, as editing
+ * does): a 6-digit code goes by SMS to the new number, and the number changes when the code the patient reads out is
+ * entered. Sending answers 202 with the change; 400 on `phone` for a number that is not an Indian mobile number or that
+ * the record has already, 422 `patient.phone_code_throttled` with `data.retryAfterSeconds` after 3 codes to the number
+ * in 15 minutes. Confirming answers 400 on `code` with `data.attemptsLeft` for a wrong code, 422
+ * `patient.phone_code_expired` once it cannot be used, and 409 `patient.phone_changed_meanwhile` when the record's
+ * number changed after the code was sent. `pending` is null (204) when nothing waits for a code.
+ */
+export const phoneChangeApi = {
+  pending: async (patientId: string, signal?: AbortSignal) =>
+    (await api.get<PhoneChange | undefined>(`/api/v1/patients/${patientId}/phone-change`, { signal })) ?? null,
+  request: (patientId: string, phone: string) =>
+    api.post<PhoneChange>(`/api/v1/patients/${patientId}/phone-change`, { phone }),
+  confirm: (patientId: string, changeId: string, code: string) =>
+    api.post<PhoneChangeConfirmed>(`/api/v1/patients/${patientId}/phone-change/${changeId}/confirm`, { code }),
 };
 
 /**

@@ -49,6 +49,7 @@ public static class PersonalDataCatalogue
             [
                 new("patients.patients", "Duplicate registrations merged into yours", Counted: false, Column: "merged_into_patient_id"),
                 new("patients.patient_identity_checks", "Identity checks with your Aadhaar fingerprint"),
+                new("patients.patient_phone_changes", "Changes of your mobile number, each confirmed with a code sent to the new number"),
                 new("patients.downtime_uhids", "Your registration on paper while the system was down"),
                 // A change that needed a second person's approval (joining two registrations, a credit note on a bill): what
                 // was asked, by whom, why, and who decided. Listed, not counted: it is about records listed here already.
