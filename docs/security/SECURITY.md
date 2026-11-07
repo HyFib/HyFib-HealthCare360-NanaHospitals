@@ -348,6 +348,13 @@ and grants nothing.
     so the desk and the departments keep serving the patient; the categories themselves show only to doctors. The
     patient's journey (where they are in their visit, stay and lab orders) stays open too, without their operations.
   - The FHIR API does not list these patients to clients that may not open restricted records.
+  - **A shared number.** Families often share one mobile number, and whoever holds it signs in to the patient portal
+    and reads what is sent to it. So a record in a category is reached through a number only when the number is the
+    patient's alone (`SharedNumbers`): when another active patient is registered with the same number, the portal leaves
+    the record out for that number, and the report-ready, prescription and bill messages are not sent to it by SMS or
+    WhatsApp (a report still goes by e-mail to the patient's own address). A family member's account on another number
+    never sees it. The patient gets these at the hospital; on a number that is theirs alone nothing changes. The billing
+    desk is told only that the bill can't be sent to that number, not why.
   - The upgrade puts records that already carry such a diagnosis into its category; a merge carries the duplicate's
     categories to the surviving record. A doctor manages the categories without being able to open the chart.
 - **Terminations of pregnancy** (MTP Act s.5A): an MTP case opens only to `mtp.read` and `mtp.certify` (medical records

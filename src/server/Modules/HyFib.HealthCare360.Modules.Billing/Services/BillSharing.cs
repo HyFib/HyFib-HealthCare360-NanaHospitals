@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Billing.Documents;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Settings;
 
@@ -14,7 +15,8 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// <para>
 /// A bill is a service message about the patient's own care, so, like a report, it needs no WhatsApp opt-in: it goes
 /// to the number registered for the patient unless that number replied STOP (the delivery handler checks it when the
-/// message goes out, see <see cref="WhatsAppOptOutPolicy"/>). Deceased patients' numbers are not messaged.
+/// message goes out, see <see cref="WhatsAppOptOutPolicy"/>). Deceased patients' numbers are not messaged, and neither is
+/// the number of a record in a protected category that another patient shares (<see cref="SharedNumbers"/>).
 /// </para>
 /// </summary>
 public sealed class BillSharing(HospitalDbContext db, INotificationService notifications, WhatsAppConsent whatsApp, ISettingsService settings)
@@ -36,7 +38,7 @@ public sealed class BillSharing(HospitalDbContext db, INotificationService notif
             return;
         }
 
-        if (await RecipientAsync(bill.PatientId, ct) is { } patient)
+        if (await RecipientAsync(bill.PatientId, ct) is { } patient && !await SharedNumbers.HiddenFromNumberAsync(db, bill.PatientId, ct))
         {
             Queue(bill, patient);
         }
@@ -60,6 +62,12 @@ public sealed class BillSharing(HospitalDbContext db, INotificationService notif
         if (patient is null)
         {
             return Error.Rule("billing.no_mobile", "The patient has no mobile number to send the bill to. Add one to their registration first.");
+        }
+
+        // The reason is not given: that the record is in a protected category is none of the billing desk's business.
+        if (await SharedNumbers.HiddenFromNumberAsync(db, bill.PatientId, ct))
+        {
+            return Error.Rule("billing.bill_not_sent_to_number", "This bill can't be sent to the patient's number. Print it and give it to the patient.");
         }
 
         if ((await whatsApp.StatusAsync(patient.Phone, ct)).OptedOut)

@@ -71,6 +71,10 @@ and `npx eslint apps/portal`.
   see, and the switcher is always in the header. Every query key starts `['portal', patientId, …]`, and family-wide
   lists are filtered to the person being viewed. A record that belongs to another family member shows "This belongs
   to …" with a switch button.
+* **Protected records on a shared number.** A record in a protected category (HIV, mental health, MTP, sexual violence)
+  is left out of the profiles, and of every portal endpoint (they all go through `PortalPatientScope`), when another
+  patient is registered with the same number, and always for a family member on another number. The patient sees it
+  when signed in with a number that is theirs alone; otherwise the hospital gives it in person (`SharedNumberTests`).
 * **Family on other numbers (PP-01).** A family member with their own mobile number joins the account in one of two
   ways. In the portal (`/profile/family`), the account holder enters the relative's UHID, mobile number and relation;
   the server sends a 6-digit code to that number when the UHID and the number belong to the same active patient, and
