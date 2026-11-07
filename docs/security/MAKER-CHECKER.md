@@ -13,12 +13,13 @@ lost, pay redirected, a patient's identity or safety record changed, a statutory
 off) and goes through on one person's word. Writes that are routine, reversible, audited, or a professional's own
 signed act (a doctor signing their own note) are not listed.
 
-**What is already covered** (SECURITY.md): credit notes and write-offs, receipt and refund reversals, card and UPI import
-withdrawal, bill cancellation, discounts asked above a cashier's limit, every price master (services, tariff plans,
-payer terms, packages, check-ups, the PM-JAY HBP master, doctor-fee rules, the non-payable list), the plan a stay is
-billed on, a third party paying on cover verified by a second person, goods receipts, purchase requisitions and orders,
-stock adjustments and expiry write-offs, asset condemnation, drug class changes, user and role grants, patient merge,
-lab corrections where a separate verifier is required, death certificates, high-alert drug and transfusion bedside
+**What is already covered** (SECURITY.md): credit notes and write-offs, receipt and refund reversals, card and UPI
+import withdrawal, bill cancellation, pharmacy invoice cancellations, returns paid out or written off and ward returns
+not restocked, discounts asked above a cashier's limit, every price master (services, tariff plans, payer terms,
+packages, check-ups, the PM-JAY HBP master, doctor-fee rules, the non-payable list), the plan a stay is billed on, a
+third party paying on cover verified by a second person, goods receipts, purchase requisitions and orders, stock
+adjustments and expiry write-offs, asset condemnation, drug class changes, user and role grants, patient merge, lab
+corrections where a separate verifier is required, death certificates, high-alert drug and transfusion bedside
 co-signatures, NDPS witnesses, payroll runs, leave approval, audit-trail retention and purge, a patient's mobile number
 changed only with a code sent to the new number.
 
@@ -27,7 +28,7 @@ changed only with a code sent to the new number.
 | Slice | What one person can do today | Where | The control | Status |
 |---|---|---|---|---|
 | 1 | Switch off a control (second pathologist, second doctor on death certificates, desktop-only administration, payment before sample collection, cashier shifts), raise a discount or credit limit, lengthen a grace or lock time, or redirect payment keys, SMS/WhatsApp/ABDM/AI providers, the portal address or alert contacts | `PUT /api/v1/admin/settings/{key}` | The looser direction waits for a second administrator; the stricter applies at once; secrets stay encrypted while they wait | In force (`settings.change`) |
-| 2 | Cancel a same-day pharmacy invoice or take a return and pay the refund out (a card or UPI sale refunded in cash), with no limit and no rule against cancelling one's own sale; credit a stay for ward returns without restocking (a controlled drug then leaves no register entry) | Pharmacy `SaleAdjustmentService`, `PharmacySale.Cancel`, `InpatientPharmacyService.ReturnAsync` | A refund in the mode it was paid; the seller cannot cancel their own sale; a second person approves; ward returns of controlled drugs witnessed | Open |
+| 2 | Cancel a same-day pharmacy invoice or take a return and pay the refund out (a card or UPI sale refunded in cash), with no limit and no rule against cancelling one's own sale; credit a stay for ward returns without restocking (a controlled drug then leaves no register entry) | Pharmacy `SaleAdjustmentService`, `PharmacySale.Cancel`, `InpatientPharmacyService.ReturnAsync` | A refund in the mode it was paid; whoever sold the invoice or took its payment neither asks nor approves; a second person who approves refunds approves money paid out and stock written off; a ward return not restocked approved by a second pharmacist, a controlled drug entered in the register as returned and written off | In force (`pharmacy.sale_cancel`, `pharmacy.sale_return`, `pharmacy.ward_return`) |
 | 3 | Release donated blood from quarantine on one officer's screening results and grouping; group, crossmatch and issue the same unit alone (grouping and crossmatch record a typed name, not a user); release uncrossmatched blood on a doctor's name typed by the issuer | SpecialtyCare `DonorService`, `BloodComponent`, `TransfusionService`, `BloodRequest` | Screening and grouping verified by a second officer before release; crossmatch by someone other than who grouped; emergency release authorised by the doctor in the system | Open |
 | 4 | Reset another user's password (and be shown it), reset their MFA, change their e-mail, then sign in as them; link an account to another doctor's practitioner record or signature; enrol any PC as an administration desktop | Platform `AccessAdminEndpoints`, `OrganizationEndpoints`, `DeviceEndpoints` | Password reset sent to the user, not the admin; MFA reset, e-mail change, practitioner link and desktop enrolment approved by a second administrator | Open |
 | 5 | Write a ward medication order in any doctor's name, chemotherapy and high-alert drugs included, with no countersignature; stop a doctor's order; clear the controlled and high-alert flags by typing a drug name; give a dose with no order and no witness; refill a controlled-drug prescription; override a blocking alert in the doctor's name; switch off drug interactions or raise maximum doses for the whole hospital | Inpatient `MarService`; Clinical `PrescriptionService`, `DrugSafetyEndpoints` | A nurse's verbal or telephone order countersigned by the doctor within the hospital's time; flags from the drug master; witness on every high-alert dose; drug safety tables loosened only with a second doctor | Open |

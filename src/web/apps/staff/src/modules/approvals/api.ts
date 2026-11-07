@@ -95,8 +95,8 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
 /**
  * Who may ask for or decide a change of each kind: the inbox is for them. Kept with the server's kinds
  * (IApprovalAction): credit notes and write-offs, money not received and refunds not paid out, patient merges, lab
- * report corrections, death certificates a second doctor confirms, goods receipts posted into stock, and the masters,
- * access and plans approved only here. Every kind's approving permission is in it (approvalsMenu.test.ts).
+ * report corrections, death certificates a second doctor confirms, goods receipts posted into stock, the pharmacy's
+ * cancellations, returns and ward returns not restocked, and the masters, access and plans approved only here. Every kind's approving permission is in it (approvalsMenu.test.ts).
  */
 export const APPROVAL_PERMISSIONS = [
   'billing.refunds.request',
@@ -122,4 +122,8 @@ export const APPROVAL_PERMISSIONS = [
   // A setting that loosens a control, or changes where money, patients' data or alerts go: one administrator asks,
   // another who may change settings approves.
   'admin.settings.manage',
+  // A pharmacist asks for a cancellation or a return paying money out (someone who approves refunds decides, above), and
+  // withdraws it; a ward return not restocked is asked for by one pharmacist who issues to the wards and approved by another.
+  'pharmacy.returns',
+  'pharmacy.ip.issue',
 ] as const;

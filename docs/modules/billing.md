@@ -93,7 +93,7 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 | `billing.discounts.approve` | Approve discounts above a user's limit, discharge with dues, set limits | HospitalAdmin, Accountant |
 | `billing.payments.collect` | Collect payments, POS, payment links, advance adjustment, pay out approved refunds | Cashier, Billing, FrontOffice, HospitalAdmin |
 | `billing.refunds.request` | Request refunds, credit notes and write-offs, and ask to reverse money that did not move (a receipt not received, a refund not paid out) | Cashier, Billing, HospitalAdmin |
-| `billing.refunds.approve` | Approve refunds, credit notes, write-offs, reversals of money that did not move, and card and UPI settlement reports withdrawn as imported in error, someone else asked for | HospitalAdmin, Accountant |
+| `billing.refunds.approve` | Approve refunds (the pharmacy's invoice cancellations and returns paying money out or writing stock off included, see [pharmacy.md](pharmacy.md)), credit notes, write-offs, reversals of money that did not move, and card and UPI settlement reports withdrawn as imported in error, someone else asked for | HospitalAdmin, Accountant |
 | `billing.deposits` | Collect IP advances | Cashier, Billing, HospitalAdmin |
 | `billing.shifts` | Cashier shifts, day-end report | Cashier, Billing, FrontOffice, Accountant, HospitalAdmin |
 | `billing.tariffs.manage` | Tariff plans, prices, packages | Billing, HospitalAdmin |

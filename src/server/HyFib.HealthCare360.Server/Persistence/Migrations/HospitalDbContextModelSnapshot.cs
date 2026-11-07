@@ -27064,6 +27064,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("reference");
 
+                    b.Property<Guid?>("RefundOfPaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("refund_of_payment_id");
+
                     b.HasKey("Id")
                         .HasName("pk_sale_payments");
 

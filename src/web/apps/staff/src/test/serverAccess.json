@@ -2489,6 +2489,9 @@
     "masters.service_price": "masters.prices.approve",
     "mrd.death_certificate": "mrd.deaths.confirm",
     "patients.merge": "patients.merge",
+    "pharmacy.sale_cancel": "billing.refunds.approve",
+    "pharmacy.sale_return": "billing.refunds.approve",
+    "pharmacy.ward_return": "pharmacy.ip.issue",
     "purchase.grn": "purchase.grn.approve",
     "settings.change": "admin.settings.manage"
   }

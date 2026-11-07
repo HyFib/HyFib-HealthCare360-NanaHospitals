@@ -6,7 +6,6 @@ using System.Text;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
-using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
 using HyFib.HealthCare360.Modules.SupportServices.Domain.Canteen;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Canteen;
@@ -49,14 +48,15 @@ public sealed class CounterCardSettlementTests(HospitalServer server)
         await using var terminals = await OtherTerminalsAsync(pharmacyTid, canteenTid);
         (await accounts.GetAsync<PosSettlementSummaryDto>("/api/v1/billing/pos/settlements/summary")).OtherTerminals.ShouldContain(pharmacyTid);
 
-        // The pharmacist sells two strips by card and types the RRN from the charge slip. One strip comes back the same day
-        // and is paid back by card: the pharmacist types the sale's RRN as the refund's reference.
+        // The pharmacist sells two strips by card and types the RRN from the charge slip. One strip comes back the same day:
+        // another pharmacist takes it back and the accountant approves the refund, which goes back to the card under the
+        // sale's RRN (a card payment is never paid back in cash).
         var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist);
         var saleRrn = Digits(12);
         var sold = await CounterSaleAsync(pharmacist, medicine, 2m, PharmacyPaymentMode.Card, saleRrn);
         var detail = await pharmacist.GetAsync<PharmacySaleDetail>($"/api/v1/pharmacy/sales/{sold.Id}");
-        var returned = await pharmacist.PostAsync<SaleReturnCreated>($"/api/v1/pharmacy/sales/{sold.Id}/returns",
-            new SaleReturnRequest([new SaleReturnLine(detail.Items.Single().Id, 1m, true)], "One strip not needed", PharmacyPaymentMode.Card, saleRrn));
+        var returned = await server.ReturnSaleAsync(await server.SignInAsync(HospitalServer.Users.SecondPharmacist), sold.Id,
+            new SaleReturnRequest([new SaleReturnLine(detail.Items.Single().Id, 1m, true)], "One strip not needed"));
         returned.CashRefund.ShouldBeGreaterThan(0m);
 
         // The canteen bills one visitor by UPI on the hospital's QR (Billing's terminal), the UPI reference typed in groups
@@ -153,22 +153,19 @@ public sealed class CounterCardSettlementTests(HospitalServer server)
         var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist);
 
         // Pharmacy sales by UPI: one eight days ago and one six days ago, part of it paid back by UPI; one six days ago
-        // whose invoice was cancelled that day (its money went back in cash at the counter).
+        // whose invoice was cancelled that day (its money went back by UPI). Another pharmacist takes the return and asks
+        // for the cancellation, and the accountant approves both.
         var settledRrn = Digits(12);
         var settled = await CounterSaleAsync(pharmacist, medicine, 1m, PharmacyPaymentMode.Upi, settledRrn);
         await MoveBackAsync(settled.Id, 8);
         var waitingRrn = Digits(12);
         var waiting = await CounterSaleAsync(pharmacist, medicine, 2m, PharmacyPaymentMode.Upi, waitingRrn);
         var detail = await pharmacist.GetAsync<PharmacySaleDetail>($"/api/v1/pharmacy/sales/{waiting.Id}");
-        await pharmacist.PostAsync<SaleReturnCreated>($"/api/v1/pharmacy/sales/{waiting.Id}/returns",
-            new SaleReturnRequest([new SaleReturnLine(detail.Items.Single().Id, 1m, true)], "One strip not needed", PharmacyPaymentMode.Upi, Digits(12)));
+        var secondPharmacist = await server.SignInAsync(HospitalServer.Users.SecondPharmacist);
+        await server.ReturnSaleAsync(secondPharmacist, waiting.Id, new SaleReturnRequest([new SaleReturnLine(detail.Items.Single().Id, 1m, true)], "One strip not needed"));
         await MoveBackAsync(waiting.Id, 6);
         var cancelled = await CounterSaleAsync(pharmacist, medicine, 1m, PharmacyPaymentMode.Upi, Digits(12));
-        using (var cancel = await pharmacist.SendRawAsync(HttpMethod.Post, $"/api/v1/pharmacy/sales/{cancelled.Id}/cancel", new PharmacyReasonRequest("Billed to the wrong customer")))
-        {
-            cancel.StatusCode.ShouldBe(HttpStatusCode.NoContent, await cancel.Content.ReadAsStringAsync(Ct));
-        }
-
+        await server.CancelSaleAsync(secondPharmacist, cancelled.Id, "Billed to the wrong customer");
         await MoveBackAsync(cancelled.Id, 6);
 
         // A card sale six days ago (no report the hospital imported carries the pharmacy's cards that far back), and a
@@ -200,7 +197,8 @@ public sealed class CounterCardSettlementTests(HospitalServer server)
         var unsettled = await UnsettledAsync(accounts);
         var payments = await PaymentsAsync(waiting.Id, cancelled.Id);
         var waitingPayment = payments.Single(p => p.PharmacySaleId == waiting.Id && !p.IsRefund).Id;
-        var cancelledPayment = payments.Single(p => p.PharmacySaleId == cancelled.Id && p.Mode == PharmacyPaymentMode.Upi).Id;
+        var cancelledPayment = payments.Single(p => p.PharmacySaleId == cancelled.Id && p.Mode == PharmacyPaymentMode.Upi && !p.IsRefund).Id;
+        payments.Single(p => p.PharmacySaleId == cancelled.Id && p.IsRefund).Mode.ShouldBe(PharmacyPaymentMode.Upi, "money that came by UPI goes back by UPI");
         var paidBack = payments.Where(p => p.IsRefund).Select(p => p.Id).ToHashSet();
         unsettled.Single(u => u.PaymentId == waitingPayment).ShouldSatisfyAllConditions(
             u => u.ReceiptId.ShouldBeNull(),

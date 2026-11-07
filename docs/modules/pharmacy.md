@@ -6,7 +6,9 @@ issues to admitted patients (charged to the IP account) and ward returns; Schedu
 chronic-medication refills with reminders; and the pharmacist dashboard. SRS **PH-01..06** (with ERX-03/06, PP-05).
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Pharmacy` (references SupplyChain for stock and Patients).
-Schema `pharmacy`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Pharmacy.Tests` (58 unit and EF-model tests).
+Schema `pharmacy`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Pharmacy.Tests` (89 unit and EF-model tests);
+`PharmacyRefundApprovalTests` in `tests/HyFib.HealthCare360.IntegrationTests` proves the refunds and write-offs that wait
+for a second person, over the real API.
 All stock movements go through SupplyChain's `StockService` (see `supplychain.md`) in the same transaction as the
 pharmacy document. The pharmacy never changes batch quantities itself. A pharmacy store's stock positions and its
 reorder, near-expiry and expired-stock reports (PH-04) are SupplyChain's stock screen (`/api/v1/inventory/stock`) and
@@ -20,8 +22,9 @@ proves them on stock received with chosen batches and expiry dates.
 | `pharmacy.queue.read` | E-prescription queue and pharmacy stock | Pharmacist, HospitalAdmin |
 | `pharmacy.dispense` | Dispense prescriptions (FEFO, substitution, counselling); close queue entries | Pharmacist, HospitalAdmin |
 | `pharmacy.sales` | Counter sales, GST invoices, collection of dues | Pharmacist, HospitalAdmin |
-| `pharmacy.returns` | Sales returns and same-day invoice cancellation | Pharmacist, HospitalAdmin |
-| `pharmacy.ip.issue` | Issue to admitted patients, ward returns, cancel ward indents | Pharmacist, HospitalAdmin |
+| `pharmacy.returns` | Sales returns and same-day invoice cancellation; a cancellation, and a return paying money out or writing stock off, waits for someone who approves refunds | Pharmacist, HospitalAdmin |
+| `pharmacy.ip.issue` | Issue to admitted patients, ward returns, cancel ward indents; approve another pharmacist's ward return not restocked | Pharmacist, HospitalAdmin |
+| `billing.refunds.approve` (Billing's) | Approve a pharmacy cancellation, and a return paying money out or writing stock off, someone else asked for, as every other refund | Accountant, HospitalAdmin |
 | `pharmacy.ip.indent` | Raise ward indents for admitted patients | Pharmacist, HospitalAdmin, **Nurse** |
 | `pharmacy.registers` | View/export the controlled-drug and Schedule H registers, and the NDPS accounts | Pharmacist, HospitalAdmin |
 | `pharmacy.ndps.count` | Count the narcotics at a change of shift, and witness another's count | Pharmacist, Nurse |
@@ -96,21 +99,65 @@ blocked, expired or used up is warned about, not picked. Scanners that type like
 | GET | `/stock?storeId&search&inStockOnly&take` | Counter staff | → `PharmacyStockRow[]` (schedule, controlled, Rx-only, cold chain, available, MRP, nearest expiry). A pharmacy tag's barcode as `search` (`PCM500#AB1234`) finds the item by its exact code and adds `scanned` (the batch it names, or why it cannot be handed out) |
 | GET | `/stock/batches?storeId&itemId&includeEmpty` | Counter staff | → `BatchStock[]` (FEFO order) |
 | GET | `/sales?page&from&to&status&type&storeId&withDues` | `pharmacy.sales` or `pharmacy.returns` | → paged `PharmacySaleListItem` |
-| GET | `/sales/{id}` · `/sales/{id}/returns` | same | → `PharmacySaleDetail` (GST invoice: HSN, batch, expiry, CGST/SGST, round-off, payments) · `SaleReturnDto[]` |
+| GET | `/sales/{id}` · `/sales/{id}/returns` | same | → `PharmacySaleDetail` (GST invoice: HSN, batch, expiry, CGST/SGST, round-off, payments, each refund with the payment it paid back; `pending`: a cancellation or return waiting for approval; `ownSale`: the reader sold it or took its payment) · `SaleReturnDto[]` |
 | POST | `/sales/counter` | `pharmacy.sales` | `CounterSaleRequest` (storeId, patientId? or customerName/customerPhone, prescription? {prescriberName, prescriberRegistrationNumber, prescriptionDate, reference}, lines[itemId, quantity, batchId?], discountPercent, payments, confirmControlledDrugs, buyer? {gstin, legalName, deliveryState?, address?}) → 201 `PharmacySaleCreated`. The outside prescription is kept as presented, its date with it (`PharmacySaleDetail.prescriptionDate`, printed on the invoice beside its reference), so the sale is matched to the paper it was made against; a date after today is refused (400 `prescription.prescriptionDate`). Cash is held to the Income-tax Act's limit with the billing counters' (422 `payments.cash_limit`, see `docs/modules/billing.md`): an invoice is one transaction, and a patient's cash counts with what they paid at billing that day |
 | POST | `/sales/{id}/payments` | `pharmacy.sales` | `CollectPaymentRequest` (mode, amount, reference) → 204 (`payment.exceeds_due`, `payments.cash_limit`) |
-| POST | `/sales/{id}/returns` | `pharmacy.returns` | `SaleReturnRequest` (lines[saleItemId, quantity, restock], reason, refundMode, refundReference) → 201 `SaleReturnCreated` (returnNumber, refundAmount, adjustedAgainstDue, cashRefund) |
-| POST | `/sales/{id}/cancel` | `pharmacy.returns` | `PharmacyReasonRequest` → 204. Same local day only and no returns (`sale.cancel_window`, `sale.has_returns`). Stock goes back to the original batches and the queue entry reopens |
+| POST | `/sales/{id}/returns` | `pharmacy.returns` | `SaleReturnRequest` (lines[saleItemId, quantity, restock], reason; each sale line once) → 201 `SaleReturnCreated` (returnNumber, refundAmount, adjustedAgainstDue, cashRefund) when restocked and set wholly against the balance due; otherwise 202 `ApprovalRequestDto` (kind `pharmacy.sale_return`). 403 `pharmacy.return_own_sale` for whoever sold it or took its payment |
+| POST | `/sales/{id}/cancel` | `pharmacy.returns` | `PharmacyReasonRequest` → 202 `ApprovalRequestDto` (kind `pharmacy.sale_cancel`). Same local day only and no returns (`sale.cancel_window`, `sale.has_returns`), no IRN (`einvoice.active`); 403 `pharmacy.cancel_own_sale` for whoever sold it or took its payment. Approved, every payment is paid back the way it was paid, the stock goes back to the original batches and the queue entry reopens |
 
 OTC blocking (`SchedulePolicy`, Drugs & Cosmetics Rules): Schedule H, H1, X and NDPS medicines are never sold
 without a prescription (`pharmacy.prescription_required`, with the offending items in `data.items`). H1/X also
 need the buyer's identity for the register (`pharmacy.buyer_required`). Returns refund against any due first, then
-pay out. Only unexpired stock is restocked; expired or damaged returns are refunded but not put back.
+pay out, the way the sale was paid. Only unexpired stock is restocked; expired or damaged returns are refunded and
+written off (see below).
 
-A card or UPI payment, collection or refund needs its reference: the RRN or approval code from the charge slip, or the
-UPI reference (UTR). Billing's card and UPI settlement matches the acquirer's transactions with the invoice by it, and
-lists a payment no settlement carries (through the Platform contract `ICounterSalesSource`; see *Card and UPI
+A card or UPI payment or collection needs its reference: the RRN or approval code from the charge slip, or the UPI
+reference (UTR). A refund carries the reference of the payment it pays back, under which the acquirer reports it.
+Billing's card and UPI settlement matches the acquirer's transactions with the invoice, and a refund with the refund, by
+it, and lists a payment no settlement carries (through the Platform contract `ICounterSalesSource`; see *Card and UPI
 reconciliation* in [billing.md](billing.md)).
+
+### Refunds and write-offs wait for a second person (maker-checker)
+
+Money out of the pharmacy, and stock written off, are made only when a second person approves them
+(`platform.approval_requests`, the Approvals inbox; see SECURITY.md, Maker-checker, and MAKER-CHECKER.md, slice 2):
+* **Who.** A pharmacist (`pharmacy.returns`) asks for a cancellation or a return; someone else who approves every other
+  refund (`billing.refunds.approve`: accountants and hospital administrators by default, so at night whoever of them is on
+  duty) approves (`pharmacy.sale_cancel`, `pharmacy.sale_return`). Whoever sold the invoice, or took a payment on it,
+  neither asks (403 `pharmacy.cancel_own_sale`, `pharmacy.return_own_sale`) nor approves (the same codes, the request
+  waiting for someone else), whatever their permissions; the one who asked never approves (`approval.self`).
+* **What waits.** A cancellation, always. A return that pays money out, or that writes stock off (a line not restocked,
+  or expired), even when nothing is paid back. A return restocked and set wholly against the balance due is made at
+  once (201). Nothing moves while a request waits: no refund, no stock back, no register entry. The invoice shows it
+  waiting (`pending`), and the staff app's cancel and return dialogs say "Asked for approval".
+* **What the approver reads.** The invoice and who sold it, the patient or customer, the items and quantities, the
+  amount, how the money goes back ("₹400.00 in cash, ₹600.00 back to the card (RRN or approval code …)"), what comes off
+  the balance due, whether the stock goes back or is written off, and the reason.
+* **Back the way it came** (`SaleRefunds`). Each refund is a payment of the sale naming the payment it pays back
+  (`refund_of_payment_id`), in that payment's mode and with its reference: cash from the till only for money that came in
+  as cash, a card payment back to the card, UPI by UPI. A cancellation pays every payment back whole. A return pays back
+  what is left after the balance due, shared among the payments in proportion to what each has left, to the paisa (each
+  share rounded down, the paise left over to the largest remainders); payments taken together count cash, then card, then
+  UPI. Refunds made before refunds named a payment are taken off the last payments first. The day book counts a return's
+  money in each mode it went back in.
+* **Applied only as asked.** Approved, the change is made in the approval's transaction, only over the invoice as it was
+  asked (its version): a payment, a return or a cancellation made since, a line that expired, or a refund that would no
+  longer split the same way fails the request (`approval.stale`) and changes nothing. A cancellation is approved only on
+  the invoice's own day (the day book keeps a same-day cancellation out of the books, and a previous day's invoice is
+  corrected by a return, a credit note): after midnight, or once the invoice has an IRN, it fails and the pharmacist
+  takes a return instead. The stock ledger and the register name the approver as who recorded it, with "asked for by …,
+  approved by …", and the change is audited (`pharmacy.sale_cancelled`, `pharmacy.sale_returned`) with both names.
+* **A write-off is recorded.** A line not restocked comes back into its batch (`Return`) and goes out again as a
+  write-off (`Adjustment`, or `ExpiryWriteOff` for an expired one), under the return's reference with "not restocked: …":
+  the ledger shows what came back and what was destroyed, and a Schedule H1/X or NDPS drug has both lines in the
+  controlled-drug register (the NDPS annual return counts it as returned by the patient and written off).
+* **Ward returns.** A ward return restocked is made at once. One with a line not restocked waits for a second pharmacist
+  (`pharmacy.ward_return`, approved by another holder of `pharmacy.ip.issue`, who must be able to open the patient's
+  record); nothing is credited to the stay or written off until then. Approved, it is written off as above: a controlled
+  drug is entered in the register as returned from the ward and written off, recorded by the approving pharmacist, so the
+  second pharmacist is the witness of what is destroyed. The issue shows the return waiting (`pending`), and the request
+  names any controlled or high-alert drug among the lines. A high-alert drug that is not on a register is written off in
+  the stock ledger only.
 
 ### In-patient pharmacy — `/ward-indents`, `/ip-issues` (PH-03)
 | Method | Path | Permission | Request → response |
@@ -118,9 +165,9 @@ reconciliation* in [billing.md](billing.md)).
 | GET | `/ward-indents?page&status&admissionId&includeClosed` · `/ward-indents/{id}?storeId` | `pharmacy.ip.issue` or `pharmacy.ip.indent` | → paged `WardIndentListItem` (STAT first, then oldest) · `WardIndentDetail` (lines with availability) |
 | POST | `/ward-indents` | `pharmacy.ip.indent` | `RaiseWardIndentRequest` (patientId, admissionId, visitId, wardName, bedLabel, urgency Routine/Stat, prescriptionId?, remarks, lines[itemId, quantity, remarks]) → 201 `PharmacyDocumentCreated` |
 | POST | `/ward-indents/{id}/cancel` | `pharmacy.ip.issue` or `pharmacy.ip.indent` | `PharmacyReasonRequest` → 204 (what was already issued stays issued) |
-| GET | `/ip-issues?page&admissionId&patientId` · `/ip-issues/{id}` | same | → paged `IpIssueListItem` · `IpIssueDetail` (lines with charge ids, returns) |
+| GET | `/ip-issues?page&admissionId&patientId` · `/ip-issues/{id}` | same | → paged `IpIssueListItem` · `IpIssueDetail` (lines with charge ids, returns, `pending`: a ward return waiting for a second pharmacist) |
 | POST | `/ip-issues` | `pharmacy.ip.issue` | `IpIssueRequest` (storeId, wardIndentId? or queueEntryId?, patientId, admissionId, visitId, lines[itemId, quantity, batchId?, wardIndentLineId?, queueLineId?, substitutionReason, prescriberConsent], confirmControlledDrugs) → 201 `IpIssueCreated` (id, number, totalAmount) |
-| POST | `/ip-issues/{id}/returns` | `pharmacy.ip.issue` | `WardReturnRequest` (lines[ipIssueLineId, quantity, restock], reason) → 201 `WardReturnCreated` (id, number, creditAmount) |
+| POST | `/ip-issues/{id}/returns` | `pharmacy.ip.issue` | `WardReturnRequest` (lines[ipIssueLineId, quantity, restock], reason; each line once) → 201 `WardReturnCreated` (id, number, creditAmount) when every line is restocked; otherwise 202 `ApprovalRequestDto` (kind `pharmacy.ward_return`) for a second pharmacist |
 
 **Charges** go through `IChargePoster`, which is implemented by Billing and idempotent on SourceModule + SourceReference:
 * Each issue line is posted at its price (`UnitPriceOverride` = the line's `unitPrice`) with
@@ -222,7 +269,8 @@ Refill rules. Authorised on the original OP prescription only, at most 12 refill
 | `MedicationDispensed` (Platform.Contracts) | raised | On OP dispensing and counter sales to a registered patient (walk-in customers have none), and on every IP issue. Feeds medication history and the nursing MAR (handled by Inpatient) |
 
 Stock ledger references written by this module: `pharmacy.dispense`, `pharmacy.sale`, `pharmacy.return`,
-`pharmacy.cancel`, `pharmacy.ip_issue`, `pharmacy.ward_return`.
+`pharmacy.cancel`, `pharmacy.ip_issue`, `pharmacy.ward_return`. A return not restocked writes a `Return` and a
+write-off (`Adjustment` or `ExpiryWriteOff`) under its return's reference.
 
 ## Real time
 
@@ -270,7 +318,7 @@ exceed it.
 ## Tables (schema `pharmacy`)
 
 `queue_entries` (unique `prescription_id` where `refill_of_entry_id IS NULL`), `queue_lines`, `sales` (unique
-`invoice_number`), `sale_items`, `sale_payments`, `sale_returns` (unique `return_number`), `sale_return_items`,
+`invoice_number`), `sale_items`, `sale_payments` (a refund's `refund_of_payment_id`), `sale_returns` (unique `return_number`), `sale_return_items`,
 `ward_indents`, `ward_indent_lines`, `ip_issues`, `ip_issue_lines`, `ward_returns`, `ward_return_lines`,
 `controlled_drug_register` (unique `ledger_entry_id`), `refill_requests`, `narcotic_counts`, `narcotic_count_lines`, `adr_reports` (unique `number`; drugs as jsonb). Queue entries and sales use `xmin`
 optimistic concurrency. Foreign keys go to the Patients `Patient` table and to the SupplyChain store, item and

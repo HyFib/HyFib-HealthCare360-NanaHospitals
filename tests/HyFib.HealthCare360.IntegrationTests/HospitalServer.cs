@@ -9,6 +9,8 @@ using HyFib.HealthCare360.Modules.Billing.Features.Packages;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 using HyFib.HealthCare360.Integrations.Payments;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
 using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Hosting;
@@ -69,6 +71,7 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.CardiologyTechnician] = SystemRoles.CardiologyTechnician,
         [Users.SecondDoctor] = SystemRoles.Doctor,
         [Users.SecondNurse] = SystemRoles.Nurse,
+        [Users.SecondPharmacist] = SystemRoles.Pharmacist,
         [Users.Accountant] = SystemRoles.Accountant,
         [Users.Radiographer] = SystemRoles.Radiographer,
         [Users.MisAnalyst] = SystemRoles.MisAnalyst,
@@ -811,6 +814,54 @@ public sealed class HospitalServer : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// A pharmacy return taken as the counter takes it: asked for by <paramref name="maker"/>, who did not sell the invoice
+    /// (the pharmacist who sold it may not take its returns), and, when it pays money out or writes stock off, approved by
+    /// the accountant, who approves every refund: the return as it is then, as it would have been in one step.
+    /// </summary>
+    public async Task<SaleReturnDto> ReturnSaleAsync(ApiClient maker, Guid saleId, SaleReturnRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        var path = $"/api/v1/pharmacy/sales/{saleId}/returns";
+        using var response = await maker.SendRawAsync(HttpMethod.Post, path, request);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"Returning on invoice {saleId}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)}");
+        }
+
+        if (response.StatusCode == HttpStatusCode.Accepted)
+        {
+            await ApproveRefundAsync((await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Post, path)).Id);
+        }
+
+        return (await maker.GetAsync<List<SaleReturnDto>>(path)).OrderBy(r => r.ReturnedAt).Last();
+    }
+
+    /// <summary>
+    /// A same-day pharmacy invoice cancelled: asked for by <paramref name="maker"/>, who did not sell it, and approved by the
+    /// accountant, who approves every refund.
+    /// </summary>
+    public async Task CancelSaleAsync(ApiClient maker, Guid saleId, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        var asked = await maker.PostAsync<ApprovalRequestDto>($"/api/v1/pharmacy/sales/{saleId}/cancel", new PharmacyReasonRequest(reason));
+        await ApproveRefundAsync(asked.Id);
+    }
+
+    /// <summary>
+    /// Approves a refund someone else asked for (a pharmacy cancellation or return) as the accountant, who holds
+    /// <c>billing.refunds.approve</c> and sells nothing.
+    /// </summary>
+    public async Task<ApprovalRequestDto> ApproveRefundAsync(Guid approvalId)
+    {
+        var checker = await SignInAsync(Users.Accountant);
+        var request = await checker.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
+        var approved = await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Approved for the tests.", request.Version));
+        return approved.Status == ApprovalStatus.Approved
+            ? approved
+            : throw new InvalidOperationException($"Approving {request.Summary}: {approved.Status} ({approved.Outcome})");
+    }
+
     // The seed signs the first consultant (by code) in as the doctor; the second doctor is the next one.
     private async Task<Guid?> SecondConsultantAsync()
     {
@@ -992,6 +1043,13 @@ public sealed class HospitalServer : IAsyncLifetime
 
         /// <summary>A second nurse, who witnesses <see cref="Nurse"/>'s controlled doses at her screen. Created on first use.</summary>
         public const string SecondNurse = "nurse2";
+
+        /// <summary>
+        /// A second pharmacist, who takes the returns and asks for the cancellations of what <see cref="Pharmacist"/> sold (no
+        /// one cancels or pays back their own sale), and approves <see cref="Pharmacist"/>'s ward returns not restocked.
+        /// Created on first use.
+        /// </summary>
+        public const string SecondPharmacist = "pharmacist2";
 
         /// <summary>
         /// Keeps the accounts: prepares doctor payouts, which someone else (the hospital administrator) approves. Created on

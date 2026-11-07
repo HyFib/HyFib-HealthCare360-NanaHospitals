@@ -4,6 +4,8 @@ using HyFib.HealthCare360.Modules.Pharmacy.Domain;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Inpatient;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Modules.SupplyChain.Services;
+using HyFib.HealthCare360.Platform.Approvals;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Pharmacy.Services;
@@ -13,7 +15,8 @@ namespace HyFib.HealthCare360.Modules.Pharmacy.Services;
 /// in-patient prescription or directly. Each issued line is charged to the admission through
 /// <see cref="IChargePoster"/> at MRP (SourceModule "pharmacy.ip", SourceReference = issue line id, so retries
 /// never double-charge), feeds the MAR through <see cref="MedicationDispensed"/>, and returns from the ward
-/// restock the batch and reverse the charge (cancel the untouched line, otherwise a negative credit line).
+/// restock the batch and reverse the charge (cancel the untouched line, otherwise a negative credit line). A return with
+/// a line not restocked is a write-off, made only when a second pharmacist approves it (<see cref="WardReturnKind"/>).
 /// </summary>
 public sealed class InpatientPharmacyService(
     HospitalDbContext db,
@@ -24,9 +27,14 @@ public sealed class InpatientPharmacyService(
     PharmacyRealtime realtime,
     PatientAccessGuard guard,
     IAntimicrobialStewardship stewardship,
+    IApprovals approvals,
+    IAuditLogger audit,
     ICurrentUser currentUser,
     TimeProvider time)
 {
+    /// <summary>A ward return with a line not restocked (a write-off): one pharmacist asks, another approves.</summary>
+    public const string WardReturnKind = "pharmacy.ward_return";
+
     public const string ChargeModule = "pharmacy.ip";
     public const string ChargeReturnModule = "pharmacy.ip.return";
     public const string MedicinesServiceCode = "PHARM-MED";
@@ -389,7 +397,16 @@ public sealed class InpatientPharmacyService(
 
     // ------------------------------------------------------------------ ward returns
 
-    public async Task<Result<WardReturnCreated>> ReturnAsync(Guid issueId, WardReturnRequest request, CancellationToken ct)
+    /// <summary>A ward return of the issue waiting for a second pharmacist, for every reader of the issue.</summary>
+    public Task<IReadOnlyList<PendingApproval>> PendingReturnsAsync(Guid issueId, CancellationToken ct) =>
+        PendingApprovals.ForAsync(db, nameof(IpIssue), issueId, [WardReturnKind], currentUser.UserId, time.GetUtcNow(), ct);
+
+    /// <summary>
+    /// A ward return. Restocked, it is made at once, as before; a line not restocked (opened, damaged or expired) is a
+    /// write-off, and the return waits for a second pharmacist (<see cref="WardReturnApprovedAsync"/>): nothing is credited
+    /// or written off until then.
+    /// </summary>
+    public async Task<Result<WardReturnOutcome>> ReturnAsync(Guid issueId, WardReturnRequest request, CancellationToken ct)
     {
         var issue = await db.Set<IpIssue>().Include(i => i.Lines).FirstOrDefaultAsync(i => i.Id == issueId, ct);
         if (issue is null)
@@ -409,9 +426,141 @@ public sealed class InpatientPharmacyService(
             return services.Error!;
         }
 
-        var today = time.Today();
-        var now = time.GetUtcNow();
+        var plan = issue.PlanReturn(request.Lines.Select(l => new ReturnInput(l.IpIssueLineId, l.Quantity, l.Restock)).ToList(), time.Today());
+        if (plan.IsFailure)
+        {
+            return plan.Error!;
+        }
+
+        var reason = request.Reason.Trim();
+        if (plan.Value.WritesOff)
+        {
+            var asked = await AskWardReturnAsync(issue, plan.Value, reason, ct);
+            return asked.IsFailure ? asked.Error! : new WardReturnOutcome(null, asked.Value);
+        }
+
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var made = await MakeWardReturnAsync(issue, plan.Value, reason, services.Value, null, ct);
+        if (made.IsFailure)
+        {
+            return made.Error!;
+        }
+
+        var saved = await stock.SaveAsync(ct);
+        if (saved.IsFailure)
+        {
+            return saved.Error!;
+        }
+
+        await transaction.CommitAsync(ct);
+        return new WardReturnOutcome(made.Value, null);
+    }
+
+    /// <summary>
+    /// Makes a ward return a second pharmacist approved, in the approval's transaction (the approval saves): only over the
+    /// issue as it was asked for, and only if it would still be credited and written off exactly as approved.
+    /// </summary>
+    internal async Task<Result<string>> WardReturnApprovedAsync(ApprovalRequest approval, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<WardReturnPayload>(approval.Payload);
+        var issue = await db.Set<IpIssue>().Include(i => i.Lines).FirstOrDefaultAsync(i => i.Id == asked.IpIssueId, ct);
+        if (issue is null)
+        {
+            return Error.NotFound(nameof(IpIssue), asked.IpIssueId);
+        }
+
+        // The approving pharmacist opens the patient's record to decide: one who may not is refused, and the request waits.
+        var access = await guard.EnsureCanOpenAsync(issue.PatientId, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!;
+        }
+
+        if (issue.Version != approval.SubjectVersion)
+        {
+            return IssueChanged(issue);
+        }
+
+        var services = await ServiceItemsAsync(ct);
+        if (services.IsFailure)
+        {
+            return services.Error!;
+        }
+
+        var plan = issue.PlanReturn(asked.Lines, time.Today());
+        if (plan.IsFailure)
+        {
+            return Error.Rule("approval.stale", $"The return from the ward of issue {issue.Number} can no longer be made, so nothing was changed: {plan.Error!.Message}");
+        }
+
+        if (plan.Value.Credit != asked.Credit || !plan.Value.Lines.Select(l => new ReturnInput(l.Line.Id, l.Quantity, l.Restock)).SequenceEqual(asked.Lines))
+        {
+            return IssueChanged(issue);
+        }
+
+        var made = await MakeWardReturnAsync(issue, plan.Value, asked.Reason, services.Value, approval, ct);
+        if (made.IsFailure)
+        {
+            return made.Error!;
+        }
+
+        var writtenOff = plan.Value.Lines.Where(l => !l.Restock).Select(l => $"{l.Line.ItemName} × {StockErrors.Format(l.Quantity)}");
+        var outcome = $"Ward return {made.Value.Number}: ₹{Money.FormatInr(made.Value.CreditAmount)} credited to the IP account; written off: {string.Join(", ", writtenOff)}";
+        audit.Add(new AuditEntry(AuditCategories.Data, "pharmacy.ward_return_written_off",
+            Fit($"{outcome}. Asked for by {approval.RequestedByName}, approved by {CheckerName()}: {asked.Reason}", 1000))
+        {
+            PatientId = issue.PatientId,
+            EntityType = nameof(IpIssue),
+            EntityId = issue.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { issue.Number, wardReturn = made.Value.Number, approval = approval.Id, requestedBy = approval.RequestedBy, approvedBy = currentUser.UserId },
+        });
+        return outcome;
+    }
+
+    /// <summary>
+    /// Asks a second pharmacist to approve a ward return with lines not restocked, telling them what is written off, whether a
+    /// controlled or high-alert drug is among them, and what the patient is credited.
+    /// </summary>
+    private async Task<Result<ApprovalRequestDto>> AskWardReturnAsync(IpIssue issue, WardReturnPlan plan, string reason, CancellationToken ct)
+    {
+        var patient = await PharmacyLookups.PatientAsync(db, issue.PatientId, ct);
+        var itemIds = plan.Lines.Select(l => l.Line.ItemId).ToList();
+        var highAlert = await db.Set<Item>().AsNoTracking().Where(i => itemIds.Contains(i.Id) && i.IsHighAlert).Select(i => i.Id).ToListAsync(ct);
+        var flagged = plan.Lines.Where(l => !l.Restock && (Item.NeedsRegister(l.Line.Schedule, l.Line.IsControlled) || highAlert.Contains(l.Line.ItemId))).ToList();
+        var party = patient is null ? "Unknown patient" : $"{patient.Name} ({patient.Uhid})";
+        List<ApprovalDetail> details =
+        [
+            new("Issue", $"{issue.Number}, issued {DocumentFormat.DateTime(issue.IssuedAt)}"),
+            new("Patient", party),
+            new("Items returned", string.Join("; ", plan.Lines.Select(l =>
+                $"{l.Line.ItemName} × {StockErrors.Format(l.Quantity)} (batch {l.Line.BatchNumber}), {(l.Restock ? "back on the shelf" : l.Expired ? "not restocked (expired): written off" : "not restocked: written off")}"))),
+            new("Credited to the IP account", DocumentFormat.Money(plan.Credit)),
+        ];
+        if (flagged.Count > 0)
+        {
+            details.Add(new("Controlled or high-alert", string.Join("; ", flagged.Select(l =>
+                Item.NeedsRegister(l.Line.Schedule, l.Line.IsControlled)
+                    ? $"{l.Line.ItemName}: entered in the controlled-drug register as returned from the ward and written off, naming you"
+                    : $"{l.Line.ItemName} (high-alert): written off in the stock ledger, naming you"))));
+        }
+
+        var notRestocked = plan.Lines.Count(l => !l.Restock);
+        var summary = $"Ward return on issue {issue.Number} ({party}): {notRestocked} line{(notRestocked == 1 ? string.Empty : "s")} not restocked (written off), ₹{Money.FormatInr(plan.Credit)} credited";
+        var payload = new WardReturnPayload(issue.Id, plan.Lines.Select(l => new ReturnInput(l.Line.Id, l.Quantity, l.Restock)).ToList(), reason, plan.Credit);
+        return await approvals.RequestAsync(WardReturnKind, new ApprovalSubject(nameof(IpIssue), issue.Id, issue.Version, issue.FacilityId, issue.PatientId), payload,
+            Fit(summary, 300), details, reason, ct);
+    }
+
+    /// <summary>
+    /// Makes the ward return worked out in <paramref name="plan"/>, in the caller's transaction: restocked lines go back into
+    /// their batch; a line not restocked comes back and goes out again as a write-off, so the ledger and, for a controlled
+    /// drug, the register show what came back from the ward and what was destroyed; and the patient is credited.
+    /// </summary>
+    private async Task<Result<WardReturnCreated>> MakeWardReturnAsync(
+        IpIssue issue, WardReturnPlan plan, string reason, Dictionary<string, Guid> services, ApprovalRequest? approval, CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
         var wardReturn = new WardReturn
         {
             FacilityId = issue.FacilityId,
@@ -420,36 +569,46 @@ public sealed class InpatientPharmacyService(
             PatientId = issue.PatientId,
             AdmissionId = issue.AdmissionId,
             ReturnedAt = now,
-            Reason = request.Reason.Trim(),
+            Reason = reason,
         };
-        var reference = new StockReference(PharmacyStockReferences.WardReturn, wardReturn.Id, wardReturn.Number, $"Ward return against {issue.Number}");
-        var movements = new List<StockMovement>();
+        var approved = approval is null ? string.Empty : $"; asked for by {approval.RequestedByName}, approved by {CheckerName()}";
+        var reference = new StockReference(PharmacyStockReferences.WardReturn, wardReturn.Id, wardReturn.Number, Fit($"Ward return against {issue.Number}{approved}", 300));
+        var writeOff = reference with { Remarks = Fit($"Returned from the ward against {issue.Number}, not restocked: {reason}{approved}", 300) };
+        var restocked = new List<StockMovement>();
+        var cameBack = new List<StockMovement>();
+        var writtenOff = new List<(StockMovement Movement, StockMovementType Type)>();
         var returnedItems = await InventoryQueries.ItemSummariesAsync(db, issue.Lines.Select(l => l.ItemId), ct);
-        foreach (var input in request.Lines)
+        foreach (var planned in plan.Lines)
         {
-            var line = issue.Lines.FirstOrDefault(l => l.Id == input.IpIssueLineId);
-            if (line is null)
-            {
-                return Error.NotFound(nameof(IpIssueLine), input.IpIssueLineId);
-            }
-
-            var wholeLine = line.ReturnedQuantity == 0 && input.Quantity == line.Quantity;
-            var credit = issue.ReturnLine(line.Id, input.Quantity, now);
+            var line = planned.Line;
+            var wholeLine = line.ReturnedQuantity == 0 && planned.Quantity == line.Quantity;
+            var credit = issue.ReturnLine(line.Id, planned.Quantity, now);
             if (credit.IsFailure)
             {
                 return credit.Error!;
             }
 
-            var restock = input.Restock && (line.ExpiryDate is not { } expiry || expiry >= today);
-            if (restock)
+            var moved = await stock.ReturnToBatchAsync(line.BatchId, planned.Quantity, StockMovementType.Return, planned.Restock ? reference : writeOff, null, ct);
+            if (moved.IsFailure)
             {
-                var moved = await stock.ReturnToBatchAsync(line.BatchId, input.Quantity, StockMovementType.Return, reference, null, ct);
-                if (moved.IsFailure)
+                return moved.Error!;
+            }
+
+            if (planned.Restock)
+            {
+                restocked.Add(moved.Value);
+            }
+            else
+            {
+                cameBack.Add(moved.Value);
+                var type = planned.Expired ? StockMovementType.ExpiryWriteOff : StockMovementType.Adjustment;
+                var destroyed = await stock.AdjustBatchAsync(line.BatchId, -planned.Quantity, type, writeOff, ct);
+                if (destroyed.IsFailure)
                 {
-                    return moved.Error!;
+                    return destroyed.Error!;
                 }
 
-                movements.Add(moved.Value);
+                writtenOff.Add((destroyed.Value, type));
             }
 
             var returnLine = new WardReturnLine
@@ -460,9 +619,9 @@ public sealed class InpatientPharmacyService(
                 ItemName = line.ItemName,
                 BatchId = line.BatchId,
                 BatchNumber = line.BatchNumber,
-                Quantity = input.Quantity,
+                Quantity = planned.Quantity,
                 CreditAmount = credit.Value,
-                Restocked = restock,
+                Restocked = planned.Restock,
                 ChargeReversal = ChargeReversal.Credited,
             };
 
@@ -481,8 +640,8 @@ public sealed class InpatientPharmacyService(
                     PatientId = issue.PatientId,
                     VisitId = issue.VisitId,
                     AdmissionId = issue.AdmissionId,
-                    ServiceItemId = services.Value[ServiceCodeFor(line.ItemType)],
-                    Quantity = -input.Quantity,
+                    ServiceItemId = services[ServiceCodeFor(line.ItemType)],
+                    Quantity = -planned.Quantity,
                     UnitPriceOverride = line.UnitPrice,
                     Description = device is null ? $"Returned: {line.ItemName} (batch {line.BatchNumber})" : $"Returned: {line.ItemName}",
                     SourceModule = ChargeReturnModule,
@@ -501,23 +660,27 @@ public sealed class InpatientPharmacyService(
         }
 
         db.Add(wardReturn);
-        if (movements.Any(m => m.RequiresRegister))
+        if (restocked.Concat(cameBack).Concat(writtenOff.Select(w => w.Movement)).Any(m => m.RequiresRegister))
         {
-            var items = await InventoryQueries.ItemSummariesAsync(db, movements.Select(m => m.ItemId), ct);
-            var patient = await PharmacyLookups.PatientAsync(db, issue.PatientId, ct);
-            register.Record(issue.FacilityId, movements, StockMovementType.Return, inward: true, reference,
-                PharmacyLookups.Party(patient, null, null, null, null), items, now);
+            var items = await InventoryQueries.ItemSummariesAsync(db, issue.Lines.Select(l => l.ItemId), ct);
+            var party = PharmacyLookups.Party(await PharmacyLookups.PatientAsync(db, issue.PatientId, ct), null, null, null, null);
+            register.Record(issue.FacilityId, restocked, StockMovementType.Return, inward: true, reference, party, items, now);
+            register.Record(issue.FacilityId, cameBack, StockMovementType.Return, inward: true, writeOff, party, items, now);
+            foreach (var group in writtenOff.GroupBy(w => w.Type))
+            {
+                register.Record(issue.FacilityId, group.Select(w => w.Movement), group.Key, inward: false, writeOff, party, items, now);
+            }
         }
 
-        var saved = await stock.SaveAsync(ct);
-        if (saved.IsFailure)
-        {
-            return saved.Error!;
-        }
-
-        await transaction.CommitAsync(ct);
         return new WardReturnCreated(wardReturn.Id, wardReturn.Number, wardReturn.CreditAmount);
     }
+
+    private static Error IssueChanged(IpIssue issue) => Error.Rule("approval.stale",
+        $"Issue {issue.Number} changed after this was asked for (another return was taken), so nothing was changed. Ask again, against the issue as it is now.");
+
+    private string CheckerName() => currentUser.DisplayName ?? currentUser.UserName ?? "Unknown user";
+
+    private static string Fit(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
     /// <summary>The catalogue services pharmacy lines are billed under (seeded by <c>PharmacySeeder</c>).</summary>
     private async Task<Result<Dictionary<string, Guid>>> ServiceItemsAsync(CancellationToken ct)
@@ -530,4 +693,26 @@ public sealed class InpatientPharmacyService(
             ? services
             : Error.Rule("pharmacy.service_items_missing", "The pharmacy billing services (PHARM-MED, PHARM-CONS, PHARM-IMPL) are missing or inactive.");
     }
+}
+
+/// <summary>The ward return asked for, exactly as it will be made: its lines (each restocked or written off), why, and the credit.</summary>
+public sealed record WardReturnPayload(Guid IpIssueId, IReadOnlyList<ReturnInput> Lines, string Reason, decimal Credit);
+
+/// <summary>A ward return made at once (<see cref="Created"/>: everything restocked), or asked for (<see cref="Asked"/>).</summary>
+public sealed record WardReturnOutcome(WardReturnCreated? Created, ApprovalRequestDto? Asked);
+
+/// <summary>
+/// A ward return with a line not restocked: a write-off, and for a controlled drug an entry in the register. One
+/// pharmacist asks and another who issues to the wards approves (the framework refuses the one who asked), as a second
+/// pharmacist witnesses what is destroyed.
+/// </summary>
+internal sealed class WardReturnApproval(InpatientPharmacyService ip) : IApprovalAction
+{
+    public string Kind => InpatientPharmacyService.WardReturnKind;
+
+    public string Title => "Ward return not restocked";
+
+    public string ApprovePermission => PharmacyPermissions.IpIssue;
+
+    public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => ip.WardReturnApprovedAsync(request, ct);
 }
