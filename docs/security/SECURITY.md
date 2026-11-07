@@ -368,7 +368,8 @@ and grants nothing.
   a default grant back from a role that no longer has it (`identity.seeded_grants` records what the seeder gave), and
   leaves alone any grant an administrator gave by hand.
 - **Maker-checker.** Some changes are made only when a second person approves them (`ApprovalRequest`,
-  `/api/v1/approvals`):
+  `/api/v1/approvals`): what is still done on one person's word, and the order it is being closed in, is in
+  [MAKER-CHECKER.md](MAKER-CHECKER.md). They are:
   - credit notes and write-offs on a finalized bill (audit finding S6): a cashier or the billing desk asks
     (`billing.refunds.request`), an approver issues (`billing.refunds.approve`);
   - money recorded that did not move: a receipt whose money never arrived (a cheque returned, a payment the bank never
@@ -482,8 +483,9 @@ and grants nothing.
   - A request waits at most 7 days. Only the person who asked withdraws it. Asking, approving, rejecting, withdrawing
     and a failed approval are audited, and the credit note keeps both names.
 - **Separation of duties.** No one approves or undoes their own work:
-  - whoever finalised a bill cannot cancel it (`billing.cancel_own_bill`), as refunds, discounts, credit notes and
-    write-offs already need a second person;
+  - whoever finalised a bill cannot cancel it (`billing.cancel_own_bill`), as refunds, credit notes and write-offs
+    already need a second person (a discount needs one only above the cashier's own limit; a holder of
+    `billing.discounts.approve` still discounts alone, see MAKER-CHECKER.md, slice 6);
   - whoever raised a purchase requisition or order cannot approve it (`requisition.approve_own`, `po.approve_own`);
   - a lab that sets `lab.separateVerifier` (per facility, off by default for a lab with one pathologist) refuses
     verification of a result by whoever entered it (`lab.verify_own_result`), and a correction of a released report
