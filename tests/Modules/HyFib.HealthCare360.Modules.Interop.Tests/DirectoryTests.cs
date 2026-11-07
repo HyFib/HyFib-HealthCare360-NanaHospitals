@@ -120,6 +120,11 @@ public sealed class DirectoryTests
         var listed = SearchRequestParser.Parse(SearchDefinitions.Find(FhirResourceTypes.Practitioner)!, TestData.Query("active=true"));
         listed.Error.ShouldNotBeNull().Outcome.Issue[0].Diagnostics.ShouldBe("Practitioner searches need at least one of: _id, identifier, name.");
 
+        // When they last changed narrows a patient search, never a practitioner one: changed since 2000 is every doctor.
+        var changedSince = SearchRequestParser.Parse(SearchDefinitions.Find(FhirResourceTypes.Practitioner)!, TestData.Query("_lastUpdated=ge2000-01-01"));
+        changedSince.Error.ShouldNotBeNull("a sync by last update would list the staff").Outcome.Issue[0].Diagnostics
+            .ShouldBe("Practitioner searches need at least one of: _id, identifier, name.");
+
         TestData.Search(FhirResourceTypes.Practitioner, "name=asha&active=true").Criteria.Count.ShouldBe(2);
         TestData.Search(FhirResourceTypes.Organization, string.Empty).Criteria.ShouldBeEmpty();
     }
@@ -130,6 +135,7 @@ public sealed class DirectoryTests
     [InlineData("name=rao%20asha", true)]
     [InlineData("name=sha", false)]
     [InlineData("name=asha%20k", false)]
+    [InlineData("name=..", false)] // no word in it, so it starts none: it never finds every doctor
     [InlineData("name=asha&active=true", true)]
     [InlineData("name=asha&active=false", false)]
     [InlineData("identifier=https://doctor.ndhm.gov.in|21-1521-3828-3227", true)]
@@ -184,6 +190,19 @@ public sealed class DirectoryTests
         (inWard.PartOf.Reference, inWard.PhysicalType.Coding[0].Code, inWard.Type[0].Coding[0].Code, inWard.Meta.LastUpdated).ShouldBe(
             ($"Location/ward-{Icu.Id:D}", "bd", "ICU", IcuBed.UpdatedAt));
         inWard.ManagingOrganization.Reference.ShouldBe($"Organization/{TestData.FacilityId:D}");
+    }
+
+    [Fact]
+    public void A_room_or_bed_taken_out_of_use_is_inactive_and_found_so_while_its_ward_is_in_use()
+    {
+        // The semi-private ward is in use; room 201 is closed for repairs, and its bed with it.
+        var room = LocationMapper.Room(Room201 with { IsActive = false }, SemiPrivate);
+        var bed = LocationMapper.Bed(RoomBed with { IsActive = false }, SemiPrivate, Room201 with { IsActive = false });
+
+        room.Status.ShouldBe(R4.Location.LocationStatus.Inactive, "the room is out of use, whatever its ward is");
+        bed.Status.ShouldBe(R4.Location.LocationStatus.Inactive, "the bed is out of use, whatever its ward is");
+        ResourceSearch.Matches(bed, TestData.Search(FhirResourceTypes.Location, "status=inactive")).ShouldBeTrue("a client looking for the places out of use finds it");
+        ResourceSearch.Matches(bed, TestData.Search(FhirResourceTypes.Location, "status=active")).ShouldBeFalse();
     }
 
     [Fact]

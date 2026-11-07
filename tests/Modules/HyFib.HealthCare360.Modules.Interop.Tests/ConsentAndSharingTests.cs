@@ -427,12 +427,16 @@ public sealed class PatientSearchQueryTests
         unknown.Gender = Gender.Unknown;
         var female = RecordSharingConsentTests.Patient("FEMALE");
         female.Gender = Gender.Female;
+        var other = RecordSharingConsentTests.Patient("OTHER");
+        other.Gender = Gender.Other;
         (female.CreatedAt, female.UpdatedAt) = (Monday, Monday.AddDays(2));
-        (male.CreatedAt, unknown.CreatedAt) = (Monday.AddDays(1), Monday);
-        var patients = new[] { male, unknown, female }.AsQueryable();
+        (male.CreatedAt, other.CreatedAt, unknown.CreatedAt) = (Monday.AddDays(1), Monday.AddHours(12), Monday);
+        var patients = new[] { male, unknown, other, female }.AsQueryable();
 
-        Sorted(patients, "_sort=gender").ShouldBe(["FEMALE", "MALE", "UNKNOWN"]);
-        Sorted(patients, "_sort=-_lastUpdated").ShouldBe(["FEMALE", "MALE", "UNKNOWN"]);
+        // By the code served, in alphabetical order: female, male, other, unknown. A patient recorded as other is not one of
+        // whom nothing is known.
+        Sorted(patients, "_sort=gender").ShouldBe(["FEMALE", "MALE", "OTHER", "UNKNOWN"]);
+        Sorted(patients, "_sort=-_lastUpdated").ShouldBe(["FEMALE", "MALE", "OTHER", "UNKNOWN"]);
         Sorted(patients, "_sort=_id").ShouldBe([.. patients.OrderBy(p => p.Id).Select(p => p.Uhid)]);
     }
 
