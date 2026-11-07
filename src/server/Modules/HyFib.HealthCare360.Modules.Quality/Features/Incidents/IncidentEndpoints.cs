@@ -160,6 +160,10 @@ internal static class IncidentEndpoints
             .Select(c => new IncidentCapaItem(c.Id, c.CapaNumber, c.Type, c.Action, c.Status, c.DueDate, c.IsOverdue(today)))
             .ToList();
 
+        var mvpi = await db.Set<MvpiReport>().AsNoTracking().Where(r => r.IncidentId == id).OrderBy(r => r.CreatedAt)
+            .Select(r => new IncidentMvpiItem(r.Id, r.Number, r.Status, r.FollowUpOfId != null, r.Reference))
+            .ToListAsync(ct);
+
         if (incident.PatientId is { } patientId)
         {
             await audit.PatientRecordAccessedAsync(patientId, $"Viewed incident report {incident.IncidentNumber}", ct);
@@ -172,6 +176,7 @@ internal static class IncidentEndpoints
             incident.InvolvedStaffUserIds.Select(u => new PersonRef(u, names.GetValueOrDefault(u) ?? "Unknown user")).ToList(),
             incident.Description, incident.ImmediateAction, incident.Witnesses, incident.IsAnonymous, incident.ReporterName,
             incident.AssignedToUserId is { } assignee ? new PersonRef(assignee, names.GetValueOrDefault(assignee) ?? "Unknown user") : null,
-            incident.ClosedAt, incident.ClosureNote, incident.LastStatusNote, incident.ReopenCount, investigation, capas, incident.Version));
+            incident.ClosedAt, incident.ClosureNote, incident.LastStatusNote, incident.ReopenCount, investigation, capas, incident.InvolvesDevice,
+            incident.IsDeviceRelated, mvpi, incident.Version));
     }
 }

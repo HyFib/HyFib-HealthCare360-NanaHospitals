@@ -5,7 +5,7 @@ Platform feature: `src/server/HyFib.HealthCare360.Platform/Numbering` · table `
 (HospitalAdmin by default).
 
 Every kind of number HC360 issues is a **number series**: UHIDs, visit numbers, OP and IP bills, receipts, lab accession
-numbers, purchase orders and so on, 54 in all. Each module declares its series, so all of them are on the screen from
+numbers, purchase orders and so on, 55 in all. Each module declares its series, so all of them are on the screen from
 the first start, before a single number is issued. Administrators can set the format, when numbers start again from 1,
 and the next number of each series, before go-live or later. A change applies to numbers issued from then on: numbers
 already issued never change.
@@ -229,6 +229,7 @@ again and the next number cannot be set below them.
 | Purchase | Purchase order | `supplychain.po` | `{FAC}PO{YY}{SEQ:6}` | every year | per facility | 24 |
 | Purchase | Purchase requisition | `supplychain.pr` | `{FAC}PR{YY}{SEQ:6}` | every year | per facility | 24 |
 | Quality and safety | Corrective action (CAPA) | `quality.capa` | `{FAC}CAPA{YY}{SEQ:4}` | every year | per facility | 24 |
+| Quality and safety | Device adverse event report (MvPI) | `quality.mvpi` | `{FAC}MDAE{YY}{SEQ:5}` | every year | per facility | 24 |
 | Quality and safety | Downtime | `quality.downtime` | `{FAC}DT{YY}{SEQ:4}` | every year | per facility | 24 |
 | Quality and safety | Incident report | `quality.incident` | `{FAC}IR{YY}{SEQ:5}` | every year | per facility | 24 |
 | Quality and safety | Risk | `quality.risk` | `{FAC}RSK{SEQ:4}` | never | per facility | 24 |

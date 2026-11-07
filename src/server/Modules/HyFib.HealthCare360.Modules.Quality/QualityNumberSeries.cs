@@ -17,5 +17,9 @@ public static class QualityNumberSeries
     public static NumberSeriesDefinition Downtime { get; } =
         new("quality.downtime", "Downtime", "Quality and safety", "{FAC}DT{YY}{SEQ:4}", NumberResetPolicy.Yearly, MaxLength: 24);
 
-    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [Incident, Capa, Risk, Downtime];
+    /// <summary>A medical device adverse event report to the Materiovigilance Programme of India (MvPI).</summary>
+    public static NumberSeriesDefinition Mvpi { get; } =
+        new("quality.mvpi", "Device adverse event report (MvPI)", "Quality and safety", "{FAC}MDAE{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [Incident, Capa, Risk, Downtime, Mvpi];
 }

@@ -37,6 +37,8 @@ export interface ReportIncidentRequest {
   sentinelKind: SentinelEventKind | null;
   flagAsSentinel: boolean;
   isAnonymous: boolean;
+  /** A medical device was involved: the quality team may report it to MvPI. */
+  involvesDevice?: boolean;
 }
 
 export interface IncidentReceipt {
@@ -88,6 +90,15 @@ export interface IncidentCapaItem {
   isOverdue: boolean;
 }
 
+/** A device adverse event report (MvPI) raised from an incident. */
+export interface IncidentMvpiItem {
+  id: string;
+  number: string;
+  status: 'Draft' | 'Submitted';
+  isFollowUp: boolean;
+  reference: string | null;
+}
+
 export interface IncidentDetail {
   id: string;
   incidentNumber: string;
@@ -117,6 +128,11 @@ export interface IncidentDetail {
   reopenCount: number;
   investigationStatus: InvestigationStatus | null;
   capas: IncidentCapaItem[];
+  /** Marked as involving a medical device. */
+  involvesDevice: boolean;
+  /** May be reported to MvPI: an equipment failure, or marked as involving a device. */
+  isDeviceRelated: boolean;
+  mvpiReports: IncidentMvpiItem[];
   version: number;
 }
 
@@ -130,6 +146,7 @@ export interface UpdateIncidentRequest {
   patientId: string | null;
   involvedStaffUserIds: string[] | null;
   version: number;
+  involvesDevice: boolean;
 }
 
 export interface RcaFactorInput {

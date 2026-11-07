@@ -35,6 +35,12 @@ const manifest: ModuleManifest = {
       keywords: ['sentinel', 'rca', 'investigation', 'root cause'],
     },
     {
+      label: 'Device adverse events (MvPI)',
+      to: '/quality/mvpi',
+      permission: Q.incidentsManage,
+      keywords: ['mvpi', 'materiovigilance', 'medical device', 'mdae', 'implant', 'equipment failure', 'ipc'],
+    },
+    {
       label: 'Corrective actions (CAPA)',
       to: '/quality/capas',
       permission: Q.capaManage,

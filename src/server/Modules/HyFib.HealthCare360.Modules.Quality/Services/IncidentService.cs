@@ -68,6 +68,7 @@ public sealed class IncidentService(
         incident.DepartmentId = request.DepartmentId;
         incident.PatientId = request.PatientId;
         incident.InvolvedStaffUserIds = request.InvolvedStaffUserIds?.Distinct().ToList() ?? [];
+        incident.InvolvesDevice = request.InvolvesDevice;
         await db.SaveChangesAsync(ct);
 
         if (incident.IsSentinel && !wasSentinel)
@@ -254,6 +255,7 @@ public sealed class IncidentService(
             PatientId = request.PatientId,
             InvolvedStaffUserIds = request.InvolvedStaffUserIds?.Distinct().ToList() ?? [],
             Description = request.Description.Trim(),
+            InvolvesDevice = request.InvolvesDevice,
             ImmediateAction = Clean(request.ImmediateAction),
             Witnesses = Clean(request.Witnesses),
             IsAnonymous = reporterUserId is null,

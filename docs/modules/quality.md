@@ -1,16 +1,17 @@
 # Quality module (IRMS: incidents, RCA, CAPA, risk register, NABH indicators)
 
-Project: `src/server/Modules/HyFib.HealthCare360.Modules.Quality` · schema `quality` · depends on Platform only.
-Patients and staff are referenced by id: `PatientId` from the Patients module, and staff as Platform user ids.
-Covers SRS **IRMS-01..06**: incident reporting, severity grading, investigation/RCA, CAPA tracking, a risk register
-with likelihood × impact scoring, and NABH quality indicators.
+Project: `src/server/Modules/HyFib.HealthCare360.Modules.Quality` · schema `quality` · depends on Platform and Patients
+(an MvPI report names its patient by initials, age and sex from the registration). Staff are referenced as Platform user
+ids. Covers SRS **IRMS-01..06**: incident reporting, severity grading, investigation/RCA, CAPA tracking, a risk register
+with likelihood × impact scoring, and NABH quality indicators; and adverse events with medical devices reported to the
+Materiovigilance Programme of India ([MvPI](#device-adverse-events--mvpi-apiv1qualitymvpi)).
 
 ## Permissions
 
 | Permission | Default roles | Purpose |
 |---|---|---|
 | `quality.incidents.report` | all staff roles | Report incidents (optionally anonymously), see own named reports, work on CAPAs one owns |
-| `quality.incidents.manage` | QualityManager, HospitalAdmin | Review, grade, assign, investigate and close incidents; receives sentinel alerts |
+| `quality.incidents.manage` | QualityManager, HospitalAdmin | Review, grade, assign, investigate and close incidents; receives sentinel alerts; reports device adverse events to MvPI |
 | `quality.capa.manage` | QualityManager, HospitalAdmin | Plan CAPAs, verify effectiveness, cancel |
 | `quality.risks.manage` | QualityManager, HospitalAdmin | Risk register |
 | `quality.indicators.manage` | QualityManager, HospitalAdmin | Indicator definitions, values, trends, scorecard |
@@ -23,11 +24,11 @@ The dashboard needs any of the four management permissions.
 ### Incidents (`/api/v1/quality/incidents`)
 | Method | Path | Permission | Body → Response |
 |---|---|---|---|
-| POST | `/` | incidents.report | `ReportIncidentRequest {type, severity, occurredAt, location, departmentId, patientId, involvedStaffUserIds, description (≥ 20 chars), immediateAction, witnesses, sentinelKind, flagAsSentinel, isAnonymous}` → 201 `IncidentReceipt {id, incidentNumber, isSentinel, severity, type}` |
+| POST | `/` | incidents.report | `ReportIncidentRequest {type, severity, occurredAt, location, departmentId, patientId, involvedStaffUserIds, description (≥ 20 chars), immediateAction, witnesses, sentinelKind, flagAsSentinel, isAnonymous, involvesDevice}` → 201 `IncidentReceipt {id, incidentNumber, isSentinel, severity, type}` |
 | GET | `/mine` | incidents.report | own **named** reports → `MyIncidentItem[]` |
 | GET | `/` | incidents.manage | filters `status, type, severity, sentinelOnly, openOnly, departmentId, from, to`, `search`; sort `occurredAt, reportedAt, severity, number` → `IncidentListItem` (incl. open CAPA count). Severity sorts by harm (NearMiss → Death), not alphabetically: enums are stored as text |
-| GET | `/{id}` | incidents.manage | → `IncidentDetail` (next allowed statuses, involved staff names, investigation status, CAPAs); writes a PHI-access audit entry when a patient is linked |
-| PUT | `/{id}` | incidents.manage | `UpdateIncidentRequest {type, severity, sentinelKind, flagAsSentinel, location, departmentId, patientId, involvedStaffUserIds, version}` (re-grading; becoming sentinel alerts the team) |
+| GET | `/{id}` | incidents.manage | → `IncidentDetail` (next allowed statuses, involved staff names, investigation status, CAPAs, `involvesDevice`, `isDeviceRelated`, the MvPI reports raised from it); writes a PHI-access audit entry when a patient is linked |
+| PUT | `/{id}` | incidents.manage | `UpdateIncidentRequest {type, severity, sentinelKind, flagAsSentinel, location, departmentId, patientId, involvedStaffUserIds, version, involvesDevice}` (re-grading; becoming sentinel alerts the team) |
 | POST | `/{id}/transition` | incidents.manage | `TransitionIncidentRequest {status, note}` |
 | POST | `/{id}/assign` | incidents.manage | `AssignIncidentRequest {userId}` (a Reported incident moves to UnderReview; the assignee is notified) |
 | GET | `/{id}/investigation` | incidents.manage | → `InvestigationDto` |
@@ -53,6 +54,70 @@ only after a completed RCA, except when a duplicate report is closed straight fr
 and data-audit event record no user, session, device or IP. The scope fails closed (422
 `incident.anonymity_unavailable`) if it could still see the user. Later edits by the quality team are audited
 normally. Alerts never name the reporter.
+
+**A medical device involved.** The reporter, or the quality team on review, marks an incident `involvesDevice` (an
+implant, an instrument, a monitor, a consumable). An incident is *device-related* (`isDeviceRelated`) when it is an
+`EquipmentFailure` or is so marked; its screen then offers **Report to MvPI**.
+
+### Device adverse events — MvPI (`/api/v1/quality/mvpi`)
+India's Materiovigilance Programme (MvPI, run by the Indian Pharmacopoeia Commission as the national coordination centre
+under the Medical Devices Rules 2017) asks hospitals to report adverse events with medical devices on its *Medical
+Device Adverse Event (MDAE) reporting form*. HC360 keeps the hospital's copy (`MvpiReport`, table
+`quality.mvpi_reports`, numbered `quality.mvpi`). The quality team raises a report from a device-related incident (the
+incident's day, place, account and action taken, its patient, and a death graded as a death) or for a patient or no
+patient at all. The device is filled in from what billing says of the devices charged to the patient
+(`IBillingStatusProvider.GetDevicesAsync`): the newest implant becomes the device (brand as its name, maker, batch as
+the lot, serial, implanted on the day it was used, single use), and the others are offered to pick.
+
+What the report holds, in the form's order:
+* **Patient**: initials (never the name; `PatientNames.Initials`), age in completed years on the day of the event, sex,
+  weight; or *no patient involved*.
+* **Event**: date of the event and the date the hospital became aware, where it happened, what happened, seriousness
+  (death with its date, life-threatening, hospitalisation initial or prolonged, disability, congenital anomaly,
+  intervention to prevent permanent impairment, other) and the patient's outcome (recovered, recovering, not recovered,
+  fatal, unknown).
+* **Device** (`MvpiDevice`, one `jsonb` column): brand or trade name, common name or category, risk class A–D (MDR 2017),
+  manufacturer and address, importer, model, catalogue, serial and lot numbers, UDI, made and expiry dates, software
+  version, implantable with the dates implanted and explanted, single use or reusable and whether reprocessed, operated
+  by a health professional, the patient or someone else, and whether it is kept for evaluation (where: quarantine),
+  not available, or returned to the manufacturer (when).
+* **Reporter**: name (whoever raised it), designation, department and the date of the report; the hospital's name,
+  address and contact print from the facility.
+* **Sent to MvPI**: the date, by whom, MvPI's (or the monitoring centre's) reference; a follow-up report names the report
+  it follows.
+
+**Workflow** (`MvpiReport`, unit-tested): a **Draft** may be saved half written, but its facts must fit together (no
+event in the future, aware on or after the event, a fatal outcome with death as the seriousness, a death on or after the
+event, implanted before the event, explanted after implanting, made before expiry, a patient or *no patient*, not
+both). It is recorded as **Submitted** only with what MvPI needs (`Missing()`, also on the DTO): the patient or *no
+patient*, where and what happened, the date of a death, the device's name and manufacturer and one of its model,
+catalogue, serial or lot number or UDI, the implant date of an implantable device, where a device kept for evaluation is
+kept or when it went back to the manufacturer, and the reporter's designation; otherwise 400 `mvpi.incomplete` with the
+fields. A sent report cannot change (422 `mvpi.submitted`): what is learned later goes on a **follow-up** report (a new
+draft copied from it, naming it), and only its reference can be corrected or added, with a reason (the data audit keeps
+the reference it replaced). There is no due date in HC360: MvPI's guidance asks for prompt reporting, serious events
+first.
+
+| Method | Path | Body → Response |
+|---|---|---|
+| GET | `?status&from&to&incidentId` | the register, newest event first (`from`/`to` on the day of the event; at most 500) → `MvpiReportListItem[]` |
+| GET | `/prefill?incidentId&patientId` | → `MvpiPrefill` (the incident's event and patient, the devices billed to the patient, the newest implant as the device); a patient's lookup is audited as PHI access |
+| GET | `/{id}` · `/{id}/document` · `/{id}/pdf` | → `MvpiReportDto` (with `missing`) / the printable MDAE form / its PDF; audited as PHI access when it names a patient |
+| POST | `/` | `SaveMvpiReportRequest {incidentId, patientId, noPatient, weightKg, eventOn, awareOn, location, description, seriousness, deathOn, outcome, device, reporterDesignation, reporterDepartment}` → `MvpiReportDto` (a draft) |
+| PUT | `/{id}` | the same with `version`; the incident stays the one it was raised from; 422 `mvpi.submitted` once sent |
+| POST | `/{id}/submit` | `SubmitMvpiReportRequest {submittedOn, submittedBy, reference, version}`: `submittedBy` defaults to the user; on or after the hospital became aware, not in the future |
+| POST | `/{id}/reference` | `CorrectMvpiReferenceRequest {reference, reason, version}` (sent reports only) |
+| POST | `/{id}/follow-up` | → a new draft naming the sent report (`followUpOfId`) |
+
+Every route needs `quality.incidents.manage`: the reports are raised from the incident register and hold the same
+patient's data, so the register's managers keep them. A report that names a patient opens only for those who may open
+the patient's record (a restricted record stays closed). The register and the printable form are on **Quality → Device
+adverse events (MvPI)** (`/quality/mvpi` in the staff app). The form prints in the MDAE form's order (patient, event,
+device, reporter, sending), with ticked boxes for its choices, and names the patient by initials only.
+
+Not built: sending to MvPI's online system (ADRMS) or by e-mail (the printed or PDF form is sent, and the reference
+recorded); devices from the biomedical asset register (equipment failures of the hospital's own equipment are filled in
+by hand); the in-vitro diagnostic device form.
 
 ### CAPA (`/api/v1/quality/capas`)
 | Method | Path | Permission | Body → Response |
@@ -125,6 +190,7 @@ notices: incident assigned (to the assignee), CAPA assigned or reassigned (to th
 | `quality.capa` | `{FAC}CAPA{YY}{SEQ:4}` | yearly |
 | `quality.risk` | `{FAC}RSK{SEQ:4}` | never |
 | `quality.downtime` | `{FAC}DT{YY}{SEQ:4}` | yearly |
+| `quality.mvpi` | `{FAC}MDAE{YY}{SEQ:5}` (device adverse event report to MvPI) | yearly |
 
 ## Seed data (`QualitySeeder`, order 120, idempotent by code)
 Twenty-two monthly NABH indicators:

@@ -83,6 +83,16 @@ public sealed class Incident : AuditableEntity, IFacilityScoped
     public List<Guid> InvolvedStaffUserIds { get; set; } = [];
 
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>
+    /// A medical device was involved (an implant, an instrument, a monitor, a consumable), whatever the incident's type: it
+    /// may be reportable to the Materiovigilance Programme of India (<see cref="MvpiReport"/>), as an equipment failure is.
+    /// </summary>
+    public bool InvolvesDevice { get; set; }
+
+    /// <summary>Whether the incident may be reported to MvPI: an equipment failure, or one marked as involving a device.</summary>
+    public bool IsDeviceRelated => Type == IncidentType.EquipmentFailure || InvolvesDevice;
+
     public string? ImmediateAction { get; set; }
     public string? Witnesses { get; set; }
 

@@ -135,7 +135,7 @@ docs/                                     SRS, architecture, security, deploymen
 | Contract | Implemented by | Used by |
 |---|---|---|
 | `IChargePoster` — post/cancel billable charges against a visit or admission | Billing | Clinical, Diagnostics, Pharmacy, Inpatient, SpecialtyCare, SupportServices |
-| `IBillingStatusProvider` — paid status of order lines, outstanding dues, discharge clearance | Billing | Diagnostics, Inpatient, Front office |
+| `IBillingStatusProvider` — paid status of order lines, outstanding dues, discharge clearance, the devices billed to a patient | Billing | Diagnostics, Inpatient, Front office, Quality (MvPI reports) |
 | `IAdmissionDirectory` — whether a stay goes on, is discharged or was cancelled | Inpatient | Clinical (no order for a stay that has ended) |
 | `EncounterLocks` — the transaction-scoped lock of a visit or a stay, taken by what orders on it and what closes it | Platform | Clinical (orders, check-ups), Diagnostics (work withdrawn when a visit or stay closes) |
 | `IDischargeHoldSource` — work that keeps the patient in the hospital (several sources may answer) | SpecialtyCare (a surgery in pre-op or under way) | Inpatient (discharge completion) |
