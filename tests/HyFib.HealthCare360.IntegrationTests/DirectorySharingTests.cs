@@ -136,6 +136,8 @@ public sealed class DirectorySharingTests(HospitalServer server)
         var places = stay.GetProperty("location").EnumerateArray().ToList();
         places.Select(l => l.GetProperty("location").GetProperty("reference").GetString()).ShouldBe(
             [$"Location/ward-{open.Id}", $"Location/bed-{first.BedId}", $"Location/ward-{semiPrivate.Id}", $"Location/bed-{second.Id}"]);
+        places.Select(l => l.GetProperty("location").GetProperty("display").GetString()).ShouldBe(
+            [open.Name, first.Label, semiPrivate.Name, second.Label], "a ward by its name and a bed by its label, as the bed board shows them");
         places.Select(l => (l.GetProperty("status").GetString(), l.GetProperty("physicalType").GetProperty("coding")[0].GetProperty("code").GetString()))
             .ShouldBe([("completed", "wa"), ("completed", "bd"), ("active", "wa"), ("active", "bd")]);
         places[1].GetProperty("period").GetProperty("end").GetString().ShouldBe(places[3].GetProperty("period").GetProperty("start").GetString());
@@ -167,6 +169,66 @@ public sealed class DirectorySharingTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_stay_still_names_the_ward_and_bed_it_was_in_after_they_are_deleted_by_mistake()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var (partner, partnerId, _) = await PartnerAsync(server);
+        var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId.ShouldNotBeNull();
+        var patient = await RegisterAsync(frontOffice);
+
+        // A ward of the test's own, with a bed added on the bed board: the patient is admitted to it, then moved to a bed of
+        // the open female ward.
+        var ward = NewWard(facilityId);
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            db.Add(ward);
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var open = (await admin.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWF");
+        var (first, second) = (await TestBeds.AddAsync(admin, ward.Id), await TestBeds.AddAsync(admin, open.Id));
+        var admission = await AdmitAsync(frontOffice, patient, first.BedId);
+        try
+        {
+            await frontOffice.PostAsync($"/api/v1/inpatient/admissions/{admission.Id}/transfer",
+                new TransferPatientRequest(second.BedId, "Moved to the female ward", null, null, null));
+            await frontOffice.PostAsync<Created>($"/api/v1/patients/{patient}/consents", new CaptureConsentRequest(
+                ConsentType.DataSharing, null, true, null, null, null, null, null,
+                new RecordSharingScope([partnerId], [SharingPurpose.Treatment], [SharedRecordKind.Visits], null, null, null)));
+
+            // Then the first ward and its bed are deleted by mistake (the app takes places out of use; it never deletes one).
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+                var deletedWard = await db.Set<Ward>().SingleAsync(w => w.Id == ward.Id, Ct);
+                var deletedBed = await db.Set<Bed>().SingleAsync(b => b.Id == first.BedId, Ct);
+                (deletedWard.IsDeleted, deletedWard.DeletedAt) = (true, DateTimeOffset.UtcNow);
+                (deletedBed.IsDeleted, deletedBed.DeletedAt) = (true, DateTimeOffset.UtcNow);
+                await db.SaveChangesAsync(Ct);
+            }
+
+            // The stay still says where the patient was: that ward and that bed, by the name and label the bed board showed,
+            // and then where the patient is now.
+            var stay = (await FhirAsync(partner, $"Encounter/visit-{admission.VisitId}", "TREAT")).Body;
+            stay.GetProperty("location").EnumerateArray()
+                .Select(l => (l.GetProperty("location").GetProperty("reference").GetString(), l.GetProperty("location").GetProperty("display").GetString(),
+                    l.GetProperty("status").GetString()))
+                .ShouldBe([
+                    ($"Location/ward-{ward.Id}", ward.Name, "completed"),
+                    ($"Location/bed-{first.BedId}", first.Label, "completed"),
+                    ($"Location/ward-{open.Id}", open.Name, "active"),
+                    ($"Location/bed-{second.BedId}", second.Label, "active"),
+                ], "a past stay keeps the ward and bed it was in, deleted since or not");
+        }
+        finally
+        {
+            await admin.PostAsync($"/api/v1/inpatient/admissions/{admission.Id}/cancel", new CancelAdmissionRequest("Admitted for a test of the FHIR directory"));
+        }
+    }
+
+    [Fact]
     public async Task A_facility_taken_out_of_use_reads_as_not_active_one_deleted_is_gone_and_every_search_is_on_the_trail()
     {
         var (partner, partnerId, _) = await PartnerAsync(server);
@@ -191,15 +253,33 @@ public sealed class DirectorySharingTests(HospitalServer server)
         Matches((await FhirAsync(partner, $"Organization?identifier={deleted.Code}", null)).Body).ShouldBeEmpty();
         (await DirectoryAuditAsync("Organization", deleted.Id.ToString("D"))).ShouldHaveSingleItem().Summary.ShouldEndWith("(gone)");
 
+        // For treatment, the first page of one of every facility changed since 2000: the hospital's own and the one closed
+        // here match at least, so fewer are returned than matched.
+        (await FhirAsync(partner, "Organization?_lastUpdated=ge2000-01-01&_count=1", "TREAT")).Status.ShouldBe(200);
+
         // Each search is on the trail, by its parameter names, as an integration event in no patient's access history.
         await using (var scope = server.Services.CreateAsyncScope())
         {
             var searches = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuditEvent>().AsNoTracking()
                 .Where(a => a.Action == "fhir.directory" && a.UserId == partnerId && a.EntityId == null)
+                .OrderBy(a => a.Id)
                 .ToListAsync(Ct);
-            searches.Count.ShouldBe(3);
+            searches.Count.ShouldBe(4);
             searches.ShouldAllBe(e => e.Category == AuditCategories.Integration && e.PatientId == null && e.EntityType == "fhir.Organization");
             searches.ShouldAllBe(e => e.Summary!.StartsWith("FHIR R4 search Organization: ", StringComparison.Ordinal));
+
+            // The page's entry says how many it returned of how many matched, which parameters were used (never their
+            // values) and for what purpose.
+            var page = searches[^1];
+            var json = page.Details.ShouldNotBeNull();
+            using var document = JsonDocument.Parse(json);
+            var details = document.RootElement;
+            var total = details.GetProperty("total").GetInt32();
+            total.ShouldBeGreaterThan(1, "every live facility matched, the hospital's own and the one closed here at least");
+            (details.GetProperty("returned").GetInt32(), page.Summary).ShouldBe((1, $"FHIR R4 search Organization: 1 of {total} returned"));
+            details.GetProperty("parameters").EnumerateArray().Select(p => p.GetString()).ShouldBe(["_lastUpdated", "_count"]);
+            details.GetProperty("purpose").GetString().ShouldBe("TREAT", "the purpose the partner stated");
+            json.ShouldNotContain("2000-01-01", Case.Sensitive, "what was searched for is not recorded, only by which parameters");
         }
     }
 
@@ -209,10 +289,12 @@ public sealed class DirectorySharingTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var (partner, _, _) = await PartnerAsync(server);
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId.ShouldNotBeNull();
-        var open = (await admin.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWF");
+        var wards = await admin.GetAsync<List<WardDto>>("/api/v1/inpatient/wards");
+        var (open, semiPrivate) = (wards.Single(w => w.Code == "GWF"), wards.Single(w => w.Code == "SPW"));
         var bed = await TestBeds.AddAsync(admin, open.Id);
         var annexe = await FacilityAsync(isActive: true);
         Ward deletedWard, annexeWard;
+        Room deletedRoom;
         await using (var scope = server.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
@@ -221,7 +303,11 @@ public sealed class DirectorySharingTests(HospitalServer server)
             deletedWard = NewWard(facilityId);
             (deletedWard.IsDeleted, deletedWard.DeletedAt) = (true, DateTimeOffset.UtcNow);
             annexeWard = NewWard(annexe.Id);
-            db.AddRange(deletedWard, annexeWard);
+
+            // A room of the semi-private ward, which is in use, recorded and then deleted by mistake.
+            var number = "D" + string.Concat(Enumerable.Range(0, 6).Select(_ => (char)('0' + Random.Shared.Next(10))));
+            deletedRoom = new Room { FacilityId = facilityId, WardId = semiPrivate.Id, Number = number, IsDeleted = true, DeletedAt = DateTimeOffset.UtcNow };
+            db.AddRange(deletedWard, annexeWard, deletedRoom);
             await db.SaveChangesAsync(Ct);
         }
 
@@ -230,6 +316,12 @@ public sealed class DirectorySharingTests(HospitalServer server)
         Matches((await FhirAsync(partner, $"Location?_id=bed-{bed.BedId}", null)).Body).ShouldBeEmpty();
         (await FhirAsync(partner, $"Location/ward-{deletedWard.Id}", null)).Status.ShouldBe(410);
         Matches((await FhirAsync(partner, $"Location?_id=ward-{deletedWard.Id}", null)).Body).ShouldBeEmpty();
+
+        // So is a room, though its ward is in use: gone by id, in no search, not even among the places of its ward.
+        (await FhirAsync(partner, $"Location/room-{deletedRoom.Id}", null)).Refusal.ShouldBe((410, "deleted"), "records may still name the room");
+        Matches((await FhirAsync(partner, $"Location?_id=room-{deletedRoom.Id}", null)).Body).ShouldBeEmpty();
+        Matches((await FhirAsync(partner, $"Location?partof=Location/ward-{semiPrivate.Id}&_count=100", null)).Body)
+            .ShouldNotContain($"room-{deletedRoom.Id}", "a room deleted by mistake is no place of its ward");
 
         // Another facility's wards are that facility's: a reader of this one neither reads nor finds them.
         (await FhirAsync(partner, $"Location/ward-{annexeWard.Id}", null)).Status.ShouldBe(404);

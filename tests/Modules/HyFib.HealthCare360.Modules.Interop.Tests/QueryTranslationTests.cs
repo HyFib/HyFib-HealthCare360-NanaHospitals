@@ -277,6 +277,10 @@ public sealed class QueryTranslationTests : IDisposable
         order.ShouldContain("COLLATE \"C\"");
         order.ShouldContain("make_date(", Case.Insensitive);
         order.ShouldContain("date_of_birth IS NULL", Case.Insensitive);
+
+        // The name is served with every given name, the middle one too: two patients who differ only in it are ordered by
+        // it, not by when they registered.
+        Order("name").ShouldContain("p.middle_name", Case.Sensitive, "the middle name is one of the given names the name orders by");
         Order("birthdate").ShouldContain("make_date(", Case.Insensitive);
         Order("-_lastUpdated").ShouldContain("date_trunc('milliseconds',", Case.Sensitive, "to the millisecond it is served with");
         Order("gender").ShouldEndWith("END, p.registered_at DESC, p.id", Case.Sensitive, "then newest registrations first, then by id");
