@@ -124,7 +124,8 @@ public static class PlatformPermissions
 
     /// <summary>
     /// Change the server's own credentials (its database password and encryption keys), make a new backup recovery key,
-    /// and sign everybody out. Only SuperAdmin has it by default.
+    /// sign everybody out, and set how long the audit trail is kept and purge it (one asks, another approves). Only SuperAdmin
+    /// has it by default.
     /// </summary>
     public const string SystemManage = "admin.system.manage";
     public const string BackupsManage = "admin.backups.manage";
@@ -179,7 +180,7 @@ public static class PlatformPermissions
         new(PrintManage, "Administration", "Set up print templates (letterhead, logo, closing notes)", Admins),
         new(NotificationTemplatesManage, "Administration", "Edit SMS/WhatsApp/e-mail templates", [SystemRoles.HospitalAdmin, SystemRoles.CrmExecutive]),
         new(SystemRead, "Administration", "View server health, WiFi link and backups", Admins),
-        new(SystemManage, "Administration", "Change the server's database password and keys, make backup recovery keys, and sign everybody out"),
+        new(SystemManage, "Administration", "Change the server's database password and keys, make backup recovery keys, sign everybody out, and set how long the audit trail is kept and purge it (with a second person)"),
         new(BackupsManage, "Administration", "Run backups and see which recovery key opens each"),
         new(MastersRead, "Masters", "View facilities, departments, doctors and services", AllStaff),
         new(MastersManage, "Masters", "Edit facilities, departments, doctors and services", Admins),

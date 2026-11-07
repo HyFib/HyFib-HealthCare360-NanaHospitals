@@ -24,6 +24,7 @@ public sealed class AuditCoverageTests
     {
         // The trail itself, and the machinery that runs the servers.
         ["AuditEvent"] = "The audit trail itself: append-only, hash-chained and sealed.",
+        ["AuditPurge"] = "The record of a purge of the audit trail's old months: append-only, sealed, anchored outside the database, and audited as audit.purged.",
         ["ClusterEntry"] = "Short-lived keys and counters the servers share (spent challenges, rate limits); expire within minutes.",
         ["IdempotencyRecord"] = "A stored answer replayed when a retry repeats its key; the change it answered is audited.",
         ["OutboxMessage"] = "A message waiting to be sent; the change that queued it is audited, the delivery is in the message log.",

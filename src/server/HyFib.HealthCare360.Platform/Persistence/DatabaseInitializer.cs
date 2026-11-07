@@ -392,5 +392,33 @@ internal static class PlatformSql
             END LOOP;
         END
         $triggers$;
+
+        -- The records of purges of the audit trail (audit.audit_purges) are append-only too: a purge writes one, sealed, and
+        -- nothing changes or removes it. Its triggers are made only where missing or turned off.
+        CREATE OR REPLACE FUNCTION audit.protect_audit_purges() RETURNS trigger AS $$
+        BEGIN
+            RAISE EXCEPTION 'audit purge records are append-only';
+        END;
+        $$ LANGUAGE plpgsql;
+
+        DO $purges$
+        BEGIN
+            IF to_regclass('audit.audit_purges') IS NULL THEN
+                RETURN;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'audit.audit_purges'::regclass
+                           AND tgname = 'trg_protect_audit_purges' AND tgenabled = 'O') THEN
+                CREATE OR REPLACE TRIGGER trg_protect_audit_purges BEFORE DELETE OR UPDATE ON audit.audit_purges
+                    FOR EACH ROW EXECUTE FUNCTION audit.protect_audit_purges();
+                ALTER TABLE audit.audit_purges ENABLE TRIGGER trg_protect_audit_purges;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'audit.audit_purges'::regclass
+                           AND tgname = 'trg_protect_audit_purges_truncate' AND tgenabled = 'O') THEN
+                CREATE OR REPLACE TRIGGER trg_protect_audit_purges_truncate BEFORE TRUNCATE ON audit.audit_purges
+                    FOR EACH STATEMENT EXECUTE FUNCTION audit.protect_audit_purges();
+                ALTER TABLE audit.audit_purges ENABLE TRIGGER trg_protect_audit_purges_truncate;
+            END IF;
+        END
+        $purges$;
         """;
 }

@@ -39,6 +39,7 @@ import {
   type RequestKind,
 } from '@/modules/privacy/labels';
 import {
+  accessLogText,
   buildRequest,
   checkRequest,
   DETAILS_MAX,
@@ -318,7 +319,9 @@ function PrivacyRequestForm({ kind }: { kind: RequestKind }) {
                 </li>
               ))}
             </ul>
-            <p className={styles.policy}>{t('myPrivacy.new.erasure.keep.log')}</p>
+            <p className={styles.policy}>
+              {accessLogText('myPrivacy.new.erasure.keep.log', info.data?.accessLogYears, t, f)}
+            </p>
             <p className={styles.policy}>{t('myPrivacy.new.erasure.keep.backups')}</p>
           </ReportCard>
         </>
@@ -436,7 +439,7 @@ function PrivacyRequestForm({ kind }: { kind: RequestKind }) {
                   <Checkbox
                     ref={field.ref}
                     size="large"
-                    label={t('myPrivacy.new.understood')}
+                    label={accessLogText('myPrivacy.new.understood', info.data?.accessLogYears, t, f)}
                     checked={field.value}
                     onChange={(_, data) => field.onChange(data.checked === true)}
                     disabled={busy}

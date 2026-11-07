@@ -130,13 +130,31 @@ export function awaitsRequesterCheck(
   );
 }
 
+/**
+ * How long the record access log is kept, in the patient's words: permanently, or for the years the hospital set
+ * (`accessLogYears` of the public privacy notice; ADR-015). `key` says it permanently, and `key.years` for the years.
+ */
+export function accessLogText(
+  key:
+    | 'myPrivacy.new.erasure.keep.log'
+    | 'myPrivacy.new.understood'
+    | 'myPrivacy.request.accessLogKept'
+    | 'privacy.keep.body',
+  years: number | null | undefined,
+  t: Translate,
+  f: Pick<Formatters, 'number'>,
+): string {
+  return years == null ? t(key) : t(`${key}.years`, { years: f.number(years) });
+}
+
 /** What an erasure removed, in the patient's words, and how long the law keeps the rest; null when nothing to say. */
 export function erasureOutcome(
   request: Pick<PortalDataRequestDetail, 'type' | 'retainedUntil' | 'retainedPermanently'> & {
     erasedItems: readonly string[];
   },
   t: Translate,
-  f: Pick<Formatters, 'calendarDate'>,
+  f: Pick<Formatters, 'calendarDate' | 'number'>,
+  accessLogYears?: number | null,
 ): { erased: string[]; kept: string | null; accessLog: string } | null {
   if (request.type !== 'Erasure') {
     return null;
@@ -151,9 +169,11 @@ export function erasureOutcome(
   } else if (request.retainedUntil) {
     kept = t('myPrivacy.request.keptUntil', { date: f.calendarDate(request.retainedUntil) });
   }
-  // The access log is never erased by a request and is kept permanently, as the hospital decided: said apart from what
-  // the law keeps, which is all that retainedUntil and retainedPermanently describe.
-  return erased.length > 0 || kept ? { erased, kept, accessLog: t('myPrivacy.request.accessLogKept') } : null;
+  // The access log is never erased by a request and is kept permanently, or for the years the hospital set, as the
+  // hospital decided: said apart from what the law keeps, which is all that retainedUntil and retainedPermanently describe.
+  return erased.length > 0 || kept
+    ? { erased, kept, accessLog: accessLogText('myPrivacy.request.accessLogKept', accessLogYears, t, f) }
+    : null;
 }
 
 export function fieldLabel(field: string, t: Translate): string {

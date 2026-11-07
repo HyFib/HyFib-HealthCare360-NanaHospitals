@@ -42519,6 +42519,99 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("audit_events", "audit");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Platform.Auditing.AuditPurge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ApprovalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("approval_id");
+
+                    b.Property<Guid>("ApprovedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("approved_by");
+
+                    b.Property<string>("ApprovedByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("approved_by_name");
+
+                    b.Property<long>("BoundaryChainIndex")
+                        .HasColumnType("bigint")
+                        .HasColumnName("boundary_chain_index");
+
+                    b.Property<string>("BoundaryHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("boundary_hash");
+
+                    b.Property<DateOnly>("CutoffMonth")
+                        .HasColumnType("date")
+                        .HasColumnName("cutoff_month");
+
+                    b.Property<string>("ExportFile")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)")
+                        .HasColumnName("export_file");
+
+                    b.Property<string>("ExportSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("export_sha256");
+
+                    b.Property<long>("FirstChainIndex")
+                        .HasColumnType("bigint")
+                        .HasColumnName("first_chain_index");
+
+                    b.Property<string>("Mac")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("mac");
+
+                    b.Property<string>("Months")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("months");
+
+                    b.Property<DateTimeOffset>("PurgedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("purged_at");
+
+                    b.Property<Guid>("RequestedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by");
+
+                    b.Property<string>("RequestedByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("requested_by_name");
+
+                    b.Property<int>("RetentionYears")
+                        .HasColumnType("integer")
+                        .HasColumnName("retention_years");
+
+                    b.Property<long>("RowCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("row_count");
+
+                    b.HasKey("Id")
+                        .HasName("pk_audit_purges");
+
+                    b.HasIndex("BoundaryChainIndex")
+                        .IsUnique()
+                        .HasDatabaseName("ix_audit_purges_boundary_chain_index");
+
+                    b.ToTable("audit_purges", "audit");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Files.StoredFile", b =>
                 {
                     b.Property<Guid>("Id")

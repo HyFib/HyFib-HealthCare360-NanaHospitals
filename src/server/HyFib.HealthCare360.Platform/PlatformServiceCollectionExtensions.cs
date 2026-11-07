@@ -232,6 +232,12 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<AuditChainService>();
         services.AddSingleton<AuditSealKey>();
         services.AddSingleton<AuditAnchors>();
+
+        // How long the audit trail is kept, and the purge of the months it no longer keeps: two super administrators.
+        services.AddScoped<AuditRetentionService>();
+        services.AddScoped<IApprovalAction, AuditRetentionApproval>();
+        services.AddScoped<IApprovalAction, AuditPurgeApproval>();
+
         services.AddServerClock();
         services.AddScoped<INumberSeries, NumberSeriesService>();
         services.AddScoped<IOutbox, Outbox>();
@@ -419,6 +425,7 @@ public static class PlatformServiceCollectionExtensions
         DeviceEndpoints.Map(endpoints);
         OrganizationEndpoints.Map(endpoints);
         AuditEndpoints.Map(endpoints);
+        AuditRetentionEndpoints.Map(endpoints);
         NumberSeriesEndpoints.Map(endpoints);
         PrintTemplateEndpoints.Map(endpoints);
         NotificationEndpoints.Map(endpoints);

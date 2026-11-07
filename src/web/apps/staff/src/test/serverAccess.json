@@ -901,6 +901,7 @@
     "/api/v1/abdm/shares/{id:guid} patients.register,patients.contact.read",
     "/api/v1/admin/audit admin.audit.read",
     "/api/v1/admin/audit/export admin.audit.read",
+    "/api/v1/admin/audit/retention admin.system.manage",
     "/api/v1/admin/audit/verify admin.audit.read",
     "/api/v1/admin/backups admin.backups.manage",
     "/api/v1/admin/backups/recovery-key admin.backups.manage",
@@ -1638,6 +1639,8 @@
     "POST /api/v1/abdm/patients/{patientId:guid}/consent-requests abdm.records.request",
     "POST /api/v1/abdm/shares/{id:guid}/dismiss patients.register",
     "POST /api/v1/abdm/shares/{id:guid}/registered patients.register",
+    "POST /api/v1/admin/audit/retention/change admin.system.manage",
+    "POST /api/v1/admin/audit/retention/purge admin.system.manage",
     "POST /api/v1/admin/backups admin.backups.manage",
     "POST /api/v1/admin/backups/recovery-key admin.backups.manage,admin.system.manage",
     "POST /api/v1/admin/backups/recovery-key/{keyId}/confirm admin.backups.manage,admin.system.manage",
@@ -2463,6 +2466,8 @@
     "PUT /api/v1/scheduling/schedules/{id:guid} scheduling.schedules.manage"
   ],
   "approvals": {
+    "audit.purge": "admin.system.manage",
+    "audit.retention": "admin.system.manage",
     "billing.credit_note": "billing.refunds.approve",
     "billing.hbp_master": "masters.prices.approve",
     "billing.ip_plan": "billing.discounts.approve",

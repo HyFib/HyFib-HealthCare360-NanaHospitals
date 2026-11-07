@@ -75,7 +75,24 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.Cashier] = SystemRoles.Cashier,
         [Users.CanteenManager] = SystemRoles.CanteenManager,
         [Users.QualityManager] = SystemRoles.QualityManager,
+        [Users.SecondSystemAdmin] = SystemAdministrationRole,
     };
+
+    /// <summary>
+    /// A role of the tests' own holding <c>admin.system.manage</c> alone, which only the Super Administrator holds by default:
+    /// its member is a second person who may ask for, and approve, what two super administrators decide (how long the audit
+    /// trail is kept, and its purge). It approves no grants, so who may approve access is as the seed has it.
+    /// </summary>
+    private const string SystemAdministrationRole = "IT system administration";
+
+    /// <summary>
+    /// The months of the audit events the server holds from before anything else (<see cref="PlantOldAuditMonthsAsync"/>):
+    /// the start of the chain, which AuditRetentionTests purges once the audit trail is kept 8 years.
+    /// </summary>
+    public static readonly IReadOnlyList<DateOnly> OldAuditMonths = [new(2015, 3, 1), new(2015, 4, 1)];
+
+    /// <summary>How many audit events <see cref="OldAuditMonths"/> hold: chain positions 1 to this.</summary>
+    public const int OldAuditEvents = 3;
 
     // A test-only password for the staff accounts, new for every run.
     private readonly string _password = "It-" + Guid.NewGuid().ToString("N");
@@ -218,9 +235,27 @@ public sealed class HospitalServer : IAsyncLifetime
             db.Add(desktop);
             await db.SaveChangesAsync(ct);
             _desktopId = desktop.Id;
+            await PlantOldAuditMonthsAsync(scope.ServiceProvider, ct);
         }
 
         await _app.StartAsync(ct);
+    }
+
+    /// <summary>
+    /// Audit events from March and April 2015, written before the server starts and so before anything is sealed, with ids
+    /// below the seed's: the sealer seals in id order, so they take chain positions 1 to <see cref="OldAuditEvents"/>, and
+    /// their months, partitions of their own. A hospital whose audit trail is that old can purge those months once it keeps
+    /// the trail 8 years (AuditRetentionTests); no other test's rows are in them.
+    /// </summary>
+    private static async Task PlantOldAuditMonthsAsync(IServiceProvider services, CancellationToken ct)
+    {
+        await services.GetRequiredService<HospitalDbContext>().Database.ExecuteSqlRawAsync("""
+            INSERT INTO audit.audit_events (id, occurred_at, category, action, severity, user_name, summary) OVERRIDING SYSTEM VALUE VALUES
+                (-3, '2015-03-04 09:00:00+00', 'phi', 'patient.accessed', 'Info', 'doctor', 'Viewed the discharge summary (it: an old month)'),
+                (-2, '2015-03-20 11:30:00+00', 'data', 'Bill.update', 'Info', 'billing', 'Changed a bill (it: an old month)'),
+                (-1, '2015-04-08 16:15:00+00', 'auth', 'auth.login', 'Info', 'admin', 'Signed in (it: an old month)')
+            """, ct);
+        await services.GetRequiredService<PartitionMaintenance>().RunAsync(ct);
     }
 
     /// <summary>
@@ -510,8 +545,12 @@ public sealed class HospitalServer : IAsyncLifetime
     /// </summary>
     private async Task<string> CreateAccountAsync(HttpClient http, string userName, string role)
     {
-        var admin = await SignInAsync(Users.HospitalAdmin);
-        var roleId = (await admin.GetAsync<List<RoleListItem>>("/api/v1/admin/roles")).Single(r => r.Name == role).Id;
+        // Only someone who holds admin.system.manage gives it: the Super Administrator, for the tests' role that holds it.
+        var admin = await SignInAsync(role == SystemAdministrationRole ? Users.Admin : Users.HospitalAdmin);
+        var roles = await admin.GetAsync<List<RoleListItem>>("/api/v1/admin/roles");
+        var roleId = roles.SingleOrDefault(r => r.Name == role)?.Id
+                     ?? (await CreateRoleAsync(admin, new SaveRoleRequest(role, "Asks for and approves what two super administrators decide (tests)",
+                         [PlatformPermissions.SystemManage], Version: null))).Id;
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
                          ?? throw new InvalidOperationException("The hospital administrator has no facility.");
         var temporary = "It-first-" + Guid.NewGuid().ToString("N");
@@ -950,6 +989,13 @@ public sealed class HospitalServer : IAsyncLifetime
         /// Created on first use.
         /// </summary>
         public const string QualityManager = "qualitymanager";
+
+        /// <summary>
+        /// A second person who holds <c>admin.system.manage</c> beside the Super Administrator (<see cref="Admin"/>), in a role
+        /// that holds it alone: approves how long the audit trail is kept, and its purge, that the other asks for. Created on
+        /// first use, by the Super Administrator.
+        /// </summary>
+        public const string SecondSystemAdmin = "sysadmin2";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);

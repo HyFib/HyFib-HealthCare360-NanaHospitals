@@ -251,6 +251,13 @@ public sealed class AuditOptions
 
     /// <summary>How often the chain's end is anchored, at most (default an hour; at least a minute).</summary>
     public TimeSpan AnchorInterval { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// Where a purge of old months of the audit trail writes their export before removing them (default
+    /// <c>audit/archive</c> beside the anchor file's default). Keep it, and copy it off the server, for as long as an auditor
+    /// may ask for those months.
+    /// </summary>
+    public string? ArchiveDirectory { get; set; }
 }
 
 /// <summary>
@@ -348,6 +355,9 @@ public sealed class DataDirectories
         AuditAnchors = string.IsNullOrWhiteSpace(options.Audit.AnchorFile)
             ? Path.Combine(Shared ?? Root, "audit", "anchors.log")
             : Path.GetFullPath(Environment.ExpandEnvironmentVariables(options.Audit.AnchorFile));
+        AuditArchive = string.IsNullOrWhiteSpace(options.Audit.ArchiveDirectory)
+            ? Path.Combine(Shared ?? Root, "audit", "archive")
+            : Path.GetFullPath(Environment.ExpandEnvironmentVariables(options.Audit.ArchiveDirectory));
     }
 
     public string Root { get; }
@@ -375,6 +385,9 @@ public sealed class DataDirectories
 
     /// <summary>The audit chain's anchor file (<see cref="AuditOptions.AnchorFile"/>).</summary>
     public string AuditAnchors { get; }
+
+    /// <summary>Where a purge of the audit trail writes the export of what it removes (<see cref="AuditOptions.ArchiveDirectory"/>).</summary>
+    public string AuditArchive { get; }
 
     public void EnsureCreated()
     {

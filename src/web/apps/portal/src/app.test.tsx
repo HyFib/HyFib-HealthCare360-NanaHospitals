@@ -48,6 +48,8 @@ const SOLVED_PROOF = /^1\.otp\.1\.1\.00\.sig:\d+$/;
 
 /** Set by a test to make the anonymous privacy contact endpoint fail (it is rate-limited in production). */
 let privacyContactFails = false;
+/** How long the record access log is kept, as the public privacy notice says it; null while permanently. */
+let accessLogYears: number | null = null;
 
 /** The hospital's feature switches, as `GET /api/v1/system/info` reports them. */
 let switches = { patientPortal: true, telehealth: true };
@@ -179,6 +181,7 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
         address: 'Nana Hospitals, Pune 411001',
       },
       responseDays: 30,
+      accessLogYears,
     });
   }
   return json({ title: 'Not found', status: 404 }, 404);
@@ -201,6 +204,7 @@ beforeAll(() => {
 beforeEach(() => {
   requests.length = 0;
   privacyContactFails = false;
+  accessLogYears = null;
   switches = { patientPortal: true, telehealth: true };
   signInRefused = false;
   codeSent = false;
@@ -427,6 +431,17 @@ describe('public pages', () => {
     // "Your privacy" needs a signed-in patient.
     expect(screen.queryByRole('link', { name: 'Go to Your privacy' })).not.toBeInTheDocument();
     expect(requests.some((request) => request.url.endsWith('/api/v1/public/privacy'))).toBe(true);
+  });
+
+  it('says the record access log is kept permanently while the hospital keeps it so', async () => {
+    openAt('/portal/privacy');
+    expect(await screen.findByText(/is kept permanently and never changed/, {}, SLOW)).toBeInTheDocument();
+  });
+
+  it('says for how many years the record access log is kept once the hospital sets a period', async () => {
+    accessLogYears = 8;
+    openAt('/portal/privacy');
+    expect(await screen.findByText(/is kept for 8 years and never changed/, {}, SLOW)).toBeInTheDocument();
   });
 
   it('keeps the privacy notice when the grievance officer cannot be loaded', async () => {

@@ -3,8 +3,11 @@ using HyFib.HealthCare360.Modules.Privacy.Services;
 
 namespace HyFib.HealthCare360.Modules.Privacy.Features.Settings;
 
-/// <summary>What the public privacy notice shows: whom to contact, and how soon requests are answered.</summary>
-public sealed record PublicPrivacyInfo(string Hospital, PrivacyContact Contact, int ResponseDays);
+/// <summary>
+/// What the public privacy notice shows: whom to contact, how soon requests are answered, and how long the record access
+/// log (the audit trail) is kept: <paramref name="AccessLogYears"/> years, or permanently while null (ADR-015).
+/// </summary>
+public sealed record PublicPrivacyInfo(string Hospital, PrivacyContact Contact, int ResponseDays, int? AccessLogYears = null);
 
 /// <summary>The settings as saved, and the contact as published (with the hospital's own details filling any gap).</summary>
 public sealed record PrivacySettingsView(PrivacySettingsDto Settings, PrivacyContact Published);
@@ -70,10 +73,11 @@ internal static class PrivacySettingsEndpoints
             .WithValidation<CertInContact>().FirstSaveCreates();
 
         // Public: the privacy notice names the grievance officer for everyone, signed in or not.
-        app.MapGet("/api/v1/public/privacy", async (PrivacySettings privacy, HospitalDbContext db, CancellationToken ct) =>
+        app.MapGet("/api/v1/public/privacy", async (PrivacySettings privacy, RetentionService retention, HospitalDbContext db, CancellationToken ct) =>
             {
                 var hospital = await db.Set<Facility>().AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.CreatedAt).Select(f => f.Name).FirstOrDefaultAsync(ct);
-                return TypedResults.Ok(new PublicPrivacyInfo(hospital ?? "Hospital", await privacy.PublishedContactAsync(ct), await privacy.ResponseDaysAsync(ct)));
+                return TypedResults.Ok(new PublicPrivacyInfo(hospital ?? "Hospital", await privacy.PublishedContactAsync(ct), await privacy.ResponseDaysAsync(ct),
+                    await retention.ValueAsync(RetentionSchedule.Get(RetentionSchedule.Audit), ct)));
             })
             .WithTags("Privacy")
             .AllowAnonymous()

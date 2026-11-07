@@ -91,7 +91,7 @@ What is kept (`holds`):
 |---|---|
 | Medical records | Permanently if any visit or chart is medico-legal; otherwise until the latest of the last visit plus the out-patient period, the last discharge plus the in-patient period, and any chart's retention date |
 | Bills | The last bill plus the finance period |
-| The audit trail | Permanently (the hospital keeps it permanently; see the retention table). It is shown to the principal, but holds nothing else back: the request keeps the rest until the latest of the other holds, as the audit trail is never erased by a request anyway |
+| The audit trail | Permanently while the hospital keeps it so; once super administrators set a period, until the last access plus that period (see the retention table). It is shown to the principal, but holds nothing else back: the request keeps the rest until the latest of the other holds, as the audit trail is never erased by a request anyway |
 | The message log | The last message plus the log period |
 
 The request records what was erased and until when the rest is kept. The retention review lists it until then.
@@ -144,9 +144,9 @@ the existing record request (`/portal/records/request`).
 
 ## Public (`/api/v1/public/privacy`, anonymous, rate-limited)
 
-→ `PublicPrivacyInfo {hospital, contact {title, name, email, phone, address}, responseDays}`: the grievance officer
-and response period for the privacy notice. Until an officer is named, the first facility's e-mail, phone and address
-stand in.
+→ `PublicPrivacyInfo {hospital, contact {title, name, email, phone, address}, responseDays, accessLogYears}`: the
+grievance officer and response period for the privacy notice, and how long the record access log is kept (null while
+permanently). Until an officer is named, the first facility's e-mail, phone and address stand in.
 
 ## Breach register (`/api/v1/privacy/breaches`, `privacy.breaches.manage`)
 
@@ -193,7 +193,7 @@ true until the report is recorded.
 | `records.inpatient` | 5 years | 5 | Reviewed by MRD |
 | `records.mlc` | permanently | — | Kept |
 | `finance` | 8 years | 8 | Kept (used for erasure holds) |
-| `audit` | permanently | — | Kept (tamper-evident, never edited); not editable. The hospital decided to keep it permanently (SRS SEC-04 asks for 10 years at the least) |
+| `audit` | permanently, or the years super administrators set | 8 years once set | Kept (tamper-evident, never edited). Not editable here: holders of `admin.system.manage` set it, one asking and another approving (`/api/v1/admin/audit/retention`, ADR-015); months older than the period go only by a purge another approves, exported first |
 | `backups` | from `HealthCare360:Backup:RetentionDays` | — | Deleted by the backup job |
 
 The logs are kept 366 days, not 365: a year has at most 366 days, so every line is kept the full year the DPDP Rules 2025
@@ -201,8 +201,8 @@ ask for (rules 6 and 8), across a 29 February too. A period changed to less befo
 
 | Method | Path | Body → Response |
 |---|---|---|
-| GET | `/` | → `RetentionRuleDto[] {key, title, description, basis, action: Delete\|Review\|Keep, unit: Days\|Years, value, defaultValue, minimumValue, maximumValue, editable, lastRemoved, lastRunAt}` |
-| PUT | `/{key}` | `{value}` within the allowed range; changing a medical records period moves the retention date of every completed chart of that kind (Clinical handles `RecordRetentionChanged` in the same transaction) |
+| GET | `/` | → `RetentionRuleDto[] {key, title, description, basis, action: Delete\|Review\|Keep, unit: Days\|Years, value, defaultValue, minimumValue, maximumValue, editable, systemManaged, lastRemoved, lastRunAt}`; `systemManaged`: set only by super administrators, two people agreeing (the audit trail) |
+| PUT | `/{key}` | `{value}` within the allowed range; changing a medical records period moves the retention date of every completed chart of that kind (Clinical handles `RecordRetentionChanged` in the same transaction). `audit` is refused (422 `privacy.retention_fixed`), and so is its setting in the settings API |
 | GET | `/runs?take=` | → `RetentionRunDto[] {id, startedAt, finishedAt, trigger, startedByUserId, startedByName, totalRemoved, results[{key, removed, before}], error}` |
 | GET | `/preview` | → what a clean-up would remove now, per key |
 | POST | `/run` | → 202: queues a clean-up; the job runs it within minutes |
@@ -280,13 +280,15 @@ withdrawing it ends the earlier ones.
 - **Consent managers** (Rules r4), **Significant Data Fiduciary** duties (DPIA and audit), and **cross-border
   transfer** rules.
 - **Erasure and the audit trail.** Erasure never touches the audit trail: it is append-only and hash-chained, and its
-  change details keep the old values. The hospital keeps it permanently, and everything that tells a patient about it
-  says so, apart from what the law keeps, since the law does not require it: the data summary ("Permanently, and never
-  edited"), the erasure answer ("The record access log is kept permanently and never edited"), the portal's erasure form
-  (the access log is under the list of what the law keeps, as the hospital's own decision, and the confirmation names it
-  apart), a completed request in the portal and in the staff app (said even when the law keeps nothing else), and the
-  portal's public privacy notice (the access log, with times and network addresses, kept permanently; other security
-  records deleted after a while). A request's `retainedUntil` and `retainedPermanently` describe what the law keeps
-  only. The printed privacy notice must say the same: when the hospital updates its text, it raises
+  change details keep the old values. The hospital keeps it permanently unless two super administrators set a period of
+  at least 8 years (ADR-015). The data summary says the period in force ("Permanently, and never edited", or "For 8
+  years, and never edited", in English, Hindi and Tamil in the portal), and so does the erasure answer ("The record
+  access log is kept permanently and never edited", or "until <date>"), apart from what the law keeps, since the law does
+  not require it. So do, from the public notice's `accessLogYears` (`/api/v1/public/privacy`, null while permanent),
+  the portal's erasure form (the access log is under the list of what the law keeps, as the hospital's own decision,
+  and the confirmation names it apart), a completed request in the portal and in the staff app (said even when the law
+  keeps nothing else), and the portal's public privacy notice (the access log, with times and network addresses, kept
+  permanently or for the years set; other security records deleted after a while). A request's `retainedUntil` and
+  `retainedPermanently` describe what the law keeps only. The printed privacy notice must say the same: when the hospital updates its text, it raises
   `privacy.noticeVersion` so patients are shown the new version. Erased data also stays in backups until they expire
   (30 days by default).

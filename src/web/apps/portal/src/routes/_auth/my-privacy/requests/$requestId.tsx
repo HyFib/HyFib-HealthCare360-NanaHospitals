@@ -16,7 +16,7 @@ import { useNow } from '@/lib/hooks';
 import { isGuid } from '@/lib/ids';
 import { useToast } from '@/lib/toast';
 import type { PortalCorrectionItem, PortalDataRequestDetail } from '@/lib/types';
-import { privacyApi, privacyQueries } from '@/modules/privacy/api';
+import { privacyApi, privacyQueries, publicPrivacyQueries } from '@/modules/privacy/api';
 import { ContactCard } from '@/modules/privacy/ContactCard';
 import { DECISION, REQUEST_STATUS, REQUEST_TYPE } from '@/modules/privacy/labels';
 import {
@@ -169,7 +169,9 @@ function RequestDetail({ request, back }: { request: PortalDataRequestDetail; ba
   const details = request.details.trim();
   const response = request.response?.trim();
   const requesterName = request.requesterName?.trim();
-  const erasure = erasureOutcome(request, t, f);
+  // The access log's period, from the public privacy notice (cached): said as the hospital keeps it now.
+  const notice = useQuery(publicPrivacyQueries.info());
+  const erasure = erasureOutcome(request, t, f, notice.data?.accessLogYears);
   const shown = { response: request.response, erasureShown: (erasure?.erased.length ?? 0) > 0 };
 
   const withdraw = async () => {

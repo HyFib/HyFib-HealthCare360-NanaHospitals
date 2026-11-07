@@ -78,10 +78,20 @@ public sealed class BackupRestoreTests(HospitalServer server)
             var json = protector.Unprotect(JsonSerializer.Deserialize<string>(saved.Value)!).ShouldNotBeNull();
             JsonSerializer.Deserialize<string>(json).ShouldBe(credential);
 
+            // The anchor file is kept outside the database and its backups (best on storage the database's administrators
+            // cannot write): it is put back beside the restored server, which checks a purge of old months against it.
+            var anchors = server.Services.GetRequiredService<AuditAnchors>().Path;
+            if (File.Exists(anchors))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(machine.AuditAnchors)!);
+                File.Copy(anchors, machine.AuditAnchors, overwrite: true);
+            }
+
             var check = await new AuditChainService(db, new AuditSealKey(machine, protection), new AuditAnchors(machine, NullLogger<AuditAnchors>.Instance),
                 TimeProvider.System).VerifyAsync(Ct);
             check.Valid.ShouldBeTrue(check.Message);
-            check.CheckedCount.ShouldBeGreaterThanOrEqualTo(chainEnd, "the audit trail sealed before the backup is back, its seals verifying with the backup's audit key");
+            check.CheckedCount.ShouldBeGreaterThanOrEqualTo(chainEnd - (check.PurgedThrough ?? 0),
+                "the audit trail sealed before the backup is back (from the start of the chain, or the last purge), its seals verifying with the backup's audit key");
         }
         finally
         {

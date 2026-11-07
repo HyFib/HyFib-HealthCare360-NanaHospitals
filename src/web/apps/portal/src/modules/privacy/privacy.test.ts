@@ -6,6 +6,7 @@ import { formattersFor } from '@/i18n/useFormat';
 import type { DataSummary, RetentionPeriods, SummaryCategory } from '@/lib/types';
 import { CATEGORY, CONSENT_TYPE, ITEM_LABEL } from './labels';
 import {
+  accessLogText,
   awaitsRequesterCheck,
   buildNomineeRequest,
   buildRequest,
@@ -162,6 +163,28 @@ describe('privacy requests', () => {
       'वह लॉग जो दिखाता है कि आपका रिकॉर्ड किसने खोला या बदला, हमेशा रखा जाता है और इसमें कभी बदलाव नहीं किया जाता। यह अस्पताल का फ़ैसला है।',
     );
     expect(erasureOutcome({ ...erasure, type: 'Correction' }, en, fen)).toBeNull();
+  });
+
+  it('says how long the access log is kept once the hospital sets a period, in each language', () => {
+    const erasure = {
+      type: 'Erasure',
+      erasedItems: ['messages'],
+      retainedUntil: null,
+      retainedPermanently: false,
+    } as const;
+    expect(erasureOutcome(erasure, en, fen, 8)?.accessLog).toBe(
+      'The access log that shows who opened or changed your record is kept for 8 years and never changed, as the hospital decided.',
+    );
+    expect(erasureOutcome(erasure, hi, fhi, 8)?.accessLog).toBe(
+      'वह लॉग जो दिखाता है कि आपका रिकॉर्ड किसने खोला या बदला, 8 साल तक रखा जाता है और इसमें कभी बदलाव नहीं किया जाता। यह अस्पताल का फ़ैसला है।',
+    );
+    expect(erasureOutcome(erasure, ta, fta, 8)?.accessLog).toContain('8 ஆண்டுகள், ஒருபோதும் மாற்றப்படாமல்');
+    expect(erasureOutcome(erasure, en, fen, null)?.accessLog).toContain('kept permanently');
+    expect(accessLogText('myPrivacy.new.understood', 8, en, fen)).toBe(
+      'I understand that the hospital must keep my medical records and bills for as long as the law requires, and keeps the access log for 8 years.',
+    );
+    expect(accessLogText('privacy.keep.body', 10, hi, fhi)).toContain('10 साल तक रखा जाता है');
+    expect(accessLogText('myPrivacy.new.erasure.keep.log', undefined, ta, fta)).toContain('நிரந்தரமாக');
   });
 
   it('shows correction values the way the patient reads them', () => {
@@ -410,13 +433,14 @@ describe('the data summary', () => {
     expect(say('MessageLog')).toBe(
       'The message log for 365 days; feedback, complaints and follow-up calls with your medical records.',
     );
-    expect(say('Audit')).toBe('12 years.');
+    expect(say('Audit')).toBe('For 12 years, and never edited.');
     expect(say('WhileInUse')).toBe('While the account is open.');
     expect(say('WithRecords')).toBe('As long as the records they relate to.');
     expect(say('MedicalRecords', hi, fhi)).toBe(
       'ओपीडी मुलाक़ात के बाद कम से कम 4 साल और अस्पताल में भर्ती के बाद 7 साल; मेडिको-लीगल मामलों के रिकॉर्ड हमेशा के लिए।',
     );
-    expect(say('Audit', hi, fhi)).toBe('12 साल।');
+    expect(say('Audit', hi, fhi)).toBe('12 साल तक, और इसमें कभी बदलाव नहीं किया जाता।');
+    expect(say('Audit', ta, fta)).toBe('12 ஆண்டுகள், ஒருபோதும் திருத்தப்படாமல்.');
   });
 
   it('says the audit trail is kept permanently when it has no period, in each language', () => {
@@ -440,7 +464,7 @@ describe('the data summary', () => {
   it('translates a group by its key, and keeps the server text for a group it does not know', () => {
     const known = categoryView(category('access-log', 'Audit'), PERIODS, hi, fhi);
     expect(known.title).toBe('रिकॉर्ड देखने का लॉग');
-    expect(known.retention).toBe('12 साल।');
+    expect(known.retention).toBe('12 साल तक, और इसमें कभी बदलाव नहीं किया जाता।');
     const unknown = categoryView(category('genomics', 'WithRecords'), PERIODS, hi, fhi);
     expect(unknown).toMatchObject({ title: 'Server title genomics', basis: 'Server basis' });
     expect(categoryView(category('constructor', 'Audit'), PERIODS, en, fen).title).toBe('Server title constructor');
