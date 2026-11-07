@@ -6,12 +6,13 @@ import type { ReactNode } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Mvpi from './mvpi';
 import { blankDevice, mvpiApi, type MvpiPrefill, type MvpiReport, type MvpiReportListItem } from './mvpi';
-import { IncidentMvpiPanel, MvpiFormDialog, MvpiRegister } from './MvpiReports';
+import { IncidentMvpiPanel, MvpiFormDialog, MvpiRegister, MvpiReportDialog } from './MvpiReports';
 
 // The MvPI register, the MDAE form as a draft (filled in from an incident and the implant on the patient's bill), and the
 // incident's "Report to MvPI". The server is replaced.
 
 const list = vi.hoisted(() => vi.fn());
+const getReport = vi.hoisted(() => vi.fn());
 vi.mock('./mvpi', async (importOriginal) => {
   const actual = await importOriginal<typeof Mvpi>();
   return {
@@ -21,6 +22,7 @@ vi.mock('./mvpi', async (importOriginal) => {
       ...actual.mvpiQueries,
       list: (filters: Mvpi.MvpiFilters) => ({ queryKey: ['mvpi', 'list', filters], queryFn: () => list(filters) }),
       prefill: () => ({ queryKey: ['mvpi', 'prefill'], queryFn: () => null }),
+      report: (id: string) => ({ queryKey: ['mvpi', 'report', id], queryFn: () => getReport(id) }),
     },
   };
 });
@@ -111,6 +113,46 @@ const PREFILL: MvpiPrefill = {
     },
   ],
 };
+
+/** The draft raised from PREFILL, as the server answers it. */
+const draft = (missing: Record<string, string>): MvpiReport => ({
+  id: 'r1',
+  number: 'NHMDAE2600004',
+  status: 'Draft',
+  reportedOn: daysAgo(1),
+  incidentId: 'i1',
+  incidentNumber: 'NHIR2600061',
+  followUpOfId: null,
+  followUpOfNumber: null,
+  followUpOfReference: null,
+  followUps: [],
+  patientId: 'p1',
+  noPatient: false,
+  patientInitials: 'L. N.',
+  uhid: 'NH26000611',
+  ageYears: 67,
+  sex: 'Female',
+  weightKg: null,
+  eventOn: daysAgo(2),
+  awareOn: daysAgo(1),
+  location: 'Ward 3, bed 12',
+  description: 'The tibial component of the knee implant loosened six weeks after surgery.',
+  seriousness: 'None',
+  deathOn: null,
+  outcome: 'Unknown',
+  device: PREFILL.device,
+  reporterName: 'Meena Iyer',
+  reporterDesignation: null,
+  reporterDepartment: 'Quality',
+  submittedOn: null,
+  submittedByName: null,
+  reference: null,
+  referenceCorrectionReason: null,
+  referenceCorrectedByName: null,
+  referenceCorrectedAt: null,
+  missing,
+  version: 3,
+});
 
 describe('Device adverse events (MvPI)', () => {
   it('lists the reports with their device, patient by initials and state, and filters by state and date', async () => {
@@ -233,5 +275,21 @@ describe('Device adverse events (MvPI)', () => {
       ),
     );
     expect(screen.queryByRole('button', { name: 'Report to MvPI' })).not.toBeInTheDocument();
+  });
+  it('offers "Record as sent" only once MvPI has all it needs', async () => {
+    getReport.mockResolvedValue(draft({ reporterDesignation: "Give the reporter's designation." }));
+    const first = render(wrap(<MvpiReportDialog id="r1" onClose={() => undefined} onOpen={() => undefined} />));
+    const blocked = await screen.findByRole('button', { name: 'Record as sent' });
+    expect(blocked).toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(blocked);
+    expect(screen.queryByText('Record NHMDAE2600004 as sent to MvPI')).not.toBeInTheDocument();
+    first.unmount();
+
+    getReport.mockResolvedValue(draft({}));
+    render(wrap(<MvpiReportDialog id="r1" onClose={() => undefined} onOpen={() => undefined} />));
+    const ready = await screen.findByRole('button', { name: 'Record as sent' });
+    expect(ready).not.toHaveAttribute('aria-disabled', 'true');
+    await userEvent.click(ready);
+    expect(await screen.findByText('Record NHMDAE2600004 as sent to MvPI')).toBeInTheDocument();
   });
 });

@@ -44,6 +44,11 @@ public sealed class MvpiDeviceReportTests(HospitalServer server)
         var implantedAt = DateTimeOffset.UtcNow.AddDays(-42);
         await ChargeImplantAsync(patientId, visit.Id, batch, implantedAt);
 
+        // A newer implant was charged by mistake and the charge cancelled (the pack went back unused): it is no device of hers.
+        var returnedBatch = "RET" + batch[3..];
+        var returned = await ChargeImplantAsync(patientId, visit.Id, returnedBatch, implantedAt.AddDays(1));
+        await CancelChargeAsync(returned);
+
         // The nurse reports the loosened implant; anyone may report an incident, but not open the MvPI register.
         var incident = await nurse.PostAsync<IncidentReceipt>("/api/v1/quality/incidents", new ReportIncidentRequest(
             IncidentType.EquipmentFailure, IncidentSeverity.Moderate, DateTimeOffset.UtcNow.AddHours(-3), "Ward 3, bed 12", null, patientId, null,
@@ -65,6 +70,7 @@ public sealed class MvpiDeviceReportTests(HospitalServer server)
         prefill.PatientInitials!.Length.ShouldBeLessThan(8, "the form names the patient by initials");
         prefill.Description!.ShouldContain("Action taken: Orthopaedic surgeon informed.");
         prefill.Devices.ShouldContain(d => d.IsImplant && d.Batch == batch && d.Serial == "SN-A1");
+        prefill.Devices.ShouldNotContain(d => d.Batch == returnedBatch, "a cancelled charge is no device of the patient's");
         var device = prefill.Device;
         (device.Name, device.Manufacturer, device.LotNumber, device.SerialNumber, device.Implantable, device.ImplantedOn)
             .ShouldBe((Brand, Maker, batch, "SN-A1", true, DateOnly.FromDateTime(implantedAt.UtcDateTime.AddHours(5.5))));
@@ -265,12 +271,13 @@ public sealed class MvpiDeviceReportTests(HospitalServer server)
     }
 
     /// <summary>Billing: the knee implant used in theatre, as the surgery record charges it (brand, maker, batch, serial).</summary>
-    private async Task ChargeImplantAsync(Guid patientId, Guid visitId, string batch, DateTimeOffset usedAt)
+    private async Task<string> ChargeImplantAsync(Guid patientId, Guid visitId, string batch, DateTimeOffset usedAt)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
         var poster = scope.ServiceProvider.GetRequiredService<IChargePoster>();
         var implant = await db.Set<ServiceItem>().Where(s => s.Code == "OT-IMPLANT").Select(s => s.Id).SingleAsync(Ct);
+        var reference = Guid.CreateVersion7().ToString();
         var posted = await poster.PostAsync(new ChargeRequest
         {
             PatientId = patientId,
@@ -279,11 +286,22 @@ public sealed class MvpiDeviceReportTests(HospitalServer server)
             UnitPriceOverride = 50_000m,
             Description = "Implant: Knee implant system",
             SourceModule = "tests.mvpi",
-            SourceReference = Guid.CreateVersion7().ToString(),
+            SourceReference = reference,
             ServiceDate = usedAt,
             Device = new DeviceDetails(Brand, Maker, Specification, batch, "SN-A1", 60_000m, null),
         }, Ct);
         posted.IsSuccess.ShouldBeTrue(posted.Error?.Message);
+        await db.SaveChangesAsync(Ct);
+        return reference;
+    }
+
+    /// <summary>Billing: the charge cancelled before it was billed.</summary>
+    private async Task CancelChargeAsync(string reference)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var cancelled = await scope.ServiceProvider.GetRequiredService<IChargePoster>().CancelAsync("tests.mvpi", reference, "Pack returned unused", Ct);
+        cancelled.IsSuccess.ShouldBeTrue(cancelled.Error?.Message);
         await db.SaveChangesAsync(Ct);
     }
 
