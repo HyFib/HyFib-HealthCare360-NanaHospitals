@@ -2,6 +2,10 @@ import { formatDateTime } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
 import {
   answerHint,
+  auditCutoffMonth,
+  auditPeriodMeaning,
+  auditTrailKeptText,
+  auditYearsError,
   availableCorrectionFields,
   breachClock,
   breachListClock,
@@ -23,6 +27,8 @@ import {
   keptUntilText,
   latestErasureSummary,
   listText,
+  monthsText,
+  monthText,
   nextBreachStep,
   nomineeSourceText,
   noticeChannelsText,
@@ -440,12 +446,41 @@ describe('retention', () => {
       /permanently/,
     );
     expect(retentionFixedReason(rule({ key: 'backups', editable: false }))).toMatch(/backup settings/);
-    expect(retentionFixedReason(rule({ key: 'audit', editable: false }))).toMatch(/cannot be changed/);
+    expect(
+      retentionFixedReason(rule({ key: 'audit', defaultValue: null, editable: false, systemManaged: true })),
+    ).toMatch(/super administrators, two people agreeing/);
     expect(retentionRunSource('Scheduled', 'Meera Iyer')).toBe('Nightly');
     expect(retentionRunSource('Manual', 'Meera Iyer')).toBe('Started by Meera Iyer');
     expect(retentionRunSource('Manual', null)).toBe('Started by an administrator');
     expect(isMedicalRecordsRule('records.inpatient')).toBe(true);
     expect(isMedicalRecordsRule('records.mlc')).toBe(false);
+  });
+
+  it('sets the audit trail’s period: permanently, or 8 years at the least', () => {
+    expect(auditYearsError(null, 8, 99)).toBeNull();
+    expect(auditYearsError(8, 8, 99)).toBeNull();
+    expect(auditYearsError(7, 8, 99)).toMatch(/At least 8 years: .*books of account/);
+    expect(auditYearsError(100, 8, 99)).toBe('At most 99 years.');
+    expect(auditYearsError(8.5, 8, 99)).toBe('Enter a whole number of years.');
+  });
+
+  it('says how long the audit trail is kept beside an erasure', () => {
+    expect(auditTrailKeptText(null)).toBe(
+      'The audit trail (the record access log) is never erased by a request: the hospital keeps it permanently and never edits it.',
+    );
+    expect(auditTrailKeptText(8)).toBe(
+      'The audit trail (the record access log) is never erased by a request: the hospital keeps it for 8 years and never edits it.',
+    );
+  });
+
+  it('says from which month a purge may remove the audit trail', () => {
+    const now = new Date('2026-11-07T10:00:00Z');
+    expect(auditCutoffMonth(8, now)).toBe('2018-11-01');
+    expect(auditCutoffMonth(10, new Date('2026-01-31T23:59:00Z'))).toBe('2016-01-01');
+    expect(monthText('2018-11-01')).toBe('November 2018');
+    expect(monthsText(['2015-03-01', '2015-04-01'])).toBe('March 2015, April 2015');
+    expect(auditPeriodMeaning(8, now)).toMatch(/^Months before November 2018 may then be purged/);
+    expect(auditPeriodMeaning(null, now)).toMatch(/kept permanently/);
   });
 
   it('describes holds and record dates', () => {

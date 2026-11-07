@@ -230,8 +230,9 @@ again: it writes the blocks into the new files.
 
 When the server signs in with a password (above), the password of HC360's database account is changed from
 Administration › System health, while HC360 runs (SRS SEC-07). It needs the permission *Change the server's database
-password and keys, make backup recovery keys, and sign everybody out* (`admin.system.manage`), which only SuperAdmin has
-until it is given to another role in Administration › Roles and permissions. Then:
+password and keys, make backup recovery keys, sign everybody out, and set how long the audit trail is kept and purge it
+(with a second person)* (`admin.system.manage`), which only SuperAdmin has until it is given to another role in
+Administration › Roles and permissions. Then:
 
 1. Open Administration › System health. Under Database it shows when the password was last changed, and by whom.
 2. Select **Change password** and confirm.
@@ -311,6 +312,12 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - The audit trail's anchors go to `%ProgramData%\HyFib\HealthCare360\audit\anchors.log`. To keep them where the
      database's administrators cannot change them, set `HealthCare360:Audit:AnchorFile` to a write-once share or another
      machine, and give that file to auditors with an audit export (Administration › Audit log › Export for auditors).
+   - The audit trail is kept permanently unless two super administrators set a period (8 years at the least, Privacy ›
+     Retention › Audit trail). A purge they agree on writes the months it removes to
+     `%ProgramData%\HyFib\HealthCare360\audit\archive` first (or `HealthCare360:Audit:ArchiveDirectory`): copy each
+     export off the server, with the anchor file, and keep it as long as an auditor may ask for those months. The
+     anchor file is not in the backups: after a purge, a server restored on new hardware verifies its audit trail only
+     with the anchor file put back (the anchor of the purge's boundary is checked), so keep a copy off the server.
    - Set Windows Time to synchronise with NPL or NIC (`w32tm /config /manualpeerlist:"time.nplindia.org samay1.nic.in"
      /syncfromflags:manual /update`), and allow NTP (UDP 123) to them. System health shows the clock's offset and warns
      when it is more than a second off or no time server answers; a hospital with its own time server that follows
@@ -1326,11 +1333,13 @@ then the move is undone, and trying again at every run would hold them as long e
 leaves that month's rows in the default partition, where they are kept and found as before; restart the `HC360Server`
 service at a quiet hour to have it try once more.
 
-**Partitions are never dropped.** How long each kind of record is kept is set in one place, Privacy › Retention, whose
-clean-up keeps every record for at least what the law asks (a year for the message and integration logs), leaves medical
-records, remote-monitoring readings among them, to the medical records department's review instead of deleting them
-(SRS PRV-02), and records every run in the audit trail. Because the logs are partitioned by the time it deletes by, the
-clean-up reads only the months concerned. The audit trail's partitions refuse TRUNCATE and DELETE like the table itself.
+**Partition upkeep never drops a partition.** How long each kind of record is kept is set in one place, Privacy ›
+Retention, whose clean-up keeps every record for at least what the law asks (a year for the message and integration
+logs), leaves medical records, remote-monitoring readings among them, to the medical records department's review instead
+of deleting them (SRS PRV-02), and records every run in the audit trail. Because the logs are partitioned by the time it
+deletes by, the clean-up reads only the months concerned. The audit trail's partitions refuse TRUNCATE and DELETE like the
+table itself; the only ones ever dropped are whole months a purge removes, which two super administrators agree on once
+they keep the audit trail for a period (8 years at the least), after it exports them to the audit archive (ADR-015).
 
 ## 11. Troubleshooting
 

@@ -547,6 +547,8 @@ export interface RetentionRuleFacts {
   minimumValue: number | null;
   maximumValue: number;
   editable: boolean;
+  /** Set by super administrators, two people agreeing (the audit trail). */
+  systemManaged?: boolean;
 }
 
 /** The allowed range for a period (RetentionService.UpdateAsync). */
@@ -569,6 +571,9 @@ export function retentionFixedReason(rule: RetentionRuleFacts): string | null {
   if (rule.editable && rule.defaultValue !== null) {
     return null;
   }
+  if (rule.systemManaged) {
+    return 'Set by super administrators, two people agreeing, under Audit trail below.';
+  }
   if (rule.defaultValue === null) {
     return 'Kept permanently. This cannot be changed.';
   }
@@ -576,6 +581,59 @@ export function retentionFixedReason(rule: RetentionRuleFacts): string | null {
     return 'Set in the server’s backup settings. Ask IT to change it.';
   }
   return 'Fixed by law or hospital policy, so it cannot be changed here.';
+}
+
+// ------------------------------------------------------------------ audit trail retention (AuditRetention)
+
+/** The month in words: "November 2018" from "2018-11-01". */
+export function monthText(month: string): string {
+  const [year, number] = month.split('-').map(Number);
+  return new Date(Date.UTC(year!, number! - 1, 1)).toLocaleString('en-IN', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/**
+ * The first month a purge keeps under a period of `years` (AuditRetention.CutoffMonth): today, UTC, `years` back,
+ * rounded down to the month's first day, "yyyy-MM-dd". Every month before it may be removed.
+ */
+export function auditCutoffMonth(years: number, now: Date = new Date()): string {
+  const year = now.getUTCFullYear() - years;
+  const month = now.getUTCMonth() + 1;
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`;
+}
+
+/** Why a period of `years` cannot be asked for, or null when it can (AuditRetention.Problem); null years is permanently. */
+export function auditYearsError(years: number | null, minimum: number, maximum: number): string | null {
+  if (years === null) {
+    return null;
+  }
+  if (!Number.isInteger(years)) {
+    return 'Enter a whole number of years.';
+  }
+  if (years < minimum) {
+    return `At least ${minimum} years: the audit trail also records changes to bills and payments, and books of account and their audit trail are kept ${minimum} years (Companies Act s.128(5)).`;
+  }
+  return years > maximum ? `At most ${maximum} years.` : null;
+}
+
+/** What a period means for a purge: "Months before November 2018 may then be purged", or that nothing ever is. */
+export function auditPeriodMeaning(years: number | null, now: Date = new Date()): string {
+  return years === null
+    ? 'Nothing is ever purged: the audit trail is kept permanently.'
+    : `Months before ${monthText(auditCutoffMonth(years, now))} may then be purged, by two super administrators, after they are exported.`;
+}
+
+/** That erasure never touches the audit trail, and how long the hospital keeps it: permanently, or for the years set. */
+export function auditTrailKeptText(years: number | null | undefined): string {
+  return `The audit trail (the record access log) is never erased by a request: the hospital keeps it ${years == null ? 'permanently' : `for ${years} years`} and never edits it.`;
+}
+
+/** "2015-03-01" … as "March 2015, April 2015". */
+export function monthsText(months: readonly string[]): string {
+  return months.map(monthText).join(', ');
 }
 
 /** "Nightly", or who started it: "Started by Meera Iyer". */

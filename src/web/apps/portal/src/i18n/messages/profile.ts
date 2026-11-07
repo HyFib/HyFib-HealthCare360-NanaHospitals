@@ -40,6 +40,8 @@ export const profileMessages = defineMessages({
     'privacy.keep.title': 'How long it is kept',
     'privacy.keep.body':
       'Medical records are kept for as long as the law and medical rules require. The log of who opened or changed your record, with the time and network address, is kept permanently and never changed: the hospital decided to keep it so. Other security records, such as sign-in sessions, are kept for a limited time and then deleted.',
+    'privacy.keep.body.years':
+      'Medical records are kept for as long as the law and medical rules require. The log of who opened or changed your record, with the time and network address, is kept for {years} years and never changed: the hospital decided to keep it so. Other security records, such as sign-in sessions, are kept for a limited time and then deleted.',
     'privacy.family.title': 'Family members',
     'privacy.family.body':
       'Everyone registered at the hospital with your mobile number appears in your portal. A family member with their own number appears too once they agree, by giving you a code sent to their number or at the front desk. In your profile you can see who else sees your records, and stop it at any time. If someone should not be linked to your number, ask the front desk to change it.',
@@ -101,6 +103,8 @@ export const profileMessages = defineMessages({
     'privacy.keep.title': 'इसे कितने समय तक रखा जाता है',
     'privacy.keep.body':
       'मेडिकल रिकॉर्ड उतने समय तक रखे जाते हैं जितना कानून और चिकित्सा नियम कहते हैं। आपका रिकॉर्ड किसने खोला या बदला, इसका लॉग, समय और नेटवर्क पते के साथ, हमेशा रखा जाता है और इसमें कभी बदलाव नहीं किया जाता: यह अस्पताल का फ़ैसला है। बाकी सुरक्षा रिकॉर्ड, जैसे साइन-इन सत्र, सीमित समय तक रखे जाते हैं और फिर हटा दिए जाते हैं।',
+    'privacy.keep.body.years':
+      'मेडिकल रिकॉर्ड उतने समय तक रखे जाते हैं जितना कानून और चिकित्सा नियम कहते हैं। आपका रिकॉर्ड किसने खोला या बदला, इसका लॉग, समय और नेटवर्क पते के साथ, {years} साल तक रखा जाता है और इसमें कभी बदलाव नहीं किया जाता: यह अस्पताल का फ़ैसला है। बाकी सुरक्षा रिकॉर्ड, जैसे साइन-इन सत्र, सीमित समय तक रखे जाते हैं और फिर हटा दिए जाते हैं।',
     'privacy.family.title': 'परिवार के सदस्य',
     'privacy.family.body':
       'अस्पताल में आपके मोबाइल नंबर से पंजीकृत हर व्यक्ति आपके पोर्टल में दिखता है। अपने अलग नंबर वाले परिवार के सदस्य भी दिखते हैं, जब वे सहमति दें: उनके नंबर पर भेजा गया कोड आपको देकर, या फ्रंट डेस्क पर। अपनी प्रोफ़ाइल में आप देख सकते हैं कि आपके रिकॉर्ड और कौन देखता है, और इसे कभी भी बंद कर सकते हैं। अगर किसी को आपके नंबर से नहीं जुड़ा होना चाहिए, तो फ्रंट डेस्क से इसे बदलवाएँ।',
@@ -168,6 +172,8 @@ export const profileMessages = defineMessages({
     'privacy.keep.title': 'எவ்வளவு காலம் வைக்கப்படுகிறது',
     'privacy.keep.body':
       'மருத்துவப் பதிவுகள் சட்டமும் மருத்துவ விதிகளும் கோரும் காலம் வரை வைக்கப்படுகின்றன. உங்கள் பதிவை யார் திறந்தார்கள் அல்லது மாற்றினார்கள் என்பதன் பதிவேடு, நேரம் மற்றும் நெட்வொர்க் முகவரியுடன், நிரந்தரமாக, ஒருபோதும் மாற்றப்படாமல் வைக்கப்படுகிறது: இது மருத்துவமனையின் முடிவு. உள்நுழைவு அமர்வுகள் போன்ற மற்ற பாதுகாப்புப் பதிவுகள் குறிப்பிட்ட காலம் வரை வைக்கப்பட்டுப் பின்னர் அழிக்கப்படுகின்றன.',
+    'privacy.keep.body.years':
+      'மருத்துவப் பதிவுகள் சட்டமும் மருத்துவ விதிகளும் கோரும் காலம் வரை வைக்கப்படுகின்றன. உங்கள் பதிவை யார் திறந்தார்கள் அல்லது மாற்றினார்கள் என்பதன் பதிவேடு, நேரம் மற்றும் நெட்வொர்க் முகவரியுடன், {years} ஆண்டுகள், ஒருபோதும் மாற்றப்படாமல் வைக்கப்படுகிறது: இது மருத்துவமனையின் முடிவு. உள்நுழைவு அமர்வுகள் போன்ற மற்ற பாதுகாப்புப் பதிவுகள் குறிப்பிட்ட காலம் வரை வைக்கப்பட்டுப் பின்னர் அழிக்கப்படுகின்றன.',
     'privacy.family.title': 'குடும்ப உறுப்பினர்கள்',
     'privacy.family.body':
       'உங்கள் மொபைல் எண்ணுடன் மருத்துவமனையில் பதிவு செய்த அனைவரும் உங்கள் போர்டலில் தெரிவார்கள். சொந்த எண் உள்ள குடும்ப உறுப்பினரும் ஒப்புதல் அளித்த பிறகு தெரிவார்; அவருடைய எண்ணுக்கு அனுப்பப்பட்ட குறியீட்டை உங்களிடம் தருவதன் மூலமோ வரவேற்பு மேசையிலோ அவர் ஒப்புதல் அளிக்கலாம். உங்கள் பதிவுகளை வேறு யார் பார்க்கிறார்கள் என்பதை உங்கள் சுயவிவரத்தில் பார்க்கலாம், எப்போது வேண்டுமானாலும் அதை நிறுத்தலாம். யாராவது உங்கள் எண்ணுடன் இணைக்கப்படக் கூடாது என்றால், அதை மாற்ற வரவேற்பு மேசையில் கேளுங்கள்.',

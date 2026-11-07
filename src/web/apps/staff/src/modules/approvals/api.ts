@@ -116,4 +116,7 @@ export const APPROVAL_PERMISSIONS = [
   'admin.grants.approve',
   'inventory.drug_class.approve',
   'billing.discounts.approve',
+  // How long the audit trail is kept, and a purge of the months it no longer keeps: one super administrator asks,
+  // another approves.
+  'admin.system.manage',
 ] as const;

@@ -448,6 +448,8 @@ and grants nothing.
     the supplier's invoice and approves it, which posts it. The request shows the invoice's total as printed beside the
     total worked out from the lines. Whoever entered the receipt never posts it either (`grn.post_own`), even when
     someone else sent it, and a receipt cancelled after it was sent posts nothing (`approval.stale`).
+  - how long the audit trail is kept (`audit.retention`) and a purge of the months it no longer keeps (`audit.purge`):
+    one holder of `admin.system.manage` asks, another approves (see Integrity and audit).
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was
@@ -735,8 +737,24 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
       at a time and `CONCURRENTLY` (`AuditEntityIndex`), and later partitions take it from the parent.
   - The log is partitioned by month (SCAL-04). Each month's partition refuses TRUNCATE and DELETE as the table does, and
     the chain-link trigger refuses a seal that takes a chain position another entry has (a unique index would have to
-    include the month). No partition is ever dropped, of the audit log or any other table: records are deleted only by
-    the Privacy retention schedule, row by row, at least as late as the law allows and with every run audited.
+    include the month). Partition upkeep never drops a partition, of the audit log or any other table: other records are
+    deleted only by the Privacy retention schedule, row by row, at least as late as the law allows and with every run
+    audited, and the audit log only by the purge below.
+  - **How long it is kept, and the purge** (ADR-015). Permanently, unless holders of `admin.system.manage` (the Super
+    Administrator by default) set a period: one asks, with a reason, and another approves (`audit.retention`); never
+    fewer than 8 years, the period of the books of account whose changes the log records too (Companies Act s.128(5)).
+    The retention screen and the settings API refuse its setting otherwise. A period removes nothing by itself: a purge,
+    asked for by one holder and approved by another (`audit.purge`), removes whole months entirely before the cut-off
+    (today less the period, to the month), only those at the start of the chain with every entry sealed, never the
+    default partition, and is refused if what it would remove changed after it was asked for. Approved, in one
+    transaction: the entries are exported in the auditor's format to the audit archive outside the database
+    (`audit/archive`, or `HealthCare360:Audit:ArchiveDirectory`) and the file is checked; a purge record (boundary position
+    and hash, months, entries, the export's name and SHA-256, who asked and who approved) is sealed with the audit seal
+    key and an anchor of the boundary is appended to the anchor file; the months' partitions are detached and dropped; and
+    `audit.purged` is audited as critical. *Verify integrity*, the daily check and System health then check the chain from
+    the latest purge, once its seal and its anchor are checked: rows removed behind a purge record someone made up do not
+    verify. Purge records are append-only (triggers refuse UPDATE, DELETE and TRUNCATE). The anchor file is not in the
+    backups: a server restored after a purge verifies only with it put back. Tests: `AuditRetentionTests`.
 - The controlled-drug registers (the pharmacy's of every Schedule H1/X and NDPS movement, and the prescriber's of every
   signed controlled line) are append-only in the database: a trigger refuses a delete, a truncate and any change but the
   patient link a merge of duplicate records moves (`ControlledDrugRegisterGuardTests`). Each line, and each move of its

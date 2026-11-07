@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Privacy.Domain;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Settings;
 
@@ -33,15 +34,28 @@ public sealed class RetentionTests
         mlc.Effective(5).ShouldBeNull();
     }
 
+    /// <summary>
+    /// ADR-015: the audit trail is kept permanently until super administrators, two people agreeing, set a period of 8
+    /// years at the least (the setting <see cref="AuditRetention"/> reads); the schedule's own editing never changes it.
+    /// </summary>
     [Fact]
-    public void The_audit_trail_is_kept_permanently_and_no_setting_shortens_it()
+    public void The_audit_trail_is_kept_permanently_until_super_administrators_set_8_years_at_the_least()
     {
         var audit = RetentionSchedule.Get(RetentionSchedule.Audit);
         audit.Action.ShouldBe(RetentionAction.Keep);
-        audit.Editable.ShouldBeFalse();
+        (audit.Editable, audit.SystemManaged).ShouldBe((false, true));
         audit.DefaultValue.ShouldBeNull();
-        audit.Effective(5).ShouldBeNull("a stored period, from before the hospital chose to keep it permanently, is not applied");
+        audit.SettingKey.ShouldBe(AuditRetention.YearsSetting);
+        audit.Effective(null).ShouldBeNull("nothing set: permanently");
+        audit.Effective(8).ShouldBe(8);
+        audit.Effective(5).ShouldBe(AuditRetention.MinimumYears, "never fewer than 8 years, whatever is stored");
+        audit.Effective(500).ShouldBe(AuditRetention.MaximumYears);
+        audit.Effective(12).ShouldBe(AuditRetention.Effective(12), "the schedule and the purge read the period alike");
     }
+
+    [Fact]
+    public void Every_other_rule_kept_permanently_stays_so_whatever_is_stored() =>
+        RetentionSchedule.Rules.Where(r => r.DefaultValue is null && !r.SystemManaged).ShouldAllBe(r => r.Effective(5) == null);
 
     [Theory]
     [InlineData(null, 3)]

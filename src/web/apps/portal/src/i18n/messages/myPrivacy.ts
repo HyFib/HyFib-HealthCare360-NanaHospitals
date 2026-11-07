@@ -260,7 +260,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.retention.finance': '{years} years from the bill date, as tax law requires.',
     'myPrivacy.retention.messages':
       'The message log for {days} days; feedback, complaints and follow-up calls with your medical records.',
-    'myPrivacy.retention.years': '{years} years.',
+    'myPrivacy.retention.years': 'For {years} years, and never edited.',
     'myPrivacy.retention.permanently': 'Permanently, and never edited.',
     'myPrivacy.retention.whileInUse': 'While the account is open.',
     'myPrivacy.retention.withRecords': 'As long as the records they relate to.',
@@ -373,11 +373,15 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.new.erasure.keep.bills': 'Your bills and payments, for the years that tax law requires.',
     'myPrivacy.new.erasure.keep.log':
       "The hospital also keeps the access log that shows who opened or changed your record. It is kept permanently and never changed, to keep your record secure. This is the hospital's own decision, not the law's, and a request does not erase it.",
+    'myPrivacy.new.erasure.keep.log.years':
+      "The hospital also keeps the access log that shows who opened or changed your record. It is kept for {years} years and never changed, to keep your record secure. This is the hospital's own decision, not the law's, and a request does not erase it.",
     'myPrivacy.new.erasure.keep.backups': "Copies in the hospital's backups are removed when those backups expire.",
     'myPrivacy.new.erasure.portal':
       'If you ask us to close your portal account, you will be signed out on every phone and computer, and you will no longer see your records here.',
     'myPrivacy.new.understood':
       'I understand that the hospital must keep my medical records and bills for as long as the law requires, and keeps the access log permanently.',
+    'myPrivacy.new.understood.years':
+      'I understand that the hospital must keep my medical records and bills for as long as the law requires, and keeps the access log for {years} years.',
     'myPrivacy.new.understood.required': 'Please confirm that you have read this.',
     'myPrivacy.new.truthful':
       'Please give correct and complete details. The law asks everyone who raises a concern not to give false information.',
@@ -430,6 +434,8 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.request.keptPermanently': 'Some records must be kept permanently, as the law requires.',
     'myPrivacy.request.accessLogKept':
       'The access log that shows who opened or changed your record is kept permanently and never changed, as the hospital decided.',
+    'myPrivacy.request.accessLogKept.years':
+      'The access log that shows who opened or changed your record is kept for {years} years and never changed, as the hospital decided.',
     'myPrivacy.erased.messages': 'Optional messages were stopped.',
     'myPrivacy.erased.feedback':
       'Your name, number and comments were removed from your feedback, complaints and enquiries.',
@@ -755,7 +761,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.retention.finance': 'बिल की तारीख से {years} साल, जैसा टैक्स कानून कहता है।',
     'myPrivacy.retention.messages':
       'संदेशों का लॉग {days} दिनों तक; फ़ीडबैक, शिकायतें और फ़ॉलो-अप कॉल आपके मेडिकल रिकॉर्ड के साथ।',
-    'myPrivacy.retention.years': '{years} साल।',
+    'myPrivacy.retention.years': '{years} साल तक, और इसमें कभी बदलाव नहीं किया जाता।',
     'myPrivacy.retention.permanently': 'हमेशा के लिए, और इसमें कभी बदलाव नहीं किया जाता।',
     'myPrivacy.retention.whileInUse': 'जब तक खाता खुला है।',
     'myPrivacy.retention.withRecords': 'जब तक उनसे जुड़े रिकॉर्ड रखे जाते हैं।',
@@ -869,11 +875,15 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.new.erasure.keep.bills': 'आपके बिल और भुगतान, उतने साल तक जितना टैक्स कानून कहता है।',
     'myPrivacy.new.erasure.keep.log':
       'अस्पताल वह लॉग भी रखता है जो दिखाता है कि आपका रिकॉर्ड किसने खोला या बदला। आपके रिकॉर्ड की सुरक्षा के लिए यह हमेशा रखा जाता है और इसमें कभी बदलाव नहीं किया जाता। यह अस्पताल का अपना फ़ैसला है, कानून की शर्त नहीं, और अनुरोध से यह नहीं मिटता।',
+    'myPrivacy.new.erasure.keep.log.years':
+      'अस्पताल वह लॉग भी रखता है जो दिखाता है कि आपका रिकॉर्ड किसने खोला या बदला। आपके रिकॉर्ड की सुरक्षा के लिए यह {years} साल तक रखा जाता है और इसमें कभी बदलाव नहीं किया जाता। यह अस्पताल का अपना फ़ैसला है, कानून की शर्त नहीं, और अनुरोध से यह नहीं मिटता।',
     'myPrivacy.new.erasure.keep.backups': 'अस्पताल के बैकअप में रखी कॉपी, उन बैकअप की अवधि ख़त्म होने पर हट जाती हैं।',
     'myPrivacy.new.erasure.portal':
       'अगर आप अपना पोर्टल खाता बंद करवाते हैं, तो आप हर फ़ोन और कंप्यूटर पर साइन आउट हो जाएँगे, और अपने रिकॉर्ड यहाँ नहीं देख पाएँगे।',
     'myPrivacy.new.understood':
       'मैंने समझ लिया है कि अस्पताल को मेरे मेडिकल रिकॉर्ड और बिल तब तक रखने होते हैं जब तक कानून कहता है, और रिकॉर्ड देखने का लॉग हमेशा रखा जाता है।',
+    'myPrivacy.new.understood.years':
+      'मैंने समझ लिया है कि अस्पताल को मेरे मेडिकल रिकॉर्ड और बिल तब तक रखने होते हैं जब तक कानून कहता है, और रिकॉर्ड देखने का लॉग {years} साल तक रखा जाता है।',
     'myPrivacy.new.understood.required': 'कृपया पुष्टि करें कि आपने यह पढ़ लिया है।',
     'myPrivacy.new.truthful':
       'कृपया सही और पूरी जानकारी दें। कानून शिकायत करने वाले हर व्यक्ति से यह अपेक्षा करता है कि वह गलत जानकारी न दे।',
@@ -926,6 +936,8 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.request.keptPermanently': 'कानून के अनुसार कुछ रिकॉर्ड हमेशा रखने होंगे।',
     'myPrivacy.request.accessLogKept':
       'वह लॉग जो दिखाता है कि आपका रिकॉर्ड किसने खोला या बदला, हमेशा रखा जाता है और इसमें कभी बदलाव नहीं किया जाता। यह अस्पताल का फ़ैसला है।',
+    'myPrivacy.request.accessLogKept.years':
+      'वह लॉग जो दिखाता है कि आपका रिकॉर्ड किसने खोला या बदला, {years} साल तक रखा जाता है और इसमें कभी बदलाव नहीं किया जाता। यह अस्पताल का फ़ैसला है।',
     'myPrivacy.erased.messages': 'वैकल्पिक संदेश बंद कर दिए गए।',
     'myPrivacy.erased.feedback': 'आपके फ़ीडबैक, शिकायतों और पूछताछ से आपका नाम, नंबर और टिप्पणियाँ हटा दी गईं।',
     'myPrivacy.erased.nominee': 'आपका नॉमिनी हटा दिया गया।',
@@ -1269,7 +1281,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.retention.finance': 'வரிச் சட்டம் கோருவதன்படி, பில் தேதியிலிருந்து {years} ஆண்டுகள்.',
     'myPrivacy.retention.messages':
       'செய்திப் பதிவேடு {days} நாட்கள்; கருத்துகள், புகார்கள் மற்றும் தொடர் கவனிப்பு அழைப்புகள் உங்கள் மருத்துவப் பதிவுகளுடன்.',
-    'myPrivacy.retention.years': '{years} ஆண்டுகள்.',
+    'myPrivacy.retention.years': '{years} ஆண்டுகள், ஒருபோதும் திருத்தப்படாமல்.',
     'myPrivacy.retention.permanently': 'நிரந்தரமாக, ஒருபோதும் திருத்தப்படாமல்.',
     'myPrivacy.retention.whileInUse': 'கணக்கு செயலில் இருக்கும் வரை.',
     'myPrivacy.retention.withRecords': 'அவை தொடர்புடைய பதிவுகள் வைக்கப்படும் காலம் வரை.',
@@ -1385,12 +1397,16 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.new.erasure.keep.bills': 'வரிச் சட்டம் கோரும் ஆண்டுகள் வரை உங்கள் பில்கள் மற்றும் கட்டணங்கள்.',
     'myPrivacy.new.erasure.keep.log':
       'உங்கள் பதிவை யார் திறந்தார்கள் அல்லது மாற்றினார்கள் என்பதைக் காட்டும் அணுகல் பதிவேட்டையும் மருத்துவமனை வைத்திருக்கிறது. உங்கள் பதிவைப் பாதுகாக்க இது நிரந்தரமாக, ஒருபோதும் மாற்றப்படாமல் வைக்கப்படுகிறது. இது சட்டத்தின் தேவை அல்ல, மருத்துவமனையின் சொந்த முடிவு; கோரிக்கையால் இது அழிக்கப்படாது.',
+    'myPrivacy.new.erasure.keep.log.years':
+      'உங்கள் பதிவை யார் திறந்தார்கள் அல்லது மாற்றினார்கள் என்பதைக் காட்டும் அணுகல் பதிவேட்டையும் மருத்துவமனை வைத்திருக்கிறது. உங்கள் பதிவைப் பாதுகாக்க இது {years} ஆண்டுகள், ஒருபோதும் மாற்றப்படாமல் வைக்கப்படுகிறது. இது சட்டத்தின் தேவை அல்ல, மருத்துவமனையின் சொந்த முடிவு; கோரிக்கையால் இது அழிக்கப்படாது.',
     'myPrivacy.new.erasure.keep.backups':
       'மருத்துவமனையின் காப்புப் பிரதிகளில் (பேக்கப்) உள்ள நகல்கள், அந்தக் காப்புப் பிரதிகள் காலாவதியாகும்போது நீக்கப்படும்.',
     'myPrivacy.new.erasure.portal':
       'உங்கள் போர்ட்டல் கணக்கை மூடச் சொன்னால், எல்லா ஃபோன்களிலும் கணினிகளிலும் நீங்கள் வெளியேற்றப்படுவீர்கள், மேலும் உங்கள் பதிவுகளை இனி இங்கே பார்க்க முடியாது.',
     'myPrivacy.new.understood':
       'சட்டம் கோரும் காலம் வரை என் மருத்துவப் பதிவுகளையும் பில்களையும் மருத்துவமனை வைத்திருக்க வேண்டும் என்பதையும், அணுகல் பதிவேடு நிரந்தரமாக வைக்கப்படும் என்பதையும் நான் புரிந்துகொள்கிறேன்.',
+    'myPrivacy.new.understood.years':
+      'சட்டம் கோரும் காலம் வரை என் மருத்துவப் பதிவுகளையும் பில்களையும் மருத்துவமனை வைத்திருக்க வேண்டும் என்பதையும், அணுகல் பதிவேடு {years} ஆண்டுகள் வைக்கப்படும் என்பதையும் நான் புரிந்துகொள்கிறேன்.',
     'myPrivacy.new.understood.required': 'இதைப் படித்ததை உறுதிசெய்யுங்கள்.',
     'myPrivacy.new.truthful':
       'சரியான, முழுமையான விவரங்களை அளியுங்கள். புகார் தெரிவிக்கும் ஒவ்வொருவரும் தவறான தகவலை அளிக்கக் கூடாது என்று சட்டம் கோருகிறது.',
@@ -1444,6 +1460,8 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.request.keptPermanently': 'சட்டம் கோருவதன்படி, சில பதிவுகள் நிரந்தரமாக வைத்திருக்கப்பட வேண்டும்.',
     'myPrivacy.request.accessLogKept':
       'உங்கள் பதிவை யார் திறந்தார்கள் அல்லது மாற்றினார்கள் என்பதைக் காட்டும் அணுகல் பதிவேடு நிரந்தரமாக, ஒருபோதும் மாற்றப்படாமல் வைக்கப்படுகிறது; இது மருத்துவமனையின் முடிவு.',
+    'myPrivacy.request.accessLogKept.years':
+      'உங்கள் பதிவை யார் திறந்தார்கள் அல்லது மாற்றினார்கள் என்பதைக் காட்டும் அணுகல் பதிவேடு {years} ஆண்டுகள், ஒருபோதும் மாற்றப்படாமல் வைக்கப்படுகிறது; இது மருத்துவமனையின் முடிவு.',
     'myPrivacy.erased.messages': 'விருப்பச் செய்திகள் நிறுத்தப்பட்டன.',
     'myPrivacy.erased.feedback':
       'உங்கள் கருத்துகள், புகார்கள் மற்றும் விசாரணைகளிலிருந்து உங்கள் பெயர், எண் மற்றும் கருத்துரைகள் நீக்கப்பட்டன.',

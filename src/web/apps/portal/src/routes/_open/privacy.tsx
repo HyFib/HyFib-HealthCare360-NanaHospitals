@@ -6,9 +6,11 @@ import { ButtonLink, TextLink } from '@/components/links';
 import { PortalPage } from '@/components/PortalPage';
 import { Notice } from '@/components/States';
 import { useT, type MessageKey } from '@/i18n';
+import { useFormat } from '@/i18n/useFormat';
 import { IDLE_SIGN_OUT_MINUTES } from '@/lib/sessionEnd';
 import { publicPrivacyQueries } from '@/modules/privacy/api';
 import { ContactCard } from '@/modules/privacy/ContactCard';
+import { accessLogText } from '@/modules/privacy/model';
 import { ReportCard } from '@/modules/reports/ReportParts';
 import { useHospitalName } from '@/shell/hooks';
 import { useOptionalProfile } from '@/shell/profileContext';
@@ -60,6 +62,7 @@ const useStyles = makeStyles({
 function PrivacyPage() {
   const styles = useStyles();
   const t = useT();
+  const f = useFormat();
   const hospital = useHospitalName();
   const signedIn = useOptionalProfile() !== null;
   // Anonymous and rate-limited: while it loads, or if it fails, the notice simply goes without the contact block.
@@ -71,7 +74,11 @@ function PrivacyPage() {
       {SECTIONS.map((section) => (
         <ReportCard key={section.title} title={t(section.title)}>
           {section.items.length === 1 ? (
-            <p className={styles.text}>{t(section.items[0] as MessageKey)}</p>
+            <p className={styles.text}>
+              {section.items[0] === 'privacy.keep.body'
+                ? accessLogText('privacy.keep.body', info.data?.accessLogYears, t, f)
+                : t(section.items[0] as MessageKey)}
+            </p>
           ) : (
             <ul className={styles.list}>
               {section.items.map((item) => (

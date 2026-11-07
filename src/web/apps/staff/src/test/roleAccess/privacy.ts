@@ -1,5 +1,6 @@
 import type {
   AffectedPatientItem,
+  AuditRetentionStatus,
   BreachDetail,
   BreachListItem,
   CertInContact,
@@ -312,6 +313,7 @@ const rule = (
   minimumValue: unit === 'Days' ? 30 : 1,
   maximumValue: unit === 'Days' ? 3650 : 50,
   editable: true,
+  systemManaged: false,
   lastRemoved: 0,
   lastRunAt: hoursAgo(20),
   version: null,
@@ -330,7 +332,44 @@ const RETENTION_RULES: RetentionRuleDto[] = [
     editable: false,
     basis: 'Kept permanently',
   }),
+  rule('audit', 'Audit trail', 'Keep', 'Years', 8, {
+    defaultValue: null,
+    minimumValue: 8,
+    maximumValue: 99,
+    editable: false,
+    systemManaged: true,
+    basis: 'Kept permanently unless super administrators set 8 years at the least',
+  }),
 ];
+
+/** Kept 8 years: two old months a purge would remove, and a change back to permanently waiting for approval. */
+const AUDIT_RETENTION: AuditRetentionStatus = {
+  years: 8,
+  minimumYears: 8,
+  maximumYears: 99,
+  basis: 'Books of account and their audit trail are kept 8 years (Companies Act s.128(5)).',
+  purge: {
+    years: 8,
+    cutoffMonth: '2018-11-01',
+    months: [
+      { month: '2015-03-01', rows: 2, firstChainIndex: 1, lastChainIndex: 2 },
+      { month: '2015-04-01', rows: 1, firstChainIndex: 3, lastChainIndex: 3 },
+    ],
+    rows: 3,
+    firstChainIndex: 1,
+    boundaryChainIndex: 3,
+    boundaryHash: 'A'.repeat(64),
+    problem: null,
+  },
+  pendingChange: {
+    approvalId: id('ap01'),
+    summary: 'Audit trail kept permanently (now 8 years)',
+    requestedByName: 'Arjun Rao',
+    requestedAt: hoursAgo(3),
+  },
+  pendingPurge: null,
+  lastPurge: null,
+};
 
 const RESULTS: RetentionRunResult[] = [
   { key: 'messages.log', removed: 1240, before: daysAgo(180) },
@@ -415,6 +454,8 @@ export const ANSWERS: FakeAnswers = {
   'GET /api/v1/privacy/retention/runs': RETENTION_RUNS,
   'GET /api/v1/privacy/retention/preview': RESULTS,
   'GET /api/v1/privacy/retention/review': RETENTION_REVIEW,
+  'GET /api/v1/admin/audit/retention': AUDIT_RETENTION,
+  'GET /api/v1/public/privacy': { hospital: 'Nana Hospitals', contact: CONTACT, responseDays: 30, accessLogYears: 8 },
   'GET /api/v1/privacy/settings': SETTINGS,
   'GET /api/v1/privacy/settings/cert-in': CERT_IN,
 };

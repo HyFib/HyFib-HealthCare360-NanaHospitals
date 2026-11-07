@@ -1211,6 +1211,8 @@ export interface PublicPrivacyInfo {
   hospital: string;
   contact: PrivacyContact;
   responseDays: number;
+  /** How long the record access log is kept, in years; null (or missing) while the hospital keeps it permanently (ADR-015). */
+  accessLogYears?: number | null;
 }
 
 /** The registration details as held. ABHA and Aadhaar arrive masked, exactly as the hospital stores them. */

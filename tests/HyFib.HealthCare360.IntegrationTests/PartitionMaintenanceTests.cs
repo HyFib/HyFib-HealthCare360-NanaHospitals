@@ -24,8 +24,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// without changing them (the audit trail too, whose chain still verifies), months gone by included, a month at a time
 /// and for a while at most each pass, and this month and the months ahead whatever happens to those. A table in use, or one
 /// that fails, is left to the next pass, and the others are done.
-/// It never drops a month, however old: deleting is the Privacy module's retention schedule's alone (legal minimums,
-/// medical records reviewed, every run audited). The months used are decades away from the test server's own rows, so
+/// It never drops a month, however old: deleting is the Privacy module's retention schedule's (legal minimums, medical
+/// records reviewed, every run audited), and the audit trail's purge, which two super administrators agree on. The months used are decades away from the test server's own rows, so
 /// nothing other tests wrote is touched; a pass may also move rows other tests left in the default partition, so each test
 /// looks at its own months. A test that needs a backlog, or a table to fail, has a database of its own.
 /// </summary>
@@ -120,23 +120,29 @@ public sealed class PartitionMaintenanceTests(HospitalServer server)
         await Should.ThrowAsync<PostgresException>(() => ExecuteAsync("TRUNCATE audit.audit_events_2047_02"));
     }
 
+    /// <summary>
+    /// The month is decades ahead of the server's own rows, as the other tests' are, not behind them: the audit trail's
+    /// months before the cut-off of an 8-year period belong to AuditRetentionTests, whose purge removes the oldest months
+    /// only while they are the start of the chain, and an event sealed today in a month of 2003 would not be.
+    /// </summary>
     [Fact]
     public async Task Old_months_are_never_dropped_whatever_their_age()
     {
-        var month = new DateTime(2003, 2, 1, 0, 0, 0, DateTimeKind.Utc);
+        var month = new DateTime(2063, 2, 1, 0, 0, 0, DateTimeKind.Utc);
         var message = await MessageAsync(month.AddDays(14));
         var call = await IntegrationCallAsync(month.AddDays(14));
         var audit = await AuditAsync(month.AddDays(14));
         await RunAsync(month.AddDays(1), monthsAhead: 1);
 
-        // Twelve years on: a message log entry, an integration call and an audit event from 2003 are all still there, in
-        // their month. The message and integration logs are deleted row by row, once the retention the hospital set under
-        // Privacy allows, by the privacy retention run.
+        // Twelve years on: a message log entry, an integration call and an audit event from 2063 are all still there, in
+        // their month. Partition upkeep never drops a month: the message and integration logs are deleted row by row, once
+        // the retention the hospital set under Privacy allows, by the privacy retention run, and the audit trail only by a
+        // purge two super administrators agree on (AuditRetentionTests).
         await RunAsync(month.AddYears(12), monthsAhead: 1);
 
-        (await PartitionOfAsync("platform.notification_logs", message)).ShouldBe("platform.notification_logs_2003_02");
-        (await PartitionOfAsync("integrations.integration_logs", call)).ShouldBe("integrations.integration_logs_2003_02");
-        (await PartitionOfAsync("audit.audit_events", audit)).ShouldBe("audit.audit_events_2003_02");
+        (await PartitionOfAsync("platform.notification_logs", message)).ShouldBe("platform.notification_logs_2063_02");
+        (await PartitionOfAsync("integrations.integration_logs", call)).ShouldBe("integrations.integration_logs_2063_02");
+        (await PartitionOfAsync("audit.audit_events", audit)).ShouldBe("audit.audit_events_2063_02");
     }
 
     /// <summary>

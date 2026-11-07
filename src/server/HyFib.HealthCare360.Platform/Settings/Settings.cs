@@ -378,7 +378,7 @@ internal static class SettingsEndpoints
                 return Error.Field("key", "Use letters, digits, dots, dashes or underscores.").ToProblem();
             }
 
-            if (TrainingDatabase.Problem(key) is { } serverSet)
+            if ((TrainingDatabase.Problem(key) ?? AuditRetention.SettingProblem(key)) is { } serverSet)
             {
                 return Error.Field("key", serverSet).ToProblem();
             }
