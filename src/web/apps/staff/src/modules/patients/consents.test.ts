@@ -228,6 +228,8 @@ describe('what a record-sharing consent covers (gap #28)', () => {
   });
 
   it('tells the patient the procedures done apart from the notes written about them (gap #26)', () => {
+    // The consent form offers the kinds in this list: without procedures in it, no consent could name them.
+    expect(SHARED_RECORD_KINDS).toContain('Procedures');
     expect(sharingScopeSummary({ ...open, kinds: ['Procedures'] }, day)).toBe(
       'Shared with every partner account, for any purpose: procedures and operations.',
     );
