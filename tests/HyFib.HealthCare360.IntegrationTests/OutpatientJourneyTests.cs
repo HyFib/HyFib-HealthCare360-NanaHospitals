@@ -603,9 +603,9 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
             .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
-        await admin.SaveSettingAsync(key, new SaveSettingRequest(
+        await server.SaveSettingAsync(admin, key, new SaveSettingRequest(
             new JsonObject { ["enabled"] = true, ["provider"] = "simulator", ["fromAddress"] = "reports@hospital.example" }, null, false, null));
-        return new Restore(() => admin.SaveSettingAsync(key,
+        return new Restore(() => server.SaveSettingAsync(admin, key,
             new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
     }
 

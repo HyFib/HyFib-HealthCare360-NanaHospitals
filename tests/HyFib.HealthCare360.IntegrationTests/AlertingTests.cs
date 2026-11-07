@@ -319,9 +319,9 @@ public sealed class AlertingTests(HospitalServer server)
         var token = Guid.NewGuid().ToString("N");
         await using var monitor = Monitor.Start();
 
-        // Set as an administrator sets it, without asking for a secret. The address holds the monitor's token: it is kept
-        // encrypted, never shown again, and left out of the audit trail.
-        await admin.PutAsync($"{Settings}/{AlertHeartbeat.UrlSetting}", new SaveSettingRequest(JsonValue.Create($"{monitor.Address}ping/{token}"), null, false, null));
+        // Set as an administrator sets it, without asking for a secret, and approved by a second (where alerts go waits for
+        // one). The address holds the monitor's token: it is kept encrypted, never shown again, and left out of the audit trail.
+        await server.SaveSettingAsync(admin, AlertHeartbeat.UrlSetting, new SaveSettingRequest(JsonValue.Create($"{monitor.Address}ping/{token}"), null, false, null));
         try
         {
             var saved = (await admin.GetAsync<List<SettingDto>>($"{Settings}?prefix={AlertHeartbeat.UrlSetting}")).Single(s => s.Key == AlertHeartbeat.UrlSetting);

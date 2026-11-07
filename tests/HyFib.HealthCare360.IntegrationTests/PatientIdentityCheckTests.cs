@@ -354,7 +354,7 @@ public sealed class PatientIdentityCheckTests(HospitalServer server)
         await admin.PostAsync<IntegrationTestResult>("/api/v1/admin/integrations/aadhaar/test", new TestIntegrationRequest(null, null, null, null, null));
 
     /// <summary>Complete UIDAI settings, with a self-signed signing certificate standing in for the AUA's.</summary>
-    private static async Task UseUidaiAsync(ApiClient admin, string subject)
+    private async Task UseUidaiAsync(ApiClient admin, string subject)
     {
         using var key = RSA.Create(2048);
         var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -362,14 +362,14 @@ public sealed class PatientIdentityCheckTests(HospitalServer server)
         var pfx = Convert.ToBase64String(certificate.Export(X509ContentType.Pfx, "pw"));
         await SaveAsync(admin, "integrations.aadhaar",
             """{"enabled":true,"provider":"uidai","authUrl":"https://asa.example.invalid/2.5/{ac}/{uid0}/{uid1}/{asalk}","auaCode":"HC0000001","subAuaCode":"HC0000001"}""");
-        await admin.SaveSettingAsync("integrations.aadhaar.secret", new SaveSettingRequest(
+        await server.SaveSettingAsync(admin, "integrations.aadhaar.secret", new SaveSettingRequest(
             JsonNode.Parse($$"""{"licenceKey":"LK-TEST","asaLicenceKey":"ASA-TEST","signingCertificate":"{{pfx}}","signingCertificatePassword":"pw"}"""), null, true, null));
     }
 
-    private static async Task SwitchOffAsync(ApiClient admin)
+    private async Task SwitchOffAsync(ApiClient admin)
     {
         await SaveAsync(admin, "integrations.aadhaar", """{"enabled":false,"provider":"simulator"}""");
-        await admin.SaveSettingAsync("integrations.aadhaar.secret", new SaveSettingRequest(JsonNode.Parse("{}"), null, true, null));
+        await server.SaveSettingAsync(admin, "integrations.aadhaar.secret", new SaveSettingRequest(JsonNode.Parse("{}"), null, true, null));
     }
 
     private static string Path(PatientCreated patient) => $"/api/v1/patients/{patient.Id}/identity-checks";
@@ -415,8 +415,8 @@ public sealed class PatientIdentityCheckTests(HospitalServer server)
         }
     }
 
-    private static Task SaveAsync(ApiClient admin, string key, string json) =>
-        admin.SaveSettingAsync(key, new SaveSettingRequest(JsonNode.Parse(json), null, false, null));
+    private Task SaveAsync(ApiClient admin, string key, string json) =>
+        server.SaveSettingAsync(admin, key, new SaveSettingRequest(JsonNode.Parse(json), null, false, null));
 
     private async Task<PatientCreated> RegisterAsync(bool isVip, string? aadhaar)
     {

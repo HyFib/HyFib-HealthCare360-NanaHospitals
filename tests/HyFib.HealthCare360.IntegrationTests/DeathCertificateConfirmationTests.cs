@@ -247,7 +247,7 @@ public sealed class DeathCertificateConfirmationTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
                          ?? throw new InvalidOperationException("The hospital administrator has no facility.");
-        await admin.SaveSettingAsync(VitalRegistrationService.ConfirmationSetting, new SaveSettingRequest(JsonValue.Create(false), facilityId, false, null));
+        await server.SaveSettingAsync(admin, VitalRegistrationService.ConfirmationSetting, new SaveSettingRequest(JsonValue.Create(false), facilityId, false, null));
         return new Restore(async () =>
         {
             await using var scope = server.Services.CreateAsyncScope();

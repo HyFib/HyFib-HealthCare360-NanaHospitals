@@ -65,8 +65,8 @@ public sealed class SystemHealthIntegrationsTests(HospitalServer server)
         await db.SaveChangesAsync(Ct);
     }
 
-    private static Task SaveAsync(ApiClient admin, string key, string json) =>
-        admin.SaveSettingAsync(key, new SaveSettingRequest(JsonNode.Parse(json), null, false, null));
+    private Task SaveAsync(ApiClient admin, string key, string json) =>
+        server.SaveSettingAsync(admin, key, new SaveSettingRequest(JsonNode.Parse(json), null, false, null));
 
     private sealed record HealthIntegrations(IReadOnlyList<IntegrationHealth> Integrations, IReadOnlyList<HealthWarning> Warnings);
 }

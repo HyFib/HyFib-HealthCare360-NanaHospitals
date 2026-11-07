@@ -150,7 +150,7 @@ public sealed class SimulatorTests(HospitalServer server)
     /// Puts back, when disposed, every hospital-wide integration setting the test changed, because the server is shared
     /// by every test of the run.
     /// </summary>
-    private static async Task<IAsyncDisposable> PutBackAfterwardsAsync(ApiClient admin)
+    private async Task<IAsyncDisposable> PutBackAfterwardsAsync(ApiClient admin)
     {
         var before = await IntegrationSettingsAsync(admin);
         return new PutBack(async () =>
@@ -160,7 +160,7 @@ public sealed class SimulatorTests(HospitalServer server)
                 var was = before.GetValueOrDefault(key);
                 if (!JsonNode.DeepEquals(value, was))
                 {
-                    await admin.SaveSettingAsync(key, new SaveSettingRequest(was?.DeepClone(), null, false, null));
+                    await server.SaveSettingAsync(admin, key, new SaveSettingRequest(was?.DeepClone(), null, false, null));
                 }
             }
         });
@@ -176,8 +176,8 @@ public sealed class SimulatorTests(HospitalServer server)
         public async ValueTask DisposeAsync() => await putBack();
     }
 
-    private static Task SaveAsync(ApiClient admin, string key, string json) =>
-        admin.SaveSettingAsync(key, new SaveSettingRequest(JsonNode.Parse(json), null, false, null));
+    private Task SaveAsync(ApiClient admin, string key, string json) =>
+        server.SaveSettingAsync(admin, key, new SaveSettingRequest(JsonNode.Parse(json), null, false, null));
 
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));
 }

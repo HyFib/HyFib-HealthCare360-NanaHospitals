@@ -9,6 +9,10 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// </summary>
 internal static class SettingEdits
 {
+    /// <summary>
+    /// Saves a setting that is not guarded. A change that waits for a second administrator (SettingGuard) is refused here
+    /// for want of a reason: save it with <see cref="HospitalServer.SaveSettingAsync"/>, which asks and approves it.
+    /// </summary>
     public static async Task SaveSettingAsync(this ApiClient admin, string key, SaveSettingRequest request) =>
         await admin.PutAsync($"/api/v1/admin/settings/{key}", request with { Version = await SettingVersionAsync(admin, key, request.FacilityId) });
 

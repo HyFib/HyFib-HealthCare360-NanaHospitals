@@ -243,14 +243,14 @@ public sealed class CardiologyPacsTests(HospitalServer server)
         return study;
     }
 
-    private static Task SetPacsAsync(ApiClient admin, JsonNode value) =>
-        admin.SaveSettingAsync(PacsKey, new SaveSettingRequest(value, null, false, null));
+    private Task SetPacsAsync(ApiClient admin, JsonNode value) =>
+        server.SaveSettingAsync(admin, PacsKey, new SaveSettingRequest(value, null, false, null));
 
     /// <summary>
     /// Turns on the PACS simulator with a viewer link by study UID and accession number for the rest of the test, then
     /// puts the setting back: the server is shared by every test of the run.
     /// </summary>
-    private static async Task<IAsyncDisposable> PacsSimulatorAsync(ApiClient admin)
+    private async Task<IAsyncDisposable> PacsSimulatorAsync(ApiClient admin)
     {
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={PacsKey}"))
             .FirstOrDefault(s => s.Key == PacsKey && s.FacilityId is null)?.Value;

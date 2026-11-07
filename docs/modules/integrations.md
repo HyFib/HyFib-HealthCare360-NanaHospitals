@@ -1153,7 +1153,10 @@ Permissions:
 * The dashboard, test sends, logs and inboxes need the platform's `admin.integrations.manage`. It has no default role:
   only Super Admin holds it until an administrator grants it, because it exposes message logs and live test sends.
 * Integration settings and credentials are saved through the platform settings API (`/api/v1/admin/settings`), which
-  needs `admin.settings.manage`. Credentials are write-only, and each change is audited as a warning.
+  needs `admin.settings.manage`. Credentials are write-only, and each change is audited as a warning. Every change to
+  an `integrations.*` setting, credentials included, waits for a second administrator who may change settings
+  (`settings.change`, SECURITY.md, Maker-checker): the form asks why, and the credentials asked are held with the
+  request only encrypted. Lab setup's analyser connections keep their own endpoint and permission.
 * The Tally day book's own endpoints (`/api/v1/billing/tally`, posting, the file, the checks, mark imported and the
   ledger names) belong to Billing and need `billing.tally.export` or `billing.tally.configure`; see
   [billing.md](billing.md#tally--apiv1billingtally).

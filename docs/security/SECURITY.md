@@ -450,6 +450,28 @@ and grants nothing.
     someone else sent it, and a receipt cancelled after it was sent posts nothing (`approval.stale`).
   - how long the audit trail is kept (`audit.retention`) and a purge of the months it no longer keeps (`audit.purge`):
     one holder of `admin.system.manage` asks, another approves (see Integrity and audit).
+  - a setting that loosens a control, or changes where money, patients' data or alerts go (`settings.change`,
+    `SettingGuard`): one holder of `admin.settings.manage` asks with the reason (`PUT /api/v1/admin/settings/{key}`
+    answers 202, and 400 on `reason` without one), and another approves, shown the setting, what it controls, where it
+    applies, the value in force and the one asked ("Second pathologist for lab corrections: on → off"). That is
+    switching off the second pathologist (`lab.separateVerifier`), the second doctor on death certificates
+    (`mrd.deathCertificateConfirmation`), administration only on enrolled desktops
+    (`security.administrationRequiresDesktop`), payment before a lab sample (`lab.requirePaymentBeforeCollection`) or
+    the cash counter shift (`billing.shift.required`); switching on Windows Hello unlock (`ui.biometricUnlock`) or AI
+    (`ai.enabled`); raising an own-authority discount limit (`billing.discount.defaultMaxPercent`,
+    `pharmacy.discount.max_percent`), the canteen's staff credit, the sessions per account, the screen-lock or MAR grace
+    time or a delta check's threshold (0 for none counts as the highest), or shortening its look-back; clearing any of
+    them, so the default decides; and any change to the portal's address in every SMS and QR code (`portal.baseUrl`),
+    the TDS on doctors' fees, the critical alerts' numbers, times and heartbeat (`alerts.*`), an integration
+    (`integrations.*`), the ABDM gateway, the AI provider and its addresses, and any credential (a `*.secret` key, or a
+    value saved as secret). The stricter direction is saved at once, and every other setting as before. A credential
+    asked is held with the request only as the settings store holds it, encrypted with the data key, shown as "a new
+    secret value (not shown)", and decrypted only to be saved. Approved, the change is saved through the settings store
+    only over the value it was asked against (`approval.stale`), one waits per setting and facility
+    (`approval.already_requested`), and it is audited as `setting.changed` at Warning with who asked and who approved.
+    The Features screen's switches are not guarded: one switched off stops a service, never a control. Lab setup's
+    analyser list (`integrations.lab.instruments`) keeps its own screen and permission: it saves only analysers Lab setup
+    has, each bound to its allowed addresses and audited, while the same key through the settings API waits.
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was

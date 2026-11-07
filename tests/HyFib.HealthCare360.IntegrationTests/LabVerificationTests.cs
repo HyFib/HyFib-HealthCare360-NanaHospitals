@@ -87,7 +87,7 @@ public sealed class LabVerificationTests(HospitalServer server)
         var ownResults = (await EnterAsync(pathologist, own, normal)).Select(l => l.ResultId).ToList();
         var labResults = (await EnterAsync(lab, entered, normal)).Select(l => l.ResultId).ToList();
 
-        await admin.SaveSettingAsync(LabResultService.SeparateVerifierSetting, new SaveSettingRequest(JsonValue.Create(true), facilityId, false, null));
+        await server.SaveSettingAsync(admin, LabResultService.SeparateVerifierSetting, new SaveSettingRequest(JsonValue.Create(true), facilityId, false, null));
         try
         {
             var refused = await RefusalAsync(pathologist, VerifyPath, new VerifyResultsRequest(ownResults, null, null, Release: false));
@@ -214,7 +214,7 @@ public sealed class LabVerificationTests(HospitalServer server)
         // A walk-in test is drawn only once paid; these tests are about the sign-off, so the counter waives that here.
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
                          ?? throw new InvalidOperationException("The hospital administrator has no facility.");
-        await SetPaymentGateAsync(admin, facilityId, required: false);
+        await SetPaymentGateAsync(server, admin, facilityId, required: false);
         try
         {
             var consents = consented
@@ -227,7 +227,7 @@ public sealed class LabVerificationTests(HospitalServer server)
         }
         finally
         {
-            await SetPaymentGateAsync(admin, facilityId, required: true);
+            await SetPaymentGateAsync(server, admin, facilityId, required: true);
         }
 
         return tube;
@@ -272,8 +272,8 @@ public sealed class LabVerificationTests(HospitalServer server)
         response.StatusCode.ShouldBe(HttpStatusCode.Forbidden, $"POST {path}");
     }
 
-    private static Task SetPaymentGateAsync(ApiClient admin, Guid facilityId, bool required) =>
-        admin.SaveSettingAsync("lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
+    private static Task SetPaymentGateAsync(HospitalServer server, ApiClient admin, Guid facilityId, bool required) =>
+        server.SaveSettingAsync(admin, "lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
 
     internal static async Task<PatientCreated> RegisterPatientAsync(HospitalServer server, Gender gender = Gender.Male)
     {

@@ -1,6 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 
 export interface UserListItem {
   id: string;
@@ -440,7 +441,53 @@ export interface SettingDto {
   updatedAt: string | null;
   /** Sent back with a change, so a save over someone else's newer one is refused (409) rather than lost (REL-04). */
   version: number;
+  /** A change to it waiting for a second administrator, if any. */
+  pending?: PendingSettingChange | null;
 }
+
+/** A change to a guarded setting waiting for a second administrator (maker-checker). */
+export interface PendingSettingChange {
+  approvalId: string;
+  /** "Second pathologist for lab corrections: on → off". */
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/**
+ * What saving a setting would do, before it is saved (`POST /api/v1/admin/settings/{key}/check`). A change that loosens
+ * a control (switched off, a limit raised, a value cleared), or changes where money, patients' data or alerts go, waits
+ * for a second administrator; the screens ask for a reason only then.
+ */
+export interface SettingChangeCheck {
+  waits: boolean;
+  /** The setting's name, as the approver reads it. */
+  setting: string;
+  /** What it controls; null for a setting that is not guarded. */
+  controls: string | null;
+  from: string;
+  to: string;
+}
+
+/** A setting saved as the settings API takes it (`PUT /api/v1/admin/settings/{key}`). */
+export interface SaveSettingBody {
+  value: unknown;
+  facilityId: string | null;
+  secret: boolean;
+  description: string | null;
+  /** The version the value was shown at; none for a value not set (REL-04). */
+  version?: number;
+  /** Why, for the administrator who decides a change that waits: required then, not kept otherwise. */
+  reason?: string | null;
+}
+
+export const settingsApi = {
+  check: (key: string, body: SaveSettingBody) =>
+    api.post<SettingChangeCheck>(`/api/v1/admin/settings/${encodeURIComponent(key)}/check`, body),
+  /** Saved at once (nothing back), or asked for (202: the request a second administrator decides). */
+  save: (key: string, body: SaveSettingBody) =>
+    api.put<ApprovalRequestDto | undefined>(`/api/v1/admin/settings/${encodeURIComponent(key)}`, body),
+};
 
 export interface BackupRunDto {
   id: string;

@@ -180,7 +180,7 @@ public sealed class LabConnectionTests(HospitalServer server)
         // A connection written before Bidirectional in Lab setup decided, with "hostQuery": false.
         var stored = await StoredListAsync();
         stored.Add(JsonNode.Parse($$"""{"code":"{{code}}","protocol":"Astm","port":{{port}},"hostQuery":false}""")!);
-        await admin.SaveSettingAsync(LabSettingKeys.Instruments, new SaveSettingRequest(stored, null, false, null));
+        await server.SaveSettingAsync(admin, LabSettingKeys.Instruments, new SaveSettingRequest(stored, null, false, null));
         (await ConnectionAsync(admin, code)).HostQueryRetiredOff.ShouldBeTrue();
 
         await admin.PutAsync($"{Connections}/{code}", Tcp(port, await VersionAsync(admin)));

@@ -119,4 +119,7 @@ export const APPROVAL_PERMISSIONS = [
   // How long the audit trail is kept, and a purge of the months it no longer keeps: one super administrator asks,
   // another approves.
   'admin.system.manage',
+  // A setting that loosens a control, or changes where money, patients' data or alerts go: one administrator asks,
+  // another who may change settings approves.
+  'admin.settings.manage',
 ] as const;

@@ -257,6 +257,10 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IPrintTemplates, PrintTemplates>();
         services.AddScoped<DocumentAssets>();
         services.AddScoped<ISettingsService, SettingsService>();
+
+        // A change that loosens a control, or changes where money, patients' data or alerts go, waits for a second administrator.
+        services.AddScoped<SettingChanges>();
+        services.AddScoped<IApprovalAction, SettingChangeApproval>();
         services.AddScoped<IFeatureFlags, FeatureFlags>();
         services.AddScoped<IIntegrationLogger, IntegrationLogger>();
 

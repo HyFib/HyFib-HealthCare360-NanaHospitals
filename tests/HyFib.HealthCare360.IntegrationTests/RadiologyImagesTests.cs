@@ -198,14 +198,14 @@ public sealed class RadiologyImagesTests(HospitalServer server)
     /// Turns on the PACS simulator with a viewer link by accession number for the rest of the test, then puts the setting
     /// back: the server is shared by every test of the run.
     /// </summary>
-    private static async Task<IAsyncDisposable> PacsSimulatorAsync(ApiClient admin)
+    private async Task<IAsyncDisposable> PacsSimulatorAsync(ApiClient admin)
     {
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={PacsKey}"))
             .FirstOrDefault(s => s.Key == PacsKey && s.FacilityId is null)?.Value;
-        await admin.SaveSettingAsync(PacsKey, new SaveSettingRequest(
+        await server.SaveSettingAsync(admin, PacsKey, new SaveSettingRequest(
             new JsonObject { ["enabled"] = true, ["provider"] = "simulator", ["viewerUrlTemplate"] = "https://pacs.example.org/viewer?acc={accession}" },
             null, false, null));
-        return new Restore(() => admin.SaveSettingAsync(PacsKey,
+        return new Restore(() => server.SaveSettingAsync(admin, PacsKey,
             new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
     }
 

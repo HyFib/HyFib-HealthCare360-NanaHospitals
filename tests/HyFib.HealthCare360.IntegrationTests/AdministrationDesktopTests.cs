@@ -153,13 +153,13 @@ public sealed class AdministrationDesktopTests(HospitalServer server)
 
         try
         {
-            await it.SaveSettingAsync(AdministrationOnDesktop.SettingKey, new SaveSettingRequest(JsonValue.Create(false), null, false, null));
+            await server.SaveSettingAsync(it, AdministrationOnDesktop.SettingKey, new SaveSettingRequest(JsonValue.Create(false), null, false, null));
             (await browser.GetAsync<PagedResult<UserListItem>>("/api/v1/admin/users?pageSize=1")).Items.ShouldNotBeEmpty();
             var me = await browser.GetAsync<AuthUser>("/api/v1/auth/me");
             me.Permissions.ShouldContain(PlatformPermissions.UsersManage);
             me.AdministrationNeedsDesktop.ShouldBeFalse();
 
-            await it.SaveSettingAsync(AdministrationOnDesktop.SettingKey, new SaveSettingRequest(JsonValue.Create("true"), null, false, null));
+            await server.SaveSettingAsync(it, AdministrationOnDesktop.SettingKey, new SaveSettingRequest(JsonValue.Create("true"), null, false, null));
             await RefusedAsync(browser, HttpMethod.Get, "/api/v1/admin/users");
         }
         finally

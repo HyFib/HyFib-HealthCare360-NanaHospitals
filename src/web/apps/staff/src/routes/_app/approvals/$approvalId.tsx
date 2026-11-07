@@ -51,6 +51,10 @@ function subjectLink(
     // A goods receipt to post: its lines, batches and totals, to check against the supplier's invoice.
     case 'GoodsReceiptNote':
       return { label: 'Open the goods receipt', to: `/purchase/grns/${request.subjectId}` };
+    // A setting changed: the request names it, what it controls, the value in force and the one asked; the settings
+    // list shows the change waiting. Only those who may change settings decide it, and they may open the list.
+    case 'SystemSetting':
+      return { label: 'Open the settings', to: '/admin/settings' };
     default:
       return null;
   }

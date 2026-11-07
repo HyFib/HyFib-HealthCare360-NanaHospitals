@@ -1313,14 +1313,14 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
             .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
-        await admin.SaveSettingAsync(key, new SaveSettingRequest(
+        await server.SaveSettingAsync(admin, key, new SaveSettingRequest(
             new JsonObject { ["enabled"] = true, ["provider"] = "simulator", ["simulatorSettlementDays"] = 0 }, null, false, null));
-        await admin.SaveSettingAsync(secretKey, new SaveSettingRequest(
+        await server.SaveSettingAsync(admin, secretKey, new SaveSettingRequest(
             new JsonObject { ["simulatorSecret"] = SimulatorSecret }, null, true, null));
         return new Restore(async () =>
         {
-            await admin.SaveSettingAsync(key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null));
-            await admin.SaveSettingAsync(secretKey, new SaveSettingRequest(new JsonObject(), null, true, null));
+            await server.SaveSettingAsync(admin, key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null));
+            await server.SaveSettingAsync(admin, secretKey, new SaveSettingRequest(new JsonObject(), null, true, null));
         });
     }
 
@@ -1386,18 +1386,18 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
             .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
-        await admin.SaveSettingAsync(key, new SaveSettingRequest(new JsonObject
+        await server.SaveSettingAsync(admin, key, new SaveSettingRequest(new JsonObject
         {
             ["enabled"] = true,
             ["provider"] = "cashfree",
             ["cashfreeBaseUrl"] = FakeCashfree.BaseUrl,
             ["cashfreeClientId"] = FakeCashfree.ClientId,
         }, null, false, null));
-        await admin.SaveSettingAsync(CashfreeSecretKey, new SaveSettingRequest(new JsonObject { ["clientSecret"] = FakeCashfree.ClientSecret }, null, true, null));
+        await server.SaveSettingAsync(admin, CashfreeSecretKey, new SaveSettingRequest(new JsonObject { ["clientSecret"] = FakeCashfree.ClientSecret }, null, true, null));
         return new Restore(async () =>
         {
-            await admin.SaveSettingAsync(key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null));
-            await admin.SaveSettingAsync(CashfreeSecretKey, new SaveSettingRequest(new JsonObject(), null, true, null));
+            await server.SaveSettingAsync(admin, key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null));
+            await server.SaveSettingAsync(admin, CashfreeSecretKey, new SaveSettingRequest(new JsonObject(), null, true, null));
         });
     }
 
@@ -1405,7 +1405,7 @@ public sealed class GatewayReconciliationTests(HospitalServer server)
     private async Task SwitchToSimulatorKeepingCashfreeAsync()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
-        await admin.SaveSettingAsync("integrations.payment", new SaveSettingRequest(new JsonObject
+        await server.SaveSettingAsync(admin, "integrations.payment", new SaveSettingRequest(new JsonObject
         {
             ["enabled"] = true,
             ["provider"] = "simulator",

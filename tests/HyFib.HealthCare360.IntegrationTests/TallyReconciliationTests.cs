@@ -32,7 +32,7 @@ public sealed class TallyReconciliationTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId ?? throw new InvalidOperationException("The administrator has no facility.");
         var receiptNumber = await AddReceiptAsync(facilityId);
-        await admin.SaveSettingAsync(TallySetting, new SaveSettingRequest(JsonNode.Parse("""{"enabled":false}"""), null, false, null));
+        await server.SaveSettingAsync(admin, TallySetting, new SaveSettingRequest(JsonNode.Parse("""{"enabled":false}"""), null, false, null));
         try
         {
             var before = await admin.GetAsync<TallyDayVouchersDto>($"{Base}/days/{Date}/vouchers");
@@ -62,7 +62,7 @@ public sealed class TallyReconciliationTests(HospitalServer server)
             afterImport.Lines.Single(l => l.Group == "Money received" && l.Item == "Cash").ShouldSatisfyAllConditions(l => l.Records.ShouldBe(500m), l => l.DayBook.ShouldBe(500m));
 
             // With the simulator as Tally the day posts, Tally confirms the voucher, and reading it back finds it as sent.
-            await admin.SaveSettingAsync(TallySetting, new SaveSettingRequest(
+            await server.SaveSettingAsync(admin, TallySetting, new SaveSettingRequest(
                 JsonNode.Parse($$"""{"enabled":true,"provider":"simulator","companyName":"IT {{Guid.NewGuid():N}}"}"""), null, false, null));
             var posted = await PostAsync(admin);
             posted.ShouldSatisfyAllConditions(
@@ -85,7 +85,7 @@ public sealed class TallyReconciliationTests(HospitalServer server)
         }
         finally
         {
-            await admin.SaveSettingAsync(TallySetting, new SaveSettingRequest(JsonNode.Parse("""{"enabled":false}"""), null, false, null));
+            await server.SaveSettingAsync(admin, TallySetting, new SaveSettingRequest(JsonNode.Parse("""{"enabled":false}"""), null, false, null));
         }
     }
 

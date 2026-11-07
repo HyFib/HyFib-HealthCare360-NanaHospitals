@@ -56,7 +56,7 @@ public sealed class RpmAlertJourneyTests(HospitalServer server)
             [new ThresholdInput(RpmReadingType.SystolicBp, Min: 90, Max: 130, CriticalMin: 80, CriticalMax: 180)], enrollment.Version));
         await LeavesAsync(hospitalAdmin, leaver);
 
-        await using var messaging = await Messaging.TurnOffAsync(await server.SignInAsync(HospitalServer.Users.Admin));
+        await using var messaging = await Messaging.TurnOffAsync(server, await server.SignInAsync(HospitalServer.Users.Admin));
 
         // A nurse records a reading the patient read out on a follow-up call: within the programme's limit, over the patient's.
         var measuredAt = DateTimeOffset.UtcNow.AddMinutes(-10);
@@ -209,11 +209,11 @@ public sealed class RpmAlertJourneyTests(HospitalServer server)
     /// SMS and WhatsApp, hospital-wide, for the rest of the test: off, then on to the integrations simulator. The settings
     /// are put back as they were afterwards, since the server is shared by every test of the run.
     /// </summary>
-    private sealed class Messaging(ApiClient admin, Dictionary<string, JsonNode?> before) : IAsyncDisposable
+    private sealed class Messaging(HospitalServer server, ApiClient admin, Dictionary<string, JsonNode?> before) : IAsyncDisposable
     {
         private static readonly string[] Keys = ["integrations.sms", "integrations.whatsapp"];
 
-        public static async Task<Messaging> TurnOffAsync(ApiClient admin)
+        public static async Task<Messaging> TurnOffAsync(HospitalServer server, ApiClient admin)
         {
             var before = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
             foreach (var key in Keys)
@@ -222,7 +222,7 @@ public sealed class RpmAlertJourneyTests(HospitalServer server)
                     .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
             }
 
-            var messaging = new Messaging(admin, before);
+            var messaging = new Messaging(server, admin, before);
             await messaging.SaveAsync(_ => new JsonObject { ["enabled"] = false, ["provider"] = "simulator" });
             return messaging;
         }
@@ -235,7 +235,7 @@ public sealed class RpmAlertJourneyTests(HospitalServer server)
         {
             foreach (var key in Keys)
             {
-                await admin.SaveSettingAsync(key, new SaveSettingRequest(value(key), null, false, null));
+                await server.SaveSettingAsync(admin, key, new SaveSettingRequest(value(key), null, false, null));
             }
         }
     }

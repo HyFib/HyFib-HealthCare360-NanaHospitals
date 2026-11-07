@@ -430,13 +430,13 @@ public sealed class ReceiptReversalTests(HospitalServer server)
     /// Online payments go to the training gateway until disposed; then the setting is put back, because the server is
     /// shared by every test of the run.
     /// </summary>
-    private static async Task<IAsyncDisposable> PaymentsToSimulatorAsync(ApiClient admin)
+    private async Task<IAsyncDisposable> PaymentsToSimulatorAsync(ApiClient admin)
     {
         const string key = "integrations.payment";
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
             .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
-        await admin.SaveSettingAsync(key, new SaveSettingRequest(new JsonObject { ["enabled"] = true, ["provider"] = "simulator" }, null, false, null));
-        return new Restore(() => admin.SaveSettingAsync(key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
+        await server.SaveSettingAsync(admin, key, new SaveSettingRequest(new JsonObject { ["enabled"] = true, ["provider"] = "simulator" }, null, false, null));
+        return new Restore(() => server.SaveSettingAsync(admin, key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
     }
 
     /// <summary>The billing desk's counter shift, opened if it is not.</summary>

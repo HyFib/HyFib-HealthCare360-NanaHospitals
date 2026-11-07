@@ -12,6 +12,7 @@ import {
   Input,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   SearchBox,
   Switch,
   Text,
@@ -33,9 +34,15 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
-import { api } from '@/lib/api';
 import { PUBLIC_SETTINGS_KEY } from '@/lib/lookups';
-import { adminQueries, type SettingDto } from '@/modules/admin/api';
+import {
+  adminQueries,
+  settingsApi,
+  type SaveSettingBody,
+  type SettingChangeCheck,
+  type SettingDto,
+} from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import { isFeatureSettingKey, isValidSettingKey, settingWarning } from '@/modules/admin/settingsForms';
 
 export const Route = createFileRoute('/_app/admin/settings')({
@@ -99,7 +106,9 @@ function display(value: unknown): string {
 
 /**
  * Key/value configuration (SRS MNT-03). Values are JSON; secrets (API keys for SMS/WhatsApp/payment gateways) are
- * encrypted on the server and never sent back to the screen.
+ * encrypted on the server and never sent back to the screen. A change that loosens a control (switched off, a limit
+ * raised, a value cleared) or changes where money, patients' data or alerts go waits for a second administrator: the
+ * dialog asks why before it asks, and the list shows the change waiting.
  */
 function SettingsPage() {
   const settings = useQuery(adminQueries.settings());
@@ -160,14 +169,22 @@ function SettingsPage() {
             {
               key: 'value',
               header: 'Value',
-              render: (s) =>
-                s.isSecret ? (
-                  <Badge appearance="tint" icon={<LockClosedRegular />}>
-                    {s.hasValue ? 'Set (hidden)' : 'Not set'}
-                  </Badge>
-                ) : (
-                  <Text font="monospace">{display(s.value)}</Text>
-                ),
+              render: (s) => (
+                <span>
+                  {s.isSecret ? (
+                    <Badge appearance="tint" icon={<LockClosedRegular />}>
+                      {s.hasValue ? 'Set (hidden)' : 'Not set'}
+                    </Badge>
+                  ) : (
+                    <Text font="monospace">{display(s.value)}</Text>
+                  )}
+                  {s.pending && (
+                    <Caption1 block style={{ color: tokens.colorNeutralForeground3 }}>
+                      Waiting for approval: {s.pending.summary}
+                    </Caption1>
+                  )}
+                </span>
+              ),
             },
             {
               key: 'scope',
@@ -221,19 +238,49 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
 
   const keyValid = isValidSettingKey(key);
   const keepSecret = secret && Boolean(setting?.hasValue) && !raw;
+  const [reason, setReason] = useState('');
 
+  const body: SaveSettingBody = {
+    value,
+    facilityId: setting?.facilityId ?? null,
+    secret,
+    description: description.trim() || null,
+    // The value as shown (none when adding): one saved meanwhile is not overwritten (REL-04).
+    version: setting?.version,
+  };
+  // What the server said this very change does; any edit after it asks again.
+  const changeKey = JSON.stringify([key, value, secret]);
+  const [checked, setChecked] = useState<{ change: string; check: SettingChangeCheck } | null>(null);
+  const waits = checked?.change === changeKey && checked.check.waits ? checked.check : null;
+
+  // Saving first asks the server whether the change waits for a second administrator; only then is a reason asked for,
+  // and the change is sent once, with it.
   const save = useMutation({
-    mutationFn: () =>
-      api.put(`/api/v1/admin/settings/${encodeURIComponent(key)}`, {
-        value,
-        facilityId: setting?.facilityId ?? null,
-        secret,
-        description: description.trim() || null,
-        // The value as shown (none when adding): one saved meanwhile is not overwritten (REL-04).
-        version: setting?.version,
-      }),
-    onSuccess: () => {
-      notify.success('Setting saved');
+    mutationFn: async () => {
+      if (!waits) {
+        const check = await settingsApi.check(key, body);
+        if (check.waits) {
+          return { kind: 'check' as const, check };
+        }
+      }
+      return {
+        kind: 'sent' as const,
+        asked: await settingsApi.save(key, { ...body, reason: waits ? reason.trim() : null }),
+      };
+    },
+    onSuccess: (outcome) => {
+      if (outcome.kind === 'check') {
+        setChecked({ change: changeKey, check: outcome.check });
+        return;
+      }
+      if (outcome.asked) {
+        notify.success(
+          'Asked for approval',
+          `${outcome.asked.summary}. Another administrator decides it; until then the setting stays as it is.`,
+        );
+      } else {
+        notify.success('Setting saved');
+      }
       void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
       void queryClient.invalidateQueries({ queryKey: PUBLIC_SETTINGS_KEY });
       onClose();
@@ -242,7 +289,7 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
   });
 
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ key, secret, raw, description }),
+    dirty: useValuesChanged({ key, secret, raw, description, reason }),
     busy: save.isPending,
     onClose,
   });
@@ -253,6 +300,15 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
         <DialogBody>
           <DialogTitle>{setting ? setting.key : 'Add setting'}</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {setting?.pending && (
+              <PendingGrantNotice
+                approvalId={setting.pending.approvalId}
+                what={setting.pending.summary}
+                requestedBy={setting.pending.requestedBy}
+                requestedAt={setting.pending.requestedAt}
+                decides="Another administrator who may change settings decides it; until then the setting stays as it is."
+              />
+            )}
             {!setting && (
               <Field
                 label="Setting name"
@@ -308,15 +364,29 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
                 <MessageBarBody>The current secret stays as it is unless you type a new one.</MessageBarBody>
               </MessageBar>
             )}
+            {waits && (
+              <>
+                <MessageBar intent="warning" layout="multiline">
+                  <MessageBarBody>
+                    <MessageBarTitle>Waits for a second administrator</MessageBarTitle>
+                    {waits.setting}: {waits.from} → {waits.to}. {waits.controls} Another administrator who may change
+                    settings decides it; until then the setting stays as it is.
+                  </MessageBarBody>
+                </MessageBar>
+                <Field label="Reason, for the administrator who decides" required>
+                  <Textarea value={reason} onChange={(_, d) => setReason(d.value)} rows={2} maxLength={500} />
+                </Field>
+              </>
+            )}
           </DialogContent>
           <DialogActions>
             <Button onClick={guard.requestClose}>Cancel</Button>
             <Button
               appearance="primary"
-              disabled={!keyValid || save.isPending || keepSecret}
+              disabled={!keyValid || save.isPending || keepSecret || (waits !== null && !reason.trim())}
               onClick={() => save.mutate()}
             >
-              Save
+              {waits ? 'Ask for approval' : 'Save'}
             </Button>
           </DialogActions>
         </DialogBody>
