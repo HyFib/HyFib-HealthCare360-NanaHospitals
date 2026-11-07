@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.MedicalRecords;
 using HyFib.HealthCare360.Modules.Clinical.Features.Procedures;
 using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
+using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
@@ -68,10 +69,12 @@ public sealed class ProcedureSharingTests(HospitalServer server)
         visiting.GetProperty("performer")[0].GetProperty("actor").GetProperty("display").GetString().ShouldBe("Dr. Rao (visiting)");
         visiting.GetProperty("bodySite")[0].GetProperty("text").GetString().ShouldBe("Axilla, right");
 
-        // The record in error is left out of searches, but read by id it says it was entered in error.
+        // The record in error is left out of searches, but read by id it says it was entered in error, and why.
         var retracted = await FhirAsync(partner, $"Procedure/{wrong.Id}", "TREAT");
         retracted.Status.ShouldBe(200);
         retracted.Body.GetProperty("status").GetString().ShouldBe("entered-in-error");
+        retracted.Body.GetProperty("note").EnumerateArray().Select(n => n.GetProperty("text").GetString())
+            .ShouldContain("Entered in error: Recorded for the wrong patient", "a provider that read the record learns why it was withdrawn");
         Matches((await FhirAsync(partner, $"Procedure?patient={patient}&status=entered-in-error", "TREAT")).Body).ShouldBe([wrong.Id.ToString("D")]);
 
         // The consent covers procedures only.
@@ -156,17 +159,35 @@ public sealed class ProcedureSharingTests(HospitalServer server)
             misfiled.PerformedAt, "GZB0ZZZ", null, null, null, ProcedureSide.NotApplicable, null, null, null, "Wrong procedure picked", misfiled.Version));
         (await CategoriesAsync(admin, corrected)).ShouldBe([SensitiveCategory.MentalHealth]);
 
+        // A code of the hospital's own tariff that happens to begin as a termination's does not: only an ICD-10-PCS code says
+        // what the procedure was.
+        using (var tariff = await mrd.SendRawAsync(HttpMethod.Post, "/api/v1/mrd/procedure-codes", new SaveProcedureCodeRequest(
+                   "10AHOSP", "Dressing in the ward's procedure room", "Hospital tariff", "Nursing", "Dressing", true)))
+        {
+            tariff.EnsureSuccessStatusCode();
+        }
+
+        var dressed = await RegisterAsync(frontOffice);
+        (await RecordAsync(doctor, dressed, "10AHOSP")).CodeSystem.ShouldBe("Hospital tariff");
+        (await CategoriesAsync(admin, dressed)).ShouldBeEmpty("a tariff code is no ICD-10-PCS code, whatever it begins with");
+
         // Records kept before the upgrade, when nothing put them in a category: a termination, a course of ECT, a termination
-        // marked as entered in error, and an appendicectomy. Then the upgrade's own statement.
+        // marked as entered in error, and an appendicectomy; a termination on a record already in the HIV category; and a code
+        // of the hospital's tariff and a code cut short, neither of them an ICD-10-PCS procedure. Then the upgrade's own
+        // statement.
         var (terminated, shocked, voided, operated) =
             (await RegisterAsync(frontOffice), await RegisterAsync(frontOffice), await RegisterAsync(frontOffice), await RegisterAsync(frontOffice));
+        var (positive, tariffed, truncated) = (await RegisterAsync(frontOffice), await RegisterAsync(frontOffice), await RegisterAsync(frontOffice));
+        var categories = await admin.GetAsync<SensitiveCategoriesDto>($"/api/v1/patients/{positive}/sensitive-categories");
+        await admin.PutAsync<SensitiveCategoriesDto>($"/api/v1/patients/{positive}/sensitive-categories",
+            new SetSensitiveCategoriesRequest([SensitiveCategory.Hiv], "HIV infection recorded on paper", categories.Version));
         await using (var scope = server.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
             var facilityId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
-            ProcedureRecord Before(Guid patientId, string code)
+            ProcedureRecord Before(Guid patientId, string code, string system = CodeReleases.Icd10Pcs)
             {
-                var record = ProcedureRecord.Record(patientId, new ProcedureDetails(DateTimeOffset.UtcNow.AddYears(-1), code, CodeReleases.Icd10Pcs,
+                var record = ProcedureRecord.Record(patientId, new ProcedureDetails(DateTimeOffset.UtcNow.AddYears(-1), code, system,
                     "Recorded before the upgrade", null, "Dr. Menon", ProcedureSide.NotApplicable, null, null, null), null);
                 record.FacilityId = facilityId;
                 db.Add(record);
@@ -174,19 +195,73 @@ public sealed class ProcedureSharingTests(HospitalServer server)
             }
 
             Before(terminated, "10A07ZX");
-            Before(shocked, "gzb4zzz");
+            var course = Before(shocked, "GZB4ZZZ");
             Before(voided, "10A07Z6").MarkEnteredInError("Recorded for the wrong patient", null, DateTimeOffset.UtcNow).IsSuccess.ShouldBeTrue();
             Before(operated, "0DTJ4ZZ");
+            Before(positive, "10A00ZZ");
+            Before(tariffed, "10AHOSP", "Hospital tariff");
+            Before(truncated, "10A");
             await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+            // The course of ECT kept its code as it was typed then, in lower case and with spaces: a record made now keeps the
+            // catalogue's code, in capitals.
+            await db.Set<ProcedureRecord>().IgnoreQueryFilters().Where(p => p.Id == course.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.Code, " gzb4zzz "), TestContext.Current.CancellationToken);
             (await CategoriesAsync(admin, terminated)).ShouldBeEmpty();
             await db.Database.ExecuteSqlRawAsync(Migrations.SensitiveProcedures.MarkRecordsOfSensitiveProcedures, TestContext.Current.CancellationToken);
         }
 
         (await CategoriesAsync(admin, terminated)).ShouldBe([SensitiveCategory.Mtp]);
-        (await CategoriesAsync(admin, shocked)).ShouldBe([SensitiveCategory.MentalHealth]);
+        (await CategoriesAsync(admin, shocked)).ShouldBe([SensitiveCategory.MentalHealth], "the code is read whatever its case and the spaces around it");
         (await CategoriesAsync(admin, voided)).ShouldBeEmpty("a procedure entered in error is known to be wrong: the upgrade does not close the record for it");
         (await CategoriesAsync(admin, operated)).ShouldBeEmpty();
         (await CategoriesAsync(admin, treated)).ShouldBe([SensitiveCategory.MentalHealth], "the upgrade only adds a category");
+        (await CategoriesAsync(admin, positive)).ShouldBe([SensitiveCategory.Hiv, SensitiveCategory.Mtp], ignoreOrder: true,
+            "the upgrade adds the category to those the record is already in");
+        (await CategoriesAsync(admin, tariffed)).ShouldBeEmpty("a tariff code is no ICD-10-PCS code, whatever it begins with");
+        (await CategoriesAsync(admin, truncated)).ShouldBeEmpty("a code cut short to its table names no procedure");
+    }
+
+    [Fact]
+    public async Task An_operation_the_theatre_completed_during_a_stay_is_shared_as_a_surgical_procedure_of_the_stay()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var (partner, partnerId, _) = await PartnerAsync(server);
+        var patient = await RegisterAsync(frontOffice);
+        await frontOffice.PostAsync<Created>($"/api/v1/patients/{patient}/consents", new CaptureConsentRequest(
+            ConsentType.DataSharing, null, true, null, null, null, null, null,
+            new RecordSharingScope([partnerId], [SharingPurpose.Treatment], [SharedRecordKind.Procedures], null, null, null)));
+        var admission = await AbdmExportTests.AdmitAsync(server, patient);
+
+        // From the admission on, the bed is given back whatever happens.
+        try
+        {
+            // The theatre completes an appendicectomy booked for the stay before any doctor opened a note in it: the operation
+            // is the stay's, with no encounter or visit of its own.
+            var me = await doctor.GetAsync<JsonElement>("/api/v1/auth/me");
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<ProcedureService>().RecordSurgeryAsync(new SurgeryCompleted(
+                    Guid.CreateVersion7(), "OT-STAY-1", me.GetProperty("facilityId").GetGuid(), patient, admission.Id, null, null, "Open appendicectomy",
+                    ProcedureSide.NotApplicable, me.GetProperty("practitionerId").GetGuid(), DateTimeOffset.UtcNow.AddHours(-2), DateTimeOffset.UtcNow.AddHours(-1)),
+                    TestContext.Current.CancellationToken);
+                await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().SaveChangesAsync(TestContext.Current.CancellationToken);
+            }
+
+            var search = await FhirAsync(partner, $"Procedure?patient={patient}", "TREAT");
+            var operation = Resource(search.Body, Guid.Parse(Matches(search.Body).ShouldHaveSingleItem()));
+            operation.TryGetProperty("category", out var category).ShouldBeTrue("an operation the theatre completed is a surgical procedure");
+            var coding = category.GetProperty("coding")[0];
+            (coding.GetProperty("system").GetString(), coding.GetProperty("code").GetString()).ShouldBe(("http://snomed.info/sct", "387713003"));
+            operation.TryGetProperty("encounter", out var encounter)
+                .ShouldBeTrue("an operation of the stay, with no encounter of its own, is of the stay's in-patient visit");
+            encounter.GetProperty("reference").GetString().ShouldBe($"Encounter/visit-{admission.VisitId:D}");
+        }
+        finally
+        {
+            await AbdmExportTests.CancelAdmissionAsync(server, admission);
+        }
     }
 
     /// <summary>A procedure from the catalogue, done an hour ago, recorded on the chart by the doctor who did it.</summary>

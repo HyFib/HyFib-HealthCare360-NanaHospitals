@@ -193,8 +193,13 @@ public sealed class AbdmExportTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var abha = NewAbha();
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
-        var signed = await ConsultAsync(doctor, patient.Id, sign: true, procedure: true);
+
+        // Two consultations, an abscess drained in each: first the one left open, its drainage on the record before the other
+        // is signed; then the one signed, its drainage done by a colleague who wrote nothing else in it.
+        var colleague = await server.SignInAsync(HospitalServer.Users.SecondDoctor);
+        var colleagueId = (await colleague.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var unsigned = await ConsultAsync(doctor, patient.Id, sign: false, procedure: true);
+        var signed = await ConsultAsync(doctor, patient.Id, sign: true, procedure: true, performer: colleagueId);
         var path = $"/api/v1/abdm/bundles/op-consultations/{signed}";
 
         // Off by default: nothing is exported, for anyone.
@@ -226,12 +231,20 @@ public sealed class AbdmExportTests(HospitalServer server)
                     .ShouldBe(Abha.Format(abha));
 
                 // The abscess drained in this consultation, under the IG's Procedure section (SNOMED CT 371525003); not the
-                // one drained in the patient's other consultation.
-                resources.Single(r => r.GetProperty("resourceType").GetString() == "Procedure").GetProperty("code").GetProperty("text").GetString()
-                    .ShouldBe("Incision and drainage of abscess");
+                // one drained in the patient's other consultation, though it was on the record before this one was signed.
+                var procedure = resources.Where(r => r.GetProperty("resourceType").GetString() == "Procedure")
+                    .ShouldHaveSingleItem("a consultation holds the procedures done in it, not those of the patient's other consultations");
+                procedure.GetProperty("code").GetProperty("text").GetString().ShouldBe("Incision and drainage of abscess");
                 composition.GetProperty("section").EnumerateArray()
                     .Single(s => s.GetProperty("code").GetProperty("coding")[0].GetProperty("code").GetString() == "371525003")
                     .GetProperty("entry").GetArrayLength().ShouldBe(1);
+
+                // Done by the colleague, who is a practitioner of the document though they wrote nothing else in it.
+                procedure.TryGetProperty("performer", out var performers).ShouldBeTrue("the colleague who drained it is named, with their record");
+                var surgeon = Entry(bundle, performers[0].GetProperty("actor").GetProperty("reference").GetString()!);
+                surgeon.GetProperty("resourceType").GetString().ShouldBe("Practitioner");
+                surgeon.GetProperty("name")[0].GetProperty("text").GetString()
+                    .ShouldBe((await admin.GetAsync<JsonElement>($"/api/v1/masters/practitioners/{colleagueId}")).GetProperty("displayName").GetString());
                 resources.ShouldContain(r => r.GetProperty("resourceType").GetString() == "Condition");
                 version = bundle.GetProperty("meta").GetProperty("versionId").GetString();
             }
@@ -463,7 +476,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var abha = NewAbha();
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
-        var admission = await AdmitAsync(patient.Id);
+        var admission = await AdmitAsync(server, patient.Id);
 
         // From the admission on, the bed is given back whatever happens.
         try
@@ -497,7 +510,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         finally
         {
             await SwitchAsync(enabled: false);
-            await CancelAdmissionAsync(admission);
+            await CancelAdmissionAsync(server, admission);
         }
     }
 
@@ -944,11 +957,24 @@ public sealed class AbdmExportTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var abha = NewAbha();
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
-        var admission = await AdmitAsync(patient.Id);
+        var admission = await AdmitAsync(server, patient.Id);
 
         // From the admission on, the bed is given back whatever happens.
         try
         {
+            // A colleague puts a chest drain in, in theatre, before any doctor has opened a note in the stay: the operation is
+            // the stay's, with no encounter of its own.
+            var colleagueId = (await (await server.SignInAsync(HospitalServer.Users.SecondDoctor)).GetAsync<JsonElement>("/api/v1/auth/me"))
+                .GetProperty("practitionerId").GetGuid();
+            var facilityId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<ProcedureService>().RecordSurgeryAsync(new SurgeryCompleted(
+                    Guid.CreateVersion7(), "OT-STAY-2", facilityId, patient.Id, admission.Id, admission.VisitId, null, "Intercostal chest drain insertion",
+                    ProcedureSide.Left, colleagueId, DateTimeOffset.UtcNow.AddHours(-3), DateTimeOffset.UtcNow.AddHours(-2)), Ct);
+                await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().SaveChangesAsync(Ct);
+            }
+
             // The stay: the doctor's admission note with its diagnosis, a CRP, and paracetamol for the fever.
             var note = await AdmissionNoteAsync(doctor, patient.Id, admission);
             await ReleaseAsync(await CrpAsync(patient, admission));
@@ -978,7 +1004,19 @@ public sealed class AbdmExportTests(HospitalServer server)
                 .ShouldBe("R50.9");
             Resources(bundle, "MedicationRequest").ShouldHaveSingleItem().GetProperty("medicationCodeableConcept").GetProperty("text").GetString()
                 .ShouldBe(paracetamol.Name);
-            Resources(bundle, "Procedure").ShouldHaveSingleItem().GetProperty("code").GetProperty("text").GetString().ShouldBe("Diagnostic pleural tap");
+
+            // The stay's procedures: the pleural tap on the chart, and the drain put in in theatre, which has no encounter of its
+            // own; the drain done by the colleague, a practitioner of the document though they wrote nothing else in it.
+            var procedures = Resources(bundle, "Procedure");
+            procedures.Select(p => p.GetProperty("code").GetProperty("text").GetString())
+                .ShouldBe(["Intercostal chest drain insertion", "Diagnostic pleural tap"], ignoreOrder: true, "an operation of the stay is in its summary, encounter or none");
+            var drain = procedures.Single(p => p.GetProperty("code").GetProperty("text").GetString() == "Intercostal chest drain insertion");
+            drain.TryGetProperty("performer", out var performers).ShouldBeTrue("the colleague who put the drain in is named, with their record");
+            var surgeon = Entry(bundle, performers[0].GetProperty("actor").GetProperty("reference").GetString()!);
+            surgeon.GetProperty("resourceType").GetString().ShouldBe("Practitioner");
+            var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+            surgeon.GetProperty("name")[0].GetProperty("text").GetString()
+                .ShouldBe((await hospitalAdmin.GetAsync<JsonElement>($"/api/v1/masters/practitioners/{colleagueId}")).GetProperty("displayName").GetString());
 
             // The section reads whole: the doctor's list of medicines on discharge, then what was prescribed during the stay.
             var medications = Composition(bundle).GetProperty("section").EnumerateArray().Single(s => s.GetProperty("title").GetString() == "Medications");
@@ -1003,7 +1041,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         finally
         {
             await SwitchAsync(enabled: false);
-            await CancelAdmissionAsync(admission);
+            await CancelAdmissionAsync(server, admission);
         }
     }
 
@@ -1053,7 +1091,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         var abha = NewAbha();
         var kept = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
         var duplicate = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
-        var admission = await AdmitAsync(duplicate.Id);
+        var admission = await AdmitAsync(server, duplicate.Id);
 
         // From the admission on, the bed is given back whatever happens.
         try
@@ -1102,7 +1140,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         {
             await SetPatientAsync(kept.Id, deleted: false);
             await SwitchAsync(enabled: false);
-            await CancelAdmissionAsync(admission);
+            await CancelAdmissionAsync(server, admission);
         }
     }
 
@@ -1115,7 +1153,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         var abha = NewAbha();
         var kept = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
         var duplicate = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
-        var admission = await AdmitAsync(duplicate.Id);
+        var admission = await AdmitAsync(server, duplicate.Id);
 
         // From the admission on, the bed is given back whatever happens.
         try
@@ -1181,7 +1219,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         finally
         {
             await SwitchAsync(enabled: false);
-            await CancelAdmissionAsync(admission);
+            await CancelAdmissionAsync(server, admission);
         }
     }
 
@@ -1214,8 +1252,11 @@ public sealed class AbdmExportTests(HospitalServer server)
         (test.Loinc, test.LoincName).ShouldBe(("1988-5", null));
     }
 
-    /// <summary>A consultation without a visit: complaint, assessment and a coded diagnosis; signed or left open.</summary>
-    internal static async Task<Guid> ConsultAsync(ApiClient doctor, Guid patientId, bool sign, bool procedure = false)
+    /// <summary>
+    /// A consultation without a visit: complaint, assessment and a coded diagnosis, and an abscess drained in it when asked
+    /// (by the doctor, or the practitioner named); signed or left open.
+    /// </summary>
+    internal static async Task<Guid> ConsultAsync(ApiClient doctor, Guid patientId, bool sign, bool procedure = false, Guid? performer = null)
     {
         var encounter = await doctor.PostAsync<EncounterDetail>("/api/v1/emr/encounters", new StartEncounterRequest(
             patientId, VisitId: null, AdmissionId: null, Type: null, DepartmentId: null, PractitionerId: null, TemplateId: null,
@@ -1228,9 +1269,9 @@ public sealed class AbdmExportTests(HospitalServer server)
             new AddDiagnosisRequest("R50.9", Title: null, DiagnosisType.Provisional, IsPrimary: true, OnsetDate: null, DiagnosisStatus.Active, Notes: null));
         if (procedure)
         {
-            // An abscess drained in the consultation, described in words.
+            // An abscess drained in the consultation, described in words, by the doctor or the practitioner named.
             await doctor.PostAsync<ProcedureDto>($"/api/v1/emr/patients/{patientId}/procedures", new RecordProcedureRequest(
-                encounter.Id, DateTimeOffset.UtcNow.AddMinutes(-5), null, "Incision and drainage of abscess", null, null, ProcedureSide.Right, "Axilla",
+                encounter.Id, DateTimeOffset.UtcNow.AddMinutes(-5), null, "Incision and drainage of abscess", performer, null, ProcedureSide.Right, "Axilla",
                 "Pus drained", null));
         }
 
@@ -1267,7 +1308,7 @@ public sealed class AbdmExportTests(HospitalServer server)
             .Prescription.Status.ShouldBe(PrescriptionStatus.Signed);
 
     /// <summary>The front office admits the patient under the doctor to a free bed of the female general ward.</summary>
-    private async Task<AdmissionCreated> AdmitAsync(Guid patientId)
+    internal static async Task<AdmissionCreated> AdmitAsync(HospitalServer server, Guid patientId)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
@@ -1282,7 +1323,8 @@ public sealed class AbdmExportTests(HospitalServer server)
             AdmittedAt: null, Notes: null, NotifyPatient: false));
     }
 
-    private async Task CancelAdmissionAsync(AdmissionCreated admission)
+    /// <summary>The hospital administrator cancels the admission, which gives the bed back.</summary>
+    internal static async Task CancelAdmissionAsync(HospitalServer server, AdmissionCreated admission)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         await admin.PostAsync($"/api/v1/inpatient/admissions/{admission.Id}/cancel", new CancelAdmissionRequest("Admitted for a test of ABDM health records"));

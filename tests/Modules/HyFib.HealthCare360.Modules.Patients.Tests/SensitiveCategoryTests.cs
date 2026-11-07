@@ -46,7 +46,12 @@ public sealed class SensitiveCategoryTests
     [InlineData("10E0XZZ", SensitiveCategory.None)]
     [InlineData("GZ50ZZZ", SensitiveCategory.None)]
     [InlineData("0DTJ4ZZ", SensitiveCategory.None)]
+    // A lumbar fusion with an interbody device: its body part, approach and device read 1, 0, A, but it ends no pregnancy.
+    [InlineData("0SG10A0", SensitiveCategory.None)]
+    // A code cut short is no procedure, whichever table it starts in; nor is a diagnosis's code, or none.
     [InlineData("10A", SensitiveCategory.None)]
+    [InlineData("GZB", SensitiveCategory.None)]
+    [InlineData("GZB0", SensitiveCategory.None)]
     [InlineData("O04.9", SensitiveCategory.None)]
     [InlineData(null, SensitiveCategory.None)]
     public void A_procedure_puts_the_record_in_the_category_its_diagnosis_would(string? code, SensitiveCategory expected) =>
