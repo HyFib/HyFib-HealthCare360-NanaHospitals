@@ -170,6 +170,7 @@ public sealed class TallyService(
                 r.Number, date, r.ReceiptNumber, r.Purpose, null, r.Lines.Select(l => new TallyPayment(l.Mode, l.Amount)).ToList(),
                 r.Reason == ReversalReason.Chargeback)).ToList(),
             RefundReversals = refundReversals.Select(r => new TallyRefundReversal(r.Number, date, r.RefundNumber, r.Purpose, r.Mode, r.Amount)).ToList(),
+            Vendors = await VendorsAsync(facilityId, date, ct),
         };
     }
 
@@ -667,6 +668,21 @@ public sealed class TallyService(
         }
 
         return days;
+    }
+
+    /// <summary>The day's purchase returns and supplier payable adjustments, from Supply chain (<see cref="IVendorAccountsSource"/>).</summary>
+    private async Task<VendorAccountsDay> VendorsAsync(Guid facilityId, DateOnly date, CancellationToken ct)
+    {
+        List<VendorDebitNoteEntry> notes = [];
+        List<VendorPayableAdjustmentEntry> adjustments = [];
+        foreach (var source in services.GetServices<IVendorAccountsSource>())
+        {
+            var day = await source.GetDayAsync(facilityId, date, ct);
+            notes.AddRange(day.DebitNotes);
+            adjustments.AddRange(day.Adjustments);
+        }
+
+        return new VendorAccountsDay(notes, adjustments);
     }
 
     private void Finish(TallyExport export, IReadOnlyList<TallyVoucherRecord> all, string message)

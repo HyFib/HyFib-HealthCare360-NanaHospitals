@@ -343,7 +343,7 @@ public sealed class StockService(HospitalDbContext db, ICurrentUser currentUser,
     /// <summary>Applies an approved correction to one batch (count variance, breakage, expiry write-off).</summary>
     public async Task<Result<StockMovement>> AdjustBatchAsync(Guid batchId, decimal delta, StockMovementType movement, StockReference reference, CancellationToken ct)
     {
-        if (movement is not (StockMovementType.Adjustment or StockMovementType.ExpiryWriteOff))
+        if (movement is not (StockMovementType.Adjustment or StockMovementType.ExpiryWriteOff or StockMovementType.PurchaseReturn))
         {
             throw new ArgumentException($"{movement} is not an adjustment.", nameof(movement));
         }

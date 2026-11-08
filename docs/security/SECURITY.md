@@ -463,6 +463,17 @@ and grants nothing.
     it from their own sign-in (`pharmacy.override_unacknowledged`), never the account that signed it
     (`pharmacy.override_own_prescription`); the acknowledgement is audited at Warning with the alert and the doctor's
     reason (`pharmacy.safety_override_acknowledged`).
+  - the store (MAKER-CHECKER slice 13): an indent is approved and issued by someone other than whoever raised it
+    (`indent.approve_own`, `indent.issue_own`); a transfer is received by someone other than whoever dispatched it
+    (`transfer.receive_own`), and a line counted short books nothing until someone who holds
+    `inventory.adjustments.approve`, neither the receiver nor the dispatcher (`transfer.shortfall_own`), approves the
+    write-off (`inventory.transfer_shortfall`); a batch held on a recall is released only by someone else who holds
+    `inventory.recall.release` (`inventory.recall_release`); a purchase return (`purchase.debit_note`, by
+    `purchase.grn.approve`) and a supplier payable adjustment (`purchase.payable_adjustment`, by `purchase.approve`) post,
+    and reach Tally, only when someone other than whoever raised them approves. A store's own reorder levels change at once,
+    audited before and after: they only decide when to reorder. The recall trace, which lists the names and phone numbers of
+    every patient who had a batch, needs `pharmacy.registers` and is audited as PHI access with who ran it
+    (`pharmacy.recall_trace`).
     A new price or GST rate, a price the counter may type, discounts allowed and a service put in use wait; what only
     narrows them (no counter price, no discounts, out of use) applies at once. While a change waits, any other change to
     the price is refused (`approval.already_requested`), the price in use put back included. A new service is made out

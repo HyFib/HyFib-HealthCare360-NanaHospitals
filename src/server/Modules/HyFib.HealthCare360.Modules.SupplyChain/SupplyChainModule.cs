@@ -10,6 +10,7 @@ using HyFib.HealthCare360.Modules.SupplyChain.Features.Reports;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Stock;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Stores;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Transfers;
+using HyFib.HealthCare360.Modules.SupplyChain.Features.VendorAccounts;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Vendors;
 using HyFib.HealthCare360.Modules.SupplyChain.Services;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -124,6 +125,8 @@ public sealed class SupplyChainModule : IModule
         services.AddScoped<GoodsReceiptService>();
         services.AddScoped<IndentService>();
         services.AddScoped<TransferService>();
+        services.AddScoped<VendorAccountService>();
+        services.AddScoped<IVendorAccountsSource, VendorAccountsDayBookSource>();
         services.AddScoped<AdjustmentService>();
         services.AddScoped<InventoryReportService>();
         services.AddScoped<AssetService>();
@@ -146,6 +149,7 @@ public sealed class SupplyChainModule : IModule
         AdjustmentEndpoints.Map(endpoints);
         VendorEndpoints.Map(endpoints);
         PurchaseEndpoints.Map(endpoints);
+        VendorAccountEndpoints.Map(endpoints);
         GoodsReceiptEndpoints.Map(endpoints);
         AssetEndpoints.Map(endpoints);
         MaintenanceEndpoints.Map(endpoints);
