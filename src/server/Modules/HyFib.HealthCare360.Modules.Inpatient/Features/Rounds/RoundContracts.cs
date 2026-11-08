@@ -7,7 +7,8 @@ namespace HyFib.HealthCare360.Modules.Inpatient.Features.Rounds;
 /// One in-patient on the ward round, with what needs the doctor's attention. "Seen", "note" and results are the
 /// doctor's own when the round is a doctor's, and anyone's when it is a department's. For a restricted (VIP) patient the
 /// name reads "Restricted patient", and the diagnosis and vital-sign details are left out, unless the user may open
-/// restricted records.
+/// restricted records; for a patient in a sensitive category the user does not hold, the diagnosis and vital-sign details
+/// are left out (<see cref="IsConfidential"/>).
 /// </summary>
 public sealed record WardRoundPatient(
     Guid AdmissionId,
@@ -40,7 +41,14 @@ public sealed record WardRoundPatient(
     bool HasCriticalResults,
     DateTimeOffset? VitalsAt,
     FlagSeverity? VitalsSeverity,
-    IReadOnlyList<string> VitalsFlags);
+    IReadOnlyList<string> VitalsFlags)
+{
+    /// <summary>
+    /// A record in a sensitive category the user does not hold (HIV, mental health, MTP, sexual violence): named, as on the
+    /// bed board, without the diagnosis and vital-sign details.
+    /// </summary>
+    public bool IsConfidential { get; init; }
+}
 
 /// <summary>
 /// The ward round (EMR-01 "IP rounds"): the in-patients under a doctor's care (their own admissions and those they have

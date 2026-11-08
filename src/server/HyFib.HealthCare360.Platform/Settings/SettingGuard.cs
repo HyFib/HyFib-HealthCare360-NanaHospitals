@@ -220,6 +220,21 @@ public static class SettingGuard
             "Whether a second blood bank officer verifies a donation's screening results before its units leave quarantine, and issues blood one officer both grouped and cross-matched. Off, one officer does all of it, and what they release so is listed for the medical officer's review.",
             DefaultOn: true),
 
+        // ClinicalSignOff.DischargeSummaryCareTeamSetting (the Clinical module): on unless set to false.
+        ["clinical.dischargeSummary.careTeamOnly"] = new SettingSwitch("Discharge summary signed by the care team",
+            "Whether a discharge summary is signed only by the stay's consultant or a doctor on its care team, as themselves. Off, any doctor signs any stay's summary, and an account not linked to a doctor signs it in the consultant's name.",
+            DefaultOn: true),
+
+        // ClinicalSignOff.EncounterAmendByAuthorSetting (the Clinical module): on unless set to false.
+        ["clinical.encounters.amendByAuthorOnly"] = new SettingSwitch("Another doctor's signed encounter amended with approval",
+            "Whether a signed encounter is amended at once only by the doctor who wrote it, and by any other doctor only when its author or the head of its department approves. Off, any doctor amends any signed encounter alone (the original is still kept).",
+            DefaultOn: true),
+
+        // ClinicalSignOff.CriticalResultCoveringSetting (the Clinical module): on unless set to false.
+        ["clinical.criticalResults.coveringOnly"] = new SettingSwitch("Critical results acknowledged by the covering doctor",
+            "Whether another doctor's critical result is acknowledged only by a doctor on the same stay's care team or one the ordering doctor handed over to. Off, any doctor acknowledges any critical result, and it leaves the ordering doctor's list unseen by them.",
+            DefaultOn: true),
+
         // AdministrationOnDesktop.SettingKey; not set, the server's settings file decides (on, as it ships).
         ["security.administrationRequiresDesktop"] = new SettingSwitch("Administration only on enrolled desktops",
             "Whether users and roles, settings, devices, backups, integrations and the audit trail can be changed only in HC360 Desktop on a computer IT enrolled. Off, any browser signed in as an administrator can.",

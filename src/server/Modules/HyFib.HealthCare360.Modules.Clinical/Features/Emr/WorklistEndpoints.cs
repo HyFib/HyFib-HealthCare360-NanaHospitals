@@ -28,8 +28,8 @@ internal static class WorklistEndpoints
         TypedResults.Ok(await queries.BuildAsync(date ?? time.Today(), practitionerId ?? user.PractitionerId, departmentId, ct));
 
     /// <summary>Records that the doctor has seen a released report (critical results stay on top until acknowledged).</summary>
-    private static async Task<IResult> Acknowledge(Guid id, AcknowledgeResultRequest request, ClinicalAccess access, HospitalDbContext db, ICurrentUser user,
-        TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Acknowledge(Guid id, AcknowledgeResultRequest request, ClinicalAccess access, DoctorHandovers handovers, HospitalDbContext db,
+        ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         var review = await db.Set<ResultReview>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstOrDefaultAsync(r => r.Id == id, ct);
         if (review is null)
@@ -41,6 +41,13 @@ internal static class WorklistEndpoints
         if (opened.IsFailure)
         {
             return opened.Error!.ToProblem();
+        }
+
+        // Another doctor's critical result is acknowledged only by a doctor covering for them (maker-checker, slice 15).
+        var covering = await handovers.EnsureMayAcknowledgeAsync(review, ct);
+        if (covering.IsFailure)
+        {
+            return covering.Error!.ToProblem();
         }
 
         var result = review.Acknowledge(user.UserId, request.Note, time.GetUtcNow());
