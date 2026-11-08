@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HyFib.HealthCare360.Server.Persistence.Migrations
 {
     [DbContext(typeof(HospitalDbContext))]
-    [Migration("20261108205404_StatutoryReturns")]
+    [Migration("20261108230222_StatutoryReturns")]
     partial class StatutoryReturns
     {
         /// <inheritdoc />
@@ -42870,6 +42870,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("release_notes");
 
+                    b.Property<string>("ReleaseWitnessName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("release_witness_name");
+
+                    b.Property<Guid?>("ReleaseWitnessUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("release_witness_user_id");
+
                     b.Property<DateTimeOffset?>("ReleasedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("released_at");
@@ -42878,6 +42887,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("released_by_name");
+
+                    b.Property<Guid?>("ReleasedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("released_by_user_id");
 
                     b.Property<string>("ReleasedTo")
                         .HasMaxLength(64)
