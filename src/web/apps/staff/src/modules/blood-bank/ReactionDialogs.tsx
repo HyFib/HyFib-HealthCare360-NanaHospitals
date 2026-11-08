@@ -30,7 +30,7 @@ import {
   useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { fromIstInput, nowIstInput } from '@/modules/ot/shared/datetime';
 import { applyFormErrors } from '@/modules/ot/shared/errors';
@@ -39,13 +39,15 @@ import { CheckboxGroupField, DateTimeField } from '@/modules/ot/shared/fields';
 import {
   bloodApi,
   bloodKeys,
+  REACTION_IMPUTABILITIES,
   REACTION_SEVERITIES,
   REACTION_SYMPTOMS,
   REACTION_TYPES,
   type BloodIssueDto,
   type TransfusionReactionDto,
 } from './api';
-import { reactionTypeLabel, severityLabel, symptomLabel } from './labels';
+import { imputabilityLabel, reactionTypeLabel, severityLabel, symptomLabel } from './labels';
+import { haemovigilanceReportable, reactionLowers } from './rules';
 
 const useStyles = makeStyles({
   body: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -217,6 +219,9 @@ const closeSchema = z.object({
   // `: boolean` keeps TypeScript from inferring a type predicate, which would narrow the output type away from the form's input type.
   type: z.enum(REACTION_TYPES).refine((t): boolean => t !== 'Unclassified', 'Classify the reaction.'),
   severity: z.enum(REACTION_SEVERITIES),
+  imputability: z
+    .enum(REACTION_IMPUTABILITIES)
+    .refine((i): boolean => i !== 'NotAssessed', 'Assess the imputability before closing the investigation.'),
   findings: z.string().trim().min(1, 'Record the investigation findings.').max(4000),
   reportedToHaemovigilance: z.boolean(),
 });
@@ -233,10 +238,13 @@ export function CloseReactionDialog({ reaction, onClose }: { reaction: Transfusi
     defaultValues: {
       type: reaction.type === 'Unclassified' ? 'FebrileNonHaemolytic' : reaction.type,
       severity: reaction.severity,
+      imputability: reaction.imputability === 'NotAssessed' ? 'Probable' : reaction.imputability,
       findings: reaction.investigationFindings ?? '',
       reportedToHaemovigilance: reaction.reportedToHaemovigilance,
     },
   });
+  const [closeSeverity, closeImputability] = useWatch({ control: form.control, name: ['severity', 'imputability'] });
+  const lowered = reactionLowers(reaction.severity, reaction.imputability, closeSeverity, closeImputability);
   const close = useMutation({
     mutationFn: (v: CloseValues) => bloodApi.closeReaction(reaction.id, v),
     onSuccess: () => {
@@ -280,6 +288,27 @@ export function CloseReactionDialog({ reaction, onClose }: { reaction: Transfusi
                   label="Severity"
                   options={REACTION_SEVERITIES.map((s) => ({ value: s, label: severityLabel[s] }))}
                 />
+                <SelectField
+                  control={form.control}
+                  name="imputability"
+                  label="Imputability"
+                  required
+                  options={REACTION_IMPUTABILITIES.filter((i) => i !== 'NotAssessed').map((i) => ({
+                    value: i,
+                    label: imputabilityLabel[i],
+                  }))}
+                />
+                {lowered.length > 0 && (
+                  <FullRow>
+                    <MessageBar intent="warning">
+                      <MessageBarBody>
+                        <MessageBarTitle>This lowers the reaction</MessageBarTitle>
+                        {lowered.join('; ')}. Lowering waits for the blood bank medical officer: record the
+                        classification with your reason first, and close once it is approved.
+                      </MessageBarBody>
+                    </MessageBar>
+                  </FullRow>
+                )}
                 <FullRow>
                   <TextAreaField
                     control={form.control}
@@ -312,6 +341,153 @@ export function CloseReactionDialog({ reaction, onClose }: { reaction: Transfusi
                 icon={close.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 Close investigation
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </form>
+        {guard.dialogs}
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
+const classifySchema = z.object({
+  type: z.enum(REACTION_TYPES),
+  severity: z.enum(REACTION_SEVERITIES),
+  imputability: z.enum(REACTION_IMPUTABILITIES),
+  reason: z.string().trim().max(1000),
+});
+
+type ClassifyValues = z.infer<typeof classifySchema>;
+
+/**
+ * The blood bank's classification while it investigates (maker-checker, slice 15). Raising the severity or imputability,
+ * or a first assessment, is made at once; lowering either, which can take the reaction out of haemovigilance reporting,
+ * needs the reason and waits for the blood bank medical officer, never the officer who asked.
+ */
+export function ClassifyReactionDialog({
+  reaction,
+  onClose,
+}: {
+  reaction: TransfusionReactionDto;
+  onClose: () => void;
+}) {
+  const styles = useStyles();
+  const notify = useNotify();
+  const queryClient = useQueryClient();
+  const form = useForm<ClassifyValues>({
+    resolver: zodResolver(classifySchema),
+    defaultValues: {
+      type: reaction.type,
+      severity: reaction.severity,
+      imputability: reaction.imputability,
+      reason: '',
+    },
+  });
+  const [askedSeverity, askedImputability] = useWatch({ control: form.control, name: ['severity', 'imputability'] });
+  const lowered = reactionLowers(reaction.severity, reaction.imputability, askedSeverity, askedImputability);
+  const leavesReporting =
+    haemovigilanceReportable(reaction.imputability) && !haemovigilanceReportable(askedImputability);
+  const save = useMutation({
+    mutationFn: (v: ClassifyValues) =>
+      bloodApi.classifyReaction(reaction.id, {
+        ...v,
+        reason: v.reason.length > 0 ? v.reason : null,
+        version: reaction.version,
+      }),
+    onSuccess: (asked) => {
+      if (asked) {
+        notify.success('Lowering asked for', `${asked.summary}. It waits for the blood bank medical officer.`);
+      } else {
+        notify.success('Classification recorded');
+      }
+
+      void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
+      onClose();
+    },
+    onError: (error) => applyFormErrors(error, form.setError),
+  });
+
+  const submit = (v: ClassifyValues) => {
+    if (lowered.length > 0 && v.reason.length < 5) {
+      form.setError('reason', { message: 'Say why the reaction is lowered: the findings that support it.' });
+      return;
+    }
+
+    save.mutate(v);
+  };
+
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+
+  return (
+    <Dialog open onOpenChange={guard.onOpenChange}>
+      <DialogSurface style={{ maxWidth: 640 }}>
+        <form onSubmit={form.handleSubmit(submit)} noValidate>
+          <DialogBody>
+            <DialogTitle>
+              Classify the reaction
+              <Caption1 block className={styles.muted}>
+                {reaction.patientName} · unit {reaction.unitNumber} · reported{' '}
+                {severityLabel[reaction.severity].toLowerCase()}
+              </Caption1>
+            </DialogTitle>
+            <DialogContent className={styles.body}>
+              <FormGrid columns={2}>
+                <SelectField
+                  control={form.control}
+                  name="type"
+                  label="Classification (HvPI)"
+                  options={REACTION_TYPES.map((t) => ({ value: t, label: reactionTypeLabel[t] }))}
+                />
+                <SelectField
+                  control={form.control}
+                  name="severity"
+                  label="Severity"
+                  options={REACTION_SEVERITIES.map((s) => ({ value: s, label: severityLabel[s] }))}
+                />
+                <SelectField
+                  control={form.control}
+                  name="imputability"
+                  label="Imputability"
+                  options={REACTION_IMPUTABILITIES.map((i) => ({ value: i, label: imputabilityLabel[i] }))}
+                />
+                {lowered.length > 0 && (
+                  <FullRow>
+                    <MessageBar intent="warning">
+                      <MessageBarBody>
+                        <MessageBarTitle>Waits for the blood bank medical officer</MessageBarTitle>
+                        This lowers the reaction ({lowered.join('; ')})
+                        {leavesReporting ? ' and takes it out of haemovigilance reporting' : ''}. The classification in
+                        force stands until the medical officer approves; you cannot approve it yourself.
+                      </MessageBarBody>
+                    </MessageBar>
+                  </FullRow>
+                )}
+                <FullRow>
+                  <TextAreaField
+                    control={form.control}
+                    name="reason"
+                    label="Why it is lowered"
+                    required={lowered.length > 0}
+                    rows={3}
+                    maxLength={1000}
+                    placeholder="The investigation's findings that support it"
+                  />
+                </FullRow>
+              </FormGrid>
+              <ActionError error={save.error} />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={guard.requestClose} disabled={save.isPending}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={save.isPending}
+                icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
+              >
+                {lowered.length > 0 ? 'Ask the medical officer' : 'Record classification'}
               </Button>
             </DialogActions>
           </DialogBody>

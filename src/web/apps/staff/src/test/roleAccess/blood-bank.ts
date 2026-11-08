@@ -432,6 +432,12 @@ const reaction = (
   reportedToHaemovigilance: false,
   closedAt: null,
   closedByName: null,
+  imputability: 'NotAssessed',
+  loweredByName: null,
+  lowerRequestedByName: null,
+  lowerReason: null,
+  lowerPendingApprovalId: null,
+  version: 3,
   ...extra,
 });
 

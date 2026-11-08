@@ -27,6 +27,15 @@ public sealed class TransfusionReaction : AuditableEntity, IFacilityScoped
     public ReactionSeverity Severity { get; set; }
 
     public ReactionType Type { get; set; }
+
+    /// <summary>The blood bank's assessment of whether the transfusion caused it (<see cref="ReactionDowngrade"/>).</summary>
+    public ReactionImputability Imputability { get; set; }
+
+    /// <summary>Who lowered the severity or imputability, and who asked when the medical officer approved it.</summary>
+    public string? LoweredByName { get; set; }
+
+    public string? LowerRequestedByName { get; set; }
+    public string? LowerReason { get; set; }
     public ReactionStatus Status { get; set; }
     public string? InvestigationFindings { get; set; }
     public bool ReportedToHaemovigilance { get; set; }
@@ -47,7 +56,39 @@ public sealed class TransfusionReaction : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    public Result Close(ReactionType type, ReactionSeverity severity, string findings, bool reportedToHaemovigilance, string closedBy, DateTimeOffset now)
+    /// <summary>
+    /// Records the blood bank's classification while the report is open. Lowering the severity or imputability is made only
+    /// when the medical officer approved it (or the hospital lets the officer do it alone): the service checks
+    /// <see cref="ReactionDowngrade.Lowers"/> before calling this.
+    /// </summary>
+    public Result Classify(ReactionType type, ReactionSeverity severity, ReactionImputability imputability)
+    {
+        if (Status == ReactionStatus.Closed)
+        {
+            return Error.Rule("bloodbank.reaction_closed", "This reaction report is closed.");
+        }
+
+        Type = type;
+        Severity = severity;
+        Imputability = imputability;
+        if (Status == ReactionStatus.Reported)
+        {
+            Status = ReactionStatus.UnderInvestigation;
+        }
+
+        return Result.Success();
+    }
+
+    /// <summary>The names kept when a classification was lowered.</summary>
+    public void MarkLowered(string reason, string loweredBy, string? requestedBy)
+    {
+        LowerReason = reason.Trim();
+        LoweredByName = loweredBy;
+        LowerRequestedByName = requestedBy;
+    }
+
+    public Result Close(
+        ReactionType type, ReactionSeverity severity, ReactionImputability imputability, string findings, bool reportedToHaemovigilance, string closedBy, DateTimeOffset now)
     {
         if (Status == ReactionStatus.Closed)
         {
@@ -64,8 +105,14 @@ public sealed class TransfusionReaction : AuditableEntity, IFacilityScoped
             return Error.Field("findings", "Record the investigation findings.");
         }
 
+        if (imputability == ReactionImputability.NotAssessed)
+        {
+            return Error.Field("imputability", "Assess the imputability before closing the investigation.");
+        }
+
         Type = type;
         Severity = severity;
+        Imputability = imputability;
         InvestigationFindings = findings.Trim();
         ReportedToHaemovigilance = reportedToHaemovigilance;
         Status = ReactionStatus.Closed;

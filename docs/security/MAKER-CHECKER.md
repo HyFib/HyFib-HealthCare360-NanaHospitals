@@ -36,7 +36,9 @@ absconded (the nurse in charge approves), LAMA and DAMA witnessed (on the ward a
 confirmed death certificate voided; a visit cancelled after the doctor started it; and in the theatre a side or
 procedure changed after the WHO Sign-in (the checklist redone), site marking with a side booked, the swab and
 instrument counts witnessed with their discrepancies settled, and implants corrected, not deleted, after the operation
-starts.
+starts; a canteen bill cancelled after it was paid (asked for, and approved by someone who approves canteen
+cancellations, never the cashier who sold it, the money going back the way it was paid, `canteen.sale_cancel`); and
+housekeeping's cleaning verified by a supervisor other than the cleaner (`housekeeping.verify_own`).
 
 ## Still on one person's word, by slice
 
@@ -56,7 +58,8 @@ starts.
 | 12 | Settle an insurance claim with deductions, or reject it, writing off what the insurer owes; record the pre-authorised amount that moves the bill from patient to insurer | Billing `ClaimService`, `PayerCoverageService` | Write-offs above a threshold approved by a second person; pre-authorised amounts checked by a second insurance desk user | Open |
 | 13 | Raise, approve and issue one's own indent (stock leaves as consumption); set an implant's ceiling price or an item's GST rate; receive a transfer one dispatched; release a recalled batch | SupplyChain `Indents`, `ItemEndpoints`, `Transfers`, `StockEndpoints` | Never approve or receive one's own; ceiling price and GST through the price approval; unblocking a recalled batch approved by a pharmacist | Open |
 | 14 | Close a sentinel event or never event straight from Reported, or downgrade it so no root-cause analysis is due; close a data breach without the Board report, or take patients off its notification list unaudited; schedule one's own bulk campaign; share a patient's reports and bills with any phone number; record an unscoped record-sharing consent with no signed form | Quality `IncidentService`; Privacy `BreachService`; Engagement `CampaignService`; Patients `PortalFamilyService`, front office consents | Sentinel closure and downgrade, breach closure and notification changes by a second person; campaigns approved by someone other than the author; family links confirmed by a code to the patient; unscoped consent with a witness | Open |
-| 15 | Override a lab quality-control failure for the day; change critical limits or switch on automatic verification; downgrade a transfusion reaction (skipping haemovigilance reporting); change a dialysis patient's infection status; cancel an admission after days of care; acknowledge another doctor's critical result; sign a discharge summary as any doctor; amend another doctor's signed encounter; waive an ambulance trip charge | Diagnostics, SpecialtyCare, Inpatient, Clinical, SupportServices | Each a threshold or a second person as the hospital's policy decides; listed for the decision | Open |
+| 15 | Override a lab quality-control failure for the day; change critical limits or switch on automatic verification; cancel an admission after days of care; acknowledge another doctor's critical result; sign a discharge summary as any doctor; amend another doctor's signed encounter | Diagnostics, Inpatient, Clinical | Each a threshold or a second person as the hospital's policy decides; listed for the decision | Open |
+| 15 | Waive an ambulance trip's charge; downgrade a transfusion reaction's severity or imputability (skipping haemovigilance reporting); change a dialysis patient's infection status (HBV, HCV, HIV: the machine and the isolation) | SupportServices `AmbulanceService` (`POST /api/v1/ambulance/trips/{id}/waive`, and `waiveReason` at completion); SpecialtyCare `ReactionClassificationService` (`PUT /api/v1/blood-bank/reactions/{id}/classification`, and the close), `InfectionStatusService` (`POST /api/v1/dialysis/patients/{patientId}/infection-status`) | Strict by default; each relaxed only by a guarded setting a second administrator approves (`ambulance.waiverApproval`, `bloodbank.reactionDowngradeApproval`, `dialysis.infectionStatusApproval`), and then audited at Warning. A completed trip is charged at once; its waiver waits for someone who approves waivers (`ambulance.waivers.approve`), never the asker, the charge standing until then and withdrawn from the bill once approved (one already on a final bill: the approval fails, a credit note is asked for). Lowering a reaction's severity, or its imputability below one assessed, waits for the blood bank medical officer (`bloodbank.reactions.approve`), never the officer who asked, with the reason; the classification stands and the investigation is not closed the lowered way meanwhile; raising either, or a first assessment, is made at once. A dialysis patient's infection status changes only on the patient's verified lab result for that infection from the last 90 days, never from the profile form; a sero-negative patient found positive is isolated at once (the stricter direction), and taking a patient off a positive status waits for a second person (`dialysis.infection_status.approve`), never the asker. Each is approved only over the record as asked (`approval.stale`) and audited with both names | In force (`ambulance.charge_waiver`, `bloodbank.reaction_lower`, `bloodbank.reaction_lowered`, `dialysis.infection_status`, `dialysis.infection_status_change`, `dialysis.lab_result_mismatch`) |
 | 15 | Cancel a visit after the doctor started it (the consultation under way, or a note, order or prescription on it) | Patients `VisitService` (`POST /api/v1/visits/{id}/cancel`) | The desk asks with a reason; a front-office supervisor or the treating doctor approves, never the asker; the token, charges and orders follow only once approved | In force (`patients.visit_cancel`) |
 
 ## Not covered (decided, not built)
@@ -133,6 +136,20 @@ starts.
   (`surgery.charge_cancel_failed`: the charge cannot be withdrawn) and a credit note is asked for at the billing desk, as
   slice 6 has it. The OT in-charge
   is a permission, `ot.materials.approve`, not the nurse named on the booking.
+
+- **Slice 15 leaves these as they are** (the three items in force). A waiver asked for at completion is asked for
+  after the trip's charges are posted, in a second step: if that request is refused (one already waiting), the trip stays
+  completed and charged, and the desk asks again from the trip log. The waiver withdraws the base fare and the
+  kilometres together; a part waiver is not offered (a discount at the billing desk does that, under slice 6). The
+  blood bank medical officer is a permission (`bloodbank.reactions.approve`, the hospital administrator by default), not
+  a role HC360 knows: the hospital grants it to the medical officer's account. Whether the reaction was actually sent to
+  the Haemovigilance Programme of India stays the officer's tick at closing; HC360 does not send it. The lab result a
+  dialysis status changes on is a result in HC360's own laboratory, verified; an outside laboratory's report is entered
+  there first (as an external result) to be used. A sero-negative patient found positive is isolated at once on the
+  result, by one person: the second look is not asked for, since a patient waiting for it would be dialysed on a shared
+  machine. Sessions already booked on a machine of the old category are refused when they start, as before, and are
+  reassigned by hand. The canteen's cashier may ask for their own bill's cancellation (only the approval is barred to
+  them), unlike the pharmacy, where whoever sold an invoice neither asks nor approves.
 
 ## How each control is built
 

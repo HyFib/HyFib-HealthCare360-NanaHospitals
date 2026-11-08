@@ -104,6 +104,7 @@ import { Route as AppFrontOfficeVisitorsRouteImport } from './routes/_app/front-
 import { Route as AppFrontOfficeVisitsRouteImport } from './routes/_app/front-office/visits'
 import { Route as AppHealthCheckupsIndexRouteImport } from './routes/_app/health-checkups/index'
 import { Route as AppHealthCheckupsBookRouteImport } from './routes/_app/health-checkups/book'
+import { Route as AppHousekeepingIndexRouteImport } from './routes/_app/housekeeping/index'
 import { Route as AppHrIndexRouteImport } from './routes/_app/hr/index'
 import { Route as AppHrCredentialsRouteImport } from './routes/_app/hr/credentials'
 import { Route as AppHrDesignationsRouteImport } from './routes/_app/hr/designations'
@@ -823,6 +824,11 @@ const AppHealthCheckupsIndexRoute = AppHealthCheckupsIndexRouteImport.update({
 const AppHealthCheckupsBookRoute = AppHealthCheckupsBookRouteImport.update({
   id: '/health-checkups/book',
   path: '/health-checkups/book',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppHousekeepingIndexRoute = AppHousekeepingIndexRouteImport.update({
+  id: '/housekeeping/',
+  path: '/housekeeping/',
   getParentRoute: () => AppRoute,
 } as any)
 const AppHrIndexRoute = AppHrIndexRouteImport.update({
@@ -2257,6 +2263,7 @@ export interface FileRoutesByFullPath {
   '/feedback/': typeof AppFeedbackIndexRoute
   '/front-office/': typeof AppFrontOfficeIndexRoute
   '/health-checkups/': typeof AppHealthCheckupsIndexRoute
+  '/housekeeping/': typeof AppHousekeepingIndexRoute
   '/hr/': typeof AppHrIndexRoute
   '/inpatient/': typeof AppInpatientIndexRoute
   '/insurance/': typeof AppInsuranceIndexRoute
@@ -2592,6 +2599,7 @@ export interface FileRoutesByTo {
   '/feedback': typeof AppFeedbackIndexRoute
   '/front-office': typeof AppFrontOfficeIndexRoute
   '/health-checkups': typeof AppHealthCheckupsIndexRoute
+  '/housekeeping': typeof AppHousekeepingIndexRoute
   '/hr': typeof AppHrIndexRoute
   '/inpatient': typeof AppInpatientIndexRoute
   '/insurance': typeof AppInsuranceIndexRoute
@@ -2929,6 +2937,7 @@ export interface FileRoutesById {
   '/_app/feedback/': typeof AppFeedbackIndexRoute
   '/_app/front-office/': typeof AppFrontOfficeIndexRoute
   '/_app/health-checkups/': typeof AppHealthCheckupsIndexRoute
+  '/_app/housekeeping/': typeof AppHousekeepingIndexRoute
   '/_app/hr/': typeof AppHrIndexRoute
   '/_app/inpatient/': typeof AppInpatientIndexRoute
   '/_app/insurance/': typeof AppInsuranceIndexRoute
@@ -3266,6 +3275,7 @@ export interface FileRouteTypes {
     | '/feedback/'
     | '/front-office/'
     | '/health-checkups/'
+    | '/housekeeping/'
     | '/hr/'
     | '/inpatient/'
     | '/insurance/'
@@ -3601,6 +3611,7 @@ export interface FileRouteTypes {
     | '/feedback'
     | '/front-office'
     | '/health-checkups'
+    | '/housekeeping'
     | '/hr'
     | '/inpatient'
     | '/insurance'
@@ -3937,6 +3948,7 @@ export interface FileRouteTypes {
     | '/_app/feedback/'
     | '/_app/front-office/'
     | '/_app/health-checkups/'
+    | '/_app/housekeeping/'
     | '/_app/hr/'
     | '/_app/inpatient/'
     | '/_app/insurance/'
@@ -4772,6 +4784,13 @@ declare module '@tanstack/react-router' {
       path: '/health-checkups/book'
       fullPath: '/health-checkups/book'
       preLoaderRoute: typeof AppHealthCheckupsBookRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/housekeeping/': {
+      id: '/_app/housekeeping/'
+      path: '/housekeeping'
+      fullPath: '/housekeeping/'
+      preLoaderRoute: typeof AppHousekeepingIndexRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/hr/': {
@@ -6620,6 +6639,7 @@ interface AppRouteChildren {
   AppFeedbackIndexRoute: typeof AppFeedbackIndexRoute
   AppFrontOfficeIndexRoute: typeof AppFrontOfficeIndexRoute
   AppHealthCheckupsIndexRoute: typeof AppHealthCheckupsIndexRoute
+  AppHousekeepingIndexRoute: typeof AppHousekeepingIndexRoute
   AppHrIndexRoute: typeof AppHrIndexRoute
   AppInpatientIndexRoute: typeof AppInpatientIndexRoute
   AppInsuranceIndexRoute: typeof AppInsuranceIndexRoute
@@ -6954,6 +6974,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppFeedbackIndexRoute: AppFeedbackIndexRoute,
   AppFrontOfficeIndexRoute: AppFrontOfficeIndexRoute,
   AppHealthCheckupsIndexRoute: AppHealthCheckupsIndexRoute,
+  AppHousekeepingIndexRoute: AppHousekeepingIndexRoute,
   AppHrIndexRoute: AppHrIndexRoute,
   AppInpatientIndexRoute: AppInpatientIndexRoute,
   AppInsuranceIndexRoute: AppInsuranceIndexRoute,

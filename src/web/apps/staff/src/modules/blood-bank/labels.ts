@@ -10,6 +10,7 @@ import type {
   DonationStatus,
   DonationType,
   DonorEligibilityOutcome,
+  ReactionImputability,
   ReactionSeverity,
   ReactionStatus,
   ReactionSymptom,
@@ -180,6 +181,15 @@ export const reactionTypeLabel: Record<ReactionType, string> = {
   BacterialContamination: 'Bacterial contamination',
   Hypotensive: 'Hypotensive reaction',
   Other: 'Other',
+};
+
+export const imputabilityLabel: Record<ReactionImputability, string> = {
+  NotAssessed: 'Not assessed',
+  Excluded: 'Excluded',
+  Unlikely: 'Unlikely',
+  Possible: 'Possible',
+  Probable: 'Probable',
+  Definite: 'Definite (certain)',
 };
 
 export const severityLabel: Record<ReactionSeverity, string> = {

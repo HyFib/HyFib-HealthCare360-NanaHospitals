@@ -27,6 +27,19 @@ internal static class WasteEndpoints
         group.MapGet("/register", Month).RequirePermission(SupportServicesPermissions.WasteManage);
         group.MapGet("/register/export", MonthExport).RequirePermission(SupportServicesPermissions.WasteManage);
         group.MapGet("/annual", Year).RequirePermission(SupportServicesPermissions.WasteManage);
+        group.MapGet("/annual/form-iv", async (int? year, WasteService waste, TimeProvider time, CancellationToken ct) =>
+                TypedResults.Ok(await waste.FormIvAsync(year ?? time.Today().Year - 1, ct)))
+            .RequirePermission(SupportServicesPermissions.WasteManage);
+        group.MapGet("/bags/{id:guid}/label", async (Guid id, WasteService waste, CancellationToken ct) => (await waste.LabelAsync(id, ct)).ToOk())
+            .RequireAnyPermission(Readers);
+        group.MapGet("/accidents", async (int? year, WasteService waste, TimeProvider time, CancellationToken ct) =>
+                TypedResults.Ok(await waste.AccidentsAsync(year ?? time.Today().Year, ct)))
+            .RequirePermission(SupportServicesPermissions.WasteManage);
+        group.MapPost("/accidents", async (RecordWasteAccidentRequest request, WasteService waste, CancellationToken ct) =>
+                (await waste.RecordAccidentAsync(request, ct)).ToHttpResult(a => TypedResults.Created($"/api/v1/bmw/accidents/{a.Id}", a)))
+            .RequireAnyPermission(Readers).WithValidation<RecordWasteAccidentRequest>();
+        group.MapGet("/accidents/{id:guid}/form-i", async (Guid id, WasteService waste, CancellationToken ct) => (await waste.FormIAsync(id, ct)).ToOk())
+            .RequirePermission(SupportServicesPermissions.WasteManage);
     }
 
     private static async Task<IResult> Bags(DateOnly? from, DateOnly? to, WasteService waste, TimeProvider time, CancellationToken ct)

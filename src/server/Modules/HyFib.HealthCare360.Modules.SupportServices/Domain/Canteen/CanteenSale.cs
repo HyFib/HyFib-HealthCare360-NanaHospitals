@@ -53,8 +53,25 @@ public sealed class CanteenSale : AuditableEntity, IFacilityScoped
     public CanteenSaleStatus Status { get; set; }
     public string? CashierName { get; set; }
     public DateTimeOffset? CancelledAt { get; set; }
+
+    /// <summary>Who approved the cancellation (a second person, never the cashier who sold the bill).</summary>
     public Guid? CancelledBy { get; set; }
+
+    public string? CancelledByName { get; set; }
     public string? CancelReason { get; set; }
+
+    /// <summary>Who asked for the cancellation.</summary>
+    public Guid? CancelRequestedBy { get; set; }
+
+    public string? CancelRequestedByName { get; set; }
+
+    /// <summary>How the money went back: the way it was paid (cash from the till, the card or UPI under its reference, or the staff credit ledger).</summary>
+    public CanteenPaymentMode? RefundMode { get; set; }
+
+    public decimal? RefundAmount { get; set; }
+
+    /// <summary>The cashier who sold the bill (who opened it), whoever that was: never the one who approves its cancellation.</summary>
+    public bool SoldBy(Guid? userId) => userId is { } id && CreatedBy == id;
     public List<CanteenSaleLine> Lines { get; set; } = [];
 
     public void ApplyTotals(BillTotals totals)
@@ -82,24 +99,53 @@ public sealed class CanteenSale : AuditableEntity, IFacilityScoped
         NetAmount = totals.NetAmount;
     }
 
-    public Result Cancel(string reason, Guid? userId, DateOnly today, DateTimeOffset now)
+    /// <summary>Whether the bill can still be cancelled today: not already cancelled, and sold today (earlier days are closed).</summary>
+    public Result CanCancel(DateOnly today)
     {
         if (Status == CanteenSaleStatus.Cancelled)
         {
             return Error.Rule("canteen.sale_cancelled", "This bill is already cancelled.");
         }
 
-        if (BusinessDate != today)
+        return BusinessDate != today
+            ? Error.Rule("canteen.day_closed", "Only today's bills can be cancelled; earlier days are closed.")
+            : Result.Success();
+    }
+
+    /// <summary>
+    /// Cancels the bill once a second person approved it: the money goes back the way it was paid, whole
+    /// (<see cref="RefundMode"/>), and both names are kept.
+    /// </summary>
+    public Result Cancel(string reason, Guid? askedBy, string? askedByName, Guid? approvedBy, string? approvedByName, DateOnly today, DateTimeOffset now)
+    {
+        var cancellable = CanCancel(today);
+        if (cancellable.IsFailure)
         {
-            return Error.Rule("canteen.day_closed", "Only today's bills can be cancelled; earlier days are closed.");
+            return cancellable;
         }
 
         Status = CanteenSaleStatus.Cancelled;
         CancelledAt = now;
-        CancelledBy = userId;
+        CancelledBy = approvedBy;
+        CancelledByName = approvedByName;
+        CancelRequestedBy = askedBy;
+        CancelRequestedByName = askedByName;
         CancelReason = reason.Trim();
+        RefundMode = PaymentMode;
+        RefundAmount = NetAmount;
         return Result.Success();
     }
+
+    /// <summary>How the money goes back, in words for the approver and the bill.</summary>
+    public string RefundWords() => PaymentMode switch
+    {
+        CanteenPaymentMode.Cash => $"₹{Money.FormatInr(NetAmount)} back in cash from the till",
+        CanteenPaymentMode.Card => $"₹{Money.FormatInr(NetAmount)} back to the card{Reference()}, not from the till",
+        CanteenPaymentMode.Upi => $"₹{Money.FormatInr(NetAmount)} back by UPI{Reference()}, not from the till",
+        _ => $"₹{Money.FormatInr(NetAmount)} taken off {EmployeeName ?? EmployeeCode}'s staff credit",
+    };
+
+    private string Reference() => string.IsNullOrWhiteSpace(PaymentReference) ? string.Empty : $" (reference {PaymentReference})";
 }
 
 /// <summary>A bill line. Name, price, GST rate and HSN/SAC code are copied from the menu item, so later menu edits never change an issued bill.</summary>

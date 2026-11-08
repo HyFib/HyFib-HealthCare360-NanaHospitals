@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare.Features.BloodBank;
@@ -48,6 +49,10 @@ internal static class TransfusionEndpoints
         group.MapPost("/reactions/{id:guid}/investigate", async (Guid id, TransfusionService s, CancellationToken ct) =>
                 (await s.InvestigateReactionAsync(id, ct)).ToNoContent())
             .RequirePermission(SpecialtyCarePermissions.BloodBankReactionsInvestigate);
+        // Lowering the severity or imputability waits for the blood bank medical officer (202); anything else is made at once (204).
+        group.MapPut("/reactions/{id:guid}/classification", async (Guid id, ClassifyReactionRequest r, ReactionClassificationService s, CancellationToken ct) =>
+                (await s.ClassifyAsync(id, r, ct)).ToHttpResult(o => o.Asked is { } asked ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked) : TypedResults.NoContent()))
+            .RequirePermission(SpecialtyCarePermissions.BloodBankReactionsInvestigate).WithValidation<ClassifyReactionRequest>();
         group.MapPost("/reactions/{id:guid}/close", async (Guid id, CloseReactionRequest r, TransfusionService s, CancellationToken ct) =>
                 (await s.CloseReactionAsync(id, r, ct)).ToNoContent())
             .RequirePermission(SpecialtyCarePermissions.BloodBankReactionsInvestigate).WithValidation<CloseReactionRequest>();
@@ -173,7 +178,7 @@ internal static class TransfusionEndpoints
             .ToList());
     }
 
-    private static async Task<IResult> ListReactions([AsParameters] PageQuery query, ReactionStatus? status, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> ListReactions([AsParameters] PageQuery query, ReactionStatus? status, HospitalDbContext db, TimeProvider time, CancellationToken ct)
     {
         var page = query.ToRequest();
         var reactions = db.Set<TransfusionReaction>().AsNoTracking();
@@ -188,10 +193,26 @@ internal static class TransfusionEndpoints
                 orderby r.ReportedAt descending
                 select new { r, p.Uhid, p.FullName })
             .ToPagedResultAsync(page, ct);
+        var ids = result.Items.Select(x => x.r.Id).ToList();
+        var now = time.GetUtcNow();
+        var waiting = (await db.Set<ApprovalRequest>().AsNoTracking()
+                .Where(a => a.Kind == ReactionClassificationService.LowerKind && a.SubjectType == nameof(TransfusionReaction) && ids.Contains(a.SubjectId)
+                            && a.Status == ApprovalStatus.Pending && a.ExpiresAt > now)
+                .Select(a => new { a.SubjectId, a.Id })
+                .ToListAsync(ct))
+            .GroupBy(a => a.SubjectId).ToDictionary(g => g.Key, g => (Guid?)g.First().Id);
         return TypedResults.Ok(result.Map(x => new TransfusionReactionDto(
             x.r.Id, x.r.IssueId, x.r.RequestId, x.r.PatientId, x.Uhid, x.FullName, x.r.UnitNumber, x.r.ReportedAt, x.r.ReportedByName, x.r.OnsetAt,
             x.r.Symptoms, x.r.Vitals, x.r.TransfusionStopped, x.r.VolumeTransfusedMl, x.r.ActionsTaken, x.r.Severity, x.r.Type, x.r.Status,
-            x.r.InvestigationFindings, x.r.ReportedToHaemovigilance, x.r.ClosedAt, x.r.ClosedByName)));
+            x.r.InvestigationFindings, x.r.ReportedToHaemovigilance, x.r.ClosedAt, x.r.ClosedByName)
+        {
+            Imputability = x.r.Imputability,
+            LoweredByName = x.r.LoweredByName,
+            LowerRequestedByName = x.r.LowerRequestedByName,
+            LowerReason = x.r.LowerReason,
+            LowerPendingApprovalId = waiting.GetValueOrDefault(x.r.Id),
+            Version = x.r.Version,
+        }));
     }
 
     private static CrossMatchDto ToDto(CrossMatch c, DateTimeOffset now) => new(

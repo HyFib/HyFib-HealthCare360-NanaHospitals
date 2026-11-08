@@ -769,6 +769,30 @@ and grants nothing.
       hospital administrator by default), never the one who asked. The original line is kept; its charge is withdrawn
       and its stock returned, and the corrected line is issued and charged, through the same stock and charge paths, only
       over the line as asked (`approval.stale`), audited `ot.material_corrected` with both names;
+  - support services and specialty care (MAKER-CHECKER.md, slice 15 and Support services):
+    - a canteen bill cancelled after it was paid (`POST /api/v1/canteen/sales/{id}/cancel` answers 202,
+      `canteen.sale_cancel`): approved by someone who holds the new `canteen.cancellations.approve` (canteen managers,
+      accountants and the hospital administrator by default), never the one who asked nor the cashier who sold it
+      (`canteen.cancel_own_sale`, 403). The money goes back the way it was paid (a card or UPI bill to the card or UPI,
+      never from the till; a staff credit bill off the ledger) and the stock comes back, only over the bill as asked and
+      on its business day (`approval.stale`), audited `canteen.sale_cancelled` with both names;
+    - an ambulance trip's charge waived (`POST /api/v1/ambulance/trips/{id}/waive`, or `waiveReason` at completion,
+      `ambulance.charge_waiver`): the trip is charged at once and the waiver waits for someone who holds
+      `ambulance.waivers.approve` (accountants, the hospital administrator), never the asker; approved, the trip's
+      charges are withdrawn from the bill, audited `ambulance.charge_waived`;
+    - a transfusion reaction's severity, or its imputability below one assessed, lowered
+      (`PUT /api/v1/blood-bank/reactions/{id}/classification`, `bloodbank.reaction_lower`): waits for the blood bank
+      medical officer (`bloodbank.reactions.approve`), never the officer who asked; the investigation is not closed the
+      lowered way meanwhile (`bloodbank.reaction_lowered`); audited with both names;
+    - a dialysis patient's infection status (`POST /api/v1/dialysis/patients/{patientId}/infection-status`,
+      `dialysis.infection_status`): only on the patient's verified lab result for that infection from the last 90 days
+      (`dialysis.lab_result_unverified`, `dialysis.lab_result_mismatch`, `dialysis.lab_result_old`), never from the
+      profile form (`dialysis.infection_status_change`); a sero-negative patient found positive is isolated at once, and
+      taking a patient off a positive status waits for someone who holds `dialysis.infection_status.approve` (doctors by
+      default), never the asker;
+    - each of the last three is strict by default and relaxed only by a guarded setting a second administrator
+      approves (`ambulance.waiverApproval`, `bloodbank.reactionDowngradeApproval`, `dialysis.infectionStatusApproval`):
+      then one person makes the change alone, audited at Warning (the dialysis lab result is still required);
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was
@@ -788,6 +812,8 @@ and grants nothing.
   - whoever sold a pharmacy invoice, or took a payment on it, does not ask for its cancellation or take a return of it,
     nor approve either (`pharmacy.cancel_own_sale`, `pharmacy.return_own_sale`, 403 whatever else they may do), and the
     pharmacist who asks for a ward return not restocked does not approve it (`approval.self`);
+  - the cashier who sold a canteen bill does not approve its cancellation (`canteen.cancel_own_sale`), and the cleaner
+    does not verify their own cleaning, scheduled or asked for by a ward (`housekeeping.verify_own`);
   - a lab that sets `lab.separateVerifier` (per facility, off by default for a lab with one pathologist) refuses
     verification of a result by whoever entered it (`lab.verify_own_result`), and a correction of a released report
     waits for a second pathologist (see Maker-checker);

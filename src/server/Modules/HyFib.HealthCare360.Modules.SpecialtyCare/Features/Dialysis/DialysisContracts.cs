@@ -20,7 +20,23 @@ public sealed record DialysisProfileDto(
     Guid Id, Guid PatientId, string Uhid, string PatientName, Gender Gender, string? Age, decimal DryWeightKg, VascularAccessType VascularAccess,
     string? AccessSite, DateOnly? AccessCreatedOn, IReadOnlyList<Weekday> ScheduleDays, DialysisShift Shift, int SessionMinutes, SeroStatus SeroStatus,
     DateOnly? SeroTestedOn, bool SeroRescreeningDue, DialyzerReusePolicy ReusePolicy, int MaxDialyzerUses, int EffectiveMaxDialyzerUses,
-    Guid? NephrologistId, string? NephrologistName, string? PrimaryDiagnosis, string? AnticoagulationNotes, DateOnly EnrolledOn, bool IsActive, uint Version);
+    Guid? NephrologistId, string? NephrologistName, string? PrimaryDiagnosis, string? AnticoagulationNotes, DateOnly EnrolledOn, bool IsActive, uint Version)
+{
+    /// <summary>Who changed the infection status last, who asked when a second person approved it, and the result it rests on.</summary>
+    public string? SeroChangedByName { get; init; }
+
+    public string? SeroChangeRequestedByName { get; init; }
+    public Guid? SeroLabResultId { get; init; }
+
+    /// <summary>A change asked for and waiting for a second person: the status in force stands until then.</summary>
+    public Guid? InfectionStatusPendingApprovalId { get; init; }
+}
+
+/// <summary>A verified HBsAg, HCV or HIV result of the patient, recent enough to change their infection status on.</summary>
+public sealed record InfectionResultDto(Guid Id, SeroStatus Infection, string TestName, string? Value, string? Flag, DateOnly VerifiedOn);
+
+/// <summary>Change the patient's infection status on the verified lab result that supports it.</summary>
+public sealed record ChangeInfectionStatusRequest(SeroStatus SeroStatus, Guid LabResultId, string Reason, uint Version);
 
 public sealed record SaveDialysisProfileRequest(
     decimal DryWeightKg, VascularAccessType VascularAccess, string? AccessSite, DateOnly? AccessCreatedOn, IReadOnlyList<Weekday> ScheduleDays,
@@ -91,6 +107,17 @@ public sealed class SaveDialysisMachineRequestValidator : AbstractValidator<Save
 public sealed class RecordDisinfectionRequestValidator : AbstractValidator<RecordDisinfectionRequest>
 {
     public RecordDisinfectionRequestValidator() => RuleFor(x => x.Method).NotEmpty().MaximumLength(100);
+}
+
+public sealed class ChangeInfectionStatusRequestValidator : AbstractValidator<ChangeInfectionStatusRequest>
+{
+    public ChangeInfectionStatusRequestValidator()
+    {
+        RuleFor(x => x.SeroStatus).IsInEnum();
+        RuleFor(x => x.LabResultId).NotEmpty().WithMessage("Choose the lab result that supports the change.");
+        RuleFor(x => x.Reason).NotEmpty().MinimumLength(5).SafeText(500);
+        RuleFor(x => x.Version).SeenVersion();
+    }
 }
 
 public sealed class SaveDialysisProfileRequestValidator : AbstractValidator<SaveDialysisProfileRequest>

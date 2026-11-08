@@ -24,6 +24,9 @@ internal static class LabelSamples
     public static CssdPackLabel Pack(bool released = true) => new(
         "CS2600000123", "General surgery set", "Steam", released ? new DateOnly(2026, 10, 30) : null);
 
+    public static WasteBagLabelData WasteBag() =>
+        new("NHBW260000123", "Yellow", "Biohazard / Cytotoxic", "TN-BMW-1234", "Nana Hospitals", "Ward 3 dressing room", 2.45m, new DateOnly(2026, 11, 8));
+
     public static AssetTagLabel Asset() => new("AST-2600123", "Multipara monitor, ICU bed 4", "Nana Hospitals");
 
     public static PharmacyTagLabel PharmacyTag(bool batch = true) => batch

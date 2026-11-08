@@ -86,6 +86,20 @@ public sealed record CssdPackLabel(
     string? Method,
     DateOnly? SterileUntil);
 
+/// <summary>
+/// A bio-medical waste bag label (BMW Rules 2016, Schedule IV): the category and its symbol, the hospital's HCF identifier,
+/// the bag's bar code, where it was filled, its weight and the date.
+/// </summary>
+public sealed record WasteBagLabelData(
+    string Barcode,
+    string Category,
+    string Symbol,
+    string HcfId,
+    string? Hospital,
+    string Source,
+    decimal WeightKg,
+    DateOnly CollectedOn);
+
 /// <summary>An asset tag (AST-01): the hospital, the asset and its tag number to scan.</summary>
 public sealed record AssetTagLabel(
     string AssetTag,

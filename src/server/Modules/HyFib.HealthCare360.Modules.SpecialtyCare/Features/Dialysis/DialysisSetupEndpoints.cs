@@ -1,8 +1,11 @@
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Dialysis;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Common;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
+using HyFib.HealthCare360.Modules.SupplyChain.Domain;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare.Features.Dialysis;
 
@@ -28,6 +31,12 @@ internal static class DialysisSetupEndpoints
                 (await s.SaveProfileAsync(patientId, r, ct)).ToHttpResult(id => TypedResults.Ok(new { id })))
             .RequirePermission(SpecialtyCarePermissions.DialysisPatients).WithValidation<SaveDialysisProfileRequest>().FirstSaveCreates();
 
+        // Off a positive status waits for a second person (202); negative to positive isolates at once (204). Both need the lab result.
+        group.MapPost("/patients/{patientId:guid}/infection-status", async (Guid patientId, ChangeInfectionStatusRequest r, InfectionStatusService s, CancellationToken ct) =>
+                (await s.ChangeAsync(patientId, r, ct)).ToHttpResult(o => o.Asked is { } asked ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked) : TypedResults.NoContent()))
+            .RequirePermission(SpecialtyCarePermissions.DialysisPatients).WithValidation<ChangeInfectionStatusRequest>();
+
+        group.MapGet("/patients/{patientId:guid}/infection-results", InfectionResults).RequirePermission(SpecialtyCarePermissions.DialysisRead);
         group.MapGet("/patients/{patientId:guid}/dialyzers", ListDialyzers).RequirePermission(SpecialtyCarePermissions.DialysisRead);
         group.MapPost("/patients/{patientId:guid}/dialyzers", async (Guid patientId, RegisterDialyzerRequest r, DialysisService s, CancellationToken ct) =>
                 (await s.RegisterDialyzerAsync(patientId, r, ct)).ToHttpResult(d => TypedResults.Created($"/api/v1/dialysis/patients/{patientId}/dialyzers", ToDto(d))))
@@ -152,7 +161,41 @@ internal static class DialysisSetupEndpoints
 
         await audit.PatientRecordAccessedAsync(patientId, "Viewed dialysis profile", ct);
         var names = await SpecialtyLookups.PractitionerNamesAsync(db, [row.d.NephrologistId], ct);
-        return TypedResults.Ok(ToDto(row.d, row.Uhid, row.FullName, row.Gender, row.DateOfBirth, names, time.Today()));
+        var now = time.GetUtcNow();
+        var pending = await db.Set<ApprovalRequest>().AsNoTracking()
+            .Where(a => a.Kind == InfectionStatusService.ChangeKind && a.SubjectType == nameof(DialysisPatientProfile) && a.SubjectId == row.d.Id
+                        && a.Status == ApprovalStatus.Pending && a.ExpiresAt > now)
+            .Select(a => (Guid?)a.Id).FirstOrDefaultAsync(ct);
+        return TypedResults.Ok(ToDto(row.d, row.Uhid, row.FullName, row.Gender, row.DateOfBirth, names, time.Today()) with { InfectionStatusPendingApprovalId = pending });
+    }
+
+    /// <summary>The patient's verified HBsAg, HCV and HIV results of the last 90 days: those an infection status may change on.</summary>
+    private static async Task<IResult> InfectionResults(Guid patientId, HospitalDbContext db, PatientAccessGuard guard, TimeProvider time, CancellationToken ct)
+    {
+        var access = await guard.EnsureCanOpenChartAsync(patientId, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
+        }
+
+        var since = time.GetUtcNow().AddDays(-InfectionStatusChange.MaxResultAgeDays - 1);
+        var results = await db.Set<LabResult>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(r => r.PatientId == patientId && r.Status == LabResultStatus.Verified && r.VerifiedAt >= since)
+            .OrderByDescending(r => r.VerifiedAt).Take(200)
+            .Select(r => new { r.Id, r.TestCode, r.TestName, r.ValueText, r.NumericValue, r.Flag, r.VerifiedAt })
+            .ToListAsync(ct);
+        var today = time.Today();
+        return TypedResults.Ok(results
+            .Select(r => new
+            {
+                r,
+                Infection = new[] { SeroStatus.HBsAg, SeroStatus.HCV, SeroStatus.HIV }.Cast<SeroStatus?>().FirstOrDefault(s => InfectionStatusChange.TestsFor(s!.Value, r.TestCode, r.TestName)),
+                On = HospitalClock.ToLocalDate(r.VerifiedAt!.Value),
+            })
+            .Where(x => x.Infection is not null && InfectionStatusChange.Recent(x.On, today))
+            .Select(x => new InfectionResultDto(x.r.Id, x.Infection!.Value, x.r.TestName, x.r.ValueText ?? x.r.NumericValue?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                x.r.Flag?.ToString(), x.On))
+            .ToList());
     }
 
     private static async Task<IResult> ListDialyzers(Guid patientId, bool? includeDiscarded, HospitalDbContext db, CancellationToken ct)
@@ -177,5 +220,10 @@ internal static class DialysisSetupEndpoints
         d.Id, d.PatientId, uhid, name, gender, dateOfBirth is { } dob ? Age.Format(dob, today) : null, d.DryWeightKg, d.VascularAccess, d.AccessSite,
         d.AccessCreatedOn, d.ScheduleDays, d.Shift, d.SessionMinutes, d.SeroStatus, d.SeroTestedOn, SeroSegregation.IsRescreeningDue(d.SeroTestedOn, today),
         d.ReusePolicy, d.MaxDialyzerUses, d.EffectiveMaxDialyzerUses, d.NephrologistId, d.NephrologistId is { } n ? names.GetValueOrDefault(n) : null,
-        d.PrimaryDiagnosis, d.AnticoagulationNotes, d.EnrolledOn, d.IsActive, d.Version);
+        d.PrimaryDiagnosis, d.AnticoagulationNotes, d.EnrolledOn, d.IsActive, d.Version)
+    {
+        SeroChangedByName = d.SeroChangedByName,
+        SeroChangeRequestedByName = d.SeroChangeRequestedByName,
+        SeroLabResultId = d.SeroLabResultId,
+    };
 }
