@@ -544,7 +544,10 @@ public sealed class TransfusionService(
             audit.Add(new AuditEntry(AuditCategories.Data, "bloodbank.reaction_lowered",
                 $"Transfusion reaction on unit {reaction.UnitNumber} lowered at closing by {name} alone (the medical officer is not required here): {string.Join("; ", lowered)}")
             {
-                PatientId = reaction.PatientId, EntityType = nameof(TransfusionReaction), EntityId = reaction.Id.ToString(), Severity = AuditSeverity.Warning,
+                PatientId = reaction.PatientId,
+                EntityType = nameof(TransfusionReaction),
+                EntityId = reaction.Id.ToString(),
+                Severity = AuditSeverity.Warning,
             });
         }
 

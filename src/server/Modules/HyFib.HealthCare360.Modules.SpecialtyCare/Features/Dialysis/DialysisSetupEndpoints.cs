@@ -221,9 +221,9 @@ internal static class DialysisSetupEndpoints
         d.AccessCreatedOn, d.ScheduleDays, d.Shift, d.SessionMinutes, d.SeroStatus, d.SeroTestedOn, SeroSegregation.IsRescreeningDue(d.SeroTestedOn, today),
         d.ReusePolicy, d.MaxDialyzerUses, d.EffectiveMaxDialyzerUses, d.NephrologistId, d.NephrologistId is { } n ? names.GetValueOrDefault(n) : null,
         d.PrimaryDiagnosis, d.AnticoagulationNotes, d.EnrolledOn, d.IsActive, d.Version)
-    {
-        SeroChangedByName = d.SeroChangedByName,
-        SeroChangeRequestedByName = d.SeroChangeRequestedByName,
-        SeroLabResultId = d.SeroLabResultId,
-    };
+        {
+            SeroChangedByName = d.SeroChangedByName,
+            SeroChangeRequestedByName = d.SeroChangeRequestedByName,
+            SeroLabResultId = d.SeroLabResultId,
+        };
 }

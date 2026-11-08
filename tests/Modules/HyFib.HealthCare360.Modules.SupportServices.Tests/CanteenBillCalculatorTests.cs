@@ -118,8 +118,12 @@ public sealed class CanteenBillCalculatorTests
         var today = new DateOnly(2026, 9, 25);
         var sale = new CanteenSale
         {
-            BusinessDate = today, NetAmount = 120m, PaymentMode = mode, PaymentReference = mode == CanteenPaymentMode.Cash ? null : "RRN123",
-            EmployeeName = "Ravi Kumar", EmployeeCode = "E100",
+            BusinessDate = today,
+            NetAmount = 120m,
+            PaymentMode = mode,
+            PaymentReference = mode == CanteenPaymentMode.Cash ? null : "RRN123",
+            EmployeeName = "Ravi Kumar",
+            EmployeeCode = "E100",
         };
 
         sale.RefundWords().ShouldBe(words);
