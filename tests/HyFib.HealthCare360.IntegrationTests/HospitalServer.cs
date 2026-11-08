@@ -1207,6 +1207,57 @@ public sealed class HospitalServer : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// A witness (or the doctor who explained the risks) confirms at <paramref name="at"/>'s screen with their own user name
+    /// and password (ADR-014), for <paramref name="purpose"/> and the patient: the confirmation <paramref name="at"/> then
+    /// sends once with the record.
+    /// </summary>
+    public async Task<WitnessConfirmed> WitnessAsync(ApiClient at, string witnessUserName, string purpose, Guid patientId)
+    {
+        ArgumentNullException.ThrowIfNull(at);
+        await SignInAsync(witnessUserName); // an account created on first use exists before it witnesses
+        // From the test's own address: a witness's password counts against the address's sign-in limit.
+        return await FromOwnAddress(at).PostAsync<WitnessConfirmed>("/api/v1/auth/witness", new ConfirmWitnessRequest(witnessUserName, _password, null, purpose, patientId));
+    }
+
+    /// <summary>
+    /// The ward reports the patient absconded (maker-checker, slice 8): the nurse asks (202) with the report, and the nurse in
+    /// charge (the hospital administrator holds <c>nursing.in_charge</c>) approves; the stay is then closed as absconded.
+    /// </summary>
+    public async Task AbscondAsync(ApiClient maker, Guid admissionId, string notes)
+    {
+        var asked = await AskAbscondedAsync(maker, admissionId, notes);
+        await ApproveRecordChangeAsync(asked.Id);
+    }
+
+    /// <summary>The ward asks for the stay to be closed as absconded: the request, waiting for the nurse in charge.</summary>
+    public async Task<ApprovalRequestDto> AskAbscondedAsync(ApiClient maker, Guid admissionId, string notes)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        var path = $"/api/v1/inpatient/admissions/{admissionId}/discharge/complete";
+        using var response = await maker.SendRawAsync(HttpMethod.Post, path, new Modules.Inpatient.Features.Discharge.CompleteDischargeRequest(
+            Modules.Inpatient.Domain.DischargeType.Absconded, null, notes, NotifyPatient: false,
+            Absconded: new Modules.Inpatient.Domain.AbscondedReport(DateTimeOffset.UtcNow.AddMinutes(-30), "Ward staff and security searched the floor and the grounds",
+                PoliceInformed: false, PoliceStation: null, PoliceReference: null, RelativesInformed: true, RelativeInformed: "The patient's son, by phone")));
+        if (response.StatusCode != HttpStatusCode.Accepted)
+        {
+            throw new InvalidOperationException($"POST {path}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)}");
+        }
+
+        return await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Post, path);
+    }
+
+    /// <summary>
+    /// A correction of an implant or consumable line after the operation started, approved by the hospital administrator, who
+    /// holds the OT in-charge's approval and did not ask for it.
+    /// </summary>
+    public async Task<ApprovalRequestDto> ApproveMaterialCorrectionAsync(Guid approvalId)
+    {
+        var checker = await SignInAsync(Users.HospitalAdmin);
+        var request = await checker.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
+        return await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Checked against the pack label.", request.Version));
+    }
+
     // The seed signs the first consultant (by code) in as the doctor; the second doctor is the next one.
     private async Task<Guid?> SecondConsultantAsync()
     {

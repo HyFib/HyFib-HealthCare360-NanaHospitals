@@ -8,15 +8,18 @@ public enum JourneyKind
     Inpatient,
     Surgery,
     Lab,
+
+    /// <summary>A stay in casualty (the emergency department), from arrival to disposition.</summary>
+    Emergency,
 }
 
 /// <summary>
-/// One journey as its pipeline shows it: the visit, stay, operation or lab accession it follows, its stages in order and
+/// One journey as its pipeline shows it: the visit, casualty stay, stay, operation or lab accession it follows, its stages in order and
 /// the stage the patient is in.
 /// </summary>
-/// <param name="Id">The visit's, admission's, booking's or lab order's id.</param>
-/// <param name="Number">Its number as staff know it: the visit, admission, booking or accession number.</param>
-/// <param name="Title">What it is: the department and doctor, the ward and bed, the operation, the tests.</param>
+/// <param name="Id">The visit's, emergency case's, admission's, booking's or lab order's id.</param>
+/// <param name="Number">Its number as staff know it: the visit (for a casualty stay, the emergency visit), admission, booking or accession number.</param>
+/// <param name="Title">What it is: the department and doctor, the casualty complaint, the ward and bed, the operation, the tests.</param>
 /// <param name="Current">The stage the patient is in, with the minutes spent in it; null once the journey is finished or cancelled.</param>
 public sealed record JourneyDto(
     JourneyKind Kind,
@@ -30,8 +33,8 @@ public sealed record JourneyDto(
 
 /// <summary>
 /// A patient's journeys (GET /api/v1/patients/{patientId}/journey), as of <paramref name="AsOf"/>: the current or latest
-/// out-patient visit, the current stay (until the bed the patient left is clean), and the operations and lab orders of
-/// those, or still open.
+/// out-patient visit, the current or latest casualty stay, the current stay (until the bed the patient left is clean), and
+/// the operations and lab orders of those, or still open.
 /// </summary>
 /// <param name="SurgeriesWithheld">
 /// The record is in a sensitive category the user may not open: operations are part of the clinical record it closes,
@@ -41,20 +44,21 @@ public sealed record PatientJourneys(
     Guid PatientId,
     DateTimeOffset AsOf,
     JourneyDto? Outpatient,
+    JourneyDto? Emergency,
     JourneyDto? Inpatient,
     IReadOnlyList<JourneyDto> Surgeries,
     IReadOnlyList<JourneyDto> LabOrders,
     bool SurgeriesWithheld);
 
-/// <summary>What the board of patients in the hospital shows: out-patients or in-patients, of a department, of a ward.</summary>
+/// <summary>What the board of patients in the hospital shows: out-patients, casualty (ER) or in-patients, of a department, of a ward.</summary>
 public sealed record InHospitalFilter(JourneyKind? Kind, Guid? DepartmentId, Guid? WardId);
 
 /// <summary>
-/// A patient in the hospital now (GET /api/v1/journeys/in-hospital): an out-patient visit of today that is still open, or
-/// a stay, with its pipeline. A restricted (VIP) patient the user may not open is named by initials (R-3).
+/// A patient in the hospital now (GET /api/v1/journeys/in-hospital): an out-patient visit of today that is still open, a
+/// patient in casualty not yet disposed of, or a stay, with its pipeline. A restricted (VIP) patient the user may not open is named by initials (R-3).
 /// </summary>
-/// <param name="Place">Where to find the patient: the token for an out-patient, the ward and bed for an in-patient.</param>
-/// <param name="ArrivedAt">The check-in or the admission.</param>
+/// <param name="Place">Where to find the patient: the token for an out-patient, casualty and the triage level, the ward and bed for an in-patient.</param>
+/// <param name="ArrivedAt">The check-in, the arrival in casualty or the admission.</param>
 public sealed record InHospitalPatient(
     Guid PatientId,
     string Uhid,

@@ -241,7 +241,10 @@ public sealed class BookingPaidTwiceTests(HospitalServer server)
         return await SimulatorPaymentIdAsync(orderId);
     }
 
-    private async Task SetSimulatorAsync(string orderId, SimulatorTransactionStatus status)
+    private Task SetSimulatorAsync(string orderId, SimulatorTransactionStatus status) => SetSimulatorAsync(server, orderId, status);
+
+    /// <summary>The patient pays (or leaves) the training gateway's checkout of <paramref name="orderId"/>.</summary>
+    internal static async Task SetSimulatorAsync(HospitalServer server, string orderId, SimulatorTransactionStatus status)
     {
         await using var scope = server.Services.CreateAsyncScope();
         (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<SimulatorTransaction>()
@@ -362,7 +365,10 @@ public sealed class BookingPaidTwiceTests(HospitalServer server)
     /// Online payments go to the training gateway, settled at once and signed with a known key, for the rest of the
     /// test; then the settings are put back, because the server is shared by every test of the run.
     /// </summary>
-    private async Task<IAsyncDisposable> PaymentsToSimulatorAsync()
+    private Task<IAsyncDisposable> PaymentsToSimulatorAsync() => PaymentsToSimulatorAsync(server);
+
+    /// <summary>Online payments to the training gateway for another test's steps (<see cref="PaymentsToSimulatorAsync()"/>).</summary>
+    internal static async Task<IAsyncDisposable> PaymentsToSimulatorAsync(HospitalServer server)
     {
         const string key = "integrations.payment";
         const string secretKey = "integrations.payment.secret";

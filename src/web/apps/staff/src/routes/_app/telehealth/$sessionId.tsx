@@ -36,7 +36,11 @@ import { CallControls } from '@/modules/virtualcare/telehealth/CallControls';
 import { ChatPanel } from '@/modules/virtualcare/telehealth/ChatPanel';
 import { isSessionOpen } from '@/modules/virtualcare/telehealth/labels';
 import { emrLinks } from '@/modules/virtualcare/telehealth/links';
-import { EndSessionDialog, RecordingConsentDialog } from '@/modules/virtualcare/telehealth/SessionDialogs';
+import {
+  EndSessionDialog,
+  RecordingConsentDialog,
+  TelehealthConsentDialog,
+} from '@/modules/virtualcare/telehealth/SessionDialogs';
 import { SessionDetails } from '@/modules/virtualcare/telehealth/SessionDetails';
 import { useSessionActions } from '@/modules/virtualcare/telehealth/useSessionActions';
 import { useTelehealthCall } from '@/modules/virtualcare/telehealth/useTelehealthCall';
@@ -215,6 +219,8 @@ function Console({ session, config }: { session: TelehealthSessionDetail; config
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentDismissed, setConsentDismissed] = useState(false);
   const [startProblem, setStartProblem] = useState<string | null>(null);
+  // The participant the doctor wanted to admit while the patient's consent to a video consultation was not on record.
+  const [askingVideoConsent, setAskingVideoConsent] = useState<{ participantId?: string } | null>(null);
 
   // Messages count as read while the chat tab is open.
   if (tab === 'chat' && seen !== state.messages.length) {
@@ -250,6 +256,11 @@ function Console({ session, config }: { session: TelehealthSessionDetail; config
     onError: (error) => notify.warning('Could not admit the patient', hubErrorMessage(error)),
   });
 
+  // No call starts without the patient's consent to be seen by video on record: ask for it first.
+  const needsVideoConsent = !session.telehealthConsentGivenAt && status !== 'InProgress';
+  const admitPatient = (participantId?: string) =>
+    needsVideoConsent ? setAskingVideoConsent({ participantId }) : admit.mutate(participantId);
+
   const showConsentPrompt = state.peer === 'connected' && !session.recordingConsentAt && !consentDismissed;
   const suggestAudioOnly = state.poorStreak >= 2 && !state.audioOnly && state.cameraOn;
   const mediaProblem = state.media.message;
@@ -262,7 +273,7 @@ function Console({ session, config }: { session: TelehealthSessionDetail; config
           patientName={session.patientName}
           earlyJoinMinutes={config.earlyJoinMinutes}
           admitting={admit.isPending}
-          onAdmit={(participantId) => admit.mutate(participantId)}
+          onAdmit={admitPatient}
           onRetryJoin={() => call.retry()}
           onReconnectVideo={() => call.reconnectVideo()}
         />
@@ -317,6 +328,19 @@ function Console({ session, config }: { session: TelehealthSessionDetail; config
               </MessageBarActions>
             </MessageBar>
           )}
+          {needsVideoConsent && (
+            <MessageBar intent="warning" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle>No consent to a video consultation</MessageBarTitle>
+                The patient has not consented to be seen by video. Record their consent before you admit them.
+              </MessageBarBody>
+              <MessageBarActions>
+                <Button size="small" onClick={() => setAskingVideoConsent({})}>
+                  Record consent
+                </Button>
+              </MessageBarActions>
+            </MessageBar>
+          )}
           {showConsentPrompt && (
             <MessageBar intent="info" layout="multiline">
               <MessageBarBody>
@@ -352,7 +376,7 @@ function Console({ session, config }: { session: TelehealthSessionDetail; config
               session={session}
               canAdmit={state.phase === 'joined'}
               admitting={admit.isPending}
-              onAdmit={(participantId) => admit.mutate(participantId)}
+              onAdmit={admitPatient}
               canResend={actions.canManage}
               resending={actions.resending}
               onResend={() => actions.resendLink(session.id)}
@@ -392,6 +416,21 @@ function Console({ session, config }: { session: TelehealthSessionDetail; config
         }}
       />
       <RecordingConsentDialog open={consentOpen} sessionId={session.id} onClose={() => setConsentOpen(false)} />
+      {askingVideoConsent && (
+        <TelehealthConsentDialog
+          open
+          sessionId={session.id}
+          patientName={session.patientName}
+          onClose={() => setAskingVideoConsent(null)}
+          onRecorded={() => {
+            const pending = askingVideoConsent;
+            setAskingVideoConsent(null);
+            if (state.waiting.length > 0) {
+              admit.mutate(pending.participantId);
+            }
+          }}
+        />
+      )}
       {actions.dialogs}
 
       <Dialog

@@ -235,14 +235,7 @@ export type VisitStatus = 'Open' | 'InProgress' | 'Completed' | 'Cancelled';
 export type TokenStatus = 'Waiting' | 'Called' | 'InService' | 'Completed' | 'Skipped' | 'NoShow' | 'Cancelled';
 export type TokenPriority = 'Normal' | 'Priority' | 'Emergency';
 export type ReferralSource =
-  | 'Self'
-  | 'Doctor'
-  | 'Hospital'
-  | 'HealthCamp'
-  | 'Online'
-  | 'Corporate'
-  | 'Advertisement'
-  | 'Other';
+  'Self' | 'Doctor' | 'Hospital' | 'HealthCamp' | 'Online' | 'Corporate' | 'Advertisement' | 'Other';
 
 /**
  * The patient's payer for the banner (`GET /api/v1/patients/{id}/payer`, UX-04), chosen by the server: the open visit's,

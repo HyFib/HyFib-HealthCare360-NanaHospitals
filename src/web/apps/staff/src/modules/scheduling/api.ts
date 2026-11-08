@@ -369,6 +369,37 @@ export interface ScheduleSaved {
   affectedAppointments: AffectedAppointment[];
 }
 
+/** A message telling a stranded patient that the doctor is not available, on one channel, and how it fared. */
+export interface StrandedNotice {
+  channel: 'Sms' | 'WhatsApp' | 'Email';
+  status: 'Queued' | 'Sent' | 'Failed' | 'Skipped' | 'Delivered' | 'Suppressed' | string;
+  error: string | null;
+}
+
+/** A booking a leave or block strands, and whether its patient was told about it. */
+export interface StrandedPatient {
+  appointmentId: string;
+  number: string;
+  patientId: string;
+  patientName: string;
+  phoneMasked: string | null;
+  startsAt: string;
+  status: AppointmentStatus;
+  toldAt: string | null;
+  notices: StrandedNotice[];
+  /** Why the patient cannot be told by message (no mobile number): the desk calls. */
+  notToldReason: string | null;
+}
+
+/** GET/POST /api/v1/scheduling/exceptions/{id}/stranded and /notify-patients. */
+export interface StrandedPatients {
+  exceptionId: string;
+  /** False when the SMS cannot go (the template has no DLT id); patients are told on WhatsApp alone. */
+  smsReady: boolean;
+  smsNote: string | null;
+  patients: StrandedPatient[];
+}
+
 export interface ScheduleExceptionDto {
   id: string;
   practitionerId: string;
@@ -467,6 +498,7 @@ export const schedulingKeys = {
   all: ['scheduling'] as const,
   appointments: ['scheduling', 'appointments'] as const,
   appointment: (id: string) => ['scheduling', 'appointment', id] as const,
+  stranded: (exceptionId: string) => ['scheduling', 'stranded', exceptionId] as const,
   summary: ['scheduling', 'summary'] as const,
   slots: ['scheduling', 'slots'] as const,
   waitlist: ['scheduling', 'waitlist'] as const,
@@ -500,6 +532,11 @@ export const schedulingQueries = {
     queryOptions({
       queryKey: schedulingKeys.appointment(id),
       queryFn: ({ signal }) => api.get<AppointmentDetail>(`${BASE}/appointments/${id}`, { signal }),
+    }),
+  stranded: (exceptionId: string) =>
+    queryOptions({
+      queryKey: schedulingKeys.stranded(exceptionId),
+      queryFn: ({ signal }) => api.get<StrandedPatients>(`${BASE}/exceptions/${exceptionId}/stranded`, { signal }),
     }),
   summary: (date: string, departmentId?: string | null) =>
     queryOptions({
@@ -577,6 +614,9 @@ export const schedulingApi = {
       ? api.put<ScheduleSaved>(`${BASE}/exceptions/${id}`, request)
       : api.post<ScheduleSaved>(`${BASE}/exceptions`, request),
   deleteException: (id: string) => api.delete<void>(`${BASE}/exceptions/${id}`),
+  /** Tells the patients a leave or block strands, not told yet, by SMS and WhatsApp, with a link to rebook. */
+  notifyStranded: (exceptionId: string) =>
+    api.post<StrandedPatients>(`${BASE}/exceptions/${exceptionId}/notify-patients`),
 
   addToWaitlist: (request: AddToWaitlistRequest) => api.post<WaitlistEntryDto>(`${BASE}/waitlist`, request),
   cancelWaitlist: (id: string) => api.post<void>(`${BASE}/waitlist/${id}/cancel`),

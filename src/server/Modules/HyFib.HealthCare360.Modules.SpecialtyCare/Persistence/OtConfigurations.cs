@@ -17,6 +17,8 @@ internal sealed class OperationTheatreConfiguration : IEntityTypeConfiguration<O
 
 internal sealed class SurgeryBookingConfiguration : IEntityTypeConfiguration<SurgeryBooking>
 {
+    internal const int SiteLevelLength = 60;
+
     public void Configure(EntityTypeBuilder<SurgeryBooking> b)
     {
         b.ToTable("surgery_bookings", SpecialtyCareSchema.Name);
@@ -30,8 +32,14 @@ internal sealed class SurgeryBookingConfiguration : IEntityTypeConfiguration<Sur
         b.Property(x => x.ChargeError).HasMaxLength(SpecialtyCareSchema.Reason);
         b.Property(x => x.PreOpChecks).HasJsonRows();
         b.Property(x => x.SafetyChecks).HasJsonRows();
+        b.Property(x => x.SiteLevel).HasMaxLength(SiteLevelLength);
+        b.Property(x => x.Counts).HasJsonRows();
+        b.Property(x => x.CountDiscrepancies).HasJsonRows();
+        b.Property(x => x.ChecklistVoids).HasJsonRows();
         b.Ignore(x => x.RequiresAnaesthetist);
         b.Ignore(x => x.IsClosed);
+        b.Ignore(x => x.Site);
+        b.Ignore(x => x.MaterialsLocked);
         b.Ignore(x => x.MinutesInTheatre);
 
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
@@ -99,11 +107,15 @@ internal sealed class SurgeryMaterialConfiguration : IEntityTypeConfiguration<Su
         b.Property(x => x.SerialNumber).HasMaxLength(64);
         b.Property(x => x.RecordedByName).HasMaxLength(SpecialtyCareSchema.Name200);
         b.Property(x => x.ChargeError).HasMaxLength(SpecialtyCareSchema.Reason);
+        b.Property(x => x.CorrectionReason).HasMaxLength(SpecialtyCareSchema.Reason);
+        b.Property(x => x.CorrectionRequestedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.CorrectionApprovedByName).HasMaxLength(SpecialtyCareSchema.Name200);
         b.Property(x => x.Quantity).HasPrecision(18, 3);
         b.Property(x => x.Mrp).HasPrecision(18, 4);
         b.Property(x => x.CeilingPrice).HasPrecision(18, 4);
         b.Ignore(x => x.Amount);
         b.Ignore(x => x.Device);
+        b.Ignore(x => x.IsSuperseded);
         b.HasOne<SurgeryBooking>().WithMany().HasForeignKey(x => x.SurgeryBookingId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.SurgeryBookingId);
         b.HasIndex(x => x.LotNumber);

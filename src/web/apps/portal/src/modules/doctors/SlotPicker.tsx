@@ -97,15 +97,16 @@ export function SlotPicker({
                     type="button"
                     role="radio"
                     aria-checked={isSelected}
-                    aria-label={fewLeft ? `${time}, ${t('booking.time.seatsLeft', { count: slot.seatsLeft })}` : time}
                     className={mergeClasses(styles.slot, isSelected && styles.selected)}
                     onClick={() => onSelect(slot)}
                   >
-                    <span aria-hidden>{time}</span>
+                    {/* The name is the text on the button (WCAG 2.5.3): the time, and how few places are left. */}
+                    <span>{time}</span>
                     {fewLeft && (
-                      <span className={styles.seats} aria-hidden>
-                        {t('booking.time.seatsLeft', { count: slot.seatsLeft })}
-                      </span>
+                      <>
+                        {' '}
+                        <span className={styles.seats}>{t('booking.time.seatsLeft', { count: slot.seatsLeft })}</span>
+                      </>
                     )}
                   </button>
                 );

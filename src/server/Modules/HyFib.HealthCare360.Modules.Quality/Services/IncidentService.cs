@@ -278,7 +278,7 @@ public sealed class IncidentService(
     /// Sentinel events alert every quality manager immediately (critical); moderate harm is flagged for review.
     /// The message never names the reporter.
     /// </summary>
-    private Task EscalateAsync(IncidentReceipt incident, Guid facilityId, string location, CancellationToken ct)
+    internal Task EscalateAsync(IncidentReceipt incident, Guid facilityId, string location, CancellationToken ct)
     {
         var link = $"/quality/incidents/{incident.Id}";
         if (incident.IsSentinel)

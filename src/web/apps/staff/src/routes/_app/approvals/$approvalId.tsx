@@ -40,9 +40,16 @@ function subjectLink(
     case 'Allergy':
     case 'PatientAlert':
       return request.patientId ? { label: "Open the patient's chart", to: `/emr/patients/${request.patientId}` } : null;
-    // A stay's MLC flag cleared or unlinked: the admission, with the change waiting.
+    // A stay's MLC flag cleared or unlinked, or the stay closed as absconded or as a death pending post-mortem: the
+    // admission, with the change waiting.
     case 'Admission':
       return { label: 'Open the admission', to: `/inpatient/admissions/${request.subjectId}` };
+    // An implant or consumable corrected after the operation started: the OT list, found by the surgery's booking number
+    // (the request's first detail names it); its implants tab shows the correction waiting.
+    case 'SurgeryMaterial': {
+      const booking = request.details.find((d) => d.label === 'Surgery')?.value.split(' · ')[0];
+      return booking ? { label: 'Find the surgery', to: '/ot/bookings', search: { search: booking } } : null;
+    }
     case 'Refund':
       return { label: 'Open the refund', to: `/billing/refunds/${request.subjectId}` };
     case 'IpAccount':
@@ -70,7 +77,8 @@ function subjectLink(
       return canManageMasters
         ? { label: 'Open the service', to: '/setup/services', search: { edit: request.subjectId } }
         : null;
-    // A death certificate to confirm: the certificate itself, opened (and audited) as the patient's record.
+    // A death certificate to confirm, or a confirmed one to void: the certificate itself, opened (and audited) as the
+    // patient's record.
     case 'DeathRecord':
       return { label: 'Open the death certificate', to: `/mrd/deaths/${request.subjectId}` };
     // A goods receipt to post: its lines, batches and totals, to check against the supplier's invoice.

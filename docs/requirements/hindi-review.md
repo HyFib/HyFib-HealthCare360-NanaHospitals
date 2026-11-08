@@ -392,6 +392,7 @@ Points we would most like checked:
 | 144 | `message.feature.off` | This is not available right now. Please contact the hospital. | यह सुविधा अभी उपलब्ध नहीं है। कृपया अस्पताल से संपर्क करें। | |
 | 145 | `message.appointment.payment_cancel_staff_only` | Only hospital staff can cancel an appointment because the payment was not received. | भुगतान न मिलने के कारण अपॉइंटमेंट केवल अस्पताल का स्टाफ़ ही रद्द कर सकता है। | |
 | 146 | `message.portal.link_not_usable` | This link no longer works. | यह लिंक अब काम नहीं करता। | |
+| 147 | `message.appointment.video_consent` | Agree to be seen by video to book a video consultation. | वीडियो परामर्श बुक करने के लिए वीडियो पर परामर्श की सहमति दें। | |
 
 ## The validators' own messages (shown next to a field)
 

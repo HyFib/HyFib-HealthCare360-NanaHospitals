@@ -32,14 +32,7 @@ export type DiagnosisStatus = 'Active' | 'Resolved' | 'Chronic';
 export type FavouriteKind = 'Order' | 'Drug';
 export type DischargeSummaryStatus = 'Draft' | 'Signed' | 'Amended';
 export type AdmissionStatus =
-  | 'Admitted'
-  | 'DischargeInitiated'
-  | 'Discharged'
-  | 'Cancelled'
-  | 'Absconded'
-  | 'Expired'
-  | 'Lama'
-  | 'Dama';
+  'Admitted' | 'DischargeInitiated' | 'Discharged' | 'Cancelled' | 'Absconded' | 'Expired' | 'Lama' | 'Dama';
 export type AdmissionType = 'Elective' | 'Emergency' | 'DayCare' | 'Maternity' | 'TransferIn';
 
 export const ENCOUNTER_TYPES: readonly EncounterType[] = [
