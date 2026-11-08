@@ -456,23 +456,24 @@ and grants nothing.
     answers 202, and 400 on `reason` without one), and another approves, shown the setting, what it controls, where it
     applies, the value in force and the one asked ("Second pathologist for lab corrections: on → off"). That is
     switching off the second pathologist (`lab.separateVerifier`), the second doctor on death certificates
-    (`mrd.deathCertificateConfirmation`), administration only on enrolled desktops
-    (`security.administrationRequiresDesktop`), payment before a lab sample (`lab.requirePaymentBeforeCollection`) or
-    the cash counter shift (`billing.shift.required`); switching on Windows Hello unlock (`ui.biometricUnlock`) or AI
-    (`ai.enabled`); raising an own-authority discount limit (`billing.discount.defaultMaxPercent`,
-    `pharmacy.discount.max_percent`), the canteen's staff credit, the sessions per account, the screen-lock or MAR grace
-    time or a delta check's threshold (0 for none counts as the highest), or shortening its look-back; clearing any of
-    them, so the default decides; and any change to the portal's address in every SMS and QR code (`portal.baseUrl`),
-    the TDS on doctors' fees, the critical alerts' numbers, times and heartbeat (`alerts.*`), an integration
-    (`integrations.*`), the ABDM gateway, the AI provider and its addresses, and any credential (a `*.secret` key, or a
-    value saved as secret). The stricter direction is saved at once, and every other setting as before. A credential
-    asked is held with the request only as the settings store holds it, encrypted with the data key, shown as "a new
-    secret value (not shown)", and decrypted only to be saved. Approved, the change is saved through the settings store
-    only over the value it was asked against (`approval.stale`), one waits per setting and facility
-    (`approval.already_requested`), and it is audited as `setting.changed` at Warning with who asked and who approved.
-    The Features screen's switches are not guarded: one switched off stops a service, never a control. Lab setup's
-    analyser list (`integrations.lab.instruments`) keeps its own screen and permission: it saves only analysers Lab setup
-    has, each bound to its allowed addresses and audited, while the same key through the settings API waits.
+    (`mrd.deathCertificateConfirmation`), the second blood bank officer (`bloodbank.separateVerifier`), administration
+    only on enrolled desktops (`security.administrationRequiresDesktop`), payment before a lab sample
+    (`lab.requirePaymentBeforeCollection`) or the cash counter shift (`billing.shift.required`); switching on Windows
+    Hello unlock (`ui.biometricUnlock`) or AI (`ai.enabled`); raising an own-authority discount limit
+    (`billing.discount.defaultMaxPercent`, `pharmacy.discount.max_percent`), the canteen's staff credit, the sessions
+    per account, the screen-lock or MAR grace time or a delta check's threshold (0 for none counts as the highest), or
+    shortening its look-back; clearing any of them, so the default decides; and any change to the portal's address in
+    every SMS and QR code (`portal.baseUrl`), the TDS on doctors' fees, the critical alerts' numbers, times and
+    heartbeat (`alerts.*`), an integration (`integrations.*`), the ABDM gateway, the AI provider and its addresses, and
+    any credential (a `*.secret` key, or a value saved as secret). The stricter direction is saved at once, and every
+    other setting as before. A credential asked is held with the request only as the settings store holds it, encrypted
+    with the data key, shown as "a new secret value (not shown)", and decrypted only to be saved. Approved, the change
+    is saved through the settings store only over the value it was asked against (`approval.stale`), one waits per
+    setting and facility (`approval.already_requested`), and it is audited as `setting.changed` at Warning with who
+    asked and who approved. The Features screen's switches are not guarded: one switched off stops a service, never a
+    control. Lab setup's analyser list (`integrations.lab.instruments`) keeps its own screen and permission: it saves
+    only analysers Lab setup has, each bound to its allowed addresses and audited, while the same key through the
+    settings API waits.
   - money out of the pharmacy (`pharmacy.sale_cancel`, `pharmacy.sale_return`): a same-day invoice cancelled, and a
     return that pays money out or writes stock off, are asked for by a pharmacist (`pharmacy.returns`) who neither sold
     the invoice nor took its payment, and approved by someone else who approves every other refund
@@ -492,6 +493,26 @@ and grants nothing.
     (`pharmacy.ip.issue`) approves, after opening the patient's record; nothing is credited or written off until then. A
     controlled drug is entered in the register as returned from the ward and written off, recorded by the approving
     pharmacist with the one who asked. A ward return restocked is made at once.
+  - blood released from quarantine (MAKER-CHECKER.md, slice 3; a second officer verifies, with no approval request): a
+    donation's grouping and TTI results that clear it leave its units in quarantine, "awaiting verification", not
+    reserved or issued. Another blood bank officer who holds `bloodbank.inventory.manage` (the permission that enters
+    results and prepares and discards stock: blood bank officers by default) verifies them as they were shown
+    (`POST /api/v1/blood-bank/donations/{id}/lab-results/verify`, with the donation's version), and only then do the
+    units go to stock. The donation names who entered and who verified, by account, and the verification is audited with
+    both names (`bloodbank.results_verified`). Until then only the officer who entered complete results corrects them
+    (`bloodbank.results_entered_by_other`), and once verified nobody does (`bloodbank.results_final`). A reactive result
+    discards the units and defers the donor at once, as before. A facility with one officer on duty sets
+    `bloodbank.separateVerifier` to `false` (on by default: the Drugs and Cosmetics Rules, Schedule F Part XII-B, and
+    the NBTC standards expect the medical officer's check), which waits for a second administrator: that officer then
+    verifies their own results, audited at Warning, and the donation is flagged and listed for the medical officer's
+    review (`GET …/donations?oneOfficer=true`);
+  - uncross-matched blood (slice 3): released only on an emergency request a doctor has authorised from their own
+    sign-in (`POST /api/v1/blood-bank/requests/{id}/emergency-release`): a holder of `bloodbank.requests.create` whose
+    account is linked to a doctor in the practitioner list (consultant, resident or visiting), never a name the blood
+    bank types (`bloodbank.doctor_required`, 403). The request keeps the doctor's account, practitioner record and the
+    time; the authorisation and each unit issued on it are audited at Warning, naming the doctor and the issuing
+    officer. The doctor's authorisation is the second person: no approval inbox stands in the way of blood in an
+    emergency.
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was
@@ -523,6 +544,20 @@ and grants nothing.
     witness's account. A high-alert medicine given is witnessed the same way. A ward order takes both flags from the
     drug master when it names an item of it, whatever the order form sent, and so does the order made for a medicine
     the pharmacy issues without a prescription line.
+  - in the blood bank, grouping, cross-match and issue are not all one person: grouping and cross-match record the
+    officer's account, and a unit is not issued by the officer who both grouped the patient and cross-matched it, nor
+    plasma, platelets or cryoprecipitate (issued on the group alone) by the officer who grouped the patient, nor an
+    uncross-matched unit by the doctor who released it (`bloodbank.issue_own_checks`, 403). Where
+    `bloodbank.separateVerifier` is off, the one officer on duty issues it, audited at Warning
+    (`bloodbank.issued_on_own_checks`), and the issue is flagged and listed for the medical officer's review (`GET
+    …/requests?oneOfficer=true`). The officer who entered a donation's results does not verify them while the setting is
+    on (`bloodbank.verify_own_results`). A patient's grouping is compared with the request's own first sample (a second
+    grouping that disagrees is refused, `bloodbank.grouping_discrepancy`, as before) and with the groups confirmed on
+    the patient's other requests, in any facility: one that disagrees is recorded but holds the request, at Warning, and
+    nothing is cross-matched or issued on it (`bloodbank.grouping_history_discrepancy`) until another officer groups a
+    new sample, which must agree with the first sample or the earlier group and replaces the first
+    (`bloodbank.regroup_own_sample` for the same officer). The setting does not lift this; in an emergency, the doctor's
+    release of O Rh(D)-negative red cells goes on meanwhile;
   - a unit of blood is started on the ward only after a bedside check by two staff, the second proving who they are at
     the first one's screen in the same way (purpose `blood.bedside_check`, `bloodbank.transfuse`). The patient's
     wristband and the bag are read and compared with the issue on the server; another patient's or another unit is

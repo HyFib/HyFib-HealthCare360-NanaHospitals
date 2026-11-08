@@ -17,9 +17,12 @@ public sealed record DonorScreeningDto(
     decimal TemperatureC, IReadOnlyList<ScreeningAnswer> Answers, DonorEligibilityOutcome Outcome, IReadOnlyList<string> Reasons, DateOnly? DeferredUntil,
     int? MaxBagVolumeMl, Guid? DonationId);
 
+/// <param name="AwaitingVerification">Results clear the donation and wait for a second officer before the units leave quarantine.</param>
+/// <param name="VerifiedByEnterer">Released on one officer's word (no second officer at the facility), for the medical officer's review.</param>
 public sealed record DonationListItem(
     Guid Id, string BagNumber, Guid DonorId, string DonorNumber, string DonorName, BloodBagType BagType, int VolumeMl, DonationType Type,
-    DateTimeOffset CollectedAt, DonationStatus Status, BloodGroup BloodGroup, bool TtiComplete, bool TtiReactive);
+    DateTimeOffset CollectedAt, DonationStatus Status, BloodGroup BloodGroup, bool TtiComplete, bool TtiReactive, bool AwaitingVerification,
+    bool VerifiedByEnterer);
 
 public sealed record DonorDetail(
     Guid Id, string DonorNumber, string FirstName, string? LastName, string FullName, Gender Gender, DateOnly DateOfBirth, string Age, BloodGroup BloodGroup,
@@ -49,10 +52,17 @@ public sealed record RecordLabResultsRequest(
     public TtiPanel ToPanel() => new() { Hiv = Hiv, HbsAg = HbsAg, Hcv = Hcv, Syphilis = Syphilis, Malaria = Malaria };
 }
 
+/// <summary>Verifies a donation's results as they were shown (<paramref name="Version"/>): results changed since are not verified unseen.</summary>
+public sealed record VerifyLabResultsRequest(uint Version);
+
+/// <param name="LabResultsByUserId">Who entered the results: the screen offers them the correction and others the verification.</param>
+/// <param name="SeparateVerifier">The facility asks for a second officer (<c>bloodbank.separateVerifier</c>).</param>
 public sealed record DonationDetail(
     Guid Id, string BagNumber, Guid DonorId, string DonorNumber, string DonorName, BloodBagType BagType, int VolumeMl, DonationType Type,
     Guid? ReplacementForPatientId, DateTimeOffset CollectedAt, string? CollectedByName, DonationStatus Status, BloodGroup BloodGroup, TtiPanel Tti,
-    DateTimeOffset? LabResultsAt, DateTimeOffset? SeparatedAt, string? DonorReaction, string? Notes, IReadOnlyList<BloodUnitDto> Components, uint Version);
+    DateTimeOffset? LabResultsAt, Guid? LabResultsByUserId, string? LabResultsByName, bool AwaitingVerification, DateTimeOffset? VerifiedAt,
+    string? VerifiedByName, bool VerifiedByEnterer, bool SeparateVerifier, DateTimeOffset? SeparatedAt, string? DonorReaction, string? Notes,
+    IReadOnlyList<BloodUnitDto> Components, uint Version);
 
 public sealed class SaveDonorRequestValidator : AbstractValidator<SaveDonorRequest>
 {
@@ -127,4 +137,9 @@ public sealed class RecordLabResultsRequestValidator : AbstractValidator<RecordL
 {
     public RecordLabResultsRequestValidator() =>
         RuleFor(x => x.BloodGroup).NotEqual(BloodGroup.Unknown).WithMessage("Enter the ABO and Rh(D) group.");
+}
+
+public sealed class VerifyLabResultsRequestValidator : AbstractValidator<VerifyLabResultsRequest>
+{
+    public VerifyLabResultsRequestValidator() => RuleFor(x => x.Version).SeenVersion();
 }

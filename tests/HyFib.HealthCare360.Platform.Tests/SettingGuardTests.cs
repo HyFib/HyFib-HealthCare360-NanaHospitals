@@ -30,6 +30,11 @@ public sealed class SettingGuardTests
         Waits("mrd.deathCertificateConfirmation", null, Off).ShouldBeTrue();
         Waits("mrd.deathCertificateConfirmation", Off, On).ShouldBeFalse();
 
+        // The second blood bank officer likewise: a blood bank with one officer on duty switches it off only with a second administrator.
+        Waits("bloodbank.separateVerifier", null, Off).ShouldBeTrue("one officer then releases blood from quarantine alone");
+        Waits("bloodbank.separateVerifier", Off, On).ShouldBeFalse();
+        SettingGuard.Judge("bloodbank.separateVerifier", null, Off, secret: false).Summary.ShouldBe("Second blood bank officer: not set (on) → off");
+
         // Typed as text, as the administration rule reads it too.
         Waits("security.administrationRequiresDesktop", On, JsonValue.Create("false")).ShouldBeTrue();
         Waits("security.administrationRequiresDesktop", Off, JsonValue.Create(" TRUE ")).ShouldBeFalse();

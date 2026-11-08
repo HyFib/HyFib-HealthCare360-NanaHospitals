@@ -9,7 +9,7 @@ import {
   Text,
 } from '@fluentui/react-components';
 import { DismissCircleRegular } from '@fluentui/react-icons';
-import { formatDateTime, useRealtimeEvent } from '@hc360/core';
+import { formatDateTime, useRealtimeEvent, useSession } from '@hc360/core';
 import { LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -88,6 +88,9 @@ function RequestView({ request: r }: { request: BloodRequestDetail }) {
   const canCrossmatch = usePermission('bloodbank.crossmatch.perform');
   const canIssue = usePermission('bloodbank.units.issue');
   const canReport = usePermission('bloodbank.reactions.report');
+  // The treating doctor authorises uncross-matched release: one who may ask for blood and is linked to a practitioner
+  // record (the server checks it is a doctor's).
+  const isPractitioner = Boolean(useSession((s) => s.user?.practitionerId));
   const [cancelling, setCancelling] = useState(false);
   const [reporting, setReporting] = useState<BloodIssueDto | null>(null);
   const open = r.status !== 'Issued' && r.status !== 'Cancelled';
@@ -152,7 +155,7 @@ function RequestView({ request: r }: { request: BloodRequestDetail }) {
         />
       </div>
 
-      <EmergencyReleasePanel request={r} canIssue={canIssue} />
+      <EmergencyReleasePanel request={r} canAuthorise={canCreate && isPractitioner} />
 
       <Section title="Patient’s blood group">
         <GroupingCard request={r} canGroup={canCrossmatch} />

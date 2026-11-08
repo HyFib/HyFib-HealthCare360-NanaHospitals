@@ -18,6 +18,10 @@ public sealed class CrossMatch : AuditableEntity, IFacilityScoped
     public CrossmatchMethod Method { get; set; }
     public CrossmatchResult Result { get; set; }
     public DateTimeOffset PerformedAt { get; set; }
+
+    /// <summary>The officer who cross-matched, so an issue can tell whether it rests on one person's checks alone.</summary>
+    public Guid? PerformedByUserId { get; set; }
+
     public string? PerformedByName { get; set; }
     public string? Remarks { get; set; }
 

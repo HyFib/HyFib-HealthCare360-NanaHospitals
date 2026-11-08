@@ -31222,6 +31222,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("issued_by_user_id");
 
+                    b.Property<bool>("IssuedOnOwnChecks")
+                        .HasColumnType("boolean")
+                        .HasColumnName("issued_on_own_checks");
+
                     b.Property<string>("IssuedToName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -31337,6 +31341,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("deleted_by");
 
+                    b.Property<string>("EarlierGroup")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("earlier_group");
+
                     b.Property<DateTimeOffset?>("EmergencyReleaseAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("emergency_release_at");
@@ -31345,6 +31354,14 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("emergency_release_authorised_by");
+
+                    b.Property<Guid?>("EmergencyReleaseByPractitionerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("emergency_release_by_practitioner_id");
+
+                    b.Property<Guid?>("EmergencyReleaseByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("emergency_release_by_user_id");
 
                     b.Property<string>("EmergencyReleaseReason")
                         .HasMaxLength(500)
@@ -31355,6 +31372,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
 
+                    b.Property<string>("FirstSampleGroup")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("first_sample_group");
+
                     b.Property<DateTimeOffset?>("GroupedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("grouped_at");
@@ -31363,6 +31385,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("grouped_by_name");
+
+                    b.Property<Guid?>("GroupedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("grouped_by_user_id");
 
                     b.Property<decimal?>("HaemoglobinGdl")
                         .HasPrecision(4, 1)
@@ -31396,6 +31422,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<int?>("PlateletCount")
                         .HasColumnType("integer")
                         .HasColumnName("platelet_count");
+
+                    b.Property<DateTimeOffset?>("RegroupedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("regrouped_at");
 
                     b.Property<string>("RequestNumber")
                         .IsRequired()
@@ -31556,6 +31586,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("performed_by_name");
 
+                    b.Property<Guid?>("PerformedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("performed_by_user_id");
+
                     b.Property<string>("Remarks")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
@@ -31679,6 +31713,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("lab_results_at");
 
+                    b.Property<string>("LabResultsByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("lab_results_by_name");
+
+                    b.Property<Guid?>("LabResultsByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("lab_results_by_user_id");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
@@ -31715,6 +31758,23 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid?>("UpdatedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("updated_by");
+
+                    b.Property<DateTimeOffset?>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("verified_at");
+
+                    b.Property<bool>("VerifiedByEnterer")
+                        .HasColumnType("boolean")
+                        .HasColumnName("verified_by_enterer");
+
+                    b.Property<string>("VerifiedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("verified_by_name");
+
+                    b.Property<Guid?>("VerifiedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("verified_by_user_id");
 
                     b.Property<uint>("Version")
                         .IsConcurrencyToken()

@@ -269,7 +269,10 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
         }
     }
 
-    /// <summary>A unit of <paramref name="group"/> packed red cells collected, tested, asked for, cross-matched (or released in an emergency) and issued.</summary>
+    /// <summary>
+    /// A unit of <paramref name="group"/> packed red cells collected, tested and verified by a second officer, asked for,
+    /// cross-matched by a second officer (or released in an emergency by the doctor) and issued.
+    /// </summary>
     private async Task<BloodIssueDto> IssueUnitAsync(ApiClient officer, ApiClient doctor, Guid patientId, Guid admissionId, BloodGroup group, bool emergency)
     {
         var donor = await officer.PostAsync<Created>($"{Bank}/donors", new SaveDonorRequest(
@@ -286,6 +289,7 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
         var loaded = await officer.GetAsync<DonationDetail>($"{Bank}/donations/{donation.Id}");
         await officer.PutAsync($"{Bank}/donations/{donation.Id}/lab-results", new RecordLabResultsRequest(
             group, TtiResult.NonReactive, TtiResult.NonReactive, TtiResult.NonReactive, TtiResult.NonReactive, TtiResult.NonReactive, loaded.Version));
+        await server.VerifyDonationAsync(donation.Id);
         var unitId = units.Single().Id;
 
         var request = await doctor.PostAsync<Created>($"{Bank}/requests", new CreateBloodRequestRequest(
@@ -294,14 +298,13 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
             RequiredBy: null, HaemoglobinGdl: 6.8m, PlateletCount: null));
         if (emergency)
         {
-            await officer.PostAsync($"{Bank}/requests/{request.Id}/emergency-release",
-                new EmergencyReleaseRequest("Dr. Meera Iyer", "Massive bleeding after a road accident, no time to group and cross-match"));
+            await server.AuthoriseEmergencyReleaseAsync(request.Id, "Massive bleeding after a road accident, no time to group and cross-match");
         }
         else
         {
+            // The officer groups the patient and a second officer cross-matches, so the unit does not go out on one officer's checks.
             await officer.PostAsync($"{Bank}/requests/{request.Id}/grouping", new GroupPatientRequest(group));
-            await officer.PostAsync<CrossMatchDto>($"{Bank}/requests/{request.Id}/crossmatches",
-                new RecordCrossMatchRequest(unitId, CrossmatchMethod.GelCard, CrossmatchResult.Compatible, null));
+            await server.CrossMatchAsSecondOfficerAsync(request.Id, unitId);
         }
 
         return await officer.PostAsync<BloodIssueDto>($"{Bank}/requests/{request.Id}/issues", new IssueBloodRequest(unitId, "Staff nurse Asha"));

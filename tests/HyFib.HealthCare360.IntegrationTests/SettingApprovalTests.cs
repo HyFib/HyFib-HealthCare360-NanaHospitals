@@ -11,6 +11,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Pharmacy.Services;
+using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
 using HyFib.HealthCare360.Modules.SupportServices.Services;
 using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
@@ -199,6 +200,7 @@ public sealed class SettingApprovalTests(HospitalServer server)
     {
         Switch(LabResultService.SeparateVerifierSetting).DefaultOn.ShouldBeFalse();
         Switch(VitalRegistrationService.ConfirmationSetting).DefaultOn.ShouldBeTrue();
+        Switch(BloodBankSettings.SeparateVerifier).DefaultOn.ShouldBeTrue();
         Switch(AdministrationOnDesktop.SettingKey).DefaultOn.ShouldBeTrue();
         Switch(SampleService.RequirePaymentSetting).DefaultOn.ShouldBeTrue();
         Switch(ShiftService.RequiredSetting).DefaultOn.ShouldBeTrue();

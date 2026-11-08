@@ -3,7 +3,10 @@ using HyFib.HealthCare360.Modules.SpecialtyCare.Tests.Support;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare.Tests.BloodBank;
 
-/// <summary>Unit status machine: quarantine release on TTI (BB-04), expiry (BB-05), issue and cold-chain return (BB-07).</summary>
+/// <summary>
+/// Unit status machine: quarantine until the screening results clear it and a second officer verifies them (BB-04),
+/// expiry (BB-05), issue and cold-chain return (BB-07).
+/// </summary>
 public sealed class BloodComponentTests
 {
     private static readonly Guid Request = Guid.CreateVersion7();
@@ -24,20 +27,44 @@ public sealed class BloodComponentTests
     {
         var unit = Unit(type);
         unit.ApplyLabResults(BloodGroup.OPositive, Clear, TestData.Now);
+        unit.Release(TestData.Now);
         unit.Status.ShouldBe(BloodUnitStatus.Available);
         return unit;
     }
 
     [Fact]
-    public void Unit_leaves_quarantine_only_when_every_tti_marker_is_non_reactive()
+    public void Results_that_clear_the_unit_leave_it_in_quarantine_awaiting_verification()
     {
         var unit = Unit();
 
         unit.ApplyLabResults(BloodGroup.OPositive, Clear with { Malaria = TtiResult.Pending }, TestData.Now);
-        unit.Status.ShouldBe(BloodUnitStatus.Quarantine);
+        (unit.Status, unit.AwaitingVerification).ShouldBe((BloodUnitStatus.Quarantine, false));
 
+        // All five non-reactive, as the officer typed them: still quarantined, and neither reserved nor issued.
         unit.ApplyLabResults(BloodGroup.OPositive, Clear, TestData.Now);
-        unit.Status.ShouldBe(BloodUnitStatus.Available);
+        (unit.Status, unit.AwaitingVerification).ShouldBe((BloodUnitStatus.Quarantine, true));
+        unit.Reserve(Request, TestData.Now).Error!.Code.ShouldBe("bloodbank.unit_unavailable");
+        unit.Issue(Request, TestData.Now).Error!.Code.ShouldBe("bloodbank.unit_unavailable");
+    }
+
+    [Fact]
+    public void Verified_results_release_the_unit_to_stock_and_pending_ones_release_nothing()
+    {
+        var pending = Unit();
+        pending.ApplyLabResults(BloodGroup.OPositive, Clear with { Hcv = TtiResult.Pending }, TestData.Now);
+        pending.Release(TestData.Now);
+        pending.Status.ShouldBe(BloodUnitStatus.Quarantine);
+
+        var cleared = Unit();
+        cleared.ApplyLabResults(BloodGroup.OPositive, Clear, TestData.Now);
+        cleared.Release(TestData.Now);
+        (cleared.Status, cleared.AwaitingVerification).ShouldBe((BloodUnitStatus.Available, false));
+
+        // A platelet unit whose 5 days ran out while the results waited goes to expired, not to stock.
+        var platelets = Unit(BloodComponentType.PlateletConcentrate);
+        platelets.ApplyLabResults(BloodGroup.OPositive, Clear, TestData.Now);
+        platelets.Release(platelets.ExpiresAt);
+        platelets.Status.ShouldBe(BloodUnitStatus.Expired);
     }
 
     [Theory]
@@ -69,7 +96,18 @@ public sealed class BloodComponentTests
     {
         var unit = Unit();
         unit.ApplyLabResults(BloodGroup.Unknown, Clear, TestData.Now);
+        unit.Release(TestData.Now);
         unit.Status.ShouldBe(BloodUnitStatus.Quarantine);
+    }
+
+    [Fact]
+    public void A_reactive_unit_is_discarded_and_never_released()
+    {
+        var unit = Unit();
+        unit.ApplyLabResults(BloodGroup.OPositive, Clear with { Syphilis = TtiResult.Reactive }, TestData.Now);
+        unit.Release(TestData.Now);
+
+        unit.Status.ShouldBe(BloodUnitStatus.Discarded);
     }
 
     [Fact]

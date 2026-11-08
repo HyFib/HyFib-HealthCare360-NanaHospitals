@@ -48,6 +48,12 @@ public sealed class BloodIssue : AuditableEntity, IFacilityScoped
     public Guid? IssuedByUserId { get; set; }
     public string? IssuedByName { get; set; }
 
+    /// <summary>
+    /// Issued on checks the issuer alone made (grouped and cross-matched, say), where the facility lets one officer do it
+    /// (<c>bloodbank.separateVerifier</c> off): listed for the medical officer's review.
+    /// </summary>
+    public bool IssuedOnOwnChecks { get; set; }
+
     /// <summary>Ward staff who collected the unit (identity check at the blood bank counter).</summary>
     public string IssuedToName { get; set; } = string.Empty;
 
