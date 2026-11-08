@@ -144,3 +144,30 @@ describe('a drug made less strictly handled', SCREEN_TESTS, () => {
     expect(await screen.findByText(/Ravi Store asked on .* to be handled less strictly/, {}, SLOW)).toBeInTheDocument();
   });
 });
+
+describe("a medicine's NPPA ceiling price", SCREEN_TESTS, () => {
+  it('raised, waits for someone who approves prices and asks why; the save carries the reason', async () => {
+    const server = open({ ...TRAMADOL, ceilingPrice: 2, ceilingNotification: 'S.O. 1(E) of 1-Apr-2026' }, true);
+    const user = userEvent.setup();
+    const ceiling = await screen.findByRole('spinbutton', { name: /NPPA ceiling price/ }, SLOW);
+    expect(screen.queryByText(/waits for someone who approves prices/)).not.toBeInTheDocument();
+
+    await user.clear(ceiling);
+    await user.type(ceiling, '3');
+    expect(await screen.findByText(/waits for someone who approves prices/)).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: /Why the price change/ }), 'NPPA revised the ceiling');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(saved(server)).toBeDefined(), SLOW);
+    expect(saved(server)).toMatchObject({ ceilingPrice: 3, priceChangeReason: 'NPPA revised the ceiling' });
+  });
+
+  it('lowered, applies at once and asks nothing', async () => {
+    open({ ...TRAMADOL, ceilingPrice: 2 }, false);
+    const user = userEvent.setup();
+    const ceiling = await screen.findByRole('spinbutton', { name: /NPPA ceiling price/ }, SLOW);
+    await user.clear(ceiling);
+    await user.type(ceiling, '1.5');
+    expect(screen.queryByText(/waits for someone who approves prices/)).not.toBeInTheDocument();
+  });
+});

@@ -12,6 +12,10 @@ export const SUPPLY_PERMISSIONS = {
   grnReceive: 'purchase.grn.receive',
   /** Checks a goods receipt against the supplier's invoice and posts it into stock (never one's own). */
   grnApprove: 'purchase.grn.approve',
+  /** Record refrigerator and freezer temperatures and the action taken on an excursion. */
+  coldChainRecord: 'inventory.cold_chain.record',
+  /** Set up refrigerators and freezers, their allowed range and their data loggers. */
+  coldChainManage: 'inventory.cold_chain.manage',
   assetsRead: 'assets.read',
   assetsManage: 'assets.manage',
   assetsMaintenance: 'assets.maintenance',
@@ -58,4 +62,5 @@ export const VENDOR_READERS = [
   S.assetsMaintenance,
 ] as const;
 export const PURCHASE_READERS = [S.purchaseManage, S.purchaseApprove, S.grnReceive, S.grnApprove] as const;
+export const COLD_CHAIN_READERS = [S.coldChainRecord, S.coldChainManage, S.stockRead] as const;
 export const ASSET_READERS = [S.assetsRead, S.assetsManage, S.assetsMaintenance] as const;
