@@ -10,42 +10,110 @@ public sealed class MtpCaseTests
     private static readonly MtpOpinion First = new("Dr. Meera", "TNMC 45120", Today);
     private static readonly MtpOpinion Second = new("Dr. Lata", "TNMC 51877", Today);
 
+    private static readonly Guid Certifier = Guid.NewGuid();
+    private static readonly Guid SecondDoctor = Guid.NewGuid();
+
     [Theory]
-    [InlineData(8, 1, true)]
-    [InlineData(20, 1, true)]
-    [InlineData(21, 1, false)]
-    [InlineData(21, 2, true)]
-    [InlineData(24, 2, true)]
-    public void The_length_of_the_pregnancy_decides_how_many_doctors_form_the_opinion(int weeks, int doctors, bool allowed)
+    [InlineData(8, 1, true, false)]
+    [InlineData(20, 1, true, false)]
+    [InlineData(20, 2, true, false)]
+    [InlineData(21, 1, true, true)]
+    [InlineData(24, 1, true, true)]
+    [InlineData(21, 2, false, false)]
+    public void The_length_of_the_pregnancy_decides_how_many_doctors_form_the_opinion(int weeks, int typed, bool allowed, bool awaitingSecond)
     {
-        var opinions = new[] { First, Second }.Take(doctors).ToList();
-        var result = new MtpCase().Certify(
+        var opinions = new[] { First, Second }.Take(typed).ToList();
+        var mtp = new MtpCase();
+        var result = mtp.Certify(
             Certification() with { WeeksOfGestation = weeks, Opinions = opinions, Category = weeks > 20 ? MtpRule3BCategory.ChangeOfMaritalStatus : null },
-            Today, null, Now);
+            Today, Certifier, Now);
 
         result.IsSuccess.ShouldBe(allowed, result.Error?.Message);
         if (!allowed)
         {
-            result.Error!.Fields!.Keys.ShouldBe(["opinions"]);
+            // From 20 weeks the second opinion is the second doctor's to record, never typed (maker-checker, slice 9).
+            result.Error!.Code.ShouldBe("mtp.second_opinion_typed");
         }
+        else
+        {
+            mtp.AwaitingSecondOpinion.ShouldBe(awaitingSecond);
+        }
+    }
+
+    [Fact]
+    public void From_20_weeks_the_second_doctor_records_their_own_opinion_before_the_termination()
+    {
+        var mtp = new MtpCase();
+        mtp.Certify(Certification() with
+        {
+            WeeksOfGestation = 22,
+            Category = MtpRule3BCategory.Minor,
+            AgeYears = 16,
+            ConsentBy = MtpConsentBy.Guardian,
+            GuardianName = "Selvi",
+            GuardianRelation = "Mother"
+        }, Today, Certifier, Now).IsSuccess.ShouldBeTrue();
+        mtp.Terminate(Termination(), Today, Now).Error!.Code.ShouldBe("mtp.second_opinion_required");
+
+        // Not the doctor who certified the case, nor the doctor of the first opinion under another account.
+        mtp.RecordSecondOpinion(new MtpSecondOpinion(Certifier, "Dr. Meera", "TNMC 99999", Today, Certifier), Today).Error!.Code
+            .ShouldBe("mtp.second_opinion_same_doctor");
+        mtp.RecordSecondOpinion(new MtpSecondOpinion(SecondDoctor, "Dr. Meera K", " tnmc 45120 ", Today, SecondDoctor), Today).Error!.Code
+            .ShouldBe("mtp.second_opinion_same_doctor");
+        mtp.RecordSecondOpinion(new MtpSecondOpinion(SecondDoctor, "Dr. Lata", "TNMC 51877", Today.AddDays(1), SecondDoctor), Today).Error!.Fields!.Keys
+            .ShouldBe(["opinionOn"]);
+
+        mtp.RecordSecondOpinion(new MtpSecondOpinion(SecondDoctor, " Dr. Lata ", "TNMC 51877", Today, Certifier), Today).IsSuccess.ShouldBeTrue();
+        mtp.AwaitingSecondOpinion.ShouldBeFalse();
+        mtp.SecondOpinion.ShouldBe(new MtpOpinion("Dr. Lata", "TNMC 51877", Today, SecondDoctor, Certifier));
+        mtp.Opinions.Count.ShouldBe(2);
+        mtp.RecordSecondOpinion(new MtpSecondOpinion(Guid.NewGuid(), "Dr. Rao", "TNMC 1", Today, Certifier), Today).Error!.Code
+            .ShouldBe("mtp.second_opinion_recorded");
+
+        // A correction drops it: the second doctor gives it again on the case as corrected.
+        mtp.Certify(Certification() with
+        {
+            WeeksOfGestation = 23,
+            Category = MtpRule3BCategory.Minor,
+            AgeYears = 16,
+            ConsentBy = MtpConsentBy.Guardian,
+            GuardianName = "Selvi",
+            GuardianRelation = "Mother",
+            Opinions = [First with { UserId = SecondDoctor }]
+        }, Today, Certifier, Now).IsSuccess.ShouldBeTrue();
+        (mtp.SecondOpinion, mtp.AwaitingSecondOpinion).ShouldBe(((MtpOpinion?)null, true), "an opinion typed on the case is never the doctor's own");
+        mtp.RecordSecondOpinion(new MtpSecondOpinion(SecondDoctor, "Dr. Lata", "TNMC 51877", Today, SecondDoctor), Today).IsSuccess.ShouldBeTrue();
+        mtp.Terminate(Termination(), Today, Now).IsSuccess.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Up_to_20_weeks_no_second_opinion_is_recorded() =>
+        CertifiedCase().RecordSecondOpinion(new MtpSecondOpinion(SecondDoctor, "Dr. Lata", "TNMC 51877", Today, SecondDoctor), Today).Error!.Code
+            .ShouldBe("mtp.second_opinion_not_needed");
+
+    private static MtpCase CertifiedCase()
+    {
+        var mtp = new MtpCase();
+        mtp.Certify(Certification(), Today, Certifier, Now).IsSuccess.ShouldBeTrue();
+        return mtp;
     }
 
     [Fact]
     public void From_20_to_24_weeks_the_woman_is_in_a_rule_3b_category_and_a_contraceptive_failure_is_no_ground()
     {
-        var late = Certification() with { WeeksOfGestation = 22, Opinions = [First, Second] };
+        var late = Certification() with { WeeksOfGestation = 22, Opinions = [First] };
 
         new MtpCase().Certify(late, Today, null, Now).Error!.Fields!.Keys.ShouldBe(["category"]);
         new MtpCase().Certify(late with { Category = MtpRule3BCategory.Minor, Grounds = [MtpGround.ContraceptiveFailure] }, Today, null, Now)
             .Error!.Fields!.Keys.ShouldBe(["grounds"]);
-        new MtpCase().Certify(late with { Opinions = [First, First with { DoctorName = "Dr. Meera R" }], Category = MtpRule3BCategory.Minor }, Today, null, Now)
-            .Error!.Fields!.Keys.ShouldBe(["opinions"], "the two opinions are of two doctors");
+        new MtpCase().Certify(Certification() with { Opinions = [First, First with { DoctorName = "Dr. Meera R" }] }, Today, null, Now)
+            .Error!.Fields!.Keys.ShouldBe(["opinions"], "two opinions typed are of two doctors");
     }
 
     [Fact]
     public void Beyond_24_weeks_only_a_foetal_abnormality_the_medical_board_found()
     {
-        var board = Certification() with { WeeksOfGestation = 28, Opinions = [First, Second], Grounds = [MtpGround.FoetalAbnormality] };
+        var board = Certification() with { WeeksOfGestation = 28, Opinions = [First], Grounds = [MtpGround.FoetalAbnormality] };
 
         new MtpCase().Certify(board, Today, null, Now).Error!.Fields!.Keys.ShouldBe(["medicalBoardReference"]);
         new MtpCase().Certify(board with { Grounds = [MtpGround.InjuryToMentalHealth], MedicalBoardReference = "SMB/2026/14" }, Today, null, Now)

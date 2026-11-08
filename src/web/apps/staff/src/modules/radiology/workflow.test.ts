@@ -7,6 +7,7 @@ import {
   isReportEditable,
   isReportSigned,
   nextStudyAction,
+  pregnancyScanPerformed,
   studyActions,
 } from './workflow';
 
@@ -18,6 +19,16 @@ describe('imaging study actions', () => {
     expect(studyActions('Acquired')).not.toContain('start');
     expect(studyActions('Reported')).not.toContain('cancel');
     expect(studyActions('Cancelled')).toEqual([]);
+    // A pregnancy ultrasound once scanned is not cancelled: its Form F is completed (slice 9).
+    expect(studyActions('InProgress', true)).not.toContain('cancel');
+    expect(studyActions('Acquired', true)).toEqual(['report', 'repeat', 'reconcile']);
+    expect(pregnancyScanPerformed({ requiresFormF: true, startedAt: null, acquiredAt: null })).toBe(false);
+    expect(pregnancyScanPerformed({ requiresFormF: true, startedAt: '2026-11-08T05:00:00Z', acquiredAt: null })).toBe(
+      true,
+    );
+    expect(pregnancyScanPerformed({ requiresFormF: false, startedAt: '2026-11-08T05:00:00Z', acquiredAt: null })).toBe(
+      false,
+    );
   });
 
   it('suggests the next step', () => {
