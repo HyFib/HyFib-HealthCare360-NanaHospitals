@@ -350,3 +350,60 @@ export function fromPatientDetail(p: PatientDetail): PatientFormValues {
     notes: p.notes ?? '',
   };
 }
+
+/** What an edit of an existing patient changes that a second person may have to approve (maker-checker, slice 7). */
+export interface RecordChangesAsked {
+  /** Identity fields changed, in words: they wait unless the desk may still correct them (`identityCorrectableUntil`). */
+  identity: string[];
+  /** A VIP restriction lifted: it waits. */
+  liftsRestriction: boolean;
+  /** The deceased status set or taken back here: it waits (a certified death is the certificate's to take back). */
+  deceased: boolean;
+}
+
+const sameText = (a: string | null | undefined, b: string | null | undefined) => (a ?? '').trim() === (b ?? '').trim();
+
+/**
+ * What of the identity, the restriction and the deceased status `values` change from `patient` (the ABHA number and
+ * Aadhaar are write-only: a number entered, or one removed, is a change).
+ */
+export function recordChangesAsked(
+  values: PatientFormValues,
+  patient: PatientDetail,
+  options: { removeAbha: boolean; removeAadhaar: boolean; isDeceased: boolean; deceasedAtChanged: boolean },
+): RecordChangesAsked {
+  const identity: string[] = [];
+  if (
+    !sameText(values.title, patient.title) ||
+    !sameText(values.firstName, patient.firstName) ||
+    !sameText(values.middleName, patient.middleName) ||
+    !sameText(values.lastName, patient.lastName)
+  ) {
+    identity.push('name');
+  }
+  if (values.gender !== patient.gender) {
+    identity.push('sex');
+  }
+  if (values.ageMode === 'age' || !sameText(values.dateOfBirth, patient.dateOfBirth)) {
+    identity.push('date of birth');
+  }
+  if (values.abhaNumber.trim() !== '' || options.removeAbha) {
+    identity.push('ABHA number');
+  }
+  if (!sameText(values.abhaAddress.toLowerCase(), (patient.abhaAddress ?? '').toLowerCase())) {
+    identity.push('ABHA address');
+  }
+  if (values.aadhaarNumber.trim() !== '' || options.removeAadhaar) {
+    identity.push('Aadhaar');
+  }
+  return {
+    identity,
+    liftsRestriction: patient.isVip && !values.isVip,
+    deceased: options.isDeceased !== patient.isDeceased || (options.isDeceased && options.deceasedAtChanged),
+  };
+}
+
+/** Whether saving asks a second person for anything, given whether the desk may still correct the identity at once. */
+export function asksForApproval(changes: RecordChangesAsked, identityCorrectable: boolean): boolean {
+  return (changes.identity.length > 0 && !identityCorrectable) || changes.liftsRestriction || changes.deceased;
+}

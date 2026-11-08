@@ -1,6 +1,7 @@
 import { isApiError, type Gender, type PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { DeficiencyType } from '@/modules/mrd/api';
 import type { PatientSummary, TokenPriority, TokenStatus } from '@/modules/patients/api';
 import type { AppointmentStatus, AppointmentVisitType } from '@/modules/scheduling/api';
@@ -31,7 +32,14 @@ export type DiagnosisStatus = 'Active' | 'Resolved' | 'Chronic';
 export type FavouriteKind = 'Order' | 'Drug';
 export type DischargeSummaryStatus = 'Draft' | 'Signed' | 'Amended';
 export type AdmissionStatus =
-  'Admitted' | 'DischargeInitiated' | 'Discharged' | 'Cancelled' | 'Absconded' | 'Expired' | 'Lama' | 'Dama';
+  | 'Admitted'
+  | 'DischargeInitiated'
+  | 'Discharged'
+  | 'Cancelled'
+  | 'Absconded'
+  | 'Expired'
+  | 'Lama'
+  | 'Dama';
 export type AdmissionType = 'Elective' | 'Emergency' | 'DayCare' | 'Maternity' | 'TransferIn';
 
 export const ENCOUNTER_TYPES: readonly EncounterType[] = [
@@ -455,6 +463,16 @@ export interface AllergyDto {
   recordedByUserId: string | null;
   notes: string | null;
   version: number;
+  /** A change waiting for a prescriber (taken out of the checks, or a lower severity): the allergy stands as it is until then. */
+  pendingChange?: PendingFlagChange | null;
+}
+
+/** A change to a patient flag waiting for a second clinician (maker-checker, slice 7). */
+export interface PendingFlagChange {
+  approvalId: string;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface RecordAllergyRequest {
@@ -473,6 +491,8 @@ export interface UpdateAllergyRequest {
   statusReason: string | null;
   notes: string | null;
   version: number;
+  /** Why a lower severity is asked for (it waits for a prescriber); a status change gives its reason in `statusReason`. */
+  changeReason?: string | null;
 }
 
 /**
@@ -499,6 +519,8 @@ export interface PatientAlertDto {
   isCurrent: boolean;
   deactivatedAt: string | null;
   deactivationReason: string | null;
+  /** DNR asked to be taken off: it stays on the banner until a second doctor agrees. */
+  pendingChange?: PendingFlagChange | null;
 }
 
 export interface RaiseAlertRequest {
@@ -1092,15 +1114,21 @@ export const emrApi = {
 
   recordAllergy: (patientId: string, request: RecordAllergyRequest) =>
     api.post<AllergyDto>(`/api/v1/emr/patients/${patientId}/allergies`, request),
+  /**
+   * Stricter changes, the reaction and notes are saved at once (the allergy back); taking an active allergy out of the
+   * checks or lowering its severity waits for a prescriber who did not ask (202, the request back).
+   */
   updateAllergy: (id: string, request: UpdateAllergyRequest) =>
-    api.put<AllergyDto>(`/api/v1/emr/allergies/${id}`, request),
+    api.put<AllergyDto | ApprovalRequestDto>(`/api/v1/emr/allergies/${id}`, request),
   /** Idempotent; 409 `allergy.active_exist` (with `data.activeAllergies`) while the patient has active allergies. */
   recordNoKnownAllergies: (patientId: string) =>
     api.post<AllergyStatusDto>(`/api/v1/emr/patients/${patientId}/allergies/none`),
+  /** DNR only by a doctor (403 `alert.dnr_doctor_only`), and with no end date. */
   raiseAlert: (patientId: string, request: RaiseAlertRequest) =>
     api.post<PatientAlertDto>(`/api/v1/emr/patients/${patientId}/alerts`, request),
+  /** Other alerts are cleared at once; DNR is asked for by a doctor and taken off when a second doctor agrees (202). */
   deactivateAlert: (id: string, reason: string) =>
-    api.post<PatientAlertDto>(`/api/v1/emr/alerts/${id}/deactivate`, { reason }),
+    api.post<PatientAlertDto | ApprovalRequestDto>(`/api/v1/emr/alerts/${id}/deactivate`, { reason }),
 
   addDiagnosis: (encounterId: string, request: AddDiagnosisRequest) =>
     api.post<DiagnosisDto>(`/api/v1/emr/encounters/${encounterId}/diagnoses`, request),

@@ -109,8 +109,9 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
  * (IApprovalAction): credit notes and write-offs, money not received and refunds not paid out, patient merges, lab
  * report corrections, death certificates a second doctor confirms, goods receipts posted into stock, the pharmacy's
  * cancellations, returns and ward returns not restocked, the masters, access and plans approved only here, and changes
- * to accounts and administration desktops, the drug-safety tables loosened, and the billing desk's discount limits raised,
- * charges cancelled, cash shortages and doctors' consultation fees. Every kind's approving permission is in it
+ * to accounts and administration desktops, the drug-safety tables loosened, the billing desk's discount limits raised,
+ * charges cancelled, cash shortages and doctors' consultation fees, and the patient's record: its identity, a VIP
+ * restriction lifted, the deceased status, a sensitive category, DNR, an allergy and a stay's MLC flag. Every kind's approving permission is in it
  * (approvalsMenu.test.ts).
  */
 export const APPROVAL_PERMISSIONS = [
@@ -151,4 +152,19 @@ export const APPROVAL_PERMISSIONS = [
   // shift closed short asks a supervisor (someone who approves refunds, above) to accept the shortage: each may withdraw it.
   'billing.charges.manage',
   'billing.shifts',
+  // The patient's record (slice 7): the desk asks for an identity change, a VIP restriction lifted or the deceased status
+  // (someone who approves identity changes, or who opens restricted records, decides); a doctor asks for a sensitive
+  // category to be taken out or DNR taken off (another doctor decides); a clinician asks for an allergy to leave the
+  // checks or be lowered (a prescriber decides); the admission desk asks for a stay's MLC flag to be cleared (the MLC
+  // register decides). Each may withdraw it.
+  'patients.register',
+  'patients.identity.approve',
+  'patients.restricted.read',
+  'patients.sensitive.manage',
+  'clinical.alerts.manage',
+  'clinical.encounters.sign',
+  'clinical.allergies.manage',
+  'clinical.prescriptions.sign',
+  'inpatient.admissions.admit',
+  'mrd.mlc.register',
 ] as const;

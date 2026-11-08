@@ -416,6 +416,11 @@ function StayHeader({ admission: a }: { admission: AdmissionDetail }) {
           MLC {a.mlcNumber ?? ''}
         </Badge>
       )}
+      {a.pendingMlc && (
+        <Badge color="warning" appearance="tint">
+          MLC change waiting for approval
+        </Badge>
+      )}
     </div>
   );
 }

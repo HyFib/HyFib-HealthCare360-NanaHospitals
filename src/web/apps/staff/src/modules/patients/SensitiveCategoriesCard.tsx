@@ -23,6 +23,9 @@ import { ErrorState, Section, useNotify, useUnsavedChanges, useValuesChanged } f
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { askedForApproval } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
+import { approvalKeys } from '@/modules/approvals/api';
 import { errorMessage } from '@/modules/lab/common/errors';
 import {
   patientApi,
@@ -50,9 +53,10 @@ const useStyles = makeStyles({
 
 /**
  * The record's sensitive categories (gap R-4) for the doctors who keep them: an HIV, mental-illness, abortion or
- * sexual-abuse diagnosis sets them, as does a sexual assault in the MLC register; a doctor can add or remove one, with a
- * reason. The clinical record of a patient in a category opens only to staff holding that category, or through
- * break-the-glass.
+ * sexual-abuse diagnosis sets them, as does a sexual assault in the MLC register; a doctor can add one at once, with a
+ * reason, and asks for one to be removed: another doctor who keeps them approves it, and the record stays in the category
+ * until then (maker-checker, slice 7). The clinical record of a patient in a category opens only to staff holding that
+ * category, or through break-the-glass.
  */
 export function SensitiveCategoriesCard({ patientId }: { patientId: string }) {
   const canManage = usePermission(MANAGE);
@@ -85,6 +89,15 @@ function Card({ patientId }: { patientId: string }) {
                 : 'Not in a sensitive category.'
               : 'Loading…'}
           </Text>
+          {data?.waiting && data.waitingRemoval && data.waitingRemoval.length > 0 && (
+            <PendingGrantNotice
+              approvalId={data.waiting.approvalId}
+              what={`Taking the record out of ${data.waitingRemoval.map((c) => sensitiveCategoryLabel[c]).join(', ')}`}
+              requestedBy={data.waiting.requestedBy}
+              requestedAt={data.waiting.requestedAt}
+              decides="Another doctor who manages the categories decides it; until then the record stays in the category."
+            />
+          )}
           <div>
             <Button
               icon={<ShieldLockRegular />}
@@ -118,14 +131,29 @@ function CategoriesDialog({
   const [reason, setReason] = useState('');
   const save = useMutation({
     mutationFn: () => patientApi.setSensitive(patientId, categories, reason.trim(), current.version),
-    onSuccess: (saved) => {
-      queryClient.setQueryData(patientKeys.sensitive(patientId), saved);
-      notify.success('Categories saved', 'The change is recorded in the audit trail.');
+    onSuccess: async (saved) => {
+      const asked = askedForApproval(saved);
+      if (asked) {
+        // A category taken out waits for another doctor; anything added is saved.
+        await queryClient.invalidateQueries({ queryKey: patientKeys.sensitive(patientId) });
+        void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Another doctor who manages the categories decides it; until then the record stays in the category.`,
+        );
+      } else {
+        queryClient.setQueryData(patientKeys.sensitive(patientId), saved as SensitiveCategoriesDto);
+        notify.success('Categories saved', 'The change is recorded in the audit trail.');
+      }
       onClose();
     },
   });
   const guard = useUnsavedChanges({ dirty: useValuesChanged({ categories, reason }), busy: save.isPending, onClose });
   const valid = reason.trim().length >= 10;
+  // Taking the record out of a category it is in now, and not already asked for, goes to another doctor.
+  const removing = current.categories.some(
+    (c) => !categories.includes(c) && !(current.waitingRemoval ?? []).includes(c),
+  );
 
   return (
     <Dialog open onOpenChange={guard.onOpenChange}>
@@ -166,7 +194,8 @@ function CategoriesDialog({
                 <Textarea value={reason} maxLength={500} rows={2} onChange={(_, d) => setReason(d.value)} autoFocus />
               </Field>
               <Caption1 className={styles.muted}>
-                Removing a category opens the record to every clinician again.
+                Adding a category applies at once. Removing one opens the record to every clinician again, so another
+                doctor who manages the categories approves it first; the record stays in the category until then.
               </Caption1>
             </DialogContent>
             <DialogActions>
@@ -180,7 +209,7 @@ function CategoriesDialog({
                 disabledFocusable={save.isPending}
                 icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
-                Save
+                {removing ? 'Ask for approval' : 'Save'}
               </Button>
             </DialogActions>
           </DialogBody>

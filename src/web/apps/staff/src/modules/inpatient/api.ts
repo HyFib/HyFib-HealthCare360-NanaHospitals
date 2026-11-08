@@ -1,6 +1,7 @@
 import type { Gender, PagedResult, PayerType, WristbandAllergies } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { BedAlert, BedStatus } from './bedState';
 
 // ------------------------------------------------------------------ enums (strings, as the server sends them)
@@ -405,6 +406,20 @@ export interface UpdateAdmissionRequest {
   attendantPhone: string | null;
   notes: string | null;
   version: number;
+  /**
+   * Why the stay is no longer medico-legal (or its MLC number changes): clearing or unlinking the flag waits for someone
+   * who keeps the MLC register, and the server answers 400 on `changeReason` without one.
+   */
+  changeReason?: string | null;
+}
+
+/** A change to a stay's medico-legal flag waiting for someone who keeps the MLC register (maker-checker, slice 7). */
+export interface PendingMlcChange {
+  approvalId: string;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
+  asked: { isMlc: boolean; mlcNumber: string | null };
 }
 
 export interface TransferPatientRequest {
@@ -499,6 +514,8 @@ export interface AdmissionDetail {
   cancelledAt: string | null;
   cancelReason: string | null;
   version: number;
+  /** Clearing or unlinking the medico-legal flag, asked for: the stay stays medico-legal (and free by law) until then. */
+  pendingMlc?: PendingMlcChange | null;
 }
 
 export interface PatientAdmissionItem {
@@ -887,7 +904,9 @@ export const wardApi = {
 
 export const admissionApi = {
   admit: (body: AdmitPatientRequest) => api.post<AdmissionCreated>('/api/v1/inpatient/admissions', body),
-  update: (id: string, body: UpdateAdmissionRequest) => api.put<void>(`/api/v1/inpatient/admissions/${id}`, body),
+  /** 204 when all is saved; 202 with the request when clearing or unlinking the medico-legal flag waits (the rest is saved). */
+  update: (id: string, body: UpdateAdmissionRequest) =>
+    api.put<ApprovalRequestDto | null | undefined>(`/api/v1/inpatient/admissions/${id}`, body),
   transfer: (id: string, body: TransferPatientRequest) =>
     api.post<void>(`/api/v1/inpatient/admissions/${id}/transfer`, body),
   cancel: (id: string, reason: string) => api.post<void>(`/api/v1/inpatient/admissions/${id}/cancel`, { reason }),
