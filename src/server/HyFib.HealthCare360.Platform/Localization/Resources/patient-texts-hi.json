@@ -311,6 +311,7 @@
   "message.appointment.choose_patient": "चुनें कि अपॉइंटमेंट किसके लिए है।",
   "message.appointment.choose_doctor": "डॉक्टर चुनें।",
   "message.appointment.choose_slot": "समय चुनें।",
+  "message.appointment.video_consent": "वीडियो परामर्श बुक करने के लिए वीडियो पर परामर्श की सहमति दें।",
   "message.appointment.choose_new_slot": "नया समय चुनें।",
   "message.appointment.slot_unavailable_choose": "यह समय बुकिंग के लिए उपलब्ध नहीं है। कृपया कोई दूसरा समय चुनें।",
   "message.appointment.overlap": "इस समय रोगी का अपॉइंटमेंट {number} पहले से है।",

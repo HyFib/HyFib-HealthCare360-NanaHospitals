@@ -9,8 +9,8 @@ scheduled data extracts for external BI tools such as Power BI, with data-refres
 Staff app: `src/web/apps/staff/src/modules/analytics` (manifest section *Insights*) and
 `src/web/apps/staff/src/routes/_app/analytics`.
 
-The module also holds the **patient journeys** (the pipeline of where each patient is: their out-patient visit, stay,
-operations and lab orders, and the board of patients in the hospital), a live read model over every module's records
+The module also holds the **patient journeys** (the pipeline of where each patient is: their out-patient visit, casualty
+stay, stay, operations and lab orders, and the board of patients in the hospital), a live read model over every module's records
 that only this layer may read (see *Patient journeys*). Its screens are the front office's.
 
 ## Permissions
@@ -368,8 +368,8 @@ BI extracts.
 
 ## Patient journeys (the pipeline)
 
-Where each patient is in the hospital, as a line of stages: their out-patient visit, their stay, their operations and
-their lab orders. Every stage is read from the record that proves it; nothing is a status someone sets by hand, and no
+Where each patient is in the hospital, as a line of stages: their out-patient visit, their stay in casualty, their stay,
+their operations and their lab orders. Every stage is read from the record that proves it; nothing is a status someone sets by hand, and no
 module was given a field for it. `Services/JourneyQueries.cs` reads, `Domain/Journeys/*` decides (pure, unit-tested),
 `Features/Journeys/*` answers. Like the Clinical timeline and the CRM 360° view it reads with small indexed queries, a
 few per kind of record for a whole page of patients at once, and writes nothing. Unlike the reports it reads the live
@@ -380,10 +380,10 @@ admission lists do.
 
 | Method | Path | Permission | Response |
 |---|---|---|---|
-| GET | `/api/v1/patients/{patientId}/journey` | `visits.read` | `PatientJourneys {patientId, asOf, outpatient, inpatient, surgeries[], labOrders[], surgeriesWithheld}` |
-| GET | `/api/v1/journeys/in-hospital?kind=&departmentId=&wardId=&page=&pageSize=` | `visits.read` | `PagedResult<InHospitalPatient {patientId, uhid, patientName, isRestricted, gender, age, kind, departmentId, departmentName, wardId, place, arrivedAt, journey}>`; `kind` `Outpatient` or `Inpatient` (another kind is a 400 on `kind`) |
+| GET | `/api/v1/patients/{patientId}/journey` | `visits.read` | `PatientJourneys {patientId, asOf, outpatient, emergency, inpatient, surgeries[], labOrders[], surgeriesWithheld}` |
+| GET | `/api/v1/journeys/in-hospital?kind=&departmentId=&wardId=&page=&pageSize=` | `visits.read` | `PagedResult<InHospitalPatient {patientId, uhid, patientName, isRestricted, gender, age, kind, departmentId, departmentName, wardId, place, arrivedAt, journey}>`; `kind` `Outpatient`, `Emergency` (casualty) or `Inpatient` (another kind is a 400 on `kind`) |
 
-`JourneyDto {kind (Outpatient, Inpatient, Surgery, Lab), id, number, title, status (Active, Completed, Cancelled),
+`JourneyDto {kind (Outpatient, Inpatient, Surgery, Lab, Emergency), id, number, title, status (Active, Completed, Cancelled),
 startedAt, stages[], current}`; each stage `{key, label, state, at, minutesInStage, detail}`, `state` one of `Done`,
 `Current`, `Pending`, `Skipped`, `NotApplicable`, `Stopped`; `minutesInStage` only on the current stage, and only when
 the time it was reached is stored; `detail` a short note from the records ("Token GM-012", "₹350.00 due", "1 of 3
@@ -397,11 +397,15 @@ released"). `current` is null once the journey is finished or cancelled.
   category closes: unless `EnsureCanOpenChartAsync` passes they are left out and `surgeriesWithheld` says so. The
   visit, stay and lab orders stay open to the desk and the departments, as the categories leave bills and orders open.
 * **Which journeys.** The current out-patient visit (one open today, as the board has it), or else the most recent
-  whatever its state; the latest stay while it lasts, that is admitted or with the discharge begun, and after discharge
-  until the bed the patient left is clean; operations and lab orders of that visit or stay, or still open (at most 5
+  whatever its state; the casualty stay still open (the emergency case not yet disposed of), or else the most recent;
+  the latest stay while it lasts, that is admitted or with the discharge begun, and after discharge
+  until the bed the patient left is clean; operations and lab orders of that visit, casualty visit or stay, or still open (at most 5
   operations and 10 lab orders, newest first).
-* **The board.** Today's (IST) out-patient visits still open and the stays of patients in a bed, newest arrival first,
-  25 a page, by out-patients or in-patients, department (the visit's or the stay's) and ward (the stay's). Each kind is
+* **The board.** Today's (IST) out-patient visits still open, the patients in casualty (an emergency case not yet
+  disposed of, whatever day it opened, whose visit is not cancelled) and the stays of patients in a bed, newest arrival
+  first, 25 a page, by out-patients, casualty (`kind=Emergency`, the *ER* filter) or in-patients, department (the
+  visit's, the emergency visit's or the stay's) and ward (the stay's; casualty has none). A casualty row's place is
+  "Casualty · ESI 2" (or "Casualty · not triaged"). Each kind is
   read on its own index for its newest arrivals and the two merged, as the Clinical timeline pages its sources. A
   restricted (VIP) patient the user may not open is named by initials, "R. S. (restricted)", as patient search does
   (R-3), with `isRestricted`; the UHID stays. Like today's visits and the bed board, a look at the board is not audited
@@ -420,6 +424,7 @@ one shows *stopped* for every stage it had not reached. A stage that does not ap
 
 | Journey | Stages (key: what proves it, role) |
 |---|---|
+| Casualty stay | `arrived` the case's arrival, arrival mode in detail · `triaged` the first triage, latest ESI level in detail ("ESI 2"); optional: a patient resuscitated before triage is with the doctor and triage is skipped · `seen-by-doctor` the first doctor, named in detail · `investigations-done` every lab, imaging and cardiology line of the emergency visit's orders completed by its report (parallel; not applicable once disposed of with none) · `disposition` the case's disposition, in words: Discharged, "Admitted · IP…" (the stay opened from the casualty visit; "Admitted, bed not yet given" until it is), "Referred to …", Left against medical advice, Absconded, Died. Finished at the disposition (a patient who absconded or died before triage went without it); cancelled with its visit |
 | Out-patient visit | `checked-in` visit's check-in (token in detail) · `called` token called, room in detail (optional; not applicable without a token) · `in-consultation` the earlier of the token's service start and the first encounter · `consultation-signed` every encounter of the visit signed · `investigations-done` every lab, imaging and cardiology line of the visit's orders completed by its report (parallel) · `dispensed` every e-prescription of the visit dispensed at the pharmacy (parallel) · `billed` every charge of the visit on a finalized bill (parallel) · `paid` nothing left to bill and nothing due, when the last bill was settled: the payment, credit note or write-off that brought its due to nothing (parallel) · `closed` the visit completed. Before the consultation is signed, tests, medicines and billing with nothing behind them are pending (they may still come); after, not applicable |
 | In-patient stay | `admitted` where from, in the admit screen's words, naming the OPD or casualty visit the admission links ("From OPD visit NHV260000076") · `bedded` the first bed's start (ward and bed in detail) · `rounds-and-nursing` the first consultant's round, nursing note or risk assessment (optional) · `investigations-complete` the stay's investigation lines completed (parallel; not applicable until one is ordered) · `discharge-initiated` · `summary-signed` the discharge summary signed (parallel) · `cleared` as Billing clears a discharge: every service on a finalized bill, interim or final, and nothing due, when the last bill was settled, or a discharge with dues approved (optional: a patient who leaves against advice, absconds or dies is not held by it; not applicable with nothing charged) · `discharged` (how, for anything but a normal discharge) · `bed-cleaned` the housekeeping task of the bed left at discharge (not applicable when the bed was not left for cleaning) |
 | Operation | `requested` the booking · `scheduled` a slot held (when it was given is not stored: no time, the slot and theatre in detail; a postponed booking is waiting for a slot again) · `pre-op` the pre-operative checklist complete, consent among its items, at the last item recorded · `received` in pre-op (optional) · `sign-in`, `time-out` WHO checklist phases · `incision` · `sign-out` · `out-and-billed` the patient out of theatre with the OT charges posted (failed charges keep it pending). There is no recovery (PACU) or back-to-ward record, so no stage for it |
@@ -483,8 +488,8 @@ The patient journeys are shown by the front office's module (`src/web/apps/staff
 
 | Route | Screen |
 |---|---|
-| `/front-office/in-hospital` | *Patients in hospital* (Front office menu, `visits.read`): the board, filtered by out-patients or in-patients, department and ward (the ward filter for those who may read the wards), each row with the compact pipeline and the time in the current stage; opens the patient's page; refreshed every minute and on every visit change |
-| `/patients/$patientId` | The *Journey* card (`visits.read`): the visit and the stay as full pipelines, operations and lab orders beneath as compact lines |
+| `/front-office/in-hospital` | *Patients in hospital* (Front office menu, `visits.read`): the board, filtered by out-patients, casualty (ER) or in-patients, department and ward (the ward filter for those who may read the wards), each row with the compact pipeline and the time in the current stage; opens the patient's page; refreshed every minute and on every visit or casualty change |
+| `/patients/$patientId` | The *Journey* card (`visits.read`): the visit, the casualty stay and the stay as full pipelines, operations and lab orders beneath as compact lines |
 
 ## Tests
 
@@ -503,11 +508,12 @@ end-to-end `BiExtractTests` in `tests/HyFib.HealthCare360.IntegrationTests` (rul
 and delete, a failing refresh alerting once). `AnalyticsModuleTests` checks that the server's catalogue has every
 report.
 Web: `format.test.ts`, `params.test.ts`, `charts.test.ts`, `schedule-form.test.ts` in the module folder.
-Patient journeys: every stage rule in `Domain/Journeys` (`JourneyStagesTests`, `OutpatientJourneyTests`,
+Patient journeys: every stage rule in `Domain/Journeys` (`JourneyStagesTests`, `OutpatientJourneyTests`, `EmergencyJourneyTests`,
 `InpatientJourneyTests`, `SurgeryJourneyTests`, `LabJourneyTests`: current, skipped, not applicable, cancelled and
 finished journeys); `PatientPipelineTests` in the integration tests drives a patient through registration, the OPD, the
-consultation, a lab order, payment, collection and admission and reads both endpoints at each step, and checks the
-restricted-record rules; the staff app's `Pipeline.test.tsx` (`@hc360/ui`), `JourneyCard.test.tsx`,
+consultation, a lab order, payment, collection and admission, and a casualty patient through arrival, triage, the doctor,
+a lab order and admission from casualty, reads both endpoints at each step, and checks the restricted-record rules (also
+for casualty); the staff app's `Pipeline.test.tsx` (`@hc360/ui`), `JourneyCard.test.tsx`,
 `inHospital.test.tsx` and the accessibility checks of the board and the patient's page (in the browser at 360 px too).
 
 ## Maintainers

@@ -29,6 +29,12 @@ internal sealed class SchedulingSeeder(IOptions<PlatformOptions> options, INumbe
         (AppointmentNotifier.WaitlistTemplate, NotificationChannel.WhatsApp,
             "Dear {{name}}, good news: a slot with {{doctor}} is now free on {{date}} at {{time}}. Book it at {{link}} before it is taken.",
             "Waitlist: a slot opened (WhatsApp)"),
+        (StrandedPatientNotifier.Template, NotificationChannel.Sms,
+            "Dear {{name}}, {{doctor}} is not available on {{date}} at {{time}} (ref {{reference}}). Please choose another time at {{link}} or call us. - {{hospital}}",
+            "Doctor not available: choose another time"),
+        (StrandedPatientNotifier.Template, NotificationChannel.WhatsApp,
+            "Dear {{name}}, we are sorry: {{doctor}} is not available for your {{mode}} on {{date}} at {{time}} (ref {{reference}}). Please choose another time at {{link}}, or reply to this message and we will help.",
+            "Doctor not available: choose another time (WhatsApp)"),
     ];
 
     private static readonly (TimeOnly Start, TimeOnly End)[] DemoSessions =

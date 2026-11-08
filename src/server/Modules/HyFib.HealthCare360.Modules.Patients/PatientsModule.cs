@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Numbering;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace HyFib.HealthCare360.Modules.Patients;
 
@@ -53,6 +54,13 @@ public static class PatientsPermissions
     public const string Downtime = "patients.downtime";
     public const string VisitsRead = "visits.read";
     public const string VisitsManage = "visits.manage";
+
+    /// <summary>
+    /// Approve the cancellation someone else asked for of a visit the doctor has started (a consultation under way, or
+    /// with notes, orders or a prescription). Held by the hospital administrator and doctors by default; a doctor's account
+    /// approves only the visits it treats. Grant it to a front-office supervisor's role.
+    /// </summary>
+    public const string VisitsCancelApprove = "visits.cancel.approve";
     public const string QueueManage = "queue.manage";
     public const string QueueDisplay = "queue.display";
     public const string Enquiries = "frontoffice.enquiries";
@@ -91,6 +99,9 @@ public static class PatientsPermissions
         new(Downtime, "Patients", "Issue downtime UHID blocks for paper registration and follow their entry", [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
         new(VisitsRead, "Visits", "View visits and queues", PlatformPermissions.PatientFacingStaff),
         new(VisitsManage, "Visits", "Create, cancel and complete visits", [.. Desk, .. Clinical]),
+        new(VisitsCancelApprove, "Visits",
+            "Approve cancelling a visit the doctor has started, asked for by someone else (a doctor approves only the visits they treat)",
+            [SystemRoles.HospitalAdmin, SystemRoles.Doctor]),
         new(QueueManage, "Visits", "Call, start and complete queue tokens", [.. Desk, .. Clinical]),
         new(QueueDisplay, "Visits", "Show the queue display board (kiosk/TV)", Desk),
         new(Enquiries, "Front Office", "Record and resolve enquiries", [.. Desk, SystemRoles.CrmExecutive]),
@@ -115,6 +126,7 @@ public sealed class PatientsModule : IModule
         services.AddScoped<PatientRegistrationService>();
         services.AddScoped<Seed.LoadTestPatients>();
         services.AddScoped<PatientAccessGuard>();
+        services.TryAddScoped<IVisitClinicalWork, NoVisitClinicalWork>();
         services.AddScoped<PatientDeaths>();
         services.AddScoped<PatientRecordApprovals>();
         services.AddScoped<PatientContactAccess>();

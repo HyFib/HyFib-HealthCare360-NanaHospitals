@@ -43,6 +43,34 @@ public sealed class AppointmentNotifier(HospitalDbContext db, INotificationServi
         Queue(WaitlistTemplate, contact, values, slotStartsAt, entry.FacilityId);
     }
 
+    /// <summary>
+    /// Tells the patient that the doctor is not available for the booking (a leave or a block), with a link to choose
+    /// another time on the portal; on the <paramref name="channels"/> given. False when the patient has no contact details.
+    /// </summary>
+    public async Task<bool> DoctorUnavailableAsync(Appointment appointment, IReadOnlyList<NotificationChannel> channels, CancellationToken ct)
+    {
+        var contact = await ContactAsync(appointment.PatientId, appointment.PractitionerId, appointment.FacilityId, ct);
+        if (contact is null)
+        {
+            return false;
+        }
+
+        var baseUrl = await PortalAddress.BaseUrlAsync(settings, appointment.FacilityId, ct);
+        var values = Values(contact, appointment.StartsAt, appointment);
+        values["link"] = baseUrl is null
+            ? "the patient portal"
+            : PortalAddress.Page(baseUrl, $"doctors/{appointment.PractitionerId}?reschedule={appointment.Id}");
+        var ttl = appointment.StartsAt - time.GetUtcNow();
+        notifications.Queue(
+            StrandedPatientNotifier.Template,
+            new NotificationRecipient(contact.Phone, contact.Email, contact.PatientId, contact.PatientName, contact.Language),
+            values,
+            channels,
+            ttl > TimeSpan.Zero ? ttl : TimeSpan.FromMinutes(30),
+            appointment.FacilityId);
+        return true;
+    }
+
     private async Task QueueAsync(string template, Appointment appointment, CancellationToken ct)
     {
         var contact = await ContactAsync(appointment.PatientId, appointment.PractitionerId, appointment.FacilityId, ct);

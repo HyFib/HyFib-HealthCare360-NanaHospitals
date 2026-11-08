@@ -1,6 +1,7 @@
 import type { Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type {
   QueueTokenDto,
   TokenPriority,
@@ -216,9 +217,12 @@ export const CANCEL_VISIT_REASON_MAX = 300;
 /**
  * Ending a visit from the front desk needs `visits.manage`. Cancelling (a patient checked in by mistake, or who left)
  * also cancels its queue token and withdraws Billing's own unbilled charges; closing finishes the token. Both answer 422
- * `visit.closed` / `visit.cancelled` when the visit has already ended.
+ * `visit.closed` / `visit.cancelled` when the visit has already ended. Once the doctor has started the visit (the
+ * consultation under way, or a note, order or prescription on it), cancelling answers 202 with the approval it waits for:
+ * a front-office supervisor or the treating doctor decides (MAKER-CHECKER.md, slice 15).
  */
 export const visitApi = {
-  cancel: (visitId: string, reason: string) => api.post<void>(`/api/v1/visits/${visitId}/cancel`, { reason }),
+  cancel: (visitId: string, reason: string) =>
+    api.post<ApprovalRequestDto | undefined>(`/api/v1/visits/${visitId}/cancel`, { reason }),
   complete: (visitId: string) => api.post<void>(`/api/v1/visits/${visitId}/complete`),
 };

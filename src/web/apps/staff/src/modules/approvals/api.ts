@@ -111,8 +111,9 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
  * cancellations, returns and ward returns not restocked, the masters, access and plans approved only here, and changes
  * to accounts and administration desktops, the drug-safety tables loosened, the billing desk's discount limits raised,
  * charges cancelled, cash shortages and doctors' consultation fees, and the patient's record: its identity, a VIP
- * restriction lifted, the deceased status, a sensitive category, DNR, an allergy and a stay's MLC flag; and discharge and
- * death: an absconded stay closed, a death closed pending post-mortem, a confirmed death certificate voided. Every kind's approving permission is in it
+ * restriction lifted, the deceased status, a sensitive category, DNR, an allergy and a stay's MLC flag; discharge and
+ * death: an absconded stay closed, a death closed pending post-mortem, a confirmed death certificate voided; and a visit
+ * the doctor has started, cancelled at the desk. Every kind's approving permission is in it
  * (approvalsMenu.test.ts).
  */
 export const APPROVAL_PERMISSIONS = [
@@ -173,4 +174,8 @@ export const APPROVAL_PERMISSIONS = [
   // asks to void a confirmed death certificate (another doctor who confirms certificates decides). Each may withdraw it.
   'inpatient.admissions.discharge',
   'nursing.in_charge',
+  // A visit the doctor has started, cancelled at the desk (slice 15): the desk asks (and may withdraw it), a front-office
+  // supervisor or the treating doctor decides.
+  'visits.manage',
+  'visits.cancel.approve',
 ] as const;
