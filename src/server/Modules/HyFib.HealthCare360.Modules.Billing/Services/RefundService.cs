@@ -267,7 +267,7 @@ public sealed class RefundService(
         }
 
         var amount = Money.Round(request.Amount);
-        var creditable = bill.CanCredit(amount);
+        var creditable = request.Kind == CreditNoteKind.PayerShare ? await PayerCreditableAsync(bill, amount, ct) : bill.CanCredit(amount);
         if (creditable.IsFailure)
         {
             return creditable.Error!;
@@ -282,15 +282,25 @@ public sealed class RefundService(
 
         var what = CreditNoteApproval.Words(request.Kind);
         var timeBarred = GstTimeBarred(bill);
-        var details = new List<ApprovalDetail>
-        {
-            new("Bill", bill.BillNumber ?? bill.Id.ToString()),
-            new("Patient's share", $"₹{Money.FormatInr(bill.PatientAmount)}"),
-            new("Paid", $"₹{Money.FormatInr(bill.PaidAmount)}"),
-            new("Already credited", $"₹{Money.FormatInr(bill.CreditAmount)}"),
-            new("Balance due", $"₹{Money.FormatInr(bill.DueAmount)}"),
-            new(what, $"₹{Money.FormatInr(amount)}"),
-        };
+        var details = request.Kind == CreditNoteKind.PayerShare
+            ? new List<ApprovalDetail>
+            {
+                new("Bill", bill.BillNumber ?? bill.Id.ToString()),
+                new("Payer's share", $"₹{Money.FormatInr(bill.PayerAmount + bill.PayerDebitAmount)}"),
+                new("Settled by the payer", $"₹{Money.FormatInr(bill.PayerSettledAmount)}"),
+                new("Disallowed by the payer", $"₹{Money.FormatInr(bill.PayerDisallowedAmount)}"),
+                new("Already credited to the payer", $"₹{Money.FormatInr(await PayerCreditedAsync(bill.Id, ct))}"),
+                new(what, $"₹{Money.FormatInr(amount)}"),
+            }
+            : new List<ApprovalDetail>
+            {
+                new("Bill", bill.BillNumber ?? bill.Id.ToString()),
+                new("Patient's share", $"₹{Money.FormatInr(bill.PatientAmount)}"),
+                new("Paid", $"₹{Money.FormatInr(bill.PaidAmount)}"),
+                new("Already credited", $"₹{Money.FormatInr(bill.CreditAmount)}"),
+                new("Balance due", $"₹{Money.FormatInr(bill.DueAmount)}"),
+                new(what, $"₹{Money.FormatInr(amount)}"),
+            };
         var gst = 0m;
         foreach (var (line, before, lineAmount) in credited.Value)
         {
@@ -347,7 +357,9 @@ public sealed class RefundService(
             return lines.Error!;
         }
 
-        var credited = bill.ApplyCredit(asked.Amount);
+        // A payer credit note lowers the payer's invoice for what it already did not pay (the settlement's deduction): the
+        // patient owes the same. Anything else lowers what the patient owes.
+        var credited = asked.Kind == CreditNoteKind.PayerShare ? await PayerCreditableAsync(bill, asked.Amount, ct) : bill.ApplyCredit(asked.Amount);
         if (credited.IsFailure)
         {
             return credited.Error!;
@@ -378,7 +390,18 @@ public sealed class RefundService(
         var gst = note.Lines.Count == 0 ? string.Empty
             : timeBarred ? $"; GST not reduced: the time for it ended on {LastDayText(bill)} (CGST Act s.34(2))"
             : $"; GST ₹{Money.FormatInr(note.GstAmount)} on {note.Lines.Count} service{(note.Lines.Count == 1 ? string.Empty : "s")}";
-        audit.Add(new AuditEntry(AuditCategories.Data, asked.Kind == CreditNoteKind.WriteOff ? "billing.bill.written_off" : "billing.credit_note.issued",
+        if (asked.Kind == CreditNoteKind.PayerShare)
+        {
+            // The bill's version moves with the note, so a second payer credit asked against the bill as it was is stale.
+            db.Entry(bill).State = EntityState.Modified;
+        }
+
+        audit.Add(new AuditEntry(AuditCategories.Data, asked.Kind switch
+            {
+                CreditNoteKind.WriteOff => "billing.bill.written_off",
+                CreditNoteKind.PayerShare => "billing.payer_credit_note.issued",
+                _ => "billing.credit_note.issued",
+            },
             $"{note.Number}: ₹{Money.FormatInr(note.Amount)} on bill {bill.BillNumber}{gst} — {note.Reason} (asked for by {note.RequestedByName}, approved by {note.IssuedByName})")
         {
             PatientId = bill.PatientId,
@@ -399,7 +422,7 @@ public sealed class RefundService(
     {
         if (asked is not { Count: > 0 })
         {
-            if (kind == CreditNoteKind.CreditNote && bill.TaxAmount != 0m)
+            if (kind is CreditNoteKind.CreditNote or CreditNoteKind.PayerShare && bill.TaxAmount != 0m)
             {
                 return Error.Field("lines",
                     "Name the services this credit note corrects, with the amount on each: the bill carries GST, and the GST credited is each service's own.");
@@ -428,6 +451,11 @@ public sealed class RefundService(
                 return Error.Field($"lines[{index}].billLineId", "This service is not on the bill.");
             }
 
+            if (kind == CreditNoteKind.PayerShare && !line.IsPayerPayable)
+            {
+                return Error.Rule("billing.credit_not_payer_payable", $"The payer does not pay for {line.Description}, so its credit note is not the payer's.");
+            }
+
             if (line.Quantity < 0 || line.NetAmount <= 0m)
             {
                 return Error.Rule("billing.credit_exceeds_line", $"{line.Description} comes to nothing on this bill, so it cannot be credited.");
@@ -447,6 +475,33 @@ public sealed class RefundService(
 
         return lines;
     }
+
+    /// <summary>
+    /// A payer credit note: on a finalized bill with a payer, of at most what the payer's settlements disallowed less what
+    /// earlier payer credit notes credited.
+    /// </summary>
+    private async Task<Result> PayerCreditableAsync(Bill bill, decimal amount, CancellationToken ct)
+    {
+        if (amount <= 0)
+        {
+            return Error.Rule("billing.amount_invalid", "Enter an amount greater than zero.");
+        }
+
+        if (bill.Status is not (BillStatus.Finalized or BillStatus.PartiallyPaid or BillStatus.Paid) || !bill.HasPayer)
+        {
+            return Error.Rule("billing.bill_not_creditable", "A payer credit note applies to a finalized bill with a payer.");
+        }
+
+        var left = bill.PayerDisallowedAmount - await PayerCreditedAsync(bill.Id, ct);
+        return amount > left
+            ? Error.Rule("billing.payer_credit_exceeds", left <= 0m
+                ? "The payer has not settled this bill for less than billed, or its shortfall is already credited: record the settlement and its deductions first."
+                : $"At most ₹{Money.FormatInr(left)} can be credited to the payer: what its settlements disallowed, less earlier payer credit notes.")
+            : Result.Success();
+    }
+
+    private Task<decimal> PayerCreditedAsync(Guid billId, CancellationToken ct) =>
+        db.Set<CreditNote>().Where(c => c.BillId == billId && c.Kind == CreditNoteKind.PayerShare).SumAsync(c => c.Amount, ct);
 
     /// <summary>The date the bill was invoiced, from which the time to reduce its GST runs.</summary>
     private static DateOnly BillDate(Bill bill) => BillingTime.LocalDate(bill.FinalizedAt ?? bill.CreatedAt);

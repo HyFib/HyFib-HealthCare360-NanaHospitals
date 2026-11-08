@@ -41,6 +41,7 @@ export function toChange(
     perFacility: series.scope === 'facility',
     isLocked: series.isLocked,
     maxLength: series.maxLength,
+    gstDocument: series.gstDocument,
     defaultFormat: series.defaultFormat,
     format: series.isLocked ? series.format : values.format.trim(),
     resetPolicy: series.isLocked ? series.resetPolicy : values.resetPolicy,

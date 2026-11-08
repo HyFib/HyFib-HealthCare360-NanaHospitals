@@ -20,9 +20,18 @@ public sealed class EInvoiceService(
     IEnumerable<IEInvoiceSource> sources,
     ISettingsService settings,
     ICurrentUser currentUser,
+    IInvoiceRegistrationPortal portal,
     TimeProvider time)
 {
     public const string ApplicableFromSetting = "gst.einvoice.from";
+
+    /// <summary>
+    /// The consignment value above which goods move with an e-way bill (CGST rule 138: ₹50,000, lower in some states for
+    /// movement within them).
+    /// </summary>
+    public const string EwayBillThresholdSetting = "gst.ewaybill.threshold";
+
+    public const decimal DefaultEwayBillThreshold = 50000m;
 
     /// <summary>The portal takes an invoice up to 30 days after its date from a large taxpayer; reporting it later is refused.</summary>
     public const int ReportWithinDays = 30;
@@ -170,6 +179,187 @@ public sealed class EInvoiceService(
         return await DetailAsync(document, [], ct);
     }
 
+    /// <summary>
+    /// Asks the portal for the document's IRN (the facility must be connected, <c>integrations.irp</c>): the JSON is the
+    /// one the hospital would upload, checked as it is; the IRN, acknowledgement, signed invoice and signed QR code the
+    /// portal answers are recorded after the code is checked against the document. A document the portal already holds
+    /// (2150, as after a lost answer) is fetched by its IRN and recorded the same way, so asking twice never makes two.
+    /// </summary>
+    public async Task<Result<EInvoiceDetail>> GenerateAsync(string source, Guid id, CancellationToken ct)
+    {
+        var found = await DocumentAsync(source, id, ct);
+        if (found.IsFailure)
+        {
+            return found.Error!;
+        }
+
+        var (document, seller, applicable) = found.Value;
+        var noun = InvoiceRegistrationPayload.Noun(document);
+        if (document.IsCancelled)
+        {
+            return Error.Rule("einvoice.document_cancelled", $"The {noun} is cancelled here; it needs no IRN.");
+        }
+
+        if (await LiveAsync(document.Source, document.Id, ct) is not null)
+        {
+            return Error.Conflict("einvoice.registered", $"This {noun} already has an IRN.");
+        }
+
+        var (payload, problems) = InvoiceRegistrationPayload.Build(seller, document);
+        var preceding = await PrecedingProblemsAsync(document, applicable, ct);
+        if (payload is null || preceding.Count > 0)
+        {
+            return Problems(document, [.. problems, .. preceding]);
+        }
+
+        var connection = await portal.ConnectionAsync(document.FacilityId, ct);
+        if (!connection.Connected)
+        {
+            return Error.Rule("einvoice.irp_not_connected", $"{connection.Problem} Until it is, upload the JSON on the portal and record the IRN by hand.");
+        }
+
+        var gstin = Gstin.Normalize(seller.Gstin)!;
+        var answer = await portal.GenerateAsync(document.FacilityId, gstin, payload, ct);
+        if (answer.Error is { Code: IrpError.DuplicateIrn, ExistingIrn: { } existing })
+        {
+            answer = await portal.GetByIrnAsync(document.FacilityId, gstin, existing, ct);
+        }
+
+        if (!answer.IsSuccess)
+        {
+            return PortalError(answer.Error!);
+        }
+
+        var irn = answer.Value!;
+        var read = SignedQrCode.Read(irn.SignedQrCode);
+        if (read.IsFailure || SignedQrCode.Mismatches(read.Value, document, seller.Gstin) is { Count: > 0 } mismatches)
+        {
+            var why = read.IsFailure ? read.Error!.Message : string.Join(" ", SignedQrCode.Mismatches(read.Value, document, seller.Gstin));
+            return Error.Rule("einvoice.irp_mismatch",
+                $"The portal gave IRN {irn.Irn}, but its signed QR code is not this {noun}'s: {why} It is not recorded; check the IRN on the portal with the GST adviser.");
+        }
+
+        if (await db.Set<EInvoice>().IgnoreQueryFilters().AnyAsync(e => e.Irn == irn.Irn, ct))
+        {
+            return Error.Conflict("einvoice.irn_exists", "This IRN is already recorded against an invoice.");
+        }
+
+        var registration = new EInvoice
+        {
+            FacilityId = document.FacilityId,
+            Source = document.Source,
+            SourceId = document.Id,
+            DocumentNumber = document.Number,
+            DocumentDate = document.Date,
+            BuyerGstin = Gstin.Normalize(document.Buyer.Gstin)!,
+            InvoiceValue = document.Total,
+            Irn = irn.Irn,
+            AckNo = irn.AckNo,
+            AckDate = irn.AckDate.ToUniversalTime(),
+            SignedQrCode = irn.SignedQrCode,
+            SignedInvoice = string.IsNullOrEmpty(irn.SignedInvoice) ? null : irn.SignedInvoice,
+            Provider = connection.Provider ?? EInvoice.ManualProvider,
+            RecordedByName = currentUser.DisplayName ?? currentUser.UserName ?? "Staff",
+            PrecedingSource = document.Preceding?.Source,
+            PrecedingId = document.Preceding?.Id,
+        };
+        if (irn.EwbNo is { } ewb && irn.EwbDate is { } ewbDate)
+        {
+            registration.RecordEwayBill(ewb, ewbDate.ToUniversalTime(), irn.EwbValidTill?.ToUniversalTime());
+        }
+
+        db.Add(registration);
+        await db.SaveChangesAsync(ct);
+        return await DetailAsync(document, [], ct);
+    }
+
+    /// <summary>
+    /// Generates the e-way bill of a B2B invoice of goods (the pharmacy's) from its live IRN, when its value is above
+    /// <see cref="EwayBillThresholdSetting"/> (CGST rule 138): Part-B by the vehicle, or Part-A only with the transporter's
+    /// id when the transporter will fill the vehicle in.
+    /// </summary>
+    public async Task<Result<EInvoiceDetail>> EwayBillAsync(string source, Guid id, GenerateEwayBillRequest request, CancellationToken ct)
+    {
+        var found = await DocumentAsync(source, id, ct);
+        if (found.IsFailure)
+        {
+            return found.Error!;
+        }
+
+        var (document, seller, _) = found.Value;
+        if (document.Type != EInvoiceDocumentTypes.Invoice || document.Items.All(i => i.IsService))
+        {
+            return Error.Rule("einvoice.ewaybill_goods", "An e-way bill is for an invoice of goods; services move without one.");
+        }
+
+        var threshold = await EwayBillThresholdAsync(document.FacilityId, ct);
+        if (document.Total <= threshold)
+        {
+            return Error.Rule("einvoice.ewaybill_not_needed",
+                $"Goods worth ₹{Money.FormatInr(document.Total)} move without an e-way bill (needed above ₹{Money.FormatInr(threshold)}).");
+        }
+
+        var registration = await db.Set<EInvoice>()
+            .FirstOrDefaultAsync(e => e.Source == document.Source && e.SourceId == document.Id && e.Status == EInvoiceStatus.Registered, ct);
+        if (registration is null)
+        {
+            return Error.Rule("einvoice.not_registered", "Get the invoice's IRN first: the e-way bill is generated from it.");
+        }
+
+        if (registration.EwbNo is { } existing)
+        {
+            return Error.Conflict("einvoice.ewaybill_exists", $"E-way bill {existing} is already generated for this invoice.");
+        }
+
+        var connection = await portal.ConnectionAsync(document.FacilityId, ct);
+        if (!connection.Connected)
+        {
+            return Error.Rule("einvoice.irp_not_connected", connection.Problem ?? "The e-invoice portal (IRP) is not connected.");
+        }
+
+        var body = new JsonObject { ["Irn"] = registration.Irn, ["Distance"] = request.DistanceKm, ["TransMode"] = ((int)request.Mode).ToString(CultureInfo.InvariantCulture) };
+        if (!string.IsNullOrWhiteSpace(request.TransporterGstin))
+        {
+            body["TransId"] = request.TransporterGstin.Trim().ToUpperInvariant();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TransporterName))
+        {
+            body["TransName"] = request.TransporterName.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TransportDocumentNumber))
+        {
+            body["TransDocNo"] = request.TransportDocumentNumber.Trim();
+        }
+
+        if (request.TransportDocumentDate is { } docDate)
+        {
+            body["TransDocDt"] = InvoiceRegistrationPayload.Date(docDate);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.VehicleNumber))
+        {
+            body["VehNo"] = request.VehicleNumber.Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
+            body["VehType"] = request.OverDimensionalCargo ? "O" : "R";
+        }
+
+        var answer = await portal.GenerateEwayBillAsync(document.FacilityId, Gstin.Normalize(seller.Gstin)!, body, ct);
+        if (!answer.IsSuccess)
+        {
+            return PortalError(answer.Error!);
+        }
+
+        var recorded = registration.RecordEwayBill(answer.Value!.EwbNo, answer.Value.EwbDate.ToUniversalTime(), answer.Value.ValidTill?.ToUniversalTime());
+        if (recorded.IsFailure)
+        {
+            return recorded.Error!;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return await DetailAsync(document, [], ct);
+    }
+
     public async Task<Result<EInvoiceDetail>> CancelAsync(string source, Guid id, CancelIrnRequest request, CancellationToken ct)
     {
         var found = await DocumentAsync(source, id, ct);
@@ -200,7 +390,29 @@ public sealed class EInvoiceService(
         }
 
         db.SetExpectedVersion(registration, request.Version);
-        var cancelled = registration.Cancel(request.Reason, request.Remark, time.GetUtcNow());
+        var now = time.GetUtcNow();
+        if (!registration.CanCancel(now))
+        {
+            return registration.Cancel(request.Reason, request.Remark, now).Error!;
+        }
+
+        // Connected to the portal, HC360 cancels the IRN there first; one cancelled on the portal by hand is only recorded.
+        if (!request.CancelledOnPortal && await portal.ConnectionAsync(document.FacilityId, ct) is { Connected: true })
+        {
+            var answer = await portal.CancelAsync(document.FacilityId, Gstin.Normalize(seller.Gstin)!, registration.Irn, (int)request.Reason, request.Remark.Trim(), ct);
+            if (answer.Error is { Code: "2270" })
+            {
+                return Error.Rule("einvoice.cancel_window",
+                    "The portal cancels an IRN only within 24 hours of its generation. Issue a credit note against the invoice instead.");
+            }
+
+            if (!answer.IsSuccess)
+            {
+                return PortalError(answer.Error!);
+            }
+        }
+
+        var cancelled = registration.Cancel(request.Reason, request.Remark, now);
         if (cancelled.IsFailure)
         {
             return cancelled.Error!;
@@ -214,6 +426,17 @@ public sealed class EInvoiceService(
     /// <summary>The live IRN of an invoice, if any.</summary>
     public Task<EInvoice?> LiveAsync(string source, Guid id, CancellationToken ct) =>
         db.Set<EInvoice>().AsNoTracking().FirstOrDefaultAsync(e => e.Source == source && e.SourceId == id && e.Status == EInvoiceStatus.Registered, ct);
+
+    private async Task<decimal> EwayBillThresholdAsync(Guid facilityId, CancellationToken ct) =>
+        await settings.GetAsync<decimal?>(EwayBillThresholdSetting, facilityId, ct) is { } value and > 0 ? value : DefaultEwayBillThreshold;
+
+    /// <summary>The portal's refusal, in its own words and code, or why it could not be reached.</summary>
+    private static Error PortalError(IrpError error) => error.Code switch
+    {
+        IrpError.NotConnected => Error.Rule("einvoice.irp_not_connected", error.Message),
+        IrpError.Unreachable => Error.Rule("einvoice.irp_unreachable", $"{error.Message} Nothing was recorded; try again."),
+        _ => Error.Rule("einvoice.irp_refused", $"The e-invoice portal refused it ({error.Code}): {error.Message}"),
+    };
 
     public static EInvoiceStamp Stamp(EInvoice e) =>
         new(e.Irn, e.AckNo, e.AckDate, e.SignedQrCode, DocumentAssets.QrCode(e.SignedQrCode).DataUri);
@@ -277,10 +500,14 @@ public sealed class EInvoiceService(
                 : new EInvoiceRegistrationDto(
                     registration.Irn, registration.AckNo, registration.AckDate, registration.Status, registration.RecordedByName, registration.CreatedAt,
                     registration.CancelledAt, registration.CancelReason, registration.CancelRemark, registration.AckDate + EInvoice.CancelWindow,
-                    registration.CanCancel(now), DocumentAssets.QrCode(registration.SignedQrCode).DataUri, registration.Version),
+                    registration.CanCancel(now), DocumentAssets.QrCode(registration.SignedQrCode).DataUri, registration.Version,
+                    registration.Provider, registration.EwbNo, registration.EwbDate, registration.EwbValidTill),
             document.Type,
             document.Preceding?.Number,
-            document.Preceding?.Date);
+            document.Preceding?.Date,
+            (await portal.ConnectionAsync(document.FacilityId, ct)).Connected,
+            document.Type == EInvoiceDocumentTypes.Invoice && document.Items.Any(i => !i.IsService)
+                && document.Total > await EwayBillThresholdAsync(document.FacilityId, ct));
     }
 
     private async Task<DateOnly?> ApplicableFromAsync(Guid facilityId, CancellationToken ct) =>
@@ -373,7 +600,7 @@ internal sealed class CreditNoteEInvoiceSource(HospitalDbContext db) : IEInvoice
                 from c in db.Set<CreditNote>().AsNoTracking()
                 join b in db.Set<Bill>() on c.BillId equals b.Id
                 join p in db.Set<Payer>() on b.PayerId equals p.Id
-                where c.FacilityId == facilityId && c.Kind == CreditNoteKind.CreditNote && !c.GstTimeBarred && b.TaxAmount != 0 && p.Gstin != null
+                where c.FacilityId == facilityId && (c.Kind == CreditNoteKind.CreditNote || c.Kind == CreditNoteKind.PayerShare) && !c.GstTimeBarred && b.TaxAmount != 0 && p.Gstin != null
                       && c.IssuedAt >= start && c.IssuedAt < end && db.Set<CreditNoteLine>().Any(l => l.CreditNoteId == c.Id)
                 select new { c.Id, c.Number, c.IssuedAt, p.Gstin, p.Name, c.Amount, b.BillNumber })
             .ToListAsync(cancellationToken);
@@ -386,7 +613,7 @@ internal sealed class CreditNoteEInvoiceSource(HospitalDbContext db) : IEInvoice
     public async Task<EInvoiceDocument?> FindAsync(Guid id, CancellationToken cancellationToken)
     {
         var note = await db.Set<CreditNote>().AsNoTracking().Include(c => c.Lines).FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
-        if (note is not { Kind: CreditNoteKind.CreditNote, GstTimeBarred: false } || note.Lines.Count == 0)
+        if (note is not { Kind: CreditNoteKind.CreditNote or CreditNoteKind.PayerShare, GstTimeBarred: false } || note.Lines.Count == 0)
         {
             return null;
         }

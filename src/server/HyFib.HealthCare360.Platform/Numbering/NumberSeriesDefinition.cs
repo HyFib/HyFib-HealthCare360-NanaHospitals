@@ -35,6 +35,13 @@ public sealed record NumberSeriesDefinition(
     /// <summary>An internal series that administrators never see, such as a department's daily queue tokens.</summary>
     public bool Hidden { get; init; }
 
+    /// <summary>
+    /// A GST tax invoice, bill of supply, credit note or debit note (GST rules 46, 49 and 53): its serial number has at
+    /// most <see cref="NumberFormatRules.GstMaxLength"/> characters, and the e-invoice portal refuses one that starts
+    /// with 0, so its format is held to both when it is saved (<see cref="NumberFormatRules.GstProblems"/>).
+    /// </summary>
+    public bool GstDocument { get; init; }
+
     public bool IsLocked => LockedReason is not null;
 }
 

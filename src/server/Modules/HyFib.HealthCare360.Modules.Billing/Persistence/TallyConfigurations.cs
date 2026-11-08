@@ -61,6 +61,8 @@ internal sealed class EInvoiceConfiguration : IEntityTypeConfiguration<EInvoice>
         b.Property(x => x.CancelReason).HasMaxLength(24);
         b.Property(x => x.CancelRemark).HasMaxLength(100);
         b.Property(x => x.PrecedingSource).HasMaxLength(16);
+        b.Property(x => x.Provider).HasMaxLength(16);
+        b.Property(x => x.SignedInvoice).HasMaxLength(100000);
         b.HasIndex(x => x.Irn).IsUnique();
         b.HasIndex(x => new { x.PrecedingSource, x.PrecedingId }).HasFilter("preceding_id IS NOT NULL");
 

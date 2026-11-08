@@ -70,6 +70,16 @@ public static class NumberFormatRules
 
     public const int MaxFacilityCodeLength = 6;
 
+    /// <summary>GST rules 46(b), 49(b) and 53(1)(b): an invoice's, bill of supply's or note's serial number has at most 16 characters.</summary>
+    public const int GstMaxLength = 16;
+
+    /// <summary>
+    /// A GST document's running number, when its numbers start again at least every year, is measured at its padding and
+    /// at least this many digits: a facility's documents of one year. One that never starts again grows past any padding,
+    /// and is measured at <see cref="AssumedSequenceDigits"/>.
+    /// </summary>
+    public const int GstAssumedSequenceDigits = 6;
+
     /// <summary>What is wrong with how a format is written, most important first (nothing when it is well formed).</summary>
     public static IReadOnlyList<string> FormatProblems(string? format)
     {
@@ -152,6 +162,63 @@ public static class NumberFormatRules
         }
 
         return new NumberFormatLength(facility, date, sequence, text);
+    }
+
+    /// <summary>
+    /// The longest GST document number <paramref name="format"/> can make within a year (<see cref="GstAssumedSequenceDigits"/>),
+    /// or ever when its numbers never start again, with the facility code at <paramref name="facilityCodeLength"/> letters.
+    /// </summary>
+    public static NumberFormatLength GstLongestNumber(string format, NumberResetPolicy policy, int facilityCodeLength)
+    {
+        var length = LongestNumber(format, facilityCodeLength);
+        var width = NumberFormat.Parse(format).Where(p => p.Kind == NumberFormatPartKind.Sequence).Select(p => p.Width ?? 0).DefaultIfEmpty(0).Max();
+        var digits = policy == NumberResetPolicy.Never ? Math.Max(width, AssumedSequenceDigits) : Math.Max(width, GstAssumedSequenceDigits);
+        return length with { RunningNumber = digits };
+    }
+
+    /// <summary>
+    /// What stops <paramref name="format"/> from numbering a GST document (<see cref="NumberSeriesDefinition.GstDocument"/>):
+    /// numbers longer than 16 characters (GST rule 46) with the longest facility code in use, and numbers that can start
+    /// with 0, which the e-invoice portal refuses (its document number is <c>[A-Z1-9][A-Z0-9/-]{0,15}</c>).
+    /// </summary>
+    public static IReadOnlyList<string> GstProblems(string format, NumberResetPolicy policy, int facilityCodeLength)
+    {
+        var problems = new List<string>();
+        var length = GstLongestNumber(format, policy, facilityCodeLength);
+        if (length.Total > GstMaxLength)
+        {
+            var pieces = new List<string>();
+            if (length.FacilityCode > 0)
+            {
+                pieces.Add($"facility code {length.FacilityCode}");
+            }
+
+            if (length.Date > 0)
+            {
+                pieces.Add($"date {length.Date}");
+            }
+
+            pieces.Add(policy == NumberResetPolicy.Never
+                ? $"running number {length.RunningNumber}, since it never starts again"
+                : $"running number {length.RunningNumber}");
+            if (length.FixedText > 0)
+            {
+                pieces.Add($"fixed text {length.FixedText}");
+            }
+
+            problems.Add($"GST rule 46 allows at most {GstMaxLength} characters in an invoice or note number; numbers in this format can reach {length.Total} " +
+                         $"({string.Join(", ", pieces)}). Shorten the fixed text, use {{YY}} instead of {{YYYY}}, or use fewer digits in {{SEQ:n}}" +
+                         (policy == NumberResetPolicy.Never ? ", and start again every year." : "."));
+        }
+
+        var parsed = NumberFormat.Parse(format);
+        if (parsed.Count > 0 && (parsed[0].Kind is NumberFormatPartKind.Sequence or NumberFormatPartKind.Month or NumberFormatPartKind.Day
+                                 || (parsed[0].Kind == NumberFormatPartKind.Text && parsed[0].Text.StartsWith('0'))))
+        {
+            problems.Add("The e-invoice portal refuses invoice and note numbers that start with 0. Start the format with a letter, {FAC} or the year.");
+        }
+
+        return problems;
     }
 
     /// <summary>
@@ -300,6 +367,14 @@ public static class NumberFormatRules
             if (length.Total > series.MaxLength)
             {
                 Add(FormatField, TooLong(series, parts, length));
+            }
+
+            if (series.GstDocument)
+            {
+                foreach (var problem in GstProblems(change.Format, change.ResetPolicy, Math.Clamp(change.LongestFacilityCode, 0, MaxFacilityCodeLength)))
+                {
+                    Add(FormatField, problem);
+                }
             }
 
             // Two series whose numbers read alike, with their facility codes in place of {FAC}, can issue the same numbers

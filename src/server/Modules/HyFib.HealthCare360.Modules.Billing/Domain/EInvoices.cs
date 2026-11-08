@@ -59,10 +59,46 @@ public sealed class EInvoice : AuditableEntity, IFacilityScoped
 
     public Guid? PrecedingId { get; set; }
 
+    /// <summary>
+    /// How the IRN came: <c>manual</c> (uploaded on the portal and recorded by hand) or the portal provider that answered
+    /// HC360's request (<c>nic</c>, <c>gsp</c>, or <c>simulator</c>, whose IRNs are made up and swept on a live server).
+    /// </summary>
+    public string Provider { get; set; } = ManualProvider;
+
+    /// <summary>The portal's signed invoice (a JWT) when HC360 asked for the IRN itself; null when recorded by hand.</summary>
+    public string? SignedInvoice { get; set; }
+
+    /// <summary>The e-way bill generated from this IRN (goods only), its date and the last moment it is valid.</summary>
+    public long? EwbNo { get; private set; }
+
+    public DateTimeOffset? EwbDate { get; private set; }
+    public DateTimeOffset? EwbValidTill { get; private set; }
+
+    public const string ManualProvider = "manual";
+
     public EInvoiceStatus Status { get; private set; }
     public DateTimeOffset? CancelledAt { get; private set; }
     public EInvoiceCancelReason? CancelReason { get; private set; }
     public string? CancelRemark { get; private set; }
+
+    /// <summary>Records the e-way bill the portal generated from this IRN.</summary>
+    public Result RecordEwayBill(long number, DateTimeOffset date, DateTimeOffset? validTill)
+    {
+        if (Status != EInvoiceStatus.Registered)
+        {
+            return Error.Rule("einvoice.not_registered", "An e-way bill is generated only from a live IRN.");
+        }
+
+        if (EwbNo is not null)
+        {
+            return Error.Conflict("einvoice.ewaybill_exists", $"E-way bill {EwbNo} is already generated for this invoice.");
+        }
+
+        EwbNo = number;
+        EwbDate = date;
+        EwbValidTill = validTill;
+        return Result.Success();
+    }
 
     public bool CanCancel(DateTimeOffset now) => Status == EInvoiceStatus.Registered && now - AckDate <= CancelWindow;
 
@@ -121,18 +157,18 @@ public static partial class InvoiceRegistrationPayload
             problems.Add($"The portal takes {noun} numbers of up to 16 letters, digits, / and -, not starting with 0; {document.Number} is not one. Shorten the number format under Hospital setup.");
         }
 
-        var creditNote = document.Type == EInvoiceDocumentTypes.CreditNote;
-        if (document.Type is not (EInvoiceDocumentTypes.Invoice or EInvoiceDocumentTypes.CreditNote))
+        var note = document.Type is EInvoiceDocumentTypes.CreditNote or EInvoiceDocumentTypes.DebitNote;
+        if (document.Type is not (EInvoiceDocumentTypes.Invoice or EInvoiceDocumentTypes.CreditNote or EInvoiceDocumentTypes.DebitNote))
         {
             problems.Add($"The portal does not take documents of type {document.Type} from HC360.");
         }
-        else if (creditNote && document.Preceding is null)
+        else if (note && document.Preceding is null)
         {
-            problems.Add("A credit note names the invoice it reduces.");
+            problems.Add($"A {noun} names the invoice it changes.");
         }
-        else if (creditNote && !DocumentNumber().IsMatch(document.Preceding!.Number))
+        else if (note && !DocumentNumber().IsMatch(document.Preceding!.Number))
         {
-            problems.Add($"The portal names the invoice a credit note reduces by a number of up to 16 letters, digits, / and -; {document.Preceding.Number} is not one.");
+            problems.Add($"The portal names the invoice a {noun} changes by a number of up to 16 letters, digits, / and -; {document.Preceding.Number} is not one.");
         }
 
         var sellerState = Gstin.StateCode(seller.Gstin);
@@ -260,7 +296,12 @@ public static partial class InvoiceRegistrationPayload
     }
 
     /// <summary>What the document is called in a problem: an invoice or a credit note.</summary>
-    public static string Noun(EInvoiceDocument document) => document.Type == EInvoiceDocumentTypes.CreditNote ? "credit note" : "invoice";
+    public static string Noun(EInvoiceDocument document) => document.Type switch
+    {
+        EInvoiceDocumentTypes.CreditNote => "credit note",
+        EInvoiceDocumentTypes.DebitNote => "debit note",
+        _ => "invoice",
+    };
 
     /// <summary>The portal's date: dd/MM/yyyy.</summary>
     public static string Date(DateOnly date) => date.ToString("dd'/'MM'/'yyyy", CultureInfo.InvariantCulture);
