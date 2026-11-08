@@ -10,6 +10,7 @@ import {
   makeStyles,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Spinner,
   Table,
   TableBody,
@@ -233,7 +234,10 @@ function AffectedContent({
           </div>
           {canTell && stranded.data && !stranded.data.smsReady && stranded.data.smsNote && (
             <MessageBar intent="warning" layout="multiline" style={{ marginTop: 8 }}>
-              <MessageBarBody>{stranded.data.smsNote}</MessageBarBody>
+              <MessageBarBody>
+                <MessageBarTitle>WhatsApp only</MessageBarTitle>
+                {stranded.data.smsNote}
+              </MessageBarBody>
             </MessageBar>
           )}
           {!canManage && (

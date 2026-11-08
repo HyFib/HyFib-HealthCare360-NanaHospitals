@@ -12,6 +12,7 @@ import {
   makeStyles,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Select,
   Spinner,
   Switch,
@@ -557,6 +558,7 @@ export function TelehealthConsentDialog({
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <MessageBar intent="warning">
               <MessageBarBody>
+                <MessageBarTitle>No consent on record</MessageBarTitle>
                 {patientName} has not consented to be seen by video. Ask them, by phone or in the chat, and note their
                 answer before you admit them.
               </MessageBarBody>
