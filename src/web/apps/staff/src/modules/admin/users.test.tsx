@@ -196,3 +196,73 @@ describe('access that waits for a second administrator', SCREEN_TESTS, () => {
     expect(put?.body).toMatchObject({ roleIds: [id('004'), id('002')], version: 3 });
   });
 });
+
+// Nobody takes over a colleague's account alone: a reset's temporary password goes to the account's own mobile number
+// and e-mail address, and the screen says where, never what; a two-step verification reset waits for another
+// administrator, and the screen says it was asked for.
+describe("resetting a colleague's sign-in", SCREEN_TESTS, () => {
+  const nurseId = id('300');
+  const NURSE = {
+    id: nurseId,
+    userName: 'kavitha.r',
+    displayName: 'Kavitha Raman',
+    email: null,
+    phone: '+919840012345',
+    isActive: true,
+    isLocked: false,
+    mfaEnabled: true,
+    lastLoginAt: null,
+    roles: ['Nurse'],
+  };
+
+  const serve = (action: 'reset-password' | 'reset-mfa', answer: unknown) => {
+    server = fakeServer({
+      'GET /api/v1/admin/users': paged([NURSE]),
+      'GET /api/v1/admin/roles': ROLES,
+      [`POST /api/v1/admin/users/${nurseId}/${action}`]: answer,
+    });
+  };
+
+  const choose = async (user: ReturnType<typeof userEvent.setup>, item: string) => {
+    openScreen('/admin/users');
+    await user.click(await screen.findByRole('button', { name: 'Actions for Kavitha Raman' }, SLOW));
+    await user.click(await screen.findByRole('menuitem', { name: item }));
+    const confirm = await screen.findByRole('alertdialog');
+    await user.click(within(confirm).getByRole('button', { name: 'Continue' }));
+  };
+
+  it('says where the temporary password was sent, and never shows it to the administrator', async () => {
+    serve('reset-password', {
+      userId: nurseId,
+      sentTo: ['mobile +91******2345'],
+      expiresAt: '2026-11-11T06:30:00Z',
+      temporaryPassword: null,
+    });
+    const user = userEvent.setup();
+    await choose(user, 'Reset password');
+
+    const sent = await screen.findByRole('dialog', { name: 'Password reset for Kavitha Raman' }, SLOW);
+    expect(within(sent).getByText(/A temporary password was sent to their mobile \+91\*{6}2345/)).toBeInTheDocument();
+    expect(within(sent).getByText('Not shown to you')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Temporary password for/ })).not.toBeInTheDocument();
+    expect(within(sent).queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
+    await expectNoAxeViolations();
+    expect(server.requests.filter((r) => r.method === 'POST')).toHaveLength(1);
+  });
+
+  it('says a two-step verification reset was asked for, and that nothing changes until it is approved', async () => {
+    serve('reset-mfa', {
+      id: id('903'),
+      kind: 'identity.mfa_reset',
+      summary: 'Two-step verification reset for Kavitha Raman (kavitha.r)',
+    });
+    const user = userEvent.setup();
+    await choose(user, 'Reset two-step verification');
+
+    expect(await screen.findByText('Asked for approval', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getAllByText(/nothing changes until then/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Two-step verification reset')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    await expectNoAxeViolations();
+  });
+});

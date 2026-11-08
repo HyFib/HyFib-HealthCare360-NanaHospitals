@@ -322,4 +322,6 @@ export const DEVICES: DeviceDto[] = [
 export const DEVICES_ANSWERS: FakeAnswers = {
   'GET /api/v1/admin/devices': DEVICES,
   'GET /api/v1/admin/devices/desktop-update': { offeredVersion: null, releasedAt: null, problem: null },
+  // The administrator's own codes for another workstation, waiting for a second administrator or ready to show.
+  'GET /api/v1/admin/devices/enrollment-codes/requests': [],
 };

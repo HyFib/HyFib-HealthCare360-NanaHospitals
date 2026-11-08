@@ -11,9 +11,11 @@ import {
   Input,
   makeStyles,
   MessageBar,
+  MessageBarActions,
   MessageBarBody,
   MessageBarTitle,
   Select,
+  Spinner,
   Text,
   tokens,
 } from '@fluentui/react-components';
@@ -42,7 +44,15 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { toOptions, useDepartments } from '@/lib/lookups';
-import { adminQueries, type DeviceDto, type DeviceKind } from '@/modules/admin/api';
+import {
+  adminQueries,
+  askedForApproval,
+  type AskedForApproval,
+  type DeviceDto,
+  type DeviceKind,
+  type EnrollmentCode,
+  type EnrollmentCodeRequest,
+} from '@/modules/admin/api';
 import { desktopUpdateSummary } from '@/modules/admin/desktopVersions';
 import { DeviceVersion } from '@/modules/admin/DeviceVersion';
 
@@ -101,6 +111,19 @@ function DevicesPage() {
   const [revoking, setRevoking] = useState<DeviceDto | null>(null);
   // Away from an enrolled desktop this page opens only while the hospital enrols its first workstation (SRS SEC-08).
   const firstEnrolment = useSession((s) => s.user?.administrationNeedsDesktop === true);
+  // Codes for another workstation or tablet this administrator asked for, once a second administrator approved them:
+  // each is shown here once, until it expires.
+  const requests = useQuery({ ...adminQueries.enrollmentRequests(), enabled: !firstEnrolment });
+  const ready = (requests.data ?? []).filter((r) => r.ready);
+  const [shown, setShown] = useState<{ kind: DeviceKind; code: EnrollmentCode } | null>(null);
+  const collect = useMutation({
+    mutationFn: (request: EnrollmentCodeRequest) => collectCode(request.approvalId),
+    onSuccess: (code, request) => {
+      setShown({ kind: request.kind, code });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'devices'] });
+    },
+    onError: (error) => notify.error(error, 'Could not show the code'),
+  });
 
   const revoke = useMutation({
     mutationFn: (device: DeviceDto) => api.post(`/api/v1/admin/devices/${device.id}/revoke`),
@@ -141,6 +164,21 @@ function DevicesPage() {
           <MessageBarBody>{updateSummary.text}</MessageBarBody>
         </MessageBar>
       )}
+      {ready.map((request) => (
+        <MessageBar key={request.approvalId} intent="success" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Enrolment code approved</MessageBarTitle>
+            Your code for a {kindLabel(request.kind).toLowerCase()}
+            {request.note ? ` (${request.note})` : ''} was approved. It is shown once, and works until{' '}
+            {request.expiresAt ? formatDateTime(request.expiresAt) : 'it expires'}.
+          </MessageBarBody>
+          <MessageBarActions>
+            <Button disabled={collect.isPending} onClick={() => collect.mutate(request)}>
+              Show the code
+            </Button>
+          </MessageBarActions>
+        </MessageBar>
+      ))}
       <Section flush>
         <DataTable
           ariaLabel="Devices"
@@ -213,6 +251,23 @@ function DevicesPage() {
       </Section>
 
       {enrolling && <EnrolDialog onClose={() => setEnrolling(false)} />}
+      {shown && (
+        <Dialog open onOpenChange={(_, d) => !d.open && setShown(null)}>
+          <DialogSurface>
+            <DialogBody>
+              <DialogTitle>Enrol a device</DialogTitle>
+              <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <CodeView kind={shown.kind} code={shown.code} />
+              </DialogContent>
+              <DialogActions>
+                <Button appearance="primary" onClick={() => setShown(null)}>
+                  Done
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
+      )}
       {editing && <EditDeviceDialog device={editing} onClose={() => setEditing(null)} />}
       <ConfirmDialog
         open={revoking !== null}
@@ -229,22 +284,73 @@ function DevicesPage() {
   );
 }
 
-function EnrolDialog({ onClose }: { onClose: () => void }) {
+/** The code of an approved request, chosen now and shown once to the administrator who asked for it. */
+function collectCode(approvalId: string): Promise<EnrollmentCode> {
+  return api.post<EnrollmentCode>(`/api/v1/admin/devices/enrollment-codes/requests/${approvalId}/code`);
+}
+
+/** A one-time code as the person at the new device reads it, with when it expires. */
+function CodeView({ kind, code }: { kind: DeviceKind; code: EnrollmentCode }) {
   const styles = useStyles();
+  return (
+    <>
+      <Text>
+        {kind === 'LabAgent'
+          ? 'On the PC the analyser is cabled to, run Install-HC360LabAgent.ps1 as an administrator with this one-time code (-EnrolmentCode), the server address and the hospital CA fingerprint:'
+          : 'On the new device, open HC360 Desktop and enter this one-time code:'}
+      </Text>
+      <div className={styles.code}>{code.code}</div>
+      <MessageBar intent="info">
+        <MessageBarBody>
+          The code works once and expires at {formatDateTime(code.expiresAt)}.
+          {kind === 'LabAgent' && ' Then set up each analyser on that PC in Lab setup › Analysers › Connection.'}
+        </MessageBarBody>
+      </MessageBar>
+    </>
+  );
+}
+
+/**
+ * Makes an enrolment code. A workstation's or tablet's, from which the hospital can be administered, waits for a second
+ * administrator once one is enrolled: the dialog says it was asked for, and shows the code here once it is approved.
+ */
+function EnrolDialog({ onClose }: { onClose: () => void }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [kind, setKind] = useState<DeviceKind>('Workstation');
   const [note, setNote] = useState('');
   const [validMinutes, setValidMinutes] = useState(30);
+  const [asked, setAsked] = useState<AskedForApproval | null>(null);
+  const [code, setCode] = useState<EnrollmentCode | null>(null);
   const create = useMutation({
     mutationFn: () =>
-      api.post<{ code: string; expiresAt: string }>('/api/v1/admin/devices/enrollment-codes', {
+      api.post<unknown>('/api/v1/admin/devices/enrollment-codes', {
         kind,
         facilityId: null,
         note: note || null,
         validMinutes,
       }),
+    onSuccess: (result) => {
+      const request = askedForApproval(result);
+      if (request) {
+        setAsked(request);
+        void queryClient.invalidateQueries({ queryKey: ['approvals'] });
+      } else {
+        setCode(result as EnrollmentCode);
+      }
+    },
     onError: (error) => notify.error(error, 'Could not create an enrolment code'),
+  });
+  // While it waits, the request is looked at again every few seconds, so the code can be shown as soon as it is approved.
+  const requests = useQuery({ ...adminQueries.enrollmentRequests(true), enabled: asked !== null && code === null });
+  const ready = asked !== null && requests.data?.some((r) => r.approvalId === asked.id && r.ready) === true;
+  const collect = useMutation({
+    mutationFn: (approvalId: string) => collectCode(approvalId),
+    onSuccess: (collected) => {
+      setCode(collected);
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'devices'] });
+    },
+    onError: (error) => notify.error(error, 'Could not show the code'),
   });
 
   const close = () => {
@@ -258,22 +364,17 @@ function EnrolDialog({ onClose }: { onClose: () => void }) {
         <DialogBody>
           <DialogTitle>Enrol a device</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {create.data ? (
-              <>
-                <Text>
-                  {kind === 'LabAgent'
-                    ? 'On the PC the analyser is cabled to, run Install-HC360LabAgent.ps1 as an administrator with this one-time code (-EnrolmentCode), the server address and the hospital CA fingerprint:'
-                    : 'On the new device, open HC360 Desktop and enter this one-time code:'}
-                </Text>
-                <div className={styles.code}>{create.data.code}</div>
-                <MessageBar intent="info">
-                  <MessageBarBody>
-                    The code works once and expires at {formatDateTime(create.data.expiresAt)}.
-                    {kind === 'LabAgent' &&
-                      ' Then set up each analyser on that PC in Lab setup › Analysers › Connection.'}
-                  </MessageBarBody>
-                </MessageBar>
-              </>
+            {code ? (
+              <CodeView kind={kind} code={code} />
+            ) : asked ? (
+              <MessageBar intent={ready ? 'success' : 'warning'} layout="multiline">
+                <MessageBarBody>
+                  <MessageBarTitle>{ready ? 'Approved' : 'Asked for approval'}</MessageBarTitle>
+                  {ready
+                    ? 'Another administrator approved the code. It is shown once: show it when you are at the new device.'
+                    : `The hospital can be administered from a ${kindLabel(kind).toLowerCase()}, so another administrator who may approve grants approves its code first. Once they do, the code is shown here, once, and works for ${validMinutes} minutes from then. You can also close this and show it from Devices later.`}
+                </MessageBarBody>
+              </MessageBar>
             ) : (
               <>
                 <Field
@@ -281,7 +382,9 @@ function EnrolDialog({ onClose }: { onClose: () => void }) {
                   hint={
                     kind === 'LabAgent'
                       ? 'A Windows service on the PC a serial analyser is cabled to. It relays the analyser to HC360, even when nobody is signed in.'
-                      : undefined
+                      : kind === 'Workstation' || kind === 'Tablet'
+                        ? 'Administration can be used from it. Unless it is the first one, its code waits for another administrator who may approve grants.'
+                        : undefined
                   }
                 >
                   <Select value={kind} onChange={(_, d) => setKind(d.value as DeviceKind)}>
@@ -307,10 +410,22 @@ function EnrolDialog({ onClose }: { onClose: () => void }) {
             )}
           </DialogContent>
           <DialogActions>
-            {create.data ? (
+            {code ? (
               <Button appearance="primary" onClick={close}>
                 Done
               </Button>
+            ) : asked ? (
+              <>
+                <Button onClick={close}>Close</Button>
+                <Button
+                  appearance="primary"
+                  disabled={!ready || collect.isPending}
+                  icon={!ready ? <Spinner size="tiny" aria-hidden /> : undefined}
+                  onClick={() => collect.mutate(asked.id)}
+                >
+                  {ready ? 'Show the code' : 'Waiting for approval'}
+                </Button>
+              </>
             ) : (
               <>
                 <Button onClick={close}>Cancel</Button>

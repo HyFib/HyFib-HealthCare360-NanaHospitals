@@ -43,6 +43,18 @@ export interface ApprovalRequestDto {
   canDecide: boolean;
   canWithdraw: boolean;
   version: number;
+  /**
+   * In the answer to an approval only, never again: a secret the approval made for the person who approved it to hand
+   * over in person (the temporary password of an account with no mobile number or e-mail address to send it to).
+   */
+  handover?: ApprovalHandover | null;
+}
+
+/** A secret handed to the approver once: what it is for, the secret, and when it stops working. */
+export interface ApprovalHandover {
+  label: string;
+  secret: string;
+  expiresAt: string | null;
 }
 
 export interface ApprovalFilters {
@@ -96,7 +108,8 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
  * Who may ask for or decide a change of each kind: the inbox is for them. Kept with the server's kinds
  * (IApprovalAction): credit notes and write-offs, money not received and refunds not paid out, patient merges, lab
  * report corrections, death certificates a second doctor confirms, goods receipts posted into stock, the pharmacy's
- * cancellations, returns and ward returns not restocked, and the masters, access and plans approved only here. Every kind's approving permission is in it (approvalsMenu.test.ts).
+ * cancellations, returns and ward returns not restocked, the masters, access and plans approved only here, and changes
+ * to accounts and administration desktops. Every kind's approving permission is in it (approvalsMenu.test.ts).
  */
 export const APPROVAL_PERMISSIONS = [
   'billing.refunds.request',
@@ -109,8 +122,10 @@ export const APPROVAL_PERMISSIONS = [
   // The store sends a goods receipt for approval (and may withdraw it); someone else checks it and posts it into stock.
   'purchase.grn.receive',
   'purchase.grn.approve',
-  // Approved only here: prices, tariffs, packages, fee-sharing and payer plans; access given to a user or a role; a
-  // drug handled less strictly; the plan a stay is billed on. Every approving permission the server has is in this list
+  // Approved only here: prices, tariffs, packages, fee-sharing and payer plans; access given to a user or a role, and a
+  // temporary password to hand over, a two-step verification reset, another user's contact details, a practitioner
+  // link, a linked doctor's registration and another administration desktop (admin.grants.approve); a drug handled less
+  // strictly; the plan a stay is billed on. Every approving permission the server has is in this list
   // (approvalsMenu.test.ts checks it against serverAccess.json), so whoever may approve a change can find it.
   'masters.prices.approve',
   'admin.grants.approve',

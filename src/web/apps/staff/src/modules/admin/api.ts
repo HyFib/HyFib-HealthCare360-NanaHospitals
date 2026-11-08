@@ -34,6 +34,32 @@ export interface UserDetail {
   version: number;
   /** Roles and facilities asked for the user, or their reactivation, waiting for a second administrator. */
   pendingGrant?: PendingUserGrant | null;
+  /**
+   * Changes to the account waiting for a second administrator: a temporary password to be handed over, a two-step
+   * verification reset, new contact details, a practitioner link.
+   */
+  pendingChanges?: PendingAccountChange[] | null;
+}
+
+/** A change to an account waiting for a second administrator who may approve grants: what it changes, in words. */
+export interface PendingAccountChange {
+  approvalId: string;
+  kind: string;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/**
+ * A password reset made (200): where the temporary password went, masked, never the password itself. Only an account
+ * with nowhere to send it, reset while the hospital has one administrator who may approve, gets it back to hand over;
+ * otherwise that reset waits for a second administrator (202, an approval request), who is shown it.
+ */
+export interface PasswordResetResponse {
+  userId: string;
+  sentTo: string[];
+  expiresAt: string;
+  temporaryPassword?: string | null;
 }
 
 /** Access asked for a user, waiting for a second administrator who may approve grants. */
@@ -127,6 +153,26 @@ export interface DeviceDto {
   departmentId: string | null;
   location: string | null;
   version: number;
+}
+
+/** A one-time enrolment code, shown once: formatted for reading aloud (ABCD-EFGH), and when it expires. */
+export interface EnrollmentCode {
+  code: string;
+  expiresAt: string;
+}
+
+/**
+ * An enrolment code for a workstation or tablet the signed-in administrator asked for, from which the hospital can be
+ * administered: waiting for a second administrator (`ready` false), or approved and not yet shown, until `expiresAt`.
+ */
+export interface EnrollmentCodeRequest {
+  approvalId: string;
+  kind: DeviceKind;
+  note: string | null;
+  validMinutes: number;
+  ready: boolean;
+  requestedAt: string;
+  expiresAt: string | null;
 }
 
 /** The HC360 Desktop version the server offers to enrolled workstations, or why it offers none (SRS DED-18). */
@@ -589,6 +635,14 @@ export const adminQueries = {
     queryOptions({
       queryKey: ['admin', 'devices'],
       queryFn: ({ signal }) => api.get<DeviceDto[]>('/api/v1/admin/devices', { signal }),
+    }),
+  /** My enrolment codes for administration desktops, waiting for approval or ready to be shown. */
+  enrollmentRequests: (poll = false) =>
+    queryOptions({
+      queryKey: ['admin', 'devices', 'enrollment-requests'],
+      queryFn: ({ signal }) =>
+        api.get<EnrollmentCodeRequest[]>('/api/v1/admin/devices/enrollment-codes/requests', { signal }),
+      refetchInterval: poll ? 10_000 : false,
     }),
   desktopUpdate: () =>
     queryOptions({

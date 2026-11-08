@@ -1,4 +1,4 @@
-import { Checkbox, makeStyles } from '@fluentui/react-components';
+import { Checkbox, makeStyles, MessageBar, MessageBarBody } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   CheckboxGroup,
@@ -17,6 +17,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
 import { useDepartments } from '@/lib/lookups';
+import { askedForApproval } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import {
   mastersApi,
   mastersQueries,
@@ -84,9 +86,16 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
         ...toPractitionerRequest(values, practitioner, loadedVersion),
         ...(anyway ? { takeOutOfUseAnyway: true } : {}),
       }),
-    onSuccess: (_, { anyway }) => {
+    onSuccess: (result, { anyway }) => {
       setWorkAhead(null);
-      if (anyway) {
+      const asked = askedForApproval(result);
+      if (asked) {
+        // A doctor someone signs in as: the registration number, HPR ID or signature waits; the rest is saved.
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Another administrator who may approve grants decides it; the rest of the record is saved.`,
+        );
+      } else if (anyway) {
         notify.warning(
           'Taken out of use',
           'Nobody can book or assign this doctor now. Move or cancel what was still booked with them: their appointments, ' +
@@ -137,6 +146,25 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
           workAhead && save.mutate({ values: workAhead.values, anyway: true }, { onSuccess: guard.close })
         }
       />
+      {practitioner?.pendingIdentity ? (
+        <PendingGrantNotice
+          approvalId={practitioner.pendingIdentity.approvalId}
+          what={`A new registration number, HPR ID or signature for ${practitioner.displayName}`}
+          requestedBy={practitioner.pendingIdentity.requestedBy}
+          requestedAt={practitioner.pendingIdentity.requestedAt}
+          decides="Another administrator who may approve grants decides it; until then their documents carry the ones shown here."
+        />
+      ) : (
+        (practitioner?.linkedAccounts?.length ?? 0) > 0 && (
+          <MessageBar intent="info" layout="multiline">
+            <MessageBarBody>
+              {practitioner?.linkedAccounts?.join(', ')} signs in as {practitioner?.displayName}. A new registration
+              number, HPR ID or signature waits for another administrator who may approve grants; the rest is saved at
+              once.
+            </MessageBarBody>
+          </MessageBar>
+        )
+      )}
       <PractitionerFields
         control={form.control}
         editing={practitioner !== null}
