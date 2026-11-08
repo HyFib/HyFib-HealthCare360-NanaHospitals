@@ -167,6 +167,35 @@ public sealed class AccountAdministrationApprovalTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Nobody_approves_a_change_to_their_own_account_even_one_another_administrator_asked_for()
+    {
+        var superAdmin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var holder = (await superAdmin.GetAsync<PagedResult<UserListItem>>($"{Users}?search={HospitalServer.Users.HospitalAdmin}"))
+            .Items.Single(u => u.UserName == HospitalServer.Users.HospitalAdmin);
+        var account = await superAdmin.GetAsync<UserDetail>($"{Users}/{holder.Id}");
+
+        using var response = await superAdmin.SendRawAsync(HttpMethod.Put, $"{Users}/{account.Id}",
+            Update(account) with { Email = $"it-own-{Letters(8)}@example.test", Reason = "Moved to the hospital's own mail." });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync(Ct));
+        var asked = (await response.Content.ReadFromJsonAsync<ApprovalRequestDto>(ApiClient.Json, Ct))!;
+        try
+        {
+            asked.Kind.ShouldBe(AccountApprovals.ContactChangeKind);
+            (await RefusalAsync(hospitalAdmin, $"/api/v1/approvals/{asked.Id}/approve", new ApproveRequest(null, asked.Version)))
+                .ShouldBe((HttpStatusCode.Forbidden, AccountApprovals.OwnAccountCode));
+            (await superAdmin.GetAsync<UserDetail>($"{Users}/{account.Id}")).Email.ShouldBe(account.Email);
+        }
+        finally
+        {
+            // The seeded hospital administrator's account is shared by the other tests: nothing is left waiting on it.
+            var left = await superAdmin.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}");
+            await superAdmin.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}/withdraw", new WithdrawApprovalRequest(left.Version));
+        }
+    }
+
+    [Fact]
     public async Task Linking_an_account_to_a_practitioner_waits_and_an_approval_over_an_account_changed_since_fails_stale()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
