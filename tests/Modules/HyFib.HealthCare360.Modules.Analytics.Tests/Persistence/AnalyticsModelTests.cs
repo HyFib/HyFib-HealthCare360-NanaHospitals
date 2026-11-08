@@ -22,7 +22,7 @@ public sealed class AnalyticsModelTests
             .Where(e => e.ClrType.Namespace?.StartsWith("HyFib.HealthCare360.Modules.Analytics", StringComparison.Ordinal) == true)
             .ToList();
 
-        entities.Select(e => e.GetTableName()).ShouldBe(["dashboards", "report_schedules", "report_deliveries", "report_delivery_recipients"], ignoreOrder: true);
+        entities.Select(e => e.GetTableName()).ShouldBe(["dashboards", "report_schedules", "report_deliveries", "report_delivery_recipients", "kpi_targets"], ignoreOrder: true);
         entities.ShouldAllBe(e => e.GetSchema() == "analytics");
     }
 
@@ -55,6 +55,20 @@ public sealed class AnalyticsModelTests
     }
 
     [Fact]
+    public void A_facility_has_one_target_per_kpi_and_its_status_is_stored_as_words()
+    {
+        var target = Model.Value.FindEntityType(typeof(KpiTarget))!;
+
+        var index = target.GetIndexes().Single(i => i.Properties.Select(p => p.Name).SequenceEqual(new[] { nameof(KpiTarget.FacilityId), nameof(KpiTarget.KpiKey) }));
+        index.IsUnique.ShouldBeTrue();
+        index.GetFilter().ShouldBe("is_deleted = false");
+        target.GetDeclaredQueryFilters().Select(f => f.Key).ShouldContain(Platform.Persistence.HospitalDbContext.FacilityFilter);
+        target.FindProperty(nameof(KpiTarget.LastStatus))!.GetProviderClrType().ShouldBe(typeof(string));
+        target.FindProperty(nameof(KpiTarget.Target))!.GetPrecision().ShouldBe(18);
+        target.FindProperty(nameof(KpiTarget.Version))!.IsConcurrencyToken.ShouldBeTrue();
+    }
+
+    [Fact]
     public void The_create_script_includes_the_analytics_schema()
     {
         using var db = ReportTestHarness.CreateContext(null);
@@ -64,5 +78,6 @@ public sealed class AnalyticsModelTests
         script.ShouldContain("CREATE TABLE analytics.dashboards");
         script.ShouldContain("CREATE TABLE analytics.report_schedules");
         script.ShouldContain("CREATE TABLE analytics.report_deliveries");
+        script.ShouldContain("CREATE TABLE analytics.kpi_targets");
     }
 }
