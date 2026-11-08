@@ -55,6 +55,8 @@ export interface QueueListItem {
   signedAt: string;
   receivedAt: string;
   waitingMinutes: number;
+  /** A line was signed over a blocking safety alert and no pharmacist has acknowledged it yet. */
+  hasUnacknowledgedOverride?: boolean;
 }
 
 export interface QueueLineDto {
@@ -85,6 +87,11 @@ export interface QueueLineDto {
    */
   schedule: DrugSchedule | null;
   isNdps: boolean;
+  /** The blocking safety alerts the prescriber signed this line over; it is not dispensed until acknowledged. */
+  safetyOverride?: string | null;
+  overrideAcknowledgedBy?: string | null;
+  overrideAcknowledgedAt?: string | null;
+  overrideAcknowledgementNote?: string | null;
 }
 
 export interface QueueEntryDetail {
@@ -110,6 +117,8 @@ export interface QueueEntryDetail {
   version: number;
   /** Why the visit's medicines are free of cost by law (BNSS 2023 s.397, with the MLC entry): they are given, not sold. */
   freeTreatmentReason?: string | null;
+  /** The prescriber's reason for signing over a blocking safety alert. */
+  safetyOverrideReason?: string | null;
 }
 
 export interface SalePayment {
@@ -804,6 +813,8 @@ export const pharmacyApi = {
   dispense: (entryId: string, body: DispenseRequest) =>
     api.post<PharmacySaleCreated>(`${BASE}/queue/${entryId}/dispense`, body),
   closeEntry: (entryId: string, reason: string) => api.post<void>(`${BASE}/queue/${entryId}/close`, { reason }),
+  acknowledgeOverride: (entryId: string, lineId: string, note: string | null) =>
+    api.post<void>(`${BASE}/queue/${entryId}/lines/${lineId}/acknowledge-override`, { note }),
   authorizeRefills: (entryId: string, body: { refills: number; validUntil: string; note: string }) =>
     api.post<void>(`${BASE}/queue/${entryId}/refills`, body),
   counterSale: (body: CounterSaleRequest) => api.post<PharmacySaleCreated>(`${BASE}/sales/counter`, body),

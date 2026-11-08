@@ -4,6 +4,7 @@ import { PHARMACY_PERMISSIONS } from '@/modules/pharmacy/permissions';
 import {
   ADJUSTMENT_READERS,
   CATALOG_READERS,
+  COLD_CHAIN_READERS,
   INDENT_READERS,
   REPORT_READERS,
   STORE_READERS,
@@ -30,6 +31,12 @@ const manifest: ModuleManifest = {
       to: '/inventory/stock',
       permission: S.stockRead,
       keywords: ['on hand', 'batch', 'expiry', 'fefo', 'block'],
+    },
+    {
+      label: 'Cold chain',
+      to: '/inventory/cold-chain',
+      permission: COLD_CHAIN_READERS,
+      keywords: ['temperature', 'refrigerator', 'fridge', 'freezer', 'vaccine', 'insulin', 'excursion', 'logger'],
     },
     {
       label: 'Stock ledger',

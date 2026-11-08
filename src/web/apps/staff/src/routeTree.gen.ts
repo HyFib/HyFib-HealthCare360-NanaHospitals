@@ -123,6 +123,7 @@ import { Route as AppInsurancePoliciesRouteImport } from './routes/_app/insuranc
 import { Route as AppInventoryIndexRouteImport } from './routes/_app/inventory/index'
 import { Route as AppInventoryAdjustmentsRouteImport } from './routes/_app/inventory/adjustments'
 import { Route as AppInventoryCategoriesRouteImport } from './routes/_app/inventory/categories'
+import { Route as AppInventoryColdChainRouteImport } from './routes/_app/inventory/cold-chain'
 import { Route as AppInventoryItemsRouteImport } from './routes/_app/inventory/items'
 import { Route as AppInventoryLedgerRouteImport } from './routes/_app/inventory/ledger'
 import { Route as AppInventoryReportsRouteImport } from './routes/_app/inventory/reports'
@@ -920,6 +921,11 @@ const AppInventoryAdjustmentsRoute = AppInventoryAdjustmentsRouteImport.update({
 const AppInventoryCategoriesRoute = AppInventoryCategoriesRouteImport.update({
   id: '/inventory/categories',
   path: '/inventory/categories',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppInventoryColdChainRoute = AppInventoryColdChainRouteImport.update({
+  id: '/inventory/cold-chain',
+  path: '/inventory/cold-chain',
   getParentRoute: () => AppRoute,
 } as any)
 const AppInventoryItemsRoute = AppInventoryItemsRouteImport.update({
@@ -2181,6 +2187,7 @@ export interface FileRoutesByFullPath {
   '/insurance/policies': typeof AppInsurancePoliciesRoute
   '/inventory/adjustments': typeof AppInventoryAdjustmentsRoute
   '/inventory/categories': typeof AppInventoryCategoriesRoute
+  '/inventory/cold-chain': typeof AppInventoryColdChainRoute
   '/inventory/items': typeof AppInventoryItemsRoute
   '/inventory/ledger': typeof AppInventoryLedgerRoute
   '/inventory/reports': typeof AppInventoryReportsRoute
@@ -2517,6 +2524,7 @@ export interface FileRoutesByTo {
   '/insurance/policies': typeof AppInsurancePoliciesRoute
   '/inventory/adjustments': typeof AppInventoryAdjustmentsRoute
   '/inventory/categories': typeof AppInventoryCategoriesRoute
+  '/inventory/cold-chain': typeof AppInventoryColdChainRoute
   '/inventory/items': typeof AppInventoryItemsRoute
   '/inventory/ledger': typeof AppInventoryLedgerRoute
   '/inventory/reports': typeof AppInventoryReportsRoute
@@ -2855,6 +2863,7 @@ export interface FileRoutesById {
   '/_app/insurance/policies': typeof AppInsurancePoliciesRoute
   '/_app/inventory/adjustments': typeof AppInventoryAdjustmentsRoute
   '/_app/inventory/categories': typeof AppInventoryCategoriesRoute
+  '/_app/inventory/cold-chain': typeof AppInventoryColdChainRoute
   '/_app/inventory/items': typeof AppInventoryItemsRoute
   '/_app/inventory/ledger': typeof AppInventoryLedgerRoute
   '/_app/inventory/reports': typeof AppInventoryReportsRoute
@@ -3193,6 +3202,7 @@ export interface FileRouteTypes {
     | '/insurance/policies'
     | '/inventory/adjustments'
     | '/inventory/categories'
+    | '/inventory/cold-chain'
     | '/inventory/items'
     | '/inventory/ledger'
     | '/inventory/reports'
@@ -3529,6 +3539,7 @@ export interface FileRouteTypes {
     | '/insurance/policies'
     | '/inventory/adjustments'
     | '/inventory/categories'
+    | '/inventory/cold-chain'
     | '/inventory/items'
     | '/inventory/ledger'
     | '/inventory/reports'
@@ -3866,6 +3877,7 @@ export interface FileRouteTypes {
     | '/_app/insurance/policies'
     | '/_app/inventory/adjustments'
     | '/_app/inventory/categories'
+    | '/_app/inventory/cold-chain'
     | '/_app/inventory/items'
     | '/_app/inventory/ledger'
     | '/_app/inventory/reports'
@@ -4917,6 +4929,13 @@ declare module '@tanstack/react-router' {
       path: '/inventory/categories'
       fullPath: '/inventory/categories'
       preLoaderRoute: typeof AppInventoryCategoriesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/inventory/cold-chain': {
+      id: '/_app/inventory/cold-chain'
+      path: '/inventory/cold-chain'
+      fullPath: '/inventory/cold-chain'
+      preLoaderRoute: typeof AppInventoryColdChainRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/inventory/items': {
@@ -6557,6 +6576,7 @@ interface AppRouteChildren {
   AppInsurancePoliciesRoute: typeof AppInsurancePoliciesRoute
   AppInventoryAdjustmentsRoute: typeof AppInventoryAdjustmentsRoute
   AppInventoryCategoriesRoute: typeof AppInventoryCategoriesRoute
+  AppInventoryColdChainRoute: typeof AppInventoryColdChainRoute
   AppInventoryItemsRoute: typeof AppInventoryItemsRoute
   AppInventoryLedgerRoute: typeof AppInventoryLedgerRoute
   AppInventoryReportsRoute: typeof AppInventoryReportsRoute
@@ -6892,6 +6912,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppInsurancePoliciesRoute: AppInsurancePoliciesRoute,
   AppInventoryAdjustmentsRoute: AppInventoryAdjustmentsRoute,
   AppInventoryCategoriesRoute: AppInventoryCategoriesRoute,
+  AppInventoryColdChainRoute: AppInventoryColdChainRoute,
   AppInventoryItemsRoute: AppInventoryItemsRoute,
   AppInventoryLedgerRoute: AppInventoryLedgerRoute,
   AppInventoryReportsRoute: AppInventoryReportsRoute,
