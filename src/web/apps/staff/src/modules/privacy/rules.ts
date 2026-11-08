@@ -406,6 +406,10 @@ export interface BreachFacts {
   missingForNotice: readonly string[];
   affectedListed: number;
   notified: number;
+  /** The Board's reference: closing needs the detailed report recorded with it (MAKER-CHECKER.md, slice 14). */
+  boardReference?: string | null;
+  /** The breach's closing, asked for and waiting for the Data Protection Officer. */
+  closureAskedAt?: string | null;
 }
 
 export interface BreachSteps {
@@ -438,11 +442,22 @@ export function breachSteps(breach: BreachFacts): BreachSteps {
   } else if (pending === 0) {
     notifyBlocker = 'Everyone on the list has been sent the notice.';
   }
+  // Slice 14: a breach closes only on its detailed report to the Board, recorded with the Board's reference, and when the
+  // Data Protection Officer agrees.
+  let closeBlocker: string | null = null;
+  if (breach.status !== 'ReportSubmitted') {
+    closeBlocker =
+      'Record the detailed report to the Data Protection Board (its reference and the day it was sent) first.';
+  } else if (!breach.boardReference?.trim()) {
+    closeBlocker = "Record the Board's reference for the detailed report first.";
+  } else if (breach.closureAskedAt) {
+    closeBlocker = 'Closing is waiting for the Data Protection Officer.';
+  }
   return {
     boardInformed: { visible: open, blocker: null },
     extension: { visible: open || informed, blocker: null },
     reportSubmitted: { visible: open || informed, blocker: reportBlocker },
-    close: { visible: !closed, blocker: null, noteRequired: breach.status !== 'ReportSubmitted' },
+    close: { visible: !closed, blocker: closeBlocker, noteRequired: false },
     edit: { visible: !closed, blocker: null },
     notify: { visible: !closed, blocker: notifyBlocker, pending },
     addPeople: { visible: true, blocker: closed ? 'A closed breach cannot be changed.' : null },

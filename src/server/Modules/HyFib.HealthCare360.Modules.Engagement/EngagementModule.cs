@@ -20,6 +20,12 @@ public static class EngagementPermissions
     /// <summary>Separate from drafting so a hospital can have campaigns approved by someone other than the author.</summary>
     public const string CampaignsSend = "crm.campaigns.send";
 
+    /// <summary>
+    /// Approve a bulk campaign someone else asked to schedule (MAKER-CHECKER.md, slice 14). Never the campaign's author: the
+    /// one who wrote it or last edited it, nor the one who asked.
+    /// </summary>
+    public const string CampaignsApprove = "crm.campaigns.approve";
+
     public const string ReferralsManage = "crm.referrals.manage";
     public const string Patient360Read = "crm.patient360.read";
     public const string FeedbackRead = "feedback.read";
@@ -39,7 +45,8 @@ public static class EngagementPermissions
         new(LeadsManage, "CRM", "Capture and work leads; convert them into patients and appointments", [.. Crm, SystemRoles.FrontOffice]),
         new(FollowUpsManage, "CRM", "Follow-up call worklist: create, assign, record calls and send reminders", Crm),
         new(CampaignsManage, "CRM", "Draft SMS/WhatsApp campaigns, preview consented audiences and view delivery", Crm),
-        new(CampaignsSend, "CRM", "Schedule, hold and cancel campaign sending", Crm),
+        new(CampaignsSend, "CRM", "Ask to schedule campaigns, hold and cancel their sending", Crm),
+        new(CampaignsApprove, "CRM", "Approve a bulk campaign someone else asked to schedule (never one's own)", [SystemRoles.HospitalAdmin]),
         new(ReferralsManage, "CRM", "Referring doctors and referral analytics", Crm),
         new(Patient360Read, "CRM", "Patient 360° view: visits, spend, feedback, complaints and communication consent", Crm),
         new(FeedbackRead, "Feedback", "View feedback responses and analytics", Experience),

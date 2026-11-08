@@ -196,8 +196,9 @@ function BreachView({
 
   const close = async (note: string) => {
     const result = await command.run(() => privacyApi.closeBreach(b.id, note || null), {
-      success: 'Breach closed',
-      failure: 'Could not close the breach',
+      success: 'Asked for approval',
+      successBody: `${b.breachNumber} closes when the Data Protection Officer agrees, not you. It stays open until then.`,
+      failure: 'Could not ask to close the breach',
     });
     if (result.ok) {
       setClosing(false);
@@ -381,6 +382,15 @@ function BreachView({
             {stepButton('close', 'Close', <LockClosedRegular />)}
           </div>
         )}
+        {b.closureAskedAt && b.status !== 'Closed' && (
+          <MessageBar intent="info" layout="multiline">
+            <MessageBarBody>
+              <MessageBarTitle>Waiting for the Data Protection Officer</MessageBarTitle>
+              Closing this breach was asked for {formatDateTime(b.closureAskedAt)}. It stays open until someone who
+              approves breaches agrees, never the one who asked. It is in their approvals inbox.
+            </MessageBarBody>
+          </MessageBar>
+        )}
         {steps.reportSubmitted.visible && b.missingForReport.length > 0 && (
           <Caption1>Still needed for the report: {listText(b.missingForReport)}.</Caption1>
         )}
@@ -559,15 +569,11 @@ function BreachView({
       <ReasonDialog
         open={closing}
         title="Close the breach record"
-        description={
-          steps.close.noteRequired
-            ? 'The detailed report was not sent to the Board. Say why the breach can be closed, for example because no personal data was involved after all.'
-            : 'The detailed report was sent to the Board. Add a closing note if it helps.'
-        }
+        description={`The detailed report went to the Board (${b.boardReference ?? 'no reference'}). Add a closing note if it helps. The Data Protection Officer closes it, not you: it stays open until they agree.`}
         label="Closing note"
         required={steps.close.noteRequired}
         maxLength={1000}
-        confirmLabel="Close"
+        confirmLabel="Ask for approval"
         busy={command.busy}
         onConfirm={(note) => void close(note)}
         onCancel={() => setClosing(false)}
