@@ -16,7 +16,9 @@ public sealed record StockSummaryRow(
     DateOnly? NearestExpiry,
     decimal ValueAtCost,
     decimal ReorderLevel,
-    bool BelowReorder);
+    bool BelowReorder,
+    decimal BlockedQuantity = 0,
+    decimal OnOrder = 0);
 
 /// <summary>One stock-card line: movement in/out with the store balance after it.</summary>
 public sealed record LedgerRow(

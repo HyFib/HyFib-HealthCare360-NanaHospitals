@@ -27,8 +27,10 @@ internal sealed class PharmacyQueueEntryConfiguration : IEntityTypeConfiguration
         b.Property(x => x.PrescriptionNumber).HasMaxLength(40);
         b.Property(x => x.CloseReason).HasMaxLength(300);
         b.Property(x => x.RefillNote).HasMaxLength(300);
+        b.Property(x => x.SafetyOverrideReason).HasMaxLength(1000);
         b.Ignore(x => x.RefillsRemaining);
         b.Ignore(x => x.IsOpen);
+        b.Ignore(x => x.HasUnacknowledgedOverride);
         b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.QueueEntryId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
 
@@ -57,7 +59,11 @@ internal sealed class PharmacyQueueLineConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.Instructions).HasMaxLength(500);
         b.Property(x => x.RequestedQuantity).IsQuantity();
         b.Property(x => x.DispensedQuantity).IsQuantity();
+        b.Property(x => x.SafetyOverride).HasMaxLength(1000);
+        b.Property(x => x.OverrideAcknowledgedByName).HasMaxLength(200);
+        b.Property(x => x.OverrideAcknowledgementNote).HasMaxLength(500);
         b.Ignore(x => x.RemainingQuantity);
+        b.Ignore(x => x.NeedsOverrideAcknowledgement);
         b.HasIndex(x => x.PrescriptionLineId);
     }
 }

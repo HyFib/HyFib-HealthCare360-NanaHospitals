@@ -238,6 +238,16 @@ function QueuePage() {
                       </Badge>
                     </Tooltip>
                   )}
+                  {e.hasUnacknowledgedOverride && (
+                    <Tooltip
+                      content="Prescribed over a safety alert: a pharmacist acknowledges it before it is dispensed"
+                      relationship="description"
+                    >
+                      <Badge size="small" color="warning">
+                        Safety override
+                      </Badge>
+                    </Tooltip>
+                  )}
                   {e.isRefill && (
                     <Badge size="small" appearance="tint" color="brand" icon={<ArrowRepeatAllRegular />}>
                       Refill
