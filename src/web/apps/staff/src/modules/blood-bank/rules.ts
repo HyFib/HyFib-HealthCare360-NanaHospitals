@@ -174,6 +174,8 @@ export interface IssueCheckInput {
   unitExpired: boolean;
   ttiCleared: boolean;
   reservedForOtherRequest: boolean;
+  /** The request's grouping disagrees with the patient's earlier requests and no new sample is grouped yet. */
+  groupingHeld?: boolean;
 }
 
 export interface IssueCheck {
@@ -196,8 +198,15 @@ export function issueCheck(input: IssueCheckInput): IssueCheck {
   if (input.unitExpired || input.unitStatus === 'Expired') {
     reasons.push('This unit has expired and must not be transfused.');
   }
-  if (!input.ttiCleared || input.unitStatus === 'Quarantine') {
+  if (!input.ttiCleared) {
     reasons.push('This unit has not cleared TTI screening (still in quarantine).');
+  } else if (input.unitStatus === 'Quarantine') {
+    reasons.push('This unit’s screening results wait for a second officer’s verification (still in quarantine).');
+  }
+  if (input.groupingHeld && !input.emergencyReleaseAuthorised) {
+    reasons.push(
+      'The patient’s group on this request differs from earlier requests: another officer groups a new sample before anything is issued.',
+    );
   }
   if (input.reservedForOtherRequest) {
     reasons.push('This unit is reserved for another patient’s request.');
@@ -233,6 +242,46 @@ export function issueCheck(input: IssueCheckInput): IssueCheck {
   }
 
   return { allowed: reasons.length === 0, emergency: reasons.length === 0 && emergency, reasons };
+}
+
+// ---------------------------------------------------------------- the second officer
+
+export interface OwnChecksInput {
+  /** The signed-in user who would issue the unit. */
+  userId: string | null | undefined;
+  groupedByUserId: string | null;
+  /** Who made the valid compatible cross-match the issue relies on (red cells). */
+  crossMatchedByUserId: string | null;
+  crossMatched: boolean;
+  /** The unit goes uncross-matched under the doctor's emergency release. */
+  emergency: boolean;
+  releaseAuthorisedByUserId: string | null;
+}
+
+/**
+ * Grouping, cross-match and issue are not all one person, as the server checks it (`IssueSeparation`): why an issue by
+ * `userId` would rest on their own checks alone, or null. Red cells, when they both grouped the patient and cross-matched
+ * the unit; plasma, platelets and cryoprecipitate (issued on the group alone), when they grouped the patient; an
+ * uncross-matched release, when they are the doctor who authorised it.
+ */
+export function ownChecksReason(input: OwnChecksInput): string | null {
+  const me = input.userId;
+  if (!me) {
+    return null;
+  }
+  if (input.emergency) {
+    return input.releaseAuthorisedByUserId === me
+      ? 'You authorised this uncross-matched release as the doctor: another blood bank officer issues the unit.'
+      : null;
+  }
+  if (input.crossMatched) {
+    return input.groupedByUserId === me && input.crossMatchedByUserId === me
+      ? 'You grouped the patient and cross-matched this unit. Another blood bank officer issues it, or cross-matches it again first.'
+      : null;
+  }
+  return input.groupedByUserId === me
+    ? 'You grouped the patient, and this component is issued on the group alone. Another blood bank officer issues it.'
+    : null;
 }
 
 // ---------------------------------------------------------------- cold chain on return

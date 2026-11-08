@@ -32,6 +32,7 @@ export const Route = createFileRoute('/_app/blood-bank/requests/')({
   validateSearch: (s: Record<string, unknown>): RequestFilters => ({
     status: REQUEST_STATUSES.includes(s.status as BloodRequestStatus) ? (s.status as BloodRequestStatus) : undefined,
     closed: s.closed === true ? true : undefined,
+    oneOfficer: s.oneOfficer === true ? true : undefined,
     search: typeof s.search === 'string' && s.search ? s.search : undefined,
     page: typeof s.page === 'number' && s.page > 1 ? s.page : undefined,
   }),
@@ -120,6 +121,11 @@ function BloodRequestsPage() {
               checked={Boolean(filters.closed)}
               onChange={(_, d) => set({ closed: d.checked || undefined })}
               label="Include issued and cancelled"
+            />
+            <Switch
+              checked={Boolean(filters.oneOfficer)}
+              onChange={(_, d) => set({ oneOfficer: d.checked || undefined })}
+              label="Only units issued by one officer (for review)"
             />
           </FilterBar>
         </div>

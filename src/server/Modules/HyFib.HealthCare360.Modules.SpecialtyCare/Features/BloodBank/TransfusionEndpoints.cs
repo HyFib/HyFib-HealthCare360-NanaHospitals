@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare.Features.BloodBank;
 
@@ -21,11 +22,13 @@ internal static class TransfusionEndpoints
                 (await s.CancelRequestAsync(id, r.Reason, ct)).ToNoContent())
             .RequirePermission(SpecialtyCarePermissions.BloodBankRequests).WithValidation<BloodReasonRequest>();
         group.MapPost("/requests/{id:guid}/grouping", async (Guid id, GroupPatientRequest r, TransfusionService s, CancellationToken ct) =>
-                (await s.GroupPatientAsync(id, r.BloodGroup, ct)).ToNoContent())
+                (await s.GroupPatientAsync(id, r, ct)).ToNoContent())
             .RequirePermission(SpecialtyCarePermissions.BloodBankCrossmatch).WithValidation<GroupPatientRequest>();
+        // The treating doctor, from their own sign-in: one who may ask for blood and whose account is a doctor's (checked
+        // by the service), never the blood bank typing a name.
         group.MapPost("/requests/{id:guid}/emergency-release", async (Guid id, EmergencyReleaseRequest r, TransfusionService s, CancellationToken ct) =>
                 (await s.AuthoriseEmergencyReleaseAsync(id, r, ct)).ToNoContent())
-            .RequirePermission(SpecialtyCarePermissions.BloodBankIssue).WithValidation<EmergencyReleaseRequest>();
+            .RequirePermission(SpecialtyCarePermissions.BloodBankRequests).WithValidation<EmergencyReleaseRequest>();
         group.MapGet("/requests/{id:guid}/compatible-units", CompatibleUnits).RequirePermission(SpecialtyCarePermissions.BloodBankCrossmatch);
         group.MapPost("/requests/{id:guid}/crossmatches", async (Guid id, RecordCrossMatchRequest r, TransfusionService s, TimeProvider t, CancellationToken ct) =>
                 (await s.CrossMatchAsync(id, r, ct)).ToHttpResult(c => TypedResults.Ok(ToDto(c, t.GetUtcNow()))))
@@ -50,9 +53,13 @@ internal static class TransfusionEndpoints
             .RequirePermission(SpecialtyCarePermissions.BloodBankReactionsInvestigate).WithValidation<CloseReactionRequest>();
     }
 
+    /// <summary>
+    /// Requests, emergencies first. <c>oneOfficer</c>: those with a unit issued on one officer's checks where the facility has
+    /// no second officer, open or closed, for the medical officer's review.
+    /// </summary>
     private static async Task<IResult> ListRequests(
-        [AsParameters] PageQuery query, BloodRequestStatus? status, bool? openOnly, Guid? patientId, HospitalDbContext db, IFieldProtector protector,
-        CancellationToken ct)
+        [AsParameters] PageQuery query, BloodRequestStatus? status, bool? openOnly, Guid? patientId, bool? oneOfficer, HospitalDbContext db,
+        IFieldProtector protector, CancellationToken ct)
     {
         var page = query.ToRequest();
         var requests = db.Set<BloodRequest>().AsNoTracking();
@@ -60,9 +67,15 @@ internal static class TransfusionEndpoints
         {
             requests = requests.Where(r => r.Status == status);
         }
-        else if (openOnly != false)
+        else if (openOnly != false && oneOfficer != true)
         {
             requests = requests.Where(r => r.Status != BloodRequestStatus.Issued && r.Status != BloodRequestStatus.Cancelled);
+        }
+
+        if (oneOfficer == true)
+        {
+            var reviewed = db.Set<BloodIssue>().Where(i => i.IssuedOnOwnChecks).Select(i => i.RequestId);
+            requests = requests.Where(r => reviewed.Contains(r.Id));
         }
 
         if (patientId is not null)
@@ -89,7 +102,8 @@ internal static class TransfusionEndpoints
         return TypedResults.Ok(result);
     }
 
-    private static async Task<IResult> GetRequest(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> GetRequest(
+        Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, ISettingsService settings, TimeProvider time, CancellationToken ct)
     {
         var row = await (
                 from x in db.Set<BloodRequest>().AsNoTracking()
@@ -116,8 +130,10 @@ internal static class TransfusionEndpoints
         return TypedResults.Ok(new BloodRequestDetail(
             r.Id, r.RequestNumber, r.PatientId, row.Uhid, row.FullName, r.AdmissionId, r.VisitId, r.OrderItemId, r.ComponentType, r.UnitsRequested,
             r.UnitsReserved, r.UnitsIssued, r.Urgency, r.Indication, r.RequiredBy, r.RequestedByName, r.HaemoglobinGdl, r.PlateletCount,
-            r.PatientBloodGroup, r.GroupedAt, r.GroupedByName, r.EmergencyReleaseAuthorisedBy, r.EmergencyReleaseReason, r.Status, r.CancelReason,
-            crossMatches.Select(c => ToDto(c, now)).ToList(), issues.Select(ToDto).ToList(), r.Version));
+            r.PatientBloodGroup, r.GroupedAt, r.GroupedByUserId, r.GroupedByName, r.EarlierGroup, r.FirstSampleGroup, r.RegroupedAt, r.GroupingHeld,
+            r.EmergencyReleaseAuthorisedBy, r.EmergencyReleaseByUserId, r.EmergencyReleaseAt, r.EmergencyReleaseReason,
+            await settings.SeparateVerifierAsync(r.FacilityId, ct), r.Status, r.CancelReason, crossMatches.Select(c => ToDto(c, now)).ToList(),
+            issues.Select(ToDto).ToList(), r.Version));
     }
 
     /// <summary>Units the blood bank can offer: ABO/Rh compatible with the grouped patient, in date, first-expiry-first-out.</summary>
@@ -132,6 +148,11 @@ internal static class TransfusionEndpoints
         if (!request.IsGrouped)
         {
             return Error.Rule("bloodbank.patient_not_grouped", "Group the patient's sample first.").ToProblem();
+        }
+
+        if (request.GroupingHeld)
+        {
+            return TransfusionService.GroupingHeldError(request).ToProblem();
         }
 
         var now = time.GetUtcNow();
@@ -174,9 +195,10 @@ internal static class TransfusionEndpoints
     }
 
     private static CrossMatchDto ToDto(CrossMatch c, DateTimeOffset now) => new(
-        c.Id, c.ComponentId, c.UnitNumber, c.Method, c.Result, c.PerformedAt, c.PerformedByName, c.Remarks, c.IsValidCompatibleAt(now), c.ChargeStatus);
+        c.Id, c.ComponentId, c.UnitNumber, c.Method, c.Result, c.PerformedAt, c.PerformedByUserId, c.PerformedByName, c.Remarks, c.IsValidCompatibleAt(now),
+        c.ChargeStatus);
 
     private static BloodIssueDto ToDto(BloodIssue i) => new(
         i.Id, i.RequestId, i.ComponentId, i.UnitNumber, i.ComponentType, i.UnitBloodGroup, i.IsEmergencyRelease, i.IssuedAt, i.IssuedByName, i.IssuedToName,
-        i.ReturnedAt, i.Restocked, i.ReturnNotes, i.ChargeStatus, i.ChargeError);
+        i.ReturnedAt, i.Restocked, i.ReturnNotes, i.ChargeStatus, i.ChargeError, i.IssuedOnOwnChecks);
 }

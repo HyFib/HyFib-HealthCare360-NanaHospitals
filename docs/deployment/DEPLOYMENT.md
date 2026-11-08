@@ -350,7 +350,11 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    second pathologist's approval. A second doctor confirms each death certificate before it is reported, unless a
    facility with a single doctor sets `mrd.deathCertificateConfirmation` to `false`. Who may confirm is the
    `mrd.deaths.confirm` permission (every doctor by default); a hospital that wants only senior doctors to confirm takes
-   it from the Doctor role and gives it to them.
+   it from the Doctor role and gives it to them. In the blood bank, a second officer verifies each donation's screening
+   results before its units leave quarantine, and issues what one officer both grouped and cross-matched, unless a
+   facility with one blood bank officer on duty sets `bloodbank.separateVerifier` to `false`: that officer then does both,
+   and what they release so is listed on the Donations and Blood requests screens for the medical officer's review.
+   Uncross-matched blood is released only on a doctor's own sign-in, so give doctors' accounts their practitioner record.
    A facility that does ultrasounds in pregnancy sets `pcpndt.registrationNumber` (for that facility) to its PCPNDT
    registration: until then Form F cannot be recorded, and those scans cannot start. Mark each obstetric ultrasound
    procedure "Ultrasound in pregnancy" under Radiology › Procedures and templates; the seeded obstetric and anomaly
@@ -358,20 +362,21 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    A facility approved for terminations of pregnancy sets `mtp.approvalNumber` (for that facility) to its certificate of
    approval (MTP Rules, Form B): until then no MTP case can be opened. No clinical role may certify a termination out of
    the box: grant `mtp.certify` and `patients.sensitive.mtp` to the gynaecologists the approval names.
-   **Some settings wait for a second administrator** who may change settings (Approvals), so that no one person
-   switches off a control another person's check relies on, lets more money out, or sends money, patients' data or
-   critical alerts somewhere else. The screen asks why, says the change was asked for, and the setting stays as it is
-   until another administrator approves it. They are: switching off `lab.separateVerifier`,
-   `mrd.deathCertificateConfirmation`, `security.administrationRequiresDesktop`, `lab.requirePaymentBeforeCollection`
-   or `billing.shift.required`; switching on `ui.biometricUnlock` or `ai.enabled`; raising
-   `billing.discount.defaultMaxPercent`, `pharmacy.discount.max_percent`, `supportservices.canteen.staffCreditLimit`,
-   `security.maxSessionsPerUser`, `ui.idleLockMinutes`, `inpatient.marGraceMinutes` or `lab.deltaCheckPercent` (0, for
-   no limit or no check, counts as the highest), or lowering `lab.deltaCheckWindowDays`; clearing any of these, so the
-   default decides; and any change at all to `portal.baseUrl`, `doctorfees.tds.percent`, every `alerts.*` setting,
-   every integration (`integrations.*`), `abdm.gateway`, `ai.provider`, `ai.openai`, `ai.speech` and every credential
-   (a `*.secret` setting, or one saved as secret). The other direction (a control switched on, a limit lowered) is
-   saved at once, as is every other setting. So set the gateway keys, the alert numbers and the portal's address with
-   a hospital administrator from step 6 at hand to approve them.
+   **Some settings wait for a second administrator** who may change settings (Approvals), so that no one person switches
+   off a control another person's check relies on, lets more money out, or sends money, patients' data or critical
+   alerts somewhere else. The screen asks why, says the change was asked for, and the setting stays as it is until
+   another administrator approves it. They are: switching off `lab.separateVerifier`,
+   `mrd.deathCertificateConfirmation`, `bloodbank.separateVerifier`, `security.administrationRequiresDesktop`,
+   `lab.requirePaymentBeforeCollection` or `billing.shift.required`; switching on `ui.biometricUnlock` or `ai.enabled`;
+   raising `billing.discount.defaultMaxPercent`, `pharmacy.discount.max_percent`,
+   `supportservices.canteen.staffCreditLimit`, `security.maxSessionsPerUser`, `ui.idleLockMinutes`,
+   `inpatient.marGraceMinutes` or `lab.deltaCheckPercent` (0, for no limit or no check, counts as the highest), or
+   lowering `lab.deltaCheckWindowDays`; clearing any of these, so the default decides; and any change at all to
+   `portal.baseUrl`, `doctorfees.tds.percent`, every `alerts.*` setting, every integration (`integrations.*`),
+   `abdm.gateway`, `ai.provider`, `ai.openai`, `ai.speech` and every credential (a `*.secret` setting, or one saved as
+   secret). The other direction (a control switched on, a limit lowered) is saved at once, as is every other setting. So
+   set the gateway keys, the alert numbers and the portal's address with a hospital administrator from step 6 at hand to
+   approve them.
 8. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a

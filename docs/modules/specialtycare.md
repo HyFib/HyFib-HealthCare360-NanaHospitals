@@ -19,12 +19,13 @@ and write a PHI-access audit entry. Donor detail views write a `donor.accessed` 
 | A dialysis machine must match the patient's sero status (Negative/HBsAg/HCV/HIV). This is checked when the session is scheduled and again when it starts. The machine must also be disinfected after its last session and not be running another one. | `SeroSegregation`, `DialysisMachine.EnsureReadyFor` | `SeroSegregationTests`, `DialysisSessionTests` |
 | A dialyzer is used only for its own patient and only up to its maximum uses. HBsAg-positive patients are always single-use. | `Dialyzer.Use`, `DialysisPatientProfile.EffectiveMaxDialyzerUses` | `DialyzerTests` |
 | Donor eligibility (NBTC 2017): Hb ≥ 12.5 g/dL; weight ≥ 45 kg (≥ 55 kg for 450 ml); age 18–65 (first-time donors ≤ 60); BP 100–140/60–90; pulse 60–100; temperature ≤ 37.5 °C; whole-blood interval 90 days (men) / 120 days (women); questionnaire deferrals. | `DonorEligibility` | `DonorEligibilityTests` |
-| A unit leaves quarantine only when it is grouped **and** all five TTI markers are non-reactive. Any reactive marker discards the unit and defers the donor. | `BloodComponent.ApplyLabResults` | `BloodComponentTests` |
+| A unit leaves quarantine only when it is grouped **and** all five TTI markers are non-reactive **and** another blood bank officer has verified those results (below, *The second officer*). Any reactive marker discards the unit and defers the donor at once. | `BloodComponent.ApplyLabResults/Release`, `Donation.RecordLabResults/Verify` | `BloodComponentTests`, `SecondOfficerTests`, `BloodBankVerificationTests` |
 | ABO/Rh(D) compatibility table: PRBC compatible, whole blood ABO-identical, plasma/platelets/cryo plasma-compatible, Bombay handled, unknown group never compatible. | `BloodCompatibility` | `BloodCompatibilityTests` |
-| Issue gate: red cells need a compatible cross-match done within 72 h. A doctor-authorised emergency release allows only uncross-matched O Rh(D)-negative PRBC, or AB plasma when the patient is ungrouped. Expired units, units that have not cleared TTI, and units reserved for another request are never issued. | `IssueCompatibility`, `BloodComponent.Issue` | `IssueCompatibilityTests` |
+| Issue gate: red cells need a compatible cross-match done within 72 h. An emergency release, authorised by a doctor from their own sign-in, allows only uncross-matched O Rh(D)-negative PRBC, or AB plasma when the patient is ungrouped. Expired units, units that have not cleared TTI or are awaiting verification, and units reserved for another request are never issued. | `IssueCompatibility`, `BloodComponent.Issue`, `BloodRequest.AuthoriseEmergencyRelease` | `IssueCompatibilityTests`, `BloodBankVerificationTests` |
+| Grouping, cross-match and issue are not all one person: a unit is not issued by the officer who both grouped the patient and cross-matched it (plasma, platelets, cryo: who grouped; an uncross-matched unit: the doctor who released it), unless the facility has switched the second officer off. | `IssueSeparation` | `SecondOfficerTests`, `BloodBankVerificationTests` |
 | Cold chain: a returned unit is restocked only if it comes back within 30 min with temperature maintained. Thawed FFP/cryo are never restocked. | `ColdChain` | `BloodComponentTests` |
 | Shelf life from collection: WB 35 d, PRBC 35 d, FFP 365 d, platelets 5 d, cryo 365 d. Plasma and platelets must be separated within 8 h. | `ComponentShelfLife` | `ComponentShelfLifeTests` |
-| Blood-bank grouping of the patient sample is used for compatibility, never the group from registration. A second grouping that disagrees is refused (possible wrong blood in tube). | `BloodRequest.RecordGrouping` | `IssueCompatibilityTests` |
+| Blood-bank grouping of the patient sample is used for compatibility, never the group from registration. A second grouping that disagrees is refused (possible wrong blood in tube). A grouping that disagrees with the groups confirmed on the patient's other requests holds the request until another officer groups a new sample. | `BloodRequest.RecordGrouping/Regroup`, `GroupingHistory` | `IssueCompatibilityTests`, `SecondOfficerTests`, `BloodBankVerificationTests` |
 | A termination of pregnancy (MTP Act s.3) needs the woman's written consent, or her guardian's when she is under 18 or mentally ill; the opinion of one doctor up to 20 weeks, of two from 20 to 24 weeks for a woman in a rule 3B category; beyond 24 weeks only a substantial foetal abnormality, with the Medical Board's opinion. A contraceptive failure is a ground up to 20 weeks only. Once the termination is recorded the case cannot change. | `MtpCase.Certify/Terminate` | `MtpCaseTests`, `MtpTests` |
 
 ## Endpoints
@@ -109,20 +110,21 @@ screen and in Excel, CSV and PDF. It needs `analytics.clinical.read` and is audi
 | POST | `/donors/{id}/defer` | `bloodbank.donors.manage` | `DeferDonorRequest` (until, permanent, reason) → 204 |
 | POST | `/donors/{id}/screenings` | `bloodbank.donors.manage` | `ScreenDonorRequest` (Hb, weight, BP, pulse, temperature, answers[{key, yes}]) → `DonorScreeningDto` (outcome Eligible/TemporarilyDeferred/PermanentlyDeferred, reasons, deferredUntil, maxBagVolumeMl) |
 | POST | `/donors/{id}/donations` | `bloodbank.donors.manage` | `CollectDonationRequest` (screeningId, bagNumber (scan) or generated, bagType Single/Double/Triple/Quadruple, volume 350/450, type Voluntary/Replacement, replacementForPatientId) → 201 `{id}` |
-| GET | `/donations?status=&pendingResults=&search=` · `/donations/{id}` | `bloodbank.inventory.manage` | → paged `DonationListItem` / `DonationDetail` (TTI panel, components) |
+| GET | `/donations?status=&pendingResults=&awaitingVerification=&oneOfficer=&search=` · `/donations/{id}` | `bloodbank.inventory.manage` | → paged `DonationListItem` (awaitingVerification, verifiedByEnterer) / `DonationDetail` (TTI panel, who entered and who verified, awaitingVerification, separateVerifier, components). `oneOfficer`: released on one officer's word, for the medical officer's review |
 | POST | `/donations/{id}/components` | `bloodbank.inventory.manage` | `SeparateComponentsRequest` {components[{type WholeBlood/PRBC/FFP/PlateletConcentrate/Cryoprecipitate, volumeMl, storageLocation}]} → `BloodUnitDto[]` (in quarantine) |
-| PUT | `/donations/{id}/lab-results` | `bloodbank.inventory.manage` | `RecordLabResultsRequest` (bloodGroup, hiv, hbsAg, hcv, syphilis, malaria: Pending/NonReactive/Reactive) → 204; releases or discards units, defers reactive donors, alerts officers |
+| PUT | `/donations/{id}/lab-results` | `bloodbank.inventory.manage` | `RecordLabResultsRequest` (bloodGroup, hiv, hbsAg, hcv, syphilis, malaria: Pending/NonReactive/Reactive, version) → 204; a reactive result discards the units, defers the donor and alerts officers; results that clear the donation leave the units in quarantine awaiting verification. Complete results are corrected only by whoever entered them (403 `bloodbank.results_entered_by_other`), never once verified (`bloodbank.results_final`) |
+| POST | `/donations/{id}/lab-results/verify` | `bloodbank.inventory.manage` | `VerifyLabResultsRequest` (version) → 204; another officer verifies the results as shown and the units go to stock (403 `bloodbank.verify_own_results` for the officer who entered them while `bloodbank.separateVerifier` is on); audited `bloodbank.results_verified` with both names |
 | GET | `/inventory` | `bloodbank.read` | → `BloodInventoryDashboard` (stock cells by component × group: available/reserved/quarantine/expiringSoon, units expiring within 3 days, open and emergency requests) |
 | GET | `/units?status=&component=&bloodGroup=&search=` · `/units/by-number/{unitNumber}` | `bloodbank.read` | → paged `BloodUnitDto` / barcode look-up |
 | POST | `/units/{id}/discard` | `bloodbank.inventory.manage` | `DiscardUnitRequest` → 204 |
-| GET | `/requests?status=&openOnly=true&patientId=&search=` · `/requests/{id}` | `bloodbank.read` | → paged `BloodRequestListItem` (emergency first) / `BloodRequestDetail` (cross-matches, issues) |
+| GET | `/requests?status=&openOnly=true&patientId=&oneOfficer=&search=` · `/requests/{id}` | `bloodbank.read` | → paged `BloodRequestListItem` (emergency first) / `BloodRequestDetail` (who grouped and who cross-matched by account, a grouping held against the patient's earlier requests, the doctor's release, separateVerifier, cross-matches, issues). `oneOfficer`: requests with a unit issued on one officer's checks, open or closed |
 | POST | `/requests` | `bloodbank.requests.create` | `CreateBloodRequestRequest` (patientId, component, units, urgency Routine/Urgent/Emergency, indication, requiredBy, pre-transfusion Hb/platelets) → 201 `{id, requestNumber}`. Emergency requests alert issuers |
 | POST | `/requests/{id}/cancel` | `bloodbank.requests.create` | `BloodReasonRequest` → 204 (frees reserved units) |
-| POST | `/requests/{id}/grouping` | `bloodbank.crossmatch.perform` | `GroupPatientRequest` (bloodGroup) → 204 |
-| POST | `/requests/{id}/emergency-release` | `bloodbank.units.issue` | `EmergencyReleaseRequest` (authorisedBy doctor, reason) → 204 (emergency requests only; audited) |
+| POST | `/requests/{id}/grouping` | `bloodbank.crossmatch.perform` | `GroupPatientRequest` (bloodGroup, newSample) → 204. 422 `bloodbank.grouping_discrepancy` against this request's first sample; a grouping against the patient's earlier requests holds the request. `newSample`: another officer's grouping of a new sample for a held request (403 `bloodbank.regroup_own_sample`) |
+| POST | `/requests/{id}/emergency-release` | `bloodbank.requests.create`, and a doctor's practitioner record | `EmergencyReleaseRequest` (reason) → 204 (emergency requests only; 403 `bloodbank.doctor_required`; the doctor's account, practitioner record and time recorded; audited and the blood bank told) |
 | GET | `/requests/{id}/compatible-units` | `bloodbank.crossmatch.perform` | → `CompatibleUnitDto[]` (compatible, in date, first-expiry-first-out) |
 | POST | `/requests/{id}/crossmatches` | `bloodbank.crossmatch.perform` | `RecordCrossMatchRequest` (componentId, method, result) → `CrossMatchDto`; a compatible result reserves the unit |
-| POST | `/requests/{id}/issues` | `bloodbank.units.issue` | `IssueBloodRequest` (componentId, issuedToName) → `BloodIssueDto` |
+| POST | `/requests/{id}/issues` | `bloodbank.units.issue` | `IssueBloodRequest` (componentId, issuedToName) → `BloodIssueDto` (issuedOnOwnChecks). 403 `bloodbank.issue_own_checks` when the issue rests on the issuer's checks alone; 422 `bloodbank.grouping_history_discrepancy` while the grouping is held |
 | POST | `/issues/{id}/return` | `bloodbank.units.issue` | `ReturnBloodRequest` (temperatureMaintained, notes) → `BloodIssueDto` (restocked or discarded). Refused once the unit was started on the ward (`bloodbank.transfusion_started`) |
 | GET | `/patients/{patientId}/units` | `bloodbank.transfuse` or `bloodbank.read` | → `PatientBloodUnits`: the patient's units issued, newest first, each with when it must be started by, until when its cross-match stands, the consent a start would rely on and its transfusion (audited as a read of the patient's record) |
 | POST | `/issues/{id}/transfusion` | `bloodbank.transfuse` | `StartTransfusionRequest` (wristbandUhid, bagUnitNumber, witnessConfirmationId, baseline observations, consentDeferredReason) → 201 `TransfusionDto`. The bedside check, below |
@@ -164,6 +166,37 @@ other; and the start writes the issue, as a return does, so of a start and a ret
 refused on the issue's version (409). It ends completed or stopped, with the volume given and the
 observations at the end; a stop says why (`bloodbank.transfusion_stopped`, a warning), and a reaction is reported as
 before. With the issue, the transfusion says what became of each unit: returned, or transfused.
+
+**The second officer** (maker-checker; Drugs and Cosmetics Rules, Schedule F Part XII-B; NBTC standards). No unit
+leaves the blood bank on one officer's word:
+
+* a donation's results that clear it (grouped, all five markers non-reactive) leave its units in quarantine, *awaiting
+  verification*. Another officer who holds `bloodbank.inventory.manage` checks them against the worksheet and the
+  analyser's printout and verifies them, and the units go to stock; a component separated later goes to stock too. The
+  donation names who entered and who verified. Markers still pending are completed by any officer; complete results are
+  corrected only by whoever entered them, and verified ones by nobody. A reactive result discards at once;
+* grouping and cross-match record the officer's account. A unit is not issued by the officer who both grouped the
+  patient and cross-matched it; plasma, platelets and cryoprecipitate, which go on the group alone, not by the officer
+  who grouped; an uncross-matched unit not by the doctor who released it (`bloodbank.issue_own_checks`). The issue
+  screen says so once the unit is scanned, before it is handed over;
+* the patient's grouping is compared twice. With this request's own first sample, as before: a second grouping that
+  disagrees is refused (`bloodbank.grouping_discrepancy`), as possible wrong blood in the tube. With the groups confirmed
+  on the patient's other requests, in any facility: one that disagrees is recorded, but holds the request (audited at
+  Warning, and the officers who cross-match are told). Nothing is cross-matched or issued on it
+  (`bloodbank.grouping_history_discrepancy`) until another officer groups a new sample. The new sample must agree with
+  the first sample or with the earlier group (a third group is refused), and its grouping replaces the first; if it
+  agrees with the first sample, the earlier grouping is to be investigated. While the request is held, a doctor's
+  emergency release still lets O Rh(D)-negative red cells and AB plasma go, as for an ungrouped patient;
+* uncross-matched release is authorised by the treating doctor on the request, from their own sign-in: one who may ask
+  for blood and whose account is linked to a doctor (consultant, resident or visiting) in the practitioner list
+  (`bloodbank.doctor_required` otherwise). The blood bank no longer types a name. Their account, practitioner record and
+  the time are kept, the blood bank is told, and each unit issued on it is audited naming the doctor and the officer.
+
+A blood bank with one officer on duty (a night shift) sets `bloodbank.separateVerifier` to `false` for its facility,
+which waits for a second administrator (SettingGuard). That officer then verifies their own results and issues on their
+own grouping and cross-match; each is audited at Warning and flagged (`verifiedByEnterer`, `issuedOnOwnChecks`), and the
+donations and requests screens list them for the medical officer's review (`oneOfficer=true`). The setting does not
+lift the hold on a grouping that disagrees with earlier requests.
 
 **Unit labels (BB-03).** From a donation's components and from a unit, the staff app prints a label per unit,
 without a dialog, on the workstation's label printer: blood group with POS or NEG in full, component and volume, the
@@ -207,8 +240,8 @@ case, its print and the register export are audited.
 | `physio.referrals.manage` | Doctor, Physiotherapist |
 | `physio.treatment.manage` | Physiotherapist |
 | `bloodbank.read` | BloodBankOfficer, Doctor, Nurse, HospitalAdmin |
-| `bloodbank.donors.manage`, `bloodbank.inventory.manage`, `bloodbank.crossmatch.perform`, `bloodbank.units.issue`, `bloodbank.reactions.investigate` | BloodBankOfficer |
-| `bloodbank.requests.create`, `bloodbank.reactions.report` | Doctor, Nurse, BloodBankOfficer |
+| `bloodbank.donors.manage`, `bloodbank.inventory.manage` (also verifies another officer's screening results), `bloodbank.crossmatch.perform`, `bloodbank.units.issue`, `bloodbank.reactions.investigate` | BloodBankOfficer |
+| `bloodbank.requests.create` (a doctor among them, linked to a doctor's practitioner record, authorises uncross-matched release), `bloodbank.reactions.report` | Doctor, Nurse, BloodBankOfficer |
 | `bloodbank.transfuse` (check a unit at the bedside, start and end it, witness another's check) | Nurse, Doctor |
 | `mtp.read`, `mtp.register` | MrdOfficer |
 | `mtp.certify` | none: grant it, with `patients.sensitive.mtp`, to the gynaecologists the place's approval names |

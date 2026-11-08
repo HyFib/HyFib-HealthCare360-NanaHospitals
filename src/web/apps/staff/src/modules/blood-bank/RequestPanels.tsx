@@ -34,7 +34,7 @@ import {
   ShieldErrorRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { formatDateTime, formatTime, isApiError, type BloodGroup } from '@hc360/core';
+import { formatDateTime, formatTime, isApiError, useSession, type BloodGroup } from '@hc360/core';
 import {
   ConfirmDialog,
   DataTable,
@@ -65,7 +65,15 @@ import {
 import { BloodGroupBadge, ExpiryText, TtiBadge, UnitStatusBadge } from './BloodBadges';
 import { componentLabel, componentShort, crossmatchMethodLabel, groupLabel } from './labels';
 import { printIssueSlip } from './print';
-import { compatibilityText, crossmatchValidity, isKnownGroup, issueCheck, returnOutcome, ttiState } from './rules';
+import {
+  compatibilityText,
+  crossmatchValidity,
+  isKnownGroup,
+  issueCheck,
+  ownChecksReason,
+  returnOutcome,
+  ttiState,
+} from './rules';
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -96,12 +104,18 @@ const useStyles = makeStyles({
 
 // ---------------------------------------------------------------- grouping
 
-/** The patient's group from the blood bank's own grouping of the request sample (never the registration group). */
+/**
+ * The patient's group from the blood bank's own grouping of the request sample (never the registration group), with who
+ * grouped it. A grouping that disagrees with the patient's earlier requests holds the request: another officer groups a
+ * new sample, which replaces the first.
+ */
 export function GroupingCard({ request, canGroup }: { request: BloodRequestDetail; canGroup: boolean }) {
   const styles = useStyles();
-  const [open, setOpen] = useState(false);
+  const userId = useSession((s) => s.user?.id);
+  const [open, setOpen] = useState<'second' | 'new' | null>(null);
   const grouped = isKnownGroup(request.patientBloodGroup) && request.groupedAt !== null;
   const closed = request.status === 'Issued' || request.status === 'Cancelled';
+  const groupedByMe = request.groupedByUserId !== null && request.groupedByUserId === userId;
   return (
     <div className={styles.stack}>
       <div className={styles.row}>
@@ -111,33 +125,77 @@ export function GroupingCard({ request, canGroup }: { request: BloodRequestDetai
           note="blood bank grouping"
         />
         {grouped ? (
-          <WhoWhen prefix="Grouped by" by={request.groupedByName} at={request.groupedAt} />
+          <WhoWhen
+            prefix={request.regroupedAt ? 'New sample grouped by' : 'Grouped by'}
+            by={request.groupedByName}
+            at={request.groupedAt}
+          />
         ) : (
           <Text>Not grouped yet. Group the request sample before cross-matching.</Text>
         )}
       </div>
+      {request.groupingHeld && request.earlierGroup && (
+        <MessageBar intent="error" layout="multiline" icon={<ShieldErrorRegular />}>
+          <MessageBarBody>
+            <MessageBarTitle>The group differs from the patient’s earlier requests</MessageBarTitle>
+            This sample grouped {groupLabel(request.patientBloodGroup)}; earlier requests were grouped{' '}
+            {groupLabel(request.earlierGroup)}. Nothing is cross-matched or issued until another blood bank officer
+            groups a new sample. In an emergency the doctor can still release O Rh(D)-negative red cells
+            uncross-matched.
+          </MessageBarBody>
+        </MessageBar>
+      )}
+      {request.regroupedAt && request.firstSampleGroup && (
+        <Caption1 className={styles.muted}>
+          The first sample grouped {groupLabel(request.firstSampleGroup)}
+          {request.earlierGroup ? ` and earlier requests ${groupLabel(request.earlierGroup)}` : ''}; the new sample
+          decides.
+        </Caption1>
+      )}
       <Caption1 className={styles.muted}>The group recorded at registration is never used for transfusion.</Caption1>
       {canGroup && !closed && (
         <div>
-          <Button icon={<BeakerRegular />} appearance={grouped ? 'secondary' : 'primary'} onClick={() => setOpen(true)}>
-            {grouped ? 'Group a second sample' : 'Record the patient’s group'}
-          </Button>
+          {request.groupingHeld ? (
+            groupedByMe ? (
+              <Text>You grouped the first sample: another blood bank officer groups the new one.</Text>
+            ) : (
+              <Button icon={<BeakerRegular />} appearance="primary" onClick={() => setOpen('new')}>
+                Group a new sample
+              </Button>
+            )
+          ) : (
+            <Button
+              icon={<BeakerRegular />}
+              appearance={grouped ? 'secondary' : 'primary'}
+              onClick={() => setOpen('second')}
+            >
+              {grouped ? 'Group a second sample' : 'Record the patient’s group'}
+            </Button>
+          )}
         </div>
       )}
-      {open && <GroupDialog request={request} onClose={() => setOpen(false)} />}
+      {open && <GroupDialog request={request} newSample={open === 'new'} onClose={() => setOpen(null)} />}
     </div>
   );
 }
 
-function GroupDialog({ request, onClose }: { request: BloodRequestDetail; onClose: () => void }) {
+function GroupDialog({
+  request,
+  newSample,
+  onClose,
+}: {
+  request: BloodRequestDetail;
+  newSample: boolean;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [group, setGroup] = useState<BloodGroup | ''>('');
   const record = useMutation({
-    mutationFn: () => bloodApi.groupPatient(request.id, group || 'Unknown'),
+    mutationFn: () => bloodApi.groupPatient(request.id, group || 'Unknown', newSample),
     onSuccess: () => {
-      notify.success('Patient grouped');
+      notify.success(newSample ? 'New sample grouped' : 'Patient grouped');
       void queryClient.invalidateQueries({ queryKey: bloodKeys.request(request.id) });
       void queryClient.invalidateQueries({ queryKey: bloodKeys.compatible(request.id) });
       onClose();
@@ -149,13 +207,16 @@ function GroupDialog({ request, onClose }: { request: BloodRequestDetail; onClos
       <DialogSurface style={{ maxWidth: 520 }}>
         <DialogBody>
           <DialogTitle>
-            Group the patient’s sample
+            {newSample ? 'Group a new sample' : 'Group the patient’s sample'}
             <Caption1 block className={styles.muted}>
               {request.patientName} · {request.uhid} · {request.requestNumber}
             </Caption1>
           </DialogTitle>
           <DialogContent className={styles.stack}>
-            <Field label="ABO and Rh(D) group of this sample" required>
+            <Field
+              label={newSample ? 'ABO and Rh(D) group of the new sample' : 'ABO and Rh(D) group of this sample'}
+              required
+            >
               <Select value={group} onChange={(_, d) => setGroup(d.value as BloodGroup | '')} autoFocus>
                 <option value="">Choose the group</option>
                 {KNOWN_GROUPS.map((g) => (
@@ -166,8 +227,9 @@ function GroupDialog({ request, onClose }: { request: BloodRequestDetail; onClos
               </Select>
             </Field>
             <Caption1 className={styles.muted}>
-              A result that disagrees with an earlier grouping is refused: it may be the wrong blood in the tube.
-              Collect a fresh sample and investigate.
+              {newSample
+                ? 'Group a sample freshly collected from the patient, not the first one. Its group replaces the first sample’s; one that matches neither the first sample nor the earlier requests is refused.'
+                : 'A result that disagrees with an earlier grouping of this request is refused: it may be the wrong blood in the tube. Collect a fresh sample and investigate. One that disagrees with the patient’s earlier requests holds the request until another officer groups a new sample.'}
             </Caption1>
             {discrepancy ? (
               <MessageBar intent="error" layout="multiline" politeness="assertive" icon={<ShieldErrorRegular />}>
@@ -203,7 +265,10 @@ function GroupDialog({ request, onClose }: { request: BloodRequestDetail; onClos
 export function CompatibilityHint({ request }: { request: BloodRequestDetail }) {
   return (
     <MessageBar intent="info" layout="multiline">
-      <MessageBarBody>{compatibilityText(request.componentType, request.patientBloodGroup)}</MessageBarBody>
+      <MessageBarBody>
+        <MessageBarTitle>Compatible groups</MessageBarTitle>
+        {compatibilityText(request.componentType, request.patientBloodGroup)}
+      </MessageBarBody>
     </MessageBar>
   );
 }
@@ -214,10 +279,18 @@ export function CompatibilityHint({ request }: { request: BloodRequestDetail }) 
 export function CompatibleUnitsPanel({ request, now }: { request: BloodRequestDetail; now: number }) {
   const styles = useStyles();
   const grouped = isKnownGroup(request.patientBloodGroup);
-  const units = useQuery({ ...bloodQueries.compatibleUnits(request.id), enabled: grouped });
+  const units = useQuery({ ...bloodQueries.compatibleUnits(request.id), enabled: grouped && !request.groupingHeld });
   const [crossMatching, setCrossMatching] = useState<CompatibleUnitDto | null>(null);
   if (!grouped) {
     return <Text className={styles.muted}>Compatible units appear once the patient’s sample is grouped.</Text>;
+  }
+  if (request.groupingHeld) {
+    return (
+      <Text className={styles.muted}>
+        Compatible units appear once another officer has grouped a new sample: this grouping differs from the patient’s
+        earlier requests.
+      </Text>
+    );
   }
   return (
     <>
@@ -379,8 +452,8 @@ export function CrossMatchesTable({ crossMatches, now }: { crossMatches: CrossMa
         { key: 'method', header: 'Method', priority: 'low', render: (c) => crossmatchMethodLabel[c.method] },
         {
           key: 'when',
-          header: 'Done',
-          render: (c) => `${formatDateTime(c.performedAt)}${c.performedByName ? ` · ${c.performedByName}` : ''}`,
+          header: 'Cross-matched by',
+          render: (c) => `${c.performedByName ?? 'unknown user'} · ${formatDateTime(c.performedAt)}`,
         },
         {
           key: 'validity',
@@ -409,10 +482,17 @@ export function CrossMatchesTable({ crossMatches, now }: { crossMatches: CrossMa
 // ---------------------------------------------------------------- emergency release
 
 /**
- * Doctor-authorised release of uncross-matched blood for life-threatening bleeding: only group O Rh(D)-negative
- * packed red cells, or AB plasma if the patient is not grouped yet. Recorded in the audit log.
+ * Release of uncross-matched blood for life-threatening bleeding, authorised by the treating doctor from their own
+ * sign-in (never a name the blood bank types): only group O Rh(D)-negative packed red cells, or AB plasma if the patient
+ * is not grouped yet. The doctor's account and practitioner record are recorded and audited.
  */
-export function EmergencyReleasePanel({ request, canIssue }: { request: BloodRequestDetail; canIssue: boolean }) {
+export function EmergencyReleasePanel({
+  request,
+  canAuthorise,
+}: {
+  request: BloodRequestDetail;
+  canAuthorise: boolean;
+}) {
   const styles = useStyles();
   const [open, setOpen] = useState(false);
   if (request.urgency !== 'Emergency' || request.status === 'Issued' || request.status === 'Cancelled') {
@@ -422,7 +502,10 @@ export function EmergencyReleasePanel({ request, canIssue }: { request: BloodReq
     return (
       <MessageBar intent="error" layout="multiline" icon={<WarningRegular />}>
         <MessageBarBody>
-          <MessageBarTitle>Emergency release authorised by {request.emergencyReleaseAuthorisedBy}</MessageBarTitle>
+          <MessageBarTitle>
+            Uncross-matched release authorised by {request.emergencyReleaseAuthorisedBy}
+            {request.emergencyReleaseAt ? ` · ${formatDateTime(request.emergencyReleaseAt)}` : ''}
+          </MessageBarTitle>
           {request.emergencyReleaseReason} Uncross-matched issue is limited to O Rh(D)-negative packed red cells, or AB
           plasma while the patient is ungrouped. Group and cross-match as soon as the sample arrives.
         </MessageBarBody>
@@ -435,10 +518,11 @@ export function EmergencyReleasePanel({ request, canIssue }: { request: BloodReq
         <WarningRegular /> Life-threatening bleeding and no time to cross-match?
       </Text>
       <Text>
-        A doctor can authorise release of uncross-matched blood: only group O Rh(D)-negative packed red cells, or AB
-        plasma if the patient is not grouped yet. The decision is recorded with the doctor’s name and audited.
+        The treating doctor can authorise release of uncross-matched blood from their own sign-in: only group O
+        Rh(D)-negative packed red cells, or AB plasma if the patient is not grouped yet. The blood bank issues it only
+        once the doctor has.
       </Text>
-      {canIssue && (
+      {canAuthorise ? (
         <div>
           <Button
             appearance="primary"
@@ -446,9 +530,11 @@ export function EmergencyReleasePanel({ request, canIssue }: { request: BloodReq
             style={{ backgroundColor: tokens.colorPaletteRedBackground3 }}
             onClick={() => setOpen(true)}
           >
-            Authorise emergency release
+            Authorise uncrossmatched release
           </Button>
         </div>
+      ) : (
+        <Caption1>Ask the treating doctor to authorise it on this request, signed in as themselves.</Caption1>
       )}
       {open && <EmergencyReleaseDialog request={request} onClose={() => setOpen(false)} />}
     </div>
@@ -459,23 +545,23 @@ function EmergencyReleaseDialog({ request, onClose }: { request: BloodRequestDet
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const [doctor, setDoctor] = useState('');
+  const doctor = useSession((s) => s.user?.displayName);
   const [reason, setReason] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const authorise = useMutation({
-    mutationFn: () => bloodApi.emergencyRelease(request.id, doctor.trim(), reason.trim()),
+    mutationFn: () => bloodApi.emergencyRelease(request.id, reason.trim()),
     onSuccess: () => {
       notify.warning(
-        'Emergency release authorised',
-        'Issue only O Rh(D)-negative red cells or AB plasma until the patient is cross-matched.',
+        'Uncross-matched release authorised',
+        'The blood bank issues only O Rh(D)-negative red cells or AB plasma until the patient is cross-matched.',
       );
       void queryClient.invalidateQueries({ queryKey: bloodKeys.request(request.id) });
       onClose();
     },
   });
-  const valid = doctor.trim().length > 2 && reason.trim().length >= 10 && confirmed;
+  const valid = reason.trim().length >= 10 && confirmed;
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ doctor, reason, confirmed }),
+    dirty: useValuesChanged({ reason, confirmed }),
     busy: authorise.isPending,
     onClose,
   });
@@ -498,26 +584,17 @@ function EmergencyReleaseDialog({ request, onClose }: { request: BloodRequestDet
               Patient: <Text weight="semibold">{request.patientName}</Text> ({request.uhid}) · request{' '}
               {request.requestNumber}
             </Text>
-            <Field label="Doctor authorising the release" required>
-              <Input
-                value={doctor}
-                onChange={(_, d) => setDoctor(d.value)}
-                maxLength={200}
-                autoFocus
-                placeholder="Name of the treating doctor"
-              />
-            </Field>
             <Field
               label="Clinical reason"
               required
               hint="At least 10 characters, e.g. haemorrhagic shock after trauma, BP 70/40."
             >
-              <Textarea value={reason} onChange={(_, d) => setReason(d.value)} rows={3} maxLength={500} />
+              <Textarea value={reason} onChange={(_, d) => setReason(d.value)} rows={3} maxLength={500} autoFocus />
             </Field>
             <Checkbox
               checked={confirmed}
               onChange={(_, d) => setConfirmed(d.checked === true)}
-              label="I confirm the doctor above has authorised release of uncross-matched blood for this life-threatening situation."
+              label={`I, ${doctor ?? 'the signed-in doctor'}, am treating this patient and authorise release of uncross-matched blood for this life-threatening situation.`}
             />
             <ActionError error={authorise.error} />
           </DialogContent>
@@ -553,6 +630,7 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
   const notify = useNotify();
   const queryClient = useQueryClient();
   const letterhead = useLetterhead();
+  const userId = useSession((s) => s.user?.id);
   const [term, setTerm] = useState('');
   const [number, setNumber] = useState('');
   const [collector, setCollector] = useState('');
@@ -574,6 +652,7 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
         .sort((a, b) => Date.parse(b.performedAt) - Date.parse(a.performedAt))[0]
     : undefined;
   const validCrossMatch =
+    !request.groupingHeld &&
     latestCrossMatch &&
     latestCrossMatch.result === 'Compatible' &&
     crossmatchValidity(latestCrossMatch.performedAt, now).valid
@@ -591,15 +670,30 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
       : issueCheck({
           component: u.componentType,
           unitGroup: u.bloodGroup,
-          patientGroup: request.patientBloodGroup,
+          patientGroup: request.groupingHeld ? 'Unknown' : request.patientBloodGroup,
           hasValidCompatibleCrossmatch: Boolean(validCrossMatch),
           emergencyReleaseAuthorised: Boolean(request.emergencyReleaseAuthorisedBy),
           unitStatus: u.status,
           unitExpired: u.isExpired || Date.parse(u.expiresAt) <= now,
           ttiCleared: ttiState(u.tti).cleared,
           reservedForOtherRequest: u.status === 'Reserved' && u.reservedForRequestId !== request.id,
+          groupingHeld: request.groupingHeld,
         })
     : null;
+  // Grouping, cross-match and issue are not all one person: refused where the facility has a second officer, and
+  // otherwise issued and listed for the medical officer's review.
+  const ownChecks =
+    check?.allowed && u
+      ? ownChecksReason({
+          userId,
+          groupedByUserId: request.groupedByUserId,
+          crossMatchedByUserId: validCrossMatch?.performedByUserId ?? null,
+          crossMatched: Boolean(validCrossMatch),
+          emergency: check.emergency,
+          releaseAuthorisedByUserId: request.emergencyReleaseByUserId,
+        })
+      : null;
+  const refusedOwnChecks = ownChecks !== null && request.separateVerifier;
 
   const issue = useMutation({
     mutationFn: () => bloodApi.issue(request.id, u?.id ?? '', collector.trim()),
@@ -701,7 +795,24 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
               </MessageBarBody>
             </MessageBar>
           )}
-          {check?.allowed && check.emergency && (
+          {refusedOwnChecks && (
+            <MessageBar intent="error" layout="multiline" politeness="assertive">
+              <MessageBarBody>
+                <MessageBarTitle>Another blood bank officer issues this unit</MessageBarTitle>
+                {ownChecks}
+              </MessageBarBody>
+            </MessageBar>
+          )}
+          {ownChecks !== null && !request.separateVerifier && (
+            <MessageBar intent="warning" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle>Issued on your checks alone</MessageBarTitle>
+                {ownChecks} This facility has no second officer on duty, so you may issue it: it is listed for the
+                medical officer’s review.
+              </MessageBarBody>
+            </MessageBar>
+          )}
+          {check?.allowed && !refusedOwnChecks && check.emergency && (
             <MessageBar intent="warning" layout="multiline">
               <MessageBarBody>
                 <MessageBarTitle>Uncross-matched — emergency release</MessageBarTitle>
@@ -710,7 +821,7 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
               </MessageBarBody>
             </MessageBar>
           )}
-          {check?.allowed && !check.emergency && (
+          {check?.allowed && !refusedOwnChecks && !check.emergency && (
             <MessageBar intent="success">
               <MessageBarBody>All checks passed for {request.patientName}.</MessageBarBody>
             </MessageBar>
@@ -729,7 +840,7 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
         <Button
           appearance="primary"
           size="large"
-          disabled={!u || !check?.allowed || !collector.trim() || issue.isPending}
+          disabled={!u || !check?.allowed || refusedOwnChecks || !collector.trim() || issue.isPending}
           icon={issue.isPending ? <Spinner size="tiny" aria-hidden /> : <PrintRegular />}
           onClick={submit}
         >
@@ -813,6 +924,11 @@ export function IssuesTable({
                 {i.isEmergencyRelease && (
                   <Badge color="danger" appearance="filled">
                     Uncross-matched
+                  </Badge>
+                )}
+                {i.issuedOnOwnChecks && (
+                  <Badge color="warning" appearance="tint">
+                    One officer — for review
                   </Badge>
                 )}
                 {i.returnedAt ? (

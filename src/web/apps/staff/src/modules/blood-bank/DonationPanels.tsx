@@ -16,8 +16,8 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { BeakerRegular, DeleteRegular, PrintRegular } from '@fluentui/react-icons';
-import { formatDateTime, type BloodGroup } from '@hc360/core';
+import { BeakerRegular, CheckmarkCircleRegular, DeleteRegular, EditRegular, PrintRegular } from '@fluentui/react-icons';
+import { formatDateTime, useSession, type BloodGroup } from '@hc360/core';
 import { ConfirmDialog, DataTable, sameValues, useLeaveGuard, useNotify, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -90,16 +90,22 @@ const useStyles = makeStyles({
 // ---------------------------------------------------------------- grouping and TTI results
 
 /**
- * ABO/Rh(D) group and the five mandatory TTI markers (HIV, HBsAg, HCV, syphilis, malaria). Units leave quarantine
- * only when grouped and every marker is non-reactive; any reactive marker discards every unit of the donation and
- * defers the donor. Results can be completed later but never changed once all five are in.
+ * ABO/Rh(D) group and the five mandatory TTI markers (HIV, HBsAg, HCV, syphilis, malaria). Any reactive marker discards
+ * every unit of the donation and defers the donor at once. Results that clear it release nothing by themselves: another
+ * blood bank officer verifies them, and only then do the units leave quarantine (where the facility has no second officer
+ * on duty, the one who entered them may, and the release is listed for the medical officer's review). Markers still
+ * pending are completed later; complete results are corrected only by whoever entered them, and never once verified.
  */
 export function LabResultsPanel({ donation, canManage }: { donation: DonationDetail; canManage: boolean }) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
+  const userId = useSession((s) => s.user?.id);
   const state = ttiState(donation.tti);
-  const editable = canManage && !state.complete && donation.status !== 'Discarded';
+  const enteredByMe = donation.labResultsByUserId !== null && donation.labResultsByUserId === userId;
+  const open = donation.status !== 'Discarded' && donation.verifiedAt === null;
+  const [correcting, setCorrecting] = useState(false);
+  const editable = canManage && open && (!state.complete || (enteredByMe && correcting));
   const shown = { group: donation.bloodGroup === 'Unknown' ? ('' as const) : donation.bloodGroup, tti: donation.tti };
   // Only what is changed here is kept; until then the panel shows the donation as the server has it now.
   const [edits, setEdits] = useState<{ group: BloodGroup | ''; tti: TtiPanel } | null>(null);
@@ -107,7 +113,10 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
   const [baseVersion, setBaseVersion] = useState<number | null>(null);
   const { group, tti } = edits ?? shown;
   const [confirmReactive, setConfirmReactive] = useState(false);
+  const [confirmVerify, setConfirmVerify] = useState(false);
   const draft = ttiState(tti);
+  // Another officer verifies; the one who entered them only where the facility has no second officer.
+  const canVerify = canManage && donation.awaitingVerification && (!enteredByMe || !donation.separateVerifier);
 
   const change = (next: Partial<{ group: BloodGroup | ''; tti: TtiPanel }>) => {
     setBaseVersion((base) => base ?? donation.version);
@@ -131,16 +140,19 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
         draft.reactive.length > 0
           ? 'Reactive result recorded'
           : draft.cleared
-            ? 'Results recorded — units released to stock'
+            ? 'Results recorded — awaiting verification'
             : 'Results saved',
         draft.reactive.length > 0
           ? 'All units from this donation were discarded and the donor was deferred.'
-          : undefined,
+          : draft.cleared
+            ? 'The units stay in quarantine until another blood bank officer verifies the results.'
+            : undefined,
       );
       // Shown from the donation as read again: what was changed here goes once that is in.
       await queryClient.invalidateQueries({ queryKey: bloodKeys.all });
       setEdits(null);
       setBaseVersion(null);
+      setCorrecting(false);
     },
     onError: (error) => {
       setConfirmReactive(false);
@@ -149,6 +161,22 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
         setEdits(null);
         setBaseVersion(null);
         notify.warning('The results changed meanwhile', 'They have been reloaded. Check them and enter yours again.');
+        void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
+      }
+    },
+  });
+
+  const verify = useMutation({
+    mutationFn: () => bloodApi.verifyLabResults(donation.id, donation.version),
+    onSuccess: async () => {
+      setConfirmVerify(false);
+      notify.success('Results verified — units released to stock');
+      await queryClient.invalidateQueries({ queryKey: bloodKeys.all });
+    },
+    onError: (error) => {
+      setConfirmVerify(false);
+      if (isConcurrencyConflict(error)) {
+        notify.warning('The results changed meanwhile', 'They have been reloaded. Check them again before verifying.');
         void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
       }
     },
@@ -166,6 +194,27 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
               <MessageBarTitle>Reactive screening result</MessageBarTitle>
               All units from this donation were discarded and the donor was deferred. Recall the donor for confirmatory
               testing and counselling.
+            </MessageBarBody>
+          </MessageBar>
+        )}
+        {donation.awaitingVerification && (
+          <MessageBar intent="warning" layout="multiline">
+            <MessageBarBody>
+              <MessageBarTitle>Awaiting verification</MessageBarTitle>
+              {donation.separateVerifier
+                ? enteredByMe
+                  ? 'You entered these results. Another blood bank officer checks them against the worksheet and verifies them; until then the units stay in quarantine.'
+                  : `Entered by ${donation.labResultsByName ?? 'another officer'}. Check the group and every marker against the worksheet and the analyser’s printout, then verify: the units stay in quarantine until then.`
+                : 'This facility has no second officer on duty: the officer who entered these results may verify them, and the release is listed for the medical officer’s review.'}
+            </MessageBarBody>
+          </MessageBar>
+        )}
+        {donation.verifiedByEnterer && (
+          <MessageBar intent="warning" layout="multiline">
+            <MessageBarBody>
+              <MessageBarTitle>Released on one officer’s word</MessageBarTitle>
+              Entered and verified by {donation.verifiedByName ?? 'one officer'} with no second officer on duty. Listed
+              for the medical officer’s review.
             </MessageBarBody>
           </MessageBar>
         )}
@@ -190,8 +239,42 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
           ))}
         </div>
         <Caption1 className={styles.muted}>
-          {donation.labResultsAt ? `Recorded ${formatDateTime(donation.labResultsAt)}` : 'No results yet.'}
+          {donation.labResultsAt
+            ? `Recorded ${formatDateTime(donation.labResultsAt)}${donation.labResultsByName ? ` by ${donation.labResultsByName}` : ''}`
+            : 'No results yet.'}
+          {donation.verifiedAt &&
+            (donation.verifiedByName
+              ? ` · verified ${formatDateTime(donation.verifiedAt)} by ${donation.verifiedByName}`
+              : ' · released on entry, before a second officer’s verification was required')}
         </Caption1>
+        <ActionError error={verify.error} />
+        {canManage && donation.awaitingVerification && (
+          <div className={styles.footer}>
+            {enteredByMe && (
+              <Button icon={<EditRegular />} onClick={() => setCorrecting(true)}>
+                Correct results
+              </Button>
+            )}
+            {canVerify && (
+              <Button appearance="primary" icon={<CheckmarkCircleRegular />} onClick={() => setConfirmVerify(true)}>
+                {enteredByMe ? 'Verify my results (no second officer)' : 'Verify results'}
+              </Button>
+            )}
+          </div>
+        )}
+        <ConfirmDialog
+          open={confirmVerify}
+          title={`Verify the results of bag ${donation.bagNumber}?`}
+          confirmLabel="Verify and release"
+          busy={verify.isPending}
+          onConfirm={() => verify.mutate()}
+          onCancel={() => setConfirmVerify(false)}
+        >
+          {groupLabel(donation.bloodGroup)}, all five markers non-reactive, as entered by{' '}
+          {donation.labResultsByName ?? 'the officer'}. Verify only after checking them against the worksheet and the
+          analyser’s printout: the units leave quarantine and go to stock.
+          {enteredByMe && ' You entered them yourself: the release is listed for the medical officer’s review.'}
+        </ConfirmDialog>
       </div>
     );
   }
@@ -240,7 +323,10 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
         </MessageBar>
       ) : draft.cleared ? (
         <MessageBar intent="success">
-          <MessageBarBody>All five markers non-reactive: the units leave quarantine when saved.</MessageBarBody>
+          <MessageBarBody>
+            All five markers non-reactive: the units stay in quarantine until another blood bank officer verifies the
+            results.
+          </MessageBarBody>
         </MessageBar>
       ) : (
         <Caption1 className={styles.muted}>
@@ -249,6 +335,18 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
       )}
       <ActionError error={save.error} />
       <div className={styles.footer}>
+        {correcting && (
+          <Button
+            disabled={save.isPending}
+            onClick={() => {
+              setEdits(null);
+              setBaseVersion(null);
+              setCorrecting(false);
+            }}
+          >
+            Cancel correction
+          </Button>
+        )}
         <Button
           appearance="primary"
           icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <BeakerRegular />}
@@ -431,7 +529,20 @@ export function ComponentsTable({ units, now, canManage }: { units: BloodUnitDto
           },
           { key: 'group', header: 'Group', width: 110, render: (u) => groupLabel(u.bloodGroup) },
           { key: 'expiry', header: 'Expiry', render: (u) => <ExpiryText expiresAt={u.expiresAt} now={now} /> },
-          { key: 'status', header: 'Status', render: (u) => <UnitStatusBadge status={u.status} /> },
+          {
+            key: 'status',
+            header: 'Status',
+            render: (u) => (
+              <span>
+                <UnitStatusBadge status={u.status} />
+                {u.awaitingVerification && (
+                  <Caption1 block className={styles.muted}>
+                    Awaiting verification
+                  </Caption1>
+                )}
+              </span>
+            ),
+          },
           { key: 'tti', header: 'Screening', priority: 'low', render: (u) => <TtiBadge tti={u.tti} /> },
           { key: 'store', header: 'Stored at', priority: 'low', render: (u) => u.storageLocation ?? '—' },
         ]}

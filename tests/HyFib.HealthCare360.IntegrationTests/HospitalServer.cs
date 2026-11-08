@@ -11,6 +11,8 @@ using HyFib.HealthCare360.Integrations.Payments;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
+using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank;
+using HyFib.HealthCare360.Modules.SpecialtyCare.Features.BloodBank;
 using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Hosting;
@@ -79,6 +81,18 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.CanteenManager] = SystemRoles.CanteenManager,
         [Users.QualityManager] = SystemRoles.QualityManager,
         [Users.SecondSystemAdmin] = SystemAdministrationRole,
+        [Users.BloodBankOfficer] = SystemRoles.BloodBankOfficer,
+        [Users.SecondBloodBankOfficer] = SystemRoles.BloodBankOfficer,
+    };
+
+    /// <summary>
+    /// The names of accounts created on first use where two hold the same role and a test reads which of them did what (the
+    /// audit trail names both blood bank officers). Any other is "Demo" and its role.
+    /// </summary>
+    private static readonly Dictionary<string, string> NamesCreatedOnFirstUse = new(StringComparer.Ordinal)
+    {
+        [Users.BloodBankOfficer] = "Santosh Gaikwad",
+        [Users.SecondBloodBankOfficer] = "Priya Nair",
     };
 
     /// <summary>
@@ -559,7 +573,8 @@ public sealed class HospitalServer : IAsyncLifetime
         var temporary = "It-first-" + Guid.NewGuid().ToString("N");
         var practitionerId = userName == Users.SecondDoctor ? await SecondConsultantAsync() : null;
         await CreateUserAsync(admin, new CreateUserRequest(
-            userName, $"Demo {role}", Email: null, Phone: null, [roleId], [facilityId], facilityId, practitionerId, temporary));
+            userName, NamesCreatedOnFirstUse.GetValueOrDefault(userName, $"Demo {role}"), Email: null, Phone: null, [roleId], [facilityId], facilityId,
+            practitionerId, temporary));
 
         var first = await LogInAsync(http, userName, temporary);
         if (first.Restriction != AuthService.RestrictionPasswordChange || first.AccessToken is not { Length: > 0 } restricted)
@@ -762,6 +777,48 @@ public sealed class HospitalServer : IAsyncLifetime
         {
             await ApproveSettingAsync((await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Put, path)).Id);
         }
+    }
+
+    /// <summary>
+    /// Units leave quarantine only when a second blood bank officer verifies the donation's screening results: verified as
+    /// <see cref="Users.SecondBloodBankOfficer"/>, or as <see cref="Users.BloodBankOfficer"/> when the second one entered
+    /// them, over the donation as it is now.
+    /// </summary>
+    public async Task VerifyDonationAsync(Guid donationId)
+    {
+        var path = $"/api/v1/blood-bank/donations/{donationId}";
+        foreach (var userName in new[] { Users.SecondBloodBankOfficer, Users.BloodBankOfficer })
+        {
+            var checker = await SignInAsync(userName);
+            var me = await checker.GetAsync<AuthUser>("/api/v1/auth/me");
+            var donation = await checker.GetAsync<DonationDetail>(path);
+            if (donation.LabResultsByUserId != me.Id)
+            {
+                await checker.PostAsync($"{path}/lab-results/verify", new VerifyLabResultsRequest(donation.Version));
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Grouping, cross-match and issue are not all one person: a unit cross-matched compatible (gel card) for a request as
+    /// <see cref="Users.SecondBloodBankOfficer"/>, so the officer who grouped the patient may issue it.
+    /// </summary>
+    public async Task<CrossMatchDto> CrossMatchAsSecondOfficerAsync(Guid requestId, Guid unitId)
+    {
+        var checker = await SignInAsync(Users.SecondBloodBankOfficer);
+        return await checker.PostAsync<CrossMatchDto>($"/api/v1/blood-bank/requests/{requestId}/crossmatches",
+            new RecordCrossMatchRequest(unitId, CrossmatchMethod.GelCard, CrossmatchResult.Compatible, null));
+    }
+
+    /// <summary>
+    /// Uncross-matched blood is released on the treating doctor's own authority: authorised for an emergency request as
+    /// <see cref="Users.Doctor"/>, signed in as themselves.
+    /// </summary>
+    public async Task AuthoriseEmergencyReleaseAsync(Guid requestId, string reason)
+    {
+        var doctor = await SignInAsync(Users.Doctor);
+        await doctor.PostAsync($"/api/v1/blood-bank/requests/{requestId}/emergency-release", new EmergencyReleaseRequest(reason));
     }
 
     /// <summary>
@@ -1084,6 +1141,19 @@ public sealed class HospitalServer : IAsyncLifetime
         /// first use, by the Super Administrator.
         /// </summary>
         public const string SecondSystemAdmin = "sysadmin2";
+
+        /// <summary>
+        /// Groups, cross-matches and issues blood and enters donations' screening results (Santosh Gaikwad). Created on first
+        /// use.
+        /// </summary>
+        public const string BloodBankOfficer = "bloodbank";
+
+        /// <summary>
+        /// A second blood bank officer (Priya Nair), who verifies the screening results others enter before the units leave
+        /// quarantine, and cross-matches what another grouped, so no unit goes out on one officer's checks. Created on first
+        /// use.
+        /// </summary>
+        public const string SecondBloodBankOfficer = "bloodbank2";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);

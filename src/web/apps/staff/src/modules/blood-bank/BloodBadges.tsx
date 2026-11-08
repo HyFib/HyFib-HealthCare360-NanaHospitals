@@ -54,6 +54,8 @@ export function BloodGroupBadge({
       size={size}
       icon={known ? <DropRegular /> : <WarningRegular />}
       className={styles.group}
+      // A label on a plain element is not read out: as an image, the group and its note are read as one.
+      role="img"
       aria-label={`Blood group ${groupLabel(group)}${note ? `, ${note}` : ''}`}
     >
       {groupLabel(group)}

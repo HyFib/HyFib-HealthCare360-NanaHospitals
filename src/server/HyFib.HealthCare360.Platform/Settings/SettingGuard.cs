@@ -174,11 +174,11 @@ public sealed record SettingChange(string Key, SettingRule? Rule, bool Secret, b
 /// <summary>
 /// The settings one administrator must not change alone (maker-checker). The administration settings screen saves any
 /// setting at once, so without this one person could switch off a control other people's second check relies on (the
-/// second pathologist, the second doctor on a death certificate, administration only on enrolled desktops), raise a limit
-/// that lets money out (a discount given on one's own authority), or send money, patients' data or critical alerts
-/// somewhere else (the portal's address in every SMS, a payment gateway's keys, the on-call number). A change that loosens
-/// one of these, or changes where something goes, waits for a second administrator (<see cref="ChangeKind"/>); the stricter
-/// direction is made at once, and any other setting is saved at once as before.
+/// second pathologist, the second doctor on a death certificate, the second blood bank officer, administration only on
+/// enrolled desktops), raise a limit that lets money out (a discount given on one's own authority), or send money,
+/// patients' data or critical alerts somewhere else (the portal's address in every SMS, a payment gateway's keys, the
+/// on-call number). A change that loosens one of these, or changes where something goes, waits for a second administrator
+/// (<see cref="ChangeKind"/>); the stricter direction is made at once, and any other setting is saved at once as before.
 /// <para>
 /// The keys are the modules' own (<c>LabResultService.SeparateVerifierSetting</c> and the others named beside each);
 /// SettingApprovalTests checks each against its module's constant. Every credential (a <c>*.secret</c> key, or a value
@@ -213,6 +213,11 @@ public static class SettingGuard
         // VitalRegistrationService.ConfirmationSetting
         ["mrd.deathCertificateConfirmation"] = new SettingSwitch("Second doctor on death certificates",
             "Whether a second doctor confirms each death certificate before it is reported to the Registrar. Off, the certifying doctor's word alone is reported.",
+            DefaultOn: true),
+
+        // BloodBankSettings.SeparateVerifier (the SpecialtyCare module): on unless set to false.
+        ["bloodbank.separateVerifier"] = new SettingSwitch("Second blood bank officer",
+            "Whether a second blood bank officer verifies a donation's screening results before its units leave quarantine, and issues blood one officer both grouped and cross-matched. Off, one officer does all of it, and what they release so is listed for the medical officer's review.",
             DefaultOn: true),
 
         // AdministrationOnDesktop.SettingKey; not set, the server's settings file decides (on, as it ships).

@@ -2,13 +2,15 @@ using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Common;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare.Features.BloodBank;
 
 /// <summary>
 /// /api/v1/blood-bank — donors, screening questionnaire and eligibility, donations, component separation and
-/// grouping/TTI results. Donor data (including reactive results) is confidential: every endpoint needs
-/// <c>bloodbank.donors.manage</c> or <c>bloodbank.inventory.manage</c>, and donor record views are audited.
+/// grouping/TTI results and their verification by a second officer. Donor data (including reactive results) is
+/// confidential: every endpoint needs <c>bloodbank.donors.manage</c> or <c>bloodbank.inventory.manage</c>, and donor record
+/// views are audited.
 /// </summary>
 internal static class DonorEndpoints
 {
@@ -43,6 +45,11 @@ internal static class DonorEndpoints
         group.MapPut("/donations/{id:guid}/lab-results", async (Guid id, RecordLabResultsRequest r, DonorService s, CancellationToken ct) =>
                 (await s.RecordLabResultsAsync(id, r, ct)).ToNoContent())
             .RequirePermission(SpecialtyCarePermissions.BloodBankInventory).WithValidation<RecordLabResultsRequest>();
+
+        // Whoever may enter results and prepare and discard stock verifies another officer's results, which releases the units.
+        group.MapPost("/donations/{id:guid}/lab-results/verify", async (Guid id, VerifyLabResultsRequest r, DonorService s, CancellationToken ct) =>
+                (await s.VerifyLabResultsAsync(id, r, ct)).ToNoContent())
+            .RequirePermission(SpecialtyCarePermissions.BloodBankInventory);
     }
 
     private static async Task<IResult> ListDonors([AsParameters] PageQuery query, BloodGroup? bloodGroup, bool? eligibleOnly, HospitalDbContext db, TimeProvider time, CancellationToken ct)
@@ -97,7 +104,14 @@ internal static class DonorEndpoints
             donor.IsPermanentlyDeferred, donor.DeferralReason, donor.Notes, donor.IsActive, screenings.Select(ToDto).ToList(), donations, donor.Version));
     }
 
-    private static async Task<IResult> ListDonations([AsParameters] PageQuery query, DonationStatus? status, bool? pendingResults, HospitalDbContext db, CancellationToken ct)
+    /// <summary>
+    /// Donations, newest first. <c>awaitingVerification</c>: results that clear the donation, waiting for a second officer.
+    /// <c>oneOfficer</c>: released on one officer's word where the facility has no second officer, for the medical officer's
+    /// review.
+    /// </summary>
+    private static async Task<IResult> ListDonations(
+        [AsParameters] PageQuery query, DonationStatus? status, bool? pendingResults, bool? awaitingVerification, bool? oneOfficer, HospitalDbContext db,
+        CancellationToken ct)
     {
         var page = query.ToRequest();
         var donations = db.Set<Donation>().AsNoTracking();
@@ -111,6 +125,18 @@ internal static class DonorEndpoints
             donations = donations.Where(d => d.Status != DonationStatus.Discarded && d.LabResultsAt == null);
         }
 
+        if (awaitingVerification == true)
+        {
+            donations = donations.Where(d => d.VerifiedAt == null && d.Status != DonationStatus.Discarded && d.BloodGroup != BloodGroup.Unknown
+                                             && d.Tti.Hiv == TtiResult.NonReactive && d.Tti.HbsAg == TtiResult.NonReactive && d.Tti.Hcv == TtiResult.NonReactive
+                                             && d.Tti.Syphilis == TtiResult.NonReactive && d.Tti.Malaria == TtiResult.NonReactive);
+        }
+
+        if (oneOfficer == true)
+        {
+            donations = donations.Where(d => d.VerifiedByEnterer);
+        }
+
         if (page.SearchTerm is { } term)
         {
             var number = term.ToUpperInvariant();
@@ -120,7 +146,7 @@ internal static class DonorEndpoints
         return TypedResults.Ok(await DonationRows(db, donations).ToPagedResultAsync(page, ct));
     }
 
-    private static async Task<IResult> GetDonation(Guid id, HospitalDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> GetDonation(Guid id, HospitalDbContext db, ISettingsService settings, TimeProvider time, CancellationToken ct)
     {
         var row = await (
                 from x in db.Set<Donation>().AsNoTracking()
@@ -139,8 +165,9 @@ internal static class DonorEndpoints
         var d = row.d;
         return TypedResults.Ok(new DonationDetail(
             d.Id, d.BagNumber, d.DonorId, row.DonorNumber, row.FullName, d.BagType, d.VolumeMl, d.Type, d.ReplacementForPatientId, d.CollectedAt,
-            d.CollectedByName, d.Status, d.BloodGroup, d.Tti, d.LabResultsAt, d.SeparatedAt, d.DonorReaction, d.Notes,
-            units.Select(u => InventoryEndpoints.ToDto(u, time.GetUtcNow())).ToList(), d.Version));
+            d.CollectedByName, d.Status, d.BloodGroup, d.Tti, d.LabResultsAt, d.LabResultsByUserId, d.LabResultsByName, d.AwaitingVerification,
+            d.VerifiedAt, d.VerifiedByName, d.VerifiedByEnterer, await settings.SeparateVerifierAsync(d.FacilityId, ct), d.SeparatedAt, d.DonorReaction,
+            d.Notes, units.Select(u => InventoryEndpoints.ToDto(u, time.GetUtcNow())).ToList(), d.Version));
     }
 
     private static IQueryable<DonationListItem> DonationRows(HospitalDbContext db, IQueryable<Donation> donations) =>
@@ -152,7 +179,11 @@ internal static class DonorEndpoints
             d.Tti.Hiv != TtiResult.Pending && d.Tti.HbsAg != TtiResult.Pending && d.Tti.Hcv != TtiResult.Pending
                 && d.Tti.Syphilis != TtiResult.Pending && d.Tti.Malaria != TtiResult.Pending,
             d.Tti.Hiv == TtiResult.Reactive || d.Tti.HbsAg == TtiResult.Reactive || d.Tti.Hcv == TtiResult.Reactive
-                || d.Tti.Syphilis == TtiResult.Reactive || d.Tti.Malaria == TtiResult.Reactive);
+                || d.Tti.Syphilis == TtiResult.Reactive || d.Tti.Malaria == TtiResult.Reactive,
+            d.VerifiedAt == null && d.Status != DonationStatus.Discarded && d.BloodGroup != BloodGroup.Unknown
+                && d.Tti.Hiv == TtiResult.NonReactive && d.Tti.HbsAg == TtiResult.NonReactive && d.Tti.Hcv == TtiResult.NonReactive
+                && d.Tti.Syphilis == TtiResult.NonReactive && d.Tti.Malaria == TtiResult.NonReactive,
+            d.VerifiedByEnterer);
 
     /// <summary>Earliest date the donor may give whole blood again (interval and deferral), null if permanently deferred.</summary>
     private static DateOnly? NextEligibleOn(Donor donor)

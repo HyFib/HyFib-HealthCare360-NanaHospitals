@@ -92,7 +92,7 @@ function DonationView({ donation: d }: { donation: DonationDetail }) {
 
       <Section
         title="Grouping and TTI screening"
-        description="Units stay in quarantine until the group is recorded and all five markers are non-reactive."
+        description="Units stay in quarantine until the group is recorded, all five markers are non-reactive and another blood bank officer has verified them."
       >
         <LabResultsPanel donation={d} canManage={canManage} />
       </Section>
