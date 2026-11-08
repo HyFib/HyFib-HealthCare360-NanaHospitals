@@ -59,7 +59,9 @@ public sealed record ItemDetail(
     string? Specification,
     decimal? CeilingPrice,
     bool IsHighAlert = false,
-    PendingDrugClass? PendingClass = null);
+    PendingDrugClass? PendingClass = null,
+    string? CeilingNotification = null,
+    PendingItemPricing? PendingPricing = null);
 
 public sealed record SaveItemRequest(
     string Code,
@@ -91,7 +93,9 @@ public sealed record SaveItemRequest(
     string? Specification = null,
     decimal? CeilingPrice = null,
     bool IsHighAlert = false,
-    string? ClassChangeReason = null);
+    string? ClassChangeReason = null,
+    string? CeilingNotification = null,
+    string? PriceChangeReason = null);
 
 /// <summary>Picker row: the item plus its sellable stock in the chosen store (when a store is given).</summary>
 public sealed record ItemLookup(
@@ -156,5 +160,7 @@ public sealed class SaveItemRequestValidator : AbstractValidator<SaveItemRequest
         RuleFor(x => x.CeilingPrice).GreaterThan(0).LessThanOrEqualTo(10_000_000).When(x => x.CeilingPrice is not null);
         RuleFor(x => x.Barcode).MaximumLength(64);
         RuleFor(x => x.ClassChangeReason).SafeText(500);
+        RuleFor(x => x.CeilingNotification).SafeText(100);
+        RuleFor(x => x.PriceChangeReason).SafeText(500);
     }
 }

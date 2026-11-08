@@ -20,6 +20,7 @@ import type {
   ValuationReport,
 } from '@/modules/inventory/api';
 import { BATCHES, DASHBOARD, IP_PHARMACY, ITEMS, OP_PHARMACY } from '../accessibility/fixtures/pharmacy';
+import type { ColdChainExcursionDto, ColdStorageUnitDto } from '@/modules/inventory/coldChain';
 import { paged, type FakeAnswers, type FakeRequest } from '../fakeApi';
 import { RECORD_ID } from '../roleAccessIds';
 
@@ -106,6 +107,8 @@ const STOCK: StockSummaryRow[] = [
     valueAtCost: 298,
     reorderLevel: 100,
     belowReorder: false,
+    blockedQuantity: 0,
+    onOrder: 0,
   },
   {
     itemId: PANTOPRAZOLE.id,
@@ -121,6 +124,8 @@ const STOCK: StockSummaryRow[] = [
     valueAtCost: 364,
     reorderLevel: 100,
     belowReorder: true,
+    blockedQuantity: 0,
+    onOrder: 0,
   },
   {
     itemId: TRAMADOL.id,
@@ -136,6 +141,8 @@ const STOCK: StockSummaryRow[] = [
     valueAtCost: 134.2,
     reorderLevel: 20,
     belowReorder: false,
+    blockedQuantity: 0,
+    onOrder: 0,
   },
 ];
 
@@ -644,7 +651,49 @@ const COUNT: CountDetail = {
   version: 3,
 };
 
+/** The OP pharmacy's vaccine fridge, warm since this morning: an excursion waiting for its action. */
+const COLD_UNIT: ColdStorageUnitDto = {
+  id: '0192a000-0000-7000-8000-00000000cc01',
+  storeId: OP_PHARMACY.id,
+  storeName: OP_PHARMACY.name,
+  code: 'F1',
+  name: 'Vaccine fridge',
+  kind: 'Refrigerator',
+  minCelsius: 2,
+  maxCelsius: 8,
+  isActive: true,
+  hasLogger: false,
+  loggerKeyIssuedAt: null,
+  lastReadingAt: '2026-11-08T05:00:00Z',
+  lastCelsius: 9.4,
+  lastOutOfRange: true,
+  openExcursionId: '0192a000-0000-7000-8000-00000000cc21',
+  lastLoggerReadingAt: null,
+  morningCheck: 'Taken',
+  eveningCheck: 'Upcoming',
+  version: 1,
+};
+
+const COLD_EXCURSION: ColdChainExcursionDto = {
+  id: COLD_UNIT.openExcursionId!,
+  unitId: COLD_UNIT.id,
+  startedAt: '2026-11-08T05:00:00Z',
+  endedAt: null,
+  lowestCelsius: 9.4,
+  highestCelsius: 9.4,
+  readingsOutOfRange: 1,
+  minCelsius: 2,
+  maxCelsius: 8,
+  extreme: 'up to 9.4 °C',
+  itemsAtRisk: 'Insulin glargine 100 IU/ml pen (batch G12, 10 PEN)',
+  actionTaken: null,
+  actionBy: null,
+  actionAt: null,
+};
+
 export const ANSWERS: FakeAnswers = {
+  'GET /api/v1/inventory/cold-chain/units': [COLD_UNIT],
+  'GET /api/v1/inventory/cold-chain/excursions': [COLD_EXCURSION],
   'GET /api/v1/inventory/categories': CATEGORIES,
   'GET /api/v1/inventory/items': paged(ITEM_LIST),
   'GET /api/v1/inventory/stock': paged(STOCK),
