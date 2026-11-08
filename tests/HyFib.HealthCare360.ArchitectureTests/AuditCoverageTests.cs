@@ -66,6 +66,8 @@ public sealed class AuditCoverageTests
         ["DischargeSummaryAmendment"] = "The amendment history of a signed discharge summary, with the content as it was; append-only.",
         ["DataRequestEvent"] = "A line of a data principal's request history, written once; the request is audited.",
         ["RetentionRun"] = "A clean-up run; each batch it removed and the run itself are audited (privacy.retention.*).",
+        ["ErasureReplay"] = "An erasure applied again after a restore, written once with its own critical audit entry (privacy.erasure_reapplied); never edited.",
+        ["ConsentManagerEvent"] = "The ids of a consent manager's events, kept so a repeat is acted on once; what each event changed is audited on its artefact (privacy.cm_*).",
         ["RetentionChange"] = "A change to a retention period, also audited as privacy.retention.changed.",
         ["RecordCopyFile"] = "A document of an issued copy, with its SHA-256; the database refuses changes and the issue is audited (record.copy_issued).",
         ["ReportDelivery"] = "A generated scheduled report file (encrypted) and its e-mails; downloading it is audited.",

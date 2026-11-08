@@ -15,6 +15,13 @@ import type {
   RetentionRunDto,
   RetentionRunResult,
 } from '@/modules/privacy/api';
+import type {
+  ConsentManagerDto,
+  DataAuditDto,
+  DpiaListItem,
+  ErasureLedgerStatus,
+  SdfOverview,
+} from '@/modules/privacy/dpdpApi';
 import { paged, STAFF_USER, type FakeAnswers } from '../fakeApi';
 import { RECORD_ID } from '../roleAccessIds';
 
@@ -440,7 +447,104 @@ const CERT_IN: CertInContact = {
   version: 1,
 };
 
+/** The DPDP duties' screens: the erasure ledger, the Significant Data Fiduciary register and the consent managers. */
+export const LEDGER: ErasureLedgerStatus = {
+  path: 'C:\\ProgramData\\HyFib\\HealthCare360\\privacy\\erasure-ledger.log',
+  mirrorPath: null,
+  entries: 3,
+  rejected: 0,
+  backupRetentionDays: 30,
+  replays: [],
+};
+
+export const SDF: SdfOverview = {
+  settings: {
+    designated: true,
+    notifiedOn: dateIn(-120),
+    dpo: {
+      name: 'Neha Kulkarni',
+      designation: 'Data Protection Officer',
+      email: 'dpo@nanahospitals.in',
+      phone: '+919876543210',
+      address: 'Pune',
+      basedInIndia: true,
+    },
+    version: 2,
+  },
+  dpias: 2,
+  dpiasDueSoon: 1,
+  dpiasOverdue: 0,
+  nextAuditDue: dateIn(200),
+  auditOverdue: false,
+};
+
+export const DPIAS: DpiaListItem[] = [
+  {
+    id: id('d1'),
+    number: 'DPIA26001',
+    activity: 'Lab reports by WhatsApp',
+    status: 'Approved',
+    highestRisk: 'High',
+    reviewDue: dateIn(20),
+    reviewOverdue: false,
+    daysToReview: 20,
+    approvedAt: daysAgo(300),
+    approvedByName: 'Neha Kulkarni',
+    awaitingApprovalSince: null,
+  },
+  {
+    id: id('d2'),
+    number: 'DPIA26002',
+    activity: 'Health check-up reminders',
+    status: 'Draft',
+    highestRisk: 'Medium',
+    reviewDue: dateIn(300),
+    reviewOverdue: false,
+    daysToReview: 300,
+    approvedAt: null,
+    approvedByName: null,
+    awaitingApprovalSince: null,
+  },
+];
+
+export const AUDITS: DataAuditDto[] = [
+  {
+    id: id('e1'),
+    periodFrom: dateIn(-530),
+    periodTo: dateIn(-165),
+    auditor: 'Independent Data Auditors LLP',
+    scope: 'All processing of patients’ data',
+    findings: 'Two minor observations.',
+    significantObservations: null,
+    completedOn: dateIn(-140),
+    reportedToBoardOn: null,
+    reportReference: null,
+    nextDue: dateIn(200),
+    overdue: false,
+    version: 1,
+  },
+];
+
+export const CONSENT_MANAGERS: ConsentManagerDto[] = [
+  {
+    id: id('c1'),
+    code: 'cm-one',
+    name: 'Consent Manager One',
+    registrationNumber: 'DPB-CM-0007',
+    baseUrl: 'https://cm.example.in/hc360',
+    isSimulator: false,
+    isActive: true,
+    activeArtefacts: 12,
+    version: 1,
+  },
+];
+
 export const ANSWERS: FakeAnswers = {
+  'GET /api/v1/privacy/erasure-ledger': LEDGER,
+  'GET /api/v1/privacy/sdf': SDF,
+  'GET /api/v1/privacy/sdf/dpias': DPIAS,
+  'GET /api/v1/privacy/sdf/audits': AUDITS,
+  'GET /api/v1/privacy/consent-managers': CONSENT_MANAGERS,
   [`GET /api/v1/privacy/patients/${RECORD_ID}/nominee`]: { nominee: NOMINEE },
   'GET /api/v1/privacy/overview': OVERVIEW,
   'GET /api/v1/privacy/requests': paged(REQUESTS),

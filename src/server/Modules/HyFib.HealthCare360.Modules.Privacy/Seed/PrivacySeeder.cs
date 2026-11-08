@@ -51,6 +51,9 @@ internal sealed class PrivacySeeder : ISeeder
             + "<p>If you have questions, contact our {{contact}}. You can also read this notice in the patient portal.</p>"
             + "<p>{{hospital}}</p>",
             "Personal data breach notice (DPDP Rules 2025, rule 7(1))"),
+        (GuardianConsentService.CodeTemplate, NotificationChannel.Sms, null,
+            "{{code}} is your code to give consent, as parent or guardian, for your child's records at {{hospital}}. Valid {{minutes}} minutes. Share it only at the hospital desk.",
+            "Code that verifies a parent's or guardian's consent for a child, DPDP Act s.9 (set the DLT template id before use)"),
     ];
 
     public async Task SeedAsync(HospitalDbContext db, CancellationToken cancellationToken)

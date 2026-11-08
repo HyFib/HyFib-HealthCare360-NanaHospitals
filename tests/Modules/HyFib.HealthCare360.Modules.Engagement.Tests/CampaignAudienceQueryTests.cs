@@ -154,6 +154,17 @@ public sealed class CampaignAudienceQueryTests
     }
 
     [Fact]
+    public void Children_are_never_in_a_campaign_even_with_marketing_consent_on_record()
+    {
+        // DPDP Act s.9(3): no targeted advertising at children, whatever consent was recorded (before the rule, or by a parent).
+        var adult = AddPatient(name: "Eighteen today", dateOfBirth: Today.AddYears(-18));
+        AddPatient(name: "Seventeen", dateOfBirth: Today.AddYears(-18).AddDays(1));
+        AddPatient(name: "Unknown age").DateOfBirth = null;
+
+        Audience().ShouldBe([adult]);
+    }
+
+    [Fact]
     public void Age_limits_are_inclusive_and_exclude_unknown_ages()
     {
         var turnsEighteenToday = AddPatient(name: "Eighteen", dateOfBirth: Today.AddYears(-18));
