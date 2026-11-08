@@ -40,7 +40,14 @@ public sealed class PortalFamilyTests(HospitalServer server)
             (await ownNumber.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain("portal.family_same_number");
         }
 
-        await frontOffice.PostAsync(path, new LinkFamilyMemberRequest(sonPhone, FamilyRelation.Parent, "  Patient  ", true));
+        // A code goes to the mother's own number, and nothing is shared until the desk enters it (maker-checker, slice 14).
+        var sent = await frontOffice.PostAsync<FamilyDeskCodeSent>(path, new LinkFamilyMemberRequest(sonPhone, FamilyRelation.Parent, "  Patient  ", true));
+        sent.SentTo.ShouldBe(Phone.Mask(Phone.Normalize(motherPhone)!));
+        (await frontOffice.GetAsync<PatientPortalAccessDto>(path)).Links.ShouldBeEmpty("No link until the patient's code is entered.");
+        var sonBefore = await server.SignInToPortalAsync(sonPhone);
+        (await sonBefore.GetAsync<List<PatientSummary>>("/api/v1/portal/profiles")).ShouldNotContain(p => p.Id == mother.Id);
+        await frontOffice.PostAsync<FamilyLinkCreated>($"{path}/codes/{sent.CodeId}/confirm",
+            new ConfirmFamilyLinkRequest(await server.DeskFamilyCodeAsync(mother.Id), "  Patient  "));
         using (var again = await frontOffice.SendRawAsync(HttpMethod.Post, path, new LinkFamilyMemberRequest(sonPhone, FamilyRelation.Parent, "Patient", true)))
         {
             again.StatusCode.ShouldBe(HttpStatusCode.Conflict);
@@ -78,7 +85,7 @@ public sealed class PortalFamilyTests(HospitalServer server)
 
         var ended = (await frontOffice.GetAsync<PatientPortalAccessDto>(path)).Links.ShouldHaveSingleItem();
         (ended.IsActive, ended.RevokedReason).ShouldBe((false, "Patient asked at the front desk"));
-        (await AuditActionsAsync(mother.Id)).ShouldBe(["portal.family.linked", "portal.family.ended"], ignoreOrder: true);
+        (await AuditActionsAsync(mother.Id)).ShouldBe(["portal.family.code_sent", "portal.family.linked", "portal.family.ended"], ignoreOrder: true);
     }
 
     [Fact]
@@ -235,9 +242,9 @@ public sealed class PortalFamilyTests(HospitalServer server)
         var (kept, _) = await RegisterPatientAsync(frontOffice, "Kamala");
         var grandsonPhone = NewMobile();
         var sisterPhone = NewMobile();
-        await frontOffice.PostAsync($"/api/v1/patients/{duplicate.Id}/portal-family", new LinkFamilyMemberRequest(grandsonPhone, FamilyRelation.Grandparent, "Patient", true));
-        await frontOffice.PostAsync($"/api/v1/patients/{duplicate.Id}/portal-family", new LinkFamilyMemberRequest(sisterPhone, FamilyRelation.Sibling, "Patient", true));
-        await frontOffice.PostAsync($"/api/v1/patients/{kept.Id}/portal-family", new LinkFamilyMemberRequest(sisterPhone, FamilyRelation.Sibling, "Patient", true));
+        await server.LinkFamilyAtDeskAsync(frontOffice, duplicate.Id, new LinkFamilyMemberRequest(grandsonPhone, FamilyRelation.Grandparent, "Patient", true));
+        await server.LinkFamilyAtDeskAsync(frontOffice, duplicate.Id, new LinkFamilyMemberRequest(sisterPhone, FamilyRelation.Sibling, "Patient", true));
+        await server.LinkFamilyAtDeskAsync(frontOffice, kept.Id, new LinkFamilyMemberRequest(sisterPhone, FamilyRelation.Sibling, "Patient", true));
 
         var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
         await MakerChecker.MergeAsync(mrd, await server.SignInAsync(HospitalServer.Users.MrdVerifier), duplicate.Id, kept.Id, "Registered twice");
@@ -258,8 +265,8 @@ public sealed class PortalFamilyTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var (patient, phone) = await RegisterPatientAsync(frontOffice, "Lakshmi");
         var (husband, _) = await RegisterPatientAsync(frontOffice, "Gopal");
-        await frontOffice.PostAsync($"/api/v1/patients/{patient.Id}/portal-family", new LinkFamilyMemberRequest(NewMobile(), FamilyRelation.Parent, "Patient", true));
-        await frontOffice.PostAsync($"/api/v1/patients/{husband.Id}/portal-family", new LinkFamilyMemberRequest(phone, FamilyRelation.Spouse, "Patient", true));
+        await server.LinkFamilyAtDeskAsync(frontOffice, patient.Id, new LinkFamilyMemberRequest(NewMobile(), FamilyRelation.Parent, "Patient", true));
+        await server.LinkFamilyAtDeskAsync(frontOffice, husband.Id, new LinkFamilyMemberRequest(phone, FamilyRelation.Spouse, "Patient", true));
 
         var portal = await server.SignInToPortalAsync(phone);
         var created = await portal.PostAsync<PortalRequestCreated>("/api/v1/portal/privacy/requests", new PortalDataRequestCreate(

@@ -13,7 +13,9 @@ export type WitnessPurposeKey =
   // A swab, needle or instrument count in the theatre: a second member of the OT team witnesses.
   | 'ot.count'
   // The anaesthetist's handover of a patient in the recovery room, confirmed at the recovery nurse's screen.
-  | 'ot.recovery_handover';
+  | 'ot.recovery_handover'
+  // A patient's consent to share their whole record, given with no signed form: another member of staff witnesses.
+  | 'consent.record_sharing';
 
 export interface ConfirmWitnessRequest {
   userName: string;

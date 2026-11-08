@@ -21,8 +21,11 @@ public sealed class ConsentTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var path = $"/api/v1/patients/{patient.Id}/consents";
 
+        // Sharing the whole record with no signed form is witnessed at the screen (maker-checker, slice 14): the consent names
+        // the witness who confirmed, not a name typed in.
+        var witness = await server.WitnessAsync(frontOffice, HospitalServer.Users.Nurse, "consent.record_sharing", patient.Id);
         var given = await frontOffice.PostAsync<Created>(path, new CaptureConsentRequest(
-            ConsentType.DataSharing, null, true, "Sister Mary", null, null, null, "Explained in Tamil"));
+            ConsentType.DataSharing, null, true, "Sister Mary", null, null, null, "Explained in Tamil", WitnessConfirmationId: witness.ConfirmationId));
         var refused = await frontOffice.PostAsync<Created>(path, new CaptureConsentRequest(ConsentType.Research, null, false, null, null, null, null, null));
 
         await doctor.PostAsync($"/api/v1/patients/consents/{given.Id}/revoke", new RevokeConsentRequest("  Patient asked to stop sharing  "));
@@ -36,7 +39,7 @@ public sealed class ConsentTests(HospitalServer server)
         withdrawn.CapturedByName.ShouldNotBeNullOrWhiteSpace();
         withdrawn.RevokedByName.ShouldNotBeNullOrWhiteSpace();
         withdrawn.RevokedByName.ShouldNotBe(withdrawn.CapturedByName, "The doctor withdrew what the front office recorded.");
-        withdrawn.WitnessName.ShouldBe("Sister Mary");
+        withdrawn.WitnessName.ShouldBe(witness.Name);
         consents.Single(c => c.Id == refused.Id).RevokedByName.ShouldBeNull();
 
         using (var again = await doctor.SendRawAsync(HttpMethod.Post, $"/api/v1/patients/consents/{given.Id}/revoke", new RevokeConsentRequest("Again")))
@@ -61,8 +64,14 @@ public sealed class ConsentTests(HospitalServer server)
         CaptureConsentRequest Given(ConsentType type, string? notes = null) => new(type, null, true, null, null, null, null, notes);
 
         // Sharing was agreed twice (a newer form): withdrawing either ends both, so no older copy keeps records shared.
-        var firstSharing = await nurse.PostAsync<Created>(path, Given(ConsentType.DataSharing));
-        var secondSharing = await nurse.PostAsync<Created>(path, Given(ConsentType.DataSharing));
+        var firstSharing = await nurse.PostAsync<Created>(path, Given(ConsentType.DataSharing) with
+        {
+            WitnessConfirmationId = await server.RecordSharingWitnessAsync(nurse, patient.Id, HospitalServer.Users.FrontOffice),
+        });
+        var secondSharing = await nurse.PostAsync<Created>(path, Given(ConsentType.DataSharing) with
+        {
+            WitnessConfirmationId = await server.RecordSharingWitnessAsync(nurse, patient.Id, HospitalServer.Users.FrontOffice),
+        });
         // Two operations, two consents: withdrawing one leaves the other.
         var knee = await nurse.PostAsync<Created>(path, Given(ConsentType.HighRiskProcedure, "Right knee replacement"));
         var hip = await nurse.PostAsync<Created>(path, Given(ConsentType.HighRiskProcedure, "Left hip replacement"));

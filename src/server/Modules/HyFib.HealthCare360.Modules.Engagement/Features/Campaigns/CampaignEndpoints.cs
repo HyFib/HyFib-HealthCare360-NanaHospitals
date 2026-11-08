@@ -5,8 +5,8 @@ namespace HyFib.HealthCare360.Modules.Engagement.Features.Campaigns;
 
 /// <summary>
 /// /api/v1/crm/campaigns: consent-only SMS/WhatsApp campaigns (CRM-03). Drafting and audience preview need
-/// crm.campaigns.manage. Scheduling, holding and cancelling need crm.campaigns.send, so a hospital can split the
-/// author from the approver.
+/// crm.campaigns.manage. Asking to schedule, holding and cancelling need crm.campaigns.send; a campaign is scheduled only
+/// when someone other than its author approves it (crm.campaigns.approve, 202 with the approval).
 /// </summary>
 internal static class CampaignEndpoints
 {
@@ -28,7 +28,7 @@ internal static class CampaignEndpoints
                 (await campaigns.UpdateAsync(id, r, ct)).ToNoContent())
             .RequirePermission(EngagementPermissions.CampaignsManage).WithValidation<SaveCampaignRequest>().RequireVersion();
         group.MapPost("/{id:guid}/schedule", async (Guid id, ScheduleCampaignRequest r, CampaignService campaigns, CancellationToken ct) =>
-                (await campaigns.ScheduleAsync(id, r, ct)).ToNoContent())
+                (await campaigns.ScheduleAsync(id, r, ct)).ToHttpResult(asked => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
             .RequirePermission(EngagementPermissions.CampaignsSend).WithValidation<ScheduleCampaignRequest>();
         group.MapPost("/{id:guid}/unschedule", async (Guid id, CampaignService campaigns, CancellationToken ct) =>
                 (await campaigns.UnscheduleAsync(id, ct)).ToNoContent())
@@ -69,15 +69,16 @@ internal static class CampaignEndpoints
             .ToPagedResultAsync(page, ct));
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> Get(Guid id, HospitalDbContext db, CampaignService campaigns, CancellationToken ct)
     {
         var c = await db.Set<Campaign>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        DateTimeOffset? asked = c is not null && (await campaigns.ScheduleAskedAsync([c.Id], ct)).TryGetValue(c.Id, out var since) ? since : null;
         return c is null
             ? Error.NotFound(nameof(Campaign), id).ToProblem()
             : TypedResults.Ok(new CampaignDetail(
                 c.Id, c.Name, c.Channel, c.TemplateKey, c.Message, c.Status,
                 new SegmentInput(c.SegmentMinAge, c.SegmentMaxAge, c.SegmentGender, c.SegmentCity, c.SegmentLastVisitFrom, c.SegmentLastVisitTo, c.SegmentDepartmentIds),
-                c.ScheduledAt, c.StartedAt, c.CompletedAt, c.CancelReason, c.AudienceCount, c.QueuedCount, c.SkippedCount, c.Version));
+                c.ScheduledAt, c.StartedAt, c.CompletedAt, c.CancelReason, c.AudienceCount, c.QueuedCount, c.SkippedCount, c.Version, asked));
     }
 
     /// <summary>Recipients are not facility-scoped, so the campaign is checked first (facility filter) before counting.</summary>
