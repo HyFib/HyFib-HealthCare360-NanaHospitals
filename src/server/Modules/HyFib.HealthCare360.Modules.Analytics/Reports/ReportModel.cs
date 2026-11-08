@@ -12,6 +12,9 @@ public enum ReportCategory
     Quality,
     Experience,
     People,
+
+    /// <summary>GST, TDS, payroll cost and insurance claims (added last: kept last so the earlier values keep their numbers).</summary>
+    Statutory,
 }
 
 /// <summary>How a column's values are formatted (on screen, in Excel and in CSV).</summary>
