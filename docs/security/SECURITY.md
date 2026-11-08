@@ -453,6 +453,16 @@ and grants nothing.
     witness at the bedside, the prescription. The rest of the item is saved at once, and the drug keeps its class until
     approved. An approval is refused (`approval.stale`) when the class changed after it was asked for. Made stricter, a
     class applies at once.
+  - an item's NPPA ceiling price raised or removed, or its GST rate changed (`inventory.item_price`): whoever keeps the
+    item master asks with the reason, and someone else who holds `masters.prices.approve` (accountants and hospital
+    administrators by default) approves, reading before and after in words and what it lets through. The item keeps its
+    pricing until then; a ceiling set or lowered applies at once. A scheduled medicine is not received with a printed MRP
+    above its ceiling (`grn.mrp_above_ceiling`, checked again at posting) nor sold or issued above it
+    (`pharmacy.price_above_ceiling`, DPCO 2013).
+  - a prescription line signed over a blocking safety alert is not dispensed or issued until a pharmacist acknowledges
+    it from their own sign-in (`pharmacy.override_unacknowledged`), never the account that signed it
+    (`pharmacy.override_own_prescription`); the acknowledgement is audited at Warning with the alert and the doctor's
+    reason (`pharmacy.safety_override_acknowledged`).
     A new price or GST rate, a price the counter may type, discounts allowed and a service put in use wait; what only
     narrows them (no counter price, no discounts, out of use) applies at once. While a change waits, any other change to
     the price is refused (`approval.already_requested`), the price in use put back included. A new service is made out

@@ -73,7 +73,7 @@ public sealed class SupplyChainModelTests
     {
         var permissions = new SupplyChainModule().Permissions.ToList();
 
-        permissions.Count.ShouldBe(15);
+        permissions.Count.ShouldBe(17);
         permissions.Select(p => p.Name).Distinct().Count().ShouldBe(permissions.Count);
         permissions.ShouldAllBe(p => p.DefaultRoles != null && p.DefaultRoles.Length > 0);
         permissions.Single(p => p.Name == SupplyChainPermissions.StockRead).DefaultRoles!.ShouldContain("Pharmacist");
@@ -92,5 +92,9 @@ public sealed class SupplyChainModelTests
         var grnApprove = permissions.Single(p => p.Name == SupplyChainPermissions.GrnApprove).DefaultRoles!;
         grnApprove.ShouldContain("PurchaseOfficer");
         grnApprove.ShouldNotContain("StoreKeeper");
+
+        // Whoever keeps a refrigerator reads it twice a day: the ward's nurses too (insulin, vaccines on the ward).
+        permissions.Single(p => p.Name == SupplyChainPermissions.ColdChainRecord).DefaultRoles!.ShouldContain("Nurse");
+        permissions.Single(p => p.Name == SupplyChainPermissions.ColdChainManage).DefaultRoles!.ShouldNotContain("Nurse");
     }
 }
