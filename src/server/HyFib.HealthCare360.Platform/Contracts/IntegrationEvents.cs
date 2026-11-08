@@ -58,9 +58,16 @@ public sealed record PrescriptionLine(
     int DurationDays,
     decimal Quantity,
     string? Instructions,
-    bool IsControlledDrug);
+    bool IsControlledDrug,
+    string? SafetyOverride = null);
 
-/// <summary>A doctor signed an e-prescription (ERX-03). Pharmacy queues it for dispensing.</summary>
+/// <summary>
+/// A doctor signed an e-prescription (ERX-03). Pharmacy queues it for dispensing. A line signed over a blocking safety
+/// alert (an allergy, a contraindicated interaction, a dose above the maximum) carries the alerts it was signed over
+/// (<see cref="PrescriptionLine.SafetyOverride"/>), and <paramref name="SafetyOverrideReason"/> is the prescriber's reason:
+/// the pharmacy does not dispense such a line until a pharmacist has acknowledged it. <paramref name="SignedByUserId"/> is
+/// the account that signed it, which may not acknowledge its own override.
+/// </summary>
 public sealed record PrescriptionSigned(
     Guid PrescriptionId,
     string PrescriptionNumber,
@@ -71,7 +78,9 @@ public sealed record PrescriptionSigned(
     Guid PractitionerId,
     bool IsInpatient,
     IReadOnlyList<PrescriptionLine> Lines,
-    DateTimeOffset SignedAt) : DomainEvent;
+    DateTimeOffset SignedAt,
+    string? SafetyOverrideReason = null,
+    Guid? SignedByUserId = null) : DomainEvent;
 
 public sealed record PrescriptionCancelled(Guid PrescriptionId, Guid PatientId, string Reason) : DomainEvent;
 

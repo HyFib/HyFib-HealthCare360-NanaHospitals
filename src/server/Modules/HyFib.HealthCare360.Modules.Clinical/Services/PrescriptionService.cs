@@ -430,7 +430,8 @@ public sealed class PrescriptionService(
 
         var signature = new PrescriptionSignature(currentUser.UserId, NewVerificationToken(), check.IsBlocked ? overrideReason : null,
             JsonSerializer.Serialize(check.Alerts, JsonOptions), confirmControlledDrugs, registration.Number.Trim(),
-            string.IsNullOrWhiteSpace(registration.Council) ? null : registration.Council.Trim());
+            string.IsNullOrWhiteSpace(registration.Council) ? null : registration.Council.Trim(),
+            check.IsBlocked ? OverriddenAlerts(check.BlockingAlerts) : null);
         var signed = prescription.Sign(signature, time.GetUtcNow());
         if (signed.IsFailure)
         {
@@ -481,6 +482,32 @@ public sealed class PrescriptionService(
         }
 
         return Result<IReadOnlyList<SafetyAlert>>.Ok(check.Alerts);
+    }
+
+    /// <summary>
+    /// The blocking alerts each prescribed line was signed over, in words ("ALLERGY: …; Maximum dose …"), keyed by the line:
+    /// the pharmacy shows them on the line and holds it until a pharmacist acknowledges them.
+    /// </summary>
+    internal static Dictionary<Guid, string> OverriddenAlerts(IEnumerable<SafetyAlert> blocking)
+    {
+        var lines = new Dictionary<Guid, List<string>>();
+        foreach (var alert in blocking)
+        {
+            foreach (var itemId in alert.ItemIds.Distinct())
+            {
+                if (!lines.TryGetValue(itemId, out var messages))
+                {
+                    lines[itemId] = messages = [];
+                }
+
+                if (!messages.Contains(alert.Message))
+                {
+                    messages.Add(alert.Message);
+                }
+            }
+        }
+
+        return lines.ToDictionary(l => l.Key, l => Fit(string.Join(" ", l.Value), 1000)!);
     }
 
     /// <summary>Refreshes pharmacy queue screens (ids only; the pharmacy reloads with its own permissions).</summary>

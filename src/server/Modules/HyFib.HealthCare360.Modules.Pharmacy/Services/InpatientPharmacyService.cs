@@ -238,6 +238,12 @@ public sealed class InpatientPharmacyService(
                     return Error.Rule("queue.line_mismatch", $"Choose which prescription line {item.Name} is issued for.");
                 }
 
+                // A line signed over a blocking safety alert goes to the ward only once a pharmacist has acknowledged it.
+                if (queueLine.NeedsOverrideAcknowledgement)
+                {
+                    return queueLine.OverrideRefusal();
+                }
+
                 var prescribed = queueLine.DrugItemId is { } prescribedId ? items.GetValueOrDefault(prescribedId) : null;
                 var substitution = SubstitutionPolicy.Evaluate(new SubstitutionCheck(
                     queueLine.DrugItemId, queueLine.GenericName ?? prescribed?.GenericName, queueLine.Strength ?? prescribed?.Strength,
@@ -308,6 +314,12 @@ public sealed class InpatientPharmacyService(
         {
             foreach (var moved in issued.Value.Movements.Where(m => m.LineId == p.Key))
             {
+                // A scheduled medicine is charged to the stay no more than its NPPA ceiling allows, as at the counter.
+                if (p.Item.CeilingRefusal(moved.BatchNumber, moved.Mrp) is { } aboveCeiling)
+                {
+                    return aboveCeiling;
+                }
+
                 var unitPrice = PriceOf(p.Item, moved.Mrp);
                 issue.Lines.Add(new IpIssueLine
                 {

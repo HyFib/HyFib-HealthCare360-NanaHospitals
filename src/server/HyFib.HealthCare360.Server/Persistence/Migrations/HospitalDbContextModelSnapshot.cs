@@ -27282,9 +27282,18 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("refills_used");
 
+                    b.Property<string>("SafetyOverrideReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("safety_override_reason");
+
                     b.Property<DateTimeOffset>("SignedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("signed_at");
+
+                    b.Property<Guid?>("SignedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("signed_by_user_id");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -27395,6 +27404,24 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_controlled_drug");
 
+                    b.Property<DateTimeOffset?>("OverrideAcknowledgedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("override_acknowledged_at");
+
+                    b.Property<string>("OverrideAcknowledgedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("override_acknowledged_by_name");
+
+                    b.Property<Guid?>("OverrideAcknowledgedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("override_acknowledged_by_user_id");
+
+                    b.Property<string>("OverrideAcknowledgementNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("override_acknowledgement_note");
+
                     b.Property<Guid>("PrescriptionLineId")
                         .HasColumnType("uuid")
                         .HasColumnName("prescription_line_id");
@@ -27412,6 +27439,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)")
                         .HasColumnName("route");
+
+                    b.Property<string>("SafetyOverride")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("safety_override");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -35242,6 +35274,221 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("calibration_records", "supplychain");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.ColdChainExcursion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ActionAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("action_at");
+
+                    b.Property<string>("ActionByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("action_by_name");
+
+                    b.Property<Guid?>("ActionByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("action_by_user_id");
+
+                    b.Property<string>("ActionTaken")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("action_taken");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<decimal>("HighestCelsius")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)")
+                        .HasColumnName("highest_celsius");
+
+                    b.Property<string>("ItemsAtRisk")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("items_at_risk");
+
+                    b.Property<decimal>("LowestCelsius")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)")
+                        .HasColumnName("lowest_celsius");
+
+                    b.Property<decimal>("MaxCelsius")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)")
+                        .HasColumnName("max_celsius");
+
+                    b.Property<decimal>("MinCelsius")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)")
+                        .HasColumnName("min_celsius");
+
+                    b.Property<int>("ReadingsOutOfRange")
+                        .HasColumnType("integer")
+                        .HasColumnName("readings_out_of_range");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_cold_chain_excursions");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_cold_chain_excursions_facility_id");
+
+                    b.HasIndex("UnitId", "StartedAt")
+                        .HasDatabaseName("ix_cold_chain_excursions_unit_id_started_at");
+
+                    b.ToTable("cold_chain_excursions", "supplychain");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.ColdStorageUnit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("kind");
+
+                    b.Property<decimal?>("LastCelsius")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)")
+                        .HasColumnName("last_celsius");
+
+                    b.Property<DateTimeOffset?>("LastLoggerReadingAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_logger_reading_at");
+
+                    b.Property<DateTimeOffset?>("LastReadingAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_reading_at");
+
+                    b.Property<string>("LoggerKeyHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("logger_key_hash");
+
+                    b.Property<DateTimeOffset?>("LoggerKeyIssuedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("logger_key_issued_at");
+
+                    b.Property<DateTimeOffset?>("LoggerSilenceAlertedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("logger_silence_alerted_at");
+
+                    b.Property<decimal>("MaxCelsius")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)")
+                        .HasColumnName("max_celsius");
+
+                    b.Property<decimal>("MinCelsius")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)")
+                        .HasColumnName("min_celsius");
+
+                    b.Property<DateTimeOffset?>("MissedAlertedThrough")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("missed_alerted_through");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid?>("OpenExcursionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("open_excursion_id");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("store_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_cold_storage_units");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_cold_storage_units_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_cold_storage_units_is_deleted");
+
+                    b.HasIndex("StoreId")
+                        .HasDatabaseName("ix_cold_storage_units_store_id");
+
+                    b.HasIndex("FacilityId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_cold_storage_units_facility_id_code")
+                        .HasFilter("is_deleted = false");
+
+                    b.ToTable("cold_storage_units", "supplychain");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.CondemnationRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -35361,6 +35608,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)")
                         .HasColumnName("batch_number");
+
+                    b.Property<decimal?>("CeilingPrice")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("ceiling_price");
 
                     b.Property<decimal>("CgstAmount")
                         .HasPrecision(18, 2)
@@ -36050,6 +36302,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid?>("CategoryId")
                         .HasColumnType("uuid")
                         .HasColumnName("category_id");
+
+                    b.Property<string>("CeilingNotification")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("ceiling_notification");
 
                     b.Property<decimal?>("CeilingPrice")
                         .HasPrecision(18, 4)
@@ -38141,6 +38398,84 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_stores_facility_id_code");
 
                     b.ToTable("stores", "supplychain");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.TemperatureReading", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Celsius")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)")
+                        .HasColumnName("celsius");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<decimal>("MaxCelsius")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)")
+                        .HasColumnName("max_celsius");
+
+                    b.Property<decimal>("MinCelsius")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)")
+                        .HasColumnName("min_celsius");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("note");
+
+                    b.Property<bool>("OutOfRange")
+                        .HasColumnType("boolean")
+                        .HasColumnName("out_of_range");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recorded_at");
+
+                    b.Property<string>("RecordedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("recorded_by_name");
+
+                    b.Property<Guid?>("RecordedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("recorded_by_user_id");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("source");
+
+                    b.Property<DateTimeOffset>("TakenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("taken_at");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_temperature_readings");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_temperature_readings_facility_id");
+
+                    b.HasIndex("UnitId", "TakenAt")
+                        .HasDatabaseName("ix_temperature_readings_unit_id_taken_at");
+
+                    b.HasIndex("UnitId", "TakenAt", "Source")
+                        .IsUnique()
+                        .HasDatabaseName("ix_temperature_readings_unit_id_taken_at_source")
+                        .HasFilter("source = 'Logger'");
+
+                    b.ToTable("temperature_readings", "supplychain");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.Vendor", b =>
@@ -48003,6 +48338,26 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_calibration_records_assets_asset_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.ColdChainExcursion", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SupplyChain.Domain.ColdStorageUnit", null)
+                        .WithMany()
+                        .HasForeignKey("UnitId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_cold_chain_excursions_cold_storage_unit_unit_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.ColdStorageUnit", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SupplyChain.Domain.Store", null)
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_cold_storage_units_store_store_id");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.CondemnationRequest", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.SupplyChain.Domain.Asset", null)
@@ -48309,6 +48664,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_stock_transfer_lines_stock_transfers_stock_transfer_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.TemperatureReading", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SupplyChain.Domain.ColdStorageUnit", null)
+                        .WithMany()
+                        .HasForeignKey("UnitId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_temperature_readings_cold_storage_units_unit_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Ambulance.AmbulanceTrip", b =>

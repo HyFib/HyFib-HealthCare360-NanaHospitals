@@ -30,6 +30,9 @@ are local (IST) calendar dates through `HospitalClock` / `TimeProvider`.
 | `purchase.approve` | Approve/reject requisitions and orders | HospitalAdmin |
 | `purchase.grn.receive` | Goods receipt against vendor invoices; send a receipt for approval | StoreKeeper, HospitalAdmin |
 | `purchase.grn.approve` | Check a goods receipt against the supplier's invoice and post it into stock (never one's own) | HospitalAdmin, PurchaseOfficer |
+| `inventory.cold_chain.record` | Record refrigerator and freezer temperatures (the twice-daily register) and the action taken on an excursion | StoreKeeper, HospitalAdmin, Pharmacist, Nurse |
+| `inventory.cold_chain.manage` | Set up refrigerators and freezers, their allowed range and their data loggers' keys | StoreKeeper, HospitalAdmin, Pharmacist |
+| `masters.prices.approve` (Platform's) | Approve an item's NPPA ceiling price raised or removed, or its GST rate changed, asked for by someone else | Accountant, HospitalAdmin |
 | `assets.read` | Asset register; report equipment breakdowns | BiomedicalEngineer, HospitalAdmin, StoreKeeper, PurchaseOfficer, Nurse |
 | `assets.manage` | Register assets and contracts; decide condemnation; dispose | BiomedicalEngineer, HospitalAdmin |
 | `assets.maintenance` | PM plans/visits, tickets, calibration; daily reminder | BiomedicalEngineer, HospitalAdmin |
@@ -42,6 +45,7 @@ Reader sets used below:
 * **Vendor readers**: any of `purchase.manage`, `purchase.approve`, `purchase.grn.receive`, `purchase.grn.approve`,
   `assets.manage`, `assets.maintenance`.
 * **Asset readers**: any of `assets.read`, `assets.manage`, `assets.maintenance`.
+* **Cold-chain readers**: any of `inventory.cold_chain.record`, `inventory.cold_chain.manage`, `inventory.stock.read`.
 
 ## Endpoints
 
@@ -57,7 +61,7 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 | GET | `/items?page&type&categoryId&schedule&controlledOnly&includeInactive` | Catalog readers | → paged `ItemListItem` (trigram name search; sort code/name/genericName/type/gstRate) |
 | GET | `/items/lookup?search&storeId&type&take` | Catalog readers | → `ItemLookup[]` (≤ 50, with available stock, MRP and nearest expiry in `storeId`) |
 | GET | `/items/by-code/{code}` · `/items/{id}` | Catalog readers | → `ItemDetail` |
-| POST · PUT | `/items` · `/items/{id}` | `inventory.items.manage` | `SaveItemRequest` (code, name, genericName, brandName, type, categoryId, strength, dosageForm, packSize, baseUnit, purchaseUnit, purchaseUnitFactor, hsnCode, gstRate ∈ {0, 0.25, 3, 5, 12, 18, 28, 40}, schedule None/Otc/G/H/H1/X, isControlled, isHighAlert, isColdChain, vedClass, reorder/min/max levels, manufacturer (or importer), barcode, isActive, version, specification, ceilingPrice) → 201 `{id}` · 204. `specification` says what a device is, as its bill prints it (for a stent, bare-metal or drug-eluting first, then material and size). `ceilingPrice` is the NPPA ceiling price of a unit of a price-controlled implant (a coronary stent, a knee implant), GST included: only an implant carries one, and it is more than 0 (`ceilingPrice`, 400). No patient is charged more for a unit, whatever an older pack's MRP: the OT and the IP pharmacy price within it, and Billing refuses more. NPPA revises it, so the store updates it |
+| POST · PUT | `/items` · `/items/{id}` | `inventory.items.manage` | `SaveItemRequest` (code, name, genericName, brandName, type, categoryId, strength, dosageForm, packSize, baseUnit, purchaseUnit, purchaseUnitFactor, hsnCode, gstRate ∈ {0, 0.25, 3, 5, 12, 18, 28, 40}, schedule None/Otc/G/H/H1/X, isControlled, isHighAlert, isColdChain, vedClass, reorder/min/max levels, manufacturer (or importer), barcode, isActive, version, specification, ceilingPrice, ceilingNotification, classChangeReason, priceChangeReason) → 201 `{id}` · 204 · 202 `ApprovalRequestDto` (a looser class or pricing waits, below). `specification` says what a device is, as its bill prints it (for a stent, bare-metal or drug-eluting first, then material and size). `ceilingPrice` is the NPPA ceiling price of a base unit, GST included, on a scheduled medicine (DPCO 2013) or a price-controlled implant (a coronary stent, a knee implant); nothing else carries one, and it is more than 0 (`ceilingPrice`, 400). `ceilingNotification` is the NPPA notification that fixed it (S.O. number and date). An implant is charged no more than its ceiling, whatever an older pack's MRP: the OT and the IP pharmacy price within it, and Billing refuses more. A medicine is not received or sold above it (*Price ceilings*, below). NPPA revises it, so the store updates it |
 | GET | `/stores?type&includeInactive` | Catalog readers or `inventory.adjustments.approve` | → `StoreDto[]` (central, pharmacy, ward, OT, lab, canteen, CSSD) |
 | GET | `/stores/{id}` | Catalog readers | → `StoreDto` |
 | POST · PUT | `/stores` · `/stores/{id}` | `inventory.items.manage` | `SaveStoreRequest` (code, name, type, departmentId, inChargeUserId, location, isActive, version) → 201 `{id}` · 204 |
@@ -65,7 +69,7 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 ### Stock — `/api/v1/inventory/stock`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/?storeId&page&type&belowReorder` | `inventory.stock.read` | → paged `StockSummaryRow` (on hand, reserved, available, expired, nearest expiry, value at cost, below-reorder flag) |
+| GET | `/?storeId&page&type&belowReorder` | `inventory.stock.read` | → paged `StockSummaryRow` (on hand, reserved, available, expired, nearest expiry, value at cost, below-reorder flag, blocked quantity, on order). Available is usable stock: not reserved, not expired, not in a blocked batch. The flag is the reorder report's rule (`ReorderCalculator.IsDue`): active, with a level, and usable stock plus what is still due on the store's approved, sent or part-received purchase orders at or under the level. Filtered with `belowReorder=true`, an item with no stock left in the store is listed too, as the report lists it |
 | GET | `/batches?storeId&itemId&includeEmpty` | Batch readers | → `BatchStock[]` in FEFO order |
 | GET | `/ledger?page&storeId&itemId&from&to&movement` | `inventory.stock.read` | → paged `LedgerRow` (stock card with the running balance; IST dates) |
 | GET | `/reservations?storeId&itemId` | Batch readers | → `ReservationRow[]` |
@@ -198,6 +202,62 @@ printer the server writes the tag (`asset-tags`); otherwise the tag page prints.
 | POST | `/tickets/{id}/assign` · `/start` · `/resolve` · `/close` · `/reopen` | `assets.maintenance` | `AssignTicketRequest` · — · `ResolveTicketRequest` (resolution, rootCause, cost, downtimeMinutes) · — · — → 204 |
 | GET · POST | `/{assetId}/calibrations` | Asset readers · `assets.maintenance` | → `CalibrationDto[]` · `RecordCalibrationRequest` (calibratedOn, agency, certificateNumber, certificateFileId, nextDueDate, outcome, remarks) → 201; only the latest certificate counts (`Asset.RecordCalibration`, unit-tested): it sets the asset's next calibration date, and a failed one puts the asset under maintenance. An older certificate entered later changes neither |
 
+### Cold chain — `/api/v1/inventory/cold-chain` (PH-04, INV-04)
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/units?storeId` | Cold-chain readers | → `ColdStorageUnitDto[]` (store, range, last reading and whether it was out of range, open excursion, logger and when it was last heard, today's morning and evening checks: Upcoming, Due, Taken or Missed) |
+| POST · PUT | `/units` · `/units/{id}` | `inventory.cold_chain.manage` | `SaveColdStorageUnitRequest` (storeId, code, name, kind Refrigerator/Freezer/ColdRoom, minCelsius?, maxCelsius?, isActive, version) → 201 id · 204. No range takes the kind's (2–8 °C; a freezer −25 to −15 °C). A range changed is audited (Warning) with what it was |
+| POST | `/units/{id}/logger-key` · `/units/{id}/logger-key/revoke` | `inventory.cold_chain.manage` | → `ColdChainLoggerKey` (key, shown once; path and header to send readings with) · 204. A new key stops the old one; only its SHA-256 is kept |
+| POST | `/units/{id}/readings` | `inventory.cold_chain.record` | `RecordTemperatureRequest` (celsius to one decimal, takenAt? within the last 12 hours, note) → 201 `TemperatureReadingRecorded` (outOfRange, allowedRange, excursionId) |
+| GET | `/units/{id}/register?date` | Cold-chain readers | → `ColdChainDailyRegister`: the day's readings (by hand with who, or from the logger), low and high, the morning and evening checks taken or missed, and the excursions that day with their action |
+| GET | `/excursions?storeId&openOnly` | Cold-chain readers | → `ColdChainExcursionDto[]` (from the first reading out of range to the first back in it: extreme, readings out of range, the cold-chain stock in the store when it began, action taken and by whom). `openOnly` lists those still out of range or with no action recorded |
+| POST | `/excursions/{id}/action` | `inventory.cold_chain.record` | `ExcursionActionRequest` (what was done about the stock) → 204, audited |
+| POST | `/logger/readings` | anonymous, the unit's `X-Device-Key` (rate-limited as patient monitors are) | `LoggerUploadRequest` (readings[takenAt, celsius], up to 500) → 200 `LoggerUploadResult` (accepted, duplicates, rejected with why). A reading already received is skipped (unique unit + time for logger readings); an unknown or wrong key is the same 401 |
+
+**Rules.** A reading is judged at one decimal against the unit's range as it was then (kept on the reading). One out of
+range with no excursion open opens one and alerts, once, the store's in-charge (`Store.InChargeUserId`; with none,
+everyone in the facility holding `inventory.cold_chain.manage`) in the app, critical, with the reading, the range and
+the cold-chain items (`Item.IsColdChain`) with stock in the store, by batch and quantity. Later readings out of range
+widen the same excursion; the first back in range ends it. A logger reading older than the unit's last reading (sent late
+after an outage) is kept in the register and moves nothing. Freezing is an excursion like warming.
+
+**The twice-daily check.** A manual reading between 06:00 and 11:00, and one between 16:00 and 21:00, hospital time, is
+the morning and the evening check. A logger does not stand in for it: the thermometer is read and entered by hand twice a
+day whether or not a logger is fitted, which is also how a failed logger is noticed. `ColdChainJob` (job-running nodes
+only, every 10 minutes) alerts each check missed since it last looked, once (the unit keeps the last check it looked at,
+`missed_alerted_through`; at most two days back; a unit set up during a window is not held to that check), and a logger
+not heard from for two hours, once until it is heard again; both go to the in-charge as warnings.
+
+## Price ceilings (DPCO 2013)
+
+A scheduled formulation's ceiling price is kept per base unit, with GST, on the item (`ceilingPrice`), as NPPA notifies
+it per tablet, capsule or ml. A pack's ceiling is that times the units in the pack, to the paisa (`PriceCeiling`), so a
+pack printed at its ceiling is never refused for the rounding of its MRP per unit.
+
+* **Receipt.** A goods receipt line of a medicine whose printed MRP is above its pack's ceiling is refused when it is
+  entered (422 `grn.mrp_above_ceiling`, naming the batch, the MRP and the ceiling) and again when it is posted, against
+  the ceiling then: a receipt entered before a cut is not posted above the new ceiling. The line keeps the ceiling it was
+  entered under.
+* **Sale.** A batch whose MRP per unit is above the ceiling is not sold at the counter or dispensed, and not issued to a
+  ward (422 `pharmacy.price_above_ceiling`, with the item and batch; see pharmacy.md). The pharmacist picks another
+  batch, or the store returns it to the supplier.
+* **Implants** keep their own rule: charged at the lower of MRP and ceiling, an older pack still used.
+
+## An item's ceiling price or GST rate loosened waits for someone who approves prices
+
+On an item already in the master, a ceiling **raised** or **removed**, or the **GST rate** changed either way, waits
+for a second person (`inventory.item_price`, MAKER-CHECKER.md slice 13). Someone else who holds `masters.prices.approve`
+(accountants and hospital administrators by default, as for every other price master) approves it in Approvals; the one
+who asked never does (`approval.self`). The rest of the item is saved at once, `PUT /items/{id}` answers 202 with the
+request, and the item keeps its ceiling, notification and rate until then (`pendingPricing` on `GET /items/{id}`). The
+request says before and after in words ("Ceiling ₹2.50 a TAB (₹25.00 a STRIP of 10) with GST, S.O. …; GST 5%") and what
+the change lets through (packs priced higher received and sold; every sale and purchase taxed at the new rate). Approved,
+it is made only over the item's pricing as it was asked (`approval.stale` otherwise), audited at Warning with both names
+(`inventory.item_price_changed`). A ceiling **set** or **lowered** applies at once: NPPA's cut is in force from its
+notification. While a change waits, a save asking other loosened pricing is refused (409 `inventory.item_price_waiting`).
+A save that loosens both the class and the pricing asks for both; the answer carries the classification's request, and
+the pricing's waits beside it in Approvals. A new item's pricing applies at once.
+
 ## Stock rules (INV-04)
 
 * `StockService` is the only code that changes stock quantities; documents never write batches directly.
@@ -279,7 +339,8 @@ and `ExpiringAsync(db, storeIds, today, days, includeExpired)` (`ExpiringBatch` 
 |---|---|---|
 | `ControlledStockMoved` (domain event, same transaction) | raised | Every ledger row of a register item (Schedule H1/X or `IsControlled`), with ledger id, batch, signed quantity, balance after and reference. Handled by Pharmacy, which writes the controlled-drug register line for movements made outside pharmacy screens (GRN, transfers, adjustments, write-offs, OT consumption) |
 
-The module handles no events from other modules, and publishes no real-time events.
+The module handles no events from other modules, and publishes no real-time events. Cold-chain alerts go through the
+outbox (`supplychain.cold-chain-alert`), so they are sent only once the reading is saved.
 
 ## Background job and notifications
 
@@ -289,6 +350,8 @@ calibrations due within 7 days or overdue, and warranties or AMC/CMC contracts l
 `/assets/maintenance`; severity *warning* when anything is overdue). The last run date is kept in the setting
 `supplychain.assets.reminders.last_run`, so a restart never sends the same day twice. A breakdown reported with
 `assetDown` notifies the same holders immediately. There are no SMS/WhatsApp templates.
+
+`ColdChainJob` (above, *Cold chain*) alerts missed temperature checks and silent loggers every 10 minutes.
 
 ## Number series (per facility)
 
@@ -351,7 +414,9 @@ orders made after it.
 vendor + vendor invoice number, filter `status <> 'Cancelled'`), `indents`, `indent_lines`, `indent_issues`,
 `indent_issue_lines`, `stock_transfers`/`_lines`, `stock_adjustments`/`_lines`, `stock_counts`/`_lines`, `assets`
 (unique tag), `asset_contracts`, `pm_plans`, `pm_visits`, `maintenance_tickets`, `calibration_records`,
-`condemnation_requests`. Precision: quantities (18,3), rates (18,4), percentages (6,2). Enums are stored as text,
+`condemnation_requests`, `cold_storage_units` (unique facility + code), `temperature_readings` (unique unit + time for
+logger readings), `cold_chain_excursions`. Items carry `ceiling_notification`; goods receipt lines the `ceiling_price`
+they were entered under. Precision: quantities (18,3), rates (18,4), percentages (6,2). Enums are stored as text,
 so queries that rank by an enum (indent priority, store type) rank explicitly or sort in memory.
 
 ## Open items for maintainers
