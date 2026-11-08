@@ -58,6 +58,10 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<PrescriptionNoticeRelease>();
         services.AddHostedService<PrescriptionNoticeReleaseJob>();
         services.AddSingleton<DscTrustStore>();
+        services.AddSingleton<DscCrlCache>();
+        services.AddSingleton<IDscOnlineRevocation, DscOnlineRevocation>();
+        services.AddScoped<DscRevocationCheck>();
+        services.AddHostedService<DscCrlRefreshJob>();
         services.AddScoped<IHealthWarningSource, DscTrustHealthWarnings>();
         services.AddScoped<PatientRecordQueries>();
         services.AddScoped<TimelineQueries>();

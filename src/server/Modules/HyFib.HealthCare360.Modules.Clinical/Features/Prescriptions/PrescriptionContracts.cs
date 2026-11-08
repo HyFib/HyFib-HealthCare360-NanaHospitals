@@ -285,7 +285,8 @@ public sealed record PrescriptionDigitalSignatureDto(
     string? ChainStatus,
     bool ChainTrusted,
     string? Message,
-    bool FinalCopyAvailable = true);
+    bool FinalCopyAvailable = true,
+    string? RevocationStatus = null);
 
 public sealed class PrescriptionItemRequestValidator : AbstractValidator<PrescriptionItemRequest>
 {
