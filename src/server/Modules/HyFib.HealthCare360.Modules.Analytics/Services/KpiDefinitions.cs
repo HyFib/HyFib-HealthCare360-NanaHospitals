@@ -15,7 +15,10 @@ public enum KpiAudience
 /// <param name="Formula">How the value is calculated, in the words the dashboard shows.</param>
 /// <param name="Source">Where the figures are recorded in HC360.</param>
 /// <param name="ReportId">The catalogue report computed with the same query, for the detail behind the figure.</param>
-/// <param name="Target">The hospital's target, when one is set; none is set for these KPIs yet.</param>
+/// <param name="Target">
+/// A target written into the catalogue itself; none is. Each facility sets its own targets and thresholds
+/// (<see cref="Domain.KpiTarget"/>), which the KPI set carries per KPI.
+/// </param>
 public sealed record KpiDefinition(
     string Key,
     string Label,

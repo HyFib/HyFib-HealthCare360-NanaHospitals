@@ -7,6 +7,7 @@ import type {
   ExtractFolder,
   KpiDefinitions,
   KpiSet,
+  KpiTargets,
   ReportCatalogue,
   ReportCatalogueItem,
   ReportParameter,
@@ -509,6 +510,43 @@ const FOLDER: ExtractFolder = {
   problem: null,
 };
 
+/** The facility's KPI targets: one set (with this month's status), one not. */
+const TARGETS: KpiTargets = {
+  facilityName: 'Nana Hospitals, Pune',
+  roles: ['Accountant', 'HospitalAdmin'],
+  kpis: [
+    {
+      key: 'occupancy',
+      label: 'Bed occupancy',
+      unit: 'percent',
+      higherIsBetter: true,
+      monthly: false,
+      formula: 'Inpatient days ÷ available bed-days × 100.',
+      target: {
+        target: 85,
+        amberThreshold: 80,
+        redThreshold: 70,
+        ownerRole: 'HospitalAdmin',
+        setByName: 'Dr. Meera Iyer',
+        setAt: '2026-11-01T05:00:00Z',
+        lastStatus: 'Amber',
+        lastValue: 76.4,
+        lastCheckedAt: '2026-11-08T04:30:00Z',
+        version: 3,
+      },
+    },
+    {
+      key: 'opVisits',
+      label: 'OP visits',
+      unit: 'count',
+      higherIsBetter: true,
+      monthly: true,
+      formula: 'Check-ins, excluding cancelled visits.',
+      target: null,
+    },
+  ],
+};
+
 /** Scheduled e-mails or extracts, by the `destination` asked for. */
 const schedules = (request: FakeRequest) =>
   request.url.searchParams.get('destination') === 'ExtractFolder' ? EXTRACTS : SCHEDULES;
@@ -525,6 +563,7 @@ const AS_FOR_EVERY_PERMISSION: FakeAnswers = {
   'GET /api/v1/analytics/schedules': schedules,
   'GET /api/v1/analytics/schedules/*': paged(DELIVERIES),
   'GET /api/v1/analytics/extracts/folder': FOLDER,
+  'GET /api/v1/analytics/kpi-targets': TARGETS,
 };
 
 /**
