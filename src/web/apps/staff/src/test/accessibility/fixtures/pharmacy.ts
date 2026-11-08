@@ -289,8 +289,10 @@ const drug = (
   version: 1,
   specification: null,
   ceilingPrice: null,
+  ceilingNotification: null,
   isHighAlert: false,
   pendingClass: null,
+  pendingPricing: null,
   ...overrides,
 });
 
@@ -413,10 +415,29 @@ export const BATCHES: Record<string, BatchStock[]> = {
 };
 
 /** What the dispensing screens ask the server for, beyond the patient's banner. */
+/** The same prescription, its first line signed over an allergy alert and not yet acknowledged by a pharmacist. */
+export const OVERRIDE_ENTRY_ID = '0192a000-0000-7000-8000-000000000e02';
+export const OVERRIDE_ENTRY: QueueEntryDetail = {
+  ...ENTRY,
+  id: OVERRIDE_ENTRY_ID,
+  prescriptionNumber: 'RX2600312',
+  safetyOverrideReason: 'Rash only, in childhood; tolerated a course last year',
+  lines: ENTRY.lines.map((line, index) =>
+    index === 0
+      ? {
+          ...line,
+          safetyOverride: `ALLERGY: ${line.drugName} contains paracetamol; the patient is allergic to paracetamol.`,
+        }
+      : line,
+  ),
+};
+
 export const PHARMACY_ANSWERS: FakeAnswers = {
   'GET /api/v1/pharmacy/queue': paged(QUEUE),
   'GET /api/v1/pharmacy/dashboard': DASHBOARD,
   [`GET /api/v1/pharmacy/queue/${ENTRY_ID}`]: ENTRY,
+  [`GET /api/v1/pharmacy/queue/${OVERRIDE_ENTRY_ID}`]: OVERRIDE_ENTRY,
+  [`POST /api/v1/pharmacy/queue/${OVERRIDE_ENTRY_ID}/lines/*`]: null,
   'GET /api/v1/inventory/stores': [OP_PHARMACY, IP_PHARMACY],
   'GET /api/v1/inventory/items/*': (request: FakeRequest) => ITEMS.find((item) => item.id === lastSegment(request)),
   'GET /api/v1/pharmacy/stock/batches': (request: FakeRequest) =>
