@@ -24,6 +24,7 @@ stay goes on, read in every facility: Clinical takes no order for a stay that is
 | `beds.housekeeping` | Housekeeping queue, release cleaned beds | Nurse, HospitalAdmin |
 | `nursing.chart` | Notes, handovers, intake/output, risk assessments, consultant visits | Nurse, Doctor |
 | `nursing.mar` | Medication chart and MAR | Nurse, Doctor |
+| `nursing.in_charge` | Ward nurse in charge: the verbal and telephone orders and nurses' stops not countersigned in time, listed and told of each | HospitalAdmin (give it to the ward sisters' role) |
 
 "Read set" below = any of `inpatient.admissions.read`, `beds.manage`, `beds.housekeeping`, `nursing.chart`, `inpatient.masters.manage`.
 
@@ -168,25 +169,47 @@ after discharge). Vitals are owned by Clinical and are not duplicated here.
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/admissions/{admissionId}/medication-orders?activeOnly` | `nursing.mar` or `nursing.chart` | → `MedicationOrderDto[]` (incl. `roundTimes`) |
-| POST | `/admissions/{admissionId}/medication-orders` | `nursing.mar` | `AddMedicationOrderRequest` (transcribed order; next 24 h scheduled) → 201; after the discharge, 422 `medication.discharged` |
-| POST | `/medication-orders/{id}/stop` | `nursing.mar` | `StopMedicationOrderRequest` → `MedicationOrderDto` (future doses cancelled) |
-| POST | `/medication-orders/{id}/schedule` | `nursing.mar` | → `ScheduleResult` (extend 24 h) |
+| POST | `/admissions/{admissionId}/medication-orders` | `nursing.mar` | `AddMedicationOrderRequest` (a prescriber's own order, signed at once, or a doctor's verbal or telephone order: `orderedByPractitionerId`, `mode`, `readBack`, `emergency`; next 24 h scheduled unless the doses are held) → 201; 422 `medication.verbal_order_required`, `medication.read_back_required`; 400 on `orderedByPractitionerId` (no doctor) or `drugItemId` (not in the master); after the discharge, 422 `medication.discharged` |
+| POST | `/medication-orders/{id}/stop` | `nursing.mar` | `StopMedicationOrderRequest` → `MedicationOrderDto`: a prescriber's stop cancels the future doses at once; anyone else's is asked for (`stopPending`, doses held) |
+| POST | `/medication-orders/{id}/countersign` | `clinical.prescriptions.sign` | `CountersignMedicationOrderRequest` (`version`) → `MedicationOrderDto`; only the doctor named, from their own account (403 `medication.countersign_not_prescriber`); held doses are scheduled |
+| POST | `/medication-orders/{id}/stop/countersign` | `clinical.prescriptions.sign` | `ConfirmStopRequest` (`version`) → the order stopped, the doses held since the stop was asked for cancelled |
+| POST | `/medication-orders/{id}/stop/decline` | `clinical.prescriptions.sign` | `DeclineStopRequest` (reason, `version`) → the order goes on; the nurse who asked is told |
+| GET | `/medication-orders/awaiting-countersignature?wardId&mine&overdueOnly` | `nursing.mar` or `nursing.in_charge` | → `AwaitingCountersignatureItem[]` (what waits for a doctor: for a ward, for the signed-in doctor, past its time) |
+| GET | `/drugs?search` | `nursing.mar` | → `WardDrugDto[]` (the drug master for the ward's order form, with its controlled and high-alert flags) |
+| POST | `/medication-orders/{id}/schedule` | `nursing.mar` | → `ScheduleResult` (extend 24 h); 422 while the doses are held |
 | GET | `/admissions/{admissionId}/mar?date` | `nursing.mar` or `nursing.chart` | → `MarEntryDto[]` (day + older undocumented doses, `isOverdue`) |
 | POST | `/admissions/{admissionId}/mar` | `nursing.mar` | `AddAdHocDoseRequest` (SOS/STAT; `givenNow`; `witnessConfirmationId` as below) → 201 `MarEntryDto`; after the discharge (late entries, 24 h) only a dose given before it, with its time, else 422 `medication.discharged` |
-| POST | `/mar/{id}/record` | `nursing.mar` | `RecordAdministrationRequest` (outcome Given/Held/Refused/Missed, administeredAt, reason — required unless given, batch, `witnessConfirmationId` — required for a controlled drug or high-alert medicine given, notes, `version`) → `MarEntryDto` (`witnessName`) |
+| POST | `/mar/{id}/record` | `nursing.mar` | `RecordAdministrationRequest` (outcome Given/Held/Refused/Missed, administeredAt, reason — required unless given, batch, `witnessConfirmationId` — required for a controlled drug or high-alert medicine given, or a dose with no order, notes, `version`) → `MarEntryDto` (`witnessName`, `needsWitness`, `heldBecause`); a held dose is not given (422 `medication.awaiting_countersignature`, `medication.stop_pending`) |
 | GET | `/wards/{wardId}/mar/due?withinMinutes` | `nursing.mar` | → `WardMarItem[]` (ward due/overdue worklist) |
 
 A controlled drug given (an order marked controlled: Schedule H1 or X, or NDPS) or a high-alert medicine given is
 witnessed by a second nurse, who proves who they are at the recording nurse's screen (ADR-014). An order that names an
 item of the drug master takes both flags from it when it is made, whatever the order form or the prescription line
-sent; so does the order made for a medicine the pharmacy issues without a prescription line. An order typed by name
-keeps the flags it was given. They type their own user name and password there, and
+sent; so does the order made for a medicine the pharmacy issues without a prescription line. A ward order typed in
+without an item of the master is always high-alert (its flags cannot be cleared by typing a name), and a dose with no
+order behind it is always witnessed. The witnesses type their own user name and password there, and
 their authenticator code when their account has one (`POST /api/v1/auth/witness`, purpose `mar.dose`, with the
 patient). Whoever keeps the MAR may witness (`nursing.mar`: nurses and doctors), never the nurse recording. The answer is
 a confirmation the recording nurse sends with the dose as `witnessConfirmationId`. It is good once, for that nurse, that
 patient and five minutes. It is spent in the dose's own save (422 `witness.confirmation_unusable` otherwise). The dose
 then names the witness's account (`WitnessUserId`) and name: not a name typed, as before (doses recorded before keep
 theirs). Without one, 422 `mar.witness_required`. The witness's password never reaches this module.
+
+**Verbal and telephone orders (maker-checker slice 5).** A ward order is signed at once only by a prescriber
+(`clinical.prescriptions.sign`) writing in their own name: the practitioner named is the one linked to their account.
+Anyone else, a nurse or a doctor writing another doctor's order, writes that doctor's verbal or telephone order: the
+doctor, the mode and the read-back are required, the order is audited at Warning (`medication.verbal_order`), the doctor
+is told, and it stays awaiting countersignature until the doctor named countersigns it from their own account. A
+high-alert, controlled or chemotherapy medicine (the drug master's high-alert flag covers chemotherapy) gives no dose
+until then: nothing goes on the round, and no extra dose is recorded against it, unless the nurse wrote it as an
+emergency verbal order, read back, when its doses are given, each witnessed, and it stays flagged. The doctor has
+`inpatient.verbalOrderCountersignHours` (default 24, 1 to 72; fixed on the order when it is written) to countersign. A
+nurse's stop is asked for: the order stays on the chart with every dose held until the doctor named (or the patient's
+consultant, for an order that names none) confirms it, when the doses held since it was asked for are cancelled, or
+declines it, when they are given again. `CountersignOverdueJob` (every 15 minutes, nodes that run jobs) tells the doctor
+and the facility's holders of `nursing.in_charge` once of each order or stop past its time, audited at Warning
+(`medication.countersign_overdue`, `medication.stop_countersign_overdue`); the staff app lists them under In-patients ›
+Orders to countersign.
 
 Frequencies understood: OD/QD/Daily, BD/BID, TDS/TID, QID/QDS, HS/Nocte, `1-0-1`-style patterns (3 or 4 parts,
 fractions allowed), `Q4H`/`6 hourly`…, STAT (one dose), SOS/PRN/"As directed" (never auto-scheduled).
@@ -224,9 +247,10 @@ day) or `CalendarDay` (every calendar day touched). Due days are posted at disch
 clearance check, so the final bill is complete.
 
 ## Settings, numbers, notifications, jobs, seed
-* Settings: `inpatient.bedDayPolicy` (`MidnightCensus` | `CalendarDay`), `inpatient.marGraceMinutes` (5–240, default 30).
+* Settings: `inpatient.bedDayPolicy` (`MidnightCensus` | `CalendarDay`), `inpatient.marGraceMinutes` (5–240, default 30), `inpatient.verbalOrderCountersignHours` (1–72, default 24; lengthening either waits for a second administrator, SettingGuard).
 * Number series: `admission` → `{FAC}IP{YY}{SEQ:6}`, yearly reset.
 * Notifications (platform templates, SMS): `admission.admitted` {name, ward, bed, doctor}; `discharge.completed` {name}.
+* Job: `CountersignOverdueJob` — every 15 minutes when `PlatformOptions.RunsJobs`: tells the doctor and the nurses in charge of each verbal or telephone order, and each nurse's stop, past its countersign time (once each).
 * Job: `BedDayChargeJob` — runs at start-up and hourly when `PlatformOptions.RunsJobs`; posts missing bed/nursing days of active and recently discharged admissions (`InpatientChargeService.StaysDueAsync`) and retries unaccepted consultant-visit charges. A day or visit billing refuses is kept by billing until it is charged: System health warns of it, the stay's final bill and discharge wait for it, and the stay's days are posted again however long ago it ended (`docs/modules/billing.md`, automatic charges); a ward's bed charge, and the one a stay in progress took with its bed, can't be taken out of use meanwhile (`docs/modules/masters.md`). Each bed day tells Billing whether the bed was in a critical-care ward (`Ward.IsCriticalCareType`: ICU, NICU, PICU, HDU) or a room, which decides its GST (room rent above ₹5,000 a day, see `docs/modules/billing.md`).
 * Seed `InpatientSeeder` (Order 160, only with `SeedDemoData`): GWM General Ward — Male (12, BED-GEN), GWF General Ward — Female (12, BED-GEN), SPW Semi-Private (8 in 4 rooms, BED-SEMI), PVT Private (8 rooms, BED-PVT), DLX Deluxe (4 rooms, BED-DLX), ICU (8, BED-ICU, monitors, 4 ventilators), NICU (6, BED-NICU).
 

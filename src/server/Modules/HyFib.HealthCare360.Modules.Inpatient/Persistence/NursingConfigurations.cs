@@ -77,9 +77,21 @@ internal sealed class MedicationOrderConfiguration : IEntityTypeConfiguration<Me
         b.Property(x => x.Frequency).HasMaxLength(32);
         b.Property(x => x.Instructions).HasMaxLength(500);
         b.Property(x => x.StopReason).HasMaxLength(300);
+        b.Property(x => x.EnteredByName).HasMaxLength(200);
+        b.Property(x => x.CountersignedByName).HasMaxLength(200);
+        b.Property(x => x.StopRequestedByName).HasMaxLength(200);
+        b.Property(x => x.StopRequestReason).HasMaxLength(300);
         b.Ignore(x => x.IsAsNeeded);
+        b.Ignore(x => x.AwaitingCountersignature);
+        b.Ignore(x => x.IsHighRisk);
+        b.Ignore(x => x.StopPending);
+        b.Ignore(x => x.DosesHeld);
         b.HasOne<Admission>().WithMany().HasForeignKey(x => x.AdmissionId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.AdmissionId, x.Status });
+
+        // The orders waiting for a doctor's countersignature, and those past their time, are found without reading the rest.
+        b.HasIndex(x => x.CountersignDueAt).HasFilter("countersigned_at IS NULL AND mode <> 'Written'");
+        b.HasIndex(x => x.StopCountersignDueAt).HasFilter("stop_requested_at IS NOT NULL");
         b.HasIndex(x => x.PrescriptionLineId);
         b.HasIndex(x => x.PrescriptionId);
         b.HasIndex(x => x.PatientId);

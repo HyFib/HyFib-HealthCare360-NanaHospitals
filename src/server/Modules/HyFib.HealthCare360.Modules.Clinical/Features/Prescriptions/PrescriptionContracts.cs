@@ -100,7 +100,9 @@ public sealed record PrescriptionDto(
     bool IsDigitallySigned = false,
     DateTimeOffset? DigitallySignedAt = null,
     string? DigitalSignerName = null,
-    bool FinalCopyAvailable = true);
+    bool FinalCopyAvailable = true,
+    Guid? SignedByUserId = null,
+    string? RefilledByName = null);
 
 public sealed record PrescriptionListItem(
     Guid Id,

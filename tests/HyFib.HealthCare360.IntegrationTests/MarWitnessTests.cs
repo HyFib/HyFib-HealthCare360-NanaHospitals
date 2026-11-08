@@ -135,11 +135,11 @@ public sealed class MarWitnessTests(HospitalServer server)
         var morphine = await DrugClassApprovalTests.CreateAsync(admin, "Morphine", DrugSchedule.X, controlled: true, highAlert: false);
         var midazolam = await DrugClassApprovalTests.CreateAsync(admin, "Midazolam", DrugSchedule.H1, controlled: false, highAlert: false);
 
-        // Ordered on the ward as neither controlled nor high-alert: the orders take what the master says. Schedule H1 is
-        // kept in a register, so it is witnessed as a controlled drug is.
-        var insulinDose = await WardDoseAsync(nurse, admission.Id, insulin, "Insulin regular 100 IU/ml", "8 IU", "SC");
-        var morphineDose = await WardDoseAsync(nurse, admission.Id, morphine, "Morphine 10 mg/ml", "2 mg", "IV");
-        await WardDoseAsync(nurse, admission.Id, midazolam, "Midazolam 1 mg/ml", "1 mg", "IV");
+        // Ordered on the ward (by the doctor, in his own name) as neither controlled nor high-alert: the orders take what the
+        // master says. Schedule H1 is kept in a register, so it is witnessed as a controlled drug is.
+        var insulinDose = await WardDoseAsync(doctor, admission.Id, insulin, "Insulin regular 100 IU/ml", "8 IU", "SC");
+        var morphineDose = await WardDoseAsync(doctor, admission.Id, morphine, "Morphine 10 mg/ml", "2 mg", "IV");
+        await WardDoseAsync(doctor, admission.Id, midazolam, "Midazolam 1 mg/ml", "1 mg", "IV");
         var orders = await nurse.GetAsync<List<MedicationOrderDto>>($"/api/v1/nursing/admissions/{admission.Id}/medication-orders");
         (orders.Single(o => o.DrugItemId == insulin).IsHighAlert, orders.Single(o => o.DrugItemId == insulin).IsControlledDrug).ShouldBe((true, false));
         orders.Single(o => o.DrugItemId == morphine).IsControlledDrug.ShouldBeTrue();
@@ -328,23 +328,28 @@ public sealed class MarWitnessTests(HospitalServer server)
 
     /// <summary>
     /// A drug of the master ordered on the ward to be given at once, as the form sends it: neither controlled nor
-    /// high-alert. Its one dose is due now.
+    /// high-alert. Written by the doctor in his own name, so it is signed at once and its one dose is due now.
     /// </summary>
-    private static async Task<MarEntryDto> WardDoseAsync(ApiClient nurse, Guid admissionId, Guid itemId, string name, string dose, string route)
+    private static async Task<MarEntryDto> WardDoseAsync(ApiClient doctor, Guid admissionId, Guid itemId, string name, string dose, string route)
     {
-        var order = await nurse.PostAsync<MedicationOrderDto>($"/api/v1/nursing/admissions/{admissionId}/medication-orders", new AddMedicationOrderRequest(
+        var order = await doctor.PostAsync<MedicationOrderDto>($"/api/v1/nursing/admissions/{admissionId}/medication-orders", new AddMedicationOrderRequest(
             DrugItemId: itemId, DrugName: name, GenericName: null, Strength: null, Dose: dose, Route: route, Frequency: "STAT", DurationDays: 1,
             StartAt: null, Instructions: null, IsControlledDrug: false, OrderedByPractitionerId: null));
-        var chart = await nurse.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admissionId}/mar");
+        var chart = await doctor.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admissionId}/mar");
         return chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due);
     }
 
-    /// <summary>A controlled drug ordered on the ward to be given at once: its one dose is due now.</summary>
-    private static async Task<MarEntryDto> StatDoseAsync(ApiClient nurse, Guid admissionId)
+    /// <summary>
+    /// A controlled drug the doctor ordered by telephone, to be given at once: the nurse writes it in his name as an
+    /// emergency verbal order, read back, so its one dose is due now (witnessed) before he countersigns it.
+    /// </summary>
+    private async Task<MarEntryDto> StatDoseAsync(ApiClient nurse, Guid admissionId)
     {
+        var doctorId = (await (await server.SignInAsync(HospitalServer.Users.Doctor)).GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var order = await nurse.PostAsync<MedicationOrderDto>($"/api/v1/nursing/admissions/{admissionId}/medication-orders", new AddMedicationOrderRequest(
             DrugItemId: null, DrugName: "Morphine 10 mg/ml Injection", GenericName: "Morphine", Strength: "10 mg/ml", Dose: "2 mg", Route: "IV",
-            Frequency: "STAT", DurationDays: 1, StartAt: null, Instructions: null, IsControlledDrug: true, OrderedByPractitionerId: null));
+            Frequency: "STAT", DurationDays: 1, StartAt: null, Instructions: null, IsControlledDrug: true, OrderedByPractitionerId: doctorId,
+            Mode: MedicationOrderMode.Telephone, ReadBack: true, Emergency: true));
         var chart = await nurse.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admissionId}/mar");
         return chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due);
     }

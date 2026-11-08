@@ -114,6 +114,13 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
     /// <summary>Set on prescriptions issued as a refill of an earlier signed prescription.</summary>
     public Guid? RefillOfPrescriptionId { get; set; }
 
+    /// <summary>
+    /// On a refill, who issued it (a pharmacist, or a doctor), by name as their account had it then: a refill carries the
+    /// original prescriber's name and registration (<see cref="PractitionerId"/>), and <see cref="SignedByUserId"/> is the
+    /// account of whoever refilled it, so the record never reads as the doctor having signed it again.
+    /// </summary>
+    public string? RefilledByName { get; set; }
+
     /// <summary>Unguessable token printed as a QR code; the public verification page shows only non-PHI facts.</summary>
     public string? VerificationToken { get; private set; }
 

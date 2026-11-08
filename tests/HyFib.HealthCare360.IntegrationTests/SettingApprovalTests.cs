@@ -211,6 +211,7 @@ public sealed class SettingApprovalTests(HospitalServer server)
         Limit(DispensingService.MaxDiscountSetting).Default.ShouldBe(DispensingService.DefaultMaxDiscountPercent);
         Limit(CanteenService.StaffCreditLimitSetting).Default.ShouldBe(CanteenService.DefaultStaffCreditLimit);
         Limit(MarService.GraceSetting).Default.ShouldBe((decimal)MarRules.DefaultGrace.TotalMinutes);
+        Limit(MarService.CountersignHoursSetting).Default.ShouldBe(MarService.DefaultCountersignHours);
         Limit(ResultEvaluator.DeltaPercentSetting).Default.ShouldBe(ResultEvaluator.DefaultDeltaPercent);
         Limit(ResultEvaluator.DeltaWindowSetting).Default.ShouldBe(ResultEvaluator.DefaultDeltaWindowDays);
         Limit(AuthService.MaxSessionsSetting).Default.ShouldBe(AuthService.DefaultMaxSessions);

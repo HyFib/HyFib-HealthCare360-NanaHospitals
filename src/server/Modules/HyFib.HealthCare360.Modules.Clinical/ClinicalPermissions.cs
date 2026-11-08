@@ -32,6 +32,12 @@ public static class ClinicalPermissions
 
     public const string DischargeSummaryWrite = "clinical.discharge_summary.write";
     public const string TemplatesManage = "clinical.templates.manage";
+
+    /// <summary>
+    /// Approve, as the pharmacy and therapeutics committee, a drug interaction switched off or made less severe, or a maximum
+    /// dose raised or switched off, that someone else asked for (<see cref="Services.DrugSafetyApprovals"/>).
+    /// </summary>
+    public const string DrugSafetyApprove = "clinical.drug_safety.approve";
     public const string MrdCoding = "mrd.coding";
     public const string MrdRecords = "mrd.records";
 
@@ -111,6 +117,9 @@ public static class ClinicalPermissions
         new(ImmunizationsRecord, Emr, "Record immunisations", [SystemRoles.Doctor, SystemRoles.Nurse]),
         new(OrdersPlace, Emr, "Place and cancel lab, imaging, cardiology and procedure orders", [SystemRoles.Doctor]),
         new(TemplatesManage, Emr, "Maintain clinical templates, order sets and the drug-safety tables", [SystemRoles.Doctor, SystemRoles.HospitalAdmin]),
+        new(DrugSafetyApprove, Prescribing,
+            "Approve a drug interaction switched off or made less severe, or a maximum dose raised or switched off, that someone else asked for (pharmacy and therapeutics committee)",
+            [SystemRoles.Pharmacist, SystemRoles.HospitalAdmin]),
         new(PrescriptionsWrite, Prescribing, "Draft e-prescriptions", [SystemRoles.Doctor]),
         new(PrescriptionsSign, Prescribing, "Sign and cancel e-prescriptions (sends them to the pharmacy)", [SystemRoles.Doctor]),
         new(PrescriptionsRefill, Prescribing, "Issue an authorised refill of a signed prescription", [SystemRoles.Doctor, SystemRoles.Pharmacist]),

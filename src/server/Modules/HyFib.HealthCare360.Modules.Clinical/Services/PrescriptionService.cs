@@ -8,6 +8,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Realtime;
@@ -26,6 +27,7 @@ public sealed class PrescriptionService(
     ClinicalAccess access,
     PrescriptionSafetyService safety,
     ICurrentUser currentUser,
+    IPermissionService permissions,
     IAuditLogger audit,
     IRealtimePublisher realtime,
     INotificationService notifications,
@@ -202,7 +204,11 @@ public sealed class PrescriptionService(
 
     /// <summary>
     /// Authorised refill (ERX-05): consumes one refill of a signed prescription and issues it as a new signed
-    /// prescription for the pharmacy. Safety checks run again because allergies or other medicines may have changed.
+    /// prescription for the pharmacy, in the original doctor's name and registration, recording who refilled it. Safety
+    /// checks run again because allergies or other medicines may have changed. A prescription with a controlled drug
+    /// (Schedule H1 or X, or NDPS, as the drug master says now) is not refilled: the doctor writes a new one. A blocking
+    /// alert found at refill is overridden only by the doctor who wrote the prescription, signed in as themselves; anyone
+    /// else's refill is refused and the doctor is told (another doctor repeats it as their own prescription instead).
     /// </summary>
     public async Task<Result<SignPrescriptionResult>> RefillAsync(Guid id, RefillPrescriptionRequest request, CancellationToken ct)
     {
@@ -213,15 +219,23 @@ public sealed class PrescriptionService(
         }
 
         var source = loaded.Value;
+
+        // A refill is issued as it stands, so a medicine typed in without its generic name, before a prescription had to
+        // name it, can't be named here: the doctor repeats the prescription as a draft and names it there.
+        var items = await FromDrugMasterAsync(source.Items.OrderBy(i => i.Sequence).Select(i => ToItem(ToRequest(i))), ct);
+        if (items.Where(i => i.IsControlledDrug).Select(i => i.DrugName).ToList() is { Count: > 0 } controlled)
+        {
+            return Error.Rule("prescription.refill_controlled",
+                $"Prescription {source.PrescriptionNumber} has a controlled drug ({string.Join(", ", controlled)}: Schedule H1 or X, or NDPS), "
+                + "which is not repeated on a refill. The doctor writes a new prescription for it.");
+        }
+
         var used = source.UseRefill();
         if (used.IsFailure)
         {
             return used.Error!;
         }
 
-        // A refill is issued as it stands, so a medicine typed in without its generic name, before a prescription had to
-        // name it, can't be named here: the doctor repeats the prescription as a draft and names it there.
-        var items = await FromDrugMasterAsync(source.Items.OrderBy(i => i.Sequence).Select(i => ToItem(ToRequest(i))), ct);
         if (Prescription.WithoutGenericName(items) is { } unnamed)
         {
             return Error.Rule("prescription.generic_missing",
@@ -240,22 +254,65 @@ public sealed class PrescriptionService(
             Notes = source.Notes,
             Advice = source.Advice,
             RefillOfPrescriptionId = source.Id,
+            RefilledByName = Fit(currentUser.DisplayName ?? currentUser.UserName, 200),
         };
         refill.PrescriptionNumber = await numbers.NextAsync(ClinicalNumberSeries.Prescription, refill.FacilityId, ct);
         refill.ReplaceItems(items);
 
-        var signed = await SignCoreAsync(refill, request.OverrideReason, request.AcknowledgeWarnings, request.ConfirmControlledDrugs, ct);
+        // The doctor who wrote it may override a hard stop at refill, as at signing; nobody else does so in their name.
+        var byPrescriber = currentUser.PractitionerId == source.PractitionerId && currentUser.UserId is { } userId
+                           && await permissions.HasPermissionAsync(userId, ClinicalPermissions.PrescriptionsSign, ct);
+        var signed = await SignCoreAsync(refill, request.OverrideReason, request.AcknowledgeWarnings, request.ConfirmControlledDrugs, ct, overrideAllowed: byPrescriber);
         if (signed.IsFailure)
         {
+            if (signed.Error!.Code == RefillNeedsPrescriberCode)
+            {
+                await SendBackToPrescriberAsync(source, signed.Error.Data as IReadOnlyList<SafetyAlert>, ct);
+            }
+
             return signed.Error!;
         }
 
         db.Add(refill);
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "prescription.refilled",
+            $"{refill.PrescriptionNumber} issued as a refill of {source.PrescriptionNumber} by {refill.RefilledByName}, in the name of the doctor who wrote it")
+        {
+            PatientId = refill.PatientId,
+            EntityType = nameof(Prescription),
+            EntityId = refill.Id.ToString(),
+            Details = new { refillOf = source.Id, refilledBy = currentUser.UserId, prescriber = source.PractitionerId, byPrescriber },
+        });
         await QueueSignedNoticeAsync(refill, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         await PublishSignedAsync(refill, ct);
         return new SignPrescriptionResult(await ToDtoAsync(refill, ct), signed.Value);
+    }
+
+    /// <summary>A refill refused because its safety check blocks it and only the doctor who wrote the prescription may override that.</summary>
+    public const string RefillNeedsPrescriberCode = "prescription.refill_needs_prescriber";
+
+    /// <summary>Tells the doctor who wrote the prescription that a refill of it waits for their decision on a blocking alert.</summary>
+    private async Task SendBackToPrescriberAsync(Prescription source, IReadOnlyList<SafetyAlert>? alerts, CancellationToken ct)
+    {
+        var doctors = await db.Set<User>().AsNoTracking()
+            .Where(u => u.PractitionerId == source.PractitionerId && u.IsActive && u.Type == UserType.Staff)
+            .Select(u => u.Id)
+            .ToListAsync(ct);
+        var found = alerts is null ? "" : " " + string.Join(" ", alerts.Where(a => a.IsBlocking).Select(a => a.Message).Take(3));
+        await notifications.NotifyUsersAsync(doctors, "Refill held for your decision",
+            $"{currentUser.DisplayName ?? currentUser.UserName} could not refill {source.PrescriptionNumber}: its safety check blocks it, and only you may override that.{found}",
+            $"/emr/prescriptions/{source.Id}", "prescriptions", "warning", ct);
+        // Written in its own transaction: the refill's is rolled back.
+        await audit.WriteAsync(new AuditEntry(AuditCategories.Clinical, "prescription.refill_blocked",
+            $"Refill of {source.PrescriptionNumber} by {currentUser.DisplayName ?? currentUser.UserName} refused: a blocking safety alert, sent back to the prescriber")
+        {
+            PatientId = source.PatientId,
+            EntityType = nameof(Prescription),
+            EntityId = source.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = alerts?.Where(a => a.IsBlocking).ToList(),
+        }, ct);
     }
 
     public async Task<Result<Prescription>> LoadAsync(Guid id, CancellationToken ct)
@@ -290,7 +347,9 @@ public sealed class PrescriptionService(
         p.IsDigitallySigned,
         p.DigitallySignedAt,
         p.SignerName,
-        finalCopyAvailable);
+        finalCopyAvailable,
+        p.SignedByUserId,
+        p.RefilledByName);
 
     /// <summary>The medicines a teleconsultation may not prescribe, for a prescription written in one (TPG 2020).</summary>
     private async Task<IReadOnlyList<string>> TelemedicineProhibitedAsync(Prescription prescription, CancellationToken ct)
@@ -320,7 +379,7 @@ public sealed class PrescriptionService(
     }
 
     private async Task<Result<IReadOnlyList<SafetyAlert>>> SignCoreAsync(Prescription prescription, string? overrideReason, bool acknowledgeWarnings,
-        bool confirmControlledDrugs, CancellationToken ct)
+        bool confirmControlledDrugs, CancellationToken ct, bool overrideAllowed = true)
     {
         // A prescription carries the prescriber's registration number (Indian Medical Council (Professional Conduct,
         // Etiquette and Ethics) Regulations 2002, 1.4.1): one whose record has none is not signed.
@@ -344,6 +403,17 @@ public sealed class PrescriptionService(
         }
 
         var check = await safety.CheckAsync(prescription, ct);
+        if (check.IsBlocked && !overrideAllowed)
+        {
+            var doctor = (await PrintQueries.PractitionerNamesAsync(db, [prescription.PractitionerId], ct)).GetValueOrDefault(prescription.PractitionerId) ?? "the doctor who wrote it";
+            return new Error(RefillNeedsPrescriberCode,
+                $"The safety check blocks this refill, and only {doctor}, who wrote the prescription, may override that. It has been sent back to them; "
+                + "another doctor may repeat the prescription as their own and sign it.")
+            {
+                Data = check.Alerts,
+            };
+        }
+
         if (check.IsBlocked && string.IsNullOrWhiteSpace(overrideReason))
         {
             return new Error("prescription.safety_block",
@@ -554,4 +624,6 @@ public sealed class PrescriptionService(
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(18)).Replace('+', '-').Replace('/', '_');
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? Fit(string? value, int max) => value is null || value.Length <= max ? value : value[..max];
 }
