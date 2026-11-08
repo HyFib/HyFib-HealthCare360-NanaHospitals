@@ -286,11 +286,14 @@ public sealed class ClosedEncounterTests(HospitalServer server)
         var admission = await AdmitAsync(frontOffice, doctor, patientId);
         var cbc = await ServiceAsync(doctor, Cbc);
 
-        // The discharge is caught between its reads and its save: a transaction of the test holds the stay's row, which the
-        // discharge writes last. The patient left the ward unseen, so it is recorded without billing clearance.
+        // The patient left the ward unseen, so the stay is closed without billing clearance once the nurse in charge approves.
+        // The approval's discharge is caught between its reads and its save: a transaction of the test holds the stay's row,
+        // which the discharge writes last.
+        var asked = await server.AskAbscondedAsync(nurse, admission.Id, "Not in the ward at the 6 pm round");
+        var inCharge = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var request = await inCharge.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}");
         await using var hold = await HeldTransaction.HoldAsync(server, $"SELECT 1 FROM inpatient.admissions WHERE id = {admission.Id} FOR UPDATE");
-        var discharge = nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/complete",
-            new CompleteDischargeRequest(DischargeType.Absconded, DischargedAt: null, "Not in the ward at the 6 pm round", NotifyPatient: false));
+        var discharge = inCharge.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}/approve", new ApproveRequest(null, request.Version));
         await HeldTransaction.WaitUntilLockedAsync(server, admission.Id);
 
         // The doctor orders a blood count for the stay meanwhile: the order waits for the discharge to be saved.
@@ -299,7 +302,8 @@ public sealed class ClosedEncounterTests(HospitalServer server)
 
         // The discharge is saved, and the order then finds the stay ended.
         await hold.ReleaseAsync();
-        (await discharge).Status.ShouldBe(AdmissionStatus.Absconded);
+        (await discharge).Status.ShouldBe(ApprovalStatus.Approved);
+        (await nurse.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admission.Id}")).Status.ShouldBe(AdmissionStatus.Absconded);
         using var refused = await order;
         refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, await refused.Content.ReadAsStringAsync(Ct));
         (await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString().ShouldBe("admission.closed");

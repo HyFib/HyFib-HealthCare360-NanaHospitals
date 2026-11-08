@@ -703,6 +703,47 @@ and grants nothing.
       are until then. Marking a stay medico-legal or giving it its number is at once. Audited `admission.mlc_cleared`;
     - another change of a kind that waits, while one waits, is refused (`approval.already_requested`); the same change
       saved again asks nothing more;
+  - discharge and death (MAKER-CHECKER.md, slice 8). How a stay ended other than routinely is kept on the stay
+    (`inpatient.discharge_declarations`, one per stay, shown on the admission as `declaration`), and what waits shows on
+    it as `pendingDischarge`:
+    - a stay closed as **expired** needs the patient's death certificate (MCCD) for this stay (or naming none) that a
+      second doctor has confirmed (or that is reported, or at a facility that does not ask for confirmation,
+      `mrd.deathCertificateConfirmation` off). Without one the discharge is refused, `discharge.death_certificate_required`;
+      with one not yet confirmed, `discharge.death_certificate_unconfirmed` (with the certificate's number and since when
+      its confirmation waits); a certificate naming another stay, `discharge.death_certificate_other_stay`. The ward reads
+      why (`GET /api/v1/inpatient/admissions/{id}/discharge/death-certificate`). Billing clearance is still skipped (a
+      body is not held for dues) and what was due is recorded on the declaration; the stay's remaining days are billed
+      afterwards; the patient is marked deceased and the mortuary receives the body as before. A **medico-legal** death
+      whose certificate cannot be issued while the post-mortem is pending (`certificatePendingPostMortem`, notes
+      required) is asked for instead (202, `inpatient.expired_pending_postmortem`) and approved by a second doctor who
+      confirms certificates (`mrd.deaths.confirm`), never the one who asked; refused for a stay that is not medico-legal
+      (`discharge.postmortem_not_mlc`), and it fails (`approval.stale`) once a certificate has been certified meanwhile
+      (the stay is then closed with it). The patient stays admitted, and not deceased, until it is approved; audited
+      `discharge.expired_pending_postmortem` with both names;
+    - a stay closed as **absconded** is asked for (202, `inpatient.absconded`) with the report (when last seen, who
+      searched, whether the police and the relatives were told, each named), and approved by the nurse in charge
+      (`nursing.in_charge`, the hospital administrator by default; HC360 has no medical superintendent role), never the
+      one who asked. A medico-legal stay needs the police told, with the station and the reference
+      (`discharge.police_intimation_required`). Until it is approved the patient stays admitted (if they come back, the
+      request is withdrawn); billing clearance is skipped and the dues recorded, the remaining days billed with the
+      approval. Audited `discharge.absconded` with both names;
+    - **LAMA and DAMA** on the ward, and **LAMA from the emergency department**, record who signed the form (the patient,
+      or a relative named with the relationship), or that nobody would ("refused to sign"); the doctor who explained the
+      risks, who is the user signed in when they are a doctor (they sign encounters and have a practitioner record), or
+      else confirms at the screen with their own credentials (purpose `against_advice.doctor`, `clinical.encounters.sign`;
+      otherwise `against_advice.doctor_required`); and a witness, a different member of staff who confirms with their own
+      user name and password at the screen (ADR-014: purpose `discharge.against_advice`, `nursing.chart`, on the ward;
+      `er.lama`, `clinical.er.triage`, in the emergency department), never the doctor (`against_advice.witness_is_doctor`).
+      Each confirmation is good once, for that patient and record. A scanned copy of the signed form can go with it (a file
+      of the document store, for this patient). Audited `discharge.against_advice`; the ER case keeps it on the case;
+    - a **death certificate a second doctor confirmed** is marked entered in error only when a second doctor agrees:
+      its certifier asks (202, `mrd.death_certificate_void`, with the reason), and another holder of `mrd.deaths.confirm`
+      (often the one who confirmed it) approves, never the one who asked. Until then the certificate and the patient's
+      deceased status stand, and the certificate is neither corrected nor reported (`death.void_waiting`). Approved, it
+      leaves the register, and the deceased mark it made is taken back only when no other certificate stands for the
+      patient; audited `death.voided` with both names. A certificate not yet confirmed is still marked by its certifier
+      at once; one reported to the Registrar is not voided here at all (`vital.reported`: a correction goes through the
+      Registrar);
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was
@@ -738,6 +779,8 @@ and grants nothing.
     master when it names an item of it, whatever the order form sent, and so does the order made for a medicine the
     pharmacy issues without a prescription line; a ward order typed in without an item of the master is always
     high-alert, so typing a name instead of picking the drug clears nothing.
+  - a patient leaving against medical advice (LAMA, DAMA, and LAMA from the emergency department) is witnessed in the
+    same way by a different member of staff, never the doctor who explained the risks (see Maker-checker, slice 8);
   - in the blood bank, grouping, cross-match and issue are not all one person: grouping and cross-match record the
     officer's account, and a unit is not issued by the officer who both grouped the patient and cross-matched it, nor
     plasma, platelets or cryoprecipitate (issued on the group alone) by the officer who grouped the patient, nor an

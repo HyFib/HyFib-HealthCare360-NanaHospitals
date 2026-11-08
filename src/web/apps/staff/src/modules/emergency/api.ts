@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { AgainstAdviceRequest, AgainstAdviceSignatory } from '@/modules/witness/againstAdvice';
 
 /**
  * The emergency department: /api/v1/emergency. The ER board, ESI triage (the server computes the level), the doctor's
@@ -150,6 +151,18 @@ export interface EmergencyCase {
   triages: EsiTriage[];
   mlc: Mlc | null;
   version: number;
+  /** A patient who left against medical advice: who signed (or refused), the doctor, the witness and the scanned form. */
+  againstAdvice?: ErAgainstAdvice | null;
+}
+
+/** LAMA from the emergency department, as recorded (maker-checker, slice 8). */
+export interface ErAgainstAdvice {
+  signedBy: AgainstAdviceSignatory;
+  signatoryName: string | null;
+  relationship: string | null;
+  doctorName: string;
+  witnessName: string;
+  signedFormFileId: string | null;
 }
 
 export interface TriageInput {
@@ -375,13 +388,22 @@ export const erApi = {
   },
   triage: (id: string, input: TriageInput) => api.post<EmergencyCase>(`${base}/cases/${id}/triage`, input),
   seen: (id: string, version: number) => api.post<EmergencyCase>(`${base}/cases/${id}/seen`, { version }),
+  /** LAMA goes with `againstAdvice`: who signed (or refused), the doctor's and the witness's confirmations (slice 8). */
   dispose: (
     id: string,
     disposition: EmergencyDisposition,
     notes: string | null,
     referredTo: string | null,
     version: number,
-  ) => api.post<EmergencyCase>(`${base}/cases/${id}/disposition`, { disposition, notes, referredTo, version }),
+    againstAdvice: AgainstAdviceRequest | null = null,
+  ) =>
+    api.post<EmergencyCase>(`${base}/cases/${id}/disposition`, {
+      disposition,
+      notes,
+      referredTo,
+      version,
+      againstAdvice,
+    }),
   saveMlc: (id: string, input: MlcInput) => api.put<EmergencyCase>(`${base}/cases/${id}/mlc`, input),
   intimate: (
     id: string,

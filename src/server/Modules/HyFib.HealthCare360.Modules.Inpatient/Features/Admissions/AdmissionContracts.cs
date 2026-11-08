@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
+using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
@@ -122,7 +123,9 @@ public sealed record AdmissionDetail(
     DateTimeOffset? CancelledAt,
     string? CancelReason,
     uint Version,
-    PendingMlcChange? PendingMlc = null);
+    PendingMlcChange? PendingMlc = null,
+    PendingDischarge? PendingDischarge = null,
+    DischargeDeclarationDto? Declaration = null);
 
 /// <summary>
 /// What an in-patient's wristband shows (FO-03): who, the UHID to scan, the admission and the bed, and what the chart
