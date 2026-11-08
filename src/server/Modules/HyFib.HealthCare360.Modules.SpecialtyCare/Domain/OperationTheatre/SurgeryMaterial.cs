@@ -54,6 +54,23 @@ public sealed class SurgeryMaterial : AuditableEntity, IFacilityScoped
     public ChargeStatus ChargeStatus { get; set; }
     public string? ChargeError { get; set; }
 
+    /// <summary>The line this one corrects (maker-checker slice 10): the original is kept, superseded by this one.</summary>
+    public Guid? CorrectsMaterialId { get; set; }
+
+    /// <summary>When a correction approved by a second person replaced this line; its charge withdrawn and its stock returned then.</summary>
+    public DateTimeOffset? SupersededAt { get; set; }
+
+    /// <summary>The line that replaced this one; null when the correction said the item was not used at all.</summary>
+    public Guid? SupersededByMaterialId { get; set; }
+
+    /// <summary>Why the line was corrected, as asked; set on the line corrected.</summary>
+    public string? CorrectionReason { get; set; }
+
+    public string? CorrectionRequestedByName { get; set; }
+    public string? CorrectionApprovedByName { get; set; }
+
+    public bool IsSuperseded => SupersededAt is not null;
+
     public decimal Amount => Money.Round(Quantity * UnitPrice);
 
     /// <summary>What the bill says of the item (NPPA), and the most a unit may be charged.</summary>

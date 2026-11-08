@@ -1247,6 +1247,17 @@ public sealed class HospitalServer : IAsyncLifetime
         return await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Post, path);
     }
 
+    /// <summary>
+    /// A correction of an implant or consumable line after the operation started, approved by the hospital administrator, who
+    /// holds the OT in-charge's approval and did not ask for it.
+    /// </summary>
+    public async Task<ApprovalRequestDto> ApproveMaterialCorrectionAsync(Guid approvalId)
+    {
+        var checker = await SignInAsync(Users.HospitalAdmin);
+        var request = await checker.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
+        return await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Checked against the pack label.", request.Version));
+    }
+
     // The seed signs the first consultant (by code) in as the doctor; the second doctor is the next one.
     private async Task<Guid?> SecondConsultantAsync()
     {

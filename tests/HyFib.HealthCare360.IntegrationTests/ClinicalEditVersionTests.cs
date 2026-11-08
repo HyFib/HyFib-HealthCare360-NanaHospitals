@@ -193,6 +193,11 @@ public sealed class ClinicalEditVersionTests(HospitalServer server)
         booking.Status.ShouldBe(SurgeryStatus.Scheduled);
 
         var path = $"/api/v1/ot/bookings/{booking.Id}";
+
+        // The left forearm is booked, so the surgeon marks the site and records it first (maker-checker slice 10).
+        var booked = await doctor.GetAsync<SurgeryDetail>(path);
+        await doctor.PutAsync($"{path}/pre-op-checklist",
+            new RecordChecklistRequest([new ChecklistInput(SiteMarking.Item, ChecklistItemState.Done, null)], booked.Version));
         var loaded = await nurse.GetAsync<SurgeryDetail>(path);
         var checkedItems = loaded.PreOpChecklist.Select(i => new ChecklistInput(i.Key, ChecklistItemState.Done, null)).ToList();
 
