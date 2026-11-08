@@ -2,13 +2,14 @@ import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import { useConnection } from '@hc360/core';
 import { expectNoAxeViolations } from '@hc360/ui/testing';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useOfflineCopy } from '@/lib/offline/offlineCopy';
 import { OfflineCopyBanner } from '@/shell/OfflineCopy';
 import type * as ContinuityApi from './continuityApi';
+import type * as PackPrint from './packPrint';
 import {
   blockProgress,
   continuityApi,
@@ -36,7 +37,7 @@ vi.mock('./continuityApi', async (importOriginal) => {
   };
 });
 vi.mock('./packPrint', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./packPrint')>()),
+  ...(await importOriginal<typeof PackPrint>()),
   printPack: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -244,8 +245,8 @@ describe('late back-entry', () => {
     );
     await expectNoAxeViolations(baseElement);
     const dialog = await screen.findByRole('dialog');
-    await userEvent.type(within(dialog).getByLabelText(/Earliest time/), '2026-11-01T08:00');
-    await userEvent.type(within(dialog).getByLabelText(/Latest time/), '2026-11-02T08:00');
+    fireEvent.change(within(dialog).getByLabelText(/Earliest time/), { target: { value: '2026-11-01T08:00' } });
+    fireEvent.change(within(dialog).getByLabelText(/Latest time/), { target: { value: '2026-11-02T08:00' } });
     await userEvent.type(within(dialog).getByLabelText(/How many records/), '12');
     await userEvent.type(within(dialog).getByLabelText(/Why late/), 'Six-day outage');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Ask for approval' }));

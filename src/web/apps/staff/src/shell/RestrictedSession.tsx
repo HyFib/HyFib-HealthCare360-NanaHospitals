@@ -4,7 +4,7 @@ import { auth, useSession } from '@hc360/core';
 import { useNavigate } from '@tanstack/react-router';
 import { ChangePasswordForm, MfaSetup } from '@/modules/account/security';
 import { BrandMark } from './BrandMark';
-import { wipeOfflineCopy } from './OfflineCopy';
+import { wipeOfflineCopy } from '@/lib/offline/wipe';
 
 const useStyles = makeStyles({
   root: {

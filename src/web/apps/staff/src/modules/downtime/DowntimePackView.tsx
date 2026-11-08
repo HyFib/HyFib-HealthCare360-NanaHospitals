@@ -1,4 +1,4 @@
-import { Caption1, makeStyles, MessageBar, MessageBarBody, Subtitle2, Text, tokens } from '@fluentui/react-components';
+import { Caption1, makeStyles, Subtitle2, Text, tokens } from '@fluentui/react-components';
 import { formatDateTime } from '@hc360/core';
 import type { DowntimePack, DowntimePackTable } from './continuityApi';
 
@@ -6,6 +6,7 @@ const useStyles = makeStyles({
   root: { display: 'flex', flexDirection: 'column', gap: '16px' },
   section: { display: 'flex', flexDirection: 'column', gap: '8px' },
   muted: { color: tokens.colorNeutralForeground3 },
+  alert: { color: tokens.colorPaletteRedForeground1 },
   scroll: { overflowX: 'auto' },
   table: {
     borderCollapse: 'collapse',
@@ -27,9 +28,9 @@ export function PackTable({ table }: { table: DowntimePackTable }) {
   return (
     <div className={styles.section}>
       {table.alert && (
-        <MessageBar intent="error">
-          <MessageBarBody>{table.alert}</MessageBarBody>
-        </MessageBar>
+        <Text weight="bold" className={styles.alert}>
+          {table.alert}
+        </Text>
       )}
       <div className={styles.scroll}>
         <table className={styles.table}>
@@ -54,10 +55,8 @@ export function PackTable({ table }: { table: DowntimePackTable }) {
             ) : (
               table.rows.map((row, i) => (
                 // Rows have no id of their own; their order is the pack's.
-                // eslint-disable-next-line react/no-array-index-key
                 <tr key={i}>
                   {row.map((cell, j) => (
-                    // eslint-disable-next-line react/no-array-index-key
                     <td key={j}>{cell}</td>
                   ))}
                 </tr>

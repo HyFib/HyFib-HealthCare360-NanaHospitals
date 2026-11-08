@@ -86,11 +86,6 @@ export function OfflineCopyKeeper() {
   return null;
 }
 
-/** Signs out after wiping the offline copy from this computer, reachable or not. */
-export async function wipeOfflineCopy(): Promise<void> {
-  await clearOfflineCopy(backend);
-}
-
 /**
  * While HC360 cannot be reached: how old the offline copy is, and the copy itself, read only. Nothing can be written
  * from it; the ward records on paper and enters it when HC360 is back.

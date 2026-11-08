@@ -1,3 +1,4 @@
+/* global self, caches, fetch, URL, Response */
 /*
  * HC360 staff app service worker (read-only offline mode). It keeps the app's own files (the page and its scripts and
  * styles) so the app still opens when the HC360 server cannot be reached; the offline copy itself is kept encrypted by

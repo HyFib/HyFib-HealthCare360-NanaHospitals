@@ -42,6 +42,7 @@ import {
   type DowntimeNumberBlockDetail,
   type DowntimeNumberKind,
   type DowntimePack,
+  type RequestLateBackEntry,
 } from './continuityApi';
 import { DowntimePackView } from './DowntimePackView';
 import { printNumberSheet, printPack } from './packPrint';
@@ -470,7 +471,7 @@ export function RequestLateDialog({
   const [reason, setReason] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const ask = useMutation({
-    mutationFn: continuityApi.requestLate,
+    mutationFn: (request: RequestLateBackEntry) => continuityApi.requestLate(request),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: continuityKeys.grants });
       notify.success('Asked: it waits for a second person in the approvals inbox.');

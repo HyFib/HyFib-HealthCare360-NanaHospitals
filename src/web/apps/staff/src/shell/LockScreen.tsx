@@ -32,7 +32,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
-import { wipeOfflineCopy } from './OfflineCopy';
+import { wipeOfflineCopy } from '@/lib/offline/wipe';
 
 const useStyles = makeStyles({
   overlay: {
