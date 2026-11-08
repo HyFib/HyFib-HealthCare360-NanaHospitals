@@ -653,6 +653,42 @@ and grants nothing.
       new doctor starts with none of their own (the service price) until theirs is approved. Another fee while one waits
       is refused (`approval.already_requested`), and a fee is set only over the fees it replaces (`approval.stale`),
       audited `practitioner.fee_changed` with both names;
+  - the patient's record (MAKER-CHECKER.md, slice 7). Each waits with the asker's reason, and until it is approved the
+    record keeps its present value everywhere (banner, wristband, labels, search, ABDM and FHIR, break-the-glass, the
+    prescribing checks, free treatment on bills); the record's read says what waits:
+    - an existing patient's identity (`patients.identity`: name, title, sex, date of birth or the age it was estimated
+      from, ABHA number or address, Aadhaar, another number ending in the same four digits included):
+      `PUT /api/v1/patients/{id}` saves the rest at once and answers 202 (`changeReason` required), approved by someone
+      else who holds the new `patients.identity.approve` (medical records officers and the hospital administrator by
+      default; a hospital grants it to a front-office supervisor's role). The desk that registered the patient corrects
+      a typo at once within 24 hours of entering the record and before any visit has begun (`identityCorrectableUntil`
+      on the record). The ABHA number and Aadhaar wait in their stored form only (encrypted, indexed, last four digits),
+      never in clear; both are checked again for another holder at approval. Audited `patient.identity_changed` (and
+      `patient.abha_changed`) with both names;
+    - a VIP restriction lifted (`patients.restriction_lift`), approved by someone else who opens restricted records
+      (`patients.restricted.read`); restricting a record is at once;
+    - the deceased status set or taken back from the registration screen (`patients.deceased`), approved by a holder of
+      `patients.identity.approve`. A death certified in Medical Records, and an expired discharge, still mark it at once;
+      a certified death (a certificate not entered in error) is not taken back here at all (`patient.death_certified`):
+      its certificate is marked entered in error instead;
+    - a record taken out of a sensitive category (`patients.sensitive_remove`), approved by another doctor who holds
+      `patients.sensitive.manage`; adding one (by a doctor or from a diagnosis) is at once. The request is asked about
+      the record's categories (`PatientSensitiveCategories`), not the patient, so neither it nor its decision shows in
+      the patient's history or list of changes waiting to staff who may not manage the categories;
+    - Do Not Resuscitate: put on at once, and only by a doctor (`clinical.encounters.sign`; a nurse is refused
+      `alert.dnr_doctor_only`), with no end date; taken off only when a doctor asks and a second doctor agrees
+      (`clinical.dnr_lift`, `POST /api/v1/emr/alerts/{id}/deactivate` answers 202), audited `alert.dnr_lifted`. Other
+      alerts are cleared at once as before;
+    - an active allergy made inactive, resolved or entered in error, or given a lower severity
+      (`clinical.allergy_change`, `PUT /api/v1/emr/allergies/{id}` answers 202), approved by a prescriber
+      (`clinical.prescriptions.sign`) who did not ask; recording one, a higher severity, making one active again and the
+      reaction or notes are at once. Audited `allergy.changed_with_approval`;
+    - a stay's medico-legal flag cleared, or the MLC number it is linked by changed or removed (`inpatient.mlc_clear`,
+      `PUT /api/v1/inpatient/admissions/{id}` answers 202, `changeReason` required), approved by someone who keeps the
+      MLC register (`mrd.mlc.register`); the stay, its visit and a victim's free treatment under BNSS s.397 stay as they
+      are until then. Marking a stay medico-legal or giving it its number is at once. Audited `admission.mlc_cleared`;
+    - another change of a kind that waits, while one waits, is refused (`approval.already_requested`); the same change
+      saved again asks nothing more;
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was

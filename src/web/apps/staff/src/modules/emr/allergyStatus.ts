@@ -86,3 +86,23 @@ export function noKnownAllergiesRefusal(error: unknown): string | null {
     `open ${one ? 'it' : 'them'} and mark ${one ? 'it' : 'them'} entered in error, inactive or resolved first.`
   );
 }
+
+const SEVERITY_ORDER = ['Mild', 'Moderate', 'Severe', 'Anaphylaxis'] as const;
+
+/**
+ * Whether an allergy change waits for a prescriber who did not ask (maker-checker, slice 7, as the server decides it):
+ * an active allergy taken out of the checks (inactive, resolved, entered in error) or given a lower severity. Recording
+ * one, a higher severity, making one active again, and the reaction or notes are saved at once.
+ */
+export function allergyChangeWaits(
+  current: { status: string; severity: string },
+  asked: { status: string; severity: string },
+): boolean {
+  if (current.status !== 'Active') {
+    return false;
+  }
+  const lower =
+    SEVERITY_ORDER.indexOf(asked.severity as (typeof SEVERITY_ORDER)[number]) <
+    SEVERITY_ORDER.indexOf(current.severity as (typeof SEVERITY_ORDER)[number]);
+  return asked.status !== 'Active' || lower;
+}

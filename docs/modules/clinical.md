@@ -33,7 +33,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | `clinical.encounters.sign` | Sign/amend encounters, sign notes | Doctor |
 | `clinical.vitals.record` | Record vitals | Doctor, Nurse |
 | `clinical.allergies.manage` | Record/update allergies | Doctor, Nurse |
-| `clinical.alerts.manage` | DNR, fall-risk, isolation, infection-control, pregnancy alerts | Doctor, Nurse |
+| `clinical.alerts.manage` | DNR, fall-risk, isolation, infection-control, pregnancy alerts (DNR is put on, and asked to come off, only by a holder of `clinical.encounters.sign`: a doctor) | Doctor, Nurse |
 | `clinical.immunizations.record` | Record immunisations | Doctor, Nurse |
 | `clinical.orders.place` | Place/cancel orders | Doctor |
 | `clinical.templates.manage` | Templates, order sets, interaction and dose tables | Doctor, HospitalAdmin |
@@ -82,11 +82,11 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | POST | `/emr/patients/{patientId}/vitals/preview` | vitals.record | same request → `VitalFlag[]` (nothing saved) |
 | POST | `/emr/vitals/{id}/entered-in-error` | vitals.record | `EnteredInErrorRequest{reason}` |
 | GET / POST | `/emr/patients/{patientId}/allergies` | emr.read / allergies.manage | `RecordAllergyRequest{allergen, type, reaction, severity, onsetDate, notes}` → `AllergyDto` (409 `allergy.duplicate`). Recording an allergy removes a "no known allergies" statement in the same save |
-| PUT | `/emr/allergies/{id}` | allergies.manage | `UpdateAllergyRequest{reaction, severity, status, statusReason, notes, version}`. Re-activating an allergy also removes a "no known allergies" statement |
+| PUT | `/emr/allergies/{id}` | allergies.manage | `UpdateAllergyRequest{reaction, severity, status, statusReason, notes, version, changeReason?}`. Re-activating an allergy also removes a "no known allergies" statement. A higher severity, active again, the reaction and notes → 200 `AllergyDto` at once. An active allergy made inactive, resolved or entered in error (reason in `statusReason`), or given a lower severity (reason in `changeReason`, 400 without it), → 202 `ApprovalRequestDto` (`clinical.allergy_change`): a prescriber (`clinical.prescriptions.sign`) who did not ask approves it, and the allergy stays as it is in every check and on the banner until then (maker-checker slice 7; made only over the allergy as asked, `approval.stale`; audited `allergy.changed_with_approval`). The allergy list shows what waits (`pendingChange`); another such change while one waits is 409 `approval.already_requested` |
 | GET | `/emr/patients/{patientId}/allergies/status` | emr.read | → `AllergyStatusDto{status: Recorded\|NoKnownAllergies\|NotRecorded, recordedAt?, recordedByName?}` (see *No known allergies*); restricted-record guard and PHI audit like the allergy list |
 | POST | `/emr/patients/{patientId}/allergies/none` | allergies.manage | no body → 200 `AllergyStatusDto` (`NoKnownAllergies`). 409 `allergy.active_exist` (`data.activeAllergies`) while an active allergy exists; idempotent (repeats return the existing statement); 422 `patient.merged` on a merged-away UHID; publishes `clinical.flags.changed` |
-| GET / POST | `/emr/patients/{patientId}/alerts` | emr.read / alerts.manage | `RaiseAlertRequest{type, title?, detail?, severity?, expiresOn?}` → `PatientAlertDto` |
-| POST | `/emr/alerts/{id}/deactivate` | alerts.manage | `DeactivateAlertRequest{reason}` |
+| GET / POST | `/emr/patients/{patientId}/alerts` | emr.read / alerts.manage | `RaiseAlertRequest{type, title?, detail?, severity?, expiresOn?}` → `PatientAlertDto`. DNR only by a doctor (`clinical.encounters.sign`; 403 `alert.dnr_doctor_only`) and with no end date (400): it records the treating doctor's documented decision, at once. The list shows a DNR asked to come off (`pendingChange`) |
+| POST | `/emr/alerts/{id}/deactivate` | alerts.manage | `DeactivateAlertRequest{reason}` → 200 `PatientAlertDto`. DNR: only a doctor asks (403 `alert.dnr_doctor_only`), → 202 `ApprovalRequestDto` (`clinical.dnr_lift`), and a second doctor (`clinical.encounters.sign`, never the one who asked) takes it off; it stays on the banner and the wristband until then, as taking it off overrides a documented end-of-life decision (maker-checker slice 7; audited `alert.dnr_lifted`) |
 | GET | `/emr/patients/{patientId}/diagnoses?encounterId&problemsOnly` | emr.read | → `DiagnosisDto[]` |
 | POST | `/emr/encounters/{encounterId}/diagnoses` | emr.write | `AddDiagnosisRequest{icdCode?, title?, type, isPrimary, onsetDate, status, notes}` |
 | PUT | `/emr/diagnoses/{id}` | emr.write | `UpdateDiagnosisRequest{type, isPrimary, status, onsetDate, notes, version}` |

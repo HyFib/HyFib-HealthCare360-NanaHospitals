@@ -13,10 +13,13 @@ import { approvalQueries } from './api';
 export function PendingApprovals({
   subjectType,
   subjectId,
+  kinds,
 }: {
   subjectType:
     'Bill' | 'Patient' | 'LabReport' | 'Refund' | 'IpAccount' | 'PatientAdvance' | 'DeathRecord' | 'GoodsReceiptNote';
   subjectId: string;
+  /** Only these kinds (a patient's merge, when the record shows its other changes waiting itself). */
+  kinds?: readonly string[];
 }) {
   const navigate = useNavigate();
   const requests = useQuery({
@@ -24,7 +27,7 @@ export function PendingApprovals({
     // While one waits, ask again every 30 s: it may be decided, withdrawn or lapse on another workstation.
     refetchInterval: (query) => (query.state.data?.items.some((r) => !r.isExpired) ? 30_000 : false),
   });
-  const waiting = (requests.data?.items ?? []).filter((r) => !r.isExpired);
+  const waiting = (requests.data?.items ?? []).filter((r) => !r.isExpired && (!kinds || kinds.includes(r.kind)));
   if (waiting.length === 0) {
     return null;
   }

@@ -1,15 +1,34 @@
-import { Button, Field, Input, MessageBar, MessageBarBody, MessageBarTitle, Switch } from '@fluentui/react-components';
+import {
+  Button,
+  Field,
+  Input,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Switch,
+  Textarea,
+} from '@fluentui/react-components';
 import { isApiError } from '@hc360/core';
 import { applyServerErrors, ErrorState, FormGrid, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
-import type { UseFormReturn } from 'react-hook-form';
+import { useEffect, useState } from 'react';
+import { useWatch, type UseFormReturn } from 'react-hook-form';
 import { usePermission } from '@/lib/permissions';
+import { askedForApproval } from '@/modules/admin/api';
+import { approvalKeys } from '@/modules/approvals/api';
 import { patientApi, patientKeys, patientQueries, type PatientDetail } from '@/modules/patients/api';
+import { PatientChangesWaiting } from '@/modules/patients/PatientChangesWaiting';
 import { PatientForm } from '@/modules/patients/PatientForm';
 import { photoChange } from '@/modules/patients/photo';
-import { fromPatientDetail, toPatientPayload, type PatientFormValues } from '@/modules/patients/validation';
+import {
+  asksForApproval,
+  fromPatientDetail,
+  recordChangesAsked,
+  toPatientPayload,
+  type PatientFormValues,
+  type RecordChangesAsked,
+} from '@/modules/patients/validation';
 
 /** ISO instant → value for <input type="datetime-local"> in the workstation's time zone. */
 function toLocalInput(iso: string | null): string {
@@ -83,6 +102,11 @@ function EditForm({ patient }: { patient: PatientDetail }) {
   const [deceasedAt, setDeceasedAt] = useState(toLocalInput(patient.deceasedAt));
   const [removeAbha, setRemoveAbha] = useState(false);
   const [removeAadhaar, setRemoveAadhaar] = useState(false);
+  const [changeReason, setChangeReason] = useState('');
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const [changes, setChanges] = useState<RecordChangesAsked | null>(null);
+  const correctable = patient.identityCorrectableUntil != null;
+  const asks = changes !== null && asksForApproval(changes, correctable);
 
   const save = useMutation({
     mutationFn: (values: PatientFormValues) => {
@@ -98,11 +122,21 @@ function EditForm({ patient }: { patient: PatientDetail }) {
         deceasedAt: isDeceased && deceasedAt ? new Date(deceasedAt).toISOString() : null,
         isActive,
         version: patient.version,
+        changeReason: asks ? changeReason.trim() : null,
       });
     },
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
       await queryClient.invalidateQueries({ queryKey: patientKeys.all });
-      notify.success('Patient details saved');
+      const asked = askedForApproval(saved);
+      if (asked) {
+        void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Another person decides it; until then the record keeps its present details. The rest is saved.`,
+        );
+      } else {
+        notify.success('Patient details saved');
+      }
       await navigate({ to: '/patients/$patientId', params: { patientId: patient.id } });
     },
     onError: (error) => {
@@ -139,11 +173,18 @@ function EditForm({ patient }: { patient: PatientDetail }) {
           { label: 'Edit' },
         ]}
       />
+      <PatientChangesWaiting changes={patient.pendingChanges} />
       <PatientForm
         defaultValues={defaults}
-        onSubmit={(values) => save.mutate(values)}
+        onSubmit={(values) => {
+          if (asks && changeReason.trim().length === 0) {
+            setReasonError('Say why: the change goes to someone else for approval, and they read your reason.');
+            return;
+          }
+          save.mutate(values);
+        }}
         busy={save.isPending}
-        submitLabel="Save changes"
+        submitLabel={asks ? 'Ask for approval' : 'Save changes'}
         onFormReady={setForm}
         identifierHints={{ abha: patient.abhaNumberMasked, aadhaarLast4: patient.aadhaarLast4 }}
         changePhone={{
@@ -166,33 +207,121 @@ function EditForm({ patient }: { patient: PatientDetail }) {
           </Button>
         }
         extraSections={
-          <Section title="Record status">
-            <FormGrid columns={3}>
-              {patient.abhaNumberMasked && (
-                <Switch
-                  checked={removeAbha}
-                  onChange={(_, d) => setRemoveAbha(d.checked)}
-                  label={`Remove ABHA ${patient.abhaNumberMasked}`}
-                />
-              )}
-              {patient.aadhaarLast4 && (
-                <Switch
-                  checked={removeAadhaar}
-                  onChange={(_, d) => setRemoveAadhaar(d.checked)}
-                  label={`Remove Aadhaar ending ${patient.aadhaarLast4}`}
-                />
-              )}
-              <Switch checked={isActive} onChange={(_, d) => setIsActive(d.checked)} label="Record is active" />
-              <Switch checked={isDeceased} onChange={(_, d) => setIsDeceased(d.checked)} label="Patient has died" />
-              {isDeceased && (
-                <Field label="Date and time of death" required>
-                  <Input type="datetime-local" value={deceasedAt} onChange={(_, d) => setDeceasedAt(d.value)} />
+          <>
+            {form && (
+              <ChangesWatcher
+                form={form}
+                patient={patient}
+                options={{
+                  removeAbha,
+                  removeAadhaar,
+                  isDeceased,
+                  deceasedAtChanged: deceasedAt !== toLocalInput(patient.deceasedAt),
+                }}
+                onChange={setChanges}
+              />
+            )}
+            <Section title="Record status">
+              <FormGrid columns={3}>
+                {patient.abhaNumberMasked && (
+                  <Switch
+                    checked={removeAbha}
+                    onChange={(_, d) => setRemoveAbha(d.checked)}
+                    label={`Remove ABHA ${patient.abhaNumberMasked}`}
+                  />
+                )}
+                {patient.aadhaarLast4 && (
+                  <Switch
+                    checked={removeAadhaar}
+                    onChange={(_, d) => setRemoveAadhaar(d.checked)}
+                    label={`Remove Aadhaar ending ${patient.aadhaarLast4}`}
+                  />
+                )}
+                <Switch checked={isActive} onChange={(_, d) => setIsActive(d.checked)} label="Record is active" />
+                <Switch checked={isDeceased} onChange={(_, d) => setIsDeceased(d.checked)} label="Patient has died" />
+                {isDeceased && (
+                  <Field label="Date and time of death" required>
+                    <Input type="datetime-local" value={deceasedAt} onChange={(_, d) => setDeceasedAt(d.value)} />
+                  </Field>
+                )}
+              </FormGrid>
+            </Section>
+            {asks && changes && (
+              <Section
+                title="Asked for approval"
+                description="Saving keeps the rest at once. What follows goes to someone else, and the record keeps its present details until they approve it."
+              >
+                <MessageBar intent="info" layout="multiline">
+                  <MessageBarBody>
+                    <MessageBarTitle>Who decides</MessageBarTitle>
+                    {approvalWords(changes, correctable)}
+                  </MessageBarBody>
+                </MessageBar>
+                <Field
+                  label="Reason for the change"
+                  required
+                  validationMessage={reasonError ?? undefined}
+                  hint="The person who approves it reads this."
+                >
+                  <Textarea
+                    value={changeReason}
+                    maxLength={500}
+                    rows={2}
+                    onChange={(_, d) => {
+                      setChangeReason(d.value);
+                      setReasonError(null);
+                    }}
+                  />
                 </Field>
-              )}
-            </FormGrid>
-          </Section>
+              </Section>
+            )}
+          </>
         }
       />
     </Page>
   );
+}
+
+/** Tells the page, as the form is filled in, what the save would ask a second person for. */
+function ChangesWatcher({
+  form,
+  patient,
+  options,
+  onChange,
+}: {
+  form: UseFormReturn<PatientFormValues>;
+  patient: PatientDetail;
+  options: Parameters<typeof recordChangesAsked>[2];
+  onChange: (changes: RecordChangesAsked) => void;
+}) {
+  const values = useWatch({ control: form.control }) as PatientFormValues;
+  const { removeAbha, removeAadhaar, isDeceased, deceasedAtChanged } = options;
+  const changes = recordChangesAsked({ ...form.getValues(), ...values }, patient, {
+    removeAbha,
+    removeAadhaar,
+    isDeceased,
+    deceasedAtChanged,
+  });
+  const key = JSON.stringify(changes);
+  useEffect(() => onChange(JSON.parse(key) as RecordChangesAsked), [key, onChange]);
+  return null;
+}
+
+/** What waits, in words: the identity past the correction window, a restriction lifted, the deceased status. */
+function approvalWords(changes: RecordChangesAsked, correctable: boolean): string {
+  const parts: string[] = [];
+  if (changes.identity.length > 0 && !correctable) {
+    parts.push(
+      `The ${changes.identity.join(', ')}: someone who approves identity changes (medical records) decides it. Only the desk that registered a patient corrects these at once, within a day and before the patient is seen.`,
+    );
+  }
+  if (changes.liftsRestriction) {
+    parts.push('Lifting the VIP restriction: someone else who may open restricted records decides it.');
+  }
+  if (changes.deceased) {
+    parts.push(
+      'The deceased status: someone who approves identity changes decides it. A death a doctor certified is taken back only by marking its certificate entered in error.',
+    );
+  }
+  return parts.join(' ');
 }

@@ -48,6 +48,7 @@ import { ConsentsPanel } from '@/modules/patients/ConsentsPanel';
 import { DocumentsPanel } from '@/modules/patients/DocumentsPanel';
 import { IdentityChecksPanel } from '@/modules/patients/IdentityChecksPanel';
 import { MergePatientDialog } from '@/modules/patients/MergePatientDialog';
+import { PatientChangesWaiting } from '@/modules/patients/PatientChangesWaiting';
 import { PortalAccessPanel } from '@/modules/patients/PortalAccessPanel';
 import { PatientPrivacyCard } from '@/modules/privacy/PatientPrivacyCard';
 import { SensitiveCategoriesCard } from '@/modules/patients/SensitiveCategoriesCard';
@@ -235,7 +236,10 @@ function PatientProfilePage() {
         </MessageBar>
       )}
 
-      {canMerge && !p.mergedIntoPatientId && <PendingApprovals subjectType="Patient" subjectId={p.id} />}
+      <PatientChangesWaiting changes={p.pendingChanges} />
+      {canMerge && !p.mergedIntoPatientId && (
+        <PendingApprovals subjectType="Patient" subjectId={p.id} kinds={['patients.merge']} />
+      )}
       <PatientJourneyCard patientId={p.id} />
 
       <Section flush>

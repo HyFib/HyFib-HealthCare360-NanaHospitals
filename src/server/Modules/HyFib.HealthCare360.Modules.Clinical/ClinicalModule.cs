@@ -66,6 +66,8 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<HealthCheckupService>();
         services.AddScoped<ProcedureService>();
         services.AddScoped<VitalRegistrationService>();
+        services.AddScoped<PatientFlagApprovals>();
+        services.AddScoped<HyFib.HealthCare360.Modules.Patients.Services.IDeathCertificateLookup, DeathCertificateLookup>();
         services.AddScoped<NotifiableDiseases>();
         services.AddScoped<IdspService>();
         services.AddScoped<EmergencyService>();

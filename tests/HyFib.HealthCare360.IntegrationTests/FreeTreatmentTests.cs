@@ -322,10 +322,10 @@ public sealed class FreeTreatmentTests(HospitalServer server)
         (await billing.PostAsync<BillDetail>(Bills, new CreateBillRequest(accident.Visit.Id, null, null))).FreeTreatmentReason.ShouldBeNull();
     }
 
-    private sealed record ErCase(Guid PatientId, string Uhid, VisitDetail Visit, Guid CaseId, MlcDto Mlc);
+    internal sealed record ErCase(Guid PatientId, string Uhid, VisitDetail Visit, Guid CaseId, MlcDto Mlc);
 
     /// <summary>A new emergency patient whose case the doctor enters in the MLC register as <paramref name="cause"/>.</summary>
-    private static async Task<ErCase> ErCaseAsync(ApiClient frontOffice, ApiClient doctor, MlcCause cause, Gender gender)
+    internal static async Task<ErCase> ErCaseAsync(ApiClient frontOffice, ApiClient doctor, MlcCause cause, Gender gender)
     {
         var (patientId, visit) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice, gender);
         var row = (await doctor.GetAsync<ErBoard>($"{Er}/board")).Rows.Single(r => r.VisitId == visit.Id);

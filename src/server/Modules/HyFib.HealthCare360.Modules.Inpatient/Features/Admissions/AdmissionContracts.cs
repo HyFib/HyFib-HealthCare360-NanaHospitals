@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
+using HyFib.HealthCare360.Modules.Inpatient.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 
@@ -47,7 +48,8 @@ public sealed record UpdateAdmissionRequest(
     string? AttendantRelation,
     string? AttendantPhone,
     string? Notes,
-    uint Version);
+    uint Version,
+    string? ChangeReason = null);
 
 public sealed record TransferPatientRequest(Guid ToBedId, string Reason, Guid? ConsultantPractitionerId, Guid? DepartmentId, DateTimeOffset? TransferredAt);
 
@@ -119,7 +121,8 @@ public sealed record AdmissionDetail(
     string? DischargeNotes,
     DateTimeOffset? CancelledAt,
     string? CancelReason,
-    uint Version);
+    uint Version,
+    PendingMlcChange? PendingMlc = null);
 
 /// <summary>
 /// What an in-patient's wristband shows (FO-03): who, the UHID to scan, the admission and the bed, and what the chart
@@ -295,6 +298,7 @@ public sealed class UpdateAdmissionRequestValidator : AbstractValidator<UpdateAd
         RuleFor(x => x.ProvisionalDiagnosis).SafeText(500);
         RuleFor(x => x.PolicyNumber).MaximumLength(64).Matches(AdmissionRules.PolicyPattern).WithMessage("Use letters, digits, spaces, '/' or '-'.");
         RuleFor(x => x.MlcNumber).MaximumLength(64);
+        RuleFor(x => x.ChangeReason).SafeText(500);
         RuleFor(x => x.AttendantName).MaximumLength(200);
         RuleFor(x => x.AttendantRelation).MaximumLength(64);
         RuleFor(x => x.AttendantPhone).PhoneNumber();

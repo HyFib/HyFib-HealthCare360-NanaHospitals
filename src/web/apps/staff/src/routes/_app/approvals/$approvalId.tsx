@@ -29,7 +29,20 @@ function subjectLink(
     case 'Bill':
       return { label: 'Open the bill', to: `/billing/bills/${request.subjectId}` };
     case 'Patient':
-      return { label: 'Open the duplicate record', to: `/patients/${request.subjectId}` };
+      return request.kind === 'patients.merge'
+        ? { label: 'Open the duplicate record', to: `/patients/${request.subjectId}` }
+        : // An identity change, a restriction lifted or the deceased status: the record, with the change waiting.
+          { label: "Open the patient's record", to: `/patients/${request.subjectId}` };
+    // A sensitive category taken out: the record, whose confidential-record card shows it waiting.
+    case 'PatientSensitiveCategories':
+      return { label: "Open the patient's record", to: `/patients/${request.subjectId}` };
+    // An allergy or DNR: the request names the patient and what changes; the chart's flags show it waiting.
+    case 'Allergy':
+    case 'PatientAlert':
+      return request.patientId ? { label: "Open the patient's chart", to: `/emr/patients/${request.patientId}` } : null;
+    // A stay's MLC flag cleared or unlinked: the admission, with the change waiting.
+    case 'Admission':
+      return { label: 'Open the admission', to: `/inpatient/admissions/${request.subjectId}` };
     case 'Refund':
       return { label: 'Open the refund', to: `/billing/refunds/${request.subjectId}` };
     case 'IpAccount':

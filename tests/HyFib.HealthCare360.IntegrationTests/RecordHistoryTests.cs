@@ -183,12 +183,13 @@ public sealed class RecordHistoryTests(HospitalServer server)
         var email = $"history.{Letters(6)}@example.org";
         await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(registered) with { Email = email });
 
-        // A doctor puts the record in the mental health category, then takes it out: recorded in error.
+        // A doctor puts the record in the mental health category, then takes it out (recorded in error), which another
+        // doctor agrees to (slice 7).
         var categories = await doctor.GetAsync<SensitiveCategoriesDto>($"/api/v1/patients/{patient.Id}/sensitive-categories");
         await doctor.PutAsync<SensitiveCategoriesDto>($"/api/v1/patients/{patient.Id}/sensitive-categories",
             new SetSensitiveCategoriesRequest([SensitiveCategory.MentalHealth], "Admitted under the Mental Healthcare Act", categories.Version));
         categories = await doctor.GetAsync<SensitiveCategoriesDto>($"/api/v1/patients/{patient.Id}/sensitive-categories");
-        await doctor.PutAsync<SensitiveCategoriesDto>($"/api/v1/patients/{patient.Id}/sensitive-categories",
+        await server.SaveRecordAsync(doctor, HttpMethod.Put, $"/api/v1/patients/{patient.Id}/sensitive-categories",
             new SetSensitiveCategoriesRequest([], "Recorded in error on another patient's record", categories.Version));
 
         var path = $"/api/v1/history/Patient/{patient.Id}?pageSize=100";

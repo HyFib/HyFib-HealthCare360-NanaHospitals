@@ -30,7 +30,8 @@ internal static class FlagEndpoints
         group.MapPost("/alerts/{id:guid}/deactivate", DeactivateAlert).RequirePermission(ClinicalPermissions.AlertsManage).WithValidation<DeactivateAlertRequest>();
     }
 
-    private static async Task<IResult> ListAllergies(Guid patientId, bool? includeInactive, ClinicalAccess access, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> ListAllergies(Guid patientId, bool? includeInactive, ClinicalAccess access, HospitalDbContext db, PatientFlagApprovals flags,
+        CancellationToken ct)
     {
         var opened = await access.OpenSafetyFactsAsync(patientId, "Viewed allergies", ct);
         if (opened.IsFailure)
@@ -45,7 +46,9 @@ internal static class FlagEndpoints
         }
 
         // Severity is stored as text, so sort by clinical weight in memory (lists are short).
-        return TypedResults.Ok((await allergies.ToListAsync(ct)).OrderByDescending(a => a.Severity).ThenBy(a => a.Allergen).Select(ToDto).ToList());
+        var list = await allergies.ToListAsync(ct);
+        var pending = await flags.PendingAsync(PatientFlagApprovals.AllergyKind, nameof(Allergy), [.. list.Select(a => a.Id)], ct);
+        return TypedResults.Ok(list.OrderByDescending(a => a.Severity).ThenBy(a => a.Allergen).Select(a => ToDto(a) with { PendingChange = pending.GetValueOrDefault(a.Id) }).ToList());
     }
 
     private static async Task<IResult> RecordAllergy(Guid patientId, RecordAllergyRequest request, ClinicalAccess access, HospitalDbContext db,
@@ -170,7 +173,12 @@ internal static class FlagEndpoints
     private static bool IsAlreadyRecorded(DbUpdateException ex) =>
         ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: NoKnownAllergiesStatementConfiguration.OnePerPatientIndex };
 
-    private static async Task<IResult> UpdateAllergy(Guid id, UpdateAllergyRequest request, ClinicalAccess access, HospitalDbContext db,
+    /// <summary>
+    /// Updates an allergy. What makes it stricter (a higher severity, active again) and its reaction and notes are saved at
+    /// once; taking an active allergy out of the checks or lowering its severity waits for a prescriber who did not ask
+    /// (maker-checker, slice 7), and the answer is the request (202). The allergy stays as it is meanwhile.
+    /// </summary>
+    private static async Task<IResult> UpdateAllergy(Guid id, UpdateAllergyRequest request, ClinicalAccess access, HospitalDbContext db, PatientFlagApprovals flags,
         IRealtimePublisher realtime, CancellationToken ct)
     {
         var allergy = await db.Set<Allergy>().FirstOrDefaultAsync(a => a.Id == id, ct);
@@ -186,14 +194,49 @@ internal static class FlagEndpoints
         }
 
         db.SetExpectedVersion(allergy, request.Version);
-        var changed = allergy.ChangeStatus(request.Status, request.StatusReason);
-        if (changed.IsFailure)
+        if (allergy.Status == AllergyStatus.EnteredInError)
         {
-            return changed.Error!.ToProblem();
+            return Error.Rule("allergy.voided", "This allergy was marked as entered in error and cannot be changed. Record a new one.").ToProblem();
+        }
+
+        var now = new AllergyStanding(allergy.Status, allergy.Severity);
+        var waits = AllergyChangeRule.Waits(now, new AllergyStanding(request.Status, request.Severity));
+        var reason = request.Status != AllergyStatus.Active ? request.StatusReason : request.ChangeReason;
+        var ask = waits is not null;
+        if (waits is not null)
+        {
+            var waiting = await flags.WaitingAllergyAsync(allergy.Id, ct);
+            if (waiting is { } w && w.Payload.Asked != waits)
+            {
+                return Error.Conflict(PatientFlagApprovals.WaitingCode,
+                    $"A change to this allergy, asked for by {w.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.").ToProblem();
+            }
+
+            ask = waiting is null;
+            if (ask && string.IsNullOrWhiteSpace(reason))
+            {
+                return Error.Field(request.Status != AllergyStatus.Active ? "statusReason" : "changeReason",
+                    "Say why: this change goes to a prescriber for approval, and they read your reason.").ToProblem();
+            }
+
+            if (ask)
+            {
+                // Asked for over the allergy as the clinician saw it, even when nothing else on it changes.
+                db.GuardVersion(allergy, request.Version);
+            }
+        }
+        else
+        {
+            var changed = allergy.ChangeStatus(request.Status, request.StatusReason);
+            if (changed.IsFailure)
+            {
+                return changed.Error!.ToProblem();
+            }
+
+            allergy.Severity = request.Severity;
         }
 
         allergy.Reaction = request.Reaction?.Trim();
-        allergy.Severity = request.Severity;
         allergy.Notes = request.Notes?.Trim();
         if (allergy.IsActive)
         {
@@ -201,17 +244,33 @@ internal static class FlagEndpoints
             await EndNoKnownAllergiesAsync(db, allergy.PatientId, ct);
         }
 
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        if (ask)
+        {
+            var asked = await flags.AskAllergyAsync(allergy, waits!, request.StatusReason, reason!, ct);
+            if (asked.IsFailure)
+            {
+                return asked.Error!.ToProblem();
+            }
+
+            await transaction.CommitAsync(ct);
+            await realtime.PublishAsync(Topics.Patient(allergy.PatientId), "clinical.flags.changed", new { allergy.Id }, ct);
+            return TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
+        }
+
+        await transaction.CommitAsync(ct);
         await realtime.PublishAsync(Topics.Patient(allergy.PatientId), "clinical.flags.changed", new { allergy.Id }, ct);
-        return TypedResults.Ok(ToDto(allergy));
+        var pending = await flags.PendingAsync(PatientFlagApprovals.AllergyKind, nameof(Allergy), [allergy.Id], ct);
+        return TypedResults.Ok(ToDto(allergy) with { PendingChange = pending.GetValueOrDefault(allergy.Id) });
     }
 
     /// <summary>An active allergy on the chart ends any "no known allergies" statement, soft-deleted in the caller's save.</summary>
     private static async Task EndNoKnownAllergiesAsync(HospitalDbContext db, Guid patientId, CancellationToken ct) =>
         db.RemoveRange(await db.Set<NoKnownAllergiesStatement>().Where(s => s.PatientId == patientId).ToListAsync(ct));
 
-    private static async Task<IResult> ListAlerts(Guid patientId, bool? includeInactive, ClinicalAccess access, HospitalDbContext db, TimeProvider time,
-        CancellationToken ct)
+    private static async Task<IResult> ListAlerts(Guid patientId, bool? includeInactive, ClinicalAccess access, HospitalDbContext db, PatientFlagApprovals flags,
+        TimeProvider time, CancellationToken ct)
     {
         var opened = await access.OpenSafetyFactsAsync(patientId, "Viewed patient alerts", ct);
         if (opened.IsFailure)
@@ -226,17 +285,25 @@ internal static class FlagEndpoints
         }
 
         var today = time.Today();
-        return TypedResults.Ok((await alerts.ToListAsync(ct)).OrderByDescending(a => a.Severity).ThenByDescending(a => a.EffectiveFrom)
-            .Select(a => ToDto(a, today)).ToList());
+        var list = await alerts.ToListAsync(ct);
+        var pending = await flags.PendingAsync(PatientFlagApprovals.DnrKind, nameof(PatientAlert), [.. list.Where(a => a.Type == PatientAlertType.Dnr).Select(a => a.Id)], ct);
+        return TypedResults.Ok(list.OrderByDescending(a => a.Severity).ThenByDescending(a => a.EffectiveFrom)
+            .Select(a => ToDto(a, today) with { PendingChange = pending.GetValueOrDefault(a.Id) }).ToList());
     }
 
     private static async Task<IResult> RaiseAlert(Guid patientId, RaiseAlertRequest request, ClinicalAccess access, HospitalDbContext db, ICurrentUser user,
-        IRealtimePublisher realtime, TimeProvider time, CancellationToken ct)
+        IPermissionService permissions, IRealtimePublisher realtime, TimeProvider time, CancellationToken ct)
     {
         var allowed = await access.EnsureCanRecordAsync(patientId, ct);
         if (allowed.IsFailure)
         {
             return allowed.Error!.ToProblem();
+        }
+
+        // DNR is the treating doctor's documented decision: only someone who signs clinical notes puts it on (slice 7).
+        if (request.Type == PatientAlertType.Dnr && !await SignsNotesAsync(user, permissions, ct))
+        {
+            return DnrDoctorOnly.ToProblem();
         }
 
         var alert = new PatientAlert
@@ -256,8 +323,12 @@ internal static class FlagEndpoints
         return TypedResults.Created($"/api/v1/emr/patients/{patientId}/alerts", ToDto(alert, time.Today()));
     }
 
+    /// <summary>
+    /// Clears an alert at once, except DNR: taking it off overrides a documented end-of-life decision, so a doctor asks
+    /// and a second doctor agrees (maker-checker, slice 7); the answer is the request (202), and the banner keeps DNR.
+    /// </summary>
     private static async Task<IResult> DeactivateAlert(Guid id, DeactivateAlertRequest request, ClinicalAccess access, HospitalDbContext db, ICurrentUser user,
-        IRealtimePublisher realtime, TimeProvider time, CancellationToken ct)
+        IPermissionService permissions, PatientFlagApprovals flags, IRealtimePublisher realtime, TimeProvider time, CancellationToken ct)
     {
         var alert = await db.Set<PatientAlert>().FirstOrDefaultAsync(a => a.Id == id, ct);
         if (alert is null)
@@ -271,6 +342,21 @@ internal static class FlagEndpoints
             return allowed.Error!.ToProblem();
         }
 
+        if (alert.Type == PatientAlertType.Dnr)
+        {
+            if (!alert.IsActive)
+            {
+                return Error.Rule("alert.inactive", "This alert is already inactive.").ToProblem();
+            }
+
+            if (!await SignsNotesAsync(user, permissions, ct))
+            {
+                return DnrDoctorOnly.ToProblem();
+            }
+
+            return (await flags.AskDnrLiftAsync(alert, request.Reason, ct)).ToHttpResult(asked => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked));
+        }
+
         var result = alert.Deactivate(request.Reason, user.UserId, time.GetUtcNow());
         if (result.IsFailure)
         {
@@ -281,6 +367,12 @@ internal static class FlagEndpoints
         await realtime.PublishAsync(Topics.Patient(alert.PatientId), "clinical.flags.changed", new { alert.Id }, ct);
         return TypedResults.Ok(ToDto(alert, time.Today()));
     }
+
+    private static readonly Error DnrDoctorOnly =
+        Error.Forbidden("alert.dnr_doctor_only", "Only a doctor puts Do Not Resuscitate on or takes it off: it records the treating doctor's decision.");
+
+    private static async Task<bool> SignsNotesAsync(ICurrentUser user, IPermissionService permissions, CancellationToken ct) =>
+        user.UserId is { } userId && await permissions.HasPermissionAsync(userId, ClinicalPermissions.EncountersSign, ct);
 
     private static string DefaultTitle(PatientAlertType type) => type switch
     {

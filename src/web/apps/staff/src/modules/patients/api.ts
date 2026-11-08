@@ -110,6 +110,28 @@ export interface PatientDetail {
    * patients (`patients.contact.read`, SRS PRV-03), and so does not edit their details either.
    */
   contactsMasked?: boolean;
+  /**
+   * Changes to the record waiting for a second person (maker-checker, slice 7): an identity change, a VIP restriction
+   * lifted, the deceased status set or taken back. The record shows its present values everywhere until one is approved.
+   * Absent when nothing waits.
+   */
+  pendingChanges?: PendingPatientChange[] | null;
+  /**
+   * Until when the signed-in user may still correct the name, sex, date of birth, ABHA or Aadhaar at once: they
+   * registered the patient within the last day and the patient has not been seen yet. Absent or null: a change to them
+   * is asked for, and someone who approves identity changes decides it.
+   */
+  identityCorrectableUntil?: string | null;
+}
+
+/** A change to a patient's record waiting for a second person: the request, its kind, what it does, who asked and when. */
+export interface PendingPatientChange {
+  approvalId: string;
+  kind: string;
+  title: string;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface PatientSummary {
@@ -181,6 +203,11 @@ export interface UpdatePatientRequest extends PatientFormPayload {
    * takes it away. See `photoChange`.
    */
   removePhoto: boolean;
+  /**
+   * Why, when the save asks a second person for something (an identity change after the correction window, a VIP
+   * restriction lifted, the deceased status): the server answers 400 on `changeReason` without one.
+   */
+  changeReason?: string | null;
 }
 
 export interface DuplicateCandidate {
@@ -647,6 +674,10 @@ export type SensitiveCategory = (typeof SENSITIVE_CATEGORIES)[number];
 export interface SensitiveCategoriesDto {
   categories: SensitiveCategory[];
   version: number;
+  /** Categories asked to be taken out: still in force until another doctor who manages them approves (slice 7). */
+  waitingRemoval?: SensitiveCategory[] | null;
+  /** That request: who asked and when. */
+  waiting?: PendingPatientChange | null;
 }
 
 export const patientKeys = {
@@ -765,7 +796,13 @@ export const patientQueries = {
 
 export const patientApi = {
   register: (request: RegisterPatientRequest) => api.post<{ id: string; uhid: string }>('/api/v1/patients', request),
-  update: (id: string, request: UpdatePatientRequest) => api.put<void>(`/api/v1/patients/${id}`, request),
+  /**
+   * Saves the details: 204 (nothing back) when all is saved; 202 with the request when something waits for a second
+   * person (the rest is saved): an identity change past the correction window, a VIP restriction lifted, the deceased
+   * status. 409 `approval.already_requested` while another change of that kind waits.
+   */
+  update: (id: string, request: UpdatePatientRequest) =>
+    api.put<ApprovalRequestDto | null | undefined>(`/api/v1/patients/${id}`, request),
   duplicates: (request: DuplicateCheckRequest, signal?: AbortSignal) =>
     api.post<DuplicateCandidate[]>('/api/v1/patients/duplicates', request, { signal }),
   /**
@@ -780,9 +817,16 @@ export const patientApi = {
   breakGlass: (id: string, reason: string) =>
     api.post<{ patientId: string; expiresAt: string }>(`/api/v1/patients/${id}/break-glass`, { reason }),
   createVisit: (request: CreateVisitRequest) => api.post<VisitDetail>('/api/v1/visits', request),
-  /** Puts the record in exactly these categories (none takes it out of all), with the reason kept in the audit trail. */
+  /**
+   * Puts the record in exactly these categories, with the reason kept in the audit trail. A category added applies at
+   * once (the categories back); one taken out waits for another doctor who manages them (202, the request back).
+   */
   setSensitive: (id: string, categories: SensitiveCategory[], reason: string, version: number) =>
-    api.put<SensitiveCategoriesDto>(`/api/v1/patients/${id}/sensitive-categories`, { categories, reason, version }),
+    api.put<SensitiveCategoriesDto | ApprovalRequestDto>(`/api/v1/patients/${id}/sensitive-categories`, {
+      categories,
+      reason,
+      version,
+    }),
 };
 
 /** Recording and withdrawing consents needs `patients.consents`; a restricted record answers 403 `patient.restricted`. */
