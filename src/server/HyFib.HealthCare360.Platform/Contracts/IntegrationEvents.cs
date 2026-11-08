@@ -121,6 +121,22 @@ public sealed record PatientTransferred(
     DateTimeOffset TransferredAt,
     Guid? ToWardId = null) : DomainEvent;
 
+/// <summary>
+/// A set of vital signs was recorded (Clinical). Carries its National Early Warning Score 2 (null for a child, or when
+/// nothing NEWS2 reads was measured): Inpatient raises an early-warning escalation for a patient in a bed when the score
+/// calls for a doctor (aggregate 5 or more, or any single parameter scoring 3).
+/// </summary>
+public sealed record VitalSignsRecorded(
+    Guid VitalSignsId,
+    Guid PatientId,
+    Guid? FacilityId,
+    DateTimeOffset RecordedAt,
+    Guid? RecordedByUserId,
+    int? News2Total,
+    bool News2AnySingleParameterThree,
+    bool News2Complete,
+    string? News2Summary) : DomainEvent;
+
 public sealed record DischargeInitiated(Guid AdmissionId, Guid PatientId, DateTimeOffset InitiatedAt) : DomainEvent;
 
 /// <summary>

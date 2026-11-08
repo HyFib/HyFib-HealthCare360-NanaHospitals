@@ -116,6 +116,7 @@ import { Route as AppInpatientAdmitRouteImport } from './routes/_app/inpatient/a
 import { Route as AppInpatientBedsRouteImport } from './routes/_app/inpatient/beds'
 import { Route as AppInpatientHousekeepingRouteImport } from './routes/_app/inpatient/housekeeping'
 import { Route as AppInpatientSetupRouteImport } from './routes/_app/inpatient/setup'
+import { Route as AppInpatientTransfersRouteImport } from './routes/_app/inpatient/transfers'
 import { Route as AppInsuranceIndexRouteImport } from './routes/_app/insurance/index'
 import { Route as AppInsuranceAgeingRouteImport } from './routes/_app/insurance/ageing'
 import { Route as AppInsurancePayersRouteImport } from './routes/_app/insurance/payers'
@@ -886,6 +887,11 @@ const AppInpatientHousekeepingRoute =
 const AppInpatientSetupRoute = AppInpatientSetupRouteImport.update({
   id: '/inpatient/setup',
   path: '/inpatient/setup',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppInpatientTransfersRoute = AppInpatientTransfersRouteImport.update({
+  id: '/inpatient/transfers',
+  path: '/inpatient/transfers',
   getParentRoute: () => AppRoute,
 } as any)
 const AppInsuranceIndexRoute = AppInsuranceIndexRouteImport.update({
@@ -2182,6 +2188,7 @@ export interface FileRoutesByFullPath {
   '/inpatient/beds': typeof AppInpatientBedsRoute
   '/inpatient/housekeeping': typeof AppInpatientHousekeepingRoute
   '/inpatient/setup': typeof AppInpatientSetupRoute
+  '/inpatient/transfers': typeof AppInpatientTransfersRoute
   '/insurance/ageing': typeof AppInsuranceAgeingRoute
   '/insurance/payers': typeof AppInsurancePayersRoute
   '/insurance/policies': typeof AppInsurancePoliciesRoute
@@ -2519,6 +2526,7 @@ export interface FileRoutesByTo {
   '/inpatient/beds': typeof AppInpatientBedsRoute
   '/inpatient/housekeeping': typeof AppInpatientHousekeepingRoute
   '/inpatient/setup': typeof AppInpatientSetupRoute
+  '/inpatient/transfers': typeof AppInpatientTransfersRoute
   '/insurance/ageing': typeof AppInsuranceAgeingRoute
   '/insurance/payers': typeof AppInsurancePayersRoute
   '/insurance/policies': typeof AppInsurancePoliciesRoute
@@ -2858,6 +2866,7 @@ export interface FileRoutesById {
   '/_app/inpatient/beds': typeof AppInpatientBedsRoute
   '/_app/inpatient/housekeeping': typeof AppInpatientHousekeepingRoute
   '/_app/inpatient/setup': typeof AppInpatientSetupRoute
+  '/_app/inpatient/transfers': typeof AppInpatientTransfersRoute
   '/_app/insurance/ageing': typeof AppInsuranceAgeingRoute
   '/_app/insurance/payers': typeof AppInsurancePayersRoute
   '/_app/insurance/policies': typeof AppInsurancePoliciesRoute
@@ -3197,6 +3206,7 @@ export interface FileRouteTypes {
     | '/inpatient/beds'
     | '/inpatient/housekeeping'
     | '/inpatient/setup'
+    | '/inpatient/transfers'
     | '/insurance/ageing'
     | '/insurance/payers'
     | '/insurance/policies'
@@ -3534,6 +3544,7 @@ export interface FileRouteTypes {
     | '/inpatient/beds'
     | '/inpatient/housekeeping'
     | '/inpatient/setup'
+    | '/inpatient/transfers'
     | '/insurance/ageing'
     | '/insurance/payers'
     | '/insurance/policies'
@@ -3872,6 +3883,7 @@ export interface FileRouteTypes {
     | '/_app/inpatient/beds'
     | '/_app/inpatient/housekeeping'
     | '/_app/inpatient/setup'
+    | '/_app/inpatient/transfers'
     | '/_app/insurance/ageing'
     | '/_app/insurance/payers'
     | '/_app/insurance/policies'
@@ -4880,6 +4892,13 @@ declare module '@tanstack/react-router' {
       path: '/inpatient/setup'
       fullPath: '/inpatient/setup'
       preLoaderRoute: typeof AppInpatientSetupRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/inpatient/transfers': {
+      id: '/_app/inpatient/transfers'
+      path: '/inpatient/transfers'
+      fullPath: '/inpatient/transfers'
+      preLoaderRoute: typeof AppInpatientTransfersRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/insurance/': {
@@ -6571,6 +6590,7 @@ interface AppRouteChildren {
   AppInpatientBedsRoute: typeof AppInpatientBedsRoute
   AppInpatientHousekeepingRoute: typeof AppInpatientHousekeepingRoute
   AppInpatientSetupRoute: typeof AppInpatientSetupRoute
+  AppInpatientTransfersRoute: typeof AppInpatientTransfersRoute
   AppInsuranceAgeingRoute: typeof AppInsuranceAgeingRoute
   AppInsurancePayersRoute: typeof AppInsurancePayersRoute
   AppInsurancePoliciesRoute: typeof AppInsurancePoliciesRoute
@@ -6907,6 +6927,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppInpatientBedsRoute: AppInpatientBedsRoute,
   AppInpatientHousekeepingRoute: AppInpatientHousekeepingRoute,
   AppInpatientSetupRoute: AppInpatientSetupRoute,
+  AppInpatientTransfersRoute: AppInpatientTransfersRoute,
   AppInsuranceAgeingRoute: AppInsuranceAgeingRoute,
   AppInsurancePayersRoute: AppInsurancePayersRoute,
   AppInsurancePoliciesRoute: AppInsurancePoliciesRoute,
