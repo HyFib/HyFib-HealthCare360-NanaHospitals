@@ -36,7 +36,9 @@ absconded (the nurse in charge approves), LAMA and DAMA witnessed (on the ward a
 confirmed death certificate voided; a visit cancelled after the doctor started it; and in the theatre a side or
 procedure changed after the WHO Sign-in (the checklist redone), site marking with a side booked, the swab and
 instrument counts witnessed with their discrepancies settled, and implants corrected, not deleted, after the operation
-starts.
+starts; and a sentinel or never event closed (on its completed analysis) or re-graded out of sentinel, a data breach
+closed (on its Board report) or patients taken off its notification list, a bulk campaign scheduled, a family link
+confirmed by a code to the patient's own number, and a whole-record sharing consent with no signed form witnessed.
 
 ## Still on one person's word, by slice
 
@@ -55,7 +57,7 @@ starts.
 | 11 | Point an employee's salary at another bank account or switch them to cash (the bank file reads accounts at export, after the run was approved); revise one's own salary structure, add earnings, override loss of pay or TDS, delete another module's deductions; credit one's own leave balance | HR `EmployeeService`, `PayrollInputService`, `LeaveService`, `PayrollService` | Bank details and pay inputs approved by someone other than who made them, never one's own; the bank file uses the accounts in force at approval | Open |
 | 12 | Settle an insurance claim with deductions, or reject it, writing off what the insurer owes; record the pre-authorised amount that moves the bill from patient to insurer | Billing `ClaimService`, `PayerCoverageService` | Write-offs above a threshold approved by a second person; pre-authorised amounts checked by a second insurance desk user | Open |
 | 13 | Raise, approve and issue one's own indent (stock leaves as consumption); set an implant's ceiling price or an item's GST rate; receive a transfer one dispatched; release a recalled batch | SupplyChain `Indents`, `ItemEndpoints`, `Transfers`, `StockEndpoints` | Never approve or receive one's own; ceiling price and GST through the price approval; unblocking a recalled batch approved by a pharmacist | Open |
-| 14 | Close a sentinel event or never event straight from Reported, or downgrade it so no root-cause analysis is due; close a data breach without the Board report, or take patients off its notification list unaudited; schedule one's own bulk campaign; share a patient's reports and bills with any phone number; record an unscoped record-sharing consent with no signed form | Quality `IncidentService`; Privacy `BreachService`; Engagement `CampaignService`; Patients `PortalFamilyService`, front office consents | Sentinel closure and downgrade, breach closure and notification changes by a second person; campaigns approved by someone other than the author; family links confirmed by a code to the patient; unscoped consent with a witness | Open |
+| 14 | Close a sentinel event or never event straight from Reported, or downgrade it so no root-cause analysis is due; close a data breach without the Board report, or take patients off its notification list unaudited; schedule one's own bulk campaign; share a patient's reports and bills with any phone number; record an unscoped record-sharing consent with no signed form | Quality `IncidentService`; Privacy `BreachService`; Engagement `CampaignService`; Patients `PortalFamilyService`, front office consents | A sentinel or never event closes only on its completed root-cause analysis (from Reported too); closing it, and re-grading it out of sentinel with a reason, wait for the quality manager (`quality.incidents.approve`), never the one who asked nor its reporter. A breach closes only on its detailed report to the Board recorded with the reference and day; closing it, and taking patients off its notification list with why, wait for the Data Protection Officer (`privacy.breaches.approve`), audited with each patient taken off. A campaign is scheduled only when someone other than its author approves (`crm.campaigns.approve`): not the asker, nor who wrote or last edited it. A family link at the desk waits for a code sent to the patient's own registered number (the phone-change mechanism), entered as the patient reads it out; no link until then. A consent sharing the whole record with no signed form is witnessed at the screen (ADR-014, `consent.record_sharing`) | In force (`incident.sentinel_needs_rca`, `incident.reporter_approves`, `quality.sentinel_close`, `quality.sentinel_downgrade`, `privacy.breach_board_report_required`, `privacy.breach_close`, `privacy.breach_affected_remove`, `privacy.breach_already_notified`, `engagement.campaign_schedule`, `campaign.author_approves`, `portal.family_no_patient_phone`, `portal.family_number_changed`, `consent.witness_required`) |
 | 15 | Override a lab quality-control failure for the day; change critical limits or switch on automatic verification; downgrade a transfusion reaction (skipping haemovigilance reporting); change a dialysis patient's infection status; cancel an admission after days of care; acknowledge another doctor's critical result; sign a discharge summary as any doctor; amend another doctor's signed encounter; waive an ambulance trip charge | Diagnostics, SpecialtyCare, Inpatient, Clinical, SupportServices | Each a threshold or a second person as the hospital's policy decides; listed for the decision | Open |
 | 15 | Cancel a visit after the doctor started it (the consultation under way, or a note, order or prescription on it) | Patients `VisitService` (`POST /api/v1/visits/{id}/cancel`) | The desk asks with a reason; a front-office supervisor or the treating doctor approves, never the asker; the token, charges and orders follow only once approved | In force (`patients.visit_cancel`) |
 
@@ -133,6 +135,22 @@ starts.
   (`surgery.charge_cancel_failed`: the charge cannot be withdrawn) and a credit note is asked for at the billing desk, as
   slice 6 has it. The OT in-charge
   is a permission, `ot.materials.approve`, not the nurse named on the booking.
+
+- **Slice 14 leaves these as they are.** The quality manager is a permission (`quality.incidents.approve`, the
+  QualityManager role and the hospital administrator), not a named person; an anonymously reported incident has no
+  reporter to refuse, and the theatre's never event is reported by whoever settled the count. A sentinel event re-graded
+  out of sentinel waits as one request with all its other corrections (place, patient, staff): none is saved until it is
+  approved. Reopening a closed sentinel event, and the analysis and corrective actions themselves, are one person's as
+  before. A breach found not to be a personal data breach after all is still reported to the Board (saying so) before it
+  closes; the Board's acknowledgement is not recorded, only the reference and day of the report sent. The breach register
+  is group-wide, but a request is decided in the facility it was asked in (the first facility when none is chosen). A
+  breach's notification list takes one removal request at a time; adding patients, and sending the notices, are one
+  person's as before. Holding, unscheduling and cancelling a campaign, which only stop sending, are one person's; a
+  campaign taken back to draft is approved again before it is scheduled again. The desk's family-link code is the
+  portal's (`PortalFamilyCode`) and counts against the same limits per number; the dialog keeps it, and a desk that
+  closes the dialog sends a new one. The portal's own family code is unchanged. A record-sharing consent recorded with a
+  signed form trusts that the file stored for the patient is that form (it is not read); consents of other kinds keep a
+  typed witness name.
 
 ## How each control is built
 

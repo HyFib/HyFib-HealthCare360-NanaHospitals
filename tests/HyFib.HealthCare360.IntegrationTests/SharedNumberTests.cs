@@ -63,7 +63,7 @@ public sealed class SharedNumberTests(HospitalServer server)
         var motherPhone = NewMobile();
         var mother = await RegisterAsync(frontOffice, "Saroja", motherPhone);
         var sonPhone = NewMobile();
-        await frontOffice.PostAsync($"/api/v1/patients/{mother}/portal-family", new LinkFamilyMemberRequest(sonPhone, FamilyRelation.Parent, "Patient", true));
+        await server.LinkFamilyAtDeskAsync(frontOffice, mother, new LinkFamilyMemberRequest(sonPhone, FamilyRelation.Parent, "Patient", true));
         var son = await server.SignInToPortalAsync(sonPhone);
         (await ProfileIdsAsync(son)).ShouldBe([mother]);
 

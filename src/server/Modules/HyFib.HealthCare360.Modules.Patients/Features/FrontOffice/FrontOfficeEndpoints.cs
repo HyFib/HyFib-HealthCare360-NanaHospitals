@@ -56,9 +56,14 @@ public sealed record RecordSharingScopeDto(
     DateOnly? Until);
 
 /// <param name="SharingScope">Only for a given record-sharing consent: what it covers. Null: the whole record, for every FHIR account.</param>
+/// <param name="WitnessConfirmationId">
+/// A record-sharing consent given with no scope and no signed form: the confirmation of the witness, a second member of
+/// staff who confirmed at this screen with their own credentials (<c>POST /api/v1/auth/witness</c>, purpose
+/// <c>consent.record_sharing</c>). It names the witness on the consent.
+/// </param>
 public sealed record CaptureConsentRequest(
     ConsentType Type, string? ConsentVersion, bool Granted, string? WitnessName, string? SignedByRelation, string? SignedByName, Guid? DocumentFileId, string? Notes,
-    RecordSharingScope? SharingScope = null);
+    RecordSharingScope? SharingScope = null, Guid? WitnessConfirmationId = null);
 
 public sealed record RevokeConsentRequest(string Reason);
 
@@ -126,6 +131,8 @@ public sealed class CaptureConsentRequestValidator : AbstractValidator<CaptureCo
         RuleFor(x => x.SignedByName).NotEmpty().When(x => !string.IsNullOrWhiteSpace(x.SignedByRelation))
             .WithMessage("Enter the name of the person consenting on the patient's behalf.");
         RuleFor(x => x.Notes).SafeText(1000);
+        RuleFor(x => x.DocumentFileId).OptionalId();
+        RuleFor(x => x.WitnessConfirmationId).OptionalId();
         RuleFor(x => x.SharingScope).Null().When(x => x.Type != ConsentType.DataSharing || !x.Granted)
             .WithMessage("Only a record-sharing consent that is given says what it covers.");
         When(x => x.SharingScope is not null, () =>
@@ -500,8 +507,17 @@ internal static class FrontOfficeEndpoints
             Phone.Mask(phone), status.OptedIn, status.OptedInAt, status.Source, capturedBy, status.OptedOut, status.OptedOutAt, status.Reachable);
     }
 
+    /// <summary>
+    /// A witness to a patient's consent to share their whole record (no recipient, purpose, kinds of records or period) when
+    /// no signed form is attached: another member of the front office, at the screen with their own credentials
+    /// (MAKER-CHECKER.md, slice 14).
+    /// </summary>
+    public static readonly WitnessPurpose RecordSharingWitness = new("consent.record_sharing", PatientsPermissions.Consents,
+        "a patient's consent to share their whole record, given with no signed form");
+
     private static async Task<IResult> CaptureConsent(Guid patientId, CaptureConsentRequest request, HospitalDbContext db, PatientAccessGuard guard,
-        ICurrentUser user, ISettingsService settings, ISharingPartnerDirectory partners, TimeProvider time, CancellationToken ct)
+        ICurrentUser user, ISettingsService settings, ISharingPartnerDirectory partners, IWitnessConfirmations witnesses, IAuditLogger audit,
+        TimeProvider time, CancellationToken ct)
     {
         var access = await guard.EnsureCanOpenAsync(patientId, ct);
         if (access.IsFailure)
@@ -549,6 +565,42 @@ internal static class FrontOfficeEndpoints
             ShareUntil = scope?.Until,
         };
         db.Add(consent);
+
+        // An unscoped record-sharing consent with no signed form is the widest sharing there is, on one person's word: a
+        // second member of staff witnesses it at the screen. A scoped one, or one with the signed form attached, is as before.
+        if (consent is { Type: ConsentType.DataSharing, Granted: true, IsScopedSharing: false })
+        {
+            if (request.DocumentFileId is { } form)
+            {
+                if (!await db.Set<StoredFile>().AnyAsync(f => f.Id == form && (f.PatientId == null || f.PatientId == patientId), ct))
+                {
+                    return Error.Field("documentFileId", "The signed form was not found for this patient. Upload it again.").ToProblem();
+                }
+            }
+            else if (request.WitnessConfirmationId is not { } confirmation)
+            {
+                return Error.Rule("consent.witness_required",
+                    "Sharing the whole record with no signed form needs a witness: another member of staff confirms at this screen. Or limit what is shared, or attach the signed form.").ToProblem();
+            }
+            else
+            {
+                var witness = await witnesses.UseAsync(confirmation, RecordSharingWitness.Key, patientId, nameof(PatientConsent), consent.Id, ct);
+                if (witness.IsFailure)
+                {
+                    return witness.Error!.ToProblem();
+                }
+
+                consent.WitnessName = witness.Value.Name;
+                audit.Add(new AuditEntry(AuditCategories.Data, "patient.consent.witnessed",
+                    $"Consent to share the whole record recorded with no signed form, witnessed by {witness.Value.Name} (recorded by {user.DisplayName ?? user.UserName ?? "unknown"})")
+                {
+                    PatientId = patientId,
+                    EntityType = nameof(PatientConsent),
+                    EntityId = consent.Id.ToString(),
+                    Details = new { witnessUserId = witness.Value.UserId, witness = witness.Value.Name, recordedBy = user.UserId },
+                });
+            }
+        }
 
         // A refusal of a standing permission ends the earlier grants, as the checks that use it already read it.
         if (!consent.Granted && PatientConsent.IsStandingPermission(consent.Type))

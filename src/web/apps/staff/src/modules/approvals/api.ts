@@ -113,7 +113,9 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
  * charges cancelled, cash shortages and doctors' consultation fees, and the patient's record: its identity, a VIP
  * restriction lifted, the deceased status, a sensitive category, DNR, an allergy and a stay's MLC flag; discharge and
  * death: an absconded stay closed, a death closed pending post-mortem, a confirmed death certificate voided; a visit the
- * doctor has started, cancelled at the desk; and an implant or consumable line corrected after the operation started.
+ * doctor has started, cancelled at the desk; an implant or consumable line corrected after the operation started; and
+ * a sentinel event closed or re-graded out of sentinel, a personal data breach closed or patients taken off its notification
+ * list, and a bulk campaign scheduled.
  * Every kind's approving permission is in it
  * (approvalsMenu.test.ts).
  */
@@ -183,4 +185,14 @@ export const APPROVAL_PERMISSIONS = [
   // started; the OT in-charge decides. Each may withdraw it.
   'ot.materials.record',
   'ot.materials.approve',
+  // Slice 14: the quality team asks to close a sentinel or never event, or re-grade one out of sentinel (the quality
+  // manager decides, never the incident's reporter); the breach team asks to close a breach or take patients off its
+  // notification list (the Data Protection Officer decides); someone who sends campaigns asks to schedule one (someone
+  // other than its author decides). Each may withdraw it.
+  'quality.incidents.manage',
+  'quality.incidents.approve',
+  'privacy.breaches.manage',
+  'privacy.breaches.approve',
+  'crm.campaigns.send',
+  'crm.campaigns.approve',
 ] as const;

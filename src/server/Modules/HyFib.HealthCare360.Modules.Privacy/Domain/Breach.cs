@@ -284,19 +284,31 @@ public sealed class Breach : AuditableEntity
     }
 
     /// <summary>
-    /// Closes the record. A breach that was never reported can be closed only with a note saying why (for example,
-    /// no personal data was involved after all).
+    /// Whether the record can close: only once the detailed report to the Board is recorded, with its reference and the
+    /// day it went (DPDP Rules 2025, rule 7(2)(b); MAKER-CHECKER.md, slice 14). A breach found not to be one after all is
+    /// still reported to the Board, which is told why, and closed on that report.
     /// </summary>
-    public Result Close(string? note, DateTimeOffset now)
+    public Result CanClose()
     {
         if (Status == BreachStatus.Closed)
         {
             return Error.Rule("privacy.breach_closed", "This breach is already closed.");
         }
 
-        if (Status != BreachStatus.ReportSubmitted && string.IsNullOrWhiteSpace(note))
+        return Status == BreachStatus.ReportSubmitted && ReportSubmittedAt is not null && !string.IsNullOrWhiteSpace(BoardReference)
+            ? Result.Success()
+            : Error.Rule("privacy.breach_board_report_required", Status == BreachStatus.ReportSubmitted
+                ? "Record the Board's reference for the detailed report before closing the breach."
+                : "Record the detailed report to the Data Protection Board (its reference and the day it was sent) before closing the breach.");
+    }
+
+    /// <summary>Closes the record on its recorded Board report (<see cref="CanClose"/>), with an optional note.</summary>
+    public Result Close(string? note, DateTimeOffset now)
+    {
+        var check = CanClose();
+        if (check.IsFailure)
         {
-            return Error.Field("note", "The detailed report was not sent. Say why the breach can be closed.");
+            return check;
         }
 
         Status = BreachStatus.Closed;
