@@ -437,7 +437,7 @@ public sealed class SdfService(
                 await notifications.NotifyPermissionHoldersAsync(PrivacyPermissions.SdfManage, null,
                     threshold == 0 ? $"DPIA {dpia.Number} is overdue for review" : $"DPIA {dpia.Number} is due for review by {dpia.ReviewDue:dd MMM yyyy}",
                     $"{dpia.Activity}. Review the risks and measures, and send it for approval again (DPDP Rules 2025, rule 13).",
-                    $"/privacy/sdf/dpias/{dpia.Id}", "privacy", threshold == 0 ? "warning" : "info", ct);
+                    "/privacy/sdf", "privacy", threshold == 0 ? "warning" : "info", ct);
                 sent++;
             }
         }
