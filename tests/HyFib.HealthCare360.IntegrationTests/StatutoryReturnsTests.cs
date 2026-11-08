@@ -28,7 +28,7 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
         var components = (await hr.GetAsync<List<SalaryComponentDto>>("/api/v1/hr/payroll/components")).ToDictionary(c => c.Code);
         await ProfileAsync(manager);
 
-        // A consultant on ₹1,32,000 a month (₹80,000 basic, house rent 40 %, ₹20,000 special) who joined in January from an
+        // A consultant on ₹1,32,000 a month (₹80,000 basic, house rent 40 %, ₹20,000 special) who joined in November from an
         // employer that paid ₹12 lakh and deducted ₹60,000; and an attendant on ₹16,800, in ESI, with no PAN.
         var uanA = "1" + Digits(11);
         var uanB = "1" + Digits(11);
@@ -42,21 +42,23 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
         await hr.PutAsync($"{Statutory}/employees/{consultant.Id}/tax-declarations/2025", new SaveTaxDeclarationRequest(
             TaxRegime.New, 0, false, 0, 0, 0, 0, false, 0, 0, 0, 0, 0, PreviousEmployerSalary: 1_200_000, PreviousEmployerTds: 60_000, null, null));
 
-        // January 2026: two months left in the year after it.
-        var run = await RunAsync(hr, 2026, 1);
+        // November 2025: four months left in the year after it. Approving a month closes salary revisions dated in it or before
+        // for the whole facility, so this test uses a month earlier than any other test's salary structures, and reopens it at
+        // the end.
+        var run = await RunAsync(hr, 2025, 11);
         (await hr.PostAsync<PayrollProcessResult>($"/api/v1/hr/payroll/runs/{run}/process")).PayslipsWithErrors.ShouldBe(0);
         var a = await PayslipAsync(hr, run, consultant);
         var b = await PayslipAsync(hr, run, attendant);
 
-        // ₹3,96,000 here and ₹12 lakh before: ₹15,21,000 taxable, tax ₹1,08,150 + cess = ₹1,12,480. Less the ₹60,000
-        // deducted, over January to March: ₹17,493 a month.
-        a.Deductions.Single(d => d.Code == SalaryComponent.TdsCode).Amount.ShouldBe(17_493m);
-        a.NetPay.ShouldBe(132_000m - 1_800m - 17_493m);
+        // ₹6,60,000 here and ₹12 lakh before: ₹17,85,000 taxable, tax ₹1,57,000 + cess = ₹1,63,280. Less the ₹60,000
+        // deducted, over November to March: ₹20,656 a month.
+        a.Deductions.Single(d => d.Code == SalaryComponent.TdsCode).Amount.ShouldBe(20_656m);
+        a.NetPay.ShouldBe(132_000m - 1_800m - 20_656m);
         b.Deductions.ShouldNotContain(d => d.Code == SalaryComponent.TdsCode);
         (Deduction(b, SalaryComponent.PfCode), Deduction(b, SalaryComponent.EsiCode), b.EmployerEsi, b.NetPay).ShouldBe((1_440m, 126m, 546m, 15_234m));
 
         var computation = await hr.GetAsync<TaxComputationDto>($"{Statutory}/employees/{consultant.Id}/tax-computation/2025");
-        (computation.ChosenRegime, computation.Chosen.TaxableIncome, computation.Chosen.TotalTax).ShouldBe((TaxRegime.New, 1_521_000m, 112_480m));
+        (computation.ChosenRegime, computation.Chosen.TaxableIncome, computation.Chosen.TotalTax).ShouldBe((TaxRegime.New, 1_785_000m, 163_280m));
         computation.Other.Regime.ShouldBe(TaxRegime.Old);
 
         // Nothing leaves before the month is approved, by someone other than who processed it.
@@ -73,17 +75,17 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
         ecr.ShouldContain($"{uanA}#~#LAKSHMI {Surname(a)}#~#132000#~#15000#~#15000#~#15000#~#1800#~#1250#~#550#~#0#~#0\n");
 
         var esic = await TextAsync(manager, $"{Statutory}/runs/{run}/esic.csv");
-        esic.ShouldContain($"{ipB},MURUGAN {Surname(b)},31,16800,0,\r\n");
+        esic.ShouldContain($"{ipB},MURUGAN {Surname(b)},30,16800,0,\r\n");
         esic.ShouldNotContain(uanA);
 
         var hdfc = (await TextAsync(manager, $"{Statutory}/runs/{run}/bank-file/Hdfc")).Split("\r\n");
         var hdfcLine = hdfc.Single(l => l.Contains(a.EmployeeCode, StringComparison.Ordinal)).Split(',');
-        (hdfcLine[0], hdfcLine[3], hdfcLine[24]).ShouldBe(("I", "112707.00", "HDFC0001234"));
+        (hdfcLine[0], hdfcLine[3], hdfcLine[24]).ShouldBe(("I", "109544.00", "HDFC0001234"));
         var sbi = (await TextAsync(manager, $"{Statutory}/runs/{run}/bank-file/Sbi")).Split("\r\n");
         sbi.Single(l => l.Contains("SBIN0004321", StringComparison.Ordinal) && l.Contains("15234.00", StringComparison.Ordinal)).Split('|')[3].ShouldBe("DCR");
 
-        // Form 24Q for the quarter: refused until January's TDS has its challan, then the consultant's deduction under it.
-        using (var refused = await manager.SendRawAsync(HttpMethod.Get, $"{Statutory}/24q/2025/4/file"))
+        // Form 24Q for the quarter: refused until November's TDS has its challan, then the consultant's deduction under it.
+        using (var refused = await manager.SendRawAsync(HttpMethod.Get, $"{Statutory}/24q/2025/3/file"))
         {
             refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
             (await refused.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain("No challan");
@@ -91,13 +93,13 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
 
         var monthTds = await RunTdsAsync(hr, run);
         await manager.PostAsync<JsonElement>($"{Statutory}/challans", new SaveTdsChallanRequest(
-            TdsForm.Form24Q, 2026, 1, "0510308", new DateOnly(2026, 2, 7), Digits(5), monthTds, 0, 0, 0, 0, 0, null));
-        var form24 = await TextAsync(manager, $"{Statutory}/24q/2025/4/file");
+            TdsForm.Form24Q, 2025, 11, "0510308", new DateOnly(2025, 12, 7), Digits(5), monthTds, 0, 0, 0, 0, 0, null));
+        var form24 = await TextAsync(manager, $"{Statutory}/24q/2025/3/file");
         var lines = form24.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         lines[0].Split('^')[1].ShouldBe("FH");
         lines[1].Split('^')[StatutoryLayouts.TdsBatchHeader.IndexOf("Form Number")].ShouldBe("24Q");
         var deductee = lines.Single(l => l.Split('^')[1] == "DD" && l.Contains(a.EmployeeName.ToUpperInvariant(), StringComparison.Ordinal)).Split('^');
-        deductee[StatutoryLayouts.TdsDeducteeDetail.IndexOf("Total TDS")].ShouldBe("17493.00");
+        deductee[StatutoryLayouts.TdsDeducteeDetail.IndexOf("Total TDS")].ShouldBe("20656.00");
         deductee[StatutoryLayouts.TdsDeducteeDetail.IndexOf("Amount Paid")].ShouldBe("132000.00");
         deductee[StatutoryLayouts.TdsDeducteeDetail.IndexOf("Section Code")].ShouldBe("92B");
         deductee[StatutoryLayouts.TdsDeducteeDetail.IndexOf("PAN")].ShouldStartWith("ABCPL");
@@ -123,6 +125,9 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
         settlement.LeaveEncashment.Amount.ShouldBe(4_000m);
         settlement.Statement.Recoveries.Select(r => (r.Code, r.Amount)).ShouldBe([("NOTICE_SHORT", 8_400m), ("UNIFORM", 500m)]);
         settlement.Statement.NetPayable.ShouldBe(4_000m + 583m - 8_400m - 500m);
+
+        // Leave the month open again, as it was found, for any test that revises salaries later.
+        await manager.PostAsync($"/api/v1/hr/payroll/runs/{run}/reopen", new ReopenPayrollRequest("Statutory returns test done; reopened for other tests."));
     }
 
     // ---------------------------------------------------------------------- steps
@@ -145,7 +150,7 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
         }
 
         await hr.PostAsync<JsonElement>($"/api/v1/hr/employees/{employeeId}/salary-structures", new SaveSalaryStructureRequest(
-            new DateOnly(2026, 1, 1), null, 0, PfApplicable: true, PfOnActualBasic: false, EsiApplicable: esi, null, null, lines));
+            new DateOnly(2025, 11, 1), null, 0, PfApplicable: true, PfOnActualBasic: false, EsiApplicable: esi, null, null, lines));
     }
 
     private static async Task<Guid> RunAsync(ApiClient hr, int year, int month)
@@ -192,10 +197,10 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
 
     private static string Surname(PayslipDto payslip) => payslip.EmployeeName.Split(' ')[^1].ToUpperInvariant();
 
-    /// <summary>Exempt from attendance, so every day of the month is paid without punches; joined on 1 January 2026.</summary>
+    /// <summary>Exempt from attendance, so every day of the month is paid without punches; joined on 1 November 2025.</summary>
     private static SaveEmployeeRequest Employee(string firstName, string? pan, string uan, string? esiNumber, BankDetailsInput bank) => new(
         null, firstName, null, "Stat" + Letters(6), Gender.Female, new DateOnly(1990, 5, 10), null, null, null, null, null, null, null,
-        EmploymentType.Permanent, EmployeeStatus.Active, new DateOnly(2026, 1, 1), null, null, null, null, null, null, null,
+        EmploymentType.Permanent, EmployeeStatus.Active, new DateOnly(2025, 11, 1), null, null, null, null, null, null, null,
         IsAttendanceExempt: true, SalaryPaymentMode.BankTransfer, pan, uan, null, esiNumber, null, null, bank, null);
 
     private static string Letters(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('a' + Random.Shared.Next(26))));
