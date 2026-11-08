@@ -70,6 +70,8 @@ public sealed class BillingModule : IModule
         services.AddScoped<IEInvoiceSource, CreditNoteEInvoiceSource>();
         services.AddScoped<IEInvoiceSource, DebitNoteEInvoiceSource>();
         services.AddScoped<DebitNoteService>();
+        services.AddScoped<GstReturnService>();
+        services.AddScoped<IGstReturnSource, BillingGstReturnSource>();
         services.AddScoped<IEInvoiceRegister, EInvoiceRegisterLookup>();
         services.AddScoped<ICashReceiptSource, BillingCashReceipts>();
         services.AddScoped<TallyReconciliationService>();
@@ -123,6 +125,7 @@ public sealed class BillingModule : IModule
         DoctorFeeEndpoints.Map(endpoints);
         TallyEndpoints.Map(endpoints);
         EInvoiceEndpoints.Map(endpoints);
+        GstReturnEndpoints.Map(endpoints);
         PortalBillEndpoints.Map(endpoints);
     }
 }

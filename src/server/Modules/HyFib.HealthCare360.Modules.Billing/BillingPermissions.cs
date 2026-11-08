@@ -35,6 +35,9 @@ public static class BillingPermissions
     /// </summary>
     public const string EInvoice = "billing.einvoice";
 
+    /// <summary>Read the GST returns: GSTR-1 (with the GSTN offline tool's JSON) and GSTR-3B of the facility's GSTIN.</summary>
+    public const string GstReturns = "billing.gst.returns";
+
     public const string PayersManage = "insurance.payers.manage";
     public const string PoliciesManage = "insurance.policies.manage";
     public const string PreAuthManage = "insurance.preauth.manage";
@@ -70,8 +73,10 @@ public static class BillingPermissions
         new(GatewayReconcile, "Billing",
             "Reconcile online, card and UPI payments with the gateway's and the acquirer's settlements: record missed receipts, send failed refunds again, resolve exceptions",
             Approvers),
-        new(EInvoice, "Billing", "Keep the GST e-invoice register: the e-invoice JSON of B2B invoices, their IRNs and IRN cancellations",
+        new(EInvoice, "Billing", "Keep the GST e-invoice register: the e-invoice JSON of B2B invoices, their IRNs (asked of the portal or recorded), IRN cancellations and e-way bills",
             [SystemRoles.Billing, SystemRoles.Accountant, SystemRoles.Pharmacist, SystemRoles.HospitalAdmin]),
+        new(GstReturns, "Billing", "Read the GST returns of the facility's GSTIN: GSTR-1 with its GSTN offline-tool JSON, and GSTR-3B",
+            [SystemRoles.Accountant, SystemRoles.HospitalAdmin]),
         new(PayersManage, "Insurance", "Maintain insurers, TPAs, corporates, schemes and non-payable items", [SystemRoles.InsuranceDesk, SystemRoles.HospitalAdmin]),
         new(PoliciesManage, "Insurance", "Record and verify patient insurance policies",
             [SystemRoles.InsuranceDesk, SystemRoles.Billing, SystemRoles.HospitalAdmin]),
