@@ -13,6 +13,7 @@ import {
   Input,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Select,
   Spinner,
   Switch,
@@ -36,6 +37,7 @@ import {
   MORTUARY_PERMISSIONS,
   MORTUARY_READERS,
   mortuaryApi,
+  needsPoliceClearance,
   mortuaryKeys,
   mortuaryQueries,
   parseSlotCodes,
@@ -49,6 +51,8 @@ import {
   type ReleaseTo,
 } from '@/modules/mortuary/api';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
+import type { WitnessConfirmed } from '@/modules/witness/api';
+import { WitnessPanel } from '@/modules/witness/WitnessPanel';
 
 type MortuaryTab = 'slots' | 'register' | 'setup';
 const TABS: MortuaryTab[] = ['slots', 'register', 'setup'];
@@ -131,6 +135,7 @@ function SlotsTab() {
         {unclaimed > 0 && (
           <MessageBar intent="warning">
             <MessageBarBody>
+              <MessageBarTitle>Unclaimed</MessageBarTitle>
               {unclaimed === 1 ? 'One body has' : `${unclaimed} bodies have`} been kept beyond 72 hours unclaimed. Tell
               the police station so they can trace the family or clear disposal.
             </MessageBarBody>
@@ -407,8 +412,17 @@ function ReleaseForm({ body, onClose }: { body: Body; onClose: () => void }) {
   const [policeClearance, setPoliceClearance] = useState('');
   const [handedOver, setHandedOver] = useState(true);
   const [notes, setNotes] = useState('');
+  const [witness, setWitness] = useState<WitnessConfirmed | null>(null);
   const [tried, setTried] = useState(false);
-  const problems = releaseProblems(body, { to, receivedBy, relationship, idProof, policeClearance });
+  const witnessed = needsPoliceClearance(body, to);
+  const problems = releaseProblems(body, {
+    to,
+    receivedBy,
+    relationship,
+    idProof,
+    policeClearance,
+    witnessed: witness !== null,
+  });
   const valid = Object.values(problems).every((p) => p === null);
   const show = (p: string | null) => (tried ? (p ?? undefined) : undefined);
   const save = useMutation({
@@ -422,6 +436,7 @@ function ReleaseForm({ body, onClose }: { body: Body; onClose: () => void }) {
         belongingsHandedOver: handedOver,
         notes: blankToNull(notes),
         version: body.version,
+        witnessConfirmationId: witnessed ? (witness?.confirmationId ?? null) : null,
       }),
     onSuccess: (released) => {
       void queryClient.invalidateQueries({ queryKey: mortuaryKeys.all });
@@ -429,12 +444,15 @@ function ReleaseForm({ body, onClose }: { body: Body; onClose: () => void }) {
       print.mutate(mortuaryApi.slip(released.id));
       onClose();
     },
+    // A witness's confirmation is spent once: after a refusal the witness confirms again.
+    onError: () => setWitness(null),
   });
 
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
       <DialogSurface style={{ maxWidth: 560 }}>
         <form
+          noValidate
           onSubmit={(event) => {
             event.preventDefault();
             setTried(true);
@@ -456,8 +474,9 @@ function ReleaseForm({ body, onClose }: { body: Body; onClose: () => void }) {
               {body.isMlc && (
                 <MessageBar intent="warning">
                   <MessageBarBody>
-                    Medico-legal ({body.mlcNumber ?? 'no number'}, {body.policeStation}): to the family only on the
-                    police&apos;s clearance; never for donation.
+                    <MessageBarTitle>Medico-legal</MessageBarTitle>
+                    {body.mlcNumber ?? 'no number'}, {body.policeStation}: to the family only on the police&apos;s
+                    clearance, witnessed by a second member of staff; never for donation.
                   </MessageBarBody>
                 </MessageBar>
               )}
@@ -497,6 +516,23 @@ function ReleaseForm({ body, onClose }: { body: Body; onClose: () => void }) {
                 >
                   <Input value={policeClearance} maxLength={200} onChange={(_, d) => setPoliceClearance(d.value)} />
                 </Field>
+              )}
+              {witnessed && (
+                <>
+                  <WitnessPanel
+                    purpose="mortuary.release"
+                    patientId={body.patientId}
+                    witness={witness}
+                    onChange={setWitness}
+                    legend="Witness to the release (a second member of the mortuary staff, at this screen)"
+                    description="A body released on the police's clearance is witnessed: the second member of staff types their own user name and password here. Nothing is signed in, and the password is not kept."
+                  />
+                  {show(problems.witness) && (
+                    <MessageBar intent="error">
+                      <MessageBarBody>{problems.witness}</MessageBarBody>
+                    </MessageBar>
+                  )}
+                </>
               )}
               {body.belongings && (
                 <Checkbox

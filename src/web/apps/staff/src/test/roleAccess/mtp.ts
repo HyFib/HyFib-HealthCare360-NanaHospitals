@@ -67,7 +67,15 @@ const CASE: MtpCaseDto = {
   medicalBoardReference: null,
   opinions: [
     { doctorName: 'Dr. Kavitha Raman', registrationNumber: 'TNMC 45120', opinionOn: today },
-    { doctorName: 'Dr. Anita Rao', registrationNumber: 'TNMC 51877', opinionOn: today },
+    // The second doctor recorded her own opinion (maker-checker, slice 9).
+    {
+      doctorName: 'Dr. Anita Rao',
+      registrationNumber: 'TNMC 51877',
+      opinionOn: today,
+      userId: id('u2'),
+      recordedBy: id('u2'),
+      confirmed: true,
+    },
   ],
   certifiedAt: daysAgo(0),
   certifiedBy: 'Dr. Kavitha Raman',
@@ -79,6 +87,7 @@ const CASE: MtpCaseDto = {
   remarks: null,
   cancelReason: null,
   version: 3,
+  awaitingSecondOpinion: false,
 };
 
 const REGISTER: MtpRegister = {
@@ -157,6 +166,8 @@ const REPORT: MtpMonthlyReport = {
   ],
   byAge: [count('Under 15'), count('15 to 19'), count('20 to 34', 1), count('35 and above')],
 };
+
+export { CASE as MTP_CASE };
 
 export const ANSWERS: FakeAnswers = {
   'GET /api/v1/mtp/cases': CASES,

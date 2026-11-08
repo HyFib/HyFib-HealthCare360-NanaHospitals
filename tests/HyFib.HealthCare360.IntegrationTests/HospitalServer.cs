@@ -87,6 +87,8 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.SecondSystemAdmin] = SystemAdministrationRole,
         [Users.BloodBankOfficer] = SystemRoles.BloodBankOfficer,
         [Users.SecondBloodBankOfficer] = SystemRoles.BloodBankOfficer,
+        [Users.Gynaecologist] = MtpRole,
+        [Users.SecondGynaecologist] = MtpRole,
         [Users.InsuranceDesk] = SystemRoles.InsuranceDesk,
         [Users.SecondInsuranceDesk] = SystemRoles.InsuranceDesk,
     };
@@ -99,8 +101,23 @@ public sealed class HospitalServer : IAsyncLifetime
     {
         [Users.BloodBankOfficer] = "Santosh Gaikwad",
         [Users.SecondBloodBankOfficer] = "Priya Nair",
+        [Users.Gynaecologist] = "Dr. Sneha Iyer",
+        [Users.SecondGynaecologist] = "Dr. Meera Pillai",
         [Users.InsuranceDesk] = "Farah Qureshi",
         [Users.SecondInsuranceDesk] = "Vikram Joshi",
+    };
+
+    /// <summary>
+    /// A role of the tests' own for the gynaecologists a place's MTP approval names (no seeded role holds the MTP
+    /// permissions): they open MTP cases, certify them and give the second opinion from 20 weeks.
+    /// </summary>
+    private const string MtpRole = "IT MTP gynaecologists";
+
+    /// <summary>The practitioner each MTP account is linked to: the seed's consultants DR004 and DR006, with their registrations.</summary>
+    private static readonly Dictionary<string, string> PractitionersCreatedOnFirstUse = new(StringComparer.Ordinal)
+    {
+        [Users.Gynaecologist] = "DR004",
+        [Users.SecondGynaecologist] = "DR006",
     };
 
     /// <summary>
@@ -570,12 +587,16 @@ public sealed class HospitalServer : IAsyncLifetime
     /// </summary>
     private async Task<string> CreateAccountAsync(HttpClient http, string userName, string role)
     {
-        // Only someone who holds admin.system.manage gives it: the Super Administrator, for the tests' role that holds it.
-        var admin = await SignInAsync(role == SystemAdministrationRole ? Users.Admin : Users.HospitalAdmin);
+        // Only someone who holds admin.system.manage gives it: the Super Administrator, for the tests' role that holds it (and
+        // for the MTP role, whose permissions the hospital administrator does not give).
+        var admin = await SignInAsync(role is SystemAdministrationRole or MtpRole ? Users.Admin : Users.HospitalAdmin);
         var roles = await admin.GetAsync<List<RoleListItem>>("/api/v1/admin/roles");
         var roleId = roles.SingleOrDefault(r => r.Name == role)?.Id
-                     ?? (await CreateRoleAsync(admin, new SaveRoleRequest(role, "Asks for and approves what two super administrators decide (tests)",
-                         [PlatformPermissions.SystemManage], Version: null))).Id;
+                     ?? (role == MtpRole
+                         ? await CreateRoleAsync(admin, new SaveRoleRequest(role, "Certify terminations of pregnancy (tests)",
+                             ["mtp.read", "mtp.certify", "mtp.register", "patients.sensitive.mtp"], Version: null))
+                         : await CreateRoleAsync(admin, new SaveRoleRequest(role, "Asks for and approves what two super administrators decide (tests)",
+                             [PlatformPermissions.SystemManage], Version: null))).Id;
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
                          ?? throw new InvalidOperationException("The hospital administrator has no facility.");
         var temporary = "It-first-" + Guid.NewGuid().ToString("N");
@@ -583,7 +604,7 @@ public sealed class HospitalServer : IAsyncLifetime
         {
             Users.SecondDoctor => await ConsultantAsync(1),
             Users.ThirdDoctor => await ConsultantAsync(2),
-            _ => null,
+            _ => PractitionersCreatedOnFirstUse.TryGetValue(userName, out var code) ? await PractitionerAsync(code) : null,
         };
         await CreateUserAsync(admin, new CreateUserRequest(
             userName, NamesCreatedOnFirstUse.GetValueOrDefault(userName, $"Demo {role}"), Email: null, Phone: null, [roleId], [facilityId], facilityId,
@@ -1222,7 +1243,7 @@ public sealed class HospitalServer : IAsyncLifetime
     /// and password (ADR-014), for <paramref name="purpose"/> and the patient: the confirmation <paramref name="at"/> then
     /// sends once with the record.
     /// </summary>
-    public async Task<WitnessConfirmed> WitnessAsync(ApiClient at, string witnessUserName, string purpose, Guid patientId)
+    public async Task<WitnessConfirmed> WitnessAsync(ApiClient at, string witnessUserName, string purpose, Guid? patientId)
     {
         ArgumentNullException.ThrowIfNull(at);
         await SignInAsync(witnessUserName); // an account created on first use exists before it witnesses
@@ -1274,6 +1295,13 @@ public sealed class HospitalServer : IAsyncLifetime
         var checker = await SignInAsync(Users.HospitalAdmin);
         var request = await checker.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
         return await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Checked against the pack label.", request.Version));
+    }
+
+    private async Task<Guid?> PractitionerAsync(string code)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Practitioner>()
+            .Where(p => p.Code == code).Select(p => (Guid?)p.Id).FirstAsync(TestContext.Current.CancellationToken);
     }
 
     // The seed signs the first consultant (by code) in as the doctor; the second and third doctors are the next ones.
@@ -1557,6 +1585,18 @@ public sealed class HospitalServer : IAsyncLifetime
         /// use.
         /// </summary>
         public const string SecondBloodBankOfficer = "bloodbank2";
+
+        /// <summary>
+        /// A gynaecologist the place's MTP approval names (Dr. Sneha Iyer, linked to practitioner DR004): opens and certifies
+        /// terminations of pregnancy. Created on first use.
+        /// </summary>
+        public const string Gynaecologist = "gynae";
+
+        /// <summary>
+        /// A second gynaecologist (Dr. Meera Pillai, DR006), who gives the second opinion from 20 weeks, from her own sign-in
+        /// or confirming at the first's screen. Created on first use.
+        /// </summary>
+        public const string SecondGynaecologist = "gynae2";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);

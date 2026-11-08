@@ -35,6 +35,7 @@ internal sealed class BodyRecordConfiguration : IEntityTypeConfiguration<BodyRec
         b.Property(x => x.PoliceClearance).HasMaxLength(200);
         b.Property(x => x.ReleaseNotes).HasMaxLength(1000);
         b.Property(x => x.ReleasedByName).HasMaxLength(200);
+        b.Property(x => x.ReleaseWitnessName).HasMaxLength(200);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<MortuarySlot>().WithMany().HasForeignKey(x => x.SlotId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.FacilityId, x.Number }).IsUnique();
