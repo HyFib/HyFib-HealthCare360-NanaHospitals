@@ -32,6 +32,12 @@ const manifest: ModuleManifest = {
         'ageing',
         'near expiry',
         'discharge',
+        'gst',
+        'hsn',
+        'tds',
+        'payroll',
+        'claims',
+        'settlement ratio',
       ],
     },
     {
@@ -39,6 +45,12 @@ const manifest: ModuleManifest = {
       to: '/analytics/kpis',
       permission: ANY_ANALYTICS,
       keywords: ['kpi', 'definition', 'formula', 'glossary', 'how calculated', 'metric', 'indicator'],
+    },
+    {
+      label: 'KPI targets',
+      to: '/analytics/kpi-targets',
+      permission: A.kpiTargetsManage,
+      keywords: ['target', 'threshold', 'amber', 'red', 'goal', 'breach', 'kpi'],
     },
     {
       label: 'Dashboards',

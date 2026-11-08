@@ -24,6 +24,20 @@ internal sealed class DashboardConfiguration : IEntityTypeConfiguration<Dashboar
     }
 }
 
+internal sealed class KpiTargetConfiguration : IEntityTypeConfiguration<KpiTarget>
+{
+    public void Configure(EntityTypeBuilder<KpiTarget> b)
+    {
+        b.ToTable("kpi_targets", AnalyticsSchema.Name);
+        b.Property(x => x.KpiKey).HasMaxLength(64);
+        b.Property(x => x.OwnerRole).HasMaxLength(KpiTarget.MaxRoleLength);
+        b.Property(x => x.SetByName).HasMaxLength(200);
+
+        // One target per KPI and facility; a removed target keeps its row (soft delete) and frees the key.
+        b.HasIndex(x => new { x.FacilityId, x.KpiKey }).IsUnique().HasFilter("is_deleted = false");
+    }
+}
+
 internal sealed class ReportScheduleConfiguration : IEntityTypeConfiguration<ReportSchedule>
 {
     public void Configure(EntityTypeBuilder<ReportSchedule> b)
