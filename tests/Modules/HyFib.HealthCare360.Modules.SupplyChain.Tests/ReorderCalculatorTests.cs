@@ -155,4 +155,13 @@ public sealed class ReorderCalculatorTests
     [InlineData(0, 1)]
     public void A_requisition_line_made_from_a_suggestion_asks_for_at_least_one_pack(double suggested, double ordered) =>
         ReorderCalculator.RequisitionQuantity((decimal)suggested).ShouldBe((decimal)ordered);
+
+    [Theory]
+    [InlineData(true, 100, 80, 0, true)]
+    [InlineData(true, 100, 80, 30, false)]   // open orders count, as on the reorder report
+    [InlineData(true, 100, 100, 0, true)]    // at the level counts as below it
+    [InlineData(false, 100, 0, 0, false)]    // an inactive item is never due
+    [InlineData(true, 0, 0, 0, false)]       // no level, no flag
+    public void The_stock_screen_flag_and_the_report_share_one_rule(bool active, double level, double usable, double onOrder, bool due) =>
+        ReorderCalculator.IsDue(active, (decimal)level, (decimal)usable, (decimal)onOrder).ShouldBe(due);
 }

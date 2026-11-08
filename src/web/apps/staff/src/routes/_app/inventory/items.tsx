@@ -65,6 +65,7 @@ import {
   VED_CLASSES,
   vedLabel,
   weakensClass,
+  loosensPricing,
   type DrugSchedule,
   type ItemType,
 } from '@/modules/inventory/labels';
@@ -324,6 +325,8 @@ const itemSchema = z
     manufacturer: z.string().trim().max(120),
     specification: z.string().trim().max(200),
     ceilingPrice: z.number().nullable(),
+    ceilingNotification: z.string().trim().max(100),
+    priceChangeReason: z.string().trim().max(500),
     barcode: z.string().trim().max(64),
     isActive: z.boolean(),
   })
@@ -331,7 +334,7 @@ const itemSchema = z
     if (v.maximumStock > 0 && v.minimumStock > v.maximumStock) {
       ctx.addIssue({ code: 'custom', path: ['minimumStock'], message: 'The minimum cannot be above the maximum.' });
     }
-    if (v.type === 'Implant' && v.ceilingPrice !== null && (v.ceilingPrice <= 0 || v.ceilingPrice > 10_000_000)) {
+    if (hasCeiling(v.type) && v.ceilingPrice !== null && (v.ceilingPrice <= 0 || v.ceilingPrice > 10_000_000)) {
       ctx.addIssue({
         code: 'custom',
         path: ['ceilingPrice'],
@@ -341,6 +344,11 @@ const itemSchema = z
   });
 
 type ItemValues = z.infer<typeof itemSchema>;
+
+/** NPPA fixes ceilings for scheduled medicines (DPCO 2013) and for implants (coronary stents, knee implants). */
+function hasCeiling(type: ItemType): boolean {
+  return type === 'Drug' || type === 'Implant';
+}
 
 function toForm(item: ItemDetail | null): ItemValues {
   return {
@@ -371,6 +379,8 @@ function toForm(item: ItemDetail | null): ItemValues {
     manufacturer: item?.manufacturer ?? '',
     specification: item?.specification ?? '',
     ceilingPrice: item?.ceilingPrice ?? null,
+    ceilingNotification: item?.ceilingNotification ?? '',
+    priceChangeReason: '',
     barcode: item?.barcode ?? '',
     isActive: item?.isActive ?? true,
   };
@@ -426,12 +436,16 @@ function ItemEditor({
   });
   // The version the form was filled from, not a newer one read since (REL-04).
   const [loadedVersion] = useState(item?.version ?? null);
-  const [schedule, isControlled, isHighAlert, type, baseUnit, purchaseUnit] = useWatch({
+  const [schedule, isControlled, isHighAlert, type, baseUnit, purchaseUnit, ceilingPrice, gstRate] = useWatch({
     control: form.control,
-    name: ['schedule', 'isControlled', 'isHighAlert', 'type', 'baseUnit', 'purchaseUnit'],
+    name: ['schedule', 'isControlled', 'isHighAlert', 'type', 'baseUnit', 'purchaseUnit', 'ceilingPrice', 'gstRate'],
   });
   // An existing drug handled less strictly keeps its class until a pharmacist approves the change (maker-checker).
   const weakened = item !== null && weakensClass(item, { schedule, isControlled, isHighAlert });
+  // A ceiling raised or removed, or another GST rate, waits for someone who approves prices (maker-checker).
+  const loosened =
+    item !== null &&
+    loosensPricing(item, { ceilingPrice: hasCeiling(type) ? ceilingPrice : null, gstRate: Number(gstRate) });
   const readOnly = !canManage;
 
   const save = useMutation({
@@ -463,8 +477,10 @@ function ItemEditor({
         maximumStock: values.maximumStock,
         manufacturer: values.manufacturer || null,
         specification: values.specification || null,
-        // NPPA fixes ceilings for implants (coronary stents, knee implants) only.
-        ceilingPrice: values.type === 'Implant' ? values.ceilingPrice : null,
+        ceilingPrice: hasCeiling(values.type) ? values.ceilingPrice : null,
+        ceilingNotification:
+          hasCeiling(values.type) && values.ceilingPrice !== null ? values.ceilingNotification || null : null,
+        priceChangeReason: values.priceChangeReason || null,
         barcode: values.barcode || null,
         isActive: values.isActive,
         version: loadedVersion,
@@ -475,7 +491,9 @@ function ItemEditor({
       if (saved.approval) {
         notify.info(
           'Item saved',
-          'Its classification stays as it was until a pharmacist approves the change in Approvals.',
+          saved.approval.kind === 'inventory.item_price'
+            ? 'Its ceiling price and GST rate stay as they were until someone who approves prices approves the change in Approvals.'
+            : 'Its classification stays as it was until a pharmacist approves the change in Approvals.',
         );
       } else {
         notify.success(item ? 'Item saved' : 'Item added');
@@ -766,18 +784,57 @@ function ItemEditor({
                   hint="What the device is, as its bill says. For a stent: bare-metal or drug-eluting first, then material and size."
                 />
               )}
-              {type === 'Implant' && (
+              {hasCeiling(type) && (
                 <NumberField
                   control={form.control}
                   name="ceilingPrice"
-                  label="NPPA ceiling price (₹ a unit, with GST)"
+                  label={`NPPA ceiling price (₹ a ${baseUnit || 'unit'}, with GST)`}
                   disabled={readOnly}
                   min={0}
-                  step={0.01}
-                  hint="Coronary stents and knee implants. No patient is charged more, whatever an older pack's MRP. Update it when NPPA revises it."
+                  step={0.0001}
+                  hint={
+                    type === 'Implant'
+                      ? "Coronary stents and knee implants. No patient is charged more, whatever an older pack's MRP. Update it when NPPA revises it."
+                      : 'A scheduled medicine (DPCO 2013): no pack is received with an MRP above it, and none is sold above it. Leave empty if not price-controlled.'
+                  }
+                />
+              )}
+              {hasCeiling(type) && ceilingPrice !== null && (
+                <TextField
+                  control={form.control}
+                  name="ceilingNotification"
+                  label="NPPA notification"
+                  disabled={readOnly}
+                  maxLength={100}
+                  hint="Its S.O. number and date, e.g. S.O. 1234(E) of 30-Mar-2026"
                 />
               )}
             </FormGrid>
+            {item?.pendingPricing && (
+              <MessageBar intent="info" layout="multiline">
+                <MessageBarBody>
+                  {`${item.pendingPricing.requestedBy} asked on ${formatDateTime(item.pendingPricing.requestedAt)} for a higher or no ceiling price, or another GST rate; the item keeps its own until someone who approves prices approves it in Approvals.`}
+                </MessageBarBody>
+              </MessageBar>
+            )}
+            {loosened && !readOnly && (
+              <>
+                <MessageBar intent="warning" layout="multiline">
+                  <MessageBarBody>
+                    A higher or no ceiling price, or another GST rate, waits for someone who approves prices. The rest
+                    of the item is saved at once. A ceiling set or lowered applies at once.
+                  </MessageBarBody>
+                </MessageBar>
+                <TextAreaField
+                  control={form.control}
+                  name="priceChangeReason"
+                  label="Why the price change"
+                  rows={2}
+                  maxLength={500}
+                  hint="Name the NPPA notification or the GST notification; whoever approves it reads this."
+                />
+              </>
+            )}
             <SwitchField
               control={form.control}
               name="isActive"

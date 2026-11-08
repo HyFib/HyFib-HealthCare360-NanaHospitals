@@ -63,6 +63,20 @@ export function weakensClass(
   );
 }
 
+/**
+ * Whether a save loosens an item's price control, which then waits for someone who approves prices: a ceiling raised or
+ * removed, or another GST rate. A ceiling set or lowered applies at once.
+ */
+export function loosensPricing(
+  before: { ceilingPrice: number | null; gstRate: number },
+  after: { ceilingPrice: number | null; gstRate: number },
+): boolean {
+  return (
+    before.gstRate !== after.gstRate ||
+    (before.ceilingPrice !== null && (after.ceilingPrice === null || after.ceilingPrice > before.ceilingPrice))
+  );
+}
+
 export const VED_CLASSES = ['Vital', 'Essential', 'Desirable'] as const;
 export type VedClass = (typeof VED_CLASSES)[number];
 export const vedLabel: Record<VedClass, string> = {
