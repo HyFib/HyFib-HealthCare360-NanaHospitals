@@ -216,7 +216,12 @@ internal sealed class LabConnectionService(
             EntityId = profile.Code,
             Details = new
             {
-                transport = transport.ToString(), entry.Enabled, entry.Port, entry.AllowedIps, entry.AgentDeviceId, comPort = entry.Serial?.PortName,
+                transport = transport.ToString(),
+                entry.Enabled,
+                entry.Port,
+                entry.AllowedIps,
+                entry.AgentDeviceId,
+                comPort = entry.Serial?.PortName,
                 deviceAuthentication = entry.DeviceAuthentication.ToString(),
             },
             Severity = AuditSeverity.Warning,

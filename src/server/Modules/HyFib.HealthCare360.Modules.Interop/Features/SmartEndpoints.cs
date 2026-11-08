@@ -254,7 +254,9 @@ internal static class SmartEndpoints
         {
             audit.Add(new AuditEntry(AuditCategories.Security, "smart.token_refused", $"SMART token refused for {client!.Name}: {refused.Code}")
             {
-                EntityType = nameof(SmartClient), EntityId = client.Id.ToString(), Severity = AuditSeverity.Warning,
+                EntityType = nameof(SmartClient),
+                EntityId = client.Id.ToString(),
+                Severity = AuditSeverity.Warning,
             });
             await db.SaveChangesAsync(ct);
             return OAuth(refused);
@@ -262,12 +264,18 @@ internal static class SmartEndpoints
 
         audit.Add(new AuditEntry(AuditCategories.Security, "smart.token_issued", $"SMART access token issued to {client!.Name} ({grantType})")
         {
-            EntityType = nameof(SmartClient), EntityId = client.Id.ToString(), PatientId = issued!.PatientId, Details = new { grantType, scope = issued.Scope },
+            EntityType = nameof(SmartClient),
+            EntityId = client.Id.ToString(),
+            PatientId = issued!.PatientId,
+            Details = new { grantType, scope = issued.Scope },
         });
         await db.SaveChangesAsync(ct);
         var body = new Dictionary<string, object>
         {
-            ["access_token"] = issued.AccessToken, ["token_type"] = "Bearer", ["expires_in"] = issued.ExpiresIn, ["scope"] = issued.Scope,
+            ["access_token"] = issued.AccessToken,
+            ["token_type"] = "Bearer",
+            ["expires_in"] = issued.ExpiresIn,
+            ["scope"] = issued.Scope,
         };
         if (issued.PatientId is { } patient)
         {
@@ -303,8 +311,13 @@ internal static class SmartEndpoints
 
         var body = new Dictionary<string, object>
         {
-            ["active"] = true, ["scope"] = info.Token.Scopes, ["client_id"] = info.Client.ClientId, ["token_type"] = "Bearer",
-            ["iat"] = info.Token.IssuedAt.ToUnixTimeSeconds(), ["exp"] = info.Token.ExpiresAt.ToUnixTimeSeconds(), ["sub"] = info.Token.UserId.ToString("D"),
+            ["active"] = true,
+            ["scope"] = info.Token.Scopes,
+            ["client_id"] = info.Client.ClientId,
+            ["token_type"] = "Bearer",
+            ["iat"] = info.Token.IssuedAt.ToUnixTimeSeconds(),
+            ["exp"] = info.Token.ExpiresAt.ToUnixTimeSeconds(),
+            ["sub"] = info.Token.UserId.ToString("D"),
         };
         if (info.Token.PatientId is { } patient)
         {

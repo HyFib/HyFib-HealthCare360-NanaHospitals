@@ -595,24 +595,24 @@ internal static class AbdmTestData
     private static BillLine ChargedLine(
         int n, int order, string code, string description, string? sac, decimal quantity, decimal unitPrice, decimal taxRate, Guid? doctor,
         decimal tariffPercent = 0m, decimal staffDiscount = 0m) => new()
-    {
-        TariffDiscountPercent = tariffPercent,
-        LineDiscountAmount = staffDiscount,
-        Id = Guid.Parse($"01923a4b-0000-7000-8000-000000{n:x6}"),
-        BillId = BillId,
-        ServiceCode = code,
-        Description = description,
-        SacCode = sac,
-        Quantity = quantity,
-        UnitPrice = unitPrice,
-        GrossAmount = quantity * unitPrice,
-        TaxRate = taxRate,
-        IsDiscountAllowed = true,
-        PractitionerId = doctor,
-        DepartmentId = TestData.DepartmentId,
-        ServiceDate = Seen,
-        SortOrder = order,
-    };
+        {
+            TariffDiscountPercent = tariffPercent,
+            LineDiscountAmount = staffDiscount,
+            Id = Guid.Parse($"01923a4b-0000-7000-8000-000000{n:x6}"),
+            BillId = BillId,
+            ServiceCode = code,
+            Description = description,
+            SacCode = sac,
+            Quantity = quantity,
+            UnitPrice = unitPrice,
+            GrossAmount = quantity * unitPrice,
+            TaxRate = taxRate,
+            IsDiscountAllowed = true,
+            PractitionerId = doctor,
+            DepartmentId = TestData.DepartmentId,
+            ServiceDate = Seen,
+            SortOrder = order,
+        };
 
     /// <summary>An instant in India in 2026 (IST, UTC+05:30).</summary>
     public static DateTimeOffset Ist(int month, int day, int hour, int minute, int second = 0) =>

@@ -54,8 +54,10 @@ public sealed class SmartOnFhirTests(HospitalServer server)
         var assertion = Assertion(client.ClientId, tokenEndpoint, key);
         var token = await TokenAsync(anonymous, new()
         {
-            ["grant_type"] = "client_credentials", ["scope"] = "system/Patient.rs system/Observation.rs system/Patient.cud",
-            ["client_assertion_type"] = SmartAuthorization.ClientAssertionType, ["client_assertion"] = assertion,
+            ["grant_type"] = "client_credentials",
+            ["scope"] = "system/Patient.rs system/Observation.rs system/Patient.cud",
+            ["client_assertion_type"] = SmartAuthorization.ClientAssertionType,
+            ["client_assertion"] = assertion,
         });
         token.Status.ShouldBe(HttpStatusCode.OK);
         token.Body.GetProperty("scope").GetString().ShouldBe("system/Patient.rs");
@@ -65,8 +67,10 @@ public sealed class SmartOnFhirTests(HospitalServer server)
         // The same assertion is good once.
         (await TokenAsync(anonymous, new()
         {
-            ["grant_type"] = "client_credentials", ["scope"] = "system/Patient.rs",
-            ["client_assertion_type"] = SmartAuthorization.ClientAssertionType, ["client_assertion"] = assertion,
+            ["grant_type"] = "client_credentials",
+            ["scope"] = "system/Patient.rs",
+            ["client_assertion_type"] = SmartAuthorization.ClientAssertionType,
+            ["client_assertion"] = assertion,
         })).Error.ShouldBe("invalid_client");
 
         // Signed by another key, or for another audience: refused.
@@ -96,17 +100,23 @@ public sealed class SmartOnFhirTests(HospitalServer server)
         // Introspection, for the client the token is its own; then revoked, it reads nothing.
         var active = await FormAsync(anonymous, SmartEndpoints.IntrospectPath, new()
         {
-            ["token"] = bearer, ["client_assertion_type"] = SmartAuthorization.ClientAssertionType, ["client_assertion"] = Assertion(client.ClientId, tokenEndpoint, key),
+            ["token"] = bearer,
+            ["client_assertion_type"] = SmartAuthorization.ClientAssertionType,
+            ["client_assertion"] = Assertion(client.ClientId, tokenEndpoint, key),
         });
         (active.Body.GetProperty("active").GetBoolean(), active.Body.GetProperty("scope").GetString(), active.Body.GetProperty("client_id").GetString())
             .ShouldBe((true, "system/Patient.rs", client.ClientId));
         (await FormAsync(anonymous, SmartEndpoints.RevokePath, new()
         {
-            ["token"] = bearer, ["client_assertion_type"] = SmartAuthorization.ClientAssertionType, ["client_assertion"] = Assertion(client.ClientId, tokenEndpoint, key),
+            ["token"] = bearer,
+            ["client_assertion_type"] = SmartAuthorization.ClientAssertionType,
+            ["client_assertion"] = Assertion(client.ClientId, tokenEndpoint, key),
         })).Status.ShouldBe(HttpStatusCode.OK);
         (await FormAsync(anonymous, SmartEndpoints.IntrospectPath, new()
         {
-            ["token"] = bearer, ["client_assertion_type"] = SmartAuthorization.ClientAssertionType, ["client_assertion"] = Assertion(client.ClientId, tokenEndpoint, key),
+            ["token"] = bearer,
+            ["client_assertion_type"] = SmartAuthorization.ClientAssertionType,
+            ["client_assertion"] = Assertion(client.ClientId, tokenEndpoint, key),
         })).Body.GetProperty("active").GetBoolean().ShouldBeFalse();
         using (var revoked = await RawFhirAsync(smart, $"Patient/{shared}"))
         {
@@ -169,10 +179,22 @@ public sealed class SmartOnFhirTests(HospitalServer server)
         var code = back["code"].ToString();
 
         // A wrong verifier is refused; the right one gets a token for the patient.
-        (await TokenAsync(anonymous, new() { ["grant_type"] = "authorization_code", ["client_id"] = client.ClientId, ["code"] = code,
-            ["redirect_uri"] = "https://viewer.test/callback", ["code_verifier"] = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(48)) })).Error.ShouldBe("invalid_grant");
-        var token = await TokenAsync(anonymous, new() { ["grant_type"] = "authorization_code", ["client_id"] = client.ClientId, ["code"] = code,
-            ["redirect_uri"] = "https://viewer.test/callback", ["code_verifier"] = verifier });
+        (await TokenAsync(anonymous, new()
+        {
+            ["grant_type"] = "authorization_code",
+            ["client_id"] = client.ClientId,
+            ["code"] = code,
+            ["redirect_uri"] = "https://viewer.test/callback",
+            ["code_verifier"] = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(48))
+        })).Error.ShouldBe("invalid_grant");
+        var token = await TokenAsync(anonymous, new()
+        {
+            ["grant_type"] = "authorization_code",
+            ["client_id"] = client.ClientId,
+            ["code"] = code,
+            ["redirect_uri"] = "https://viewer.test/callback",
+            ["code_verifier"] = verifier
+        });
         token.Status.ShouldBe(HttpStatusCode.OK);
         token.Body.GetProperty("patient").GetString().ShouldBe(patient.ToString("D"));
         token.Body.GetProperty("scope").GetString().ShouldBe("launch/patient patient/*.rs");
@@ -187,8 +209,14 @@ public sealed class SmartOnFhirTests(HospitalServer server)
         (await FhirAsync(app, $"Patient?_id={patient}", null)).Status.ShouldBe(200);
 
         // The code again: refused, and the token it was exchanged for stops working.
-        (await TokenAsync(anonymous, new() { ["grant_type"] = "authorization_code", ["client_id"] = client.ClientId, ["code"] = code,
-            ["redirect_uri"] = "https://viewer.test/callback", ["code_verifier"] = verifier })).Error.ShouldBe("invalid_grant");
+        (await TokenAsync(anonymous, new()
+        {
+            ["grant_type"] = "authorization_code",
+            ["client_id"] = client.ClientId,
+            ["code"] = code,
+            ["redirect_uri"] = "https://viewer.test/callback",
+            ["code_verifier"] = verifier
+        })).Error.ShouldBe("invalid_grant");
         using (var stolen = await RawFhirAsync(app, $"Patient/{patient}"))
         {
             stolen.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
@@ -275,8 +303,10 @@ public sealed class SmartOnFhirTests(HospitalServer server)
 
     private static Dictionary<string, string> Credentials(string assertion) => new()
     {
-        ["grant_type"] = "client_credentials", ["scope"] = "system/Patient.rs",
-        ["client_assertion_type"] = SmartAuthorization.ClientAssertionType, ["client_assertion"] = assertion,
+        ["grant_type"] = "client_credentials",
+        ["scope"] = "system/Patient.rs",
+        ["client_assertion_type"] = SmartAuthorization.ClientAssertionType,
+        ["client_assertion"] = assertion,
     };
 
     private sealed record OAuthAnswer(HttpStatusCode Status, JsonElement Body)

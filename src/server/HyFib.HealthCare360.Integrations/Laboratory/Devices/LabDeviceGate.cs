@@ -161,7 +161,12 @@ internal sealed class LabDeviceGate(IServiceScopeFactory scopes, Func<X509Certif
             {
                 db.Add(device = new LabDevice
                 {
-                    ConnectionCode = code, Method = method, Identifier = identifier, Subject = subject, Status = LabDeviceStatus.Seen, FirstSeenAt = now,
+                    ConnectionCode = code,
+                    Method = method,
+                    Identifier = identifier,
+                    Subject = subject,
+                    Status = LabDeviceStatus.Seen,
+                    FirstSeenAt = now,
                 });
             }
         }
