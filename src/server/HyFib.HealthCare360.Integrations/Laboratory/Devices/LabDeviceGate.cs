@@ -114,13 +114,19 @@ internal sealed class LabDeviceGate(IServiceScopeFactory scopes, Func<X509Certif
     private async Task<(Stream?, LabDeviceAdmission)> MutualTlsAsync(string code, Stream raw, IPAddress? remote, CancellationToken ct)
     {
         var certificate = serverCertificate() ?? throw new AuthenticationException("The gateway has no server certificate.");
-        var tls = new SslStream(raw, leaveInnerStreamOpen: false, (_, _, _, _) => true);
+        // A device's certificate is usually self-signed, so no chain is asked of it: the handshake only needs one presented,
+        // and the device is then admitted by its SHA-256 fingerprint against the connection's approved devices (DecideAsync).
+        var tls = new SslStream(raw, leaveInnerStreamOpen: false, (_, presented, _, _) => presented is not null);
         await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
         {
             ServerCertificate = certificate,
             ClientCertificateRequired = true,
             CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
+            // TLS 1.2 is the floor on purpose, as for the server's HTTPS (HospitalHttps): older Windows versions the server may
+            // run on still enable TLS 1.0/1.1 by default.
+#pragma warning disable CA5398 // Avoid hardcoded SslProtocols values
             EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+#pragma warning restore CA5398
         }, ct);
 
         if (tls.RemoteCertificate is not { } presented)
