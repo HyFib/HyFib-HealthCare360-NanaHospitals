@@ -110,6 +110,9 @@ public static class WhatsAppOptOutPolicy
         // Asked for by someone else, and sent only by SMS.
         "portal.family_code",
 
+        // Asked for at the desk before a patient's records are shared with a family member's portal account, sent only by SMS.
+        "portal.family_code_desk",
+
         // Sent by staff when the patient asks at the desk; the portal's own sign-in needs no link.
         "portal.link",
 

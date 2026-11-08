@@ -56,7 +56,8 @@ public sealed record CampaignDetail(
     int AudienceCount,
     int QueuedCount,
     int SkippedCount,
-    uint Version);
+    uint Version,
+    DateTimeOffset? ScheduleAskedAt = null);
 
 /// <summary>Delivery tracking from the notification logs of the campaign's messages.</summary>
 public sealed record CampaignDelivery(int Recipients, int Queued, int Sent, int Failed, int Skipped, int OptedOut);
