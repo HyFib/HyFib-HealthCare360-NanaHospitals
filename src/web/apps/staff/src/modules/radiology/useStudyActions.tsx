@@ -120,7 +120,10 @@ export function useStudyActions(): {
           open
           title={`Cancel ${dialog.study.studyName}?`}
           description={
-            <Caption1>The charge is reversed on the bill. A study that has been reported cannot be cancelled.</Caption1>
+            <Caption1>
+              The charge is reversed on the bill. A study that has been reported cannot be cancelled, nor an ultrasound
+              in pregnancy once scanned: its Form F is completed instead.
+            </Caption1>
           }
           suggestions={[
             'Patient declined',
