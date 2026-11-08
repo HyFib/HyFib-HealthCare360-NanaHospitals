@@ -54,6 +54,7 @@ import {
   oxygenLabel,
   ponvLabel,
 } from './labels';
+import { isSignedOut } from './logic';
 import { ActionError, Detail, DetailGrid } from './shared/feedback';
 
 const useStyles = makeStyles({
@@ -81,11 +82,6 @@ function numberOrNull(value: string): number | null {
   }
   const n = Number(trimmed);
   return Number.isFinite(n) ? n : null;
-}
-
-/** True once the WHO Sign-out is complete: the patient then belongs to the recovery room. */
-export function isSignedOut(booking: SurgeryDetail): boolean {
-  return booking.safetyChecklist.some((p) => p.phase === 'SignOut' && p.isComplete);
 }
 
 /**
@@ -116,7 +112,9 @@ export function RecoveryPanel({ booking }: { booking: SurgeryDetail }) {
       );
     }
     if (!booking.inRecovery) {
-      return <Text className={styles.muted}>No recovery record: the patient left recovery before it was kept here.</Text>;
+      return (
+        <Text className={styles.muted}>No recovery record: the patient left recovery before it was kept here.</Text>
+      );
     }
     return canRecord ? (
       <ReceiveForm booking={booking} />
@@ -156,7 +154,8 @@ function useSaved(booking: SurgeryDetail) {
   const queryClient = useQueryClient();
   return (saved: RecoveryRecordDto) => {
     queryClient.setQueryData(otKeys.recovery(booking.id), saved);
-    void queryClient.invalidateQueries({ queryKey: otKeys.booking(booking.id) });
+    // Exactly the booking: the recovery record's own key sits under it and was just set.
+    void queryClient.invalidateQueries({ queryKey: otKeys.booking(booking.id), exact: true });
   };
 }
 
@@ -213,7 +212,10 @@ function ReceiveForm({ booking }: { booking: SurgeryDetail }) {
             <Input type="number" inputMode="decimal" value={litres} onChange={(_, d) => setLitres(d.value)} />
           </Field>
         )}
-        <Field label="Systolic before anaesthesia (mmHg)" hint="Left empty: the first systolic of the anaesthesia chart.">
+        <Field
+          label="Systolic before anaesthesia (mmHg)"
+          hint="Left empty: the first systolic of the anaesthesia chart."
+        >
           <Input type="number" inputMode="numeric" value={systolic} onChange={(_, d) => setSystolic(d.value)} />
         </Field>
       </div>
@@ -483,9 +485,7 @@ function ObservationForm({ booking }: { booking: SurgeryDetail }) {
         <Field label="SpO₂ (%)">
           <Input type="number" inputMode="numeric" value={values.spO2} onChange={set('spO2')} />
         </Field>
-        <Field label="On oxygen">
-          <Switch checked={onOxygen} onChange={(_, d) => setOnOxygen(d.checked)} label={onOxygen ? 'Yes' : 'No'} />
-        </Field>
+        <Switch checked={onOxygen} onChange={(_, d) => setOnOxygen(d.checked)} label="On oxygen" />
         <Field label="Respiration (/min)">
           <Input type="number" inputMode="numeric" value={values.respiratoryRate} onChange={set('respiratoryRate')} />
         </Field>
@@ -513,10 +513,24 @@ function ObservationForm({ booking }: { booking: SurgeryDetail }) {
           </Select>
         </Field>
         <Field label="Limbs moved on command (0–4)">
-          <Input type="number" inputMode="numeric" min={0} max={4} value={values.limbsMoving} onChange={set('limbsMoving')} />
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={4}
+            value={values.limbsMoving}
+            onChange={set('limbsMoving')}
+          />
         </Field>
         <Field label="Pain score (0–10)">
-          <Input type="number" inputMode="numeric" min={0} max={10} value={values.painScore} onChange={set('painScore')} />
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={10}
+            value={values.painScore}
+            onChange={set('painScore')}
+          />
         </Field>
         <Field label="Nausea and vomiting">
           <Select value={ponv} onChange={(_, d) => setPonv(d.value as Ponv | '')}>

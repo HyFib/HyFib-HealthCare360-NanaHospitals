@@ -162,7 +162,9 @@ describe('the recovery room', SCREEN_TESTS, () => {
   it('waits for the WHO Sign-out, then lets the nurse receive the patient', async () => {
     server = fakeServer({});
     show({ ...BOOKING, status: 'InProgress', safetyChecklist: phases(false), inRecovery: false }, NURSE);
-    expect(await screen.findByText('The patient comes to recovery after the WHO Sign-out.', {}, SLOW)).toBeInTheDocument();
+    expect(
+      await screen.findByText('The patient comes to recovery after the WHO Sign-out.', {}, SLOW),
+    ).toBeInTheDocument();
     cleanup();
 
     server = fakeServer({ [`POST ${RECOVERY}/receive`]: RECORD });
@@ -193,7 +195,12 @@ describe('the recovery room', SCREEN_TESTS, () => {
         name: 'Dr. Kavita Shah',
         expiresAt: '2026-11-08T05:05:00Z',
       },
-      [`POST ${RECOVERY}/handover`]: { ...RECORD, handoverAt: T, handedOverByName: 'Dr. Kavita Shah', handoverConfirmedAtScreen: true },
+      [`POST ${RECOVERY}/handover`]: {
+        ...RECORD,
+        handoverAt: T,
+        handedOverByName: 'Dr. Kavita Shah',
+        handoverConfirmedAtScreen: true,
+      },
       [`POST ${RECOVERY}/observations`]: RECORD,
     });
     const u = userEvent.setup();
@@ -207,7 +214,9 @@ describe('the recovery room', SCREEN_TESTS, () => {
     expect(await within(handover).findByText('Dr. Kavita Shah')).toBeInTheDocument();
     await expectNoAxeViolations();
     await u.click(within(handover).getByRole('button', { name: 'Record the handover' }));
-    expect(await screen.findByText(/Handed over by Dr. Kavita Shah at .*, confirmed at the recovery nurse’s screen/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Handed over by Dr. Kavita Shah at .*, confirmed at the recovery nurse’s screen/),
+    ).toBeInTheDocument();
     expect(server.requests.find((r) => r.path.endsWith('/witness'))?.body).toMatchObject({
       purpose: 'ot.recovery_handover',
       patientId: BOOKING.patientId,
@@ -255,7 +264,12 @@ describe('the recovery room', SCREEN_TESTS, () => {
   });
 
   it('lets the anaesthetist send the patient to the ward below the score with a reason, and the ICU at any score', async () => {
-    const below = { ...RECORD, handoverAt: T, handedOverByName: 'Dr. Kavita Shah', score: score(8, 'The modified Aldrete score is 8 of 10.') };
+    const below = {
+      ...RECORD,
+      handoverAt: T,
+      handedOverByName: 'Dr. Kavita Shah',
+      score: score(8, 'The modified Aldrete score is 8 of 10.'),
+    };
     server = fakeServer({
       [`GET ${RECOVERY}`]: below,
       [`POST ${RECOVERY}/discharge/override`]: {
@@ -284,7 +298,11 @@ describe('the recovery room', SCREEN_TESTS, () => {
     expect(screen.queryByRole('group', { name: 'Anaesthetist’s override' })).toBeNull();
     await u.selectOptions(screen.getByRole('combobox', { name: 'To' }), 'Ward');
 
-    await u.click(within(screen.getByRole('group', { name: 'Anaesthetist’s override' })).getByRole('button', { name: 'Send to the ward below the score' }));
+    await u.click(
+      within(screen.getByRole('group', { name: 'Anaesthetist’s override' })).getByRole('button', {
+        name: 'Send to the ward below the score',
+      }),
+    );
     await waitFor(() => expect(notify.success).toHaveBeenCalledWith('Discharged from recovery to the Ward'));
     expect(server.requests.find((r) => r.path.endsWith('/override'))?.body).toEqual({ reason: 'Spinal regressing' });
     expect(await screen.findByText(/Override by Dr. Kavita Shah: Spinal regressing/)).toBeInTheDocument();
