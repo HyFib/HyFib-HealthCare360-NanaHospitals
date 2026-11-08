@@ -65,7 +65,10 @@ export function buildRecallTraceHtml(trace: RecallTrace, letterhead: Letterhead)
   const template = templateFor(letterhead, 'other');
   const patients = trace.patients
     .map(
-      (p, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(formatDateTime(p.at))}</td><td>${escapeHtml(SOURCE_LABEL[p.source])}</td>
+      (
+        p,
+        i,
+      ) => `<tr><td>${i + 1}</td><td>${escapeHtml(formatDateTime(p.at))}</td><td>${escapeHtml(SOURCE_LABEL[p.source])}</td>
         <td>${escapeHtml(p.document)}</td><td>${escapeHtml(p.patientName)}${p.uhid ? `<br/><span class="small">${escapeHtml(p.uhid)}</span>` : ''}</td>
         <td>${escapeHtml(p.phone ?? '')}</td><td class="right">${escapeHtml(formatQty(p.quantity))}</td><td class="right">${escapeHtml(formatQty(p.returned))}</td>
         <td class="right"><b>${escapeHtml(formatQty(p.kept))}</b></td><td class="blank"></td></tr>`,

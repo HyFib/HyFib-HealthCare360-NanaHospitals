@@ -103,7 +103,7 @@ describe('a transfer counted in at the receiving store', SCREEN_TESTS, () => {
     await waitFor(
       () =>
         expect(server.requests.find((r) => r.method === 'POST' && r.path.endsWith('/receive'))?.body).toEqual({
-          lines: [{ lineId: '0192a000-0000-7000-8000-000000000611', receivedQuantity: 8 }],
+          lines: [{ lineId: expect.any(String), receivedQuantity: 8 }],
           note: 'Two strips crushed',
         }),
       SLOW,

@@ -1,4 +1,13 @@
-import { Badge, Button, Field, Input, MessageBar, MessageBarBody, Text } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Field,
+  Input,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Text,
+} from '@fluentui/react-components';
 import { PrintRegular, SearchRegular } from '@fluentui/react-icons';
 import { formatDateTime } from '@hc360/core';
 import { DataTable, ErrorState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
@@ -45,7 +54,7 @@ function RecallTracePage() {
     <Page>
       <PageHeader
         title="Recall trace"
-        description="Every patient a recalled batch reached: OP dispensing, counter sales and ward issues."
+        subtitle="Every patient a recalled batch reached: OP dispensing, counter sales and ward issues."
       />
       <Section title="Batch">
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -67,6 +76,7 @@ function RecallTracePage() {
         </div>
         <MessageBar intent="info" style={{ marginTop: 12 }}>
           <MessageBarBody>
+            <MessageBarTitle>Recorded</MessageBarTitle>
             The list shows patients&apos; names and phone numbers. Each run is recorded with your name and the batch.
           </MessageBarBody>
         </MessageBar>
@@ -112,8 +122,18 @@ function RecallTracePage() {
                 },
                 { key: 'phone', header: 'Phone', render: (r) => r.phone ?? '—' },
                 { key: 'given', header: 'Given', align: 'end', render: (r) => formatQty(r.quantity) },
-                { key: 'back', header: 'Back', align: 'end', render: (r) => (r.returned ? formatQty(r.returned) : '—') },
-                { key: 'kept', header: 'Kept', align: 'end', render: (r) => <Text weight="semibold">{formatQty(r.kept)}</Text> },
+                {
+                  key: 'back',
+                  header: 'Back',
+                  align: 'end',
+                  render: (r) => (r.returned ? formatQty(r.returned) : '—'),
+                },
+                {
+                  key: 'kept',
+                  header: 'Kept',
+                  align: 'end',
+                  render: (r) => <Text weight="semibold">{formatQty(r.kept)}</Text>,
+                },
               ]}
             />
           </Section>

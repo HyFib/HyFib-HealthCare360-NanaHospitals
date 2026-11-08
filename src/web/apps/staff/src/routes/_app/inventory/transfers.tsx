@@ -248,7 +248,9 @@ function ReceiveDialog({
               <Field
                 key={l.id}
                 label={`${l.itemName}, batch ${l.batchNumber} (sent ${formatQty(l.quantity)})`}
-                validationMessage={Number(counted[l.id]) > l.quantity ? 'More than was sent cannot be received.' : undefined}
+                validationMessage={
+                  Number(counted[l.id]) > l.quantity ? 'More than was sent cannot be received.' : undefined
+                }
               >
                 <Input
                   type="number"
@@ -376,7 +378,11 @@ function TransferDrawer({ transferId, onClose }: { transferId: string; onClose: 
                   header: 'Received',
                   align: 'end',
                   render: (l) =>
-                    l.receivedQuantity != null ? formatQty(l.receivedQuantity) : t.status === 'Received' ? formatQty(l.quantity) : '—',
+                    l.receivedQuantity != null
+                      ? formatQty(l.receivedQuantity)
+                      : t.status === 'Received'
+                        ? formatQty(l.quantity)
+                        : '—',
                 },
                 { key: 'mrp', header: 'MRP', align: 'end', priority: 'low', render: (l) => formatInr(l.mrp) },
                 {
