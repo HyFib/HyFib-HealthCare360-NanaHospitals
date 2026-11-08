@@ -331,7 +331,8 @@ describe('breach steps', () => {
     const steps = breachSteps(facts());
     expect(steps.boardInformed.visible).toBe(true);
     expect(steps.reportSubmitted.blocker).toMatch(/Board was first told/);
-    expect(steps.close.noteRequired).toBe(true);
+    // MAKER-CHECKER.md, slice 14: no closing on a reason alone before the Board has the detailed report.
+    expect(steps.close.blocker).toMatch(/detailed report to the Data Protection Board/);
     expect(nextBreachStep('Open')).toBe('boardInformed');
   });
 
@@ -345,8 +346,15 @@ describe('breach steps', () => {
     expect(nextBreachStep('BoardInformed')).toBe('reportSubmitted');
   });
 
-  it('closes with or without a note', () => {
-    const reported = breachSteps(facts({ status: 'ReportSubmitted' }));
+  it("closes on the Board's report and reference, with or without a note, once nobody has asked already", () => {
+    expect(breachSteps(facts({ status: 'ReportSubmitted' })).close.blocker).toBe(
+      "Record the Board's reference for the detailed report first.",
+    );
+    expect(
+      breachSteps(facts({ status: 'ReportSubmitted', boardReference: 'DPB/1', closureAskedAt: '2026-11-08T09:00:00Z' }))
+        .close.blocker,
+    ).toBe('Closing is waiting for the Data Protection Officer.');
+    const reported = breachSteps(facts({ status: 'ReportSubmitted', boardReference: 'DPB/1' }));
     expect(reported.reportSubmitted.visible).toBe(false);
     expect(reported.extension.visible).toBe(false);
     expect(reported.close).toEqual({ visible: true, blocker: null, noteRequired: false });

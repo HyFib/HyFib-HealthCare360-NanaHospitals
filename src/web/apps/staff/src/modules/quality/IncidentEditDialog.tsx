@@ -11,6 +11,7 @@ import {
   Field,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Spinner,
 } from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
@@ -22,6 +23,7 @@ import {
   FormGrid,
   SelectField,
   SwitchField,
+  TextAreaField,
   TextField,
   useCloseRequests,
   useNotify,
@@ -58,6 +60,7 @@ const schema = z.object({
   patient: z.object({ id: z.string(), uhid: z.string(), fullName: z.string() }).nullable(),
   staff: z.array(z.object({ id: z.string(), name: z.string() })).max(20),
   involvesDevice: z.boolean(),
+  reason: z.string().max(500),
 });
 
 type Values = z.infer<typeof schema>;
@@ -110,6 +113,7 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
       patient: null,
       staff: incident.involvedStaff,
       involvesDevice: incident.involvesDevice,
+      reason: '',
     },
   });
   const [severity, sentinelKind, flag, keepPatient] = useWatch({
@@ -117,11 +121,17 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
     name: ['severity', 'sentinelKind', 'flagAsSentinel', 'keepPatient'],
   });
   const becomesSentinel = !incident.isSentinel && isSentinel(severity, sentinelKind, flag);
+  // Taking a sentinel event out of sentinel waits for the quality manager (MAKER-CHECKER.md, slice 14).
+  const leavesSentinel = incident.isSentinel && !isSentinel(severity, sentinelKind, flag);
 
   const submit = async (v: Values) => {
+    if (leavesSentinel && !v.reason.trim()) {
+      form.setError('reason', { message: 'Say why this is no longer a sentinel event.' });
+      return;
+    }
     setBusy(true);
     try {
-      await qualityApi.updateIncident(incident.id, {
+      const asked = await qualityApi.updateIncident(incident.id, {
         type: v.type,
         severity: v.severity,
         sentinelKind: v.sentinelKind,
@@ -132,11 +142,19 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
         involvedStaffUserIds: v.staff.map((s) => s.id),
         version: incident.version,
         involvesDevice: v.involvesDevice,
+        reason: leavesSentinel ? v.reason.trim() : null,
       });
-      notify.success(
-        'Incident updated',
-        becomesSentinel ? 'It is now a sentinel event: the quality team has been alerted.' : undefined,
-      );
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${incident.incidentNumber} stays a sentinel event until the quality manager agrees: not you, nor whoever reported it. Nothing else you changed is saved until then.`,
+        );
+      } else {
+        notify.success(
+          'Incident updated',
+          becomesSentinel ? 'It is now a sentinel event: the quality team has been alerted.' : undefined,
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: qualityKeys.all });
       onClose();
     } catch (error) {
@@ -207,6 +225,24 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
               </MessageBarBody>
             </MessageBar>
           )}
+          {leavesSentinel && (
+            <>
+              <MessageBar intent="warning" layout="multiline">
+                <MessageBarBody>
+                  <MessageBarTitle>Waits for the quality manager</MessageBarTitle>
+                  This takes it out of sentinel, so no root-cause analysis is due. It waits for the quality manager to
+                  agree, not you nor whoever reported it, and nothing you change here is saved until then.
+                </MessageBarBody>
+              </MessageBar>
+              <TextAreaField
+                control={form.control}
+                name="reason"
+                label="Why it is no longer a sentinel event"
+                required
+                maxLength={500}
+              />
+            </>
+          )}
           {incident.patientId && (
             <SwitchField control={form.control} name="keepPatient" label="Keep the linked patient" />
           )}
@@ -269,7 +305,7 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
             disabled={busy}
             icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
-            Save
+            {leavesSentinel ? 'Ask for approval' : 'Save'}
           </Button>
         </DialogActions>
       </DialogBody>
