@@ -26,6 +26,8 @@ internal static class MtpEndpoints
             .RequireVersion();
         group.MapPost("/cases/{id:guid}/termination", Terminate).RequirePermission(SpecialtyCarePermissions.MtpCertify)
             .WithValidation<RecordMtpTerminationRequest>();
+        group.MapPost("/cases/{id:guid}/second-opinion", SecondOpinion).RequirePermission(SpecialtyCarePermissions.MtpCertify)
+            .WithValidation<RecordSecondOpinionRequest>();
         group.MapPost("/cases/{id:guid}/cancel", Cancel).RequirePermission(SpecialtyCarePermissions.MtpCertify).WithValidation<CancelMtpCaseRequest>();
         group.MapGet("/cases/{id:guid}/document", Document).RequireAnyPermission(CaseReaders);
         group.MapGet("/cases/{id:guid}/pdf", Pdf).RequireAnyPermission(CaseReaders);
@@ -77,6 +79,10 @@ internal static class MtpEndpoints
     private static async Task<IResult> Terminate(
         Guid id, RecordMtpTerminationRequest request, MtpService mtp, PatientAccessGuard guard, CancellationToken ct) =>
         await GuardAsync(mtp, guard, id, ct) ?? (await mtp.TerminateAsync(id, request, ct)).ToOk();
+
+    private static async Task<IResult> SecondOpinion(
+        Guid id, RecordSecondOpinionRequest request, MtpService mtp, PatientAccessGuard guard, CancellationToken ct) =>
+        await GuardAsync(mtp, guard, id, ct) ?? (await mtp.RecordSecondOpinionAsync(id, request, ct)).ToOk();
 
     private static async Task<IResult> Cancel(Guid id, CancelMtpCaseRequest request, MtpService mtp, PatientAccessGuard guard, CancellationToken ct) =>
         await GuardAsync(mtp, guard, id, ct) ?? (await mtp.CancelAsync(id, request, ct)).ToOk();

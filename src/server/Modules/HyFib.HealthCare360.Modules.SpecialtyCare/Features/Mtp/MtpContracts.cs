@@ -32,7 +32,8 @@ public sealed record MtpCaseDto(
     string? Outcome,
     string? Remarks,
     string? CancelReason,
-    uint Version);
+    uint Version,
+    bool AwaitingSecondOpinion = false);
 
 public sealed record MtpCaseListItem(
     Guid Id, string SerialNumber, Guid PatientId, string Uhid, string PatientName, MtpCaseStatus Status, int WeeksOfGestation,
@@ -63,6 +64,14 @@ public sealed record RecordMtpTerminationRequest(
     DateOnly TerminatedOn, MtpMethod Method, string PerformedBy, DateOnly? DischargedOn, string? Outcome, string? Remarks, uint Version);
 
 public sealed record CancelMtpCaseRequest(string Reason, uint Version);
+
+/// <summary>
+/// The second registered medical practitioner's opinion, from 20 weeks (maker-checker, slice 9): given by the doctor signed
+/// in, or, with <paramref name="DoctorConfirmationId"/>, by the doctor who confirmed at this screen with their own user name
+/// and password (<c>POST /api/v1/auth/witness</c>, purpose <c>mtp.second_opinion</c>). Their name and registration number
+/// come from their own practitioner record, never typed.
+/// </summary>
+public sealed record RecordSecondOpinionRequest(DateOnly OpinionOn, Guid? DoctorConfirmationId, uint Version);
 
 /// <summary>One line of the admission register (Form III).</summary>
 public sealed record MtpRegisterRow(
@@ -131,6 +140,16 @@ public sealed class RecordMtpTerminationRequestValidator : AbstractValidator<Rec
         RuleFor(x => x.PerformedBy).NotEmpty().WithMessage("Enter the doctor who performed the termination.").MaximumLength(200);
         RuleFor(x => x.Outcome).MaximumLength(500);
         RuleFor(x => x.Remarks).MaximumLength(2000);
+    }
+}
+
+public sealed class RecordSecondOpinionRequestValidator : AbstractValidator<RecordSecondOpinionRequest>
+{
+    public RecordSecondOpinionRequestValidator()
+    {
+        RuleFor(x => x.OpinionOn).NotEmpty().WithMessage("Enter the date of the opinion.");
+        RuleFor(x => x.DoctorConfirmationId).OptionalId();
+        RuleFor(x => x.Version).SeenVersion();
     }
 }
 
