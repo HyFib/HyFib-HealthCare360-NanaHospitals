@@ -93,7 +93,26 @@ function PrivacyPage() {
           {t('privacy.myPrivacy')}
         </ButtonLink>
       )}
+      <ReportCard title={t('privacy.backups.title')}>
+        <p className={styles.text}>{t('privacy.backups.body', { days: info.data?.backupWindowDays ?? 31 })}</p>
+      </ReportCard>
+      <ReportCard title={t('privacy.children.title')}>
+        <p className={styles.text}>{t('privacy.children.body')}</p>
+      </ReportCard>
       {info.data && <ContactCard contact={info.data.contact} responseDays={info.data.responseDays} showBoard={false} />}
+      {info.data?.dpo?.name && (
+        <ContactCard
+          title={t('privacy.dpo.title')}
+          contact={{
+            title: 'Data Protection Officer',
+            name: info.data.dpo.name,
+            email: info.data.dpo.email,
+            phone: info.data.dpo.phone,
+            address: info.data.dpo.address,
+          }}
+          showBoard={false}
+        />
+      )}
       <ReportCard title={t('privacy.device.title')}>
         <p className={styles.text}>{t('privacy.device.body', { minutes: IDLE_SIGN_OUT_MINUTES })}</p>
       </ReportCard>
