@@ -29,6 +29,7 @@ import { Route as AppAmbulanceIndexRouteImport } from './routes/_app/ambulance/i
 import { Route as AppAmsIndexRouteImport } from './routes/_app/ams/index'
 import { Route as AppAnalyticsIndexRouteImport } from './routes/_app/analytics/index'
 import { Route as AppAnalyticsExtractsRouteImport } from './routes/_app/analytics/extracts'
+import { Route as AppAnalyticsKpiTargetsRouteImport } from './routes/_app/analytics/kpi-targets'
 import { Route as AppAnalyticsKpisRouteImport } from './routes/_app/analytics/kpis'
 import { Route as AppAnalyticsSchedulesRouteImport } from './routes/_app/analytics/schedules'
 import { Route as AppApprovalsIndexRouteImport } from './routes/_app/approvals/index'
@@ -448,6 +449,11 @@ const AppAnalyticsIndexRoute = AppAnalyticsIndexRouteImport.update({
 const AppAnalyticsExtractsRoute = AppAnalyticsExtractsRouteImport.update({
   id: '/analytics/extracts',
   path: '/analytics/extracts',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAnalyticsKpiTargetsRoute = AppAnalyticsKpiTargetsRouteImport.update({
+  id: '/analytics/kpi-targets',
+  path: '/analytics/kpi-targets',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAnalyticsKpisRoute = AppAnalyticsKpisRouteImport.update({
@@ -2127,6 +2133,7 @@ export interface FileRoutesByFullPath {
   '/admin/system': typeof AppAdminSystemRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/analytics/extracts': typeof AppAnalyticsExtractsRoute
+  '/analytics/kpi-targets': typeof AppAnalyticsKpiTargetsRoute
   '/analytics/kpis': typeof AppAnalyticsKpisRoute
   '/analytics/schedules': typeof AppAnalyticsSchedulesRoute
   '/approvals/$approvalId': typeof AppApprovalsApprovalIdRoute
@@ -2466,6 +2473,7 @@ export interface FileRoutesByTo {
   '/admin/system': typeof AppAdminSystemRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/analytics/extracts': typeof AppAnalyticsExtractsRoute
+  '/analytics/kpi-targets': typeof AppAnalyticsKpiTargetsRoute
   '/analytics/kpis': typeof AppAnalyticsKpisRoute
   '/analytics/schedules': typeof AppAnalyticsSchedulesRoute
   '/approvals/$approvalId': typeof AppApprovalsApprovalIdRoute
@@ -2807,6 +2815,7 @@ export interface FileRoutesById {
   '/_app/admin/system': typeof AppAdminSystemRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/analytics/extracts': typeof AppAnalyticsExtractsRoute
+  '/_app/analytics/kpi-targets': typeof AppAnalyticsKpiTargetsRoute
   '/_app/analytics/kpis': typeof AppAnalyticsKpisRoute
   '/_app/analytics/schedules': typeof AppAnalyticsSchedulesRoute
   '/_app/approvals/$approvalId': typeof AppApprovalsApprovalIdRoute
@@ -3148,6 +3157,7 @@ export interface FileRouteTypes {
     | '/admin/system'
     | '/admin/users'
     | '/analytics/extracts'
+    | '/analytics/kpi-targets'
     | '/analytics/kpis'
     | '/analytics/schedules'
     | '/approvals/$approvalId'
@@ -3487,6 +3497,7 @@ export interface FileRouteTypes {
     | '/admin/system'
     | '/admin/users'
     | '/analytics/extracts'
+    | '/analytics/kpi-targets'
     | '/analytics/kpis'
     | '/analytics/schedules'
     | '/approvals/$approvalId'
@@ -3827,6 +3838,7 @@ export interface FileRouteTypes {
     | '/_app/admin/system'
     | '/_app/admin/users'
     | '/_app/analytics/extracts'
+    | '/_app/analytics/kpi-targets'
     | '/_app/analytics/kpis'
     | '/_app/analytics/schedules'
     | '/_app/approvals/$approvalId'
@@ -4296,6 +4308,13 @@ declare module '@tanstack/react-router' {
       path: '/analytics/extracts'
       fullPath: '/analytics/extracts'
       preLoaderRoute: typeof AppAnalyticsExtractsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/analytics/kpi-targets': {
+      id: '/_app/analytics/kpi-targets'
+      path: '/analytics/kpi-targets'
+      fullPath: '/analytics/kpi-targets'
+      preLoaderRoute: typeof AppAnalyticsKpiTargetsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/analytics/kpis': {
@@ -6542,6 +6561,7 @@ interface AppRouteChildren {
   AppAdminSystemRoute: typeof AppAdminSystemRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppAnalyticsExtractsRoute: typeof AppAnalyticsExtractsRoute
+  AppAnalyticsKpiTargetsRoute: typeof AppAnalyticsKpiTargetsRoute
   AppAnalyticsKpisRoute: typeof AppAnalyticsKpisRoute
   AppAnalyticsSchedulesRoute: typeof AppAnalyticsSchedulesRoute
   AppApprovalsApprovalIdRoute: typeof AppApprovalsApprovalIdRoute
@@ -6880,6 +6900,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminSystemRoute: AppAdminSystemRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppAnalyticsExtractsRoute: AppAnalyticsExtractsRoute,
+  AppAnalyticsKpiTargetsRoute: AppAnalyticsKpiTargetsRoute,
   AppAnalyticsKpisRoute: AppAnalyticsKpisRoute,
   AppAnalyticsSchedulesRoute: AppAnalyticsSchedulesRoute,
   AppApprovalsApprovalIdRoute: AppApprovalsApprovalIdRoute,
