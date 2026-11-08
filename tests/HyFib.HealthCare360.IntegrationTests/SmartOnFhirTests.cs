@@ -322,6 +322,17 @@ public sealed class SmartOnFhirTests(HospitalServer server)
         body.GetProperty("error").GetString().ShouldBe("invalid_request");
     }
 
+    [Fact]
+    public async Task A_form_that_cannot_be_read_is_refused_as_an_oauth_error()
+    {
+        var anonymous = server.Anonymous();
+        using var broken = new StringContent("--x\r\nContent-Disposition: form-data; name=\"grant_type\"\r\n\r\nclient_credentials");
+        broken.Headers.ContentType = MediaTypeHeaderValue.Parse("multipart/form-data; boundary=x");
+        using var response = await anonymous.SendContentAsync(HttpMethod.Post, SmartEndpoints.TokenPath, broken);
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct)).RootElement.GetProperty("error").GetString().ShouldBe("invalid_request");
+    }
+
     private sealed record OAuthAnswer(HttpStatusCode Status, JsonElement Body)
     {
         public string? Error => Body.TryGetProperty("error", out var error) ? error.GetString() : null;

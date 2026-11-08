@@ -356,13 +356,23 @@ internal static class SmartEndpoints
     }
 
     /// <summary>
-    /// The token, introspection and revocation endpoints take their parameters as a form (RFC 6749 s.3.2, RFC 7662, RFC 7009):
-    /// anything else is refused before the endpoint runs, with the OAuth error body.
+    /// The token, introspection and revocation endpoints take their parameters as a form (RFC 6749 s.3.2, RFC 7662, RFC 7009).
+    /// The form is read here, before the endpoint runs: a body that is not a form, or a form that cannot be read, is refused
+    /// with the OAuth error body instead of failing inside the endpoint. The form read here is the one the endpoint reads.
     /// </summary>
-    private static async ValueTask<object?> FormBodyOnly(EndpointFilterInvocationContext context, EndpointFilterDelegate next) =>
-        context.HttpContext.Request.HasFormContentType
-            ? await next(context)
-            : OAuth(OAuthError.InvalidRequest("Send the parameters as application/x-www-form-urlencoded."));
+    private static async ValueTask<object?> FormBodyOnly(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        try
+        {
+            await context.HttpContext.Request.ReadFormAsync(context.HttpContext.RequestAborted);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or Microsoft.AspNetCore.Http.BadHttpRequestException)
+        {
+            return OAuth(OAuthError.InvalidRequest("Send the parameters as application/x-www-form-urlencoded."));
+        }
+
+        return await next(context);
+    }
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
