@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSlotCodes, releaseProblems } from './api';
+import { needsPoliceClearance, parseSlotCodes, releaseProblems } from './api';
 
 const empty = { receivedBy: 'Suresh Kumar', relationship: '', idProof: '', policeClearance: '' };
 
@@ -24,6 +24,22 @@ describe('releasing a body', () => {
     expect(releaseProblems({ isMlc: false, identified: false }, { ...empty, to: 'Relatives' }).to).toMatch(
       /unidentified/,
     );
+  });
+
+  it('on the police’s clearance only with a second member of staff witnessing (maker-checker, slice 9)', () => {
+    const mlc = { isMlc: true, identified: true };
+    const cleared = {
+      ...empty,
+      to: 'Relatives' as const,
+      relationship: 'Son',
+      idProof: 'Aadhaar',
+      policeClearance: 'PM 211/2026',
+    };
+    expect(releaseProblems(mlc, cleared).witness).toMatch(/witnesses/);
+    expect(Object.values(releaseProblems(mlc, { ...cleared, witnessed: true })).every((p) => p === null)).toBe(true);
+    expect(needsPoliceClearance({ isMlc: false }, 'Municipality')).toBe(true);
+    expect(needsPoliceClearance({ isMlc: true }, 'PoliceForPostMortem')).toBe(false);
+    expect(releaseProblems({ isMlc: false, identified: true }, { ...cleared, policeClearance: '' }).witness).toBeNull();
   });
 
   it('to the municipality only on police clearance; to the police on the officer’s details', () => {

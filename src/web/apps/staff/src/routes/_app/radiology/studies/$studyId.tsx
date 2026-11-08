@@ -32,7 +32,7 @@ import { FormFPanel } from '@/modules/radiology/FormFPanel';
 import { RadiologyReportPanel } from '@/modules/radiology/ReportEditor';
 import { StudyImages } from '@/modules/radiology/StudyImages';
 import { useStudyActions } from '@/modules/radiology/useStudyActions';
-import { nextStudyAction, studyActionLabel, studyActions } from '@/modules/radiology/workflow';
+import { nextStudyAction, pregnancyScanPerformed, studyActionLabel, studyActions } from '@/modules/radiology/workflow';
 
 export const Route = createFileRoute('/_app/radiology/studies/$studyId')({
   component: ImagingStudyPage,
@@ -92,7 +92,10 @@ function StudyView({ study }: { study: ImagingStudyDetail }) {
   const canSeeImages = usePermission(RADIOLOGY_PERMISSIONS.images);
   const actions = useStudyActions();
   const next = canWork ? nextStudyAction(study.status) : null;
-  const others = canWork ? studyActions(study.status).filter((action) => action !== next && action !== 'report') : [];
+  const scanLocked = pregnancyScanPerformed(study);
+  const others = canWork
+    ? studyActions(study.status, scanLocked).filter((action) => action !== next && action !== 'report')
+    : [];
   const ref = {
     id: study.id,
     studyName: study.studyName,
@@ -168,6 +171,16 @@ function StudyView({ study }: { study: ImagingStudyDetail }) {
           <MessageBarBody>
             <MessageBarTitle>Cancelled</MessageBarTitle>
             {study.cancelReason}
+          </MessageBarBody>
+        </MessageBar>
+      )}
+      {scanLocked && study.formFStatus !== 'Completed' && study.status !== 'Cancelled' && (
+        <MessageBar intent="info">
+          <MessageBarBody>
+            <MessageBarTitle>Scanned: complete the Form F</MessageBarTitle>
+            This ultrasound in pregnancy has been scanned, so it cannot be cancelled. Its Form F is completed with the
+            result by the doctor who performed it (PCPNDT Act); it is closed as cancelled only when the scan was never
+            done.
           </MessageBarBody>
         </MessageBar>
       )}

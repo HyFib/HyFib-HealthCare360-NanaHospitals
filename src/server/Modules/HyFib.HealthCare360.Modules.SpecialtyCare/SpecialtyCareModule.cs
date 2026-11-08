@@ -42,6 +42,7 @@ public sealed class SpecialtyCareModule : IModule
         services.AddScoped<IApprovalAction, ReactionLowerApproval>();
         services.AddScoped<BedsideTransfusionService>();
         services.AddWitnessPurpose(BedsideTransfusionService.BedsideWitness);
+        services.AddWitnessPurpose(MtpService.SecondOpinionWitness);
         services.AddScoped<BloodInventoryService>();
         services.AddScoped<MtpService>();
 

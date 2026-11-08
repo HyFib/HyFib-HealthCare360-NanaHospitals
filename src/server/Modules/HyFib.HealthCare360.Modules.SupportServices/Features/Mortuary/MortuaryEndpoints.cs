@@ -126,6 +126,7 @@ internal static class BodyReleaseSlip
                 ("Received by", b.Relationship is null ? b.ReceivedBy : $"{b.ReceivedBy} ({b.Relationship})"),
                 ("Identity proof", b.IdProof),
                 ("Police clearance", b.PoliceClearance),
+                ("Release witnessed by", b.ReleaseWitnessName),
                 ("Belongings", b.Belongings is null ? null : $"{b.Belongings} — {(b.BelongingsHandedOver ? "handed over" : "kept")}"),
                 ("Released by", b.ReleasedByName),
             ])}

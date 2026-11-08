@@ -246,6 +246,12 @@ reference); the police for a post-mortem on the officer's name, number and stati
 body, on the police's clearance; a medical college for body donation, never a medico-legal body. The release frees the
 slot, keeps the slot it was in for the register, and prints the release slip with the belongings handed over.
 
+A release on the police's clearance (a medico-legal body to the relatives, an unclaimed body to the municipality) is
+witnessed by a second member of the mortuary staff at the screen, with their own user name and password (maker-checker,
+slice 9; `POST /api/v1/auth/witness`, purpose `mortuary.release`, `mortuary.manage`), never the one who releases it. The
+body record (`releaseWitnessName`) and the slip name the witness, and every release is audited `mortuary.body_released`
+with who released it and who witnessed.
+
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
 | GET | `/slots` | `mortuary.manage` or `mortuary.configure` | → `MortuarySlotDto[]` (who is in each, `unclaimed`) |
@@ -253,7 +259,7 @@ slot, keeps the slot it was in for the register, and prints the release slip wit
 | GET | `/bodies?status&from&to` | `mortuary.manage` | → `BodyDto[]`: in storage, or received in the period (at most a year; default the last 30 days) |
 | POST | `/bodies` | `mortuary.manage` | `ReceiveBodyRequest{source, patientId?, name?, identified, sex?, ageYears?, diedAt?, broughtBy?, isMlc, mlcNumber?, policeStation?, identificationMarks?, belongings?, slotId}`; 422 `mortuary.death_not_recorded`, 409 `mortuary.slot_occupied` / `mortuary.already_in` |
 | GET | `/bodies/{id}` | `mortuary.manage` | → `BodyDto` (a patient's body through the patient access guard) |
-| POST | `/bodies/{id}/release` | `mortuary.manage` | `ReleaseBodyRequest{to, receivedBy, relationship?, idProof?, policeClearance?, belongingsHandedOver, notes?, version}`; 422 `mortuary.released`, `mortuary.unidentified`, `mortuary.mlc_donation` |
+| POST | `/bodies/{id}/release` | `mortuary.manage` | `ReleaseBodyRequest{to, receivedBy, relationship?, idProof?, policeClearance?, belongingsHandedOver, notes?, version, witnessConfirmationId?}`; 422 `mortuary.released`, `mortuary.unidentified`, `mortuary.mlc_donation`, `mortuary.witness_required`, `mortuary.witness_is_releaser`, `witness.confirmation_unusable` |
 | GET | `/bodies/{id}/slip` | `mortuary.manage` | → the release slip (`PrintableDocumentDto`), audited for a patient |
 
 Not built: embalming, the post-mortem itself, freezer temperature logging, and mortuary charges.
