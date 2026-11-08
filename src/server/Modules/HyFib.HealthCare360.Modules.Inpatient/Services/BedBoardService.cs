@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Beds;
 using HyFib.HealthCare360.Modules.Patients;
@@ -11,7 +12,8 @@ namespace HyFib.HealthCare360.Modules.Inpatient.Services;
 /// admission or transfer, and the housekeeping queue. Restricted (VIP) patients appear as "Restricted patient" unless the
 /// user may open restricted records, so the board never leaks a confidential admission to the whole ward.
 /// </summary>
-public sealed class BedBoardService(HospitalDbContext db, IPermissionService permissions, MarService mar, ICurrentUser currentUser, TimeProvider time)
+public sealed class BedBoardService(
+    HospitalDbContext db, IPermissionService permissions, MarService mar, EarlyWarningService earlyWarning, ICurrentUser currentUser, TimeProvider time)
 {
     /// <summary>Beds waiting longer than this for cleaning are flagged (turnaround target).</summary>
     public static readonly TimeSpan CleaningTarget = TimeSpan.FromMinutes(60);
@@ -168,6 +170,15 @@ public sealed class BedBoardService(HospitalDbContext db, IPermissionService per
             yield return BedAlert.Restricted;
         }
 
+        if (occupant.News2Response == News2Response.Emergency)
+        {
+            yield return BedAlert.News2Emergency;
+        }
+        else if (occupant.News2Response == News2Response.Urgent)
+        {
+            yield return BedAlert.News2Urgent;
+        }
+
         if (occupant.Status == AdmissionStatus.DischargeInitiated)
         {
             yield return BedAlert.DischargeInitiated;
@@ -210,12 +221,14 @@ public sealed class BedBoardService(HospitalDbContext db, IPermissionService per
                     a.IsMlc,
                 })
             .ToListAsync(ct);
+        var news2 = await earlyWarning.LatestAsync(rows.Select(r => (r.Id, r.PatientId, r.AdmittedAt, r.DateOfBirth)).ToList(), ct);
 
         var canSeeRestricted = currentUser.UserId is { } userId && await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct);
         return rows.ToDictionary(r => r.Id, r => (
             new BedOccupant(r.Id, r.AdmissionNumber, r.PatientId, r.Uhid, r.IsVip && !canSeeRestricted ? "Restricted patient" : r.FullName, r.Gender,
                 r.DateOfBirth is { } dob ? Age.Format(dob, today) : null, r.ConsultantName, r.AdmittedAt, LengthOfStay.Days(r.AdmittedAt, now),
-                r.ExpectedDischargeDate, r.Status, r.PayerType),
+                r.ExpectedDischargeDate, r.Status, r.PayerType, news2.GetValueOrDefault(r.Id)?.Score, news2.GetValueOrDefault(r.Id)?.Response,
+                news2.GetValueOrDefault(r.Id)?.IsComplete ?? false, news2.GetValueOrDefault(r.Id)?.RecordedAt),
             r.IsMlc,
             r.IsVip));
     }
@@ -258,6 +271,26 @@ public sealed class BedBoardService(HospitalDbContext db, IPermissionService per
         foreach (var id in overdue)
         {
             alerts[id].Add(BedAlert.MedicationOverdue);
+        }
+
+        var escalated = await db.Set<EarlyWarningEscalation>().AsNoTracking()
+            .Where(e => admissionIds.Contains(e.AdmissionId) && e.Status == EscalationStatus.Open)
+            .Select(e => e.AdmissionId)
+            .Distinct()
+            .ToListAsync(ct);
+        foreach (var id in escalated)
+        {
+            alerts[id].Add(BedAlert.EscalationOpen);
+        }
+
+        var transferring = await db.Set<TransferRequest>().AsNoTracking()
+            .Where(t => admissionIds.Contains(t.AdmissionId) && t.Status == TransferRequestStatus.Pending)
+            .Select(t => t.AdmissionId)
+            .Distinct()
+            .ToListAsync(ct);
+        foreach (var id in transferring)
+        {
+            alerts[id].Add(BedAlert.TransferPending);
         }
 
         return alerts;

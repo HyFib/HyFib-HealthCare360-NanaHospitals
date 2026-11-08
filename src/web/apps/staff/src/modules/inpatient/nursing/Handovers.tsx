@@ -33,6 +33,8 @@ import { z } from 'zod';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { nursingApi, nursingKeys, nursingQueries, type HandoverDto } from '../nursingApi';
 import { addDays, dutyDate, NURSING_SHIFTS, SHIFT_LABEL, shiftAt, type NursingShift } from '../time';
+import type { CarePlanProblemDto } from '../wardCareApi';
+import { CarePlanSummary } from './CarePlan';
 
 const useStyles = makeStyles({
   form: {
@@ -146,12 +148,14 @@ function HandoverCard({
   canAcknowledge,
   onAcknowledge,
   busy,
+  carePlan,
 }: {
   h: HandoverDto;
   header?: string;
   canAcknowledge: boolean;
   onAcknowledge: () => void;
   busy: boolean;
+  carePlan?: CarePlanProblemDto[] | null;
 }) {
   const styles = useStyles();
   return (
@@ -185,6 +189,7 @@ function HandoverCard({
         )}
       </div>
       <SbarBody h={h} />
+      {carePlan && carePlan.length > 0 && <CarePlanSummary problems={carePlan} />}
     </article>
   );
 }
@@ -402,6 +407,7 @@ export function WardHandoverSheet({ wardId, canWrite }: { wardId: string; canWri
               canAcknowledge={canWrite}
               busy={acknowledge.isPending && acknowledge.variables?.id === r.handover.id}
               onAcknowledge={() => acknowledge.mutate(r.handover)}
+              carePlan={r.carePlan}
             />
           ))}
         </div>

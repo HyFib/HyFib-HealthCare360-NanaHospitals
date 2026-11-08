@@ -125,8 +125,7 @@ public sealed class DirectorySharingTests(HospitalServer server)
         var second = await admin.PostAsync<BedDto>("/api/v1/beds", new SaveBedRequest(
             semiPrivate.Id, room.Id, "T-" + Guid.NewGuid().ToString("N")[..10].ToUpperInvariant(), false, false, false, 999, true, null));
         var admission = await AdmitAsync(frontOffice, patient, first.BedId);
-        await frontOffice.PostAsync($"/api/v1/inpatient/admissions/{admission.Id}/transfer",
-            new TransferPatientRequest(second.Id, "Moved to a room at the family's request", null, null, null));
+        await TestTransfers.MoveAsync(server, frontOffice, admission.Id, second.Id, "Moved to a room at the family's request");
         await frontOffice.PostAsync<Created>($"/api/v1/patients/{patient}/consents", new CaptureConsentRequest(
             ConsentType.DataSharing, null, true, null, null, null, null, null,
             new RecordSharingScope([partnerId], [SharingPurpose.Treatment], [SharedRecordKind.Visits], null, null, null)));
@@ -192,8 +191,7 @@ public sealed class DirectorySharingTests(HospitalServer server)
         var admission = await AdmitAsync(frontOffice, patient, first.BedId);
         try
         {
-            await frontOffice.PostAsync($"/api/v1/inpatient/admissions/{admission.Id}/transfer",
-                new TransferPatientRequest(second.BedId, "Moved to the female ward", null, null, null));
+            await TestTransfers.MoveAsync(server, frontOffice, admission.Id, second.BedId, "Moved to the female ward");
             await frontOffice.PostAsync<Created>($"/api/v1/patients/{patient}/consents", new CaptureConsentRequest(
                 ConsentType.DataSharing, null, true, null, null, null, null, null,
                 new RecordSharingScope([partnerId], [SharingPurpose.Treatment], [SharedRecordKind.Visits], null, null, null)));
