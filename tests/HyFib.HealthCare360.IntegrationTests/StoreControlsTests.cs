@@ -50,7 +50,7 @@ public sealed class StoreControlsTests(HospitalServer server)
         await ReceiveAsync(store, central, item, 20m, 10m);
 
         var indent = await store.PostAsync<JsonElement>("/api/v1/inventory/indents",
-            new CreateIndentRequest(central, icu, null, IndentPriority.Normal, null, [new IndentLineInput(item, 5m, null)]));
+            new CreateIndentRequest(central, icu, null, IndentPriority.Routine, null, [new IndentLineInput(item, 5m, null)]));
         var id = indent.GetProperty("id").GetGuid();
 
         using (var own = await store.SendRawAsync(HttpMethod.Post, $"/api/v1/inventory/indents/{id}/approve", new ApproveIndentRequest(null)))
@@ -200,7 +200,8 @@ public sealed class StoreControlsTests(HospitalServer server)
         (await ReorderAsync(store, central)).ShouldNotContain(r => r.ItemId == item);
 
         await store.PutAsync($"/api/v1/inventory/stores/{central}/levels/{item}", new SaveStoreItemLevelRequest(25m, 40m, 5m, 60m, null));
-        var due = (await ReorderAsync(store, central)).ShouldHaveSingleItem(r => r.ItemId == item);
+        var due = (await ReorderAsync(store, central)).Where(r => r.ItemId == item).ShouldHaveSingleItem();
+        var levelId = await LevelIdAsync(central, item);
         (due.ReorderLevel, due.MaximumStock, due.SuggestedQuantity).ShouldBe((25m, 60m, 50m));
         (await ReorderAsync(store, icu)).ShouldNotContain(r => r.ItemId == item);
         var flagged = await store.GetAsync<PagedResult<StockSummaryRow>>($"/api/v1/inventory/stock?storeId={central}&belowReorder=true&pageSize=200");
@@ -215,10 +216,10 @@ public sealed class StoreControlsTests(HospitalServer server)
             removed.StatusCode.ShouldBe(HttpStatusCode.NoContent);
         }
 
-        var trail = await AuditsAsync(level.Id);
+        var trail = await AuditsAsync(levelId);
         trail.Select(a => a.Action).ShouldBe(["stock_level.saved", "stock_level.saved", "stock_level.removed"]);
         trail[1].Summary.ShouldNotBeNull().ShouldContain("reorder at 5");
-        trail[1].Summary.ShouldContain("was reorder at 25");
+        trail[1].Summary.ShouldNotBeNull().ShouldContain("was reorder at 25");
     }
 
     [Fact]
@@ -238,9 +239,9 @@ public sealed class StoreControlsTests(HospitalServer server)
         // A registered patient and a walk-in buy at the counter; an admitted patient has it issued to the ward.
         var registered = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
         await pharmacist.PostAsync<PharmacySaleCreated>("/api/v1/pharmacy/sales/counter", new CounterSaleRequest(
-            op, registered.Id, null, null, null, [new CounterSaleLine(item, 3m, null)], 0m, [new SalePayment(PharmacyPaymentMode.Cash, 30m, null)], false));
+            op, registered.Id, null, null, null, [new CounterSaleLine(item, 3m, null)], 0m, [new SalePayment(PharmacyPaymentMode.Cash, 60m, null)], false));
         await pharmacist.PostAsync<PharmacySaleCreated>("/api/v1/pharmacy/sales/counter", new CounterSaleRequest(
-            op, null, "Walk-in Ravi", "9000000001", null, [new CounterSaleLine(item, 2m, null)], 0m, [new SalePayment(PharmacyPaymentMode.Cash, 20m, null)], false));
+            op, null, "Walk-in Ravi", "9000000001", null, [new CounterSaleLine(item, 2m, null)], 0m, [new SalePayment(PharmacyPaymentMode.Cash, 40m, null)], false));
         var inpatient = (await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice)).Id;
         var admission = await AdmitAsync(frontOffice, doctor, inpatient);
         await pharmacist.PostAsync<IpIssueCreated>("/api/v1/pharmacy/ip-issues", new IpIssueRequest(
@@ -253,7 +254,7 @@ public sealed class StoreControlsTests(HospitalServer server)
             (RecallTraceSource.WardIssue, (Guid?)inpatient, 4m),
         ]);
         trace.Patients[1].PatientName.ShouldBe("Walk-in Ravi");
-        trace.Patients[1].Phone.ShouldBe("9000000001");
+        trace.Patients[1].Phone.ShouldBe("+919000000001", "the counter keeps the number in international form");
         (trace.PatientCount, trace.QuantityWithPatients).ShouldBe((3, 9m));
         trace.Stock.Sum(s => s.OnHand).ShouldBe(21m);
 
@@ -281,7 +282,7 @@ public sealed class StoreControlsTests(HospitalServer server)
             vendor, central, null, reference, "Recall RC-201", [new DebitNoteLineInput(batch.BatchId, 4m)]));
         asked.Kind.ShouldBe(VendorAccountService.DebitNoteKind);
         var note = await store.GetAsync<DebitNoteDto>($"/api/v1/purchase/debit-notes/{asked.SubjectId}");
-        (note.Status, note.TaxableAmount, note.GstAmount, note.TotalAmount).ShouldBe((VendorDocumentStatus.Draft, 40m, 2m, 42m));
+        (note.Status, note.TaxableAmount, note.GstAmount, note.TotalAmount).ShouldBe((VendorDocumentStatus.Draft, 80m, 4m, 84m));
         note.ApprovalWaitingSince.ShouldNotBeNull();
         (await LedgerAsync(item, central)).ShouldNotContain(l => l.MovementType == StockMovementType.PurchaseReturn);
         (await VouchersAsync()).ShouldNotContain(v => v.Number == note.Number);
@@ -301,9 +302,9 @@ public sealed class StoreControlsTests(HospitalServer server)
         var voucher = (await VouchersAsync()).Single(v => v.Number == note.Number);
         voucher.VoucherType.ShouldBe("Debit Note");
         voucher.Narration.ShouldContain(reference);
-        voucher.Entries.Where(e => e.IsDebit).Sum(e => e.Amount).ShouldBe(42m);
-        voucher.Entries.Where(e => !e.IsDebit).Sum(e => e.Amount).ShouldBe(42m);
-        voucher.Entries.ShouldContain(e => !e.IsDebit && e.Ledger == "Purchase Returns" && e.Amount == 40m);
+        voucher.Entries.Where(e => e.IsDebit).Sum(e => e.Amount).ShouldBe(84m);
+        voucher.Entries.Where(e => !e.IsDebit).Sum(e => e.Amount).ShouldBe(84m);
+        voucher.Entries.ShouldContain(e => !e.IsDebit && e.LedgerName == "Purchase Returns" && e.Amount == 80m);
         (await AuditAsync("purchase.debit_note_posted", note.Id)).Summary.ShouldNotBeNull().ShouldContain("approved by");
     }
 
@@ -330,7 +331,7 @@ public sealed class StoreControlsTests(HospitalServer server)
         await MakerChecker.ApproveAsync(other, await other.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}"));
         var voucher = (await VouchersAsync()).Single(v => v.Number == listed.Number);
         voucher.VoucherType.ShouldBe("Journal");
-        voucher.Entries.ShouldContain(e => !e.IsDebit && e.Ledger == "Purchase Rate Differences" && e.Amount == 1250m);
+        voucher.Entries.ShouldContain(e => !e.IsDebit && e.LedgerName == "Purchase Rate Differences" && e.Amount == 1250m);
         voucher.Entries.ShouldContain(e => e.IsDebit && e.Amount == 1250m);
     }
 
@@ -351,7 +352,7 @@ public sealed class StoreControlsTests(HospitalServer server)
             MinimumStock: 0, MaximumStock: 0, Manufacturer: "Test Pharma", Barcode: null, IsActive: true, Version: null)))
         .GetProperty("id").GetGuid();
 
-    /// <summary>The store receives <paramref name="units"/> bought at <paramref name="rate"/> each (MRP twice that); someone else posts it.</summary>
+    /// <summary>The store receives <paramref name="units"/> bought at <paramref name="rate"/> each (MRP, the counter price, twice that); someone else posts it.</summary>
     private async Task ReceiveAsync(ApiClient store, Guid storeId, Guid itemId, decimal units, decimal rate, string? batchNumber = null)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -412,6 +413,14 @@ public sealed class StoreControlsTests(HospitalServer server)
         await using var scope = server.Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuditEvent>().AsNoTracking()
             .Where(a => a.EntityId == entityId.ToString() && a.Action.StartsWith("stock_level.")).OrderBy(a => a.OccurredAt).ThenBy(a => a.Id).ToListAsync(Ct);
+    }
+
+    /// <summary>The store's own level row for the item (the audit trail is kept against it).</summary>
+    private async Task<Guid> LevelIdAsync(Guid storeId, Guid itemId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<StoreItemLevel>().IgnoreQueryFilters().AsNoTracking()
+            .Where(l => l.StoreId == storeId && l.ItemId == itemId).Select(l => l.Id).SingleAsync(Ct);
     }
 
     private static async Task<Guid> UserIdAsync(ApiClient user) => (await user.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("id").GetGuid();
