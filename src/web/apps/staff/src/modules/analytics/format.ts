@@ -270,7 +270,9 @@ const TARGET_STATUS: Record<KpiStatus, { tone: TargetTone; label: string }> = {
 };
 
 /** Where a KPI stands against the facility's target for the period shown, or null when no target is set. */
-export function kpiTargetSummary(kpi: Pick<KpiValue, 'value' | 'unit' | 'higherIsBetter' | 'target'>): KpiTargetSummary | null {
+export function kpiTargetSummary(
+  kpi: Pick<KpiValue, 'value' | 'unit' | 'higherIsBetter' | 'target'>,
+): KpiTargetSummary | null {
   const target = kpi.target;
   if (!target) {
     return null;

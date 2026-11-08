@@ -438,16 +438,27 @@ internal sealed class PayrollCostReport : ReportDefinition
         else if (groupBy == ByCostCentre)
         {
             column = "Cost centre";
-            var kinds = await ctx.ListAsync(
-                (from s in payslips
-                 join e in db.Set<Employee>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]) on s.EmployeeId equals e.Id
-                 join d in db.Set<Department>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]) on e.DepartmentId equals d.Id into departments
-                 from d in departments.DefaultIfEmpty()
-                 select new { Kind = d == null ? (DepartmentKind?)null : d.Kind, s.EmployeeId, s.GrossEarnings, s.EmployerPf, s.EmployerEsi })
-                .GroupBy(x => x.Kind)
-                .Select(g => new KindTotal(g.Key, g.Select(x => x.EmployeeId).Distinct().Count(), g.Sum(x => x.GrossEarnings), g.Sum(x => x.EmployerPf), g.Sum(x => x.EmployerEsi))),
+
+            // Each source in a query of its own: employees and departments are read with their soft-deleted rows (a
+            // department closed since keeps its kind), which EF would otherwise apply to the payslips too.
+            var byEmployee = await ctx.ListAsync(
+                payslips.GroupBy(s => s.EmployeeId)
+                    .Select(g => new EmployeeTotal(g.Key, g.Sum(s => s.GrossEarnings), g.Sum(s => s.EmployerPf), g.Sum(s => s.EmployerEsi))),
                 ct);
-            groups = kinds.Select(k => new PayrollCostGroup(PayrollCost.CostCentre(k.Kind), k.Employees, k.Earnings, k.Pf, k.Esi)).ToList();
+            var employeeIds = byEmployee.Select(e => e.EmployeeId).ToList();
+            var departmentOf = (await ctx.LookupAsync(
+                    db.Set<Employee>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).Where(e => employeeIds.Contains(e.Id)).Select(e => new EmployeeDepartment(e.Id, e.DepartmentId)),
+                    ct))
+                .ToDictionary(e => e.EmployeeId, e => e.DepartmentId);
+            var departmentIds = departmentOf.Values.OfType<Guid>().Distinct().ToList();
+            var kindOf = (await ctx.LookupAsync(
+                    db.Set<Department>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).Where(d => departmentIds.Contains(d.Id)).Select(d => new DepartmentKindOf(d.Id, d.Kind)),
+                    ct))
+                .ToDictionary(d => d.Id, d => d.Kind);
+            groups = byEmployee
+                .GroupBy(e => departmentOf.GetValueOrDefault(e.EmployeeId) is { } d && kindOf.TryGetValue(d, out var kind) ? kind : (DepartmentKind?)null)
+                .Select(g => new PayrollCostGroup(PayrollCost.CostCentre(g.Key), g.Count(), g.Sum(e => e.Earnings), g.Sum(e => e.Pf), g.Sum(e => e.Esi)))
+                .ToList();
         }
         else
         {
@@ -483,7 +494,11 @@ internal sealed class PayrollCostReport : ReportDefinition
 
     private sealed record EmployerTotal(int PfPayslips, decimal Pf, int EsiPayslips, decimal Esi);
 
-    private sealed record KindTotal(DepartmentKind? Kind, int Employees, decimal Earnings, decimal Pf, decimal Esi);
+    private sealed record EmployeeTotal(Guid EmployeeId, decimal Earnings, decimal Pf, decimal Esi);
+
+    private sealed record EmployeeDepartment(Guid EmployeeId, Guid? DepartmentId);
+
+    private sealed record DepartmentKindOf(Guid Id, DepartmentKind Kind);
 
     private sealed record NameTotal(string? Name, int Employees, decimal Earnings, decimal Pf, decimal Esi);
 }

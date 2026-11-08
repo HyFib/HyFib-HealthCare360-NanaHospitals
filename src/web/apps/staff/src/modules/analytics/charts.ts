@@ -254,12 +254,24 @@ export function kpiTrendOption(kpi: Pick<KpiValue, 'label' | 'unit' | 'trend' | 
   const asBars = kpi.unit === 'count' || kpi.unit === 'inr';
   const format = (value: number) => (kpi.unit === 'inr' ? formatKpi(value, 'inr') : formatKpi(value, kpi.unit));
   const daily = kpi.target?.dailyTarget ?? null;
-  const lines: { yAxis: number; label: { formatter: string; position: 'insideEndTop' | 'insideStartTop'; fontSize: number }; lineStyle: { type: 'dashed' | 'dotted'; opacity: number } }[] = [];
+  const lines: {
+    yAxis: number;
+    label: { formatter: string; position: 'insideEndTop' | 'insideStartTop'; fontSize: number };
+    lineStyle: { type: 'dashed' | 'dotted'; opacity: number };
+  }[] = [];
   if (average !== null) {
-    lines.push({ yAxis: average, label: { formatter: `Average ${format(average)}`, position: 'insideEndTop', fontSize: 11 }, lineStyle: { type: 'dashed', opacity: 0.8 } });
+    lines.push({
+      yAxis: average,
+      label: { formatter: `Average ${format(average)}`, position: 'insideEndTop', fontSize: 11 },
+      lineStyle: { type: 'dashed', opacity: 0.8 },
+    });
   }
   if (daily !== null && values.length > 0) {
-    lines.push({ yAxis: daily, label: { formatter: `Target ${format(daily)} a day`, position: 'insideStartTop', fontSize: 11 }, lineStyle: { type: 'dotted', opacity: 1 } });
+    lines.push({
+      yAxis: daily,
+      label: { formatter: `Target ${format(daily)} a day`, position: 'insideStartTop', fontSize: 11 },
+      lineStyle: { type: 'dotted', opacity: 1 },
+    });
   }
   const markLine = lines.length === 0 ? undefined : { silent: true, symbol: 'none' as const, data: lines };
   const series: BarSeriesOption | LineSeriesOption = asBars
@@ -331,7 +343,8 @@ export function sparklinePaths(
   const max = Math.max(...scale);
   const span = max - min || 1;
   const stepX = (width - padding * 2) / (finite.length - 1);
-  const yOf = (value: number) => (max === min ? height / 2 : padding + (1 - (value - min) / span) * (height - padding * 2));
+  const yOf = (value: number) =>
+    max === min ? height / 2 : padding + (1 - (value - min) / span) * (height - padding * 2);
   const points = finite.map((value, index) => {
     const x = padding + index * stepX;
     // A flat series sits in the middle rather than on the floor.

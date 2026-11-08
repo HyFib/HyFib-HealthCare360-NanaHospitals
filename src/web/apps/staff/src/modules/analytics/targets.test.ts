@@ -12,7 +12,14 @@ const visits: KpiTargetItem = {
   target: null,
 };
 
-const alos: KpiTargetItem = { ...visits, key: 'alos', label: 'Average length of stay', unit: 'days', higherIsBetter: false, monthly: false };
+const alos: KpiTargetItem = {
+  ...visits,
+  key: 'alos',
+  label: 'Average length of stay',
+  unit: 'days',
+  higherIsBetter: false,
+  monthly: false,
+};
 
 describe('KPI target form', () => {
   it('starts empty with the hospital administrator told, or from the stored target', () => {
@@ -54,29 +61,44 @@ describe('KPI target form', () => {
 
   it('reads Indian-grouped numbers and sends no version for a first target', () => {
     expect(
-      parseTargetForm({ target: '30,00,000', amberThreshold: '27,00,000.50', redThreshold: '24,00,000', ownerRole: 'Accountant' }, visits)
-        .request,
+      parseTargetForm(
+        { target: '30,00,000', amberThreshold: '27,00,000.50', redThreshold: '24,00,000', ownerRole: 'Accountant' },
+        visits,
+      ).request,
     ).toEqual({ target: 3_000_000, amberThreshold: 2_700_000.5, redThreshold: 2_400_000, ownerRole: 'Accountant' });
   });
 
   it('names thresholds on the wrong side of the target, as the server does', () => {
-    expect(parseTargetForm({ target: '3000', amberThreshold: '3500', redThreshold: '2000', ownerRole: 'X' }, visits).errors).toEqual({
+    expect(
+      parseTargetForm({ target: '3000', amberThreshold: '3500', redThreshold: '2000', ownerRole: 'X' }, visits).errors,
+    ).toEqual({
       amberThreshold: 'Higher is better for this KPI, so the amber threshold must be at or below the target.',
     });
-    expect(parseTargetForm({ target: '3000', amberThreshold: '2500', redThreshold: '2600', ownerRole: 'X' }, visits).errors).toEqual({
+    expect(
+      parseTargetForm({ target: '3000', amberThreshold: '2500', redThreshold: '2600', ownerRole: 'X' }, visits).errors,
+    ).toEqual({
       redThreshold: 'The red threshold must be at or below the amber threshold.',
     });
-    expect(parseTargetForm({ target: '4', amberThreshold: '3', redThreshold: '6', ownerRole: 'X' }, alos).errors).toEqual({
+    expect(
+      parseTargetForm({ target: '4', amberThreshold: '3', redThreshold: '6', ownerRole: 'X' }, alos).errors,
+    ).toEqual({
       amberThreshold: 'Lower is better for this KPI, so the amber threshold must be at or above the target.',
     });
-    expect(parseTargetForm({ target: '4', amberThreshold: '5', redThreshold: '4.5', ownerRole: 'X' }, alos).errors).toEqual({
+    expect(
+      parseTargetForm({ target: '4', amberThreshold: '5', redThreshold: '4.5', ownerRole: 'X' }, alos).errors,
+    ).toEqual({
       redThreshold: 'The red threshold must be at or above the amber threshold.',
     });
-    expect(parseTargetForm({ target: '4', amberThreshold: '5', redThreshold: '6', ownerRole: 'X' }, alos).request).toBeDefined();
+    expect(
+      parseTargetForm({ target: '4', amberThreshold: '5', redThreshold: '6', ownerRole: 'X' }, alos).request,
+    ).toBeDefined();
   });
 
   it('asks for numbers and an owner', () => {
-    const errors = parseTargetForm({ target: 'lots', amberThreshold: '1.234', redThreshold: '', ownerRole: '' }, visits).errors;
+    const errors = parseTargetForm(
+      { target: 'lots', amberThreshold: '1.234', redThreshold: '', ownerRole: '' },
+      visits,
+    ).errors;
     expect(Object.keys(errors ?? {}).sort()).toEqual(['amberThreshold', 'ownerRole', 'redThreshold', 'target']);
   });
 

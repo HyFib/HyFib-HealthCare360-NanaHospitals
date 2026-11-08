@@ -92,7 +92,11 @@ function KpiTargetsPage() {
     return (
       <Page maxWidth={900}>
         <PageHeader title="KPI targets" icon={<TargetArrowRegular />} breadcrumbs={crumbs} />
-        <ErrorState error={targets.error} onRetry={() => void targets.refetch()} title="Could not load the KPI targets" />
+        <ErrorState
+          error={targets.error}
+          onRetry={() => void targets.refetch()}
+          title="Could not load the KPI targets"
+        />
       </Page>
     );
   }
@@ -130,7 +134,8 @@ function KpiTargetsPage() {
             {
               key: 'target',
               header: 'Target',
-              render: (k) => (k.target ? formatKpi(k.target.target, k.unit) : <Caption1 className={styles.muted}>Not set</Caption1>),
+              render: (k) =>
+                k.target ? formatKpi(k.target.target, k.unit) : <Caption1 className={styles.muted}>Not set</Caption1>,
             },
             {
               key: 'amber',
@@ -258,18 +263,32 @@ function TargetDialog({ item, roles, onClose }: { item: KpiTargetItem; roles: st
                 <Field label="Target" hint={hint} required validationMessage={errors.target}>
                   <Input inputMode="decimal" value={form.target} onChange={(_, d) => change('target')(d.value)} />
                 </Field>
-                <Field label="Amber at" hint={item.higherIsBetter ? 'Or below' : 'Or above'} required validationMessage={errors.amberThreshold}>
-                  <Input inputMode="decimal" value={form.amberThreshold} onChange={(_, d) => change('amberThreshold')(d.value)} />
+                <Field
+                  label="Amber at"
+                  hint={item.higherIsBetter ? 'Or below' : 'Or above'}
+                  required
+                  validationMessage={errors.amberThreshold}
+                >
+                  <Input
+                    inputMode="decimal"
+                    value={form.amberThreshold}
+                    onChange={(_, d) => change('amberThreshold')(d.value)}
+                  />
                 </Field>
-                <Field label="Red at" hint={item.higherIsBetter ? 'Or below' : 'Or above'} required validationMessage={errors.redThreshold}>
-                  <Input inputMode="decimal" value={form.redThreshold} onChange={(_, d) => change('redThreshold')(d.value)} />
+                <Field
+                  label="Red at"
+                  hint={item.higherIsBetter ? 'Or below' : 'Or above'}
+                  required
+                  validationMessage={errors.redThreshold}
+                >
+                  <Input
+                    inputMode="decimal"
+                    value={form.redThreshold}
+                    onChange={(_, d) => change('redThreshold')(d.value)}
+                  />
                 </Field>
               </div>
-              <Field
-                label="Tell this role when it turns amber or red"
-                required
-                validationMessage={errors.ownerRole}
-              >
+              <Field label="Tell this role when it turns amber or red" required validationMessage={errors.ownerRole}>
                 <Select value={form.ownerRole} onChange={(_, d) => change('ownerRole')(d.value)}>
                   <option value="">Choose a role</option>
                   {roles.map((role) => (

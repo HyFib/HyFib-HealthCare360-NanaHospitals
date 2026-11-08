@@ -49,7 +49,11 @@ const occupancy: KpiTargetItem = {
   },
 };
 
-const LIST: KpiTargets = { facilityName: 'Nana Hospitals, Pune', roles: ['Accountant', 'HospitalAdmin'], kpis: [visits, occupancy] };
+const LIST: KpiTargets = {
+  facilityName: 'Nana Hospitals, Pune',
+  roles: ['Accountant', 'HospitalAdmin'],
+  kpis: [visits, occupancy],
+};
 
 let server: ReturnType<typeof fakeServer>;
 
@@ -67,14 +71,19 @@ describe('KPI targets', SCREEN_TESTS, () => {
   it('lists each KPI with its target and this month’s status, and sets a first target after naming a wrong threshold', async () => {
     server = fakeServer({
       [`GET ${TARGETS}`]: LIST,
-      [`PUT ${TARGETS}/opVisits`]: { ...visits, target: { ...occupancy.target!, target: 3000, amberThreshold: 2500, redThreshold: 2000, version: 1 } },
+      [`PUT ${TARGETS}/opVisits`]: {
+        ...visits,
+        target: { ...occupancy.target!, target: 3000, amberThreshold: 2500, redThreshold: 2000, version: 1 },
+      },
     });
     const user = userEvent.setup();
     openScreen('/analytics/kpi-targets');
 
     const table = await screen.findByRole('table', { name: 'KPI targets' }, SLOW);
     expect(within(table).getByText('Needs attention')).toBeInTheDocument();
-    expect(within(table).getByText('A monthly figure, prorated to the period shown; higher is better.')).toBeInTheDocument();
+    expect(
+      within(table).getByText('A monthly figure, prorated to the period shown; higher is better.'),
+    ).toBeInTheDocument();
     expect(screen.getByText(/1 of 2 KPIs have a target/)).toBeInTheDocument();
     await expectNoAxeViolations();
 
@@ -87,7 +96,9 @@ describe('KPI targets', SCREEN_TESTS, () => {
     await user.click(within(dialog).getByRole('button', { name: 'Save target' }));
 
     expect(
-      await within(dialog).findByText('Higher is better for this KPI, so the amber threshold must be at or below the target.'),
+      await within(dialog).findByText(
+        'Higher is better for this KPI, so the amber threshold must be at or below the target.',
+      ),
     ).toBeInTheDocument();
     expect(server.requests.filter((r) => r.method === 'PUT')).toEqual([]);
     await expectNoAxeViolations();
@@ -100,7 +111,12 @@ describe('KPI targets', SCREEN_TESTS, () => {
     expect(await screen.findByText('Target for OP visits saved', {}, SLOW)).toBeInTheDocument();
     const puts = server.requests.filter((r) => r.method === 'PUT');
     expect(puts).toHaveLength(1);
-    expect(puts[0]?.body).toEqual({ target: 3000, amberThreshold: 2500, redThreshold: 2000, ownerRole: 'HospitalAdmin' });
+    expect(puts[0]?.body).toEqual({
+      target: 3000,
+      amberThreshold: 2500,
+      redThreshold: 2000,
+      ownerRole: 'HospitalAdmin',
+    });
   });
 
   it('changes a target with the version it loaded', async () => {

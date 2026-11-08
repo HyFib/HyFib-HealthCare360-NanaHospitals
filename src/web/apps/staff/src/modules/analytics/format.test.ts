@@ -162,9 +162,16 @@ describe('KPI against its target', () => {
   it('marks green and red, a KPI without a figure, and none without a target', () => {
     expect(kpiTargetSummary({ ...kpi, target: { ...kpi.target, status: 'Green' } })?.label).toBe('On target');
     expect(kpiTargetSummary({ ...kpi, target: { ...kpi.target, status: 'Red' } })?.tone).toBe('bad');
-    expect(kpiTargetSummary({ ...kpi, value: null, target: { ...kpi.target, status: null } })?.label).toBe('No figure yet');
+    expect(kpiTargetSummary({ ...kpi, value: null, target: { ...kpi.target, status: null } })?.label).toBe(
+      'No figure yet',
+    );
     expect(kpiTargetSummary({ ...kpi, target: null })).toBeNull();
-    const alos = { value: 5.5, unit: 'days' as const, higherIsBetter: false, target: { ...kpi.target, target: 4, amber: 5, red: 6, prorated: false } };
+    const alos = {
+      value: 5.5,
+      unit: 'days' as const,
+      higherIsBetter: false,
+      target: { ...kpi.target, target: 4, amber: 5, red: 6, prorated: false },
+    };
     expect(kpiTargetSummary(alos)?.text).toBe('Target 4.0 days');
     expect(kpiTargetSummary(alos)?.description).toContain('Amber at 5.0 days or above, red at 6.0 days or above.');
   });

@@ -111,9 +111,11 @@ public sealed class ReportCatalogTests
         var clinical = catalog.VisibleTo(Actor(AnalyticsPermissions.ClinicalRead)).Select(r => r.Descriptor).ToList();
 
         mis.ShouldNotContain(r => r.Category == ReportCategory.Revenue);
+        mis.ShouldNotContain(r => r.Category == ReportCategory.Statutory, "tax, payroll cost and claims are money: finance only");
         mis.ShouldNotContain(r => r.ContainsPatientIdentifiers);
         mis.ShouldContain(r => r.Id == "hr-headcount");
-        finance.ShouldAllBe(r => r.Category == ReportCategory.Revenue || r.Category == ReportCategory.Pharmacy);
+        finance.ShouldAllBe(r => r.Category == ReportCategory.Revenue || r.Category == ReportCategory.Pharmacy || r.Category == ReportCategory.Statutory);
+        finance.Count(r => r.Category == ReportCategory.Statutory).ShouldBe(6);
         finance.ShouldContain(r => r.Id == "pharmacy-sales-margin");
         clinical.ShouldContain(r => r.Id == "critical-values");
         clinical.ShouldContain(r => r.Id == "discharge-outcomes");

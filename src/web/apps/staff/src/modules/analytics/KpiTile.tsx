@@ -107,7 +107,8 @@ const useStyles = makeStyles({
 
 /**
  * One executive KPI: the value, the change on the previous period (green when better, red when worse — with an arrow and
- * words, never colour alone), a sparkline and a link to the report behind it.
+ * words, never colour alone), where it stands against the facility's target when one is set (an icon and words), a
+ * sparkline with the daily target and a link to the report behind it.
  */
 export function KpiTile({ kpi, inputs, compact }: { kpi: KpiValue; inputs: ReportInputs; compact?: boolean }) {
   const styles = useStyles();

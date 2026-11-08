@@ -138,7 +138,15 @@ describe('KPI trends and sparklines', () => {
         { date: '2026-09-01', value: 100_000 },
         { date: '2026-09-02', value: 200_000 },
       ],
-      target: { target: 1_000_000, amber: 900_000, red: 800_000, prorated: true, status: 'Green', ownerRole: 'Accountant', dailyTarget: 98_630.14 },
+      target: {
+        target: 1_000_000,
+        amber: 900_000,
+        red: 800_000,
+        prorated: true,
+        status: 'Green',
+        ownerRole: 'Accountant',
+        dailyTarget: 98_630.14,
+      },
     }) as unknown as AnyOption;
     const lines = (option.series[0]?.markLine as { data: { yAxis: number; label: { formatter: string } }[] }).data;
     expect(lines.map((l) => l.yAxis)).toEqual([150_000, 98_630.14]);
