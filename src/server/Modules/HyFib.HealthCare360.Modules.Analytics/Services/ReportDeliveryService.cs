@@ -348,7 +348,9 @@ internal sealed class ScheduledReportJob(
     private const int BatchSize = 10;
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan PurgeEvery = TimeSpan.FromHours(6);
+    private static readonly TimeSpan KpiTargetsEvery = TimeSpan.FromHours(1);
     private DateTimeOffset _lastPurge = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastKpiCheck = DateTimeOffset.MinValue;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -368,6 +370,12 @@ internal sealed class ScheduledReportJob(
                     await PurgeAsync(stoppingToken);
                     _lastPurge = time.GetUtcNow();
                 }
+
+                if (time.GetUtcNow() - _lastKpiCheck >= KpiTargetsEvery)
+                {
+                    await CheckKpiTargetsAsync(stoppingToken);
+                    _lastKpiCheck = time.GetUtcNow();
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -375,6 +383,13 @@ internal sealed class ScheduledReportJob(
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    /// <summary>Checks the facilities' KPI targets against this month to date and tells owners of new breaches.</summary>
+    internal async Task<int> CheckKpiTargetsAsync(CancellationToken ct)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<KpiTargetMonitor>().CheckAsync(time.GetUtcNow(), ct);
     }
 
     internal async Task<int> RunDueAsync(CancellationToken ct)
