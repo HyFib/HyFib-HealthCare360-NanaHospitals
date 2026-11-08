@@ -24,8 +24,16 @@ internal static class LeaveEndpoints
         group.MapGet("/leave/balances", Balances).RequireAnyPermission(HRPermissions.LeaveApprove, HRPermissions.EmployeesRead);
         group.MapPost("/leave/balances/credit", async (CreditLeaveRequest r, LeaveService leave, CancellationToken ct) => (await leave.CreditYearAsync(r.Year, ct)).ToOk())
             .RequirePermission(HRPermissions.LeaveApprove).WithValidation<CreditLeaveRequest>();
-        group.MapPost("/leave/balances/adjust", async (AdjustLeaveBalanceRequest r, LeaveService leave, CancellationToken ct) => (await leave.AdjustAsync(r, ct)).ToNoContent())
+        // A debit is made at once (204); a credit is asked for (202) and approved by someone else who approves leave
+        // (maker-checker slice 11). Nobody adjusts their own balance.
+        group.MapPost("/leave/balances/adjust", async (AdjustLeaveBalanceRequest r, LeaveService leave, CancellationToken ct) =>
+                (await leave.AdjustAsync(r, ct)).ToHttpResult(asked => asked is null
+                    ? TypedResults.NoContent()
+                    : TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
             .RequirePermission(HRPermissions.LeaveApprove).WithValidation<AdjustLeaveBalanceRequest>();
+        group.MapGet("/leave/balances/pending", async (Guid employeeId, LeaveService leave, CancellationToken ct) =>
+                TypedResults.Ok(await leave.PendingAdjustmentsAsync(employeeId, ct)))
+            .RequireAnyPermission(HRPermissions.LeaveApprove, HRPermissions.EmployeesRead);
 
         group.MapGet("/leave/requests", ListRequests).RequirePermission(HRPermissions.LeaveApprove);
         group.MapPost("/employees/{employeeId:guid}/leave-requests", async (Guid employeeId, ApplyLeaveRequest r, LeaveService leave, CancellationToken ct) =>

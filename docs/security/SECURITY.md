@@ -769,6 +769,26 @@ and grants nothing.
       hospital administrator by default), never the one who asked. The original line is kept; its charge is withdrawn
       and its stock returned, and the corrected line is issued and charged, through the same stock and charge paths, only
       over the line as asked (`approval.stale`), audited `ot.material_corrected` with both names;
+  - pay and leave (MAKER-CHECKER.md, slice 11). Each waits with the asker's reason in the approvals inbox, and until it
+    is approved what is in force stays in force; approved, it is made over the record as asked (`approval.stale`) and
+    audited with both names:
+    - a salary's bank account, IFSC, bank or payment mode (`hr.bank_details`; `PUT /api/v1/hr/employees/{id}/bank-details`
+      answers 202, as does an employee saved with another payment mode, and a new employee's first account waits too):
+      someone else who holds `hr.payroll.approve` approves, never the employee whose salary it is
+      (`hr.bank_details_own`). The account and IFSC asked for stay encrypted in the request; the inbox, the audit trail
+      (`employee.bank_changed`) and the notice to the employee show the account's last four digits only;
+    - the bank file (`GET …/payroll/runs/{id}/bank-transfer.csv`) pays the accounts fixed, encrypted, on the payslips when
+      the run was approved (`payroll_runs.bank_details_fixed_at`), never the employees' accounts at export; a run approved
+      before payment details were fixed has none until it is reopened and approved again
+      (`payroll.bank_details_not_fixed`);
+    - a salary structure (`hr.salary_structure`), an additional earning or a loss-of-pay or TDS override
+      (`hr.payroll_input`), a file of inputs with an earning in it (`hr.payroll_import`) and a deduction another module
+      posted, or another person entered, taken off (`hr.payroll_input_remove`): asked by `hr.payroll.process`, approved
+      by someone else who holds `hr.payroll.approve`. A deduction is added at once. Nobody enters or approves a change to
+      their own pay or structure (403 `hr.pay_own`, checked by the employee record linked to the signed-in account);
+    - a manual leave credit (`hr.leave_adjust`): approved by someone else who holds `hr.leave.approve`; a debit is made at
+      once; nobody adjusts their own balance or decides their own leave request (403 `hr.leave_own`). The yearly credit,
+      worked out by rule, is unchanged;
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was

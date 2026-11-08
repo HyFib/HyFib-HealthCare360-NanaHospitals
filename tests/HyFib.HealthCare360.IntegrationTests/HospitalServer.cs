@@ -86,6 +86,7 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.SecondSystemAdmin] = SystemAdministrationRole,
         [Users.BloodBankOfficer] = SystemRoles.BloodBankOfficer,
         [Users.SecondBloodBankOfficer] = SystemRoles.BloodBankOfficer,
+        [Users.HrManager] = SystemRoles.HrManager,
     };
 
     /// <summary>
@@ -1251,6 +1252,25 @@ public sealed class HospitalServer : IAsyncLifetime
     /// A correction of an implant or consumable line after the operation started, approved by the hospital administrator, who
     /// holds the OT in-charge's approval and did not ask for it.
     /// </summary>
+    /// <summary>
+    /// An HR change (salary payment details, a salary structure, a payroll input, a leave credit: maker-checker slice 11)
+    /// approved by whoever of the HR manager and the hospital administrator did not ask for it.
+    /// </summary>
+    public async Task<ApprovalRequestDto> ApproveHrChangeAsync(Guid approvalId)
+    {
+        foreach (var userName in new[] { Users.HrManager, Users.HospitalAdmin })
+        {
+            var checker = await SignInAsync(userName);
+            var request = await checker.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
+            if (request.CanDecide)
+            {
+                return Approved(await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Checked for the tests.", request.Version)));
+            }
+        }
+
+        throw new InvalidOperationException($"Neither HR user may decide approval {approvalId}.");
+    }
+
     public async Task<ApprovalRequestDto> ApproveMaterialCorrectionAsync(Guid approvalId)
     {
         var checker = await SignInAsync(Users.HospitalAdmin);
@@ -1493,6 +1513,13 @@ public sealed class HospitalServer : IAsyncLifetime
         /// use.
         /// </summary>
         public const string SecondBloodBankOfficer = "bloodbank2";
+
+        /// <summary>
+        /// An HR manager beside the hospital administrator (who holds every HR permission too): approves the salary payment
+        /// details, pay and leave credits the administrator asks for, and asks for some of their own (maker-checker slice 11).
+        /// Created on first use.
+        /// </summary>
+        public const string HrManager = "hrmanager";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);

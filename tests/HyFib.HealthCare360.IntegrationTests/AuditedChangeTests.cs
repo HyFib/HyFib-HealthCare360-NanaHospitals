@@ -17,6 +17,7 @@ using HyFib.HealthCare360.Modules.Privacy.Services;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Dialysis;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Physiotherapy;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
@@ -274,9 +275,11 @@ public sealed class AuditedChangeTests(HospitalServer server)
         var hr = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var components = (await hr.GetAsync<List<SalaryComponentDto>>("/api/v1/hr/payroll/components")).ToDictionary(c => c.Code);
         var employee = await hr.PostAsync<EmployeeCreated>("/api/v1/hr/employees/", Employee());
-        var structure = await hr.PostAsync<Created>($"/api/v1/hr/employees/{employee.Id}/salary-structures", new SaveSalaryStructureRequest(
+        var asked = await hr.PostAsync<ApprovalRequestDto>($"/api/v1/hr/employees/{employee.Id}/salary-structures", new SaveSalaryStructureRequest(
             new DateOnly(2026, 4, 1), null, 0, PfApplicable: true, PfOnActualBasic: false, EsiApplicable: false, null, null,
             [new SalaryStructureLineInput(components["BASIC"].Id, 18_000), new SalaryStructureLineInput(components["HRA"].Id, 40)]));
+        await server.ApproveHrChangeAsync(asked.Id);
+        var structure = (await hr.GetAsync<List<SalaryStructureDto>>($"/api/v1/hr/employees/{employee.Id}/salary-structures")).ShouldHaveSingleItem();
 
         var lines = Details(await TrailAsync(nameof(EmployeeSalaryStructure), structure.Id), "EmployeeSalaryStructure.create")["lines"]!;
 

@@ -20508,6 +20508,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("approved_by_user_id");
 
+                    b.Property<DateTimeOffset?>("BankDetailsFixedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("bank_details_fixed_at");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -20633,10 +20637,22 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("BankAccountCipher")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("bank_account_cipher")
+                        .HasAnnotation("HC360:ProtectedValue", true);
+
                     b.Property<string>("BankAccountMasked")
                         .HasMaxLength(24)
                         .HasColumnType("character varying(24)")
                         .HasColumnName("bank_account_masked");
+
+                    b.Property<string>("BankIfscCipher")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("bank_ifsc_cipher")
+                        .HasAnnotation("HC360:ProtectedValue", true);
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")

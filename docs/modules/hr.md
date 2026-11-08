@@ -23,6 +23,24 @@ The service re-checks the reporting line. HR (`hr.leave.approve` / `hr.attendanc
 for employees of the facility they are working in. Nobody can approve their own request. Payroll follows
 maker-checker: the approver must be a different user from the processor.
 
+**Maker-checker (slice 11, MAKER-CHECKER.md).** These wait in the approvals inbox (`platform.approval_requests`) for a
+second person, never the one who asked (`approval.self`) and never the employee whose pay or leave it is; until approved,
+what is in force stays in force, and the approval is audited with both names:
+
+| Kind | Asked by | Approved by | What waits |
+|---|---|---|---|
+| `hr.bank_details` | `hr.employees.manage` | `hr.payroll.approve`, not the employee (`hr.bank_details_own`) | A salary's bank account, IFSC, bank or payment mode (cash, cheque, bank transfer); a new employee's first account too. Audited with the account masked to its last four digits; the employee is told |
+| `hr.salary_structure` | `hr.payroll.process` | `hr.payroll.approve` | A salary structure (revision); made only over the latest structure as asked (`approval.stale`) |
+| `hr.payroll_input` | `hr.payroll.process` | `hr.payroll.approve` | An additional earning, a loss-of-pay override or a TDS override. A deduction is added at once |
+| `hr.payroll_import` | `hr.payroll.process` | `hr.payroll.approve` | An imported file with an earning in it, as a whole. A file of deductions only is imported at once |
+| `hr.payroll_input_remove` | `hr.payroll.process` | `hr.payroll.approve` | A deduction another module posted (canteen credit), or another person entered, taken off. One's own entry, and an earning or override, are removed at once |
+| `hr.leave_adjust` | `hr.leave.approve` | `hr.leave.approve`, not the employee (`hr.leave_own`) | A manual leave credit. A debit is made at once; the yearly credit (by rule) stays automatic |
+
+Nobody makes a change to their own pay or salary structure, nor approves one (403 `hr.pay_own`), nor adjusts their own
+leave balance or decides their own leave request (403 `hr.leave_own`). `GET /api/v1/hr/payroll/pending-changes?runId&employeeId`
+and `GET /api/v1/hr/leave/balances/pending?employeeId` list what waits; `EmployeeDetail.pendingPaymentDetails` the
+payment details asked for.
+
 ## Endpoints
 
 All list endpoints accept `page, pageSize, search, sort, desc` and return `{ items, page, pageSize, totalCount }`.
@@ -32,9 +50,9 @@ All list endpoints accept `page, pageSize, search, sort, desc` and return `{ ite
 |---|---|---|---|
 | GET | `/api/v1/hr/employees` | employees.read | filters `departmentId, designationId, status, employmentType, includeSeparated`; sort `code,name,joiningDate,department` → `EmployeeListItem` (phone masked) |
 | GET | `/api/v1/hr/employees/{id}` | employees.read | → `EmployeeDetail` (bank account, IFSC and PAN masked only) |
-| POST | `/api/v1/hr/employees` | employees.manage | `SaveEmployeeRequest` (optional `bank`) → 201 `EmployeeCreated {id, employeeCode}` |
-| PUT | `/api/v1/hr/employees/{id}` | employees.manage | `SaveEmployeeRequest` (`version` required; `pan`: null = keep, "" = remove) → 204 |
-| PUT | `/api/v1/hr/employees/{id}/bank-details` | employees.manage | `UpdateBankDetailsRequest {bankName, accountNumber, ifsc, confirmSharedAccount, version}` → 204; 409 `employee.bank_account_shared` when another current employee is paid into the same account |
+| POST | `/api/v1/hr/employees` | employees.manage | `SaveEmployeeRequest` (optional `bank`) → 201 `EmployeeCreated {id, employeeCode, bankApprovalId}`: the payment mode is saved, a bank account given waits (`hr.bank_details`) |
+| PUT | `/api/v1/hr/employees/{id}` | employees.manage | `SaveEmployeeRequest` (`version` required; `pan`: null = keep, "" = remove) → 204; a payment mode other than the one in force is asked for in the same save → 202 the approval request (`hr.bank_details`), the rest saved |
+| PUT | `/api/v1/hr/employees/{id}/bank-details` | employees.manage | `UpdateBankDetailsRequest {paymentMode, bankName, accountNumber, ifsc, confirmSharedAccount, reason, version}` (no account keeps the one on record) → 202 the approval request (`hr.bank_details`); 409 `employee.bank_account_shared` when another current employee is paid into the same account, `approval.already_requested` while a change waits |
 | POST | `/api/v1/hr/employees/{id}/separate` | employees.manage | `SeparateEmployeeRequest {lastWorkingDay, reason, note, version}` → 204 |
 | GET/POST/PUT | `/api/v1/hr/designations[/{id}]` | read: employees.read or .manage; write: employees.manage | `SaveDesignationRequest {code, name, category, grade, isActive, version}` |
 | GET | `/api/v1/hr/credentials` | credentials.manage or employees.read | `expiringWithinDays, type, departmentId` → `CredentialDto` (with `stage`, `daysToExpiry`), soonest expiry first |
@@ -139,7 +157,8 @@ shift.
 | POST/DELETE | `/api/v1/hr/holidays[/{id}]` | attendance.manage | `SaveHolidayRequest {date, name, kind: National|Festival|Restricted}` (restricted holidays are working days) |
 | GET | `/api/v1/hr/leave/balances?employeeId&year` | leave.approve or employees.read | → `LeaveBalanceDto {opening, credited, adjusted, availed, encashed, closing, pending, available}` |
 | POST | `/api/v1/hr/leave/balances/credit` | leave.approve | `CreditLeaveRequest {year}` → `CreditLeaveResult`; carry-forward (capped) + pro-rated quota; re-runnable |
-| POST | `/api/v1/hr/leave/balances/adjust` | leave.approve | `AdjustLeaveBalanceRequest {employeeId, leaveTypeId, year, days (±, half days), reason}` (comp-off credits, corrections; audited) |
+| POST | `/api/v1/hr/leave/balances/adjust` | leave.approve | `AdjustLeaveBalanceRequest {employeeId, leaveTypeId, year, days (±, half days), reason}` (comp-off credits, corrections; audited): a debit → 204; a credit → 202 (`hr.leave_adjust`); one's own → 403 `hr.leave_own` |
+| GET | `/api/v1/hr/leave/balances/pending?employeeId` | leave.approve or employees.read | → `PendingLeaveAdjustment[]` |
 | GET | `/api/v1/hr/leave/requests?status&employeeId&from&to` | leave.approve | → `LeaveRequestDto` (pending first) |
 | POST | `/api/v1/hr/employees/{employeeId}/leave-requests` | leave.approve | `ApplyLeaveRequest {leaveTypeId, fromDate, fromSession, toDate, toSession, reason, attachmentFileId}` (HR on behalf) |
 | POST | `/api/v1/hr/leave/requests/{id}/approve` · `/reject` · `/cancel` | leave.approve | `DecisionRequest` / `CancelLeaveRequest {reason}` |
@@ -157,7 +176,7 @@ immediately.
 | POST/PUT | `/api/v1/hr/payroll/components[/{id}]` | payroll.process | `SaveSalaryComponentRequest {code, name, kind, calculationType: Fixed|PercentOfBasic, defaultValue, isTaxable, sortOrder, isActive, wageTreatment?: Wages|Excluded|PaidOnLeaving}` (none keeps it; BASIC and deductions are `Wages`); PF/ESI/PT/TDS are reserved |
 | GET | `/api/v1/hr/payroll/professional-tax` | payroll.process or .approve | → `ProfessionalTaxScheduleDto[]` |
 | PUT | `/api/v1/hr/payroll/professional-tax/{stateCode}` | payroll.approve | `SaveProfessionalTaxRequest {stateName, frequency: Monthly|HalfYearly, deductionMonths, bands[{incomeFrom, incomeTo, amount, februaryAmount}]}` replaces the state's table (audited) |
-| GET/POST | `/api/v1/hr/employees/{employeeId}/salary-structures` | GET: process/approve; POST: payroll.process | `SaveSalaryStructureRequest {effectiveFrom, annualCtc, monthlyTds, pfApplicable, pfOnActualBasic, esiApplicable, professionalTaxState, notes, lines[{salaryComponentId, value}]}`; a new structure closes the previous one. The pay heads and their amounts are in the structure's audit event (`lines`) |
+| GET/POST | `/api/v1/hr/employees/{employeeId}/salary-structures` | GET: process/approve; POST: payroll.process | `SaveSalaryStructureRequest {effectiveFrom, annualCtc, monthlyTds, pfApplicable, pfOnActualBasic, esiApplicable, professionalTaxState, notes, lines[{salaryComponentId, value}]}` → 202 (`hr.salary_structure`); once approved, the new structure closes the previous one. The pay heads and their amounts are in the structure's audit event (`lines`) |
 | GET | `/api/v1/hr/payroll/runs?year` | process or approve | → `PayrollRunDto` (incl. `payslipsWithErrors`) |
 | GET | `/api/v1/hr/payroll/runs/{id}` | process or approve | → `PayrollRunDto` |
 | POST | `/api/v1/hr/payroll/runs` | payroll.process | `CreatePayrollRunRequest {year, month, notes}` (one per facility and month, not in the future) |
@@ -167,10 +186,11 @@ immediately.
 | POST | `/api/v1/hr/payroll/runs/{id}/reopen` | payroll.approve | `ReopenPayrollRequest {reason}` (Approved → Processed) |
 | POST | `/api/v1/hr/payroll/runs/{id}/mark-paid` | payroll.approve | `MarkPayrollPaidRequest {paidOn, reference}`; notifies employees |
 | POST | `/api/v1/hr/payroll/runs/{id}/lock` | payroll.approve | Paid → Locked; also locks the month's attendance |
-| GET | `/api/v1/hr/payroll/runs/{id}/bank-transfer.csv` | payroll.approve | Approved/Paid/Locked only; CSV `EmployeeCode,BeneficiaryName,AccountNumber,IFSC,Amount,Narration` with decrypted accounts; never stored, every export audited, CSV-injection safe |
-| GET/POST | `/api/v1/hr/payroll/runs/{id}/inputs` | GET: process/approve; POST: payroll.process | `SavePayrollInputRequest {employeeId, kind: Earning|Deduction|LopDaysOverride|TdsOverride, componentCode, description, amount}` |
-| POST | `/api/v1/hr/payroll/runs/{id}/inputs/import` | payroll.process | `ImportPayrollInputsRequest {csv}`: `employeeCode,componentCode,amount[,description]`; all-or-nothing, 400 with line-numbered errors |
-| DELETE | `/api/v1/hr/payroll/inputs/{inputId}` | payroll.process | before approval only |
+| GET | `/api/v1/hr/payroll/runs/{id}/bank-transfer.csv` | payroll.approve | Approved/Paid/Locked only; CSV `EmployeeCode,BeneficiaryName,AccountNumber,IFSC,Amount,Narration` with decrypted accounts; never stored, every export audited, CSV-injection safe. The accounts are the ones in force when the run was approved, fixed on its payslips then (`payslips.bank_account_cipher`, `payroll_runs.bank_details_fixed_at`); a run approved before that has none (422 `payroll.bank_details_not_fixed`: reopen and approve again) |
+| GET/POST | `/api/v1/hr/payroll/runs/{id}/inputs` | GET: process/approve; POST: payroll.process | `SavePayrollInputRequest {employeeId, kind: Earning|Deduction|LopDaysOverride|TdsOverride, componentCode, description, amount}`: a deduction → 201 its id; anything else → 202 (`hr.payroll_input`) |
+| POST | `/api/v1/hr/payroll/runs/{id}/inputs/import` | payroll.process | `ImportPayrollInputsRequest {csv}`: `employeeCode,componentCode,amount[,description]`; all-or-nothing, 400 with line-numbered errors; with an earning in it → 202 `{imported: 0, approval}` (`hr.payroll_import`) |
+| DELETE | `/api/v1/hr/payroll/inputs/{inputId}` | payroll.process | before approval only; a deduction another module posted or another person entered → 202 (`hr.payroll_input_remove`) |
+| GET | `/api/v1/hr/payroll/pending-changes?runId&employeeId` | process or approve | → `PendingPayChange[]`: a run's inputs, or an employee's salary structures, waiting for approval |
 | GET | `/api/v1/hr/payroll/runs/{id}/payslips?errorsOnly&search` | process or approve | → `PayslipListItem` |
 | GET | `/api/v1/hr/payroll/payslips/{id}` | process or approve | → `PayslipDto` (payslip JSON: earnings, deductions, employer PF/ESI, masked PAN/account, warnings) |
 
@@ -285,8 +305,10 @@ seeded for this year and next. Five demo employees with salary structures are ad
 
 ## Security and privacy
 * Bank account, IFSC and PAN are AES-GCM encrypted with `IFieldProtector` and marked `[SensitiveData]`. Screens show
-  them masked only. Blind indexes detect shared salary accounts and duplicate PANs. Changing bank details is audited
-  and the employee is always notified.
+  them masked only. Blind indexes detect shared salary accounts and duplicate PANs. Changing bank details or the
+  payment mode waits for a second person who approves payroll (never the employee), is audited with both names and the
+  account's last four digits, and the employee is always notified. A change waiting keeps its account encrypted in the
+  approval request.
 * Only the bank-transfer CSV contains decrypted values. It requires `hr.payroll.approve` and an approved run, and
   every export is audited (PRV-04).
 * Punches (`attendance_punches`) and computed days (`attendance_days`) are `[NotAudited]`. Regularisations, leave,
