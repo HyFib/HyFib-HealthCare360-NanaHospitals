@@ -37,6 +37,7 @@ import { formatDateTime, isApiError } from '@hc360/core';
 import { applyServerErrors, DataTable, ErrorState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { ErasureLedgerSection } from '@/modules/privacy/ErasureLedgerSection';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -306,6 +307,7 @@ function RetentionPage() {
           />
         </Section>
       </Columns>
+      <ErasureLedgerSection />
 
       {editing && <RetentionDrawer rule={editing} onClose={() => setEditing(null)} />}
       {cleanup && <CleanupDialog mode={cleanup} onClose={() => setCleanup(null)} />}

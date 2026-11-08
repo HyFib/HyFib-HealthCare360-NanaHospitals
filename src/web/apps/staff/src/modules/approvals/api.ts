@@ -207,4 +207,8 @@ export const APPROVAL_PERMISSIONS = [
   'ambulance.waivers.approve',
   'bloodbank.reactions.approve',
   'dialysis.infection_status.approve',
+  // A data protection impact assessment (DPDP Act s.10): whoever keeps the Significant Data Fiduciary records sends it
+  // (and may withdraw it); someone else who approves them, the Data Protection Officer, decides.
+  'privacy.sdf.manage',
+  'privacy.sdf.approve',
 ] as const;
