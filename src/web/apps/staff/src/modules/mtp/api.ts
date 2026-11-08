@@ -85,6 +85,15 @@ export interface MtpOpinion {
   doctorName: string;
   registrationNumber: string;
   opinionOn: string;
+  /**
+   * The doctor's own account, for an opinion they recorded in HC360 (the second opinion from 20 weeks, maker-checker
+   * slice 9); absent or null for one typed on the case.
+   */
+  userId?: string | null;
+  /** Who recorded it: the doctor themselves, or the colleague at whose screen they confirmed with their own credentials. */
+  recordedBy?: string | null;
+  /** Recorded by the doctor in HC360, not typed by someone else. */
+  confirmed?: boolean;
 }
 
 /** A termination of pregnancy (server `MtpCaseDto`). */
@@ -120,6 +129,18 @@ export interface MtpCaseDto {
   outcome: string | null;
   remarks: string | null;
   cancelReason: string | null;
+  version: number;
+  /** From 20 weeks the second doctor records their own opinion; until then the termination waits. */
+  awaitingSecondOpinion: boolean;
+}
+
+/**
+ * The second registered medical practitioner's opinion (server `RecordSecondOpinionRequest`): given by the doctor signed
+ * in, or, with `doctorConfirmationId`, by the doctor who confirmed at this screen with their own credentials.
+ */
+export interface RecordSecondOpinionRequest {
+  opinionOn: string;
+  doctorConfirmationId: string | null;
   version: number;
 }
 
@@ -272,6 +293,9 @@ export const mtpApi = {
     api.post<MtpCaseDto>(`${mtpCase(id)}/termination`, request),
   cancel: (id: string, reason: string, version: number) =>
     api.post<MtpCaseDto>(`${mtpCase(id)}/cancel`, { reason, version }),
+  /** The second doctor's opinion, from 20 weeks: their own sign-in, or their confirmation at this screen. */
+  secondOpinion: (id: string, request: RecordSecondOpinionRequest) =>
+    api.post<MtpCaseDto>(`${mtpCase(id)}/second-opinion`, request),
   /** The month's admission register (Form III) as CSV (the download is audited). */
   exportRegister: (year: number, month: number) => api.blob('/api/v1/mtp/register/export', { query: { year, month } }),
 };
