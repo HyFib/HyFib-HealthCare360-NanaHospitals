@@ -9170,6 +9170,97 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("discharge_summary_amendments", "clinical");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.DoctorHandover", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<Guid>("FromPractitionerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("from_practitioner_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("note");
+
+                    b.Property<Guid?>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("starts_at");
+
+                    b.Property<Guid>("ToPractitionerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("to_practitioner_id");
+
+                    b.Property<DateTimeOffset>("Until")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("until");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_doctor_handovers");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_doctor_handovers_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_doctor_handovers_is_deleted");
+
+                    b.HasIndex("ToPractitionerId", "Until")
+                        .HasDatabaseName("ix_doctor_handovers_to_practitioner_id_until");
+
+                    b.HasIndex("FromPractitionerId", "ToPractitionerId", "Until")
+                        .HasDatabaseName("ix_doctor_handovers_from_practitioner_id_to_practitioner_id_un");
+
+                    b.ToTable("doctor_handovers", "clinical");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.DrugDoseLimit", b =>
                 {
                     b.Property<Guid>("Id")
@@ -9352,6 +9443,14 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("arrived_at");
 
+                    b.Property<DateTimeOffset?>("BayAssignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("bay_assigned_at");
+
+                    b.Property<Guid?>("BayId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("bay_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -9479,6 +9578,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_emergency_cases");
 
+                    b.HasIndex("BayId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_emergency_cases_bay_id")
+                        .HasFilter("bay_id IS NOT NULL");
+
                     b.HasIndex("FacilityId")
                         .HasDatabaseName("ix_emergency_cases_facility_id");
 
@@ -9496,6 +9600,86 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_emergency_cases_facility_id_disposition");
 
                     b.ToTable("emergency_cases", "clinical");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Emergency.ErBay", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Area")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("area");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("display_order");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_er_bays");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_er_bays_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_er_bays_is_deleted");
+
+                    b.HasIndex("FacilityId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_er_bays_facility_id_code");
+
+                    b.ToTable("er_bays", "clinical");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Emergency.EsiTriage", b =>
@@ -9868,6 +10052,128 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_mlc_records_facility_id_number");
 
                     b.ToTable("mlc_records", "clinical");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Emergency.WoundCertificate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("DoctorName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("doctor_name");
+
+                    b.Property<string>("DoctorRegistration")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("doctor_registration");
+
+                    b.Property<DateTimeOffset>("ExaminedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("examined_at");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("History")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("history");
+
+                    b.Property<string>("IdentificationMarks")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("identification_marks");
+
+                    b.Property<string>("Injuries")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("injuries");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid>("MlcRecordId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("mlc_record_id");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("remarks");
+
+                    b.Property<DateTimeOffset?>("SignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("signed_at");
+
+                    b.Property<Guid?>("SignedByPractitionerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("signed_by_practitioner_id");
+
+                    b.Property<Guid?>("SignedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("signed_by_user_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<Guid>("VisitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("visit_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_wound_certificates");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_wound_certificates_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_wound_certificates_is_deleted");
+
+                    b.HasIndex("MlcRecordId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_wound_certificates_mlc_record_id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_wound_certificates_patient_id");
+
+                    b.ToTable("wound_certificates", "clinical");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Encounter", b =>
@@ -11936,6 +12242,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("signer_name");
+
+                    b.Property<string>("SignerRevocationStatus")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("signer_revocation_status");
 
                     b.Property<string>("SignerSerialNumber")
                         .HasMaxLength(128)
@@ -46682,6 +46993,12 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Emergency.EmergencyCase", b =>
                 {
+                    b.HasOne("HyFib.HealthCare360.Modules.Clinical.Domain.Emergency.ErBay", null)
+                        .WithMany()
+                        .HasForeignKey("BayId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_emergency_cases_er_bay_bay_id");
+
                     b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
                         .WithMany()
                         .HasForeignKey("PatientId")
@@ -46722,6 +47039,23 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_mlc_records_visits_visit_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Emergency.WoundCertificate", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Clinical.Domain.Emergency.MlcRecord", null)
+                        .WithMany()
+                        .HasForeignKey("MlcRecordId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_wound_certificates_mlc_records_mlc_record_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_wound_certificates_patients_patient_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.Encounter", b =>

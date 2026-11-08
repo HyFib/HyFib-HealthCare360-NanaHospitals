@@ -75,6 +75,7 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.CssdTechnician] = SystemRoles.CssdTechnician,
         [Users.CardiologyTechnician] = SystemRoles.CardiologyTechnician,
         [Users.SecondDoctor] = SystemRoles.Doctor,
+        [Users.ThirdDoctor] = SystemRoles.Doctor,
         [Users.SecondNurse] = SystemRoles.Nurse,
         [Users.SecondPharmacist] = SystemRoles.Pharmacist,
         [Users.Accountant] = SystemRoles.Accountant,
@@ -574,7 +575,12 @@ public sealed class HospitalServer : IAsyncLifetime
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
                          ?? throw new InvalidOperationException("The hospital administrator has no facility.");
         var temporary = "It-first-" + Guid.NewGuid().ToString("N");
-        var practitionerId = userName == Users.SecondDoctor ? await SecondConsultantAsync() : null;
+        var practitionerId = userName switch
+        {
+            Users.SecondDoctor => await ConsultantAsync(1),
+            Users.ThirdDoctor => await ConsultantAsync(2),
+            _ => null,
+        };
         await CreateUserAsync(admin, new CreateUserRequest(
             userName, NamesCreatedOnFirstUse.GetValueOrDefault(userName, $"Demo {role}"), Email: null, Phone: null, [roleId], [facilityId], facilityId,
             practitionerId, temporary));
@@ -1258,12 +1264,12 @@ public sealed class HospitalServer : IAsyncLifetime
         return await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Checked against the pack label.", request.Version));
     }
 
-    // The seed signs the first consultant (by code) in as the doctor; the second doctor is the next one.
-    private async Task<Guid?> SecondConsultantAsync()
+    // The seed signs the first consultant (by code) in as the doctor; the second and third doctors are the next ones.
+    private async Task<Guid?> ConsultantAsync(int skip)
     {
         await using var scope = Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Practitioner>()
-            .Where(p => p.Kind == PractitionerKind.Consultant).OrderBy(p => p.Code).Skip(1).Select(p => (Guid?)p.Id)
+            .Where(p => p.Kind == PractitionerKind.Consultant).OrderBy(p => p.Code).Skip(skip).Select(p => (Guid?)p.Id)
             .FirstAsync(TestContext.Current.CancellationToken);
     }
 
@@ -1436,6 +1442,12 @@ public sealed class HospitalServer : IAsyncLifetime
         /// <see cref="Doctor"/>'s. Created on first use.
         /// </summary>
         public const string SecondDoctor = "doctor2";
+
+        /// <summary>
+        /// A third doctor, linked to the consultant after <see cref="SecondDoctor"/>'s: a doctor who is neither the author nor
+        /// on the care team, nor covering, for the slice 15 sign-off rules. Created on first use.
+        /// </summary>
+        public const string ThirdDoctor = "doctor3";
 
         /// <summary>A second nurse, who witnesses <see cref="Nurse"/>'s controlled doses at her screen. Created on first use.</summary>
         public const string SecondNurse = "nurse2";
