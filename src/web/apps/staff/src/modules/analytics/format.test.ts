@@ -11,6 +11,7 @@ import {
   formatShortDate,
   formatValue,
   kpiChange,
+  kpiTargetSummary,
   toNumber,
 } from './format';
 
@@ -129,5 +130,49 @@ describe('small helpers', () => {
     expect(formatBytes(1_572_864)).toBe('1.5 MB');
     expect(formatCount(1, 'row')).toBe('1 row');
     expect(formatCount(1200, 'row')).toBe('1,200 rows');
+  });
+});
+
+describe('KPI against its target', () => {
+  const kpi = {
+    value: 2_100,
+    unit: 'count' as const,
+    higherIsBetter: true,
+    target: {
+      target: 2_761.64,
+      amber: 2_301.37,
+      red: 1_841.1,
+      prorated: true,
+      status: 'Amber' as const,
+      ownerRole: 'HospitalAdmin',
+      dailyTarget: 98.63,
+    },
+  };
+
+  it('says where the figure stands in words, with the prorated target', () => {
+    expect(kpiTargetSummary(kpi)).toEqual({
+      tone: 'warning',
+      label: 'Needs attention',
+      text: 'Target 2,762 for the period',
+      description:
+        'Needs attention: 2,100 against a target of 2,762 (the monthly target prorated to the period). Amber at 2,301 or below, red at 1,841 or below.',
+    });
+  });
+
+  it('marks green and red, a KPI without a figure, and none without a target', () => {
+    expect(kpiTargetSummary({ ...kpi, target: { ...kpi.target, status: 'Green' } })?.label).toBe('On target');
+    expect(kpiTargetSummary({ ...kpi, target: { ...kpi.target, status: 'Red' } })?.tone).toBe('bad');
+    expect(kpiTargetSummary({ ...kpi, value: null, target: { ...kpi.target, status: null } })?.label).toBe(
+      'No figure yet',
+    );
+    expect(kpiTargetSummary({ ...kpi, target: null })).toBeNull();
+    const alos = {
+      value: 5.5,
+      unit: 'days' as const,
+      higherIsBetter: false,
+      target: { ...kpi.target, target: 4, amber: 5, red: 6, prorated: false },
+    };
+    expect(kpiTargetSummary(alos)?.text).toBe('Target 4.0 days');
+    expect(kpiTargetSummary(alos)?.description).toContain('Amber at 5.0 days or above, red at 6.0 days or above.');
   });
 });
