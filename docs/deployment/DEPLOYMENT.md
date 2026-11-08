@@ -373,7 +373,7 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    `mrd.deathCertificateConfirmation`, `bloodbank.separateVerifier`, `security.administrationRequiresDesktop`,
    `lab.requirePaymentBeforeCollection` or `billing.shift.required`; switching on `ui.biometricUnlock` or `ai.enabled`;
    raising `billing.discount.defaultMaxPercent`, `pharmacy.discount.max_percent`, `billing.chargeCancel.approvalAbove`,
-   `billing.shift.shortageTolerance`, `supportservices.canteen.staffCreditLimit`, `security.maxSessionsPerUser`, `ui.idleLockMinutes`,
+   `billing.claimWriteOff.approvalAbove`, `billing.shift.shortageTolerance`, `supportservices.canteen.staffCreditLimit`, `security.maxSessionsPerUser`, `ui.idleLockMinutes`,
    `inpatient.marGraceMinutes`, `inpatient.verbalOrderCountersignHours` or `lab.deltaCheckPercent` (0, for no limit or
    no check, counts as the highest), or
    lowering `lab.deltaCheckWindowDays`; clearing any of these, so the default decides; and any change at all to
@@ -398,6 +398,12 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    has the default discount limit (0%) like everyone else: give them a limit in Billing › Discount approvals › Discount
    limits, which another approver approves. Doctors added in **Hospital setup › Doctors and clinical staff** charge the
    consultation service's price until someone who approves prices approves their own fee.
+   **Insurance money waits for a second person too** (MAKER-CHECKER.md slice 12): what an insurer deducts or rejects is
+   written off only when someone who holds `insurance.claims.writeoff.approve` (the accountant and the hospital
+   administrator out of the box) approves it, above `billing.claimWriteOff.approvalAbove` (₹0 by default: every
+   write-off), and an amount an insurer approves on a pre-authorisation moves the bill to the insurer only once a second
+   insurance desk user checks it. So the insurance desk needs at least two users holding `insurance.preauth.manage` (or
+   the hospital administrator as the second), or pre-authorised amounts wait.
 8. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a
