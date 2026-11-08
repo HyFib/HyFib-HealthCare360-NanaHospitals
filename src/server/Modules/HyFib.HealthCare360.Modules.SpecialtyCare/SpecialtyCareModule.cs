@@ -29,6 +29,7 @@ public sealed class SpecialtyCareModule : IModule
         services.AddScoped<SurgeryService>();
         services.AddScoped<IPractitionerWorkSource, SurgeryPractitionerWork>();
         services.AddScoped<OtClinicalService>();
+        services.AddWitnessPurpose(OtClinicalService.CountWitness);
         services.AddScoped<OtReportingService>();
         services.AddScoped<DialysisService>();
         services.AddScoped<PhysioService>();

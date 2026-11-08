@@ -34171,9 +34171,24 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("charge_status");
 
+                    b.Property<string>("ChecklistVoids")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("checklist_voids");
+
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at");
+
+                    b.Property<string>("CountDiscrepancies")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("count_discrepancies");
+
+                    b.Property<string>("Counts")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("counts");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -34295,6 +34310,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("sign_out_completed_at");
 
+                    b.Property<string>("SiteLevel")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("site_level");
+
                     b.Property<DateTimeOffset?>("StartedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("started_at");
@@ -34398,6 +34418,25 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("charge_status");
 
+                    b.Property<string>("CorrectionApprovedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("correction_approved_by_name");
+
+                    b.Property<string>("CorrectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("correction_reason");
+
+                    b.Property<string>("CorrectionRequestedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("correction_requested_by_name");
+
+                    b.Property<Guid?>("CorrectsMaterialId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("corrects_material_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -34476,6 +34515,14 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("specification");
+
+                    b.Property<DateTimeOffset?>("SupersededAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("superseded_at");
+
+                    b.Property<Guid?>("SupersededByMaterialId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("superseded_by_material_id");
 
                     b.Property<Guid?>("SupplyItemId")
                         .HasColumnType("uuid")

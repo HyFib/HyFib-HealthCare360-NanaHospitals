@@ -255,6 +255,13 @@ export function PlanFields({
           options={LATERALITIES.map((value) => ({ value, label: lateralityLabel[value] }))}
         />
       </FullRow>
+      <TextField
+        control={control}
+        name="siteLevel"
+        label="Level or digit"
+        maxLength={60}
+        hint="Where a side alone does not say where: a spinal level (L4–L5), a finger, a toe or a tooth. The site is then marked by the surgeon."
+      />
       <FullRow>
         <TextField control={control} name="diagnosis" label="Diagnosis" maxLength={500} />
       </FullRow>

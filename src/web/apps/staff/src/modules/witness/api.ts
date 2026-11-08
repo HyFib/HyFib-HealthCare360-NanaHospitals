@@ -9,7 +9,9 @@ export type WitnessPurposeKey =
   // The doctor who explained the risks of leaving against advice, confirming at the nurse's screen.
   | 'against_advice.doctor'
   // A patient leaving the emergency department against medical advice: a nurse or doctor of the department witnesses.
-  | 'er.lama';
+  | 'er.lama'
+  // A swab, needle or instrument count in the theatre: a second member of the OT team witnesses.
+  | 'ot.count';
 
 export interface ConfirmWitnessRequest {
   userName: string;

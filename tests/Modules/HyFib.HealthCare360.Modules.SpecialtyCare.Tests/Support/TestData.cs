@@ -42,6 +42,18 @@ internal static class TestData
         return booking;
     }
 
+    /// <summary>A count of <paramref name="category"/>, counted by one nurse and witnessed by another.</summary>
+    public static SurgicalCount Count(CountCategory category, CountStage stage, int number, DateTimeOffset? at = null) =>
+        new(Guid.CreateVersion7(), category, stage, number, Guid.CreateVersion7(), "Sr. Anita Joseph", Guid.CreateVersion7(), "Sr. Leela Thomas", at ?? Now, null);
+
+    /// <summary>Swabs counted at the start and at the end of an operation in progress, and tallying.</summary>
+    public static SurgeryBooking CountsTallied(SurgeryBooking booking)
+    {
+        booking.RecordCount(Count(CountCategory.Swabs, CountStage.Initial, 10)).IsSuccess.ShouldBeTrue();
+        booking.RecordCount(Count(CountCategory.Swabs, CountStage.Final, 10)).Value.ShouldBeNull();
+        return booking;
+    }
+
     /// <summary>Sign-in and time-out done, knife to skin.</summary>
     public static SurgeryBooking InProgress()
     {

@@ -112,8 +112,9 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
  * to accounts and administration desktops, the drug-safety tables loosened, the billing desk's discount limits raised,
  * charges cancelled, cash shortages and doctors' consultation fees, and the patient's record: its identity, a VIP
  * restriction lifted, the deceased status, a sensitive category, DNR, an allergy and a stay's MLC flag; discharge and
- * death: an absconded stay closed, a death closed pending post-mortem, a confirmed death certificate voided; and a visit
- * the doctor has started, cancelled at the desk. Every kind's approving permission is in it
+ * death: an absconded stay closed, a death closed pending post-mortem, a confirmed death certificate voided; a visit the
+ * doctor has started, cancelled at the desk; and an implant or consumable line corrected after the operation started.
+ * Every kind's approving permission is in it
  * (approvalsMenu.test.ts).
  */
 export const APPROVAL_PERMISSIONS = [
@@ -178,4 +179,8 @@ export const APPROVAL_PERMISSIONS = [
   // supervisor or the treating doctor decides.
   'visits.manage',
   'visits.cancel.approve',
+  // The theatre (slice 10): the OT team asks for an implant or consumable line to be corrected after the operation has
+  // started; the OT in-charge decides. Each may withdraw it.
+  'ot.materials.record',
+  'ot.materials.approve',
 ] as const;
