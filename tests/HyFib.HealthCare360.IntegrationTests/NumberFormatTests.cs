@@ -29,18 +29,18 @@ public sealed class NumberFormatTests(HospitalServer server)
         list.Series.ShouldNotContain(s => s.Key.StartsWith("token:", StringComparison.Ordinal), "queue tokens are internal");
         list.Series.Select(s => s.Area).ShouldBe(list.Series.Select(s => s.Area).Order(StringComparer.OrdinalIgnoreCase), "listed by area");
 
-        // Neither the demonstration data nor any test raises a CAPA.
-        var capa = list.Series.Single(s => s.Key == "quality.capa");
-        capa.ShouldSatisfyAllConditions(
-            () => capa.Format.ShouldBe("{FAC}CAPA{YY}{SEQ:4}"),
-            () => capa.ResetPolicy.ShouldBe(NumberResetPolicy.Yearly),
-            () => capa.DefaultFormat.ShouldBe(capa.Format),
-            () => capa.IsCustomised.ShouldBeFalse(),
-            () => capa.IsLocked.ShouldBeFalse(),
-            () => capa.Scope.ShouldBe("facility"),
-            () => capa.LastNumber.ShouldBe(0L),
-            () => capa.NextExample.ShouldStartWith(capa.FacilityCode + "CAPA"),
-            () => capa.NextExample.ShouldEndWith("0001"));
+        // Neither the demonstration data nor any test adds a CRM lead (internal audits raise CAPAs, so quality.capa is used).
+        var lead = list.Series.Single(s => s.Key == "crm.lead");
+        lead.ShouldSatisfyAllConditions(
+            () => lead.Format.ShouldBe("{FAC}LD{YY}{SEQ:5}"),
+            () => lead.ResetPolicy.ShouldBe(NumberResetPolicy.Yearly),
+            () => lead.DefaultFormat.ShouldBe(lead.Format),
+            () => lead.IsCustomised.ShouldBeFalse(),
+            () => lead.IsLocked.ShouldBeFalse(),
+            () => lead.Scope.ShouldBe("facility"),
+            () => lead.LastNumber.ShouldBe(0L),
+            () => lead.NextExample.ShouldStartWith(lead.FacilityCode + "LD"),
+            () => lead.NextExample.ShouldEndWith("00001"));
 
         var uhid = list.Series.Single(s => s.Key == "uhid");
         uhid.Scope.ShouldBe("global");
