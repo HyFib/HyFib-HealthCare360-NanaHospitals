@@ -126,6 +126,41 @@ public sealed class WardCareTests(HospitalServer server)
             .ShouldBeNull("NEWS2 is for adults of 16 and over");
     }
 
+    [Fact]
+    public async Task An_escalation_nobody_answers_is_reminded_once_after_its_time_and_one_answered_is_not()
+    {
+        var (frontOffice, doctor, nurse) = await StaffAsync();
+        var unanswered = await AdmitAsync(frontOffice, doctor, "GWF");
+        var answered = await AdmitAsync(frontOffice, doctor, "GWF");
+        await RecordAsync(nurse, unanswered.PatientId, rr: 22, spo2: 95, oxygen: true, sbp: 118, pulse: 88, Consciousness.Alert, 37.4m);
+        await RecordAsync(nurse, answered.PatientId, rr: 22, spo2: 95, oxygen: true, sbp: 118, pulse: 88, Consciousness.Alert, 37.4m);
+        var waiting = (await EscalationsAsync(nurse, unanswered.Id)).ShouldHaveSingleItem();
+        var seen = (await EscalationsAsync(nurse, answered.Id)).ShouldHaveSingleItem();
+        await doctor.PostAsync<EscalationDto>($"/api/v1/nursing/escalations/{seen.Id}/respond",
+            new RespondToEscalationRequest(EscalationOutcome.ReviewedContinueObservation, "Reviewed; hourly observations", seen.Version));
+
+        // Not before its 30 minutes are up.
+        await RemindAsync();
+        (await EscalationsAsync(nurse, unanswered.Id)).Single().ReminderSentAt.ShouldBeNull();
+
+        // Raised 31 minutes ago: the consultant and the nurses in charge are told again, marked as a reminder, once.
+        await BackdateRaisedAsync(waiting.Id, TimeSpan.FromMinutes(31));
+        await BackdateRaisedAsync(seen.Id, TimeSpan.FromMinutes(31));
+        await RemindAsync();
+        await RemindAsync();
+        (await EscalationsAsync(nurse, unanswered.Id)).Single().ReminderSentAt.ShouldNotBeNull();
+        (await EscalationsAsync(nurse, answered.Id)).Single().ReminderSentAt.ShouldBeNull("it was answered before its time");
+
+        var doctorUser = await UserIdAsync(HospitalServer.Users.Doctor);
+        var inCharge = await UserIdAsync(HospitalServer.Users.HospitalAdmin);
+        var reminders = (await NotificationsAsync($"/inpatient/admissions/{unanswered.Id}")).Where(n => n.Title.StartsWith("Reminder:")).ToList();
+        reminders.Count(n => n.UserId == doctorUser).ShouldBe(1, "reminded once");
+        reminders.Count(n => n.UserId == inCharge).ShouldBe(1);
+        reminders.ShouldAllBe(n => n.Body!.Contains(unanswered.Uhid) && !n.Body.Contains(unanswered.PatientName));
+        (await NotificationsAsync($"/inpatient/admissions/{answered.Id}")).ShouldNotContain(n => n.Title.StartsWith("Reminder:"));
+        (await AuditAsync(unanswered.PatientId)).Count(a => a.Action == "inpatient.news2_reminder").ShouldBe(1);
+    }
+
     // ---------------------------------------------------------------------- transfers
 
     [Fact]
@@ -381,6 +416,22 @@ public sealed class WardCareTests(HospitalServer server)
         var current = await api.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{stay.Id}");
         var board = await api.GetAsync<List<BedBoardWard>>($"/api/v1/beds/board?wardId={current.WardId}");
         return board.ShouldHaveSingleItem().Beds.Single(b => b.BedId == current.BedId);
+    }
+
+    /// <summary>Runs what the 5-minute reminder job runs.</summary>
+    private async Task RemindAsync()
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<EarlyWarningService>().RemindUnansweredAsync(Ct);
+    }
+
+    private async Task BackdateRaisedAsync(Guid escalationId, TimeSpan by)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var row = await db.Set<EarlyWarningEscalation>().IgnoreQueryFilters().SingleAsync(e => e.Id == escalationId, Ct);
+        row.RaisedAt -= by;
+        await db.SaveChangesAsync(Ct);
     }
 
     private async Task<int> NotifyOverdueAsync()

@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Domain;
 namespace HyFib.HealthCare360.Modules.Inpatient.Features.EarlyWarning;
 
 /// <param name="OpenMinutes">For an open escalation, minutes since the vital signs were taken.</param>
+/// <param name="ReminderSentAt">When the ward was reminded that nobody had responded (30 minutes urgent, 15 emergency).</param>
 public sealed record EscalationDto(
     Guid Id,
     Guid AdmissionId,
@@ -27,7 +28,8 @@ public sealed record EscalationDto(
     EscalationOutcome? Outcome,
     string? Response,
     int? MinutesToRespond,
-    uint Version);
+    uint Version,
+    DateTimeOffset? ReminderSentAt = null);
 
 /// <summary>Who responded is the signed-in user; the time is now.</summary>
 public sealed record RespondToEscalationRequest(EscalationOutcome Outcome, string Response, uint Version);

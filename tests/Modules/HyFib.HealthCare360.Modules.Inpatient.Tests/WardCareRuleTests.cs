@@ -30,6 +30,26 @@ public sealed class WardCareRuleTests
         escalation.Respond(Guid.NewGuid(), "Other", true, EscalationOutcome.TreatmentChanged, "Again", Now).Error!.Code.ShouldBe("escalation.responded");
     }
 
+    [Theory]
+    [InlineData(EscalationLevel.Urgent, 29, false)]
+    [InlineData(EscalationLevel.Urgent, 30, true)]
+    [InlineData(EscalationLevel.Emergency, 14, false)]
+    [InlineData(EscalationLevel.Emergency, 15, true)]
+    public void An_unanswered_escalation_is_due_a_reminder_after_30_minutes_urgent_and_15_emergency(EscalationLevel level, int minutes, bool due) =>
+        new EarlyWarningEscalation { Level = level, RaisedAt = Now, VitalsRecordedAt = Now.AddHours(-6) }
+            .IsReminderDue(Now.AddMinutes(minutes)).ShouldBe(due, "counted from when it was raised, not from vital signs entered late");
+
+    [Fact]
+    public void A_reminder_is_sent_once_and_never_after_a_response()
+    {
+        var reminded = new EarlyWarningEscalation { Level = EscalationLevel.Urgent, RaisedAt = Now, ReminderSentAt = Now.AddMinutes(30) };
+        reminded.IsReminderDue(Now.AddHours(2)).ShouldBeFalse();
+
+        var answered = new EarlyWarningEscalation { Level = EscalationLevel.Urgent, RaisedAt = Now, VitalsRecordedAt = Now };
+        answered.Respond(Guid.NewGuid(), "Doctor", true, EscalationOutcome.TreatmentChanged, "Seen", Now.AddMinutes(10)).IsSuccess.ShouldBeTrue();
+        answered.IsReminderDue(Now.AddHours(2)).ShouldBeFalse();
+    }
+
     [Fact]
     public void The_receiving_ward_decides_never_whoever_asked()
     {

@@ -95,6 +95,7 @@ public sealed class InpatientModule : IModule
         services.AddScoped<DowntimePrintService>();
         services.AddHostedService<BedDayChargeJob>();
         services.AddHostedService<CountersignOverdueJob>();
+        services.AddHostedService<EarlyWarningReminderJob>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

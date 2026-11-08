@@ -113,6 +113,8 @@ export interface EscalationDto {
   response: string | null;
   minutesToRespond: number | null;
   version: number;
+  /** When the ward was reminded that nobody had responded (30 minutes urgent, 15 emergency). */
+  reminderSentAt?: string | null;
 }
 
 // ------------------------------------------------------------------ transfer requests

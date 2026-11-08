@@ -73,29 +73,11 @@ public sealed class EarlyWarningService(
         };
         db.Add(escalation);
 
-        var ignore = new[] { HospitalDbContext.FacilityFilter };
-        var uhid = await db.Set<Patient>().IgnoreQueryFilters(ignore).Where(p => p.Id == admission.PatientId).Select(p => p.Uhid).FirstAsync(ct);
-        var wardName = await db.Set<Ward>().IgnoreQueryFilters(ignore).Where(w => w.Id == admission.WardId).Select(w => w.Name).FirstOrDefaultAsync(ct);
-        var bedLabel = await db.Set<Bed>().IgnoreQueryFilters(ignore).Where(b => b.Id == admission.BedId).Select(b => b.Label).FirstOrDefaultAsync(ct);
-
-        // The UHID and bed only: the name of a restricted patient must not reach a notification list.
         var title = level == EscalationLevel.Emergency ? "NEWS2 emergency: respond now" : "NEWS2 urgent review";
-        var body = $"{uhid}, {wardName ?? "ward"} bed {bedLabel ?? "-"}: {escalation.Summary}. "
-                   + (level == EscalationLevel.Emergency
-                       ? "Emergency response: review at once and call the rapid response team."
-                       : "Urgent review by the ward's doctor.");
-        var link = $"/inpatient/admissions/{admission.Id}";
-        var severity = level == EscalationLevel.Emergency ? "critical" : "warning";
-        if (admission.ConsultantPractitionerId is { } consultant)
-        {
-            var doctors = await db.Set<User>().AsNoTracking()
-                .Where(u => u.PractitionerId == consultant && u.IsActive && u.Type == UserType.Staff)
-                .Select(u => u.Id)
-                .ToListAsync(ct);
-            await notifications.NotifyUsersAsync(doctors, title, body, link, Category, severity, ct);
-        }
-
-        await notifications.NotifyPermissionHoldersAsync(InpatientPermissions.NursingInCharge, admission.FacilityId, title, body, link, Category, severity, ct);
+        await TellWardAsync(escalation, title,
+            level == EscalationLevel.Emergency
+                ? "Emergency response: review at once and call the rapid response team."
+                : "Urgent review by the ward's doctor.", ct);
         await audit.WriteAsync(new AuditEntry(AuditCategories.Clinical, "inpatient.news2_escalated", $"{title}: {escalation.Summary}")
         {
             PatientId = admission.PatientId,
@@ -103,6 +85,67 @@ public sealed class EarlyWarningService(
             EntityId = escalation.Id.ToString(),
             Severity = level == EscalationLevel.Emergency ? AuditSeverity.Critical : AuditSeverity.Warning,
         }, ct);
+    }
+
+    /// <summary>
+    /// The reminder: every escalation still open past its level's time (<see cref="EarlyWarningEscalation.ReminderAfter"/>,
+    /// 30 minutes urgent, 15 emergency) is told again, once, to the stay's consultant and the nurses in charge, marked as a
+    /// reminder and audited at Warning (<c>inpatient.news2_reminder</c>). One answered before its time is never reminded.
+    /// Run by <see cref="EarlyWarningReminderJob"/> every 5 minutes across facilities; returns how many it reminded of.
+    /// </summary>
+    public async Task<int> RemindUnansweredAsync(CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        var earliestDue = now - EarlyWarningEscalation.ReminderAfter(EscalationLevel.Emergency);
+        var candidates = await db.Set<EarlyWarningEscalation>()
+            .IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(e => e.Status == EscalationStatus.Open && e.ReminderSentAt == null && e.RaisedAt <= earliestDue)
+            .OrderBy(e => e.RaisedAt)
+            .Take(200)
+            .ToListAsync(ct);
+        var due = candidates.Where(e => e.IsReminderDue(now)).ToList();
+        foreach (var escalation in due)
+        {
+            var waited = (int)(now - escalation.RaisedAt).TotalMinutes;
+            escalation.ReminderSentAt = now;
+            await TellWardAsync(escalation, $"Reminder: {escalation.Summary} unanswered for {waited} min",
+                "Nobody has recorded a response yet. " + (escalation.Level == EscalationLevel.Emergency
+                    ? "Emergency response: review at once and call the rapid response team."
+                    : "Urgent review by the ward's doctor."), ct);
+            await audit.WriteAsync(new AuditEntry(AuditCategories.Clinical, "inpatient.news2_reminder",
+                $"{escalation.Summary} not answered {waited} minutes after it was raised; the ward was reminded")
+            {
+                PatientId = escalation.PatientId,
+                EntityType = nameof(EarlyWarningEscalation),
+                EntityId = escalation.Id.ToString(),
+                Severity = AuditSeverity.Warning,
+            }, ct);
+        }
+
+        await db.SaveChangesAsync(ct);
+        return due.Count;
+    }
+
+    /// <summary>Tells the stay's consultant and the facility's nurses in charge, by UHID, ward and bed only (never the name).</summary>
+    private async Task TellWardAsync(EarlyWarningEscalation escalation, string title, string action, CancellationToken ct)
+    {
+        var ignore = new[] { HospitalDbContext.FacilityFilter };
+        var uhid = await db.Set<Patient>().IgnoreQueryFilters(ignore).Where(p => p.Id == escalation.PatientId).Select(p => p.Uhid).FirstAsync(ct);
+        var wardName = await db.Set<Ward>().IgnoreQueryFilters(ignore).Where(w => w.Id == escalation.WardId).Select(w => w.Name).FirstOrDefaultAsync(ct);
+        var bedLabel = await db.Set<Bed>().IgnoreQueryFilters(ignore).Where(b => b.Id == escalation.BedId).Select(b => b.Label).FirstOrDefaultAsync(ct);
+        var body = $"{uhid}, {wardName ?? "ward"} bed {bedLabel ?? "-"}: {escalation.Summary}. {action}";
+        var link = $"/inpatient/admissions/{escalation.AdmissionId}";
+        var severity = escalation.Level == EscalationLevel.Emergency ? "critical" : "warning";
+        if (escalation.ConsultantPractitionerId is { } consultant)
+        {
+            var doctors = await db.Set<User>().AsNoTracking().IgnoreQueryFilters(ignore)
+                .Where(u => u.PractitionerId == consultant && u.IsActive && u.Type == UserType.Staff)
+                .Select(u => u.Id)
+                .ToListAsync(ct);
+            await notifications.NotifyUsersAsync(doctors, title, body, link, Category, severity, ct);
+        }
+
+        await notifications.NotifyPermissionHoldersAsync(InpatientPermissions.NursingInCharge, escalation.FacilityId, title, body, link, Category, severity, ct);
     }
 
     public async Task<Result<EscalationDto>> RespondAsync(Guid id, RespondToEscalationRequest request, CancellationToken ct)
@@ -165,7 +208,7 @@ public sealed class EarlyWarningService(
         e.Id, e.AdmissionId, e.PatientId, uhid, e.WardId, wardName, bedLabel, e.VitalSignsId, e.VitalsRecordedAt, e.Score, e.AnySingleParameterThree,
         e.IsScoreComplete, e.Summary, e.Level, e.Status, e.RaisedAt,
         e.Status == EscalationStatus.Open ? (int)Math.Max(0, (now - e.VitalsRecordedAt).TotalMinutes) : null,
-        e.RespondedAt, e.RespondedByName, e.RespondedByDoctor, e.Outcome, e.Response, e.MinutesToRespond, e.Version);
+        e.RespondedAt, e.RespondedByName, e.RespondedByDoctor, e.Outcome, e.Response, e.MinutesToRespond, e.Version, e.ReminderSentAt);
 
     /// <summary>The latest NEWS2 of each stay's patient since admission, for the bed board, the round and the ward print.</summary>
     internal async Task<Dictionary<Guid, News2Latest>> LatestAsync(IReadOnlyCollection<(Guid AdmissionId, Guid PatientId, DateTimeOffset AdmittedAt, DateOnly? DateOfBirth)> stays,

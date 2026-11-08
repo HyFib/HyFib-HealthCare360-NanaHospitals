@@ -399,6 +399,7 @@ export function EscalationList({
               {e.uhid}
               {e.bedLabel ? ` · bed ${e.bedLabel}` : ''} · observations at {formatTime(e.vitalsRecordedAt)}
               {e.status === 'Open' && e.openMinutes !== null ? ` · waiting ${e.openMinutes} min` : ''}
+              {e.reminderSentAt ? ` · reminder sent ${formatTime(e.reminderSentAt)}` : ''}
             </Caption1>
             {e.status === 'Responded' && (
               <Caption1>
