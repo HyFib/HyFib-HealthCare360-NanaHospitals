@@ -2184,6 +2184,7 @@
     "POST /api/v1/mrd/records/{id:guid}/scan mrd.records",
     "POST /api/v1/mtp/cases mtp.certify",
     "POST /api/v1/mtp/cases/{id:guid}/cancel mtp.certify",
+    "POST /api/v1/mtp/cases/{id:guid}/second-opinion mtp.certify",
     "POST /api/v1/mtp/cases/{id:guid}/termination mtp.certify",
     "POST /api/v1/notifications/read-all -",
     "POST /api/v1/notifications/{id:guid}/read -",

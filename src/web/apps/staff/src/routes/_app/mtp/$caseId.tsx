@@ -9,7 +9,12 @@ import {
   tokens,
   useRestoreFocusTarget,
 } from '@fluentui/react-components';
-import { CheckmarkCircleRegular, DismissCircleRegular, EditRegular } from '@fluentui/react-icons';
+import {
+  CheckmarkCircleRegular,
+  DismissCircleRegular,
+  EditRegular,
+  PersonAvailableRegular,
+} from '@fluentui/react-icons';
 import { formatDate, formatDateTime, isApiError } from '@hc360/core';
 import { ErrorState, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -33,7 +38,7 @@ import {
   type MtpCaseDto,
 } from '@/modules/mtp/api';
 import { MtpConfidential } from '@/modules/mtp/MtpConfidential';
-import { CaseDialog, TerminationDialog } from '@/modules/mtp/MtpDialogs';
+import { CaseDialog, SecondOpinionDialog, TerminationDialog } from '@/modules/mtp/MtpDialogs';
 import { ReasonDialog } from '@/modules/ot/shared/feedback';
 
 export const Route = createFileRoute('/_app/mtp/$caseId')({
@@ -87,7 +92,7 @@ function MtpCasePage() {
   return <CaseView mtp={mtp.data} />;
 }
 
-type Dialog = 'correct' | 'terminate' | 'cancel' | null;
+type Dialog = 'correct' | 'terminate' | 'second' | 'cancel' | null;
 
 function CaseView({ mtp }: { mtp: MtpCaseDto }) {
   const styles = useStyles();
@@ -135,7 +140,17 @@ function CaseView({ mtp }: { mtp: MtpCaseDto }) {
           </MessageBarBody>
         </MessageBar>
       )}
-      {open && (
+      {open && mtp.awaitingSecondOpinion && (
+        <MessageBar intent="warning">
+          <MessageBarBody>
+            <MessageBarTitle>Waiting for the second doctor&apos;s opinion</MessageBarTitle>
+            From 20 weeks two registered medical practitioners form the opinion. The second records it from their own
+            sign-in, or confirms it at this screen with their own user name and password; it is never typed by the first
+            doctor. The termination is recorded after it.
+          </MessageBarBody>
+        </MessageBar>
+      )}
+      {open && !mtp.awaitingSecondOpinion && (
         <MessageBar intent="info">
           <MessageBarBody>
             <MessageBarTitle>Certified, not yet done</MessageBarTitle>
@@ -150,14 +165,25 @@ function CaseView({ mtp }: { mtp: MtpCaseDto }) {
           <div className={styles.actions}>
             {canCertify && open && (
               <>
-                <Button
-                  appearance="primary"
-                  icon={<CheckmarkCircleRegular />}
-                  onClick={() => setDialog('terminate')}
-                  {...restoreFocusTarget}
-                >
-                  Record termination
-                </Button>
+                {mtp.awaitingSecondOpinion ? (
+                  <Button
+                    appearance="primary"
+                    icon={<PersonAvailableRegular />}
+                    onClick={() => setDialog('second')}
+                    {...restoreFocusTarget}
+                  >
+                    Record second opinion
+                  </Button>
+                ) : (
+                  <Button
+                    appearance="primary"
+                    icon={<CheckmarkCircleRegular />}
+                    onClick={() => setDialog('terminate')}
+                    {...restoreFocusTarget}
+                  >
+                    Record termination
+                  </Button>
+                )}
                 <Button icon={<EditRegular />} onClick={() => setDialog('correct')} {...restoreFocusTarget}>
                   Correct details
                 </Button>
@@ -183,7 +209,10 @@ function CaseView({ mtp }: { mtp: MtpCaseDto }) {
           <Fact label="Medical Board's opinion">{mtp.medicalBoardReference}</Fact>
           <Fact label="Opinion formed by">
             {mtp.opinions
-              .map((o) => `${o.doctorName} (${o.registrationNumber}), ${formatDate(o.opinionOn)}`)
+              .map(
+                (o) =>
+                  `${o.doctorName} (${o.registrationNumber}), ${formatDate(o.opinionOn)}${o.confirmed ? ', recorded by the doctor' : ''}`,
+              )
               .join('; ')}
           </Fact>
           <Fact label="Certified">
@@ -205,6 +234,7 @@ function CaseView({ mtp }: { mtp: MtpCaseDto }) {
       )}
       {dialog === 'correct' && <CaseDialog existing={mtp} onClose={() => setDialog(null)} />}
       {dialog === 'terminate' && <TerminationDialog mtp={mtp} onClose={() => setDialog(null)} />}
+      {dialog === 'second' && <SecondOpinionDialog mtp={mtp} onClose={() => setDialog(null)} />}
       <ReasonDialog
         open={dialog === 'cancel'}
         title={`Cancel MTP case ${mtp.serialNumber}?`}

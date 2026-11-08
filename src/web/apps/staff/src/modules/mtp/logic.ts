@@ -15,6 +15,12 @@ export const MAX_OPINIONS = 3;
 /** The number of doctors' opinions the length of a pregnancy calls for (beyond 24 weeks, with the Medical Board's). */
 export const opinionsNeeded = (weeks: number) => (weeks > ONE_OPINION_WEEKS ? 2 : 1);
 
+/**
+ * How many opinions are typed on the case: from 20 weeks only the first doctor's, because the second doctor records their
+ * own from their sign-in or confirms it with their own credentials (maker-checker, slice 9).
+ */
+export const typedOpinionsAllowed = (weeks: number) => (opinionsNeeded(weeks) > 1 ? 1 : MAX_OPINIONS);
+
 /** s.3(4): a minor's or a mentally ill woman's consent is her guardian's; anyone else's is her own. */
 export const consentByFor = (ageYears: number, mentallyIll: boolean): MtpConsentBy =>
   (Number.isFinite(ageYears) && ageYears < AGE_OF_MAJORITY) || mentallyIll ? 'Guardian' : 'Woman';
@@ -100,14 +106,14 @@ export function certificationProblems(d: CertificationDraft, today: string): Rec
     opinions:
       filled.length !== d.opinions.length
         ? 'Enter each doctor’s name and registration number.'
-        : filled.length < needed
-          ? needed === 1
-            ? 'Enter the doctor who formed the opinion.'
-            : 'Beyond 20 weeks the opinion of two doctors is needed.'
-          : new Set(registrations).size !== registrations.length
-            ? 'The two opinions must be of two different doctors.'
-            : d.opinions.some((o) => !o.opinionOn || o.opinionOn > today)
-              ? 'Enter the date of each opinion, not after today.'
-              : null,
+        : filled.length < 1
+          ? 'Enter the doctor who formed the opinion.'
+          : needed > 1 && filled.length > 1
+            ? 'From 20 weeks the second doctor records their own opinion once the case is saved: enter only the first doctor’s opinion here.'
+            : new Set(registrations).size !== registrations.length
+              ? 'The two opinions must be of two different doctors.'
+              : d.opinions.some((o) => !o.opinionOn || o.opinionOn > today)
+                ? 'Enter the date of each opinion, not after today.'
+                : null,
   };
 }
