@@ -1225,6 +1225,14 @@ public sealed class HospitalServer : IAsyncLifetime
     }
 
     /// <summary>
+    /// A witness confirms at <paramref name="at"/>'s screen a consent to share the patient's whole record with no signed form
+    /// (maker-checker, slice 14): the confirmation to send with the consent. <paramref name="witness"/> holds
+    /// <c>patients.consents</c> and is not the one recording it.
+    /// </summary>
+    public async Task<Guid> RecordSharingWitnessAsync(ApiClient at, Guid patientId, string witness = Users.Nurse) =>
+        (await WitnessAsync(at, witness, "consent.record_sharing", patientId)).ConfirmationId;
+
+    /// <summary>
     /// The ward reports the patient absconded (maker-checker, slice 8): the nurse asks (202) with the report, and the nurse in
     /// charge (the hospital administrator holds <c>nursing.in_charge</c>) approves; the stay is then closed as absconded.
     /// </summary>
@@ -1326,6 +1334,38 @@ public sealed class HospitalServer : IAsyncLifetime
         var result = await ApiClient.ReadAsync<SignInResult>(verified, HttpMethod.Post, "/api/v1/auth/otp/verify");
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", FullAccess(phone, result));
         return (new ApiClient(http), PortalRefreshCookieOf(verified) ?? throw new InvalidOperationException($"Signing in to the portal as {phone} set no refresh cookie."));
+    }
+
+    /// <summary>
+    /// The front desk shares a patient's records with a family member's portal account (maker-checker, slice 14): a code goes
+    /// to the patient's own mobile number, and the desk enters it as the patient reads it out (read here from the outbox).
+    /// </summary>
+    public async Task<Modules.Patients.Features.Patients.FamilyLinkCreated> LinkFamilyAtDeskAsync(
+        ApiClient staff, Guid patientId, Modules.Patients.Features.Patients.LinkFamilyMemberRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(staff);
+        ArgumentNullException.ThrowIfNull(request);
+        var sent = await staff.PostAsync<Modules.Patients.Features.Patients.FamilyDeskCodeSent>($"/api/v1/patients/{patientId}/portal-family", request);
+        return await staff.PostAsync<Modules.Patients.Features.Patients.FamilyLinkCreated>(
+            $"/api/v1/patients/{patientId}/portal-family/codes/{sent.CodeId}/confirm",
+            new Modules.Patients.Features.Patients.ConfirmFamilyLinkRequest(await DeskFamilyCodeAsync(patientId), request.ConsentGivenBy));
+    }
+
+    /// <summary>The last code the front desk had sent to the patient's own number to share their records: read from the outbox.</summary>
+    public async Task<string> DeskFamilyCodeAsync(Guid patientId)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var scope = Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var phone = await db.Set<Modules.Patients.Domain.Patient>().AsNoTracking().Where(p => p.Id == patientId).Select(p => p.Phone).SingleAsync(ct);
+        var deliveries = await db.Set<OutboxMessage>().AsNoTracking()
+            .Where(m => m.Type == NotificationService.SmsType)
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(200)
+            .ToListAsync(ct);
+        return deliveries.Select(m => m.Read<NotificationDelivery>())
+            .First(d => d.TemplateKey == "portal.family_code_desk" && d.To == phone)
+            .Values["code"];
     }
 
     /// <summary>The last portal sign-in code sent to <paramref name="phone"/>: the test server sends no SMS, so it is read from the outbox.</summary>

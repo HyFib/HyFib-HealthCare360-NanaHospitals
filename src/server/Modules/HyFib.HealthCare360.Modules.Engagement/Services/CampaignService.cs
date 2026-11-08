@@ -2,6 +2,8 @@ using HyFib.HealthCare360.Modules.Engagement.Domain;
 using HyFib.HealthCare360.Modules.Engagement.Features.Campaigns;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Approvals;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Notifications;
 
@@ -10,9 +12,17 @@ namespace HyFib.HealthCare360.Modules.Engagement.Services;
 /// <summary>
 /// Marketing campaigns (CRM-03): drafting against consented segments, scheduling (with template and opt-out checks),
 /// cancelling, batch sending for the dispatcher and delivery tracking.
+/// <para>
+/// A campaign is scheduled, and so sent, only when someone other than its author approves it (MAKER-CHECKER.md, slice 14):
+/// asking to schedule it leaves it a draft, waiting for a holder of <see cref="EngagementPermissions.CampaignsApprove"/> who
+/// neither wrote nor last edited it, nor asked.
+/// </para>
 /// </summary>
-public sealed class CampaignService(HospitalDbContext db, ICurrentUser currentUser, PublicLinks links, TimeProvider time)
+public sealed class CampaignService(HospitalDbContext db, ICurrentUser currentUser, PublicLinks links, IApprovals approvals, IAuditLogger audit, TimeProvider time)
 {
+    /// <summary>A bulk campaign asked to be scheduled, waiting for someone other than its author.</summary>
+    public const string ScheduleKind = "engagement.campaign_schedule";
+
     /// <summary>Every campaign template must offer an opt-out link (TRAI/DPDP), provided as {{optout}}.</summary>
     public const string OptOutPlaceholder = "{{optout}}";
 
@@ -102,12 +112,111 @@ public sealed class CampaignService(HospitalDbContext db, ICurrentUser currentUs
         return Result.Success();
     }
 
-    public async Task<Result> ScheduleAsync(Guid id, ScheduleCampaignRequest request, CancellationToken ct)
+    /// <summary>
+    /// Asks for the campaign to be scheduled: the checks of scheduling are made now (template, opt-out link, portal address,
+    /// a time to come, a consenting audience), and then it waits for someone other than its author to approve; it stays a
+    /// draft, and nothing is sent, until then. Editing the draft meanwhile makes the request stale.
+    /// </summary>
+    public async Task<Result<ApprovalRequestDto>> ScheduleAsync(Guid id, ScheduleCampaignRequest request, CancellationToken ct)
     {
         var campaign = await db.Set<Campaign>().FirstOrDefaultAsync(c => c.Id == id, ct);
         if (campaign is null)
         {
             return Error.NotFound(nameof(Campaign), id);
+        }
+
+        var ready = await ReadyAsync(campaign, request.ScheduledAt, ct);
+        if (ready.IsFailure)
+        {
+            return ready.Error!;
+        }
+
+        var audience = ready.Value;
+        var authors = await AuthorNamesAsync(campaign, ct);
+        List<ApprovalDetail> details =
+        [
+            new("Campaign", $"{campaign.Name} ({campaign.Channel})"),
+            new("Message", Fit(campaign.Message, 500)),
+            new("Template", campaign.TemplateKey),
+            new("Audience", $"{audience:N0} patients who agreed to messages (counted now; consent is checked again as each is sent)"),
+            new("Send at", LocalTime(request.ScheduledAt)),
+            new("Status", "Draft → scheduled"),
+            new("Written by", authors),
+            new("Why it waits", "A bulk campaign is sent only when someone other than its author approves it"),
+        ];
+        return await approvals.RequestAsync(
+            ScheduleKind,
+            new ApprovalSubject(nameof(Campaign), campaign.Id, campaign.Version, campaign.FacilityId, null),
+            new CampaignSchedulePayload(campaign.Id, request.ScheduledAt),
+            Fit($"Send campaign \"{campaign.Name}\" by {campaign.Channel} to {audience:N0} patients at {LocalTime(request.ScheduledAt)}", 300),
+            details,
+            $"Schedule {campaign.Name} for {LocalTime(request.ScheduledAt)}",
+            ct);
+    }
+
+    /// <summary>
+    /// Schedules a campaign whose scheduling was approved, in the approval's transaction (the approval saves): only the
+    /// draft as it was asked (<c>approval.stale</c>), by someone who neither wrote nor last edited it
+    /// (<c>campaign.author_approves</c>, which leaves it waiting), with the checks of scheduling made again.
+    /// </summary>
+    internal async Task<Result<string>> ScheduleApprovedAsync(ApprovalRequest request, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<CampaignSchedulePayload>(request.Payload);
+        var campaign = await db.Set<Campaign>().FirstOrDefaultAsync(c => c.Id == asked.CampaignId, ct);
+        if (campaign is null)
+        {
+            return Error.NotFound(nameof(Campaign), asked.CampaignId);
+        }
+
+        if (currentUser.UserId is { } checker && (campaign.CreatedBy == checker || campaign.UpdatedBy == checker))
+        {
+            return Error.Forbidden("campaign.author_approves", "You wrote or last edited this campaign, so someone else approves it.");
+        }
+
+        if (campaign.Status != CampaignStatus.Draft || (request.SubjectVersion is { } version && campaign.Version != version))
+        {
+            return Error.Rule("approval.stale", $"Campaign \"{campaign.Name}\" was changed after this was asked for, so it was not scheduled. Ask again.");
+        }
+
+        if (asked.ScheduledAt < time.GetUtcNow().AddMinutes(-1))
+        {
+            return Error.Rule("approval.stale", $"The time asked for ({LocalTime(asked.ScheduledAt)}) has passed, so the campaign was not scheduled. Ask again with a new time.");
+        }
+
+        var ready = await ReadyAsync(campaign, asked.ScheduledAt, ct);
+        if (ready.IsFailure)
+        {
+            return ready.Error!;
+        }
+
+        var scheduled = campaign.Schedule(asked.ScheduledAt, ready.Value, request.RequestedBy, time.GetUtcNow());
+        if (scheduled.IsFailure)
+        {
+            return scheduled.Error!;
+        }
+
+        var approver = currentUser.DisplayName ?? currentUser.UserName ?? "Unknown user";
+        audit.Add(new AuditEntry(AuditCategories.Data, "crm.campaign.scheduled",
+            Fit($"Campaign \"{campaign.Name}\" scheduled for {LocalTime(asked.ScheduledAt)} to {ready.Value:N0} patients (asked for by {request.RequestedByName}, approved by {approver})", 1000))
+        {
+            EntityType = nameof(Campaign),
+            EntityId = campaign.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { campaign.Name, asked.ScheduledAt, audience = ready.Value, approval = request.Id, requestedBy = request.RequestedBy, approvedBy = currentUser.UserId },
+        });
+        return $"Campaign scheduled for {LocalTime(asked.ScheduledAt)}";
+    }
+
+    /// <summary>When the campaigns among these were asked to be scheduled and still wait.</summary>
+    public Task<IReadOnlyDictionary<Guid, DateTimeOffset>> ScheduleAskedAsync(IReadOnlyCollection<Guid> campaignIds, CancellationToken ct) =>
+        approvals.WaitingSinceAsync(ScheduleKind, nameof(Campaign), campaignIds, ct);
+
+    /// <summary>The checks of scheduling; the audience it would reach now.</summary>
+    private async Task<Result<int>> ReadyAsync(Campaign campaign, DateTimeOffset at, CancellationToken ct)
+    {
+        if (campaign.Status != CampaignStatus.Draft)
+        {
+            return Error.Rule("campaign.not_draft", "Only a draft campaign can be scheduled.");
         }
 
         var problem = await ValidateTemplateAsync(campaign.TemplateKey, campaign.Channel, campaign.FacilityId, ct);
@@ -122,15 +231,29 @@ public sealed class CampaignService(HospitalDbContext db, ICurrentUser currentUs
                 $"Set the '{PublicLinks.BaseUrlSetting}' setting to the hospital's public https address first; every message must carry an opt-out link.");
         }
 
-        var audience = await Audience(campaign.FacilityId, campaign.Segment, campaign.Channel).CountAsync(ct);
-        var result = campaign.Schedule(request.ScheduledAt, audience, currentUser.UserId, time.GetUtcNow());
-        if (result.IsSuccess)
+        if (at < time.GetUtcNow().AddMinutes(-1))
         {
-            await db.SaveChangesAsync(ct);
+            return Error.Field("scheduledAt", "Choose a time in the future.");
         }
 
-        return result;
+        var audience = await Audience(campaign.FacilityId, campaign.Segment, campaign.Channel).CountAsync(ct);
+        return audience <= 0 ? Error.Rule("campaign.empty_audience", "No consenting patients match this segment.") : audience;
     }
+
+    private async Task<string> AuthorNamesAsync(Campaign campaign, CancellationToken ct)
+    {
+        var ids = new[] { campaign.CreatedBy, campaign.UpdatedBy }.OfType<Guid>().Distinct().ToList();
+        var names = await db.Set<User>().AsNoTracking().Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
+        var created = campaign.CreatedBy is { } c ? names.GetValueOrDefault(c) ?? "Unknown user" : "Unknown user";
+        return campaign.UpdatedBy is { } u && u != campaign.CreatedBy
+            ? $"{created}, last edited by {names.GetValueOrDefault(u) ?? "Unknown user"}"
+            : created;
+    }
+
+    private static string LocalTime(DateTimeOffset instant) =>
+        instant.ToOffset(TimeSpan.FromMinutes(330)).ToString("dd MMM yyyy HH:mm 'IST'", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Fit(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
     public Task<Result> UnscheduleAsync(Guid id, CancellationToken ct) => ChangeAsync(id, c => c.Unschedule(), ct);
 
@@ -253,4 +376,19 @@ public sealed class CampaignService(HospitalDbContext db, ICurrentUser currentUs
 
         return result;
     }
+}
+
+/// <summary>What was asked: schedule this campaign for this time.</summary>
+public sealed record CampaignSchedulePayload(Guid CampaignId, DateTimeOffset ScheduledAt);
+
+/// <summary>A bulk campaign scheduled: someone who may send campaigns asks, someone other than its author approves.</summary>
+internal sealed class CampaignScheduleApproval(CampaignService campaigns) : IApprovalAction
+{
+    public string Kind => CampaignService.ScheduleKind;
+
+    public string Title => "Bulk campaign scheduled";
+
+    public string ApprovePermission => EngagementPermissions.CampaignsApprove;
+
+    public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => campaigns.ScheduleApprovedAsync(request, ct);
 }

@@ -455,6 +455,12 @@ export interface CaptureConsentRequest {
   notes: string | null;
   /** Only for a given record-sharing consent; null shares the whole record with every partner account. */
   sharingScope?: RecordSharingScope | null;
+  /**
+   * The whole record shared with no signed form: the confirmation of the witness, another member of staff who confirmed at
+   * this screen (`POST /api/v1/auth/witness`, purpose `consent.record_sharing`). Without it the server answers 422
+   * `consent.witness_required` (MAKER-CHECKER.md, slice 14).
+   */
+  witnessConfirmationId?: string | null;
 }
 
 /** Where a WhatsApp opt-in was given. */
@@ -859,14 +865,30 @@ export const documentApi = {
   remove: (documentId: string) => api.delete<void>(`/api/v1/patients/documents/${documentId}`),
 };
 
+/** The code went to the patient's own number (`sentTo`, masked); nothing is shared until it is entered. */
+export interface FamilyDeskCodeSent {
+  codeId: string;
+  sentTo: string;
+  expiresAt: string;
+}
+
 /**
- * Sharing the patient's records with a family member's portal account needs `patients.consents`. Linking answers 422
- * `portal.family_same_number` for the patient's own number and 409 `portal.family_already_linked`; ending answers 422
- * `portal.family_link_ended` when it has already ended.
+ * Sharing the patient's records with a family member's portal account needs `patients.consents`, and a code sent by SMS
+ * to the patient's own registered number that the desk enters as the patient reads it out (MAKER-CHECKER.md, slice 14):
+ * no link exists until then. Sending answers 422 `portal.family_same_number` for the patient's own number,
+ * `portal.family_no_patient_phone` when the patient has no mobile number, `portal.family_code_throttled` after several
+ * codes, and 409 `portal.family_already_linked`. Confirming answers 400 for a wrong code (five tries), 422
+ * `portal.family_code_expired`, and 409 `portal.family_number_changed` when the patient's number changed since. Ending
+ * answers 422 `portal.family_link_ended` when it has already ended.
  */
 export const portalFamilyApi = {
-  link: (patientId: string, request: LinkFamilyMemberRequest) =>
-    api.post<{ id: string }>(`/api/v1/patients/${patientId}/portal-family`, request),
+  sendCode: (patientId: string, request: LinkFamilyMemberRequest) =>
+    api.post<FamilyDeskCodeSent>(`/api/v1/patients/${patientId}/portal-family`, request),
+  confirm: (patientId: string, codeId: string, code: string, consentGivenBy: string) =>
+    api.post<{ id: string }>(`/api/v1/patients/${patientId}/portal-family/codes/${codeId}/confirm`, {
+      code,
+      consentGivenBy,
+    }),
   revoke: (linkId: string, reason: string) =>
     api.post<void>(`/api/v1/patients/portal-family/${linkId}/revoke`, { reason }),
 };
