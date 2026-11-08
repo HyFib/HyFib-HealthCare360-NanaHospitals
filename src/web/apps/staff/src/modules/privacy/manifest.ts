@@ -49,6 +49,18 @@ const manifest: ModuleManifest = {
       keywords: ['dpdp', 'retention', 'clean-up', 'purge', 'delete old data', 'how long we keep', 'records'],
     },
     {
+      label: 'Consent managers',
+      to: '/privacy/consent-managers',
+      permission: 'privacy.consent_managers.manage',
+      keywords: ['dpdp', 'consent manager', 'consent artefact', 'withdraw consent', 'data protection board'],
+    },
+    {
+      label: 'Significant data fiduciary',
+      to: '/privacy/sdf',
+      permission: 'privacy.sdf.manage',
+      keywords: ['dpdp', 'sdf', 'dpia', 'impact assessment', 'data audit', 'data protection officer', 'dpo'],
+    },
+    {
       label: 'Privacy settings',
       to: '/privacy/settings',
       permission: P.settingsManage,

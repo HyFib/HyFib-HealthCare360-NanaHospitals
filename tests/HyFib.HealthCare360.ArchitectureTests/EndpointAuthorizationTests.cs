@@ -101,6 +101,10 @@ public sealed class EndpointAuthorizationTests
         // Provider callbacks, each verified by the provider's signature or shared secret.
         "POST /api/v1/billing/webhooks/payment-gateway",
         "POST /api/v1/billing/webhooks/cashfree",
+
+        // Consent managers' events (DPDP Act s.6(7)): acted on only once their HMAC signature over the timestamp and body
+        // verifies with the secret shared with that consent manager, within five minutes; each event id once.
+        "POST /api/v1/consent-managers/{code}/events",
         "GET /api/v1/integrations/webhooks/sms/generic",
         "POST /api/v1/integrations/webhooks/sms/generic",
         "POST /api/v1/integrations/webhooks/sms/msg91",

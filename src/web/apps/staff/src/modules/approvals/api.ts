@@ -205,4 +205,8 @@ export const APPROVAL_PERMISSIONS = [
   'insurance.claims.manage',
   'insurance.claims.writeoff.approve',
   'insurance.preauth.manage',
+  // A data protection impact assessment (DPDP Act s.10): whoever keeps the Significant Data Fiduciary records sends it
+  // (and may withdraw it); someone else who approves them, the Data Protection Officer, decides.
+  'privacy.sdf.manage',
+  'privacy.sdf.approve',
 ] as const;
