@@ -2,6 +2,7 @@ using System.Globalization;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Privacy.Domain;
 using HyFib.HealthCare360.Modules.Privacy.Features.Breaches;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Settings;
@@ -32,6 +33,11 @@ public sealed record PortalBreachNotice(
 /// <summary>
 /// The personal-data breach register (DPDP Act 2023 s8(6); DPDP Rules 2025, rule 7): recording, the Board's 72-hour
 /// clock, the people affected, and their notices by SMS, e-mail and the patient portal. The register is group-wide.
+/// <para>
+/// Closing a breach, which needs its detailed report to the Board recorded, and taking patients off its notification list
+/// wait for a second person who holds <see cref="PrivacyPermissions.BreachesApprove"/> (the Data Protection Officer), never
+/// the one who asked (MAKER-CHECKER.md, slice 14).
+/// </para>
 /// </summary>
 public sealed class BreachService(
     HospitalDbContext db,
@@ -41,8 +47,18 @@ public sealed class BreachService(
     PrivacySettings privacy,
     IAuditLogger audit,
     ICurrentUser currentUser,
+    IApprovals approvals,
     TimeProvider time)
 {
+    /// <summary>A breach closed, waiting for the Data Protection Officer.</summary>
+    public const string CloseKind = "privacy.breach_close";
+
+    /// <summary>Patients taken off a breach's notification list, waiting for the Data Protection Officer.</summary>
+    public const string RemoveAffectedKind = "privacy.breach_affected_remove";
+
+    /// <summary>The most patients one request takes off the list.</summary>
+    public const int MaxRemovedAtOnce = 500;
+
     public const string NoticeTemplate = "privacy.breach.notice";
     private const int Batch = 500;
 
@@ -79,7 +95,13 @@ public sealed class BreachService(
     public async Task<BreachDetail?> DetailAsync(Guid id, CancellationToken ct)
     {
         var breach = await db.Set<Breach>().AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, ct);
-        return breach is null ? null : await ToDetailAsync(breach, ct);
+        if (breach is null)
+        {
+            return null;
+        }
+
+        var waiting = await WaitingAsync(id, ct);
+        return await ToDetailAsync(breach, ct) with { ClosureAskedAt = waiting.Closure, RemovalAskedAt = waiting.Removal };
     }
 
     public async Task<Result<BreachCreated>> CreateAsync(SaveBreachRequest request, CancellationToken ct)
@@ -150,8 +172,82 @@ public sealed class BreachService(
     public Task<Result> RecordCertInReportedAsync(Guid id, CertInReportedRequest request, CancellationToken ct) =>
         ChangeAsync(id, b => b.RecordCertInReported(request.At, request.Reference, time.GetUtcNow()), ct, "privacy.breach.cert_in_reported");
 
-    public Task<Result> CloseAsync(Guid id, CloseBreachRequest request, CancellationToken ct) =>
-        ChangeAsync(id, b => b.Close(request.Note, time.GetUtcNow()), ct, "privacy.breach.closed");
+    /// <summary>
+    /// Asks for the breach to be closed: refused until its detailed report to the Board is recorded
+    /// (<c>privacy.breach_board_report_required</c>), then waiting for the Data Protection Officer; nothing changes until then.
+    /// </summary>
+    public async Task<Result<ApprovalRequestDto>> CloseAsync(Guid id, CloseBreachRequest request, CancellationToken ct)
+    {
+        var breach = await db.Set<Breach>().AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, ct);
+        if (breach is null)
+        {
+            return Error.NotFound(nameof(Breach), id);
+        }
+
+        var check = breach.CanClose();
+        if (check.IsFailure)
+        {
+            return check.Error!;
+        }
+
+        var affected = db.Set<BreachAffectedPatient>().AsNoTracking().Where(a => a.BreachId == id);
+        var listed = await affected.CountAsync(ct);
+        var notNotified = await affected.CountAsync(a => a.NotifiedAt == null, ct);
+        var note = Clean(request.Note);
+        List<ApprovalDetail> details =
+        [
+            new("Breach", $"{breach.BreachNumber}: {breach.Title}"),
+            new("Status", "Detailed report sent → closed"),
+            new("Board report", $"{breach.BoardReference}, sent {LocalTime(breach.ReportSubmittedAt!.Value)}"),
+            new("People affected", listed == 0 ? "None listed" : $"{listed} listed, {notNotified} not yet sent the notice"),
+            new("Closing note", note ?? "None"),
+            new("What follows", "The breach can no longer be changed, and no more notices are sent from it"),
+            new("Why it waits", "A personal data breach is closed only when the Data Protection Officer agrees, never the person who asks"),
+        ];
+        return await approvals.RequestAsync(
+            CloseKind,
+            await SubjectAsync(breach, ct),
+            new BreachClosePayload(breach.Id, note),
+            $"Close personal data breach {breach.BreachNumber} ({breach.Title})",
+            details,
+            note ?? $"Board report {breach.BoardReference} recorded",
+            ct);
+    }
+
+    /// <summary>
+    /// Closes a breach whose closing was approved, in the approval's transaction (the approval saves): only over the
+    /// breach as it was asked (<c>approval.stale</c>) and while its Board report is still recorded.
+    /// </summary>
+    internal async Task<Result<string>> CloseApprovedAsync(ApprovalRequest request, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<BreachClosePayload>(request.Payload);
+        var breach = await db.Set<Breach>().FirstOrDefaultAsync(b => b.Id == asked.BreachId, ct);
+        if (breach is null)
+        {
+            return Error.NotFound(nameof(Breach), asked.BreachId);
+        }
+
+        if (breach.Status == BreachStatus.Closed || (request.SubjectVersion is { } version && breach.Version != version))
+        {
+            return Error.Rule("approval.stale", $"Breach {breach.BreachNumber} was {(breach.Status == BreachStatus.Closed ? "closed already" : "changed after this was asked for")}, so nothing was changed. Ask again if it should still close.");
+        }
+
+        var closed = breach.Close(asked.Note, time.GetUtcNow());
+        if (closed.IsFailure)
+        {
+            return closed.Error!;
+        }
+
+        audit.Add(new AuditEntry(AuditCategories.Security, "privacy.breach.closed",
+            Fit($"Breach {breach.BreachNumber} closed on Board report {breach.BoardReference}{(asked.Note is null ? string.Empty : $": {asked.Note}")} (asked for by {request.RequestedByName}, approved by {Checker()})", 1000))
+        {
+            EntityType = nameof(Breach),
+            EntityId = breach.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { breach.BreachNumber, breach.BoardReference, approval = request.Id, requestedBy = request.RequestedBy, approvedBy = currentUser.UserId },
+        });
+        return $"Breach {breach.BreachNumber} closed";
+    }
 
     public async Task<PagedResult<AffectedPatientItem>> AffectedAsync(Guid id, PageRequest page, CancellationToken ct)
     {
@@ -232,23 +328,127 @@ public sealed class BreachService(
         return new AddAffectedResult(added, listed.Count, notFound);
     }
 
-    public async Task<Result> RemoveAffectedAsync(Guid id, Guid patientId, CancellationToken ct)
+    /// <summary>
+    /// Asks for patients to be taken off the breach's notification list, with why. A patient already sent the notice stays
+    /// on it (<c>privacy.breach_already_notified</c>). Nothing changes until the Data Protection Officer approves: the
+    /// patients stay listed, and a notice sent meanwhile reaches them.
+    /// </summary>
+    public async Task<Result<ApprovalRequestDto>> RemoveAffectedAsync(Guid id, RemoveAffectedRequest request, CancellationToken ct)
     {
-        var affected = await db.Set<BreachAffectedPatient>().FirstOrDefaultAsync(a => a.BreachId == id && a.PatientId == patientId, ct);
-        if (affected is null)
+        var breach = await db.Set<Breach>().AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, ct);
+        if (breach is null)
         {
-            return Error.NotFound("Affected patient", patientId);
+            return Error.NotFound(nameof(Breach), id);
         }
 
-        if (affected.NotifiedAt is not null)
+        if (breach.Status == BreachStatus.Closed)
         {
-            return Error.Rule("privacy.breach_already_notified", "This patient has already been sent the notice, so they stay on the list.");
+            return Error.Rule("privacy.breach_closed", "A closed breach cannot be changed.");
         }
 
-        db.Remove(affected);
-        await db.SaveChangesAsync(ct);
-        return Result.Success();
+        var ids = request.PatientIds.Distinct().ToList();
+        var rows = await (
+                from a in db.Set<BreachAffectedPatient>().AsNoTracking()
+                join p in db.Set<Patient>() on a.PatientId equals p.Id
+                where a.BreachId == id && ids.Contains(a.PatientId)
+                select new { a.PatientId, a.NotifiedAt, p.Uhid, p.FullName })
+            .ToListAsync(ct);
+        if (rows.Count != ids.Count)
+        {
+            return Error.NotFound("Affected patient", ids.First(i => rows.All(r => r.PatientId != i)));
+        }
+
+        if (rows.FirstOrDefault(r => r.NotifiedAt is not null) is { } notified)
+        {
+            return Error.Rule("privacy.breach_already_notified", $"{notified.FullName} ({notified.Uhid}) has already been sent the notice, so they stay on the list.");
+        }
+
+        var reason = request.Reason.Trim();
+        var names = rows.OrderBy(r => r.Uhid, StringComparer.Ordinal).Select(r => $"{r.FullName} ({r.Uhid})").ToList();
+        List<ApprovalDetail> details =
+        [
+            new("Breach", $"{breach.BreachNumber}: {breach.Title}"),
+            new("Taken off the list", Fit(string.Join(", ", names), 1000)),
+            new("How many", rows.Count == 1 ? "1 patient" : $"{rows.Count} patients"),
+            new("What follows", "They are not sent the breach notice and do not see it in the portal"),
+            new("Why it waits", "Taking people off a breach's notification list is agreed by the Data Protection Officer, never the person who asks"),
+        ];
+        return await approvals.RequestAsync(
+            RemoveAffectedKind,
+            await SubjectAsync(breach, ct),
+            new BreachRemoveAffectedPayload(breach.Id, [.. rows.Select(r => r.PatientId)], reason),
+            rows.Count == 1
+                ? $"Take {names[0]} off the notification list of breach {breach.BreachNumber}"
+                : $"Take {rows.Count} patients off the notification list of breach {breach.BreachNumber}",
+            details,
+            reason,
+            ct);
     }
+
+    /// <summary>
+    /// Takes the patients off the list once approved, in the approval's transaction: only while every one of them is still
+    /// listed and not yet sent the notice (<c>approval.stale</c>), audited with each patient removed and why.
+    /// </summary>
+    internal async Task<Result<string>> RemoveAffectedApprovedAsync(ApprovalRequest request, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<BreachRemoveAffectedPayload>(request.Payload);
+        var breach = await db.Set<Breach>().AsNoTracking().FirstOrDefaultAsync(b => b.Id == asked.BreachId, ct);
+        if (breach is null)
+        {
+            return Error.NotFound(nameof(Breach), asked.BreachId);
+        }
+
+        var rows = await db.Set<BreachAffectedPatient>().Where(a => a.BreachId == breach.Id && asked.PatientIds.Contains(a.PatientId)).ToListAsync(ct);
+        if (breach.Status == BreachStatus.Closed || rows.Count != asked.PatientIds.Count || rows.Any(r => r.NotifiedAt is not null))
+        {
+            return Error.Rule("approval.stale",
+                $"Breach {breach.BreachNumber}'s list changed after this was asked for (a patient was sent the notice or taken off already, or the breach closed), so nobody was taken off. Ask again.");
+        }
+
+        var patients = await db.Set<Patient>().AsNoTracking().Where(p => asked.PatientIds.Contains(p.Id))
+            .Select(p => new { p.Id, p.Uhid }).ToListAsync(ct);
+        db.RemoveRange(rows);
+        var uhids = patients.Select(p => p.Uhid).Order(StringComparer.Ordinal).ToList();
+        audit.Add(new AuditEntry(AuditCategories.Security, "privacy.breach.affected_removed",
+            Fit($"Breach {breach.BreachNumber}: {rows.Count} taken off the notification list ({string.Join(", ", uhids)}): {asked.Reason} (asked for by {request.RequestedByName}, approved by {Checker()})", 1000))
+        {
+            EntityType = nameof(Breach),
+            EntityId = breach.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { breach.BreachNumber, patientIds = asked.PatientIds, uhids, reason = asked.Reason, approval = request.Id, requestedBy = request.RequestedBy, approvedBy = currentUser.UserId },
+        });
+        foreach (var patient in patients)
+        {
+            audit.Add(new AuditEntry(AuditCategories.Data, "privacy.breach.affected_removed",
+                Fit($"Taken off the notification list of breach {breach.BreachNumber}: {asked.Reason}", 1000))
+            {
+                PatientId = patient.Id,
+                EntityType = nameof(Breach),
+                EntityId = breach.Id.ToString(),
+            });
+        }
+
+        return rows.Count == 1 ? $"1 patient taken off breach {breach.BreachNumber}'s list" : $"{rows.Count} patients taken off breach {breach.BreachNumber}'s list";
+    }
+
+    /// <summary>When the breach's closing and a removal from its list were asked for and still wait.</summary>
+    public async Task<(DateTimeOffset? Closure, DateTimeOffset? Removal)> WaitingAsync(Guid id, CancellationToken ct)
+    {
+        var closing = await approvals.WaitingSinceAsync(CloseKind, nameof(Breach), [id], ct);
+        var removal = await approvals.WaitingSinceAsync(RemoveAffectedKind, nameof(Breach), [id], ct);
+        return (closing.TryGetValue(id, out var c) ? c : null, removal.TryGetValue(id, out var r) ? r : null);
+    }
+
+    /// <summary>The register is group-wide: a request is asked in the asker's facility (the first facility when none is chosen).</summary>
+    private async Task<ApprovalSubject> SubjectAsync(Breach breach, CancellationToken ct)
+    {
+        var facility = currentUser.FacilityId ?? await db.Set<Facility>().OrderBy(f => f.CreatedAt).Select(f => f.Id).FirstOrDefaultAsync(ct);
+        return new ApprovalSubject(nameof(Breach), breach.Id, breach.Version, facility, null);
+    }
+
+    private string Checker() => currentUser.DisplayName ?? currentUser.UserName ?? "Unknown user";
+
+    private static string Fit(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
     /// <summary>
     /// Sends the notice to every listed patient who has not had it: by SMS (the short notice and a link to the full one
@@ -504,4 +704,34 @@ public sealed class BreachService(
         instant.ToOffset(TimeSpan.FromMinutes(330)).ToString("dd MMM yyyy HH:mm 'IST'", CultureInfo.InvariantCulture);
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}
+
+/// <summary>What was asked: close this breach, with this note.</summary>
+public sealed record BreachClosePayload(Guid BreachId, string? Note);
+
+/// <summary>What was asked: take these patients off this breach's notification list, for this reason.</summary>
+public sealed record BreachRemoveAffectedPayload(Guid BreachId, IReadOnlyList<Guid> PatientIds, string Reason);
+
+/// <summary>A personal data breach closed: the breach team asks, the Data Protection Officer decides.</summary>
+internal sealed class BreachCloseApproval(BreachService breaches) : IApprovalAction
+{
+    public string Kind => BreachService.CloseKind;
+
+    public string Title => "Personal data breach closed";
+
+    public string ApprovePermission => PrivacyPermissions.BreachesApprove;
+
+    public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => breaches.CloseApprovedAsync(request, ct);
+}
+
+/// <summary>Patients taken off a breach's notification list: the breach team asks, the Data Protection Officer decides.</summary>
+internal sealed class BreachRemoveAffectedApproval(BreachService breaches) : IApprovalAction
+{
+    public string Kind => BreachService.RemoveAffectedKind;
+
+    public string Title => "Patients taken off a breach's notification list";
+
+    public string ApprovePermission => PrivacyPermissions.BreachesApprove;
+
+    public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => breaches.RemoveAffectedApprovedAsync(request, ct);
 }

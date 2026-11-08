@@ -361,6 +361,10 @@ export interface BreachDetail {
   certInReportedAt: string | null;
   certInReference: string | null;
   certInReportOverdue: boolean;
+  /** The breach's closing, asked for and waiting for the Data Protection Officer (MAKER-CHECKER.md, slice 14). */
+  closureAskedAt?: string | null;
+  /** Patients asked to be taken off the notification list, waiting for the Data Protection Officer. */
+  removalAskedAt?: string | null;
 }
 
 export interface SaveBreachRequest {
@@ -813,7 +817,12 @@ export const privacyApi = {
   /** CERT-In was told of the incident (within 6 hours of the hospital noticing it). */
   certInReported: (id: string, at: string, reference: string | null) =>
     api.post<void>(`${BASE}/breaches/${id}/cert-in-reported`, { at, reference }),
-  closeBreach: (id: string, note: string | null) => api.post<void>(`${BASE}/breaches/${id}/close`, { note }),
+  /**
+   * Asks for the breach to be closed: refused (422 `privacy.breach_board_report_required`) until the detailed report to the
+   * Board is recorded with its reference; then 202 with the approval it waits for (the Data Protection Officer decides).
+   */
+  closeBreach: (id: string, note: string | null) =>
+    api.post<ApprovalRequestDto>(`${BASE}/breaches/${id}/close`, { note }),
   /** The detailed report for printing (audited). */
   breachReport: (id: string) => api.get<BreachReport>(`${BASE}/breaches/${id}/report`),
   addAffected: (id: string, patientIds: string[], uhids: string[]) =>
@@ -821,7 +830,12 @@ export const privacyApi = {
       patientIds: patientIds.length > 0 ? patientIds : null,
       uhids: uhids.length > 0 ? uhids : null,
     }),
-  removeAffected: (id: string, patientId: string) => api.delete<void>(`${BASE}/breaches/${id}/affected/${patientId}`),
+  /**
+   * Asks for patients to be taken off the notification list, with why: 202 with the approval it waits for (the Data
+   * Protection Officer decides, never the one who asked); they stay on the list until then.
+   */
+  removeAffected: (id: string, patientIds: string[], reason: string) =>
+    api.post<ApprovalRequestDto>(`${BASE}/breaches/${id}/affected/remove`, { patientIds, reason }),
   notify: (id: string) => api.post<NotifyAffectedResult>(`${BASE}/breaches/${id}/notify`),
 
   /** `version`: the period as shown (null while the default applies); one changed meanwhile is not overwritten. */
