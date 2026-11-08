@@ -104,7 +104,8 @@ export function transitionBlocker(from: IncidentStatus, to: IncidentStatus, p: I
   if (from === 'Investigation' && (to === 'CapaInProgress' || to === 'Closed') && !p.rcaCompleted) {
     return 'Complete the root-cause analysis first.';
   }
-  if (to === 'Closed' && p.isSentinel && !p.rcaCompleted && from !== 'Reported') {
+  // Slice 14: from Reported too (once the way to close a duplicate), so no sentinel event closes unexamined.
+  if (to === 'Closed' && p.isSentinel && !p.rcaCompleted) {
     return 'A sentinel event can be closed only after a completed root-cause analysis.';
   }
   if (to === 'CapaInProgress' && p.capaCount === 0) {

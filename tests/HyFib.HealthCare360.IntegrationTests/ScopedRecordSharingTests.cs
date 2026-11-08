@@ -105,7 +105,8 @@ public sealed class ScopedRecordSharingTests(HospitalServer server)
         var patient = await RegisterAsync(frontOffice);
         var records = await RecordsAsync(patient, hospitalAdmin.FacilityId);
         var consentId = (await frontOffice.PostAsync<Created>($"/api/v1/patients/{patient}/consents",
-            new CaptureConsentRequest(ConsentType.DataSharing, null, true, null, null, null, null, null))).Id;
+            new CaptureConsentRequest(ConsentType.DataSharing, null, true, null, null, null, null, null,
+                WitnessConfirmationId: await server.RecordSharingWitnessAsync(frontOffice, patient)))).Id;
 
         (await frontOffice.GetAsync<List<ConsentDto>>($"/api/v1/patients/{patient}/consents")).Single(c => c.Id == consentId).SharingScope.ShouldBeNull();
         (await FhirAsync(insurer, $"Patient/{patient}", null)).Status.ShouldBe(200);

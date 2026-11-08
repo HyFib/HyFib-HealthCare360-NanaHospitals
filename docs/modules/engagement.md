@@ -18,7 +18,8 @@ one place. Engagement never keeps its own copy.
 | `crm.leads.manage` | CrmExecutive, HospitalAdmin, FrontOffice | Capture and work leads; convert them to patients and appointments |
 | `crm.followups.manage` | CrmExecutive, HospitalAdmin | Follow-up call worklist, reminders, staff-captured feedback, feedback links |
 | `crm.campaigns.manage` | CrmExecutive, HospitalAdmin | Draft campaigns, preview consented audiences, view delivery |
-| `crm.campaigns.send` | CrmExecutive, HospitalAdmin | Schedule, hold and cancel sending. It is separate from drafting, so a hospital can make an approver different from the author |
+| `crm.campaigns.send` | CrmExecutive, HospitalAdmin | Ask to schedule a campaign, hold and cancel sending |
+| `crm.campaigns.approve` | HospitalAdmin | Approve a campaign someone asked to schedule: never its author (who wrote or last edited it) nor the one who asked (MAKER-CHECKER.md, slice 14) |
 | `crm.referrals.manage` | CrmExecutive, HospitalAdmin | Referring doctors and referral analytics |
 | `crm.patient360.read` | CrmExecutive, HospitalAdmin | Patient 360° view |
 | `feedback.read` | CrmExecutive, QualityManager, HospitalAdmin | Responses and analytics |
@@ -88,7 +89,7 @@ Visits record the referrer as free text, so referral counts come from matching t
 | GET | `/{id}/delivery` | manage or send | → `CampaignDelivery {recipients, queued, sent, failed, skipped, optedOut}` from the notification logs. `skipped` includes messages the platform suppressed because the number replied STOP on WhatsApp, or never opted in to WhatsApp |
 | POST | `/audience-preview?channel=` | campaigns.manage | `SegmentInput {minAge, maxAge, gender, city, lastVisitFrom, lastVisitTo, departmentIds[≤50]}` → `AudiencePreview {count, sample[5] (UHID, masked name, age, city)}`. With `channel=WhatsApp` only patients whose number opted in to WhatsApp, with no STOP in force, count |
 | POST/PUT | `/[{id}]` | campaigns.manage | `SaveCampaignRequest {name, channel: Sms\|WhatsApp, templateKey, message (SMS ≤ 480 chars), segment, version}`. Only drafts can be edited |
-| POST | `/{id}/schedule` | campaigns.send | `{scheduledAt}` → 204 |
+| POST | `/{id}/schedule` | campaigns.send | `{scheduledAt}` → 202 with the approval (`engagement.campaign_schedule`) after the scheduling checks; the campaign stays a draft until someone other than its author approves (`campaign.author_approves` refuses its author), then it is scheduled and audited `crm.campaign.scheduled`. Editing the draft meanwhile, or the time passing, makes it stale. `CampaignDetail.scheduleAskedAt` while it waits |
 | POST | `/{id}/unschedule` | campaigns.send | back to draft before sending starts |
 | POST | `/{id}/cancel` | campaigns.send | `{reason}`. Messages already queued are still delivered |
 

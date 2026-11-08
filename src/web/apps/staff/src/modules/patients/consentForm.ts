@@ -89,6 +89,14 @@ export const consentFormSchema = z
 
 export type ConsentFormValues = z.infer<typeof consentFormSchema>;
 
+/**
+ * A given record-sharing consent for the whole record (no recipient, purpose, kinds or period) with no signed form, as
+ * this form records it: a second member of staff witnesses it at the screen (MAKER-CHECKER.md, slice 14).
+ */
+export function needsWitness(v: Pick<ConsentFormValues, 'type' | 'decision' | 'sharing'>): boolean {
+  return v.type === 'DataSharing' && v.decision === 'given' && v.sharing === 'everything';
+}
+
 /** A given record-sharing consent that the patient limited: only then does the form ask what it covers. */
 export function limitsSharing(v: Pick<ConsentFormValues, 'type' | 'decision' | 'sharing'>): boolean {
   return v.type === 'DataSharing' && v.decision === 'given' && v.sharing === 'limited';
@@ -116,8 +124,14 @@ export function consentFormDefaults(): ConsentFormValues {
 
 const clean = (value: string): string | null => value.trim() || null;
 
-/** The request the server expects; call it only with values the schema accepted. */
-export function toCaptureRequest(v: ConsentFormValues): CaptureConsentRequest {
+/**
+ * The request the server expects; call it only with values the schema accepted. A whole-record sharing consent carries
+ * its witness's confirmation (`witnessConfirmationId`), and the witness's name then comes from it, not from what was typed.
+ */
+export function toCaptureRequest(
+  v: ConsentFormValues,
+  witnessConfirmationId: string | null = null,
+): CaptureConsentRequest {
   if (!v.type) {
     throw new Error('The consent type is required.');
   }
@@ -126,7 +140,7 @@ export function toCaptureRequest(v: ConsentFormValues): CaptureConsentRequest {
     type: v.type,
     consentVersion: clean(v.consentVersion),
     granted: v.decision === 'given',
-    witnessName: clean(v.witnessName),
+    witnessName: needsWitness(v) ? null : clean(v.witnessName),
     signedByRelation: proxy ? clean(v.signedByRelation) : null,
     signedByName: proxy ? clean(v.signedByName) : null,
     documentFileId: null,
@@ -141,6 +155,7 @@ export function toCaptureRequest(v: ConsentFormValues): CaptureConsentRequest {
           until: v.until,
         }
       : null,
+    witnessConfirmationId: needsWitness(v) ? witnessConfirmationId : null,
   };
 }
 
