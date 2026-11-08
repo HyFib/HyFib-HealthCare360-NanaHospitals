@@ -15,6 +15,9 @@ public static class SpecialtyCarePermissions
     public const string OtSurgery = "ot.surgery.perform";
     public const string OtAnaesthesia = "ot.anaesthesia.record";
     public const string OtMaterials = "ot.materials.record";
+
+    /// <summary>The OT in-charge: approves a correction of an implant or consumable line once the operation has started.</summary>
+    public const string OtMaterialsApprove = "ot.materials.approve";
     public const string OtReports = "ot.reports.read";
 
     // ------------------------------------------------------------------ dialysis (DIA-01..05)
@@ -59,6 +62,8 @@ public static class SpecialtyCarePermissions
         new(OtSurgery, Ot, "Start and complete surgery, write operation notes and post-op orders", [SystemRoles.Doctor]),
         new(OtAnaesthesia, Ot, "Write the anaesthesia record", [SystemRoles.Doctor]),
         new(OtMaterials, Ot, "Record implants and consumables used in surgery (billed to the patient)", [SystemRoles.Nurse, SystemRoles.OtCoordinator, SystemRoles.Doctor]),
+        new(OtMaterialsApprove, Ot, "OT in-charge: approve a correction of an implant or consumable line after the operation has started (its charge and stock follow)",
+            [SystemRoles.OtCoordinator, SystemRoles.HospitalAdmin]),
         new(OtReports, Ot, "View OT utilisation reports", [SystemRoles.OtCoordinator, SystemRoles.HospitalAdmin, SystemRoles.MisAnalyst]),
 
         new(DialysisRead, Dialysis, "View the dialysis board, patients, machines and sessions", [SystemRoles.DialysisTechnician, SystemRoles.Nurse, SystemRoles.Doctor, SystemRoles.HospitalAdmin]),

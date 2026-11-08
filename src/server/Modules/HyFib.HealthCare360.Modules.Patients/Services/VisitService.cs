@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Realtime;
@@ -17,6 +18,9 @@ public sealed class VisitService(
     INotificationService notifications,
     ICurrentUser currentUser,
     IPayerDirectory payers,
+    IApprovals approvals,
+    IVisitClinicalWork clinicalWork,
+    IAuditLogger audit,
     TimeProvider time)
 {
     public async Task<Result<VisitDetail>> CreateAsync(CreateVisitRequest request, CancellationToken ct)
@@ -172,7 +176,16 @@ public sealed class VisitService(
     private static readonly Error InpatientVisitClosesWithTheStay =
         Error.Rule("visit.inpatient", "An in-patient visit closes with the stay. Discharge the patient or cancel the admission instead.");
 
-    public async Task<Result> CancelAsync(Guid visitId, string reason, CancellationToken ct)
+    /// <summary>A visit the doctor has started, cancelled at the desk, waiting for a second person.</summary>
+    public const string CancelKind = "patients.visit_cancel";
+
+    /// <summary>
+    /// Cancels a visit from the desk: at once while the doctor has not started it; once the consultation is under way, or
+    /// the visit has an encounter, a note, an order or a prescription, it waits for someone else (a front-office
+    /// supervisor, or the treating doctor) who holds <see cref="PatientsPermissions.VisitsCancelApprove"/>, and nothing
+    /// changes until then: the token, the charges and the orders follow the cancellation only once approved.
+    /// </summary>
+    public async Task<Result<VisitCancelOutcome>> AskCancelAsync(Guid visitId, string reason, CancellationToken ct)
     {
         var visit = await db.Set<Visit>().FirstOrDefaultAsync(v => v.Id == visitId, ct);
         if (visit is null)
@@ -185,30 +198,154 @@ public sealed class VisitService(
             return InpatientVisitClosesWithTheStay;
         }
 
-        var result = visit.Cancel(reason.Trim(), time.GetUtcNow());
-        if (result.IsFailure)
+        // Under the visit's lock, which an order or an encounter placed on it holds until it is saved: the work read here
+        // is all there is, and none comes until the cancellation is saved or asked for.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await EncounterLocks.LockAsync(db, [visit.Id], ct);
+        await db.Entry(visit).ReloadAsync(ct);
+        if (visit.Status is VisitStatus.Completed or VisitStatus.Cancelled)
         {
-            return result;
+            return visit.Cancel(reason.Trim(), time.GetUtcNow()).Error!;
         }
 
-        var token = await db.Set<QueueToken>().FirstOrDefaultAsync(t => t.VisitId == visitId, ct);
+        var work = await clinicalWork.OfVisitAsync(visit.Id, ct);
+        if (!CancelNeedsApproval(visit.Status, work))
+        {
+            var cancelled = await CancelVisitAsync(visit, reason.Trim(), ct);
+            if (cancelled.IsFailure)
+            {
+                return cancelled.Error!;
+            }
+
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            if (cancelled.Value is { } token)
+            {
+                await PublishQueueChangeAsync(token, ct);
+            }
+
+            return new VisitCancelOutcome(null);
+        }
+
+        var patient = await db.Set<Patient>().Where(p => p.Id == visit.PatientId).Select(p => new { p.Uhid, p.FullName }).FirstOrDefaultAsync(ct);
+        var who = patient is null ? "the patient" : $"{patient.FullName} ({patient.Uhid})";
+        var doctor = visit.PractitionerId is { } pid
+            ? await db.Set<Practitioner>().Where(p => p.Id == pid).Select(p => p.DisplayName).FirstOrDefaultAsync(ct)
+            : null;
+        List<ApprovalDetail> details =
+        [
+            new("Visit", $"{visit.VisitNumber}, checked in {DocumentClock(visit.VisitedAt)}" + (doctor is null ? string.Empty : $", with {doctor}")),
+            new("Patient", who),
+            new("Status", $"{StatusWords(visit.Status)} → cancelled"),
+            new("Clinical record", work.Words()),
+            new("What follows", "The queue token is cancelled, charges not yet billed are withdrawn, and lab tests not yet drawn and studies not yet done are withdrawn with their order lines. Bills already finalized, notes and prescriptions stay as they are."),
+            new("Why it waits", "The doctor has started this visit: its cancellation is approved by a front-office supervisor or the treating doctor, not the person who asks"),
+        ];
+        var requested = await approvals.RequestAsync(
+            CancelKind,
+            new ApprovalSubject(nameof(Visit), visit.Id, visit.Version, visit.FacilityId, visit.PatientId),
+            new VisitCancelPayload(visit.Id, reason.Trim()),
+            Fit($"Cancel visit {visit.VisitNumber} of {who}, which the doctor has started", 300),
+            details,
+            reason,
+            ct);
+        if (requested.IsFailure)
+        {
+            return requested.Error!;
+        }
+
+        await transaction.CommitAsync(ct);
+        return new VisitCancelOutcome(requested.Value);
+    }
+
+    /// <summary>The doctor has started the visit: the consultation is under way, or the record holds work on it.</summary>
+    public static bool CancelNeedsApproval(VisitStatus status, VisitClinicalWork work) => status == VisitStatus.InProgress || work.Any;
+
+    /// <summary>The visits among these whose cancellation waits for approval, and when it was asked for.</summary>
+    public Task<IReadOnlyDictionary<Guid, DateTimeOffset>> CancellationsAskedAsync(IReadOnlyCollection<Guid> visitIds, CancellationToken ct) =>
+        approvals.WaitingSinceAsync(CancelKind, nameof(Visit), visitIds, ct);
+
+    /// <summary>
+    /// Cancels a visit whose cancellation was approved, in the approval's transaction (the approval saves): only while it
+    /// is still open (<c>approval.stale</c>). A doctor's account approves only a visit it treats: the visit's doctor, or one
+    /// who opened an encounter, ordered or prescribed on it; anyone else holding the permission (a front-office supervisor)
+    /// approves any. The token, charges and orders then follow the cancellation as when the desk cancels a visit not started.
+    /// </summary>
+    internal async Task<Result<string>> CancelApprovedAsync(ApprovalRequest request, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<VisitCancelPayload>(request.Payload);
+        var visit = await db.Set<Visit>().FirstOrDefaultAsync(v => v.Id == asked.VisitId, ct);
+        if (visit is null)
+        {
+            return Error.NotFound(nameof(Visit), asked.VisitId);
+        }
+
+        if (visit.Status is VisitStatus.Completed or VisitStatus.Cancelled)
+        {
+            return Error.Rule("approval.stale", visit.Status == VisitStatus.Cancelled
+                ? $"Visit {visit.VisitNumber} was cancelled already, so nothing was changed."
+                : $"Visit {visit.VisitNumber} was completed after this was asked for, so it was not cancelled.");
+        }
+
+        if (currentUser.PractitionerId is { } practitionerId)
+        {
+            var work = await clinicalWork.OfVisitAsync(visit.Id, ct);
+            if (visit.PractitionerId != practitionerId && !work.Practitioners.Contains(practitionerId))
+            {
+                return Error.Forbidden("approval.not_treating_doctor",
+                    "A doctor approves the cancellation only of a visit they treat. Ask the treating doctor or a front-office supervisor.");
+            }
+        }
+
+        await EncounterLocks.LockAsync(db, [visit.Id], ct);
+        var cancelled = await CancelVisitAsync(visit, Fit(asked.Reason, 300), ct);
+        if (cancelled.IsFailure)
+        {
+            return cancelled.Error!;
+        }
+
+        var checker = currentUser.DisplayName ?? currentUser.UserName ?? "Unknown user";
+        audit.Add(new AuditEntry(AuditCategories.Data, "patients.visit.cancelled",
+            Fit($"Visit {visit.VisitNumber} cancelled after the doctor had started it: {asked.Reason} (asked for by {request.RequestedByName}, approved by {checker})", 1000))
+        {
+            PatientId = visit.PatientId,
+            EntityType = nameof(Visit),
+            EntityId = visit.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { visit.VisitNumber, approval = request.Id, requestedBy = request.RequestedBy, approvedBy = currentUser.UserId },
+        });
+        return $"Visit {visit.VisitNumber} cancelled";
+    }
+
+    /// <summary>
+    /// Cancels the visit and its queue token (the token changed, if any, comes back); the caller saves, in the
+    /// transaction that holds the visit's lock. The modules that follow (Billing, the lab and imaging, Scheduling) react to
+    /// <see cref="VisitCancelled"/> in that save, holding the same lock from their reads to its commit, so an order being
+    /// placed on the visit is either seen by them or sees the visit cancelled.
+    /// </summary>
+    private async Task<Result<QueueToken?>> CancelVisitAsync(Visit visit, string reason, CancellationToken ct)
+    {
+        var result = visit.Cancel(reason, time.GetUtcNow());
+        if (result.IsFailure)
+        {
+            return result.Error!;
+        }
+
+        var token = await db.Set<QueueToken>().FirstOrDefaultAsync(t => t.VisitId == visit.Id, ct);
         if (token is not null && token.Status is not (TokenStatus.Completed or TokenStatus.Cancelled))
         {
             token.Status = TokenStatus.Cancelled;
+            return token;
         }
 
-        // In a transaction of its own: the modules that withdraw the visit's work hold its lock from their reads to this
-        // commit, so an order being placed on the visit is either seen by them or sees the visit cancelled.
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        if (token is not null)
-        {
-            await PublishQueueChangeAsync(token, ct);
-        }
-
-        return Result.Success();
+        return (QueueToken?)null;
     }
+
+    private static string StatusWords(VisitStatus status) => status == VisitStatus.InProgress ? "In consultation" : "Waiting";
+
+    private static string DocumentClock(DateTimeOffset at) => at.ToOffset(TimeSpan.FromMinutes(330)).ToString("dd MMM yyyy HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Fit(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
     public async Task<Result> CompleteAsync(Guid visitId, CancellationToken ct)
     {
@@ -394,4 +531,25 @@ public sealed class VisitService(
         v.Id, v.VisitNumber, v.PatientId, v.Type, v.Status, v.DepartmentId, v.PractitionerId, v.AppointmentId, v.VisitedAt, v.CompletedAt,
         v.IsFollowUp, v.IsFreeFollowUp, v.PreviousVisitId, v.PayerType, v.PayerId, v.ReferralSource, v.ReferredBy, v.ChiefComplaint, v.IsMlc,
         v.MlcNumber, v.Notes, v.CancelReason, token is null ? null : ToDto(token), v.Version);
+}
+
+/// <summary>What the desk asked: cancel this visit, for this reason.</summary>
+public sealed record VisitCancelPayload(Guid VisitId, string Reason);
+
+/// <summary>The cancellation done at once (<paramref name="Asked"/> null), or the approval it waits for.</summary>
+public sealed record VisitCancelOutcome(ApprovalRequestDto? Asked);
+
+/// <summary>
+/// A visit the doctor has started, cancelled at the desk: the desk asks (<c>visits.manage</c>), and someone else decides:
+/// a front-office supervisor, or the treating doctor (<see cref="PatientsPermissions.VisitsCancelApprove"/>).
+/// </summary>
+internal sealed class VisitCancelApproval(VisitService visits) : IApprovalAction
+{
+    public string Kind => VisitService.CancelKind;
+
+    public string Title => "Visit cancelled after the doctor started it";
+
+    public string ApprovePermission => PatientsPermissions.VisitsCancelApprove;
+
+    public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => visits.CancelApprovedAsync(request, ct);
 }

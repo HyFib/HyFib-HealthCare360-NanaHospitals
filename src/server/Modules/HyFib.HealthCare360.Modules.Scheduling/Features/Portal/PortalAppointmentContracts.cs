@@ -28,6 +28,10 @@ public sealed record PortalAppointment(
     bool CanReschedule,
     bool CanPay);
 
+/// <param name="TelehealthConsent">
+/// For a video consultation, the patient agrees to be seen by video (Telemedicine Practice Guidelines 2020); recorded on the
+/// patient's consents unless one is already in force. A video consultation is not booked without it.
+/// </param>
 public sealed record PortalBookAppointmentRequest(
     Guid PatientId,
     Guid PractitionerId,
@@ -35,7 +39,8 @@ public sealed record PortalBookAppointmentRequest(
     AppointmentVisitType VisitType,
     bool IsTelehealth,
     string? Reason,
-    bool PayOnline);
+    bool PayOnline,
+    bool TelehealthConsent = false);
 
 /// <param name="Payment">Gateway checkout details when the patient chose to pay online and the gateway is available.</param>
 /// <param name="Message">Shown to the patient, for example when online payment is unavailable and they will pay at the hospital.</param>
@@ -80,6 +85,8 @@ public sealed class PortalBookAppointmentRequestValidator : AbstractValidator<Po
         RuleFor(x => x.StartsAt).NotEqual(default(DateTimeOffset)).WithMessage("Choose a time slot.");
         RuleFor(x => x.VisitType).IsInEnum();
         RuleFor(x => x.Reason).SafeText(300);
+        RuleFor(x => x.TelehealthConsent).Equal(true).When(x => x.IsTelehealth)
+            .WithMessage("Agree to be seen by video to book a video consultation.");
     }
 }
 

@@ -166,7 +166,10 @@ public sealed class TelehealthHub(
         return await JoinPatientSideAsync(session, TelehealthRole.Guest, null, firstName ?? "Patient");
     }
 
-    /// <summary>Admits one waiting participant (or everyone waiting) and starts the consultation clock.</summary>
+    /// <summary>
+    /// Admits one waiting participant (or everyone waiting) and starts the consultation clock. A consultation not yet under
+    /// way starts only with the patient's consent to be seen by video on record (<see cref="TelehealthConsents"/>).
+    /// </summary>
     public async Task Admit(Guid sessionId, Guid? participantId)
     {
         RequireSeat(sessionId, clinicianOnly: true);
@@ -174,6 +177,11 @@ public sealed class TelehealthHub(
         if (session.IsClosed)
         {
             throw new HubException("This consultation is closed.");
+        }
+
+        if (session.Status != TelehealthStatus.InProgress && !await TelehealthConsents.OnRecordAsync(db, session.PatientId, Aborted))
+        {
+            throw new HubException(TelehealthConsents.RequiredMessage);
         }
 
         var waiting = await db.Set<TelehealthParticipant>()

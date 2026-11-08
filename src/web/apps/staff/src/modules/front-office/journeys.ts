@@ -3,20 +3,23 @@ import type { PipelineStage } from '@hc360/ui';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
-// Where patients are in the hospital: the pipeline of each visit, stay, operation and lab accession, derived on the
+// Where patients are in the hospital: the pipeline of each visit, casualty stay, stay, operation and lab accession, derived on the
 // server from what the modules record (docs/modules/analytics.md, "Patient journeys"). Nothing here sets a stage.
 
-export type JourneyKind = 'Outpatient' | 'Inpatient' | 'Surgery' | 'Lab';
+export type JourneyKind = 'Outpatient' | 'Inpatient' | 'Surgery' | 'Lab' | 'Emergency';
+
+/** The kinds the board of patients in hospital shows. */
+export type BoardKind = 'Outpatient' | 'Emergency' | 'Inpatient';
 export type JourneyStatus = 'Active' | 'Completed' | 'Cancelled';
 
 /** One journey (the server's `JourneyDto`): what it follows, its stages in order and the stage the patient is in. */
 export interface JourneyDto {
   kind: JourneyKind;
-  /** The visit's, admission's, booking's or lab order's id. */
+  /** The visit's, emergency case's, admission's, booking's or lab order's id. */
   id: string;
-  /** The visit, admission, booking or accession number. */
+  /** The visit (for casualty, the emergency visit), admission, booking or accession number. */
   number: string;
-  /** The department and doctor, the ward and bed, the operation, the tests. */
+  /** The department and doctor, the casualty complaint, the ward and bed, the operation, the tests. */
   title: string;
   status: JourneyStatus;
   startedAt: string;
@@ -30,6 +33,8 @@ export interface PatientJourneys {
   patientId: string;
   asOf: string;
   outpatient: JourneyDto | null;
+  /** The casualty stay still open, else the most recent. */
+  emergency: JourneyDto | null;
   inpatient: JourneyDto | null;
   surgeries: JourneyDto[];
   labOrders: JourneyDto[];
@@ -46,18 +51,18 @@ export interface InHospitalPatient {
   isRestricted: boolean;
   gender: Gender;
   age: string | null;
-  kind: 'Outpatient' | 'Inpatient';
+  kind: BoardKind;
   departmentId: string | null;
   departmentName: string | null;
   wardId: string | null;
-  /** The token for an out-patient, the ward and bed for an in-patient. */
+  /** The token for an out-patient, casualty and the triage level, the ward and bed for an in-patient. */
   place: string | null;
   arrivedAt: string;
   journey: JourneyDto;
 }
 
 export interface InHospitalFilters {
-  kind?: 'Outpatient' | 'Inpatient';
+  kind?: BoardKind;
   departmentId?: string;
   wardId?: string;
   page?: number;
@@ -68,6 +73,7 @@ export const JOURNEY_KIND_LABEL: Record<JourneyKind, string> = {
   Inpatient: 'In-patient stay',
   Surgery: 'Operation',
   Lab: 'Lab order',
+  Emergency: 'Casualty visit',
 };
 
 /** A journey's pipelines refresh every minute, as the other live worklists do, and on every visit change in the facility. */

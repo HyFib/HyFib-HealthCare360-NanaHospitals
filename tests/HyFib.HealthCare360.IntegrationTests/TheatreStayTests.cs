@@ -15,6 +15,7 @@ using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -173,15 +174,19 @@ public sealed class TheatreStayTests(HospitalServer server)
         var booking = await BookAsync(doctor, patientId, visitId: null);
         await ScheduleAsync(doctor, booking.Id);
 
+        // The ward reports the patient gone (an absconded stay waits for the nurse in charge), before the theatre has him.
+        var asked = await server.AskAbscondedAsync(nurse, admission.Id, "Not in the ward at the 6 pm round");
+        var inCharge = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var request = await inCharge.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}");
+
         // The theatre is caught as it saves the patient into pre-op: a transaction of the test holds the case's row, which the
         // theatre writes once it holds the stay's lock.
         await using var hold = await HeldTransaction.HoldAsync(server, $"SELECT 1 FROM specialtycare.surgery_bookings WHERE id = {booking.Id} FOR UPDATE");
         var receive = doctor.SendRawAsync(HttpMethod.Post, $"{Bookings}/{booking.Id}/receive");
         await HeldTransaction.WaitUntilLockedAsync(server, admission.Id);
 
-        // The ward records meanwhile that the patient has left: the discharge waits for the theatre.
-        var discharge = nurse.SendRawAsync(HttpMethod.Post, $"/api/v1/inpatient/admissions/{admission.Id}/discharge/complete",
-            new CompleteDischargeRequest(DischargeType.Absconded, null, "Not in the ward at the 6 pm round", NotifyPatient: false));
+        // The nurse in charge approves meanwhile: the discharge waits for the theatre.
+        var discharge = inCharge.SendRawAsync(HttpMethod.Post, $"/api/v1/approvals/{asked.Id}/approve", new ApproveRequest(null, request.Version));
         (await Task.WhenAny(discharge, Task.Delay(TimeSpan.FromSeconds(2), Ct))).ShouldNotBe(discharge, "the discharge waits for the theatre");
 
         // The theatre saves, and the discharge then finds the patient in pre-op: the stay goes on.
@@ -199,11 +204,11 @@ public sealed class TheatreStayTests(HospitalServer server)
 
         (await nurse.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admission.Id}")).Status.ShouldBe(AdmissionStatus.Admitted);
 
-        // The case is called off, and the discharge then goes through.
+        // While the theatre has him, the ward is refused at once; the case is called off, and the discharge then goes through.
+        (await DischargeRefusalAsync(nurse, admission.Id, DischargeType.Absconded)).Code.ShouldBe("discharge.in_theatre");
         await doctor.PostAsync($"{Bookings}/{booking.Id}/cancel", new SurgeryReasonRequest("Patient left the ward"));
-        (await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/complete",
-            new CompleteDischargeRequest(DischargeType.Absconded, null, "Not in the ward at the 6 pm round", NotifyPatient: false)))
-            .Status.ShouldBe(AdmissionStatus.Absconded);
+        await server.AbscondAsync(nurse, admission.Id, "Not in the ward at the 6 pm round");
+        (await nurse.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admission.Id}")).Status.ShouldBe(AdmissionStatus.Absconded);
         await CleanBedAsync(nurse, admission.Id);
     }
 
@@ -218,11 +223,13 @@ public sealed class TheatreStayTests(HospitalServer server)
         var booking = await BookAsync(doctor, patientId, visitId: null);
         await ScheduleAsync(doctor, booking.Id);
 
-        // The discharge is caught between its reads and its save: a transaction of the test holds the stay's row, which the
-        // discharge writes last.
+        // The patient has absconded and the nurse in charge approves closing the stay. The discharge is caught between its
+        // reads and its save: a transaction of the test holds the stay's row, which the discharge writes last.
+        var asked = await server.AskAbscondedAsync(nurse, admission.Id, "Not in the ward at the 6 pm round");
+        var inCharge = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var request = await inCharge.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}");
         await using var hold = await HeldTransaction.HoldAsync(server, $"SELECT 1 FROM inpatient.admissions WHERE id = {admission.Id} FOR UPDATE");
-        var discharge = nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/complete",
-            new CompleteDischargeRequest(DischargeType.Absconded, null, "Not in the ward at the 6 pm round", NotifyPatient: false));
+        var discharge = inCharge.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}/approve", new ApproveRequest(null, request.Version));
         await HeldTransaction.WaitUntilLockedAsync(server, admission.Id);
 
         // The theatre receives the patient meanwhile: it waits for the discharge.
@@ -231,7 +238,8 @@ public sealed class TheatreStayTests(HospitalServer server)
 
         // The stay ends, and the case booked during it with it: the theatre then finds it cancelled.
         await hold.ReleaseAsync();
-        (await discharge).Status.ShouldBe(AdmissionStatus.Absconded);
+        (await discharge).Status.ShouldBe(ApprovalStatus.Approved);
+        (await nurse.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admission.Id}")).Status.ShouldBe(AdmissionStatus.Absconded);
         using (var refused = await receive)
         {
             refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, await refused.Content.ReadAsStringAsync(Ct));
@@ -298,10 +306,11 @@ public sealed class TheatreStayTests(HospitalServer server)
     }
 
     /// <summary>The nurse completes the discharge and is refused as against the rules (422): its code and detail.</summary>
-    private static async Task<(string? Code, string? Detail)> DischargeRefusalAsync(ApiClient nurse, Guid admissionId)
+    private static async Task<(string? Code, string? Detail)> DischargeRefusalAsync(ApiClient nurse, Guid admissionId, DischargeType type = DischargeType.Normal)
     {
         using var response = await nurse.SendRawAsync(HttpMethod.Post, $"/api/v1/inpatient/admissions/{admissionId}/discharge/complete",
-            new CompleteDischargeRequest(DischargeType.Normal, null, "Discharged home", NotifyPatient: false));
+            new CompleteDischargeRequest(type, null, "Discharged home", NotifyPatient: false,
+                Absconded: type == DischargeType.Absconded ? new AbscondedReport(DateTimeOffset.UtcNow.AddMinutes(-30), "Ward staff", false, null, null, false, null) : null));
         response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, await response.Content.ReadAsStringAsync(Ct));
         var problem = await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
         return (problem.GetProperty("code").GetString(), problem.GetProperty("detail").GetString());

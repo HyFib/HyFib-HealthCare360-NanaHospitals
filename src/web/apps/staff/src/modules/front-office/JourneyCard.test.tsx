@@ -3,7 +3,7 @@ import { Hc360ThemeProvider } from '@hc360/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { patientJourneys } from '@/test/accessibility/fixtures/frontOffice';
+import { IN_HOSPITAL, patientJourneys } from '@/test/accessibility/fixtures/frontOffice';
 import { fakeServer, STAFF_USER, stubBrowserApis } from '@/test/appScreen';
 import { PatientJourneyCard } from './JourneyCard';
 import type { PatientJourneys } from './journeys';
@@ -91,6 +91,31 @@ describe('the journey card', () => {
 
     expect(await screen.findByText(/Operations are not shown: the record is confidential/)).toBeInTheDocument();
     expect(screen.queryByRole('list', { name: 'Operation OT2600045' })).not.toBeInTheDocument();
+  });
+
+  it('shows a casualty stay as a pipeline that ends with where the patient went', async () => {
+    const er = IN_HOSPITAL[3]!.journey;
+    showCard({
+      ...JOURNEYS,
+      outpatient: null,
+      emergency: {
+        ...er,
+        status: 'Completed',
+        current: null,
+        stages: er.stages.map((s) =>
+          s.key === 'disposition'
+            ? { ...s, state: 'Done', at: s.at ?? new Date().toISOString(), detail: 'Admitted · IP2600140' }
+            : s.state === 'Current'
+              ? { ...s, state: 'Done', minutesInStage: null }
+              : s.state === 'Pending'
+                ? { ...s, state: 'Skipped' }
+                : s,
+        ),
+      },
+    });
+
+    const stay = await screen.findByRole('list', { name: 'Casualty visit ER2600031' });
+    expect(within(stay).getAllByRole('listitem').at(-1)).toHaveTextContent('Admitted · IP2600140');
   });
 
   it('says when there is nothing to follow', async () => {

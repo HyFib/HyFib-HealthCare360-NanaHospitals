@@ -22,6 +22,7 @@ internal sealed class VitalRegistrationService(
     ICurrentUser currentUser,
     IApprovals approvals,
     ISettingsService settings,
+    IAuditLogger audit,
     TimeProvider time)
 {
     /// <summary>
@@ -29,6 +30,9 @@ internal sealed class VitalRegistrationService(
     /// (<see cref="DeathCertificateApproval"/>). On unless the facility sets it to <c>false</c>, as one with a single doctor does.
     /// </summary>
     public const string ConfirmationSetting = "mrd.deathCertificateConfirmation";
+
+    private const string VoidWaiting =
+        "A second doctor is asked to agree that this confirmed certificate was entered in error. Until they decide, it stands as it is: whoever asked can withdraw the request (Approvals, Asked by me).";
 
     private const string ConfirmationWaiting =
         "This certificate is waiting for a second doctor's confirmation. Whoever asked can withdraw the request (Approvals, Asked by me), or the confirming doctor can return it; then change the certificate.";
@@ -134,6 +138,11 @@ internal sealed class VitalRegistrationService(
             if (await ConfirmationWaitingSinceAsync(death.Id, ct) is not null)
             {
                 return Error.Conflict("death.confirmation_waiting", ConfirmationWaiting);
+            }
+
+            if (await VoidWaitingSinceAsync(death.Id, ct) is not null)
+            {
+                return Error.Conflict("death.void_waiting", VoidWaiting);
             }
         }
         else
@@ -338,6 +347,11 @@ internal sealed class VitalRegistrationService(
         }
 
         db.SetExpectedVersion(death, request.Version);
+        if (await VoidWaitingSinceAsync(death.Id, ct) is not null)
+        {
+            return Error.Conflict("death.void_waiting", VoidWaiting);
+        }
+
         var reported = death.Report(
             new RegistrarReport(request.ReportedOn, request.RegistrationNumber), time.Today(), await ConfirmationRequiredAsync(death.FacilityId, ct));
         if (reported.IsFailure)
@@ -368,8 +382,14 @@ internal sealed class VitalRegistrationService(
         return await BirthDtoAsync(birth, ct);
     }
 
-    /// <summary>A certificate made on the wrong patient: it leaves the register, and the deceased mark it made is taken back.</summary>
-    public async Task<Result<DeathRecordDto>> DeathInErrorAsync(Guid id, VitalEntryErrorRequest request, CancellationToken ct)
+    /// <summary>
+    /// A certificate made on the wrong patient: it leaves the register, and the deceased mark it made is taken back. Only its
+    /// certifier marks it, and only while it is not reported to the Registrar (a correction then goes through the
+    /// Registrar). A certificate a second doctor has confirmed took two doctors to make, so undoing it takes two
+    /// (maker-checker, slice 8): the certifier asks, with the reason, and another doctor who confirms certificates agrees
+    /// (<see cref="DeathCertificateVoidApproval"/>); until then the certificate and the deceased status stand.
+    /// </summary>
+    public async Task<Result<DeathInErrorOutcome>> DeathInErrorAsync(Guid id, VitalEntryErrorRequest request, CancellationToken ct)
     {
         var death = await db.Set<DeathRecord>().FirstOrDefaultAsync(d => d.Id == id, ct);
         if (death is null)
@@ -383,6 +403,22 @@ internal sealed class VitalRegistrationService(
             return Error.Conflict("death.confirmation_waiting", ConfirmationWaiting);
         }
 
+        if (death.Status == VitalReportStatus.Recorded && death.IsConfirmed)
+        {
+            if (death.Version != request.Version)
+            {
+                return Error.ConcurrencyConflict;
+            }
+
+            if (!death.IsCertifiedBy(currentUser.UserId))
+            {
+                return Error.Forbidden("vital.not_own_entry", "Only the doctor who certified this death can mark it as entered in error.");
+            }
+
+            var asked = await AskVoidAsync(death, request.Reason.Trim(), ct);
+            return asked.IsFailure ? asked.Error! : new DeathInErrorOutcome(await DeathDtoAsync(death, ct), asked.Value);
+        }
+
         var marked = death.MarkEnteredInError(request.Reason, currentUser.UserId);
         if (marked.IsFailure)
         {
@@ -391,8 +427,104 @@ internal sealed class VitalRegistrationService(
 
         await deaths.ClearDeceasedAsync(death.PatientId, death.DiedAt, $"the death certificate {death.SerialNumber} was entered in error", ct);
         await db.SaveChangesAsync(ct);
-        return await DeathDtoAsync(death, ct);
+        return new DeathInErrorOutcome(await DeathDtoAsync(death, ct), null);
     }
+
+    /// <summary>The certifier asks another doctor to agree that a confirmed certificate was entered in error: what goes, and what stays until then.</summary>
+    private Task<Result<ApprovalRequestDto>> AskVoidAsync(DeathRecord death, string reason, CancellationToken ct) =>
+        approvals.RequestAsync(
+            DeathCertificateVoidApproval.Key,
+            new ApprovalSubject(nameof(DeathRecord), death.Id, death.Version, death.FacilityId, death.PatientId),
+            new DeathVoidPayload(death.Id, death.DiedAt),
+            $"Death certificate {death.SerialNumber}: confirmed → entered in error",
+            [
+                new("Death register no.", death.SerialNumber),
+                new("Date and time of death", DocumentFormat.DateTime(death.DiedAt)),
+                new("Underlying cause", death.UnderlyingCause),
+                new("Certified by", $"{death.CertifiedBy}, registration no. {death.CertifierRegistrationNumber}"),
+                new("Confirmed by", $"{death.ConfirmedBy}, registration no. {death.ConfirmerRegistrationNumber}"),
+                new("Certificate", "confirmed, not yet reported → entered in error, out of the death register"),
+                new("What it reaches",
+                    "The patient is no longer recorded as deceased, unless another certificate stands for them. Until this is approved, the certificate and the deceased status stand."),
+            ],
+            reason,
+            ct);
+
+    /// <summary>
+    /// Marks the confirmed certificate entered in error once a second doctor approves, in the approval's transaction: only
+    /// the certificate as it was when asked (<c>approval.stale</c>), still not reported to the Registrar. The deceased mark it
+    /// made is taken back only when no other certificate stands for the patient. Audited with both names.
+    /// </summary>
+    internal async Task<Result<string>> ApplyVoidAsync(ApprovalRequest approval, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<DeathVoidPayload>(approval.Payload);
+        var death = await db.Set<DeathRecord>().FirstOrDefaultAsync(d => d.Id == asked.DeathId, ct);
+        if (death is null)
+        {
+            return Error.NotFound("Death", asked.DeathId);
+        }
+
+        if (death.Status == VitalReportStatus.Reported)
+        {
+            return VitalRegistration.Closed(death.Status);
+        }
+
+        if (death.Version != approval.SubjectVersion)
+        {
+            return Error.Rule("approval.stale",
+                $"Death certificate {death.SerialNumber} changed after this was asked for, so nothing was changed. Ask again, for the certificate as it is now.");
+        }
+
+        var open = await guard.EnsureCanOpenChartAsync(death.PatientId, ct);
+        if (open.IsFailure)
+        {
+            return open.Error!;
+        }
+
+        // Asked by the certifier: marked in their name, approved in the second doctor's.
+        var marked = death.MarkEnteredInError(approval.Reason, approval.RequestedBy);
+        if (marked.IsFailure)
+        {
+            return marked.Error!;
+        }
+
+        var another = await db.Set<DeathRecord>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .AnyAsync(d => d.PatientId == death.PatientId && d.Id != death.Id && d.Status != VitalReportStatus.EnteredInError, ct);
+        if (!another)
+        {
+            await deaths.ClearDeceasedAsync(death.PatientId, death.DiedAt, $"the death certificate {death.SerialNumber} was entered in error", ct);
+        }
+
+        var approver = currentUser.DisplayName ?? currentUser.UserName;
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "death.voided",
+            Fit($"Death certificate {death.SerialNumber}: confirmed → entered in error: {approval.Reason} (asked for by {approval.RequestedByName}, approved by {approver})", 1000))
+        {
+            PatientId = death.PatientId,
+            EntityType = nameof(DeathRecord),
+            EntityId = death.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new
+            {
+                before = "confirmed",
+                after = "entered in error",
+                deceasedCleared = !another,
+                confirmedBy = death.ConfirmedBy,
+                approval = approval.Id,
+                requestedBy = approval.RequestedBy,
+                approvedBy = currentUser.UserId,
+            },
+        });
+        return another
+            ? $"Death certificate {death.SerialNumber} entered in error; another certificate stands, so the patient stays deceased"
+            : $"Death certificate {death.SerialNumber} entered in error; the patient is no longer recorded as deceased";
+    }
+
+    private async Task<DateTimeOffset?> VoidWaitingSinceAsync(Guid deathId, CancellationToken ct) =>
+        (await approvals.WaitingSinceAsync(DeathCertificateVoidApproval.Key, nameof(DeathRecord), [deathId], ct)).TryGetValue(deathId, out var since)
+            ? since
+            : null;
+
+    private static string Fit(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
     /// <summary>The month's births by the local date of birth, without those entered in error.</summary>
     public async Task<BirthRegister> BirthRegisterAsync(int year, int month, CancellationToken ct)
@@ -473,6 +605,7 @@ internal sealed class VitalRegistrationService(
             ConfirmedBy = d.ConfirmedBy,
             ConfirmerRegistrationNumber = d.ConfirmerRegistrationNumber,
             ConfirmedAt = d.ConfirmedAt,
+            VoidWaitingSince = d.Status == VitalReportStatus.Recorded && d.IsConfirmed ? await VoidWaitingSinceAsync(d.Id, ct) : null,
         };
     }
 

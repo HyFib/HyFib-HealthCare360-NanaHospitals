@@ -24,3 +24,25 @@ internal sealed class DeathCertificateApproval(VitalRegistrationService vital) :
 
     public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => vital.ConfirmApprovedAsync(request, ct);
 }
+
+/// <summary>The confirmed certificate to mark entered in error, and the time of death whose deceased mark it took.</summary>
+public sealed record DeathVoidPayload(Guid DeathId, DateTimeOffset DiedAt);
+
+/// <summary>
+/// A death certificate a second doctor confirmed, marked entered in error (maker-checker, slice 8): making it took two
+/// doctors, so undoing it does too. Its certifier asks, with the reason, and another doctor who confirms certificates
+/// (often the one who confirmed it) agrees; never the one who asked. Until then the certificate and the patient's deceased
+/// status stand. A certificate reported to the Registrar is not voided here at all: a correction goes through the Registrar.
+/// </summary>
+internal sealed class DeathCertificateVoidApproval(VitalRegistrationService vital) : IApprovalAction
+{
+    public const string Key = "mrd.death_certificate_void";
+
+    public string Kind => Key;
+
+    public string Title => "Confirmed death certificate voided";
+
+    public string ApprovePermission => ClinicalPermissions.DeathsConfirm;
+
+    public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => vital.ApplyVoidAsync(request, ct);
+}

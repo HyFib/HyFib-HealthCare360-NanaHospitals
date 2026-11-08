@@ -221,7 +221,8 @@ internal static class SurgeryEndpoints
             p.Key switch { SafetyPhase.SignIn => b.SignInCompletedAt, SafetyPhase.TimeOut => b.TimeOutCompletedAt, _ => b.SignOutCompletedAt },
             p.Value.Select(i => ToItem(i, b.SafetyChecks.FirstOrDefault(e => e.Phase == p.Key && e.Key == i.Key))).ToList())).ToList(),
         b.Notes, b.CancelReason, b.PostponeReason, b.PostponeCount, b.ChargeStatus, b.ChargeError, b.Version,
-        b.NurseId, b.NurseId is { } n ? names.GetValueOrDefault(n) : null);
+        b.NurseId, b.NurseId is { } n ? names.GetValueOrDefault(n) : null, b.SiteLevel, b.Site.NeedsMarking, b.Counts, SurgicalCounts.Tally(b.Counts),
+        b.CountDiscrepancies, b.ChecklistVoids);
 
     private static ChecklistItemDto ToItem(ChecklistItemDefinition definition, ChecklistEntry? entry) => new(
         definition.Key, definition.Text, definition.AllowsNotApplicable, entry?.State ?? ChecklistItemState.Pending, entry?.Remarks,

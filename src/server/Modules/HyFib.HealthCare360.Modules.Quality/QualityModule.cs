@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Modules.Quality.Features.Mvpi;
 using HyFib.HealthCare360.Modules.Quality.Features.Risks;
 using HyFib.HealthCare360.Modules.Quality.Services;
 using HyFib.HealthCare360.Platform.Numbering;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace HyFib.HealthCare360.Modules.Quality;
 
@@ -55,6 +56,9 @@ public sealed class QualityModule : IModule
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<IncidentService>();
+
+        // Departments that cannot reference Quality raise their never events into the register (SpecialtyCare's theatre).
+        services.Replace(ServiceDescriptor.Scoped<IIncidentRegister, IncidentRegister>());
         services.AddScoped<CapaService>();
         services.AddScoped<ICapaRegister, CapaRegister>();
         services.AddScoped<AnonymousReportingScope>();

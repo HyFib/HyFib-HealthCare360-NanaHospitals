@@ -23,8 +23,13 @@ public sealed record CreateSurgeryBookingRequest(
     DateTimeOffset? ScheduledStart,
     DateTimeOffset? ScheduledEnd,
     string? Notes,
-    Guid? NurseId = null);
+    Guid? NurseId = null,
+    string? SiteLevel = null);
 
+/// <param name="ChangeReason">
+/// Why the side, level or procedure changes after the WHO Sign-in: required then, when only the operating surgeon or the
+/// anaesthetist may change it, and the Sign-in (and Time-out) are redone.
+/// </param>
 public sealed record UpdateSurgeryPlanRequest(
     Guid? ProcedureServiceItemId,
     string? ProcedureCode,
@@ -39,7 +44,9 @@ public sealed record UpdateSurgeryPlanRequest(
     DateOnly? PreferredDate,
     string? Notes,
     uint Version,
-    Guid? NurseId = null);
+    Guid? NurseId = null,
+    string? SiteLevel = null,
+    string? ChangeReason = null);
 
 public sealed record ScheduleSurgeryRequest(Guid TheatreId, DateTimeOffset ScheduledStart, DateTimeOffset ScheduledEnd, uint Version);
 
@@ -118,7 +125,13 @@ public sealed record SurgeryDetail(
     string? ChargeError,
     uint Version,
     Guid? NurseId = null,
-    string? NurseName = null);
+    string? NurseName = null,
+    string? SiteLevel = null,
+    bool SiteMarkingRequired = false,
+    IReadOnlyList<SurgicalCount>? Counts = null,
+    IReadOnlyList<CountTally>? CountTallies = null,
+    IReadOnlyList<CountDiscrepancy>? CountDiscrepancies = null,
+    IReadOnlyList<ChecklistVoid>? ChecklistVoids = null);
 
 public sealed class CreateSurgeryBookingRequestValidator : AbstractValidator<CreateSurgeryBookingRequest>
 {
@@ -128,6 +141,7 @@ public sealed class CreateSurgeryBookingRequestValidator : AbstractValidator<Cre
         RuleFor(x => x.ProcedureName).NotEmpty().WithMessage("Enter the planned procedure.").SafeText(300);
         RuleFor(x => x.ProcedureCode).MaximumLength(32);
         RuleFor(x => x.Diagnosis).SafeText(500);
+        RuleFor(x => x.SiteLevel).SafeText(60);
         RuleFor(x => x.Notes).SafeText(2000);
         RuleFor(x => x.AssistantIds).Must(a => a is null || a.Count <= 10).WithMessage("Add at most 10 assistants.");
         RuleFor(x => x)
@@ -145,6 +159,8 @@ public sealed class UpdateSurgeryPlanRequestValidator : AbstractValidator<Update
         RuleFor(x => x.ProcedureName).NotEmpty().SafeText(300);
         RuleFor(x => x.ProcedureCode).MaximumLength(32);
         RuleFor(x => x.Diagnosis).SafeText(500);
+        RuleFor(x => x.SiteLevel).SafeText(60);
+        RuleFor(x => x.ChangeReason).SafeText(500);
         RuleFor(x => x.Notes).SafeText(2000);
         RuleFor(x => x.AssistantIds).Must(a => a is null || a.Count <= 10).WithMessage("Add at most 10 assistants.");
     }

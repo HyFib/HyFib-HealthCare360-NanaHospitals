@@ -129,11 +129,24 @@ section of the doctor's worklist (EMR-01, see the Clinical module).
 | POST | `/initiate` | `inpatient.admissions.discharge` | `InitiateDischargeRequest` (expectedDischargeDate, notes) → `DischargeResult` (all due bed days are posted first) |
 | POST | `/revoke` | `inpatient.admissions.discharge` | `RevokeDischargeRequest` → `DischargeResult` |
 | GET | `/clearance` | discharge or admissions.read | → `DischargeClearanceDto` (from `IBillingStatusProvider`) |
-| POST | `/complete` | `inpatient.admissions.discharge` | `CompleteDischargeRequest` (dischargeType Normal/Referred/Lama/Dama/Absconded/Expired, dischargedAt ≤ 48 h back, notes — required for LAMA/DAMA/absconded, notifyPatient) → `DischargeResult`; 422 `discharge.in_theatre` while the stay has a surgery in pre-op or in progress (the detail names each case), then 422 `discharge.billing_pending` (`data.outstanding`) until Billing clears |
+| POST | `/complete` | `inpatient.admissions.discharge` | `CompleteDischargeRequest` (dischargeType Normal/Referred/Lama/Dama/Absconded/Expired, dischargedAt ≤ 48 h back, notes — required for LAMA/DAMA/absconded, notifyPatient; `againstAdvice` for LAMA/DAMA, `absconded` for Absconded, `certificatePendingPostMortem` for a medico-legal death) → 200 `DischargeResult`, or 202 `ApprovalRequestDto` for Absconded (`inpatient.absconded`) and a death pending post-mortem (`inpatient.expired_pending_postmortem`); 422 `discharge.in_theatre` while the stay has a surgery in pre-op or in progress (the detail names each case), then 422 `discharge.billing_pending` (`data.outstanding`) until Billing clears. Expired: 422 `discharge.death_certificate_required`, `discharge.death_certificate_unconfirmed`, `discharge.death_certificate_other_stay`, `discharge.postmortem_not_mlc`. Absconded: 422 `discharge.police_intimation_required` for a medico-legal stay. LAMA/DAMA: 422 `against_advice.doctor_required`, `against_advice.witness_is_doctor`, `witness.confirmation_unusable`. 409 `approval.already_requested` while a closing waits |
+| GET | `/death-certificate` | discharge or admissions.read | → `DischargeDeathCertificateDto` (the patient's certificate: number, `settled`, `forThisStay`, `confirmedBy`, `confirmationWaitingSince`, `medicoLegalStay`, `status` in words) |
 | GET | `/api/v1/inpatient/discharges/pending?wardId` | `inpatient.admissions.read` | → `PendingDischargeItem[]` |
 
 Rules: routine discharges (Normal, Referred, LAMA, DAMA) must be initiated and cleared by Billing; death and abscondence
-are recorded immediately without clearance and without the "discharged" SMS. Whatever the type, a discharge is not
+skip billing clearance and the "discharged" SMS (a body is not held for dues), the dues left recorded on the stay's
+declaration. Maker-checker (slice 8): Expired closes only with the patient's death certificate (MCCD) a second doctor
+confirmed (or reported, or at a facility that asks for no confirmation); a medico-legal death whose certificate waits
+for the post-mortem waits for a second doctor who confirms certificates (`mrd.deaths.confirm`). Absconded waits for the
+nurse in charge (`nursing.in_charge`), with the report (last seen, who searched, police and relatives told; for a
+medico-legal stay the police station and reference). LAMA and DAMA record who signed the form (patient, a relative named
+with the relationship, or "refused to sign"), the doctor who explained the risks (the user signed in when a doctor, or
+their confirmation at the screen, witness purpose `against_advice.doctor`) and a witness confirming with their own
+credentials (purpose `discharge.against_advice`, `nursing.chart`), never the doctor, and optionally the scanned form (a
+file id). The patient stays admitted while a closing waits (`GET /{id}` shows `pendingDischarge`); once closed, `GET
+/{id}` shows the `declaration` (form, witness, report, certificate, dues, who recorded and who approved). An approved
+closing bills the remaining bed days in its own transaction. Audited `discharge.expired`, `discharge.against_advice`,
+`discharge.absconded`, `discharge.expired_pending_postmortem`. Whatever the type, a discharge is not
 completed while another department still has the patient: before anything is charged or changed, `DischargeService`
 asks every `IDischargeHoldSource` (Platform contract; today SpecialtyCare's theatre: a surgery of the stay received in
 pre-op or under way), and refuses with the first hold's code and every hold's message. It asks again in its transaction,

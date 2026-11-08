@@ -102,7 +102,41 @@ public sealed record SurgeryMaterialDto(
     string? Brand,
     string? Specification,
     decimal? Mrp,
-    decimal? CeilingPrice);
+    decimal? CeilingPrice,
+    Guid? CorrectsMaterialId = null,
+    DateTimeOffset? SupersededAt = null,
+    Guid? SupersededByMaterialId = null,
+    string? CorrectionReason = null,
+    string? CorrectionRequestedByName = null,
+    string? CorrectionApprovedByName = null,
+    PendingMaterialCorrection? PendingCorrection = null);
+
+/// <summary>A correction of an implant or consumable line waiting for the OT in-charge: the request, what it changes, who asked and when.</summary>
+public sealed record PendingMaterialCorrection(Guid ApprovalId, string Summary, string RequestedBy, DateTimeOffset RequestedAt);
+
+/// <summary>
+/// A correction of an implant or consumable line recorded once the operation has started (maker-checker slice 10): the batch,
+/// serial number, expiry or quantity as they should have been, and why. The line is not changed: once a second person
+/// approves, it is kept as corrected and a line with these values replaces it, its charge and stock adjusted. A quantity of 0
+/// says the item was not used: the line is kept as withdrawn, its charge withdrawn and its stock returned.
+/// </summary>
+public sealed record CorrectSurgeryMaterialRequest(string? LotNumber, string? SerialNumber, DateOnly? ExpiryDate, decimal Quantity, string Reason);
+
+/// <summary>
+/// One swab, needle or instrument count, made by the signed-in member of the theatre team and witnessed by a second at the same
+/// screen: <see cref="WitnessConfirmationId"/> from <c>POST /api/v1/auth/witness</c> with purpose <c>ot.count</c> and the patient.
+/// <see cref="Number"/> is what was counted (initial, final) or what was added (additional).
+/// </summary>
+public sealed record RecordSurgicalCountRequest(CountCategory Category, CountStage Stage, int Number, Guid WitnessConfirmationId, string? Remarks = null);
+
+/// <summary>
+/// Settles a count that did not tally: found (where), an X-ray with no retained item (its result), or a retained item, which is
+/// raised in the Quality incident register as a never event with <see cref="Harm"/>.
+/// </summary>
+public sealed record ResolveCountDiscrepancyRequest(DiscrepancyResolution Resolution, string Note, string? XrayResult = null, IncidentHarm? Harm = null);
+
+/// <summary>The discrepancy as settled, with the incident raised for a retained item.</summary>
+public sealed record CountDiscrepancyResolved(Guid DiscrepancyId, DiscrepancyResolution Resolution, Guid? IncidentId, string? IncidentNumber);
 
 /// <summary>
 /// An implant or consumable used in a surgery. For an item from the OT store the item master gives its name, brand, maker,
@@ -272,5 +306,43 @@ public sealed class AddSurgeryMaterialRequestValidator : AbstractValidator<AddSu
             .Must(x => x.Kind != MaterialKind.Implant || x.SupplyItemId is not null || !string.IsNullOrWhiteSpace(x.LotNumber)
                        || !string.IsNullOrWhiteSpace(x.SerialNumber))
             .WithName("lotNumber").WithMessage("Enter the lot or serial number of the implant (needed for device recalls).");
+    }
+}
+
+public sealed class CorrectSurgeryMaterialRequestValidator : AbstractValidator<CorrectSurgeryMaterialRequest>
+{
+    public CorrectSurgeryMaterialRequestValidator()
+    {
+        RuleFor(x => x.LotNumber).MaximumLength(64);
+        RuleFor(x => x.SerialNumber).MaximumLength(64);
+        RuleFor(x => x.Quantity).GreaterThanOrEqualTo(0).LessThanOrEqualTo(1000);
+        RuleFor(x => x.Reason).NotEmpty().WithMessage("Give the reason for the correction.").SafeText(500);
+    }
+}
+
+public sealed class RecordSurgicalCountRequestValidator : AbstractValidator<RecordSurgicalCountRequest>
+{
+    public RecordSurgicalCountRequestValidator()
+    {
+        RuleFor(x => x.Category).IsInEnum();
+        RuleFor(x => x.Stage).IsInEnum();
+        RuleFor(x => x.Number).InclusiveBetween(0, SurgicalCounts.MaxNumber);
+        RuleFor(x => x.WitnessConfirmationId).NotEmpty().WithMessage("A second member of the team witnesses the count from their own sign-in.");
+        RuleFor(x => x.Remarks).SafeText(500);
+    }
+}
+
+public sealed class ResolveCountDiscrepancyRequestValidator : AbstractValidator<ResolveCountDiscrepancyRequest>
+{
+    public ResolveCountDiscrepancyRequestValidator()
+    {
+        RuleFor(x => x.Resolution).IsInEnum();
+        RuleFor(x => x.Note).NotEmpty().WithMessage("Describe how the count was settled.").SafeText(1000);
+        RuleFor(x => x.XrayResult).SafeText(1000);
+        RuleFor(x => x.XrayResult).NotEmpty().When(x => x.Resolution == DiscrepancyResolution.XrayNoRetainedItem)
+            .WithMessage("Enter the result of the X-ray.");
+        RuleFor(x => x.Harm).NotNull().When(x => x.Resolution == DiscrepancyResolution.RetainedItem)
+            .WithMessage("Grade the harm of the retained item for the incident report.");
+        RuleFor(x => x.Harm).IsInEnum().When(x => x.Harm is not null);
     }
 }

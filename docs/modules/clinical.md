@@ -542,6 +542,14 @@ certificate prints "NOT YET CONFIRMED" and the register shows it. While the requ
 corrected or marked entered in error (409 `death.confirmation_waiting`): the certifying doctor withdraws the request, or
 the confirming doctor returns it. A certificate saved before the facility asked for confirmations, or whose request was
 returned, withdrawn or ran out (seven days), is asked for again by its certifier (`POST /mrd/deaths/{id}/confirmation`).
+A certificate a second doctor confirmed is marked entered in error only when a second doctor agrees (maker-checker, slice
+8, kind `mrd.death_certificate_void`, `DeathCertificateVoidApproval`): its certifier asks with the reason (202), another
+holder of `mrd.deaths.confirm` approves, never the one who asked, and until then the certificate and the patient's
+deceased status stand, and the certificate is neither corrected nor reported (409 `death.void_waiting`; the record shows
+`voidWaitingSince`). Approved, it leaves the register and the deceased mark is taken back only when no other certificate
+stands for the patient (audited `death.voided` with both names). An unconfirmed certificate is marked at once, as before;
+a reported one not at all (`vital.reported`). The ward closing a stay as expired reads the certificate's standing through
+`DeathCertificateStandings` (Inpatient's `/discharge/death-certificate`).
 A facility with one doctor sets `mrd.deathCertificateConfirmation` to `false`: one doctor's certificate is then reported
 as certified.
 
@@ -555,7 +563,7 @@ as certified.
 | POST · PUT | `/mrd/deaths` · `/mrd/deaths/{id}` | mrd.deaths.certify | `SaveDeathRequest` (patient, time of death, age when no date of birth, causes, other conditions, manner, medico-legal, pregnancy, registration number; PUT with `version`). 409 `death.exists` for a second certificate; asks a second doctor's confirmation; PUT 409 `death.confirmation_waiting` while one waits |
 | POST | `/mrd/deaths/{id}/confirmation` | mrd.deaths.certify, only the certifying doctor | `AskDeathConfirmationRequest{version}`: asks for the certificate as it stands. 403 `vital.not_own_entry`; 422 `death.confirmation_off`, `death.confirmed`; 409 `approval.already_requested` |
 | POST | `/mrd/{births\|deaths}/{id}/report` | mrd.vital.register | `ReportToRegistrarRequest{reportedOn, registrationNumber, version}`; a death 422 `death.not_confirmed` until a second doctor confirms it |
-| POST | `/mrd/{births\|deaths}/{id}/entered-in-error` | as GET of one, and only by whoever recorded or certified it | `VitalEntryErrorRequest{reason, version}`: out of the register; a death's deceased mark is taken back; 403 `vital.not_own_entry`; 409 `death.confirmation_waiting` while a confirmation waits |
+| POST | `/mrd/{births\|deaths}/{id}/entered-in-error` | as GET of one, and only by whoever recorded or certified it | `VitalEntryErrorRequest{reason, version}`: out of the register; a death's deceased mark is taken back; 403 `vital.not_own_entry`; 409 `death.confirmation_waiting` while a confirmation waits. A confirmed death certificate → 202 `ApprovalRequestDto` (`mrd.death_certificate_void`), made when a second doctor approves; 409 `death.void_waiting` while it waits; 422 `vital.reported` once reported |
 
 #### Notifiable diseases (IDSP, `/idsp`, tag Disease Surveillance, permission `mrd.idsp.report`)
 A diagnosis (not a differential) whose ICD-10 code is on the IDSP list (`IdspDiseases`) opens a case on the week's
@@ -742,6 +750,11 @@ the user may not open shows initials.
   and records the disposition (`/disposition`): discharged, admitted, referred to another hospital (named), LAMA,
   absconded or died (these three with notes). The case leaves the board and the emergency visit closes; an admitted
   patient's stay goes on as the admission's own visit. A patient must be triaged first, unless they died or absconded.
+  LAMA goes with `againstAdvice` (maker-checker, slice 8; 400 without it, 422 `er.lama_witness_required`): who signed
+  the form (the patient, a relative named with the relationship, or "refused to sign"), the doctor who explained the
+  risks (the doctor signed in, or their confirmation at the screen, `against_advice.doctor`), a witness who confirms
+  with their own credentials (purpose `er.lama`, `clinical.er.triage`; never the doctor, `against_advice.witness_is_doctor`)
+  and optionally the scanned form; the case keeps them (`againstAdvice` on `EmergencyCaseDetail`).
 * **Medico-legal cases** (`PUT /cases/{id}/mlc`, `clinical.er.mlc`): the doctor enters the case in the MLC register,
   numbered `mlc-register`: who brought the patient, named unless a member of the public (a Good Samaritan is not
   compelled to give their name or other details, for the MLC form either: Motor Vehicles Act 1988, s.134A, and Central

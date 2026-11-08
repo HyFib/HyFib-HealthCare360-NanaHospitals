@@ -22,6 +22,9 @@ public enum SafetyPhase
 /// </summary>
 public static class SurgicalSafetyChecklist
 {
+    /// <summary>The Sign-out's count item: confirmed only from the recorded counts (<see cref="SurgicalCounts.CanConfirm"/>).</summary>
+    public const string CountsItem = "counts_correct";
+
     public static IReadOnlyDictionary<SafetyPhase, IReadOnlyList<ChecklistItemDefinition>> Phases { get; } =
         new Dictionary<SafetyPhase, IReadOnlyList<ChecklistItemDefinition>>
         {
@@ -48,7 +51,7 @@ public static class SurgicalSafetyChecklist
             [SafetyPhase.SignOut] =
             [
                 new("procedure_recorded", "Name of the procedure recorded", false),
-                new("counts_correct", "Instrument, sponge and needle counts are correct", true),
+                new(CountsItem, "Instrument, sponge and needle counts are correct", true),
                 new("specimens_labelled", "Specimens labelled (labels read aloud, including patient name)", true),
                 new("equipment_problems", "Equipment problems identified and addressed", false),
                 new("recovery_concerns", "Key concerns for recovery and management reviewed by surgeon, anaesthetist and nurse", false),

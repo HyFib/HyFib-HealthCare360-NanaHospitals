@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
 
@@ -56,13 +57,14 @@ public static class TelehealthQueries
                 p.Id, p.Role, p.DisplayName, p.JoinedAt, p.AdmittedAt, p.LeftAt, p.AudioOnly, p.WorstRoundTripMs, p.MaxPacketLossPercent, p.LowestBitrateKbps))
             .ToListAsync(ct);
         var messageCount = await db.Set<TelehealthMessage>().CountAsync(m => m.SessionId == id, ct);
+        var consentGivenAt = await TelehealthConsents.GivenAtAsync(db, row.Session.PatientId, ct);
 
         var x = row.Session;
         return new TelehealthSessionDetail(
             x.Id, x.FacilityId, x.AppointmentId, x.AppointmentNumber, x.PatientId, row.Uhid, row.FullName, row.Gender,
             row.DateOfBirth is { } dob ? Age.Format(dob, today) : null, Phone.Mask(row.Phone), x.PractitionerId, row.PractitionerName ?? "Doctor",
             x.DepartmentId, x.VisitId, x.Status, x.ScheduledStartAt, x.ScheduledEndAt, x.PatientWaitingSince, x.StartedAt, x.EndedAt, x.DurationSeconds,
-            x.LinkSentAt, x.LinkSendCount, x.JoinTokenExpiresAt, x.RecordingConsent, x.RecordingConsentAt, x.AudioOnlyUsed, x.QualityNotes, x.CancelReason,
+            x.LinkSentAt, x.LinkSendCount, x.JoinTokenExpiresAt, x.RecordingConsent, x.RecordingConsentAt, consentGivenAt, x.AudioOnlyUsed, x.QualityNotes, x.CancelReason,
             messageCount, participants, x.Version);
     }
 

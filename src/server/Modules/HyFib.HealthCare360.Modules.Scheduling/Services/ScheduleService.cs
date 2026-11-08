@@ -234,6 +234,10 @@ public sealed class ScheduleService(HospitalDbContext db, ICurrentUser currentUs
             .ToList();
     }
 
+    /// <summary>The open future bookings a leave or a block takes away (an extra session strands none).</summary>
+    public Task<IReadOnlyList<AffectedAppointment>> StrandedByAsync(ScheduleException exception, CancellationToken ct) =>
+        exception.RemovesSlots ? BlockedBookingsAsync(exception, ct) : Task.FromResult<IReadOnlyList<AffectedAppointment>>([]);
+
     private async Task<IReadOnlyList<AffectedAppointment>> BlockedBookingsAsync(ScheduleException exception, CancellationToken ct)
     {
         var from = _calendar.StartOfDay(exception.FromDate);

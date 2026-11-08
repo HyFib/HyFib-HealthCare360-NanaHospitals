@@ -12,6 +12,10 @@ internal sealed class EmergencyCaseConfiguration : IEntityTypeConfiguration<Emer
         b.Property(x => x.DisposedByName).HasMaxLength(200);
         b.Property(x => x.DispositionNotes).HasMaxLength(1000);
         b.Property(x => x.ReferredTo).HasMaxLength(200);
+        b.Property(x => x.LamaSignatoryName).HasMaxLength(200);
+        b.Property(x => x.LamaRelationship).HasMaxLength(64);
+        b.Property(x => x.LamaDoctorName).HasMaxLength(200);
+        b.Property(x => x.LamaWitnessName).HasMaxLength(200);
         b.Ignore(x => x.IsOpen);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Visit>().WithMany().HasForeignKey(x => x.VisitId).OnDelete(DeleteBehavior.Restrict);

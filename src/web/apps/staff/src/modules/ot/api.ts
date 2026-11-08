@@ -1,6 +1,7 @@
 import { isApiError, type Gender, type LookupItem, type PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { PatientSummary } from '@/modules/patients/api';
 import type { ChargeOutcome, ChargeStatus } from './shared/types';
 
@@ -45,6 +46,19 @@ export type AirwayDevice = (typeof AIRWAY_DEVICES)[number];
 
 export const SPECIMEN_DESTINATIONS = ['Histopathology', 'Microbiology', 'Cytology', 'FrozenSection', 'Other'] as const;
 export type SpecimenDestination = (typeof SPECIMEN_DESTINATIONS)[number];
+
+export const COUNT_CATEGORIES = ['Swabs', 'Needles', 'Instruments'] as const;
+export type CountCategory = (typeof COUNT_CATEGORIES)[number];
+
+export const COUNT_STAGES = ['Initial', 'Additional', 'Final'] as const;
+export type CountStage = (typeof COUNT_STAGES)[number];
+
+export const DISCREPANCY_RESOLUTIONS = ['Found', 'XrayNoRetainedItem', 'RetainedItem'] as const;
+export type DiscrepancyResolution = (typeof DISCREPANCY_RESOLUTIONS)[number];
+
+/** Harm graded as NABH incident reporting grades it (server `IncidentHarm`). */
+export const INCIDENT_HARMS = ['NearMiss', 'NoHarm', 'Mild', 'Moderate', 'Severe', 'Death'] as const;
+export type IncidentHarm = (typeof INCIDENT_HARMS)[number];
 
 export const MATERIAL_KINDS = ['Implant', 'Consumable'] as const;
 export type MaterialKind = (typeof MATERIAL_KINDS)[number];
@@ -248,6 +262,108 @@ export interface SurgeryDetail {
   /** The assisting nurse / OT in-charge (a nurse or OT technician from the practitioner master). */
   nurseId: string | null;
   nurseName: string | null;
+  /** The level or digit operated on (a spinal level, a finger, a tooth), where a side alone does not say where. */
+  siteLevel?: string | null;
+  /** A side or level is booked: the site is marked by the surgeon, never "not applicable". */
+  siteMarkingRequired?: boolean;
+  counts?: SurgicalCount[] | null;
+  countTallies?: CountTally[] | null;
+  countDiscrepancies?: CountDiscrepancy[] | null;
+  /** WHO checklist phases voided by a change of side or procedure after the Sign-in. */
+  checklistVoids?: ChecklistVoid[] | null;
+}
+
+/** One count, by one member of the theatre team and witnessed by a second at the same screen. */
+export interface SurgicalCount {
+  id: string;
+  category: CountCategory;
+  stage: CountStage;
+  number: number;
+  countedByUserId: string | null;
+  countedByName: string;
+  witnessUserId: string;
+  witnessName: string;
+  at: string;
+  remarks: string | null;
+}
+
+/** A category's counts so far: what is expected back, and whether the final count tallies. */
+export interface CountTally {
+  category: CountCategory;
+  initial: number | null;
+  added: number;
+  final: number | null;
+  expected: number | null;
+  isFinal: boolean;
+  tallies: boolean;
+}
+
+/** A final count that did not tally; open until it is settled, and the Sign-out waits for it. */
+export interface CountDiscrepancy {
+  id: string;
+  category: CountCategory;
+  expected: number;
+  counted: number;
+  finalCountId: string;
+  openedAt: string;
+  resolution: DiscrepancyResolution | null;
+  resolutionNote: string | null;
+  xrayResult: string | null;
+  incidentId: string | null;
+  incidentNumber: string | null;
+  resolvedByUserId: string | null;
+  resolvedByName: string | null;
+  resolvedAt: string | null;
+  isOpen: boolean;
+}
+
+export interface ChecklistVoid {
+  at: string;
+  byUserId: string | null;
+  byName: string;
+  reason: string;
+  before: string;
+  after: string;
+  phases: SafetyPhase[];
+}
+
+export interface RecordSurgicalCountRequest {
+  category: CountCategory;
+  stage: CountStage;
+  number: number;
+  /** From `POST /api/v1/auth/witness`, purpose `ot.count`, by the second member of the team at this screen. */
+  witnessConfirmationId: string;
+  remarks: string | null;
+}
+
+export interface ResolveCountDiscrepancyRequest {
+  resolution: DiscrepancyResolution;
+  note: string;
+  xrayResult: string | null;
+  harm: IncidentHarm | null;
+}
+
+export interface CountDiscrepancyResolved {
+  discrepancyId: string;
+  resolution: DiscrepancyResolution;
+  incidentId: string | null;
+  incidentNumber: string | null;
+}
+
+/** A correction of a line after the operation started: waits for the OT in-charge; 0 says the item was not used. */
+export interface CorrectSurgeryMaterialRequest {
+  lotNumber: string | null;
+  serialNumber: string | null;
+  expiryDate: string | null;
+  quantity: number;
+  reason: string;
+}
+
+export interface PendingMaterialCorrection {
+  approvalId: string;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface CreateSurgeryBookingRequest {
@@ -270,6 +386,7 @@ export interface CreateSurgeryBookingRequest {
   scheduledEnd: string | null;
   notes: string | null;
   nurseId: string | null;
+  siteLevel?: string | null;
 }
 
 export interface UpdateSurgeryPlanRequest {
@@ -287,6 +404,9 @@ export interface UpdateSurgeryPlanRequest {
   notes: string | null;
   version: number;
   nurseId: string | null;
+  siteLevel?: string | null;
+  /** Required when the side, level or procedure changes after the WHO Sign-in (operating surgeon or anaesthetist only). */
+  changeReason?: string | null;
 }
 
 export interface ScheduleSurgeryRequest {
@@ -448,6 +568,15 @@ export interface SurgeryMaterialDto {
   mrp: number | null;
   /** The NPPA ceiling price of a unit of a price-controlled implant. */
   ceilingPrice: number | null;
+  /** The line this one corrects; the original is kept, superseded. */
+  correctsMaterialId?: string | null;
+  /** When an approved correction replaced this line (its charge withdrawn, its stock returned). */
+  supersededAt?: string | null;
+  supersededByMaterialId?: string | null;
+  correctionReason?: string | null;
+  correctionRequestedByName?: string | null;
+  correctionApprovedByName?: string | null;
+  pendingCorrection?: PendingMaterialCorrection | null;
 }
 
 /**
@@ -672,6 +801,16 @@ export const otApi = {
     api.post<SurgeryMaterialDto>(`/api/v1/ot/bookings/${id}/materials`, request),
   removeMaterial: (id: string, materialId: string) =>
     api.delete<void>(`/api/v1/ot/bookings/${id}/materials/${materialId}`),
+  /** 202: the correction waits for the OT in-charge (`ot.materials.approve`), never the one who asked. */
+  correctMaterial: (id: string, materialId: string, request: CorrectSurgeryMaterialRequest) =>
+    api.post<ApprovalRequestDto>(`/api/v1/ot/bookings/${id}/materials/${materialId}/corrections`, request),
+  recordCount: (id: string, request: RecordSurgicalCountRequest) =>
+    api.post<void>(`/api/v1/ot/bookings/${id}/counts`, request),
+  resolveDiscrepancy: (id: string, discrepancyId: string, request: ResolveCountDiscrepancyRequest) =>
+    api.post<CountDiscrepancyResolved>(
+      `/api/v1/ot/bookings/${id}/counts/discrepancies/${discrepancyId}/resolve`,
+      request,
+    ),
 };
 
 /** Procedures from the service catalogue (Surgery category), without the OT time/fee items. */

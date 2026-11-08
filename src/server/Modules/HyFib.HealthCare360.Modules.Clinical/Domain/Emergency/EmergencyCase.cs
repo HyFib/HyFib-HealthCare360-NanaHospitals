@@ -49,6 +49,22 @@ public sealed class EmergencyCase : AuditableEntity, IFacilityScoped
     /// <summary>The hospital a referred patient goes to.</summary>
     public string? ReferredTo { get; private set; }
 
+    /// <summary>
+    /// A patient who left against medical advice (LAMA): who signed the form, or that nobody would; the doctor who explained
+    /// the risks; and the witness, another member of staff who confirmed with their own credentials (maker-checker, slice 8).
+    /// </summary>
+    public AgainstAdviceSignatory? LamaSignedBy { get; private set; }
+
+    public string? LamaSignatoryName { get; private set; }
+    public string? LamaRelationship { get; private set; }
+    public Guid? LamaDoctorUserId { get; private set; }
+    public string? LamaDoctorName { get; private set; }
+    public Guid? LamaWitnessUserId { get; private set; }
+    public string? LamaWitnessName { get; private set; }
+
+    /// <summary>The scanned LAMA form, a file of the document store.</summary>
+    public Guid? LamaSignedFormFileId { get; private set; }
+
     public bool IsOpen => Disposition is null;
 
     public Result Triage(EsiTriage triage, ArrivalMode arrivalMode)
@@ -81,7 +97,11 @@ public sealed class EmergencyCase : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    public Result Dispose(EmergencyDisposition disposition, string? notes, string? referredTo, string byName, DateTimeOffset now)
+    /// <summary>
+    /// Where the patient goes. A patient leaving against medical advice goes with the declaration: who signed, the doctor who
+    /// explained the risks and a witness (<paramref name="againstAdvice"/>).
+    /// </summary>
+    public Result Dispose(EmergencyDisposition disposition, string? notes, string? referredTo, string byName, DateTimeOffset now, AgainstAdviceRecord? againstAdvice = null)
     {
         if (!IsOpen)
         {
@@ -106,6 +126,19 @@ public sealed class EmergencyCase : AuditableEntity, IFacilityScoped
                 EmergencyDisposition.Absconded => "Note when the patient was last seen and who was informed.",
                 _ => "Note the time and cause of death as declared.",
             });
+        }
+
+        if (disposition == EmergencyDisposition.Lama && againstAdvice is null)
+        {
+            return Error.Rule("er.lama_witness_required",
+                "Record who signed the LAMA form (or that the patient refused to sign), the doctor who explained the risks and a witness who confirms with their own user name and password.");
+        }
+
+        if (disposition == EmergencyDisposition.Lama)
+        {
+            (LamaSignedBy, LamaSignatoryName, LamaRelationship) = (againstAdvice!.SignedBy, againstAdvice.SignatoryName, againstAdvice.Relationship);
+            (LamaDoctorUserId, LamaDoctorName) = (againstAdvice.DoctorUserId, againstAdvice.DoctorName);
+            (LamaWitnessUserId, LamaWitnessName, LamaSignedFormFileId) = (againstAdvice.WitnessUserId, againstAdvice.WitnessName, againstAdvice.SignedFormFileId);
         }
 
         Disposition = disposition;

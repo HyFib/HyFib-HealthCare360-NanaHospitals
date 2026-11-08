@@ -70,6 +70,7 @@ public sealed record TelehealthSessionDetail(
     DateTimeOffset? JoinTokenExpiresAt,
     bool RecordingConsent,
     DateTimeOffset? RecordingConsentAt,
+    DateTimeOffset? TelehealthConsentGivenAt,
     bool AudioOnlyUsed,
     string? QualityNotes,
     string? CancelReason,
@@ -100,6 +101,13 @@ public sealed record EndTelehealthSessionRequest(string? QualityNotes);
 public sealed record CancelTelehealthSessionRequest(string Reason);
 
 public sealed record RecordingConsentRequest(bool Granted);
+
+/// <summary>
+/// The patient's consent to be seen by video, given by voice to the doctor at the start of the call (Telemedicine Practice
+/// Guidelines 2020, s.3.3): <paramref name="Notes"/> says what the patient was told (that this is a video consultation,
+/// its limits, that a physical examination may still be needed, how the record is kept) and that they agreed.
+/// </summary>
+public sealed record TelehealthConsentRequest(string Notes);
 
 public sealed record PostTelehealthMessageRequest(string Text);
 
@@ -160,6 +168,12 @@ public sealed class CreateTelehealthSessionRequestValidator : AbstractValidator<
         RuleFor(x => x.ScheduledStartAt).NotNull().When(x => x.AppointmentId is null).WithMessage("Choose the consultation time.");
         RuleFor(x => x.DurationMinutes).InclusiveBetween(5, 120);
     }
+}
+
+public sealed class TelehealthConsentRequestValidator : AbstractValidator<TelehealthConsentRequest>
+{
+    public TelehealthConsentRequestValidator() =>
+        RuleFor(x => x.Notes).NotEmpty().WithMessage("Note what the patient was told and that they agreed to be seen by video.").SafeText(800);
 }
 
 public sealed class EndTelehealthSessionRequestValidator : AbstractValidator<EndTelehealthSessionRequest>

@@ -70,6 +70,20 @@ describe('patients in hospital', SCREEN_TESTS, () => {
     expect(sunil.getByText(`NH26000126 · ${WARD.name} · GWM-07`)).toBeInTheDocument();
   });
 
+  it('shows a patient in casualty with the triage level and the stage of their casualty stay', async () => {
+    await openBoard();
+
+    const senthil = within(row('Senthil Kumar'));
+    const stay = senthil.getByRole('list', { name: 'Casualty visit ER2600031' });
+    expect(within(stay).getAllByRole('listitem')).toHaveLength(5);
+    const current = within(stay)
+      .getAllByRole('listitem')
+      .find((stage) => stage.getAttribute('aria-current') === 'step');
+    expect(current).toHaveTextContent('Seen by doctor');
+    expect(current).toHaveTextContent('30 min');
+    expect(senthil.getByText('NH26000127 · Casualty · ESI 2')).toBeInTheDocument();
+  });
+
   it('names a restricted patient by initials, as the server sends them, and says the record is restricted', async () => {
     await openBoard();
 
@@ -79,7 +93,7 @@ describe('patients in hospital', SCREEN_TESTS, () => {
     expect(screen.queryByText('Ravi Shankar')).not.toBeInTheDocument();
   });
 
-  it('asks the server for the out-patients or in-patients, the department and the ward chosen', async () => {
+  it('asks the server for the out-patients, casualty or in-patients, the department and the ward chosen', async () => {
     const user = userEvent.setup();
     await openBoard();
     expect(boardRequests()[0]?.get('kind')).toBeNull();
@@ -94,6 +108,14 @@ describe('patients in hospital', SCREEN_TESTS, () => {
     // Out-patients have no ward: the filter goes, and so does the ward chosen.
     await user.selectOptions(screen.getByRole('combobox', { name: 'Show' }), 'Outpatient');
     await waitFor(() => expect(boardRequests().at(-1)?.get('kind')).toBe('Outpatient'));
+    expect(boardRequests().at(-1)?.get('wardId')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Ward' })).not.toBeInTheDocument();
+
+    // Casualty has no ward either.
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Show' }), 'Inpatient');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Ward' }), WARD.id);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Show' }), 'Emergency');
+    await waitFor(() => expect(boardRequests().at(-1)?.get('kind')).toBe('Emergency'));
     expect(boardRequests().at(-1)?.get('wardId')).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Ward' })).not.toBeInTheDocument();
   });

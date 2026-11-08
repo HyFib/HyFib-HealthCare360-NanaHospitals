@@ -145,7 +145,9 @@ internal static class VitalRegistrationEndpoints
             return Error.NotFound("Death", id).ToProblem();
         }
 
-        return await Refused(access, death.PatientId, ct) ?? (await vital.DeathInErrorAsync(id, request, ct)).ToOk();
+        // Marked at once (200), or, for a certificate a second doctor confirmed, asked for (202 with the request).
+        return await Refused(access, death.PatientId, ct) ?? (await vital.DeathInErrorAsync(id, request, ct)).ToHttpResult(outcome =>
+            outcome.Asked is { } asked ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked) : TypedResults.Ok(outcome.Death));
     }
 
     private static async Task<IResult> BirthDocument(

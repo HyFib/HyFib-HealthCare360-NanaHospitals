@@ -4,6 +4,10 @@ import type {
   AnaesthesiaType,
   AsaGrade,
   ConflictKind,
+  CountCategory,
+  CountStage,
+  DiscrepancyResolution,
+  IncidentHarm,
   Laterality,
   MaterialKind,
   SafetyPhase,
@@ -140,4 +144,31 @@ export const conflictLabel: Record<ConflictKind, string> = {
   Surgeon: 'The surgeon is already operating',
   Anaesthetist: 'The anaesthetist is already allocated',
   Patient: 'The patient already has a surgery',
+};
+
+export const countCategoryLabel: Record<CountCategory, string> = {
+  Swabs: 'Swabs',
+  Needles: 'Needles',
+  Instruments: 'Instruments',
+};
+
+export const countStageLabel: Record<CountStage, string> = {
+  Initial: 'Initial count',
+  Additional: 'Added during the operation',
+  Final: 'Final count',
+};
+
+export const discrepancyResolutionLabel: Record<DiscrepancyResolution, string> = {
+  Found: 'Found',
+  XrayNoRetainedItem: 'X-ray taken: no retained item',
+  RetainedItem: 'Retained item: report a never event',
+};
+
+export const incidentHarmLabel: Record<IncidentHarm, string> = {
+  NearMiss: 'Near miss',
+  NoHarm: 'No harm',
+  Mild: 'Mild harm',
+  Moderate: 'Moderate harm',
+  Severe: 'Severe harm',
+  Death: 'Death',
 };

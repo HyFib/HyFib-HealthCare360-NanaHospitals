@@ -25,6 +25,10 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
     public string? ProcedureCode { get; set; }
     public string ProcedureName { get; set; } = string.Empty;
     public Laterality Laterality { get; set; }
+
+    /// <summary>The level or digit operated on, where a side alone does not say where (a spinal level, a finger, a tooth).</summary>
+    public string? SiteLevel { get; set; }
+
     public string? Diagnosis { get; set; }
 
     public Guid? SurgeonId { get; set; }
@@ -65,6 +69,15 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
     public DateTimeOffset? TimeOutCompletedAt { get; set; }
     public DateTimeOffset? SignOutCompletedAt { get; set; }
 
+    /// <summary>The swab, needle and instrument counts, each made by two members of the team.</summary>
+    public List<SurgicalCount> Counts { get; set; } = [];
+
+    /// <summary>Final counts that did not tally, and how each was settled.</summary>
+    public List<CountDiscrepancy> CountDiscrepancies { get; set; } = [];
+
+    /// <summary>WHO checklist phases voided by a change of side or procedure after the Sign-in, with who changed it and why.</summary>
+    public List<ChecklistVoid> ChecklistVoids { get; set; } = [];
+
     public string? Notes { get; set; }
     public string? CancelReason { get; set; }
     public string? PostponeReason { get; set; }
@@ -77,6 +90,15 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
     public bool RequiresAnaesthetist => !AnaesthesiaTypes.GivenBySurgeon(AnaesthesiaType);
 
     public bool IsClosed => Status is SurgeryStatus.Completed or SurgeryStatus.Cancelled;
+
+    /// <summary>The procedure and where on the patient, as the WHO checklist confirms it.</summary>
+    public SurgicalSite Site => new(ProcedureServiceItemId, ProcedureName, Laterality, SiteLevel);
+
+    /// <summary>
+    /// Implants and consumables are corrected, not removed, once the operation has started (maker-checker slice 10): they have
+    /// been used, charged and taken from stock, and an implant is in the patient.
+    /// </summary>
+    public bool MaterialsLocked => StartedAt is not null || SignOutCompletedAt is not null || Status is SurgeryStatus.InProgress or SurgeryStatus.Completed;
 
     /// <summary>Minutes the patient occupied the theatre (wheels-in to wheels-out), used for OT charges and utilisation.</summary>
     public double? MinutesInTheatre => CompletedAt is { } end && (InRoomAt ?? StartedAt) is { } start ? (end - start).TotalMinutes : null;
@@ -141,7 +163,10 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    public Result RecordPreOp(IReadOnlyList<ChecklistInput> items, StaffStamp by)
+    /// <param name="canMarkSite">
+    /// The signed-in user is a surgeon (holds the permission to operate), who may record that they marked the site.
+    /// </param>
+    public Result RecordPreOp(IReadOnlyList<ChecklistInput> items, StaffStamp by, bool canMarkSite = false)
     {
         if (Status is not (SurgeryStatus.Requested or SurgeryStatus.Scheduled or SurgeryStatus.InPreOp or SurgeryStatus.Postponed))
         {
@@ -153,7 +178,13 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
             return Error.Rule("surgery.preop_locked", "The pre-operative checklist is locked after the WHO Sign-in.");
         }
 
-        return PreOpChecklist.Apply(PreOpChecks, items, by);
+        var marking = SiteMarking.CheckPreOp(Site, PreOpChecks, items, canMarkSite);
+        if (marking.IsFailure)
+        {
+            return marking;
+        }
+
+        return PreOpChecklist.Apply(PreOpChecks, SiteMarking.KeepMark(PreOpChecks, items), by);
     }
 
     /// <summary>Records WHO checklist items for one phase, enforcing the phase order and the surgery state.</summary>
@@ -184,6 +215,25 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
         if (phase == SafetyPhase.SignIn && !PreOpChecklist.IsComplete(PreOpChecks))
         {
             return Error.Rule("surgery.preop_incomplete", "Complete the pre-operative checklist before the WHO Sign-in.");
+        }
+
+        if (phase == SafetyPhase.SignIn)
+        {
+            var marked = SiteMarking.CheckSignIn(Site, PreOpChecks, items);
+            if (marked.IsFailure)
+            {
+                return marked;
+            }
+        }
+
+        if (phase == SafetyPhase.SignOut)
+        {
+            var counted = SurgicalCounts.CanConfirm(
+                items.FirstOrDefault(i => i.Key == SurgicalSafetyChecklist.CountsItem)?.State ?? ChecklistItemState.Pending, Counts, CountDiscrepancies);
+            if (counted.IsFailure)
+            {
+                return counted;
+            }
         }
 
         var result = SurgicalSafetyChecklist.Apply(SafetyChecks, phase, items, by);
@@ -248,6 +298,119 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
         Raise(new SurgeryCompleted(Id, BookingNumber, FacilityId, PatientId, AdmissionId, VisitId, ProcedureCode, ProcedureName, Side(Laterality),
             SurgeonId, StartedAt, now));
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Changes the side or procedure after the WHO Sign-in (checked by <see cref="SiteChangeRule"/> before the plan is
+    /// applied): the Sign-in, and the Time-out if done, no longer stand, because what they confirmed has changed. Their
+    /// confirmations are kept in <see cref="ChecklistVoids"/> and the phases are redone. A mark on the old side or level is no
+    /// longer the mark, so the pre-op site marking is redone too.
+    /// </summary>
+    public ChecklistVoid VoidChecklistForSiteChange(SurgicalSite before, string reason, StaffStamp by)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        var phases = new[] { SafetyPhase.SignIn, SafetyPhase.TimeOut, SafetyPhase.SignOut }.Where(IsPhaseComplete).ToList();
+        var voided = SafetyChecks.Where(e => e.State != ChecklistItemState.Pending).ToList();
+        var record = new ChecklistVoid(by.At, by.UserId, by.Name, reason.Trim(), before.Words, Site.Words, phases, voided);
+        ChecklistVoids.Add(record);
+        SafetyChecks = SurgicalSafetyChecklist.NewEntries();
+        SignInCompletedAt = TimeOutCompletedAt = SignOutCompletedAt = null;
+        return record;
+    }
+
+    /// <summary>
+    /// After any change of side or level, a site mark already recorded (or recorded as not applicable) no longer stands: it
+    /// marked another place. Called after the plan is applied.
+    /// </summary>
+    public void ResetSiteMarkingIfMoved(SurgicalSite before)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        if (!before.PlaceDiffers(Site))
+        {
+            return;
+        }
+
+        var index = PreOpChecks.FindIndex(e => e.Key == SiteMarking.Item);
+        if (index >= 0 && PreOpChecks[index].State != ChecklistItemState.Pending)
+        {
+            PreOpChecks[index] = new ChecklistEntry(SiteMarking.Item, ChecklistItemState.Pending, null, null, null, null);
+        }
+    }
+
+    /// <summary>Records one count, witnessed; a final count that does not tally opens a discrepancy.</summary>
+    public Result<CountDiscrepancy?> RecordCount(SurgicalCount count)
+    {
+        ArgumentNullException.ThrowIfNull(count);
+        var allowed = SurgicalCounts.CanRecord(Status, SignOutCompletedAt is not null, Counts, count.Category, count.Stage, count.Number);
+        if (allowed.IsFailure)
+        {
+            return allowed.Error!;
+        }
+
+        Counts.Add(count);
+        if (count.Stage != CountStage.Final)
+        {
+            return (CountDiscrepancy?)null;
+        }
+
+        var tally = SurgicalCounts.Tally(Counts).Single(t => t.Category == count.Category);
+        if (tally.Tallies)
+        {
+            return (CountDiscrepancy?)null;
+        }
+
+        var discrepancy = new CountDiscrepancy(Guid.CreateVersion7(), count.Category, tally.Expected ?? 0, count.Number, count.Id, count.At);
+        CountDiscrepancies.Add(discrepancy);
+        return discrepancy;
+    }
+
+    /// <summary>
+    /// Settles an open discrepancy. Found needs where; an X-ray needs its result; a retained item needs the incident it was
+    /// reported as (raised by the caller in the Quality register before this is saved).
+    /// </summary>
+    public Result<CountDiscrepancy> ResolveDiscrepancy(
+        Guid discrepancyId, DiscrepancyResolution resolution, string note, string? xrayResult, (Guid Id, string Number)? incident, StaffStamp by)
+    {
+        var index = CountDiscrepancies.FindIndex(d => d.Id == discrepancyId);
+        if (index < 0)
+        {
+            return Error.NotFound(nameof(CountDiscrepancy), discrepancyId);
+        }
+
+        var open = CountDiscrepancies[index];
+        if (!open.IsOpen)
+        {
+            return Error.Rule("surgery.discrepancy_settled", $"The discrepancy in the {SurgicalCounts.Describe(open.Category)} count is already settled.");
+        }
+
+        if (string.IsNullOrWhiteSpace(note))
+        {
+            return Error.Field("note", resolution == DiscrepancyResolution.Found ? "Say where the item was found." : "Describe what was done.");
+        }
+
+        if (resolution == DiscrepancyResolution.XrayNoRetainedItem && string.IsNullOrWhiteSpace(xrayResult))
+        {
+            return Error.Field("xrayResult", "Enter the result of the X-ray.");
+        }
+
+        if (resolution == DiscrepancyResolution.RetainedItem && incident is null)
+        {
+            return Error.Rule("surgery.discrepancy_incident", "A retained item is reported in the incident register first.");
+        }
+
+        var settled = open with
+        {
+            Resolution = resolution,
+            ResolutionNote = note.Trim(),
+            XrayResult = string.IsNullOrWhiteSpace(xrayResult) ? null : xrayResult.Trim(),
+            IncidentId = incident?.Id,
+            IncidentNumber = incident?.Number,
+            ResolvedByUserId = by.UserId,
+            ResolvedByName = by.Name,
+            ResolvedAt = by.At,
+        };
+        CountDiscrepancies[index] = settled;
+        return settled;
     }
 
     /// <summary>
