@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.VitalRegistration;
 
@@ -75,7 +76,19 @@ public sealed record DeathRecordDto(
     public string? ConfirmerRegistrationNumber { get; init; }
 
     public DateTimeOffset? ConfirmedAt { get; init; }
+
+    /// <summary>
+    /// When the certifier asked a second doctor to let them void this confirmed certificate; null when none waits. Until it
+    /// is approved the certificate and the deceased status stand (maker-checker, slice 8).
+    /// </summary>
+    public DateTimeOffset? VoidWaitingSince { get; init; }
 }
+
+/// <summary>
+/// A death certificate marked entered in error: at once when no second doctor has confirmed it (<paramref name="Death"/>),
+/// or, when one has, the request for a second doctor to agree (<paramref name="Asked"/>, answered 202).
+/// </summary>
+public sealed record DeathInErrorOutcome(DeathRecordDto Death, ApprovalRequestDto? Asked);
 
 /// <summary>A birth in the hospital. <paramref name="Version"/>: when correcting it.</summary>
 public sealed record SaveBirthRequest(

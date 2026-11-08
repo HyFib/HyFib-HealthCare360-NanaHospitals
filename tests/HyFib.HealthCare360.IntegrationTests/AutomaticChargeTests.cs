@@ -149,8 +149,7 @@ public sealed class AutomaticChargeTests(HospitalServer server)
         // The patient absconds: the stay ends first, and its days are posted after. Billing refuses yesterday's (the bed's
         // service out of use outside the services master).
         await SetInUseAsync(bedCharge.Id, false);
-        await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/complete",
-            new CompleteDischargeRequest(DischargeType.Absconded, null, "Left the ward unseen; the family and the police were told", NotifyPatient: false));
+        await server.AbscondAsync(nurse, admission.Id, "Left the ward unseen; the family and the police were told");
         (await RefusalsAsync(admission.Id)).ShouldHaveSingleItem().ServiceItemId.ShouldBe(bedCharge.Id);
 
         // As if it ended five days ago, past the days a discharged stay is revisited: its days are posted again all the

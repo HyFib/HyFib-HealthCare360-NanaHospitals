@@ -1,4 +1,6 @@
+using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Domain.Emergency;
+using HyFib.HealthCare360.Modules.Clinical.Services;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Emergency;
 
@@ -112,7 +114,11 @@ public sealed record EmergencyCaseDetail(
     string? ReferredTo,
     IReadOnlyList<EsiTriageDto> Triages,
     MlcDto? Mlc,
-    uint Version);
+    uint Version,
+    AgainstAdviceDto? AgainstAdvice = null);
+
+/// <summary>A patient who left against medical advice: who signed (or "refused to sign"), the doctor who explained the risks, the witness and the scanned form.</summary>
+public sealed record AgainstAdviceDto(AgainstAdviceSignatory SignedBy, string? SignatoryName, string? Relationship, string DoctorName, string WitnessName, Guid? SignedFormFileId);
 
 /// <summary>A triage: the answers at decision points A to C, the measured vitals, and the level if the nurse assigns another.</summary>
 public sealed record TriageRequest(
@@ -156,7 +162,11 @@ public sealed record TriagePreview(int Level, IReadOnlyList<string> Reasons, boo
 
 public sealed record CaseVersionRequest(uint Version);
 
-public sealed record DispositionRequest(EmergencyDisposition Disposition, string? Notes, string? ReferredTo, uint Version);
+/// <summary>
+/// Where the patient goes. LAMA goes with <paramref name="AgainstAdvice"/>: who signed the form (or that the patient
+/// refused), the doctor who explained the risks and a witness's confirmation (maker-checker, slice 8).
+/// </summary>
+public sealed record DispositionRequest(EmergencyDisposition Disposition, string? Notes, string? ReferredTo, uint Version, AgainstAdviceRequest? AgainstAdvice = null);
 
 /// <summary>Opens or corrects the case's MLC entry. <paramref name="Version"/>: the entry's, when correcting one.</summary>
 /// <param name="ChildVictim">
@@ -245,6 +255,9 @@ public sealed class DispositionRequestValidator : AbstractValidator<DispositionR
         RuleFor(x => x.Disposition).IsInEnum();
         RuleFor(x => x.Notes).SafeText(1000);
         RuleFor(x => x.ReferredTo).SafeText(200);
+        RuleFor(x => x.AgainstAdvice).NotNull().When(x => x.Disposition == EmergencyDisposition.Lama)
+            .WithMessage("Record who signed the LAMA form (or that the patient refused to sign), and a witness who confirms with their own user name and password.");
+        RuleFor(x => x.AgainstAdvice!).SetValidator(new AgainstAdviceRequestValidator()).When(x => x.AgainstAdvice is not null);
     }
 }
 

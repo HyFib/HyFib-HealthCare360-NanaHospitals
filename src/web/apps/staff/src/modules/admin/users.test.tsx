@@ -263,6 +263,9 @@ describe("resetting a colleague's sign-in", SCREEN_TESTS, () => {
     expect(screen.getAllByText(/nothing changes until then/).length).toBeGreaterThan(0);
     expect(screen.queryByText('Two-step verification reset')).not.toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    // The closed confirmation's portal can keep the rest of the page aria-hidden for a moment after the dialog is
+    // gone; axe run then would see a hidden page that is being torn down (aria-hidden-focus, "axe encountered an error").
+    await waitFor(() => expect(document.querySelector('body > div[aria-hidden="true"]')).toBeNull());
     await expectNoAxeViolations();
   });
 });

@@ -113,13 +113,25 @@ function DeathView({ death }: { death: DeathRecordDto }) {
   // waits, the certificate is not changed under them.
   const waiting = recorded && death.confirmationWaitingSince !== null;
   const unconfirmed = recorded && death.confirmationRequired && death.confirmedAt === null;
+  // A confirmed certificate took two doctors to make: voiding it waits for a second doctor (maker-checker, slice 8), and
+  // the certificate and the deceased status stand until then.
+  const confirmed = recorded && death.confirmedAt !== null;
+  const voidWaiting = recorded && !!death.voidWaitingSince;
 
   const markError = useMutation({
     mutationFn: (reason: string) => vitalApi.deathInError(death.id, reason, death.version),
     onSuccess: (saved) => {
+      setDialog(null);
+      if ('kind' in saved) {
+        void queryClient.invalidateQueries({ queryKey: vitalKeys.death(death.id) });
+        notify.success(
+          'Asked for approval',
+          'Another doctor who confirms certificates decides it. Until then the certificate stands.',
+        );
+        return;
+      }
       queryClient.setQueryData(vitalKeys.death(death.id), saved);
       void queryClient.invalidateQueries({ queryKey: vitalKeys.registers('death') });
-      setDialog(null);
       notify.success('Marked as entered in error', `${saved.serialNumber} is kept, but out of the register.`);
     },
   });
@@ -161,7 +173,7 @@ function DeathView({ death }: { death: DeathRecordDto }) {
           </MessageBarBody>
         </MessageBar>
       )}
-      {waiting && <PendingApprovals subjectType="DeathRecord" subjectId={death.id} />}
+      {(waiting || voidWaiting) && <PendingApprovals subjectType="DeathRecord" subjectId={death.id} />}
       {unconfirmed && !waiting && (
         <MessageBar intent="warning">
           <MessageBarBody>
@@ -186,7 +198,7 @@ function DeathView({ death }: { death: DeathRecordDto }) {
         title="Medical certificate of cause of death (Form 4)"
         actions={
           <div className={styles.actions}>
-            {canRegister && recorded && !unconfirmed && (
+            {canRegister && recorded && !unconfirmed && !voidWaiting && (
               <Button
                 appearance="primary"
                 icon={<SendRegular />}
@@ -206,14 +218,14 @@ function DeathView({ death }: { death: DeathRecordDto }) {
                 Ask for confirmation
               </Button>
             )}
-            {canCertify && recorded && !waiting && (
+            {canCertify && recorded && !waiting && !voidWaiting && (
               <Button icon={<EditRegular />} onClick={() => setDialog('correct')} {...restoreFocusTarget}>
                 Correct
               </Button>
             )}
-            {canMarkError && recorded && !waiting && (
+            {canMarkError && recorded && !waiting && !voidWaiting && (
               <Button icon={<DismissCircleRegular />} onClick={() => setDialog('error')} {...restoreFocusTarget}>
-                Entered in error
+                {confirmed ? 'Ask to void' : 'Entered in error'}
               </Button>
             )}
             <PrintVitalButton path={deathDocument(death.id)} label="Print certificate" />
@@ -276,10 +288,18 @@ function DeathView({ death }: { death: DeathRecordDto }) {
       {dialog === 'report' && <ReportDialog kind="death" id={death.id} onClose={() => setDialog(null)} />}
       <ReasonDialog
         open={dialog === 'error'}
-        title={`Mark certificate ${death.serialNumber} as entered in error?`}
-        description="For a certificate made for the wrong patient, or twice. It is kept, but leaves the death register and is not reported."
+        title={
+          confirmed
+            ? `Ask to void certificate ${death.serialNumber}?`
+            : `Mark certificate ${death.serialNumber} as entered in error?`
+        }
+        description={
+          confirmed
+            ? `A second doctor confirmed this certificate, so another doctor who confirms certificates must agree. Until then the certificate stands and the patient stays recorded as deceased. Once reported to the Registrar, a correction goes through the Registrar.`
+            : 'For a certificate made for the wrong patient, or twice. It is kept, but leaves the death register and is not reported.'
+        }
         label="Reason"
-        confirmLabel="Entered in error"
+        confirmLabel={confirmed ? 'Ask for approval' : 'Entered in error'}
         destructive
         busy={markError.isPending}
         error={markError.error}
