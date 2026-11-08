@@ -22,6 +22,7 @@ import type {
   WristbandDto,
 } from '@/modules/inpatient/api';
 import type { BedStatus } from '@/modules/inpatient/bedState';
+import type { EscalationDto, TransferRequestDto } from '@/modules/inpatient/wardCareApi';
 import { paged, STAFF_USER, type FakeAnswers, type FakeRequest } from '../fakeApi';
 import { RECORD_ID, WARD_ID } from '../roleAccessIds';
 
@@ -482,6 +483,73 @@ const CENSUS: CensusReport = {
   averageHousekeepingTurnaroundMinutes: 35,
 };
 
+const SUNIL = IN_PATIENTS[0]!;
+
+/** A move to the ICU asked by the ward, waiting for the ICU's nurse in charge. */
+const TRANSFERS: TransferRequestDto[] = [
+  {
+    id: id('c1'),
+    admissionId: SUNIL.admissionId,
+    admissionNumber: SUNIL.admissionNumber,
+    patientId: SUNIL.patientId,
+    uhid: SUNIL.uhid,
+    patientName: SUNIL.patientName,
+    fromWardId: WARD_ID,
+    fromWardName: WARD.name,
+    fromBedLabel: 'GWM-01',
+    toWardId: id('c2'),
+    toWardName: 'ICU',
+    toBedId: id('c9'),
+    toBedLabel: 'ICU-04',
+    reason: 'NEWS2 rising on oxygen',
+    clinicalSummary: 'Pneumonia day 3; 4 L oxygen; MAP 62 after fluids.',
+    isUrgent: false,
+    status: 'Pending',
+    requestedAt: minutesAgo(15),
+    requestedByName: 'Sr. Latha',
+    holdUntil: minutesAgo(-600),
+    decidedAt: null,
+    decidedByName: null,
+    decisionNote: null,
+    transferredAt: null,
+    acceptanceDueAt: null,
+    isAcceptanceOverdue: false,
+    wasAcceptedLate: false,
+    canDecide: true,
+    version: 1,
+  },
+];
+
+/** The ward's open NEWS2 escalation (the nursing station's ward view). */
+export const ESCALATIONS: EscalationDto[] = [
+  {
+    id: id('e1'),
+    admissionId: SUNIL.admissionId,
+    patientId: SUNIL.patientId,
+    uhid: SUNIL.uhid,
+    wardId: WARD_ID,
+    wardName: WARD.name,
+    bedLabel: 'GWM-01',
+    vitalSignsId: id('d1'),
+    vitalsRecordedAt: minutesAgo(25),
+    score: 6,
+    anySingleParameterThree: false,
+    isScoreComplete: true,
+    summary: 'NEWS2 6',
+    level: 'Urgent',
+    status: 'Open',
+    raisedAt: minutesAgo(25),
+    openMinutes: 25,
+    respondedAt: null,
+    respondedByName: null,
+    respondedByDoctor: false,
+    outcome: null,
+    response: null,
+    minutesToRespond: null,
+    version: 1,
+  },
+];
+
 export const ANSWERS: FakeAnswers = {
   'GET /api/v1/inpatient/census': CENSUS,
   'GET /api/v1/beds': BEDS,
@@ -505,5 +573,7 @@ export const ANSWERS: FakeAnswers = {
   [`GET /api/v1/inpatient/admissions/${RECORD_ID}/discharge/clearance`]: CLEARANCE,
   [`GET /api/v1/inpatient/admissions/${RECORD_ID}/wristband`]: WRISTBAND,
   'GET /api/v1/inpatient/discharges/pending': PENDING_DISCHARGES,
+  'GET /api/v1/inpatient/transfer-requests': TRANSFERS,
+  'GET /api/v1/nursing/escalations': ESCALATIONS,
   [`GET /api/v1/patients/${RECORD_ID}/admissions`]: PATIENT_ADMISSIONS,
 };

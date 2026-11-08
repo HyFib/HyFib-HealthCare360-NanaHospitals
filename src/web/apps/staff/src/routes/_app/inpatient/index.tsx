@@ -36,6 +36,8 @@ import {
 } from '@/modules/inpatient/census';
 import { useInpatientPermissions, useInpatientRealtime } from '@/modules/inpatient/hooks';
 import { formatDuration } from '@/modules/inpatient/time';
+import { DowntimePrintButton } from '@/modules/inpatient/DowntimePrintButton';
+import { usePermission } from '@/lib/permissions';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -73,6 +75,7 @@ function CensusPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const permissions = useInpatientPermissions();
+  const canChart = usePermission('nursing.chart');
   useInpatientRealtime();
 
   const today = todayIso();
@@ -113,6 +116,7 @@ function CensusPage() {
             >
               Bed board
             </Button>
+            {canChart && <DowntimePrintButton wardId={null} label="Downtime pack (all wards)" />}
             {permissions.admit && (
               <Button
                 appearance="primary"
