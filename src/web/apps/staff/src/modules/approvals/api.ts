@@ -195,4 +195,10 @@ export const APPROVAL_PERMISSIONS = [
   'privacy.breaches.approve',
   'crm.campaigns.send',
   'crm.campaigns.approve',
+  // Insurance money (slice 12): the insurance desk asks for a write-off of what the insurer deducted or rejected
+  // (someone who approves insurance write-offs decides), and records an amount the insurer approved on a
+  // pre-authorisation (another insurance desk user checks it). Each may withdraw it.
+  'insurance.claims.manage',
+  'insurance.claims.writeoff.approve',
+  'insurance.preauth.manage',
 ] as const;
