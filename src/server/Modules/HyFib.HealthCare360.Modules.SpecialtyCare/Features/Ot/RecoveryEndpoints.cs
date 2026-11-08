@@ -21,7 +21,7 @@ internal static class RecoveryEndpoints
             .RequirePermission(SpecialtyCarePermissions.OtChecklists).WithValidation<ReceiveInRecoveryRequest>();
         group.MapPut("", async (Guid id, SaveRecoveryRecordRequest r, RecoveryService s, CancellationToken ct) =>
                 (await s.SaveAsync(id, r, ct)).ToOk())
-            .RequirePermission(SpecialtyCarePermissions.OtChecklists).WithValidation<SaveRecoveryRecordRequest>().RequireVersion();
+            .RequirePermission(SpecialtyCarePermissions.OtChecklists).WithValidation<SaveRecoveryRecordRequest>();
         group.MapPost("/handover", async (Guid id, RecoveryHandoverRequest r, RecoveryService s, CancellationToken ct) =>
                 (await s.HandoverAsync(id, r, ct)).ToOk())
             .RequirePermission(SpecialtyCarePermissions.OtChecklists).WithValidation<RecoveryHandoverRequest>();
