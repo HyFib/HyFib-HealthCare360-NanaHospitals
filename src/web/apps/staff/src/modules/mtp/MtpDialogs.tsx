@@ -13,6 +13,8 @@ import {
   makeStyles,
   MessageBar,
   MessageBarBody,
+  Radio,
+  RadioGroup,
   Select,
   Spinner,
   Text,
@@ -27,6 +29,8 @@ import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { errorMessage } from '@/modules/lab/common/errors';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
+import type { WitnessConfirmed } from '@/modules/witness/api';
+import { WitnessPanel } from '@/modules/witness/WitnessPanel';
 import {
   MTP_CATEGORIES,
   MTP_GROUNDS,
@@ -51,6 +55,7 @@ import {
   ONE_OPINION_WEEKS,
   opinionsNeeded,
   TWO_OPINIONS_WEEKS,
+  typedOpinionsAllowed,
 } from './logic';
 
 const useStyles = makeStyles({
@@ -93,12 +98,17 @@ export function CaseDialog({ existing, onClose }: { existing: MtpCaseDto | null;
   const [grounds, setGrounds] = useState<MtpGround[]>(existing?.grounds ?? []);
   const [category, setCategory] = useState<MtpRule3BCategory | null>(existing?.category ?? null);
   const [board, setBoard] = useState(existing?.medicalBoardReference ?? '');
-  const [opinions, setOpinions] = useState<MtpOpinion[]>(existing?.opinions ?? [blankOpinion()]);
+  // The second doctor's own opinion (recorded by them) is not typed here: a correction asks them for it again.
+  const [opinions, setOpinions] = useState<MtpOpinion[]>(
+    existing?.opinions.filter((o) => !o.confirmed) ?? [blankOpinion()],
+  );
+  const secondRecorded = existing?.opinions.find((o) => o.confirmed) ?? null;
 
   const ageYears = Number.parseInt(age, 10);
   const weeksValue = Number.parseInt(weeks, 10);
   const consentBy = consentByFor(ageYears, mentallyIll);
   const needed = opinionsNeeded(Number.isInteger(weeksValue) ? weeksValue : 0);
+  const typedAllowed = typedOpinionsAllowed(Number.isInteger(weeksValue) ? weeksValue : 0);
   const problems = {
     patient: patient ? null : 'Find the woman.',
     ...certificationProblems(
@@ -153,7 +163,9 @@ export function CaseDialog({ existing, onClose }: { existing: MtpCaseDto | null;
       void queryClient.invalidateQueries({ queryKey: ['mtp', 'register'] });
       notify.success(
         existing ? 'Case corrected' : 'MTP case opened',
-        `${saved.serialNumber}: the termination may be done and recorded.`,
+        saved.awaitingSecondOpinion
+          ? `${saved.serialNumber}: the second doctor records their opinion before the termination.`
+          : `${saved.serialNumber}: the termination may be done and recorded.`,
       );
       onClose();
       if (!existing) {
@@ -318,7 +330,12 @@ export function CaseDialog({ existing, onClose }: { existing: MtpCaseDto | null;
                 </Field>
               )}
               <Field
-                label={needed === 1 ? 'Doctor who formed the opinion' : 'Doctors who formed the opinion'}
+                label={needed === 1 ? 'Doctor who formed the opinion' : 'Doctor who formed the first opinion'}
+                hint={
+                  needed > 1
+                    ? 'From 20 weeks the second doctor records their own opinion once the case is saved: from their own sign-in, or confirming at this screen with their own user name and password.'
+                    : undefined
+                }
                 required
                 validationMessage={show(problems.opinions)}
               >
@@ -356,11 +373,11 @@ export function CaseDialog({ existing, onClose }: { existing: MtpCaseDto | null;
                       />
                     </div>
                   ))}
-                  {opinions.length < MAX_OPINIONS && (
+                  {opinions.length < Math.min(MAX_OPINIONS, typedAllowed) && (
                     <div>
                       <Button
                         icon={<AddRegular />}
-                        appearance={opinions.length < needed ? 'primary' : 'secondary'}
+                        appearance="secondary"
                         onClick={() => setOpinions((all) => [...all, blankOpinion()])}
                       >
                         Add a doctor
@@ -369,6 +386,14 @@ export function CaseDialog({ existing, onClose }: { existing: MtpCaseDto | null;
                   )}
                 </div>
               </Field>
+              {secondRecorded && (
+                <MessageBar intent="warning">
+                  <MessageBarBody>
+                    Saving a correction sets aside the second opinion of {secondRecorded.doctorName}: they record it
+                    again on the case as corrected.
+                  </MessageBarBody>
+                </MessageBar>
+              )}
               <Caption1 className={styles.muted}>
                 Keep the signed consent and Form I in the case file. Under s.5A of the MTP Act her name and particulars
                 are revealed to no one but a person authorised by law.
@@ -545,6 +570,140 @@ export function TerminationDialog({ mtp, onClose }: { mtp: MtpCaseDto; onClose: 
           </DialogBody>
         </form>
         {guard.dialogs}
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
+/**
+ * The second registered medical practitioner's opinion, from 20 weeks (MTP Act s.3(2)(b); maker-checker, slice 9). It is
+ * never typed by the first doctor: the second doctor records it signed in as themselves, or confirms it here with their own
+ * user name and password. Their name and registration number come from their own practitioner record.
+ */
+export function SecondOpinionDialog({ mtp, onClose }: { mtp: MtpCaseDto; onClose: () => void }) {
+  const styles = useStyles();
+  const notify = useNotify();
+  const queryClient = useQueryClient();
+  const [by, setBy] = useState<'me' | 'confirm'>('confirm');
+  const [opinionOn, setOpinionOn] = useState(todayIso());
+  const [doctor, setDoctor] = useState<WitnessConfirmed | null>(null);
+  const [tried, setTried] = useState(false);
+  const problems = {
+    opinionOn: !opinionOn
+      ? 'Enter the date of the opinion.'
+      : opinionOn > todayIso()
+        ? 'An opinion cannot be dated after today.'
+        : null,
+    doctor:
+      by === 'confirm' && !doctor ? 'The second doctor confirms here with their own user name and password.' : null,
+  };
+  const valid = Object.values(problems).every((p) => p === null);
+  const show = (problem: string | null) => (tried ? (problem ?? undefined) : undefined);
+  const first = mtp.opinions.filter((o) => !o.confirmed);
+
+  const record = useMutation({
+    mutationFn: () =>
+      mtpApi.secondOpinion(mtp.id, {
+        opinionOn,
+        doctorConfirmationId: by === 'confirm' ? doctor!.confirmationId : null,
+        version: mtp.version,
+      }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(mtpKeys.case(mtp.id), saved);
+      void queryClient.invalidateQueries({ queryKey: mtpKeys.cases });
+      const second = saved.opinions.find((o) => o.confirmed);
+      notify.success(
+        'Second opinion recorded',
+        second ? `${second.doctorName} (${second.registrationNumber})` : saved.serialNumber,
+      );
+      onClose();
+    },
+    // A confirmation is spent once: after a refusal the doctor confirms again.
+    onError: () => setDoctor(null),
+  });
+
+  return (
+    <Dialog open onOpenChange={(_, d) => !d.open && !record.isPending && onClose()}>
+      <DialogSurface style={{ maxWidth: 640 }}>
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            setTried(true);
+            if (valid && !record.isPending) {
+              record.mutate();
+            }
+          }}
+        >
+          <DialogBody>
+            <DialogTitle>
+              Second doctor&apos;s opinion
+              <Caption1 block className={styles.muted}>
+                {mtp.serialNumber} · {mtp.weeksOfGestation} weeks
+              </Caption1>
+            </DialogTitle>
+            <DialogContent className={styles.content}>
+              {record.error && (
+                <MessageBar intent="error">
+                  <MessageBarBody>
+                    {errorMessage(record.error, 'The second opinion could not be recorded.')}
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+              <Text>
+                From 20 weeks the opinion of two registered medical practitioners is needed. The first is{' '}
+                {first.map((o) => `${o.doctorName} (${o.registrationNumber})`).join('; ')}. The second is another doctor
+                the place&apos;s approval names, never the doctor who certified the case; their name and registration
+                number are taken from their own record.
+              </Text>
+              <RadioGroup
+                aria-label="Who gives the second opinion"
+                value={by}
+                onChange={(_, d) => {
+                  setBy(d.value as 'me' | 'confirm');
+                  setDoctor(null);
+                }}
+              >
+                <Radio value="confirm" label="The second doctor confirms here with their own user name and password" />
+                <Radio value="me" label="I am the second doctor, signed in as myself" />
+              </RadioGroup>
+              <Field label="Opinion on" required validationMessage={show(problems.opinionOn)}>
+                <Input type="date" value={opinionOn} max={todayIso()} onChange={(_, d) => setOpinionOn(d.value)} />
+              </Field>
+              {by === 'confirm' && (
+                <WitnessPanel
+                  purpose="mtp.second_opinion"
+                  patientId={mtp.patientId}
+                  witness={doctor}
+                  onChange={setDoctor}
+                  legend="Second doctor (at this screen)"
+                  description="The second registered medical practitioner types their own user name and password here. Nothing is signed in, and the password is not kept."
+                  confirmedLabel="Second opinion of"
+                  who="Doctor"
+                />
+              )}
+              {show(problems.doctor) && (
+                <MessageBar intent="error">
+                  <MessageBarBody>{problems.doctor}</MessageBarBody>
+                </MessageBar>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={onClose} disabled={record.isPending}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={record.isPending}
+                disabledFocusable={record.isPending}
+                icon={record.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
+              >
+                Record second opinion
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </form>
       </DialogSurface>
     </Dialog>
   );

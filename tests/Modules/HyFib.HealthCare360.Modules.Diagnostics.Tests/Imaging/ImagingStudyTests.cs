@@ -126,6 +126,33 @@ public sealed class ImagingStudyTests
         study.CancelledAt.ShouldBe(Now);
     }
 
+    [Fact]
+    public void An_ultrasound_in_pregnancy_is_cancelled_only_before_the_scan()
+    {
+        // Maker-checker, slice 9 (PCPNDT): before the scan its Form F may close as cancelled; once begun, never.
+        var waiting = Study(ImagingStudyStatus.Arrived);
+        waiting.RequiresFormF = true;
+        waiting.Cancel("Patient left before the scan", Now).IsSuccess.ShouldBeTrue();
+
+        var started = Study(ImagingStudyStatus.Arrived);
+        started.RequiresFormF = true;
+        started.Start(UserId, Now).IsSuccess.ShouldBeTrue();
+        started.Cancel("Abandoned", Now).Error!.Code.ShouldBe("form_f.scan_performed");
+        started.Status.ShouldBe(ImagingStudyStatus.InProgress);
+
+        var scanned = Study(ImagingStudyStatus.Arrived);
+        scanned.RequiresFormF = true;
+        scanned.LinkPacs("1.2.3.4", 1, 3, Now).IsSuccess.ShouldBeTrue();
+        scanned.PregnancyScanPerformed.ShouldBeTrue();
+        scanned.Cancel("Wrong order", Now).Error!.Code.ShouldBe("form_f.scan_performed");
+        scanned.CancelledAt.ShouldBeNull();
+
+        // Any other study scanned but not reported is still cancelled as before.
+        var ct = Study(ImagingStudyStatus.Arrived);
+        ct.Start(UserId, Now).IsSuccess.ShouldBeTrue();
+        ct.Cancel("Patient declined contrast", Now).IsSuccess.ShouldBeTrue();
+    }
+
     [Theory]
     [InlineData(ImagingStudyStatus.Acquired, true)]
     [InlineData(ImagingStudyStatus.Reported, true)]

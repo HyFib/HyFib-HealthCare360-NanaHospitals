@@ -809,6 +809,27 @@ and grants nothing.
       hospital administrator by default), never the one who asked. The original line is kept; its charge is withdrawn
       and its stock returned, and the corrected line is issued and charged, through the same stock and charge paths, only
       over the line as asked (`approval.stale`), audited `ot.material_corrected` with both names;
+  - the PCPNDT Form F, the MTP second opinion and the mortuary (MAKER-CHECKER.md, slice 9):
+    - an **ultrasound in pregnancy** (a study whose procedure requires a Form F) is cancelled only before its scan begins.
+      Once started on the machine, acquired, or found in PACS, `POST /api/v1/radiology/studies/{id}/cancel` is refused
+      (`form_f.scan_performed`) and its Form F stays open to be completed with the result (PCPNDT Act s.29, Rule 9); it is
+      closed as cancelled only for a scan never done. The clinician withdrawing the order after the scan leaves the study
+      and the form as they are and tells the radiologists. Each refusal is audited at Warning (`form_f.cancel_refused`).
+      A completed Form F still cannot change, for anyone (`form_f.completed`): no correction path is offered;
+    - from 20 weeks the **second registered medical practitioner's opinion** (MTP Act s.3(2)(b), as amended in 2021) is
+      not typed on the case (`mtp.second_opinion_typed`): the second doctor records it
+      (`POST /api/v1/mtp/cases/{id}/second-opinion`) signed in as themselves, or confirms it at the first doctor's screen
+      with their own user name and password (ADR-014, purpose `mtp.second_opinion`, `mtp.certify`). Their name and
+      registration number come from the practitioner record their account is linked to, which must be a doctor's with a
+      registration number (`mtp.second_opinion_not_rmp`); never the doctor who certified the case nor the registration of
+      the first opinion (`mtp.second_opinion_same_doctor`). The termination waits for it (`mtp.second_opinion_required`).
+      A correction of the case sets it aside, audited at Warning (`mtp.second_opinion_dropped`), and the second doctor
+      gives it again. Audited `mtp.second_opinion_recorded` with both doctors and who recorded it;
+    - a body released from the **mortuary on the police's clearance** (a medico-legal body to the relatives, an unclaimed
+      body to the municipality) records the clearance and is witnessed at the screen by a second member of the mortuary
+      staff with their own credentials (purpose `mortuary.release`, `mortuary.manage`; `mortuary.witness_required`), never
+      the one who releases it (`witness.self`, `mortuary.witness_is_releaser`). The body record and the release slip name
+      the witness; every release is audited `mortuary.body_released` with both names;
   - quality, privacy, engagement and the patient's own sharing (MAKER-CHECKER.md, slice 14):
     - a sentinel or never event (Quality): it is not closed, from Reported or any other status, until its root-cause
       analysis is completed (`incident.sentinel_needs_rca`; closing a duplicate straight from Reported is no longer a way
@@ -894,6 +915,9 @@ and grants nothing.
     high-alert, so typing a name instead of picking the drug clears nothing.
   - a patient leaving against medical advice (LAMA, DAMA, and LAMA from the emergency department) is witnessed in the
     same way by a different member of staff, never the doctor who explained the risks (see Maker-checker, slice 8);
+  - the second doctor's opinion on a termination from 20 weeks is that doctor's own, never the certifying doctor's, and a
+    body released from the mortuary on the police's clearance is witnessed by a second member of staff (see
+    Maker-checker, slice 9);
   - in the blood bank, grouping, cross-match and issue are not all one person: grouping and cross-match record the
     officer's account, and a unit is not issued by the officer who both grouped the patient and cross-matched it, nor
     plasma, platelets or cryoprecipitate (issued on the group alone) by the officer who grouped the patient, nor an
