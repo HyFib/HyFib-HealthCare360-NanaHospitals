@@ -57,6 +57,15 @@ import {
 import { SexualAssaultExamination } from '@/modules/emergency/SexualAssaultExamination';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 import { errorMessage } from '@/modules/lab/common/errors';
+import { AgainstAdviceFields } from '@/modules/witness/AgainstAdviceFields';
+import {
+  AGAINST_ADVICE_SIGNATORY_LABEL,
+  againstAdviceMissing,
+  againstAdviceRequest,
+  EMPTY_AGAINST_ADVICE,
+  type AgainstAdviceState,
+  useDoctorSignedIn,
+} from '@/modules/witness/againstAdvice';
 
 export const Route = createFileRoute('/_app/emergency/')({
   component: () => (
@@ -381,21 +390,43 @@ function DoctorTab({ c, canDecide }: { c: EmergencyCase; canDecide: boolean }) {
   const [disposition, setDisposition] = useState<EmergencyDisposition>('Discharged');
   const [notes, setNotes] = useState('');
   const [referredTo, setReferredTo] = useState('');
+  const [againstAdvice, setAgainstAdvice] = useState<AgainstAdviceState>(EMPTY_AGAINST_ADVICE);
+  const [declarationProblem, setDeclarationProblem] = useState<string | null>(null);
+  const doctorSignedIn = useDoctorSignedIn();
   const refresh = () => void queryClient.invalidateQueries({ queryKey: erKeys.all });
   const seen = useMutation({ mutationFn: () => erApi.seen(c.id, c.version), onSuccess: refresh });
   const dispose = useMutation({
-    mutationFn: () => erApi.dispose(c.id, disposition, notes.trim() || null, referredTo.trim() || null, c.version),
+    mutationFn: () =>
+      erApi.dispose(
+        c.id,
+        disposition,
+        notes.trim() || null,
+        referredTo.trim() || null,
+        c.version,
+        disposition === 'Lama' ? againstAdviceRequest(againstAdvice) : null,
+      ),
     onSuccess: () => {
       notify.success('Disposition recorded', 'The patient is off the board and the emergency visit is closed.');
       refresh();
     },
   });
+  const record = () => {
+    // LAMA (maker-checker, slice 8): who signed, the doctor who explained the risks and a witness, before it is sent.
+    const missing = disposition === 'Lama' ? againstAdviceMissing(againstAdvice, doctorSignedIn) : null;
+    setDeclarationProblem(missing);
+    if (!missing) {
+      dispose.mutate();
+    }
+  };
   if (c.disposition) {
     return (
       <Text>
         {DISPOSITION_LABELS[c.disposition]} by {c.disposedByName} at {formatDateTime(c.disposedAt!)}
         {c.referredTo ? ` to ${c.referredTo}` : ''}
         {c.dispositionNotes ? `: ${c.dispositionNotes}` : ''}
+        {c.againstAdvice
+          ? `. ${AGAINST_ADVICE_SIGNATORY_LABEL[c.againstAdvice.signedBy]}${c.againstAdvice.signatoryName ? ` (${c.againstAdvice.signatoryName}, ${c.againstAdvice.relationship})` : ''}; risks explained by ${c.againstAdvice.doctorName}; witnessed by ${c.againstAdvice.witnessName}.`
+          : ''}
       </Text>
     );
   }
@@ -434,17 +465,29 @@ function DoctorTab({ c, canDecide }: { c: EmergencyCase; canDecide: boolean }) {
       >
         <Textarea value={notes} maxLength={1000} onChange={(_, d) => setNotes(d.value)} />
       </Field>
+      {disposition === 'Lama' && (
+        <AgainstAdviceFields
+          value={againstAdvice}
+          onChange={(next) => {
+            setAgainstAdvice(next);
+            setDeclarationProblem(null);
+          }}
+          patientId={c.patientId}
+          witnessPurpose="er.lama"
+          witnessWho="a nurse or doctor of the department"
+        />
+      )}
+      {declarationProblem && (
+        <MessageBar intent="error">
+          <MessageBarBody>{declarationProblem}</MessageBarBody>
+        </MessageBar>
+      )}
       {dispose.error && (
         <MessageBar intent="error">
           <MessageBarBody>{errorMessage(dispose.error, 'The disposition could not be recorded.')}</MessageBarBody>
         </MessageBar>
       )}
-      <Button
-        appearance="primary"
-        style={{ alignSelf: 'flex-start' }}
-        disabled={dispose.isPending}
-        onClick={() => dispose.mutate()}
-      >
+      <Button appearance="primary" style={{ alignSelf: 'flex-start' }} disabled={dispose.isPending} onClick={record}>
         Record disposition
       </Button>
     </div>
