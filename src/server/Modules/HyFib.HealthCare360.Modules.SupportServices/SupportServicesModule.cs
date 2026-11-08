@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Modules.SupportServices.Features.Linen;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Mortuary;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Waste;
 using HyFib.HealthCare360.Modules.SupportServices.Services;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.SupportServices;
@@ -125,6 +126,7 @@ public sealed class SupportServicesModule : IModule
         services.AddScoped<StaffCreditService>();
         services.AddScoped<WasteService>();
         services.AddScoped<MortuaryService>();
+        services.AddWitnessPurpose(MortuaryService.ReleaseWitness);
         services.AddScoped<AmbulanceService>();
         services.AddScoped<LinenService>();
 

@@ -24,6 +24,7 @@ internal sealed class ImagingService(
     INotificationService notifications,
     IServiceProvider services,
     ICurrentUser currentUser,
+    IAuditLogger audit,
     TimeProvider time,
     ILogger<ImagingService> logger)
 {
@@ -97,11 +98,21 @@ internal sealed class ImagingService(
         if (result.IsFailure)
         {
             logger.LogWarning("Clinical cancellation of imaging study {StudyId} could not be applied: {Error}", study.Id, result.Error!.Message);
+            var scanned = result.Error.Code == ScanPerformed;
+            if (scanned)
+            {
+                // The order is withdrawn on the clinical side, but the scan was done: the study and its Form F stay, to be
+                // completed, and the refusal is on the record (PCPNDT; maker-checker, slice 9).
+                audit.Add(CancelRefused(study, reason, "the ordering clinician withdrew the order"));
+            }
+
             realtime.AlertStaffAfterCommit(new DeferredStaffAlert(
                 DiagnosticsPermissions.RadiologyReportsVerify,
                 study.FacilityId,
-                $"Cancelled order already reported: {study.StudyName}",
-                $"The clinician cancelled {study.StudyName} ({study.AccessionNumber}) after it was reported. Review the report and the bill.",
+                scanned ? $"Cancelled order already scanned: {study.StudyName}" : $"Cancelled order already reported: {study.StudyName}",
+                scanned
+                    ? $"The clinician cancelled {study.StudyName} ({study.AccessionNumber}) after the scan. It is an ultrasound in pregnancy: complete its Form F; it is not closed as cancelled."
+                    : $"The clinician cancelled {study.StudyName} ({study.AccessionNumber}) after it was reported. Review the report and the bill.",
                 $"/radiology/studies/{study.Id}",
                 "warning"));
             return true;
@@ -142,6 +153,24 @@ internal sealed class ImagingService(
             ? Error.Rule("form_f.required", "This is an ultrasound in pregnancy: record the woman's Form F details and declaration before the scan.")
             : null;
 
+    /// <summary>The refusal to cancel an ultrasound in pregnancy once scanned (<see cref="ImagingStudy.PregnancyScanPerformed"/>).</summary>
+    internal const string ScanPerformed = "form_f.scan_performed";
+
+    /// <summary>
+    /// The audit entry of a refused cancellation of a pregnancy ultrasound already scanned, at Warning: the PCPNDT in-charge
+    /// sees who tried to close a scanned Form F, and why.
+    /// </summary>
+    private AuditEntry CancelRefused(ImagingStudy study, string reason, string? by) =>
+        new(AuditCategories.Clinical, "form_f.cancel_refused",
+            TextLimits.Clip($"{study.StudyName} ({study.AccessionNumber}) was not cancelled{(by is null ? string.Empty : $" when {by}")}: it is an ultrasound in pregnancy already scanned, so its Form F is completed, not closed as cancelled. Reason given: {reason}", 1000))
+        {
+            PatientId = study.PatientId,
+            EntityType = nameof(ImagingStudy),
+            EntityId = study.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { study.AccessionNumber, study.Status, study.StartedAt, study.AcquiredAt, reason },
+        };
+
     /// <summary>A cancelled scan closes its declared Form F as cancelled, so the month's register does not wait for it.</summary>
     private async Task CancelFormFAsync(ImagingStudy study, CancellationToken ct)
     {
@@ -165,6 +194,11 @@ internal sealed class ImagingService(
         var cancelled = study.Cancel(reason.Trim(), time.GetUtcNow());
         if (cancelled.IsFailure)
         {
+            if (cancelled.Error!.Code == ScanPerformed)
+            {
+                await audit.WriteAsync(CancelRefused(study, reason.Trim(), null), ct);
+            }
+
             return cancelled.Error!;
         }
 

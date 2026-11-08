@@ -88,6 +88,12 @@ public sealed class ImagingStudy : AuditableEntity, IFacilityScoped
 
     public bool IsPackageComponent => PackageBookingId is not null;
 
+    /// <summary>
+    /// An ultrasound in pregnancy whose scan has begun (started on the machine, acquired, or images found in PACS): its
+    /// Form F is completed, never closed as cancelled.
+    /// </summary>
+    public bool PregnancyScanPerformed => RequiresFormF && (StartedAt is not null || AcquiredAt is not null);
+
     public Result Schedule(DateTimeOffset at, string? room, string? stationAeTitle)
     {
         if (Status is not (ImagingStudyStatus.Ordered or ImagingStudyStatus.Scheduled))
@@ -206,6 +212,15 @@ public sealed class ImagingStudy : AuditableEntity, IFacilityScoped
         if (Status == ImagingStudyStatus.Cancelled)
         {
             return Result.Success();
+        }
+
+        // PCPNDT Act s.29 and Rule 9: every ultrasound of a pregnant woman is recorded on a Form F that is completed with
+        // the result. Once the scan has begun, cancelling the study would close its Form F as cancelled, as if no scan
+        // had been done: it is refused, and the form is completed instead (maker-checker, slice 9).
+        if (PregnancyScanPerformed)
+        {
+            return Error.Rule("form_f.scan_performed",
+                "This ultrasound in pregnancy has been scanned, so it cannot be cancelled: complete its Form F with the result (PCPNDT Act). A Form F is closed as cancelled only when the scan was never done.");
         }
 
         Status = ImagingStudyStatus.Cancelled;

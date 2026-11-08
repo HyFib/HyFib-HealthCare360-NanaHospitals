@@ -27,6 +27,7 @@ internal sealed class ImagingStudyConfiguration : IEntityTypeConfiguration<Imagi
         b.Property(x => x.ChargeError).HasMaxLength(300);
         b.Ignore(x => x.IsClosed);
         b.Ignore(x => x.IsPackageComponent);
+        b.Ignore(x => x.PregnancyScanPerformed);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasMany(x => x.Repeats).WithOne().HasForeignKey(x => x.ImagingStudyId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.AccessionNumber).IsUnique();

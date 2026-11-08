@@ -171,7 +171,7 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | POST | `/studies/{id}/arrive` · `/start` | `radiology.worklist` | → `ImagingStudyDetail` |
 | POST | `/studies/{id}/acquire` | `radiology.worklist` | `AcquireStudyRequest` (contrastUsed, contrastAgent — required with contrast, volume, doseNote, notes) → `ImagingStudyDetail` |
 | POST | `/studies/{id}/repeats` | `radiology.worklist` | `RecordRepeatRequest` (reason, note) → `ImagingStudyDetail` |
-| POST | `/studies/{id}/cancel` | `radiology.worklist` | `CancelStudyRequest` (reason) → `ImagingStudyDetail`; refused once reported |
+| POST | `/studies/{id}/cancel` | `radiology.worklist` | `CancelStudyRequest` (reason) → `ImagingStudyDetail`; refused once reported, and an ultrasound in pregnancy once its scan has begun (422 `form_f.scan_performed`, audited at Warning `form_f.cancel_refused`; see PCPNDT Form F) |
 | POST | `/studies/{id}/reconcile` | `radiology.worklist` | → `ImagingStudyDetail`. Links the study with PACS by accession number (or study UID); refused with the fail-closed codes under Workflow rules |
 | POST | `/pacs/reconcile` | `radiology.worklist` | → `PacsReconciliationSummary` (the facility's recent unlinked studies, finished scans first, batches of 50) |
 | GET | `/studies/{id}/viewer` | `radiology.images.view` | → `ViewerLink`. Before linking, the same PACS patient check as linking. 422 `pacs.not_configured`, `pacs.viewer_not_configured`, `pacs.accession_too_long`, or a linking code. Guard; audit "Opened images of …" |
@@ -211,6 +211,12 @@ acquired until the woman's details and her declaration are recorded (422 `form_f
 until the form is completed (422 `form_f.incomplete`). A completed form cannot change (422 `form_f.completed`). A form is
 recorded only once the facility's `pcpndt.registrationNumber` is set (422 `form_f.not_registered`), and only for an
 ultrasound of a woman.
+
+Cancelling the study closes a declared form as cancelled, only before the scan (maker-checker, slice 9). Once the study
+is started, acquired or found in PACS (`ImagingStudy.PregnancyScanPerformed`), cancelling it is refused (422
+`form_f.scan_performed`) and the form is completed with the result; the clinician withdrawing the order then leaves the
+study and its form as they are and tells the radiologists (`radiology.reports.verify`). Each refusal is audited at
+Warning (`form_f.cancel_refused`), with the reason given. A completed form is never corrected in HC360.
 
 | Method | Path | Permission | Request → response |
 |---|---|---|---|

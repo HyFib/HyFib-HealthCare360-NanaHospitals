@@ -45,18 +45,15 @@ public sealed class MtpTests(HospitalServer server)
         await settings.SetAsync(MtpService.ApprovalSetting, Approval, facilityId, false, Ct);
         try
         {
-            // At 22 weeks one doctor's opinion is not enough.
-            using (var oneDoctor = await admin.SendRawAsync(HttpMethod.Post, "/api/v1/mtp/cases",
-                       Case(patient.Id, today) with
-                       {
-                           WeeksOfGestation = 22,
-                           Grounds = [MtpGround.InjuryToMentalHealth],
-                           Category = MtpRule3BCategory.ChangeOfMaritalStatus,
-                       }))
-            {
-                oneDoctor.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
-                (await oneDoctor.Content.ReadAsStringAsync(Ct)).ShouldContain("two doctors");
-            }
+            // At 22 weeks the second doctor's opinion is not typed on the case: that doctor records it (MtpSecondOpinionTests).
+            (await RefusalAsync(admin, HttpMethod.Post, "/api/v1/mtp/cases",
+                Case(patient.Id, today) with
+                {
+                    WeeksOfGestation = 22,
+                    Grounds = [MtpGround.InjuryToMentalHealth],
+                    Category = MtpRule3BCategory.ChangeOfMaritalStatus,
+                    Opinions = [new MtpOpinion("Dr. Meera Krishnan", "TNMC 45120", today), new MtpOpinion("Dr. Lata Rao", "TNMC 51877", today)],
+                }, HttpStatusCode.UnprocessableEntity)).ShouldBe("mtp.second_opinion_typed");
 
             var opened = await admin.PostAsync<MtpCaseDto>("/api/v1/mtp/cases", Case(patient.Id, today));
             (opened.Status, opened.ApprovalNumber, opened.WeeksOfGestation).ShouldBe((MtpCaseStatus.Certified, Approval, 9));
