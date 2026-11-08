@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace HyFib.HealthCare360.Modules.SupplyChain.Domain;
 
 public enum ItemType
@@ -122,10 +124,16 @@ public sealed class Item : AuditableEntity
     public string? Specification { get; set; }
 
     /// <summary>
-    /// For a price-controlled implant (a coronary stent, a knee implant), the NPPA ceiling price of a base unit with the GST
-    /// on it: no patient is charged more, whatever the MRP printed on an older pack. NPPA revises it, so the store updates it.
+    /// The NPPA ceiling price of a base unit (a tablet, a ml, a stent) with the GST on it. For a price-controlled implant (a
+    /// coronary stent, a knee implant) no patient is charged more, whatever the MRP printed on an older pack. For a scheduled
+    /// formulation under the Drugs (Prices Control) Order 2013 no pack is received with an MRP above it, and none is sold
+    /// above it (<see cref="PriceCeiling"/>). NPPA revises it, so the store updates it; raising or removing it, or changing
+    /// the GST rate, waits for a second person (<see cref="Services.ItemPriceApprovals"/>).
     /// </summary>
     public decimal? CeilingPrice { get; set; }
+
+    /// <summary>The NPPA notification that fixed <see cref="CeilingPrice"/> (its S.O. number and date), printed with refusals.</summary>
+    public string? CeilingNotification { get; set; }
 
     public string? Barcode { get; set; }
     public bool IsActive { get; set; } = true;
@@ -165,14 +173,104 @@ public sealed class Item : AuditableEntity
             return Error.Field("schedule", "Only drugs can carry a schedule, the controlled-drug flag or the high-alert flag.");
         }
 
-        if (CeilingPrice is not null && (Type != ItemType.Implant || CeilingPrice <= 0))
+        if (CeilingPrice is not null && (Type is not (ItemType.Implant or ItemType.Drug) || CeilingPrice <= 0))
         {
-            return Error.Field("ceilingPrice", "An NPPA ceiling price is set on an implant (a coronary stent, a knee implant), and is more than zero.");
+            return Error.Field("ceilingPrice",
+                "An NPPA ceiling price is set on a scheduled medicine (DPCO 2013) or a price-controlled implant (a coronary stent, a knee implant), and is more than zero.");
         }
 
         return GstCalculator.IsStandardRate(GstRate)
             ? Result.Success()
             : Error.Field("gstRate", "Use a notified GST rate (0, 0.25, 3, 5, 12, 18, 28 or 40%).");
+    }
+}
+
+/// <summary>
+/// The Drugs (Prices Control) Order 2013 for a scheduled formulation: NPPA fixes a ceiling price per unit (a tablet, a
+/// capsule, a ml) and no one sells it above that, GST added (para 14 and 20). The ceiling is kept per base unit with GST
+/// on <see cref="Item.CeilingPrice"/>; a pack's ceiling is that times the units in the pack, rounded to the paisa, so a
+/// pack priced at the ceiling is never refused for the rounding of its per-unit MRP. Implants are charged at the lower of
+/// their MRP and ceiling instead (an older pack printed before a cut is still used), so this applies to medicines only.
+/// </summary>
+public static class PriceCeiling
+{
+    /// <summary>A sale or receipt above the ceiling of a scheduled medicine.</summary>
+    public const string SaleCode = "pharmacy.price_above_ceiling";
+
+    public const string ReceiptCode = "grn.mrp_above_ceiling";
+
+    /// <summary>Whether the item is a price-controlled medicine (an implant's ceiling caps the charge instead).</summary>
+    public static bool AppliesTo(ItemType type, decimal? ceiling) => type == ItemType.Drug && ceiling is > 0;
+
+    /// <summary>The ceiling of a pack of <paramref name="units"/> base units, with GST, to the paisa.</summary>
+    public static decimal PerPack(decimal ceilingPerUnit, decimal units) =>
+        Math.Round(ceilingPerUnit * units, 2, MidpointRounding.AwayFromZero);
+
+    /// <summary>Whether a pack's MRP is above the ceiling of its <paramref name="units"/> base units.</summary>
+    public static bool PackExceeds(decimal packMrp, decimal ceilingPerUnit, decimal units) =>
+        Math.Round(packMrp, 2, MidpointRounding.AwayFromZero) > PerPack(ceilingPerUnit, units);
+
+    /// <summary>
+    /// Whether a batch's MRP per base unit is above the ceiling: compared as a pack of the item's purchase unit, as it was
+    /// printed, so a per-unit MRP rounded to four places (₹23.46 a strip of 10 is ₹2.346 a tablet) compares as received.
+    /// </summary>
+    public static bool UnitExceeds(decimal unitMrp, decimal ceilingPerUnit, decimal unitsPerPack) =>
+        PackExceeds(unitMrp * (unitsPerPack > 0 ? unitsPerPack : 1), ceilingPerUnit, unitsPerPack > 0 ? unitsPerPack : 1);
+
+    /// <summary>The refusal of a sale or issue of a batch priced above the ceiling.</summary>
+    public static Error SaleRefusal(Guid itemId, string itemName, string batchNumber, decimal unitMrp, decimal ceilingPerUnit, string baseUnit, string? notification) =>
+        new(SaleCode,
+            $"{itemName} batch {batchNumber} has an MRP of {Money(unitMrp)} a {baseUnit.ToLowerInvariant()}, above its NPPA ceiling price of {Money(ceilingPerUnit)}"
+            + (string.IsNullOrWhiteSpace(notification) ? "" : $" ({notification})")
+            + ". It cannot be sold above the ceiling (DPCO 2013): choose another batch, or ask the store to return it to the supplier.")
+        {
+            Data = new { itemId, batchNumber, unitMrp, ceilingPrice = ceilingPerUnit },
+        };
+
+    internal static string Money(decimal amount) => "₹" + amount.ToString(amount == Math.Round(amount, 2) ? "0.00" : "0.00##", CultureInfo.InvariantCulture);
+}
+
+/// <summary>
+/// What an item is priced at by law and taxed at: its NPPA ceiling price (per base unit, with GST) and notification, and its
+/// GST rate. On an item already in the master, a ceiling raised or removed, or a GST rate changed, waits for a second person
+/// who approves prices (<see cref="Services.ItemPriceApprovals"/>); a ceiling set or lowered applies at once.
+/// </summary>
+public sealed record ItemPricing(decimal? CeilingPrice, string? CeilingNotification, decimal GstRate)
+{
+    public static ItemPricing Of(Item item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        return new(item.CeilingPrice, item.CeilingNotification, item.GstRate);
+    }
+
+    /// <summary>Whether <paramref name="next"/> loosens the price control: a higher or no ceiling, or another GST rate.</summary>
+    public bool IsLoosenedBy(ItemPricing next)
+    {
+        ArgumentNullException.ThrowIfNull(next);
+        return GstRate != next.GstRate || (CeilingPrice is { } ceiling && (next.CeilingPrice is not { } after || after > ceiling));
+    }
+
+    public void ApplyTo(Item item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        (item.CeilingPrice, item.CeilingNotification, item.GstRate) = (CeilingPrice, CeilingNotification, GstRate);
+    }
+
+    /// <summary>In words, for the approval and the audit: "Ceiling ₹2.35 a TAB (₹23.50 a STRIP of 10), with GST; GST 12%".</summary>
+    public string Words(Item item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        var gst = "GST " + GstRate.ToString("0.##", CultureInfo.InvariantCulture) + "%";
+        if (CeilingPrice is not { } ceiling)
+        {
+            return "No ceiling price; " + gst;
+        }
+
+        var pack = item.PurchaseUnitFactor > 1
+            ? $" ({PriceCeiling.Money(PriceCeiling.PerPack(ceiling, item.PurchaseUnitFactor))} a {item.PurchaseUnit} of {item.PurchaseUnitFactor.ToString("0.##", CultureInfo.InvariantCulture)})"
+            : "";
+        var notified = string.IsNullOrWhiteSpace(CeilingNotification) ? "" : $", {CeilingNotification}";
+        return $"Ceiling {PriceCeiling.Money(ceiling)} a {item.BaseUnit}{pack} with GST{notified}; {gst}";
     }
 }
 

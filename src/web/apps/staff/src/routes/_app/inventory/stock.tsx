@@ -172,6 +172,20 @@ function StockPage() {
                 render: (r) => <Text weight="semibold">{formatQty(r.available)}</Text>,
               },
               {
+                key: 'blocked',
+                header: 'Blocked',
+                align: 'end',
+                priority: 'low',
+                render: (r) => (r.blockedQuantity > 0 ? formatQty(r.blockedQuantity) : '—'),
+              },
+              {
+                key: 'onOrder',
+                header: 'On order',
+                align: 'end',
+                priority: 'low',
+                render: (r) => (r.onOrder > 0 ? formatQty(r.onOrder) : '—'),
+              },
+              {
                 key: 'expired',
                 header: 'Expired',
                 align: 'end',
