@@ -111,7 +111,8 @@ public sealed class VendorDebitNote : AuditableEntity, IFacilityScoped
     }
 }
 
-/// <summary>One batch handed back on a debit note.</summary>
+/// <summary>One batch handed back on a debit note; in the audit trail with its note (what was returned, and how much).</summary>
+[AuditedWithParent]
 public sealed class VendorDebitNoteLine : Entity
 {
     public Guid VendorDebitNoteId { get; set; }
