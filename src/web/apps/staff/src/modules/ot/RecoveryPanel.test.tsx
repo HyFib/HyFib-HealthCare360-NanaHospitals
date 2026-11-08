@@ -51,6 +51,8 @@ const BOOKING: SurgeryDetail = {
   assistantIds: [],
   anaesthetistId: null,
   anaesthetistName: 'Dr. Kavita Shah',
+  nurseId: null,
+  nurseName: null,
   anaesthesiaType: 'Spinal',
   priority: 'Elective',
   preferredDate: null,
