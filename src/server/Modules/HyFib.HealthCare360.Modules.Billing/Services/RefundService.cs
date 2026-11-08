@@ -396,12 +396,13 @@ public sealed class RefundService(
             db.Entry(bill).State = EntityState.Modified;
         }
 
-        audit.Add(new AuditEntry(AuditCategories.Data, asked.Kind switch
-            {
-                CreditNoteKind.WriteOff => "billing.bill.written_off",
-                CreditNoteKind.PayerShare => "billing.payer_credit_note.issued",
-                _ => "billing.credit_note.issued",
-            },
+        var issuedAction = asked.Kind switch
+        {
+            CreditNoteKind.WriteOff => "billing.bill.written_off",
+            CreditNoteKind.PayerShare => "billing.payer_credit_note.issued",
+            _ => "billing.credit_note.issued",
+        };
+        audit.Add(new AuditEntry(AuditCategories.Data, issuedAction,
             $"{note.Number}: ₹{Money.FormatInr(note.Amount)} on bill {bill.BillNumber}{gst} — {note.Reason} (asked for by {note.RequestedByName}, approved by {note.IssuedByName})")
         {
             PatientId = bill.PatientId,
