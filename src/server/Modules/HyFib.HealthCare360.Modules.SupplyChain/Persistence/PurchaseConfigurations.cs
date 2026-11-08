@@ -103,6 +103,7 @@ internal sealed class GoodsReceiptLineConfiguration : IEntityTypeConfiguration<G
         b.Property(x => x.FreeQuantity).IsQuantity();
         b.Property(x => x.Rate).IsUnitRate();
         b.Property(x => x.Mrp).IsUnitRate();
+        b.Property(x => x.CeilingPrice).HasPrecision(18, 4);
         b.Property(x => x.DiscountPercent).IsPercent();
         b.Property(x => x.GstRate).IsPercent();
         b.Property(x => x.UnitsPerPurchaseUnit).IsQuantity();
