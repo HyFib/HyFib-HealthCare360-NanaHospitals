@@ -40,11 +40,23 @@ export function WitnessPanel({
   patientId,
   witness,
   onChange,
+  legend = 'Witness (a second nurse, at this screen)',
+  description = 'A controlled drug is witnessed: the second nurse types their own user name and password here. Nothing is signed in, and the password is not kept.',
+  confirmedLabel = 'Witnessed by',
+  who = 'Witness',
 }: {
   purpose: WitnessPurposeKey;
   patientId: string | null;
   witness: WitnessConfirmed | null;
   onChange: (witness: WitnessConfirmed | null) => void;
+  /** Who confirms, as the panel's legend. */
+  legend?: string;
+  /** What they confirm and how. */
+  description?: string;
+  /** "Witnessed by", or what the confirmation says about the person (the doctor who explained the risks). */
+  confirmedLabel?: string;
+  /** Who types their credentials, for the fields' labels ("Witness's user name", "Doctor's password"). */
+  who?: string;
 }) {
   const styles = useStyles();
   const [userName, setUserName] = useState('');
@@ -98,10 +110,10 @@ export function WitnessPanel({
       <div className={styles.confirmed} role="status">
         <PersonAvailableRegular aria-hidden />
         <span>
-          Witnessed by <strong>{witness.name}</strong>
+          {confirmedLabel} <strong>{witness.name}</strong>
         </span>
         <Button size="small" appearance="subtle" onClick={() => onChange(null)}>
-          Change witness
+          Change {who.toLowerCase()}
         </Button>
       </div>
     );
@@ -110,13 +122,10 @@ export function WitnessPanel({
   const failed = confirm.error && !(isApiError(confirm.error) && confirm.error.code === 'witness.code_required');
   return (
     <fieldset className={styles.panel}>
-      <legend className={styles.legend}>Witness (a second nurse, at this screen)</legend>
-      <Caption1 className={styles.muted}>
-        A controlled drug is witnessed: the second nurse types their own user name and password here. Nothing is signed
-        in, and the password is not kept.
-      </Caption1>
+      <legend className={styles.legend}>{legend}</legend>
+      <Caption1 className={styles.muted}>{description}</Caption1>
       <div className={styles.row}>
-        <Field label="Witness's user name" required>
+        <Field label={`${who}'s user name`} required>
           <Input
             value={userName}
             onChange={(_, d) => setUserName(d.value)}
@@ -125,7 +134,7 @@ export function WitnessPanel({
             autoComplete="off"
           />
         </Field>
-        <Field label="Witness's password" required>
+        <Field label={`${who}'s password`} required>
           <Input
             type="password"
             value={password}
@@ -136,7 +145,7 @@ export function WitnessPanel({
           />
         </Field>
         {askCode && (
-          <Field label="Witness's authenticator code" required hint="6 digits from their authenticator app">
+          <Field label={`${who}'s authenticator code`} required hint="6 digits from their authenticator app">
             <Input
               value={code}
               onChange={(_, d) => setCode(d.value)}
@@ -148,7 +157,7 @@ export function WitnessPanel({
           </Field>
         )}
         <Button icon={<ShieldKeyholeRegular />} disabled={!ready || confirm.isPending} onClick={send}>
-          Confirm witness
+          Confirm {who.toLowerCase()}
         </Button>
       </div>
       {failed && (

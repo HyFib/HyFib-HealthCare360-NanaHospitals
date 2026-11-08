@@ -27,6 +27,16 @@ Telehealth video consultations (WebRTC signalling, waiting room, chat) and Remot
   requires the doctor's DSC, once it is signed with it: Clinical ERX-04). The call screen's
   "Open chart" and "Notes and prescription" open in a new browser tab, or in HC360 Desktop in a second window, so the
   call keeps running while the doctor writes.
+* **Consent to a video consultation** – the Telemedicine Practice Guidelines 2020 (s.3.3) ask the doctor to have the
+  patient's consent before a teleconsultation. It is the patient's `ConsentType.Telehealth` consent (Patients,
+  `TelehealthConsents`), a standing permission in force until withdrawn or refused again. It is given on the portal when
+  the patient books a video consultation (the booking is refused without it), at the desk (the consents panel), or by
+  voice to the doctor at the start of the call, which the doctor records with what the patient was told
+  (`POST …/telehealth-consent`, on the patient's consents as the doctor's). Without one in force, neither `POST …/start`
+  (422 `telehealth.consent_required`) nor the hub's `Admit` starts a consultation not yet under way; a call already
+  under way goes on if the consent is withdrawn, and the next one does not start. `TelehealthSessionDetail
+  .telehealthConsentGivenAt` says whether one is on record; the call screen asks the doctor to record it before
+  admitting.
 * Sessions nobody started become `Missed` one hour after their scheduled end (job).
 * **Switched off** ([features.md](features.md), `features.telehealth`): every `/api/v1/telehealth` and
   `/api/v1/portal/telehealth` endpoint answers 503 `feature.disabled`, except `end` and `cancel`, so a call already
@@ -45,7 +55,7 @@ The hub accepts anonymous connections (guests have no JWT) and authorises every 
 | `JoinAsClinician(sessionId)` → `TelehealthJoinResult` | staff with `telehealth.consult` at the session's facility | joins the room; sees who is waiting; PHI access audited |
 | `JoinAsPatient(sessionId)` → `TelehealthJoinResult` | portal user with `portal.access` whose `PortalPatientScope` covers the patient | waiting room (re-admitted automatically after a reconnect) |
 | `JoinAsGuest(sessionId, token)` → `TelehealthJoinResult` | holder of the SMS/WhatsApp link | waiting room; sees first names only; 5 failed tries abort the connection |
-| `Admit(sessionId, participantId?)` | clinician | admits one/all waiting; starts the clock |
+| `Admit(sessionId, participantId?)` | clinician | admits one/all waiting; starts the clock; refused while the patient's consent to a video consultation is not on record and the call is not yet under way |
 | `SendOffer` / `SendAnswer(sessionId, sdp)`, `SendIceCandidate(sessionId, candidate)` | admitted participants | relayed to the others in the room |
 | `SendChat(sessionId, text)` → `TelehealthMessageDto` | admitted participants | stored and broadcast (max 2 000 chars); the reply shows it to the sender even if the broadcast could not be sent |
 | `ChangeMediaMode(sessionId, audioOnly)` | admitted participants | audio-only fallback, recorded |
@@ -72,11 +82,12 @@ request or hub call that saved it still succeeds (REL-03), so nobody sends a cha
 | GET | `/sessions?date&to&practitionerId&status&mine` | `telehealth.sessions.read` | ≤ 31 days → `TelehealthSessionListItem[]` |
 | GET | `/sessions/{id}` | `telehealth.sessions.read` | → `TelehealthSessionDetail` (participants with quality, message count, link info); guard + PHI audit |
 | POST | `/sessions` | `telehealth.sessions.manage` | `CreateTelehealthSessionRequest` (appointmentId **or** patientId + practitionerId + scheduledStartAt, durationMinutes 5–120, sendLink) → 201 `TelehealthLinkIssued { sessionId, joinUrl, expiresAt, sent }` |
-| POST | `/sessions/{id}/start` | `telehealth.consult` | → `TelehealthSessionDetail` (visit created, appointment InConsultation) |
+| POST | `/sessions/{id}/start` | `telehealth.consult` | → `TelehealthSessionDetail` (visit created, appointment InConsultation); 422 `telehealth.consent_required` without the patient's consent to a video consultation |
 | POST | `/sessions/{id}/end` | `telehealth.consult` | `EndTelehealthSessionRequest` (qualityNotes) → `TelehealthSessionDetail` |
 | POST | `/sessions/{id}/cancel` | `telehealth.sessions.manage` | `CancelTelehealthSessionRequest` (reason) → `TelehealthSessionDetail` |
 | POST | `/sessions/{id}/resend-link` | `telehealth.sessions.manage` | → `TelehealthLinkIssued` (old link stops working) |
 | POST | `/sessions/{id}/recording-consent` | `telehealth.consult` | `RecordingConsentRequest { granted }` → 204 |
+| POST | `/sessions/{id}/telehealth-consent` | `telehealth.consult` | `TelehealthConsentRequest { notes }` (what the patient was told and agreed to, by voice; required, ≤ 800) → `TelehealthSessionDetail`; adds a `Telehealth` consent unless one is in force; chart access checked |
 | GET | `/sessions/{id}/messages` | `telehealth.sessions.read` | → `TelehealthMessageDto[]` (PHI audit) |
 | POST | `/sessions/{id}/messages` | `telehealth.consult` | `PostTelehealthMessageRequest { text }` → 201 `TelehealthMessageDto` |
 

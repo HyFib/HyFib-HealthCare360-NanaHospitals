@@ -44,12 +44,20 @@ export function useVisitActions(): {
 
   const end = useMutation({
     mutationFn: ({ visit, action, reason }: { visit: VisitListItem; action: Ending['action']; reason?: string }) =>
-      action === 'cancel' ? visitApi.cancel(visit.id, reason ?? '') : visitApi.complete(visit.id),
-    onSuccess: (_, { visit, action }) => {
-      notify.success(
-        action === 'cancel' ? 'Visit cancelled' : 'Visit closed',
-        `${visit.visitNumber} · ${visit.patientName}`,
-      );
+      action === 'cancel' ? visitApi.cancel(visit.id, reason ?? '') : visitApi.complete(visit.id).then(() => undefined),
+    onSuccess: (asked, { visit, action }) => {
+      if (asked) {
+        // The doctor had started the visit: nothing changes until a second person approves.
+        notify.success(
+          'Asked for approval',
+          `${visit.visitNumber} · ${visit.patientName}. The doctor has started this visit, so a front-office supervisor or the treating doctor decides.`,
+        );
+      } else {
+        notify.success(
+          action === 'cancel' ? 'Visit cancelled' : 'Visit closed',
+          `${visit.visitNumber} · ${visit.patientName}`,
+        );
+      }
       close();
       void refresh();
     },
@@ -106,7 +114,8 @@ export function useVisitActions(): {
             <>
               <Text weight="semibold">{visit.patientName}</Text> ({visit.uhid}), checked in for{' '}
               {visit.departmentName ?? 'a visit'}. Its queue token is cancelled and its charges not yet billed are
-              withdrawn. A cancelled visit cannot be reopened.
+              withdrawn. A cancelled visit cannot be reopened. Once the doctor has started the visit, a front-office
+              supervisor or the treating doctor approves the cancellation first.
             </>
           )
         }

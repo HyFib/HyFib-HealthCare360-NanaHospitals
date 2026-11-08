@@ -266,7 +266,10 @@ export const WARD: WardDto = {
   version: 1,
 };
 
-/** The board: Asha with the doctor, Ravi (restricted) waiting since check-in, a man in the general ward for two days. */
+/**
+ * The board: Asha with the doctor, Ravi (restricted) waiting since check-in, a man in the general ward for two days and a
+ * man in casualty with the doctor after triage at level 2.
+ */
 export const IN_HOSPITAL: InHospitalPatient[] = [
   {
     patientId: PATIENTS[0]!.id,
@@ -344,6 +347,33 @@ export const IN_HOSPITAL: InHospitalPatient[] = [
       ],
     }),
   },
+  {
+    patientId: '0192a000-0000-7000-8000-000000000005',
+    uhid: 'NH26000127',
+    patientName: 'Senthil Kumar',
+    isRestricted: false,
+    gender: 'Male',
+    age: '34Y',
+    kind: 'Emergency',
+    departmentId: null,
+    departmentName: 'Emergency',
+    wardId: null,
+    place: 'Casualty · ESI 2',
+    arrivedAt: minutesAgo(40),
+    journey: journey({
+      kind: 'Emergency',
+      id: '0192a000-0000-7000-8000-00000000a505',
+      number: 'ER2600031',
+      title: 'Casualty · Fall from two-wheeler',
+      stages: [
+        stage('arrived', 'Arrived', 'Done', 40, 'Government ambulance'),
+        stage('triaged', 'Triaged', 'Done', 36, 'ESI 2'),
+        stage('seen-by-doctor', 'Seen by doctor', 'Current', 30, 'Dr. Arjun Rao'),
+        stage('investigations-done', 'Investigations done', 'Pending', null, '0 of 1 resulted'),
+        stage('disposition', 'Disposition', 'Pending'),
+      ],
+    }),
+  },
 ];
 
 /** A patient's journeys as their page shows them: Asha's visit, her CRP waiting in the lab, and a booked operation. */
@@ -352,6 +382,7 @@ export function patientJourneys(patientId: string): PatientJourneys {
     patientId,
     asOf: minutesAgo(0),
     outpatient: ASHA_VISIT,
+    emergency: null,
     inpatient: null,
     surgeries: [
       journey({

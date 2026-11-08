@@ -87,6 +87,8 @@ export interface TelehealthSessionDetail {
   joinTokenExpiresAt: string | null;
   recordingConsent: boolean;
   recordingConsentAt: string | null;
+  /** When the patient's consent to be seen by video (in force) was given; null: none on record, so the call cannot start. */
+  telehealthConsentGivenAt: string | null;
   audioOnlyUsed: boolean;
   qualityNotes: string | null;
   cancelReason: string | null;
@@ -207,6 +209,8 @@ export const telehealthApi = {
   resendLink: (id: string) => api.post<TelehealthLinkIssued>(`${BASE}/sessions/${id}/resend-link`),
   recordingConsent: (id: string, granted: boolean) =>
     api.post<void>(`${BASE}/sessions/${id}/recording-consent`, { granted }),
+  telehealthConsent: (id: string, notes: string) =>
+    api.post<TelehealthSessionDetail>(`${BASE}/sessions/${id}/telehealth-consent`, { notes }),
   postMessage: (id: string, text: string) =>
     api.post<TelehealthMessageDto>(`${BASE}/sessions/${id}/messages`, { text }),
 };

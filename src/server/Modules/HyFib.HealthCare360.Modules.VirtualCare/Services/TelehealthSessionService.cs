@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
 using HyFib.HealthCare360.Modules.VirtualCare.Hubs;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.VirtualCare.Services;
 
@@ -19,6 +20,7 @@ public sealed class TelehealthSessionService(
     VisitService visits,
     TelehealthLinkSender links,
     TelehealthBroadcaster broadcaster,
+    ISettingsService settings,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -100,7 +102,8 @@ public sealed class TelehealthSessionService(
 
     /// <summary>
     /// Starts the consultation: creates the telehealth visit (once), marks the appointment "in consultation" and starts
-    /// the clock. Safe to repeat (for example after the doctor's app reconnects).
+    /// the clock. Safe to repeat (for example after the doctor's app reconnects). A consultation not yet under way starts
+    /// only with the patient's consent to be seen by video on record (<see cref="TelehealthConsents"/>).
     /// </summary>
     public async Task<Result<TelehealthSession>> StartAsync(Guid id, CancellationToken ct)
     {
@@ -113,6 +116,11 @@ public sealed class TelehealthSessionService(
         if (session.IsClosed)
         {
             return Error.Rule("telehealth.closed", "This consultation is closed.");
+        }
+
+        if (session.Status != TelehealthStatus.InProgress && !await TelehealthConsents.OnRecordAsync(db, session.PatientId, ct))
+        {
+            return TelehealthConsents.Required();
         }
 
         if (session.VisitId is null)
@@ -211,6 +219,36 @@ public sealed class TelehealthSessionService(
         var sent = await links.SendAsync(session, url, ct);
         await db.SaveChangesAsync(ct);
         return new TelehealthLinkIssued(session.Id, url, session.JoinTokenExpiresAt, sent);
+    }
+
+    /// <summary>
+    /// The doctor records that the patient agreed, by voice at the start of the call, to be seen by video: a telehealth
+    /// consent on the patient's record, taken by this doctor, with what was said. Nothing is added when one is in force.
+    /// </summary>
+    public async Task<Result<TelehealthSession>> RecordTelehealthConsentAsync(Guid id, string notes, CancellationToken ct)
+    {
+        var session = await db.Set<TelehealthSession>().AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (session is null)
+        {
+            return Error.NotFound(nameof(TelehealthSession), id);
+        }
+
+        if (session.IsClosed)
+        {
+            return Error.Rule("telehealth.closed", "This consultation is closed.");
+        }
+
+        if (!await TelehealthConsents.OnRecordAsync(db, session.PatientId, ct))
+        {
+            var reference = session.AppointmentNumber is { } number ? $" (appointment {number})" : string.Empty;
+            await TelehealthConsents.GrantAsync(
+                db, settings, session.PatientId, currentUser.UserId, session.FacilityId,
+                $"Given by voice to the doctor at the start of the video consultation{reference}: {notes.Trim()}", time.GetUtcNow(), ct);
+            await db.SaveChangesAsync(ct);
+            await broadcaster.SessionChangedAsync(session, ct);
+        }
+
+        return session;
     }
 
     public async Task<Result> RecordConsentAsync(Guid id, bool granted, CancellationToken ct)

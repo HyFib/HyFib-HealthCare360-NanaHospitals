@@ -33,7 +33,7 @@ import {
   ShieldKeyholeRegular,
   TagRegular,
 } from '@fluentui/react-icons';
-import { formatDate, formatDateOnly, formatDateTime, formatPhone, humanize, isApiError } from '@hc360/core';
+import { formatDate, formatDateOnly, formatDateTime, formatInr, formatPhone, humanize, isApiError } from '@hc360/core';
 import {
   DataTable,
   EmptyState,
@@ -50,6 +50,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { AdmissionDietPanel } from '@/modules/dietary/AdmissionDietPanel';
 import { HistoryButton } from '@/modules/history/RecordHistory';
@@ -286,6 +287,20 @@ function AdmissionPage() {
 
       <StayHeader admission={a} />
 
+      {a.pendingDischarge && (
+        <PendingGrantNotice
+          approvalId={a.pendingDischarge.approvalId}
+          what={a.pendingDischarge.summary}
+          requestedBy={a.pendingDischarge.requestedBy}
+          requestedAt={a.pendingDischarge.requestedAt}
+          decides={
+            a.pendingDischarge.type === 'Absconded'
+              ? 'The nurse in charge decides it; until then the patient stays admitted. If the patient comes back, withdraw the request.'
+              : 'A second doctor decides it; until then the patient stays admitted.'
+          }
+        />
+      )}
+
       {initiated && (
         <Section
           title="Discharge in progress"
@@ -421,6 +436,11 @@ function StayHeader({ admission: a }: { admission: AdmissionDetail }) {
           MLC change waiting for approval
         </Badge>
       )}
+      {a.pendingDischarge && (
+        <Badge color="warning" appearance="tint">
+          {a.pendingDischarge.type === 'Absconded' ? 'Absconded' : 'Death'}: closing waits for approval
+        </Badge>
+      )}
     </div>
   );
 }
@@ -470,6 +490,7 @@ function Overview({ admission: a }: { admission: AdmissionDetail }) {
           </MessageBarBody>
         </MessageBar>
       )}
+      {a.declaration && <DeclarationDetails declaration={a.declaration} />}
       {a.cancelledAt && (
         <MessageBar intent="warning" layout="multiline">
           <MessageBarBody>
@@ -587,6 +608,34 @@ function Charges({ admissionId }: { admissionId: string }) {
         ]}
         emptyTitle="No bed or nursing days charged yet"
       />
+    </div>
+  );
+}
+
+/** How the stay ended, as declared (maker-checker, slice 8): the form and its witness, the abscondence report, the certificate, the dues left. */
+function DeclarationDetails({ declaration: d }: { declaration: NonNullable<AdmissionDetail['declaration']> }) {
+  const styles = useStyles();
+  return (
+    <div className={styles.details}>
+      {d.signedBy && <Detail label="Form">{d.signedBy}</Detail>}
+      {d.risksExplainedBy && <Detail label="Risks explained by">{d.risksExplainedBy}</Detail>}
+      {d.witnessName && <Detail label="Witness">{d.witnessName}</Detail>}
+      {d.signedFormFileId && <Detail label="Scanned form">Attached</Detail>}
+      {d.lastSeenAt && <Detail label="Last seen">{formatDateTime(d.lastSeenAt)}</Detail>}
+      {d.searchedBy && <Detail label="Searched by">{d.searchedBy}</Detail>}
+      {d.type === 'Absconded' && (
+        <Detail label="Police told">
+          {d.policeInformed ? [d.policeStation, d.policeReference].filter(Boolean).join(', ') : 'No'}
+        </Detail>
+      )}
+      {d.type === 'Absconded' && (
+        <Detail label="Relatives told">{d.relativesInformed ? d.relativeInformed : 'No'}</Detail>
+      )}
+      {d.deathCertificateNumber && <Detail label="Death certificate">{d.deathCertificateNumber}</Detail>}
+      {d.certificatePendingPostMortem && <Detail label="Death certificate">Pending post-mortem</Detail>}
+      {d.duesOutstanding !== null && <Detail label="Dues left at closing">{formatInr(d.duesOutstanding)}</Detail>}
+      <Detail label="Recorded by">{d.recordedBy}</Detail>
+      {d.approvedBy && <Detail label="Approved by">{d.approvedBy}</Detail>}
     </div>
   );
 }

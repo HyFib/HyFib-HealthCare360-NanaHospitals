@@ -1,6 +1,7 @@
 import type { StatusTone } from '@hc360/ui';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 
 // Births and deaths in the hospital (server `VitalRegistrationEndpoints`): a birth is recorded against the mother
 // (Form 1, Form 3 for a still birth), a death with its medical certificate of cause of death (MCCD, Form 4). Each is
@@ -169,6 +170,11 @@ export interface DeathRecordDto {
   confirmedBy: string | null;
   confirmerRegistrationNumber: string | null;
   confirmedAt: string | null;
+  /**
+   * When the certifier asked a second doctor to let them void this confirmed certificate; null when none waits. Until it
+   * is approved the certificate and the deceased status stand (maker-checker, slice 8).
+   */
+  voidWaitingSince?: string | null;
 }
 
 /** A birth to record, or to correct (`version`: the record as read) until it is reported. */
@@ -336,8 +342,12 @@ export const vitalApi = {
   correctDeath: (id: string, request: SaveDeathRequest) => api.put<DeathRecordDto>(death(id), request),
   reportDeath: (id: string, request: ReportToRegistrarRequest) =>
     api.post<DeathRecordDto>(`${death(id)}/report`, request),
+  /**
+   * 200 with the certificate marked; 202 with the request when a second doctor confirmed it, and another doctor must agree
+   * (maker-checker, slice 8). A certificate reported to the Registrar is refused (`vital.reported`).
+   */
   deathInError: (id: string, reason: string, version: number) =>
-    api.post<DeathRecordDto>(`${death(id)}/entered-in-error`, { reason, version }),
+    api.post<DeathRecordDto | ApprovalRequestDto>(`${death(id)}/entered-in-error`, { reason, version }),
   /** The certifying doctor asks a second doctor to confirm the certificate as it stands. */
   askDeathConfirmation: (id: string, version: number) =>
     api.post<DeathRecordDto>(`${death(id)}/confirmation`, { version }),

@@ -23,6 +23,14 @@ internal static class ScheduleEndpoints
         group.MapPut("/exceptions/{id:guid}", (Guid id, SaveScheduleExceptionRequest request, ScheduleService schedules, CancellationToken ct) => SaveException(id, request, schedules, ct))
             .RequirePermission(SchedulingPermissions.SchedulesManage).WithValidation<SaveScheduleExceptionRequest>().RequireVersion();
         group.MapDelete("/exceptions/{id:guid}", DeleteException).RequirePermission(SchedulingPermissions.SchedulesManage);
+
+        // The patients a leave or block strands: who they are and whether they were told; and telling them, in one action.
+        group.MapGet("/exceptions/{id:guid}/stranded", async (Guid id, StrandedPatientNotifier stranded, CancellationToken ct) =>
+                (await stranded.ListAsync(id, ct)).ToOk())
+            .RequirePermission(SchedulingPermissions.AppointmentsManage);
+        group.MapPost("/exceptions/{id:guid}/notify-patients", async (Guid id, StrandedPatientNotifier stranded, CancellationToken ct) =>
+                (await stranded.NotifyAsync(id, ct)).ToOk())
+            .RequirePermission(SchedulingPermissions.AppointmentsManage);
     }
 
     private static async Task<IResult> ListSchedules(Guid? practitionerId, Guid? departmentId, bool? activeOnly, HospitalDbContext db, CancellationToken ct)

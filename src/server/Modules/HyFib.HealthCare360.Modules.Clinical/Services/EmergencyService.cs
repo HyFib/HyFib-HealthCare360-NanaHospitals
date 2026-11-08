@@ -21,6 +21,7 @@ internal sealed class EmergencyService(
     INumberSeries numbers,
     PatientAccessGuard guard,
     IRealtimePublisher realtime,
+    AgainstAdviceDeclarations againstAdvice,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -69,7 +70,10 @@ internal sealed class EmergencyService(
         return new EmergencyCaseDetail(
             c.Id, c.VisitId, c.PatientId, person.Name, person.Uhid, person.Gender?.ToString(), person.AgeYears, c.ArrivedAt, c.ArrivalMode, c.Level, c.TriagedAt,
             c.DoctorSeenAt, c.DoctorName, c.Disposition, c.DisposedAt, c.DisposedByName, c.DispositionNotes, c.ReferredTo,
-            triages.Select(Dto).ToList(), mlc is null ? null : Dto(mlc, person.Gender), c.Version);
+            triages.Select(Dto).ToList(), mlc is null ? null : Dto(mlc, person.Gender), c.Version,
+            c.LamaSignedBy is { } signedBy
+                ? new AgainstAdviceDto(signedBy, c.LamaSignatoryName, c.LamaRelationship, c.LamaDoctorName ?? string.Empty, c.LamaWitnessName ?? string.Empty, c.LamaSignedFormFileId)
+                : null);
     }
 
     public async Task<TriagePreview> PreviewAsync(EmergencyCase c, TriagePreviewRequest r, CancellationToken ct)
@@ -179,7 +183,22 @@ internal sealed class EmergencyService(
 
         db.SetExpectedVersion(c, request.Version);
         var now = time.GetUtcNow();
-        var disposed = c.Dispose(request.Disposition, request.Notes, request.ReferredTo, Me, now);
+
+        // LAMA (maker-checker, slice 8): who signed, the doctor who explained the risks, and a witness who confirms with their
+        // own credentials at this screen; the confirmations are spent with this save.
+        AgainstAdviceRecord? declaration = null;
+        if (request.Disposition == EmergencyDisposition.Lama && request.AgainstAdvice is { } asked && c.IsOpen)
+        {
+            var recorded = await againstAdvice.RecordAsync(asked, AgainstAdviceDeclarations.ErWitness.Key, c.PatientId, nameof(EmergencyCase), c.Id, ct);
+            if (recorded.IsFailure)
+            {
+                return recorded.Error!;
+            }
+
+            declaration = recorded.Value;
+        }
+
+        var disposed = c.Dispose(request.Disposition, request.Notes, request.ReferredTo, Me, now, declaration);
         if (disposed.IsFailure)
         {
             return disposed.Error!;

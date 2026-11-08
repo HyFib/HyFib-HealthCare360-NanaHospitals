@@ -19,6 +19,8 @@ const useStyles = makeStyles({
     scrollbarWidth: 'thin',
   },
   day: {
+    // Holds the visually hidden date: without it, a day scrolled out of the strip would widen the page.
+    position: 'relative',
     scrollSnapAlign: 'start',
     display: 'flex',
     flexDirection: 'column',
@@ -50,6 +52,14 @@ const useStyles = makeStyles({
   date: { fontSize: tokens.fontSizeBase400, fontWeight: tokens.fontWeightSemibold },
   count: { fontSize: tokens.fontSizeBase200, color: tokens.colorStatusSuccessForeground1 },
   none: { fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3 },
+  srOnly: {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    overflow: 'hidden',
+    clip: 'rect(0 0 0 0)',
+    whiteSpace: 'nowrap',
+  },
 });
 
 /**
@@ -93,27 +103,23 @@ export function DateStrip({
         {days.map((day) => {
           const free = counts.get(day) ?? 0;
           const isSelected = day === selected;
-          const label = `${describeDay(day, f, t, now)}, ${f.calendarDate(day)}. ${free > 0 ? t('booking.day.free', { count: free }) : t('booking.day.none')}`;
+          const shown = loading ? '…' : free > 0 ? t('booking.day.free', { count: free }) : t('booking.day.none');
           return (
             <button
               key={day}
               type="button"
               role="radio"
               aria-checked={isSelected}
-              aria-label={label}
               className={mergeClasses(styles.day, isSelected && styles.selected)}
               disabled={loading || free === 0}
               onClick={() => onSelect(day)}
             >
-              <span className={styles.weekday} aria-hidden>
-                {f.weekday(day)}
-              </span>
-              <span className={styles.date} aria-hidden>
-                {f.dayMonth(day)}
-              </span>
-              <span className={free > 0 ? styles.count : styles.none} aria-hidden>
-                {loading ? '…' : free > 0 ? t('booking.day.free', { count: free }) : t('booking.day.none')}
-              </span>
+              {/* The name is the text on the button, so a voice user can say what they see (WCAG 2.5.3); the full date
+                  follows it, for a screen reader only. */}
+              <span className={styles.weekday}>{f.weekday(day)}</span>{' '}
+              <span className={styles.date}>{f.dayMonth(day)}</span>{' '}
+              <span className={free > 0 ? styles.count : styles.none}>{shown}</span>
+              <span className={styles.srOnly}>{`. ${describeDay(day, f, t, now)}, ${f.calendarDate(day)}`}</span>
             </button>
           );
         })}

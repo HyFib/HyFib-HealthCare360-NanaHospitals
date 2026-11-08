@@ -43,6 +43,29 @@ internal sealed class AdmissionConfiguration : IEntityTypeConfiguration<Admissio
     }
 }
 
+internal sealed class DischargeDeclarationConfiguration : IEntityTypeConfiguration<DischargeDeclaration>
+{
+    public void Configure(EntityTypeBuilder<DischargeDeclaration> b)
+    {
+        b.ToTable("discharge_declarations", InpatientSchema.Name);
+        b.Property(x => x.SignatoryName).HasMaxLength(200);
+        b.Property(x => x.SignatoryRelationship).HasMaxLength(64);
+        b.Property(x => x.RisksExplainedByName).HasMaxLength(200);
+        b.Property(x => x.WitnessName).HasMaxLength(200);
+        b.Property(x => x.SearchedBy).HasMaxLength(300);
+        b.Property(x => x.PoliceStation).HasMaxLength(200);
+        b.Property(x => x.PoliceReference).HasMaxLength(100);
+        b.Property(x => x.RelativeInformed).HasMaxLength(200);
+        b.Property(x => x.DeathCertificateNumber).HasMaxLength(32);
+        b.Property(x => x.RecordedByName).HasMaxLength(200);
+        b.Property(x => x.ApprovedByName).HasMaxLength(200);
+        b.HasOne<Admission>().WithMany().HasForeignKey(x => x.AdmissionId).OnDelete(DeleteBehavior.Restrict);
+
+        // One declaration per stay: a stay ends once.
+        b.HasIndex(x => x.AdmissionId).IsUnique();
+    }
+}
+
 internal sealed class BedAssignmentConfiguration : IEntityTypeConfiguration<BedAssignment>
 {
     public void Configure(EntityTypeBuilder<BedAssignment> b)

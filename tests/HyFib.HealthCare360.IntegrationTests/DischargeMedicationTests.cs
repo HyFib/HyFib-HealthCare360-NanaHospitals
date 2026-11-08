@@ -42,9 +42,8 @@ public sealed class DischargeMedicationTests(HospitalServer server)
         before.Count(d => d.MedicationOrderId == qid.Id).ShouldBeGreaterThan(0);
         before.ShouldContain(d => d.MedicationOrderId == stat.Id && d.Status == MarStatus.Due);
 
-        // She leaves the ward unseen: recorded at once, without billing clearance.
-        await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/complete",
-            new CompleteDischargeRequest(DischargeType.Absconded, DischargedAt: null, "Not in the ward at the 6 pm round; security informed.", NotifyPatient: false));
+        // She leaves the ward unseen: closed without billing clearance once the nurse in charge approves.
+        await server.AbscondAsync(nurse, admission.Id, "Not in the ward at the 6 pm round; security informed.");
 
         var stopped = await nurse.GetAsync<List<MedicationOrderDto>>($"{orders}?activeOnly=false");
         stopped.Select(o => o.Id).ShouldBe([qid.Id, stat.Id], ignoreOrder: true);

@@ -97,6 +97,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     responded_by_doctor = table.Column<bool>(type: "boolean", nullable: false),
                     outcome = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                     response = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    reminder_sent_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     created_by = table.Column<Guid>(type: "uuid", nullable: true),
                     updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),

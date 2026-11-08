@@ -1,7 +1,15 @@
 import { api } from '@/lib/api';
 
 /** What a witness confirms: the server's witness purposes (`WitnessPurpose`). */
-export type WitnessPurposeKey = 'mar.dose' | 'blood.bedside_check';
+export type WitnessPurposeKey =
+  | 'mar.dose'
+  | 'blood.bedside_check'
+  // A patient leaving the ward against medical advice (LAMA, DAMA): a nurse or doctor of the ward team witnesses.
+  | 'discharge.against_advice'
+  // The doctor who explained the risks of leaving against advice, confirming at the nurse's screen.
+  | 'against_advice.doctor'
+  // A patient leaving the emergency department against medical advice: a nurse or doctor of the department witnesses.
+  | 'er.lama';
 
 export interface ConfirmWitnessRequest {
   userName: string;

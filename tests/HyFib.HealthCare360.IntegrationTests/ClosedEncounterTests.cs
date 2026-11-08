@@ -23,6 +23,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
@@ -76,7 +77,7 @@ public sealed class ClosedEncounterTests(HospitalServer server)
 
         // A visit checked in by mistake and cancelled takes none either.
         var mistaken = await CheckInAsync(frontOffice, doctor, patientId);
-        await frontOffice.PostAsync($"/api/v1/visits/{mistaken.Id}/cancel", new CancelVisitRequest("Checked in twice by mistake"));
+        await VisitCancellation.CancelAsync(server, frontOffice, mistaken.Id, "Checked in twice by mistake");
         (await RefusalAsync(doctor, Order(patientId, cbc, visitId: mistaken.Id))).Code.ShouldBe("visit.cancelled");
         (await doctor.GetAsync<PagedResult<OrderDto>>($"{Orders}?patientId={patientId}")).Items.ShouldBeEmpty();
     }
@@ -100,7 +101,7 @@ public sealed class ClosedEncounterTests(HospitalServer server)
         var accession = await AccessionAsync(lab, patientId);
         await WithoutPaymentGateAsync(() => lab.PostAsync<List<SampleLabel>>($"/api/v1/lab/orders/{accession.Id}/collect",
             new CollectSamplesRequest([TubeOf(accession, Crp)], null, "Left arm")));
-        await frontOffice.PostAsync($"/api/v1/visits/{visit.Id}/cancel", new CancelVisitRequest("Patient left before the tests"));
+        await VisitCancellation.CancelAsync(server, frontOffice, visit.Id, "Patient left before the tests");
         const string reason = "Visit cancelled: Patient left before the tests";
 
         // The doctor's order shows the blood count and the X-ray withdrawn, with the reason; the CRP goes on.
@@ -209,7 +210,7 @@ public sealed class ClosedEncounterTests(HospitalServer server)
         booking.Status.ShouldBe(BookingStatus.CheckedIn);
 
         // The patient leaves before the blood is drawn, and the desk cancels the visit.
-        await frontOffice.PostAsync($"/api/v1/visits/{visit.Id}/cancel", new CancelVisitRequest("Patient left before the check-up"));
+        await VisitCancellation.CancelAsync(server, frontOffice, visit.Id, "Patient left before the check-up");
 
         // The check-up goes with it, as its own cancellation does: the booking, the package charge and the blood count.
         var cancelled = await frontOffice.GetAsync<BookingDto>($"{Bookings}/{booking.Id}");
@@ -234,7 +235,7 @@ public sealed class ClosedEncounterTests(HospitalServer server)
         // The package is billed and the bill finalised before the desk cancels the visit.
         var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(visit.Id, null, null));
         await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
-        await frontOffice.PostAsync($"/api/v1/visits/{visit.Id}/cancel", new CancelVisitRequest("Visit opened twice"));
+        await VisitCancellation.CancelAsync(server, frontOffice, visit.Id, "Visit opened twice");
 
         // The patient has paid for the check-up: it stays, and so does its blood count, until billing refunds the package.
         (await frontOffice.GetAsync<BookingDto>($"{Bookings}/{booking.Id}")).Status.ShouldBe(BookingStatus.CheckedIn);
@@ -259,7 +260,7 @@ public sealed class ClosedEncounterTests(HospitalServer server)
         var closed = await CheckInAsync(frontOffice, doctor, patientId);
         await frontOffice.PostAsync($"/api/v1/visits/{closed.Id}/complete");
         var cancelled = await CheckInAsync(frontOffice, doctor, patientId);
-        await frontOffice.PostAsync($"/api/v1/visits/{cancelled.Id}/cancel", new CancelVisitRequest("Checked in twice by mistake"));
+        await VisitCancellation.CancelAsync(server, frontOffice, cancelled.Id, "Checked in twice by mistake");
 
         // Not booked as a walk-in on either visit: the refusal names the visit.
         (await RefusalAsync(frontOffice, Bookings, new BookCheckupRequest(patientId, package.Id, Today(), closed.Id, null))).ShouldBe(("visit.closed",
@@ -285,11 +286,14 @@ public sealed class ClosedEncounterTests(HospitalServer server)
         var admission = await AdmitAsync(frontOffice, doctor, patientId);
         var cbc = await ServiceAsync(doctor, Cbc);
 
-        // The discharge is caught between its reads and its save: a transaction of the test holds the stay's row, which the
-        // discharge writes last. The patient left the ward unseen, so it is recorded without billing clearance.
+        // The patient left the ward unseen, so the stay is closed without billing clearance once the nurse in charge approves.
+        // The approval's discharge is caught between its reads and its save: a transaction of the test holds the stay's row,
+        // which the discharge writes last.
+        var asked = await server.AskAbscondedAsync(nurse, admission.Id, "Not in the ward at the 6 pm round");
+        var inCharge = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var request = await inCharge.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}");
         await using var hold = await HeldTransaction.HoldAsync(server, $"SELECT 1 FROM inpatient.admissions WHERE id = {admission.Id} FOR UPDATE");
-        var discharge = nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/complete",
-            new CompleteDischargeRequest(DischargeType.Absconded, DischargedAt: null, "Not in the ward at the 6 pm round", NotifyPatient: false));
+        var discharge = inCharge.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}/approve", new ApproveRequest(null, request.Version));
         await HeldTransaction.WaitUntilLockedAsync(server, admission.Id);
 
         // The doctor orders a blood count for the stay meanwhile: the order waits for the discharge to be saved.
@@ -298,7 +302,8 @@ public sealed class ClosedEncounterTests(HospitalServer server)
 
         // The discharge is saved, and the order then finds the stay ended.
         await hold.ReleaseAsync();
-        (await discharge).Status.ShouldBe(AdmissionStatus.Absconded);
+        (await discharge).Status.ShouldBe(ApprovalStatus.Approved);
+        (await nurse.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admission.Id}")).Status.ShouldBe(AdmissionStatus.Absconded);
         using var refused = await order;
         refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, await refused.Content.ReadAsStringAsync(Ct));
         (await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString().ShouldBe("admission.closed");
@@ -307,7 +312,7 @@ public sealed class ClosedEncounterTests(HospitalServer server)
     }
 
     [Fact]
-    public async Task A_visit_cancelled_while_an_order_is_being_placed_on_it_waits_for_the_order_and_withdraws_it()
+    public async Task A_visit_cancelled_while_an_order_is_being_placed_on_it_waits_for_the_order_and_once_approved_withdraws_it()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
@@ -326,11 +331,15 @@ public sealed class ClosedEncounterTests(HospitalServer server)
         var cancel = frontOffice.SendRawAsync(HttpMethod.Post, $"/api/v1/visits/{visit.Id}/cancel", new CancelVisitRequest("Patient left before the blood test"));
         (await Task.WhenAny(cancel, Task.Delay(TimeSpan.FromSeconds(2), Ct))).ShouldNotBe(cancel, "the cancellation waits for the order");
 
-        // The order is saved first, and the cancellation then withdraws its blood count, in the order and in the lab.
+        // The order is saved first; the desk's cancellation then sees it, so it waits for a second person (the visit now has
+        // an order, MAKER-CHECKER.md slice 15), who approves it: the cancellation withdraws its blood count, in the order and
+        // in the lab.
         await hold.ReleaseAsync();
         var placed = await order;
         using var cancelled = await cancel;
-        cancelled.IsSuccessStatusCode.ShouldBeTrue(await cancelled.Content.ReadAsStringAsync(Ct));
+        cancelled.StatusCode.ShouldBe(HttpStatusCode.Accepted, await cancelled.Content.ReadAsStringAsync(Ct));
+        var asked = await ApiClient.ReadAsync<ApprovalRequestDto>(cancelled, HttpMethod.Post, $"/api/v1/visits/{visit.Id}/cancel");
+        await MakerChecker.ApproveAsync(await server.SignInAsync(HospitalServer.Users.HospitalAdmin), asked);
         const string reason = "Visit cancelled: Patient left before the blood test";
         var line = (await doctor.GetAsync<OrderDto>($"{Orders}/{placed.Id}")).Items.ShouldHaveSingleItem();
         (line.Status, line.CancelReason).ShouldBe((OrderItemStatus.Cancelled, reason));

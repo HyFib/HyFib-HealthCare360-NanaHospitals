@@ -106,6 +106,7 @@ const DETAIL: TelehealthSessionDetail = {
   joinTokenExpiresAt: minutesFromNow(120),
   recordingConsent: false,
   recordingConsentAt: null,
+  telehealthConsentGivenAt: '2026-10-31T03:30:00Z',
   audioOnlyUsed: false,
   qualityNotes: null,
   cancelReason: null,
