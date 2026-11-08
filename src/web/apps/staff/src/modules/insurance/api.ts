@@ -224,6 +224,12 @@ export interface PreAuthDetail {
   rejectedAt: string | null;
   enhancements: EnhancementDto[];
   version: number;
+  /**
+   * When an amount the insurer approved (the approval, an enhancement or the final approval) was recorded and sent to
+   * another insurance desk user to check against the letter; null when none waits. Until it is checked the patient pays
+   * that part of the bill.
+   */
+  amountAskedAt?: string | null;
 }
 
 export interface SavePreAuthRequest {
@@ -317,6 +323,10 @@ export interface ClaimDetail {
   /** The coding medical records verified for the bill's stay or visit; null until a second coder verifies it. */
   verifiedCoding: VerifiedClaimCoding | null;
   version: number;
+  /** When a write-off (the insurer's deductions, or a rejection) was asked for and still waits for a second person. */
+  writeOffAskedAt?: string | null;
+  /** The most the desk writes off alone at this facility; more waits for someone who approves insurance write-offs. */
+  writeOffApprovalAbove?: number;
 }
 
 /** Verified medical records coding (MB-03), as the text of a claim's codes. */
@@ -349,6 +359,8 @@ export interface SettleClaimRequest {
   utrNumber: string | null;
   reference: string | null;
   settledOn: string | null;
+  /** The claim's version the desk saw: a claim that changed meanwhile is refused (409). */
+  version: number;
 }
 
 export interface ClaimFilters {
@@ -509,8 +521,9 @@ export const insuranceApi = {
   submitPreAuth: (id: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/submit`),
   preAuthQuery: (id: string, text: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/query`, { text }),
   preAuthAnswer: (id: string, text: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/answer`, { text }),
-  approvePreAuth: (id: string, approvedAmount: number, reference: string | null) =>
-    api.post<void>(`/api/v1/insurance/preauths/${id}/approve`, { approvedAmount, reference }),
+  /** Records the insurer's approval for another insurance desk user to check (202): nothing moves to the insurer until then. */
+  approvePreAuth: (id: string, approvedAmount: number, reference: string | null, version: number) =>
+    api.post<ApprovalRequestDto>(`/api/v1/insurance/preauths/${id}/approve`, { approvedAmount, reference, version }),
   rejectPreAuth: (id: string, reason: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/reject`, { reason }),
   requestEnhancement: (id: string, amount: number, reason: string) =>
     api.post<void>(`/api/v1/insurance/preauths/${id}/enhancements`, { amount, reason }),
@@ -520,14 +533,17 @@ export const insuranceApi = {
     approved: boolean,
     approvedAmount: number,
     reference: string | null,
+    version: number,
   ) =>
-    api.post<void>(`/api/v1/insurance/preauths/${id}/enhancements/${enhancementId}/respond`, {
+    // A refusal is recorded at once (undefined); an approval waits for another insurance desk user to check it.
+    api.post<ApprovalRequestDto | undefined>(`/api/v1/insurance/preauths/${id}/enhancements/${enhancementId}/respond`, {
       approved,
       approvedAmount,
       reference,
+      version,
     }),
-  finalApproval: (id: string, amount: number, reference: string | null) =>
-    api.post<void>(`/api/v1/insurance/preauths/${id}/final-approval`, { amount, reference }),
+  finalApproval: (id: string, amount: number, reference: string | null, version: number) =>
+    api.post<ApprovalRequestDto>(`/api/v1/insurance/preauths/${id}/final-approval`, { amount, reference, version }),
   createClaim: (request: CreateClaimRequest) => api.post<{ id: string }>('/api/v1/insurance/claims', request),
   updateClaimCoding: (id: string, request: UpdateClaimCodingRequest) =>
     api.put<void>(`/api/v1/insurance/claims/${id}/coding`, request),
@@ -535,9 +551,12 @@ export const insuranceApi = {
   claimAnswer: (id: string, text: string) => api.post<void>(`/api/v1/insurance/claims/${id}/answer`, { text }),
   approveClaim: (id: string, approvedAmount: number) =>
     api.post<void>(`/api/v1/insurance/claims/${id}/approve`, { approvedAmount }),
+  /** Recorded at once (undefined), or, with deductions above the facility's amount, the money posted and the write-off asked for. */
   settleClaim: (id: string, request: SettleClaimRequest, idempotencyKey?: string) =>
-    api.post<void>(`/api/v1/insurance/claims/${id}/settle`, request, { idempotencyKey }),
-  rejectClaim: (id: string, reason: string) => api.post<void>(`/api/v1/insurance/claims/${id}/reject`, { reason }),
+    api.post<ApprovalRequestDto | undefined>(`/api/v1/insurance/claims/${id}/settle`, request, { idempotencyKey }),
+  /** Recorded at once (undefined), or, above the facility's amount, asked for and nothing changes until approved. */
+  rejectClaim: (id: string, reason: string, version: number) =>
+    api.post<ApprovalRequestDto | undefined>(`/api/v1/insurance/claims/${id}/reject`, { reason, version }),
 };
 
 /** Uploads a supporting document (discharge summary, investigation report) to the encrypted file store. */

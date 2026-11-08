@@ -243,23 +243,37 @@ function pieOption(chart: ReportChartData, options: ChartBuildOptions): ChartOpt
 
 // ------------------------------------------------------------------------------------------------ KPI trend
 
-/** Bars for counts and money, a line for rates; a dashed line marks the period average. */
-export function kpiTrendOption(kpi: Pick<KpiValue, 'label' | 'unit' | 'trend'>): ChartOption {
+/**
+ * Bars for counts and money, a line for rates; a dashed line marks the period average and, when the facility set a
+ * target, a dotted line the daily target (the monthly target prorated to a day).
+ */
+export function kpiTrendOption(kpi: Pick<KpiValue, 'label' | 'unit' | 'trend' | 'target'>): ChartOption {
   const points = kpi.trend ?? [];
   const values = points.map((p) => p.value);
   const average = values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : null;
   const asBars = kpi.unit === 'count' || kpi.unit === 'inr';
   const format = (value: number) => (kpi.unit === 'inr' ? formatKpi(value, 'inr') : formatKpi(value, kpi.unit));
-  const markLine =
-    average === null
-      ? undefined
-      : {
-          silent: true,
-          symbol: 'none' as const,
-          lineStyle: { type: 'dashed' as const, opacity: 0.8 },
-          label: { formatter: `Average ${format(average)}`, position: 'insideEndTop' as const, fontSize: 11 },
-          data: [{ yAxis: average }],
-        };
+  const daily = kpi.target?.dailyTarget ?? null;
+  const lines: {
+    yAxis: number;
+    label: { formatter: string; position: 'insideEndTop' | 'insideStartTop'; fontSize: number };
+    lineStyle: { type: 'dashed' | 'dotted'; opacity: number };
+  }[] = [];
+  if (average !== null) {
+    lines.push({
+      yAxis: average,
+      label: { formatter: `Average ${format(average)}`, position: 'insideEndTop', fontSize: 11 },
+      lineStyle: { type: 'dashed', opacity: 0.8 },
+    });
+  }
+  if (daily !== null && values.length > 0) {
+    lines.push({
+      yAxis: daily,
+      label: { formatter: `Target ${format(daily)} a day`, position: 'insideStartTop', fontSize: 11 },
+      lineStyle: { type: 'dotted', opacity: 1 },
+    });
+  }
+  const markLine = lines.length === 0 ? undefined : { silent: true, symbol: 'none' as const, data: lines };
   const series: BarSeriesOption | LineSeriesOption = asBars
     ? { type: 'bar', name: kpi.label, data: values, barMaxWidth: 28, markLine }
     : {
@@ -316,24 +330,29 @@ export function sparklinePaths(
   width: number,
   height: number,
   padding = 2,
-): { line: string; area: string } | null {
+  reference?: number | null,
+): { line: string; area: string; referenceY: number | null } | null {
   const finite = values.filter((v) => Number.isFinite(v));
   if (finite.length < 2) {
     return null;
   }
-  const min = Math.min(...finite);
-  const max = Math.max(...finite);
+  // A reference (the daily target) widens the scale so its line is always inside the box.
+  const hasReference = reference !== null && reference !== undefined && Number.isFinite(reference);
+  const scale = hasReference ? [...finite, reference] : finite;
+  const min = Math.min(...scale);
+  const max = Math.max(...scale);
   const span = max - min || 1;
   const stepX = (width - padding * 2) / (finite.length - 1);
+  const yOf = (value: number) =>
+    max === min ? height / 2 : padding + (1 - (value - min) / span) * (height - padding * 2);
   const points = finite.map((value, index) => {
     const x = padding + index * stepX;
     // A flat series sits in the middle rather than on the floor.
-    const y = max === min ? height / 2 : padding + (1 - (value - min) / span) * (height - padding * 2);
-    return `${round(x)},${round(y)}`;
+    return `${round(x)},${round(yOf(value))}`;
   });
   const line = `M${points.join(' L')}`;
   const area = `${line} L${round(padding + (finite.length - 1) * stepX)},${height} L${padding},${height} Z`;
-  return { line, area };
+  return { line, area, referenceY: hasReference ? round(yOf(reference)) : null };
 }
 
 function round(value: number): number {

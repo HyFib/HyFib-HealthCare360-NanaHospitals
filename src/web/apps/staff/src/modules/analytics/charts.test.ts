@@ -120,5 +120,36 @@ describe('KPI trends and sparklines', () => {
     expect(paths?.area.endsWith('Z')).toBe(true);
     expect(sparklinePaths([5], 100, 20)).toBeNull();
     expect(sparklinePaths([5, 5], 100, 20)?.line).toBe('M2,10 L98,10');
+    expect(sparklinePaths([1, 3, 2], 100, 20)?.referenceY).toBeNull();
+  });
+
+  it('widens the sparkline to hold the daily target line', () => {
+    // Values 1..3 and a target of 5: the scale runs 1..5, so 5 is at the top and 3 half way down.
+    const paths = sparklinePaths([1, 3], 100, 20, 2, 5);
+    expect(paths?.referenceY).toBe(2);
+    expect(paths?.line).toBe('M2,18 L98,10');
+  });
+
+  it('marks the daily target under the trend when one is set', () => {
+    const option = kpiTrendOption({
+      label: 'Revenue',
+      unit: 'inr',
+      trend: [
+        { date: '2026-09-01', value: 100_000 },
+        { date: '2026-09-02', value: 200_000 },
+      ],
+      target: {
+        target: 1_000_000,
+        amber: 900_000,
+        red: 800_000,
+        prorated: true,
+        status: 'Green',
+        ownerRole: 'Accountant',
+        dailyTarget: 98_630.14,
+      },
+    }) as unknown as AnyOption;
+    const lines = (option.series[0]?.markLine as { data: { yAxis: number; label: { formatter: string } }[] }).data;
+    expect(lines.map((l) => l.yAxis)).toEqual([150_000, 98_630.14]);
+    expect(lines[1]?.label.formatter).toMatch(/^Target .* a day$/);
   });
 });

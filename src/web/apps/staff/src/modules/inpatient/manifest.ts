@@ -34,6 +34,12 @@ const manifest: ModuleManifest = {
       keywords: ['IP list', 'discharge', 'transfer', 'in-patients'],
     },
     {
+      label: 'Transfer requests',
+      to: '/inpatient/transfers',
+      permission: ['inpatient.admissions.read', 'nursing.in_charge'],
+      keywords: ['transfer', 'move ward', 'accept transfer', 'step up', 'step down', 'ICU'],
+    },
+    {
       label: 'Nursing station',
       to: '/nursing',
       permission: ['nursing.chart', 'nursing.mar'],
