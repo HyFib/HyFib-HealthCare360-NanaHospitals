@@ -40,7 +40,11 @@ public sealed record WardRoundPatient(
     bool HasCriticalResults,
     DateTimeOffset? VitalsAt,
     FlagSeverity? VitalsSeverity,
-    IReadOnlyList<string> VitalsFlags);
+    IReadOnlyList<string> VitalsFlags,
+    int? News2Score = null,
+    News2Response? News2Response = null,
+    bool News2Complete = false,
+    bool HasOpenEscalation = false);
 
 /// <summary>
 /// The ward round (EMR-01 "IP rounds"): the in-patients under a doctor's care (their own admissions and those they have
