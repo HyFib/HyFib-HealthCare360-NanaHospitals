@@ -28,7 +28,15 @@ public sealed record KpiValue(
     bool HigherIsBetter,
     string? ReportId,
     string Definition,
-    IReadOnlyList<KpiPoint>? Trend);
+    IReadOnlyList<KpiPoint>? Trend,
+    KpiTargetView? Target = null);
+
+/// <summary>
+/// A KPI's facility target as it applies to the period shown: the goal and the amber and red thresholds (counts and money
+/// prorated from their monthly figures), where the value stands against them, the role told when it is missed, and for
+/// counts and money the target per day, drawn as a line under the daily trend.
+/// </summary>
+public sealed record KpiTargetView(decimal Target, decimal Amber, decimal Red, bool Prorated, KpiStatus? Status, string OwnerRole, decimal? DailyTarget);
 
 /// <summary>GET /api/v1/analytics/kpis — the executive KPI set (BI-01).</summary>
 public sealed record KpiSet(
@@ -48,7 +56,7 @@ public sealed record KpiSet(
 /// facility, period and audience, so a busy morning of dashboard refreshes costs a handful of queries. They are read on the
 /// reporting replica when there is one, and on the primary database when it cannot be reached (SCAL-03).
 /// </summary>
-internal sealed class KpiService(ReportingDbContextFactory contexts, FacilityAccess facilities, IMemoryCache cache, TimeProvider time)
+internal sealed class KpiService(ReportingDbContextFactory contexts, FacilityAccess facilities, IMemoryCache cache, TimeProvider time, HospitalDbContext db)
 {
     public const int MaxDays = 366;
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(2);
@@ -90,7 +98,7 @@ internal sealed class KpiService(ReportingDbContextFactory contexts, FacilityAcc
         var key = $"analytics:kpis:{scope.Value.FacilityId?.ToString() ?? ReportKeys.AllFacilities}:{start:yyyyMMdd}:{end:yyyyMMdd}:{operations}:{finance}";
         if (cache.TryGetValue(key, out KpiSet? cached) && cached is not null)
         {
-            return cached;
+            return await WithTargetsAsync(cached, scope.Value.FacilityId, ct);
         }
 
         var (previousFrom, previousTo) = ReportPeriods.Previous(start, end);
@@ -124,7 +132,64 @@ internal sealed class KpiService(ReportingDbContextFactory contexts, FacilityAcc
             cache.Set(key, set, CacheDuration);
         }
 
-        return set;
+        return await WithTargetsAsync(set, scope.Value.FacilityId, ct);
+    }
+
+    /// <summary>
+    /// The facility's targets on the KPIs (read on the primary database at every request, so a target set a minute ago
+    /// shows at once even while the figures come from the cache). A consolidated view of every facility has no targets.
+    /// </summary>
+    private async Task<KpiSet> WithTargetsAsync(KpiSet set, Guid? facilityId, CancellationToken ct)
+    {
+        if (facilityId is not { } id)
+        {
+            return set;
+        }
+
+        var targets = await KpiTargetService.ForFacilityAsync(db, id, ct);
+        if (targets.Count == 0)
+        {
+            return set;
+        }
+
+        var days = AnalyticsClock.Days(set.From, set.To);
+        return set with
+        {
+            Kpis = set.Kpis.Select(k => targets.TryGetValue(k.Key, out var t) ? k with { Target = TargetView(k.Unit, k.HigherIsBetter, k.Value, t, days) } : k).ToList(),
+        };
+    }
+
+    /// <summary>The target as it applies to a period of <paramref name="days"/> days, and where <paramref name="value"/> stands.</summary>
+    internal static KpiTargetView TargetView(string unit, bool higherIsBetter, decimal? value, KpiTarget target, int days)
+    {
+        var band = KpiTargetMath.ForPeriod(unit, target.Target, target.AmberThreshold, target.RedThreshold, days);
+        var additive = KpiTargetMath.IsAdditive(unit);
+        return new KpiTargetView(
+            band.Target, band.Amber, band.Red, additive, KpiTargetMath.Status(value, band, higherIsBetter), target.OwnerRole,
+            additive ? KpiTargetMath.Prorate(target.Target, 1) : null);
+    }
+
+    /// <summary>
+    /// Every KPI of a facility for this month to date (both audiences), for the target monitor: on the replica when there
+    /// is one, as the dashboard reads them.
+    /// </summary>
+    internal async Task<(DateOnly From, DateOnly To, IReadOnlyDictionary<string, decimal?> Values)> MonthToDateAsync(Guid facilityId, DateTimeOffset now, CancellationToken ct)
+    {
+        var today = AnalyticsClock.LocalDate(now);
+        var start = new DateOnly(today.Year, today.Month, 1);
+        var (numbers, _) = await contexts.RunAsync(facilityId, "the KPI targets check", reporting => ComputeAsync(reporting, start, today, now, true, true, ct), ct);
+        var values = new Dictionary<string, decimal?>(StringComparer.Ordinal)
+        {
+            [KpiDefinitions.OpVisits.Key] = numbers.OpVisits,
+            [KpiDefinitions.Admissions.Key] = numbers.Admissions,
+            [KpiDefinitions.Occupancy.Key] = numbers.Occupancy,
+            [KpiDefinitions.Alos.Key] = numbers.Alos,
+            [KpiDefinitions.LabTat.Key] = numbers.LabTat,
+            [KpiDefinitions.Nps.Key] = numbers.Nps,
+            [KpiDefinitions.Revenue.Key] = numbers.Revenue,
+            [KpiDefinitions.Collections.Key] = numbers.Collections,
+        };
+        return (start, today, values);
     }
 
     private static KpiValue Kpi(KpiDefinition definition, decimal? value, decimal? previous, IReadOnlyList<KpiPoint>? trend) =>
