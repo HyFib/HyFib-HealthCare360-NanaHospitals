@@ -127,8 +127,14 @@ internal static class VisitEndpoints
     private static async Task<IResult> Create(CreateVisitRequest request, VisitService visits, CancellationToken ct) =>
         (await visits.CreateAsync(request, ct)).ToCreated(v => $"/api/v1/visits/{v.Id}");
 
+    /// <summary>
+    /// 204 once cancelled; 202 with the approval request when the doctor has started the visit and a second person decides
+    /// (<see cref="VisitService.AskCancelAsync"/>).
+    /// </summary>
     private static async Task<IResult> Cancel(Guid id, CancelVisitRequest request, VisitService visits, CancellationToken ct) =>
-        (await visits.CancelAsync(id, request.Reason, ct)).ToNoContent();
+        (await visits.AskCancelAsync(id, request.Reason, ct)).ToHttpResult(outcome => outcome.Asked is { } asked
+            ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)
+            : TypedResults.NoContent());
 
     private static async Task<IResult> Complete(Guid id, VisitService visits, CancellationToken ct) =>
         (await visits.CompleteAsync(id, ct)).ToNoContent();

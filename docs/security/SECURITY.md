@@ -653,6 +653,20 @@ and grants nothing.
       new doctor starts with none of their own (the service price) until theirs is approved. Another fee while one waits
       is refused (`approval.already_requested`), and a fee is set only over the fees it replaces (`approval.stale`),
       audited `practitioner.fee_changed` with both names;
+  - a visit the doctor has started, cancelled at the desk (`patients.visit_cancel`, MAKER-CHECKER.md slice 15): once the
+    consultation is under way (the token started or an encounter opened), or the visit has an encounter, a note, an order
+    line or an e-prescription not cancelled, `POST /api/v1/visits/{id}/cancel` (`visits.manage`) answers 202 with the
+    approval it waits for, with the asker's reason, the status before and after in words ("In consultation →
+    cancelled"), the clinical work on the visit and what will follow. The work is read under the visit's lock (the one an
+    order or encounter placed on the visit holds), so an order being placed is either seen, and the cancellation waits,
+    or sees the visit cancelled. Someone else who holds `visits.cancel.approve` decides: the hospital administrator by
+    default (grant it to a front-office supervisor's role), or a doctor, whose account approves only a visit it treats
+    (the visit's doctor, or one who opened an encounter, ordered or prescribed on it: `approval.not_treating_doctor`, 403,
+    which leaves the request waiting), never whoever asked (`approval.self`). Nothing changes until then: the token, the
+    unbilled charges (Billing) and the lab tests not drawn and studies not done with their order lines (Diagnostics)
+    follow the cancellation only once approved, in the approval's transaction, as when the desk cancels a visit not
+    started; a visit completed or cancelled meanwhile is not touched (`approval.stale`). Audited
+    `patients.visit.cancelled` at Warning with both names. A visit the doctor has not started is cancelled at once;
   - the patient's record (MAKER-CHECKER.md, slice 7). Each waits with the asker's reason, and until it is approved the
     record keeps its present value everywhere (banner, wristband, labels, search, ABDM and FHIR, break-the-glass, the
     prescribing checks, free treatment on bills); the record's read says what waits:
