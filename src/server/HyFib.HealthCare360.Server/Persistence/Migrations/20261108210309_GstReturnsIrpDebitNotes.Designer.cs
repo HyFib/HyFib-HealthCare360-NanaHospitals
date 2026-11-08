@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HyFib.HealthCare360.Server.Persistence.Migrations
 {
     [DbContext(typeof(HospitalDbContext))]
-    [Migration("20261108195541_GstReturnsIrpDebitNotes")]
+    [Migration("20261108210309_GstReturnsIrpDebitNotes")]
     partial class GstReturnsIrpDebitNotes
     {
         /// <inheritdoc />
