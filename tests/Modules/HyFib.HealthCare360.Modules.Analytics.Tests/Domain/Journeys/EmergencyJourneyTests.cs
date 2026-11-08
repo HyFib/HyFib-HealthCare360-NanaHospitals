@@ -57,7 +57,10 @@ public sealed class EmergencyJourneyTests
     {
         var waiting = Arrived with
         {
-            Level = 3, TriagedAt = At(10, 5), DoctorSeenAt = At(10, 20), DoctorName = "Dr. Arjun Rao",
+            Level = 3,
+            TriagedAt = At(10, 5),
+            DoctorSeenAt = At(10, 20),
+            DoctorName = "Dr. Arjun Rao",
             Investigations = [new InvestigationFact(At(10, 50)), new InvestigationFact(null)],
         };
 
@@ -80,8 +83,14 @@ public sealed class EmergencyJourneyTests
     {
         var left = Arrived with
         {
-            Level = 3, TriagedAt = At(10, 5), DoctorSeenAt = At(10, 20), DoctorName = "Dr. Arjun Rao",
-            Disposition = disposition, DisposedAt = At(10, 55), ReferredTo = referredTo, AdmissionNumber = admission,
+            Level = 3,
+            TriagedAt = At(10, 5),
+            DoctorSeenAt = At(10, 20),
+            DoctorName = "Dr. Arjun Rao",
+            Disposition = disposition,
+            DisposedAt = At(10, 55),
+            ReferredTo = referredTo,
+            AdmissionNumber = admission,
         };
 
         var progress = EmergencyJourney.Progress(left, Now);

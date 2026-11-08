@@ -109,6 +109,7 @@ describe('telling the patients a leave strands', () => {
     showDialog(stranded({ smsReady: false, smsNote: 'The SMS template has no DLT template id.' }, null));
 
     expect(await screen.findByText('The SMS template has no DLT template id.')).toBeInTheDocument();
+    await expectNoAxeViolations(document.body);
   });
 
   it('has no accessibility problems', async () => {
