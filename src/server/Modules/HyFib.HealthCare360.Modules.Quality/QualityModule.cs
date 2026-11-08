@@ -56,6 +56,7 @@ public sealed class QualityModule : IModule
     {
         services.AddScoped<IncidentService>();
         services.AddScoped<CapaService>();
+        services.AddScoped<ICapaRegister, CapaRegister>();
         services.AddScoped<AnonymousReportingScope>();
         services.AddScoped<MvpiService>();
         services.AddScoped<MvpiAccess>();
