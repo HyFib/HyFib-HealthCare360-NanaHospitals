@@ -50,6 +50,9 @@ internal sealed class PatientsMergedHandler(HospitalDbContext db) : IDomainEvent
         await RepointAsync<MedicationOrder>(x => x.PatientId == from, x => x.PatientId = to, cancellationToken);
         await RepointAsync<MedicationAdministration>(x => x.PatientId == from, x => x.PatientId = to, cancellationToken);
         await RepointAsync<ConsultantVisit>(x => x.PatientId == from, x => x.PatientId = to, cancellationToken);
+        await RepointAsync<EarlyWarningEscalation>(x => x.PatientId == from, x => x.PatientId = to, cancellationToken);
+        await RepointAsync<TransferRequest>(x => x.PatientId == from, x => x.PatientId = to, cancellationToken);
+        await RepointAsync<CarePlanProblem>(x => x.PatientId == from, x => x.PatientId = to, cancellationToken);
         await RepointAsync<Bed>(x => x.ReservedForPatientId == from, x => x.ReservedForPatientId = to, cancellationToken);
     }
 
@@ -59,4 +62,10 @@ internal sealed class PatientsMergedHandler(HospitalDbContext db) : IDomainEvent
         var rows = await db.Set<T>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Where(predicate).ToListAsync(ct);
         rows.ForEach(repoint);
     }
+}
+
+/// <summary>Vital signs whose NEWS2 calls for a doctor raise an early-warning escalation for a patient in a bed.</summary>
+internal sealed class VitalSignsRecordedHandler(EarlyWarningService earlyWarning) : IDomainEventHandler<VitalSignsRecorded>
+{
+    public Task HandleAsync(VitalSignsRecorded domainEvent, CancellationToken cancellationToken) => earlyWarning.RaiseAsync(domainEvent, cancellationToken);
 }

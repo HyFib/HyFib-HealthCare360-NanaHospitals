@@ -111,7 +111,8 @@ export type RoundOrder = 'bed' | 'attention';
 type RoundFacts = Pick<
   WardRoundPatient,
   'vitalsSeverity' | 'hasCriticalResults' | 'resultsToReview' | 'seenToday' | 'status'
->;
+> &
+  Partial<Pick<WardRoundPatient, 'news2Response' | 'hasOpenEscalation'>>;
 
 /**
  * How much a patient needs the doctor now, for "most urgent first": critical vital signs or a critical result first,
@@ -119,6 +120,11 @@ type RoundFacts = Pick<
  */
 export function roundAttention(patient: RoundFacts): number {
   let score = 0;
+  if (patient.news2Response === 'Emergency' || patient.hasOpenEscalation) {
+    score += 8;
+  } else if (patient.news2Response === 'Urgent') {
+    score += 4;
+  }
   if (patient.vitalsSeverity === 'Critical') {
     score += 8;
   } else if (patient.vitalsSeverity === 'Abnormal') {

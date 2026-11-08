@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 
 namespace HyFib.HealthCare360.Modules.Inpatient.Features.Beds;
@@ -61,6 +62,18 @@ public enum BedAlert
     DischargeDueToday,
     ReservationExpired,
     CleaningDelayed,
+
+    /// <summary>The latest NEWS2 is 5–6, or a single parameter scored 3: urgent review.</summary>
+    News2Urgent,
+
+    /// <summary>The latest NEWS2 is 7 or more: emergency response.</summary>
+    News2Emergency,
+
+    /// <summary>An early-warning escalation is waiting for a clinician's response.</summary>
+    EscalationOpen,
+
+    /// <summary>A transfer to another ward is requested and waiting for the receiving ward.</summary>
+    TransferPending,
 }
 
 public sealed record BedOccupant(
@@ -76,7 +89,11 @@ public sealed record BedOccupant(
     int LengthOfStayDays,
     DateOnly? ExpectedDischargeDate,
     AdmissionStatus Status,
-    PayerType PayerType);
+    PayerType PayerType,
+    int? News2Score = null,
+    News2Response? News2Response = null,
+    bool News2Complete = false,
+    DateTimeOffset? News2At = null);
 
 public sealed record BedBoardItem(
     Guid BedId,

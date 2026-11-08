@@ -17,6 +17,13 @@ import type {
 import { countBeds, occupancyPercent } from '@/modules/inpatient/bedState';
 import type { MarEntryDto, MedicationOrderDto, WardHandoverItem, WardMarItem } from '@/modules/inpatient/nursingApi';
 import { istDate } from '@/modules/inpatient/time';
+import type {
+  CarePlanProblemDto,
+  CarePlanProblemTemplate,
+  EscalationDto,
+  TransferRequestDto,
+  WardVitalsDto,
+} from '@/modules/inpatient/wardCareApi';
 import {
   fakeServer,
   openScreen,
@@ -649,6 +656,115 @@ const ADMISSION: AdmissionDetail = {
   version: 4,
 };
 
+const ESCALATION: EscalationDto = {
+  id: '0192a000-0000-7000-8000-000000000e01',
+  admissionId: ASHA.admissionId,
+  patientId: ASHA.patientId,
+  uhid: ASHA.uhid,
+  wardId: FEMALE_WARD,
+  wardName: 'Female medical ward',
+  bedLabel: 'FMW-01',
+  vitalSignsId: '0192a000-0000-7000-8000-000000000e02',
+  vitalsRecordedAt: minutesAgo(20),
+  score: 6,
+  anySingleParameterThree: false,
+  isScoreComplete: true,
+  summary: 'NEWS2 6',
+  level: 'Urgent',
+  status: 'Open',
+  raisedAt: minutesAgo(20),
+  openMinutes: 20,
+  respondedAt: null,
+  respondedByName: null,
+  respondedByDoctor: false,
+  outcome: null,
+  response: null,
+  minutesToRespond: null,
+  version: 1,
+};
+
+const VITALS: WardVitalsDto = {
+  id: '0192a000-0000-7000-8000-000000000e02',
+  recordedAt: minutesAgo(20),
+  temperatureCelsius: 38.4,
+  pulse: 112,
+  respiratoryRate: 22,
+  systolicBp: 108,
+  diastolicBp: 70,
+  spO2: 94,
+  onSupplementalOxygen: false,
+  consciousness: 'Alert',
+  spO2Scale: 'Scale1',
+  news2: {
+    total: 6,
+    anySingleParameterThree: false,
+    response: 'Urgent',
+    isComplete: true,
+    scale: 'Scale1',
+    parts: [{ parameter: 'Respiration', value: '22/min', points: 2 }],
+    missing: [],
+    summary: 'NEWS2 6',
+  },
+  isEnteredInError: false,
+};
+
+const TRANSFER: TransferRequestDto = {
+  id: '0192a000-0000-7000-8000-000000000e03',
+  admissionId: ASHA.admissionId,
+  admissionNumber: ASHA.admissionNumber,
+  patientId: ASHA.patientId,
+  uhid: ASHA.uhid,
+  patientName: ASHA.patientName,
+  fromWardId: FEMALE_WARD,
+  fromWardName: 'Female medical ward',
+  fromBedLabel: 'FMW-01',
+  toWardId: ICU,
+  toWardName: 'Medical ICU',
+  toBedId: '0192a000-0000-7000-8000-000000000e04',
+  toBedLabel: 'MICU-03',
+  reason: 'NEWS2 rising despite fluids',
+  clinicalSummary: 'Pneumonia day 3; on 4 L oxygen; MAP 62 after 1 L fluid.',
+  isUrgent: false,
+  status: 'Pending',
+  requestedAt: minutesAgo(10),
+  requestedByName: 'Sr. Latha',
+  holdUntil: new Date(now + 12 * 3_600_000).toISOString(),
+  decidedAt: null,
+  decidedByName: null,
+  decisionNote: null,
+  transferredAt: null,
+  acceptanceDueAt: null,
+  isAcceptanceOverdue: false,
+  wasAcceptedLate: false,
+  canDecide: true,
+  version: 1,
+};
+
+const CARE_PLAN: CarePlanProblemDto[] = [
+  {
+    id: '0192a000-0000-7000-8000-000000000e05',
+    admissionId: ASHA.admissionId,
+    problemCode: 'FALL_RISK',
+    title: 'Risk of falls',
+    goal: 'No fall during the stay',
+    interventions: [{ text: 'Bed at the lowest height, side rails up', frequency: 'Every shift' }],
+    status: 'Active',
+    startedAt: minutesAgo(600),
+    startedByName: 'Sr. Latha',
+    resolvedAt: null,
+    resolvedByName: null,
+    resolutionNote: null,
+    lastEvaluation: null,
+    evaluatedThisShift: false,
+    version: 1,
+  },
+];
+
+const CARE_PLAN_PROBLEMS: CarePlanProblemTemplate[] = [
+  { code: 'FALL_RISK', title: 'Risk of falls', goal: 'No fall during the stay', interventions: [] },
+  { code: 'PAIN', title: 'Acute pain', goal: 'Pain score 3 or less at rest', interventions: [] },
+];
+
 const LETTERHEAD: Letterhead = { name: 'Nana Hospitals, Pune' };
 
 let server: ReturnType<typeof fakeServer>;
@@ -670,6 +786,12 @@ beforeEach(() => {
     [`GET /api/v1/emr/patients/${ASHA.patientId}/flags`]: FLAGS,
     [`GET /api/v1/inpatient/admissions/${ASHA.admissionId}`]: ADMISSION,
     'GET /api/v1/print/letterhead': LETTERHEAD,
+    'GET /api/v1/nursing/escalations': [ESCALATION],
+    'GET /api/v1/inpatient/transfer-requests': [TRANSFER],
+    [`GET /api/v1/nursing/admissions/${ASHA.admissionId}/escalations`]: [ESCALATION],
+    [`GET /api/v1/emr/patients/${ASHA.patientId}/vitals`]: { items: [VITALS], page: 1, pageSize: 50, totalCount: 1 },
+    [`GET /api/v1/nursing/admissions/${ASHA.admissionId}/care-plan`]: CARE_PLAN,
+    'GET /api/v1/nursing/care-plan/problems': CARE_PLAN_PROBLEMS,
   });
 });
 
@@ -716,6 +838,35 @@ describe('in-patient screens', SCREEN_TESTS, () => {
     openScreen(`/inpatient/admissions/${ASHA.admissionId}`);
     expect(await screen.findByText('Community-acquired pneumonia, right lower lobe', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText(/Sulfonamides/, {}, SLOW)).toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
+
+  it('nursing station, observations with NEWS2 and an open escalation', async () => {
+    localStorage.setItem('hc360:nursing:ward', FEMALE_WARD);
+    openScreen('/nursing');
+    await userEvent.click(await screen.findByRole('button', { name: /^Bed FMW-01, Asha Devi/ }, SLOW));
+    await userEvent.click(await screen.findByRole('tab', { name: 'Observations (NEWS2)' }, SLOW));
+    expect(await screen.findByRole('table', { name: 'Observations with NEWS2' }, SLOW)).toBeInTheDocument();
+    expect(screen.getAllByText('NEWS2 6').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Record response' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Consciousness (ACVPU)' })).toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
+
+  it('nursing station, the care plan', async () => {
+    localStorage.setItem('hc360:nursing:ward', FEMALE_WARD);
+    openScreen('/nursing');
+    await userEvent.click(await screen.findByRole('button', { name: /^Bed FMW-01, Asha Devi/ }, SLOW));
+    await userEvent.click(await screen.findByRole('tab', { name: 'Care plan' }, SLOW));
+    expect(await screen.findByText('Goal: No fall during the stay', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText('Due this shift')).toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
+
+  it('transfer requests waiting for the receiving ward', async () => {
+    openScreen('/inpatient/transfers');
+    expect(await screen.findByRole('button', { name: 'Accept and move' }, SLOW)).toBeInTheDocument();
+    expect(screen.getByText(/Pneumonia day 3/)).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 });
