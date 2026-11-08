@@ -20,10 +20,19 @@ internal sealed class MtpService(
     ISettingsService settings,
     PatientAccessGuard guard,
     ICurrentUser currentUser,
+    IWitnessConfirmations witnesses,
+    IAuditLogger audit,
     TimeProvider time)
 {
     /// <summary>The place's certificate of approval for terminations (MTP Rules 2003, rule 5; Form B), printed on every form.</summary>
     public const string ApprovalSetting = "mtp.approvalNumber";
+
+    /// <summary>
+    /// The second registered medical practitioner, from 20 weeks, confirming their opinion at the screen of the doctor who
+    /// records it: one of the doctors the place's approval names (who hold <c>mtp.certify</c>).
+    /// </summary>
+    public static readonly WitnessPurpose SecondOpinionWitness = new("mtp.second_opinion", SpecialtyCarePermissions.MtpCertify,
+        "the second registered medical practitioner's opinion on a termination of pregnancy from 20 weeks");
 
     public async Task<IReadOnlyList<MtpCaseListItem>> ListAsync(Guid? patientId, MtpCaseStatus? status, CancellationToken ct)
     {
@@ -117,6 +126,7 @@ internal sealed class MtpService(
             db.Add(mtp);
         }
 
+        var droppedSecond = mtp.SecondOpinion;
         var certified = mtp.Certify(
             new MtpCertification(
                 request.AgeYears, request.MentallyIll, request.ConsentBy, request.GuardianName, request.GuardianRelation, request.ConsentOn,
@@ -129,10 +139,94 @@ internal sealed class MtpService(
             return certified.Error!;
         }
 
+        if (droppedSecond is not null)
+        {
+            // A correction drops the second doctor's opinion: they give it again on the case as it now reads.
+            audit.Add(new AuditEntry(AuditCategories.Clinical, "mtp.second_opinion_dropped",
+                $"MTP case {mtp.SerialNumber}: corrected by {Me()}, so the second opinion of {droppedSecond.DoctorName} ({droppedSecond.RegistrationNumber}) is to be given again")
+            {
+                PatientId = mtp.PatientId,
+                EntityType = nameof(MtpCase),
+                EntityId = mtp.Id.ToString(),
+                Severity = AuditSeverity.Warning,
+            });
+        }
+
         await guard.FlagAsync(mtp.PatientId, SensitiveCategory.Mtp, $"an MTP case ({mtp.SerialNumber})", ct);
         await db.SaveChangesAsync(ct);
         return await ToDtoAsync(mtp, ct);
     }
+
+    /// <summary>
+    /// The second registered medical practitioner's opinion, from 20 weeks (maker-checker, slice 9): the doctor signed in,
+    /// or the doctor who confirmed at this screen with their own credentials (<see cref="SecondOpinionWitness"/>). Their
+    /// name and registration number come from the practitioner record their account is linked to, which must be a doctor's
+    /// with a registration number; never the doctor who certified the case nor the doctor of the first opinion.
+    /// </summary>
+    public async Task<Result<MtpCaseDto>> RecordSecondOpinionAsync(Guid id, RecordSecondOpinionRequest request, CancellationToken ct)
+    {
+        var mtp = await db.Set<MtpCase>().FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (mtp is null)
+        {
+            return Error.NotFound(nameof(MtpCase), id);
+        }
+
+        if (currentUser.UserId is not { } me)
+        {
+            return Error.Forbidden("auth.required", "Sign in first.");
+        }
+
+        db.SetExpectedVersion(mtp, request.Version);
+        Guid doctorUserId;
+        if (request.DoctorConfirmationId is { } confirmation)
+        {
+            var confirmed = await witnesses.UseAsync(confirmation, SecondOpinionWitness.Key, mtp.PatientId, nameof(MtpCase), mtp.Id, ct);
+            if (confirmed.IsFailure)
+            {
+                return confirmed.Error!;
+            }
+
+            doctorUserId = confirmed.Value.UserId;
+        }
+        else
+        {
+            doctorUserId = me;
+        }
+
+        var doctor = await (from u in db.Set<User>().AsNoTracking()
+                            join p in db.Set<Practitioner>().AsNoTracking() on u.PractitionerId equals p.Id
+                            where u.Id == doctorUserId
+                            select new { p.DisplayName, p.RegistrationNumber, p.Kind, p.IsActive }).FirstOrDefaultAsync(ct);
+        if (doctor is null || !doctor.IsActive || !PractitionerKinds.IsDoctor(doctor.Kind) || string.IsNullOrWhiteSpace(doctor.RegistrationNumber))
+        {
+            return Error.Rule("mtp.second_opinion_not_rmp", request.DoctorConfirmationId is null
+                ? "The second opinion is a registered medical practitioner's: sign in as the second doctor (an account linked to a doctor's practitioner record with a registration number), or have them confirm here with their own user name and password."
+                : "The doctor who confirmed is not a registered medical practitioner on record: their account is not linked to a doctor's practitioner record with a registration number.");
+        }
+
+        var recorded = mtp.RecordSecondOpinion(
+            new MtpSecondOpinion(doctorUserId, doctor.DisplayName, doctor.RegistrationNumber!, request.OpinionOn, me), time.Today());
+        if (recorded.IsFailure)
+        {
+            return recorded.Error!;
+        }
+
+        var first = string.Join("; ", mtp.Opinions.Where(o => !o.Confirmed).Select(o => $"{o.DoctorName} ({o.RegistrationNumber})"));
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "mtp.second_opinion_recorded",
+            $"MTP case {mtp.SerialNumber}: second opinion of {doctor.DisplayName} ({doctor.RegistrationNumber!.Trim()}), "
+            + (doctorUserId == me ? "recorded from their own sign-in" : $"confirmed with their own credentials at the screen of {Me()}")
+            + $"; first opinion {first}")
+        {
+            PatientId = mtp.PatientId,
+            EntityType = nameof(MtpCase),
+            EntityId = mtp.Id.ToString(),
+            Details = new { secondDoctor = doctorUserId, recordedBy = me, certifiedBy = mtp.CertifiedBy, request.OpinionOn },
+        });
+        await db.SaveChangesAsync(ct);
+        return await ToDtoAsync(mtp, ct);
+    }
+
+    private string Me() => currentUser.DisplayName ?? currentUser.UserName ?? "a member of staff";
 
     public async Task<Result<MtpCaseDto>> TerminateAsync(Guid id, RecordMtpTerminationRequest request, CancellationToken ct)
     {
@@ -311,7 +405,7 @@ internal sealed class MtpService(
             c.Id, c.SerialNumber, c.PatientId, patient.Uhid, patient.FullName, c.AdmissionId, c.Status, c.ApprovalNumber, c.AgeYears, c.MentallyIll,
             c.ConsentBy, c.GuardianName, c.GuardianRelation, c.ConsentOn, c.ConsentFileId, c.WeeksOfGestation, c.Grounds, c.Category,
             c.MedicalBoardReference, c.Opinions, c.CertifiedAt, certifiedBy, c.TerminatedOn, c.Method, c.PerformedBy, c.DischargedOn, c.Outcome,
-            c.Remarks, c.CancelReason, c.Version);
+            c.Remarks, c.CancelReason, c.Version, c.AwaitingSecondOpinion);
     }
 }
 

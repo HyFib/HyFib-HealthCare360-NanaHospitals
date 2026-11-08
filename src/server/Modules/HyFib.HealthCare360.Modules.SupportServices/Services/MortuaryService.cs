@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SupportServices.Domain.Mortuary;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Mortuary;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.SupportServices.Services;
@@ -11,8 +12,16 @@ namespace HyFib.HealthCare360.Modules.SupportServices.Services;
 /// who died in the hospital comes in only once their death is on record (certified, or the stay discharged as expired),
 /// and is medico-legal if their last visit was; a body leaves only to someone named, on the authority its case needs.
 /// </summary>
-internal sealed class MortuaryService(HospitalDbContext db, INumberSeries numbers, ICurrentUser currentUser, TimeProvider time)
+internal sealed class MortuaryService(
+    HospitalDbContext db, INumberSeries numbers, ICurrentUser currentUser, IWitnessConfirmations witnesses, IAuditLogger audit, TimeProvider time)
 {
+    /// <summary>
+    /// A body released on the police's clearance (medico-legal to the relatives, unclaimed to the municipality): a second
+    /// member of the mortuary staff witnesses the release at the screen of the one who releases it.
+    /// </summary>
+    public static readonly WitnessPurpose ReleaseWitness = new("mortuary.release", SupportServicesPermissions.MortuaryManage,
+        "a body released from the mortuary on the police's clearance");
+
     public Task<BodyRecord?> FindAsync(Guid id, CancellationToken ct) => db.Set<BodyRecord>().AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, ct);
 
     public async Task<IReadOnlyList<MortuarySlotDto>> SlotsAsync(CancellationToken ct)
@@ -172,15 +181,38 @@ internal sealed class MortuaryService(HospitalDbContext db, INumberSeries number
         }
 
         db.SetExpectedVersion(body, request.Version);
+        BodyReleaseWitness? witness = null;
+        if (request.WitnessConfirmationId is { } confirmation)
+        {
+            var confirmed = await witnesses.UseAsync(confirmation, ReleaseWitness.Key, body.PatientId, nameof(BodyRecord), body.Id, ct);
+            if (confirmed.IsFailure)
+            {
+                return confirmed.Error!;
+            }
+
+            witness = new BodyReleaseWitness(confirmed.Value.UserId, confirmed.Value.Name);
+        }
+
+        var by = currentUser.DisplayName ?? currentUser.UserName ?? "Staff";
         var released = body.Release(
             new BodyRelease(request.To, request.ReceivedBy, request.Relationship, request.IdProof, request.PoliceClearance, request.BelongingsHandedOver,
                 request.Notes),
-            currentUser.DisplayName ?? currentUser.UserName ?? "Staff", time.GetUtcNow());
+            currentUser.UserId, by, witness, time.GetUtcNow());
         if (released.IsFailure)
         {
             return released.Error!;
         }
 
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "mortuary.body_released",
+            Fit($"Body {body.Number} released to {request.To} ({body.ReceivedBy}) by {by}"
+                + (body.PoliceClearance is { } clearance ? $" on the police's clearance {clearance}" : string.Empty)
+                + (witness is null ? string.Empty : $", witnessed by {witness.Name}")))
+        {
+            PatientId = body.PatientId,
+            EntityType = nameof(BodyRecord),
+            EntityId = body.Id.ToString(),
+            Details = new { body.Number, request.To, body.IsMlc, body.PoliceClearance, releasedBy = currentUser.UserId, witness = witness?.UserId },
+        });
         await db.SaveChangesAsync(ct);
         return await DtoAsync(body, ct);
     }
@@ -219,10 +251,12 @@ internal sealed class MortuaryService(HospitalDbContext db, INumberSeries number
             b.Id, b.Number, b.PatientId, b.PatientId is { } p ? uhids.GetValueOrDefault(p) : null, b.Source, b.Name, b.Identified, b.Sex, b.AgeYears, b.DiedAt,
             b.ReceivedAt, b.ReceivedByName, b.BroughtBy, b.IsMlc, b.MlcNumber, b.PoliceStation, b.IdentificationMarks, b.Belongings, b.SlotCode, b.Status,
             b.Unclaimed(now), b.ReleasedAt, b.ReleasedTo, b.ReceivedBy, b.Relationship, b.IdProof, b.PoliceClearance, b.BelongingsHandedOver, b.ReleaseNotes,
-            b.ReleasedByName, b.Version)).ToList();
+            b.ReleasedByName, b.Version, b.ReleaseWitnessName)).ToList();
     }
 
     private static int AgeAt(DateOnly dob, DateOnly on) => on.Year - dob.Year - (on < dob.AddYears(on.Year - dob.Year) ? 1 : 0);
+
+    private static string Fit(string text) => text.Length <= 1000 ? text : text[..1000];
 
     private static string? Trim(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

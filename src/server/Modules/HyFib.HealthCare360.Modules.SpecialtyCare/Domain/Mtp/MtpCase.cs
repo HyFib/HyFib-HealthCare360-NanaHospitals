@@ -78,8 +78,23 @@ public enum MtpConsentBy
     Guardian = 2,
 }
 
-/// <summary>One registered medical practitioner who formed the opinion of Form I.</summary>
-public sealed record MtpOpinion(string DoctorName, string RegistrationNumber, DateOnly OpinionOn);
+/// <summary>
+/// One registered medical practitioner who formed the opinion of Form I. <paramref name="UserId"/>: the doctor's own
+/// account, for an opinion the doctor recorded in HC360 (the second opinion from 20 weeks), never for one typed on the
+/// case; <paramref name="RecordedBy"/>: the signed-in user who recorded it, the doctor themselves or the colleague at
+/// whose screen they confirmed it with their own credentials.
+/// </summary>
+public sealed record MtpOpinion(string DoctorName, string RegistrationNumber, DateOnly OpinionOn, Guid? UserId = null, Guid? RecordedBy = null)
+{
+    /// <summary>Recorded by the doctor in HC360 (their own sign-in or their own credentials), not typed by someone else.</summary>
+    public bool Confirmed => UserId is not null;
+}
+
+/// <summary>
+/// The second registered medical practitioner's opinion, from 20 weeks (s.3(2)(b)): the doctor, as their account and
+/// practitioner record name them, and who recorded it (<see cref="MtpOpinion.RecordedBy"/>).
+/// </summary>
+public sealed record MtpSecondOpinion(Guid DoctorUserId, string DoctorName, string RegistrationNumber, DateOnly OpinionOn, Guid RecordedBy);
 
 /// <summary>What Form C and Form I record before the termination.</summary>
 public sealed record MtpCertification(
@@ -168,6 +183,15 @@ public sealed class MtpCase : AuditableEntity, IFacilityScoped
 
     public bool IsClosed => Status is MtpCaseStatus.Terminated or MtpCaseStatus.Cancelled;
 
+    /// <summary>The second doctor's opinion, recorded by that doctor; null until then (and for a case that needs one opinion).</summary>
+    public MtpOpinion? SecondOpinion => Opinions.FirstOrDefault(o => o.Confirmed);
+
+    /// <summary>
+    /// From 20 weeks the opinion of two doctors is needed, and the second records their own (maker-checker, slice 9): until
+    /// then the termination waits.
+    /// </summary>
+    public bool AwaitingSecondOpinion => Status == MtpCaseStatus.Certified && OpinionsNeeded(WeeksOfGestation) > 1 && SecondOpinion is null;
+
     /// <summary>
     /// Records the consent and the doctors' opinion, or corrects them before the termination is done. Refused when the
     /// law does not allow the termination on what was recorded.
@@ -194,10 +218,51 @@ public sealed class MtpCase : AuditableEntity, IFacilityScoped
         Grounds = [.. Enum.GetValues<MtpGround>().Where(c.Grounds.Contains)];
         Category = c.WeeksOfGestation > OneOpinionWeeks ? c.Category : null;
         MedicalBoardReference = c.WeeksOfGestation > TwoOpinionsWeeks ? c.MedicalBoardReference!.Trim() : null;
-        Opinions = [.. c.Opinions.Select(o => o with { DoctorName = o.DoctorName.Trim(), RegistrationNumber = o.RegistrationNumber.Trim() })];
+        // Opinions typed on the case are never "confirmed": a second opinion recorded before is dropped by any correction,
+        // and that doctor records it again on the case as corrected.
+        Opinions = [.. c.Opinions.Select(o => new MtpOpinion(o.DoctorName.Trim(), o.RegistrationNumber.Trim(), o.OpinionOn))];
         CertifiedAt = now;
         CertifiedBy = by;
         Status = MtpCaseStatus.Certified;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Records the second registered medical practitioner's opinion, from 20 weeks (MTP Act s.3(2)(b), as amended in 2021),
+    /// as that doctor gives it from their own sign-in or confirms it with their own credentials: never the doctor who
+    /// certified the case, nor the doctor of the first opinion (maker-checker, slice 9).
+    /// </summary>
+    public Result RecordSecondOpinion(MtpSecondOpinion opinion, DateOnly today)
+    {
+        if (IsClosed)
+        {
+            return Closed();
+        }
+
+        if (OpinionsNeeded(WeeksOfGestation) < 2)
+        {
+            return Error.Rule("mtp.second_opinion_not_needed", "Up to 20 weeks the opinion of one doctor is enough: no second opinion is recorded.");
+        }
+
+        if (SecondOpinion is not null)
+        {
+            return Error.Rule("mtp.second_opinion_recorded", $"The second opinion is already recorded, by {SecondOpinion.DoctorName}.");
+        }
+
+        var registration = opinion.RegistrationNumber.Trim();
+        if (opinion.DoctorUserId == CertifiedBy
+            || Opinions.Any(o => string.Equals(o.RegistrationNumber.Trim(), registration, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Error.Rule("mtp.second_opinion_same_doctor",
+                "The second opinion is another registered medical practitioner's: not the doctor who certified the case, nor the doctor of the first opinion.");
+        }
+
+        if (opinion.OpinionOn > today)
+        {
+            return Error.Field("opinionOn", "An opinion cannot be dated after today.");
+        }
+
+        Opinions = [.. Opinions, new MtpOpinion(opinion.DoctorName.Trim(), registration, opinion.OpinionOn, opinion.DoctorUserId, opinion.RecordedBy)];
         return Result.Success();
     }
 
@@ -207,6 +272,12 @@ public sealed class MtpCase : AuditableEntity, IFacilityScoped
         if (IsClosed)
         {
             return Closed();
+        }
+
+        if (AwaitingSecondOpinion)
+        {
+            return Error.Rule("mtp.second_opinion_required",
+                "From 20 weeks the termination waits for the second doctor's opinion, recorded by that doctor from their own sign-in or confirmed here with their own credentials.");
         }
 
         if (string.IsNullOrWhiteSpace(t.PerformedBy))
@@ -329,12 +400,16 @@ public sealed class MtpCase : AuditableEntity, IFacilityScoped
             return Error.Field("opinions", "Enter each doctor's name and registration number.");
         }
 
-        var needed = OpinionsNeeded(c.WeeksOfGestation);
-        if (opinions.Count < needed)
+        if (opinions.Count < 1)
         {
-            return Error.Field("opinions", needed == 1
-                ? "Enter the doctor who formed the opinion."
-                : "Beyond 20 weeks the opinion of two doctors is needed.");
+            return Error.Field("opinions", "Enter the doctor who formed the opinion.");
+        }
+
+        // From 20 weeks the second doctor's opinion is that doctor's to record, never typed on the case (slice 9).
+        if (OpinionsNeeded(c.WeeksOfGestation) > 1 && opinions.Count > 1)
+        {
+            return Error.Rule("mtp.second_opinion_typed",
+                "From 20 weeks the second doctor records their own opinion, from their own sign-in or confirming with their own credentials: enter only the first doctor's opinion here.");
         }
 
         if (opinions.Select(o => o.RegistrationNumber.Trim().ToUpperInvariant()).Distinct().Count() != opinions.Count)

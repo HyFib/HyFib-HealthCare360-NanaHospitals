@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { certificationProblems, consentByFor, gestationRule, opinionsNeeded, type CertificationDraft } from './logic';
+import {
+  certificationProblems,
+  consentByFor,
+  gestationRule,
+  opinionsNeeded,
+  typedOpinionsAllowed,
+  type CertificationDraft,
+} from './logic';
 
 const TODAY = '2026-10-25';
 
@@ -43,8 +50,10 @@ describe('the MTP case form', () => {
     expect(problemsOf(draft({ weeksOfGestation: 22 }))).toEqual({
       grounds: 'The failure of a contraceptive is a ground up to 20 weeks only.',
       category: 'From 20 to 24 weeks the woman must be in a category of rule 3B. Choose it.',
-      opinions: 'Beyond 20 weeks the opinion of two doctors is needed.',
     });
+    // The second opinion is the second doctor's to record (maker-checker, slice 9): only the first is typed.
+    expect(typedOpinionsAllowed(22)).toBe(1);
+    expect(typedOpinionsAllowed(20)).toBe(3);
     expect(
       problemsOf(
         draft({
@@ -53,14 +62,15 @@ describe('the MTP case form', () => {
           category: 'SexualAssaultRapeOrIncest',
           opinions: [draft().opinions[0]!, second],
         }),
-      ),
+      ).opinions,
+    ).toContain('the second doctor records their own opinion');
+    expect(
+      problemsOf(draft({ weeksOfGestation: 22, grounds: ['Rape'], category: 'SexualAssaultRapeOrIncest' })),
     ).toEqual({});
   });
 
   it('allows beyond 24 weeks only a foetal abnormality with the Medical Board’s reference', () => {
-    expect(
-      problemsOf(draft({ weeksOfGestation: 26, grounds: ['RiskToLife'], opinions: [draft().opinions[0]!, second] })),
-    ).toEqual({
+    expect(problemsOf(draft({ weeksOfGestation: 26, grounds: ['RiskToLife'] }))).toEqual({
       grounds: 'Beyond 24 weeks a pregnancy is terminated only for a substantial foetal abnormality.',
       medicalBoardReference: 'Beyond 24 weeks enter the reference of the Medical Board’s opinion.',
     });
@@ -70,7 +80,6 @@ describe('the MTP case form', () => {
           weeksOfGestation: 26,
           grounds: ['FoetalAbnormality'],
           medicalBoardReference: 'SMB/TN/2026/118',
-          opinions: [draft().opinions[0]!, second],
         }),
       ),
     ).toEqual({});
