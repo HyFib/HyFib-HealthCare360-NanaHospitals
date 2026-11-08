@@ -466,6 +466,7 @@ internal static class AbdmNarrative
         R4.Patient p => p.Name.FirstOrDefault()?.Text,
         R4.Practitioner p => p.Name.FirstOrDefault()?.Text,
         R4.Organization o => o.Name,
+        R4.Invoice i => i.Identifier.FirstOrDefault()?.Value is { } number ? $"Bill {number}" : "Bill",
         _ => Summary(resource),
     };
 
@@ -485,8 +486,38 @@ internal static class AbdmNarrative
         R4.Immunization i => Immunization(i),
         R4.ImmunizationRecommendation r => NextDose(r),
         R4.Procedure p => Procedure(p),
+        R4.Invoice i => Invoice(i),
         _ => null,
     };
+
+    /// <summary>
+    /// "Bill NHOB260000001 (issued), Out-patient bill: total ₹1,180.00, taxes excluded ₹1,000.00", then a line for each
+    /// service with its quantity and net amount ("Consultation fee × 1: ₹500.00"), and who pays what: the bill as it reads.
+    /// </summary>
+    private static string Invoice(R4.Invoice invoice)
+    {
+        var lines = new List<string>
+        {
+            $"Bill {invoice.Identifier.FirstOrDefault()?.Value} ({invoice.Status?.ToString().ToLowerInvariant()}), {Text(invoice.Type)}: "
+            + $"total {Rupees(invoice.TotalGross)}, taxes excluded {Rupees(invoice.TotalNet)}",
+        };
+        foreach (var item in invoice.LineItem)
+        {
+            var quantity = item.PriceComponent.FirstOrDefault(c => c.Type == R4.InvoicePriceComponentType.Base)?.Factor;
+            var net = item.PriceComponent.Where(c => c.Type != R4.InvoicePriceComponentType.Informational).Sum(c => c.Amount?.Value ?? 0m);
+            var name = Text(item.ChargeItem as R4.CodeableConcept) ?? "Service";
+            lines.Add($"{name} × {quantity?.ToString("0.###", CultureInfo.InvariantCulture) ?? "1"}: {AbdmRecords.Rupees(net)}");
+        }
+
+        if (FhirElements.Clean(invoice.PaymentTerms) is { } terms)
+        {
+            lines.Add(terms);
+        }
+
+        return string.Join('\n', lines);
+
+        static string Rupees(R4.Money? money) => AbdmRecords.Rupees(money?.Value ?? 0m);
+    }
 
     /// <summary>
     /// "Incision and drainage of abscess: performed 2026-10-15T10:15:00+05:30, Axilla, right, by Dr. Asha Rao. Outcome:

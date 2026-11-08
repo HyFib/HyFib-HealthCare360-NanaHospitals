@@ -93,6 +93,7 @@ internal sealed class AbdmConsentRequestService(
     public static readonly IReadOnlySet<string> HiTypes = new HashSet<string>(StringComparer.Ordinal)
     {
         "OPConsultation", "Prescription", "DischargeSummary", "DiagnosticReport", "ImmunizationRecord", "HealthDocumentRecord", "WellnessRecord",
+        "Invoice",
     };
 
     private const string PurposeSystem = "http://terminology.hl7.org/ValueSet/v3-PurposeOfUse";
