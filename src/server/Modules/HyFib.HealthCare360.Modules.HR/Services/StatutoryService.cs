@@ -100,9 +100,20 @@ public sealed class StatutoryService(HospitalDbContext db, ICurrentUser currentU
 
         var challan = new TdsChallan
         {
-            FacilityId = facilityId, Form = r.Form, Year = r.Year, Month = r.Month, BsrCode = r.BsrCode, DepositedOn = r.DepositedOn,
-            ChallanSerial = r.ChallanSerial, Tax = r.Tax, Surcharge = r.Surcharge, Cess = r.Cess, Interest = r.Interest, Others = r.Others,
-            LateFee = r.LateFee, MinorHead = r.MinorHead ?? "200",
+            FacilityId = facilityId,
+            Form = r.Form,
+            Year = r.Year,
+            Month = r.Month,
+            BsrCode = r.BsrCode,
+            DepositedOn = r.DepositedOn,
+            ChallanSerial = r.ChallanSerial,
+            Tax = r.Tax,
+            Surcharge = r.Surcharge,
+            Cess = r.Cess,
+            Interest = r.Interest,
+            Others = r.Others,
+            LateFee = r.LateFee,
+            MinorHead = r.MinorHead ?? "200",
         };
         db.Add(challan);
         await db.SaveChangesAsync(ct);

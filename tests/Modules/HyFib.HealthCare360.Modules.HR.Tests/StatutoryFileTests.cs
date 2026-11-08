@@ -290,7 +290,8 @@ public sealed class TdsReturnFileTests
     public void A_challan_paying_less_than_is_allocated_and_a_bad_tan_are_problems()
     {
         var short1 = Challan(new TdsDeduction("Kavya Rao", "ABCPK1234L", 150_000, new DateOnly(2026, 4, 30), new DateOnly(2026, 4, 30), 12_567, null, "92B", null))
-            with { Tax = 10_000 };
+            with
+        { Tax = 10_000 };
         var result = TdsReturnFile.Build("24Q", Deductor with { Tan = "CHEN1234" }, 2026, 1, [short1], new DateOnly(2026, 7, 10));
         result.Problems.Count.ShouldBe(2);
     }
