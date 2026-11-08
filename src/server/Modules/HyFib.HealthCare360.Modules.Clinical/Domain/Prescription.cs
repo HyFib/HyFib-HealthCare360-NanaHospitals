@@ -45,7 +45,8 @@ public sealed record PrescriptionSignature(
     string? SafetyAlertsJson,
     bool ControlledDrugsConfirmed,
     string? RegistrationNumber = null,
-    string? RegistrationCouncil = null);
+    string? RegistrationCouncil = null,
+    IReadOnlyDictionary<Guid, string>? OverriddenAlerts = null);
 
 /// <summary>
 /// The doctor's Digital Signature Certificate signature over the prescription's canonical bytes (ERX-04), as checked
@@ -264,8 +265,12 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
         ControlledDrugsConfirmed = HasControlledDrugs;
         RefillsRemaining = RefillsAllowed;
 
+        // Each line signed over a blocking alert carries what it was signed over, so the pharmacist sees it before dispensing.
         Raise(new PrescriptionSigned(Id, PrescriptionNumber, PatientId, VisitId, AdmissionId, FacilityId, PractitionerId, IsInpatient,
-            Items.OrderBy(i => i.Sequence).Select(ToLine).ToList(), now));
+            Items.OrderBy(i => i.Sequence)
+                .Select(i => ToLine(i) with { SafetyOverride = SafetyOverrideReason is null ? null : signature.OverriddenAlerts?.GetValueOrDefault(i.Id) })
+                .ToList(),
+            now, SafetyOverrideReason, signature.UserId));
         return Result.Success();
     }
 
