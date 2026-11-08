@@ -16,7 +16,7 @@ import type {
   WorklistItem,
 } from '@/modules/lab/api';
 import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, stubBrowserApis, type FakeRequest } from '../appScreen';
-import { ASHA, ENTRY_ID, PHARMACY_ANSWERS, RAVI } from './fixtures/pharmacy';
+import { ASHA, ENTRY_ID, OVERRIDE_ENTRY, OVERRIDE_ENTRY_ID, PHARMACY_ANSWERS, RAVI } from './fixtures/pharmacy';
 
 // The lab bench's result entry and the pharmacy's dispensing screens, whole (shell included) with canned data, checked
 // with axe-core for WCAG 2.2 A and AA problems (SRS UX-10). Colour contrast and target sizes are checked in a browser
@@ -531,5 +531,25 @@ describe('lab and pharmacy screens', SCREEN_TESTS, () => {
     expect(await screen.findByText('CGST (included)', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText('Fall risk: Walks with a stick', {}, SLOW)).toBeInTheDocument();
     await expectNoAxeViolations();
+  });
+
+  it('pharmacy dispensing of a prescription signed over a safety alert: acknowledged before it is dispensed', async () => {
+    openScreen(`/pharmacy/queue/${OVERRIDE_ENTRY_ID}`);
+    expect(await screen.findByText('Prescribed over a safety alert', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText(OVERRIDE_ENTRY.safetyOverrideReason!)).toBeInTheDocument();
+    expect(screen.getByText(OVERRIDE_ENTRY.lines[0]!.safetyOverride!)).toBeInTheDocument();
+    await expectNoAxeViolations();
+
+    await userEvent.type(screen.getByRole('textbox', { name: /What you did about/ }), 'Spoke to the doctor');
+    await userEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+    const acknowledged = await vi.waitFor(() => {
+      const request = server.requests.find((r) => r.method === 'POST' && r.path.endsWith('/acknowledge-override'));
+      expect(request).toBeDefined();
+      return request!;
+    }, SLOW);
+    expect(acknowledged.path).toBe(
+      `/api/v1/pharmacy/queue/${OVERRIDE_ENTRY_ID}/lines/${OVERRIDE_ENTRY.lines[0]!.id}/acknowledge-override`,
+    );
+    expect(acknowledged.body).toEqual({ note: 'Spoke to the doctor' });
   });
 });

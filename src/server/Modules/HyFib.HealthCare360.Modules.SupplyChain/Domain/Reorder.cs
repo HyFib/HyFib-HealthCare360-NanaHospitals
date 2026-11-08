@@ -25,13 +25,9 @@ public static class ReorderCalculator
     /// <returns>The suggestion, or <c>null</c> when the item is not due.</returns>
     public static ReorderSuggestion? Suggest(Item item, decimal available, decimal pendingPurchaseUnits)
     {
-        if (!item.IsActive || item.ReorderLevel <= 0)
-        {
-            return null;
-        }
-
+        ArgumentNullException.ThrowIfNull(item);
         var onOrder = Math.Max(pendingPurchaseUnits, 0) * item.PurchaseUnitFactor;
-        if (available + onOrder > item.ReorderLevel)
+        if (!IsDue(item.IsActive, item.ReorderLevel, available, onOrder))
         {
             return null;
         }
@@ -41,6 +37,13 @@ public static class ReorderCalculator
         var purchaseUnits = item.PurchaseUnitFactor <= 0 ? quantity : Math.Ceiling(quantity / item.PurchaseUnitFactor);
         return new ReorderSuggestion(item, available, onOrder, quantity, purchaseUnits);
     }
+
+    /// <summary>
+    /// Whether an item is due for reorder: active, with a reorder level, and its usable stock plus what is on order (both in
+    /// base units) at or under the level. The stock screen's flag and the reorder report use this one rule.
+    /// </summary>
+    public static bool IsDue(bool isActive, decimal reorderLevel, decimal available, decimal onOrderBaseUnits) =>
+        isActive && reorderLevel > 0 && available + Math.Max(onOrderBaseUnits, 0) <= reorderLevel;
 
     /// <summary>The order the store buys in: vital items first, then essential, then desirable, each by name.</summary>
     public static IReadOnlyList<ReorderSuggestion> Rank(IEnumerable<ReorderSuggestion> suggestions) =>
