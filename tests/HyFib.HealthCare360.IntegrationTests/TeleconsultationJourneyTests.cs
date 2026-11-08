@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
@@ -98,6 +99,10 @@ public sealed class TeleconsultationJourneyTests(HospitalServer server)
             .Single(s => s.AppointmentId == appointment.Id);
         session.Status.ShouldBe(TelehealthStatus.Scheduled);
         session.LinkSent.ShouldBeTrue("The join link goes out with the booking.");
+
+        // The patient agrees on the phone to be seen by video, which the front office records: no call starts without it.
+        await frontOffice.PostAsync<JsonElement>($"/api/v1/patients/{patient.Id}/consents",
+            new CaptureConsentRequest(ConsentType.Telehealth, null, true, null, null, null, null, "Agreed on the phone when booking"));
 
         // Doctor: starting the call opens the telehealth visit and puts the appointment in consultation.
         var started = await doctor.PostAsync<TelehealthSessionDetail>($"/api/v1/telehealth/sessions/{session.Id}/start");

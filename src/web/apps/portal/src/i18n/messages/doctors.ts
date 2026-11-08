@@ -66,6 +66,9 @@ export const doctorMessages = defineMessages({
     'booking.reason.label': 'Reason for the visit',
     'booking.reason.hint': 'A few words help the doctor prepare. Do not write passwords or card numbers.',
     'booking.reason.tooLong': 'Please keep it under 300 characters.',
+    'booking.videoConsent.label':
+      'I agree to be seen by video. I understand the doctor may still ask me to come to the hospital to be examined.',
+    'booking.videoConsent.required': 'Please agree to a video consultation to book it.',
     'booking.payment.label': 'How would you like to pay?',
     'booking.payment.online': 'Pay online now',
     'booking.payment.onlineHint':
@@ -175,6 +178,9 @@ export const doctorMessages = defineMessages({
     'booking.reason.label': 'मिलने का कारण',
     'booking.reason.hint': 'कुछ शब्द लिखने से डॉक्टर को तैयारी में मदद मिलती है। पासवर्ड या कार्ड नंबर न लिखें।',
     'booking.reason.tooLong': 'कृपया 300 अक्षरों से कम लिखें।',
+    'booking.videoConsent.label':
+      'मैं वीडियो पर परामर्श के लिए सहमत हूँ। मैं समझता/समझती हूँ कि डॉक्टर जाँच के लिए फिर भी अस्पताल आने को कह सकते हैं।',
+    'booking.videoConsent.required': 'वीडियो परामर्श बुक करने के लिए कृपया सहमति दें।',
     'booking.payment.label': 'आप भुगतान कैसे करना चाहेंगे?',
     'booking.payment.online': 'अभी ऑनलाइन भुगतान करें',
     'booking.payment.onlineHint': 'UPI, कार्ड या नेट बैंकिंग। भुगतान न हो पाने पर भी आपका समय सुरक्षित रहेगा।',
@@ -284,6 +290,9 @@ export const doctorMessages = defineMessages({
     'booking.reason.hint':
       'சில வார்த்தைகள் எழுதினால் மருத்துவர் தயாராக உதவும். கடவுச்சொல் அல்லது கார்டு எண்களை எழுதாதீர்கள்.',
     'booking.reason.tooLong': 'தயவுசெய்து 300 எழுத்துகளுக்குள் எழுதுங்கள்.',
+    'booking.videoConsent.label':
+      'வீடியோ மூலம் ஆலோசனை பெற ஒப்புக்கொள்கிறேன். பரிசோதனைக்காக மருத்துவர் மருத்துவமனைக்கு வரச் சொல்லலாம் என்பதைப் புரிந்துகொள்கிறேன்.',
+    'booking.videoConsent.required': 'வீடியோ ஆலோசனையை முன்பதிவு செய்ய தயவுசெய்து ஒப்புதல் அளியுங்கள்.',
     'booking.payment.label': 'எப்படிப் பணம் செலுத்த விரும்புகிறீர்கள்?',
     'booking.payment.online': 'இப்போதே ஆன்லைனில் செலுத்துங்கள்',
     'booking.payment.onlineHint':

@@ -212,6 +212,8 @@ export interface PortalBookAppointmentRequest {
   isTelehealth: boolean;
   reason: string | null;
   payOnline: boolean;
+  /** For a video consultation: the patient agrees to be seen by video (recorded on their consents). */
+  telehealthConsent?: boolean;
 }
 
 /** What the portal needs to open the payment gateway's checkout (Razorpay-style order). */

@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Services;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Scheduling.Features.Portal;
 
@@ -92,6 +93,8 @@ internal static class PortalAppointmentEndpoints
         AppointmentPaymentService payments,
         HospitalDbContext db,
         SchedulingSettings settings,
+        ISettingsService allSettings,
+        ICurrentUser user,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -113,6 +116,15 @@ internal static class PortalAppointmentEndpoints
         }
 
         var appointment = booked.Value;
+
+        // The patient agreed on the booking screen to be seen by video: on their consents, so the doctor may admit them.
+        if (request.IsTelehealth && !await TelehealthConsents.OnRecordAsync(db, request.PatientId, ct))
+        {
+            await TelehealthConsents.GrantAsync(
+                db, allSettings, request.PatientId, user.UserId, appointment.FacilityId,
+                $"Given by the patient on the portal when booking video consultation {appointment.Number}.", time.GetUtcNow(), ct);
+        }
+
         PaymentCheckout? checkout = null;
         string? message = null;
         if (request.PayOnline)
