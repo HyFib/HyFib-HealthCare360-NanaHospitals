@@ -251,6 +251,7 @@ public sealed class QualityAudit : AuditableEntity, IFacilityScoped
 }
 
 /// <summary>An audit's answer to one checklist item, copied from the template when the audit was scheduled.</summary>
+[AuditedWithParent]
 public sealed class AuditFinding : Entity
 {
     public Guid AuditId { get; set; }

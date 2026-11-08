@@ -324,12 +324,13 @@ public sealed class HaiService(
     {
         var since = time.GetUtcNow() - CultureLookBack;
         var cases = db.Set<HaiCase>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
+        var samples = db.Set<LabSample>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
         var results = await (from r in db.Set<LabResult>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
                              join t in db.Set<LabTest>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on r.LabTestId equals t.Id
                              join o in db.Set<LabOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on r.LabOrderId equals o.Id
                              where r.ResultType == LabResultType.Culture && r.Status == LabResultStatus.Verified && r.Organism != null && r.VerifiedAt >= since
                                    && !cases.Any(c => c.CultureResultId == r.Id)
-                             let collected = db.Set<LabSample>().Where(s => s.Id == r.SampleId).Select(s => s.CollectedAt).FirstOrDefault()
+                             let collected = samples.Where(s => s.Id == r.SampleId).Select(s => s.CollectedAt).FirstOrDefault()
                              select new { r.Id, o.FacilityId, r.PatientId, r.TestName, r.Organism, t.SpecimenType, Collected = collected ?? o.OrderedAt })
             .ToListAsync(ct);
 

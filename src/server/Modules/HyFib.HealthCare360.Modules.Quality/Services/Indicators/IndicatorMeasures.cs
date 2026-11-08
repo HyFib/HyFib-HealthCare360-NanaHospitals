@@ -189,6 +189,8 @@ public sealed class IndicatorMeasures(HospitalDbContext db, ISurgeryAndTransfusi
 
     private async Task<MeasureResult> LabWaitAsync(MeasurePeriod p, CancellationToken ct)
     {
+        var items = db.Set<LabOrderItem>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
+        var samples = db.Set<LabSample>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
         var orders = await Set<LabOrder>(p)
             .Where(o => o.PatientClass == DiagnosticsPatientClass.OutPatient && o.OrderedAt >= p.Start && o.OrderedAt < p.End && o.Status != LabOrderStatus.Cancelled)
             .Select(o => new
@@ -196,8 +198,8 @@ public sealed class IndicatorMeasures(HospitalDbContext db, ISurgeryAndTransfusi
                 o.PatientId,
                 o.AccessionNumber,
                 o.OrderedAt,
-                Collected = (from i in db.Set<LabOrderItem>()
-                             join s in db.Set<LabSample>() on i.SampleId equals s.Id
+                Collected = (from i in items
+                             join s in samples on i.SampleId equals s.Id
                              where i.LabOrderId == o.Id && s.CollectedAt != null
                              select s.CollectedAt).Min(),
             })
@@ -487,9 +489,10 @@ public sealed class IndicatorMeasures(HospitalDbContext db, ISurgeryAndTransfusi
 
     private async Task<MeasureResult> SentinelRcaAsync(MeasurePeriod p, CancellationToken ct)
     {
+        var investigations = db.Set<QualityInvestigation>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
         var rows = await (from i in db.Set<QualityIncident>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
                           where i.FacilityId == p.FacilityId && i.IsSentinel && i.ReportedAt >= p.Start && i.ReportedAt < p.End
-                          let completed = db.Set<QualityInvestigation>().Where(v => v.IncidentId == i.Id).Select(v => v.CompletedAt).FirstOrDefault()
+                          let completed = investigations.Where(v => v.IncidentId == i.Id).Select(v => v.CompletedAt).FirstOrDefault()
                           select new { i.PatientId, i.IncidentNumber, i.ReportedAt, Completed = completed })
             .ToListAsync(ct);
         var records = rows.Select(r =>
