@@ -339,6 +339,8 @@ export interface LabConnectionDto {
   problem: string | null;
   status: LabConnectionStatusDto | null;
   pendingOrders: number;
+  /** How the connection's devices prove who they are before a message is read. */
+  deviceAuthentication?: LabDeviceAuthentication;
 }
 
 /** An enrolled HC360 lab agent. Online: it called in during the last three minutes, or relays an analyser now. */
@@ -372,6 +374,7 @@ export interface SaveLabConnectionRequest {
   agentDeviceId: string | null;
   serial: LabSerialPortDto | null;
   listVersion: number;
+  deviceAuthentication?: LabDeviceAuthentication;
 }
 
 export interface ReferralLabDto {
@@ -1481,3 +1484,50 @@ export const LAB_PERMISSIONS = {
   /** See whether analysers and their lab agents are connected. */
   connectionStatus: 'integrations.lab.status',
 } as const;
+
+/** How an analyser connection's devices prove who they are (LabDeviceAuthentication). */
+export type LabDeviceAuthentication = 'None' | 'SharedSecret' | 'MutualTls' | 'LabAgent';
+
+/** A device of an analyser connection (LabDeviceDto): one refused at the door (Seen), added, approved or revoked. */
+export interface LabDeviceDto {
+  id: string;
+  connectionCode: string;
+  name: string | null;
+  method: LabDeviceAuthentication;
+  identifier: string;
+  subject: string | null;
+  status: 'Seen' | 'PendingApproval' | 'Approved' | 'Revoked';
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  lastAddress: string | null;
+  refusedAttempts: number;
+  addedByName: string | null;
+  addedAt: string | null;
+  approvedByName: string | null;
+  approvedAt: string | null;
+  pendingApprovalId: string | null;
+  version: number;
+}
+
+/** POST /api/v1/integrations/lab/devices answers 202 with the approval; a shared-secret device's key id and secret, shown once. */
+export interface LabDeviceAdded {
+  device: LabDeviceDto;
+  approval: { id: string };
+  keyId: string | null;
+  secret: string | null;
+}
+
+export const labDevicesApi = {
+  list: (connection: string, signal?: AbortSignal) =>
+    api.get<LabDeviceDto[]>('/api/v1/integrations/lab/devices', { signal, query: { connection } }),
+  add: (body: {
+    connectionCode: string;
+    name: string;
+    method: LabDeviceAuthentication;
+    fingerprint: string | null;
+    seenDeviceId: string | null;
+    reason: string;
+  }) => api.post<LabDeviceAdded>('/api/v1/integrations/lab/devices', body),
+  revoke: (id: string, version: number, reason: string) =>
+    api.post<void>(`/api/v1/integrations/lab/devices/${id}/revoke`, { version, reason }),
+};

@@ -15,6 +15,9 @@ public static class InteropPermissions
     public const string AbdmExport = "abdm.export";
     public const string AbdmRecordsRequest = "abdm.records.request";
 
+    /// <summary>Register, list and suspend SMART on FHIR clients; a registration needs a second holder's approval.</summary>
+    public const string SmartClientsManage = "fhir.clients.manage";
+
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
         new(FhirRead, "Interoperability",
@@ -26,5 +29,8 @@ public static class InteropPermissions
         new(AbdmRecordsRequest, "Interoperability",
             "Ask a patient, through ABDM, to let the hospital see their records at other providers, in their name as the requesting doctor (the patient decides in their ABHA app; every request is audited)",
             [SystemRoles.Doctor]),
+        new(SmartClientsManage, "Interoperability",
+            "Register partner applications that read the FHIR API with SMART on FHIR tokens, and suspend them (a registration waits for a second administrator's approval; every token still reads only what patients' consents allow)",
+            [SystemRoles.HospitalAdmin]),
     ];
 }

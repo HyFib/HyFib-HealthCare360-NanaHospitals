@@ -245,6 +245,12 @@ public static class SettingGuard
             "Whether clinical text and dictation are sent to the AI provider set up. Off, nothing leaves the hospital for AI.",
             DefaultOn: false, OnIsLooser: true),
 
+        // AiSettingKeys.ProcessingAgreement (the AI module): on, the facility's dictation goes to the speech service (only
+        // its speech, silence taken out); turning it on says the facility has signed a processing agreement with it.
+        ["ai.processingAgreement"] = new SettingSwitch("AI processing agreement",
+            "Whether the facility has an AI processing agreement with the speech service, so that its staff's dictation may be sent there. Off, no audio leaves the server.",
+            DefaultOn: false, OnIsLooser: true),
+
         // ---------------------------------------------------------------- limits
 
         // DiscountService.DefaultLimitSetting: read as 0 to 100.

@@ -30,6 +30,8 @@ internal static class FhirOutcomes
     public const string AuthenticationRequired = "authentication-required";
     public const string PermissionRequired = "permission-required";
     public const string FacilityRequired = "facility-required";
+    public const string SmartRequired = "smart-required";
+    public const string ScopeInsufficient = "scope-insufficient";
     public const string ReadOnly = "read-only";
     public const string RecordsWithheld = "records-withheld";
     public const string TooManyRecords = "too-many-records";
@@ -84,6 +86,17 @@ internal static class FhirOutcomes
     /// A reader whose session is not at a facility its account is assigned to (#251): a partner reads one facility's
     /// records, and an account the hospital assigned to none may sign in anywhere, so it is not that partner.
     /// </summary>
+    /// <summary>A password session of an integration account the hospital moved to a SMART backend service.</summary>
+    public static FhirError MigratedToSmart() =>
+        Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
+            "This integration account now reads with its SMART backend service's access tokens (POST /oauth2/token), not by signing in.",
+            SmartRequired);
+
+    /// <summary>A SMART token whose scopes do not reach the type, the interaction, or this patient's record.</summary>
+    public static FhirError OutsideScope(string what) =>
+        Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
+            $"The access token's scopes do not allow {what}.", ScopeInsufficient);
+
     public static FhirError NoFacility() =>
         Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
             "This account is not linked to a facility, so it cannot read records. The hospital links each partner's account to the facility whose records it reads; ask the hospital to assign one, then sign in again.",

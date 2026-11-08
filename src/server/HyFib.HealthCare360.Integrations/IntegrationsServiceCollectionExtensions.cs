@@ -139,6 +139,13 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddScoped<LabTrainingAnalyser>();
         services.AddSingleton<LabGatewayState>();
         services.AddSingleton<ILabMessageProcessor, LabMessageProcessor>();
+        // Analyser connections authenticate the device before a message is read (mutual TLS uses the LAN certificate).
+        services.AddSingleton(sp => new Laboratory.Devices.LabDeviceGate(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            () => sp.GetService<HyFib.HealthCare360.Platform.Networking.LanCertificateManager>()?.ServerCertificate,
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<Laboratory.Devices.LabDeviceGate>>()));
+        services.AddScoped<Laboratory.Devices.LabDeviceService>();
         services.AddHostedService<LabGatewayHostedService>();
 
         // Orders sent to analysers unasked, serial analysers relayed by lab agents, and their set-up in Lab setup.

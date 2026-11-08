@@ -55,5 +55,6 @@ public sealed class IntegrationsModule : IModule
         WhatsAppWebhookEndpoints.Map(endpoints);
         LabConnectionEndpoints.Map(endpoints);
         LabAgentEndpoints.Map(endpoints);
+        Laboratory.Devices.LabDeviceEndpoints.Map(endpoints);
     }
 }

@@ -7,7 +7,11 @@ namespace HyFib.HealthCare360.Modules.Interop.Domain;
 internal sealed record ConsentFact(bool Granted, DateTimeOffset CapturedAt, DateTimeOffset? RevokedAt, SharingScope? Scope = null);
 
 /// <summary>Who reads through the FHIR API, the purpose they stated (none: null), and the hospital's date today.</summary>
-internal sealed record SharingReader(Guid UserId, SharingPurpose? Purpose, DateOnly Today);
+internal sealed record SharingReader(Guid UserId, SharingPurpose? Purpose, DateOnly Today)
+{
+    /// <summary>A SMART token's scopes and patient, which narrow what the account reads; null for a session.</summary>
+    public SmartAccess? Smart { get; init; }
+}
 
 /// <summary>
 /// What one given record-sharing consent covers: the accounts that may read, what for, which kinds of records, the

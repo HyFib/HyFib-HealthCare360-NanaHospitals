@@ -141,6 +141,15 @@ public sealed class EndpointAuthorizationTests
 
         // FHIR requires a public capability statement; the catch-all only answers "not found" in FHIR's format.
         "GET /fhir/r4/metadata",
+
+        // SMART on FHIR (rate-limited): discovery, and the OAuth endpoints a partner calls before it has a token. The token,
+        // introspection and revocation endpoints authenticate the client themselves (a signed assertion, or a public app's
+        // PKCE verifier); authorize only checks the request and hands it to the staff app's signed-in screen.
+        "GET /fhir/r4/.well-known/smart-configuration",
+        "GET /oauth2/authorize",
+        "POST /oauth2/token",
+        "POST /oauth2/introspect",
+        "POST /oauth2/revoke",
         "ANY /fhir/{**rest}",
 
         // Health checks for the service manager and monitoring: they say only whether the server and database are up.

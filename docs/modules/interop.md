@@ -33,6 +33,7 @@ pages, the first refused and the second accepted, reported errored, not delivere
 |---|---|---|
 | `fhir.read` | Read and search patient records through the FHIR API (what the patient's record-sharing consents let the account read; every access is audited) | HospitalAdmin |
 | `abdm.records.request` | Ask a patient, through ABDM, to let the hospital see their records at other providers, in their name as the requesting doctor (every request is audited) | Doctor |
+| `fhir.clients.manage` | Register partner applications for SMART on FHIR (a second holder approves) and suspend them | HospitalAdmin |
 | `abdm.export` | Export discharge summaries, lab reports, radiology and cardiology reports, consultation notes, prescriptions and vaccine doses given here as ABDM health records (every export is audited). Staff only: it does not check the record-sharing consent, so never give it to an integration service account | HospitalAdmin, MrdOfficer |
 
 Integration partners (a referral hospital, a health information exchange) get their own service user:
@@ -65,6 +66,43 @@ Integration partners (a referral hospital, a health information exchange) get th
    export, a staff download for the patient's own locker, is not limited this way.
 4. The partner states why it reads in `X-Purpose-Of-Use` with each request (for example `TREAT`), as patients'
    consents may allow some purposes only ([Consent and access rules](#consent-and-access-rules)).
+
+### SMART on FHIR (partner applications)
+
+Partners read with SMART on FHIR access tokens (App Launch 2.0 and Backend Services), discovered at
+`/fhir/r4/.well-known/smart-configuration` and in the CapabilityStatement (`rest.security.service` SMART-on-FHIR and
+the `oauth-uris` extension).
+
+* **Registration** (Administration, `/api/v1/smart/clients`, `fhir.clients.manage`): one administrator registers a
+  client, a second approves it (`interop.smart_client`; the one who registered it cannot), and only then is it issued
+  tokens. An **app** has exact redirect URIs (https, or http on 127.0.0.1/[::1] for a native app) and `patient/` or
+  `user/` read scopes; a **backend service** has its public keys (a JSON Web Key Set: RSA 2048+ or EC P-256/P-384, no
+  private parts), `system/` read scopes, the integration account it reads as and that account's facility. Suspending a
+  client revokes all its tokens at once.
+* **Apps** (`GET /oauth2/authorize`): authorization code with PKCE (S256 only). The request is checked (client, exact
+  redirect URI, `aud`, scopes) and handed to the staff app's **Authorize an app** screen, where a staff member who holds
+  `fhir.read` and is assigned to the facility signs in, sees what is asked, names the patient by UHID for a `patient/`
+  grant, and allows or denies. The code is single use for ten minutes; presenting it twice revokes the token it bought.
+  The token reads as that staff member, at their facility.
+* **Backend services** (`POST /oauth2/token`, `grant_type=client_credentials`): a JWT client assertion signed by a
+  registered key (RS384, ES384, RS256 or ES256), `iss` = `sub` = the client id, `aud` the token endpoint, expiring within
+  five minutes, each `jti` accepted once. The token reads as the client's integration account at its facility.
+* **Scopes**: SMART v2 (`patient/*.rs`, `user/Observation.r`…) and v1 `.read`, read and search only; others asked
+  for are dropped and the granted scopes are said back. A token reads only the types its scopes name (403
+  `scope-insufficient` otherwise); a `patient/` token only its patient's record: reads of another patient's records and
+  searches without that patient are refused, and a Patient search must be `_id` of that patient.
+* **Consent still applies on every read**: a token signs the request in as its account, so the account's
+  `fhir.read`, its facility and each patient's record-sharing consent (who may read, purpose, kinds, dates, until)
+  decide exactly as for a session; scopes only narrow.
+* **Tokens**: opaque, 15 minutes, stored as SHA-256, accepted by the FHIR API only. `POST /oauth2/introspect` (RFC 7662)
+  and `POST /oauth2/revoke` (RFC 7009) answer the client the token was issued to (an assertion, or a public app's
+  `client_id` for revocation). No refresh tokens are issued: an app asks again, a service mints a new assertion.
+* **Migration**: partners on a password-signed-in service user keep working. Registering a backend service with
+  *replaces password sign-in* makes the FHIR API refuse that account's own sessions (403 `smart-required`) once the
+  client is active.
+* Audit: `smart.client_registered`, `smart.client_approved`, `smart.client_suspended`, `smart.app_authorized`,
+  `smart.token_issued`, `smart.token_refused`, beside the FHIR read audit, which names the account as before.
+* Tests: `SmartOnFhirTests` (IntegrationTests), `SmartScopeTests` (Interop.Tests), staff `modules/interop/smartAuthorize.test.tsx`.
 
 ## Consent and access rules
 

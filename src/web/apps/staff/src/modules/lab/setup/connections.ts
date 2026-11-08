@@ -63,6 +63,7 @@ export const connectionSchema = z
     handshake: z.enum(SERIAL_HANDSHAKES),
     dtrEnable: z.boolean(),
     rtsEnable: z.boolean(),
+    deviceAuthentication: z.enum(['None', 'SharedSecret', 'MutualTls', 'LabAgent']),
   })
   .superRefine((values, ctx) => {
     const problem = (path: string, message: string) => ctx.addIssue({ code: 'custom', path: [path], message });
@@ -122,6 +123,7 @@ export function toConnectionForm(connection: LabConnectionDto | undefined): Conn
     handshake: serial?.handshake ?? 'None',
     dtrEnable: serial?.dtrEnable ?? true,
     rtsEnable: serial?.rtsEnable ?? true,
+    deviceAuthentication: connection?.deviceAuthentication ?? 'None',
   };
 }
 
@@ -158,6 +160,17 @@ export function toSaveRequest(values: ConnectionForm, isHl7: boolean, listVersio
           rtsEnable: handshakeUsesRts(values.handshake) ? false : values.rtsEnable,
         },
     listVersion,
+    // A network device proves itself by a shared secret or a certificate, a serial one through its lab agent.
+    deviceAuthentication:
+      values.deviceAuthentication === 'None'
+        ? 'None'
+        : tcp
+          ? values.deviceAuthentication === 'LabAgent'
+            ? 'SharedSecret'
+            : values.deviceAuthentication
+          : serial
+            ? 'LabAgent'
+            : 'None',
   };
 }
 
