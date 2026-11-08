@@ -309,6 +309,19 @@ public sealed class SmartOnFhirTests(HospitalServer server)
         ["client_assertion"] = assertion,
     };
 
+    [Theory]
+    [InlineData(SmartEndpoints.TokenPath)]
+    [InlineData(SmartEndpoints.IntrospectPath)]
+    [InlineData(SmartEndpoints.RevokePath)]
+    public async Task The_oauth_endpoints_take_only_a_form(string path)
+    {
+        var anonymous = server.Anonymous();
+        using var json = await anonymous.SendContentAsync(HttpMethod.Post, path, JsonContent.Create(new { grant_type = "client_credentials", client_id = "x" }));
+        json.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var body = JsonDocument.Parse(await json.Content.ReadAsStringAsync(Ct)).RootElement;
+        body.GetProperty("error").GetString().ShouldBe("invalid_request");
+    }
+
     private sealed record OAuthAnswer(HttpStatusCode Status, JsonElement Body)
     {
         public string? Error => Body.TryGetProperty("error", out var error) ? error.GetString() : null;

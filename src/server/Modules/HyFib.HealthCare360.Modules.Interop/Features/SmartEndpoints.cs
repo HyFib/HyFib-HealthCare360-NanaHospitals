@@ -59,9 +59,12 @@ internal static class SmartEndpoints
 
         var oauth = app.MapGroup("/oauth2").WithTags("SMART on FHIR").AllowAnonymous().RequireRateLimiting(RateLimitPolicies.Partner).DisableAntiforgery();
         oauth.MapGet("/authorize", Authorize);
-        oauth.MapPost("/token", Token).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(16 * 1024));
-        oauth.MapPost("/introspect", Introspect).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(16 * 1024));
-        oauth.MapPost("/revoke", Revoke).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(16 * 1024));
+        oauth.MapPost("/token", Token).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(16 * 1024))
+            .AddEndpointFilter(FormBodyOnly);
+        oauth.MapPost("/introspect", Introspect).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(16 * 1024))
+            .AddEndpointFilter(FormBodyOnly);
+        oauth.MapPost("/revoke", Revoke).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(16 * 1024))
+            .AddEndpointFilter(FormBodyOnly);
 
         var smart = app.MapGroup("/api/v1/smart").WithTags("SMART on FHIR");
         smart.MapGet("/authorize/preview", Preview).RequirePermission(InteropPermissions.FhirRead);
@@ -215,11 +218,6 @@ internal static class SmartEndpoints
 
     private static async Task<IResult> Token(HttpContext http, SmartAuthorization smart, IAuditLogger audit, HospitalDbContext db, CancellationToken ct)
     {
-        if (!http.Request.HasFormContentType)
-        {
-            return OAuth(OAuthError.InvalidRequest("Send the parameters as application/x-www-form-urlencoded."));
-        }
-
         var form = await http.Request.ReadFormAsync(ct);
         var tokenEndpoint = Origin(http.Request) + TokenPath;
         var grantType = form["grant_type"].ToString();
@@ -290,11 +288,6 @@ internal static class SmartEndpoints
     /// <summary>RFC 7662, for the client the token was issued to (it authenticates with its assertion); any other token is inactive to it.</summary>
     private static async Task<IResult> Introspect(HttpContext http, SmartAuthorization smart, CancellationToken ct)
     {
-        if (!http.Request.HasFormContentType)
-        {
-            return OAuth(OAuthError.InvalidRequest("Send the parameters as application/x-www-form-urlencoded."));
-        }
-
         var form = await http.Request.ReadFormAsync(ct);
         var (client, error) = await smart.AuthenticateAssertionAsync(form["client_assertion_type"], form["client_assertion"], NullIfEmpty(form["client_id"]),
             Origin(http.Request) + TokenPath, ct);
@@ -330,11 +323,6 @@ internal static class SmartEndpoints
     /// <summary>RFC 7009: the client the token was issued to revokes it (a public app names itself); the answer is the same either way.</summary>
     private static async Task<IResult> Revoke(HttpContext http, SmartAuthorization smart, CancellationToken ct)
     {
-        if (!http.Request.HasFormContentType)
-        {
-            return OAuth(OAuthError.InvalidRequest("Send the parameters as application/x-www-form-urlencoded."));
-        }
-
         var form = await http.Request.ReadFormAsync(ct);
         SmartClient? client;
         if (form.ContainsKey("client_assertion"))
@@ -366,6 +354,15 @@ internal static class SmartEndpoints
         var query = new Dictionary<string, string?> { ["error"] = error, ["error_description"] = description, ["state"] = state };
         return QueryHelpers.AddQueryString(redirect, query.Where(p => !string.IsNullOrEmpty(p.Value))!);
     }
+
+    /// <summary>
+    /// The token, introspection and revocation endpoints take their parameters as a form (RFC 6749 s.3.2, RFC 7662, RFC 7009):
+    /// anything else is refused before the endpoint runs, with the OAuth error body.
+    /// </summary>
+    private static async ValueTask<object?> FormBodyOnly(EndpointFilterInvocationContext context, EndpointFilterDelegate next) =>
+        context.HttpContext.Request.HasFormContentType
+            ? await next(context)
+            : OAuth(OAuthError.InvalidRequest("Send the parameters as application/x-www-form-urlencoded."));
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
