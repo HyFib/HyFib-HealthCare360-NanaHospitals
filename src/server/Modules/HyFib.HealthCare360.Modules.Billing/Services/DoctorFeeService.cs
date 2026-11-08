@@ -276,7 +276,7 @@ public sealed class DoctorFeeService(
         }
 
         var deducted = Money.Round(Math.Max(0, deductions.Sum(d => d.Amount)));
-        var amounts = new PayoutAmounts(gross, deducted, fee.Value.RatePercent, fee.Value.Tds, gross - fee.Value.Tds - deducted);
+        var amounts = new PayoutAmounts(gross, deducted, fee.Value.Tax.RatePercent, fee.Value.Tax.Tds, gross - fee.Value.Tax.Tds - deducted);
         if (amounts.Net < 0)
         {
             return Error.Rule("doctorfees.negative_payout", "Deductions and TDS exceed the fees of this period.");
@@ -295,8 +295,9 @@ public sealed class DoctorFeeService(
             Deductions = deductions.Select(d => new DoctorPayoutDeduction { Description = d.Description.Trim(), Amount = Money.Round(d.Amount) }).ToList(),
         };
         payout.ApplyAmounts(amounts);
-        payout.TdsBasis = fee.Value.Basis;
-        payout.TdsRemark = fee.Value.Remark;
+        payout.TdsBasis = fee.Value.Tax.Basis;
+        payout.TdsRemark = fee.Value.Tax.Remark;
+        payout.TdsPanCipher = fee.Value.PanCipher;
         db.Add(payout);
         foreach (var accrual in accruals)
         {

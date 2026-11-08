@@ -42,6 +42,7 @@ internal sealed class DoctorPayoutConfiguration : IEntityTypeConfiguration<Docto
         b.Property(x => x.Notes).HasMaxLength(500);
         b.Property(x => x.TdsPercent).HasPrecision(5, 2);
         b.Property(x => x.TdsRemark).HasMaxLength(1);
+        b.Property(x => x.TdsPanCipher).HasMaxLength(256).IsProtectedValue();
         b.HasMany(x => x.Deductions).WithOne().HasForeignKey(x => x.PayoutId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.PayoutNumber).IsUnique();
         b.HasIndex(x => new { x.PractitionerId, x.PeriodFrom });

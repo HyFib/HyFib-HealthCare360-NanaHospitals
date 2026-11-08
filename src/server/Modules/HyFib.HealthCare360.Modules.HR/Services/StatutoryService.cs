@@ -19,10 +19,13 @@ public sealed class StatutoryService(HospitalDbContext db, ICurrentUser currentU
 
     // ---- Employer profile -------------------------------------------------------------------------------------------
 
-    public async Task<StatutoryProfileDto?> ProfileAsync(CancellationToken ct)
+    /// <summary>The facility's details; an empty profile (no version) until the first save.</summary>
+    public async Task<StatutoryProfileDto> ProfileAsync(CancellationToken ct)
     {
         var p = await db.Set<StatutoryEmployerProfile>().AsNoTracking().FirstOrDefaultAsync(ct);
-        return p is null ? null : ToDto(p);
+        return p is null
+            ? new StatutoryProfileDto(null, null, null, null, "K", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, BankFileFormat.Csv, null)
+            : ToDto(p);
     }
 
     public async Task<Result> SaveProfileAsync(SaveStatutoryProfileRequest r, CancellationToken ct)

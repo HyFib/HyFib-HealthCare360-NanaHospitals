@@ -111,6 +111,10 @@ public sealed class DoctorPayout : AuditableEntity, IFacilityScoped
     /// <summary>The reason code in Form 26Q: C for the higher rate without a PAN (s.206AA), A for a s.197 certificate.</summary>
     public string? TdsRemark { get; set; }
 
+    /// <summary>The doctor's PAN when the tax was deducted (encrypted): the return reports it as it was, not a PAN given later.</summary>
+    [SensitiveData]
+    public string? TdsPanCipher { get; set; }
+
     public decimal NetAmount { get; set; }
     public PayoutStatus Status { get; set; }
     public Guid? ApprovedBy { get; set; }

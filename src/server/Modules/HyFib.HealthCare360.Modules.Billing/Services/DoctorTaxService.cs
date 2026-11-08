@@ -61,7 +61,7 @@ public sealed class DoctorTaxService(HospitalDbContext db, IFieldProtector prote
     /// </summary>
     /// <param name="rate">The facility's s.194J rate, if set (else the year's).</param>
     /// <param name="typedRate">A lower rate typed for this payout (a s.197 certificate not yet on the profile).</param>
-    public async Task<Result<ProfessionalFeeTdsResult>> PayoutTdsAsync(Guid practitionerId, decimal gross, decimal? rate, decimal? typedRate, DateOnly creditedOn,
+    public async Task<Result<PayoutTds>> PayoutTdsAsync(Guid practitionerId, decimal gross, decimal? rate, decimal? typedRate, DateOnly creditedOn,
         CancellationToken ct)
     {
         var fy = IncomeTaxRates.FinancialYearOf(creditedOn);
@@ -86,8 +86,12 @@ public sealed class DoctorTaxService(HospitalDbContext db, IFieldProtector prote
         var taxed = earlier.Sum(p => p.TdsBasis > 0 ? p.TdsBasis : p.TdsAmount > 0 ? p.GrossAmount : 0);
         var profile = await db.Set<DoctorTaxProfile>().AsNoTracking().FirstOrDefaultAsync(x => x.PractitionerId == practitionerId, ct);
         var pan = profile?.PanCipher is { } cipher ? protector.Unprotect(cipher) : null;
-        return ProfessionalFeeTds.Compute(rates, credited, taxed, Math.Max(0, gross), pan, typedRate ?? profile?.CertificateRateOn(creditedOn));
+        return new PayoutTds(ProfessionalFeeTds.Compute(rates, credited, taxed, Math.Max(0, gross), pan, typedRate ?? profile?.CertificateRateOn(creditedOn)),
+            HrIdentifiers.IsValidPan(pan) ? profile!.PanCipher : null);
     }
+
+    /// <summary>The tax on a payout, and the doctor's PAN (encrypted) it was worked out with.</summary>
+    public sealed record PayoutTds(ProfessionalFeeTdsResult Tax, string? PanCipher);
 
     public sealed record Doctor26QResult(string FileName, byte[] Content, TdsReturnResult Return);
 
@@ -171,14 +175,16 @@ public sealed class DoctorTaxService(HospitalDbContext db, IFieldProtector prote
                 where (practitionerId == null || p.PractitionerId == practitionerId) && p.Status != PayoutStatus.Draft && p.ApprovedAt != null
                       && p.ApprovedAt >= start && p.ApprovedAt < end
                 orderby p.ApprovedAt
-                select new { p.PayoutNumber, p.PractitionerId, d.DisplayName, p.ApprovedAt, p.GrossAmount, p.TdsAmount, p.TdsPercent, p.TdsRemark })
+                select new { p.PayoutNumber, p.PractitionerId, d.DisplayName, p.ApprovedAt, p.GrossAmount, p.TdsAmount, p.TdsPercent, p.TdsRemark, p.TdsPanCipher })
             .ToListAsync(ct);
         var ids = payouts.Select(p => p.PractitionerId).Distinct().ToList();
         var profiles = await db.Set<DoctorTaxProfile>().AsNoTracking().Where(x => ids.Contains(x.PractitionerId)).ToDictionaryAsync(x => x.PractitionerId, ct);
         return payouts.Select(p =>
         {
             var profile = profiles.GetValueOrDefault(p.PractitionerId);
-            return new Credit(p.PayoutNumber, profile?.NameAsPerPan ?? p.DisplayName, profile?.PanCipher is { } c ? protector.Unprotect(c) : null,
+            // The PAN the tax was deducted with; a payout from before PANs were kept takes the one on record.
+            var cipher = p.TdsPanCipher ?? (p.TdsRemark == "C" ? null : profile?.PanCipher);
+            return new Credit(p.PayoutNumber, profile?.NameAsPerPan ?? p.DisplayName, cipher is not null ? protector.Unprotect(cipher) : null,
                 BillingTime.LocalDate(p.ApprovedAt!.Value), p.GrossAmount, p.TdsAmount, p.TdsAmount > 0 ? p.TdsPercent : null, section, p.TdsRemark);
         }).ToList();
     }

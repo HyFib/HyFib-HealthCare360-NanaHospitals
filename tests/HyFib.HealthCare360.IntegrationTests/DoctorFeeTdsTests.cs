@@ -26,6 +26,7 @@ public sealed class DoctorFeeTdsTests(HospitalServer server)
         var manager = await server.SignInAsync(HospitalServer.Users.HrManager);
         var today = server.Today;
         var statements = new DoctorFeeStatementTests(server);
+        await StatutoryReturnsTests.ProfileAsync(manager);
 
         // The doctor earns all of what the procedure is billed at: ₹30,000 a bill.
         var doctor = await DoctorFeeStatementTests.DoctorAsync(admin);

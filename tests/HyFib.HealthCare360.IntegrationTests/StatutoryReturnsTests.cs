@@ -127,12 +127,13 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
 
     // ---------------------------------------------------------------------- steps
 
-    private static async Task ProfileAsync(ApiClient manager)
+    /// <summary>The facility's TAN, PAN and the person responsible, which the returns need (shared by DoctorFeeTdsTests).</summary>
+    internal static async Task ProfileAsync(ApiClient manager)
     {
-        var current = await manager.GetAsync<StatutoryProfileDto?>($"{Statutory}/profile");
+        var current = await manager.GetAsync<StatutoryProfileDto>($"{Statutory}/profile");
         await manager.PutAsync($"{Statutory}/profile", new SaveStatutoryProfileRequest(
             "CHEN12345E", "AABCN1234F", "Nana Hospitals Pvt Ltd", null, "K", "12 Mount Road", null, null, "Chennai", "22", "600002", null, null,
-            "S Raman", "Finance Manager", "ABCPR1234K", "9876543210", null, "TNMAS0012345000", null, "00000012345678", BankFileFormat.Sbi, current?.Version));
+            "S Raman", "Finance Manager", "ABCPR1234K", "9876543210", null, "TNMAS0012345000", null, "00000012345678", BankFileFormat.Sbi, current.Version));
     }
 
     private static async Task StructureAsync(ApiClient hr, Guid employeeId, Dictionary<string, SalaryComponentDto> components, decimal basic, decimal special, bool esi)
