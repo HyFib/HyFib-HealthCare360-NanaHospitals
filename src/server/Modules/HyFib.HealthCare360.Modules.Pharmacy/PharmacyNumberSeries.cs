@@ -9,7 +9,7 @@ public static class PharmacyNumberSeries
         new("pharmacy.invoice", "Pharmacy invoice", "Pharmacy", "{FAC}PH{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24) { GstDocument = true };
 
     public static NumberSeriesDefinition SaleReturn { get; } =
-        new("pharmacy.return", "Sale return", "Pharmacy", "{FAC}PHR{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24) { GstDocument = true };
+        new("pharmacy.return", "Sale return", "Pharmacy", "{FAC}SR{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24) { GstDocument = true };
 
     public static NumberSeriesDefinition RefillRequest { get; } =
         new("pharmacy.refill", "Refill request", "Pharmacy", "{FAC}RF{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);

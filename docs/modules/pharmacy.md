@@ -328,7 +328,7 @@ while SMS/WhatsApp consent is active.
 | Series key | Format |
 |---|---|
 | `pharmacy.invoice` | `{FAC}PH{YY}{SEQ:6}` (OP dispensing and counter sales; a GST series, at most 16 characters) |
-| `pharmacy.return` | `{FAC}PHR{YY}{SEQ:5}` (a credit note; a GST series, at most 16 characters) |
+| `pharmacy.return` | `{FAC}SR{YY}{SEQ:6}` (a credit note; a GST series, at most 16 characters) |
 | `pharmacy.ward_indent` · `pharmacy.ip_issue` · `pharmacy.ward_return` | `{FAC}WI{YY}{SEQ:6}` · `{FAC}IPI{YY}{SEQ:6}` · `{FAC}WR{YY}{SEQ:6}` |
 | `pharmacy.refill` | `{FAC}RF{YY}{SEQ:6}` |
 
@@ -356,7 +356,7 @@ stock-batch tables.
 
 ## Open items for maintainers
 
-* **GST series in use.** The invoice and return defaults were `{SEQ:7}` and `PHR…{SEQ:6}`, 17 characters at a
+* **GST series in use.** The invoice and return defaults were `{FAC}PH{YY}{SEQ:7}` and `{FAC}PHR{YY}{SEQ:6}`, 17 characters at a
   6-letter facility code; a series already in use keeps its stored format until an administrator changes it.
 
 * **ServiceCategory**: the IP pharmacy service items are seeded as `ServiceCategory.Consumable`. A

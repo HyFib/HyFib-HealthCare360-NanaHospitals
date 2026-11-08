@@ -109,10 +109,17 @@ public sealed class IrpClientTests : IDisposable
     public async Task A_gsp_takes_plain_json_and_a_duplicate_comes_back_with_the_irn_the_portal_holds()
     {
         _http.Respond(HttpStatusCode.OK, """{"Status":1,"Data":{"AuthToken":"gsp-token"}}""");
-        _http.Respond(HttpStatusCode.OK, $$"""
-            {"Status":0,"ErrorDetails":[{"ErrorCode":"2150","ErrorMessage":"Duplicate IRN"}],
-             "InfoDtls":[{"InfCd":"DUPIRN","Desc":{"AckNo":112610012345678,"AckDt":"2026-10-05 11:02:00","Irn":"{{new string('B', 64)}}"}}]}
-            """);
+        var duplicate = new JsonObject
+        {
+            ["Status"] = 0,
+            ["ErrorDetails"] = new JsonArray(new JsonObject { ["ErrorCode"] = "2150", ["ErrorMessage"] = "Duplicate IRN" }),
+            ["InfoDtls"] = new JsonArray(new JsonObject
+            {
+                ["InfCd"] = "DUPIRN",
+                ["Desc"] = new JsonObject { ["AckNo"] = 112610012345678, ["AckDt"] = "2026-10-05 11:02:00", ["Irn"] = new string('B', 64) },
+            }),
+        };
+        _http.Respond(HttpStatusCode.OK, duplicate.ToJsonString());
 
         var result = await Client.GenerateAsync(Context("gsp"), Invoice(), Ct);
 

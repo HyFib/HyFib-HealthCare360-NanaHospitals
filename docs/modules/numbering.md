@@ -228,7 +228,7 @@ again and the next number cannot be set below them.
 | Patients | Visit number (out-patient visits and admissions) | `visit` | `{FAC}V{YY}{SEQ:7}` | every year | per facility | 24 |
 | Pharmacy | Pharmacy invoice (GST) | `pharmacy.invoice` | `{FAC}PH{YY}{SEQ:6}` | every year | per facility | 24 |
 | Pharmacy | Refill request | `pharmacy.refill` | `{FAC}RF{YY}{SEQ:6}` | every year | per facility | 24 |
-| Pharmacy | Sale return (GST) | `pharmacy.return` | `{FAC}PHR{YY}{SEQ:5}` | every year | per facility | 24 |
+| Pharmacy | Sale return (GST) | `pharmacy.return` | `{FAC}SR{YY}{SEQ:6}` | every year | per facility | 24 |
 | Pharmacy | Ward indent | `pharmacy.ward_indent` | `{FAC}WI{YY}{SEQ:6}` | every year | per facility | 24 |
 | Pharmacy | Ward issue | `pharmacy.ip_issue` | `{FAC}IPI{YY}{SEQ:6}` | every year | per facility | 24 |
 | Pharmacy | Ward return | `pharmacy.ward_return` | `{FAC}WR{YY}{SEQ:6}` | every year | per facility | 24 |
