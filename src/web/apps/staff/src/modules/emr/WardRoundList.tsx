@@ -143,6 +143,7 @@ export function WardRoundList({
                   hasActiveAllergies={p.hasActiveAllergies}
                   hasCriticalAlerts={p.hasCriticalAlerts}
                   isRestricted={p.isRestricted}
+                  isConfidential={p.isConfidential}
                 >
                   {p.isMlc && (
                     <Tooltip content="Medico-legal case" relationship="description">

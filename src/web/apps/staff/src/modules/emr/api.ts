@@ -109,6 +109,8 @@ export interface WorklistQueueEntry {
   hasCriticalAlerts: boolean;
   /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", without the complaint. */
   isRestricted: boolean;
+  /** A record in a sensitive category the user does not hold: named, without the clinical text. */
+  isConfidential?: boolean;
 }
 
 /** A booking on the doctor's day; once the patient has checked in it carries the visit, token and note. */
@@ -137,6 +139,8 @@ export interface WorklistAppointment {
   hasCriticalAlerts: boolean;
   /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", without the reason. */
   isRestricted: boolean;
+  /** A record in a sensitive category the user does not hold: named, without the clinical text. */
+  isConfidential?: boolean;
 }
 
 export interface WorklistEncounter {
@@ -1095,8 +1099,16 @@ export const emrApi = {
     api.put<EncounterDetail>(`/api/v1/emr/encounters/${id}`, { ...content, version }),
   signEncounter: (id: string, version: number) =>
     api.post<EncounterDetail>(`/api/v1/emr/encounters/${id}/sign`, { version }),
+  /**
+   * The author amends at once (the encounter); another doctor's amendment waits for the author or the head of the
+   * department (an approval request, 202: maker-checker, slice 15).
+   */
   amendEncounter: (id: string, reason: string, content: EncounterContent, version: number) =>
-    api.post<EncounterDetail>(`/api/v1/emr/encounters/${id}/amend`, { reason, ...content, version }),
+    api.post<EncounterDetail | ApprovalRequestDto>(`/api/v1/emr/encounters/${id}/amend`, {
+      reason,
+      ...content,
+      version,
+    }),
 
   recordVitals: (patientId: string, request: RecordVitalsPayload) =>
     api.post<VitalsDto>(`/api/v1/emr/patients/${patientId}/vitals`, request),
