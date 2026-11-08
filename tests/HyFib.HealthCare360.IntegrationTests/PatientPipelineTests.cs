@@ -7,6 +7,8 @@ using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.Payments;
 using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
+using HyFib.HealthCare360.Modules.Clinical.Domain.Emergency;
+using HyFib.HealthCare360.Modules.Clinical.Features.Emergency;
 using HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabSamples;
@@ -228,6 +230,96 @@ public sealed class PatientPipelineTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_casualty_patient_is_followed_from_arrival_through_triage_and_the_doctor_to_admission()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var (patientId, visit) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice);
+        var caseRow = (await nurse.GetAsync<ErBoard>("/api/v1/emergency/board")).Rows.Single(r => r.VisitId == visit.Id);
+
+        // Just arrived: on the board under ER, waiting for triage, the minutes counting from the arrival.
+        var row = await OnBoardAsync(frontOffice, patientId, "kind=Emergency");
+        (row.Kind, row.Place, row.WardId).ShouldBe((JourneyKind.Emergency, "Casualty · not triaged", (Guid?)null));
+        (row.Journey.Id, row.Journey.Number, row.Journey.Status).ShouldBe((caseRow.CaseId, visit.VisitNumber, JourneyStatus.Active));
+        row.Journey.Stages.Select(s => s.Key).ShouldBe(EmergencyJourney.Stages.Select(s => s.Key));
+        var current = row.Journey.Current.ShouldNotBeNull();
+        (current.Key, current.MinutesInStage.HasValue).ShouldBe(("arrived", true));
+        (await BoardAsync(frontOffice, "kind=Outpatient")).Items.ShouldNotContain(r => r.PatientId == patientId, "a casualty patient is not an out-patient");
+        (await BoardAsync(frontOffice, "kind=Inpatient")).Items.ShouldNotContain(r => r.PatientId == patientId);
+        (await BoardAsync(frontOffice, $"kind=Emergency&departmentId={visit.DepartmentId}")).Items.ShouldContain(r => r.PatientId == patientId);
+        (await BoardAsync(frontOffice, $"kind=Emergency&departmentId={Guid.CreateVersion7()}")).Items.ShouldNotContain(r => r.PatientId == patientId);
+
+        // Triaged at level 2: the board and the patient's page show the level.
+        var triaged = await nurse.PostAsync<EmergencyCaseDetail>($"/api/v1/emergency/cases/{caseRow.CaseId}/triage", EmergencyDepartmentTests.Triage(caseRow.Version));
+        row = await OnBoardAsync(nurse, patientId, "kind=Emergency");
+        row.Place.ShouldBe("Casualty · ESI 2");
+        row.Journey.Current.ShouldNotBeNull().ShouldSatisfyAllConditions(s => s.Key.ShouldBe("triaged"), s => s.Detail.ShouldBe("ESI 2"));
+        var er = (await JourneysAsync(nurse, patientId)).Emergency.ShouldNotBeNull();
+        er.Title.ShouldBe("Casualty · Fall from two-wheeler, forearm laceration, head knock");
+
+        // Seen by the doctor, who orders a CRP on the emergency visit: the test runs alongside.
+        var seen = await doctor.PostAsync<EmergencyCaseDetail>($"/api/v1/emergency/cases/{caseRow.CaseId}/seen", new CaseVersionRequest(triaged.Version));
+        var crp = (await doctor.GetAsync<List<ServiceItemDto>>($"/api/v1/masters/lookups/services?category=Laboratory&search={CrpCode}")).Single(s => s.Code == CrpCode);
+        await doctor.PostAsync<OrderDto>("/api/v1/clinical/orders", new PlaceOrderRequest(patientId, EncounterId: null, VisitId: visit.Id, AdmissionId: null,
+            OrderPriority.Stat, "Head injury, fever", [new OrderLineRequest(crp.Id, Notes: null)], OrderSetId: null, ConfirmDuplicates: false));
+        var journeys = await JourneysAsync(doctor, patientId);
+        er = journeys.Emergency.ShouldNotBeNull();
+        er.Current.ShouldNotBeNull().Key.ShouldBe("seen-by-doctor");
+        Stage(er, "seen-by-doctor").Detail.ShouldBe(seen.DoctorName);
+        Stage(er, "investigations-done").ShouldSatisfyAllConditions(s => s.State.ShouldBe(StageState.Pending), s => s.Detail.ShouldBe("0 of 1 resulted"));
+        journeys.LabOrders.ShouldHaveSingleItem("the emergency visit's lab order is followed beside it");
+        journeys.Outpatient.ShouldBeNull("an emergency visit is not an out-patient visit");
+
+        // The doctor admits the patient: the casualty journey ends saying so, and the stay goes on from the casualty visit.
+        await doctor.PostAsync<EmergencyCaseDetail>($"/api/v1/emergency/cases/{caseRow.CaseId}/disposition",
+            new DispositionRequest(EmergencyDisposition.Admitted, "For observation, head injury", null, seen.Version));
+        er = (await JourneysAsync(doctor, patientId)).Emergency.ShouldNotBeNull();
+        (er.Status, er.Current).ShouldBe((JourneyStatus.Completed, (JourneyStage?)null));
+        Stage(er, "disposition").Detail.ShouldBe("Admitted, bed not yet given");
+        (await BoardAsync(frontOffice, "kind=Emergency")).Items.ShouldNotContain(r => r.PatientId == patientId, "the patient has left casualty");
+
+        var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "SPW");
+        var admission = await AdmitAsync(frontOffice, doctor, patientId, visit.Id, ward.Id, AdmissionSource.Emergency);
+        try
+        {
+            journeys = await JourneysAsync(nurse, patientId);
+            Stage(journeys.Emergency.ShouldNotBeNull(), "disposition").Detail.ShouldBe($"Admitted · {admission.AdmissionNumber}");
+            Stage(journeys.Inpatient.ShouldNotBeNull(), "admitted").Detail.ShouldBe($"From casualty visit {visit.VisitNumber}");
+            (await OnBoardAsync(nurse, patientId, $"kind=Inpatient&wardId={ward.Id}")).Kind.ShouldBe(JourneyKind.Inpatient);
+        }
+        finally
+        {
+            await CancelAdmissionAsync(frontOffice, nurse, admission.Id);
+        }
+    }
+
+    [Fact]
+    public async Task A_restricted_patient_in_casualty_is_on_the_board_by_initials()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var (patientId, visit) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice, isVip: true);
+        try
+        {
+            var masked = await OnBoardAsync(frontOffice, patientId, "kind=Emergency");
+            masked.IsRestricted.ShouldBeTrue();
+            masked.PatientName.ShouldEndWith("(restricted)");
+            using var refused = await frontOffice.SendRawAsync(HttpMethod.Get, $"/api/v1/patients/{patientId}/journey");
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+
+            var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+            (await OnBoardAsync(admin, patientId, "kind=Emergency")).IsRestricted.ShouldBeFalse();
+            (await JourneysAsync(admin, patientId)).Emergency.ShouldNotBeNull().Number.ShouldBe(visit.VisitNumber);
+        }
+        finally
+        {
+            // A case whose visit is cancelled leaves the board.
+            await frontOffice.PostAsync($"/api/v1/visits/{visit.Id}/cancel", new CancelVisitRequest("Registered for a test of the casualty board"));
+            (await BoardAsync(frontOffice, "kind=Emergency")).Items.ShouldNotContain(r => r.PatientId == patientId);
+        }
+    }
+
+    [Fact]
     public async Task Staff_who_never_see_patients_cannot_open_the_board_or_a_journey()
     {
         var cssd = await server.SignInAsync(HospitalServer.Users.CssdTechnician);
@@ -239,7 +331,7 @@ public sealed class PatientPipelineTests(HospitalServer server)
 
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         using var unknown = await frontOffice.SendRawAsync(HttpMethod.Get, "/api/v1/journeys/in-hospital?kind=Lab");
-        unknown.StatusCode.ShouldBe(HttpStatusCode.BadRequest, "the board shows out-patients or in-patients");
+        unknown.StatusCode.ShouldBe(HttpStatusCode.BadRequest, "the board shows out-patients, casualty or in-patients");
     }
 
     private static Task<PatientJourneys> JourneysAsync(ApiClient api, Guid patientId) =>
@@ -316,12 +408,14 @@ public sealed class PatientPipelineTests(HospitalServer server)
     /// Front office: admits the patient from his OPD visit, under the doctor, to a bed of the ward added for it
     /// (<see cref="TestBeds"/>).
     /// </summary>
-    private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId, Guid visitId, Guid wardId)
+    private async Task<AdmissionCreated> AdmitAsync(
+        ApiClient frontOffice, ApiClient doctor, Guid patientId, Guid visitId, Guid wardId, AdmissionSource source = AdmissionSource.OutPatient)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var bed = await TestBeds.AddAsync(server, wardId);
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
-            PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: visitId,
+            PatientId: patientId, BedId: bed.BedId, Type: source == AdmissionSource.Emergency ? AdmissionType.Emergency : AdmissionType.Elective, Source: source,
+            SourceVisitId: visitId,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,
             ProvisionalDiagnosis: "Community-acquired pneumonia", ReferredBy: null, PayerType: PayerType.Self, PayerId: null, PolicyNumber: null,
             IsMlc: false, MlcNumber: null, ExpectedDischargeDate: null, AttendantName: null, AttendantRelation: null, AttendantPhone: null,

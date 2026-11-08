@@ -41,9 +41,12 @@ function JourneyCard({ patientId }: { patientId: string }) {
   useRealtimeEvent(facilityId ? `facility:${facilityId}` : null, 'visits.changed', () => {
     void queryClient.invalidateQueries({ queryKey: journeyKeys.patient(patientId) });
   });
+  useRealtimeEvent(facilityId ? `facility:${facilityId}` : null, 'er.changed', () => {
+    void queryClient.invalidateQueries({ queryKey: journeyKeys.patient(patientId) });
+  });
 
   const data = journeys.data;
-  const main = [data?.outpatient, data?.inpatient].filter((j): j is JourneyDto => Boolean(j));
+  const main = [data?.outpatient, data?.emergency, data?.inpatient].filter((j): j is JourneyDto => Boolean(j));
   return (
     <Section
       title="Journey"

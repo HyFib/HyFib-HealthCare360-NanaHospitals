@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Analytics.Domain.Journeys;
 using HyFib.HealthCare360.Modules.Analytics.Features.Journeys;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Clinical.Domain.Emergency;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
@@ -17,8 +18,9 @@ using OtChargeStatus = HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Common.C
 namespace HyFib.HealthCare360.Modules.Analytics.Services;
 
 /// <summary>
-/// Where each patient is in their out-patient visit, stay, operations and lab orders, derived from the records the
-/// modules already keep: the visit and its token, the encounter, the order lines, the pharmacy queue, the charges, bills
+/// Where each patient is in their out-patient visit, casualty stay, stay, operations and lab orders, derived from the
+/// records the modules already keep: the visit and its token, the emergency case and its triage, the encounter, the order
+/// lines, the pharmacy queue, the charges, bills
 /// and receipts, the bed history, the ward's rounds and notes, the discharge summary, the housekeeping task, the surgery
 /// booking and the lab's tubes, results and report. Nothing here is set by hand, and nothing is written.
 /// Like the Clinical timeline and the CRM 360° view it reads with small indexed queries, a few per kind of record for a
@@ -38,7 +40,7 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
 
     /// <summary>
     /// The patient's journeys: the current out-patient visit (open today, as the board has it) or else the most recent,
-    /// the latest stay while it lasts (until the bed the patient left is clean), and the operations and lab orders of
+    /// the casualty stay still open or else the most recent, the latest stay while it lasts (until the bed the patient left is clean), and the operations and lab orders of
     /// those, or still open. Operations are left out when <paramref name="includeSurgeries"/> is false: the record's
     /// sensitive category closes them to this user.
     /// </summary>
@@ -49,6 +51,8 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
         var visits = db.Set<Visit>().AsNoTracking().Where(v => v.PatientId == patientId && v.Type == VisitType.OutPatient).OrderByDescending(v => v.VisitedAt);
         var visit = await visits.Where(v => (v.Status == VisitStatus.Open || v.Status == VisitStatus.InProgress) && v.VisitedAt >= today).FirstOrDefaultAsync(ct)
                     ?? await visits.FirstOrDefaultAsync(ct);
+        var cases = db.Set<EmergencyCase>().AsNoTracking().Where(c => c.PatientId == patientId).OrderByDescending(c => c.ArrivedAt);
+        var casualty = await cases.Where(c => c.Disposition == null).FirstOrDefaultAsync(ct) ?? await cases.FirstOrDefaultAsync(ct);
         var stay = await db.Set<Admission>().AsNoTracking()
             .Where(a => a.PatientId == patientId)
             .OrderByDescending(a => a.AdmittedAt)
@@ -60,6 +64,13 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
             var facts = await OutpatientFactsAsync([visit], ct);
             var titles = await VisitTitlesAsync([visit], ct);
             outpatient = Journey(JourneyKind.Outpatient, visit.Id, visit.VisitNumber, titles[visit.Id], visit.VisitedAt, OutpatientJourney.Progress(facts[visit.Id], now));
+        }
+
+        JourneyDto? emergency = null;
+        if (casualty is not null)
+        {
+            var facts = await EmergencyFactsAsync([casualty], ct);
+            emergency = EmergencyJourneyOf(casualty, facts[casualty.Id], now);
         }
 
         JourneyDto? inpatient = null;
@@ -85,6 +96,11 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
             visitIds.Add(visit.Id);
         }
 
+        if (casualty is not null)
+        {
+            visitIds.Add(casualty.VisitId);
+        }
+
         if (stay is not null)
         {
             visitIds.Add(stay.VisitId);
@@ -93,12 +109,13 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
         var admissionId = stay?.Id;
         var surgeries = includeSurgeries ? await SurgeryJourneysAsync(patientId, visitIds, admissionId, now, ct) : [];
         var labOrders = await LabJourneysAsync(patientId, visitIds, admissionId, now, ct);
-        return new PatientJourneys(patientId, now, outpatient, inpatient, surgeries, labOrders, SurgeriesWithheld: !includeSurgeries);
+        return new PatientJourneys(patientId, now, outpatient, emergency, inpatient, surgeries, labOrders, SurgeriesWithheld: !includeSurgeries);
     }
 
     /// <summary>
-    /// The patients in the hospital now: today's out-patient visits that are still open, and the stays of patients still
-    /// in a bed (admitted, or with the discharge begun), newest arrival first. Each has its pipeline and the stage the
+    /// The patients in the hospital now: today's out-patient visits that are still open, the patients in casualty not yet
+    /// disposed of (whatever day they came), and the stays of patients still in a bed (admitted, or with the discharge
+    /// begun), newest arrival first. Each has its pipeline and the stage the
     /// patient is in. A restricted (VIP) patient's name shows only to those who may open the record (R-3).
     /// </summary>
     public async Task<PagedResult<InHospitalPatient>> InHospitalAsync(InHospitalFilter filter, PageRequest page, CancellationToken ct)
@@ -109,10 +126,15 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
             .Where(v => v.Type == VisitType.OutPatient && (v.Status == VisitStatus.Open || v.Status == VisitStatus.InProgress) && v.VisitedAt >= today);
         var stays = db.Set<Admission>().AsNoTracking()
             .Where(a => a.Status == AdmissionStatus.Admitted || a.Status == AdmissionStatus.DischargeInitiated);
+
+        // A case whose visit the desk cancelled is no longer in casualty.
+        var cases = db.Set<EmergencyCase>().AsNoTracking()
+            .Where(c => c.Disposition == null && db.Set<Visit>().Any(v => v.Id == c.VisitId && v.Status != VisitStatus.Cancelled));
         if (filter.DepartmentId is { } departmentId)
         {
             visits = visits.Where(v => v.DepartmentId == departmentId);
             stays = stays.Where(a => a.DepartmentId == departmentId);
+            cases = cases.Where(c => db.Set<Visit>().Any(v => v.Id == c.VisitId && v.DepartmentId == departmentId));
         }
 
         if (filter.WardId is { } wardId)
@@ -121,25 +143,34 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
         }
 
         // Each source is read on its own index for its newest (skip + take) arrivals and the two merged here, as the
-        // Clinical timeline pages its sources: the page can only come from those rows. An out-patient has no ward.
+        // Clinical timeline pages its sources: the page can only come from those rows. An out-patient and a patient in
+        // casualty have no ward.
         var depth = page.Skip + page.Take;
         long total = 0;
         List<Visit> visitRows = [];
+        List<EmergencyCase> caseRows = [];
         List<Admission> stayRows = [];
-        if (filter.Kind != JourneyKind.Inpatient && filter.WardId is null)
+        if ((filter.Kind is null or JourneyKind.Outpatient) && filter.WardId is null)
         {
             total += await visits.LongCountAsync(ct);
             visitRows = await visits.OrderByDescending(v => v.VisitedAt).ThenBy(v => v.Id).Take(depth).ToListAsync(ct);
         }
 
-        if (filter.Kind != JourneyKind.Outpatient)
+        if ((filter.Kind is null or JourneyKind.Emergency) && filter.WardId is null)
+        {
+            total += await cases.LongCountAsync(ct);
+            caseRows = await cases.OrderByDescending(c => c.ArrivedAt).ThenBy(c => c.Id).Take(depth).ToListAsync(ct);
+        }
+
+        if (filter.Kind is null or JourneyKind.Inpatient)
         {
             total += await stays.LongCountAsync(ct);
             stayRows = await stays.OrderByDescending(a => a.AdmittedAt).ThenBy(a => a.Id).Take(depth).ToListAsync(ct);
         }
 
-        var arrivals = visitRows.Select(v => (At: v.VisitedAt, Visit: (Visit?)v, Stay: (Admission?)null))
-            .Concat(stayRows.Select(a => (At: a.AdmittedAt, Visit: (Visit?)null, Stay: (Admission?)a)))
+        var arrivals = visitRows.Select(v => (At: v.VisitedAt, Visit: (Visit?)v, Case: (EmergencyCase?)null, Stay: (Admission?)null))
+            .Concat(caseRows.Select(c => (At: c.ArrivedAt, Visit: (Visit?)null, Case: (EmergencyCase?)c, Stay: (Admission?)null)))
+            .Concat(stayRows.Select(a => (At: a.AdmittedAt, Visit: (Visit?)null, Case: (EmergencyCase?)null, Stay: (Admission?)a)))
             .OrderByDescending(r => r.At)
             .Skip(page.Skip)
             .Take(page.Take)
@@ -150,12 +181,15 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
         }
 
         var pageVisits = arrivals.Where(r => r.Visit is not null).Select(r => r.Visit!).ToList();
+        var pageCases = arrivals.Where(r => r.Case is not null).Select(r => r.Case!).ToList();
         var pageStays = arrivals.Where(r => r.Stay is not null).Select(r => r.Stay!).ToList();
         var outpatient = await OutpatientFactsAsync(pageVisits, ct);
         var visitTitles = await VisitTitlesAsync(pageVisits, ct);
+        var emergency = await EmergencyFactsAsync(pageCases, ct);
         var inpatient = await InpatientFactsAsync(pageStays, ct);
-        var people = await PeopleAsync(arrivals.Select(r => r.Visit?.PatientId ?? r.Stay!.PatientId), ct);
-        var departmentIds = arrivals.Select(r => r.Visit?.DepartmentId ?? r.Stay!.DepartmentId).OfType<Guid>().Distinct().ToList();
+        var people = await PeopleAsync(arrivals.Select(r => r.Visit?.PatientId ?? r.Case?.PatientId ?? r.Stay!.PatientId), ct);
+        var departmentIds = arrivals.Select(r => r.Visit?.DepartmentId ?? (r.Case is { } c ? emergency[c.Id].DepartmentId : r.Stay!.DepartmentId))
+            .OfType<Guid>().Distinct().ToList();
         var departments = await db.Set<Department>().AsNoTracking().Where(d => departmentIds.Contains(d.Id)).ToDictionaryAsync(d => d.Id, d => d.Name, ct);
         string? DepartmentName(Guid? id) => id is { } key ? departments.GetValueOrDefault(key) : null;
 
@@ -169,6 +203,16 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
                     a.PatientId, patient.Uhid, patient.Name, patient.Restricted, patient.Gender, patient.Age, JourneyKind.Inpatient, a.DepartmentId,
                     DepartmentName(a.DepartmentId), a.WardId, stay.Bed, a.AdmittedAt,
                     Journey(JourneyKind.Inpatient, a.Id, a.AdmissionNumber, StayTitle(stay), a.AdmittedAt, InpatientJourney.Progress(stay, now)));
+            }
+
+            if (r.Case is { } c)
+            {
+                var row = emergency[c.Id];
+                var patient = people.GetValueOrDefault(c.PatientId, Person.Unknown);
+                return new InHospitalPatient(
+                    c.PatientId, patient.Uhid, patient.Name, patient.Restricted, patient.Gender, patient.Age, JourneyKind.Emergency, row.DepartmentId,
+                    DepartmentName(row.DepartmentId), null, row.Facts.Level is { } level ? $"Casualty · ESI {level}" : "Casualty · not triaged", c.ArrivedAt,
+                    EmergencyJourneyOf(c, row, now));
             }
 
             var v = r.Visit!;
@@ -266,6 +310,64 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
             g.Count(c => c.Status == BillingChargeStatus.Unbilled),
             [.. g.Where(c => c.Status == BillingChargeStatus.Billed && c.BillId is not null).Select(c => c.BillId!.Value).Distinct()
                 .Where(bills.ContainsKey).Select(id => bills[id].Fact)]));
+    }
+
+    // ------------------------------------------------------------------ casualty
+
+    /// <summary>One casualty stay's facts, with what the board needs of its emergency visit.</summary>
+    private sealed record EmergencyRow(string VisitNumber, Guid? DepartmentId, string Title, EmergencyFacts Facts);
+
+    private static JourneyDto EmergencyJourneyOf(EmergencyCase c, EmergencyRow row, DateTimeOffset now) =>
+        Journey(JourneyKind.Emergency, c.Id, row.VisitNumber, row.Title, c.ArrivedAt, EmergencyJourney.Progress(row.Facts, now));
+
+    private async Task<Dictionary<Guid, EmergencyRow>> EmergencyFactsAsync(IReadOnlyCollection<EmergencyCase> cases, CancellationToken ct)
+    {
+        if (cases.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = cases.Select(c => c.Id).ToList();
+        var visitIds = cases.Select(c => (Guid?)c.VisitId).Distinct().ToList();
+        var plainVisitIds = cases.Select(c => c.VisitId).Distinct().ToList();
+        var visits = await db.Set<Visit>().AsNoTracking()
+            .Where(v => plainVisitIds.Contains(v.Id))
+            .Select(v => new { v.Id, v.VisitNumber, v.Status, v.DepartmentId, v.ChiefComplaint })
+            .ToDictionaryAsync(v => v.Id, ct);
+
+        // The complaint the triage nurse wrote last, else the one the desk took.
+        var complaints = (await db.Set<EsiTriage>().AsNoTracking()
+                .Where(t => ids.Contains(t.CaseId))
+                .Select(t => new { t.CaseId, t.AssessedAt, t.ChiefComplaint })
+                .ToListAsync(ct))
+            .GroupBy(t => t.CaseId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(t => t.AssessedAt).First().ChiefComplaint);
+        var investigations = (await InvestigationsAsync(db.Set<ClinicalOrder>().Where(o => visitIds.Contains(o.VisitId)), ct))
+            .ToLookup(l => l.VisitId!.Value, l => l.Fact);
+
+        // A patient admitted from casualty: the stay opened from the emergency visit.
+        var admittedIds = cases.Where(c => c.Disposition == EmergencyDisposition.Admitted).Select(c => (Guid?)c.VisitId).ToList();
+        var admissions = admittedIds.Count == 0
+            ? []
+            : (await db.Set<Admission>().AsNoTracking()
+                    .Where(a => admittedIds.Contains(a.SourceVisitId) && a.Status != AdmissionStatus.Cancelled)
+                    .Select(a => new { a.SourceVisitId, a.AdmissionNumber, a.AdmittedAt })
+                    .ToListAsync(ct))
+                .GroupBy(a => a.SourceVisitId!.Value)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.AdmittedAt).First().AdmissionNumber);
+
+        return cases.ToDictionary(c => c.Id, c =>
+        {
+            var visit = visits.GetValueOrDefault(c.VisitId);
+            var complaint = complaints.GetValueOrDefault(c.Id) ?? visit?.ChiefComplaint;
+            return new EmergencyRow(
+                visit?.VisitNumber ?? string.Empty,
+                visit?.DepartmentId,
+                string.IsNullOrWhiteSpace(complaint) ? "Casualty" : $"Casualty · {complaint}",
+                new EmergencyFacts(
+                    visit?.Status ?? VisitStatus.Open, c.ArrivedAt, c.ArrivalMode, c.Level, c.TriagedAt, c.DoctorSeenAt, c.DoctorName,
+                    [.. investigations[c.VisitId]], c.Disposition, c.DisposedAt, c.ReferredTo, admissions.GetValueOrDefault(c.VisitId)));
+        });
     }
 
     // ------------------------------------------------------------------ stays
