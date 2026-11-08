@@ -810,6 +810,53 @@ and grants nothing.
       hospital administrator by default), never the one who asked. The original line is kept; its charge is withdrawn
       and its stock returned, and the corrected line is issued and charged, through the same stock and charge paths, only
       over the line as asked (`approval.stale`), audited `ot.material_corrected` with both names;
+  - quality, privacy, engagement and the patient's own sharing (MAKER-CHECKER.md, slice 14):
+    - a sentinel or never event (Quality): it is not closed, from Reported or any other status, until its root-cause
+      analysis is completed (`incident.sentinel_needs_rca`; closing a duplicate straight from Reported is no longer a way
+      round it). Closing one (`POST /api/v1/quality/incidents/{id}/transition`) and re-grading one so it is no longer
+      sentinel (`PUT /api/v1/quality/incidents/{id}`, with a `reason`; refused without one) answer 202 with the approval
+      (`quality.sentinel_close`, `quality.sentinel_downgrade`), the status, harm grade and never event before → after in
+      words. The quality manager decides (the new `quality.incidents.approve`: the QualityManager role and the hospital
+      administrator), never the one who asked (`approval.self`) nor the incident's reporter
+      (`incident.reporter_approves`, 403, which leaves it waiting; an anonymous report has no reporter to refuse). Until
+      then the incident stays as it was, and its read shows what waits (`closureAskedAt`, `downgradeAskedAt`). Made only
+      over the incident as asked (`approval.stale`), with the analysis and corrective actions checked again; audited
+      `quality.incident.sentinel_closed` / `quality.incident.sentinel_downgraded` at Warning with both names. Raising a
+      grade, and keeping one sentinel, apply at once; the theatre's retained-item never event (`IIncidentRegister`) is
+      raised as before, named to the member of staff who raised it, who then does not approve its closing;
+    - a personal data breach (Privacy, DPDP Act 2023 and Rules 2025, rule 7): it closes only on its detailed report to
+      the Board recorded with the Board's reference and day (`privacy.breach_board_report_required`; a reason alone no
+      longer closes a breach never reported). Closing it (`POST /api/v1/privacy/breaches/{id}/close`) and taking patients
+      off its notification list (`POST /api/v1/privacy/breaches/{id}/affected/remove` with the patients and why; the
+      one-person `DELETE …/affected/{patientId}` is gone) answer 202 (`privacy.breach_close`,
+      `privacy.breach_affected_remove`). The Data Protection Officer decides (the new `privacy.breaches.approve`, the
+      hospital administrator by default; grant it to the DPO's or privacy officer's role), never the one who asked. A
+      patient already sent the notice stays on the list (`privacy.breach_already_notified`); until approved the patients
+      stay listed and a notice sent meanwhile reaches them, and approval fails if any was notified or taken off since
+      (`approval.stale`). Audited `privacy.breach.closed` and `privacy.breach.affected_removed` at Warning with both
+      names, the latter with each patient's UHID and the reason (and an entry on each patient's own trail);
+    - a bulk campaign (Engagement): asking to schedule one (`POST /api/v1/crm/campaigns/{id}/schedule`,
+      `crm.campaigns.send`) runs the scheduling checks (template and opt-out link, portal address, a time to come, a
+      consenting audience) and answers 202 (`engagement.campaign_schedule`); the campaign stays a draft and nothing is
+      sent. Someone other than its author approves (the new `crm.campaigns.approve`, the hospital administrator by
+      default): not the one who asked (`approval.self`) nor the one who wrote or last edited it
+      (`campaign.author_approves`, 403). A draft edited meanwhile, or a time that has passed, fails it
+      (`approval.stale`); audited `crm.campaign.scheduled` at Warning with both names;
+    - a patient's reports and bills shared with another mobile number in the portal (Patients, `POST
+      /api/v1/patients/{id}/portal-family`): the desk's request now sends a six-digit code by SMS to the patient's own
+      registered mobile number (`portal.family_code_desk`), the portal family code and the mechanism a new mobile number
+      is confirmed with (PR #279): ten minutes, five tries judged one at a time under a lock, used once, kept only hashed,
+      and the portal's limits per number. No link exists until the desk enters it as the patient reads it out (`POST
+      …/portal-family/codes/{codeId}/confirm`, with who agreed); a patient with no mobile number of their own cannot share
+      this way (`portal.family_no_patient_phone`), and a code sent to a number the patient no longer has shares nothing
+      (`portal.family_number_changed`). Protected (restricted) records stay hidden in the portal as before. The portal's
+      own path already sent its code to the patient's number;
+    - a record-sharing consent with no scope (no recipient, purpose, kinds of records or period) and no signed form
+      (`POST /api/v1/patients/{id}/consents`): a witness, another member of staff holding `patients.consents`, confirms at
+      the screen with their own credentials (`POST /api/v1/auth/witness`, purpose `consent.record_sharing`; never the same
+      account, used once, for that patient), and the consent names them (`consent.witness_required` otherwise; audited
+      `patient.consent.witnessed`). A signed form attached must be a file stored for that patient (`documentFileId`). A
+      scoped consent, a refusal, or one with the signed form is recorded as before;
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was

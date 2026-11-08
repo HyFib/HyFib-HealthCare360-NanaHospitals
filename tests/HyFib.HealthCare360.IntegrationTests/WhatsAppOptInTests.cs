@@ -147,7 +147,7 @@ public sealed class WhatsAppOptInTests(HospitalServer server)
 
         // A family member signed in with another number sees the choice but can't change it.
         var sonPhone = "9" + Digits(9);
-        await frontOffice.PostAsync($"/api/v1/patients/{patientId}/portal-family", new LinkFamilyMemberRequest(sonPhone, FamilyRelation.Child, "Patient", true));
+        await server.LinkFamilyAtDeskAsync(frontOffice, patientId, new LinkFamilyMemberRequest(sonPhone, FamilyRelation.Child, "Patient", true));
         var son = await server.SignInToPortalAsync(sonPhone);
         var seen = await son.GetAsync<CommunicationPreferences>(path);
         (seen.WhatsApp, seen.WhatsAppEditable).ShouldBe((true, false));

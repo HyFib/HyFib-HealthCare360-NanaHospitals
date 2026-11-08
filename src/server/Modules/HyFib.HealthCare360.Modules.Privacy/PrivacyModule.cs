@@ -20,6 +20,13 @@ public static class PrivacyPermissions
     public const string RequestsLog = "privacy.requests.log";
 
     public const string BreachesManage = "privacy.breaches.manage";
+
+    /// <summary>
+    /// Approve closing a personal data breach, and taking patients off its notification list, asked for by someone else
+    /// (MAKER-CHECKER.md, slice 14): the Data Protection Officer. Held by the hospital administrator by default; grant it to
+    /// the DPO's or privacy officer's role.
+    /// </summary>
+    public const string BreachesApprove = "privacy.breaches.approve";
     public const string RetentionManage = "privacy.retention.manage";
     public const string SettingsManage = "privacy.settings.manage";
 
@@ -33,6 +40,9 @@ public static class PrivacyPermissions
             [SystemRoles.FrontOffice, .. Officers]),
         new(BreachesManage, "Privacy", "Record personal data breaches, report them to the Board and notify the people affected",
             [SystemRoles.HospitalAdmin, SystemRoles.QualityManager]),
+        new(BreachesApprove, "Privacy",
+            "Approve closing a personal data breach and taking patients off its notification list, asked for by someone else (the Data Protection Officer)",
+            [SystemRoles.HospitalAdmin]),
         new(RetentionManage, "Privacy", "Set how long each kind of data is kept, and run the clean-up", [SystemRoles.HospitalAdmin]),
         new(SettingsManage, "Privacy", "Set the grievance officer's contact details and the response period", [SystemRoles.HospitalAdmin]),
     ];
