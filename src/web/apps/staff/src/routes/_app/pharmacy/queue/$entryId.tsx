@@ -113,6 +113,8 @@ import { ScanCheck } from '@/modules/pharmacy/ScanCheck';
 import { scannedBatchProblem } from '@/modules/pharmacy/tags';
 import { checkPayments, defaultPayments, resolvePayments, type PaymentDraft } from '@/modules/pharmacy/payments';
 import { PHARMACY_PERMISSIONS as P } from '@/modules/pharmacy/permissions';
+import { SafetyOverrides } from '@/modules/pharmacy/SafetyOverrides';
+import { unacknowledgedOverrides } from '@/modules/pharmacy/overrideAcknowledgement';
 import { ipIssueAmount, priceSaleLine, saleTotals, type SaleLinePrice } from '@/modules/pharmacy/pricing';
 import { directionsText, printIpIssueSlip, printLabels, printReceipt, type DrugLabel } from '@/modules/pharmacy/print';
 
@@ -282,6 +284,8 @@ function EntryScreen({
   const facilityId = useSession((s) => s.user?.facilityId);
   const canDispense = usePermission(entry.isInpatient ? P.ipIssue : P.dispense);
   const canClose = usePermission([P.dispense, P.ipIssue]);
+  // A line signed over a blocking safety alert is acknowledged by a pharmacist (pharmacy.dispense) before it goes out.
+  const canAcknowledge = usePermission(P.dispense);
   const canRefill = usePermission(P.refills);
   const storeId = working.storeId;
 
@@ -390,6 +394,7 @@ function EntryScreen({
 
   const active = plans.filter((p) => p.quantity > 0);
   const pending = active.some((p) => p.plan?.pending);
+  const overridesWaiting = unacknowledgedOverrides(active.map((p) => p.line)).length > 0;
   const problems = active.flatMap((p) => p.problems.map((problem) => `${p.item?.name ?? p.line.drugName}: ${problem}`));
   const totals = saleTotals(active.flatMap((p) => p.priced));
   const ipTotal = sumNumbers(active.map((p) => p.amount));
@@ -410,6 +415,7 @@ function EntryScreen({
     Boolean(storeId) &&
     active.length > 0 &&
     !pending &&
+    !overridesWaiting &&
     problems.length === 0 &&
     (controlled.length === 0 || confirmControlled) &&
     (entry.isInpatient || free || (paymentCheck.ok && !discountInvalid));
@@ -728,6 +734,7 @@ function EntryScreen({
       )}
 
       {open && <StoreProblem working={working} kind="pharmacy store" />}
+      <SafetyOverrides entry={entry} canAcknowledge={open && canAcknowledge} />
 
       <div className={styles.layout}>
         <div className={styles.main}>

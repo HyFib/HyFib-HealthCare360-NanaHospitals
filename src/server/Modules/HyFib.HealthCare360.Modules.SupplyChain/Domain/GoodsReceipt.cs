@@ -161,6 +161,13 @@ public sealed class GoodsReceiptLine : Entity
     public bool RequiresMrp { get; set; }
 
     public bool AcceptShortExpiry { get; set; }
+
+    /// <summary>
+    /// Snapshot: the NPPA ceiling price of a base unit with GST, for a scheduled medicine (DPCO 2013); null for anything
+    /// else. A pack whose printed MRP is above the ceiling of its units is not received (<see cref="PriceCeiling"/>).
+    /// </summary>
+    public decimal? CeilingPrice { get; set; }
+
     public decimal GrossAmount { get; private set; }
     public decimal DiscountAmount { get; private set; }
     public decimal TaxableAmount { get; private set; }
@@ -241,7 +248,27 @@ public sealed class GoodsReceiptLine : Entity
             return Error.Rule("grn.rate_above_mrp", $"{ItemName}: purchase rate {StockErrors.Format(Rate)} is above the MRP {StockErrors.Format(Mrp)}.");
         }
 
-        return Result.Success();
+        return CheckCeiling(CeilingPrice);
+    }
+
+    /// <summary>
+    /// A scheduled medicine is not received with a printed MRP above its NPPA ceiling (DPCO 2013, para 14 and 20): the
+    /// counter could not sell it. Checked when the receipt is entered, and again when it is posted, against the ceiling then.
+    /// </summary>
+    public Result CheckCeiling(decimal? ceilingPerUnit)
+    {
+        if (ceilingPerUnit is not { } ceiling || ceiling <= 0 || Mrp <= 0 || !PriceCeiling.PackExceeds(Mrp, ceiling, UnitsPerPurchaseUnit))
+        {
+            return Result.Success();
+        }
+
+        var packCeiling = PriceCeiling.PerPack(ceiling, UnitsPerPurchaseUnit);
+        return new Error(PriceCeiling.ReceiptCode,
+            $"{ItemName} batch {BatchNumber}: the MRP printed on the pack, {PriceCeiling.Money(Mrp)}, is above its NPPA ceiling price of {PriceCeiling.Money(packCeiling)} "
+            + $"({PriceCeiling.Money(ceiling)} a unit, with GST). A scheduled medicine is not received above its ceiling (DPCO 2013): return it to the supplier.")
+        {
+            Data = new { ItemId, BatchNumber, mrp = Mrp, ceilingPrice = packCeiling },
+        };
     }
 
     private static string Format(DateOnly date) => date.ToString("dd-MMM-yyyy", CultureInfo.InvariantCulture);

@@ -49,7 +49,20 @@ public sealed class PharmacyQueueEntry : AuditableEntity, IFacilityScoped
     public DateOnly? RefillValidUntil { get; private set; }
     public string? RefillNote { get; private set; }
     public DateTimeOffset? LastRefillReminderAt { get; set; }
+
+    /// <summary>
+    /// The prescriber's reason for signing over a blocking safety alert (<see cref="PrescriptionSigned.SafetyOverrideReason"/>);
+    /// the lines it covers carry the alerts (<see cref="PharmacyQueueLine.SafetyOverride"/>).
+    /// </summary>
+    public string? SafetyOverrideReason { get; set; }
+
+    /// <summary>The account that signed the prescription: it never acknowledges its own override at the counter.</summary>
+    public Guid? SignedByUserId { get; set; }
+
     public List<PharmacyQueueLine> Lines { get; set; } = [];
+
+    /// <summary>A line signed over a blocking alert that no pharmacist has acknowledged yet.</summary>
+    public bool HasUnacknowledgedOverride => Lines.Any(l => l.NeedsOverrideAcknowledgement);
 
     public int RefillsRemaining => Math.Max(RefillsAuthorized - RefillsUsed, 0);
 
@@ -70,6 +83,8 @@ public sealed class PharmacyQueueEntry : AuditableEntity, IFacilityScoped
             SignedAt = prescription.SignedAt,
             ReceivedAt = receivedAt,
             HasControlledDrugs = prescription.Lines.Any(l => l.IsControlledDrug),
+            SafetyOverrideReason = Fit(prescription.SafetyOverrideReason, 1000),
+            SignedByUserId = prescription.SignedByUserId,
         };
         entry.Lines.AddRange(prescription.Lines.Select(l => new PharmacyQueueLine
         {
@@ -87,9 +102,53 @@ public sealed class PharmacyQueueEntry : AuditableEntity, IFacilityScoped
             Instructions = l.Instructions,
             IsControlledDrug = l.IsControlledDrug,
             RequestedQuantity = l.Quantity,
+            SafetyOverride = prescription.SafetyOverrideReason is null ? null : Fit(l.SafetyOverride, 1000),
         }));
         return entry;
     }
+
+    /// <summary>
+    /// A pharmacist acknowledges, from their own sign-in, that a line was signed over a blocking safety alert and that they
+    /// have read the prescriber's reason (and, where they judge it needed, spoken to the prescriber): only then is the line
+    /// dispensed or issued. The account that signed the prescription never acknowledges its own override.
+    /// </summary>
+    public Result AcknowledgeOverride(Guid lineId, Guid userId, string userName, string? note, DateTimeOffset now)
+    {
+        var line = Lines.FirstOrDefault(l => l.Id == lineId);
+        if (line is null)
+        {
+            return Error.NotFound(nameof(PharmacyQueueLine), lineId);
+        }
+
+        if (line.SafetyOverride is null)
+        {
+            return Error.Rule("pharmacy.no_override", $"{line.DrugName} was not signed over a safety alert: there is nothing to acknowledge.");
+        }
+
+        if (line.OverrideAcknowledgedAt is not null)
+        {
+            return Error.Rule("pharmacy.override_acknowledged", $"{line.DrugName}'s override was already acknowledged by {line.OverrideAcknowledgedByName}.");
+        }
+
+        if (!IsOpen)
+        {
+            return Error.Rule("queue.closed", $"Prescription {PrescriptionNumber} is {Status}.");
+        }
+
+        if (SignedByUserId is { } signer && signer == userId)
+        {
+            return Error.Forbidden("pharmacy.override_own_prescription",
+                $"You signed prescription {PrescriptionNumber} over the safety alert: another pharmacist acknowledges it.");
+        }
+
+        line.OverrideAcknowledgedByUserId = userId;
+        line.OverrideAcknowledgedByName = Fit(userName, 200);
+        line.OverrideAcknowledgedAt = now;
+        line.OverrideAcknowledgementNote = Fit(string.IsNullOrWhiteSpace(note) ? null : note.Trim(), 500);
+        return Result.Success();
+    }
+
+    private static string? Fit(string? text, int length) => text is null || text.Length <= length ? text : text[..(length - 1)] + "…";
 
     public Result RecordDispensed(Guid lineId, decimal quantity, DateTimeOffset now)
     {
@@ -259,6 +318,10 @@ public sealed class PharmacyQueueEntry : AuditableEntity, IFacilityScoped
             ReceivedAt = now,
             HasControlledDrugs = false,
             RefillOfEntryId = Id,
+
+            // A refill is dispensed again, so a line signed over an alert is acknowledged again, by whoever dispenses it.
+            SafetyOverrideReason = SafetyOverrideReason,
+            SignedByUserId = SignedByUserId,
         };
         refill.Lines.AddRange(Lines.Select(l => l.CopyForRefill(refill.Id)));
         return refill;
@@ -298,6 +361,24 @@ public sealed class PharmacyQueueLine : Entity
     public decimal RequestedQuantity { get; set; }
     public decimal DispensedQuantity { get; private set; }
     public QueueLineStatus Status { get; private set; }
+
+    /// <summary>The blocking safety alerts the prescriber signed this line over, in words; null when there were none.</summary>
+    public string? SafetyOverride { get; set; }
+
+    public Guid? OverrideAcknowledgedByUserId { get; internal set; }
+    public string? OverrideAcknowledgedByName { get; internal set; }
+    public DateTimeOffset? OverrideAcknowledgedAt { get; internal set; }
+    public string? OverrideAcknowledgementNote { get; internal set; }
+
+    /// <summary>Signed over a blocking alert and not yet acknowledged by a pharmacist: not dispensed or issued until it is.</summary>
+    public bool NeedsOverrideAcknowledgement => SafetyOverride is not null && OverrideAcknowledgedAt is null;
+
+    /// <summary>The refusal to dispense or issue this line while its override waits for a pharmacist.</summary>
+    internal Error OverrideRefusal() => new("pharmacy.override_unacknowledged",
+        $"{DrugName} was prescribed over a safety alert ({SafetyOverride}). Read the prescriber's reason and acknowledge the override before dispensing it.")
+    {
+        Data = new { queueLineId = Id },
+    };
 
     public decimal RemainingQuantity => Status is QueueLineStatus.Dispensed or QueueLineStatus.Cancelled
         ? 0
@@ -359,5 +440,6 @@ public sealed class PharmacyQueueLine : Entity
         Instructions = Instructions,
         IsControlledDrug = IsControlledDrug,
         RequestedQuantity = RequestedQuantity,
+        SafetyOverride = SafetyOverride,
     };
 }
