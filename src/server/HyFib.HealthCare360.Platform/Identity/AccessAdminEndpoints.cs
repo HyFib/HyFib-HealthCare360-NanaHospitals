@@ -34,7 +34,8 @@ public sealed record UserDetail(
     IReadOnlyList<Guid> RoleIds,
     IReadOnlyList<Guid> FacilityIds,
     uint Version,
-    PendingUserGrant? PendingGrant = null);
+    PendingUserGrant? PendingGrant = null,
+    IReadOnlyList<PendingAccountChange>? PendingChanges = null);
 
 /// <param name="Reason">Why the user needs the roles and facilities, for the administrator who approves them.</param>
 public sealed record CreateUserRequest(
@@ -63,7 +64,17 @@ public sealed record UpdateUserRequest(
 
 /// <param name="ExpiresAt">When the temporary password stops working, unless the user has replaced it by then.</param>
 /// <param name="ApprovalId">The request for the user's roles and facilities, when they wait for a second administrator.</param>
-public sealed record TemporaryPasswordResponse(Guid UserId, string TemporaryPassword, DateTimeOffset ExpiresAt, Guid? ApprovalId = null);
+/// <param name="PractitionerLinkApprovalId">The request to link the new account to its practitioner, when it waits for a second administrator.</param>
+public sealed record TemporaryPasswordResponse(Guid UserId, string TemporaryPassword, DateTimeOffset ExpiresAt, Guid? ApprovalId = null, Guid? PractitionerLinkApprovalId = null);
+
+/// <summary>A password reset made.</summary>
+/// <param name="SentTo">Where the temporary password went, masked: the account's own mobile number and e-mail address.</param>
+/// <param name="ExpiresAt">When the temporary password stops working, unless the user has replaced it by then.</param>
+/// <param name="TemporaryPassword">
+/// Only for an account with nowhere to send it, reset while the hospital has never had two people who may approve: the
+/// password, to give in person. Otherwise such a reset waits for a second administrator (202), who is shown it.
+/// </param>
+public sealed record PasswordResetResponse(Guid UserId, IReadOnlyList<string> SentTo, DateTimeOffset ExpiresAt, string? TemporaryPassword = null);
 
 public sealed record RoleListItem(Guid Id, string Name, string? Description, bool IsSystem, int PermissionCount, int UserCount);
 
@@ -178,12 +189,16 @@ internal static class AccessAdminEndpoints
         return TypedResults.Ok(result);
     }
 
-    private static async Task<IResult> GetUser(Guid id, HospitalDbContext db, GrantApprovals grants, CancellationToken ct)
+    private static async Task<IResult> GetUser(Guid id, HospitalDbContext db, GrantApprovals grants, AccountApprovals accounts, CancellationToken ct)
     {
         var user = await db.Set<User>().Include(u => u.Roles).Include(u => u.Facilities).AsSplitQuery().FirstOrDefaultAsync(u => u.Id == id, ct);
         return user is null
             ? Error.NotFound(nameof(User), id).ToProblem()
-            : TypedResults.Ok(ToDetail(user) with { PendingGrant = await grants.PendingForUserAsync(user.Id, ct) });
+            : TypedResults.Ok(ToDetail(user) with
+            {
+                PendingGrant = await grants.PendingForUserAsync(user.Id, ct),
+                PendingChanges = await accounts.PendingForUserAsync(user.Id, ct),
+            });
     }
 
     private static async Task<IResult> CreateUser(
@@ -196,6 +211,7 @@ internal static class AccessAdminEndpoints
         IPermissionService permissions,
         IOptions<PlatformOptions> options,
         GrantApprovals grants,
+        AccountApprovals accounts,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -219,10 +235,23 @@ internal static class AccessAdminEndpoints
         }
 
         // A new user's roles and facilities are access given: they wait for a second person who may approve grants.
-        var decision = await grants.DecideAsync(self: false, await grants.AdministrativeAsync([.. request.RoleIds.Distinct()], ct), ct);
+        var administrative = await grants.AdministrativeAsync([.. request.RoleIds.Distinct()], ct);
+        var decision = await grants.DecideAsync(self: false, administrative, ct);
         if (decision.IsFailure)
         {
             return decision.Error!.ToProblem();
+        }
+
+        // So does the practitioner the account is linked to: it signs notes and prescriptions as that doctor.
+        var linkNow = false;
+        if (request.PractitionerId is { } practitionerId)
+        {
+            if (!await accounts.LinkableAsync(practitionerId, ct))
+            {
+                return Error.Field("practitionerId", "Choose a practitioner who is in use.").ToProblem();
+            }
+
+            linkNow = decision.Value != GrantDecision.Ask;
         }
 
         var roleIds = request.RoleIds.Distinct().ToList();
@@ -239,7 +268,7 @@ internal static class AccessAdminEndpoints
             PasswordHash = hashing.Hash(password),
             MustChangePassword = true,
             TemporaryPasswordExpiresAt = TemporaryPasswordExpiry(options, time),
-            PractitionerId = request.PractitionerId,
+            PractitionerId = linkNow ? request.PractitionerId : null,
             DefaultFacilityId = request.DefaultFacilityId,
         };
         if (!ask)
@@ -266,6 +295,11 @@ internal static class AccessAdminEndpoints
             grants.AuditGivenAlone(decision.Value, nameof(User), user.Id, $"{user.UserName}, created with the roles {string.Join(", ", names.Roles(roleIds).Select(r => r.Name))}");
         }
 
+        if (linkNow)
+        {
+            grants.AuditMadeAlone(decision.Value, nameof(User), user.Id, $"{user.UserName}, created linked to a practitioner");
+        }
+
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
         Guid? approvalId = null;
@@ -280,8 +314,21 @@ internal static class AccessAdminEndpoints
             approvalId = asked.Value.Id;
         }
 
+        Guid? linkApprovalId = null;
+        if (request.PractitionerId is { } link && !linkNow)
+        {
+            var asked = await accounts.AskPractitionerLinkAsync(user, link, request.Reason, ct);
+            if (asked.IsFailure)
+            {
+                return asked.Error!.ToProblem();
+            }
+
+            linkApprovalId = asked.Value.Id;
+        }
+
         await transaction.CommitAsync(ct);
-        return TypedResults.Created($"/api/v1/admin/users/{user.Id}", new TemporaryPasswordResponse(user.Id, password, user.TemporaryPasswordExpiresAt!.Value, approvalId));
+        return TypedResults.Created($"/api/v1/admin/users/{user.Id}",
+            new TemporaryPasswordResponse(user.Id, password, user.TemporaryPasswordExpiresAt!.Value, approvalId, linkApprovalId));
     }
 
     private static async Task<IResult> UpdateUser(
@@ -293,6 +340,8 @@ internal static class AccessAdminEndpoints
         IPermissionService permissions,
         ISessionValidator sessions,
         GrantApprovals grants,
+        AccountApprovals accounts,
+        INotificationService notifications,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -321,10 +370,59 @@ internal static class AccessAdminEndpoints
 
         db.SetExpectedVersion(user, request.Version);
         user.DisplayName = request.DisplayName.Trim();
-        user.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
-        user.Phone = Phone.Normalize(request.Phone);
-        user.PractitionerId = request.PractitionerId;
         user.DefaultFacilityId = request.DefaultFacilityId;
+
+        // Another user's e-mail address and mobile number, where a reset sends their temporary password, and the
+        // practitioner an account signs as, change only when a second administrator agrees; the link taken away applies at
+        // once. One's own contact details change at once, and the ones they replace are told. What already waits is not
+        // asked for again.
+        var self = user.Id == current.UserId;
+        var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
+        var phone = Phone.Normalize(request.Phone);
+        var (emailBefore, phoneBefore) = (user.Email, user.Phone);
+        var contactChanges = !string.Equals(email, user.Email, StringComparison.Ordinal) || !string.Equals(phone, user.Phone, StringComparison.Ordinal);
+        var pendingContact = contactChanges && !self ? await accounts.PendingContactAsync(user.Id, ct) : null;
+        var askContact = contactChanges && !self && !(pendingContact is not null && pendingContact.Email == email && pendingContact.Phone == phone);
+        var link = request.PractitionerId is { } practitionerId && practitionerId != user.PractitionerId ? practitionerId : (Guid?)null;
+        if (link is { } linking && !await accounts.LinkableAsync(linking, ct))
+        {
+            return Error.Field("practitionerId", "Choose a practitioner who is in use.").ToProblem();
+        }
+
+        var askLink = link is not null && (await accounts.PendingLinkAsync(user.Id, ct))?.Asked != link;
+        var accountDecision = GrantDecision.Ask;
+        if (askContact || askLink)
+        {
+            var decided = await accounts.DecideAsync(user.Id, ct);
+            if (decided.IsFailure)
+            {
+                return decided.Error!.ToProblem();
+            }
+
+            accountDecision = decided.Value;
+        }
+
+        var accountNow = accountDecision != GrantDecision.Ask;
+        if (contactChanges && (self || (askContact && accountNow)))
+        {
+            user.Email = email;
+            user.Phone = phone;
+            CredentialNotices.QueueContactChanged(notifications, user, emailBefore, phoneBefore, time.GetUtcNow());
+            if (!self)
+            {
+                grants.AuditMadeAlone(accountDecision, nameof(User), user.Id, $"contact details of {user.UserName} changed");
+            }
+        }
+
+        if (request.PractitionerId is null)
+        {
+            user.PractitionerId = null;
+        }
+        else if (askLink && accountNow)
+        {
+            user.PractitionerId = link;
+            grants.AuditMadeAlone(accountDecision, nameof(User), user.Id, $"{user.UserName} linked to a practitioner");
+        }
 
         // What narrows access applies at once: roles and facilities taken away, the account deactivated.
         var wasActive = user.IsActive;
@@ -366,7 +464,7 @@ internal static class AccessAdminEndpoints
         }
 
         var ended = wasActive && !user.IsActive
-            ? await RevokeAllSessionsAsync(db, user.Id, "user_deactivated", time.GetUtcNow(), ct)
+            ? await AccountApprovals.RevokeAllSessionsAsync(db, user.Id, "user_deactivated", time.GetUtcNow(), ct)
             : [];
 
         // Which roles and facilities the change gave, asked for and took away, by name, in the transaction that makes it.
@@ -405,12 +503,40 @@ internal static class AccessAdminEndpoints
             asked = requested.Value;
         }
 
+        // The answer names the first request a save made; the user's page lists every change that waits.
+        if (askContact && !accountNow)
+        {
+            var requested = await accounts.AskContactChangeAsync(user, email, phone, request.Reason, ct);
+            if (requested.IsFailure)
+            {
+                return requested.Error!.ToProblem();
+            }
+
+            asked ??= requested.Value;
+        }
+
+        if (askLink && !accountNow)
+        {
+            var requested = await accounts.AskPractitionerLinkAsync(user, link!.Value, request.Reason, ct);
+            if (requested.IsFailure)
+            {
+                return requested.Error!.ToProblem();
+            }
+
+            asked ??= requested.Value;
+        }
+
         await transaction.CommitAsync(ct);
-        Invalidate(sessions, ended);
+        AccountApprovals.Invalidate(sessions, ended);
         permissions.Invalidate(user.Id);
         return asked is null ? TypedResults.NoContent() : TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked);
     }
 
+    /// <summary>
+    /// A temporary password goes to the account's own mobile number and e-mail address, never to the administrator, who is
+    /// told where it went (masked). An account with neither waits for a second administrator, who is shown it once to give
+    /// in person (<see cref="AccountApprovals"/>).
+    /// </summary>
     private static async Task<IResult> ResetPassword(
         Guid id,
         HospitalDbContext db,
@@ -420,6 +546,8 @@ internal static class AccessAdminEndpoints
         ICurrentUser current,
         IPermissionService permissions,
         INotificationService notifications,
+        GrantApprovals grants,
+        AccountApprovals accounts,
         IOptions<PlatformOptions> options,
         TimeProvider time,
         CancellationToken ct)
@@ -436,33 +564,45 @@ internal static class AccessAdminEndpoints
             return mayManage.Error!.ToProblem();
         }
 
-        var now = time.GetUtcNow();
-        var password = GenerateTemporaryPassword();
-        user.PasswordHash = hashing.Hash(password);
-        user.MustChangePassword = true;
-        user.TemporaryPasswordExpiresAt = TemporaryPasswordExpiry(options, time);
-        user.PasswordBreachedAt = null;
-        user.FailedLoginCount = 0;
-        user.LastFailedLoginAt = null;
-        user.LockoutEndsAt = null;
+        var sendable = !string.IsNullOrWhiteSpace(user.Phone) || !string.IsNullOrWhiteSpace(user.Email);
+        var decision = GrantDecision.Ask;
+        if (!sendable)
+        {
+            var decided = await accounts.DecideAsync(user.Id, ct);
+            if (decided.IsFailure)
+            {
+                return decided.Error!.ToProblem();
+            }
 
-        // The lock-screen PIN goes too: whoever may know the old password may know it. Until the account's holder sets a
-        // new one, their screen unlocks with the password. So do the devices set up to unlock it, which were set up with
-        // the old password: a lost laptop among them unlocks nothing.
-        user.PinHash = null;
-        db.RemoveRange(await db.Set<WebAuthnCredential>().Where(c => c.UserId == user.Id).ToListAsync(ct));
-        var ended = await RevokeAllSessionsAsync(db, user.Id, "password_reset", now, ct);
-        audit.Add(new AuditEntry(AuditCategories.Security, "user.password_reset", $"Password reset for {user.UserName}")
+            decision = decided.Value;
+            if (decision == GrantDecision.Ask)
+            {
+                var asked = await accounts.AskPasswordResetAsync(user, ct);
+                return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
+            }
+        }
+
+        var now = time.GetUtcNow();
+        var (password, ended) = await AccountApprovals.ResetPasswordAsync(db, user, hashing, options, now, ct);
+        var expiresAt = user.TemporaryPasswordExpiresAt!.Value;
+        IReadOnlyList<string> sentTo = sendable ? CredentialNotices.QueueTemporaryPassword(notifications, user, password, expiresAt, now) : [];
+        audit.Add(new AuditEntry(AuditCategories.Security, "user.password_reset",
+            sendable ? $"Password reset for {user.UserName}, the temporary password sent to their {string.Join(" and ", sentTo)}" : $"Password reset for {user.UserName}")
         {
             EntityType = nameof(User),
             EntityId = user.Id.ToString(),
             Severity = AuditSeverity.Warning,
         });
+        if (!sendable)
+        {
+            grants.AuditMadeAlone(decision, nameof(User), user.Id, $"temporary password for {user.UserName} shown to the administrator who reset it");
+        }
+
         CredentialNotices.QueueEmail(notifications, user, CredentialNotices.PasswordReset, now);
         await db.SaveChangesAsync(ct);
-        Invalidate(sessions, ended);
+        AccountApprovals.Invalidate(sessions, ended);
         await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.PasswordReset, ct);
-        return TypedResults.Ok(new TemporaryPasswordResponse(user.Id, password, user.TemporaryPasswordExpiresAt.Value));
+        return TypedResults.Ok(new PasswordResetResponse(user.Id, sentTo, expiresAt, sendable ? null : password));
     }
 
     private static async Task<IResult> UnlockUser(Guid id, HospitalDbContext db, IAuditLogger audit, ICurrentUser current, IPermissionService permissions, CancellationToken ct)
@@ -487,6 +627,7 @@ internal static class AccessAdminEndpoints
         return TypedResults.NoContent();
     }
 
+    /// <summary>A two-step verification reset waits for a second administrator (<see cref="AccountApprovals"/>); nothing changes until then.</summary>
     private static async Task<IResult> ResetMfa(
         Guid id,
         HospitalDbContext db,
@@ -495,10 +636,12 @@ internal static class AccessAdminEndpoints
         ICurrentUser current,
         IPermissionService permissions,
         INotificationService notifications,
+        GrantApprovals grants,
+        AccountApprovals accounts,
         TimeProvider time,
         CancellationToken ct)
     {
-        var user = await db.Set<User>().FirstOrDefaultAsync(u => u.Id == id, ct);
+        var user = await db.Set<User>().FirstOrDefaultAsync(u => u.Id == id && u.Type == UserType.Staff, ct);
         if (user is null)
         {
             return Error.NotFound(nameof(User), id).ToProblem();
@@ -510,21 +653,30 @@ internal static class AccessAdminEndpoints
             return mayManage.Error!.ToProblem();
         }
 
+        var decision = await accounts.DecideAsync(user.Id, ct);
+        if (decision.IsFailure)
+        {
+            return decision.Error!.ToProblem();
+        }
+
+        if (decision.Value == GrantDecision.Ask)
+        {
+            var asked = await accounts.AskMfaResetAsync(user, ct);
+            return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
+        }
+
         var now = time.GetUtcNow();
-        user.MfaEnabled = false;
-        user.MfaSecret = null;
-        user.MfaLastTimeStep = null;
-        // A lost or stolen authenticator: whoever holds it keeps no session either.
-        var ended = await RevokeAllSessionsAsync(db, user.Id, "mfa_reset", now, ct);
+        var ended = await AccountApprovals.ResetMfaAsync(db, user, now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "user.mfa_reset", $"Two-step verification reset for {user.UserName}")
         {
             EntityType = nameof(User),
             EntityId = user.Id.ToString(),
             Severity = AuditSeverity.Warning,
         });
+        grants.AuditMadeAlone(decision.Value, nameof(User), user.Id, $"two-step verification reset for {user.UserName}");
         CredentialNotices.QueueEmail(notifications, user, CredentialNotices.MfaReset, now);
         await db.SaveChangesAsync(ct);
-        Invalidate(sessions, ended);
+        AccountApprovals.Invalidate(sessions, ended);
         await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.MfaReset, ct);
         return TypedResults.NoContent();
     }
@@ -545,10 +697,10 @@ internal static class AccessAdminEndpoints
             return mayManage.Error!.ToProblem();
         }
 
-        var ended = await RevokeAllSessionsAsync(db, id, "revoked_by_admin", time.GetUtcNow(), ct);
+        var ended = await AccountApprovals.RevokeAllSessionsAsync(db, id, "revoked_by_admin", time.GetUtcNow(), ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "user.sessions_revoked", "All sessions revoked") { EntityType = nameof(User), EntityId = id.ToString() });
         await db.SaveChangesAsync(ct);
-        Invalidate(sessions, ended);
+        AccountApprovals.Invalidate(sessions, ended);
         return TypedResults.NoContent();
     }
 
@@ -858,34 +1010,6 @@ internal static class AccessAdminEndpoints
 
     private static async Task<IReadOnlySet<string>> CallerPermissionsAsync(ICurrentUser current, IPermissionService permissions, CancellationToken ct) =>
         current.UserId is { } callerId ? await permissions.GetPermissionsAsync(callerId, ct) : new HashSet<string>(StringComparer.Ordinal);
-
-    /// <summary>
-    /// Ends the user's open sessions in <paramref name="db"/>, unsaved, and returns them: the caller saves, then tells every
-    /// server with <see cref="Invalidate"/>.
-    /// </summary>
-    private static async Task<List<UserSession>> RevokeAllSessionsAsync(HospitalDbContext db, Guid userId, string reason, DateTimeOffset now, CancellationToken ct)
-    {
-        var active = await db.Set<UserSession>().Where(s => s.UserId == userId && s.RevokedAt == null).ToListAsync(ct);
-        foreach (var session in active)
-        {
-            session.RevokedAt = now;
-            session.RevokedReason = reason;
-        }
-
-        return active;
-    }
-
-    /// <summary>
-    /// Once their end is saved, never before: another server told sooner could read a session as still active and keep that
-    /// for the 30 seconds it caches it (SCAL-01).
-    /// </summary>
-    private static void Invalidate(ISessionValidator validator, IEnumerable<UserSession> ended)
-    {
-        foreach (var session in ended)
-        {
-            validator.Invalidate(session.Id);
-        }
-    }
 
     /// <summary>The names of these roles and facilities, deleted ones included, for an audit entry to name what it gave or took.</summary>
     private static async Task<GrantNames> GrantNamesAsync(HospitalDbContext db, IEnumerable<Guid> roleIds, IEnumerable<Guid> facilityIds, CancellationToken ct)

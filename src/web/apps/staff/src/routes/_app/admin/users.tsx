@@ -22,6 +22,7 @@ import {
   MenuTrigger,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   OverlayDrawer,
   SearchBox,
   Select,
@@ -67,7 +68,13 @@ import { api } from '@/lib/api';
 import { searchPractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { PasswordConfirmDialog } from '@/modules/account/PasswordConfirmDialog';
-import { adminQueries, askedForApproval, type UserDetail, type UserListItem } from '@/modules/admin/api';
+import {
+  adminQueries,
+  askedForApproval,
+  type PasswordResetResponse,
+  type UserDetail,
+  type UserListItem,
+} from '@/modules/admin/api';
 import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 
 export const Route = createFileRoute('/_app/admin/users')({
@@ -99,7 +106,9 @@ const ACTION_TEXT: Record<Exclude<RowAction, 'reset-password'>, { title: string;
   },
   'reset-mfa': {
     title: 'Reset two-step verification?',
-    body: 'Use this when the user lost their phone. They will set up two-step verification again at next sign-in.',
+    body:
+      'Use this when the user lost their phone. Another administrator who may approve grants approves it first; then ' +
+      'their sessions end, and they set up two-step verification again at next sign-in.',
     done: 'Two-step verification reset',
   },
   'revoke-sessions': {
@@ -126,6 +135,8 @@ function UsersPage() {
   const [editing, setEditing] = useState<string | 'new' | null>(null);
   const [pending, setPending] = useState<{ user: UserListItem; action: RowAction } | null>(null);
   const [tempPassword, setTempPassword] = useState<TemporaryPassword | null>(null);
+  // Where a reset sent the temporary password: the administrator is told where, never what.
+  const [sent, setSent] = useState<{ name: string; sentTo: string[]; expiresAt: string } | null>(null);
   const roles = useQuery(adminQueries.roles());
   const users = useQuery(
     adminQueries.users({
@@ -138,15 +149,27 @@ function UsersPage() {
 
   const act = useMutation({
     mutationFn: ({ user, action }: { user: UserListItem; action: RowAction }) =>
-      api.post<{ temporaryPassword?: string; expiresAt?: string }>(`/api/v1/admin/users/${user.id}/${action}`),
+      api.post<PasswordResetResponse | undefined>(`/api/v1/admin/users/${user.id}/${action}`),
     onSuccess: (result, { user, action }) => {
       setPending(null);
-      if (action === 'reset-password' && result?.temporaryPassword) {
+      const asked = askedForApproval(result);
+      if (asked) {
+        // A two-step verification reset, or a password reset for an account with nowhere to send it (202).
+        notify.success(
+          'Asked for approval',
+          action === 'reset-password'
+            ? `${asked.summary}. Another administrator who may approve grants decides it, and is shown the password to give them in person.`
+            : `${asked.summary}. Another administrator who may approve grants decides it; nothing changes until then.`,
+        );
+        void queryClient.invalidateQueries({ queryKey: ['approvals'] });
+      } else if (action === 'reset-password' && result?.temporaryPassword) {
         setTempPassword({
           name: user.displayName,
           password: result.temporaryPassword,
-          expiresAt: result.expiresAt ?? null,
+          expiresAt: result.expiresAt,
         });
+      } else if (action === 'reset-password' && result) {
+        setSent({ name: user.displayName, sentTo: result.sentTo, expiresAt: result.expiresAt });
       } else if (action !== 'reset-password') {
         notify.success(ACTION_TEXT[action].done);
       }
@@ -382,11 +405,37 @@ function UsersPage() {
         onCancel={() => setPending(null)}
       >
         {pending?.action === 'reset-password'
-          ? `A new temporary password is created for ${pending.user.displayName}. They must choose their own password at next sign-in, and their open sessions end.`
+          ? `A new temporary password is made for ${pending.user.displayName} and sent to their own mobile number and e-mail address; you are not shown it. With neither, it waits for another administrator, who gives it to them in person. They choose their own password at next sign-in, and their open sessions end.`
           : pending
             ? ACTION_TEXT[pending.action].body
             : null}
       </ConfirmDialog>
+
+      <Dialog open={sent !== null} onOpenChange={(_, d) => !d.open && setSent(null)}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>Password reset for {sent?.name}</DialogTitle>
+            <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Text>
+                A temporary password was sent to their {sent?.sentTo.join(' and ')}. It stops working after{' '}
+                {sent ? formatDateTime(sent.expiresAt) : ''}.
+              </Text>
+              <MessageBar intent="info" layout="multiline">
+                <MessageBarBody>
+                  <MessageBarTitle>Not shown to you</MessageBarTitle>
+                  It goes only to the account&apos;s own mobile number and e-mail address. They choose their own
+                  password when they sign in with it, and their open sessions have ended.
+                </MessageBarBody>
+              </MessageBar>
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="primary" onClick={() => setSent(null)}>
+                Done
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       <Dialog open={tempPassword !== null} onOpenChange={(_, d) => !d.open && setTempPassword(null)}>
         <DialogSurface>
@@ -409,6 +458,14 @@ function UsersPage() {
                   <MessageBarBody>
                     Their roles wait for another administrator who may approve grants. They can sign in and change their
                     password now, but see nothing until the roles are approved.
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+              {tempPassword?.linkAwaitingApproval && (
+                <MessageBar intent="info" layout="multiline">
+                  <MessageBarBody>
+                    Their link to the doctor waits for another administrator who may approve grants: until then they do
+                    not sign as that doctor.
                   </MessageBarBody>
                 </MessageBar>
               )}
@@ -464,6 +521,8 @@ interface TemporaryPassword {
   expiresAt: string | null;
   /** The new user's roles wait for a second administrator's approval. */
   awaitingApproval?: boolean;
+  /** The new user's link to a practitioner waits for a second administrator's approval. */
+  linkAwaitingApproval?: boolean;
 }
 
 function UserDrawer({
@@ -511,7 +570,7 @@ function UserDrawer({
         if (asked) {
           notify.success(
             'Asked for approval',
-            `${asked.summary}. Another administrator who may approve grants decides it.`,
+            `${asked.summary}. Another administrator who may approve grants decides it; any other change asked for with it is listed on the user.`,
           );
         } else {
           notify.success('User saved');
@@ -560,6 +619,7 @@ function UserDrawerForm({
     },
   });
   const pending = user?.pendingGrant;
+  const changes = user?.pendingChanges ?? [];
 
   const save = useMutation({
     mutationFn: (values: UserForm) => {
@@ -575,25 +635,34 @@ function UserDrawerForm({
       };
       return user
         ? api.put(`/api/v1/admin/users/${user.id}`, { ...common, isActive: values.isActive, version: user.version })
-        : api.post<{ userId: string; temporaryPassword: string; expiresAt: string; approvalId: string | null }>(
-            '/api/v1/admin/users',
-            {
-              ...common,
-              userName: values.userName,
-              temporaryPassword: values.temporaryPassword || null,
-            },
-          );
+        : api.post<{
+            userId: string;
+            temporaryPassword: string;
+            expiresAt: string;
+            approvalId: string | null;
+            practitionerLinkApprovalId?: string | null;
+          }>('/api/v1/admin/users', {
+            ...common,
+            userName: values.userName,
+            temporaryPassword: values.temporaryPassword || null,
+          });
     },
     onSuccess: (result, values) => {
       if (!user && result && typeof result === 'object' && 'temporaryPassword' in result) {
         void queryClient.invalidateQueries({ queryKey: ['admin'] });
         void queryClient.invalidateQueries({ queryKey: ['approvals'] });
-        const created = result as { temporaryPassword: string; expiresAt: string; approvalId?: string | null };
+        const created = result as {
+          temporaryPassword: string;
+          expiresAt: string;
+          approvalId?: string | null;
+          practitionerLinkApprovalId?: string | null;
+        };
         onCreated({
           name: values.displayName,
           password: created.temporaryPassword,
           expiresAt: created.expiresAt,
           awaitingApproval: Boolean(created.approvalId),
+          linkAwaitingApproval: Boolean(created.practitionerLinkApprovalId),
         });
       } else {
         onSaved(askedForApproval(result));
@@ -638,6 +707,16 @@ function UserDrawerForm({
                 requestedAt={pending.requestedAt}
               />
             )}
+            {changes.map((change) => (
+              <PendingGrantNotice
+                key={change.approvalId}
+                approvalId={change.approvalId}
+                what={change.summary}
+                requestedBy={change.requestedBy}
+                requestedAt={change.requestedAt}
+                decides="Another administrator who may approve grants decides it; until then nothing changes."
+              />
+            ))}
             <TextField
               control={form.control}
               name="userName"
@@ -654,8 +733,28 @@ function UserDrawerForm({
               required
               hint="As shown on screens and prints, e.g. Dr. Priya Sharma"
             />
-            <TextField control={form.control} name="email" label="Email" type="email" />
-            <TextField control={form.control} name="phone" label="Mobile" type="tel" />
+            <TextField
+              control={form.control}
+              name="email"
+              label="Email"
+              type="email"
+              hint={
+                user && !isSelf
+                  ? 'A reset sends the temporary password here. A change waits for another administrator.'
+                  : undefined
+              }
+            />
+            <TextField
+              control={form.control}
+              name="phone"
+              label="Mobile"
+              type="tel"
+              hint={
+                user && !isSelf
+                  ? 'A reset sends the temporary password here. A change waits for another administrator.'
+                  : undefined
+              }
+            />
             <Controller
               control={form.control}
               name="roleIds"
@@ -688,7 +787,7 @@ function UserDrawerForm({
               name="practitionerId"
               label="Linked doctor / practitioner"
               load={searchPractitioners}
-              hint="Link doctors so their queue, orders and fees follow their sign-in."
+              hint="Link doctors so their queue, orders and fees follow their sign-in. The account then signs as that doctor, so a link waits for another administrator who may approve grants."
             />
             <TextField
               control={form.control}

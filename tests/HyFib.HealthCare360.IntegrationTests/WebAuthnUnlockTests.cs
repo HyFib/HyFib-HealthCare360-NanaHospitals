@@ -378,7 +378,7 @@ public sealed class WebAuthnUnlockTests(HospitalServer server) : IAsyncLifetime
         var added = await SetUpAsync(client, device);
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
 
-        await admin.PostAsync<JsonElement>($"/api/v1/admin/users/{await UserIdAsync(userName)}/reset-password");
+        await server.ResetPasswordAsync(admin, await UserIdAsync(userName));
 
         await using var scope = server.Services.CreateAsyncScope();
         (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<WebAuthnCredential>().AnyAsync(c => c.Id == added.Id, Ct)).ShouldBeFalse();
@@ -482,7 +482,7 @@ public sealed class WebAuthnUnlockTests(HospitalServer server) : IAsyncLifetime
 
     private async Task<(Guid DeviceId, string Secret)> EnrolAsync(ApiClient admin, DeviceKind kind)
     {
-        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
+        var code = await server.EnrollmentCodeAsync(admin,
             new CreateEnrollmentCodeRequest(kind, null, "Unlock test", 30));
         var enrolled = await server.Anonymous(ownAddress: true).PostAsync<EnrollDeviceResponse>("/api/v1/devices/enroll",
             new EnrollDeviceRequest(code.Code, "Unlock test " + Guid.NewGuid().ToString("N")[..6], "OPD-PC-1", "Windows 11", "1.0.0"));

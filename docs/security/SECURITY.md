@@ -128,13 +128,26 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - Required of anyone holding an administrative permission (all-access, or any `admin.` permission), whatever their
     roles are called (`MfaForAdministration`), so a custom role with administrative rights needs it too.
   - Until it is set up, such an account can do nothing else after signing in, and it cannot be turned off.
-- **Temporary passwords** from an administrator are 12 random characters (or the administrator's choice when creating
-  an account). They must be replaced at first sign-in, and stop working after 72 hours (`TemporaryPasswordHours`);
-  the administrator then gives out a new one. The first administrator's one-time password is written to a file only
-  administrators can read, and the file is deleted once the password is changed.
+- **Temporary passwords** (account recovery: there is no self-service reset) are 12 random characters, or the
+  administrator's choice when creating an account. They must be replaced at first sign-in, and stop working after 72
+  hours (`TemporaryPasswordHours`); a new reset then gives out another. The first administrator's one-time password is
+  written to a file only administrators can read, and the file is deleted once the password is changed.
+  - **A reset goes to the account's holder, not the administrator** (MAKER-CHECKER.md, slice 4): an administrator shown
+    a colleague's temporary password could sign in as them, and doctors and nurses need no second step by default. The
+    reset sends it to the account's own mobile number by SMS and to its e-mail address (`auth.temporary_password`; the
+    outbox drops a message not sent before the password expires), and tells the administrator only where it went,
+    masked ("mobile +91******3210").
+  - An account with neither waits for a second administrator who holds `admin.grants.approve`
+    (`identity.password_reset`); nothing changes until then. Approving makes the password and shows it to that
+    administrator once, in the answer to the approval, to give in person (`ApprovalHandover`): it is kept nowhere, not
+    in the request, its outcome, the audit trail or the notice to the one who asked. The audit names both.
+  - Either way the sessions end, the PIN and the quick-unlock devices go, and the password must be changed at the next
+    sign-in. Enter a mobile number for every member of staff, so a reset does not wait.
 - **Notices** (ASVS V6.4.3): when a password is changed or reset, or two-step verification is turned on, off or reset,
   the account's holder is told in the app and, when the account has an e-mail address, by e-mail
-  (`auth.credentials_changed`). Someone who did not make the change can tell IT at once.
+  (`auth.credentials_changed`). When the account's mobile number or e-mail address changes, the number and address it
+  had before are told, by SMS and e-mail, naming the new ones masked (`auth.contact_changed`). Someone who did not make
+  the change can tell IT at once.
 - **No fixed first password outside development** (ASVS V6.3.2): `HealthCare360:Bootstrap:AdminPassword` and
   `RequirePasswordChange`, and the demonstration accounts that share that password, work on development machines only.
   Elsewhere they are ignored and the server logs a warning.
@@ -226,6 +239,14 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - While no workstation or tablet is enrolled (a new installation, or one whose desktops are kiosks and queue displays
     only), a browser may still list the devices and make an enrolment code, and nothing else, so the first workstation
     can be enrolled.
+  - **Another administration desktop is enrolled by two people** (MAKER-CHECKER.md, slice 4): whoever enrols a
+    workstation or tablet decides where the hospital can be administered from. Once one is enrolled, a code for another
+    waits for a second administrator who holds `admin.grants.approve` (`devices.enrollment`, 202). Approved, the code is
+    made for the administrator who asked, who is at the computer: Administration › Devices shows it to them once
+    (`POST /api/v1/admin/devices/enrollment-codes/requests/{id}/code`), it works once, and it expires the minutes asked
+    after the approval (30 by default). It is chosen only when shown, so the approver never sees it and the server keeps
+    only its hash. The first enrolment, at installation, and codes for kiosks, queue displays and lab agents, which
+    administer nothing, are made at once as before.
   - The `security.administrationRequiresDesktop` setting (Administration › Settings, for the whole hospital) turns it
     off; without it, `HealthCare360:Security:AdministrationRequiresDesktop` in the server's settings file decides, on by
     default. Turned off, an administrator's password alone opens administration from any computer on the network.
@@ -321,6 +342,32 @@ and grants nothing.
     undone), a grant nobody else may approve is refused (`access.no_second_approver`). The exception is a Super
     Administrator's, given at once as a break-glass: audited as critical, and System health is critical for a day after.
     A live server with fewer than two people who may approve grants says so (`access.one_approver`).
+- **Nobody takes over a colleague's account alone** (MAKER-CHECKER.md, slice 4; `AccountApprovals`). One holder of
+  `admin.users.manage` could change a nurse's e-mail address, reset her password and two-step verification, and sign in
+  as her; or link an account to a consultant's practitioner record and sign his notes, prescriptions, discharge
+  summaries and ABDM records. Now:
+  - a temporary password goes to the account's own mobile number and e-mail address (Temporary passwords, above);
+  - a two-step verification reset waits for a second administrator (`identity.mfa_reset`); nothing changes until it is
+    approved, and then the sessions end and the holder is told, as before;
+  - another user's e-mail address or mobile number waits (`identity.contact_change`), and once it changes the old ones
+    are told. A user's own contact details, saved from Administration › Users (there is no self-service screen), change
+    at once, and the old ones are told too;
+  - linking or re-linking an account to a practitioner waits (`identity.practitioner_link`), the new account's link
+    included; taking a link away applies at once. The approver reads the practitioner linked now and the one asked, by
+    name, code, kind and registration, and any other account linked to it;
+  - a linked practitioner's registration number, HPR ID or signature image waits (`masters.practitioner_identity`,
+    masters.md); a practitioner with no account is edited at once.
+
+  The checker holds `admin.grants.approve` (hospital administrators by default, and the Super Administrator) and, for
+  an account with administrative permissions, all of them. Whether a change waits is decided as for access given: a
+  hospital that has never had two people who may approve makes it at once, audited as `access.granted_alone`; once it
+  has had two, a change nobody else may approve is refused, but for a Super Administrator's break-glass. A change to
+  one's own account waits for someone else, and nobody approves a change to their own account (`approval.own_account`).
+  A change is made only over the account as it was asked for (`approval.stale`): over the fields it is about (the
+  password and contact details, the two-step verification, the contact details, the link), not the row's version, which
+  a locked-out user's sign-in attempts change too. One request of each kind waits per account (409
+  `approval.already_requested`). Each is audited with both names (`user.password_reset`, `user.mfa_reset`,
+  `user.contact_changed`, `user.practitioner_linked`). The user's page lists what waits, with links to the requests.
 - **Restricted records** (VIP, staff, high-profile patients):
   - They need an extra permission or **break-the-glass** access.
   - Break-the-glass requires a written reason, expires, and is flagged for review. The grant is a row in the database
@@ -387,6 +434,16 @@ and grants nothing.
     verification vouches for withdraws it (billing.md, A third party pays only on a second person's word);
   - access given to a user or a role (see "Access is given by two people" above): one administrator asks, another who
     holds `admin.grants.approve`, and any administrative permission it gives, approves;
+  - changes that would let one administrator take over an account (see "Nobody takes over a colleague's account alone"
+    above): a temporary password for an account with nowhere to send it (`identity.password_reset`, shown once to the
+    approver), a two-step verification reset (`identity.mfa_reset`), another user's e-mail address or mobile number
+    (`identity.contact_change`), an account linked to a practitioner (`identity.practitioner_link`) and a linked
+    practitioner's registration number, HPR ID or signature (`masters.practitioner_identity`): one administrator asks,
+    another who holds `admin.grants.approve` approves. A temporary password otherwise goes to the account's own mobile
+    number and e-mail address, never to the administrator;
+  - another workstation or tablet enrolled once one is (`devices.enrollment`, see "Administration needs an enrolled
+    device"): one administrator asks, another who holds `admin.grants.approve` approves, and the code is shown once to
+    the one who asked;
   - a service's own price and GST rate, which a self-pay patient pays (`masters.service_price`): one person saves the
     service, another who holds `masters.prices.approve` (accountants and hospital administrators by default) approves.
   - a drug handled less strictly in the item master (`inventory.drug_class`): no longer controlled (NDPS), no longer

@@ -144,11 +144,30 @@ export interface PractitionerDto {
   facilityIds: string[];
   isActive: boolean;
   version: number;
+  /** On a single practitioner's read: the staff accounts that sign as them. */
+  linkedAccounts?: string[] | null;
+  /** On a single practitioner's read: a registration number, HPR ID or signature waiting for a second administrator. */
+  pendingIdentity?: PendingPractitionerIdentity | null;
+}
+
+/** What identifies a practitioner on what they sign. */
+export interface PractitionerIdentity {
+  registrationNumber: string | null;
+  hprId: string | null;
+  signatureFileId: string | null;
+}
+
+/** A linked doctor's identity asked for, waiting for a second administrator who may approve grants. */
+export interface PendingPractitionerIdentity {
+  approvalId: string;
+  asked: PractitionerIdentity;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export type SavePractitionerRequest = Omit<
   PractitionerDto,
-  'id' | 'displayName' | 'specialtyName' | 'departmentName' | 'version'
+  'id' | 'displayName' | 'specialtyName' | 'departmentName' | 'version' | 'linkedAccounts' | 'pendingIdentity'
 > & {
   version: number | null;
   /** Take the doctor out of use although work is still ahead (the person saw the list the server named). */

@@ -48,9 +48,10 @@ public sealed class AccessControlTests(HospitalServer server)
         var frontOffice = await RoleIdAsync(hospitalAdmin, SystemRoles.FrontOffice);
         var created = await hospitalAdmin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", NewUser("it-front-desk-2", frontOffice));
 
-        var reset = await hospitalAdmin.PostAsync<TemporaryPasswordResponse>($"/api/v1/admin/users/{created.UserId}/reset-password");
+        // The account has no mobile number or e-mail address: the reset waits for the Super Administrator, who hands it over.
+        var reset = await server.ResetPasswordAsync(hospitalAdmin, created.UserId);
 
-        reset.TemporaryPassword.ShouldNotBe(created.TemporaryPassword);
+        reset.ShouldNotBe(created.TemporaryPassword);
     }
 
     [Fact]

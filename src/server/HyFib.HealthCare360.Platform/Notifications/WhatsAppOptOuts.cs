@@ -124,6 +124,10 @@ public static class WhatsAppOptOutPolicy
 
         // Sent to staff by e-mail and in the app, never on WhatsApp.
         "auth.credentials_changed",
+
+        // Sent to staff by SMS and e-mail when an administrator resets their password or changes their contact details,
+        // never on WhatsApp.
+        "auth.temporary_password", "auth.contact_changed",
     };
 
     /// <summary>

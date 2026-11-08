@@ -243,7 +243,7 @@ internal sealed class NotificationService(
                 CreatedAt = now,
                 Channel = channel,
                 TemplateKey = templateKey,
-                Recipient = channel == NotificationChannel.Email ? MaskEmail(target) : Phone.Mask(target),
+                Recipient = channel == NotificationChannel.Email ? Masking.MaskEmail(target) : Phone.Mask(target),
                 PatientId = recipient.PatientId,
                 FacilityId = facility,
                 Status = string.IsNullOrWhiteSpace(target) ? NotificationStatus.Skipped : NotificationStatus.Queued,
@@ -314,17 +314,6 @@ internal sealed class NotificationService(
         await NotifyUsersAsync(ids, title, body, link, category, severity, cancellationToken);
     }
 
-    private static string? MaskEmail(string? email)
-    {
-        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@', StringComparison.Ordinal))
-        {
-            return email;
-        }
-
-        var at = email.IndexOf('@', StringComparison.Ordinal);
-        return email[0] + "***" + email[at..];
-    }
-
     private static string? Truncate(string? value, int max) => value is null || value.Length <= max ? value : value[..max];
 }
 
@@ -367,6 +356,18 @@ public static class DefaultNotificationTemplates
         ("auth.credentials_changed", NotificationChannel.Email, "{{hospital}} HC360: your sign-in details changed",
             "{{change}} This happened to your account {{user}} on {{time}}. If you did not do this, tell your IT administrator at once.",
             "Tells staff that their password or two-step verification changed"),
+        ("auth.temporary_password", NotificationChannel.Sms, null,
+            "{{hospital}} HC360: an administrator reset the password of your account {{user}}. Temporary password: {{password}} . Change it when you sign in; it stops working on {{expires}}. If you did not ask for this, tell IT at once.",
+            "A temporary password an administrator made, sent to the member of staff's own mobile number"),
+        ("auth.temporary_password", NotificationChannel.Email, "{{hospital}} HC360: your temporary password",
+            "An administrator reset the password of your account {{user}}. Your temporary password is {{password}} . You will choose your own password when you sign in with it, and it stops working on {{expires}}. If you did not ask for this, tell your IT administrator at once.",
+            "A temporary password an administrator made, sent to the member of staff's own e-mail address"),
+        ("auth.contact_changed", NotificationChannel.Sms, null,
+            "{{hospital}} HC360: {{change}} This happened to your account {{user}} on {{time}}. If you did not ask for this, tell IT at once.",
+            "Tells staff at their old mobile number that the number or e-mail address on their account changed"),
+        ("auth.contact_changed", NotificationChannel.Email, "{{hospital}} HC360: your contact details changed",
+            "{{change}} This happened to your account {{user}} on {{time}}. If you did not ask for this, tell your IT administrator at once.",
+            "Tells staff at their old e-mail address that the address or mobile number on their account changed"),
     ];
 }
 

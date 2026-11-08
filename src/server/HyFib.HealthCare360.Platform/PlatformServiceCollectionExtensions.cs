@@ -244,6 +244,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<IApprovals>(sp => sp.GetRequiredService<ApprovalService>());
+        services.AddScoped<ApprovalHandover>();
         services.AddScoped<RecordHistoryService>();
         services.AddScoped<AuditEntityIndex>();
         services.AddScoped<NotificationTemplateRenderer>();
@@ -277,6 +278,19 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<GrantApprovals>();
         services.AddScoped<IApprovalAction, UserGrantApproval>();
         services.AddScoped<IApprovalAction, RoleGrantApproval>();
+
+        // Nobody takes over a colleague's account alone: a password reset goes to the user; a two-step verification reset,
+        // another user's contact details, an account linked to a practitioner, a linked practitioner's registration and
+        // signature, and another administration desktop wait for a second administrator.
+        services.AddScoped<AccountApprovals>();
+        services.AddScoped<IApprovalAction, PasswordResetApproval>();
+        services.AddScoped<IApprovalAction, MfaResetApproval>();
+        services.AddScoped<IApprovalAction, ContactChangeApproval>();
+        services.AddScoped<IApprovalAction, PractitionerLinkApproval>();
+        services.AddScoped<PractitionerIdentityApprovals>();
+        services.AddScoped<IApprovalAction, PractitionerIdentityApproval>();
+        services.AddScoped<DeviceEnrollmentApprovals>();
+        services.AddScoped<IApprovalAction, DeviceEnrollmentApproval>();
 
         // A service's price changes only when two people agree.
         services.AddScoped<ServicePrices>();

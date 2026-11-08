@@ -23,7 +23,7 @@ export const Route = createFileRoute('/_app/approvals/$approvalId')({
 function subjectLink(
   request: ApprovalRequestDto,
   canManageMasters: boolean,
-  can: { pharmacySales: boolean; wardIssues: boolean },
+  can: { pharmacySales: boolean; wardIssues: boolean; devices: boolean },
 ): { label: string; to: string; search?: Record<string, string> } | null {
   switch (request.subjectType) {
     case 'Bill':
@@ -36,9 +36,18 @@ function subjectLink(
       return { label: 'Open the in-patient account', to: `/billing/ip/${request.subjectId}` };
     case 'PatientAdvance':
       return request.patientId ? { label: "Open the patient's record", to: `/patients/${request.patientId}` } : null;
-    // Access given: the request names the user or role and what it gives; the list shows who holds what now.
+    // Access given, and changes to an account (a temporary password to hand over, a two-step verification reset,
+    // contact details, a practitioner link): the request names the user and what changes; the list shows the account.
     case 'User':
       return { label: 'Open the users', to: '/admin/users' };
+    // A linked doctor's registration number, HPR ID or signature: the record with the identity that waits.
+    case 'Practitioner':
+      return canManageMasters
+        ? { label: 'Open the doctor', to: '/setup/practitioners', search: { edit: request.subjectId } }
+        : null;
+    // Another administration desktop: the devices enrolled now.
+    case 'DeviceEnrollment':
+      return can.devices ? { label: 'Open the devices', to: '/admin/devices' } : null;
     case 'Role':
       return { label: 'Open the roles', to: '/admin/roles' };
     // A price asked for: the service's form shows the price charged now and the one that waits. An accountant, who
@@ -82,6 +91,7 @@ function ApprovalPage() {
   const canManageMasters = usePermission(MASTERS_MANAGE);
   const canReadPharmacySales = usePermission([PHARMACY_PERMISSIONS.sales, PHARMACY_PERMISSIONS.returns]);
   const canReadWardIssues = usePermission([PHARMACY_PERMISSIONS.ipIssue, PHARMACY_PERMISSIONS.ipIndent]);
+  const canManageDevices = usePermission('admin.devices.manage');
   const back = () => void navigate({ to: '/approvals' });
 
   if (request.isLoading) {
@@ -100,6 +110,7 @@ function ApprovalPage() {
   const subject = subjectLink(r, canManageMasters, {
     pharmacySales: canReadPharmacySales,
     wardIssues: canReadWardIssues,
+    devices: canManageDevices,
   });
   return (
     <Page maxWidth={900}>

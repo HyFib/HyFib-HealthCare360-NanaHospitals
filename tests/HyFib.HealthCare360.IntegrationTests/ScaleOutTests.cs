@@ -502,7 +502,7 @@ public sealed class ScaleOutTests(HospitalServer server)
     /// <summary>A newly enrolled workstation: its id and secret.</summary>
     private async Task<(Guid Id, string Secret)> EnrolAsync(ApiClient admin)
     {
-        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
+        var code = await server.EnrollmentCodeAsync(admin,
             new CreateEnrollmentCodeRequest(DeviceKind.Workstation, null, "Scale-out test", 30));
         var enrolled = await server.Anonymous(ownAddress: true).PostAsync<EnrollDeviceResponse>("/api/v1/devices/enroll",
             new EnrollDeviceRequest(code.Code, "Scale-out test " + Guid.NewGuid().ToString("N")[..6], "OPD-PC-1", "Windows 11", "1.0.0"));

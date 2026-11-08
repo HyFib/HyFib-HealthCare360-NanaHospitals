@@ -1,4 +1,5 @@
 using FluentValidation;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
@@ -146,6 +147,13 @@ internal static class DeviceEndpoints
         admin.MapGet("/", ListDevices).RequirePermission(PlatformPermissions.DevicesManage).AllowedForFirstDesktopEnrolment();
         admin.MapPost("/enrollment-codes", CreateEnrollmentCode).RequirePermission(PlatformPermissions.DevicesManage).AllowedForFirstDesktopEnrolment()
             .WithValidation<CreateEnrollmentCodeRequest>();
+
+        // An administration desktop's code a second administrator approved is shown to the one who asked (DeviceEnrollmentApprovals).
+        admin.MapGet("/enrollment-codes/requests", async (DeviceEnrollmentApprovals enrolments, CancellationToken ct) => TypedResults.Ok(await enrolments.MineAsync(ct)))
+            .RequirePermission(PlatformPermissions.DevicesManage);
+        admin.MapPost("/enrollment-codes/requests/{approvalId:guid}/code", async (Guid approvalId, DeviceEnrollmentApprovals enrolments, CancellationToken ct) =>
+                (await enrolments.CollectAsync(approvalId, ct)).ToOk())
+            .RequirePermission(PlatformPermissions.DevicesManage);
         admin.MapPut("/{id:guid}", UpdateDevice).RequirePermission(PlatformPermissions.DevicesManage).WithValidation<UpdateDeviceRequest>();
         admin.MapPost("/{id:guid}/revoke", RevokeDevice).RequirePermission(PlatformPermissions.DevicesManage);
 
@@ -161,12 +169,43 @@ internal static class DeviceEndpoints
                 d.LastWifiSsid, d.LastWifiSignal, d.IsRevoked, d.FacilityId, d.DepartmentId, d.Location, d.Version))
             .ToListAsync(ct));
 
-    private static async Task<IResult> CreateEnrollmentCode(CreateEnrollmentCodeRequest request, HospitalDbContext db, ICurrentUser current, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    /// <summary>
+    /// A code for a workstation or tablet, from which the hospital can be administered, waits for a second administrator once
+    /// one is enrolled (202, <see cref="DeviceEnrollmentApprovals"/>); the first, and every other kind, is made at once.
+    /// </summary>
+    private static async Task<IResult> CreateEnrollmentCode(
+        CreateEnrollmentCodeRequest request,
+        HospitalDbContext db,
+        ICurrentUser current,
+        IAuditLogger audit,
+        IAdministrationDesktops desktops,
+        GrantApprovals grants,
+        DeviceEnrollmentApprovals enrolments,
+        TimeProvider time,
+        CancellationToken ct)
     {
         var now = time.GetUtcNow();
         var minutes = request.ValidMinutes ?? 30;
+        var guarded = AdministrationOnDesktop.Administers(request.Kind) && await desktops.EnrolledAsync(ct);
+        var decision = GrantDecision.Ask;
+        if (guarded)
+        {
+            var decided = await grants.DecideAsync(self: false, [], ct);
+            if (decided.IsFailure)
+            {
+                return decided.Error!.ToProblem();
+            }
+
+            decision = decided.Value;
+            if (decision == GrantDecision.Ask)
+            {
+                var asked = await enrolments.AskAsync(request, minutes, ct);
+                return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
+            }
+        }
+
         var code = SecretTokens.NewReadableCode(8);
-        db.Add(new DeviceEnrollmentCode
+        var enrollment = new DeviceEnrollmentCode
         {
             CodeHash = SecretTokens.Hash(code),
             Kind = request.Kind,
@@ -175,13 +214,20 @@ internal static class DeviceEndpoints
             CreatedBy = current.UserId ?? Guid.Empty,
             CreatedAt = now,
             ExpiresAt = now.AddMinutes(minutes),
-        });
+        };
+        db.Add(enrollment);
         audit.Add(new AuditEntry(AuditCategories.Security, "device.enrollment_code_created", $"Enrolment code for a {request.Kind} (valid {minutes} min)"));
-        await db.SaveChangesAsync(ct);
+        if (guarded)
+        {
+            grants.AuditMadeAlone(decision, nameof(DeviceEnrollmentCode), enrollment.Id, $"enrolment code for a {request.Kind}");
+        }
 
-        // Shown once, formatted for reading aloud: ABCD-EFGH.
-        return TypedResults.Ok(new EnrollmentCodeResponse($"{code[..4]}-{code[4..]}", now.AddMinutes(minutes)));
+        await db.SaveChangesAsync(ct);
+        return TypedResults.Ok(new EnrollmentCodeResponse(Readable(code), now.AddMinutes(minutes)));
     }
+
+    /// <summary>A code as it is shown, once, formatted for reading aloud: ABCD-EFGH.</summary>
+    internal static string Readable(string code) => $"{code[..4]}-{code[4..]}";
 
     private static async Task<IResult> Enroll(
         EnrollDeviceRequest request,
