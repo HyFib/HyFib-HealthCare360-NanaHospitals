@@ -115,6 +115,7 @@ import { Route as AppInpatientAdmitRouteImport } from './routes/_app/inpatient/a
 import { Route as AppInpatientBedsRouteImport } from './routes/_app/inpatient/beds'
 import { Route as AppInpatientHousekeepingRouteImport } from './routes/_app/inpatient/housekeeping'
 import { Route as AppInpatientSetupRouteImport } from './routes/_app/inpatient/setup'
+import { Route as AppInpatientTransfersRouteImport } from './routes/_app/inpatient/transfers'
 import { Route as AppInsuranceIndexRouteImport } from './routes/_app/insurance/index'
 import { Route as AppInsuranceAgeingRouteImport } from './routes/_app/insurance/ageing'
 import { Route as AppInsurancePayersRouteImport } from './routes/_app/insurance/payers'
@@ -122,6 +123,7 @@ import { Route as AppInsurancePoliciesRouteImport } from './routes/_app/insuranc
 import { Route as AppInventoryIndexRouteImport } from './routes/_app/inventory/index'
 import { Route as AppInventoryAdjustmentsRouteImport } from './routes/_app/inventory/adjustments'
 import { Route as AppInventoryCategoriesRouteImport } from './routes/_app/inventory/categories'
+import { Route as AppInventoryColdChainRouteImport } from './routes/_app/inventory/cold-chain'
 import { Route as AppInventoryItemsRouteImport } from './routes/_app/inventory/items'
 import { Route as AppInventoryLedgerRouteImport } from './routes/_app/inventory/ledger'
 import { Route as AppInventoryReportsRouteImport } from './routes/_app/inventory/reports'
@@ -881,6 +883,11 @@ const AppInpatientSetupRoute = AppInpatientSetupRouteImport.update({
   path: '/inpatient/setup',
   getParentRoute: () => AppRoute,
 } as any)
+const AppInpatientTransfersRoute = AppInpatientTransfersRouteImport.update({
+  id: '/inpatient/transfers',
+  path: '/inpatient/transfers',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppInsuranceIndexRoute = AppInsuranceIndexRouteImport.update({
   id: '/insurance/',
   path: '/insurance/',
@@ -914,6 +921,11 @@ const AppInventoryAdjustmentsRoute = AppInventoryAdjustmentsRouteImport.update({
 const AppInventoryCategoriesRoute = AppInventoryCategoriesRouteImport.update({
   id: '/inventory/categories',
   path: '/inventory/categories',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppInventoryColdChainRoute = AppInventoryColdChainRouteImport.update({
+  id: '/inventory/cold-chain',
+  path: '/inventory/cold-chain',
   getParentRoute: () => AppRoute,
 } as any)
 const AppInventoryItemsRoute = AppInventoryItemsRouteImport.update({
@@ -2169,11 +2181,13 @@ export interface FileRoutesByFullPath {
   '/inpatient/beds': typeof AppInpatientBedsRoute
   '/inpatient/housekeeping': typeof AppInpatientHousekeepingRoute
   '/inpatient/setup': typeof AppInpatientSetupRoute
+  '/inpatient/transfers': typeof AppInpatientTransfersRoute
   '/insurance/ageing': typeof AppInsuranceAgeingRoute
   '/insurance/payers': typeof AppInsurancePayersRoute
   '/insurance/policies': typeof AppInsurancePoliciesRoute
   '/inventory/adjustments': typeof AppInventoryAdjustmentsRoute
   '/inventory/categories': typeof AppInventoryCategoriesRoute
+  '/inventory/cold-chain': typeof AppInventoryColdChainRoute
   '/inventory/items': typeof AppInventoryItemsRoute
   '/inventory/ledger': typeof AppInventoryLedgerRoute
   '/inventory/reports': typeof AppInventoryReportsRoute
@@ -2504,11 +2518,13 @@ export interface FileRoutesByTo {
   '/inpatient/beds': typeof AppInpatientBedsRoute
   '/inpatient/housekeeping': typeof AppInpatientHousekeepingRoute
   '/inpatient/setup': typeof AppInpatientSetupRoute
+  '/inpatient/transfers': typeof AppInpatientTransfersRoute
   '/insurance/ageing': typeof AppInsuranceAgeingRoute
   '/insurance/payers': typeof AppInsurancePayersRoute
   '/insurance/policies': typeof AppInsurancePoliciesRoute
   '/inventory/adjustments': typeof AppInventoryAdjustmentsRoute
   '/inventory/categories': typeof AppInventoryCategoriesRoute
+  '/inventory/cold-chain': typeof AppInventoryColdChainRoute
   '/inventory/items': typeof AppInventoryItemsRoute
   '/inventory/ledger': typeof AppInventoryLedgerRoute
   '/inventory/reports': typeof AppInventoryReportsRoute
@@ -2841,11 +2857,13 @@ export interface FileRoutesById {
   '/_app/inpatient/beds': typeof AppInpatientBedsRoute
   '/_app/inpatient/housekeeping': typeof AppInpatientHousekeepingRoute
   '/_app/inpatient/setup': typeof AppInpatientSetupRoute
+  '/_app/inpatient/transfers': typeof AppInpatientTransfersRoute
   '/_app/insurance/ageing': typeof AppInsuranceAgeingRoute
   '/_app/insurance/payers': typeof AppInsurancePayersRoute
   '/_app/insurance/policies': typeof AppInsurancePoliciesRoute
   '/_app/inventory/adjustments': typeof AppInventoryAdjustmentsRoute
   '/_app/inventory/categories': typeof AppInventoryCategoriesRoute
+  '/_app/inventory/cold-chain': typeof AppInventoryColdChainRoute
   '/_app/inventory/items': typeof AppInventoryItemsRoute
   '/_app/inventory/ledger': typeof AppInventoryLedgerRoute
   '/_app/inventory/reports': typeof AppInventoryReportsRoute
@@ -3178,11 +3196,13 @@ export interface FileRouteTypes {
     | '/inpatient/beds'
     | '/inpatient/housekeeping'
     | '/inpatient/setup'
+    | '/inpatient/transfers'
     | '/insurance/ageing'
     | '/insurance/payers'
     | '/insurance/policies'
     | '/inventory/adjustments'
     | '/inventory/categories'
+    | '/inventory/cold-chain'
     | '/inventory/items'
     | '/inventory/ledger'
     | '/inventory/reports'
@@ -3513,11 +3533,13 @@ export interface FileRouteTypes {
     | '/inpatient/beds'
     | '/inpatient/housekeeping'
     | '/inpatient/setup'
+    | '/inpatient/transfers'
     | '/insurance/ageing'
     | '/insurance/payers'
     | '/insurance/policies'
     | '/inventory/adjustments'
     | '/inventory/categories'
+    | '/inventory/cold-chain'
     | '/inventory/items'
     | '/inventory/ledger'
     | '/inventory/reports'
@@ -3849,11 +3871,13 @@ export interface FileRouteTypes {
     | '/_app/inpatient/beds'
     | '/_app/inpatient/housekeeping'
     | '/_app/inpatient/setup'
+    | '/_app/inpatient/transfers'
     | '/_app/insurance/ageing'
     | '/_app/insurance/payers'
     | '/_app/insurance/policies'
     | '/_app/inventory/adjustments'
     | '/_app/inventory/categories'
+    | '/_app/inventory/cold-chain'
     | '/_app/inventory/items'
     | '/_app/inventory/ledger'
     | '/_app/inventory/reports'
@@ -4851,6 +4875,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppInpatientSetupRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/inpatient/transfers': {
+      id: '/_app/inpatient/transfers'
+      path: '/inpatient/transfers'
+      fullPath: '/inpatient/transfers'
+      preLoaderRoute: typeof AppInpatientTransfersRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/insurance/': {
       id: '/_app/insurance/'
       path: '/insurance'
@@ -4898,6 +4929,13 @@ declare module '@tanstack/react-router' {
       path: '/inventory/categories'
       fullPath: '/inventory/categories'
       preLoaderRoute: typeof AppInventoryCategoriesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/inventory/cold-chain': {
+      id: '/_app/inventory/cold-chain'
+      path: '/inventory/cold-chain'
+      fullPath: '/inventory/cold-chain'
+      preLoaderRoute: typeof AppInventoryColdChainRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/inventory/items': {
@@ -6532,11 +6570,13 @@ interface AppRouteChildren {
   AppInpatientBedsRoute: typeof AppInpatientBedsRoute
   AppInpatientHousekeepingRoute: typeof AppInpatientHousekeepingRoute
   AppInpatientSetupRoute: typeof AppInpatientSetupRoute
+  AppInpatientTransfersRoute: typeof AppInpatientTransfersRoute
   AppInsuranceAgeingRoute: typeof AppInsuranceAgeingRoute
   AppInsurancePayersRoute: typeof AppInsurancePayersRoute
   AppInsurancePoliciesRoute: typeof AppInsurancePoliciesRoute
   AppInventoryAdjustmentsRoute: typeof AppInventoryAdjustmentsRoute
   AppInventoryCategoriesRoute: typeof AppInventoryCategoriesRoute
+  AppInventoryColdChainRoute: typeof AppInventoryColdChainRoute
   AppInventoryItemsRoute: typeof AppInventoryItemsRoute
   AppInventoryLedgerRoute: typeof AppInventoryLedgerRoute
   AppInventoryReportsRoute: typeof AppInventoryReportsRoute
@@ -6866,11 +6906,13 @@ const AppRouteChildren: AppRouteChildren = {
   AppInpatientBedsRoute: AppInpatientBedsRoute,
   AppInpatientHousekeepingRoute: AppInpatientHousekeepingRoute,
   AppInpatientSetupRoute: AppInpatientSetupRoute,
+  AppInpatientTransfersRoute: AppInpatientTransfersRoute,
   AppInsuranceAgeingRoute: AppInsuranceAgeingRoute,
   AppInsurancePayersRoute: AppInsurancePayersRoute,
   AppInsurancePoliciesRoute: AppInsurancePoliciesRoute,
   AppInventoryAdjustmentsRoute: AppInventoryAdjustmentsRoute,
   AppInventoryCategoriesRoute: AppInventoryCategoriesRoute,
+  AppInventoryColdChainRoute: AppInventoryColdChainRoute,
   AppInventoryItemsRoute: AppInventoryItemsRoute,
   AppInventoryLedgerRoute: AppInventoryLedgerRoute,
   AppInventoryReportsRoute: AppInventoryReportsRoute,

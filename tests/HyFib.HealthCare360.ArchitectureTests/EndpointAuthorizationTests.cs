@@ -134,6 +134,9 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/hr/attendance/device-punches",
         "POST /api/v1/rpm/ingest",
 
+        // Cold-chain data loggers: the unit's own key (hash compared in constant time), rate-limited per key.
+        "POST /api/v1/inventory/cold-chain/logger/readings",
+
         // HC360 lab agents: an enrolled, unrevoked lab agent's device id and secret (hash compared in constant time); the
         // relay serves only the analysers assigned to that agent.
         "POST /api/v1/integrations/lab/agent/heartbeat",

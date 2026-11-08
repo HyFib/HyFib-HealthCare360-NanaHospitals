@@ -25,6 +25,7 @@ import { inpatientKeys, type WardRound, type WardRoundPatient } from '@/modules/
 import { RecordVisitDialog } from '@/modules/inpatient/ConsultantVisits';
 import { dayOfStayLabel, roundSummaryText, sortRound, summariseRound, type RoundOrder } from './worklist';
 import { WorklistPatient } from './WorklistParts';
+import { news2Label, news2Tone } from '@/modules/inpatient/wardCareApi';
 
 const useStyles = makeStyles({
   toolbar: {
@@ -254,8 +255,19 @@ function Today({ patient: p }: { patient: WardRoundPatient }) {
           <Text>Not seen today</Text>
         </span>
       )}
-      {(p.vitalsSeverity || p.resultsToReview > 0) && (
+      {(p.vitalsSeverity || p.resultsToReview > 0 || typeof p.news2Score === 'number') && (
         <span className={styles.chips}>
+          {typeof p.news2Score === 'number' && (
+            <Badge
+              size="small"
+              appearance={p.news2Response === 'Routine' ? 'tint' : 'filled'}
+              color={news2Tone(p.news2Response)}
+              aria-label={`${news2Label(p.news2Score, p.news2Complete ?? true)}${p.hasOpenEscalation ? ', escalation waiting for a response' : ''}`}
+            >
+              {news2Label(p.news2Score, p.news2Complete ?? true)}
+              {p.hasOpenEscalation ? ' · escalated' : ''}
+            </Badge>
+          )}
           {p.vitalsSeverity && (
             <Tooltip
               content={`${p.vitalsFlags.join(' ')} Recorded ${formatRelative(p.vitalsAt)}.`}

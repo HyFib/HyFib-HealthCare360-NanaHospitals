@@ -120,3 +120,53 @@ internal sealed class MedicationAdministrationConfiguration : IEntityTypeConfigu
         b.HasIndex(x => new { x.MedicationOrderId, x.ScheduledAt }).IsUnique().HasFilter("medication_order_id IS NOT NULL AND NOT is_deleted");
     }
 }
+
+internal sealed class EarlyWarningEscalationConfiguration : IEntityTypeConfiguration<EarlyWarningEscalation>
+{
+    public void Configure(EntityTypeBuilder<EarlyWarningEscalation> b)
+    {
+        b.ToTable("early_warning_escalations", InpatientSchema.Name);
+        b.Property(x => x.Summary).HasMaxLength(200);
+        b.Property(x => x.RespondedByName).HasMaxLength(200);
+        b.Property(x => x.Response).HasMaxLength(1000);
+        b.Ignore(x => x.MinutesToRespond);
+        b.HasOne<Admission>().WithMany().HasForeignKey(x => x.AdmissionId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.AdmissionId, x.Status, x.Level });
+        b.HasIndex(x => new { x.WardId, x.Status });
+        b.HasIndex(x => x.PatientId);
+    }
+}
+
+internal sealed class CarePlanProblemConfiguration : IEntityTypeConfiguration<CarePlanProblem>
+{
+    public void Configure(EntityTypeBuilder<CarePlanProblem> b)
+    {
+        b.ToTable("care_plan_problems", InpatientSchema.Name);
+        b.Property(x => x.ProblemCode).HasMaxLength(32);
+        b.Property(x => x.Title).HasMaxLength(200);
+        b.Property(x => x.Goal).HasMaxLength(500);
+        b.Property(x => x.InterventionsJson).HasColumnType("jsonb");
+        b.Property(x => x.StartedByName).HasMaxLength(200);
+        b.Property(x => x.ResolvedByName).HasMaxLength(200);
+        b.Property(x => x.ResolutionNote).HasMaxLength(500);
+        b.Ignore(x => x.Interventions);
+        b.HasOne<Admission>().WithMany().HasForeignKey(x => x.AdmissionId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.AdmissionId, x.Status });
+        b.HasIndex(x => x.PatientId);
+    }
+}
+
+internal sealed class CarePlanEvaluationConfiguration : IEntityTypeConfiguration<CarePlanEvaluation>
+{
+    public void Configure(EntityTypeBuilder<CarePlanEvaluation> b)
+    {
+        b.ToTable("care_plan_evaluations", InpatientSchema.Name);
+        b.Property(x => x.Note).HasMaxLength(500);
+        b.Property(x => x.EvaluatedByName).HasMaxLength(200);
+        b.HasOne<CarePlanProblem>().WithMany().HasForeignKey(x => x.ProblemId).OnDelete(DeleteBehavior.Restrict);
+
+        // One evaluation of a problem per shift.
+        b.HasIndex(x => new { x.ProblemId, x.DutyDate, x.Shift }).IsUnique();
+        b.HasIndex(x => x.AdmissionId);
+    }
+}

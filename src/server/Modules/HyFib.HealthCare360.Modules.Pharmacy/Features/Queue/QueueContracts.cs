@@ -24,7 +24,8 @@ public sealed record QueueListItem(
     bool IsRefill,
     DateTimeOffset SignedAt,
     DateTimeOffset ReceivedAt,
-    int WaitingMinutes);
+    int WaitingMinutes,
+    bool HasUnacknowledgedOverride = false);
 
 /// <param name="Available">Sellable quantity of the prescribed item in the chosen store (when a store is given).</param>
 /// <param name="Schedule">
@@ -54,7 +55,11 @@ public sealed record QueueLineDto(
     decimal? Mrp,
     DateOnly? NearestExpiry,
     DrugSchedule? Schedule,
-    bool IsNdps);
+    bool IsNdps,
+    string? SafetyOverride = null,
+    string? OverrideAcknowledgedBy = null,
+    DateTimeOffset? OverrideAcknowledgedAt = null,
+    string? OverrideAcknowledgementNote = null);
 
 public sealed record QueueEntryDetail(
     Guid Id,
@@ -77,7 +82,11 @@ public sealed record QueueEntryDetail(
     Guid? RefillOfEntryId,
     IReadOnlyList<QueueLineDto> Lines,
     uint Version,
-    string? FreeTreatmentReason = null);
+    string? FreeTreatmentReason = null,
+    string? SafetyOverrideReason = null);
+
+/// <summary>The pharmacist's acknowledgement of a line signed over a blocking safety alert, with what they did (optional).</summary>
+public sealed record AcknowledgeOverrideRequest(string? Note);
 
 /// <param name="ItemId">Item handed over — the prescribed one, or a generic equivalent (substitution).</param>
 /// <param name="BatchId">Batch scanned at the counter; FEFO when omitted.</param>
@@ -130,6 +139,11 @@ public sealed class DispenseRequestValidator : AbstractValidator<DispenseRequest
         RuleFor(x => x.Payments).Must(p => p.Count <= 6).WithMessage("Split the bill into at most 6 payments.");
         RuleForEach(x => x.Payments).SetValidator(new SalePaymentValidator());
     }
+}
+
+public sealed class AcknowledgeOverrideRequestValidator : AbstractValidator<AcknowledgeOverrideRequest>
+{
+    public AcknowledgeOverrideRequestValidator() => RuleFor(x => x.Note).SafeText(500);
 }
 
 public sealed class AuthorizeRefillsRequestValidator : AbstractValidator<AuthorizeRefillsRequest>

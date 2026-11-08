@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Modules.SupplyChain.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.SupplyChain.Features.Items;
 
@@ -30,9 +31,9 @@ internal static class ItemEndpoints
         group.MapGet("/items/lookup", Lookup).RequireAnyPermission(SupplyChainPermissions.CatalogReaders);
         group.MapGet("/items/by-code/{code}", ByCode).RequireAnyPermission(SupplyChainPermissions.CatalogReaders);
         group.MapGet("/items/{id:guid}", Get).RequireAnyPermission(SupplyChainPermissions.CatalogReaders);
-        group.MapPost("/items", (SaveItemRequest r, HospitalDbContext db, DrugClassApprovals classes, CancellationToken ct) => SaveItem(null, r, db, classes, ct))
+        group.MapPost("/items", (SaveItemRequest r, HospitalDbContext db, DrugClassApprovals classes, ItemPriceApprovals prices, CancellationToken ct) => SaveItem(null, r, db, classes, prices, ct))
             .RequirePermission(SupplyChainPermissions.ItemsManage).WithValidation<SaveItemRequest>();
-        group.MapPut("/items/{id:guid}", (Guid id, SaveItemRequest r, HospitalDbContext db, DrugClassApprovals classes, CancellationToken ct) => SaveItem(id, r, db, classes, ct))
+        group.MapPut("/items/{id:guid}", (Guid id, SaveItemRequest r, HospitalDbContext db, DrugClassApprovals classes, ItemPriceApprovals prices, CancellationToken ct) => SaveItem(id, r, db, classes, prices, ct))
             .RequirePermission(SupplyChainPermissions.ItemsManage).WithValidation<SaveItemRequest>().RequireVersion();
     }
 
@@ -168,19 +169,26 @@ internal static class ItemEndpoints
         return item is null ? Error.NotFound(nameof(Item), normalized).ToProblem() : TypedResults.Ok(ToDetail(item));
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, DrugClassApprovals classes, CancellationToken ct)
+    private static async Task<IResult> Get(Guid id, HospitalDbContext db, DrugClassApprovals classes, ItemPriceApprovals prices, CancellationToken ct)
     {
         var item = await db.Set<Item>().AsNoTracking().FirstOrDefaultAsync(i => i.Id == id, ct);
         return item is null
             ? Error.NotFound(nameof(Item), id).ToProblem()
-            : TypedResults.Ok(ToDetail(item) with { PendingClass = await classes.PendingAsync(item.Id, ct) });
+            : TypedResults.Ok(ToDetail(item) with
+            {
+                PendingClass = await classes.PendingAsync(item.Id, ct),
+                PendingPricing = await prices.PendingAsync(item.Id, ct),
+            });
     }
 
     /// <summary>
     /// Saves an item. On an item already in the master, a drug made less strictly handled (<see cref="DrugSafetyClass"/>)
-    /// keeps its class until a second person approves the change (202 with the request); the rest is saved at once.
+    /// keeps its class, and a ceiling price raised or removed or a GST rate changed (<see cref="ItemPricing"/>) keeps the
+    /// item's pricing, until a second person approves the change (202 with the request; with both, the classification's,
+    /// the pricing's waiting beside it in Approvals); the rest is saved at once.
     /// </summary>
-    private static async Task<IResult> SaveItem(Guid? id, SaveItemRequest request, HospitalDbContext db, DrugClassApprovals classes, CancellationToken ct)
+    private static async Task<IResult> SaveItem(
+        Guid? id, SaveItemRequest request, HospitalDbContext db, DrugClassApprovals classes, ItemPriceApprovals prices, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         if (await db.Set<Item>().AnyAsync(i => i.Code == code && i.Id != id, ct))
@@ -201,6 +209,7 @@ internal static class ItemEndpoints
 
         Item item;
         DrugSafetyClass? before = null;
+        ItemPricing? pricedBefore = null;
         if (id is { } existingId)
         {
             var found = await db.Set<Item>().FirstOrDefaultAsync(i => i.Id == existingId, ct);
@@ -211,6 +220,7 @@ internal static class ItemEndpoints
 
             item = found;
             before = DrugSafetyClass.Of(item);
+            pricedBefore = ItemPricing.Of(item);
             if (request.Version is { } version)
             {
                 db.SetExpectedVersion(item, version);
@@ -248,6 +258,7 @@ internal static class ItemEndpoints
         item.Manufacturer = Clean(request.Manufacturer);
         item.Specification = Clean(request.Specification);
         item.CeilingPrice = request.CeilingPrice;
+        item.CeilingNotification = request.CeilingPrice is null ? null : Clean(request.CeilingNotification);
         item.Barcode = barcode;
         item.IsActive = request.IsActive;
 
@@ -281,9 +292,45 @@ internal static class ItemEndpoints
             ask = waiting is null;
         }
 
-        // The item, and the request to handle it less strictly, are kept together or not at all.
+        // A ceiling raised or removed, or another GST rate, keeps the item's pricing until a second person approves; a
+        // ceiling set or lowered applies at once (DPCO: a price cut is in force from its notification).
+        var pricing = ItemPricing.Of(item);
+        var askPrice = false;
+        if (pricedBefore is not null && pricedBefore.IsLoosenedBy(pricing))
+        {
+            var waiting = await prices.PendingAsync(item.Id, ct);
+            if (waiting is not null && waiting.Asked != pricing)
+            {
+                return Error.Conflict(ItemPriceApprovals.WaitingCode,
+                        $"A change to {item.Code} {item.Name}'s ceiling price or GST rate, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.")
+                    .ToProblem();
+            }
+
+            pricedBefore.ApplyTo(item);
+            valid = item.Validate();
+            if (valid.IsFailure)
+            {
+                return valid.Error!.ToProblem();
+            }
+
+            askPrice = waiting is null;
+        }
+
+        // The item, and the requests to loosen its controls, are kept together or not at all.
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        ApprovalRequestDto? accepted = null;
+        if (askPrice)
+        {
+            var approval = await prices.AskAsync(item, pricedBefore!, pricing, request.PriceChangeReason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            accepted = approval.Value;
+        }
+
         if (ask)
         {
             var approval = await classes.AskAsync(item, before!, asked, request.ClassChangeReason, ct);
@@ -292,8 +339,13 @@ internal static class ItemEndpoints
                 return approval.Error!.ToProblem();
             }
 
+            accepted = approval.Value;
+        }
+
+        if (accepted is not null)
+        {
             await transaction.CommitAsync(ct);
-            return TypedResults.Accepted($"/api/v1/approvals/{approval.Value.Id}", approval.Value);
+            return TypedResults.Accepted($"/api/v1/approvals/{accepted.Id}", accepted);
         }
 
         await transaction.CommitAsync(ct);
@@ -304,7 +356,7 @@ internal static class ItemEndpoints
         i.Id, i.Code, i.Name, i.GenericName, i.BrandName, i.Type, i.CategoryId, i.Strength, i.DosageForm, i.PackSize, i.BaseUnit, i.PurchaseUnit,
         i.PurchaseUnitFactor, i.HsnCode, i.GstRate, i.Schedule, i.IsControlled, i.IsColdChain, i.VedClass, i.ReorderLevel, i.ReorderQuantity,
         i.MinimumStock, i.MaximumStock, i.Manufacturer, i.Barcode, i.IsActive, i.RequiresPrescription, i.RequiresRegister, i.Version,
-        i.Specification, i.CeilingPrice, i.IsHighAlert);
+        i.Specification, i.CeilingPrice, i.IsHighAlert, CeilingNotification: i.CeilingNotification);
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
