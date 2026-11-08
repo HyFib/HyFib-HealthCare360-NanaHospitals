@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   affectedDrugs,
   alertsFromProblem,
+  doseLimitLoosens,
+  interactionLoosens,
   emptyDecision,
   groupAlerts,
   signBlockers,
@@ -144,5 +146,36 @@ describe('affectedDrugs', () => {
     ];
     expect(affectedDrugs(duplicate, items)).toEqual(['Dolo 650', 'Brufen 400']);
     expect(affectedDrugs(minor, items)).toEqual([]);
+  });
+});
+
+describe('loosening the drug-safety tables', () => {
+  const major = { drugA: 'warfarin', drugB: 'aspirin', severity: 'Major' as const, isActive: true };
+  const limit = { genericName: 'paracetamol', maxDailyDoseMg: 4000, route: 'oral', isActive: true };
+
+  it('asks for approval to switch an interaction off, make it less severe or move it to other drugs', () => {
+    expect(interactionLoosens(major, { ...major, isActive: false })).toBe(true);
+    expect(interactionLoosens(major, { ...major, severity: 'Moderate' })).toBe(true);
+    expect(interactionLoosens(major, { ...major, drugB: 'heparin' })).toBe(true);
+  });
+
+  it('saves at once an interaction made stricter, the same pair written the other way round, or one switched off already', () => {
+    expect(interactionLoosens({ ...major, severity: 'Minor' }, major)).toBe(false);
+    expect(interactionLoosens(major, { ...major, drugA: 'Aspirin ', drugB: 'Warfarin' })).toBe(false);
+    expect(interactionLoosens({ ...major, isActive: false }, { ...major, isActive: false, severity: 'Minor' })).toBe(
+      false,
+    );
+  });
+
+  it('asks for approval to raise a maximum dose, switch it off or check fewer routes', () => {
+    expect(doseLimitLoosens(limit, { ...limit, maxDailyDoseMg: 6000 })).toBe(true);
+    expect(doseLimitLoosens(limit, { ...limit, isActive: false })).toBe(true);
+    expect(doseLimitLoosens(limit, { ...limit, route: 'iv' })).toBe(true);
+    expect(doseLimitLoosens({ ...limit, route: null }, limit)).toBe(true);
+  });
+
+  it('saves at once a maximum dose lowered or checked on every route', () => {
+    expect(doseLimitLoosens(limit, { ...limit, maxDailyDoseMg: 3000 })).toBe(false);
+    expect(doseLimitLoosens(limit, { ...limit, route: '' })).toBe(false);
   });
 });

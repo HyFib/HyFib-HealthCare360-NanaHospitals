@@ -24,7 +24,8 @@ const manifest: ModuleManifest = {
     {
       label: 'Drug safety tables',
       to: '/emr/drug-safety',
-      permission: 'clinical.templates.manage',
+      // The pharmacy and therapeutics committee reads the tables it approves changes to.
+      permission: ['clinical.templates.manage', 'clinical.drug_safety.approve'],
       keywords: ['interactions', 'dose limits', 'maximum dose', 'prescribing checks'],
     },
     {

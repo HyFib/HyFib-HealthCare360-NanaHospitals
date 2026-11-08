@@ -184,3 +184,54 @@ export function affectedDrugs(alert: SafetyAlert, items: readonly { id: string; 
 export function severityTone(severity: SafetyAlertSeverity): 'danger' | 'warning' | 'informative' {
   return severity === 'Major' ? 'danger' : severity === 'Moderate' || severity === 'Minor' ? 'warning' : 'informative';
 }
+
+/** A drug interaction as the prescribing check reads it. */
+export interface InteractionRule {
+  drugA: string;
+  drugB: string;
+  severity: 'Major' | 'Moderate' | 'Minor';
+  isActive: boolean;
+}
+
+/** A maximum daily dose as the prescribing check reads it. */
+export interface DoseLimitRule {
+  genericName: string;
+  maxDailyDoseMg: number;
+  route: string | null;
+  isActive: boolean;
+}
+
+const SEVERITY_RANK: Record<InteractionRule['severity'], number> = { Minor: 0, Moderate: 1, Major: 2 };
+const drugName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ');
+const pair = (rule: InteractionRule) => [drugName(rule.drugA), drugName(rule.drugB)].sort().join('+');
+
+/**
+ * Whether saving an interaction loosens it, so it waits for the pharmacy and therapeutics committee (the server's
+ * DrugSafetyChanges, which decides): one that alerts now, switched off, made less severe or moved to other drugs.
+ */
+export function interactionLoosens(before: InteractionRule, after: InteractionRule): boolean {
+  if (!before.isActive) {
+    return false;
+  }
+  return (
+    !after.isActive || pair(before) !== pair(after) || SEVERITY_RANK[after.severity] < SEVERITY_RANK[before.severity]
+  );
+}
+
+/**
+ * Whether saving a maximum dose loosens it: one checked now, switched off, raised, moved to another drug, or checked on a
+ * narrower route (no route checks every route).
+ */
+export function doseLimitLoosens(before: DoseLimitRule, after: DoseLimitRule): boolean {
+  if (!before.isActive) {
+    return false;
+  }
+  const route = (r: string | null) => (r && r.trim() ? r.trim().toLowerCase() : null);
+  const narrower = route(before.route) !== route(after.route) && route(after.route) !== null;
+  return (
+    !after.isActive ||
+    drugName(before.genericName) !== drugName(after.genericName) ||
+    narrower ||
+    after.maxDailyDoseMg > before.maxDailyDoseMg
+  );
+}

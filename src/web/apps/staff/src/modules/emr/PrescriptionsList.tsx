@@ -15,6 +15,7 @@ import {
   MenuTrigger,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Spinner,
   Text,
   tokens,
@@ -190,7 +191,16 @@ function RefillBody({
                 <MessageBarBody>No refills remain on this prescription. A new prescription is needed.</MessageBarBody>
               </MessageBar>
             )}
-            {(alerts !== null || hasControlled) && (
+            {hasControlled && (
+              <MessageBar intent="warning" layout="multiline">
+                <MessageBarBody>
+                  <MessageBarTitle>Not refilled</MessageBarTitle>
+                  It has a controlled drug (Schedule H1 or X, or NDPS), which is not repeated on a refill: the doctor
+                  writes a new prescription for it.
+                </MessageBarBody>
+              </MessageBar>
+            )}
+            {alerts !== null && !hasControlled && (
               <SafetyReview
                 grouped={grouped}
                 requirements={requirements}
@@ -216,7 +226,7 @@ function RefillBody({
         <Button
           appearance="primary"
           icon={refill.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowSyncRegular />}
-          disabled={!rx || rx.refillsRemaining <= 0 || blockers.length > 0 || refill.isPending}
+          disabled={!rx || rx.refillsRemaining <= 0 || hasControlled || blockers.length > 0 || refill.isPending}
           // Keeps focus while issuing, and when the safety check asks for a decision: a disabled button drops it.
           disabledFocusable={refill.isPending || blockers.length > 0}
           onClick={() => {

@@ -1,5 +1,6 @@
 import type {
   AssessmentDto,
+  AwaitingCountersignatureItem,
   HandoverDto,
   IntakeOutputChart,
   MarEntryDto,
@@ -130,6 +131,8 @@ const MAR: MarEntryDto[] = [
     witnessName: null,
     notes: null,
     version: 1,
+    needsWitness: false,
+    heldBecause: null,
   },
   {
     id: id('04'),
@@ -148,6 +151,8 @@ const MAR: MarEntryDto[] = [
     witnessName: null,
     notes: null,
     version: 2,
+    needsWitness: false,
+    heldBecause: null,
   },
 ];
 
@@ -172,6 +177,24 @@ const order = (
   stoppedAt: null,
   stopReason: null,
   roundTimes: ['08:00:00', '20:00:00'],
+  mode: 'Written',
+  isEmergency: false,
+  orderedByPractitionerId: null,
+  orderedByName: null,
+  enteredByName: null,
+  awaitingCountersignature: false,
+  countersignDueAt: null,
+  countersignOverdue: false,
+  countersignedAt: null,
+  countersignedByName: null,
+  stopPending: false,
+  stopRequestedAt: null,
+  stopRequestedByName: null,
+  stopRequestReason: null,
+  stopCountersignOverdue: false,
+  dosesHeld: false,
+  canCountersign: false,
+  version: 1,
   ...overrides,
 });
 
@@ -299,7 +322,36 @@ const CHART: Record<string, unknown> = {
   assessments: ASSESSMENTS,
 };
 
+// A telephone order the night nurse wrote in the consultant's name, waiting for his countersignature.
+const AWAITING: AwaitingCountersignatureItem[] = [
+  {
+    order: order({
+      id: id('24'),
+      prescriptionId: null,
+      drugName: 'Inj. Ondansetron',
+      genericName: 'Ondansetron',
+      strength: '4 mg',
+      dose: '4 mg',
+      frequency: 'TDS',
+      source: 'Manual',
+      mode: 'Telephone',
+      orderedByName: 'Dr. Anil Kapoor',
+      enteredByName: 'Sr. Kavita Pawar',
+      awaitingCountersignature: true,
+      countersignDueAt: minutesFromNow(60 * 20),
+    }),
+    admissionId: SUNIL.admissionId,
+    patientId: SUNIL.patientId,
+    uhid: SUNIL.uhid,
+    patientName: SUNIL.patientName,
+    wardId: WARD_ID,
+    wardName: 'General Ward — Male',
+    bedLabel: bed(1),
+  },
+];
+
 export const ANSWERS: FakeAnswers = {
+  'GET /api/v1/nursing/medication-orders/awaiting-countersignature': AWAITING,
   [`GET /api/v1/nursing/wards/${WARD_ID}/mar/due`]: MAR_DUE,
   [`GET /api/v1/nursing/wards/${WARD_ID}/handovers`]: WARD_HANDOVERS,
   // Every in-patient's chart reads the same (the station opens whichever bed was chosen last).

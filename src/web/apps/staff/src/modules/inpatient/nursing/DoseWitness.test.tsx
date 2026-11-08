@@ -71,13 +71,31 @@ const morphineOrder: NursingApi.MedicationOrderDto = {
   stoppedAt: null,
   stopReason: null,
   roundTimes: [],
+  mode: 'Written',
+  isEmergency: false,
+  orderedByPractitionerId: null,
+  orderedByName: null,
+  enteredByName: null,
+  awaitingCountersignature: false,
+  countersignDueAt: null,
+  countersignOverdue: false,
+  countersignedAt: null,
+  countersignedByName: null,
+  stopPending: false,
+  stopRequestedAt: null,
+  stopRequestedByName: null,
+  stopRequestReason: null,
+  stopCountersignOverdue: false,
+  dosesHeld: false,
+  canCountersign: false,
+  version: 1,
 };
 
-function openExtra(order: NursingApi.MedicationOrderDto = morphineOrder) {
+function openExtra(order: NursingApi.MedicationOrderDto | null = morphineOrder) {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <FluentProvider theme={webLightTheme}>
-        <AdHocDoseDialog admissionId="a1" patientId="p1" orders={[order]} onClose={vi.fn()} />
+        <AdHocDoseDialog admissionId="a1" patientId="p1" orders={order ? [order] : []} onClose={vi.fn()} />
       </FluentProvider>
     </QueryClientProvider>,
   );
@@ -257,5 +275,15 @@ describe('an extra dose of a controlled drug given now', () => {
 
     expect(screen.queryByLabelText(/Witness's user name/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Record as given' })).toBeEnabled();
+  });
+
+  it('is asked for a dose with no order behind it, whatever the medicine', async () => {
+    openExtra(null);
+
+    expect(screen.getByRole('combobox', { name: 'Medicine' })).toHaveDisplayValue('A dose with no order (witnessed)');
+    await userEvent.type(screen.getByRole('textbox', { name: /Medicine name/ }), 'Paracetamol 650 mg Tablet');
+    await userEvent.type(screen.getByRole('textbox', { name: /^Dose/ }), '650 mg');
+    expect(screen.getByLabelText(/Witness's user name/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record as given' })).toBeDisabled();
   });
 });

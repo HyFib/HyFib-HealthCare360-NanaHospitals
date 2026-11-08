@@ -436,6 +436,24 @@ const order = (
   stoppedAt: null,
   stopReason: null,
   roundTimes: [],
+  mode: 'Written',
+  isEmergency: false,
+  orderedByPractitionerId: null,
+  orderedByName: null,
+  enteredByName: null,
+  awaitingCountersignature: false,
+  countersignDueAt: null,
+  countersignOverdue: false,
+  countersignedAt: null,
+  countersignedByName: null,
+  stopPending: false,
+  stopRequestedAt: null,
+  stopRequestedByName: null,
+  stopRequestReason: null,
+  stopCountersignOverdue: false,
+  dosesHeld: false,
+  canCountersign: false,
+  version: 1,
   ...overrides,
 });
 
@@ -498,6 +516,8 @@ const marEntry = (
   witnessName: null,
   notes: null,
   version: 1,
+  needsWitness: false,
+  heldBecause: null,
   ...overrides,
 });
 

@@ -149,6 +149,7 @@ import { Route as AppMtpIndexRouteImport } from './routes/_app/mtp/index'
 import { Route as AppMtpCaseIdRouteImport } from './routes/_app/mtp/$caseId'
 import { Route as AppMtpRegisterRouteImport } from './routes/_app/mtp/register'
 import { Route as AppNursingIndexRouteImport } from './routes/_app/nursing/index'
+import { Route as AppNursingCountersignaturesRouteImport } from './routes/_app/nursing/countersignatures'
 import { Route as AppOtIndexRouteImport } from './routes/_app/ot/index'
 import { Route as AppOtBookRouteImport } from './routes/_app/ot/book'
 import { Route as AppOtImplantsRouteImport } from './routes/_app/ot/implants'
@@ -1050,6 +1051,12 @@ const AppNursingIndexRoute = AppNursingIndexRouteImport.update({
   path: '/nursing/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppNursingCountersignaturesRoute =
+  AppNursingCountersignaturesRouteImport.update({
+    id: '/nursing/countersignatures',
+    path: '/nursing/countersignatures',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppOtIndexRoute = AppOtIndexRouteImport.update({
   id: '/ot/',
   path: '/ot/',
@@ -2188,6 +2195,7 @@ export interface FileRoutesByFullPath {
   '/mrd/requests': typeof AppMrdRequestsRoute
   '/mtp/$caseId': typeof AppMtpCaseIdRoute
   '/mtp/register': typeof AppMtpRegisterRoute
+  '/nursing/countersignatures': typeof AppNursingCountersignaturesRoute
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
@@ -2522,6 +2530,7 @@ export interface FileRoutesByTo {
   '/mrd/requests': typeof AppMrdRequestsRoute
   '/mtp/$caseId': typeof AppMtpCaseIdRoute
   '/mtp/register': typeof AppMtpRegisterRoute
+  '/nursing/countersignatures': typeof AppNursingCountersignaturesRoute
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
@@ -2858,6 +2867,7 @@ export interface FileRoutesById {
   '/_app/mrd/requests': typeof AppMrdRequestsRoute
   '/_app/mtp/$caseId': typeof AppMtpCaseIdRoute
   '/_app/mtp/register': typeof AppMtpRegisterRoute
+  '/_app/nursing/countersignatures': typeof AppNursingCountersignaturesRoute
   '/_app/ot/book': typeof AppOtBookRoute
   '/_app/ot/implants': typeof AppOtImplantsRoute
   '/_app/ot/theatres': typeof AppOtTheatresRoute
@@ -3194,6 +3204,7 @@ export interface FileRouteTypes {
     | '/mrd/requests'
     | '/mtp/$caseId'
     | '/mtp/register'
+    | '/nursing/countersignatures'
     | '/ot/book'
     | '/ot/implants'
     | '/ot/theatres'
@@ -3528,6 +3539,7 @@ export interface FileRouteTypes {
     | '/mrd/requests'
     | '/mtp/$caseId'
     | '/mtp/register'
+    | '/nursing/countersignatures'
     | '/ot/book'
     | '/ot/implants'
     | '/ot/theatres'
@@ -3863,6 +3875,7 @@ export interface FileRouteTypes {
     | '/_app/mrd/requests'
     | '/_app/mtp/$caseId'
     | '/_app/mtp/register'
+    | '/_app/nursing/countersignatures'
     | '/_app/ot/book'
     | '/_app/ot/implants'
     | '/_app/ot/theatres'
@@ -5074,6 +5087,13 @@ declare module '@tanstack/react-router' {
       path: '/nursing'
       fullPath: '/nursing/'
       preLoaderRoute: typeof AppNursingIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/nursing/countersignatures': {
+      id: '/_app/nursing/countersignatures'
+      path: '/nursing/countersignatures'
+      fullPath: '/nursing/countersignatures'
+      preLoaderRoute: typeof AppNursingCountersignaturesRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/ot/': {
@@ -6538,6 +6558,7 @@ interface AppRouteChildren {
   AppMrdRequestsRoute: typeof AppMrdRequestsRoute
   AppMtpCaseIdRoute: typeof AppMtpCaseIdRoute
   AppMtpRegisterRoute: typeof AppMtpRegisterRoute
+  AppNursingCountersignaturesRoute: typeof AppNursingCountersignaturesRoute
   AppOtBookRoute: typeof AppOtBookRoute
   AppOtImplantsRoute: typeof AppOtImplantsRoute
   AppOtTheatresRoute: typeof AppOtTheatresRoute
@@ -6871,6 +6892,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppMrdRequestsRoute: AppMrdRequestsRoute,
   AppMtpCaseIdRoute: AppMtpCaseIdRoute,
   AppMtpRegisterRoute: AppMtpRegisterRoute,
+  AppNursingCountersignaturesRoute: AppNursingCountersignaturesRoute,
   AppOtBookRoute: AppOtBookRoute,
   AppOtImplantsRoute: AppOtImplantsRoute,
   AppOtTheatresRoute: AppOtTheatresRoute,

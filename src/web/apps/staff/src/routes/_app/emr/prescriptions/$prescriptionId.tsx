@@ -179,6 +179,15 @@ function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto 
               </MessageBarBody>
             </MessageBar>
           )}
+          {rx.refilledByName && (
+            <MessageBar intent="info" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle>A refill</MessageBarTitle>
+                Issued by {rx.refilledByName} in {rx.practitionerName ?? "the doctor's"} name, as an authorised refill
+                of an earlier prescription.
+              </MessageBarBody>
+            </MessageBar>
+          )}
           {rx.safetyOverrideReason && (
             <MessageBar intent="warning" layout="multiline">
               <MessageBarBody>

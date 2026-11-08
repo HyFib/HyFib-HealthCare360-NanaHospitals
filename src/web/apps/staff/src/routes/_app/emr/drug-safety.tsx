@@ -46,7 +46,7 @@ function DrugSafetyPage() {
     <Page>
       <PageHeader
         title="Drug safety tables"
-        subtitle="Checked on every prescription before signing. Major interactions and doses above the limit block signing unless the doctor gives a reason."
+        subtitle="Checked on every prescription before signing. Major interactions and doses above the limit block signing unless the doctor gives a reason. Switching an alert off or weakening it waits for approval by the pharmacy and therapeutics committee."
         actions={
           canManage && (
             <Button
@@ -172,9 +172,15 @@ function InteractionsTable({
           {
             key: 'active',
             header: 'Active',
-            width: 90,
+            width: 150,
             render: (i) => (
-              <StatusBadge status={i.isActive ? 'Active' : 'Inactive'} tone={i.isActive ? 'success' : 'informative'} />
+              <span>
+                <StatusBadge
+                  status={i.isActive ? 'Active' : 'Inactive'}
+                  tone={i.isActive ? 'success' : 'informative'}
+                />
+                {i.approvalWaitingSince && <Caption1 block>Change waiting for approval</Caption1>}
+              </span>
             ),
           },
         ]}
@@ -238,9 +244,15 @@ function DoseLimitsTable({ canManage, onEdit }: { canManage: boolean; onEdit: (l
           {
             key: 'active',
             header: 'Active',
-            width: 90,
+            width: 150,
             render: (l) => (
-              <StatusBadge status={l.isActive ? 'Active' : 'Inactive'} tone={l.isActive ? 'success' : 'informative'} />
+              <span>
+                <StatusBadge
+                  status={l.isActive ? 'Active' : 'Inactive'}
+                  tone={l.isActive ? 'success' : 'informative'}
+                />
+                {l.approvalWaitingSince && <Caption1 block>Change waiting for approval</Caption1>}
+              </span>
             ),
           },
         ]}

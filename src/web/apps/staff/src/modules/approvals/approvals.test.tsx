@@ -118,6 +118,32 @@ const PASSWORD_HANDOVER: ApprovalRequestDto = {
   requestedByName: 'Hospital Admin',
 };
 
+/** A drug interaction made less severe: the committee reads it now and as asked, and what it switches off. */
+const INTERACTION_LOOSENED: ApprovalRequestDto = {
+  ...CREDIT_NOTE,
+  kind: 'clinical.drug_interaction',
+  title: 'Drug interaction loosened',
+  summary: 'aspirin + warfarin: Major, blocks signing → Moderate, a warning',
+  details: [
+    { label: 'Interaction', value: 'aspirin + warfarin' },
+    { label: 'Now', value: 'aspirin + warfarin: Major, blocks signing' },
+    { label: 'Asked for', value: 'aspirin + warfarin: Moderate, a warning' },
+    {
+      label: 'What it changes',
+      value:
+        'Prescribing aspirin with warfarin no longer blocks signing: the doctor acknowledges a warning instead, for every prescriber in the hospital.',
+    },
+  ],
+  reason: 'Regraded moderate in the March review',
+  subjectType: 'DrugInteraction',
+  subjectId: '0192a000-0000-7000-8000-00000000f101',
+  patientId: null,
+  requestedByName: 'Dr. Meera Iyer',
+};
+
+/** The pharmacy and therapeutics committee: approves the drug-safety tables loosened. */
+const COMMITTEE = { ...STAFF_USER, roles: ['Pharmacist'], permissions: ['clinical.drug_safety.approve'] };
+
 /** Approves access, and changes to accounts, another administrator asked for. */
 const GRANTS_ADMIN = { ...STAFF_USER, roles: ['HospitalAdmin'], permissions: ['admin.grants.approve'] };
 
@@ -223,6 +249,22 @@ describe('the approvals inbox', SCREEN_TESTS, () => {
     await user.click(screen.getByRole('button', { name: 'Open the settings' }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/admin/settings'));
+    expect(posts()).toHaveLength(0);
+  });
+
+  it('shows the committee an interaction loosened, before and after in words, and opens the drug safety tables', async () => {
+    serve(INTERACTION_LOOSENED, () => ({ ...INTERACTION_LOOSENED, status: 'Approved', canDecide: false }));
+    const { router } = openScreen(`/approvals/${REQUEST_ID}`, COMMITTEE);
+    const user = userEvent.setup();
+
+    expect(await screen.findByText('aspirin + warfarin: Major, blocks signing', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText('aspirin + warfarin: Moderate, a warning')).toBeInTheDocument();
+    expect(screen.getByText(/no longer blocks signing: the doctor acknowledges a warning instead/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Approve/ })).toBeEnabled();
+    await expectNoAxeViolations();
+    await user.click(screen.getByRole('button', { name: 'Open the drug safety tables' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/emr/drug-safety'));
     expect(posts()).toHaveLength(0);
   });
 

@@ -50,6 +50,19 @@ const manifest: ModuleManifest = {
       ],
     },
     {
+      label: 'Orders to countersign',
+      to: '/nursing/countersignatures',
+      permission: ['nursing.mar', 'nursing.in_charge'],
+      keywords: [
+        'verbal order',
+        'telephone order',
+        'countersign',
+        'read back',
+        'stop pending',
+        'overdue countersignature',
+      ],
+    },
+    {
       label: 'Housekeeping',
       to: '/inpatient/housekeeping',
       permission: ['beds.housekeeping', 'beds.manage'],
