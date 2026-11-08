@@ -164,7 +164,7 @@ public static partial class InvoiceRegistrationPayload
         }
         else if (note && document.Preceding is null)
         {
-            problems.Add($"A {noun} names the invoice it changes.");
+            problems.Add($"A {noun} names the invoice it {(document.Type == EInvoiceDocumentTypes.CreditNote ? "reduces" : "raises")}.");
         }
         else if (note && !DocumentNumber().IsMatch(document.Preceding!.Number))
         {

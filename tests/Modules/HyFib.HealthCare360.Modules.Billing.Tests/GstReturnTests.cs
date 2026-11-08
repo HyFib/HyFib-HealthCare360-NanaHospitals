@@ -59,23 +59,23 @@ public sealed class GstReturnTests
         invoice.Number.ShouldBe("NHIB26000001");
         invoice.BuyerGstin.ShouldBe(Corporate);
         invoice.Value.ShouldBe(13800m);
-        invoice.Items.ShouldHaveSingleItem().ShouldBe(new Gstr1Item(18m, new GstAmounts(10000m, 1800m, 0m, 0m, 0m)));
+        invoice.Items.ShouldHaveSingleItem().ShouldBe(new Gstr1Item(18m, new GstReturnAmounts(10000m, 1800m, 0m, 0m, 0m)));
     }
 
     [Fact]
     public void An_inter_state_invoice_to_a_patient_above_one_lakh_is_b2cl_and_its_return_cdnur()
     {
-        Gstr1.B2cl.ShouldHaveSingleItem().Items.ShouldHaveSingleItem().Amounts.ShouldBe(new GstAmounts(107142.86m, 12857.14m, 0m, 0m, 0m));
+        Gstr1.B2cl.ShouldHaveSingleItem().Items.ShouldHaveSingleItem().Amounts.ShouldBe(new GstReturnAmounts(107142.86m, 12857.14m, 0m, 0m, 0m));
         var note = Gstr1.Cdnur.ShouldHaveSingleItem();
         note.Number.ShouldBe("NHPHR2600001");
-        note.Items.ShouldHaveSingleItem().Amounts.ShouldBe(new GstAmounts(10000m, 1200m, 0m, 0m, 0m));
+        note.Items.ShouldHaveSingleItem().Amounts.ShouldBe(new GstReturnAmounts(10000m, 1200m, 0m, 0m, 0m));
     }
 
     [Fact]
     public void B2cs_nets_the_patients_credit_note_into_the_row_of_its_place_and_rate()
     {
         // 1,000 − 100 = 900; CGST 90 − 9 = 81; SGST 81.
-        Gstr1.B2cs.ShouldHaveSingleItem().ShouldBe(new Gstr1B2csRow(false, "33", 18m, new GstAmounts(900m, 0m, 81m, 81m, 0m)));
+        Gstr1.B2cs.ShouldHaveSingleItem().ShouldBe(new Gstr1B2csRow(false, "33", 18m, new GstReturnAmounts(900m, 0m, 81m, 81m, 0m)));
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public sealed class GstReturnTests
     {
         var note = Gstr1.Cdnr.ShouldHaveSingleItem();
         note.Kind.ShouldBe(GstDocumentKind.DebitNote);
-        note.Items.ShouldHaveSingleItem().Amounts.ShouldBe(new GstAmounts(500m, 90m, 0m, 0m, 0m));
+        note.Items.ShouldHaveSingleItem().Amounts.ShouldBe(new GstReturnAmounts(500m, 90m, 0m, 0m, 0m));
     }
 
     [Fact]
@@ -96,13 +96,13 @@ public sealed class GstReturnTests
     public void The_hsn_summary_splits_b2b_from_b2c_and_takes_credit_notes_off()
     {
         Gstr1.HsnB2b.Select(r => (r.Hsn, r.Rate, r.Amounts)).ShouldBe([
-            ("999312", 0m, new GstAmounts(2000m, 0m, 0m, 0m, 0m)),
-            ("999722", 18m, new GstAmounts(10500m, 1890m, 0m, 0m, 0m)), // 10,000 + the debit note's 500
+            ("999312", 0m, new GstReturnAmounts(2000m, 0m, 0m, 0m, 0m)),
+            ("999722", 18m, new GstReturnAmounts(10500m, 1890m, 0m, 0m, 0m)), // 10,000 + the debit note's 500
         ]);
         Gstr1.HsnB2c.Select(r => (r.Hsn, r.Uqc, r.Quantity, r.Rate, r.Amounts)).ShouldBe([
-            ("3004", "NOS", 9m, 12m, new GstAmounts(97142.86m, 11657.14m, 0m, 0m, 0m)), // 10 sold − 1 returned
-            ("999312", "NA", 0m, 0m, new GstAmounts(500m, 0m, 0m, 0m, 0m)),
-            ("999722", "NA", 0m, 18m, new GstAmounts(900m, 0m, 81m, 81m, 0m)),
+            ("3004", "NOS", 9m, 12m, new GstReturnAmounts(97142.86m, 11657.14m, 0m, 0m, 0m)), // 10 sold − 1 returned
+            ("999312", "NA", 0m, 0m, new GstReturnAmounts(500m, 0m, 0m, 0m, 0m)),
+            ("999722", "NA", 0m, 18m, new GstReturnAmounts(900m, 0m, 81m, 81m, 0m)),
         ]);
     }
 
@@ -131,10 +131,10 @@ public sealed class GstReturnTests
 
         // 3.1(a): B2B 10,000 + B2CL 1,07,142.86 + B2CS 900 + debit 500 − credit 10,000 = 1,08,542.86;
         // IGST 1,800 + 12,857.14 + 90 − 1,200 = 13,547.14; CGST and SGST 81 each.
-        r.OutwardTaxable.ShouldBe(new GstAmounts(108542.86m, 13547.14m, 81m, 81m, 0m));
+        r.OutwardTaxable.ShouldBe(new GstReturnAmounts(108542.86m, 13547.14m, 81m, 81m, 0m));
         r.NilAndExempt.ShouldBe(2500m);
-        r.InterStateToUnregistered.ShouldHaveSingleItem().ShouldBe(new Gstr1B2csRow(true, "32", 0m, new GstAmounts(97142.86m, 11657.14m, 0m, 0m, 0m)));
-        r.ItcAllOther.ShouldBe(new GstAmounts(50000m, 0m, 3000m, 3000m, 0m));
+        r.InterStateToUnregistered.ShouldHaveSingleItem().ShouldBe(new Gstr1B2csRow(true, "32", 0m, new GstReturnAmounts(97142.86m, 11657.14m, 0m, 0m, 0m)));
+        r.ItcAllOther.ShouldBe(new GstReturnAmounts(50000m, 0m, 3000m, 3000m, 0m));
         r.PurchasesWithoutGstin.ShouldBe(1);
 
         // 2,500 of 1,11,042.86: the share of turnover CGST rule 42 reverses common credit by.

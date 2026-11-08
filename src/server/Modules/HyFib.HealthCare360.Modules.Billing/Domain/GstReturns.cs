@@ -4,21 +4,21 @@ using System.Text.Json.Nodes;
 namespace HyFib.HealthCare360.Modules.Billing.Domain;
 
 /// <summary>Tax amounts of a row of a return: the taxable value, IGST, CGST, SGST and cess.</summary>
-public sealed record GstAmounts(decimal Taxable, decimal Igst, decimal Cgst, decimal Sgst, decimal Cess)
+public sealed record GstReturnAmounts(decimal Taxable, decimal Igst, decimal Cgst, decimal Sgst, decimal Cess)
 {
-    public static readonly GstAmounts Zero = new(0m, 0m, 0m, 0m, 0m);
+    public static readonly GstReturnAmounts Zero = new(0m, 0m, 0m, 0m, 0m);
 
     public decimal Tax => Igst + Cgst + Sgst + Cess;
 
-    public static GstAmounts Of(GstReturnLine line) => new(line.Taxable, line.Igst, line.Cgst, line.Sgst, line.Cess);
+    public static GstReturnAmounts Of(GstReturnLine line) => new(line.Taxable, line.Igst, line.Cgst, line.Sgst, line.Cess);
 
-    public GstAmounts Plus(GstAmounts other) => new(Taxable + other.Taxable, Igst + other.Igst, Cgst + other.Cgst, Sgst + other.Sgst, Cess + other.Cess);
+    public GstReturnAmounts Plus(GstReturnAmounts other) => new(Taxable + other.Taxable, Igst + other.Igst, Cgst + other.Cgst, Sgst + other.Sgst, Cess + other.Cess);
 
-    public GstAmounts Times(decimal sign) => new(Taxable * sign, Igst * sign, Cgst * sign, Sgst * sign, Cess * sign);
+    public GstReturnAmounts Times(decimal sign) => new(Taxable * sign, Igst * sign, Cgst * sign, Sgst * sign, Cess * sign);
 }
 
 /// <summary>A document's items by rate, as GSTR-1 lists them (one row per rate).</summary>
-public sealed record Gstr1Item(decimal Rate, GstAmounts Amounts);
+public sealed record Gstr1Item(decimal Rate, GstReturnAmounts Amounts);
 
 /// <summary>An invoice in B2B (table 4A) or B2CL (table 5), or a note in CDNR (9B registered) or CDNUR (9B unregistered, original B2CL).</summary>
 public sealed record Gstr1Document(
@@ -32,13 +32,13 @@ public sealed record Gstr1Document(
     GstDocumentKind Kind = GstDocumentKind.Invoice);
 
 /// <summary>A B2CS row (table 7): supplies to unregistered buyers, by place of supply and rate, net of their notes.</summary>
-public sealed record Gstr1B2csRow(bool InterState, string PlaceOfSupply, decimal Rate, GstAmounts Amounts);
+public sealed record Gstr1B2csRow(bool InterState, string PlaceOfSupply, decimal Rate, GstReturnAmounts Amounts);
 
 /// <summary>Table 8: nil-rated, exempt and non-GST supplies, by inter- or intra-state and registered or not.</summary>
 public sealed record Gstr1NilRow(string SupplyType, decimal NilRated, decimal Exempt, decimal NonGst);
 
 /// <summary>Table 12: the HSN summary, by HSN or SAC code, unit and rate.</summary>
-public sealed record Gstr1HsnRow(string Hsn, string Description, string Uqc, decimal Quantity, decimal Rate, GstAmounts Amounts);
+public sealed record Gstr1HsnRow(string Hsn, string Description, string Uqc, decimal Quantity, decimal Rate, GstReturnAmounts Amounts);
 
 /// <summary>Table 13: documents issued, by nature (1 invoices, 4 debit notes, 5 credit notes) and series.</summary>
 public sealed record Gstr1DocumentsIssued(int Nature, string Series, string From, string To, int Total, int Cancelled)
@@ -79,20 +79,20 @@ public sealed record Gstr3bReturn(
     string Gstin,
     int Year,
     int Month,
-    GstAmounts OutwardTaxable,
-    GstAmounts ZeroRated,
+    GstReturnAmounts OutwardTaxable,
+    GstReturnAmounts ZeroRated,
     decimal NilAndExempt,
-    GstAmounts InwardReverseCharge,
+    GstReturnAmounts InwardReverseCharge,
     decimal NonGst,
     IReadOnlyList<Gstr1B2csRow> InterStateToUnregistered,
-    GstAmounts ItcAllOther,
-    GstAmounts ItcReversed,
+    GstReturnAmounts ItcAllOther,
+    GstReturnAmounts ItcReversed,
     int PurchaseInvoices,
     int PurchasesWithoutGstin,
     decimal ExemptShareOfTurnover,
     IReadOnlyList<string> Notes)
 {
-    public GstAmounts ItcNet => ItcAllOther.Plus(ItcReversed.Times(-1m));
+    public GstReturnAmounts ItcNet => ItcAllOther.Plus(ItcReversed.Times(-1m));
 }
 
 /// <summary>
@@ -124,10 +124,10 @@ public static class GstReturnBuilder
         var b2cl = new List<Gstr1Document>();
         var cdnr = new List<Gstr1Document>();
         var cdnur = new List<Gstr1Document>();
-        var b2cs = new Dictionary<(bool, string, decimal), GstAmounts>();
+        var b2cs = new Dictionary<(bool, string, decimal), GstReturnAmounts>();
         var nil = new Dictionary<string, (decimal Nil, decimal Exempt, decimal NonGst)>(StringComparer.Ordinal);
-        var hsnB2b = new Dictionary<(string, string, decimal), (string Description, decimal Quantity, GstAmounts Amounts)>();
-        var hsnB2c = new Dictionary<(string, string, decimal), (string Description, decimal Quantity, GstAmounts Amounts)>();
+        var hsnB2b = new Dictionary<(string, string, decimal), (string Description, decimal Quantity, GstReturnAmounts Amounts)>();
+        var hsnB2c = new Dictionary<(string, string, decimal), (string Description, decimal Quantity, GstReturnAmounts Amounts)>();
 
         foreach (var doc in documents.Where(d => !d.IsCancelled).OrderBy(d => d.Date).ThenBy(d => d.Number, StringComparer.Ordinal))
         {
@@ -158,8 +158,8 @@ public static class GstReturnBuilder
 
                 var key = (line.Hsn?.Trim() ?? string.Empty, line.Uqc, line.Supply == GstSupplyKind.Taxable ? line.Rate : 0m);
                 var table = registered ? hsnB2b : hsnB2c;
-                var before = table.GetValueOrDefault(key, (line.Description, 0m, GstAmounts.Zero));
-                table[key] = (before.Item1, before.Item2 + (sign * line.Quantity), before.Item3.Plus(GstAmounts.Of(line).Times(sign)));
+                var before = table.GetValueOrDefault(key, (line.Description, 0m, GstReturnAmounts.Zero));
+                table[key] = (before.Item1, before.Item2 + (sign * line.Quantity), before.Item3.Plus(GstReturnAmounts.Of(line).Times(sign)));
             }
 
             if (doc.Kind == GstDocumentKind.Invoice)
@@ -247,7 +247,7 @@ public static class GstReturnBuilder
     /// </summary>
     public static Gstr3bReturn Gstr3b(Gstr1Return gstr1, IReadOnlyList<GstPurchase> purchases)
     {
-        var outward = GstAmounts.Zero;
+        var outward = GstReturnAmounts.Zero;
         foreach (var item in gstr1.B2b.Concat(gstr1.B2cl).SelectMany(d => d.Items))
         {
             outward = outward.Plus(item.Amounts);
@@ -268,24 +268,24 @@ public static class GstReturnBuilder
         }
 
         var seller = Gstin.StateCode(gstr1.Gstin);
-        var inter = new Dictionary<string, GstAmounts>(StringComparer.Ordinal);
+        var inter = new Dictionary<string, GstReturnAmounts>(StringComparer.Ordinal);
         foreach (var (pos, amounts) in gstr1.B2cl.SelectMany(d => d.Items.Select(i => (d.PlaceOfSupply, i.Amounts)))
                      .Concat(gstr1.Cdnur.SelectMany(d => d.Items.Select(i => (d.PlaceOfSupply, i.Amounts.Times(d.Kind == GstDocumentKind.CreditNote ? -1m : 1m)))))
                      .Concat(gstr1.B2cs.Where(r => r.InterState).Select(r => (r.PlaceOfSupply, r.Amounts))))
         {
             if (pos != seller)
             {
-                inter[pos] = inter.GetValueOrDefault(pos, GstAmounts.Zero).Plus(amounts);
+                inter[pos] = inter.GetValueOrDefault(pos, GstReturnAmounts.Zero).Plus(amounts);
             }
         }
 
         var nilExempt = gstr1.Nil.Sum(n => n.NilRated + n.Exempt);
         var nonGst = gstr1.Nil.Sum(n => n.NonGst);
-        var itc = GstAmounts.Zero;
+        var itc = GstReturnAmounts.Zero;
         var withGstin = purchases.Where(p => Gstin.IsWellFormed(p.SupplierGstin)).ToList();
         foreach (var purchase in withGstin)
         {
-            itc = itc.Plus(new GstAmounts(purchase.Taxable, purchase.Igst, purchase.Cgst, purchase.Sgst, purchase.Cess));
+            itc = itc.Plus(new GstReturnAmounts(purchase.Taxable, purchase.Igst, purchase.Cgst, purchase.Sgst, purchase.Cess));
         }
 
         var turnover = outward.Taxable + nilExempt + nonGst;
@@ -304,9 +304,9 @@ public static class GstReturnBuilder
 
         notes.Add("Credit is shown as the hospital's purchase records hold it; claim it only as far as it appears in GSTR-2B (CGST rule 36(4)).");
         return new Gstr3bReturn(
-            gstr1.Gstin, gstr1.Year, gstr1.Month, Round(outward), GstAmounts.Zero, Money.Round(nilExempt), GstAmounts.Zero, Money.Round(nonGst),
+            gstr1.Gstin, gstr1.Year, gstr1.Month, Round(outward), GstReturnAmounts.Zero, Money.Round(nilExempt), GstReturnAmounts.Zero, Money.Round(nonGst),
             inter.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new Gstr1B2csRow(true, p.Key, 0m, Round(p.Value))).ToList(),
-            Round(itc), GstAmounts.Zero, purchases.Count, purchases.Count - withGstin.Count, share, notes);
+            Round(itc), GstReturnAmounts.Zero, purchases.Count, purchases.Count - withGstin.Count, share, notes);
     }
 
     /// <summary>
@@ -446,20 +446,20 @@ public static class GstReturnBuilder
 
     private static List<Gstr1Item> ByRate(IEnumerable<GstReturnLine> lines) =>
         lines.GroupBy(l => l.Rate).OrderBy(g => g.Key)
-            .Select(g => new Gstr1Item(g.Key, Round(g.Aggregate(GstAmounts.Zero, (sum, l) => sum.Plus(GstAmounts.Of(l))))))
+            .Select(g => new Gstr1Item(g.Key, Round(g.Aggregate(GstReturnAmounts.Zero, (sum, l) => sum.Plus(GstReturnAmounts.Of(l))))))
             .Where(i => i.Amounts.Taxable != 0m || i.Amounts.Tax != 0m)
             .ToList();
 
-    private static void AddB2cs(Dictionary<(bool, string, decimal), GstAmounts> rows, bool inter, string pos, IEnumerable<GstReturnLine> lines, decimal sign)
+    private static void AddB2cs(Dictionary<(bool, string, decimal), GstReturnAmounts> rows, bool inter, string pos, IEnumerable<GstReturnLine> lines, decimal sign)
     {
         foreach (var line in lines)
         {
             var key = (inter, pos, line.Rate);
-            rows[key] = rows.GetValueOrDefault(key, GstAmounts.Zero).Plus(GstAmounts.Of(line).Times(sign));
+            rows[key] = rows.GetValueOrDefault(key, GstReturnAmounts.Zero).Plus(GstReturnAmounts.Of(line).Times(sign));
         }
     }
 
-    private static List<Gstr1HsnRow> Hsn(Dictionary<(string, string, decimal), (string Description, decimal Quantity, GstAmounts Amounts)> rows) =>
+    private static List<Gstr1HsnRow> Hsn(Dictionary<(string, string, decimal), (string Description, decimal Quantity, GstReturnAmounts Amounts)> rows) =>
         rows.OrderBy(r => r.Key.Item1, StringComparer.Ordinal).ThenBy(r => r.Key.Item3)
             .Select(r => new Gstr1HsnRow(r.Key.Item1, r.Value.Description, r.Key.Item2, Math.Round(r.Value.Quantity, 2), r.Key.Item3, Round(r.Value.Amounts)))
             .ToList();
@@ -483,7 +483,7 @@ public static class GstReturnBuilder
             return (JsonNode)new JsonObject { ["num"] = index + 1, ["itm_det"] = detail };
         }).ToArray());
 
-    private static void Tax(JsonObject target, GstAmounts amounts, bool igstOnly)
+    private static void Tax(JsonObject target, GstReturnAmounts amounts, bool igstOnly)
     {
         if (igstOnly || amounts.Igst != 0m)
         {
@@ -515,7 +515,7 @@ public static class GstReturnBuilder
             ["csamt"] = row.Amounts.Cess,
         }).ToArray());
 
-    private static GstAmounts Round(GstAmounts a) => new(Money.Round(a.Taxable), Money.Round(a.Igst), Money.Round(a.Cgst), Money.Round(a.Sgst), Money.Round(a.Cess));
+    private static GstReturnAmounts Round(GstReturnAmounts a) => new(Money.Round(a.Taxable), Money.Round(a.Igst), Money.Round(a.Cgst), Money.Round(a.Sgst), Money.Round(a.Cess));
 
     private static string Date(DateOnly date) => date.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture);
 }
