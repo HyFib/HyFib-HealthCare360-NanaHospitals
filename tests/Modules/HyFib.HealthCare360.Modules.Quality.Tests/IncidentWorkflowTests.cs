@@ -65,9 +65,12 @@ public sealed class IncidentWorkflowTests
     }
 
     [Fact]
-    public void A_duplicate_sentinel_report_can_be_closed_straight_away()
+    public void A_sentinel_report_does_not_close_straight_from_reported_without_its_analysis()
     {
-        IncidentWorkflow.CanMove(IncidentStatus.Reported, IncidentStatus.Closed, true, IncidentProgress.None, "Duplicate of NHIR2600012").IsSuccess.ShouldBeTrue();
+        // MAKER-CHECKER.md, slice 14: once the way to close a duplicate, now a sentinel event unexamined.
+        IncidentWorkflow.CanMove(IncidentStatus.Reported, IncidentStatus.Closed, true, IncidentProgress.None, "Duplicate of NHIR2600012").Error!.Code
+            .ShouldBe("incident.sentinel_needs_rca");
+        IncidentWorkflow.CanMove(IncidentStatus.Reported, IncidentStatus.Closed, false, IncidentProgress.None, "Duplicate of NHIR2600012").IsSuccess.ShouldBeTrue();
     }
 
     [Fact]

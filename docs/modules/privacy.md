@@ -24,6 +24,7 @@ the DPDP Rules 2025, whose duties for hospitals come into force in May 2027:
 | `privacy.requests.manage` | HospitalAdmin, QualityManager, MrdOfficer | Start, verify the requester, assign, note, decide corrections, erase, answer |
 | `privacy.requests.log` | FrontOffice, HospitalAdmin, QualityManager, MrdOfficer | Record a request at the desk (or from e-mail, letter or phone); record a nominee |
 | `privacy.breaches.manage` | HospitalAdmin, QualityManager | The breach register |
+| `privacy.breaches.approve` | HospitalAdmin | Approve closing a breach, and taking patients off its notification list, asked for by someone else: the Data Protection Officer (grant it to the DPO's or privacy officer's role; MAKER-CHECKER.md, slice 14) |
 | `privacy.retention.manage` | HospitalAdmin | Retention periods, the clean-up and the review list |
 | `privacy.settings.manage` | HospitalAdmin | The grievance officer's contact and the response period |
 
@@ -165,12 +166,12 @@ Availability`. Data categories: `Identity, Contact, Health, Financial, Governmen
 | POST | `/{id}/board-informed` | `{at, reference?}`: the Board was told |
 | POST | `/{id}/extension` | `{until, reference?}`: the Board allowed more time (after the 72 hours) |
 | POST | `/{id}/report-submitted` | `{at, reference?}`: needs the Board told first, and `missingForReport` empty |
-| POST | `/{id}/close` | `{note?}`: a note is required when the report was never sent |
+| POST | `/{id}/close` | `{note?}` → 202 with the approval (`privacy.breach_close`); 422 `privacy.breach_board_report_required` until the detailed report is recorded with the Board's reference. The Data Protection Officer closes it, never the one who asked; `BreachDetail.closureAskedAt` while it waits |
 | POST | `/{id}/cert-in-reported` | `CertInReportedRequest {at, reference?}`: CERT-In was told (after `awareAt`, not in the future); 422 `privacy.breach_not_cert_in` without a `certInType`, `privacy.breach_cert_in_reported` once recorded |
 | GET | `/{id}/report` | → `BreachReport {hospital, legalName, address, registrationNumber, contact, breach, generatedAt}` for printing (audited) |
 | GET | `/{id}/affected` | → `PagedResult<AffectedPatientItem {patientId, uhid, fullName, phone (masked), hasEmail, addedAt, notifiedAt, noticeChannels}>` |
 | POST | `/{id}/affected` | `{patientIds?[], uhids?[]}` (up to 5,000; a merged record counts as the one it was merged into) → `{added, alreadyListed, notFound[]}` |
-| DELETE | `/{id}/affected/{patientId}` | only before the patient was notified |
+| POST | `/{id}/affected/remove` | `RemoveAffectedRequest {patientIds[≤500], reason}` → 202 with the approval (`privacy.breach_affected_remove`); only patients not yet sent the notice (`privacy.breach_already_notified`). They stay listed until the Data Protection Officer approves; audited with each UHID and the reason. `BreachDetail.removalAskedAt` while it waits |
 | POST | `/{id}/notify` | needs `missingForNotice` empty and the breach not closed → `{queued, withoutContact, alreadyNotified}` |
 
 **The 72-hour clock** starts at `awareAt`. `reportDueAt` = `awareAt` + 72 h, or the extension. `reportOverdue` is

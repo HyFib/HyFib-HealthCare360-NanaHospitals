@@ -100,7 +100,8 @@ public sealed class ClinicalNoteSharingTests(HospitalServer server)
 
         // A consent to share the whole record shares every note but the counselling note.
         await frontOffice.PostAsync<Created>($"/api/v1/patients/{patient}/consents",
-            new CaptureConsentRequest(ConsentType.DataSharing, null, true, null, null, null, null, null));
+            new CaptureConsentRequest(ConsentType.DataSharing, null, true, null, null, null, null, null,
+                WitnessConfirmationId: await server.RecordSharingWitnessAsync(frontOffice, patient)));
         var search = await FhirAsync(partner, $"DocumentReference?patient={patient}", null);
         Matches(search.Body).ShouldBe([Id(progress)]);
         Withheld(search.Body).ShouldBeTrue();
@@ -152,7 +153,8 @@ public sealed class ClinicalNoteSharingTests(HospitalServer server)
             // either: it never points another provider at another patient's visit.
             var misfiled = await MisfiledNoteAsync(patient, theirConsultation, stay.Id);
             await frontOffice.PostAsync<Created>($"/api/v1/patients/{patient}/consents",
-                new CaptureConsentRequest(ConsentType.DataSharing, null, true, null, null, null, null, null));
+                new CaptureConsentRequest(ConsentType.DataSharing, null, true, null, null, null, null, null,
+                    WitnessConfirmationId: await server.RecordSharingWitnessAsync(frontOffice, patient)));
             var read = await FhirAsync(partner, $"DocumentReference/note-{misfiled:D}", null);
             read.Status.ShouldBe(200);
             read.Body.TryGetProperty("context", out _).ShouldBeFalse("neither the consultation nor the stay is the patient's");
