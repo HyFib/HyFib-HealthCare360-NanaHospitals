@@ -41,6 +41,7 @@ internal sealed class DoctorPayoutConfiguration : IEntityTypeConfiguration<Docto
         b.Property(x => x.PaidReference).HasMaxLength(64);
         b.Property(x => x.Notes).HasMaxLength(500);
         b.Property(x => x.TdsPercent).HasPrecision(5, 2);
+        b.Property(x => x.TdsRemark).HasMaxLength(1);
         b.HasMany(x => x.Deductions).WithOne().HasForeignKey(x => x.PayoutId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.PayoutNumber).IsUnique();
         b.HasIndex(x => new { x.PractitionerId, x.PeriodFrom });
@@ -56,5 +57,19 @@ internal sealed class DoctorPayoutDeductionConfiguration : IEntityTypeConfigurat
         b.HasKey(x => x.Id);
         b.Property(x => x.Description).HasMaxLength(200);
         b.HasIndex(x => x.PayoutId);
+    }
+}
+
+internal sealed class DoctorTaxProfileConfiguration : IEntityTypeConfiguration<DoctorTaxProfile>
+{
+    public void Configure(EntityTypeBuilder<DoctorTaxProfile> b)
+    {
+        b.ToTable("doctor_tax_profiles", BillingSchema.Name);
+        b.Property(x => x.PanCipher).HasMaxLength(256).IsProtectedValue();
+        b.Property(x => x.PanMasked).HasMaxLength(10);
+        b.Property(x => x.NameAsPerPan).HasMaxLength(75);
+        b.Property(x => x.CertificateNumber).HasMaxLength(20);
+        b.Property(x => x.CertificateRate).HasPrecision(5, 2);
+        b.HasIndex(x => x.PractitionerId).IsUnique().HasFilter("is_deleted = false");
     }
 }

@@ -11,12 +11,16 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// deductions and TDS that a second person approves before it is paid.
 /// </summary>
 public sealed class DoctorFeeService(
-    HospitalDbContext db, INumberSeries numbers, ISettingsService settings, IAuditLogger audit, ICurrentUser currentUser, ShareRuleApprovals ruleApprovals, TimeProvider time)
+    HospitalDbContext db, INumberSeries numbers, ISettingsService settings, IAuditLogger audit, ICurrentUser currentUser, ShareRuleApprovals ruleApprovals, TimeProvider time,
+    DoctorTaxService tax)
 {
     /// <summary>"finalized" (default: fee earned when billed) or "paid" (earned when the patient's share is fully paid).</summary>
     public const string TriggerSetting = "doctorfees.accrual.trigger";
 
-    /// <summary>TDS percentage on professional fees (section 194J); default 10.</summary>
+    /// <summary>
+    /// The s.194J rate on professional fees for a doctor with a PAN, when set; otherwise the year's rate in
+    /// <c>ProfessionalFeeTds</c> (10 %). The threshold and the 20 % without a PAN (s.206AA) apply either way.
+    /// </summary>
     public const string TdsSetting = "doctorfees.tds.percent";
 
     internal async Task<bool> AccruesOnPaymentAsync(Guid facilityId, CancellationToken ct) =>
@@ -263,8 +267,16 @@ public sealed class DoctorFeeService(
         }
 
         var deductions = request.Deductions ?? [];
-        var tdsPercent = request.TdsPercent ?? await settings.GetAsync<decimal?>(TdsSetting, facilityId, ct) ?? 10m;
-        var amounts = PayoutCalculator.Calculate(accruals.Sum(a => a.ShareAmount), deductions.Sum(d => d.Amount), tdsPercent);
+        var gross = Money.Round(accruals.Sum(a => a.ShareAmount));
+        var tdsRate = await settings.GetAsync<decimal?>(TdsSetting, facilityId, ct);
+        var fee = await tax.PayoutTdsAsync(request.PractitionerId, gross, tdsRate, request.TdsPercent, BillingTime.Today(time), ct);
+        if (fee.IsFailure)
+        {
+            return fee.Error!;
+        }
+
+        var deducted = Money.Round(Math.Max(0, deductions.Sum(d => d.Amount)));
+        var amounts = new PayoutAmounts(gross, deducted, fee.Value.RatePercent, fee.Value.Tds, gross - fee.Value.Tds - deducted);
         if (amounts.Net < 0)
         {
             return Error.Rule("doctorfees.negative_payout", "Deductions and TDS exceed the fees of this period.");
@@ -283,6 +295,8 @@ public sealed class DoctorFeeService(
             Deductions = deductions.Select(d => new DoctorPayoutDeduction { Description = d.Description.Trim(), Amount = Money.Round(d.Amount) }).ToList(),
         };
         payout.ApplyAmounts(amounts);
+        payout.TdsBasis = fee.Value.Basis;
+        payout.TdsRemark = fee.Value.Remark;
         db.Add(payout);
         foreach (var accrual in accruals)
         {
