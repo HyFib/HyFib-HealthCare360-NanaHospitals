@@ -35,6 +35,7 @@ import { bedAlertBadge, bedAlertInfo } from '@/modules/inpatient/bedState';
 import { BedAlertBadges } from '@/modules/inpatient/BedTile';
 import { useStoredState, useWardRealtime } from '@/modules/inpatient/hooks';
 import { Assessments } from '@/modules/inpatient/nursing/Assessments';
+import { SafetyEvents } from '@/modules/inpatient/nursing/SafetyEvents';
 import { PatientHandovers, WardHandoverSheet } from '@/modules/inpatient/nursing/Handovers';
 import { IntakeOutput } from '@/modules/inpatient/nursing/IntakeOutput';
 import { MedicationOrders } from '@/modules/inpatient/nursing/MedicationOrders';
@@ -410,7 +411,12 @@ function PatientChart({
           {current === 'notes' && <NursingNotes admissionId={admissionId} canWrite={canChart} />}
           {current === 'handover' && <PatientHandovers admissionId={admissionId} canWrite={canChart} />}
           {current === 'io' && <IntakeOutput admissionId={admissionId} canWrite={canChart} />}
-          {current === 'risk' && <Assessments admissionId={admissionId} canWrite={canChart} />}
+          {current === 'risk' && (
+            <>
+              <Assessments admissionId={admissionId} canWrite={canChart} />
+              <SafetyEvents admissionId={admissionId} canWrite={canChart} />
+            </>
+          )}
         </div>
       </Section>
     </div>

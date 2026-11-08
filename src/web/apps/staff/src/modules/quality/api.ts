@@ -397,6 +397,8 @@ export interface IndicatorDto {
   isActive: boolean;
   latest: IndicatorLatest | null;
   version: number;
+  /** Computed by HC360 from its records (monthly); otherwise entered by hand. */
+  isComputed: boolean;
 }
 
 export interface SaveIndicatorRequest {
@@ -426,6 +428,8 @@ export interface IndicatorValueDto {
   meetsTarget: boolean | null;
   notes: string | null;
   version: number;
+  isComputed: boolean;
+  computedAt: string | null;
 }
 
 export interface IndicatorTrendDto {

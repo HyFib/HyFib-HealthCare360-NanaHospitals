@@ -173,7 +173,9 @@ import { Route as AppPrivacySettingsRouteImport } from './routes/_app/privacy/se
 import { Route as AppPurchaseIndexRouteImport } from './routes/_app/purchase/index'
 import { Route as AppPurchaseVendorsRouteImport } from './routes/_app/purchase/vendors'
 import { Route as AppQualityIndexRouteImport } from './routes/_app/quality/index'
+import { Route as AppQualityAuditsRouteImport } from './routes/_app/quality/audits'
 import { Route as AppQualityDowntimeRouteImport } from './routes/_app/quality/downtime'
+import { Route as AppQualityHaiRouteImport } from './routes/_app/quality/hai'
 import { Route as AppQualityMvpiRouteImport } from './routes/_app/quality/mvpi'
 import { Route as AppQualityMyReportsRouteImport } from './routes/_app/quality/my-reports'
 import { Route as AppQualityReportRouteImport } from './routes/_app/quality/report'
@@ -1173,9 +1175,19 @@ const AppQualityIndexRoute = AppQualityIndexRouteImport.update({
   path: '/quality/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppQualityAuditsRoute = AppQualityAuditsRouteImport.update({
+  id: '/quality/audits',
+  path: '/quality/audits',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppQualityDowntimeRoute = AppQualityDowntimeRouteImport.update({
   id: '/quality/downtime',
   path: '/quality/downtime',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppQualityHaiRoute = AppQualityHaiRouteImport.update({
+  id: '/quality/hai',
+  path: '/quality/hai',
   getParentRoute: () => AppRoute,
 } as any)
 const AppQualityMvpiRoute = AppQualityMvpiRouteImport.update({
@@ -2218,7 +2230,9 @@ export interface FileRoutesByFullPath {
   '/privacy/retention': typeof AppPrivacyRetentionRoute
   '/privacy/settings': typeof AppPrivacySettingsRoute
   '/purchase/vendors': typeof AppPurchaseVendorsRoute
+  '/quality/audits': typeof AppQualityAuditsRoute
   '/quality/downtime': typeof AppQualityDowntimeRoute
+  '/quality/hai': typeof AppQualityHaiRoute
   '/quality/mvpi': typeof AppQualityMvpiRoute
   '/quality/my-reports': typeof AppQualityMyReportsRoute
   '/quality/report': typeof AppQualityReportRoute
@@ -2554,7 +2568,9 @@ export interface FileRoutesByTo {
   '/privacy/retention': typeof AppPrivacyRetentionRoute
   '/privacy/settings': typeof AppPrivacySettingsRoute
   '/purchase/vendors': typeof AppPurchaseVendorsRoute
+  '/quality/audits': typeof AppQualityAuditsRoute
   '/quality/downtime': typeof AppQualityDowntimeRoute
+  '/quality/hai': typeof AppQualityHaiRoute
   '/quality/mvpi': typeof AppQualityMvpiRoute
   '/quality/my-reports': typeof AppQualityMyReportsRoute
   '/quality/report': typeof AppQualityReportRoute
@@ -2892,7 +2908,9 @@ export interface FileRoutesById {
   '/_app/privacy/retention': typeof AppPrivacyRetentionRoute
   '/_app/privacy/settings': typeof AppPrivacySettingsRoute
   '/_app/purchase/vendors': typeof AppPurchaseVendorsRoute
+  '/_app/quality/audits': typeof AppQualityAuditsRoute
   '/_app/quality/downtime': typeof AppQualityDowntimeRoute
+  '/_app/quality/hai': typeof AppQualityHaiRoute
   '/_app/quality/mvpi': typeof AppQualityMvpiRoute
   '/_app/quality/my-reports': typeof AppQualityMyReportsRoute
   '/_app/quality/report': typeof AppQualityReportRoute
@@ -3230,7 +3248,9 @@ export interface FileRouteTypes {
     | '/privacy/retention'
     | '/privacy/settings'
     | '/purchase/vendors'
+    | '/quality/audits'
     | '/quality/downtime'
+    | '/quality/hai'
     | '/quality/mvpi'
     | '/quality/my-reports'
     | '/quality/report'
@@ -3566,7 +3586,9 @@ export interface FileRouteTypes {
     | '/privacy/retention'
     | '/privacy/settings'
     | '/purchase/vendors'
+    | '/quality/audits'
     | '/quality/downtime'
+    | '/quality/hai'
     | '/quality/mvpi'
     | '/quality/my-reports'
     | '/quality/report'
@@ -3903,7 +3925,9 @@ export interface FileRouteTypes {
     | '/_app/privacy/retention'
     | '/_app/privacy/settings'
     | '/_app/purchase/vendors'
+    | '/_app/quality/audits'
     | '/_app/quality/downtime'
+    | '/_app/quality/hai'
     | '/_app/quality/mvpi'
     | '/_app/quality/my-reports'
     | '/_app/quality/report'
@@ -5269,11 +5293,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppQualityIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/quality/audits': {
+      id: '/_app/quality/audits'
+      path: '/quality/audits'
+      fullPath: '/quality/audits'
+      preLoaderRoute: typeof AppQualityAuditsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/quality/downtime': {
       id: '/_app/quality/downtime'
       path: '/quality/downtime'
       fullPath: '/quality/downtime'
       preLoaderRoute: typeof AppQualityDowntimeRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/quality/hai': {
+      id: '/_app/quality/hai'
+      path: '/quality/hai'
+      fullPath: '/quality/hai'
+      preLoaderRoute: typeof AppQualityHaiRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/quality/mvpi': {
@@ -6594,7 +6632,9 @@ interface AppRouteChildren {
   AppPrivacyRetentionRoute: typeof AppPrivacyRetentionRoute
   AppPrivacySettingsRoute: typeof AppPrivacySettingsRoute
   AppPurchaseVendorsRoute: typeof AppPurchaseVendorsRoute
+  AppQualityAuditsRoute: typeof AppQualityAuditsRoute
   AppQualityDowntimeRoute: typeof AppQualityDowntimeRoute
+  AppQualityHaiRoute: typeof AppQualityHaiRoute
   AppQualityMvpiRoute: typeof AppQualityMvpiRoute
   AppQualityMyReportsRoute: typeof AppQualityMyReportsRoute
   AppQualityReportRoute: typeof AppQualityReportRoute
@@ -6929,7 +6969,9 @@ const AppRouteChildren: AppRouteChildren = {
   AppPrivacyRetentionRoute: AppPrivacyRetentionRoute,
   AppPrivacySettingsRoute: AppPrivacySettingsRoute,
   AppPurchaseVendorsRoute: AppPurchaseVendorsRoute,
+  AppQualityAuditsRoute: AppQualityAuditsRoute,
   AppQualityDowntimeRoute: AppQualityDowntimeRoute,
+  AppQualityHaiRoute: AppQualityHaiRoute,
   AppQualityMvpiRoute: AppQualityMvpiRoute,
   AppQualityMyReportsRoute: AppQualityMyReportsRoute,
   AppQualityReportRoute: AppQualityReportRoute,

@@ -174,6 +174,15 @@ dates, default last 7 days, at most 93 days.
 | POST | `/intake-output/{id}/void` | `VoidEntryRequest` → 204 (soft delete with reason) |
 | GET | `/admissions/{admissionId}/assessments?type` | → `AssessmentDto[]` |
 | POST | `/admissions/{admissionId}/assessments/morse` · `/braden` · `/pain` | `MorseAssessmentRequest` · `BradenAssessmentRequest` · `PainAssessmentRequest` → 201 `AssessmentDto` (score, risk, interpretation, responses) |
+| GET | `/admissions/{admissionId}/safety-events` | → `NursingSafetyEventDto[]` (falls and pressure injuries) |
+| POST | `/admissions/{admissionId}/safety-events` | `RecordSafetyEventRequest` (kind Fall or PressureInjury, occurredAt, location, description, immediateAction; a fall: injury None/Minor/Moderate/Major/Death on the NDNQI levels and witnessed; a pressure injury: NPIAP stage, body site, presentOnAdmission) → 201 `NursingSafetyEventDto` with the incident number it raised |
+
+**Falls and pressure injuries** (`NursingSafetyEvent`, table `inpatient.nursing_safety_events`) are never edited (a
+mistake is corrected with a nursing note). Every fall, and a pressure injury that developed in hospital, raises an incident
+in the Quality register in the same save (`IIncidentRegister.ReportAsync`), graded by its harm: a fall by its injury, a
+pressure injury stage 1–2 mild, stage 3 moderate, stage 4, unstageable or deep tissue severe. A pressure injury present on
+admission is documented and raises none, and the pressure ulcer incidence indicator leaves it out. Both count in the
+computed NABH indicators (falls and pressure ulcers per 1,000 patient days, [quality.md](quality.md)).
 
 Reads are PHI-audited and honour restricted records; writes need the chart open (admitted, in discharge, or ≤ 24 h
 after discharge). Vitals are owned by Clinical and are not duplicated here.
