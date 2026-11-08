@@ -393,6 +393,9 @@ Points we would most like checked:
 | 145 | `message.appointment.payment_cancel_staff_only` | Only hospital staff can cancel an appointment because the payment was not received. | भुगतान न मिलने के कारण अपॉइंटमेंट केवल अस्पताल का स्टाफ़ ही रद्द कर सकता है। | |
 | 146 | `message.portal.link_not_usable` | This link no longer works. | यह लिंक अब काम नहीं करता। | |
 | 147 | `message.appointment.video_consent` | Agree to be seen by video to book a video consultation. | वीडियो परामर्श बुक करने के लिए वीडियो पर परामर्श की सहमति दें। | |
+| 148 | `message.privacy.child_guardian_unverified` | The patient is under 18: a parent's or lawful guardian's consent must be verified first, by a code sent to their mobile number or by their identity document. | रोगी की आयु 18 वर्ष से कम है: पहले माता-पिता या वैध अभिभावक की सहमति की जाँच ज़रूरी है, उनके मोबाइल नंबर पर भेजे गए कोड से या उनके पहचान दस्तावेज़ से। | |
+| 149 | `message.privacy.child_marketing` | The patient is under 18: the DPDP Act (s.9(3)) does not allow marketing or targeted messages to children, even with a parent's consent. | रोगी की आयु 18 वर्ष से कम है: DPDP अधिनियम (धारा 9(3)) बच्चों को विपणन या लक्षित संदेश भेजने की अनुमति नहीं देता, माता-पिता की सहमति होने पर भी नहीं। | |
+| 150 | `message.privacy.consent_ended` | This consent has already ended. | यह सहमति पहले ही समाप्त हो चुकी है। | |
 
 ## The validators' own messages (shown next to a field)
 

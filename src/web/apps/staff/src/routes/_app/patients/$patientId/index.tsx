@@ -50,6 +50,7 @@ import { IdentityChecksPanel } from '@/modules/patients/IdentityChecksPanel';
 import { MergePatientDialog } from '@/modules/patients/MergePatientDialog';
 import { PatientChangesWaiting } from '@/modules/patients/PatientChangesWaiting';
 import { PortalAccessPanel } from '@/modules/patients/PortalAccessPanel';
+import { GuardianConsentCard } from '@/modules/privacy/GuardianConsentCard';
 import { PatientPrivacyCard } from '@/modules/privacy/PatientPrivacyCard';
 import { SensitiveCategoriesCard } from '@/modules/patients/SensitiveCategoriesCard';
 
@@ -276,6 +277,7 @@ function PatientProfilePage() {
       </Section>
 
       <PatientPrivacyCard patient={p} />
+      <GuardianConsentCard patientId={p.id} dateOfBirth={p.dateOfBirth ?? null} />
       <SensitiveCategoriesCard patientId={p.id} />
 
       <CheckInDialog
