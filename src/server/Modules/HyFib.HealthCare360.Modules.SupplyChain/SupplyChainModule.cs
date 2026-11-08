@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Adjustments;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Assets;
+using HyFib.HealthCare360.Modules.SupplyChain.Features.ColdChain;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Indents;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Items;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Maintenance;
@@ -36,6 +37,11 @@ public static class SupplyChainPermissions
 
     /// <summary>Checks a goods receipt against the supplier's invoice and posts it into stock: never the one who entered it.</summary>
     public const string GrnApprove = "purchase.grn.approve";
+    /// <summary>Enter a cold-chain unit's temperature (the twice-daily register) and what was done about an excursion.</summary>
+    public const string ColdChainRecord = "inventory.cold_chain.record";
+
+    /// <summary>Set up a store's refrigerators and freezers, their allowed range and their data loggers' keys.</summary>
+    public const string ColdChainManage = "inventory.cold_chain.manage";
     public const string AssetsRead = "assets.read";
     public const string AssetsManage = "assets.manage";
     public const string AssetsMaintenance = "assets.maintenance";
@@ -46,6 +52,8 @@ public static class SupplyChainPermissions
     internal static readonly string[] VendorReaders = [PurchaseManage, PurchaseApprove, GrnReceive, GrnApprove, AssetsManage, AssetsMaintenance];
 
     internal static readonly string[] AssetReaders = [AssetsRead, AssetsManage, AssetsMaintenance];
+
+    internal static readonly string[] ColdChainReaders = [ColdChainRecord, ColdChainManage, StockRead];
 
     private static readonly string[] StoreStaff = [SystemRoles.StoreKeeper, SystemRoles.HospitalAdmin];
     private static readonly string[] Biomedical = [SystemRoles.BiomedicalEngineer, SystemRoles.HospitalAdmin];
@@ -76,6 +84,13 @@ public static class SupplyChainPermissions
         new(GrnApprove, "Purchase", "Check goods receipts against the supplier's invoice and post them into stock (not your own)",
             [SystemRoles.HospitalAdmin, SystemRoles.PurchaseOfficer]),
 
+        // Whoever keeps a store with a refrigerator reads it twice a day: the pharmacy, the store and the wards' nurses (vaccines,
+        // insulin kept on the ward).
+        new(ColdChainRecord, "Inventory", "Record refrigerator and freezer temperatures and the action taken on an excursion",
+            [.. StoreStaff, SystemRoles.Pharmacist, SystemRoles.Nurse]),
+        new(ColdChainManage, "Inventory", "Set up refrigerators and freezers, their allowed temperatures and their data loggers",
+            [.. StoreStaff, SystemRoles.Pharmacist]),
+
         // Ward staff must be able to see equipment and report breakdowns (AST-04).
         new(AssetsRead, "Assets", "View the asset register and report equipment breakdowns",
             [.. Biomedical, SystemRoles.StoreKeeper, SystemRoles.PurchaseOfficer, SystemRoles.Nurse]),
@@ -97,6 +112,7 @@ public sealed class SupplyChainModule : IModule
     {
         services.AddScoped<StockService>();
         services.AddScoped<DrugClassApprovals>();
+        services.AddScoped<ItemPriceApprovals>();
         services.AddScoped<PurchaseService>();
         services.AddScoped<GoodsReceiptService>();
         services.AddScoped<IndentService>();
@@ -105,12 +121,15 @@ public sealed class SupplyChainModule : IModule
         services.AddScoped<InventoryReportService>();
         services.AddScoped<AssetService>();
         services.AddScoped<MaintenanceService>();
+        services.AddScoped<ColdChainService>();
         services.AddHostedService<AssetReminderJob>();
+        services.AddHostedService<ColdChainJob>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         ItemEndpoints.Map(endpoints);
+        ColdChainEndpoints.Map(endpoints);
         StoreEndpoints.Map(endpoints);
         StockEndpoints.Map(endpoints);
         InventoryReportEndpoints.Map(endpoints);
