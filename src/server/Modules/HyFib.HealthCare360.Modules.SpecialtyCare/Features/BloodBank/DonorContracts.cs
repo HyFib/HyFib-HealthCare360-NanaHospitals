@@ -138,3 +138,8 @@ public sealed class RecordLabResultsRequestValidator : AbstractValidator<RecordL
     public RecordLabResultsRequestValidator() =>
         RuleFor(x => x.BloodGroup).NotEqual(BloodGroup.Unknown).WithMessage("Enter the ABO and Rh(D) group.");
 }
+
+public sealed class VerifyLabResultsRequestValidator : AbstractValidator<VerifyLabResultsRequest>
+{
+    public VerifyLabResultsRequestValidator() => RuleFor(x => x.Version).SeenVersion();
+}

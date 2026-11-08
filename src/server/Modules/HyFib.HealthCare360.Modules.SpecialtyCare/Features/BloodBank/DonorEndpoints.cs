@@ -49,7 +49,7 @@ internal static class DonorEndpoints
         // Whoever may enter results and prepare and discard stock verifies another officer's results, which releases the units.
         group.MapPost("/donations/{id:guid}/lab-results/verify", async (Guid id, VerifyLabResultsRequest r, DonorService s, CancellationToken ct) =>
                 (await s.VerifyLabResultsAsync(id, r, ct)).ToNoContent())
-            .RequirePermission(SpecialtyCarePermissions.BloodBankInventory);
+            .RequirePermission(SpecialtyCarePermissions.BloodBankInventory).WithValidation<VerifyLabResultsRequest>();
     }
 
     private static async Task<IResult> ListDonors([AsParameters] PageQuery query, BloodGroup? bloodGroup, bool? eligibleOnly, HospitalDbContext db, TimeProvider time, CancellationToken ct)
