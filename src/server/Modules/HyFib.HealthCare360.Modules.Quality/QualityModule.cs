@@ -1,11 +1,14 @@
+using HyFib.HealthCare360.Modules.Quality.Features.Audits;
 using HyFib.HealthCare360.Modules.Quality.Features.Capas;
 using HyFib.HealthCare360.Modules.Quality.Features.Dashboard;
 using HyFib.HealthCare360.Modules.Quality.Features.Downtime;
+using HyFib.HealthCare360.Modules.Quality.Features.Hai;
 using HyFib.HealthCare360.Modules.Quality.Features.Incidents;
 using HyFib.HealthCare360.Modules.Quality.Features.Indicators;
 using HyFib.HealthCare360.Modules.Quality.Features.Mvpi;
 using HyFib.HealthCare360.Modules.Quality.Features.Risks;
 using HyFib.HealthCare360.Modules.Quality.Services;
+using HyFib.HealthCare360.Modules.Quality.Services.Indicators;
 using HyFib.HealthCare360.Platform.Numbering;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -28,6 +31,15 @@ public static class QualityPermissions
     /// <summary>Record spells of working without HC360 (and drills of it), and sign off their back-entry.</summary>
     public const string DowntimeManage = "quality.downtime.manage";
 
+    /// <summary>Infection surveillance: review possible hospital-acquired infections against the NHSN definitions, see the rates; receives culture alerts.</summary>
+    public const string HaiManage = "quality.hai.manage";
+
+    /// <summary>Record invasive devices (central lines, urinary catheters, ventilation) put in and taken out: the source of device days.</summary>
+    public const string HaiDevices = "quality.hai.devices";
+
+    /// <summary>NABH internal audits: checklists, the schedule, findings and closure.</summary>
+    public const string AuditsManage = "quality.audits.manage";
+
     private static readonly string[] Quality = [SystemRoles.QualityManager, SystemRoles.HospitalAdmin];
 
     internal static IEnumerable<PermissionDefinition> All { get; } =
@@ -38,6 +50,10 @@ public static class QualityPermissions
         new(RisksManage, "Quality", "Maintain the risk register", Quality),
         new(IndicatorsManage, "Quality", "Define quality indicators and record their values", Quality),
         new(DowntimeManage, "Quality", "Record downtime of HC360 and drills of the downtime procedure, and sign off the back-entry of paper records", Quality),
+        new(HaiManage, "Quality", "Review possible hospital-acquired infections against the NHSN definitions and see the HAI rates; receive positive-culture alerts", Quality),
+        new(HaiDevices, "Quality", "Record central lines, urinary catheters and ventilation put in and taken out (device days for infection surveillance)",
+            [SystemRoles.Nurse, SystemRoles.Doctor, SystemRoles.QualityManager, SystemRoles.HospitalAdmin]),
+        new(AuditsManage, "Quality", "Keep the NABH audit checklists, schedule internal audits and close them", Quality),
     ];
 }
 
@@ -63,6 +79,14 @@ public sealed class QualityModule : IModule
         services.AddScoped<AnonymousReportingScope>();
         services.AddScoped<MvpiService>();
         services.AddScoped<MvpiAccess>();
+
+        // Computed NABH indicators, HAI surveillance and internal audits.
+        services.AddScoped<IndicatorMeasures>();
+        services.AddScoped<IndicatorComputation>();
+        services.AddHostedService<IndicatorComputationJob>();
+        services.AddScoped<HaiService>();
+        services.AddHostedService<CultureAlertJob>();
+        services.AddScoped<AuditService>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -75,5 +99,8 @@ public sealed class QualityModule : IModule
         QualityDashboardEndpoints.Map(endpoints);
         DowntimeEndpoints.Map(endpoints);
         MvpiEndpoints.Map(endpoints);
+        ComputedIndicatorEndpoints.Map(endpoints);
+        HaiEndpoints.Map(endpoints);
+        AuditEndpoints.Map(endpoints);
     }
 }

@@ -20,7 +20,8 @@ public sealed record IndicatorDto(
     int SortOrder,
     bool IsActive,
     IndicatorLatest? Latest,
-    uint Version);
+    uint Version,
+    bool IsComputed = false);
 
 /// <summary>Defines a KPI; the multiplier defaults from the unit (100 for %, 1,000 per thousand).</summary>
 public sealed record SaveIndicatorRequest(
@@ -52,7 +53,9 @@ public sealed record IndicatorValueDto(
     decimal Value,
     bool? MeetsTarget,
     string? Notes,
-    uint Version);
+    uint Version,
+    bool IsComputed = false,
+    DateTimeOffset? ComputedAt = null);
 
 public sealed record IndicatorTrendDto(
     Guid IndicatorId,

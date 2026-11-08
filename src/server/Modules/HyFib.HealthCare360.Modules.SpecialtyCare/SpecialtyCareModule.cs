@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Mtp;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.BloodBank;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Dialysis;
@@ -35,6 +36,9 @@ public sealed class SpecialtyCareModule : IModule
         services.AddScoped<PhysioService>();
         services.AddScoped<DonorService>();
         services.AddScoped<TransfusionService>();
+
+        // Quality's indicators (return to OT, SSI and transfusion reaction rates) and infection surveillance read these facts.
+        services.Replace(ServiceDescriptor.Scoped<ISurgeryAndTransfusionFacts, SurgeryAndTransfusionFacts>());
         services.AddScoped<BedsideTransfusionService>();
         services.AddWitnessPurpose(BedsideTransfusionService.BedsideWitness);
         services.AddScoped<BloodInventoryService>();
