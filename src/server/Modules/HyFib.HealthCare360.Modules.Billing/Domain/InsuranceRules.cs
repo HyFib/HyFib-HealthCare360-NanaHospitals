@@ -15,6 +15,16 @@ public static class PayerCoverage
     };
 }
 
+/// <summary>
+/// When an insurance write-off waits for a second person (MAKER-CHECKER.md, slice 12): the amount the hospital gives up on
+/// a claim, the insurer's deductions on a settlement or the whole unpaid claim on a rejection, above the facility's
+/// threshold (<c>billing.claimWriteOff.approvalAbove</c>; below 0 acts as 0, so every write-off waits).
+/// </summary>
+public static class ClaimWriteOffs
+{
+    public static bool NeedsApproval(decimal writtenOff, decimal approvalAbove) => writtenOff > 0m && writtenOff > Math.Max(approvalAbove, 0m);
+}
+
 public sealed record ReceivableItem(Guid PayerId, decimal Outstanding, DateOnly Since);
 
 public sealed record AgeingBuckets(decimal Days0To30, decimal Days31To60, decimal Days61To90, decimal Over90)

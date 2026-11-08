@@ -53,6 +53,12 @@ public sealed class ReportCatalogTests
     [InlineData("feedback-nps")]
     [InlineData("hr-headcount")]
     [InlineData("hr-attendance")]
+    [InlineData("gst-summary")]
+    [InlineData("tds-summary")]
+    [InlineData("payroll-cost")]
+    [InlineData("claims-ageing")]
+    [InlineData("claims-settlement")]
+    [InlineData("claims-deductions")]
     public void Hospital_reports_are_in_the_catalogue(string id) => new ReportCatalog().Find(id).ShouldNotBeNull();
 
     [Fact]
@@ -105,9 +111,11 @@ public sealed class ReportCatalogTests
         var clinical = catalog.VisibleTo(Actor(AnalyticsPermissions.ClinicalRead)).Select(r => r.Descriptor).ToList();
 
         mis.ShouldNotContain(r => r.Category == ReportCategory.Revenue);
+        mis.ShouldNotContain(r => r.Category == ReportCategory.Statutory, "tax, payroll cost and claims are money: finance only");
         mis.ShouldNotContain(r => r.ContainsPatientIdentifiers);
         mis.ShouldContain(r => r.Id == "hr-headcount");
-        finance.ShouldAllBe(r => r.Category == ReportCategory.Revenue || r.Category == ReportCategory.Pharmacy);
+        finance.ShouldAllBe(r => r.Category == ReportCategory.Revenue || r.Category == ReportCategory.Pharmacy || r.Category == ReportCategory.Statutory);
+        finance.Count(r => r.Category == ReportCategory.Statutory).ShouldBe(6);
         finance.ShouldContain(r => r.Id == "pharmacy-sales-margin");
         clinical.ShouldContain(r => r.Id == "critical-values");
         clinical.ShouldContain(r => r.Id == "discharge-outcomes");

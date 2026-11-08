@@ -22,7 +22,7 @@ import {
   SaveRegular,
   SendRegular,
 } from '@fluentui/react-icons';
-import { formatDateOnly, formatDateTime, isApiError } from '@hc360/core';
+import { formatDateOnly, formatDateTime, formatInr, isApiError } from '@hc360/core';
 import {
   DataTable,
   EmptyState,
@@ -79,16 +79,27 @@ function ClaimPage() {
   const claim = useQuery({ ...insuranceQueries.claim(claimId), enabled: canClaims });
 
   const text = useMutation({
-    mutationFn: ({ kind, value }: { kind: 'query' | 'answer' | 'reject'; value: string }) =>
+    mutationFn: async ({ kind, value }: { kind: 'query' | 'answer' | 'reject'; value: string }) =>
       kind === 'query'
         ? insuranceApi.claimQuery(claimId, value)
         : kind === 'answer'
           ? insuranceApi.claimAnswer(claimId, value)
-          : insuranceApi.rejectClaim(claimId, value),
-    onSuccess: (_, { kind }) => {
-      notify.success(
-        kind === 'query' ? 'Insurer’s question recorded' : kind === 'answer' ? 'Answer recorded' : 'Rejection recorded',
-      );
+          : insuranceApi.rejectClaim(claimId, value, claim.data?.version ?? 0),
+    onSuccess: (asked, { kind }) => {
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          'The claim stays open and the insurer still owes it until someone who approves insurance write-offs agrees to the rejection.',
+        );
+      } else {
+        notify.success(
+          kind === 'query'
+            ? 'Insurer’s question recorded'
+            : kind === 'answer'
+              ? 'Answer recorded'
+              : 'Rejection recorded',
+        );
+      }
       setAction(null);
       void queryClient.invalidateQueries({ queryKey: insuranceKeys.all });
     },
@@ -126,6 +137,8 @@ function ClaimPage() {
 
   const c = claim.data;
   const closed = c.status === 'Settled' || c.status === 'Rejected';
+  const approvalAbove = c.writeOffApprovalAbove ?? 0;
+  const rejectionWaits = c.outstanding > 0 && c.outstanding > approvalAbove;
   const canSettle = c.status === 'Submitted' || c.status === 'Approved' || c.status === 'PartiallySettled';
 
   return (
@@ -166,7 +179,7 @@ function ClaimPage() {
                 Approved
               </Button>
             )}
-            {!closed && c.status !== 'PartiallySettled' && (
+            {!closed && c.status !== 'PartiallySettled' && !c.writeOffAskedAt && (
               <Button icon={<DismissRegular />} onClick={() => setAction('reject')}>
                 Rejected
               </Button>
@@ -180,6 +193,16 @@ function ClaimPage() {
         }
       />
       <BillingPatientBanner patientId={c.patientId} showDues={false} />
+      {c.writeOffAskedAt && (
+        <MessageBar intent="warning" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Asked for approval {formatDateTime(c.writeOffAskedAt)}</MessageBarTitle>A write-off on this
+            claim waits for someone who approves insurance write-offs; until they approve it the insurer still owes the
+            amount. Anything recorded on the claim meanwhile means it must be asked for again. If it is refused, the
+            approvals inbox says why.
+          </MessageBarBody>
+        </MessageBar>
+      )}
       {c.status === 'Rejected' && (
         <MessageBar intent="error" layout="multiline">
           <MessageBarBody>
@@ -290,10 +313,14 @@ function ClaimPage() {
       <ReasonDialog
         open={action === 'reject'}
         title="Insurer rejected the claim?"
-        description="A rejection writes off the whole unpaid claim as a deduction, in the day book and the receivables. It cannot be undone."
+        description={
+          rejectionWaits
+            ? `A rejection writes off the ${formatInr(c.outstanding)} unpaid as a deduction. ${approvalAbove > 0 ? `More than ${formatInr(approvalAbove)}` : 'Every write-off'} waits for someone who approves insurance write-offs: nothing changes until they do.`
+            : 'A rejection writes off the whole unpaid claim as a deduction, in the day book and the receivables. It cannot be undone.'
+        }
         label="Reason given by the insurer"
         maxLength={1000}
-        confirmLabel="Record rejection"
+        confirmLabel={rejectionWaits ? 'Ask for approval' : 'Record rejection'}
         destructive
         busy={text.isPending}
         error={text.error}

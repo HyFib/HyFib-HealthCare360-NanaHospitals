@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
+using HyFib.HealthCare360.Modules.Inpatient.Features.CarePlan;
 
 namespace HyFib.HealthCare360.Modules.Inpatient.Features.Nursing;
 
@@ -35,7 +36,8 @@ public sealed record HandoverDto(
     DateTimeOffset? AcknowledgedAt,
     string? AcknowledgedByName);
 
-public sealed record WardHandoverItem(HandoverDto Handover, string Uhid, string PatientName, string? BedLabel);
+/// <param name="CarePlan">The stay's active care-plan problems, with their last evaluation, for the receiving shift.</param>
+public sealed record WardHandoverItem(HandoverDto Handover, string Uhid, string PatientName, string? BedLabel, IReadOnlyList<CarePlanProblemDto>? CarePlan = null);
 
 public sealed record AddHandoverRequest(string Situation, string? Background, string? Assessment, string? Recommendation, string? PendingTasks);
 

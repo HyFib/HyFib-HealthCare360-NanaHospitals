@@ -49,6 +49,7 @@ internal sealed class ReportCatalog
         ReportCategory.Quality => "Quality and safety",
         ReportCategory.Experience => "Patient experience",
         ReportCategory.People => "People",
+        ReportCategory.Statutory => "Tax, payroll and claims",
         _ => category.ToString(),
     };
 
@@ -109,5 +110,13 @@ internal sealed class ReportCatalog
         new FeedbackNpsReport(),
         new HrHeadcountReport(),
         new HrAttendanceReport(),
+
+        // Tax, payroll and claims
+        new GstSummaryReport(),
+        new TdsSummaryReport(),
+        new PayrollCostReport(),
+        new ClaimsAgeingReport(),
+        new ClaimsSettlementReport(),
+        new ClaimsDeductionsReport(),
     ];
 }

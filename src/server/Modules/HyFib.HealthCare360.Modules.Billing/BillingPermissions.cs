@@ -39,6 +39,12 @@ public static class BillingPermissions
     public const string PoliciesManage = "insurance.policies.manage";
     public const string PreAuthManage = "insurance.preauth.manage";
     public const string ClaimsManage = "insurance.claims.manage";
+
+    /// <summary>
+    /// Approve an insurance write-off someone else asked for (the insurer's deductions on a settlement, or a rejected
+    /// claim's unpaid balance) above <c>billing.claimWriteOff.approvalAbove</c> (MAKER-CHECKER.md, slice 12).
+    /// </summary>
+    public const string ClaimWriteOffApprove = "insurance.claims.writeoff.approve";
     public const string ShareRulesManage = "doctorfees.rules.manage";
     public const string PayoutsManage = "doctorfees.payouts.manage";
 
@@ -78,6 +84,8 @@ public static class BillingPermissions
         new(PreAuthManage, "Insurance", "Manage cashless pre-authorisations and enhancements", [SystemRoles.InsuranceDesk, SystemRoles.HospitalAdmin]),
         new(ClaimsManage, "Insurance", "Submit claims, record queries and settlements, view receivable ageing",
             [SystemRoles.InsuranceDesk, SystemRoles.Accountant, SystemRoles.HospitalAdmin]),
+        new(ClaimWriteOffApprove, "Insurance",
+            "Approve an insurance write-off someone else asked for: the insurer's deductions, or a rejected claim's unpaid balance", Approvers),
         new(ShareRulesManage, "Doctor fees", "Maintain doctor revenue-sharing rules", Approvers),
         new(PayoutsManage, "Doctor fees", "View accruals and statements; prepare, approve and pay doctor payouts", Approvers),
     ];

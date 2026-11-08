@@ -155,7 +155,8 @@ latest is `GET /api/v1/downtime/pack/latest`. Printing, reading the latest and t
 | Downtime numbers issued | Each desk's and counter's open blocks (UHIDs, visits, bills, receipts) with the next number to use | Patients |
 | Back-entry windows | The windows in force | Patients |
 
-Each module writes its own section (`IDowntimePackSource`), reading its own records for the facility it is given, as
+The census and medication sheets are the downtime ward sheet's rows (below), asked for every ward of the facility for
+24 hours, so the two prints never disagree. Each module writes its own section (`IDowntimePackSource`), reading its own records for the facility it is given, as
 print-ready tables, so the print, the screen and the offline copy show the same thing. A restricted (VIP) patient is
 printed as "Restricted patient" with the UHID unless the one printing may open restricted records; the nightly pack
 never shows the name. The pack is a snapshot: anything ordered after it was made is on paper only, and the cover says
@@ -185,8 +186,6 @@ pack and the worklists. Nothing can be saved from it: the ward records on paper.
 
 - The nightly pack is made with no one signed in and never prints a restricted patient's name; print one on demand
   for the names.
-- Until the in-patient workstream's downtime ward sheet reaches main, the census and medication sections read the
-  records directly; once it does, they take that sheet's rows, so the two prints agree.
 - A late back-entry approval for admissions, transfers, ward visits and nursing charting is not counted entry by entry.
 - A number issued in one period and written on paper of the next (a yearly series across 1 January, or a financial
   year) is refused: issue blocks for the new period before a planned downtime that crosses it.
@@ -209,6 +208,26 @@ and who checked it:
 
 The forms are built in the staff app (`modules/patients/paperForms.ts`); a hospital that prefers its own stationery
 can copy their fields.
+
+## The downtime ward sheet (wards)
+
+`GET /api/v1/inpatient/downtime-print?wardId` (`nursing.chart`) → `DowntimeWardPack{generatedAt, windowEndsAt,
+facilityName, printedByName, wards[{ward, counts, patients[]}]}`, printed by the staff app on A4 under the letterhead
+("Other documents" template). Without `wardId` it is every ward in service, one ward a page. For each patient in a bed,
+in bed order:
+
+| What | From |
+|---|---|
+| Identity, bed, consultant, day of stay, diagnosis, MLC | the admission (a restricted patient's name and diagnosis withheld as on the bed board) |
+| Allergies: each active one with severity and reaction, or "No known allergies", or **ALLERGIES NOT RECORDED** | Clinical's allergies and NKA statement |
+| Isolation: an active isolation or infection-control alert, or "Isolation room" for a bed in one | Clinical's patient alerts, the ward's rooms |
+| Active medication orders, with every dose due before `windowEndsAt` (8 hours) and doses still due from before; *as needed* for SOS/PRN; CD, high-alert and *held: awaiting doctor* marked; a column to sign each dose given on paper | the MAR |
+| NEWS2: the latest score, the response it calls for, and when | the latest vital signs of the stay |
+| Pending tasks: open NEWS2 escalations, transfers waiting, overdue doses, orders waiting for countersignature, care-plan problems not yet evaluated this shift, the last handover's pending tasks | Inpatient |
+| The care plan's active problems with their interventions | the care plan |
+
+The sheet is read fresh for each print (the 8 hours run from the print), and the print is audited
+(`inpatient.downtime_print`). It is a snapshot: a medicine ordered after printing is on paper only.
 
 ## The downtime log (Quality)
 
@@ -263,8 +282,10 @@ hospital's procedure, not this page, is what staff follow.
 2. **Planned downtime.**
    - IT announces it at least 48 hours ahead and holds it at the quietest time.
    - Before it starts, the wards print what they need to work without HC360: the census, the active medication orders,
-     allergies and the day's due tasks. HC360 prints this as the **pre-downtime pack** (*Patients → Downtime
-     continuity → Print pack now*): see *Pre-downtime pack*.
+     allergies and the day's due tasks. HC360 prints this as the **downtime ward sheet** (*Nursing station → Print
+     downtime sheet* for one ward, the next 8 hours) and as part of the **pre-downtime pack** (*Patients → Downtime
+     continuity → Print pack now*, the next 24 hours, with pending orders, the OT list and the downtime numbers): see
+     *The downtime ward sheet* and *Pre-downtime pack*.
 3. **Declare a downtime.**
    - When HC360 cannot be used, or IT expects it to be down for more than 15 minutes (the hospital sets the
      threshold), the duty manager declares the downtime procedure and the announcement goes out.

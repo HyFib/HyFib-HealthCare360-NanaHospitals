@@ -195,7 +195,11 @@ export type BedAlert =
   | 'DischargeInitiated'
   | 'DischargeDueToday'
   | 'ReservationExpired'
-  | 'CleaningDelayed';
+  | 'CleaningDelayed'
+  | 'News2Urgent'
+  | 'News2Emergency'
+  | 'EscalationOpen'
+  | 'TransferPending';
 
 export type AlertSeverity = 'danger' | 'warning' | 'informative';
 
@@ -239,6 +243,26 @@ export const BED_ALERT: Record<BedAlert, BedAlertInfo> = {
     label: 'Cleaning delayed',
     description: 'Waiting more than 60 minutes for cleaning',
     severity: 'warning',
+  },
+  News2Urgent: {
+    label: 'NEWS2 urgent',
+    description: 'Latest NEWS2 is 5–6 or one parameter scored 3: urgent review by the ward doctor',
+    severity: 'danger',
+  },
+  News2Emergency: {
+    label: 'NEWS2 emergency',
+    description: 'Latest NEWS2 is 7 or more: emergency response',
+    severity: 'danger',
+  },
+  EscalationOpen: {
+    label: 'Escalated',
+    description: 'A NEWS2 escalation is waiting for a clinician to respond',
+    severity: 'danger',
+  },
+  TransferPending: {
+    label: 'Transfer asked',
+    description: 'A move to another ward is waiting for the receiving ward to accept',
+    severity: 'informative',
   },
 };
 

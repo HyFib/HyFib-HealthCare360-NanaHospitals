@@ -68,7 +68,7 @@ public sealed class SettingGuardTests
     }
 
     [Fact]
-    public void Raising_what_the_billing_desk_cancels_or_a_shortage_it_closes_alone_waits_and_lowering_is_at_once()
+    public void Raising_what_the_billing_desk_cancels_writes_off_or_closes_short_alone_waits_and_lowering_is_at_once()
     {
         Waits("billing.chargeCancel.approvalAbove", null, Number(500)).ShouldBeFalse("below the ₹1,000 default");
         Waits("billing.chargeCancel.approvalAbove", null, Number(5000)).ShouldBeTrue();
@@ -76,6 +76,11 @@ public sealed class SettingGuardTests
         Waits("billing.chargeCancel.approvalAbove", Number(0), null).ShouldBeTrue("cleared, the ₹1,000 default applies");
         Waits("billing.shift.shortageTolerance", null, Number(50)).ShouldBeTrue("above the ₹0 default: every shortage waits");
         Waits("billing.shift.shortageTolerance", Number(50), Number(20)).ShouldBeFalse();
+
+        Waits("billing.claimWriteOff.approvalAbove", null, Number(500)).ShouldBeTrue("above the ₹0 default: every insurance write-off waits");
+        Waits("billing.claimWriteOff.approvalAbove", Number(500), Number(0)).ShouldBeFalse();
+        SettingGuard.Judge("billing.claimWriteOff.approvalAbove", Number(0), Number(500), secret: false).Summary
+            .ShouldBe("Insurance write-off without approval: ₹0.00 → ₹500.00");
 
         SettingGuard.Judge("billing.chargeCancel.approvalAbove", null, Number(5000), secret: false).Summary
             .ShouldBe("Charge cancelled without approval: not set (₹1,000.00) → ₹5,000.00");

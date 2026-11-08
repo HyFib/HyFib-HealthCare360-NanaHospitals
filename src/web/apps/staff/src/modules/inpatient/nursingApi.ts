@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import type { FluidDirection, FluidRoute } from './fluidBalance';
 import type { AmbulatoryAid, GaitType, PainScaleKind, RiskLevel } from './riskScales';
 import type { NursingShift } from './time';
+import type { CarePlanProblemDto } from './wardCareApi';
 
 // ------------------------------------------------------------------ nursing notes and handovers
 
@@ -51,6 +52,8 @@ export interface WardHandoverItem {
   uhid: string;
   patientName: string;
   bedLabel: string | null;
+  /** The stay's active care-plan problems, with their last evaluation. */
+  carePlan?: CarePlanProblemDto[] | null;
 }
 
 export interface AddHandoverRequest {
