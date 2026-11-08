@@ -23,8 +23,8 @@ internal static class AdmissionEndpoints
                 (await admissions.UpdateAsync(id, r, ct)).ToHttpResult(asked =>
                     asked is null ? TypedResults.NoContent() : TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
             .RequirePermission(InpatientPermissions.Admit).WithValidation<UpdateAdmissionRequest>();
-        group.MapPost("/{id:guid}/transfer", async (Guid id, TransferPatientRequest r, AdmissionService admissions, CancellationToken ct) =>
-                (await admissions.TransferAsync(id, r, ct)).ToNoContent())
+        group.MapPost("/{id:guid}/transfer", async (Guid id, TransferPatientRequest r, TransferService transfers, CancellationToken ct) =>
+                (await transfers.DirectAsync(id, r, ct)).ToNoContent())
             .RequirePermission(InpatientPermissions.Transfer).WithValidation<TransferPatientRequest>();
         group.MapPost("/{id:guid}/cancel", async (Guid id, CancelAdmissionRequest r, AdmissionService admissions, CancellationToken ct) =>
                 (await admissions.CancelAsync(id, r, ct)).ToNoContent())

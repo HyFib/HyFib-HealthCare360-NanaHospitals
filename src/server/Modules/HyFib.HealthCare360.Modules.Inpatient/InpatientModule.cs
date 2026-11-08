@@ -1,11 +1,15 @@
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Beds;
+using HyFib.HealthCare360.Modules.Inpatient.Features.CarePlan;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Census;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
+using HyFib.HealthCare360.Modules.Inpatient.Features.DowntimePrint;
+using HyFib.HealthCare360.Modules.Inpatient.Features.EarlyWarning;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Mar;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Nursing;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Rounds;
+using HyFib.HealthCare360.Modules.Inpatient.Features.Transfers;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -86,6 +90,9 @@ public sealed class InpatientModule : IModule
         services.AddWitnessPurpose(MarService.DoseWitness);
         services.AddScoped<AdmissionAccess>();
         services.AddScoped<WardRoundQueries>();
+        services.AddScoped<EarlyWarningService>();
+        services.AddScoped<TransferService>();
+        services.AddScoped<DowntimePrintService>();
         services.AddHostedService<BedDayChargeJob>();
         services.AddHostedService<CountersignOverdueJob>();
     }
@@ -100,5 +107,9 @@ public sealed class InpatientModule : IModule
         NursingEndpoints.Map(endpoints);
         MarEndpoints.Map(endpoints);
         RoundEndpoints.Map(endpoints);
+        EarlyWarningEndpoints.Map(endpoints);
+        TransferEndpoints.Map(endpoints);
+        CarePlanEndpoints.Map(endpoints);
+        DowntimePrintEndpoints.Map(endpoints);
     }
 }

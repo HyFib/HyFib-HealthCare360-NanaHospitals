@@ -84,3 +84,27 @@ internal sealed class ConsultantVisitConfiguration : IEntityTypeConfiguration<Co
         b.HasIndex(x => x.VisitedAt).HasFilter("charge_id IS NULL AND NOT is_deleted").HasDatabaseName("ix_consultant_visits_uncharged");
     }
 }
+
+internal sealed class TransferRequestConfiguration : IEntityTypeConfiguration<TransferRequest>
+{
+    public void Configure(EntityTypeBuilder<TransferRequest> b)
+    {
+        b.ToTable("transfer_requests", InpatientSchema.Name);
+        b.Property(x => x.Reason).HasMaxLength(300);
+        b.Property(x => x.ClinicalSummary).HasMaxLength(2000);
+        b.Property(x => x.RequestedByName).HasMaxLength(200);
+        b.Property(x => x.DecidedByName).HasMaxLength(200);
+        b.Property(x => x.DecisionNote).HasMaxLength(500);
+        b.Ignore(x => x.AcceptanceDueAt);
+        b.Ignore(x => x.WasAcceptedLate);
+        b.Ignore(x => x.IsOpen);
+        b.HasOne<Admission>().WithMany().HasForeignKey(x => x.AdmissionId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Bed>().WithMany().HasForeignKey(x => x.ToBedId).OnDelete(DeleteBehavior.Restrict);
+
+        // One request waiting for the receiving ward per stay.
+        b.HasIndex(x => x.AdmissionId).IsUnique().HasFilter("status = 'Pending'").HasDatabaseName("ux_transfer_requests_pending_admission");
+        b.HasIndex(x => new { x.ToWardId, x.Status });
+        b.HasIndex(x => new { x.FromWardId, x.Status });
+        b.HasIndex(x => x.PatientId);
+    }
+}
