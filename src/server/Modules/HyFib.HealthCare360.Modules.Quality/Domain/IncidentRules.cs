@@ -10,7 +10,9 @@ public sealed record IncidentProgress(bool RcaCompleted, int CapaCount, int Open
 /// The NABH incident review path (IRMS-03/04):
 /// Reported → UnderReview → Investigation (RCA) → CapaInProgress → Closed, with short cuts where appropriate
 /// (a duplicate report closes straight away; a minor event can go from review to CAPA or closure) and reopening.
-/// Sentinel events can only be closed after a completed root-cause analysis, and nothing moves to CAPA without a CAPA.
+/// Sentinel events can only be closed after a completed root-cause analysis, from any status (Reported included), and
+/// nothing moves to CAPA without a CAPA. Closing a sentinel event, and re-grading one so it is no longer sentinel, also wait
+/// for a second person (<see cref="Services.IncidentService"/>).
 /// </summary>
 public static class IncidentWorkflow
 {
@@ -47,10 +49,14 @@ public static class IncidentWorkflow
             return Error.Rule("incident.rca_incomplete", "Complete the root-cause analysis first.");
         }
 
-        // Closing straight from "Reported" is for duplicate/invalid reports, which need no RCA of their own.
-        if (to == IncidentStatus.Closed && isSentinel && !progress.RcaCompleted && from != IncidentStatus.Reported)
+        // A sentinel or never event closes only on its completed analysis, from wherever it stands: closing one straight from
+        // "Reported" (once the way to close a duplicate) would let one person close it unexamined (MAKER-CHECKER.md, slice 14).
+        // A duplicate of a sentinel report is closed after a second person agrees it is not sentinel (a downgrade).
+        if (to == IncidentStatus.Closed && isSentinel && !progress.RcaCompleted)
         {
-            return Error.Rule("incident.sentinel_needs_rca", "A sentinel event can be closed only after a completed root-cause analysis.");
+            return Error.Rule("incident.sentinel_needs_rca", from == IncidentStatus.Reported
+                ? "A sentinel event cannot be closed straight from Reported: record and complete its root-cause analysis first."
+                : "A sentinel event can be closed only after a completed root-cause analysis.");
         }
 
         if (to == IncidentStatus.CapaInProgress && progress.CapaCount == 0)

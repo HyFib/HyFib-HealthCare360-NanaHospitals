@@ -81,24 +81,38 @@ public sealed class BreachTests
         Recorded(complete: true).RecordReportSubmitted(Aware.AddHours(5), null, Aware.AddHours(6)).Error!.Code.ShouldBe("privacy.breach_not_informed");
 
     [Fact]
-    public void A_breach_that_was_never_reported_closes_only_with_a_reason()
+    public void A_breach_never_reported_to_the_Board_does_not_close_with_a_reason_alone()
     {
+        // MAKER-CHECKER.md, slice 14: the detailed report to the Board, its reference and day, before any closing.
         var breach = Recorded();
 
-        breach.Close(null, Aware.AddDays(1)).Error!.Fields!.ShouldContainKey("note");
-        breach.Close("No personal data was on the laptop after all.", Aware.AddDays(1)).IsSuccess.ShouldBeTrue();
-        breach.Close("Again", Aware.AddDays(2)).Error!.Code.ShouldBe("privacy.breach_closed");
+        breach.Close(null, Aware.AddDays(1)).Error!.Code.ShouldBe("privacy.breach_board_report_required");
+        breach.Close("No personal data was on the laptop after all.", Aware.AddDays(1)).Error!.Code.ShouldBe("privacy.breach_board_report_required");
+        breach.Status.ShouldBe(BreachStatus.Open);
     }
 
     [Fact]
-    public void A_reported_breach_closes_without_a_note()
+    public void A_reported_breach_closes_only_with_the_Boards_reference_recorded()
     {
         var breach = Recorded(complete: true);
         var now = Aware.AddHours(30);
         breach.RecordBoardInformed(Aware.AddHours(1), null, now);
         breach.RecordReportSubmitted(Aware.AddHours(20), null, now);
 
+        breach.CanClose().Error!.Code.ShouldBe("privacy.breach_board_report_required");
+        breach.Close(null, now).Error!.Code.ShouldBe("privacy.breach_board_report_required");
+    }
+
+    [Fact]
+    public void A_breach_reported_to_the_Board_with_its_reference_closes_without_a_note()
+    {
+        var breach = Recorded(complete: true);
+        var now = Aware.AddHours(30);
+        breach.RecordBoardInformed(Aware.AddHours(1), "DPB/2026/0042", now);
+        breach.RecordReportSubmitted(Aware.AddHours(20), null, now);
+
         breach.Close(null, now).IsSuccess.ShouldBeTrue();
+        breach.Close("Again", now).Error!.Code.ShouldBe("privacy.breach_closed");
     }
 
     [Fact]

@@ -12,6 +12,7 @@ Materiovigilance Programme of India ([MvPI](#device-adverse-events--mvpi-apiv1qu
 |---|---|---|
 | `quality.incidents.report` | all staff roles | Report incidents (optionally anonymously), see own named reports, work on CAPAs one owns |
 | `quality.incidents.manage` | QualityManager, HospitalAdmin | Review, grade, assign, investigate and close incidents; receives sentinel alerts; reports device adverse events to MvPI |
+| `quality.incidents.approve` | QualityManager, HospitalAdmin | Approve closing a sentinel or never event, and re-grading one out of sentinel, asked for by someone else; never the incident's reporter (MAKER-CHECKER.md, slice 14) |
 | `quality.capa.manage` | QualityManager, HospitalAdmin | Plan CAPAs, verify effectiveness, cancel |
 | `quality.risks.manage` | QualityManager, HospitalAdmin | Risk register |
 | `quality.indicators.manage` | QualityManager, HospitalAdmin | Indicator definitions, values, trends, scorecard |
@@ -27,9 +28,9 @@ The dashboard needs any of the four management permissions.
 | POST | `/` | incidents.report | `ReportIncidentRequest {type, severity, occurredAt, location, departmentId, patientId, involvedStaffUserIds, description (≥ 20 chars), immediateAction, witnesses, sentinelKind, flagAsSentinel, isAnonymous, involvesDevice}` → 201 `IncidentReceipt {id, incidentNumber, isSentinel, severity, type}` |
 | GET | `/mine` | incidents.report | own **named** reports → `MyIncidentItem[]` |
 | GET | `/` | incidents.manage | filters `status, type, severity, sentinelOnly, openOnly, departmentId, from, to`, `search`; sort `occurredAt, reportedAt, severity, number` → `IncidentListItem` (incl. open CAPA count). Severity sorts by harm (NearMiss → Death), not alphabetically: enums are stored as text |
-| GET | `/{id}` | incidents.manage | → `IncidentDetail` (next allowed statuses, involved staff names, investigation status, CAPAs, `involvesDevice`, `isDeviceRelated`, the MvPI reports raised from it); writes a PHI-access audit entry when a patient is linked |
-| PUT | `/{id}` | incidents.manage | `UpdateIncidentRequest {type, severity, sentinelKind, flagAsSentinel, location, departmentId, patientId, involvedStaffUserIds, version, involvesDevice}` (re-grading; becoming sentinel alerts the team) |
-| POST | `/{id}/transition` | incidents.manage | `TransitionIncidentRequest {status, note}` |
+| GET | `/{id}` | incidents.manage | → `IncidentDetail` (next allowed statuses, involved staff names, investigation status, CAPAs, `involvesDevice`, `isDeviceRelated`, the MvPI reports raised from it, `closureAskedAt` and `downgradeAskedAt` while a sentinel event's closing or re-grading waits); writes a PHI-access audit entry when a patient is linked |
+| PUT | `/{id}` | incidents.manage | `UpdateIncidentRequest {type, severity, sentinelKind, flagAsSentinel, location, departmentId, patientId, involvedStaffUserIds, version, involvesDevice, reason?}` (re-grading; becoming sentinel alerts the team) → 204. Re-grading a sentinel event so it is no longer sentinel needs a `reason` and answers 202 with the approval (`quality.sentinel_downgrade`): nothing is saved until the quality manager approves |
+| POST | `/{id}/transition` | incidents.manage | `TransitionIncidentRequest {status, note}` → 204; closing a sentinel event (on its completed RCA) answers 202 with the approval (`quality.sentinel_close`) and the incident stays where it is until approved |
 | POST | `/{id}/assign` | incidents.manage | `AssignIncidentRequest {userId}` (a Reported incident moves to UnderReview; the assignee is notified) |
 | GET | `/{id}/investigation` | incidents.manage | → `InvestigationDto` |
 | PUT | `/{id}/investigation` | incidents.manage | `SaveInvestigationRequest {method: FiveWhys|Fishbone, problemStatement, whys[], factors[{category: People|Process|Equipment|Environment|Communication|Policy, description, isRootCause}], findings, recommendations, investigatorUserIds}` → investigation id. The first save moves the incident to Investigation |
@@ -47,7 +48,15 @@ else notifies.
 `Investigation → CapaInProgress | Closed`, `CapaInProgress → Investigation | Closed`, `Closed → UnderReview`
 (reopen). Closing and reopening need a note. Leaving Investigation needs a completed RCA. CapaInProgress needs at
 least one CAPA. Closing from CapaInProgress needs every CAPA verified or cancelled. A sentinel event can be closed
-only after a completed RCA, except when a duplicate report is closed straight from Reported.
+only after a completed RCA, from any status, Reported included (`incident.sentinel_needs_rca`; a duplicate of a
+sentinel report is re-graded out of sentinel first).
+
+**Second person (MAKER-CHECKER.md, slice 14).** Closing a sentinel or never event, and re-grading one so that no RCA is
+due, wait for a holder of `quality.incidents.approve` (the approvals inbox), never the one who asked (`approval.self`)
+nor the incident's reporter (`incident.reporter_approves`, 403, the request still waiting). The change is made only over
+the incident as asked (`approval.stale`), the RCA and CAPAs checked again, and audited `quality.incident.sentinel_closed`
+or `quality.incident.sentinel_downgraded` with both names. A never event the theatre raises (`IIncidentRegister`,
+retained item) is sentinel and named to whoever settled the count, as before.
 
 **Anonymous reporting.** With `isAnonymous` the reporter's id and name are not stored. The insert runs through
 `AnonymousReportingScope`: a fresh DI scope on a flow without the HTTP context, so the platform's `CreatedBy` stamp

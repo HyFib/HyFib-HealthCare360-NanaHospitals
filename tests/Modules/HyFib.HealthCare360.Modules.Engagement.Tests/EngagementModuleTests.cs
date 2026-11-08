@@ -19,7 +19,7 @@ public sealed class EngagementModuleTests
         names.ShouldBe(
         [
             EngagementPermissions.LeadsManage, EngagementPermissions.FollowUpsManage, EngagementPermissions.CampaignsManage,
-            EngagementPermissions.CampaignsSend, EngagementPermissions.ReferralsManage, EngagementPermissions.Patient360Read,
+            EngagementPermissions.CampaignsSend, EngagementPermissions.CampaignsApprove, EngagementPermissions.ReferralsManage, EngagementPermissions.Patient360Read,
             EngagementPermissions.FeedbackRead, EngagementPermissions.FeedbackManage, EngagementPermissions.ComplaintsManage,
             EngagementPermissions.ComplaintEscalations,
         ]);

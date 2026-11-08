@@ -43,6 +43,8 @@ import { useState } from 'react';
 import { Controller, useForm, useWatch, type Control, type FieldPath } from 'react-hook-form';
 import { usePermission } from '@/lib/permissions';
 import { ReasonDialog } from '@/modules/inpatient/ReasonDialog';
+import type { WitnessConfirmed } from '@/modules/witness/api';
+import { WitnessPanel } from '@/modules/witness/WitnessPanel';
 import {
   consentApi,
   patientKeys,
@@ -58,6 +60,7 @@ import {
   consentFormSchema,
   consentServerErrors,
   limitsSharing,
+  needsWitness,
   toCaptureRequest,
   type ConsentFormValues,
 } from './consentForm';
@@ -492,6 +495,9 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
   const signer = useWatch({ control: form.control, name: 'signer' });
   const [type, decision, sharing] = useWatch({ control: form.control, name: ['type', 'decision', 'sharing'] });
   const askScope = type === 'DataSharing' && decision === 'given';
+  // The whole record shared with no signed form is witnessed at this screen (MAKER-CHECKER.md, slice 14).
+  const witnessed = needsWitness({ type, decision, sharing });
+  const [witness, setWitness] = useState<WitnessConfirmed | null>(null);
 
   const save = useMutation({
     mutationFn: (request: CaptureConsentRequest) => consentApi.capture(patientId, request),
@@ -502,6 +508,13 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
       onClose();
     },
     onError: (error) => {
+      // The confirmation is used once: a refused save needs the witness to confirm again.
+      if (
+        isApiError(error) &&
+        (error.code === 'witness.confirmation_unusable' || error.code === 'consent.witness_required')
+      ) {
+        setWitness(null);
+      }
       // A field the server refused keeps Save disabled until it is changed; the first one gets the focus.
       const { fields, other } = consentServerErrors(error);
       fields.forEach(([field, message], index) =>
@@ -517,7 +530,7 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
     <form
       onSubmit={form.handleSubmit((values) => {
         setProblems([]);
-        save.mutate(toCaptureRequest(values));
+        save.mutate(toCaptureRequest(values, witness?.confirmationId ?? null));
       })}
       noValidate
     >
@@ -578,6 +591,16 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
             />
           )}
           {askScope && limitsSharing({ type, decision, sharing }) && <SharingScopeFields control={form.control} />}
+          {witnessed && (
+            <WitnessPanel
+              purpose="consent.record_sharing"
+              patientId={patientId}
+              witness={witness}
+              onChange={setWitness}
+              legend="Witness (another member of staff, at this screen)"
+              description="Sharing the whole record with no signed form is witnessed: another member of staff types their own user name and password here. Nothing is signed in, and the password is not kept. Or limit what is shared."
+            />
+          )}
           <ChoiceField
             control={form.control}
             name="signer"
@@ -609,13 +632,15 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
             </FormGrid>
           )}
           <FormGrid columns={2} minColumnWidth={200}>
-            <TextField
-              control={form.control}
-              name="witnessName"
-              label="Witness"
-              maxLength={CONSENT_LIMITS.witnessName}
-              autoComplete="off"
-            />
+            {!witnessed && (
+              <TextField
+                control={form.control}
+                name="witnessName"
+                label="Witness"
+                maxLength={CONSENT_LIMITS.witnessName}
+                autoComplete="off"
+              />
+            )}
             <TextField
               control={form.control}
               name="consentVersion"
@@ -649,7 +674,7 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
           <Button
             type="submit"
             appearance="primary"
-            disabled={!form.formState.isValid || save.isPending}
+            disabled={!form.formState.isValid || save.isPending || (witnessed && !witness)}
             icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Save
