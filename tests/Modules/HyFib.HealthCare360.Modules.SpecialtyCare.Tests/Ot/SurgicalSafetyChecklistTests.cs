@@ -51,7 +51,7 @@ public sealed class SurgicalSafetyChecklistTests
     [Fact]
     public void Surgery_completes_after_sign_out()
     {
-        var booking = TestData.InProgress();
+        var booking = TestData.CountsTallied(TestData.InProgress());
         booking.ConfirmSafety(SafetyPhase.SignOut, Phase(SafetyPhase.SignOut), TestData.Staff(TestData.Now.AddHours(3))).IsSuccess.ShouldBeTrue();
 
         booking.Complete(TestData.Now.AddHours(3).AddMinutes(5)).IsSuccess.ShouldBeTrue();
@@ -63,7 +63,7 @@ public sealed class SurgicalSafetyChecklistTests
     [Fact]
     public void A_completed_surgery_is_announced_for_the_patients_record()
     {
-        var booking = TestData.InProgress();
+        var booking = TestData.CountsTallied(TestData.InProgress());
         booking.Laterality = Laterality.Right;
         booking.ProcedureCode = "0FT44ZZ";
         booking.ConfirmSafety(SafetyPhase.SignOut, Phase(SafetyPhase.SignOut), TestData.Staff(TestData.Now.AddHours(3))).IsSuccess.ShouldBeTrue();

@@ -744,6 +744,31 @@ and grants nothing.
       patient; audited `death.voided` with both names. A certificate not yet confirmed is still marked by its certifier
       at once; one reported to the Registrar is not voided here at all (`vital.reported`: a correction goes through the
       Registrar);
+  - the operating theatre (MAKER-CHECKER.md, slice 10):
+    - the side or procedure changed after the WHO Sign-in (`PUT /api/v1/ot/bookings/{id}`): only by the operating surgeon
+      or the anaesthetist of the case, signed in as the practitioner the booking names (`surgery.site_change_team`, 403),
+      with a reason (`changeReason`). The second look is the checklist itself, done again: the Sign-in and the Time-out
+      done are voided (what they confirmed is kept on the booking, with who changed what, why, and when), the site is
+      marked again, the change is audited at Warning (`surgery.site_changed_after_sign_in`) and the case's team is told.
+      After the incision the side or procedure is not changed (`surgery.site_after_incision`); before the Sign-in the
+      plan is edited as before;
+    - site marking: with a side or a level booked, "site marked" is never "not applicable" on the pre-op checklist or at
+      the Sign-in (`checklist.site_marking_required`), and the pre-op mark is recorded by a surgeon
+      (`ot.surgery.perform`) from their own sign-in (`checklist.site_marked_by_surgeon`), so the record names who marked
+      it; the Sign-in confirms a recorded mark only (`surgery.site_not_marked`);
+    - the swab, needle and instrument counts (`POST /api/v1/ot/bookings/{id}/counts`): each made by the signed-in member
+      of the team and witnessed at the same screen by a second (`POST /api/v1/auth/witness`, purpose `ot.count`,
+      `ot.checklists.record`; never the same account, used once, for that patient). A final count that does not tally
+      opens a discrepancy, audited at Warning, and the WHO Sign-out records nothing until it is settled
+      (`surgery.count_discrepancy_open`): found, an X-ray with its result, or a retained item, which raises a never event
+      in the Quality incident register (sentinel, the harm graded, the quality team alerted) in the same transaction,
+      audited at Critical (`surgery.count_discrepancy_settled`). "Counts are correct" is confirmed only from the counts;
+    - an implant or consumable line once the operation has started: not removed (`surgery.material_locked`); a
+      correction of its batch, serial, expiry or quantity (`POST …/materials/{id}/corrections` answers 202,
+      `ot.material_correction`) is approved by the OT in-charge (the new `ot.materials.approve`: OT coordinators and the
+      hospital administrator by default), never the one who asked. The original line is kept; its charge is withdrawn
+      and its stock returned, and the corrected line is issued and charged, through the same stock and charge paths, only
+      over the line as asked (`approval.stale`), audited `ot.material_corrected` with both names;
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was

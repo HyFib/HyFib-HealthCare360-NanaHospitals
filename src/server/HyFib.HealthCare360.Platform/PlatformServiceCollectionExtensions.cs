@@ -323,10 +323,11 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddSingleton(ReleaseTrust.BuiltIn);
         services.AddSingleton<DesktopPackageStore>();
 
-        // Fallbacks replaced by the Billing, Patients, Clinical and Inpatient modules / Integrations project when present.
+        // Fallbacks replaced by the Billing, Patients, Clinical, Inpatient and Quality modules / Integrations project when present.
         services.TryAddScoped<IChargePoster, NullChargePoster>();
         services.TryAddScoped<IRoomClassDirectory, NullRoomClassDirectory>();
         services.TryAddScoped<IAdmissionDirectory, NullAdmissionDirectory>();
+        services.TryAddScoped<IIncidentRegister, NullIncidentRegister>();
         services.TryAddScoped<IBillingStatusProvider, NullBillingStatusProvider>();
         services.TryAddScoped<IPayerDirectory, NullPayerDirectory>();
         services.TryAddScoped<IPortalAccountResolver, NullPortalAccountResolver>();

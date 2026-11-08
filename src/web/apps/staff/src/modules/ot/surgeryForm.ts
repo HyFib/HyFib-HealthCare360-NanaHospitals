@@ -23,6 +23,7 @@ const baseSchema = z.object({
   procedureServiceItemId: z.string().nullable(),
   procedureName: z.string().trim().max(300, 'Use at most 300 characters.'),
   laterality: z.enum(LATERALITIES).nullable(),
+  siteLevel: z.string().trim().max(60, 'Use at most 60 characters.'),
   diagnosis: z.string().trim().max(500, 'Use at most 500 characters.'),
   surgeonId: z.string().nullable(),
   anaesthetistId: z.string().nullable(),
@@ -32,6 +33,8 @@ const baseSchema = z.object({
   priority: z.enum(SURGERY_PRIORITIES),
   preferredDate: z.string().nullable(),
   notes: z.string().trim().max(2000, 'Use at most 2000 characters.'),
+  /** Why the side, level or procedure changes after the WHO Sign-in (required then; the plan dialog asks for it). */
+  changeReason: z.string().trim().max(500, 'Use at most 500 characters.'),
   scheduleNow: z.boolean(),
   theatreId: z.string().nullable(),
   date: z.string().nullable(),
@@ -94,6 +97,7 @@ export const emptySurgeryForm: SurgeryFormValues = {
   procedureServiceItemId: null,
   procedureName: '',
   laterality: null,
+  siteLevel: '',
   diagnosis: '',
   surgeonId: null,
   anaesthetistId: null,
@@ -103,6 +107,7 @@ export const emptySurgeryForm: SurgeryFormValues = {
   priority: 'Elective',
   preferredDate: null,
   notes: '',
+  changeReason: '',
   scheduleNow: true,
   theatreId: null,
   date: null,
@@ -117,6 +122,7 @@ export function surgeryFormFromDetail(d: SurgeryDetail): SurgeryFormValues {
     procedureServiceItemId: d.procedureServiceItemId,
     procedureName: d.procedureName,
     laterality: d.laterality,
+    siteLevel: d.siteLevel ?? '',
     diagnosis: d.diagnosis ?? '',
     surgeonId: d.surgeonId,
     anaesthetistId: d.anaesthetistId,
@@ -126,6 +132,7 @@ export function surgeryFormFromDetail(d: SurgeryDetail): SurgeryFormValues {
     priority: d.priority,
     preferredDate: d.preferredDate,
     notes: d.notes ?? '',
+    changeReason: '',
     scheduleNow: true,
     theatreId: d.theatreId,
     date: d.scheduledStart ? istDate(d.scheduledStart) : d.preferredDate,
@@ -169,6 +176,7 @@ export function toCreateRequest(v: SurgeryFormValues): CreateSurgeryBookingReque
     scheduledEnd: slot?.end ?? null,
     notes: orNull(v.notes),
     nurseId: v.nurseId,
+    siteLevel: orNull(v.siteLevel),
   };
 }
 
@@ -198,5 +206,7 @@ export function toUpdateRequest(v: SurgeryFormValues, version: number): UpdateSu
     notes: orNull(v.notes),
     version,
     nurseId: v.nurseId,
+    siteLevel: orNull(v.siteLevel),
+    changeReason: orNull(v.changeReason),
   };
 }

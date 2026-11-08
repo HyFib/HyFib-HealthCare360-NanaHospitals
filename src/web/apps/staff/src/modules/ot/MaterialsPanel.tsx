@@ -10,6 +10,7 @@ import {
   DialogSurface,
   DialogTitle,
   Field,
+  Input,
   makeStyles,
   MessageBar,
   MessageBarActions,
@@ -20,9 +21,10 @@ import {
   RadioGroup,
   Spinner,
   Text,
+  Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, ArrowClockwiseRegular, BoxRegular, DeleteRegular } from '@fluentui/react-icons';
+import { AddRegular, ArrowClockwiseRegular, BoxRegular, DeleteRegular, EditRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   formatDateOnly,
@@ -67,6 +69,7 @@ import {
   batchLabel,
   issuableQuantity,
   materialsGate,
+  materialsLocked,
   otStoreProblem,
   packPrice,
   priceForBatch,
@@ -227,6 +230,9 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
   const gate = materialsGate(booking);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<SurgeryMaterialDto | null>(null);
+  const [correcting, setCorrecting] = useState<SurgeryMaterialDto | null>(null);
+  // Once the operation has started a line is corrected, not removed: a second person approves (maker-checker slice 10).
+  const locked = materialsLocked(booking);
 
   const remove = useMutation({
     mutationFn: (material: SurgeryMaterialDto) => otApi.removeMaterial(booking.id, material.id),
@@ -257,7 +263,7 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
   });
 
   const rows = materials.data ?? [];
-  const total = rows.reduce((sum, row) => sum + row.amount, 0);
+  const total = rows.filter((row) => !row.supersededAt).reduce((sum, row) => sum + row.amount, 0);
   const failed = rows.filter((row) => row.chargeStatus === 'Failed');
 
   return (
@@ -339,6 +345,7 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
                     .filter(Boolean)
                     .join(' · ')}
                 </Caption1>
+                <MaterialCorrectionState material={m} />
               </span>
             ),
           },
@@ -368,16 +375,23 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
           { key: 'bill', header: 'Billing', render: (m) => <ChargeBadge status={m.chargeStatus} /> },
         ]}
         rowActions={
-          canRecord && gate.allowed
-            ? (m) => (
-                <Button
-                  size="small"
-                  appearance="subtle"
-                  icon={<DeleteRegular />}
-                  aria-label={`Remove ${m.itemName}`}
-                  onClick={() => setRemoving(m)}
-                />
-              )
+          canRecord
+            ? (m) =>
+                locked ? (
+                  !m.supersededAt && !m.pendingCorrection ? (
+                    <Button size="small" appearance="subtle" icon={<EditRegular />} onClick={() => setCorrecting(m)}>
+                      Correct
+                    </Button>
+                  ) : null
+                ) : gate.allowed ? (
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    aria-label={`Remove ${m.itemName}`}
+                    onClick={() => setRemoving(m)}
+                  />
+                ) : null
             : undefined
         }
         emptyTitle="Nothing recorded yet"
@@ -395,6 +409,9 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
       )}
 
       {adding && <AddMaterialDialog booking={booking} onClose={() => setAdding(false)} />}
+      {correcting && (
+        <CorrectMaterialDialog booking={booking} material={correcting} onClose={() => setCorrecting(null)} />
+      )}
 
       <ConfirmDialog
         open={removing !== null}
@@ -416,6 +433,124 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
         {isStockError(remove.error) ? <StockError error={remove.error} /> : <ActionError error={remove.error} />}
       </ConfirmDialog>
     </Section>
+  );
+}
+
+/** A line corrected, a correction waiting for the OT in-charge, or a line that replaced another. */
+function MaterialCorrectionState({ material: m }: { material: SurgeryMaterialDto }) {
+  if (m.supersededAt) {
+    return (
+      <Badge appearance="tint" color="warning">
+        {m.supersededByMaterialId ? 'Corrected: replaced by the line below' : 'Corrected: not used'} ·{' '}
+        {m.correctionReason}
+        {m.correctionApprovedByName ? ` (approved by ${m.correctionApprovedByName})` : ''}
+      </Badge>
+    );
+  }
+  if (m.pendingCorrection) {
+    return (
+      <Badge appearance="tint" color="informative">
+        Correction waiting for the OT in-charge: {m.pendingCorrection.summary}
+      </Badge>
+    );
+  }
+  return m.correctsMaterialId ? (
+    <Badge appearance="tint" color="success">
+      Corrected line
+    </Badge>
+  ) : null;
+}
+
+/**
+ * Corrects a line once the operation has started: the batch, serial, expiry or quantity as it should have been, with the
+ * reason. Nothing changes until the OT in-charge approves; the original line is then kept, its charge withdrawn and its
+ * stock returned, and a corrected line takes its place (none when the quantity is 0: not used).
+ */
+function CorrectMaterialDialog({
+  booking,
+  material,
+  onClose,
+}: {
+  booking: SurgeryDetail;
+  material: SurgeryMaterialDto;
+  onClose: () => void;
+}) {
+  const notify = useNotify();
+  const queryClient = useQueryClient();
+  const [lot, setLot] = useState(material.lotNumber ?? '');
+  const [serial, setSerial] = useState(material.serialNumber ?? '');
+  const [expiry, setExpiry] = useState(material.expiryDate ?? '');
+  const [quantity, setQuantity] = useState(String(material.quantity));
+  const [reason, setReason] = useState('');
+  const qty = Number(quantity);
+  const changed =
+    lot.trim().toUpperCase() !== (material.lotNumber ?? '') ||
+    serial.trim().toUpperCase() !== (material.serialNumber ?? '') ||
+    (expiry || null) !== material.expiryDate ||
+    qty !== material.quantity;
+  const ready = changed && reason.trim().length > 0 && quantity.trim() !== '' && qty >= 0 && qty <= 1000;
+
+  const ask = useMutation({
+    mutationFn: () =>
+      otApi.correctMaterial(booking.id, material.id, {
+        lotNumber: lot.trim() || null,
+        serialNumber: serial.trim() || null,
+        expiryDate: expiry || null,
+        quantity: qty,
+        reason: reason.trim(),
+      }),
+    onSuccess: () => {
+      notify.success('Correction asked for', 'The OT in-charge approves it; the line stays as it is until then.');
+      void queryClient.invalidateQueries({ queryKey: otKeys.materials(booking.id) });
+      onClose();
+    },
+  });
+
+  return (
+    <Dialog open onOpenChange={(_, data) => !data.open && !ask.isPending && onClose()}>
+      <DialogSurface style={{ maxWidth: 560 }}>
+        <DialogBody>
+          <DialogTitle>Correct {material.itemName}</DialogTitle>
+          <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Text>
+              The operation has started, so this line is not removed. Say what it should have been and why: the OT
+              in-charge approves it, never you. The original line is kept; its charge and stock follow the correction. A
+              quantity of 0 says the item was not used.
+            </Text>
+            <Field label="Lot or batch">
+              <Input value={lot} maxLength={64} onChange={(_, d) => setLot(d.value)} />
+            </Field>
+            <Field label="Serial number">
+              <Input value={serial} maxLength={64} onChange={(_, d) => setSerial(d.value)} />
+            </Field>
+            <Field label="Expiry date">
+              <Input type="date" value={expiry} onChange={(_, d) => setExpiry(d.value)} />
+            </Field>
+            <Field label="Quantity" required>
+              <Input type="number" min={0} max={1000} value={quantity} onChange={(_, d) => setQuantity(d.value)} />
+            </Field>
+            <Field label="Reason for the correction" required>
+              <Textarea value={reason} maxLength={500} onChange={(_, d) => setReason(d.value)} />
+            </Field>
+            {!changed && <Caption1>Change the batch, serial number, expiry or quantity.</Caption1>}
+            <ActionError error={ask.error} />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={onClose} disabled={ask.isPending}>
+              Cancel
+            </Button>
+            <Button
+              appearance="primary"
+              disabled={!ready || ask.isPending}
+              icon={ask.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
+              onClick={() => ask.mutate()}
+            >
+              Ask for approval
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
   );
 }
 
