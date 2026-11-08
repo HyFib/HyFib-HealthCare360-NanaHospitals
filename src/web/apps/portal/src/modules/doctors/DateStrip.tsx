@@ -19,6 +19,8 @@ const useStyles = makeStyles({
     scrollbarWidth: 'thin',
   },
   day: {
+    // Holds the visually hidden date: without it, a day scrolled out of the strip would widen the page.
+    position: 'relative',
     scrollSnapAlign: 'start',
     display: 'flex',
     flexDirection: 'column',
