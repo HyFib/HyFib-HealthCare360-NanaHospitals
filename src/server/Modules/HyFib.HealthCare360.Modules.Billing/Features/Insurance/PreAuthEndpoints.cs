@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Insurance;
 
@@ -67,7 +68,8 @@ internal static class PreAuthEndpoints
         }));
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Get(
+        Guid id, HospitalDbContext db, PreAuthService preAuths, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
         var p = await db.Set<PreAuthorization>().AsNoTracking().Include(x => x.Enhancements).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null)
@@ -100,7 +102,8 @@ internal static class PreAuthEndpoints
             p.Enhancements.OrderBy(e => e.RequestedAt)
                 .Select(e => new EnhancementDto(e.Id, e.RequestedAmount, e.Reason, e.Status, e.ApprovedAmount, e.Reference, e.RequestedAt, e.RespondedAt))
                 .ToList(),
-            p.Version));
+            p.Version,
+            (await preAuths.AmountsAskedAsync([p.Id], ct)).TryGetValue(p.Id, out var asked) ? asked : null));
     }
 
     private static async Task<IResult> Create(SavePreAuthRequest request, PreAuthService preAuths, CancellationToken ct)
@@ -120,8 +123,9 @@ internal static class PreAuthEndpoints
     private static async Task<IResult> AnswerQuery(Guid id, PreAuthTextRequest request, PreAuthService preAuths, CancellationToken ct) =>
         (await preAuths.AnswerQueryAsync(id, request.Text, ct)).ToNoContent();
 
+    /// <summary>202: the amount waits for a second insurance desk user (MAKER-CHECKER.md, slice 12).</summary>
     private static async Task<IResult> Approve(Guid id, ApprovePreAuthRequest request, PreAuthService preAuths, CancellationToken ct) =>
-        (await preAuths.ApproveAsync(id, request, ct)).ToNoContent();
+        (await preAuths.ApproveAsync(id, request, ct)).ToHttpResult(Asked);
 
     private static async Task<IResult> Reject(Guid id, RejectPreAuthRequest request, PreAuthService preAuths, CancellationToken ct) =>
         (await preAuths.RejectAsync(id, request.Reason, ct)).ToNoContent();
@@ -129,9 +133,13 @@ internal static class PreAuthEndpoints
     private static async Task<IResult> RequestEnhancement(Guid id, RequestEnhancementRequest request, PreAuthService preAuths, CancellationToken ct) =>
         (await preAuths.RequestEnhancementAsync(id, request, ct)).ToNoContent();
 
+    /// <summary>204 for a refusal (recorded at once); 202 for an approved enhancement, which waits for a second insurance desk user.</summary>
     private static async Task<IResult> RespondToEnhancement(Guid id, Guid enhancementId, RespondEnhancementRequest request, PreAuthService preAuths, CancellationToken ct) =>
-        (await preAuths.RespondToEnhancementAsync(id, enhancementId, request, ct)).ToNoContent();
+        (await preAuths.RespondToEnhancementAsync(id, enhancementId, request, ct)).ToHttpResult(asked => asked is null ? TypedResults.NoContent() : Asked(asked));
 
+    /// <summary>202: the final approval waits for a second insurance desk user.</summary>
     private static async Task<IResult> FinalApproval(Guid id, FinalApprovalRequest request, PreAuthService preAuths, CancellationToken ct) =>
-        (await preAuths.RecordFinalApprovalAsync(id, request, ct)).ToNoContent();
+        (await preAuths.RecordFinalApprovalAsync(id, request, ct)).ToHttpResult(Asked);
+
+    private static IResult Asked(ApprovalRequestDto asked) => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked);
 }
