@@ -25,6 +25,7 @@ using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Organization;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.Extensions.DependencyInjection;
 using CodingEntryKind = HyFib.HealthCare360.Modules.Clinical.Domain.CodingEntryKind;
@@ -352,8 +353,9 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         (await tpaDesk.GetAsync<ClaimDetail>($"/api/v1/insurance/claims/{claimId}")).Status.ShouldBe(ClaimStatus.Approved);
 
         var utr = "UTR" + UniqueDigits(12);
+        var approvedClaim = await tpaDesk.GetAsync<ClaimDetail>($"/api/v1/insurance/claims/{claimId}");
         await tpaDesk.PostAsync($"/api/v1/insurance/claims/{claimId}/settle",
-            new SettleClaimRequest(insurerShare, null, utr, "Medi Assist settlement", today));
+            new SettleClaimRequest(insurerShare, null, utr, "Medi Assist settlement", today, approvedClaim.Version));
         claim = await tpaDesk.GetAsync<ClaimDetail>($"/api/v1/insurance/claims/{claimId}");
         claim.Status.ShouldBe(ClaimStatus.Settled);
         claim.SettledAmount.ShouldBe(insurerShare);
@@ -568,15 +570,21 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         return coding;
     }
 
-    /// <summary>TPA desk: raises the cashless request, submits it, and records the insurer's approval.</summary>
-    private static async Task<PreAuthDetail> ObtainPreAuthorisationAsync(ApiClient tpaDesk, Guid policyId, Guid admissionId)
+    /// <summary>
+    /// TPA desk: raises the cashless request, submits it, and records the insurer's approval, which an insurance desk user
+    /// checks before it moves the bill to the insurer (MAKER-CHECKER.md, slice 12).
+    /// </summary>
+    private async Task<PreAuthDetail> ObtainPreAuthorisationAsync(ApiClient tpaDesk, Guid policyId, Guid admissionId)
     {
         var request = new SavePreAuthRequest(
             policyId, admissionId, null, PreAuthRequested, Diagnosis, null,
             "Cellulitis of the left leg with fever; IV antibiotics, limb elevation and daily dressings.", 3, null, null);
         var id = (await tpaDesk.PostAsync<JsonElement>("/api/v1/insurance/preauths", request)).GetProperty("id").GetGuid();
         await tpaDesk.PostAsync($"/api/v1/insurance/preauths/{id}/submit");
-        await tpaDesk.PostAsync($"/api/v1/insurance/preauths/{id}/approve", new ApprovePreAuthRequest(PreAuthApproved, "MA-PA-" + UniqueDigits(6)));
+        var submitted = await tpaDesk.GetAsync<PreAuthDetail>($"/api/v1/insurance/preauths/{id}");
+        var asked = await tpaDesk.PostAsync<ApprovalRequestDto>(
+            $"/api/v1/insurance/preauths/{id}/approve", new ApprovePreAuthRequest(PreAuthApproved, "MA-PA-" + UniqueDigits(6), submitted.Version));
+        await MakerChecker.ApproveAsync(await server.SignInAsync(HospitalServer.Users.InsuranceDesk), asked);
         return await tpaDesk.GetAsync<PreAuthDetail>($"/api/v1/insurance/preauths/{id}");
     }
 

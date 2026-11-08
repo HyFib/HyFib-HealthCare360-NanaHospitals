@@ -663,6 +663,26 @@ and grants nothing.
       new doctor starts with none of their own (the service price) until theirs is approved. Another fee while one waits
       is refused (`approval.already_requested`), and a fee is set only over the fees it replaces (`approval.stale`),
       audited `practitioner.fee_changed` with both names;
+    - an insurance write-off (`insurance.claim_writeoff`, MAKER-CHECKER.md slice 12): what the insurer deducts in a
+      settlement, or the unpaid claim when it rejects it, is money never collected, so above
+      `billing.claimWriteOff.approvalAbove` (per facility, ₹0 by default: every write-off) the insurance desk
+      (`insurance.claims.manage`) asks and someone else who holds `insurance.claims.writeoff.approve` (the hospital
+      administrator, the accountant) approves, never the asker (`approval.self`; the insurance desk itself may not:
+      `approval.not_permitted`). `POST /api/v1/insurance/claims/{id}/settle` posts the money received at once (its payer
+      receipt and UTR) and answers 202 for the deductions, which stay owed by the insurer meanwhile; `…/reject` answers
+      202 and changes nothing until approved. Both take the claim's version (409 on a claim changed since it was read),
+      and the approval is made only over the claim as it was asked about (`approval.stale`), audited
+      `insurance.claim.written_off` at Warning with both names. Raising the amount waits for a second administrator
+      (SettingGuard); lowering it is at once;
+    - an amount the insurer approved on a pre-authorisation (`insurance.preauth_amount`): the approval, an enhancement
+      approved and the final approval each set how much of the bill the insurer pays, so
+      `POST /api/v1/insurance/preauths/{id}/approve`, `…/enhancements/{eid}/respond` (approved) and `…/final-approval`
+      answer 202 and record nothing until another user who holds `insurance.preauth.manage` checks it against the
+      insurer's letter, never whoever recorded it. Until then the insurer's cap stays where it was (none before the
+      first approval), so the patient pays that part. The amount is tried on a copy first (a request the record would
+      refuse is refused at once), taken with the pre-authorisation's version, made only over the pre-authorisation as it
+      was (`approval.stale`) and audited `insurance.preauth.approved`, `.enhancement` or `.final_approval` at Warning with
+      both names. A rejection or a refused enhancement is recorded at once: it leaves the bill with the patient;
   - a visit the doctor has started, cancelled at the desk (`patients.visit_cancel`, MAKER-CHECKER.md slice 15): once the
     consultation is under way (the token started or an encounter opened), or the visit has an encounter, a note, an order
     line or an e-prescription not cancelled, `POST /api/v1/visits/{id}/cancel` (`visits.manage`) answers 202 with the

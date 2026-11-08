@@ -104,7 +104,8 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 | `insurance.payers.manage` | Insurers, TPAs, corporates, schemes, non-payable items | InsuranceDesk, HospitalAdmin |
 | `insurance.policies.manage` | Patient policies | InsuranceDesk, Billing, HospitalAdmin |
 | `insurance.preauth.manage` | Cashless pre-authorisation, enhancements | InsuranceDesk, HospitalAdmin |
-| `insurance.claims.manage` | Claims, settlements, ageing | InsuranceDesk, Accountant, HospitalAdmin |
+| `insurance.claims.manage` | Claims, settlements, ageing (a write-off above `billing.claimWriteOff.approvalAbove` is asked for) | InsuranceDesk, Accountant, HospitalAdmin |
+| `insurance.claims.writeoff.approve` | Approve an insurance write-off another user asked for (the insurer's deductions, a rejected claim) | Accountant, HospitalAdmin |
 | `doctorfees.rules.manage` | Doctor revenue-share rules | HospitalAdmin, Accountant |
 | `doctorfees.payouts.manage` | Accruals, statements, payouts | HospitalAdmin, Accountant |
 
@@ -403,11 +404,13 @@ A self-paying patient's long stay can be billed in parts, so the family pays as 
 | POST | `/policies/{id}/verify` | `insurance.policies.manage` | `VerifyPolicyRequest` → 204; 403 `insurance.policy_self_verify` to whoever recorded the terms or last changed them: [someone else verifies](#a-third-party-pays-only-on-a-second-persons-word) |
 | GET | `/preauths?status&patientId&admissionId` (paged) · `/preauths/{id}` | pre-auth/claims manage, `ip.manage` | → `PreAuthListItem` / `PreAuthDetail` |
 | POST · PUT | `/preauths` · `/preauths/{id}` | `insurance.preauth.manage` | `SavePreAuthRequest` → 201 / 204 (`{FAC}PA{YY}{SEQ:6}` on submit) |
-| POST | `/preauths/{id}/submit` · `/query` · `/answer` · `/approve` · `/reject` · `/enhancements` · `/enhancements/{enhancementId}/respond` · `/final-approval` | `insurance.preauth.manage` | `PreAuthTextRequest`, `ApprovePreAuthRequest`, `RejectPreAuthRequest`, `RequestEnhancementRequest`, `RespondEnhancementRequest`, `FinalApprovalRequest` → 204 |
+| POST | `/preauths/{id}/submit` · `/query` · `/answer` · `/reject` · `/enhancements` | `insurance.preauth.manage` | `PreAuthTextRequest`, `RejectPreAuthRequest`, `RequestEnhancementRequest` → 204 |
+| POST | `/preauths/{id}/approve` · `/enhancements/{enhancementId}/respond` · `/final-approval` | `insurance.preauth.manage` | `ApprovePreAuthRequest`, `RespondEnhancementRequest`, `FinalApprovalRequest`, each with the pre-authorisation's `version` (409 when it changed) → **202** `ApprovalRequestDto` (`insurance.preauth_amount`): [another insurance desk user checks the amount](#insurance-money-waits-for-a-second-person); a refused enhancement → 204 at once. `PreAuthDetail.amountAskedAt` says when one waits |
 | GET | `/claims?status&payerId&patientId` (paged) · `/claims/{id}` | `insurance.claims.manage` | → `ClaimListItem` / `ClaimDetail` (`verifiedCoding`: the coding medical records verified for the bill's admission, or for its visit on any other bill, as claim text; null until verified) |
 | POST | `/claims` | `insurance.claims.manage` | `CreateClaimRequest(billId, …)` → 201 (`{FAC}CL{YY}{SEQ:6}`); codes left empty are the verified coding, procedures included, or else the pre-authorisation's |
 | PUT | `/claims/{id}/coding` | `insurance.claims.manage` | `UpdateClaimCodingRequest` (ICD / procedure codes as text) → 204 |
-| POST | `/claims/{id}/query` · `/answer` · `/approve` · `/settle` · `/reject` | `insurance.claims.manage` | `ClaimTextRequest`, `ApproveClaimRequest`, `SettleClaimRequest` (tranche, deductions with reasons, UTR), `RejectClaimRequest` → 204; a rejection is a full disallowance |
+| POST | `/claims/{id}/query` · `/answer` · `/approve` | `insurance.claims.manage` | `ClaimTextRequest`, `ApproveClaimRequest` → 204 |
+| POST | `/claims/{id}/settle` · `/reject` | `insurance.claims.manage` | `SettleClaimRequest` (tranche, deductions with reasons, UTR, the claim's `version`), `RejectClaimRequest(reason, version)` → 204 when the write-off is within `billing.claimWriteOff.approvalAbove`; otherwise **202** `ApprovalRequestDto` (`insurance.claim_writeoff`): the money received is posted at once, the deductions (or the rejection, a full disallowance) wait for [someone who approves insurance write-offs](#insurance-money-waits-for-a-second-person). 409 on a claim changed since it was read. `ClaimDetail` carries `writeOffAskedAt` and `writeOffApprovalAbove` |
 | GET | `/receivables/ageing?asOf` | `insurance.claims.manage` | → `ReceivablesAgeingReport` (0-30 / 31-60 / 61-90 / 90+ by payer) |
 
 **A payer's terms change only when two people agree.** A payer's category (whose default plan prices its patients
@@ -420,6 +423,25 @@ words, and that a new plan or category reaches out-patient services charged afte
 (stays already open keep their plan). Approving re-checks the terms it replaces (`prices.changed`); audited
 `payer.terms_changed` with before and after. `PayerDetail.pendingTerms` holds what waits; while it waits, a save must ask
 for the same terms (409).
+
+### Insurance money waits for a second person
+
+MAKER-CHECKER.md slice 12. **A write-off** (`insurance.claim_writeoff`): what the insurer deducts in a settlement, or the
+unpaid claim when it rejects it, is never collected from the insurer. Above `billing.claimWriteOff.approvalAbove` (per
+facility, ₹0 by default, so every write-off) the desk asks and someone else who holds
+`insurance.claims.writeoff.approve` (the accountant, the hospital administrator) approves; the insurance desk may not
+approve. In a settlement the money received is posted at once (its payer receipt, its UTR) and only the deductions
+wait, the claim partly settled meanwhile; a rejection changes nothing until approved. The approver reads the claim and
+bill, what the insurer owes before and after, each deduction and its reason, and why it waits. It is made only over the
+claim as it was asked about: a payment, a query or anything else recorded meanwhile makes it stale, and the desk asks
+again. Audited `insurance.claim.written_off` at Warning with both names. **An amount the insurer approved on a
+pre-authorisation** (`insurance.preauth_amount`): the approval, an enhancement approved and the final approval set the
+insurer's cap on the bill (`PayerCoverage.CoverageLimit`). Each is recorded for another user who holds
+`insurance.preauth.manage` to check against the insurer's letter (the approver reads the amount, the reference and the
+cap before and after); until then the cap stays where it was, none before the first approval, so the patient pays that
+part. A bill drafted meanwhile keeps that split: discard it and draft again once the amount is approved. A rejection
+or a refused enhancement is recorded at once. Audited `insurance.preauth.approved`, `.enhancement` or
+`.final_approval` at Warning with both names.
 
 ### Doctor fees — `/api/v1/doctor-fees`
 | Method | Path | Permission | Request → response |
@@ -1477,6 +1499,7 @@ estimate) or a cancelled bill gives no document and is never sent.
 | `billing.discount.defaultMaxPercent` | `0` | Staff discount allowed without approval when the user has no limit row |
 | `billing.shift.required` | `true` | Counter collections need an open cashier shift |
 | `billing.chargeCancel.approvalAbove` | `1000` | A charge worth more (₹, net) cancelled at the desk waits for someone who approves discounts; 0 makes every cancellation wait. OT, procedure, implant and bed-day charges always wait. Raising it waits for a second administrator |
+| `billing.claimWriteOff.approvalAbove` | `0` | How much (₹) the insurance desk writes off alone on a claim (the insurer's deductions in a settlement, or the unpaid claim on a rejection); more waits for someone who approves insurance write-offs. 0 makes every write-off wait. Raising it waits for a second administrator |
 | `billing.shift.shortageTolerance` | `0` | How much (₹) a drawer may be short and still close on the cashier's word; beyond it a supervisor accepts the shortage. Raising it waits for a second administrator |
 | `billing.tally.ledgers` | built-in names | `TallyLedgerMap` JSON (income by department, mode ledgers, payer and doctor ledgers, `pharmacy` and `canteen` ledgers, `salesLedgerPerGstRate`; for the settlement journal `gatewaySettlementBank` "Bank", `gatewayCharges` "Payment Gateway Charges", `gatewayInputGst` "Input GST", and the clearing ledger is `modeLedgers.PaymentGateway`, "Payment Gateway Clearing" by default; for the card and UPI settlement journal `posSettlementBank` "Bank" and `posCharges` "Card & UPI Charges (MDR)", GST on `gatewayInputGst`); set on the Tally screen |
 | `billing.tally.dailyPost.enabled` | `true` | Queue the daily Tally post |

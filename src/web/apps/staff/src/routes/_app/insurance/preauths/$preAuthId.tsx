@@ -50,6 +50,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import { BillingPatientBanner } from '@/modules/billing/BillingPatientBanner';
 import type { IpAccountDetail } from '@/modules/billing/ipApi';
 import { amountInputText, parseRupees } from '@/modules/billing/money';
@@ -104,12 +105,18 @@ function PreAuthPage() {
   const [action, setAction] = useState<Action>(null);
   const detail = useQuery({ ...insuranceQueries.preAuth(preAuthId), enabled: canRead });
 
-  const done = (message: string) => {
-    notify.success(message);
+  const done = (message: string, description?: string) => {
+    notify.success(message, description);
     setAction(null);
     void queryClient.invalidateQueries({ queryKey: insuranceKeys.preAuths });
     void queryClient.invalidateQueries({ queryKey: ['billing', 'ip'] });
   };
+  /** An amount the insurer approved, recorded for another insurance desk user to check before it moves the bill. */
+  const askedToCheck = () =>
+    done(
+      'Asked for approval',
+      'Another insurance desk user checks the amount against the insurer’s letter. Until then the patient pays that part of the bill.',
+    );
 
   const run = useMutation({
     mutationFn: async (step: { kind: 'submit' } | { kind: 'query' | 'answer' | 'reject'; text: string }) => {
@@ -248,6 +255,16 @@ function PreAuthPage() {
         }
       />
       <BillingPatientBanner patientId={p.patientId} showDues={false} />
+      {p.amountAskedAt && (
+        <MessageBar intent="warning" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Asked for approval {formatDateTime(p.amountAskedAt)}</MessageBarTitle>
+            An amount the insurer approved waits for another insurance desk user to check it against the letter. Until
+            they do, the patient pays that part of the bill. Anything recorded here meanwhile means it must be recorded
+            again. If it is refused, the approvals inbox says why.
+          </MessageBarBody>
+        </MessageBar>
+      )}
       {p.status === 'Rejected' && (
         <MessageBar intent="error" layout="multiline">
           <MessageBarBody>
@@ -422,20 +439,10 @@ function PreAuthPage() {
         onCancel={() => setAction(null)}
       />
       {action === 'approve' && (
-        <AmountReferenceDialog
-          preAuth={p}
-          mode="approve"
-          onClose={() => setAction(null)}
-          onDone={() => done('Approval recorded')}
-        />
+        <AmountReferenceDialog preAuth={p} mode="approve" onClose={() => setAction(null)} onDone={askedToCheck} />
       )}
       {action === 'final' && (
-        <AmountReferenceDialog
-          preAuth={p}
-          mode="final"
-          onClose={() => setAction(null)}
-          onDone={() => done('Final approval recorded')}
-        />
+        <AmountReferenceDialog preAuth={p} mode="final" onClose={() => setAction(null)} onDone={askedToCheck} />
       )}
       {action === 'enhance' && (
         <EnhancementDialog preAuth={p} onClose={() => setAction(null)} onDone={() => done('Enhancement asked')} />
@@ -445,7 +452,7 @@ function PreAuthPage() {
           preAuth={p}
           enhancement={action.respond}
           onClose={() => setAction(null)}
-          onDone={() => done('Insurer’s reply recorded')}
+          onDone={(asked) => (asked ? askedToCheck() : done('Insurer’s refusal recorded'))}
         />
       )}
     </Page>
@@ -473,8 +480,18 @@ function AmountReferenceDialog({
   const save = useMutation({
     mutationFn: () =>
       mode === 'approve'
-        ? insuranceApi.approvePreAuth(preAuth.id, parsed.ok ? parsed.rupees : 0, reference.trim() || null)
-        : insuranceApi.finalApproval(preAuth.id, parsed.ok ? parsed.rupees : 0, reference.trim() || null),
+        ? insuranceApi.approvePreAuth(
+            preAuth.id,
+            parsed.ok ? parsed.rupees : 0,
+            reference.trim() || null,
+            preAuth.version,
+          )
+        : insuranceApi.finalApproval(
+            preAuth.id,
+            parsed.ok ? parsed.rupees : 0,
+            reference.trim() || null,
+            preAuth.version,
+          ),
     onSuccess: onDone,
   });
   const guard = useUnsavedChanges({ dirty: useValuesChanged({ amount, reference }), busy: save.isPending, onClose });
@@ -496,7 +513,9 @@ function AmountReferenceDialog({
               <Text>
                 {mode === 'approve'
                   ? `Requested ${formatInr(preAuth.requestedAmount)}. An approval below the request is recorded as partly approved.`
-                  : 'The amount the insurer approved against the final bill. It replaces the running approvals and caps the insurer share.'}
+                  : 'The amount the insurer approved against the final bill. It replaces the running approvals and caps the insurer share.'}{' '}
+                Another insurance desk user checks it against the insurer’s letter before it moves the bill to the
+                insurer.
               </Text>
               <AmountField
                 label="Approved amount"
@@ -613,7 +632,7 @@ function RespondEnhancementDialog({
   preAuth: PreAuthDetail;
   enhancement: EnhancementDto;
   onClose: () => void;
-  onDone: () => void;
+  onDone: (asked: ApprovalRequestDto | undefined) => void;
 }) {
   const styles = useStyles();
   const [decision, setDecision] = useState<'approved' | 'rejected'>('approved');
@@ -629,8 +648,9 @@ function RespondEnhancementDialog({
         decision === 'approved',
         decision === 'approved' && parsed.ok ? parsed.rupees : 0,
         reference.trim() || null,
+        preAuth.version,
       ),
-    onSuccess: onDone,
+    onSuccess: (asked) => onDone(asked),
   });
   const guard = useUnsavedChanges({
     dirty: useValuesChanged({ decision, amount, reference }),

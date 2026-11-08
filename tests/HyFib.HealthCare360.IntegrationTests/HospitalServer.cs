@@ -88,6 +88,8 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.SecondBloodBankOfficer] = SystemRoles.BloodBankOfficer,
         [Users.Gynaecologist] = MtpRole,
         [Users.SecondGynaecologist] = MtpRole,
+        [Users.InsuranceDesk] = SystemRoles.InsuranceDesk,
+        [Users.SecondInsuranceDesk] = SystemRoles.InsuranceDesk,
     };
 
     /// <summary>
@@ -100,6 +102,8 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.SecondBloodBankOfficer] = "Priya Nair",
         [Users.Gynaecologist] = "Dr. Sneha Iyer",
         [Users.SecondGynaecologist] = "Dr. Meera Pillai",
+        [Users.InsuranceDesk] = "Farah Qureshi",
+        [Users.SecondInsuranceDesk] = "Vikram Joshi",
     };
 
     /// <summary>
@@ -1482,6 +1486,14 @@ public sealed class HospitalServer : IAsyncLifetime
         /// first use.
         /// </summary>
         public const string Accountant = "accountant";
+
+        /// <summary>
+        /// The insurance (TPA) desk: records pre-authorisations, claims and their settlements. Created on first use.
+        /// </summary>
+        public const string InsuranceDesk = "insurance";
+
+        /// <summary>A second insurance desk user, who checks what the first recorded (MAKER-CHECKER.md, slice 12). Created on first use.</summary>
+        public const string SecondInsuranceDesk = "insurance2";
 
         /// <summary>Performs scans and records the woman's Form F declaration, but does not sign Form F. Created on first use.</summary>
         public const string Radiographer = "radiographer";
