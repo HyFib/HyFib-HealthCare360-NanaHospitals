@@ -3,7 +3,10 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using HyFib.HealthCare360.Integrations.Domain;
 using HyFib.HealthCare360.Integrations.Features.Admin;
+using HyFib.HealthCare360.Modules.Analytics.Domain.Journeys;
+using HyFib.HealthCare360.Modules.Analytics.Features.Journeys;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
@@ -32,6 +35,7 @@ using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Features.Appointments;
 using HyFib.HealthCare360.Modules.Scheduling.Features.Availability;
+using HyFib.HealthCare360.Modules.Scheduling.Features.Portal;
 using HyFib.HealthCare360.Modules.Scheduling.Features.Schedules;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Stores;
 using HyFib.HealthCare360.Modules.SupplyChain.Services;
@@ -100,6 +104,134 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         await NothingIsLeftToPayAsync(patient, bill, sale);
     }
 
+    /// <summary>
+    /// The same journey started by the patient on the portal, paid online, and followed to the visit's closing: at every
+    /// hand-off the module that takes over has the work (the desk the paid booking, the queue the token, the lab the order,
+    /// billing the charges, the pharmacy the prescription), and the patient's pipeline, read only from those records,
+    /// moves to the stage the hand-off proves.
+    /// </summary>
+    [Fact]
+    public async Task A_patient_who_booked_and_paid_on_the_portal_is_followed_through_every_hand_off_to_the_visit_closing()
+    {
+        await using var gateway = await BookingPaidTwiceTests.PaymentsToSimulatorAsync(server);
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+
+        // Booking: the patient books on the portal and pays online; the desk sees the booking paid.
+        var patient = await PatientBooksAndPaysOnThePortalThenChecksInAsync(frontOffice);
+        var op = await OutpatientAsync(frontOffice, patient.PatientId);
+        (op.Id, op.Status).ShouldBe((patient.VisitId, JourneyStatus.Active));
+        op.Current.ShouldNotBeNull().Key.ShouldBe("checked-in", "check-in hands the patient to the queue");
+
+        // Queue → consultation: the doctor calls the token, sees the patient, orders a CRP and prescribes; the visit stays
+        // open for the tests and the medicines.
+        var consultation = await DoctorConsultsAsync(patient, endsVisit: false);
+        op = await OutpatientAsync(frontOffice, patient.PatientId);
+        op.Current.ShouldNotBeNull().Key.ShouldBe("consultation-signed");
+        Stage(op, "called").State.ShouldBe(StageState.Done, "the queue handed the patient to the doctor");
+        Stage(op, "investigations-done").Detail.ShouldBe("0 of 1 resulted", "the order reached the lab");
+        Stage(op, "dispensed").Detail.ShouldBe("Waiting at the pharmacy", "the prescription reached the pharmacy");
+
+        // Lab: the tube waits, not drawn until the test is paid.
+        var labWork = await LabFindsTheUnpaidSampleAsync(patient);
+
+        // Payment: billing finds every charge of the visit, and the bill paid clears the lab's payment gate.
+        var bill = await BillingSettlesTheVisitAsync(patient);
+        op = await OutpatientAsync(frontOffice, patient.PatientId);
+        Reached(Stage(op, "billed")).ShouldBeTrue();
+        Reached(Stage(op, "paid")).ShouldBeTrue();
+        var lab = (await frontOffice.GetAsync<PatientJourneys>($"/api/v1/patients/{patient.PatientId}/journey")).LabOrders.ShouldHaveSingleItem();
+        Reached(lab.Stages.Single(s => s.Key == "payment-cleared")).ShouldBeTrue();
+
+        // Sample → result: collected, received, resulted and verified; the report released completes the investigation.
+        await LabReportsTheTestAsync(patient, labWork);
+        Reached(Stage(await OutpatientAsync(frontOffice, patient.PatientId), "investigations-done")).ShouldBeTrue();
+
+        // Pharmacy: the prescription is dispensed.
+        var sale = await PharmacistDispensesAsync(patient, consultation);
+        Reached(Stage(await OutpatientAsync(frontOffice, patient.PatientId), "dispensed")).ShouldBeTrue();
+
+        // Visit closed: by the desk, once all of it is done; the booking is completed with it.
+        await frontOffice.PostAsync($"/api/v1/visits/{patient.VisitId}/complete");
+        op = await OutpatientAsync(frontOffice, patient.PatientId);
+        (op.Status, op.Current).ShouldBe((JourneyStatus.Completed, (JourneyStage?)null));
+        op.Stages.ShouldAllBe(s => s.State == StageState.Done, "every hand-off of the visit happened");
+        (await AppointmentAsync(frontOffice, patient.AppointmentId)).Status.ShouldBe(AppointmentStatus.Completed);
+        await NothingIsLeftToPayAsync(patient, bill, sale);
+    }
+
+    /// <summary>
+    /// The patient, registered at the desk once, books today's slot on the portal and pays online (the training gateway);
+    /// on arrival the desk checks the paid booking in, which opens the visit and its queue token.
+    /// </summary>
+    private async Task<CheckedInPatient> PatientBooksAndPaysOnThePortalThenChecksInAsync(ApiClient frontOffice)
+    {
+        var surname = "Portal" + RandomLetters(8);
+        var phone = "6" + RandomDigits(9);
+        var registered = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
+            Title: "Ms.", FirstName: TestPatients.FirstName("Divya"), MiddleName: null, LastName: surname, Gender: Gender.Female,
+            DateOfBirth: new DateOnly(1985, 1, 1).AddDays(Random.Shared.Next(365 * 15)), AgeYears: null, AgeMonths: null,
+            Phone: phone, AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
+            GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
+            EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null,
+            Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
+            ConfirmedNotDuplicate: false));
+        var doctorAccount = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var practitionerId = (await doctorAccount.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
+        var doctor = await frontOffice.GetAsync<PractitionerDto>($"/api/v1/masters/practitioners/{practitionerId}");
+        // Online booking closes 30 minutes before the slot.
+        var slot = await FreeSlotTodayAsync(frontOffice, doctor, leadMinutes: 35);
+
+        var portal = await server.SignInToPortalAsync(phone);
+        var booked = await portal.PostAsync<PortalBookingResult>("/api/v1/portal/appointments", new PortalBookAppointmentRequest(
+            registered.Id, doctor.Id, slot.StartsAt, AppointmentVisitType.New, IsTelehealth: false, Complaint, PayOnline: true));
+        var order = booked.Payment.ShouldNotBeNull("The training gateway takes the payment.").OrderId;
+        await BookingPaidTwiceTests.SetSimulatorAsync(server, order, SimulatorTransactionStatus.Captured);
+        (await portal.PostAsync<PortalAppointment>($"/api/v1/portal/appointments/{booked.Appointment.Id}/payment/verify")).PaymentStatus
+            .ShouldBe(AppointmentPaymentStatus.PaidOnline);
+
+        // The desk sees the booking as the portal made it, paid and so confirmed; checking it in opens the visit with a waiting token.
+        var appointment = await AppointmentAsync(frontOffice, booked.Appointment.Id);
+        (appointment.Channel, appointment.PaymentStatus, appointment.Status).ShouldBe(
+            (AppointmentChannel.Portal, AppointmentPaymentStatus.PaidOnline, AppointmentStatus.Confirmed));
+        var checkIn = await frontOffice.PostAsync<CheckInResult>(
+            $"/api/v1/scheduling/appointments/{appointment.Id}/check-in", new CheckInAppointmentRequest());
+        var visit = await frontOffice.GetAsync<VisitDetail>($"/api/v1/visits/{checkIn.VisitId}");
+        (visit.Status, visit.Type, visit.AppointmentId).ShouldBe((VisitStatus.Open, VisitType.OutPatient, appointment.Id));
+        var token = visit.Token.ShouldNotBeNull("The desk's check-in hands the patient to the department queue.");
+        token.Status.ShouldBe(TokenStatus.Waiting);
+        return new CheckedInPatient(registered.Id, registered.Uhid, phone, doctor, appointment.Id, appointment.FeeAmount, appointment.Room, visit.Id, token.Id);
+    }
+
+    /// <summary>
+    /// Billing drafts the visit's bill from every charge the modules posted (the consultation at check-in, the test when
+    /// ordered), finalizes it, and takes what is still due at the counter (the consultation was paid online).
+    /// </summary>
+    private async Task<BillDetail> BillingSettlesTheVisitAsync(CheckedInPatient patient)
+    {
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(patient.VisitId, PatientId: null, ChargeIds: null));
+        draft.Lines.ShouldContain(l => l.ServiceCode == CrpCode, "The test the doctor ordered was charged to the visit.");
+        var bill = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
+        if (bill.DueAmount > 0)
+        {
+            await OpenCounterShiftAsync(billing);
+            await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new BillPaymentRequest(
+                bill.Id, [new PaymentLineInput(BillPaymentMode.Cash, bill.DueAmount, null, null, null, null, null, null)], Notes: null));
+        }
+
+        bill = await billing.GetAsync<BillDetail>($"/api/v1/billing/bills/{bill.Id}");
+        (bill.Status, bill.DueAmount).ShouldBe((BillStatus.Paid, 0m));
+        return bill;
+    }
+
+    private static async Task<JourneyDto> OutpatientAsync(ApiClient api, Guid patientId) =>
+        (await api.GetAsync<PatientJourneys>($"/api/v1/patients/{patientId}/journey")).Outpatient.ShouldNotBeNull();
+
+    private static JourneyStage Stage(JourneyDto journey, string key) => journey.Stages.Single(s => s.Key == key);
+
+    /// <summary>The stage happened: done, or, the one reached last, where the patient is now.</summary>
+    private static bool Reached(JourneyStage stage) => stage.State is StageState.Done or StageState.Current && stage.At is not null;
+
     private async Task<CheckedInPatient> FrontOfficeRegistersBooksAndChecksInAsync()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
@@ -149,7 +281,8 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         return new CheckedInPatient(registered.Id, registered.Uhid, phone, doctor, appointment.Id, appointment.FeeAmount, appointment.Room, visit.Id, token.Id);
     }
 
-    private async Task<Consultation> DoctorConsultsAsync(CheckedInPatient patient)
+    /// <param name="endsVisit">The doctor ends the consultation with the token, which completes the visit; otherwise it stays open.</param>
+    private async Task<Consultation> DoctorConsultsAsync(CheckedInPatient patient, bool endsVisit = true)
     {
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
 
@@ -226,6 +359,12 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         // Signs the note and ends the consultation: the visit and the appointment are complete.
         (await doctor.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{encounter.Id}/sign", new SignEncounterRequest(encounter.Version)))
             .Status.ShouldBe(EncounterStatus.Signed);
+        if (!endsVisit)
+        {
+            (await doctor.GetAsync<VisitDetail>($"/api/v1/visits/{patient.VisitId}")).Status.ShouldBe(VisitStatus.InProgress);
+            return new Consultation(order.Id, crp, signed.Prescription, drug);
+        }
+
         (await doctor.PostAsync<QueueTokenDto>($"/api/v1/queue/{patient.TokenId}/complete")).Status.ShouldBe(TokenStatus.Completed);
         (await doctor.GetAsync<VisitDetail>($"/api/v1/visits/{patient.VisitId}")).Status.ShouldBe(VisitStatus.Completed);
         (await AppointmentAsync(doctor, patient.AppointmentId)).Status.ShouldBe(AppointmentStatus.Completed);
@@ -505,9 +644,10 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
     /// The doctor's first free in-person slot today. When the seeded sessions have none left (evening, Sunday, or all
     /// booked), the hospital administrator adds an extra OPD session for the rest of the day.
     /// </summary>
-    private async Task<SlotDto> FreeSlotTodayAsync(ApiClient frontOffice, PractitionerDto doctor)
+    /// <param name="leadMinutes">How long before it the slot must still start: the desk books up to it, the portal 30 minutes before.</param>
+    private async Task<SlotDto> FreeSlotTodayAsync(ApiClient frontOffice, PractitionerDto doctor, int leadMinutes = 2)
     {
-        if (await FirstFreeSlotAsync(frontOffice, doctor.Id) is { } slot)
+        if (await FirstFreeSlotAsync(frontOffice, doctor.Id, leadMinutes) is { } slot)
         {
             return slot;
         }
@@ -517,7 +657,7 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         if (now.TimeOfDay > new TimeSpan(23, 45, 0))
         {
             await Task.Delay(TimeSpan.FromDays(1) - now.TimeOfDay + TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-            if (await FirstFreeSlotAsync(frontOffice, doctor.Id) is { } morning)
+            if (await FirstFreeSlotAsync(frontOffice, doctor.Id, leadMinutes) is { } morning)
             {
                 return morning;
             }
@@ -525,22 +665,22 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
             now = DateTimeOffset.UtcNow.ToOffset(IndiaOffset);
         }
 
-        var startMinute = (int)Math.Ceiling((now.TimeOfDay.TotalMinutes + 3) / 5) * 5;
+        var startMinute = (int)Math.Ceiling((now.TimeOfDay.TotalMinutes + leadMinutes + 1) / 5) * 5;
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         await admin.PostAsync<ScheduleSaved>("/api/v1/scheduling/exceptions", new SaveScheduleExceptionRequest(
             doctor.Id, ScheduleExceptionType.ExtraSession, DateOnly.FromDateTime(now.DateTime), DateOnly.FromDateTime(now.DateTime),
             new TimeOnly(startMinute / 60, startMinute % 60), new TimeOnly(23, 59), "Extra OPD session", AllFacilities: false,
             doctor.DepartmentId, SlotMinutes: 5, CapacityPerSlot: 1, ConsultationMode.InPerson, Room: null, Version: null));
-        return await FirstFreeSlotAsync(frontOffice, doctor.Id)
+        return await FirstFreeSlotAsync(frontOffice, doctor.Id, leadMinutes)
                ?? throw new InvalidOperationException($"{doctor.DisplayName} has no free slot even after the extra session.");
     }
 
     /// <summary>Today's first free slot that starts late enough to book (the booking refuses a slot already started).</summary>
-    private static async Task<SlotDto?> FirstFreeSlotAsync(ApiClient frontOffice, Guid practitionerId)
+    private static async Task<SlotDto?> FirstFreeSlotAsync(ApiClient frontOffice, Guid practitionerId, int leadMinutes)
     {
         var availability = await frontOffice.GetAsync<List<PractitionerAvailability>>(
             $"/api/v1/scheduling/slots?practitionerId={practitionerId}&mode=InPerson&includeFull=false");
-        var earliest = DateTimeOffset.UtcNow.AddMinutes(2);
+        var earliest = DateTimeOffset.UtcNow.AddMinutes(leadMinutes);
         return availability.SelectMany(a => a.Slots).Where(s => s.Available > 0 && s.StartsAt > earliest).MinBy(s => s.StartsAt);
     }
 
