@@ -896,6 +896,7 @@
     "/api/v1/abdm/bundles/discharge-summaries/{id:guid} abdm.export",
     "/api/v1/abdm/bundles/home-readings/{id:guid} abdm.export",
     "/api/v1/abdm/bundles/immunizations/{id:guid} abdm.export",
+    "/api/v1/abdm/bundles/invoices/{id:guid} abdm.export",
     "/api/v1/abdm/bundles/lab-reports/{id:guid} abdm.export",
     "/api/v1/abdm/bundles/op-consultations/{id:guid} abdm.export",
     "/api/v1/abdm/bundles/prescriptions/{id:guid} abdm.export",
