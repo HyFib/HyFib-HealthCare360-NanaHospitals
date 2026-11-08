@@ -1,10 +1,12 @@
 using HyFib.HealthCare360.Modules.Analytics.Features.Dashboards;
 using HyFib.HealthCare360.Modules.Analytics.Features.Journeys;
+using HyFib.HealthCare360.Modules.Analytics.Features.KpiTargets;
 using HyFib.HealthCare360.Modules.Analytics.Features.Reports;
 using HyFib.HealthCare360.Modules.Analytics.Features.Schedules;
 using HyFib.HealthCare360.Modules.Analytics.Reports;
 using HyFib.HealthCare360.Modules.Analytics.Reports.Export;
 using HyFib.HealthCare360.Modules.Analytics.Services;
+using HyFib.HealthCare360.Platform.Networking;
 
 namespace HyFib.HealthCare360.Modules.Analytics;
 
@@ -34,6 +36,9 @@ public sealed class AnalyticsModule : IModule
         services.AddScoped<ReportFileWriter>();
         services.AddScoped<ReportAuditor>();
         services.AddScoped<KpiService>();
+        services.AddScoped<KpiTargetService>();
+        services.AddScoped<KpiTargetMonitor>();
+        services.AddScoped<IHealthWarningSource, ReportEmailHealthWarnings>();
         services.AddScoped<DashboardService>();
         services.AddScoped<ScheduleService>();
         services.AddScoped<ReportDeliveryService>();
@@ -41,8 +46,8 @@ public sealed class AnalyticsModule : IModule
         services.AddScoped<ExtractMonitor>();
         services.AddScoped<JourneyQueries>();
 
-        // Sends due scheduled e-mails and refreshes due BI extracts every minute; returns immediately on API-only nodes
-        // (PlatformOptions.RunsJobs).
+        // Sends due scheduled e-mails and refreshes due BI extracts every minute, and checks KPI targets hourly; returns
+        // immediately on API-only nodes (PlatformOptions.RunsJobs).
         services.AddHostedService<ScheduledReportJob>();
     }
 
@@ -51,6 +56,7 @@ public sealed class AnalyticsModule : IModule
         ReportEndpoints.Map(endpoints);
         DashboardEndpoints.Map(endpoints);
         ScheduleEndpoints.Map(endpoints);
+        KpiTargetEndpoints.Map(endpoints);
         JourneyEndpoints.Map(endpoints);
     }
 }

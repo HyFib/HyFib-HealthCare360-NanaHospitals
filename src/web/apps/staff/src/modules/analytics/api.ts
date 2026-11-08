@@ -20,7 +20,8 @@ export type ReportCategory =
   | 'SpecialtyCare'
   | 'Quality'
   | 'Experience'
-  | 'People';
+  | 'People'
+  | 'Statutory';
 export type ReportValueType =
   'Text' | 'Integer' | 'Decimal' | 'Money' | 'Percent' | 'Days' | 'Minutes' | 'Date' | 'DateTime' | 'Month';
 export type ReportParameterKind =
@@ -200,6 +201,63 @@ export interface KpiValue {
   reportId: string | null;
   definition: string;
   trend: KpiPoint[] | null;
+  /** The facility's target for this period, when one is set (none for a consolidated view). */
+  target?: KpiTargetView | null;
+}
+
+export type KpiStatus = 'Green' | 'Amber' | 'Red';
+
+/**
+ * A KPI's target as it applies to the period shown: counts and money are prorated from their monthly target
+ * (`prorated`), and `dailyTarget` is drawn under the daily trend.
+ */
+export interface KpiTargetView {
+  target: number;
+  amber: number;
+  red: number;
+  prorated: boolean;
+  status: KpiStatus | null;
+  ownerRole: string;
+  dailyTarget: number | null;
+}
+
+/** A facility's stored target (monthly for counts and money). */
+export interface KpiTargetDto {
+  target: number;
+  amberThreshold: number;
+  redThreshold: number;
+  ownerRole: string;
+  setByName: string | null;
+  setAt: string;
+  lastStatus: KpiStatus | null;
+  lastValue: number | null;
+  lastCheckedAt: string | null;
+  version: number;
+}
+
+export interface KpiTargetItem {
+  key: string;
+  label: string;
+  unit: KpiUnit;
+  higherIsBetter: boolean;
+  /** Counts and money: the target is per month. */
+  monthly: boolean;
+  formula: string;
+  target: KpiTargetDto | null;
+}
+
+export interface KpiTargets {
+  facilityName: string;
+  roles: string[];
+  kpis: KpiTargetItem[];
+}
+
+export interface SaveKpiTargetRequest {
+  target: number;
+  amberThreshold: number;
+  redThreshold: number;
+  ownerRole: string;
+  version?: number;
 }
 
 export interface KpiSet {
@@ -422,6 +480,7 @@ export const analyticsKeys = {
   runs: ['analytics', 'run'] as const,
   kpis: ['analytics', 'kpis'] as const,
   definitions: ['analytics', 'kpi-definitions'] as const,
+  targets: ['analytics', 'kpi-targets'] as const,
   dashboards: ['analytics', 'dashboards'] as const,
   schedules: ['analytics', 'schedules'] as const,
 };
@@ -486,6 +545,12 @@ export const analyticsQueries = {
       staleTime: 10 * 60_000,
       placeholderData: keepPreviousData,
     }),
+  /** Every KPI with the signed-in facility's target (analytics.kpi_targets.manage). */
+  targets: () =>
+    queryOptions({
+      queryKey: analyticsKeys.targets,
+      queryFn: ({ signal }) => api.get<KpiTargets>(`${BASE}/kpi-targets`, { signal }),
+    }),
   status: () =>
     queryOptions({
       queryKey: ['analytics', 'status'],
@@ -549,5 +614,10 @@ export const analyticsApi = {
   deleteSchedule: (id: string, version: number) => api.delete<void>(`${BASE}/schedules/${id}`, { query: { version } }),
   /** Generates the file now: e-mails it, or rewrites the extract's file. The regular schedule does not change. */
   sendNow: (id: string) => api.post<DeliveryDto>(`${BASE}/schedules/${id}/send-now`, undefined, { timeoutMs: 180_000 }),
+  /** Sets the facility's target for a KPI (no version on the first save). */
+  saveTarget: (key: string, body: SaveKpiTargetRequest) =>
+    api.put<KpiTargetItem>(`${BASE}/kpi-targets/${encodeURIComponent(key)}`, body),
+  deleteTarget: (key: string, version: number) =>
+    api.delete<void>(`${BASE}/kpi-targets/${encodeURIComponent(key)}`, { query: { version } }),
   deliveryFile: (deliveryId: string) => api.blob(`${BASE}/deliveries/${deliveryId}/file`, { timeoutMs: 120_000 }),
 };
