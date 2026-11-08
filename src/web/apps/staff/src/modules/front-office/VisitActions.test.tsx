@@ -143,6 +143,29 @@ describe('ending a visit', SCREEN_TESTS, () => {
     ]);
   });
 
+  it('says the cancellation waits for approval once the doctor has started the visit, and changes nothing yet', async () => {
+    // 202: a front-office supervisor or the treating doctor decides (MAKER-CHECKER.md, slice 15).
+    answerCancel = () => ({
+      id: '0192a000-0000-7000-8000-00000000ab01',
+      kind: 'patients.visit_cancel',
+      status: 'Pending',
+    });
+    await openVisits();
+    const user = await chooseAction('NHOV260000212', 'Cancel visit');
+    const dialog = await screen.findByRole('alertdialog', { name: 'Cancel visit NHOV260000212' });
+    expect(within(dialog).getByText(/the treating doctor approves the cancellation first/)).toBeInTheDocument();
+    await user.type(within(dialog).getByRole('textbox', { name: /^Reason/ }), 'Patient wants another hospital');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel visit' }));
+
+    await waitFor(() =>
+      expect(notify.success).toHaveBeenCalledWith(
+        'Asked for approval',
+        expect.stringContaining('NHOV260000212 · Ravi Kumar'),
+      ),
+    );
+    expect(notify.success).not.toHaveBeenCalledWith('Visit cancelled', expect.anything());
+  });
+
   it("shows the server's refusal in the cancel dialog", async () => {
     answerCancel = () => problem(422, 'This visit is already closed.');
     await openVisits();

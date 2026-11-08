@@ -20,11 +20,13 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Templates;
 using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Clinical.Services.Catalogue;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace HyFib.HealthCare360.Modules.Clinical;
 
@@ -43,6 +45,7 @@ public sealed class ClinicalModule : IModule
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<ClinicalAccess>();
+        services.Replace(ServiceDescriptor.Scoped<IVisitClinicalWork, VisitClinicalWorkQuery>());
         services.AddScoped<EncounterService>();
         services.AddScoped<ClinicalOrderService>();
         services.AddScoped<PrescriptionSafetyService>();
