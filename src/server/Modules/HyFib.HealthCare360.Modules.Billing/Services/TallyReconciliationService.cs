@@ -286,7 +286,7 @@ public sealed class TallyReconciliationService(HospitalDbContext db, TallyServic
             Payouts = paidOut.Count,
             PayoutsNet = paidOut.Sum(),
             OpenShifts = dayEnd.OpenShifts,
-            CashVariances = dayEnd.Shifts.Where(s => s.Variance is not (null or 0)).Select(s => new TallyCashVariance(s.Counter, s.UserName, s.Variance!.Value)).ToList(),
+            CashVariances = dayEnd.Shifts.Where(s => s.Variance is not (null or 0)).Select(s => new TallyCashVariance(s.Counter, s.UserName, s.Variance!.Value, s.ShortageAwaiting)).ToList(),
             NotReceived = (dayEnd.NotReceived ?? []).Select(t => new TallyModeAmount(t.Mode, t.Amount)).ToList(),
             NotPaidOut = (dayEnd.NotPaidOut ?? []).Select(t => new TallyModeAmount(t.Mode, t.Amount)).ToList(),
             AdjustmentsUndone = undone,

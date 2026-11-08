@@ -59,4 +59,45 @@ public sealed class ShiftCalculatorTests
         shift.Totals.Count.ShouldBe(3);
         shift.Close(reconciliation, null, TestData.Now).Error!.Code.ShouldBe("billing.shift_closed");
     }
+
+    [Theory]
+    [InlineData(-100, 0, true)]
+    [InlineData(-0.01, 0, true)]
+    [InlineData(-50, 50, false)]
+    [InlineData(-50.01, 50, true)]
+    [InlineData(0, 0, false)]
+    [InlineData(20, 0, false)]
+    [InlineData(-10, -5, true)]
+    public void Only_a_shortage_beyond_the_tolerance_waits_for_a_supervisor_and_an_excess_never_does(double variance, double tolerance, bool waits)
+    {
+        ShiftCalculator.ShortageNeedsSupervisor((decimal)variance, (decimal)tolerance).ShouldBe(waits);
+    }
+
+    [Fact]
+    public void A_shift_closed_short_awaits_a_supervisor_who_is_not_its_cashier()
+    {
+        var cashier = Guid.CreateVersion7();
+        var shift = CashierShift.Open(TestData.FacilityId, cashier, "Asha", "OPD-1", 1_000m, TestData.Now);
+        shift.Close(ShiftCalculator.Reconcile(1_000m, [], declaredCash: 900m), "Note missing", TestData.Now, shortageTolerance: 0m).IsSuccess.ShouldBeTrue();
+
+        (shift.Status, shift.ShortageAwaiting, shift.Shortage).ShouldBe((ShiftStatus.Closed, true, 100m));
+        shift.AcceptShortage(cashier, "Asha", TestData.Now).Error!.Code.ShouldBe(ShiftCalculator.OwnShortageCode);
+        shift.ShortageAwaiting.ShouldBeTrue();
+
+        var supervisor = Guid.CreateVersion7();
+        shift.AcceptShortage(supervisor, "Ravi", TestData.Now).IsSuccess.ShouldBeTrue();
+        (shift.ShortageAwaiting, shift.ShortageAcceptedBy, shift.ShortageAcceptedByName).ShouldBe((false, supervisor, "Ravi"));
+        shift.AcceptShortage(Guid.CreateVersion7(), "Meena", TestData.Now).Error!.Code.ShouldBe("billing.shift_shortage_not_awaiting");
+    }
+
+    [Fact]
+    public void A_shift_closed_over_or_within_the_tolerance_awaits_no_one()
+    {
+        var over = CashierShift.Open(TestData.FacilityId, Guid.CreateVersion7(), "Asha", "OPD-1", 1_000m, TestData.Now);
+        over.Close(ShiftCalculator.Reconcile(1_000m, [], declaredCash: 1_020m), null, TestData.Now).IsSuccess.ShouldBeTrue();
+        var within = CashierShift.Open(TestData.FacilityId, Guid.CreateVersion7(), "Asha", "OPD-1", 1_000m, TestData.Now);
+        within.Close(ShiftCalculator.Reconcile(1_000m, [], declaredCash: 990m), null, TestData.Now, shortageTolerance: 10m).IsSuccess.ShouldBeTrue();
+
+        (over.ShortageAwaiting, over.Shortage, within.ShortageAwaiting, within.Shortage).ShouldBe((false, 0m, false, 10m));
+    }
 }

@@ -5,7 +5,7 @@ namespace HyFib.HealthCare360.Modules.Billing.Tests;
 
 public sealed class DiscountPolicyTests
 {
-    private static readonly DiscountAuthority TenPercent = new(false, 10m, null);
+    private static readonly DiscountAuthority TenPercent = new(10m, null);
 
     [Fact]
     public void A_discount_within_the_users_limit_needs_no_approval()
@@ -22,16 +22,44 @@ public sealed class DiscountPolicyTests
     [Fact]
     public void The_rupee_cap_applies_when_it_is_lower_than_the_percentage()
     {
-        var capped = new DiscountAuthority(false, 20m, 500m);
+        var capped = new DiscountAuthority(20m, 500m);
 
         DiscountPolicy.AllowedWithoutApproval(10_000m, capped).ShouldBe(500m);
         DiscountPolicy.RequiresApproval(600m, 10_000m, capped, 0m).ShouldBeTrue();
     }
 
     [Fact]
-    public void Approvers_are_not_limited()
+    public void Only_a_limit_lets_a_discount_through_without_approval_whatever_permission_the_user_holds()
     {
-        DiscountPolicy.RequiresApproval(900m, 1_000m, new DiscountAuthority(true, 100m, null), 0m).ShouldBeFalse();
+        // An approver is held to their own limit (slice 6): their discount above it waits for another approver.
+        DiscountPolicy.RequiresApproval(900m, 1_000m, TenPercent, 0m).ShouldBeTrue();
+        DiscountPolicy.RequiresApproval(900m, 1_000m, new DiscountAuthority(100m, null), 0m).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(10.0, null, 20.0, null, true)]
+    [InlineData(10.0, null, 10.0, null, false)]
+    [InlineData(10.0, null, 5.0, null, false)]
+    [InlineData(10.0, 500.0, 10.0, 600.0, true)]
+    [InlineData(10.0, 500.0, 10.0, null, true)]
+    [InlineData(10.0, 500.0, 10.0, 400.0, false)]
+    [InlineData(10.0, null, 10.0, 400.0, false)]
+    [InlineData(10.0, 500.0, 5.0, null, true)]
+    [InlineData(120.0, null, 100.0, null, false)]
+    public void A_limit_raises_when_its_percentage_goes_up_or_its_rupee_cap_goes_up_or_away(
+        double beforePercent, double? beforeCap, double askedPercent, double? askedCap, bool raises)
+    {
+        var before = new DiscountAuthority((decimal)beforePercent, (decimal?)beforeCap);
+        var asked = new DiscountAuthority((decimal)askedPercent, (decimal?)askedCap);
+
+        DiscountPolicy.Raises(before, asked).ShouldBe(raises);
+    }
+
+    [Fact]
+    public void A_limit_in_words_names_its_cap()
+    {
+        DiscountPolicy.Words(new DiscountAuthority(12.5m, null)).ShouldBe("12.5%");
+        DiscountPolicy.Words(new DiscountAuthority(10m, 500m)).ShouldBe("10%, at most ₹500.00");
     }
 
     [Fact]

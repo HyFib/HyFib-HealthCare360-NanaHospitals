@@ -68,6 +68,22 @@ public sealed class SettingGuardTests
     }
 
     [Fact]
+    public void Raising_what_the_billing_desk_cancels_or_a_shortage_it_closes_alone_waits_and_lowering_is_at_once()
+    {
+        Waits("billing.chargeCancel.approvalAbove", null, Number(500)).ShouldBeFalse("below the ₹1,000 default");
+        Waits("billing.chargeCancel.approvalAbove", null, Number(5000)).ShouldBeTrue();
+        Waits("billing.chargeCancel.approvalAbove", Number(0), Number(-10)).ShouldBeFalse("below 0 acts as 0");
+        Waits("billing.chargeCancel.approvalAbove", Number(0), null).ShouldBeTrue("cleared, the ₹1,000 default applies");
+        Waits("billing.shift.shortageTolerance", null, Number(50)).ShouldBeTrue("above the ₹0 default: every shortage waits");
+        Waits("billing.shift.shortageTolerance", Number(50), Number(20)).ShouldBeFalse();
+
+        SettingGuard.Judge("billing.chargeCancel.approvalAbove", null, Number(5000), secret: false).Summary
+            .ShouldBe("Charge cancelled without approval: not set (₹1,000.00) → ₹5,000.00");
+        SettingGuard.Judge("billing.shift.shortageTolerance", Number(0), Number(50), secret: false).Summary
+            .ShouldBe("Cash shortage closed without a supervisor: ₹0.00 → ₹50.00");
+    }
+
+    [Fact]
     public void Zero_for_no_limit_is_the_loosest_of_all()
     {
         Waits("security.maxSessionsPerUser", Number(3), Number(0)).ShouldBeTrue("0 is no limit");

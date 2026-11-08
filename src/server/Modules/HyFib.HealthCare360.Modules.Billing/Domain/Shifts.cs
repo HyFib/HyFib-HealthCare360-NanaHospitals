@@ -27,7 +27,24 @@ public sealed class CashierShift : AuditableEntity, IFacilityScoped
     public decimal? Variance { get; set; }
 
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// Closed short by more than the hospital's tolerance, and the shortage not yet accepted by a supervisor: the shift is
+    /// closed (no money moves in it, and the cashier may open another), but the shortage stands on the cashier's word
+    /// alone until someone else who approves refunds accepts it (MAKER-CHECKER.md, slice 6). An excess needs no one.
+    /// </summary>
+    public bool ShortageAwaiting { get; set; }
+
+    /// <summary>The supervisor who accepted the shortage, never the cashier: their account, name and when.</summary>
+    public Guid? ShortageAcceptedBy { get; set; }
+
+    public string? ShortageAcceptedByName { get; set; }
+    public DateTimeOffset? ShortageAcceptedAt { get; set; }
+
     public List<CashierShiftTotal> Totals { get; set; } = [];
+
+    /// <summary>The cash short at the close (a positive amount), or 0 for a drawer that balanced or was over.</summary>
+    public decimal Shortage => Variance is < 0 ? -Variance.Value : 0m;
 
     public static CashierShift Open(Guid facilityId, Guid userId, string userName, string counter, decimal openingFloat, DateTimeOffset now) => new()
     {
@@ -41,7 +58,8 @@ public sealed class CashierShift : AuditableEntity, IFacilityScoped
         OpenedAt = now,
     };
 
-    public Result Close(ShiftReconciliation reconciliation, string? notes, DateTimeOffset now)
+    /// <param name="shortageTolerance">How much the drawer may be short and still close on the cashier's word.</param>
+    public Result Close(ShiftReconciliation reconciliation, string? notes, DateTimeOffset now, decimal shortageTolerance = 0m)
     {
         if (Status != ShiftStatus.Open)
         {
@@ -57,6 +75,27 @@ public sealed class CashierShift : AuditableEntity, IFacilityScoped
         Totals = reconciliation.Totals
             .Select(t => new CashierShiftTotal { ShiftId = Id, Mode = t.Mode, Collected = t.Collected, Refunded = t.Refunded, Net = t.Net })
             .ToList();
+        ShortageAwaiting = ShiftCalculator.ShortageNeedsSupervisor(reconciliation.Variance, shortageTolerance);
+        return Result.Success();
+    }
+
+    /// <summary>A supervisor accepts the shortage the shift closed with; never the cashier whose shift it is.</summary>
+    public Result AcceptShortage(Guid supervisorId, string supervisorName, DateTimeOffset now)
+    {
+        if (!ShortageAwaiting)
+        {
+            return Error.Rule("billing.shift_shortage_not_awaiting", "This shift's shortage is not waiting for a supervisor.");
+        }
+
+        if (supervisorId == UserId)
+        {
+            return Error.Forbidden(ShiftCalculator.OwnShortageCode, "This is your own shift, so another supervisor accepts its shortage.");
+        }
+
+        ShortageAwaiting = false;
+        ShortageAcceptedBy = supervisorId;
+        ShortageAcceptedByName = supervisorName;
+        ShortageAcceptedAt = now;
         return Result.Success();
     }
 }
@@ -89,6 +128,15 @@ public sealed record ShiftReconciliation(IReadOnlyList<ShiftModeTotal> Totals, d
 /// </summary>
 public static class ShiftCalculator
 {
+    /// <summary>Nobody accepts the shortage of their own shift.</summary>
+    public const string OwnShortageCode = "billing.shift_shortage_own";
+
+    /// <summary>
+    /// Whether a drawer closed with <paramref name="variance"/> (declared − expected) waits for a supervisor: a shortage
+    /// larger than <paramref name="tolerance"/> does; an excess, or a drawer that balanced, never does.
+    /// </summary>
+    public static bool ShortageNeedsSupervisor(decimal variance, decimal tolerance) => variance < 0 && -variance > Math.Max(tolerance, 0m);
+
     public static ShiftReconciliation Reconcile(decimal openingFloat, IEnumerable<ShiftMovement> movements, decimal declaredCash)
     {
         var totals = movements

@@ -208,6 +208,8 @@ internal sealed class CashierShiftConfiguration : IEntityTypeConfiguration<Cashi
         b.Property(x => x.UserName).HasMaxLength(200);
         b.Property(x => x.Counter).HasMaxLength(64);
         b.Property(x => x.Notes).HasMaxLength(500);
+        b.Property(x => x.ShortageAcceptedByName).HasMaxLength(200);
+        b.Ignore(x => x.Shortage);
         b.HasMany(x => x.Totals).WithOne().HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Cascade);
 
         // One open shift per cashier: every counter receipt belongs to exactly one drawer.

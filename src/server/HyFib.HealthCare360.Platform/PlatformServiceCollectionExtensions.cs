@@ -289,6 +289,8 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IApprovalAction, PractitionerLinkApproval>();
         services.AddScoped<PractitionerIdentityApprovals>();
         services.AddScoped<IApprovalAction, PractitionerIdentityApproval>();
+        services.AddScoped<PractitionerFeeApprovals>();
+        services.AddScoped<IApprovalAction, PractitionerFeeApproval>();
         services.AddScoped<DeviceEnrollmentApprovals>();
         services.AddScoped<IApprovalAction, DeviceEnrollmentApproval>();
 

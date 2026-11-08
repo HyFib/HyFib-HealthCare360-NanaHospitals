@@ -42,7 +42,12 @@ import {
   type ChargeDto,
 } from '@/modules/billing/api';
 import { BillingPatientBanner } from '@/modules/billing/BillingPatientBanner';
-import { AddChargeButton, CancelChargeDialog, type CancellableCharge } from '@/modules/billing/ChargeDialogs';
+import {
+  AddChargeButton,
+  CancelChargeDialog,
+  CancellationAsked,
+  type CancellableCharge,
+} from '@/modules/billing/ChargeDialogs';
 import { BillWorkspace } from '@/modules/billing/BillWorkspace';
 import { CounterSettingsDialog } from '@/modules/billing/CounterSettingsDialog';
 import { useBillingLive, useCanManageCharges } from '@/modules/billing/hooks';
@@ -570,7 +575,8 @@ function VisitCard({
                 }
               />
               <Amount value={charge.netAmount} />
-              {canManageCharges && (
+              {canManageCharges && charge.cancellationAskedAt && <CancellationAsked at={charge.cancellationAskedAt} />}
+              {canManageCharges && !charge.cancellationAskedAt && (
                 <Button
                   size="small"
                   appearance="subtle"
@@ -584,6 +590,7 @@ function VisitCard({
                       netAmount: charge.netAmount,
                       sourceModule: charge.sourceModule,
                       onDraft: charge.billId !== null,
+                      needsApproval: charge.cancelNeedsApproval ?? null,
                     })
                   }
                 />

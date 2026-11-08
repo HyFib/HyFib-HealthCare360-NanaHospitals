@@ -20,7 +20,6 @@ import {
   Page,
   PageHeader,
   Section,
-  StatusBadge,
   useNotify,
 } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -32,6 +31,7 @@ import { billingQueries } from '@/modules/billing/api';
 import { useBillingLive } from '@/modules/billing/hooks';
 import { PAYMENT_MODE_LABEL } from '@/modules/billing/labels';
 import { buildDayEndHtml, sendToPrinter } from '@/modules/billing/print';
+import { ShiftStatusBadge } from '@/modules/billing/ShiftControls';
 import { dateParam, textParam } from '@/modules/billing/searchParams';
 import { Amount, NoAccess } from '@/modules/billing/ui';
 
@@ -134,6 +134,18 @@ function DayEndPage() {
         <ErrorState error={report.error} onRetry={() => void report.refetch()} />
       ) : (
         <>
+          {(r.shortagesAwaiting ?? 0) > 0 && (
+            <MessageBar intent="warning">
+              <MessageBarBody>
+                <MessageBarTitle>
+                  {r.shortagesAwaiting} shift{r.shortagesAwaiting === 1 ? '' : 's'} closed short, the shortage awaiting
+                  a supervisor
+                </MessageBarTitle>
+                A cash shortage is not settled on the cashier&rsquo;s word: a supervisor other than the cashier accepts
+                it in Approvals. An excess is recorded and needs no one.
+              </MessageBarBody>
+            </MessageBar>
+          )}
           {r.openShifts > 0 && (
             <MessageBar intent="warning">
               <MessageBarBody>
@@ -274,7 +286,7 @@ function DayEndPage() {
                         />
                       ),
                   },
-                  { key: 'status', header: 'Shift', priority: 'low', render: (s) => <StatusBadge status={s.status} /> },
+                  { key: 'status', header: 'Shift', priority: 'low', render: (s) => <ShiftStatusBadge shift={s} /> },
                 ]}
                 emptyTitle="No shifts on this day"
               />

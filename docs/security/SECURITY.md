@@ -517,7 +517,9 @@ and grants nothing.
     only on enrolled desktops (`security.administrationRequiresDesktop`), payment before a lab sample
     (`lab.requirePaymentBeforeCollection`) or the cash counter shift (`billing.shift.required`); switching on Windows
     Hello unlock (`ui.biometricUnlock`) or AI (`ai.enabled`); raising an own-authority discount limit
-    (`billing.discount.defaultMaxPercent`, `pharmacy.discount.max_percent`), the canteen's staff credit, the sessions
+    (`billing.discount.defaultMaxPercent`, `pharmacy.discount.max_percent`), what the billing desk cancels or a cash
+    shortage it closes without a second person (`billing.chargeCancel.approvalAbove`, `billing.shift.shortageTolerance`),
+    the canteen's staff credit, the sessions
     per account, the screen-lock or MAR grace time or a delta check's threshold (0 for none counts as the highest), or
     shortening its look-back; clearing any of them, so the default decides; and any change to the portal's address in
     every SMS and QR code (`portal.baseUrl`), the TDS on doctors' fees, the critical alerts' numbers, times and
@@ -614,6 +616,43 @@ and grants nothing.
     interacting medicine) is overridden only by the doctor who wrote the prescription, signed in as themselves: anyone
     else's refill is refused (`prescription.refill_needs_prescriber`, nothing used up), the doctor is told, and the
     refusal is audited (`prescription.refill_blocked`). Another doctor repeats the prescription as their own and signs it.
+  - the billing desk's money decisions (MAKER-CHECKER.md, slice 6):
+    - a discount above the giver's own limit waits for someone else who holds `billing.discounts.approve`, whoever gives
+      it: holding the approval permission no longer lets anyone discount without a limit, and an approver's own discount
+      is approved by another approver (`billing.discount_self_approval`), who is recorded on the bill as its approver.
+      Within their own limit (their `DiscountLimit`, or `billing.discount.defaultMaxPercent`) a discount is made at once,
+      and nobody is recorded as approving it. Free treatment by law (BNSS s.397) is unaffected: nothing is discounted;
+    - an own-authority discount limit raised (`billing.discount_limit`: a higher percentage, a rupee cap raised or taken
+      away, or a limit removed so a higher default applies): one holder of `billing.discounts.approve` asks
+      (`PUT /api/v1/billing/discount-limits` and `DELETE …/{id}` answer 202), another approves, never the user whose limit
+      it is (`billing.discount_limit_own`, 403, which also refuses asking to raise one's own), shown the limit before and
+      after in words. Made only over the user's limit as it was asked against (`approval.stale`), audited
+      `billing.discount_limit.raised` at Warning with both names. Lowering a limit is saved at once;
+    - an unbilled charge cancelled at the billing desk (`billing.charge_cancel`): an OT (surgery), procedure, implant or
+      bed-day charge always, and any other worth more than `billing.chargeCancel.approvalAbove` (₹1,000 by default; 0
+      makes every cancellation wait), is asked for by the desk (`billing.charges.manage`;
+      `POST /api/v1/billing/charges/{id}/cancel` answers 202) and approved by someone else who holds
+      `billing.discounts.approve`, as a cancelled charge is a discount by another name. The charge stays billable
+      meanwhile; it is cancelled only while still unbilled at the amount asked (`approval.stale` once it is billed),
+      audited `billing.charge.cancelled` with both names. A credit (a return) cancelled makes the patient owe more and
+      never waits. Charges a module cancels itself (an order withdrawn, a visit or stay cancelled, a package changed) are
+      cancelled at once as before;
+    - a cash shortage at a shift's close beyond `billing.shift.shortageTolerance` (₹0 by default: every shortage): the
+      shift closes (no money moves in it, and the cashier may open another), with the cashier's reason required, but it
+      stays "closed — shortage awaiting supervisor" in the shift list, the day-end report and the Tally records check
+      until someone else who holds `billing.refunds.approve` accepts it (`billing.shift_shortage`; the close answers
+      202), never the cashier whose shift it is (`billing.shift_shortage_own`) nor whoever asked. The acceptance is kept
+      on the shift (who, when) and audited `billing.shift.shortage_accepted`. A rejected or expired request leaves the
+      shortage awaiting, and is asked again (`POST /api/v1/billing/shifts/{id}/shortage`). An excess is recorded and
+      flagged (`billing.shift.variance` at Warning) and needs no one: no money is missing;
+    - a doctor's consultation fee (`masters.practitioner_fee`): it is charged to a self-pay patient instead of the
+      consultation service's approved price (a payer's negotiated tariff still wins) and is the fee appointments are
+      booked at, so it changes only as a service's price does: whoever saves the practitioner asks, someone else who holds
+      `masters.prices.approve` approves, never the doctor whose fee it is (`masters.practitioner_fee_own`), shown the fees
+      before and after in words. The rest of the record is saved at once and the fees in force are charged until then; a
+      new doctor starts with none of their own (the service price) until theirs is approved. Another fee while one waits
+      is refused (`approval.already_requested`), and a fee is set only over the fees it replaces (`approval.stale`),
+      audited `practitioner.fee_changed` with both names;
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was
@@ -625,8 +664,10 @@ and grants nothing.
     and a failed approval are audited, and the credit note keeps both names.
 - **Separation of duties.** No one approves or undoes their own work:
   - whoever finalised a bill cannot cancel it (`billing.cancel_own_bill`), as refunds, credit notes and write-offs
-    already need a second person (a discount needs one only above the cashier's own limit; a holder of
-    `billing.discounts.approve` still discounts alone, see MAKER-CHECKER.md, slice 6);
+    already need a second person (a discount needs one above the giver's own limit, an approver's included, and is
+    never approved by whoever asked: `billing.discount_self_approval`);
+  - nobody raises their own discount limit, nor accepts the cash shortage of their own shift, nor approves their own
+    consultation fee (`billing.discount_limit_own`, `billing.shift_shortage_own`, `masters.practitioner_fee_own`);
   - whoever raised a purchase requisition or order cannot approve it (`requisition.approve_own`, `po.approve_own`);
   - whoever sold a pharmacy invoice, or took a payment on it, does not ask for its cancellation or take a return of it,
     nor approve either (`pharmacy.cancel_own_sale`, `pharmacy.return_own_sale`, 403 whatever else they may do), and the

@@ -13,6 +13,7 @@ import {
   type BillDiscountInput,
   type BillLineInput,
   type DiscountAuthority,
+  limitRaises,
   type PreviewBill,
   type PreviewLine,
 } from './billTotals';
@@ -252,7 +253,7 @@ describe('Returns and credits (mirrors ReturnsAndCreditsTests)', () => {
 });
 
 describe('DiscountPolicy (mirrors DiscountPolicyTests)', () => {
-  const tenPercent: DiscountAuthority = { canApprove: false, maxPercent: 10, maxAmount: null };
+  const tenPercent: DiscountAuthority = { maxPercent: 10, maxAmount: null };
 
   it('needs no approval within the user limit', () => {
     expect(requiresApproval(100, 1_000, tenPercent, 0)).toBe(false);
@@ -263,13 +264,24 @@ describe('DiscountPolicy (mirrors DiscountPolicyTests)', () => {
   });
 
   it('applies the rupee cap when it is lower than the percentage', () => {
-    const capped: DiscountAuthority = { canApprove: false, maxPercent: 20, maxAmount: 500 };
+    const capped: DiscountAuthority = { maxPercent: 20, maxAmount: 500 };
     expect(allowedWithoutApproval(10_000, capped)).toBe(500);
     expect(requiresApproval(600, 10_000, capped, 0)).toBe(true);
   });
 
-  it('does not limit approvers', () => {
-    expect(requiresApproval(900, 1_000, { canApprove: true, maxPercent: 100, maxAmount: null }, 0)).toBe(false);
+  it('holds approvers to their own limit like everyone else', () => {
+    expect(requiresApproval(900, 1_000, tenPercent, 0)).toBe(true);
+    expect(requiresApproval(900, 1_000, { maxPercent: 100, maxAmount: null }, 0)).toBe(false);
+  });
+
+  it('raises a limit when its percentage goes up or its rupee cap goes up or away (DiscountPolicy.Raises)', () => {
+    expect(limitRaises({ maxPercent: 10, maxAmount: null }, { maxPercent: 20, maxAmount: null })).toBe(true);
+    expect(limitRaises({ maxPercent: 10, maxAmount: null }, { maxPercent: 5, maxAmount: null })).toBe(false);
+    expect(limitRaises({ maxPercent: 10, maxAmount: 500 }, { maxPercent: 10, maxAmount: 600 })).toBe(true);
+    expect(limitRaises({ maxPercent: 10, maxAmount: 500 }, { maxPercent: 10, maxAmount: null })).toBe(true);
+    expect(limitRaises({ maxPercent: 10, maxAmount: null }, { maxPercent: 10, maxAmount: 400 })).toBe(false);
+    expect(limitRaises({ maxPercent: 10, maxAmount: 500 }, { maxPercent: 5, maxAmount: null })).toBe(true);
+    expect(limitRaises({ maxPercent: 120, maxAmount: null }, { maxPercent: 100, maxAmount: null })).toBe(false);
   });
 
   it('lets a sanctioned amount cover the discount but not more', () => {

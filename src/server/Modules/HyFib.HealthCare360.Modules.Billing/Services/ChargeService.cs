@@ -1,6 +1,9 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Approvals;
+using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Billing.Services;
 
@@ -21,10 +24,35 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// <item><see cref="CancelAsync"/> also only stages: it joins the caller's transaction, so a module reversing several
 /// charges (admission cancelled) gets all-or-nothing, and it fails with <c>billing.charge_billed</c> when the charge is
 /// already on a finalized bill.</item>
+/// <item>A charge cancelled at the billing desk (<see cref="AskCancelAsync"/>) waits for a second person when it is an OT,
+/// procedure, implant or bed-day charge, or worth more than the hospital's amount (<see cref="CancelApprovalAboveSetting"/>):
+/// cancelling a service the patient had is a discount by another name (MAKER-CHECKER.md, slice 6). Charges a module
+/// cancels itself (an order withdrawn, a stay or visit cancelled, a package changed) go through <see cref="CancelAsync"/>
+/// and <see cref="CancelChargeAsync"/>, at once as before.</item>
 /// </list>
 /// </summary>
-public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, ChargeRefusals refusals, ICurrentUser currentUser, TimeProvider time) : IChargePoster
+public sealed class ChargeService(
+    HospitalDbContext db,
+    TariffService tariffs,
+    ChargeRefusals refusals,
+    IApprovals approvals,
+    ISettingsService settings,
+    IAuditLogger audit,
+    ICurrentUser currentUser,
+    TimeProvider time) : IChargePoster
 {
+    /// <summary>A charge cancelled at the billing desk, waiting for a second person.</summary>
+    public const string CancelKind = "billing.charge_cancel";
+
+    /// <summary>
+    /// The net amount (₹) above which cancelling any other charge at the desk waits for approval; 0 makes every
+    /// cancellation wait. Raising it waits for a second administrator (SettingGuard).
+    /// </summary>
+    public const string CancelApprovalAboveSetting = "billing.chargeCancel.approvalAbove";
+
+    /// <summary>The amount while none is set: cancelling a charge worth more than ₹1,000 waits.</summary>
+    public const decimal DefaultCancelApprovalAbove = 1000m;
+
     public const string ManualSource = "billing.manual";
     public const string AdhocSource = "billing.adhoc";
     public const string ConsultationSource = "billing.consultation";
@@ -110,6 +138,153 @@ public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, C
         await db.SaveChangesAsync(ct);
         return ToDto(staged.Value, null);
     }
+
+    /// <summary>
+    /// Whether cancelling <paramref name="charge"/> at the desk waits for a second person: always for an OT, procedure,
+    /// implant or bed-day charge, otherwise when its net amount is above <paramref name="approvalAbove"/>. A credit (a
+    /// return) cancelled makes the patient owe more, so it never waits.
+    /// </summary>
+    public static bool CancelNeedsApproval(Charge charge, decimal approvalAbove)
+    {
+        ArgumentNullException.ThrowIfNull(charge);
+        if (charge.IsCredit)
+        {
+            return false;
+        }
+
+        var alwaysWaits = charge.Category is ServiceCategory.Surgery or ServiceCategory.Procedure or ServiceCategory.BedCharge
+                          || charge.Device is not null
+                          || ImplantServiceCodes.Contains(charge.ServiceCode);
+        return alwaysWaits || charge.NetAmount > Math.Max(approvalAbove, 0m);
+    }
+
+    /// <summary>The facility's amount above which a desk cancellation waits (<see cref="CancelApprovalAboveSetting"/>).</summary>
+    public async Task<decimal> CancelApprovalAboveAsync(Guid? facilityId, CancellationToken ct) =>
+        Math.Max(await settings.GetAsync<decimal?>(CancelApprovalAboveSetting, facilityId, ct) ?? DefaultCancelApprovalAbove, 0m);
+
+    /// <summary>The charges among these whose desk cancellation waits for approval, and when it was asked for.</summary>
+    public Task<IReadOnlyDictionary<Guid, DateTimeOffset>> CancellationsAskedAsync(IReadOnlyCollection<Guid> chargeIds, CancellationToken ct) =>
+        approvals.WaitingSinceAsync(CancelKind, nameof(Charge), chargeIds, ct);
+
+    /// <summary>
+    /// Cancels an unbilled charge from the billing desk: at once when it is small and not an OT, procedure, implant or
+    /// bed-day charge; otherwise it waits for someone else who approves discounts (<see cref="CancelKind"/>), and nothing
+    /// changes until then.
+    /// </summary>
+    public async Task<Result<ChargeCancelOutcome>> AskCancelAsync(Guid chargeId, string reason, CancellationToken ct)
+    {
+        var charge = await db.Set<Charge>().FirstOrDefaultAsync(c => c.Id == chargeId, ct);
+        if (charge is null)
+        {
+            return Error.NotFound(nameof(Charge), chargeId);
+        }
+
+        if (charge.Status == ChargeStatus.Billed)
+        {
+            return Error.Rule("billing.charge_billed", "This service is on a finalized bill. Cancel the bill or issue a credit note instead.");
+        }
+
+        if (charge.Status == ChargeStatus.Cancelled)
+        {
+            return new ChargeCancelOutcome(null);
+        }
+
+        var approvalAbove = await CancelApprovalAboveAsync(charge.FacilityId, ct);
+        if (!CancelNeedsApproval(charge, approvalAbove))
+        {
+            var cancelled = await CancelChargeAsync(charge, reason, ct);
+            if (cancelled.IsFailure)
+            {
+                return cancelled.Error!;
+            }
+
+            await db.SaveChangesAsync(ct);
+            return new ChargeCancelOutcome(null);
+        }
+
+        var patient = await db.Set<Patient>().Where(p => p.Id == charge.PatientId).Select(p => new { p.Uhid, p.FullName }).FirstOrDefaultAsync(ct);
+        var who = patient is null ? "the patient" : $"{patient.FullName} ({patient.Uhid})";
+        var doctor = charge.PractitionerId is { } pid ? await db.Set<Practitioner>().Where(p => p.Id == pid).Select(p => p.DisplayName).FirstOrDefaultAsync(ct) : null;
+        List<ApprovalDetail> details =
+        [
+            new("Service", $"{charge.ServiceCode} {charge.Description} × {charge.Quantity:0.##}, {DocumentFormat.Date(charge.ServiceDate)}"),
+            new("Patient", who),
+            new("Amount", $"₹{Money.FormatInr(charge.NetAmount)} → nothing: the patient is no longer charged for it"),
+            new("Posted by", Source(charge.SourceModule) + (doctor is null ? string.Empty : $", for {doctor}")),
+        ];
+        if (charge.BillId is not null)
+        {
+            details.Add(new("Bill", "Taken off the draft bill it is on"));
+        }
+
+        details.Add(new("Why it waits", IsAlwaysAsked(charge)
+            ? "An OT, procedure, implant or bed-day charge is cancelled only with a second person's approval"
+            : $"Worth more than ₹{Money.FormatInr(approvalAbove)}, the most the desk cancels alone"));
+        var requested = await approvals.RequestAsync(
+            CancelKind,
+            new ApprovalSubject(nameof(Charge), charge.Id, charge.Version, charge.FacilityId, charge.PatientId),
+            new ChargeCancelPayload(charge.Id, reason.Trim(), charge.NetAmount, charge.Quantity),
+            Fit($"Cancel {charge.Description} (₹{Money.FormatInr(charge.NetAmount)}) for {who}", 300),
+            details,
+            reason,
+            ct);
+        return requested.IsSuccess ? new ChargeCancelOutcome(requested.Value) : requested.Error!;
+    }
+
+    /// <summary>
+    /// Cancels a charge whose cancellation was approved, in the approval's transaction (the approval saves): only while it
+    /// is still unbilled and charges what was asked about (<c>approval.stale</c>).
+    /// </summary>
+    internal async Task<Result<string>> CancelApprovedAsync(ApprovalRequest request, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<ChargeCancelPayload>(request.Payload);
+        var charge = await db.Set<Charge>().FirstOrDefaultAsync(c => c.Id == asked.ChargeId, ct);
+        if (charge is null)
+        {
+            return Error.NotFound(nameof(Charge), asked.ChargeId);
+        }
+
+        if (charge.Status != ChargeStatus.Unbilled || charge.NetAmount != asked.NetAmount || charge.Quantity != asked.Quantity)
+        {
+            return Error.Rule("approval.stale", charge.Status switch
+            {
+                ChargeStatus.Billed => $"{charge.Description} was billed on a finalized bill after this was asked for, so it was not cancelled. Ask for a credit note instead.",
+                ChargeStatus.Cancelled => $"{charge.Description} was cancelled already, so nothing was changed.",
+                _ => $"{charge.Description} changed after this was asked for, so it was not cancelled. Ask again, for the charge as it is now.",
+            });
+        }
+
+        var checker = currentUser.DisplayName ?? currentUser.UserName ?? "Unknown user";
+        var cancelled = await CancelChargeAsync(charge, Fit(asked.Reason, 300), ct);
+        if (cancelled.IsFailure)
+        {
+            return cancelled.Error!;
+        }
+
+        audit.Add(new AuditEntry(AuditCategories.Data, "billing.charge.cancelled",
+            Fit($"{charge.Description} (₹{Money.FormatInr(charge.NetAmount)}) cancelled: {asked.Reason} (asked for by {request.RequestedByName}, approved by {checker})", 1000))
+        {
+            PatientId = charge.PatientId,
+            EntityType = nameof(Charge),
+            EntityId = charge.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { charge.ServiceCode, charge.NetAmount, charge.SourceModule, approval = request.Id, requestedBy = request.RequestedBy, approvedBy = currentUser.UserId },
+        });
+        return $"{charge.Description} cancelled";
+    }
+
+    private static bool IsAlwaysAsked(Charge charge) => CancelNeedsApproval(charge, decimal.MaxValue);
+
+    private static string Source(string module) => module switch
+    {
+        ManualSource or AdhocSource => "The billing desk",
+        ConsultationSource or RegistrationSource => "The front office, at the visit",
+        PackageSource => "A package",
+        OrderSource => "A doctor's order",
+        _ => $"Automatically ({module})",
+    };
+
+    private static string Fit(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
     /// <summary>Cancels a charge; one reserved by a draft bill is first taken off that draft. Does not save.</summary>
     internal async Task<Result> CancelChargeAsync(Charge charge, string reason, CancellationToken ct)
@@ -425,4 +600,26 @@ public sealed class ChargeService(HospitalDbContext db, TariffService tariffs, C
     private sealed record PatientFacts(Guid? MergedIntoPatientId, Guid RegisteredFacilityId);
 
     private sealed record ChargeContext(Guid FacilityId, TariffPlan? Plan, Guid? BedServiceItemId, Guid? VisitId);
+}
+
+/// <summary>A charge's cancellation as asked: the reason, and what it charged then (a charge changed meanwhile is not cancelled).</summary>
+public sealed record ChargeCancelPayload(Guid ChargeId, string Reason, decimal NetAmount, decimal Quantity);
+
+/// <summary>A charge cancelled at once (<paramref name="Asked"/> null), or its cancellation waiting for approval.</summary>
+public sealed record ChargeCancelOutcome(ApprovalRequestDto? Asked);
+
+/// <summary>
+/// An OT, procedure, implant or bed-day charge, or a large one, cancelled at the billing desk: the desk asks
+/// (<c>billing.charges.manage</c>), and someone else who approves discounts decides, since a cancelled charge is a discount
+/// by another name.
+/// </summary>
+internal sealed class ChargeCancelApproval(ChargeService charges) : IApprovalAction
+{
+    public string Kind => ChargeService.CancelKind;
+
+    public string Title => "Charge cancelled";
+
+    public string ApprovePermission => BillingPermissions.DiscountsApprove;
+
+    public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => charges.CancelApprovedAsync(request, ct);
 }

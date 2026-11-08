@@ -47,13 +47,14 @@ public sealed record SaveSpecialtyRequest(string Code, string Name, string? Desc
 
 /// <param name="LinkedAccounts">On a single practitioner's read: the staff accounts that sign as them.</param>
 /// <param name="PendingIdentity">On a single practitioner's read: a registration number, HPR ID or signature waiting for a second administrator.</param>
+/// <param name="PendingFee">On a single practitioner's read: consultation fees waiting for someone who approves prices.</param>
 public sealed record PractitionerDto(
     Guid Id, string Code, string Title, string FirstName, string? LastName, string DisplayName, Gender Gender, string? Qualification,
     string? RegistrationCouncil, string? RegistrationNumber, string? HprId, Guid? SpecialtyId, string? SpecialtyName, Guid? DepartmentId, string? DepartmentName,
     PractitionerKind Kind, string? Phone, string? Email, decimal ConsultationFeeNew, decimal ConsultationFeeFollowUp, int FollowUpValidityDays,
     IReadOnlyList<string> Languages, string? Bio, Guid? PhotoFileId, Guid? SignatureFileId, bool AvailableForOnlineBooking,
     bool AvailableForTelehealth, IReadOnlyList<Guid> FacilityIds, bool IsActive, uint Version,
-    IReadOnlyList<string>? LinkedAccounts = null, PendingPractitionerIdentity? PendingIdentity = null);
+    IReadOnlyList<string>? LinkedAccounts = null, PendingPractitionerIdentity? PendingIdentity = null, PendingPractitionerFee? PendingFee = null);
 
 public sealed record SavePractitionerRequest(
     string Code, string Title, string FirstName, string? LastName, Gender Gender, string? Qualification, string? RegistrationCouncil,
@@ -302,22 +303,26 @@ internal static class OrganizationEndpoints
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveSpecialtyRequest>().RequireVersion();
 
         masters.MapGet("/practitioners", ListPractitioners).RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapGet("/practitioners/{id:guid}", async (Guid id, HospitalDbContext db, PractitionerIdentityApprovals identities, CancellationToken ct) =>
+        masters.MapGet("/practitioners/{id:guid}", async (Guid id, HospitalDbContext db, PractitionerIdentityApprovals identities, PractitionerFeeApprovals fees,
+                    CancellationToken ct) =>
                 await PractitionerQuery(db, db.Set<Practitioner>().Where(p => p.Id == id)).FirstOrDefaultAsync(ct) is { } dto
                     ? TypedResults.Ok(dto with
                     {
                         LinkedAccounts = await identities.LinkedAccountsAsync(id, ct),
                         PendingIdentity = await identities.PendingAsync(id, ct),
+                        PendingFee = await fees.PendingAsync(id, ct),
                     })
                     : Error.NotFound(nameof(Practitioner), id).ToProblem())
             .RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapPost("/practitioners", (SavePractitionerRequest r, HospitalDbContext db, PractitionerWorkSources work, PractitionerIdentityApprovals identities, IAuditLogger audit,
-                    CancellationToken ct) =>
-                SavePractitioner(null, r, db, work, identities, audit, ct))
+        // A practitioner's consultation fees wait for someone who approves prices (masters.practitioner_fee): a new one is
+        // created (201) with the request's id, a save that changes them answers 202, as a linked doctor's identity does.
+        masters.MapPost("/practitioners", (SavePractitionerRequest r, HospitalDbContext db, PractitionerWorkSources work, PractitionerIdentityApprovals identities,
+                    PractitionerFeeApprovals fees, IAuditLogger audit, CancellationToken ct) =>
+                SavePractitioner(null, r, db, work, identities, fees, audit, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SavePractitionerRequest>();
         masters.MapPut("/practitioners/{id:guid}", (Guid id, SavePractitionerRequest r, HospitalDbContext db, PractitionerWorkSources work, PractitionerIdentityApprovals identities,
-                    IAuditLogger audit, CancellationToken ct) =>
-                SavePractitioner(id, r, db, work, identities, audit, ct))
+                    PractitionerFeeApprovals fees, IAuditLogger audit, CancellationToken ct) =>
+                SavePractitioner(id, r, db, work, identities, fees, audit, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SavePractitionerRequest>().RequireVersion();
 
         masters.MapGet("/services", ListServices).RequirePermission(PlatformPermissions.MastersRead);
@@ -733,8 +738,8 @@ internal static class OrganizationEndpoints
     }
 
     private static async Task<IResult> SavePractitioner(
-        Guid? id, SavePractitionerRequest request, HospitalDbContext db, PractitionerWorkSources workSources, PractitionerIdentityApprovals identities, IAuditLogger audit,
-        CancellationToken ct)
+        Guid? id, SavePractitionerRequest request, HospitalDbContext db, PractitionerWorkSources workSources, PractitionerIdentityApprovals identities,
+        PractitionerFeeApprovals fees, IAuditLogger audit, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         Practitioner practitioner;
@@ -823,8 +828,6 @@ internal static class OrganizationEndpoints
         practitioner.Kind = request.Kind;
         practitioner.Phone = Phone.Normalize(request.Phone);
         practitioner.Email = Clean(request.Email);
-        practitioner.ConsultationFeeNew = Money.Round(request.ConsultationFeeNew);
-        practitioner.ConsultationFeeFollowUp = Money.Round(request.ConsultationFeeFollowUp);
         practitioner.FollowUpValidityDays = request.FollowUpValidityDays;
         practitioner.Languages = request.Languages?.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? [];
         practitioner.Bio = Clean(request.Bio);
@@ -874,9 +877,31 @@ internal static class OrganizationEndpoints
             }
         }
 
-        // The record, and the request for its identity, are kept together or not at all.
+        // The consultation fees are what a self-pay patient is charged instead of the service's approved price: they change
+        // only when someone who approves prices agrees, and stay as they are (a new doctor's: none, so the service price
+        // applies) meanwhile. Fees already asked for are not asked again; other fees while a change waits are refused.
+        var feesNow = id is null ? PractitionerFees.None : PractitionerFees.Of(practitioner);
+        var feesAsked = new PractitionerFees(Money.Round(request.ConsultationFeeNew), Money.Round(request.ConsultationFeeFollowUp));
+        var askFees = false;
+        if (feesAsked != feesNow)
+        {
+            var waiting = id is null ? null : await fees.PendingAsync(practitioner.Id, ct);
+            if (waiting is not null && waiting.Asked != feesAsked)
+            {
+                return Error.Conflict(PractitionerFeeApprovals.WaitingCode,
+                        $"A change to {practitioner.DisplayName}'s consultation fee, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.")
+                    .ToProblem();
+            }
+
+            askFees = waiting is null;
+        }
+
+        feesNow.ApplyTo(practitioner);
+
+        // The record, and the requests for its identity and its fees, are kept together or not at all.
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        ApprovalRequestDto? identityRequest = null;
         if (identityBefore is not null && identityAsked is not null)
         {
             var approval = await identities.AskAsync(practitioner, identityBefore, identityAsked, linked, ct);
@@ -885,12 +910,29 @@ internal static class OrganizationEndpoints
                 return approval.Error!.ToProblem();
             }
 
-            await transaction.CommitAsync(ct);
-            return TypedResults.Accepted($"/api/v1/approvals/{approval.Value.Id}", approval.Value);
+            identityRequest = approval.Value;
+        }
+
+        ApprovalRequestDto? feeRequest = null;
+        if (askFees)
+        {
+            var approval = await fees.AskAsync(practitioner, feesNow, feesAsked, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            feeRequest = approval.Value;
         }
 
         await transaction.CommitAsync(ct);
-        return id is null ? TypedResults.Created($"/api/v1/masters/practitioners/{practitioner.Id}", new { practitioner.Id }) : TypedResults.NoContent();
+        if (id is null)
+        {
+            return TypedResults.Created($"/api/v1/masters/practitioners/{practitioner.Id}", new { practitioner.Id, FeeApprovalId = feeRequest?.Id });
+        }
+
+        // Both asked in one save: the identity's request answers, and the record's read shows both waiting.
+        return (identityRequest ?? feeRequest) is { } waits ? TypedResults.Accepted($"/api/v1/approvals/{waits.Id}", waits) : TypedResults.NoContent();
     }
 
     // ---------------------------------------------------------------- services

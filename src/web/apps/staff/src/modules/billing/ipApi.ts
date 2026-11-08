@@ -125,6 +125,10 @@ export interface RunningBillLine {
   isReturn: boolean;
   /** An implant's or another device's bill details (NPPA); null for a service. */
   device?: DeviceDetails | null;
+  /** Cancelling it at the desk waits for someone else who approves discounts (an OT, procedure, implant or bed day, or a large charge). */
+  cancelNeedsApproval?: boolean;
+  /** When its cancellation was asked for, while that waits for approval. */
+  cancellationAskedAt?: string | null;
 }
 
 export interface PackageLineStatus {

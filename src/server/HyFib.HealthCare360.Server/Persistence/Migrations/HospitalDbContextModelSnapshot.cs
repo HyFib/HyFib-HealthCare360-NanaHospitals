@@ -1536,6 +1536,23 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("opening_float");
 
+                    b.Property<DateTimeOffset?>("ShortageAcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("shortage_accepted_at");
+
+                    b.Property<Guid?>("ShortageAcceptedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("shortage_accepted_by");
+
+                    b.Property<string>("ShortageAcceptedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("shortage_accepted_by_name");
+
+                    b.Property<bool>("ShortageAwaiting")
+                        .HasColumnType("boolean")
+                        .HasColumnName("shortage_awaiting");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(64)

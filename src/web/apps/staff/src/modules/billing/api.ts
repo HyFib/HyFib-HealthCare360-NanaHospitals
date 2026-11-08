@@ -326,6 +326,21 @@ export interface DiscountLimitDto {
   version: number;
 }
 
+/**
+ * A user's discount limit raised (or removed, so a higher default applies) that waits for another approver
+ * (billing.discount_limit): never the one who asked, nor the user whose limit it is. `askedByYou`: the reader's own.
+ */
+export interface PendingDiscountLimitDto {
+  approvalId: string;
+  userId: string;
+  userName: string | null;
+  before: string;
+  asked: string;
+  requestedBy: string;
+  requestedAt: string;
+  askedByYou: boolean;
+}
+
 export interface SaveDiscountLimitRequest {
   userId: string;
   maxPercent: number;
@@ -379,6 +394,13 @@ export interface ChargeDto {
   status: ChargeStatus;
   billId: string | null;
   cancelReason: string | null;
+  /**
+   * Cancelling it at the desk waits for someone else who approves discounts: an OT, procedure, implant or bed-day charge,
+   * or one above the hospital's amount (`billing.chargeCancel.approvalAbove`).
+   */
+  cancelNeedsApproval?: boolean;
+  /** When its cancellation was asked for, while that waits for approval. */
+  cancellationAskedAt?: string | null;
 }
 
 /**
@@ -619,6 +641,15 @@ export interface ShiftDto {
   receiptCount: number;
   notes: string | null;
   version: number;
+  /** Closed short beyond the hospital's tolerance, the shortage not yet accepted by a supervisor (never the cashier). */
+  shortageAwaiting?: boolean;
+  /** The supervisor who accepted the shortage, and when. */
+  shortageAcceptedBy?: string | null;
+  shortageAcceptedAt?: string | null;
+  /** The request waiting for a supervisor to accept the shortage, if one waits. */
+  shortageApprovalId?: string | null;
+  /** On an open shift: how much the drawer may be short and still close on the cashier's word (₹). */
+  shortageTolerance?: number | null;
 }
 
 export interface DayEndCashierRow {
@@ -634,6 +665,10 @@ export interface DayEndCashierRow {
   expectedCash: number;
   declaredCash: number | null;
   variance: number | null;
+  /** Closed short, the shortage awaiting a supervisor. */
+  shortageAwaiting?: boolean;
+  /** The supervisor who accepted the shortage. */
+  shortageAcceptedBy?: string | null;
 }
 
 export interface DayEndReport {
@@ -657,6 +692,8 @@ export interface DayEndReport {
   notPaidOut?: DayEndReversalTotal[] | null;
   /** The net collection with the day's reversals. */
   netAfterReversals?: number;
+  /** Shifts closed short whose shortage no supervisor has accepted yet. */
+  shortagesAwaiting?: number;
 }
 
 export interface DayEndReversalTotal {
@@ -868,6 +905,12 @@ export const billingQueries = {
       queryKey: [...billingKeys.discounts(), 'limits'],
       queryFn: ({ signal }) => api.get<DiscountLimitDto[]>('/api/v1/billing/discount-limits', { signal }),
     }),
+  pendingDiscountLimits: () =>
+    queryOptions({
+      queryKey: [...billingKeys.discounts(), 'limits', 'pending'],
+      queryFn: ({ signal }) =>
+        api.get<PendingDiscountLimitDto[]>('/api/v1/billing/discount-limits/pending', { signal }),
+    }),
   myDiscountAuthority: () =>
     queryOptions({
       queryKey: [...billingKeys.discounts(), 'me'],
@@ -932,7 +975,8 @@ export const billingApi = {
    * 422 `billing.charge_billed` once it is on a finalized bill (cancel the bill or issue a credit note instead). The
    * order, dispense or admission the charge came from is not changed.
    */
-  cancelCharge: (id: string, reason: string) => api.post<void>(`/api/v1/billing/charges/${id}/cancel`, { reason }),
+  cancelCharge: (id: string, reason: string) =>
+    api.post<ApprovalRequestDto | undefined>(`/api/v1/billing/charges/${id}/cancel`, { reason }),
   createBill: (request: CreateBillRequest) => api.post<BillDetail>('/api/v1/billing/bills', request),
   addLine: (billId: string, request: AddBillLineRequest) =>
     api.post<BillDetail>(`/api/v1/billing/bills/${billId}/lines`, request),
@@ -1005,12 +1049,23 @@ export const billingApi = {
     api.post<void>(`/api/v1/billing/discount-approvals/${id}/approve`, { remarks }),
   rejectDiscount: (id: string, remarks: string | null) =>
     api.post<void>(`/api/v1/billing/discount-approvals/${id}/reject`, { remarks }),
-  saveDiscountLimit: (request: SaveDiscountLimitRequest) => api.put<void>('/api/v1/billing/discount-limits', request),
-  deleteDiscountLimit: (id: string) => api.delete<void>(`/api/v1/billing/discount-limits/${id}`),
+  /** Lowered: saved at once (204). Raised (a higher percentage, a cap raised or taken away): asked for (202, the request). */
+  saveDiscountLimit: (request: SaveDiscountLimitRequest) =>
+    api.put<ApprovalRequestDto | undefined>('/api/v1/billing/discount-limits', request),
+  /** Removed at once, unless the hospital default lets the user give more: then asked for (202). */
+  deleteDiscountLimit: (id: string) =>
+    api.delete<ApprovalRequestDto | undefined>(`/api/v1/billing/discount-limits/${id}`),
   openShift: (counter: string, openingFloat: number) =>
     api.post<ShiftDto>('/api/v1/billing/shifts/open', { counter, openingFloat }),
+  /**
+   * Closes the shift (200). Short beyond the hospital's tolerance, it closes with the shortage asked of a supervisor (202,
+   * the shift with `shortageApprovalId`); the reason (`notes`) is then required.
+   */
   closeShift: (id: string, declaredCash: number, notes: string | null, version: number) =>
     api.post<ShiftDto>(`/api/v1/billing/shifts/${id}/close`, { declaredCash, notes, version }),
+  /** Asks again for a supervisor to accept a shift's shortage (after a rejection, withdrawal or expiry). */
+  askShortage: (id: string, reason: string) =>
+    api.post<ApprovalRequestDto>(`/api/v1/billing/shifts/${id}/shortage`, { reason }),
   startPosSale: (request: StartPosSaleRequest, options: WriteOptions = {}) =>
     api.post<PosSaleDto>('/api/v1/billing/pos/sales', request, options),
   cancelPosSale: (id: string) => api.post<PosSaleDto>(`/api/v1/billing/pos/sales/${id}/cancel`),

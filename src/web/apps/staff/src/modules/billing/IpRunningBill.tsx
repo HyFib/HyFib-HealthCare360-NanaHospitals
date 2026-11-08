@@ -5,7 +5,7 @@ import { DataTable, ErrorState, KpiCard, LoadingState, Section } from '@hc360/ui
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
-import { AddChargeButton, CancelChargeDialog, type CancellableCharge } from './ChargeDialogs';
+import { AddChargeButton, CancelChargeDialog, CancellationAsked, type CancellableCharge } from './ChargeDialogs';
 import { deviceDetailsText } from './device';
 import { useCanManageCharges } from './hooks';
 import { ipQueries, type IpAccountDetail, type RunningBill } from './ipApi';
@@ -219,7 +219,9 @@ export function IpRunningBill({ account }: { account: IpAccountDetail }) {
             rowActions={
               canManageCharges
                 ? (l) =>
-                    l.status === 'Unbilled' ? (
+                    l.status === 'Unbilled' && l.cancellationAskedAt ? (
+                      <CancellationAsked at={l.cancellationAskedAt} />
+                    ) : l.status === 'Unbilled' ? (
                       <Button
                         size="small"
                         appearance="subtle"
@@ -232,6 +234,7 @@ export function IpRunningBill({ account }: { account: IpAccountDetail }) {
                             description: l.description,
                             netAmount: l.netAmount,
                             onDraft: l.billId !== null,
+                            needsApproval: l.cancelNeedsApproval ?? null,
                           })
                         }
                       />

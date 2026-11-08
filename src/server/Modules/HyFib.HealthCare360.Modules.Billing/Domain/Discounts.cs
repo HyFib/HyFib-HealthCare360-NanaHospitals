@@ -10,34 +10,54 @@ public enum DiscountApprovalStatus
     Withdrawn,
 }
 
-/// <summary>How much discount a user may give on their own (MB-05, OPB-04).</summary>
-public sealed record DiscountAuthority(bool CanApprove, decimal MaxPercent, decimal? MaxAmount)
+/// <summary>
+/// How much discount a user may give on their own (MB-05, OPB-04): their own limit, or the facility default. Holding the
+/// approval permission gives no more: an approver's own discount above their limit waits for another approver
+/// (MAKER-CHECKER.md, slice 6).
+/// </summary>
+public sealed record DiscountAuthority(decimal MaxPercent, decimal? MaxAmount)
 {
-    public static DiscountAuthority None { get; } = new(false, 0m, 0m);
+    public static DiscountAuthority None { get; } = new(0m, 0m);
 }
 
 /// <summary>
 /// Discount approval rule: staff may discount up to their percentage (and optional rupee) limit of the discountable
-/// value; anything above needs someone holding <c>billing.discounts.approve</c>, whose sanctioned amount then covers it.
+/// value; anything above needs someone else holding <c>billing.discounts.approve</c>, whose sanctioned amount then covers
+/// it. Approvers are held to their own limit like everyone else.
 /// </summary>
 public static class DiscountPolicy
 {
     public static decimal AllowedWithoutApproval(decimal discountBase, DiscountAuthority authority)
     {
-        if (authority.CanApprove)
-        {
-            return Math.Max(discountBase, 0m);
-        }
-
         var limit = Money.PercentOf(Math.Max(discountBase, 0m), Math.Clamp(authority.MaxPercent, 0m, 100m));
         return authority.MaxAmount is { } cap ? Math.Min(limit, Math.Max(cap, 0m)) : limit;
     }
 
     public static bool RequiresApproval(decimal userDiscount, decimal discountBase, DiscountAuthority authority, decimal approvedAmount) =>
         userDiscount > 0
-        && !authority.CanApprove
         && userDiscount > approvedAmount
         && userDiscount > AllowedWithoutApproval(discountBase, authority);
+
+    /// <summary>
+    /// Whether going from the limit in force (<paramref name="before"/>) to <paramref name="asked"/> lets the user give
+    /// more on their own: a higher percentage, or a rupee cap raised or taken away. Anything else only narrows it.
+    /// </summary>
+    public static bool Raises(DiscountAuthority before, DiscountAuthority asked)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(asked);
+        var percentUp = Math.Clamp(asked.MaxPercent, 0m, 100m) > Math.Clamp(before.MaxPercent, 0m, 100m);
+        var capUp = before.MaxAmount is { } cap && (asked.MaxAmount is not { } next || next > cap);
+        return percentUp || capUp;
+    }
+
+    /// <summary>A limit in words for the approver: "10%", "10%, at most ₹500.00".</summary>
+    public static string Words(DiscountAuthority limit)
+    {
+        ArgumentNullException.ThrowIfNull(limit);
+        var percent = limit.MaxPercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+        return limit.MaxAmount is { } cap ? $"{percent}, at most ₹{Money.FormatInr(cap)}" : percent;
+    }
 }
 
 /// <summary>Per-user discount ceiling set by administrators (users without one get the facility default, 0% unless configured).</summary>

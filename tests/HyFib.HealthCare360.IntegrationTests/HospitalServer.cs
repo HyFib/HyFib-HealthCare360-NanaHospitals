@@ -4,8 +4,11 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using HyFib.HealthCare360.Modules.Billing.Features.Bills;
+using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.Insurance;
 using HyFib.HealthCare360.Modules.Billing.Features.Packages;
+using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 using HyFib.HealthCare360.Integrations.Payments;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
@@ -701,7 +704,7 @@ public sealed class HospitalServer : IAsyncLifetime
     /// A price changes only when two people agree: approves the price <paramref name="approvalId"/> asks for as whichever of
     /// the seed's two administrators did not ask for it (both may approve prices).
     /// </summary>
-    public Task ApprovePriceAsync(Guid approvalId) => ApproveGrantAsync(approvalId);
+    public Task<ApprovalRequestDto> ApprovePriceAsync(Guid approvalId) => ApproveGrantAsync(approvalId);
 
     /// <summary>
     /// A service added through the masters API, its price approved by the other administrator, so it is in use at that
@@ -1036,6 +1039,111 @@ public sealed class HospitalServer : IAsyncLifetime
             ? approved
             : throw new InvalidOperationException($"Approving {request.Summary}: {approved.Status} ({approved.Outcome})");
     }
+
+    /// <summary>
+    /// A user's discount limit saved through the billing API as Billing › Discounts saves it: lowered at once; raised, asked
+    /// for by <paramref name="maker"/> and approved by whichever of the seed's two administrators did not ask (both approve
+    /// discounts, and neither is the user whose limit it is). A limit raises only when two people agree (slice 6).
+    /// </summary>
+    public async Task SaveDiscountLimitAsync(ApiClient maker, SaveDiscountLimitRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        const string path = "/api/v1/billing/discount-limits/";
+        using var response = await maker.SendRawAsync(HttpMethod.Put, path, request);
+        if (response.StatusCode == HttpStatusCode.Accepted)
+        {
+            Approved(await ApproveGrantAsync((await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Put, path)).Id));
+        }
+        else if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"PUT {path}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)}");
+        }
+    }
+
+    /// <summary>
+    /// An unbilled charge cancelled at the billing desk: at once when it is small, or asked for by <paramref name="maker"/>
+    /// and approved by the accountant, who approves discounts and cancels nothing: the charge cancelled either way.
+    /// </summary>
+    public async Task CancelChargeAsync(ApiClient maker, Guid chargeId, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        var path = $"/api/v1/billing/charges/{chargeId}/cancel";
+        using var response = await maker.SendRawAsync(HttpMethod.Post, path, new CancelChargeRequest(reason));
+        if (response.StatusCode == HttpStatusCode.Accepted)
+        {
+            await ApproveRefundAsync((await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Post, path)).Id);
+        }
+        else if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"POST {path}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)}");
+        }
+    }
+
+    /// <summary>
+    /// A cashier's shift closed with <paramref name="declaredCash"/> in the drawer by <paramref name="maker"/>: a shortage
+    /// beyond the tolerance is accepted by the accountant, a supervisor who is not the cashier. The shift as it is then.
+    /// </summary>
+    public async Task<ShiftDto> CloseShiftAsync(ApiClient maker, Guid shiftId, decimal declaredCash, string? notes)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        var shift = await maker.GetAsync<ShiftDto>($"/api/v1/billing/shifts/{shiftId}");
+        var path = $"/api/v1/billing/shifts/{shiftId}/close";
+        using var response = await maker.SendRawAsync(HttpMethod.Post, path, new CloseShiftRequest(declaredCash, notes, shift.Version));
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"POST {path}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)}");
+        }
+
+        var closed = await ApiClient.ReadAsync<ShiftDto>(response, HttpMethod.Post, path);
+        if (response.StatusCode == HttpStatusCode.Accepted && closed.ShortageApprovalId is { } approval)
+        {
+            await ApproveRefundAsync(approval);
+        }
+
+        return await maker.GetAsync<ShiftDto>($"/api/v1/billing/shifts/{shiftId}");
+    }
+
+    /// <summary>
+    /// A practitioner added through the masters API, their consultation fees approved by the other administrator (a
+    /// doctor's own fee is charged instead of the service's price, so it waits as a price does): the practitioner's id.
+    /// </summary>
+    public async Task<Guid> CreatePractitionerAsync(ApiClient maker, SavePractitionerRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        var created = await maker.PostAsync<CreatedPractitioner>("/api/v1/masters/practitioners", request);
+        if (created.FeeApprovalId is { } approval)
+        {
+            Approved(await ApprovePriceAsync(approval));
+        }
+
+        return created.Id;
+    }
+
+    private sealed record CreatedPractitioner(Guid Id, Guid? FeeApprovalId);
+
+    /// <summary>
+    /// A practitioner saved through the masters API, what it asked for (consultation fees, a linked doctor's identity)
+    /// approved by the other administrator: the record as it would have been in one step.
+    /// </summary>
+    public async Task SavePractitionerAsync(ApiClient maker, Guid practitionerId, SavePractitionerRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        var path = $"/api/v1/masters/practitioners/{practitionerId}";
+        using var response = await maker.SendRawAsync(HttpMethod.Put, path, request);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"PUT {path}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)}");
+        }
+
+        var saved = await maker.GetAsync<PractitionerDto>(path);
+        foreach (var waiting in new[] { saved.PendingIdentity?.ApprovalId, saved.PendingFee?.ApprovalId }.OfType<Guid>())
+        {
+            Approved(await ApproveGrantAsync(waiting));
+        }
+    }
+
+    private static ApprovalRequestDto Approved(ApprovalRequestDto approved) =>
+        approved.Status == ApprovalStatus.Approved ? approved : throw new InvalidOperationException($"Approving {approved.Summary}: {approved.Status} ({approved.Outcome})");
 
     // The seed signs the first consultant (by code) in as the doctor; the second doctor is the next one.
     private async Task<Guid?> SecondConsultantAsync()

@@ -13,6 +13,8 @@ internal static class ChargeEndpoints
         group.MapGet("/", List).RequireAnyPermission(BillingPermissions.ChargesRead, BillingPermissions.OpCreate, BillingPermissions.IpManage);
         group.MapGet("/{id:guid}", Get).RequireAnyPermission(BillingPermissions.ChargesRead, BillingPermissions.OpCreate, BillingPermissions.IpManage);
         group.MapPost("/", Post).RequirePermission(BillingPermissions.ChargesManage).WithValidation<PostChargeRequest>();
+        // Cancelled at once (204), or, for an OT, procedure, implant or bed-day charge or one above the hospital's amount,
+        // asked for (202) and cancelled when someone else who approves discounts approves (billing.charge_cancel).
         group.MapPost("/{id:guid}/cancel", Cancel).RequirePermission(BillingPermissions.ChargesManage).WithValidation<CancelChargeRequest>();
     }
 
@@ -24,6 +26,7 @@ internal static class ChargeEndpoints
         ChargeStatus? status,
         bool? unbilledOnly,
         HospitalDbContext db,
+        ChargeService service,
         CancellationToken ct)
     {
         if (patientId is null && visitId is null && admissionId is null)
@@ -64,10 +67,21 @@ internal static class ChargeEndpoints
                 from p in doctors.DefaultIfEmpty()
                 select new { Charge = c, PractitionerName = p == null ? null : p.DisplayName })
             .ToPagedResultAsync(page, ct);
-        return TypedResults.Ok(result.Map(r => ChargeService.ToDto(r.Charge, r.PractitionerName)));
+        var asked = await service.CancellationsAskedAsync(result.Items.Select(r => r.Charge.Id).ToList(), ct);
+        var approvalAbove = new Dictionary<Guid, decimal>();
+        foreach (var facilityId in result.Items.Select(r => r.Charge.FacilityId).Distinct())
+        {
+            approvalAbove[facilityId] = await service.CancelApprovalAboveAsync(facilityId, ct);
+        }
+
+        return TypedResults.Ok(result.Map(r => ChargeService.ToDto(r.Charge, r.PractitionerName) with
+        {
+            CancelNeedsApproval = ChargeService.CancelNeedsApproval(r.Charge, approvalAbove[r.Charge.FacilityId]),
+            CancellationAskedAt = asked.TryGetValue(r.Charge.Id, out var at) ? at : null,
+        }));
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> Get(Guid id, HospitalDbContext db, ChargeService service, CancellationToken ct)
     {
         var charge = await db.Set<Charge>().AsNoTracking().FirstOrDefaultAsync(c => c.Id == id, ct);
         if (charge is null)
@@ -76,27 +90,19 @@ internal static class ChargeEndpoints
         }
 
         var doctor = charge.PractitionerId is { } pid ? await db.Set<Practitioner>().Where(p => p.Id == pid).Select(p => p.DisplayName).FirstOrDefaultAsync(ct) : null;
-        return TypedResults.Ok(ChargeService.ToDto(charge, doctor));
+        var asked = await service.CancellationsAskedAsync([charge.Id], ct);
+        return TypedResults.Ok(ChargeService.ToDto(charge, doctor) with
+        {
+            CancelNeedsApproval = ChargeService.CancelNeedsApproval(charge, await service.CancelApprovalAboveAsync(charge.FacilityId, ct)),
+            CancellationAskedAt = asked.TryGetValue(charge.Id, out var at) ? at : null,
+        });
     }
 
     private static async Task<IResult> Post(PostChargeRequest request, ChargeService charges, CancellationToken ct) =>
         (await charges.PostManualAsync(request, ct)).ToCreated(c => $"/api/v1/billing/charges/{c.Id}");
 
-    private static async Task<IResult> Cancel(Guid id, CancelChargeRequest request, HospitalDbContext db, ChargeService charges, CancellationToken ct)
-    {
-        var charge = await db.Set<Charge>().FirstOrDefaultAsync(c => c.Id == id, ct);
-        if (charge is null)
-        {
-            return Error.NotFound(nameof(Charge), id).ToProblem();
-        }
-
-        var cancelled = await charges.CancelChargeAsync(charge, request.Reason, ct);
-        if (cancelled.IsFailure)
-        {
-            return cancelled.Error!.ToProblem();
-        }
-
-        await db.SaveChangesAsync(ct);
-        return TypedResults.NoContent();
-    }
+    private static async Task<IResult> Cancel(Guid id, CancelChargeRequest request, ChargeService charges, CancellationToken ct) =>
+        (await charges.AskCancelAsync(id, request.Reason, ct)).ToHttpResult(outcome => outcome.Asked is { } asked
+            ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)
+            : TypedResults.NoContent());
 }

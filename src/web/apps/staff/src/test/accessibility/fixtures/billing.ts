@@ -346,7 +346,7 @@ const PACKAGES: PackageListItem[] = [
   },
 ];
 
-const DISCOUNT_AUTHORITY: DiscountAuthority = { canApprove: false, maxPercent: 10, maxAmount: 500 };
+const DISCOUNT_AUTHORITY: DiscountAuthority = { maxPercent: 10, maxAmount: 500 };
 
 /** The rate list of a facility in Tamil Nadu: a service with its name in Tamil. */
 export const RATE_LIST: RateListView = {

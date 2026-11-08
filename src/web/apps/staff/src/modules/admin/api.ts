@@ -83,6 +83,8 @@ export interface PendingRoleGrant {
 /** The approval request a save that adds access makes (202): the access waits for a second administrator. */
 export interface AskedForApproval {
   id: string;
+  /** The approval kind, such as `masters.practitioner_identity` or `masters.practitioner_fee`. */
+  kind: string;
   summary: string;
 }
 

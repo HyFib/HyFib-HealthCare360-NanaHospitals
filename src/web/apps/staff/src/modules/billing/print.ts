@@ -356,11 +356,12 @@ export function buildDayEndHtml(
       (
         s,
       ) => `<tr><td>${e(s.userName)}</td><td>${e(s.counter)}</td><td>${e(formatDateTime(s.openedAt))}</td><td>${e(s.closedAt ? formatDateTime(s.closedAt) : 'Still open')}</td>
-      <td class="num">${money(s.collected)}</td><td class="num">${money(s.refunded)}</td><td class="num">${money(s.expectedCash)}</td><td class="num">${money(s.declaredCash)}</td><td class="num">${money(s.variance)}</td></tr>`,
+      <td class="num">${money(s.collected)}</td><td class="num">${money(s.refunded)}</td><td class="num">${money(s.expectedCash)}</td><td class="num">${money(s.declaredCash)}</td><td class="num">${money(s.variance)}${s.shortageAwaiting ? '<br>Shortage awaiting supervisor' : s.shortageAcceptedBy ? `<br>Shortage accepted by ${e(s.shortageAcceptedBy)}` : ''}</td></tr>`,
     )
     .join('');
   const body = `${header(letterhead, 'other', 'Day-end collection report', meta, { compact: false, ids: false })}
     ${report.openShifts > 0 ? `<div class="box"><b>${e(report.openShifts)} shift(s) still open.</b> Their figures can still change.</div>` : ''}
+    ${(report.shortagesAwaiting ?? 0) > 0 ? `<div class="box"><b>${e(report.shortagesAwaiting ?? 0)} shift(s) closed short, the shortage awaiting a supervisor.</b></div>` : ''}
     <table class="totals" style="width:100%">
       <tr><td>Total collected</td><td class="num">${money(report.totalCollected)}</td><td>Bills finalised</td><td class="num">${e(report.billsFinalized)} (${money(report.billedAmount)})</td></tr>
       <tr><td>Total refunded</td><td class="num">${money(report.totalRefunded)}</td><td>Discounts given</td><td class="num">${money(report.discountGiven)}</td></tr>

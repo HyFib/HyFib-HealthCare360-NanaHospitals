@@ -85,12 +85,12 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 | Permission | Purpose | Default roles |
 |---|---|---|
 | `billing.charges.read` | View charges, bills, receipts, IP accounts, reports | Billing, Cashier, InsuranceDesk, Accountant, HospitalAdmin |
-| `billing.charges.manage` | Manual charges, cancel unbilled charges | Billing, HospitalAdmin |
+| `billing.charges.manage` | Manual charges, cancel unbilled charges (an OT, procedure, implant or bed-day charge, or one above `billing.chargeCancel.approvalAbove`, is asked for) | Billing, HospitalAdmin |
 | `billing.op.create` | Create/edit draft OP bills (discounts within own limit) | Billing, Cashier, FrontOffice, HospitalAdmin |
 | `billing.ip.manage` | IP accounts: packages, interim/final bills, settlement | Billing, InsuranceDesk, HospitalAdmin |
 | `billing.bills.finalize` | Finalize bills (allocates the number) | Billing, Cashier, HospitalAdmin |
 | `billing.bills.cancel` | Cancel finalized bills | HospitalAdmin, Accountant |
-| `billing.discounts.approve` | Approve discounts above a user's limit, discharge with dues, set limits | HospitalAdmin, Accountant |
+| `billing.discounts.approve` | Approve discounts above a user's limit (never one's own), approve charges cancelled at the desk, discharge with dues, set limits (raising one waits for another holder) | HospitalAdmin, Accountant |
 | `billing.payments.collect` | Collect payments, POS, payment links, advance adjustment, pay out approved refunds | Cashier, Billing, FrontOffice, HospitalAdmin |
 | `billing.refunds.request` | Request refunds, credit notes and write-offs, and ask to reverse money that did not move (a receipt not received, a refund not paid out) | Cashier, Billing, HospitalAdmin |
 | `billing.refunds.approve` | Approve refunds (the pharmacy's invoice cancellations and returns paying money out or writing stock off included, see [pharmacy.md](pharmacy.md)), credit notes, write-offs, reversals of money that did not move, and card and UPI settlement reports withdrawn as imported in error, someone else asked for | HospitalAdmin, Accountant |
@@ -109,7 +109,8 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 | `doctorfees.payouts.manage` | Accruals, statements, payouts | HospitalAdmin, Accountant |
 
 Segregation of duties is enforced in the domain, not only by roles: the requester of a refund or a discount cannot
-approve it, and the preparer of a doctor payout cannot approve it. A refund requested by the system (no user, for
+approve it, and the preparer of a doctor payout cannot approve it. Holding `billing.discounts.approve` gives no more
+discount than one's own limit (see [The billing desk's decisions wait for a second person](#the-billing-desks-decisions-wait-for-a-second-person)). A refund requested by the system (no user, for
 example a cancelled prepaid appointment) can be approved by any holder of `billing.refunds.approve`.
 
 ## Endpoints
@@ -199,7 +200,7 @@ it waits, a save must ask for the same terms (409).
 | GET | `/?patientId&visitId&admissionId&status&unbilledOnly&…` (paged) | `charges.read` / `op.create` / `ip.manage` | → `PagedResult<ChargeDto>` |
 | GET | `/{id}` | same | → `ChargeDto` |
 | POST | `/` | `billing.charges.manage` | `PostChargeRequest` → 201 `ChargeDto` (source `billing.manual`; price editable only if the service allows) |
-| POST | `/{id}/cancel` | `billing.charges.manage` | `CancelChargeRequest` → 204 (refused once billed) |
+| POST | `/{id}/cancel` | `billing.charges.manage` | `CancelChargeRequest` → 204 cancelled; 202 `ApprovalRequestDto` for an OT, procedure, implant or bed-day charge or one above `billing.chargeCancel.approvalAbove` (`billing.charge_cancel`); refused once billed. `ChargeDto` (list and read) carries `cancelNeedsApproval` and `cancellationAskedAt` |
 
 ### Bills — `/api/v1/billing/bills`
 Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage`, `billing.payments.collect`.
@@ -231,9 +232,10 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | GET | `/discount-approvals?status` (paged, pending by default) | `billing.discounts.approve` | → `PagedResult<DiscountApprovalDto>` |
 | POST | `/discount-approvals/{id}/approve` · `/reject` | `billing.discounts.approve` | `DecideDiscountRequest(remarks)` → 204 (requester may not decide) |
 | GET | `/discount-limits` | `billing.discounts.approve` | → `DiscountLimitDto[]` |
-| PUT | `/discount-limits` | `billing.discounts.approve` | `SaveDiscountLimitRequest(userId, maxPercent, maxAmount?)` → 204 |
-| DELETE | `/discount-limits/{id}` | `billing.discounts.approve` | → 204 |
-| GET | `/discount-limits/me` | `op.create` / `ip.manage` | → the caller's authority (falls back to `billing.discount.defaultMaxPercent`) |
+| GET | `/discount-limits/pending` | `billing.discounts.approve` | → `PendingDiscountLimitDto[]` (limits raised that wait: user, before and asked in words, who asked, `askedByYou`) |
+| PUT | `/discount-limits` | `billing.discounts.approve` | `SaveDiscountLimitRequest(userId, maxPercent, maxAmount?, notes, version)` → 204 lowered; 202 `ApprovalRequestDto` raised (`billing.discount_limit`); 403 `billing.discount_limit_own` for one's own limit raised |
+| DELETE | `/discount-limits/{id}` | `billing.discounts.approve` | → 204; 202 when the default lets the user give more |
+| GET | `/discount-limits/me` | `op.create` / `ip.manage` | → the caller's authority (`maxPercent`, `maxAmount`; falls back to `billing.discount.defaultMaxPercent`), the approval permission giving no more |
 
 ### Payments, advances and refunds
 | Method | Path | Permission | Request → response |
@@ -317,8 +319,9 @@ case, and its Tally journal reads "taken back by a chargeback" rather than "mone
 | GET | `/shifts/current` | `billing.shifts` | → `ShiftDto` or 204 |
 | GET | `/shifts` (paged) · `/shifts/{id}` | `billing.shifts` | → `ShiftDto` |
 | POST | `/shifts/open` | `billing.shifts` | `OpenShiftRequest(counter, openingFloat)` → `ShiftDto` (one open shift per cashier) |
-| POST | `/shifts/{id}/close` | `billing.shifts` | `CloseShiftRequest(declaredCash, notes, version)` → `ShiftDto` (expected per mode, variance) |
-| GET | `/api/v1/billing/reports/day-end?date&counter` | `billing.shifts` | → `DayEndReport` (per cashier, per mode, advances collected, bills, discounts, cancellations; on the whole day's report, the reversals made that day by mode, `notReceived` and `notPaidOut`, and `netAfterReversals`) |
+| POST | `/shifts/{id}/close` | `billing.shifts` | `CloseShiftRequest(declaredCash, notes, version)` → 200 `ShiftDto` (expected per mode, variance); short beyond `billing.shift.shortageTolerance`, 202 `ShiftDto` with `shortageAwaiting` and `shortageApprovalId` (`billing.shift_shortage`), `notes` required as the reason (400) |
+| POST | `/shifts/{id}/shortage` | `billing.shifts` | `AskShortageRequest(reason)` → 202 `ApprovalRequestDto`: asks again for a supervisor to accept a shortage still awaiting (after a rejection, withdrawal or expiry) |
+| GET | `/api/v1/billing/reports/day-end?date&counter` | `billing.shifts` | → `DayEndReport` (per cashier, per mode, advances collected, bills, discounts, cancellations; on the whole day's report, the reversals made that day by mode, `notReceived` and `notPaidOut`, and `netAfterReversals`; each shift's `shortageAwaiting` and `shortageAcceptedBy`, and `shortagesAwaiting`) |
 
 ### In-patient accounts — `/api/v1/billing/ip-accounts`
 Readers = `billing.ip.manage` or `billing.charges.read`.
@@ -582,6 +585,45 @@ Where a refund stands, for the patient (`PortalRefunds.StageOf`, first match):
 
 `sentAt` is when the gateway took the refund (its latest attempt), otherwise when it was paid; `mode` is sent only once
 it is paid. The gateway's refund id and error text, the staff's names and the approver's remarks are never sent.
+
+## The billing desk's decisions wait for a second person
+
+MAKER-CHECKER.md, slice 6. Each is an approval request (`platform.approval_requests`), decided in the Approvals inbox,
+never by whoever asked (`approval.self`), and made only over the record as it was asked (`approval.stale`), audited with
+both names.
+
+* **Discounts.** Everyone discounts on their own only up to their own limit (`DiscountLimit`, else
+  `billing.discount.defaultMaxPercent`); `billing.discounts.approve` gives no more (`DiscountPolicy` has no approver
+  exemption, and nobody is recorded as approving a discount given within a limit). Above it the discount waits as a
+  `DiscountApproval` for another approver (`billing.discount_self_approval`), who is recorded on the bill
+  (`DiscountApprovedBy`, `ApprovedDiscountAmount`). Finalisation still checks the finaliser's own limit, so a discount
+  within a cashier's limit and not approved by anyone is refused at finalisation by a colleague with a lower limit, who
+  asks for approval. Free treatment by law is unaffected.
+* **Discount limits** (`billing.discount_limit`). Raising a user's limit (a higher percentage, a rupee cap raised or
+  taken away, or their limit removed so a higher default applies) is asked for by a holder of `billing.discounts.approve`
+  and approved by another, never the user whose limit it is (`billing.discount_limit_own`, which also refuses asking to
+  raise one's own). The approver reads "the default (0%) → 20%". Lowering is saved at once. Audited
+  `billing.discount_limit.raised`.
+* **Charges cancelled at the desk** (`billing.charge_cancel`). An OT (surgery), procedure, implant (`OT-IMPLANT`,
+  `PHARM-IMPL`, or any charge with device details) or bed-day charge always waits; any other waits when its net amount is
+  above `billing.chargeCancel.approvalAbove` (₹1,000). A credit (a return) cancelled never waits. Someone else who holds
+  `billing.discounts.approve` approves; the approver reads the service, the patient, the amount, who posted it and why it
+  waits. The charge stays unbilled and billable meanwhile, and is cancelled (taken off its draft first) only if it is
+  still unbilled at the amount asked; billed meanwhile, the approval fails and a credit note is asked for. Audited
+  `billing.charge.cancelled`. A module's own cancellations (`IChargePoster.CancelAsync`: an order withdrawn, a dispense
+  returned, a visit or stay cancelled, a package changed) are not desk cancellations and are made at once.
+* **Cash shortages** (`billing.shift_shortage`). A drawer closed short by more than `billing.shift.shortageTolerance`
+  (₹0) closes the shift with the cashier's reason and marks it `shortageAwaiting`: the shift list and the day-end report
+  show "closed — shortage awaiting supervisor" (`DayEndReport.shortagesAwaiting`), and the Tally records check says no
+  supervisor has accepted it. Someone else who holds `billing.refunds.approve`, never the cashier whose shift it is
+  (`billing.shift_shortage_own`), accepts it; the shift keeps who accepted it and when (`shortageAcceptedBy`,
+  `shortageAcceptedAt`), audited `billing.shift.shortage_accepted`. Rejected, withdrawn or expired, the shortage still
+  awaits and is asked again (`POST /shifts/{id}/shortage`). An excess is recorded and flagged (`billing.shift.variance`,
+  Warning) and needs no approval: no money is missing. The shortage stays the shift's; nothing is written off.
+* **A doctor's consultation fee** (`masters.practitioner_fee`, masters.md). The fee `VisitChargesHandler` charges through
+  `PriceResolver.ConsultationOverride` (a payer's negotiated tariff still wins, and no fee of the doctor's own means the
+  service's approved price) changes only when someone who approves prices agrees; the fee in force is charged meanwhile.
+  `PriceResolver` is unchanged.
 
 ## A third party pays only on a second person's word
 
@@ -1434,6 +1476,8 @@ estimate) or a cancelled bill gives no document and is never sent.
 | `billing.registrationFee.enabled` | `true` | Charge `REG-NEW` on a patient's first visit |
 | `billing.discount.defaultMaxPercent` | `0` | Staff discount allowed without approval when the user has no limit row |
 | `billing.shift.required` | `true` | Counter collections need an open cashier shift |
+| `billing.chargeCancel.approvalAbove` | `1000` | A charge worth more (₹, net) cancelled at the desk waits for someone who approves discounts; 0 makes every cancellation wait. OT, procedure, implant and bed-day charges always wait. Raising it waits for a second administrator |
+| `billing.shift.shortageTolerance` | `0` | How much (₹) a drawer may be short and still close on the cashier's word; beyond it a supervisor accepts the shortage. Raising it waits for a second administrator |
 | `billing.tally.ledgers` | built-in names | `TallyLedgerMap` JSON (income by department, mode ledgers, payer and doctor ledgers, `pharmacy` and `canteen` ledgers, `salesLedgerPerGstRate`; for the settlement journal `gatewaySettlementBank` "Bank", `gatewayCharges` "Payment Gateway Charges", `gatewayInputGst` "Input GST", and the clearing ledger is `modeLedgers.PaymentGateway`, "Payment Gateway Clearing" by default; for the card and UPI settlement journal `posSettlementBank` "Bank" and `posCharges` "Card & UPI Charges (MDR)", GST on `gatewayInputGst`); set on the Tally screen |
 | `billing.tally.dailyPost.enabled` | `true` | Queue the daily Tally post |
 | `billing.bills.sendOnWhatsApp` | `true` | Send the bill's PDF on WhatsApp when a payment settles it ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); the desk can still send it by hand when off |

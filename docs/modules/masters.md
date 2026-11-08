@@ -25,7 +25,7 @@ Code: `src/server/HyFib.HealthCare360.Platform/Organization` (schema `org`). Scr
 | Facilities and letterhead | `/setup/facilities` | Name, legal name, address, contact, GSTIN, PAN, registration, NABH and HFR ids, the logo and the letterhead line. *Preview letterhead* shows the report letterhead the server prints, from the details being typed |
 | Departments | `/setup/departments` | Kind, speciality, head of department, location, queue token prefix and position in lists, for the signed-in facility |
 | Specialities | `/setup/specialties` | Shared by every facility; patients choose one when booking online |
-| Doctors and clinical staff | `/setup/practitioners` | Name and role, council registration (required for doctors), HPR ID (ABDM's Healthcare Professionals Registry, which identifies the doctor in ABDM health records and NHCX claims), department, speciality, facilities, fees and follow-up days, online and video booking, languages, profile, photo and signature |
+| Doctors and clinical staff | `/setup/practitioners` | Name and role, council registration (required for doctors), HPR ID (ABDM's Healthcare Professionals Registry, which identifies the doctor in ABDM health records and NHCX claims), department, speciality, facilities, fees (approved by someone who approves prices) and follow-up days, online and video booking, languages, profile, photo and signature |
 | Services and prices | `/setup/services` | Category, department, base price, GST, SAC, whether discounts and price changes are allowed, and a name in each facility's local language, which that facility's rate list prints under the English name (billing.md, *The rate list*) |
 | Number formats | `/setup/numbering` | The format of every number the hospital issues, set before the first one if needed (`admin.numbering.manage`; see `docs/modules/numbering.md`) |
 | Print templates | `/setup/print-templates` | How each kind of document prints: the letterhead or pre-printed stationery, the logo, a closing note and the paper, hospital-wide or for one facility (`admin.print.manage`; see `docs/modules/print-templates.md`) |
@@ -59,8 +59,8 @@ embeds), keeping PNG transparency for logos and signatures, then stored in the f
 | POST · PUT | `/departments` · `/departments/{id}` | masters.manage | `SaveDepartmentRequest` (+`version`) → 201 · 204; 422 `facility.required` without a facility |
 | GET | `/specialties` · `/specialties/{id}` | masters.read | → `SpecialtyDto[]` · `SpecialtyDto` |
 | POST · PUT | `/specialties` · `/specialties/{id}` | masters.manage | `SaveSpecialtyRequest` (+`version`) → 201 · 204 |
-| GET | `/practitioners?page&pageSize&search&departmentId&specialtyId&kind&active` · `/practitioners/{id}` | masters.read | → `PagedResult<PractitionerDto>` (search: name, code, registration number) · `PractitionerDto` (one read also gives `linkedAccounts`, the accounts that sign as them, and `pendingIdentity`) |
-| POST · PUT | `/practitioners` · `/practitioners/{id}` | masters.manage | `SavePractitionerRequest` (+`version`; `takeOutOfUseAnyway` after a 409 `practitioner.work_ahead`) → 201 · 204, or 202 with the `ApprovalRequestDto` when a linked doctor's registration number, HPR ID or signature waits for approval; 409 `approval.already_requested` when another one waits |
+| GET | `/practitioners?page&pageSize&search&departmentId&specialtyId&kind&active` · `/practitioners/{id}` | masters.read | → `PagedResult<PractitionerDto>` (search: name, code, registration number) · `PractitionerDto` (one read also gives `linkedAccounts`, the accounts that sign as them, `pendingIdentity` and `pendingFee`) |
+| POST · PUT | `/practitioners` · `/practitioners/{id}` | masters.manage | `SavePractitionerRequest` (+`version`; `takeOutOfUseAnyway` after a 409 `practitioner.work_ahead`) → 201 `{ id, feeApprovalId }` · 204, or 202 with the `ApprovalRequestDto` when a linked doctor's registration number, HPR ID or signature, or the consultation fees, wait for approval (both in one save: the identity's request answers, the read shows both); 409 `approval.already_requested` when another one waits |
 | GET | `/services?page&pageSize&search&sort&desc&category&departmentId&active` · `/services/{id}` | masters.read | → `PagedResult<ServiceItemDto>` (sort: code, name, price, category) · `ServiceItemDto` |
 | POST · PUT | `/services` · `/services/{id}` | masters.manage | `SaveServiceItemRequest` (+`version`, `reason` for the approver) → 201 `{ id, approvalId }` · 204, or 202 with the `ApprovalRequestDto` when the price waits for approval; 409 `approval.already_requested` when a change to the price waits and this save does not fit it |
 | GET | `/lookups/departments?kind` · `/lookups/specialties` · `/lookups/practitioners?departmentId&search&kind` (`kind` repeated to narrow to those kinds, e.g. `kind=Nurse&kind=Technician` for the OT nurse picker) · `/lookups/services?category&search` | masters.read | → active items for pickers (at most 50 doctors or services) |
@@ -94,11 +94,25 @@ A save replaces every field, so screens send the whole record.
   `PractitionerIdentityApprovals`). The registration number, HPR ID and signature image print on the prescriptions,
   certificates and discharge summaries the linked account signs, and identify the doctor in ABDM records. For a
   practitioner linked to a staff account, a change to any of them waits for another administrator who holds
-  `admin.grants.approve` (`masters.practitioner_identity`): the rest of the save is made at once, the form says it was
+  `admin.grants.approve` (`masters.practitioner_identity`): the rest of the save is made at once (the fees wait on their
+  own, below), the form says it was
   asked for, and the approver reads the before and after ("Registration number: 45120 → 45210", "a signature image
   uploaded now"). It is made only over the identity it replaces (`approval.stale`; a fee changed meanwhile does not
   stand in the way), and audited with both names (`practitioner.identity_changed`). A practitioner with no account is
   edited at once, as before. Linking an account to a practitioner waits too (`identity.practitioner_link`, SECURITY.md).
+- **A doctor's consultation fee changes only as a service's price does** (MAKER-CHECKER.md, slice 6;
+  `PractitionerFeeApprovals`). The fee for a new visit and for a follow-up is charged to a self-pay patient instead of the
+  consultation service's approved price (billing's `PriceResolver.ConsultationOverride`; a payer's negotiated tariff
+  still wins, and 0 means the service price), and is the fee appointments are booked at and the rate list shows. A
+  change, lower or higher, waits for someone else who holds `masters.prices.approve` (`masters.practitioner_fee`;
+  accountants and hospital administrators by default), never the doctor whose fee it is
+  (`masters.practitioner_fee_own`); the rest of the save is made at once, and the fee in force is charged until then.
+  The approver reads "Consultation fee, new visit: ₹500.00 → ₹700.00". A new practitioner is created with no fee of
+  their own (the service price applies) and their fee asked for (`feeApprovalId`). Saving the record again with the fee
+  in force, or with the fee that waits, asks nothing twice; another fee while one waits is refused (409
+  `approval.already_requested`). It is set only over the fees it replaces (`approval.stale`; an identity or a phone
+  number changed meanwhile does not stand in the way), audited with both names (`practitioner.fee_changed`). The form
+  shows the fee that waits, with its request.
 - **Facilities in use.** Staff sign in only to a facility in use, so the facility the user is signed in to (422
   `facility.current`) and the last facility in use (422 `facility.last_active`) can't be taken out of use.
 - **Out of use, not deleted.** A department out of use takes no new visits; a doctor out of use can't be booked or chosen

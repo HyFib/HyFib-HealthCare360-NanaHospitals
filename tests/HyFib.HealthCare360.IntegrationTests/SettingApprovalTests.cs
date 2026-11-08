@@ -208,6 +208,8 @@ public sealed class SettingApprovalTests(HospitalServer server)
         (Switch(AiSettingKeys.Enabled).DefaultOn, Switch(AiSettingKeys.Enabled).OnIsLooser).ShouldBe((false, true));
 
         Limit(DiscountService.DefaultLimitSetting).Default.ShouldBe(0m);
+        Limit(Modules.Billing.Services.ChargeService.CancelApprovalAboveSetting).Default.ShouldBe(Modules.Billing.Services.ChargeService.DefaultCancelApprovalAbove);
+        Limit(ShiftService.ShortageToleranceSetting).Default.ShouldBe(ShiftService.DefaultShortageTolerance);
         Limit(DispensingService.MaxDiscountSetting).Default.ShouldBe(DispensingService.DefaultMaxDiscountPercent);
         Limit(CanteenService.StaffCreditLimitSetting).Default.ShouldBe(CanteenService.DefaultStaffCreditLimit);
         Limit(MarService.GraceSetting).Default.ShouldBe((decimal)MarRules.DefaultGrace.TotalMinutes);

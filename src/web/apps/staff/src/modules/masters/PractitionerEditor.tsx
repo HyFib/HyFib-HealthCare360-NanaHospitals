@@ -1,4 +1,5 @@
 import { Checkbox, makeStyles, MessageBar, MessageBarBody } from '@fluentui/react-components';
+import { formatInr } from '@hc360/core';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   CheckboxGroup,
@@ -24,6 +25,7 @@ import {
   mastersQueries,
   refreshAfterMasterChange,
   type FacilityDto,
+  type PractitionerCreated,
   type PractitionerDto,
   type PractitionerWork,
   type SpecialtyDto,
@@ -89,11 +91,20 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
     onSuccess: (result, { anyway }) => {
       setWorkAhead(null);
       const asked = askedForApproval(result);
+      const created = practitioner ? null : (result as PractitionerCreated | null);
       if (asked) {
-        // A doctor someone signs in as: the registration number, HPR ID or signature waits; the rest is saved.
+        // A doctor someone signs in as: the registration number, HPR ID or signature waits; a fee changed waits for
+        // someone who approves prices. Either way the rest is saved.
         notify.success(
           'Asked for approval',
-          `${asked.summary}. Another administrator who may approve grants decides it; the rest of the record is saved.`,
+          asked.kind === 'masters.practitioner_fee'
+            ? `${asked.summary}. Someone else who approves prices decides it; the fee in force is charged until then, and the rest of the record is saved.`
+            : `${asked.summary}. Another administrator who may approve grants decides it; the rest of the record is saved.`,
+        );
+      } else if (created?.feeApprovalId) {
+        notify.success(
+          'Added, fee asked for approval',
+          'Their consultation fee waits for someone else who approves prices; until then a visit is charged the consultation service’s price.',
         );
       } else if (anyway) {
         notify.warning(
@@ -165,6 +176,15 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
           </MessageBar>
         )
       )}
+      {practitioner?.pendingFee && (
+        <PendingGrantNotice
+          approvalId={practitioner.pendingFee.approvalId}
+          what={`A consultation fee of ${feeWords(practitioner.pendingFee.asked.newVisit)} for a new visit and ${feeWords(practitioner.pendingFee.asked.followUp)} for a follow-up`}
+          requestedBy={practitioner.pendingFee.requestedBy}
+          requestedAt={practitioner.pendingFee.requestedAt}
+          decides="Someone else who approves prices decides it; until then the fees shown here are charged."
+        />
+      )}
       <PractitionerFields
         control={form.control}
         editing={practitioner !== null}
@@ -175,6 +195,11 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
       />
     </MasterDrawer>
   );
+}
+
+/** A fee in words: none means the consultation service's approved price applies. */
+function feeWords(fee: number): string {
+  return fee > 0 ? formatInr(fee) : 'none (the service price)';
 }
 
 /**
@@ -342,7 +367,10 @@ export function PractitionerFields({
         {facilities.length > 1 && <FacilitiesPicker control={control} facilities={facilities} />}
       </EditorSection>
 
-      <EditorSection title="Consultation" description="What the front office charges, and how patients can book.">
+      <EditorSection
+        title="Consultation"
+        description="What the front office charges, and how patients can book. A fee changed waits for someone else who approves prices; until then the fee in force is charged (0: the consultation service's price)."
+      >
         <FormGrid columns={3} minColumnWidth={180}>
           <NumberField
             control={control}

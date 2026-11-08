@@ -2,6 +2,11 @@ using HyFib.HealthCare360.Modules.Billing.Domain;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Charges;
 
+/// <param name="CancelNeedsApproval">
+/// Cancelling it from the billing desk waits for a second person (an OT, procedure, implant or bed-day charge, or one above
+/// the hospital's amount: <c>billing.chargeCancel.approvalAbove</c>).
+/// </param>
+/// <param name="CancellationAskedAt">When its cancellation was asked for, while that waits for approval.</param>
 public sealed record ChargeDto(
     Guid Id,
     Guid PatientId,
@@ -26,7 +31,9 @@ public sealed record ChargeDto(
     DateTimeOffset ServiceDate,
     ChargeStatus Status,
     Guid? BillId,
-    string? CancelReason);
+    string? CancelReason,
+    bool CancelNeedsApproval = false,
+    DateTimeOffset? CancellationAskedAt = null);
 
 /// <summary>A service charged manually by the billing desk (for example a procedure not ordered electronically).</summary>
 public sealed record PostChargeRequest(
