@@ -686,7 +686,8 @@ export interface PrescriptionVerification {
 /**
  * What anyone may see of a prescription's DSC signature: the signer, the certificate and the hash, no patient data.
  * `Untrusted`: the prescription is as signed, but the certificate does not chain to a CCA India root installed on the
- * server, so it is not presented as a DSC. `chainTrusted` is whether it does; revocation is not checked.
+ * server, so it is not presented as a DSC. `chainTrusted` is whether it does; `revocationStatus` how the certificate's
+ * revocation was checked when it signed (in the server's words; absent for a signature made before HC360 checked it).
  */
 export type DigitalSignatureState = 'NotSigned' | 'Valid' | 'Invalid' | 'Untrusted';
 
@@ -698,6 +699,7 @@ export interface PublicDigitalSignature {
   signedAt: string;
   contentHash: string;
   chainTrusted: boolean;
+  revocationStatus?: string | null;
   message: string;
 }
 

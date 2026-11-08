@@ -38,7 +38,9 @@ absconded (the nurse in charge approves), LAMA and DAMA witnessed (on the ward a
 confirmed death certificate voided; a visit cancelled after the doctor started it; and in the theatre a side or
 procedure changed after the WHO Sign-in (the checklist redone), site marking with a side booked, the swab and
 instrument counts witnessed with their discrepancies settled, and implants corrected, not deleted, after the operation
-starts.
+starts; and another doctor's work: a discharge summary signed only by the stay's care team, another doctor's signed
+encounter amended only with its author's or the head of department's approval, and another doctor's critical result
+acknowledged only by a doctor covering for them.
 
 ## Still on one person's word, by slice
 
@@ -58,7 +60,10 @@ starts.
 | 12 | Settle an insurance claim with deductions, or reject it, writing off what the insurer owes; record the pre-authorised amount that moves the bill from patient to insurer | Billing `ClaimService`, `PayerCoverageService` | Write-offs above a threshold approved by a second person; pre-authorised amounts checked by a second insurance desk user | Open |
 | 13 | Raise, approve and issue one's own indent (stock leaves as consumption); receive a transfer one dispatched; release a recalled batch. (Set an implant's or a medicine's ceiling price or an item's GST rate: in force) | SupplyChain `Indents`, `ItemEndpoints`, `Transfers`, `StockEndpoints` | Never approve or receive one's own; unblocking a recalled batch approved by a pharmacist. **In force:** an item's NPPA ceiling price raised or removed, or its GST rate changed, waits for someone else who approves prices (`masters.prices.approve`), never the one who asked, over the item's pricing as asked (`approval.stale`); a ceiling set or lowered applies at once. A ceiling also applies to scheduled medicines (DPCO 2013): a pack with an MRP above it is not received (checked again when posted), and a batch above it is not dispensed, sold or issued | In part (`inventory.item_price`, `grn.mrp_above_ceiling`, `pharmacy.price_above_ceiling`); indents, transfers and recalled batches open |
 | 14 | Close a sentinel event or never event straight from Reported, or downgrade it so no root-cause analysis is due; close a data breach without the Board report, or take patients off its notification list unaudited; schedule one's own bulk campaign; share a patient's reports and bills with any phone number; record an unscoped record-sharing consent with no signed form | Quality `IncidentService`; Privacy `BreachService`; Engagement `CampaignService`; Patients `PortalFamilyService`, front office consents | Sentinel closure and downgrade, breach closure and notification changes by a second person; campaigns approved by someone other than the author; family links confirmed by a code to the patient; unscoped consent with a witness | Open |
-| 15 | Override a lab quality-control failure for the day; change critical limits or switch on automatic verification; downgrade a transfusion reaction (skipping haemovigilance reporting); change a dialysis patient's infection status; cancel an admission after days of care; acknowledge another doctor's critical result; sign a discharge summary as any doctor; amend another doctor's signed encounter; waive an ambulance trip charge | Diagnostics, SpecialtyCare, Inpatient, Clinical, SupportServices | Each a threshold or a second person as the hospital's policy decides; listed for the decision | Open |
+| 15 | Override a lab quality-control failure for the day; change critical limits or switch on automatic verification; downgrade a transfusion reaction (skipping haemovigilance reporting); change a dialysis patient's infection status; cancel an admission after days of care; waive an ambulance trip charge | Diagnostics, SpecialtyCare, Inpatient, SupportServices | Each a threshold or a second person as the hospital's policy decides; listed for the decision | Open |
+| 15 | Sign a discharge summary as any doctor (an account not linked to a doctor signed it in the consultant's name) | Clinical `DischargeSummaryService` (`POST /api/v1/clinical/discharge-summaries/{id}/sign`) | Only the stay's consultant or a doctor on its care team (the admitting doctor, a doctor who recorded a consultant visit) signs it, as themselves; the hospital lets any doctor sign only through `clinical.dischargeSummary.careTeamOnly`, which a second administrator approves switching off | In force (`discharge_summary.not_care_team`, `discharge_summary.doctor_required`) |
+| 15 | Amend another doctor's signed encounter | Clinical `EncounterService` (`POST /api/v1/emr/encounters/{id}/amend`) | Its author amends at once; another doctor asks, and the author or the head of the encounter's department approves (never the one who asked, nor another doctor), over the encounter as asked, the original kept in the amendment history; `clinical.encounters.amendByAuthorOnly` off (a second administrator approves) lets any doctor amend alone | In force (`clinical.encounter_amend`, `encounter.amend_approver`) |
+| 15 | Acknowledge another doctor's critical result (it then leaves the ordering doctor's list unseen by them) | Clinical `WorklistEndpoints`, `DoctorHandovers` (`POST /api/v1/emr/results/{id}/acknowledge`) | Only the ordering doctor, a doctor on the same stay's care team, or one the ordering doctor handed over to (a recorded handover, up to 7 days), audited naming why; `clinical.criticalResults.coveringOnly` off (a second administrator approves) lets any doctor | In force (`result.not_covering`, `result.acknowledged_covering`) |
 | 15 | Cancel a visit after the doctor started it (the consultation under way, or a note, order or prescription on it) | Patients `VisitService` (`POST /api/v1/visits/{id}/cancel`) | The desk asks with a reason; a front-office supervisor or the treating doctor approves, never the asker; the token, charges and orders follow only once approved | In force (`patients.visit_cancel`) |
 
 ## Not covered (decided, not built)
@@ -144,6 +149,14 @@ starts.
   (`surgery.charge_cancel_failed`: the charge cannot be withdrawn) and a credit note is asked for at the billing desk, as
   slice 6 has it. The OT in-charge
   is a permission, `ot.materials.approve`, not the nurse named on the booking.
+
+- **Slice 15 (clinical items) leaves these as they are.** The care team is the consultant, the admitting doctor and the
+  doctors who recorded a consultant visit; a doctor covering a ward without recording a visit is on it only through a
+  handover. A handover is recorded by the doctor who hands over, not by a rota: HC360 has no duty roster for doctors, so
+  an unplanned absence needs the head of department to approve an amendment, or a colleague to record a visit. Out-patient
+  results have no care team: another doctor acknowledges one only on a handover. The head of department approves another
+  doctor's amendment only of an encounter recorded in that department. Amending a discharge summary, and signing an
+  encounter one did not start, are as before.
 
 ## How each control is built
 

@@ -172,7 +172,14 @@ describe('WorklistAppointments', () => {
     wrap(
       <WorklistAppointments
         {...props}
-        appointments={[appointment({ patientName: 'Asha Rao', reason: null, isConfidential: true, startsAt: '2026-10-02T06:00:00Z' })]}
+        appointments={[
+          appointment({
+            patientName: 'Asha Rao',
+            reason: null,
+            isConfidential: true,
+            startsAt: '2026-10-02T06:00:00Z',
+          }),
+        ]}
       />,
     );
 

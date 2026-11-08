@@ -86,6 +86,6 @@ internal static class PrescriptionVerificationEndpoints
 
         var check = await PrescriptionDigitalSignatureService.CheckAsync(db, trust.Current, rx, PrescriptionSignaturePolicy.Off, ct);
         return new PublicDigitalSignature(check.State, rx.SignerName!, rx.SignerSerialNumber!, rx.SignerIssuer!, rx.DigitallySignedAt!.Value,
-            rx.SignedContentHash!, check.ChainTrusted, check.Message!);
+            rx.SignedContentHash!, check.ChainTrusted, check.Message!, rx.SignerRevocationStatus);
     }
 }

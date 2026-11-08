@@ -49,9 +49,45 @@ const CASE: EmergencyCase = {
 
 const BAYS: ErBays = {
   bays: [
-    { id: 'b1', code: 'R1', area: 'Resuscitation', displayOrder: 1, isActive: true, caseId: 'other', patientName: 'Another', uhid: 'NH1', level: 1, since: null, version: 1 },
-    { id: 'b2', code: 'A1', area: 'Acute', displayOrder: 2, isActive: true, caseId: null, patientName: null, uhid: null, level: null, since: null, version: 1 },
-    { id: 'b3', code: 'A2', area: 'Acute', displayOrder: 3, isActive: false, caseId: null, patientName: null, uhid: null, level: null, since: null, version: 1 },
+    {
+      id: 'b1',
+      code: 'R1',
+      area: 'Resuscitation',
+      displayOrder: 1,
+      isActive: true,
+      caseId: 'other',
+      patientName: 'Another',
+      uhid: 'NH1',
+      level: 1,
+      since: null,
+      version: 1,
+    },
+    {
+      id: 'b2',
+      code: 'A1',
+      area: 'Acute',
+      displayOrder: 2,
+      isActive: true,
+      caseId: null,
+      patientName: null,
+      uhid: null,
+      level: null,
+      since: null,
+      version: 1,
+    },
+    {
+      id: 'b3',
+      code: 'A2',
+      area: 'Acute',
+      displayOrder: 3,
+      isActive: false,
+      caseId: null,
+      patientName: null,
+      uhid: null,
+      level: null,
+      since: null,
+      version: 1,
+    },
   ],
   free: 1,
   occupied: 1,
@@ -119,7 +155,9 @@ describe('BayControl', () => {
 
     await userEvent.selectOptions(select, 'b2');
     await userEvent.click(screen.getByRole('button', { name: 'Put in bay' }));
-    await waitFor(() => expect(put).toHaveBeenCalledWith('/api/v1/emergency/cases/c1/bay', { bayId: 'b2', version: 4 }));
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith('/api/v1/emergency/cases/c1/bay', { bayId: 'b2', version: 4 }),
+    );
   });
 
   it('moves or frees the bay of a patient in one, and shows only the bay to a reader', async () => {
@@ -145,13 +183,22 @@ describe('WoundCertificateSection', () => {
 
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Nature' }), 'Grievous');
     expect(screen.getByText(/say which kind of grievous hurt/)).toBeInTheDocument();
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: /Kind of grievous hurt/ }), 'FractureOrDislocation');
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: /Kind of grievous hurt/ }),
+      'FractureOrDislocation',
+    );
     expect(screen.getByRole('button', { name: 'Save the certificate' })).toBeEnabled();
     await expectNoAxeViolations();
   });
 
   it('shows a signed certificate fixed, with print and the court report, and nothing to edit', async () => {
-    show(<WoundCertificateSection c={{ ...CASE, mlc: { id: 'm1' } as EmergencyCase['mlc'], woundCertificate: SIGNED }} canMlc canReport />);
+    show(
+      <WoundCertificateSection
+        c={{ ...CASE, mlc: { id: 'm1' } as EmergencyCase['mlc'], woundCertificate: SIGNED }}
+        canMlc
+        canReport
+      />,
+    );
 
     expect(screen.getByText(/Signed by Dr. Meera Iyer \(Reg. TNMC 45678\)/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save the certificate' })).not.toBeInTheDocument();
