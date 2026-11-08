@@ -19,7 +19,9 @@ public sealed record RecordVitalsRequest(
     decimal? BloodGlucose,
     GlucoseTiming GlucoseTiming,
     int? Gcs,
-    string? Notes);
+    string? Notes,
+    Consciousness? Consciousness = null,
+    SpO2Scale SpO2Scale = SpO2Scale.Scale1);
 
 /// <summary>Marks a clinical row as recorded by mistake (kept for the audit trail, hidden from summaries).</summary>
 public sealed record EnteredInErrorRequest(string Reason);
@@ -49,7 +51,10 @@ public sealed record VitalsDto(
     string? Notes,
     bool IsEnteredInError,
     string? EnteredInErrorReason,
-    IReadOnlyList<VitalFlag> Flags);
+    IReadOnlyList<VitalFlag> Flags,
+    Consciousness? Consciousness = null,
+    SpO2Scale SpO2Scale = SpO2Scale.Scale1,
+    News2Score? News2 = null);
 
 /// <summary>
 /// Physiologically plausible bounds: they reject typing errors (a pulse of 720) without judging clinical values,
@@ -61,7 +66,7 @@ public sealed class RecordVitalsRequestValidator : AbstractValidator<RecordVital
     {
         RuleFor(x => x).Must(x => x.Temperature is not null || x.Pulse is not null || x.RespiratoryRate is not null || x.SystolicBp is not null
                                   || x.DiastolicBp is not null || x.SpO2 is not null || x.HeightCm is not null || x.WeightKg is not null
-                                  || x.PainScore is not null || x.BloodGlucose is not null || x.Gcs is not null)
+                                  || x.PainScore is not null || x.BloodGlucose is not null || x.Gcs is not null || x.Consciousness is not null)
             .WithName("temperature").WithMessage("Enter at least one measurement.");
         RuleFor(x => x.Temperature).InclusiveBetween(25m, 45m).When(x => x.Temperature is not null && x.TemperatureUnit == TemperatureUnit.Celsius)
             .WithMessage("Temperature must be between 25 and 45 °C.");
@@ -79,6 +84,8 @@ public sealed class RecordVitalsRequestValidator : AbstractValidator<RecordVital
         RuleFor(x => x.PainScore).InclusiveBetween(0, 10);
         RuleFor(x => x.BloodGlucose).InclusiveBetween(10m, 1500m);
         RuleFor(x => x.Gcs).InclusiveBetween(3, 15);
+        RuleFor(x => x.Consciousness).IsInEnum();
+        RuleFor(x => x.SpO2Scale).IsInEnum();
         RuleFor(x => x.RecordedAt)
             .Must(at => at is null || (at <= time.GetUtcNow().AddMinutes(5) && at >= time.GetUtcNow().AddDays(-30)))
             .WithMessage("The time must not be in the future or more than 30 days ago.");

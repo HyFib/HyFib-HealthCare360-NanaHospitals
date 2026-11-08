@@ -47,8 +47,11 @@ describe('recording a fall or pressure injury', () => {
     await user.type(screen.getByRole('textbox', { name: /Where on the body/ }), 'Sacrum');
     await user.click(screen.getByRole('switch', { name: /Present on admission/ }));
     expect(screen.queryByText(/also reported to the quality team/)).not.toBeInTheDocument();
-    await user.type(screen.getByRole('textbox', { name: /^Where/ }), 'Bed 4');
-    await user.type(screen.getByRole('textbox', { name: /What happened/ }), 'Blister over the sacrum at the admission skin check.');
+    await user.type(screen.getByRole('textbox', { name: /^Where\s*\*?$/ }), 'Bed 4');
+    await user.type(
+      screen.getByRole('textbox', { name: /What happened/ }),
+      'Blister over the sacrum at the admission skin check.',
+    );
     await expectNoAxeViolations();
     await user.click(screen.getByRole('button', { name: 'Record' }));
 
