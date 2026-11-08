@@ -149,7 +149,8 @@ public sealed class LabDeviceAuthenticationTests(HospitalServer server)
         await client.ConnectAsync(IPAddress.Loopback, ((IPEndPoint)listener.LocalEndpoint).Port, Ct);
         using var accepted = await listener.AcceptTcpClientAsync(Ct);
         var admitting = gate.AdmitAsync(connection, accepted.GetStream(), IPAddress.Loopback, Ct);
-        await using var tls = new SslStream(client.GetStream(), false, (_, _, _, _) => true);
+        // The gateway's test certificate is self-signed: the device trusts exactly that one.
+        await using var tls = new SslStream(client.GetStream(), false, (_, presented, _, _) => presented?.Subject == "CN=hc360-gateway.test");
         try
         {
             await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
