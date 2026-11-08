@@ -16,14 +16,7 @@ export function PendingApprovals({
   kinds,
 }: {
   subjectType:
-    | 'Bill'
-    | 'Patient'
-    | 'LabReport'
-    | 'Refund'
-    | 'IpAccount'
-    | 'PatientAdvance'
-    | 'DeathRecord'
-    | 'GoodsReceiptNote';
+    'Bill' | 'Patient' | 'LabReport' | 'Refund' | 'IpAccount' | 'PatientAdvance' | 'DeathRecord' | 'GoodsReceiptNote';
   subjectId: string;
   /** Only these kinds (a patient's merge, when the record shows its other changes waiting itself). */
   kinds?: readonly string[];
