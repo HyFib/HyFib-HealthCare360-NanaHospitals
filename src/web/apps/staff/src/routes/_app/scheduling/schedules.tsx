@@ -114,7 +114,8 @@ function SchedulesPage() {
     exception: ScheduleExceptionDto | null;
     defaults?: { practitionerId?: string };
   } | null>(null);
-  const [affected, setAffected] = useState<AffectedAppointment[] | null>(null);
+  // The bookings a change strands; for a leave or block, its id, so the patients can be told in one action.
+  const [affected, setAffected] = useState<{ list: AffectedAppointment[]; exceptionId: string | null } | null>(null);
 
   const schedules = useQuery(
     schedulingQueries.schedules({
@@ -159,9 +160,9 @@ function SchedulesPage() {
 
   const set = (patch: Partial<SchedulesSearch>) =>
     void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
-  const saved = (result: ScheduleSaved | null) => {
+  const saved = (result: ScheduleSaved | null, exception = false) => {
     if (result && result.affectedAppointments.length > 0) {
-      setAffected(result.affectedAppointments);
+      setAffected({ list: result.affectedAppointments, exceptionId: exception ? result.id : null });
     }
   };
 
@@ -450,9 +451,13 @@ function SchedulesPage() {
         defaults={editingException?.defaults}
         today={today}
         onClose={() => setEditingException(null)}
-        onSaved={saved}
+        onSaved={(result) => saved(result, true)}
       />
-      <AffectedAppointmentsDialog affected={affected} onClose={() => setAffected(null)} />
+      <AffectedAppointmentsDialog
+        affected={affected?.list ?? null}
+        exceptionId={affected?.exceptionId ?? null}
+        onClose={() => setAffected(null)}
+      />
     </Page>
   );
 }
