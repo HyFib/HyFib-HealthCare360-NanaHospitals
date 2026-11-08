@@ -404,6 +404,9 @@ Points we would most like checked:
 | 144 | `message.feature.off` | This is not available right now. Please contact the hospital. | இந்த வசதி இப்போது கிடைக்கவில்லை. தயவுசெய்து மருத்துவமனையைத் தொடர்புகொள்ளுங்கள். | |
 | 145 | `message.appointment.payment_cancel_staff_only` | Only hospital staff can cancel an appointment because the payment was not received. | கட்டணம் பெறப்படவில்லை என்பதற்காகச் சந்திப்பை மருத்துவமனை ஊழியர்கள் மட்டுமே ரத்துசெய்ய முடியும். | |
 | 146 | `message.portal.link_not_usable` | This link no longer works. | இந்த இணைப்பு இனி வேலை செய்யாது. | |
+| 148 | `message.privacy.child_guardian_unverified` | The patient is under 18: a parent's or lawful guardian's consent must be verified first, by a code sent to their mobile number or by their identity document. | நோயாளிக்கு 18 வயதுக்குக் குறைவு: முதலில் பெற்றோர் அல்லது சட்டப்படியான பாதுகாவலரின் ஒப்புதல், அவர்களின் கைபேசி எண்ணுக்கு அனுப்பப்படும் குறியீடு அல்லது அவர்களின் அடையாள ஆவணம் மூலம், சரிபார்க்கப்பட வேண்டும். | |
+| 149 | `message.privacy.child_marketing` | The patient is under 18: the DPDP Act (s.9(3)) does not allow marketing or targeted messages to children, even with a parent's consent. | நோயாளிக்கு 18 வயதுக்குக் குறைவு: பெற்றோரின் ஒப்புதல் இருந்தாலும், குழந்தைகளுக்கு விளம்பர அல்லது இலக்கு வைத்த செய்திகளை அனுப்ப DPDP சட்டம் (பிரிவு 9(3)) அனுமதிப்பதில்லை. | |
+| 150 | `message.privacy.consent_ended` | This consent has already ended. | இந்த ஒப்புதல் ஏற்கெனவே முடிந்துவிட்டது. | |
 
 ## The validators' own messages (shown next to a field)
 

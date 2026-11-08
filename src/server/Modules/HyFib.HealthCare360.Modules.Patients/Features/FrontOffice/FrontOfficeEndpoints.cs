@@ -501,12 +501,32 @@ internal static class FrontOfficeEndpoints
     }
 
     private static async Task<IResult> CaptureConsent(Guid patientId, CaptureConsentRequest request, HospitalDbContext db, PatientAccessGuard guard,
-        ICurrentUser user, ISettingsService settings, ISharingPartnerDirectory partners, TimeProvider time, CancellationToken ct)
+        ICurrentUser user, ISettingsService settings, ISharingPartnerDirectory partners, IEnumerable<IGuardianConsents> guardians, TimeProvider time, CancellationToken ct)
     {
         var access = await guard.EnsureCanOpenAsync(patientId, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();
+        }
+
+        // DPDP Act s.9: for a child, no marketing at all, and nothing outside health care without a guardian's verified consent.
+        if (request.Granted)
+        {
+            var born = await db.Set<Patient>().Where(p => p.Id == patientId).Select(p => p.DateOfBirth).FirstOrDefaultAsync(ct);
+            var today = time.Today();
+            if (ChildData.IsChild(born, today))
+            {
+                var verified = false;
+                foreach (var guardian in guardians)
+                {
+                    verified |= await guardian.HasVerifiedAsync(patientId, ct);
+                }
+
+                if (ChildData.WhyRefused(request.Type, born, today, verified) is { } refused)
+                {
+                    return refused.ToProblem();
+                }
+            }
         }
 
         var scope = request.SharingScope;

@@ -1012,6 +1012,27 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - Medical records past their 3- or 5-year period are listed for the medical records team, never deleted
     automatically.
   - Every period is on one screen, and none can be set below its legal minimum.
+- **Erasure and backups.**
+  - Erased data stays in the encrypted backups until they are deleted: at most the backup period and a day (31 days by
+    default). The erasure answer and the privacy notice say so. It is not crypto-shredded: the field keys are per
+    purpose, not per patient, and every backup escrows every key so it restores on new hardware.
+  - Every erasure is appended to the erasure ledger outside the database (`privacy/erasure-ledger.log`, beside the audit
+    anchors, and beside the backups' second copy when one is set), by id only, each line sealed with the audit seal key.
+  - A database restored from a backup made before an erasure has it applied again as the server starts on it, before
+    anyone uses the data, once, with a critical audit entry. A line whose seal does not verify is never applied, so
+    write access to the folder alone cannot make the server erase someone's data. Keep the ledger with the audit
+    anchors: on storage the database's administrators cannot write, and backed up with them.
+- **Consent managers.** Their events are anonymous calls trusted only once the HMAC-SHA256 signature over the
+  timestamp and body verifies with the secret shared with that consent manager (kept encrypted, shown once), within
+  five minutes of the server's clock, each event acted on once. An artefact must name a patient by both UHID and
+  registered mobile number. Withdrawals made at the hospital are sent back signed the same way.
+- **Children.** Nothing outside health care that needs consent is recorded for a patient under 18 without a parent's
+  or lawful guardian's consent verified by a code to their own mobile number (only a salted hash kept; 5 tries, 10
+  minutes, 3 codes a number in 15 minutes) or their identity document (type and last four characters only). Marketing
+  never reaches a child, and campaign audiences hold only patients known to be adults.
+- **Significant Data Fiduciary.** Impact assessments are approved by someone other than whoever sent them (approval
+  `privacy.dpia`), over the version sent; System health warns while a designated hospital has no DPO based in India, an
+  overdue assessment or an overdue data audit.
 - **Completeness.** An architecture test fails when a table that holds a patient id is missing from the personal
   data catalogue, so the data summary cannot fall behind the database.
 - **Reports sent to patients.** The "report ready" e-mail carries the report's PDF, and so does the WhatsApp message
@@ -1606,7 +1627,10 @@ CI runs these checks on every pull request and on main. A pull request cannot me
    template ids, as for the other SMS templates (`privacy.request.received`, `privacy.request.closed`,
    `privacy.breach.notice`); without them those SMS are not sent.
 9. Confirm the retention periods in Privacy › Retention with the medical records committee and a legal adviser, and
-   review the charts it lists as past their period.
+   review the charts it lists as past their period. Delete by hand, within the backup period, any copy of a backup
+   taken off the Server Node and its second copy: the erasure window the privacy notice states covers only those two.
+   Keep the erasure ledger (`privacy/erasure-ledger.log`) with the audit anchor file, and set the backups' second copy
+   so a copy of it outlives the Server Node's disk.
 10. If the modality worklist is used, open its port in the firewall for the modalities' addresses only, keep it on the
     imaging network, and remove a modality from the worklist settings the day it is retired or moved.
 11. Give every attendance terminal that pushes over ADMS a fixed IP address, and enter it as *Only accept from this IP
@@ -1620,6 +1644,11 @@ CI runs these checks on every pull request and on main. A pull request cannot me
     each check without the Aadhaar number, and keeping the number would need an Aadhaar Data Vault. Install only
     UIDAI-certified readers and their makers' RD services, keep the RD service subscriptions current, and keep the AUA
     signing certificate's .pfx and password out of e-mail and shared folders.
+14. Register each consent manager the hospital accepts in Privacy › Consent managers, and give it the signing secret
+    shown once, over a channel the consent manager agrees. Deactivate one the day the hospital stops accepting it.
+15. Once notified as a Significant Data Fiduciary, record it in Privacy › Significant data fiduciary, name the Data
+    Protection Officer (based in India), keep an impact assessment for each processing activity, and engage the
+    independent data auditor every twelve months. Register the `privacy.guardian.code` SMS template with DLT.
 
 ## 4. Reporting a vulnerability
 
