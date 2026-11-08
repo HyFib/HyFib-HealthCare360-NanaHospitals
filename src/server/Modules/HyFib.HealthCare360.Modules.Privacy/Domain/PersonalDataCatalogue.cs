@@ -81,6 +81,8 @@ public static class PersonalDataCatalogue
                 new("clinical.notifiable_cases", "Notifiable-disease reports to public health (IDSP)"),
                 new("clinical.emergency_cases", "Emergency department visits and their triage"),
                 new("clinical.mlc_records", "Medico-legal case records"),
+                new("clinical.wound_certificates", "Wound certificates of medico-legal cases"),
+                new("clinical.doctor_handovers", "Doctors' handovers of your care to a covering doctor", Counted: false),
                 new("clinical.antimicrobial_approvals", "Approvals and reviews of restricted antibiotics"),
                 new("clinical.allergies", "Allergies"),
                 new("clinical.no_known_allergies", "No-known-allergy statements", Counted: false),
