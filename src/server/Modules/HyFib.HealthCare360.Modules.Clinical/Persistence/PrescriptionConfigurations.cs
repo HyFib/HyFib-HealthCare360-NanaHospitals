@@ -13,6 +13,7 @@ internal sealed class PrescriptionConfiguration : IEntityTypeConfiguration<Presc
         b.Property(x => x.Advice).HasMaxLength(2000);
         b.Property(x => x.VerificationToken).HasMaxLength(64);
         b.Property(x => x.PrescriberRegistrationNumber).HasMaxLength(64);
+        b.Property(x => x.RefilledByName).HasMaxLength(200);
         b.Property(x => x.PrescriberRegistrationCouncil).HasMaxLength(128);
         b.Property(x => x.SafetyOverrideReason).HasMaxLength(1000);
         b.Property(x => x.SafetyAlerts).HasColumnType("jsonb");

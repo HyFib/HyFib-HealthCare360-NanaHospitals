@@ -25,6 +25,13 @@ public static class InpatientPermissions
     public const string NursingChart = "nursing.chart";
     public const string NursingMar = "nursing.mar";
 
+    /// <summary>
+    /// The ward's nurse in charge: lists the verbal and telephone orders, and the nurses' stops, not countersigned in time on
+    /// the facility's wards, and is told of each. The hospital administrator holds it by default (no built-in role is a
+    /// ward sister, and every nurse being told would bury it); a hospital gives it to its ward sisters' role.
+    /// </summary>
+    public const string NursingInCharge = "nursing.in_charge";
+
     private static readonly string[] WardTeam = [SystemRoles.Nurse, SystemRoles.Doctor];
 
     internal static IEnumerable<PermissionDefinition> All { get; } =
@@ -43,6 +50,8 @@ public static class InpatientPermissions
         new(BedsHousekeeping, "Beds", "Work the housekeeping queue and release cleaned beds", [SystemRoles.Nurse, SystemRoles.HospitalAdmin]),
         new(NursingChart, "Nursing", "Nursing notes, handovers, intake/output, risk assessments and consultant visits", WardTeam),
         new(NursingMar, "Nursing", "Medication chart and medication administration record (MAR)", WardTeam),
+        new(NursingInCharge, "Nursing", "Ward nurse in charge: see the verbal and telephone medication orders and nurses' stops not countersigned in time, and be told of each",
+            [SystemRoles.HospitalAdmin]),
     ];
 }
 
@@ -77,6 +86,7 @@ public sealed class InpatientModule : IModule
         services.AddScoped<AdmissionAccess>();
         services.AddScoped<WardRoundQueries>();
         services.AddHostedService<BedDayChargeJob>();
+        services.AddHostedService<CountersignOverdueJob>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

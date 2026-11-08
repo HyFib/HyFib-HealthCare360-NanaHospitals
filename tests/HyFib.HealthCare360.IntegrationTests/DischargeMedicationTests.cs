@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Beds;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Mar;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
@@ -32,9 +33,10 @@ public sealed class DischargeMedicationTests(HospitalServer server)
         var admission = await AdmitAsync(frontOffice, doctor, patient.Id);
         var orders = $"/api/v1/nursing/admissions/{admission.Id}/medication-orders";
 
-        // Four doses a day from now on, and one given at once: its dose is due before the discharge.
-        var qid = await nurse.PostAsync<MedicationOrderDto>(orders, Order("QID"));
-        var stat = await nurse.PostAsync<MedicationOrderDto>(orders, Order("STAT"));
+        // Four doses a day from now on, and one given at once: its dose is due before the discharge. The doctor writes them in
+        // his own name, so they are signed at once.
+        var qid = await doctor.PostAsync<MedicationOrderDto>(orders, Order("QID"));
+        var stat = await doctor.PostAsync<MedicationOrderDto>(orders, Order("STAT"));
         var before = await DosesAsync(admission.Id);
         before.Where(d => d.MedicationOrderId == qid.Id).ShouldAllBe(d => d.Status == MarStatus.Due);
         before.Count(d => d.MedicationOrderId == qid.Id).ShouldBeGreaterThan(0);
@@ -77,9 +79,13 @@ public sealed class DischargeMedicationTests(HospitalServer server)
         await ShouldBeRefusedAsync(nurse, adHoc, AdHoc(givenNow: true, at: null));
         (await DosesAsync(admission.Id)).Count.ShouldBe(after.Count);
 
-        // A dose given before the discharge can still be recorded.
+        // A dose given before the discharge can still be recorded; with no order behind it, a second nurse witnesses it.
         var stay = await nurse.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admission.Id}");
-        await nurse.PostAsync<MarEntryDto>(adHoc, AdHoc(givenNow: true, at: stay.DischargedAt!.Value.AddMinutes(-30)));
+        await server.SignInAsync(HospitalServer.Users.SecondNurse);
+        var recording = server.FromOwnAddress(nurse);
+        var witness = await recording.PostAsync<WitnessConfirmed>("/api/v1/auth/witness",
+            new { userName = HospitalServer.Users.SecondNurse, password = server.Password, code = (string?)null, purpose = "mar.dose", patientId = patient.Id });
+        await recording.PostAsync<MarEntryDto>(adHoc, AdHoc(givenNow: true, at: stay.DischargedAt!.Value.AddMinutes(-30)) with { WitnessConfirmationId = witness.ConfirmationId });
         (await DosesAsync(admission.Id)).ShouldContain(d => d.IsAdHoc && d.Status == MarStatus.Given);
 
         await CleanBedAsync(nurse, admission.Id);

@@ -23,7 +23,7 @@ export const Route = createFileRoute('/_app/approvals/$approvalId')({
 function subjectLink(
   request: ApprovalRequestDto,
   canManageMasters: boolean,
-  can: { pharmacySales: boolean; wardIssues: boolean; devices: boolean },
+  can: { pharmacySales: boolean; wardIssues: boolean; devices: boolean; drugSafety: boolean },
 ): { label: string; to: string; search?: Record<string, string> } | null {
   switch (request.subjectType) {
     case 'Bill':
@@ -77,6 +77,14 @@ function subjectLink(
       return can.wardIssues
         ? { label: 'Open the issue', to: '/pharmacy/ip-issues', search: { id: request.subjectId } }
         : null;
+    // A drug interaction or a maximum dose loosened: the table, which shows the change waiting. The request says what the
+    // row is now and what it becomes.
+    case 'DrugInteraction':
+      return can.drugSafety ? { label: 'Open the drug safety tables', to: '/emr/drug-safety' } : null;
+    case 'DrugDoseLimit':
+      return can.drugSafety
+        ? { label: 'Open the dose limits', to: '/emr/drug-safety', search: { tab: 'dose-limits' } }
+        : null;
     default:
       return null;
   }
@@ -92,6 +100,7 @@ function ApprovalPage() {
   const canReadPharmacySales = usePermission([PHARMACY_PERMISSIONS.sales, PHARMACY_PERMISSIONS.returns]);
   const canReadWardIssues = usePermission([PHARMACY_PERMISSIONS.ipIssue, PHARMACY_PERMISSIONS.ipIndent]);
   const canManageDevices = usePermission('admin.devices.manage');
+  const canReadDrugSafety = usePermission(['clinical.templates.manage', 'clinical.drug_safety.approve']);
   const back = () => void navigate({ to: '/approvals' });
 
   if (request.isLoading) {
@@ -111,6 +120,7 @@ function ApprovalPage() {
     pharmacySales: canReadPharmacySales,
     wardIssues: canReadWardIssues,
     devices: canManageDevices,
+    drugSafety: canReadDrugSafety,
   });
   return (
     <Page maxWidth={900}>

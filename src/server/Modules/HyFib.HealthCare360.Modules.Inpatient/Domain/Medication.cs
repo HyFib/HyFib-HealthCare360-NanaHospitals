@@ -20,6 +20,23 @@ public enum MedicationOrderStatus
 }
 
 /// <summary>
+/// How the order reached the chart. A doctor who writes an order in their own name signs it there and then (<see cref="Written"/>,
+/// as is every e-prescription line); anyone else writing it in a doctor's name records what the doctor said, face to face
+/// or on the telephone, read back to the doctor, and the doctor countersigns it from their own sign-in (NABH MOM).
+/// </summary>
+public enum MedicationOrderMode
+{
+    /// <summary>Signed by the prescriber who wrote it: an e-prescription line, or a doctor's own ward order.</summary>
+    Written = 0,
+
+    /// <summary>Given face to face and written by someone else, awaiting the doctor's countersignature.</summary>
+    Verbal,
+
+    /// <summary>Given on the telephone and written by someone else, awaiting the doctor's countersignature.</summary>
+    Telephone,
+}
+
+/// <summary>
 /// A line on the in-patient medication chart: what the doctor ordered. MAR rows are scheduled from its frequency when
 /// the pharmacy dispenses it (or when a ward order is transcribed), so the chart shows only doses that are really
 /// available on the ward.
@@ -45,25 +62,109 @@ public sealed class MedicationOrder : AuditableEntity, IFacilityScoped
 
     /// <summary>
     /// Schedule H1/X or narcotic: administration needs a witness (second nurse). From the drug master when the order names
-    /// an item of it (an order typed by name keeps what it was given).
+    /// an item of it; an order typed in on the ward without one is handled as high-alert (<see cref="IsHighAlert"/>), so the
+    /// flags cannot be cleared by typing a name instead of picking the drug.
     /// </summary>
     public bool IsControlledDrug { get; set; }
 
     /// <summary>
-    /// A high-alert medicine (insulin, heparin, concentrated potassium chloride…), from the drug master when the order names
-    /// an item of it: administration needs a witness (second nurse), as a controlled drug's does.
+    /// A high-alert medicine (insulin, heparin, concentrated potassium chloride, chemotherapy…), from the drug master when the
+    /// order names an item of it: administration needs a witness (second nurse), as a controlled drug's does. A ward order
+    /// typed in without a drug-master item is always high-alert: what it is cannot be known, so it is handled as the worst.
     /// </summary>
     public bool IsHighAlert { get; set; }
 
     public MedicationOrderSource Source { get; set; }
     public MedicationOrderStatus Status { get; set; }
+
+    /// <summary>The doctor in whose name the order is given: who countersigns it when someone else wrote it.</summary>
     public Guid? OrderedByPractitionerId { get; set; }
+
     public DateTimeOffset? LastDispensedAt { get; set; }
     public DateTimeOffset? StoppedAt { get; set; }
     public Guid? StoppedBy { get; set; }
     public string? StopReason { get; set; }
 
+    /// <summary>Written by the doctor named, or a verbal or telephone order someone else wrote in the doctor's name.</summary>
+    public MedicationOrderMode Mode { get; set; }
+
+    /// <summary>A verbal or telephone order was read back to the doctor, who confirmed it, before it was charted.</summary>
+    public bool ReadBack { get; set; }
+
+    /// <summary>
+    /// A verbal order the nurse marked as an emergency (read back): a high-alert, controlled or chemotherapy medicine is
+    /// given before the doctor countersigns it, each dose witnessed as always, and the order stays flagged until then.
+    /// </summary>
+    public bool IsEmergency { get; set; }
+
+    /// <summary>Who wrote the order on the ward (the doctor named, or the nurse who took the verbal order).</summary>
+    public Guid? EnteredBy { get; set; }
+
+    public string? EnteredByName { get; set; }
+
+    /// <summary>When a verbal or telephone order should be countersigned by (setting <c>inpatient.verbalOrderCountersignHours</c>).</summary>
+    public DateTimeOffset? CountersignDueAt { get; set; }
+
+    public DateTimeOffset? CountersignedAt { get; private set; }
+    public Guid? CountersignedBy { get; private set; }
+    public string? CountersignedByName { get; private set; }
+
+    /// <summary>When the doctor and the ward's nurses in charge were told the order was not countersigned in time.</summary>
+    public DateTimeOffset? CountersignOverdueNotifiedAt { get; set; }
+
+    /// <summary>
+    /// A stop asked for by someone who does not prescribe (a nurse): the doses are held while it waits for the doctor's
+    /// countersignature, and the order stops once the doctor confirms it.
+    /// </summary>
+    public DateTimeOffset? StopRequestedAt { get; private set; }
+
+    public Guid? StopRequestedBy { get; private set; }
+    public string? StopRequestedByName { get; private set; }
+    public string? StopRequestReason { get; private set; }
+    public DateTimeOffset? StopCountersignDueAt { get; private set; }
+
+    /// <summary>When the doctor and the ward's nurses in charge were told the stop was not countersigned in time.</summary>
+    public DateTimeOffset? StopOverdueNotifiedAt { get; set; }
+
     public bool IsAsNeeded => DoseSchedule.IsAsNeeded(Frequency);
+
+    /// <summary>A verbal or telephone order the doctor has not yet countersigned (stopped or not: the record still needs it).</summary>
+    public bool AwaitingCountersignature => Mode != MedicationOrderMode.Written && CountersignedAt is null;
+
+    /// <summary>A controlled drug or a high-alert medicine (chemotherapy among them, and any medicine typed in that the drug master does not name).</summary>
+    public bool IsHighRisk => IsControlledDrug || IsHighAlert;
+
+    /// <summary>A stop a nurse asked for, waiting for the doctor's countersignature.</summary>
+    public bool StopPending => StopRequestedAt is not null && Status == MedicationOrderStatus.Active;
+
+    /// <summary>No dose of this order is given now (<see cref="CanGiveDose"/> says why).</summary>
+    public bool DosesHeld => CanGiveDose().IsFailure;
+
+    public bool CountersignOverdue(DateTimeOffset now) => AwaitingCountersignature && CountersignDueAt is { } due && now > due;
+
+    public bool StopCountersignOverdue(DateTimeOffset now) => StopPending && StopCountersignDueAt is { } due && now > due;
+
+    /// <summary>
+    /// Whether a dose may be given now. A stop waiting for the doctor holds every dose (the safe direction); so does a
+    /// verbal or telephone order of a high-alert, controlled or chemotherapy medicine until the doctor countersigns it,
+    /// unless the nurse took it as an emergency order, read back.
+    /// </summary>
+    public Result CanGiveDose()
+    {
+        if (StopPending)
+        {
+            return Error.Rule("medication.stop_pending",
+                "A stop of this medicine is waiting for the doctor's countersignature, so its doses are held. Record a dose due now as held.");
+        }
+
+        if (AwaitingCountersignature && IsHighRisk && !IsEmergency)
+        {
+            return Error.Rule("medication.awaiting_countersignature",
+                "This verbal or telephone order of a high-alert or controlled medicine gives no dose until the doctor countersigns it. In an emergency, write it as an emergency verbal order, read back.");
+        }
+
+        return Result.Success();
+    }
 
     public Result Stop(Guid? userId, string reason, DateTimeOffset now)
     {
@@ -76,6 +177,71 @@ public sealed class MedicationOrder : AuditableEntity, IFacilityScoped
         StoppedAt = now;
         StoppedBy = userId;
         StopReason = reason.Trim();
+        return Result.Success();
+    }
+
+    /// <summary>The doctor named countersigns the verbal or telephone order someone else wrote in their name.</summary>
+    public Result Countersign(Guid userId, string name, DateTimeOffset now)
+    {
+        if (Mode == MedicationOrderMode.Written)
+        {
+            return Error.Rule("medication.not_verbal", "This order was written by the doctor and needs no countersignature.");
+        }
+
+        if (CountersignedAt is not null)
+        {
+            return Error.Rule("medication.already_countersigned", "This order is already countersigned.");
+        }
+
+        CountersignedAt = now;
+        CountersignedBy = userId;
+        CountersignedByName = name;
+        return Result.Success();
+    }
+
+    /// <summary>A nurse asks for the order to stop: its doses are held until the doctor confirms the stop or declines it.</summary>
+    public Result RequestStop(Guid userId, string name, string reason, DateTimeOffset now, DateTimeOffset countersignBy)
+    {
+        if (Status != MedicationOrderStatus.Active)
+        {
+            return Error.Rule("medication.not_active", "This medication order is no longer active.");
+        }
+
+        if (StopPending)
+        {
+            return Error.Rule("medication.stop_pending", "A stop of this medicine is already waiting for the doctor's countersignature.");
+        }
+
+        StopRequestedAt = now;
+        StopRequestedBy = userId;
+        StopRequestedByName = name;
+        StopRequestReason = reason.Trim();
+        StopCountersignDueAt = countersignBy;
+        StopOverdueNotifiedAt = null;
+        return Result.Success();
+    }
+
+    /// <summary>The doctor confirms the stop a nurse asked for: the order stops, in the doctor's name, for the nurse's reason.</summary>
+    public Result ConfirmStop(Guid userId, DateTimeOffset now)
+    {
+        if (!StopPending)
+        {
+            return Error.Rule("medication.no_stop_pending", "No stop of this medicine is waiting for a countersignature.");
+        }
+
+        return Stop(userId, StopRequestReason ?? "Stopped", now);
+    }
+
+    /// <summary>The doctor declines the stop a nurse asked for: the order goes on, and its doses are given again.</summary>
+    public Result DeclineStop()
+    {
+        if (!StopPending)
+        {
+            return Error.Rule("medication.no_stop_pending", "No stop of this medicine is waiting for a countersignature.");
+        }
+
+        (StopRequestedAt, StopRequestedBy, StopRequestedByName, StopRequestReason, StopCountersignDueAt, StopOverdueNotifiedAt) =
+            (null, null, null, null, null, null);
         return Result.Success();
     }
 }
@@ -177,6 +343,12 @@ public static class MarRules
     public static bool IsOverdue(MarStatus status, DateTimeOffset scheduledAt, DateTimeOffset now, TimeSpan grace) =>
         status == MarStatus.Due && now > scheduledAt + grace;
 
+    /// <summary>
+    /// Whether a dose given is witnessed by a second nurse: always for a dose with no order behind it (nobody prescribed it,
+    /// so the second nurse is the only other check), and for an order of a controlled drug or a high-alert medicine.
+    /// </summary>
+    public static bool RequiresWitness(MedicationOrder? order) => order is null || order.IsHighRisk;
+
     public static Result ValidateOutcome(MarStatus current, MarOutcome outcome, bool requiresWitness, DateTimeOffset now)
     {
         if (current != MarStatus.Due)
@@ -197,7 +369,7 @@ public static class MarRules
         if (outcome.Status == MarStatus.Given && requiresWitness && outcome.Witness is null)
         {
             return Error.Rule("mar.witness_required",
-                "Controlled drugs are witnessed: a second nurse confirms at this screen with their own user name and password.");
+                "Controlled drugs, high-alert medicines and doses with no order are witnessed: a second nurse confirms at this screen with their own user name and password.");
         }
 
         if (outcome.AdministeredAt is { } at && at > now + ClockTolerance)

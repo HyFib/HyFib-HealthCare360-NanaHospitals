@@ -570,6 +570,50 @@ and grants nothing.
     time; the authorisation and each unit issued on it are audited at Warning, naming the doctor and the issuing
     officer. The doctor's authorisation is the second person: no approval inbox stands in the way of blood in an
     emergency.
+  - the prescribing-safety tables loosened (MAKER-CHECKER.md, slice 5; `clinical.drug_interaction`,
+    `clinical.dose_limit`): a drug interaction switched off, made less severe or moved to another pair of drugs, and a
+    maximum daily dose switched off, raised, or moved to another drug or a narrower route, are asked for, with the
+    reason, by whoever keeps the tables (`clinical.templates.manage`: doctors and hospital administrators;
+    `PUT /api/v1/clinical/drug-interactions/{id}` and `…/dose-limits/{id}` answer 202, and 400 on `reason` without
+    one), and approved by someone else who holds `clinical.drug_safety.approve` (the pharmacy and therapeutics committee:
+    pharmacists and hospital administrators by default). The approver reads the row now and as asked ("aspirin +
+    warfarin: Major, blocks signing" → "Moderate, a warning") and what it switches off for every prescriber in the
+    hospital. The row is unchanged until then, the tables show the change waiting, and it is changed only if it is still
+    as it was asked against (`approval.stale`), audited at Warning with both names (`clinical.drug_interaction_changed`,
+    `clinical.dose_limit_changed`). Adding or strengthening an alert (a new row, a higher severity, a lower maximum, every
+    route, switching one on) and changing only its words are saved at once, audited (`clinical.drug_interaction_saved`,
+    `clinical.dose_limit_saved`). A row already switched off alerts nobody, so changing it waits for nothing.
+  - a ward medication order written in a doctor's name by anyone else (slice 5; the doctor is the second person, with
+    no approval inbox): only a prescriber (`clinical.prescriptions.sign`) writing in their own name, signed in as the
+    practitioner it names, signs a ward order at once (`POST /api/v1/nursing/admissions/{id}/medication-orders`). A
+    nurse, or a doctor writing another doctor's order, records that doctor's verbal or telephone order: the doctor (an
+    active doctor of the practitioner list), whether it was given face to face or on the telephone, and that it was read
+    back are required (`medication.verbal_order_required`, `medication.read_back_required`). It stays awaiting
+    countersignature, and only the doctor named countersigns it, from the account linked to their practitioner record
+    and holding `clinical.prescriptions.sign` (`POST …/medication-orders/{id}/countersign`, with the order's version;
+    `medication.countersign_not_prescriber`, 403, for anyone else, the nurse who wrote it and another doctor included).
+    A high-alert, controlled or chemotherapy medicine ordered so gives no dose until countersigned: nothing goes on the
+    round, and no extra dose is recorded against it (`medication.awaiting_countersignature`), unless the nurse wrote it
+    as an emergency verbal order, read back, when doses are given, each witnessed as below, and the order stays flagged.
+    The doctor has the hospital's time to countersign (`inpatient.verbalOrderCountersignHours`, 24 hours by default, 1 to
+    72; lengthening it waits for a second administrator); past it, the order is flagged, listed (`GET
+    …/medication-orders/awaiting-countersignature?wardId=&mine=&overdueOnly=`), and the doctor and the facility's nurses
+    in charge (`nursing.in_charge`) are told once, audited at Warning (`medication.countersign_overdue`). Each verbal
+    order is audited at Warning as written (`medication.verbal_order`), and its countersignature with the doctor's name.
+  - stopping a ward medication order (slice 5): a prescriber (`clinical.prescriptions.sign`) stops it at once. Anyone
+    else's stop is recorded as asked for, the order stays on the chart with every dose held (no dose given:
+    `medication.stop_pending`), and the doctor named on the order (the patient's consultant for one that names none)
+    confirms it (`POST …/medication-orders/{id}/stop/countersign`), when the doses held since are cancelled, or declines
+    it (`…/stop/decline`, with the reason, told to the nurse), when the doses are given again. Holding the doses is the
+    safe direction while it waits; the same time and overdue notice apply.
+  - a refill (`POST /api/v1/clinical/prescriptions/{id}/refill`, slice 5): it carries the original doctor's name and
+    registration as before, and records who refilled it (`refilledByName`, `signedByUserId`; audited
+    `prescription.refilled`), so a pharmacist's refill never reads as the doctor's signature. A prescription with a
+    controlled drug (Schedule H1 or X, or NDPS, as the drug master says at refill) is not refilled
+    (`prescription.refill_controlled`). A blocking safety alert found at refill (an allergy recorded since, a new
+    interacting medicine) is overridden only by the doctor who wrote the prescription, signed in as themselves: anyone
+    else's refill is refused (`prescription.refill_needs_prescriber`, nothing used up), the doctor is told, and the
+    refusal is audited (`prescription.refill_blocked`). Another doctor repeats the prescription as their own and signs it.
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was
@@ -598,9 +642,11 @@ and grants nothing.
     sign-in checks it: wrong ones count towards their lockout, nothing is accepted while the account is locked, and an
     unknown account gets the same answer. Every attempt is audited against the witness's account. Nothing is signed
     in. The confirmation it returns is good once, for that nurse, that patient and five minutes, and the dose names the
-    witness's account. A high-alert medicine given is witnessed the same way. A ward order takes both flags from the
-    drug master when it names an item of it, whatever the order form sent, and so does the order made for a medicine
-    the pharmacy issues without a prescription line.
+    witness's account. A high-alert medicine given is witnessed the same way, and so is every dose with no order behind
+    it (nobody prescribed it, so the second nurse is the only other check). A ward order takes both flags from the drug
+    master when it names an item of it, whatever the order form sent, and so does the order made for a medicine the
+    pharmacy issues without a prescription line; a ward order typed in without an item of the master is always
+    high-alert, so typing a name instead of picking the drug clears nothing.
   - in the blood bank, grouping, cross-match and issue are not all one person: grouping and cross-match record the
     officer's account, and a unit is not issued by the officer who both grouped the patient and cross-matched it, nor
     plasma, platelets or cryoprecipitate (issued on the group alone) by the officer who grouped the patient, nor an

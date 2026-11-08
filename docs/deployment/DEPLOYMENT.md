@@ -374,13 +374,20 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    `lab.requirePaymentBeforeCollection` or `billing.shift.required`; switching on `ui.biometricUnlock` or `ai.enabled`;
    raising `billing.discount.defaultMaxPercent`, `pharmacy.discount.max_percent`,
    `supportservices.canteen.staffCreditLimit`, `security.maxSessionsPerUser`, `ui.idleLockMinutes`,
-   `inpatient.marGraceMinutes` or `lab.deltaCheckPercent` (0, for no limit or no check, counts as the highest), or
+   `inpatient.marGraceMinutes`, `inpatient.verbalOrderCountersignHours` or `lab.deltaCheckPercent` (0, for no limit or
+   no check, counts as the highest), or
    lowering `lab.deltaCheckWindowDays`; clearing any of these, so the default decides; and any change at all to
    `portal.baseUrl`, `doctorfees.tds.percent`, every `alerts.*` setting, every integration (`integrations.*`),
    `abdm.gateway`, `ai.provider`, `ai.openai`, `ai.speech` and every credential (a `*.secret` setting, or one saved as
    secret). The other direction (a control switched on, a limit lowered) is saved at once, as is every other setting. So
    set the gateway keys, the alert numbers and the portal's address with a hospital administrator from step 6 at hand to
    approve them.
+   **Verbal orders on the wards** are countersigned by the doctor within `inpatient.verbalOrderCountersignHours` (24 by
+   default; set fewer at once, more waits for a second administrator). Past it, the doctor and everyone holding
+   `nursing.in_charge` in the facility are told: the hospital administrator holds it out of the box, so give it to the
+   ward sisters' role (Administration › Roles). The drug-safety tables are loosened only with the pharmacy and
+   therapeutics committee's approval (`clinical.drug_safety.approve`, pharmacists and hospital administrators by
+   default): grant it to the committee's members, and take it from anyone who should not approve.
 8. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a

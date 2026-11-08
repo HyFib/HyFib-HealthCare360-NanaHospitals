@@ -267,6 +267,11 @@ public static class SettingGuard
             "Minutes after a dose's scheduled time before the medication chart shows it overdue to the nurses.",
             30m, v => v is >= 5m and <= 240m ? v : 30m, v => Count(v, "minute"), Whole: true),
 
+        // MarService.CountersignHoursSetting and DefaultCountersignHours: 1 to 72 hours, 24 for any other.
+        ["inpatient.verbalOrderCountersignHours"] = new SettingLimit("Time to countersign a verbal order",
+            "Hours within which the doctor countersigns a verbal or telephone medication order a nurse wrote in their name, or a nurse's stop of a medicine, before it is flagged and the ward's nurse in charge is told.",
+            24m, v => v is >= 1m and <= 72m ? v : 24m, v => Count(v, "hour"), Whole: true),
+
         // ResultEvaluator.DeltaPercentSetting and DefaultDeltaPercent: 0 or less turns the check off (DeltaCheck).
         ["lab.deltaCheckPercent"] = new SettingLimit("Delta check threshold",
             "How far, as a percentage, a result may move from the patient's previous one before it is held for review; 0 turns the check off.",

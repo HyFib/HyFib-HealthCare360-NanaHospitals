@@ -109,7 +109,8 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
  * (IApprovalAction): credit notes and write-offs, money not received and refunds not paid out, patient merges, lab
  * report corrections, death certificates a second doctor confirms, goods receipts posted into stock, the pharmacy's
  * cancellations, returns and ward returns not restocked, the masters, access and plans approved only here, and changes
- * to accounts and administration desktops. Every kind's approving permission is in it (approvalsMenu.test.ts).
+ * to accounts and administration desktops, and the drug-safety tables loosened. Every kind's approving permission is in it
+ * (approvalsMenu.test.ts).
  */
 export const APPROVAL_PERMISSIONS = [
   'billing.refunds.request',
@@ -141,4 +142,8 @@ export const APPROVAL_PERMISSIONS = [
   // withdraws it; a ward return not restocked is asked for by one pharmacist who issues to the wards and approved by another.
   'pharmacy.returns',
   'pharmacy.ip.issue',
+  // A drug interaction switched off or made less severe, or a maximum dose raised or switched off: whoever keeps the
+  // drug-safety tables asks (and may withdraw it), the pharmacy and therapeutics committee approves.
+  'clinical.templates.manage',
+  'clinical.drug_safety.approve',
 ] as const;

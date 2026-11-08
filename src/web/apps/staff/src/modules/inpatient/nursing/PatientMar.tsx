@@ -28,6 +28,7 @@ import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import {
   COMMON_ROUTES,
+  DOSE_HOLD_LABEL,
   MAR_STATUS_LABEL,
   nursingApi,
   nursingKeys,
@@ -86,8 +87,6 @@ export function PatientMar({
   const orders = useQuery(nursingQueries.orders(admissionId, false));
   const [recording, setRecording] = useState<{ dose: DoseToRecord; outcome: MarOutcome } | null>(null);
   const [adHoc, setAdHoc] = useState(false);
-  // A controlled drug or a high-alert medicine: a dose given is witnessed by a second nurse.
-  const witnessed = new Set((orders.data ?? []).filter((o) => o.isControlledDrug || o.isHighAlert).map((o) => o.id));
 
   const open = (entry: MarEntryDto, outcome: MarOutcome) =>
     setRecording({
@@ -103,7 +102,8 @@ export function PatientMar({
         patientId,
         patientName,
         isOverdue: entry.isOverdue,
-        needsWitness: entry.medicationOrderId ? witnessed.has(entry.medicationOrderId) : undefined,
+        // A controlled drug, a high-alert medicine, or a dose with no order behind it: witnessed by a second nurse.
+        needsWitness: entry.needsWitness,
         batchNumber: entry.batchNumber,
       },
     });
@@ -185,11 +185,14 @@ export function PatientMar({
             header: 'Status',
             width: 130,
             render: (e) => (
-              <StatusBadge
-                status={e.status}
-                label={e.status === 'Due' && e.isOverdue ? 'Overdue' : MAR_STATUS_LABEL[e.status]}
-                tone={statusTone(e)}
-              />
+              <span>
+                <StatusBadge
+                  status={e.status}
+                  label={e.status === 'Due' && e.isOverdue ? 'Overdue' : MAR_STATUS_LABEL[e.status]}
+                  tone={statusTone(e)}
+                />
+                {e.heldBecause && <Caption1 block>{DOSE_HOLD_LABEL[e.heldBecause]}</Caption1>}
+              </span>
             ),
           },
           {
@@ -213,9 +216,12 @@ export function PatientMar({
             ? (e) =>
                 e.status === 'Due' ? (
                   <span style={{ display: 'inline-flex', gap: 6 }}>
-                    <Button size="small" appearance="primary" onClick={() => open(e, 'Given')}>
-                      Given
-                    </Button>
+                    {/* A held dose (a stop waiting, or a high-alert verbal order not yet countersigned) is not given. */}
+                    {!e.heldBecause && (
+                      <Button size="small" appearance="primary" onClick={() => open(e, 'Given')}>
+                        Given
+                      </Button>
+                    )}
                     <Button size="small" onClick={() => open(e, 'Held')}>
                       Not given
                     </Button>
@@ -233,7 +239,7 @@ export function PatientMar({
         <AdHocDoseDialog
           admissionId={admissionId}
           patientId={patientId}
-          orders={(orders.data ?? []).filter((o) => o.status === 'Active')}
+          orders={(orders.data ?? []).filter((o) => o.status === 'Active' && !o.dosesHeld)}
           onClose={() => setAdHoc(false)}
         />
       )}
@@ -243,7 +249,8 @@ export function PatientMar({
 
 /**
  * An SOS/STAT or otherwise unscheduled dose; "given now" records it as given in the same step, with a second nurse's
- * confirmation at this screen when the drug is controlled (WitnessPanel).
+ * confirmation at this screen when the drug is controlled or high-alert, or when no order is behind it (WitnessPanel).
+ * Orders whose doses are held are not offered.
  */
 export function AdHocDoseDialog({
   admissionId,
@@ -307,7 +314,8 @@ export function AdHocDoseDialog({
     },
   });
 
-  const needsWitness = givenNow && Boolean(order?.isControlledDrug || order?.isHighAlert);
+  // Nobody prescribed a dose with no order: the second nurse is the only other check, so it is always witnessed.
+  const needsWitness = givenNow && (order === null || order.isControlledDrug || order.isHighAlert);
   const valid =
     (order !== null || drugName.trim().length > 0) &&
     dose.trim().length > 0 &&
@@ -354,14 +362,14 @@ export function AdHocDoseDialog({
                       {o.isAsNeeded ? ' (SOS)' : ''}
                     </option>
                   ))}
-                  <option value="">Another medicine (verbal order)</option>
+                  <option value="">A dose with no order (witnessed)</option>
                 </Select>
               </Field>
               {!order && (
                 <Field
                   label="Medicine name"
                   required
-                  hint="Record the doctor's verbal order in a nursing note as well."
+                  hint="A second nurse witnesses it. To chart a doctor's verbal order, add it on the Medicines tab."
                 >
                   <Input value={drugName} onChange={(_, d) => setDrugName(d.value)} maxLength={200} autoFocus />
                 </Field>

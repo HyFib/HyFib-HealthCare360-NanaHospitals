@@ -11829,6 +11829,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("refill_of_prescription_id");
 
+                    b.Property<string>("RefilledByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("refilled_by_name");
+
                     b.Property<int>("RefillsAllowed")
                         .HasColumnType("integer")
                         .HasColumnName("refills_allowed");
@@ -22307,6 +22312,27 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("admission_id");
 
+                    b.Property<DateTimeOffset?>("CountersignDueAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("countersign_due_at");
+
+                    b.Property<DateTimeOffset?>("CountersignOverdueNotifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("countersign_overdue_notified_at");
+
+                    b.Property<DateTimeOffset?>("CountersignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("countersigned_at");
+
+                    b.Property<Guid?>("CountersignedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("countersigned_by");
+
+                    b.Property<string>("CountersignedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("countersigned_by_name");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -22347,6 +22373,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("end_at");
 
+                    b.Property<Guid?>("EnteredBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("entered_by");
+
+                    b.Property<string>("EnteredByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("entered_by_name");
+
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
@@ -22375,6 +22410,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
 
+                    b.Property<bool>("IsEmergency")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_emergency");
+
                     b.Property<bool>("IsHighAlert")
                         .HasColumnType("boolean")
                         .HasColumnName("is_high_alert");
@@ -22382,6 +22421,12 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<DateTimeOffset?>("LastDispensedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_dispensed_at");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("mode");
 
                     b.Property<Guid?>("OrderedByPractitionerId")
                         .HasColumnType("uuid")
@@ -22398,6 +22443,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid?>("PrescriptionLineId")
                         .HasColumnType("uuid")
                         .HasColumnName("prescription_line_id");
+
+                    b.Property<bool>("ReadBack")
+                        .HasColumnType("boolean")
+                        .HasColumnName("read_back");
 
                     b.Property<string>("Route")
                         .HasMaxLength(32)
@@ -22420,10 +22469,36 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("status");
 
+                    b.Property<DateTimeOffset?>("StopCountersignDueAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("stop_countersign_due_at");
+
+                    b.Property<DateTimeOffset?>("StopOverdueNotifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("stop_overdue_notified_at");
+
                     b.Property<string>("StopReason")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)")
                         .HasColumnName("stop_reason");
+
+                    b.Property<string>("StopRequestReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("stop_request_reason");
+
+                    b.Property<DateTimeOffset?>("StopRequestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("stop_requested_at");
+
+                    b.Property<Guid?>("StopRequestedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("stop_requested_by");
+
+                    b.Property<string>("StopRequestedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("stop_requested_by_name");
 
                     b.Property<DateTimeOffset?>("StoppedAt")
                         .HasColumnType("timestamp with time zone")
@@ -22455,6 +22530,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_medication_orders");
 
+                    b.HasIndex("CountersignDueAt")
+                        .HasDatabaseName("ix_medication_orders_countersign_due_at")
+                        .HasFilter("countersigned_at IS NULL AND mode <> 'Written'");
+
                     b.HasIndex("FacilityId")
                         .HasDatabaseName("ix_medication_orders_facility_id");
 
@@ -22469,6 +22548,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("PrescriptionLineId")
                         .HasDatabaseName("ix_medication_orders_prescription_line_id");
+
+                    b.HasIndex("StopCountersignDueAt")
+                        .HasDatabaseName("ix_medication_orders_stop_countersign_due_at")
+                        .HasFilter("stop_requested_at IS NOT NULL");
 
                     b.HasIndex("AdmissionId", "Status")
                         .HasDatabaseName("ix_medication_orders_admission_id_status");

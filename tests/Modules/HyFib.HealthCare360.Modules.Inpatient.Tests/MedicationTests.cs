@@ -187,6 +187,86 @@ public sealed class MedicationTests
         handover.Acknowledge(Guid.NewGuid(), "Sr. C", At(25, 14, 5)).Error!.Code.ShouldBe("handover.acknowledged");
     }
 
+    [Fact]
+    public void A_dose_with_no_order_or_of_a_high_risk_order_is_witnessed()
+    {
+        MarRules.RequiresWitness(null).ShouldBeTrue("nobody prescribed it: the second nurse is the only other check");
+        MarRules.RequiresWitness(Order()).ShouldBeFalse();
+        MarRules.RequiresWitness(Order(highAlert: true)).ShouldBeTrue();
+        MarRules.RequiresWitness(Order(controlled: true)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_high_risk_verbal_order_gives_no_dose_until_countersigned_unless_it_is_an_emergency()
+    {
+        var doctor = Guid.NewGuid();
+        var order = Order(highAlert: true, mode: MedicationOrderMode.Telephone);
+
+        order.AwaitingCountersignature.ShouldBeTrue();
+        order.CanGiveDose().Error!.Code.ShouldBe("medication.awaiting_countersignature");
+        order.DosesHeld.ShouldBeTrue();
+        Order(highAlert: true, mode: MedicationOrderMode.Verbal, emergency: true).CanGiveDose().IsSuccess.ShouldBeTrue();
+        Order(mode: MedicationOrderMode.Verbal).CanGiveDose().IsSuccess.ShouldBeTrue("an ordinary medicine is given before the doctor countersigns");
+
+        order.Countersign(doctor, "Dr. Rao", At(25, 11)).IsSuccess.ShouldBeTrue();
+        (order.AwaitingCountersignature, order.CountersignedBy, order.CountersignedByName).ShouldBe((false, (Guid?)doctor, "Dr. Rao"));
+        order.CanGiveDose().IsSuccess.ShouldBeTrue();
+        order.Countersign(doctor, "Dr. Rao", At(25, 12)).Error!.Code.ShouldBe("medication.already_countersigned");
+        Order().Countersign(doctor, "Dr. Rao", At(25, 11)).Error!.Code.ShouldBe("medication.not_verbal");
+    }
+
+    [Fact]
+    public void A_verbal_order_past_its_time_is_overdue_until_countersigned()
+    {
+        var order = Order(mode: MedicationOrderMode.Verbal);
+        order.CountersignDueAt = At(26, 10);
+
+        order.CountersignOverdue(At(26, 10)).ShouldBeFalse();
+        order.CountersignOverdue(At(26, 10, 1)).ShouldBeTrue();
+        order.Countersign(Guid.NewGuid(), "Dr. Rao", At(26, 12)).IsSuccess.ShouldBeTrue();
+        order.CountersignOverdue(At(26, 12)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_nurses_stop_holds_the_doses_until_the_doctor_confirms_or_declines_it()
+    {
+        var nurse = Guid.NewGuid();
+        var order = Order();
+
+        order.RequestStop(nurse, "Sr. Anitha", " Rash after the second dose ", At(25, 10), At(26, 10)).IsSuccess.ShouldBeTrue();
+        (order.StopPending, order.Status, order.StopRequestReason).ShouldBe((true, MedicationOrderStatus.Active, "Rash after the second dose"));
+        order.CanGiveDose().Error!.Code.ShouldBe("medication.stop_pending");
+        order.StopCountersignOverdue(At(26, 11)).ShouldBeTrue();
+        order.RequestStop(nurse, "Sr. Anitha", "again", At(25, 11), At(26, 11)).Error!.Code.ShouldBe("medication.stop_pending");
+
+        order.DeclineStop().IsSuccess.ShouldBeTrue();
+        (order.StopPending, order.StopRequestedAt, order.CanGiveDose().IsSuccess).ShouldBe((false, (DateTimeOffset?)null, true));
+        order.DeclineStop().Error!.Code.ShouldBe("medication.no_stop_pending");
+
+        var doctor = Guid.NewGuid();
+        order.RequestStop(nurse, "Sr. Anitha", "Rash", At(25, 12), At(26, 12)).IsSuccess.ShouldBeTrue();
+        order.ConfirmStop(doctor, At(25, 13)).IsSuccess.ShouldBeTrue();
+        (order.Status, order.StoppedBy, order.StopReason, order.StopRequestedBy).ShouldBe((MedicationOrderStatus.Stopped, (Guid?)doctor, "Rash", (Guid?)nurse));
+        order.StopPending.ShouldBeFalse();
+        order.ConfirmStop(doctor, At(25, 14)).Error!.Code.ShouldBe("medication.no_stop_pending");
+    }
+
+    private static MedicationOrder Order(bool highAlert = false, bool controlled = false, MedicationOrderMode mode = MedicationOrderMode.Written, bool emergency = false) =>
+        new()
+        {
+            DrugName = "Inj. Heparin",
+            Dose = "5000 IU",
+            Route = "SC",
+            Frequency = "BD",
+            StartAt = At(25, 9),
+            Status = MedicationOrderStatus.Active,
+            Source = MedicationOrderSource.Manual,
+            IsHighAlert = highAlert,
+            IsControlledDrug = controlled,
+            Mode = mode,
+            IsEmergency = emergency,
+        };
+
     private static MedicationAdministration Due(DateTimeOffset scheduledAt) =>
         new() { DrugName = "Inj. Ceftriaxone", Dose = "1 g", Route = "IV", ScheduledAt = scheduledAt, Status = MarStatus.Due };
 

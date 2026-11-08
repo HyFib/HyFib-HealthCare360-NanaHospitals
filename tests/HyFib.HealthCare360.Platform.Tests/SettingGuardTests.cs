@@ -90,6 +90,13 @@ public sealed class SettingGuardTests
         Waits("inpatient.marGraceMinutes", Number(30), Number(1000)).ShouldBeFalse("outside 5 to 240 the chart keeps 30 minutes");
         Waits("inpatient.marGraceMinutes", Number(30), Number(30.5m)).ShouldBeTrue("not a whole number: the chart cannot read it");
 
+        // More hours to countersign a verbal order leaves it unchecked longer; fewer are saved at once.
+        Waits("inpatient.verbalOrderCountersignHours", null, Number(48)).ShouldBeTrue();
+        Waits("inpatient.verbalOrderCountersignHours", Number(24), Number(12)).ShouldBeFalse();
+        Waits("inpatient.verbalOrderCountersignHours", Number(24), Number(500)).ShouldBeFalse("outside 1 to 72 the ward keeps 24 hours");
+        SettingGuard.Judge("inpatient.verbalOrderCountersignHours", Number(12), Number(24), secret: false).Summary
+            .ShouldBe("Time to countersign a verbal order: 12 hours → 24 hours");
+
         // Fewer days back compare fewer results: lowering the look-back loosens the check.
         Waits("lab.deltaCheckWindowDays", Number(30), Number(7)).ShouldBeTrue();
         Waits("lab.deltaCheckWindowDays", Number(30), Number(90)).ShouldBeFalse();
