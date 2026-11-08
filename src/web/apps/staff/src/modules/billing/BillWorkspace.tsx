@@ -79,7 +79,8 @@ const useStyles = makeStyles({
   toolbar: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '8px' },
 });
 
-type DialogKind = 'discount' | 'finalize' | 'collect' | 'discard' | 'cancel' | 'refund' | 'credit' | 'debit' | 'link' | null;
+type DialogKind =
+  'discount' | 'finalize' | 'collect' | 'discard' | 'cancel' | 'refund' | 'credit' | 'debit' | 'link' | null;
 
 /** Refundable balance less refunds already requested or approved (they count against it until paid). */
 function refundableNow(bill: BillDetail): number {

@@ -1041,8 +1041,12 @@ export const billingApi = {
    * (`lines`, their sum the amount): 400 `lines` without them; 422 `billing.credit_exceeds_line` past a service's value.
    */
   /** Asks for a debit note: 202 with the approval request; an approver, someone else, issues it. */
-  requestDebitNote: (billId: string, party: DebitNoteParty, reason: string, lines: { billLineId: string; taxableAmount: number }[]) =>
-    api.post<ApprovalRequestDto>(`/api/v1/billing/bills/${billId}/debit-notes`, { party, reason, lines }),
+  requestDebitNote: (
+    billId: string,
+    party: DebitNoteParty,
+    reason: string,
+    lines: { billLineId: string; taxableAmount: number }[],
+  ) => api.post<ApprovalRequestDto>(`/api/v1/billing/bills/${billId}/debit-notes`, { party, reason, lines }),
   requestCreditNote: (
     billId: string,
     kind: CreditNoteKind,

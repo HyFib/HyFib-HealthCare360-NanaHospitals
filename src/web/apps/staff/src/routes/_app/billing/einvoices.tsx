@@ -273,7 +273,9 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                       {registration.ewbNo && (
                         <Caption1>
                           E-way bill {registration.ewbNo}
-                          {registration.ewbValidTill ? ` · valid until ${formatDateTime(registration.ewbValidTill)}` : ''}
+                          {registration.ewbValidTill
+                            ? ` · valid until ${formatDateTime(registration.ewbValidTill)}`
+                            : ''}
                         </Caption1>
                       )}
                       {registration.cancelledAt && (
@@ -297,9 +299,16 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                 {live && d.ewayBillNeeded && !registration.ewbNo && (
                   <>
                     <Text weight="semibold">E-way bill</Text>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8 }}>
+                    <div
+                      style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8 }}
+                    >
                       <Field label="Distance (km)" hint="0: the portal works it out from the PIN codes">
-                        <Input value={distance} inputMode="numeric" maxLength={4} onChange={(_, v) => setDistance(v.value)} />
+                        <Input
+                          value={distance}
+                          inputMode="numeric"
+                          maxLength={4}
+                          onChange={(_, v) => setDistance(v.value)}
+                        />
                       </Field>
                       <Field label="Vehicle number">
                         <Input value={vehicle} maxLength={20} onChange={(_, v) => setVehicle(v.value)} />
@@ -310,7 +319,9 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                     </div>
                     {ewayBill.error && (
                       <MessageBar intent="error">
-                        <MessageBarBody>{errorMessage(ewayBill.error, 'The e-way bill was not generated.')}</MessageBarBody>
+                        <MessageBarBody>
+                          {errorMessage(ewayBill.error, 'The e-way bill was not generated.')}
+                        </MessageBarBody>
                       </MessageBar>
                     )}
                   </>

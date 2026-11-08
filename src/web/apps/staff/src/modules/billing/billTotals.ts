@@ -460,10 +460,15 @@ export function creditableAmount(bill: { patientAmount: number; creditAmount: nu
  * disallowed, less earlier payer credit notes.
  */
 export function payerCreditableAmount(bill: {
-  payerDisallowedAmount: number;
+  payerDisallowedAmount?: number | null;
   creditNotes: { kind: string; amount: number }[];
 }): number {
-  const credited = bill.creditNotes.filter((n) => n.kind === 'PayerShare').reduce((sum, n) => sum + toPaise(n.amount), 0n);
+  if (!bill.payerDisallowedAmount) {
+    return 0;
+  }
+  const credited = bill.creditNotes
+    .filter((n) => n.kind === 'PayerShare')
+    .reduce((sum, n) => sum + toPaise(n.amount), 0n);
   return fromPaise(maxBig(toPaise(bill.payerDisallowedAmount) - credited, 0n));
 }
 
@@ -526,4 +531,9 @@ export function gstBreakdown(
         { label: 'CGST', amount: totals.cgst },
         { label: 'SGST', amount: totals.sgst },
       ];
+}
+
+/** The GST a debit note adds on `taxable` at `rate`% (paise), as `DebitNotes.Gst` rounds it. */
+export function debitGst(taxable: number, rate: number): number {
+  return fromPaise((toPaise(taxable) * BigInt(Math.round(rate * 100)) + 5000n) / 10000n);
 }

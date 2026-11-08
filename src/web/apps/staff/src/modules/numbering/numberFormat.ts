@@ -434,7 +434,9 @@ export function gstProblems(format: string, policy: NumberResetPolicy, facilityC
     if (base.facilityCode > 0) pieces.push(`facility code ${base.facilityCode}`);
     if (base.date > 0) pieces.push(`date ${base.date}`);
     pieces.push(
-      policy === 'Never' ? `running number ${runningNumber}, since it never starts again` : `running number ${runningNumber}`,
+      policy === 'Never'
+        ? `running number ${runningNumber}, since it never starts again`
+        : `running number ${runningNumber}`,
     );
     if (base.fixedText > 0) pieces.push(`fixed text ${base.fixedText}`);
     problems.push(
@@ -446,7 +448,10 @@ export function gstProblems(format: string, policy: NumberResetPolicy, facilityC
   const first = parts[0];
   if (
     first &&
-    (first.kind === 'sequence' || first.kind === 'month' || first.kind === 'day' || (first.kind === 'text' && first.text.startsWith('0')))
+    (first.kind === 'sequence' ||
+      first.kind === 'month' ||
+      first.kind === 'day' ||
+      (first.kind === 'text' && first.text.startsWith('0')))
   ) {
     problems.push(
       'The e-invoice portal refuses invoice and note numbers that start with 0. Start the format with a letter, {FAC} or the year.',
@@ -457,7 +462,11 @@ export function gstProblems(format: string, policy: NumberResetPolicy, facilityC
 
 function gstProblemsOf(change: FormatChange): string[] {
   return change.gstDocument
-    ? gstProblems(change.format, change.resetPolicy, Math.min(Math.max(change.longestFacilityCode, 0), MAX_FACILITY_CODE_LENGTH))
+    ? gstProblems(
+        change.format,
+        change.resetPolicy,
+        Math.min(Math.max(change.longestFacilityCode, 0), MAX_FACILITY_CODE_LENGTH),
+      )
     : [];
 }
 

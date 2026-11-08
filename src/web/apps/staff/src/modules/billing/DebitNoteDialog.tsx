@@ -21,18 +21,14 @@ import { useState } from 'react';
 import { approvalKeys } from '@/modules/approvals/api';
 import { billingApi, type BillDetail, type DebitNoteParty } from './api';
 import { useRefreshBilling } from './hooks';
-import { fromPaise, parseRupees, toPaise } from './money';
+import { debitGst } from './billTotals';
+import { parseRupees } from './money';
 import { ActionError, Amount, AmountField } from './ui';
 
 const useStyles = makeStyles({
   body: { display: 'flex', flexDirection: 'column', gap: '12px' },
   lines: { display: 'flex', flexDirection: 'column', gap: '8px' },
 });
-
-/** The GST a debit note adds on `taxable` at `rate`% (paise), as `DebitNotes.Gst` rounds it. */
-export function debitGst(taxable: number, rate: number): number {
-  return fromPaise((toPaise(taxable) * BigInt(Math.round(rate * 100)) + 5000n) / 10000n);
-}
 
 /**
  * Asks for a debit note (a supplementary invoice, CGST Act s.34(3)) on a finalized bill: the services charged short and
@@ -53,7 +49,9 @@ export function DebitNoteDialog({ bill, open, onClose }: { bill: BillDetail; ope
   const entries = services
     .filter((s) => (amounts[s.id] ?? '').trim() !== '')
     .map((s) => ({ service: s, parsed: parseRupees(amounts[s.id] ?? '') }));
-  const lines = entries.flatMap((e) => (e.parsed.ok ? [{ billLineId: e.service.id, taxableAmount: e.parsed.rupees }] : []));
+  const lines = entries.flatMap((e) =>
+    e.parsed.ok ? [{ billLineId: e.service.id, taxableAmount: e.parsed.rupees }] : [],
+  );
   const total = entries.reduce(
     (sum, e) => (e.parsed.ok ? sum + e.parsed.rupees + debitGst(e.parsed.rupees, e.service.taxRate) : sum),
     0,
@@ -91,8 +89,8 @@ export function DebitNoteDialog({ bill, open, onClose }: { bill: BillDetail; ope
             <DialogTitle>Debit note</DialogTitle>
             <DialogContent className={styles.body}>
               <Text>
-                Bill {bill.billNumber} · {bill.patientName}. A debit note raises what the bill charged for services on it
-                (a rate charged short, a quantity under-billed). An approver, someone other than you, issues it.
+                Bill {bill.billNumber} · {bill.patientName}. A debit note raises what the bill charged for services on
+                it (a rate charged short, a quantity under-billed). An approver, someone other than you, issues it.
               </Text>
               {hasPayer && (
                 <Field label="Charged to" required>
@@ -103,7 +101,9 @@ export function DebitNoteDialog({ bill, open, onClose }: { bill: BillDetail; ope
                 </Field>
               )}
               <div className={styles.lines} role="group" aria-label="Services this debit note raises">
-                <Text>Enter the taxable value each service is raised by; its GST is added at the service&apos;s rate.</Text>
+                <Text>
+                  Enter the taxable value each service is raised by; its GST is added at the service&apos;s rate.
+                </Text>
                 {services.map((service) => {
                   const entry = entries.find((e) => e.service.id === service.id);
                   return (
@@ -120,7 +120,11 @@ export function DebitNoteDialog({ bill, open, onClose }: { bill: BillDetail; ope
                   Debit note, GST included: <Amount value={total} strong />
                 </Text>
               </div>
-              <Field label="Reason" required hint="At least 5 characters. Printed on the debit note and kept in the audit trail.">
+              <Field
+                label="Reason"
+                required
+                hint="At least 5 characters. Printed on the debit note and kept in the audit trail."
+              >
                 <Textarea value={reason} onChange={(_, data) => setReason(data.value)} maxLength={300} rows={2} />
               </Field>
               <ActionError error={issue.error} />

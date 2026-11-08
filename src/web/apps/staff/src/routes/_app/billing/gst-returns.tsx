@@ -50,9 +50,20 @@ function documentTable(label: string, rows: Gstr1Document[] | undefined, withBuy
           { key: 'number', header: 'Number', width: 150, render: (r) => r.number },
           { key: 'date', header: 'Date', width: 110, render: (r) => formatDateOnly(r.date) },
           ...(withBuyer
-            ? [{ key: 'buyer', header: 'Buyer', render: (r: Gstr1Document) => `${r.buyerName} · ${r.buyerGstin ?? ''}` }]
+            ? [
+                {
+                  key: 'buyer',
+                  header: 'Buyer',
+                  render: (r: Gstr1Document) => `${r.buyerName} · ${r.buyerGstin ?? ''}`,
+                },
+              ]
             : []),
-          { key: 'pos', header: 'Place of supply', width: 140, render: (r) => gstStateName(r.placeOfSupply) ?? r.placeOfSupply },
+          {
+            key: 'pos',
+            header: 'Place of supply',
+            width: 140,
+            render: (r) => gstStateName(r.placeOfSupply) ?? r.placeOfSupply,
+          },
           {
             key: 'rates',
             header: 'By rate',
@@ -106,7 +117,11 @@ function GstReturnsPage() {
                 onChange={(_, d) => void navigate({ search: { month: MONTH.test(d.value) ? d.value : undefined } })}
               />
             </Field>
-            {r && <Caption1>GSTIN {r.gstin} · return period {r.period}</Caption1>}
+            {r && (
+              <Caption1>
+                GSTIN {r.gstin} · return period {r.period}
+              </Caption1>
+            )}
             <Button
               icon={<ArrowDownloadRegular />}
               disabled={!r || download.isPending}
@@ -151,7 +166,8 @@ function GstReturnsPage() {
             </Text>
             <Text>
               4(A)(5) Input tax credit from {b.purchaseInvoices - b.purchasesWithoutGstin} purchase invoice(s): IGST{' '}
-              {formatInr(b.itcAllOther.igst)}, CGST {formatInr(b.itcAllOther.cgst)}, SGST {formatInr(b.itcAllOther.sgst)}
+              {formatInr(b.itcAllOther.igst)}, CGST {formatInr(b.itcAllOther.cgst)}, SGST{' '}
+              {formatInr(b.itcAllOther.sgst)}
             </Text>
             {b.notes.map((n) => (
               <Caption1 key={n}>{n}</Caption1>
@@ -171,7 +187,12 @@ function GstReturnsPage() {
           emptyTitle="None this month"
           columns={[
             { key: 'pos', header: 'Place of supply', render: (x) => gstStateName(x.placeOfSupply) ?? x.placeOfSupply },
-            { key: 'type', header: 'Supply', width: 120, render: (x) => (x.interState ? 'Inter-state' : 'Intra-state') },
+            {
+              key: 'type',
+              header: 'Supply',
+              width: 120,
+              render: (x) => (x.interState ? 'Inter-state' : 'Intra-state'),
+            },
             { key: 'rate', header: 'Rate', width: 80, render: (x) => `${x.rate}%` },
             { key: 'amounts', header: 'Taxable and tax', render: (x) => money(x.amounts) },
           ]}
@@ -185,13 +206,18 @@ function GstReturnsPage() {
         ) : (
           r?.nil.map((n) => (
             <Text key={n.supplyType} block>
-              {n.supplyType}: nil-rated {formatInr(n.nilRated)}, exempt {formatInr(n.exempt)}, non-GST {formatInr(n.nonGst)}
+              {n.supplyType}: nil-rated {formatInr(n.nilRated)}, exempt {formatInr(n.exempt)}, non-GST{' '}
+              {formatInr(n.nonGst)}
             </Text>
           ))
         )}
       </Section>
       {(['hsnB2b', 'hsnB2c'] as const).map((key) => (
-        <Section key={key} title={key === 'hsnB2b' ? 'HSN summary, B2B (table 12)' : 'HSN summary, B2C (table 12)'} flush>
+        <Section
+          key={key}
+          title={key === 'hsnB2b' ? 'HSN summary, B2B (table 12)' : 'HSN summary, B2C (table 12)'}
+          flush
+        >
           <DataTable<Gstr1HsnRow>
             ariaLabel={key === 'hsnB2b' ? 'HSN summary of B2B supplies' : 'HSN summary of B2C supplies'}
             rows={r?.[key]}

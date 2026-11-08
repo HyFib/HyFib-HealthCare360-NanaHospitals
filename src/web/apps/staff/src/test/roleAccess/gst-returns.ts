@@ -27,9 +27,22 @@ const GSTR1: Gstr1Return = {
   cdnr: [],
   cdnur: [],
   nil: [{ supplyType: 'INTRAB2C', nilRated: 0, exempt: 500, nonGst: 0 }],
-  hsnB2b: [{ hsn: '999722', description: 'Cosmetic procedure', uqc: 'NA', quantity: 0, rate: 18, amounts: { ...zero, taxable: 10000, igst: 1800 } }],
-  hsnB2c: [{ hsn: '999312', description: 'Consultation', uqc: 'NA', quantity: 0, rate: 0, amounts: { ...zero, taxable: 500 } }],
-  documentsIssued: [{ nature: 1, series: 'OP bills', from: 'NHOB26000001', to: 'NHOB26000002', total: 2, cancelled: 1, net: 1 }],
+  hsnB2b: [
+    {
+      hsn: '999722',
+      description: 'Cosmetic procedure',
+      uqc: 'NA',
+      quantity: 0,
+      rate: 18,
+      amounts: { ...zero, taxable: 10000, igst: 1800 },
+    },
+  ],
+  hsnB2c: [
+    { hsn: '999312', description: 'Consultation', uqc: 'NA', quantity: 0, rate: 0, amounts: { ...zero, taxable: 500 } },
+  ],
+  documentsIssued: [
+    { nature: 1, series: 'OP bills', from: 'NHOB26000001', to: 'NHOB26000002', total: 2, cancelled: 1, net: 1 },
+  ],
   problems: [],
 };
 
@@ -49,7 +62,9 @@ const GSTR3B: Gstr3bReturn = {
   purchaseInvoices: 1,
   purchasesWithoutGstin: 0,
   exemptShareOfTurnover: 0.0439,
-  notes: ['Credit is shown as the hospital’s purchase records hold it; claim it only as far as it appears in GSTR-2B (CGST rule 36(4)).'],
+  notes: [
+    'Credit is shown as the hospital’s purchase records hold it; claim it only as far as it appears in GSTR-2B (CGST rule 36(4)).',
+  ],
 };
 
 export const ANSWERS: FakeAnswers = {
