@@ -181,7 +181,7 @@ internal sealed class SmartClientRegistry(
         var asked = ApprovalPayload.Read<SmartClientPayload>(request.Payload);
         var client = await db.Set<SmartClient>().FirstOrDefaultAsync(c => c.Id == asked.ClientId, ct);
         if (client is null || client.Status != SmartClientStatus.PendingApproval || client.Scopes != asked.Scopes
-            || client.RedirectUrisJson != asked.RedirectUrisJson || client.JwksJson != asked.JwksJson || client.ServiceUserId != asked.ServiceUserId)
+            || !SameJson(client.RedirectUrisJson, asked.RedirectUrisJson) || !SameJson(client.JwksJson, asked.JwksJson) || client.ServiceUserId != asked.ServiceUserId)
         {
             return Error.Rule("approval.stale", "The client was changed or suspended after this was asked for. Ask again.");
         }
@@ -198,6 +198,12 @@ internal sealed class SmartClientRegistry(
         });
         return $"{client.Name} may be issued access tokens as {client.ClientId}";
     }
+
+    /// <summary>The same JSON whatever its spacing or key order (PostgreSQL stores jsonb normalised).</summary>
+    private static bool SameJson(string? stored, string? asked) =>
+        stored is null || asked is null
+            ? stored == asked
+            : System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(stored), System.Text.Json.Nodes.JsonNode.Parse(asked));
 
     public async Task<Result> SuspendAsync(Guid id, SuspendSmartClientRequest request, CancellationToken ct)
     {
