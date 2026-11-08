@@ -512,3 +512,79 @@ export function RecordingConsentDialog({
     </Dialog>
   );
 }
+
+// ------------------------------------------------------------------ consent to a video consultation
+
+/** What the doctor says before a video consultation, as the Telemedicine Practice Guidelines 2020 ask; editable. */
+export const TELEHEALTH_CONSENT_NOTE =
+  'Explained that this is a video consultation, that a physical examination may still be needed, and how the record is kept. The patient agreed to be seen by video.';
+
+/**
+ * Records the patient's consent to be seen by video, given by voice at the start of the call (Telemedicine Practice
+ * Guidelines 2020): without it on record (from the portal, the desk or here) the patient cannot be admitted.
+ */
+export function TelehealthConsentDialog({
+  open,
+  sessionId,
+  patientName,
+  onClose,
+  onRecorded,
+}: {
+  open: boolean;
+  sessionId: string;
+  patientName: string;
+  onClose: () => void;
+  onRecorded: (detail: TelehealthSessionDetail) => void;
+}) {
+  const notify = useNotify();
+  const queryClient = useQueryClient();
+  const [notes, setNotes] = useState(TELEHEALTH_CONSENT_NOTE);
+  const record = useMutation({
+    mutationFn: () => telehealthApi.telehealthConsent(sessionId, notes.trim()),
+    onSuccess: (detail) => {
+      queryClient.setQueryData(telehealthKeys.session(sessionId), detail);
+      notify.success('Consent to a video consultation recorded', `On ${patientName}'s consents.`);
+      onRecorded(detail);
+    },
+    onError: (error) => notify.error(error, 'Could not record the consent'),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
+      <DialogSurface style={{ maxWidth: 560 }}>
+        <DialogBody>
+          <DialogTitle>Consent to a video consultation</DialogTitle>
+          <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <MessageBar intent="warning">
+              <MessageBarBody>
+                {patientName} has not consented to be seen by video. Ask them, by phone or in the chat, and note their
+                answer before you admit them.
+              </MessageBarBody>
+            </MessageBar>
+            <Field label="What the patient was told and agreed to" required>
+              <Textarea
+                value={notes}
+                onChange={(_, d) => setNotes(d.value)}
+                rows={4}
+                maxLength={800}
+                resize="vertical"
+              />
+            </Field>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={onClose} disabled={record.isPending}>
+              Not now
+            </Button>
+            <Button
+              appearance="primary"
+              onClick={() => record.mutate()}
+              disabled={record.isPending || notes.trim().length === 0}
+            >
+              The patient agrees
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+}

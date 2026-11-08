@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Button, Field, makeStyles, Select, Spinner, Textarea, tokens } from '@fluentui/react-components';
+import { Button, Checkbox, Field, makeStyles, Select, Spinner, Textarea, tokens } from '@fluentui/react-components';
 import { BuildingRegular, CheckmarkCircleRegular, PaymentRegular, VideoRegular } from '@fluentui/react-icons';
 import { isApiError } from '@hc360/core';
 import { applyServerErrors } from '@hc360/ui';
@@ -47,16 +47,20 @@ const useStyles = makeStyles({
   secure: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
 });
 
-function bookingSchema(t: Translate) {
-  return z.object({
-    patientId: z.string().min(1),
-    visitType: z.enum(['New', 'FollowUp']),
-    reason: z
-      .string()
-      .trim()
-      .max(300, { error: t('booking.reason.tooLong') }),
-    payment: z.enum(['online', 'hospital']),
-  });
+function bookingSchema(t: Translate, video: boolean) {
+  return z
+    .object({
+      patientId: z.string().min(1),
+      visitType: z.enum(['New', 'FollowUp']),
+      reason: z
+        .string()
+        .trim()
+        .max(300, { error: t('booking.reason.tooLong') }),
+      payment: z.enum(['online', 'hospital']),
+      // A video consultation needs the patient's consent to be seen by video (Telemedicine Practice Guidelines 2020).
+      videoConsent: z.boolean(),
+    })
+    .refine((v) => !video || v.videoConsent, { path: ['videoConsent'], error: t('booking.videoConsent.required') });
 }
 
 type BookingForm = z.infer<ReturnType<typeof bookingSchema>>;
@@ -100,11 +104,11 @@ export function BookingSheet({
   const now = useNow(60_000, open);
   const [phase, setPhase] = useState<Phase>({ name: 'form' });
   const [error, setError] = useState<string | null>(null);
-  const schema = useMemo(() => bookingSchema(t), [t]);
+  const schema = useMemo(() => bookingSchema(t, video), [t, video]);
 
   const form = useForm<BookingForm>({
     resolver: zodResolver(schema),
-    defaultValues: { patientId: profile.id, visitType: 'New', reason: '', payment: 'online' },
+    defaultValues: { patientId: profile.id, visitType: 'New', reason: '', payment: 'online', videoConsent: false },
   });
 
   const visitType = useWatch({ control: form.control, name: 'visitType' });
@@ -146,6 +150,7 @@ export function BookingSheet({
         isTelehealth: video,
         reason: values.reason || null,
         payOnline,
+        telehealthConsent: video ? values.videoConsent : undefined,
       });
       void queryClient.invalidateQueries({ queryKey: appointmentQueries.all(values.patientId) });
       void queryClient.invalidateQueries({ queryKey: ['public', 'doctors'] });
@@ -365,6 +370,26 @@ export function BookingSheet({
             </Field>
           )}
         />
+
+        {video && (
+          <Controller
+            control={form.control}
+            name="videoConsent"
+            render={({ field, fieldState }) => (
+              <Field
+                validationState={fieldState.error ? 'error' : 'none'}
+                validationMessage={fieldState.error?.message}
+              >
+                <Checkbox
+                  checked={field.value}
+                  onChange={(_, d) => field.onChange(d.checked === true)}
+                  label={t('booking.videoConsent.label')}
+                  disabled={working}
+                />
+              </Field>
+            )}
+          />
+        )}
 
         {fee > 0 && (
           <Controller

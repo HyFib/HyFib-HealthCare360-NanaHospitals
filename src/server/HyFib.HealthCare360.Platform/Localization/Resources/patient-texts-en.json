@@ -311,6 +311,7 @@
   "message.appointment.choose_patient": "Choose who the appointment is for.",
   "message.appointment.choose_doctor": "Choose a doctor.",
   "message.appointment.choose_slot": "Choose a time slot.",
+  "message.appointment.video_consent": "Agree to be seen by video to book a video consultation.",
   "message.appointment.choose_new_slot": "Choose the new time slot.",
   "message.appointment.slot_unavailable_choose": "This time is not available for booking. Choose another slot.",
   "message.appointment.overlap": "The patient already has appointment {number} at this time.",

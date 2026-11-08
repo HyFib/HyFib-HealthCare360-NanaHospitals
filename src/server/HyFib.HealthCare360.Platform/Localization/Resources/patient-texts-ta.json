@@ -311,6 +311,7 @@
   "message.appointment.choose_patient": "சந்திப்பு யாருக்கு என்பதைத் தேர்ந்தெடுங்கள்.",
   "message.appointment.choose_doctor": "ஒரு மருத்துவரைத் தேர்ந்தெடுங்கள்.",
   "message.appointment.choose_slot": "ஒரு நேரத்தைத் தேர்ந்தெடுங்கள்.",
+  "message.appointment.video_consent": "வீடியோ ஆலோசனையை முன்பதிவு செய்ய வீடியோ மூலம் ஆலோசனைக்கு ஒப்புதல் அளியுங்கள்.",
   "message.appointment.choose_new_slot": "புதிய நேரத்தைத் தேர்ந்தெடுங்கள்.",
   "message.appointment.slot_unavailable_choose": "இந்த நேரம் முன்பதிவுக்குக் கிடைக்கவில்லை. வேறொரு நேரத்தைத் தேர்ந்தெடுங்கள்.",
   "message.appointment.overlap": "இந்த நேரத்தில் நோயாளிக்கு ஏற்கனவே {number} என்ற சந்திப்பு உள்ளது.",
