@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Modules.Analytics.Features.Schedules;
 using HyFib.HealthCare360.Modules.Analytics.Reports;
 using HyFib.HealthCare360.Modules.Analytics.Reports.Export;
 using HyFib.HealthCare360.Modules.Analytics.Services;
+using HyFib.HealthCare360.Platform.Networking;
 
 namespace HyFib.HealthCare360.Modules.Analytics;
 
@@ -37,6 +38,7 @@ public sealed class AnalyticsModule : IModule
         services.AddScoped<KpiService>();
         services.AddScoped<KpiTargetService>();
         services.AddScoped<KpiTargetMonitor>();
+        services.AddScoped<IHealthWarningSource, ReportEmailHealthWarnings>();
         services.AddScoped<DashboardService>();
         services.AddScoped<ScheduleService>();
         services.AddScoped<ReportDeliveryService>();

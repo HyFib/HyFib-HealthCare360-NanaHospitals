@@ -664,6 +664,7 @@ internal sealed class ClaimsSettlementReport : ReportDefinition
                     g.Sum(c => c.SettledAmount),
                     g.Sum(c => c.DeductionAmount),
                     g.Sum(c => c.Status == ClaimStatus.Rejected ? c.ClaimedAmount : 0m),
+                    g.Sum(c => c.Status == ClaimStatus.Settled ? c.SettledAmount : 0m),
                     g.Sum(c => c.Status == ClaimStatus.Settled && c.SettledAt != null
                         ? DateOnly.FromDateTime(c.SettledAt.Value.AddMinutes(AnalyticsClock.OffsetMinutes).UtcDateTime).DayNumber
                           - DateOnly.FromDateTime(c.SubmittedAt.AddMinutes(AnalyticsClock.OffsetMinutes).UtcDateTime).DayNumber
@@ -674,7 +675,8 @@ internal sealed class ClaimsSettlementReport : ReportDefinition
         var rows = groups.Select(g => Row(Labels.Name(names, g.PayerId), g)).ToList();
         var total = new InsurerClaims(
             Guid.Empty, groups.Sum(g => g.Claims), groups.Sum(g => g.Claimed), groups.Sum(g => g.Settled), groups.Sum(g => g.Rejected),
-            groups.Sum(g => g.SettledClaimed), groups.Sum(g => g.Paid), groups.Sum(g => g.Deducted), groups.Sum(g => g.RejectedClaimed), groups.Sum(g => g.SettleDays));
+            groups.Sum(g => g.SettledClaimed), groups.Sum(g => g.Paid), groups.Sum(g => g.Deducted), groups.Sum(g => g.RejectedClaimed), groups.Sum(g => g.SettledPaid),
+            groups.Sum(g => g.SettleDays));
         return new ReportData(rows)
         {
             RowKeys = groups.Select(g => g.PayerId.ToString()).ToList(),
@@ -699,9 +701,11 @@ internal sealed class ClaimsSettlementReport : ReportDefinition
     ];
 
     private sealed record InsurerClaims(
-        Guid PayerId, int Claims, decimal Claimed, int Settled, int Rejected, decimal SettledClaimed, decimal Paid, decimal Deducted, decimal RejectedClaimed, int SettleDays)
+        Guid PayerId, int Claims, decimal Claimed, int Settled, int Rejected, decimal SettledClaimed, decimal Paid, decimal Deducted, decimal RejectedClaimed,
+        decimal SettledPaid, int SettleDays)
     {
-        public ClaimOutcomes Outcomes => new(Settled, Rejected, Claims - Settled - Rejected, SettledClaimed, Paid, RejectedClaimed);
+        /// <summary>The ratio counts money settled on settled claims only: part-payments of open claims wait for the decision.</summary>
+        public ClaimOutcomes Outcomes => new(Settled, Rejected, Claims - Settled - Rejected, SettledClaimed, SettledPaid, RejectedClaimed);
     }
 }
 

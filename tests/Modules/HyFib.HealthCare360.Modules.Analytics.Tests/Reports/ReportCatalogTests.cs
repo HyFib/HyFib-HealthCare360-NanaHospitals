@@ -53,6 +53,12 @@ public sealed class ReportCatalogTests
     [InlineData("feedback-nps")]
     [InlineData("hr-headcount")]
     [InlineData("hr-attendance")]
+    [InlineData("gst-summary")]
+    [InlineData("tds-summary")]
+    [InlineData("payroll-cost")]
+    [InlineData("claims-ageing")]
+    [InlineData("claims-settlement")]
+    [InlineData("claims-deductions")]
     public void Hospital_reports_are_in_the_catalogue(string id) => new ReportCatalog().Find(id).ShouldNotBeNull();
 
     [Fact]

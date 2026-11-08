@@ -34,6 +34,7 @@ export const CATEGORY_ICONS: Record<ReportCategory, FluentIcon> = {
   Quality: ShieldCheckmarkRegular,
   Experience: EmojiSmileSlightRegular,
   People: PeopleTeamRegular,
+  Statutory: ReceiptMoneyRegular,
 };
 
 export const VIEW_ICONS: Record<ReportChartType, FluentIcon> = {

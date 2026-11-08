@@ -1,5 +1,5 @@
 import { formatDateOnly, formatDateTime, formatInr } from '@hc360/core';
-import type { CellValue, KpiUnit, KpiValue, ReportValueType } from './api';
+import type { CellValue, KpiStatus, KpiUnit, KpiValue, ReportValueType } from './api';
 
 /**
  * Display formatting for report values, KPI tiles and chart axes (pure, unit-tested). Money uses Indian grouping and
@@ -249,6 +249,44 @@ export function kpiChange(
       ? 'No change on the previous period'
       : `${direction === 'up' ? 'Up' : 'Down'} ${magnitude} on the previous period${verdict}`;
   return { text, direction, tone, description };
+}
+
+export type TargetTone = 'good' | 'warning' | 'bad' | 'neutral';
+
+export interface KpiTargetSummary {
+  tone: TargetTone;
+  /** "On target", "Needs attention", "Target missed" or "No figure yet": words, never colour alone. */
+  label: string;
+  /** "Target 2,762 for the period". */
+  text: string;
+  /** The whole comparison for screen readers and tooltips. */
+  description: string;
+}
+
+const TARGET_STATUS: Record<KpiStatus, { tone: TargetTone; label: string }> = {
+  Green: { tone: 'good', label: 'On target' },
+  Amber: { tone: 'warning', label: 'Needs attention' },
+  Red: { tone: 'bad', label: 'Target missed' },
+};
+
+/** Where a KPI stands against the facility's target for the period shown, or null when no target is set. */
+export function kpiTargetSummary(kpi: Pick<KpiValue, 'value' | 'unit' | 'higherIsBetter' | 'target'>): KpiTargetSummary | null {
+  const target = kpi.target;
+  if (!target) {
+    return null;
+  }
+  const status = target.status ? TARGET_STATUS[target.status] : { tone: 'neutral' as const, label: 'No figure yet' };
+  const basis = target.prorated ? ' for the period' : '';
+  const side = kpi.higherIsBetter ? 'or below' : 'or above';
+  return {
+    tone: status.tone,
+    label: status.label,
+    text: `Target ${formatKpi(target.target, kpi.unit)}${basis}`,
+    description:
+      `${status.label}: ${formatKpiFull(kpi.value, kpi.unit)} against a target of ${formatKpiFull(target.target, kpi.unit)}` +
+      `${target.prorated ? ' (the monthly target prorated to the period)' : ''}. ` +
+      `Amber at ${formatKpiFull(target.amber, kpi.unit)} ${side}, red at ${formatKpiFull(target.red, kpi.unit)} ${side}.`,
+  };
 }
 
 /** "1.2 MB" for delivery files. */

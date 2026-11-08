@@ -19,6 +19,7 @@ export const ANALYTICS_PERMISSIONS = {
   clinicalRead: 'analytics.clinical.read',
   dashboardsManage: 'analytics.dashboards.manage',
   schedulesManage: 'analytics.schedules.manage',
+  kpiTargetsManage: 'analytics.kpi_targets.manage',
 } as const;
 
 /** Any analytics reader: the server filters the catalogue per report. */
@@ -38,6 +39,7 @@ export const CATEGORY_ORDER: readonly ReportCategory[] = [
   'Quality',
   'Experience',
   'People',
+  'Statutory',
 ];
 
 export const CATEGORY_LABELS: Record<ReportCategory, string> = {
@@ -50,6 +52,7 @@ export const CATEGORY_LABELS: Record<ReportCategory, string> = {
   Quality: 'Quality and safety',
   Experience: 'Patient experience',
   People: 'People',
+  Statutory: 'Tax, payroll and claims',
 };
 
 export const CHART_TYPES: readonly ReportChartType[] = ['Bar', 'StackedBar', 'Line', 'Area', 'Pie', 'Table', 'Summary'];

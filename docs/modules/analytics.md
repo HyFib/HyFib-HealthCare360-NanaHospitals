@@ -1,7 +1,7 @@
 # Analytics module (MIS reports, executive KPIs, dashboards, scheduled e-mails, BI extracts)
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Analytics` · schema `analytics` · reads every module's tables
-through the shared `HospitalDbContext` (read-only, `AsNoTracking`), owns only its own four tables.
+through the shared `HospitalDbContext` (read-only, `AsNoTracking`), owns only its own five tables.
 Covers SRS **MIS-01..05** (report catalogue, operational, financial, clinical and stock reports, Excel/CSV/PDF
 export) and **BI-01..05** (executive dashboard, saved dashboards, drill-down, scheduled delivery, read replica, and
 scheduled data extracts for external BI tools such as Power BI, with data-refresh monitoring).
@@ -22,13 +22,14 @@ that only this layer may read (see *Patient journeys*). Its screens are the fron
 | `analytics.clinical.read` | HospitalAdmin, QualityManager, MrdOfficer | Operational/clinical reports **and the only way to open reports that list patients** |
 | `analytics.dashboards.manage` | HospitalAdmin, MisAnalyst | Create, change, copy and delete dashboards |
 | `analytics.schedules.manage` | HospitalAdmin, MisAnalyst | Scheduled report e-mails and their delivery files, and BI extracts |
+| `analytics.kpi_targets.manage` | HospitalAdmin | Each KPI's target, amber and red thresholds and owner role for the signed-in facility |
 
 Every read endpoint needs *any* of the three read permissions; each report then checks its own audience:
 
 | Audience | Reports | Needs any of |
 |---|---|---|
 | Operations | OP, IP, diagnostics TAT, OT, dialysis, blood bank, quality, feedback | `mis.read`, `clinical.read` |
-| Finance | revenue, collections, dues, discounts, refunds, doctor fees, pharmacy sales & margin | `finance.read` |
+| Finance | revenue, collections, dues, discounts, refunds, doctor fees, pharmacy sales & margin; GST, TDS, payroll cost, insurance claims | `finance.read` |
 | Stock | near-expiry, dead stock, purchase vs consumption | `mis.read`, `finance.read` |
 | MIS | HR head count, attendance | `mis.read` |
 | Clinical (patient-level) | adverse discharges register, critical values register, OT register | `clinical.read` |
@@ -38,7 +39,7 @@ and every page view and export is audited per patient (see *Audit*).
 
 ## How reports run
 
-* **Catalogue** (`Reports/ReportCatalog.cs`): 39 report definitions, each a `ReportDescriptor` (id, title, category,
+* **Catalogue** (`Reports/ReportCatalog.cs`): 45 report definitions, each a `ReportDescriptor` (id, title, category,
   description, **definition/formula text**, audience, parameters, columns, default chart, default sort, patient-level
   flag, max days) plus a query. The catalogue is pure data; the unit tests check ids, columns, charts and permissions.
 * **Inputs** (`ReportParameterBinder`, unit-tested): only declared parameters are read; values are trimmed and capped at
@@ -85,7 +86,7 @@ All under `/api/v1/analytics`, tag *Analytics*, except the patient journeys' two
 | GET | `/reports/{id}/run` | the same with inputs as query parameters (`?period=lastMonth&departmentId=…&page=2&pageSize=50&sort=revenue&desc=true&chart=Pie`). The staff app uses this form: it is a read, so it is not stored by the idempotency layer |
 | POST | `/reports/{id}/export?format=xlsx\|csv\|pdf` | `ExportReportRequest {parameters, sort, desc}` → file (`Cache-Control: no-store`); another format → 400 "Choose Excel (xlsx), CSV or PDF."; `pdf` → `application/pdf`, or 503 `pdf.unavailable` when the server cannot make PDFs; a PDF that leaves rows out carries the header `X-Report-Notice` (see *Exports*) |
 | GET | `/reports/{id}/export?format=xlsx\|csv\|pdf&…inputs` | the same as a GET (browser downloads) |
-| GET | `/kpis?from&to&facilityId` | → `KpiSet {from, to, previousFrom, previousTo, facilityName, kpis[], generatedAt, dataSource}`; default period = this month to date; max 366 days |
+| GET | `/kpis?from&to&facilityId` | → `KpiSet {from, to, previousFrom, previousTo, facilityName, kpis[], generatedAt, dataSource}`; default period = this month to date; max 366 days. Each KPI with a facility target carries `target {target, amber, red, prorated, status (Green, Amber, Red or null), ownerRole, dailyTarget}` (see *KPI targets*) |
 | GET | `/kpi-definitions` | → `KpiDefinitionsDto {kpis[{key, label, unit, higherIsBetter, formula, source, target, audience, reportId, reportTitle}], reports[{id, title, category, categoryLabel, description, definition, containsPatientIdentifiers, canSchedule, kpiKeys[]}]}`: the KPIs the caller's dashboard shows and the reports they may open (BI-01..05). `reportTitle` is null when the caller may not open the KPI's report |
 | GET | `/lookups/{kind}?search&facilityId` | `kind` = `facilities` (the caller's allowed facilities), `departments`, `practitioners`, `payers`, `wards`, `stores`, `theatres` → `LookupItem[] {id, code, name}` (≤ 200, active only) |
 | GET | `/status` | → `AnalyticsStatusDto {dataSource, usesReplica, replicaLagSeconds, activeSchedules, lastDeliveryAt, failedDeliveriesLast7Days, checkedAt, activeExtracts, lateExtracts, failingExtracts, lastExtractRefreshAt}`; the three e-mail figures leave out extracts, which the last four cover (late and failing as in *BI extracts*) |
@@ -106,6 +107,14 @@ Drill-down (BI-03): open `drillDown.reportId` with the row's key in `drillDown.p
 `to`/`facilityId`, and the drill's fixed `parameters`. Built in: OP census → by doctor; bed occupancy → ward census;
 ALOS → by consultant; discharge outcomes → adverse-discharge register (clinical users); revenue by department → revenue
 by doctor; lab and radiology volume → by test/study; pharmacy sales by store → by medicine; HR head count → attendance.
+
+### KPI targets (`/api/v1/analytics/kpi-targets`, all need `analytics.kpi_targets.manage`)
+
+| Method | Path | Body → Response |
+|---|---|---|
+| GET | `/` | → `KpiTargetsDto {facilityName, roles[], kpis[{key, label, unit, higherIsBetter, monthly, formula, target: {target, amberThreshold, redThreshold, ownerRole, setByName, setAt, lastStatus, lastValue, lastCheckedAt, version} \| null}]}` for the signed-in facility |
+| PUT | `/{key}` | `SaveKpiTargetRequest {target, amberThreshold, redThreshold, ownerRole, version}` → `KpiTargetItem`; no version on the first save (`FirstSaveCreates`), the loaded one after (409 when stale); 400 on `amberThreshold`/`redThreshold` when a threshold is on the good side of the target or red is not beyond amber, on `ownerRole` when no such role exists; 404 for an unknown KPI |
+| DELETE | `/{key}?version=` | soft delete → 204 |
 
 ### Dashboards (`/api/v1/analytics/dashboards`)
 
@@ -230,6 +239,19 @@ bills are excluded and returns reduce revenue.*
 | `hr-headcount` | Head count and attrition | Period (this financial year), Facility, Department | Head count = employees not separated who have joined; cadre from the designation; **attrition % = leavers ÷ head count × 100**. Drill: department → attendance |
 | `hr-attendance` | Attendance and overtime | Period (last month), Facility, Department | From the nightly attendance computation: attendance % = present ÷ (present + absent + leave); overtime hours = overtime minutes ÷ 60 |
 
+### Tax, payroll and claims (finance)
+Read-only, per facility and period, and exported to Excel, CSV or PDF like every report. Built on what main records;
+the GST returns, statutory returns and claims maker-checker being added elsewhere will feed the same tables.
+
+| Id | Title | Inputs | Definition |
+|---|---|---|---|
+| `gst-summary` | GST summary by rate and HSN/SAC | Period (last month), Facility, Show by (rate and HSN/SAC, or rate), Supplies (hospital bills, pharmacy invoices) | **Invoices** = lines of hospital bills finalized in the period (cancelled excluded) and of pharmacy invoices dated in the period (cancelled excluded), by GST rate and SAC/HSN code (blank codes are "Not recorded"). **Credit notes** = GST credit notes issued in the period, by the lines they correct, as negative amounts (write-offs and notes issued after the bill's GST could be reduced carry no GST; notes that name no lines are counted in a note). **Returns** = pharmacy sales returns in the period at the returned line's rate, taxable value and GST in proportion to the refund (refund × part ÷ line net). **Net** = invoices − credit notes − returns. **Reconciliation**: the lines are added up again from the bill, credit note and invoice totals; the headline *Reconciles to bills* is Yes when each differs by at most ₹0.01 in taxable value and in GST, else the notes give the difference. A bill's round-off is in no line |
+| `tds-summary` | TDS deducted by section | Period (last month), Facility, Show by (section, deductee) | **194J** = doctor payouts approved in the period (draft payouts excluded): amount = gross share − recoveries, TDS as deducted on the payout. **192** = payslips of the payroll months in the period whose payroll is approved, paid or locked: amount = gross earnings, TDS as deducted. Effective rate = TDS ÷ amount × 100 (two decimals). TDS on vendor payments (194C, 194I, 194Q…) is not here: HC360 records no vendor payments |
+| `payroll-cost` | Payroll cost by department, cost centre and component | Period (last month), Facility, Show by (department, cost centre, salary component) | Payslips of the payroll months in the period whose payroll is approved, paid or locked. **Cost = gross earnings + employer PF + employer ESI.** Department = the payslip's department. Cost centre = the kind of the employee's department (clinical, diagnostic, support, administrative), as HC360 has no cost-centre master. By component each earning is a row and the employer's PF and ESI rows of their own; employees = payslips with the component |
+| `claims-ageing` | Insurance claims ageing | Facility, Insurer | Open claims (submitted, query, approved, partly settled) by insurer as of today: outstanding = claimed − settled − deducted (never below nothing) by days since submission (IST) in 0–30, 31–60, 61–90, 91–180 and over 180 days. Drill: insurer → settlement ratio |
+| `claims-settlement` | Insurance claim settlement ratio by insurer | Period (this financial year), Facility, Insurer | Claims submitted in the period by insurer: settled, rejected, open; claimed, settled amount, deductions. **Settlement ratio (claims) = settled ÷ (settled + rejected) × 100. Settlement ratio (amount) = amount settled on settled claims ÷ amount claimed on settled and rejected claims × 100**; open claims are left out until decided. Days to settle = average IST days from submission to settlement. Drill: insurer → deductions |
+| `claims-deductions` | Insurance claim deductions and rejections by reason | Period (this financial year), Facility, Insurer, Show by (reason, insurer and reason) | Claims submitted in the period: itemised settlement deductions by the insurer's reason, and rejected claims by rejection reason at the amount claimed. Reasons group regardless of capitals and spaces and show in the spelling used on most claims. Share = amount ÷ all deductions and rejections |
+
 ## Executive KPIs (`GET /kpis`, BI-01)
 
 Each KPI returns this period, the previous period of the same length (ending the day before `from`), the change %,
@@ -248,7 +270,33 @@ Each KPI returns this period, the previous period of the same length (ending the
 
 The definitions (label, unit, direction, formula, data source, drill-down report, audience and target) live once in
 `Services/KpiDefinitions.cs`; `KpiService` builds the tiles from them and `GET /kpi-definitions` lists them, so the
-dashboard's tooltips and the catalogue cannot differ. No KPI has a target set yet (`target` is null).
+dashboard's tooltips and the catalogue cannot differ. Targets are set per facility (*KPI targets*).
+
+## KPI targets (BI-01)
+
+An administrator (`analytics.kpi_targets.manage`, Analytics › KPI targets) sets, for the signed-in facility, each KPI's
+**target**, **amber** and **red** thresholds and the **owner role** told when it is missed (`analytics.kpi_targets`, one
+per KPI and facility). Every change is in the data audit trail with the values before and after; changing the figures
+clears the last status, so the next check starts afresh.
+
+* **Order** (`KpiTargetMath.CheckOrder`, checked by the screen and the server): higher is better → red ≤ amber ≤ target;
+  lower is better (ALOS, lab turnaround) → red ≥ amber ≥ target.
+* **Proration**: counts and money (OP visits, admissions, revenue, collections) are set **per month** and compared over
+  the period shown as monthly × days × 12 ÷ 365 (₹30,00,000 a month over 10 days is ₹9,86,301.37); the daily target
+  (monthly × 12 ÷ 365) is drawn as a dotted line under the daily trend and the tile's sparkline. Rates, days, minutes
+  and scores are compared as they are.
+* **Status** (`KpiTargetMath.Status`): green at or better than amber, amber when worse than amber but not as bad as red,
+  red at red or worse; no figure, no status. Higher is better, amber 90, red 80: 92 green, 85 amber, 80 red.
+* **Dashboard**: each tile with a target says *On target*, *Needs attention* or *Target missed* (icon and words, never
+  colour alone) with the target for the period; the tooltip and the link's name give the whole comparison.
+  Targets are read on the primary database at every request, so a new target shows at once even when the figures come
+  from the two-minute cache. A consolidated view of every facility has no targets.
+* **Breach notifications** (`KpiTargetMonitor`, hourly from the scheduled-report job where jobs run): every facility's
+  KPIs for **this month to date** are computed as the dashboard computes them; when a KPI gets worse (green → amber, or
+  anything → red; `KpiTargetMath.IsNewBreach`) every active staff user holding the owner role at the facility gets the
+  in-app notification "Bed occupancy is red" with the figure against the target (link `/analytics`; severity error for
+  red, warning for amber). The status is kept on the target, so a KPI that stays red is reported once; a new month
+  starts afresh. A role nobody holds is logged.
 
 KPI maths lives in `Domain/KpiMath.cs`, `Domain/CensusMath.cs` and `Domain/Percentiles.cs` (unit-tested): occupancy,
 ALOS (minimum one day), bed turnover rate and interval (never negative), gross/net death rate, NPS, change %, no-show
@@ -316,6 +364,15 @@ rate, per-thousand rates, margin %, nearest-rank percentiles and within-target %
   attempts and last error are kept. Idempotent per recipient.
 * **Why not the notification service**: `INotificationService.Queue` has no attachment support and `IFileStore` accepts
   only clinical document types, so the module owns this small handler (see *Maintainers*).
+* **Retries and System health**: a send the provider refuses keeps the recipient *Pending* with its attempts and last
+  error, and the outbox retries it with back-off. While a report could not be generated, or an e-mail is still unsent
+  after a try, in the last 24 hours, System health shows the warning `analytics.report_emails_failing` ("Scheduled report
+  e-mails in the last 24 hours: … e-mail(s) are not sent yet after N attempt(s) (last error: …)") from
+  `ReportEmailHealthWarnings`; it clears when the e-mails go.
+* **Tested end to end** (`ScheduledReportEmailTests`): a due schedule is run by the job, the Excel file is rendered and
+  kept, one outbox message per recipient is handed to the e-mail provider; the first send fails (e-mail switched off)
+  and is retried with back-off, System health warns; with the e-mail simulator the retry sends the message with the
+  file attached (the simulator records its name and size), and a repeat sends nothing more.
 * **Retention**: file contents are purged after `analytics.deliveries.retentionDays` (default 30) by the same job every
   6 hours; the delivery rows (who, when, what) remain.
 
@@ -452,6 +509,7 @@ have it.
 | `report_schedules` | report, `parameters_json` (jsonb), format, frequency, time (IST), weekday / day of month, recipients, active, owner, next/last run, last status/error, `destination` (`Email` or `ExtractFolder`), `extract_name`, `last_succeeded_at` · facility scoped, soft delete, index (is_active, next_run_at), owner_user_id, unique (facility_id, extract_name) for extracts not deleted |
 | `report_deliveries` | one generated file: trigger, period, status, encrypted content (purged after retention), size, rows, error · facility scoped · index (schedule_id, created_at), created_at |
 | `report_delivery_recipients` | one row per recipient: status, attempts, last error, sent at · cascade from deliveries |
+| `kpi_targets` | facility, `kpi_key`, target, amber and red thresholds, owner role, set by, last status, value and check time · facility scoped, soft delete, unique (facility_id, kpi_key) for targets not deleted |
 
 Seed (`AnalyticsSeeder`, order 190): the e-mail template and two dashboard templates, *Hospital operations* (OP
 visit trend, bed occupancy, admissions and discharges, lab volume and TAT, discharge outcomes, NPS) and *Finance
@@ -466,13 +524,14 @@ ageing).
 | `analytics.report.exported` (+ `patient.accessed` per patient for patient lists) | Data / PhiAccess | every export (report, format, inputs, rows in the file), and every BI extract written; a PDF that could not be made is not audited |
 | `analytics.delivery.downloaded` | Data | a delivered file downloaded again |
 | `patient.accessed` "Viewed where the patient is in their visit, stay, operations and lab orders" | PhiAccess | each read of a patient's journeys |
-| data audit | Data | dashboards and schedules (create/change/delete) via the platform interceptor |
+| data audit | Data | dashboards, schedules and KPI targets (create/change/delete) via the platform interceptor |
 
 ## Staff app
 
 | Route | Screen |
 |---|---|
-| `/analytics` | Executive dashboard: period (presets or custom dates) and facility, KPI tiles with change vs previous period (arrow + words + colour), sparklines, definitions, daily trend chart, dashboards and featured report shortcuts; each tile opens its report for the same period |
+| `/analytics` | Executive dashboard: period (presets or custom dates) and facility, KPI tiles with change vs previous period (arrow + words + colour) and, when a target is set, actual vs target (*On target*, *Needs attention*, *Target missed*), sparklines with the daily target, definitions, daily trend chart, dashboards and featured report shortcuts; each tile opens its report for the same period |
+| `/analytics/kpi-targets` | KPI targets (`analytics.kpi_targets.manage`): every KPI with its target, amber and red thresholds, the role told and this month's status at the last check; set, change (dialog naming a threshold on the wrong side before saving) and remove |
 | `/analytics/kpis` | KPI definitions: every dashboard KPI (formula, unit, which way is better, target, data source, the report with the detail) and every report's description and formula, with one search over both (kept in the URL); linked from the executive dashboard and the Analytics menu |
 | `/analytics/reports` | Report catalogue by area with search (title, description, formula), counts per area, patient-list badges |
 | `/analytics/reports/$reportId` | Report inputs (applied as you change them; kept in the URL so views can be bookmarked and shared), headline figures, chart with a view switch, sortable/paged table with totals, row drill-down, notes, “How it is calculated”, Excel/CSV export (patient lists confirm first), add to dashboard, e-mail regularly |
@@ -507,7 +566,15 @@ unwritable folder reported), the extract CSV, hourly schedules and extract state
 end-to-end `BiExtractTests` in `tests/HyFib.HealthCare360.IntegrationTests` (rules, file and refresh log written, rename
 and delete, a failing refresh alerting once). `AnalyticsModuleTests` checks that the server's catalogue has every
 report.
-Web: `format.test.ts`, `params.test.ts`, `charts.test.ts`, `schedule-form.test.ts` in the module folder.
+Tax, payroll and claims, and targets: `StatutoryMathTests` (ageing buckets, claim outstanding, settlement ratios,
+TDS rate, employer cost, return shares, the GST summary's rows and reconciliation, TDS rows, payroll components, claim
+reasons, the System health wording) and `KpiTargetMathTests` (proration, status, when owners are told, threshold order,
+the target view and the notice's words), all with worked examples; `AnalyticsTargetsAndStatutoryReportTests` in the
+integration tests seeds February 2019 (a bill and a credit note, four claims of one insurer, an approved payroll) and
+checks each report's figures through the API, and sets a target, reads it on the KPIs and runs the breach check twice
+(one notification); `ScheduledReportEmailTests` (*Scheduled delivery*).
+Web: `format.test.ts`, `params.test.ts`, `charts.test.ts`, `schedule-form.test.ts`, `targets.test.ts` and the screen
+test `kpiTargets.test.tsx` (with the accessibility check) in the module folder.
 Patient journeys: every stage rule in `Domain/Journeys` (`JourneyStagesTests`, `OutpatientJourneyTests`, `EmergencyJourneyTests`,
 `InpatientJourneyTests`, `SurgeryJourneyTests`, `LabJourneyTests`: current, skipped, not applicable, cancelled and
 finished journeys); `PatientPipelineTests` in the integration tests drives a patient through registration, the OPD, the
@@ -518,7 +585,10 @@ for casualty); the staff app's `Pipeline.test.tsx` (`@hc360/ui`), `JourneyCard.t
 
 ## Maintainers
 
-* **Migration needed** for the `analytics` schema (four tables above); the module adds no columns to other schemas.
+* **Migration needed** for the `analytics` schema (five tables above; `kpi_targets` added with the targets); the module
+  adds no columns to other schemas.
+* New report categories go at the end of `ReportCategory` (`Statutory` is last) and into the staff app's
+  `CATEGORY_ORDER`, labels and icons.
   Formats are stored as text (`format`, varchar 64), so `Pdf`, added after `Xlsx` and `Csv`, needed no migration; add
   any new format at the end of `ExportFormat` too.
 * **Contract gaps**: e-mail attachments are not supported by `INotificationService` (the module's outbox handler uses
