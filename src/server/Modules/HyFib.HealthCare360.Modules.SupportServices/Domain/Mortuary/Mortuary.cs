@@ -40,6 +40,12 @@ public enum ReleaseTo
     Municipality,
 }
 
+/// <summary>
+/// The second member of the mortuary staff who witnessed a release at the screen of the one who released the body, with
+/// their own user name and password (ADR-014).
+/// </summary>
+public sealed record BodyReleaseWitness(Guid UserId, string Name);
+
 /// <summary>Who received the body, and on what authority.</summary>
 public sealed record BodyRelease(
     ReleaseTo To, string ReceivedBy, string? Relationship, string? IdProof, string? PoliceClearance, bool BelongingsHandedOver, string? Notes);
@@ -94,6 +100,23 @@ public sealed class BodyRecord : AuditableEntity, IFacilityScoped
     public string? ReleaseNotes { get; private set; }
     public string? ReleasedByName { get; private set; }
 
+    /// <summary>The member of staff who released the body.</summary>
+    public Guid? ReleasedByUserId { get; private set; }
+
+    /// <summary>
+    /// The second member of staff who witnessed a release on the police's clearance (<see cref="NeedsPoliceClearance"/>);
+    /// null for a release that needs none, unless one was asked for.
+    /// </summary>
+    public Guid? ReleaseWitnessUserId { get; private set; }
+
+    public string? ReleaseWitnessName { get; private set; }
+
+    /// <summary>
+    /// A release on the police's clearance: a medico-legal body to the relatives, or an unclaimed body to the municipality.
+    /// The clearance is recorded and the release is witnessed by a second member of staff (maker-checker, slice 9).
+    /// </summary>
+    public bool NeedsPoliceClearance(ReleaseTo to) => (to == ReleaseTo.Relatives && IsMlc) || to == ReleaseTo.Municipality;
+
     public bool Unclaimed(DateTimeOffset now) => Status == BodyStatus.InStorage && now - ReceivedAt > UnclaimedAfter;
 
     public void Store(MortuarySlot slot)
@@ -102,7 +125,11 @@ public sealed class BodyRecord : AuditableEntity, IFacilityScoped
         SlotCode = slot.Code;
     }
 
-    public Result Release(BodyRelease release, string byName, DateTimeOffset now)
+    /// <summary>
+    /// Releases the body on the authority its case needs. One released on the police's clearance is witnessed by a second
+    /// member of staff, never the one who releases it.
+    /// </summary>
+    public Result Release(BodyRelease release, Guid? byUserId, string byName, BodyReleaseWitness? witness, DateTimeOffset now)
     {
         if (Status == BodyStatus.Released)
         {
@@ -156,8 +183,25 @@ public sealed class BodyRecord : AuditableEntity, IFacilityScoped
                 break;
         }
 
+        if (NeedsPoliceClearance(release.To))
+        {
+            if (witness is null)
+            {
+                return Error.Rule("mortuary.witness_required",
+                    "A body released on the police's clearance is witnessed: a second member of the mortuary staff confirms the release here with their own user name and password.");
+            }
+        }
+
+        if (witness is not null && byUserId is not null && witness.UserId == byUserId)
+        {
+            return Error.Rule("mortuary.witness_is_releaser", "The witness is someone other than the member of staff who releases the body.");
+        }
+
         Status = BodyStatus.Released;
         ReleasedAt = now;
+        ReleasedByUserId = byUserId;
+        ReleaseWitnessUserId = witness?.UserId;
+        ReleaseWitnessName = witness?.Name;
         ReleasedTo = release.To;
         ReceivedBy = release.ReceivedBy.Trim();
         Relationship = Trim(release.Relationship);
