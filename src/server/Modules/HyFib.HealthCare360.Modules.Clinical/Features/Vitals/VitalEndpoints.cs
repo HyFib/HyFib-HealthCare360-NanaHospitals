@@ -81,10 +81,12 @@ internal static class VitalEndpoints
         var vitals = Build(patientId, request, time);
         vitals.FacilityId = user.FacilityId;
         vitals.RecordedByUserId = user.UserId;
+        var dateOfBirth = await DateOfBirthAsync(db, patientId, ct);
+        vitals.MarkRecorded(News2.Score(vitals.ToNews2Reading(), dateOfBirth, time.Today()));
         db.Add(vitals);
         await db.SaveChangesAsync(ct);
 
-        var dto = ToDto(vitals, await DateOfBirthAsync(db, patientId, ct), time.Today());
+        var dto = ToDto(vitals, dateOfBirth, time.Today());
         await realtime.PublishAsync(Topics.Patient(patientId), "clinical.vitals.recorded", new { vitals.Id }, ct);
         if (dto.Flags.Any(f => f.Severity == FlagSeverity.Critical) && encounter is not null)
         {
@@ -152,6 +154,8 @@ internal static class VitalEndpoints
             BloodGlucose = r.BloodGlucose,
             GlucoseTiming = r.GlucoseTiming,
             Gcs = r.Gcs,
+            Consciousness = r.Consciousness,
+            SpO2Scale = r.SpO2Scale,
             Notes = string.IsNullOrWhiteSpace(r.Notes) ? null : r.Notes.Trim(),
         };
         vitals.ComputeBmi();
@@ -165,5 +169,7 @@ internal static class VitalEndpoints
         v.Id, v.PatientId, v.EncounterId, v.RecordedAt, v.RecordedByUserId, v.Temperature, v.TemperatureUnit, v.TemperatureCelsius, v.Pulse, v.RespiratoryRate,
         v.SystolicBp, v.DiastolicBp, v.SpO2, v.OnSupplementalOxygen, v.HeightCm, v.WeightKg, v.Bmi, v.PainScore, v.BloodGlucose, v.GlucoseTiming, v.Gcs,
         v.Notes, v.IsEnteredInError, v.EnteredInErrorReason,
-        v.IsEnteredInError ? [] : VitalSignsAssessor.Assess(v.ToReading(), dateOfBirth, today));
+        v.IsEnteredInError ? [] : VitalSignsAssessor.Assess(v.ToReading(), dateOfBirth, today),
+        v.Consciousness, v.SpO2Scale,
+        v.IsEnteredInError ? null : News2.Score(v.ToNews2Reading(), dateOfBirth, today));
 }

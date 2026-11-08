@@ -20,14 +20,15 @@ import { ArrowSwapRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
 import { applyServerErrors, FormGrid, SelectField, TextAreaField, useNotify, useUnsavedChanges } from '@hc360/ui';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { toOptions, useDepartments, usePractitioners } from '@/lib/lookups';
-import { admissionApi, inpatientKeys, type AdmissionDetail, type AvailableBedDto } from './api';
+import { admissionApi, inpatientKeys, inpatientQueries, type AdmissionDetail, type AvailableBedDto } from './api';
 import { BedPicker } from './BedPicker';
 import { fromIstInput, toIstInput } from './time';
+import { isCriticalCareWard, wardCareApi, wardCareKeys } from './wardCareApi';
 
 const REASONS = [
   'Needs ICU care',
@@ -46,6 +47,8 @@ const schema = z
     consultantPractitionerId: z.string().nullable(),
     earlier: z.boolean(),
     transferredAt: z.string(),
+    clinicalSummary: z.string().trim().max(2000),
+    urgent: z.boolean(),
   })
   .superRefine((v, ctx) => {
     if (!v.toBedId) {
@@ -58,7 +61,11 @@ const schema = z
 
 type TransferValues = z.infer<typeof schema>;
 
-/** Move an admitted patient to another bed or ward (the bed tariff follows the new ward from the next census). */
+/**
+ * Move an admitted patient to another bed of the ward at once, or ask another ward to take them: the bed is held and the
+ * receiving ward accepts (an urgent step-up or step-down to or from critical care moves at once and is accepted within
+ * the hour). The bed tariff follows the new ward from the next census.
+ */
 export function TransferDialog({
   admission,
   open,
@@ -81,9 +88,19 @@ export function TransferDialog({
       consultantPractitionerId: admission.consultantPractitionerId,
       earlier: false,
       transferredAt: nowInput,
+      clinicalSummary: '',
+      urgent: false,
     },
   });
-  const [departmentId, earlier] = useWatch({ control: form.control, name: ['departmentId', 'earlier'] });
+  const [departmentId, earlier, urgent] = useWatch({
+    control: form.control,
+    name: ['departmentId', 'earlier', 'urgent'],
+  });
+  const wards = useQuery(inpatientQueries.wards());
+  const currentWardType = wards.data?.find((w) => w.id === admission.wardId)?.type ?? null;
+  // A bed of another ward is asked of the receiving ward; a bed of the same ward is a direct move.
+  const otherWard = picked !== null && picked.wardId !== admission.wardId;
+  const urgentAllowed = otherWard && (isCriticalCareWard(picked.wardType) || isCriticalCareWard(currentWardType));
   const departments = useDepartments('Clinical');
   const practitioners = usePractitioners(departmentId);
 
@@ -94,8 +111,26 @@ export function TransferDialog({
   };
 
   const transfer = useMutation({
-    mutationFn: (values: TransferValues) =>
-      admissionApi.transfer(admission.id, {
+    mutationFn: async (values: TransferValues) => {
+      if (otherWard) {
+        if (values.clinicalSummary.trim().length < 3) {
+          form.setError('clinicalSummary', { message: 'Write a summary for the receiving ward.' });
+          throw new Error('summary');
+        }
+        const asked = await wardCareApi.requestTransfer(admission.id, {
+          toBedId: values.toBedId!,
+          reason: values.reason,
+          clinicalSummary: values.clinicalSummary,
+          departmentId: values.departmentId !== admission.departmentId ? values.departmentId : null,
+          consultantPractitionerId:
+            values.consultantPractitionerId !== admission.consultantPractitionerId
+              ? values.consultantPractitionerId
+              : null,
+          isUrgent: urgentAllowed && values.urgent,
+        });
+        return asked.status;
+      }
+      await admissionApi.transfer(admission.id, {
         toBedId: values.toBedId!,
         reason: values.reason,
         departmentId: values.departmentId !== admission.departmentId ? values.departmentId : null,
@@ -104,13 +139,28 @@ export function TransferDialog({
             ? values.consultantPractitionerId
             : null,
         transferredAt: values.earlier ? fromIstInput(values.transferredAt) : null,
-      }),
-    onSuccess: () => {
-      notify.success('Patient transferred', picked ? `Now in ${picked.wardName}, bed ${picked.label}.` : undefined);
+      });
+      return 'Moved' as const;
+    },
+    onSuccess: (outcome) => {
+      if (outcome === 'Pending') {
+        notify.success(
+          'Transfer requested',
+          picked ? `${picked.wardName} is asked to accept; bed ${picked.label} is held.` : undefined,
+        );
+      } else if (outcome === 'MovedAwaitingAcceptance') {
+        notify.success('Moved as urgent', 'The receiving ward records its acceptance within the hour.');
+      } else {
+        notify.success('Patient transferred', picked ? `Now in ${picked.wardName}, bed ${picked.label}.` : undefined);
+      }
       void queryClient.invalidateQueries({ queryKey: inpatientKeys.all });
+      void queryClient.invalidateQueries({ queryKey: wardCareKeys.all });
       finish();
     },
     onError: (error) => {
+      if (error instanceof Error && error.message === 'summary') {
+        return;
+      }
       if (isApiError(error) && (error.code === 'bed.taken' || error.code === 'bed.unavailable')) {
         void queryClient.invalidateQueries({ queryKey: ['inpatient', 'available'] });
         form.setValue('toBedId', null);
@@ -192,6 +242,38 @@ export function TransferDialog({
                   ))}
                 </div>
               </div>
+              {otherWard && (
+                <>
+                  <MessageBar intent="info" layout="multiline">
+                    <MessageBarBody>
+                      Moving to another ward: {picked?.wardName} is asked to accept the patient, and bed {picked?.label}{' '}
+                      is held until it decides.
+                    </MessageBarBody>
+                  </MessageBar>
+                  <TextAreaField
+                    control={form.control}
+                    name="clinicalSummary"
+                    label="Clinical summary for the receiving ward"
+                    required
+                    rows={3}
+                    maxLength={2000}
+                    placeholder="Diagnosis, condition now, lines and drains, what is pending"
+                  />
+                  {urgentAllowed && (
+                    <Controller
+                      control={form.control}
+                      name="urgent"
+                      render={({ field }) => (
+                        <Switch
+                          checked={field.value}
+                          onChange={(_, d) => field.onChange(d.checked)}
+                          label="Urgent step-up or step-down: move now, the receiving ward accepts within the hour"
+                        />
+                      )}
+                    />
+                  )}
+                </>
+              )}
               <FormGrid columns={2}>
                 <SelectField
                   control={form.control}
@@ -208,18 +290,20 @@ export function TransferDialog({
                   options={toOptions(practitioners.data)}
                 />
               </FormGrid>
-              <Controller
-                control={form.control}
-                name="earlier"
-                render={({ field }) => (
-                  <Switch
-                    checked={field.value}
-                    onChange={(_, d) => field.onChange(d.checked)}
-                    label="The patient moved earlier (within the last 24 hours)"
-                  />
-                )}
-              />
-              {earlier && (
+              {!otherWard && (
+                <Controller
+                  control={form.control}
+                  name="earlier"
+                  render={({ field }) => (
+                    <Switch
+                      checked={field.value}
+                      onChange={(_, d) => field.onChange(d.checked)}
+                      label="The patient moved earlier (within the last 24 hours)"
+                    />
+                  )}
+                />
+              )}
+              {earlier && !otherWard && (
                 <Controller
                   control={form.control}
                   name="transferredAt"
@@ -261,7 +345,13 @@ export function TransferDialog({
                 icon={transfer.isPending ? <Spinner size="tiny" aria-hidden /> : <ArrowSwapRegular />}
                 disabled={transfer.isPending}
               >
-                {picked ? `Transfer to ${picked.label}` : 'Transfer'}
+                {picked
+                  ? otherWard
+                    ? urgent && urgentAllowed
+                      ? `Move now to ${picked.label}`
+                      : `Ask ${picked.wardName} to accept`
+                    : `Transfer to ${picked.label}`
+                  : 'Transfer'}
               </Button>
             </DialogActions>
           </DialogBody>

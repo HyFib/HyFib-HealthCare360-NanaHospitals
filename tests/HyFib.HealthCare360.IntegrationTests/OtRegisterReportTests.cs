@@ -108,8 +108,7 @@ public sealed class OtRegisterReportTests(HospitalServer server)
         await SignedInAsync(called.Id, theatreId, wentIn.AddMinutes(1));
         await doctor.PostAsync($"{Bookings}/{called.Id}/cancel", new SurgeryReasonRequest("BP 210/110 on the table"));
         var icu = await TestBeds.AddAsync(server, "ICU");
-        await nurse.PostAsync($"/api/v1/inpatient/admissions/{admission.Id}/transfer",
-            new TransferPatientRequest(icu.BedId, "Post-operative monitoring", null, null, null));
+        await TestTransfers.MoveAsync(server, nurse, admission.Id, icu.BedId, "Post-operative monitoring");
 
         // Management, who may see contact details and open restricted records, reads the case as the paper register has it.
         var row = (await RegisterAsync(management, theatreId, wentIn)).Single(r => r["caseNumber"] == booking.BookingNumber);
