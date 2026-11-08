@@ -15,12 +15,13 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { todayIso } from '@hc360/core';
-import { useNotify, useUnsavedChanges } from '@hc360/ui';
+import { todayIso, useSession } from '@hc360/core';
+import { TextField, useNotify, useUnsavedChanges } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { givenBySurgeon, otApi, otKeys, type SurgeryDetail } from './api';
-import { planGate, procedureWithSide, slotConflicts } from './logic';
+import { phaseLabel } from './labels';
+import { onCaseTeam, planGate, procedureWithSide, siteChangeVoidsChecklist, slotConflicts } from './logic';
 import { ConflictAlert } from './OtBadges';
 import { applyFormErrors } from './shared/errors';
 import { ActionError } from './shared/feedback';
@@ -155,10 +156,28 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
     defaultValues: surgeryFormFromDetail(booking),
   });
 
+  const practitionerId = useSession((s) => s.user?.practitionerId ?? null);
+  const [procedureServiceItemId, procedureName, laterality, siteLevel] = useWatch({
+    control: form.control,
+    name: ['procedureServiceItemId', 'procedureName', 'laterality', 'siteLevel'],
+  });
+  // After the WHO Sign-in a change of side, level or procedure voids it (and the Time-out): only the operating surgeon or
+  // the anaesthetist saves it, with a reason (server SiteChangeRule).
+  const voidsChecklist = siteChangeVoidsChecklist(booking, {
+    procedureServiceItemId,
+    procedureName,
+    laterality,
+    siteLevel,
+  });
+  const mayChangeSite = onCaseTeam(booking, practitionerId);
+  const voidedPhases = booking.safetyChecklist
+    .filter((p) => p.phase !== 'SignOut' && p.isComplete)
+    .map((p) => phaseLabel[p.phase]);
+
   const save = useMutation({
     mutationFn: (values: SurgeryFormValues) => otApi.updatePlan(booking.id, toUpdateRequest(values, booking.version)),
     onSuccess: () => {
-      notify.success('Surgical plan saved');
+      notify.success(voidsChecklist ? 'Surgical plan saved: do the WHO checklist again' : 'Surgical plan saved');
       void queryClient.invalidateQueries({ queryKey: otKeys.all });
       onClose();
     },
@@ -175,7 +194,18 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
   return (
     <Dialog open onOpenChange={guard.onOpenChange}>
       <DialogSurface style={{ maxWidth: 820 }}>
-        <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
+        <form
+          onSubmit={form.handleSubmit((values) => {
+            if (voidsChecklist && !values.changeReason.trim()) {
+              form.setError('changeReason', {
+                message: 'Give the reason for changing the side or procedure after the Sign-in.',
+              });
+              return;
+            }
+            save.mutate(voidsChecklist ? values : { ...values, changeReason: '' });
+          })}
+          noValidate
+        >
           <DialogBody>
             <DialogTitle>
               Edit surgical plan
@@ -192,6 +222,30 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                 nurseName={booking.nurseName}
                 showPreferredDate={!holdsSlot}
               />
+              {voidsChecklist && (
+                <MessageBar intent={mayChangeSite ? 'warning' : 'error'} layout="multiline">
+                  <MessageBarBody>
+                    <MessageBarTitle>The WHO checklist will be done again</MessageBarTitle>
+                    The {voidedPhases.join(' and ')} {voidedPhases.length === 1 ? 'is' : 'are'} done. Changing the side,
+                    level or procedure now voids {voidedPhases.length === 1 ? 'it' : 'them'}: the surgeon marks the site
+                    again and the team repeats {voidedPhases.length === 1 ? 'it' : 'them'} before the incision. The
+                    theatre team is told.
+                    {mayChangeSite
+                      ? ' Give the reason; it is recorded with your name.'
+                      : ' Only the operating surgeon or the anaesthetist of this case changes it now, from their own sign-in.'}
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+              {voidsChecklist && mayChangeSite && (
+                <TextField
+                  control={form.control}
+                  name="changeReason"
+                  label="Reason for the change"
+                  required
+                  maxLength={500}
+                  hint="For example: consent form and imaging say the right side."
+                />
+              )}
               {conflicts ? (
                 <ConflictAlert conflicts={conflicts} />
               ) : (
@@ -208,10 +262,10 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
               <Button
                 type="submit"
                 appearance="primary"
-                disabled={save.isPending || !gate.allowed}
+                disabled={save.isPending || !gate.allowed || (voidsChecklist && !mayChangeSite)}
                 icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
-                Save plan
+                {voidsChecklist ? 'Save and redo the checklist' : 'Save plan'}
               </Button>
             </DialogActions>
           </DialogBody>

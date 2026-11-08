@@ -44,6 +44,12 @@ function subjectLink(
     // admission, with the change waiting.
     case 'Admission':
       return { label: 'Open the admission', to: `/inpatient/admissions/${request.subjectId}` };
+    // An implant or consumable corrected after the operation started: the OT list, found by the surgery's booking number
+    // (the request's first detail names it); its implants tab shows the correction waiting.
+    case 'SurgeryMaterial': {
+      const booking = request.details.find((d) => d.label === 'Surgery')?.value.split(' · ')[0];
+      return booking ? { label: 'Find the surgery', to: '/ot/bookings', search: { search: booking } } : null;
+    }
     case 'Refund':
       return { label: 'Open the refund', to: `/billing/refunds/${request.subjectId}` };
     case 'IpAccount':

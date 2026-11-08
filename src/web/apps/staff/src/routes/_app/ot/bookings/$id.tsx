@@ -30,6 +30,7 @@ import { usePermission } from '@/lib/permissions';
 import { AnaesthesiaPanel } from '@/modules/ot/AnaesthesiaPanel';
 import { otApi, otKeys, otQueries, type SurgeryDetail } from '@/modules/ot/api';
 import { PlanDialog, ScheduleDialog } from '@/modules/ot/BookingDialogs';
+import { CountsPanel } from '@/modules/ot/CountsPanel';
 import { anaesthesiaLabel, lateralityLabel } from '@/modules/ot/labels';
 import {
   cancelGate,
@@ -57,7 +58,7 @@ import { useFacilityId } from '@/modules/ot/shared/hooks';
 import { SpecialtyPatientBanner } from '@/modules/ot/shared/SpecialtyPatientBanner';
 import { SurgeryStepper } from '@/modules/ot/SurgeryStepper';
 
-const TABS = ['day', 'anaesthesia', 'note', 'materials', 'details'] as const;
+const TABS = ['day', 'counts', 'anaesthesia', 'note', 'materials', 'details'] as const;
 type TabId = (typeof TABS)[number];
 
 interface BookingSearch {
@@ -301,6 +302,7 @@ function BookingView({
         <div className={styles.tabs}>
           <TabList selectedValue={tab} onTabSelect={(_, d) => onTab(d.value as TabId)}>
             <Tab value="day">Day of surgery</Tab>
+            <Tab value="counts">Counts</Tab>
             <Tab value="anaesthesia">Anaesthesia</Tab>
             <Tab value="note">Operation note</Tab>
             <Tab value="materials">Implants and consumables</Tab>
@@ -317,6 +319,7 @@ function BookingView({
               onSchedule={() => setDialog('schedule')}
             />
           )}
+          {tab === 'counts' && <CountsPanel booking={b} />}
           {tab === 'anaesthesia' && <AnaesthesiaPanel booking={b} />}
           {tab === 'note' && <OperationNotePanel booking={b} />}
           {tab === 'materials' && <MaterialsPanel booking={b} />}
@@ -389,6 +392,7 @@ function Details({
         <Detail label="Procedure">{procedureWithSide(b.procedureName, b.laterality)}</Detail>
         <Detail label="Procedure code">{b.procedureCode}</Detail>
         <Detail label="Operative side">{lateralityLabel[b.laterality]}</Detail>
+        <Detail label="Level or digit">{b.siteLevel}</Detail>
         <Detail label="Diagnosis">{b.diagnosis}</Detail>
         <Detail label="Operating surgeon">{b.surgeonName}</Detail>
         <Detail label="Assistants">

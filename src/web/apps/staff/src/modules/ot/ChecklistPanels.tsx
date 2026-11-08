@@ -21,6 +21,7 @@ import { formatTime, isApiError } from '@hc360/core';
 import { useLeaveGuard, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { usePermission } from '@/lib/permissions';
 import {
   givenBySurgeon,
   otApi,
@@ -90,7 +91,49 @@ function stateIcon(state: ChecklistItemState, styles: ReturnType<typeof useStyle
 function recordedText(item: ChecklistItemDto): string {
   return item.state === 'NotApplicable'
     ? `Not applicable${item.remarks ? `: ${item.remarks}` : ''} — marked by`
-    : 'Confirmed by';
+    : item.key === SITE_MARKED
+      ? 'Site marked by'
+      : 'Confirmed by';
+}
+
+/** The site-marking item, on the pre-op checklist and the WHO Sign-in (server `SiteMarking.Item`). */
+const SITE_MARKED = 'site_marked';
+
+/** The Sign-out's count item: confirmed from the recorded counts (server `SurgicalSafetyChecklist.CountsItem`). */
+const COUNTS_CORRECT = 'counts_correct';
+
+/**
+ * Whether "not applicable" is offered for an item of this booking: never for site marking when a side or level is booked,
+ * nor for the counts once any count is recorded (maker-checker slice 10).
+ */
+function offersNotApplicable(item: ChecklistItemDto, booking: SurgeryDetail): boolean {
+  if (!item.allowsNotApplicable) {
+    return false;
+  }
+  if (item.key === SITE_MARKED && booking.siteMarkingRequired) {
+    return false;
+  }
+  return !(item.key === COUNTS_CORRECT && (booking.counts?.length ?? 0) > 0);
+}
+
+/** The side or procedure changed after the Sign-in: what changed, who changed it and why, and that the checklist is redone. */
+export function ChecklistVoidedNotice({ booking }: { booking: SurgeryDetail }) {
+  const last = booking.checklistVoids?.at(-1);
+  if (!last) {
+    return null;
+  }
+  return (
+    <MessageBar intent="warning" layout="multiline">
+      <MessageBarBody>
+        <MessageBarTitle>
+          Checklist voided: {last.before} → {last.after}
+        </MessageBarTitle>
+        Changed by {last.byName} at {formatTime(last.at)}: {last.reason}. The{' '}
+        {last.phases.map((p) => phaseLabel[p]).join(' and ')} {last.phases.length === 1 ? 'was' : 'were'} voided and
+        must be done again, with the site marked again, before the incision.
+      </MessageBarBody>
+    </MessageBar>
+  );
 }
 
 // ---------------------------------------------------------------- pre-operative checklist
@@ -118,6 +161,8 @@ export function PreOpChecklistPanel({
   const queryClient = useQueryClient();
   const gate = preOpGate(booking);
   const editable = gate.allowed && canRecord;
+  // With a side or level booked, the site mark is recorded by a surgeon from their own sign-in (server SiteMarking).
+  const canMarkSite = usePermission('ot.surgery.perform');
   const [edits, setEdits] = useState<Record<string, PreOpEdit>>({});
   // The booking as it was when the first unsaved tick was made: the save is refused if it changed since (REL-04).
   const [baseVersion, setBaseVersion] = useState<number | null>(null);
@@ -217,6 +262,12 @@ export function PreOpChecklistPanel({
               <span className={styles.icon}>{stateIcon(value.state, styles)}</span>
               <div className={styles.itemBody}>
                 <Text weight="semibold">{item.text}</Text>
+                {item.key === SITE_MARKED && booking.siteMarkingRequired && item.state !== 'Done' && (
+                  <Caption1 className={styles.muted}>
+                    A side or level is booked: the surgeon marks the site and records it here from their own sign-in.
+                    {!canMarkSite && editable ? ' Ask the surgeon to record it.' : ''}
+                  </Caption1>
+                )}
                 {editable && (
                   <div className={styles.controls}>
                     <RadioGroup
@@ -225,8 +276,17 @@ export function PreOpChecklistPanel({
                       value={value.state}
                       onChange={(_, data) => setItem(item, { state: data.value as ChecklistItemState })}
                     >
-                      <Radio value="Done" label="Done" />
-                      {item.allowsNotApplicable && <Radio value="NotApplicable" label="Not applicable" />}
+                      <Radio
+                        value="Done"
+                        label="Done"
+                        disabled={
+                          item.key === SITE_MARKED &&
+                          booking.siteMarkingRequired &&
+                          !canMarkSite &&
+                          item.state !== 'Done'
+                        }
+                      />
+                      {offersNotApplicable(item, booking) && <Radio value="NotApplicable" label="Not applicable" />}
                       <Radio value="Pending" label="Not done yet" />
                     </RadioGroup>
                     {(value.state === 'NotApplicable' || value.remarks) && (
@@ -316,6 +376,7 @@ export function IdentityCheck({ booking }: { booking: SurgeryDetail }) {
         ) : (
           <SideBadge laterality={booking.laterality} size="large" />
         )}
+        {booking.siteLevel && <Text block>Level: {booking.siteLevel}</Text>}
       </div>
       <div>
         <Caption1 className={styles.identityLabel}>Team</Caption1>
@@ -438,6 +499,8 @@ export function SafetyPhasePanel({
         </MessageBar>
       ) : null}
 
+      {phase === 'SignIn' && !phaseDto?.isComplete && <ChecklistVoidedNotice booking={booking} />}
+
       {phase !== 'SignOut' && !phaseDto?.isComplete && <IdentityCheck booking={booking} />}
 
       <div className={styles.items} role="list" aria-label={`${phaseLabel[phase]} items`}>
@@ -475,7 +538,13 @@ export function SafetyPhasePanel({
                   disabled={!editable || s.notApplicable}
                   onChange={(_, data) => update(item.key, { confirmed: data.checked === true })}
                 />
-                {editable && item.allowsNotApplicable && (
+                {item.key === COUNTS_CORRECT && (
+                  <Caption1 className={styles.muted}>
+                    Confirmed from the counts recorded with a second member of staff (Counts, below). A count that did
+                    not tally is settled first.
+                  </Caption1>
+                )}
+                {editable && offersNotApplicable(item, booking) && (
                   <div className={styles.controls}>
                     <Checkbox
                       label="Not applicable to this patient"

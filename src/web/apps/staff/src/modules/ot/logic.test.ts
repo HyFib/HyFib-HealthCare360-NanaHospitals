@@ -5,10 +5,13 @@ import {
   batchForLot,
   batchLabel,
   completeGate,
+  countsGate,
   currentStepId,
   dayWindow,
   issuableQuantity,
   localClashes,
+  materialsLocked,
+  onCaseTeam,
   otStoreProblem,
   overlaps,
   packPrice,
@@ -17,6 +20,8 @@ import {
   preOpGate,
   priceForBatch,
   receiveGate,
+  siteChangeVoidsChecklist,
+  siteNeedsMarking,
   slotConflicts,
   startGate,
   surgerySteps,
@@ -374,5 +379,55 @@ describe('OT store materials', () => {
       `Lot LOT-A · expires ${formatDateOnly('2027-03-31')} · 2 Nos available · MRP ${formatInr(125000)}`,
     );
     expect(batchLabel({ ...firstBatch, expiryDate: null }, 'Nos')).toContain('no expiry date');
+  });
+});
+
+describe('the theatre where a second person or a second look decides (maker-checker slice 10)', () => {
+  const site = {
+    procedureServiceItemId: null,
+    procedureName: 'Inguinal hernia repair',
+    laterality: 'Left' as const,
+    siteLevel: null,
+  };
+
+  it('needs the site marked when a side or a level is booked, and not for a midline operation', () => {
+    expect(siteNeedsMarking('Left', null)).toBe(true);
+    expect(siteNeedsMarking('Bilateral', '')).toBe(true);
+    expect(siteNeedsMarking('NotApplicable', 'L4–L5')).toBe(true);
+    expect(siteNeedsMarking('NotApplicable', '  ')).toBe(false);
+    expect(siteNeedsMarking(null, null)).toBe(false);
+  });
+
+  it('voids the checklist only for a change of side, level or procedure after the Sign-in', () => {
+    const signedIn = { ...site, safetyChecklist: phases(true) };
+    expect(siteChangeVoidsChecklist(signedIn, { ...site, laterality: 'Right' })).toBe(true);
+    expect(siteChangeVoidsChecklist(signedIn, { ...site, siteLevel: 'T12' })).toBe(true);
+    expect(siteChangeVoidsChecklist(signedIn, { ...site, procedureName: 'Femoral hernia repair' })).toBe(true);
+    expect(siteChangeVoidsChecklist(signedIn, { ...site, procedureName: ' inguinal HERNIA repair ' })).toBe(false);
+    expect(siteChangeVoidsChecklist({ ...site, safetyChecklist: phases() }, { ...site, laterality: 'Right' })).toBe(
+      false,
+    );
+  });
+
+  it('lets only the operating surgeon or the anaesthetist change the site after the Sign-in', () => {
+    const team = { surgeonId: 'p-surgeon', anaesthetistId: 'p-anaesthetist' };
+    expect(onCaseTeam(team, 'p-surgeon')).toBe(true);
+    expect(onCaseTeam(team, 'p-anaesthetist')).toBe(true);
+    expect(onCaseTeam(team, 'p-other')).toBe(false);
+    expect(onCaseTeam({ surgeonId: null, anaesthetistId: null }, null)).toBe(false);
+  });
+
+  it('corrects implants instead of removing them once the operation has started', () => {
+    expect(materialsLocked({ status: 'InPreOp', startedAt: null, safetyChecklist: phases(true, true) })).toBe(false);
+    expect(materialsLocked({ status: 'InProgress', startedAt: T, safetyChecklist: phases(true, true) })).toBe(true);
+    expect(materialsLocked({ status: 'Completed', startedAt: T, safetyChecklist: phases(true, true, true) })).toBe(
+      true,
+    );
+  });
+
+  it('records counts on the day of surgery until the Sign-out', () => {
+    expect(countsGate({ status: 'InProgress', safetyChecklist: phases(true, true) }).allowed).toBe(true);
+    expect(countsGate({ status: 'InProgress', safetyChecklist: phases(true, true, true) }).reason).toMatch(/Sign-out/);
+    expect(countsGate({ status: 'Requested', safetyChecklist: phases() }).allowed).toBe(false);
   });
 });
