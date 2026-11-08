@@ -84,7 +84,7 @@ describe('EQAS register', SCREEN_TESTS, () => {
   it('shows an unacceptable round and links its corrective action by number', async () => {
     openScreen('/lab/eqas');
     const table = await screen.findByRole('table', { name: 'EQAS rounds' }, SLOW);
-    expect(within(table).getByText('4.20 Unacceptable')).toBeInTheDocument();
+    expect(await within(table).findByText('4.20 Unacceptable', {}, SLOW)).toBeInTheDocument();
     expect(within(table).getByText('Needed')).toBeInTheDocument();
     await expectNoAxeViolations();
 
