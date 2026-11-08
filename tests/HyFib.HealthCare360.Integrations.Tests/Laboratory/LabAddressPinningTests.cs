@@ -52,7 +52,7 @@ public sealed class LabAddressPinningTests
             state.Snapshot().Single().LastError.ShouldBe("Refused a connection from 127.0.0.1: not the analyser's IP address.");
         }
 
-        await processor.DidNotReceiveWithAnyArgs().SubmitResultsAsync(default!, default!, default!, default);
+        await processor.DidNotReceiveWithAnyArgs().SubmitResultsAsync(default!, default!, default!, Ct);
     }
 
     [Fact]
