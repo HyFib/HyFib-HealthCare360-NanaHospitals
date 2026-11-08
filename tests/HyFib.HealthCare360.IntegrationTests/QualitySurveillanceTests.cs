@@ -300,19 +300,40 @@ public sealed class QualitySurveillanceTests(HospitalServer server)
         };
         var sample = new LabSample
         {
-            FacilityId = facilityId, LabOrderId = order.Id, PatientId = patientId, Barcode = $"9{Random.Shared.NextInt64(10_000_000_000, 99_999_999_999)}",
-            SpecimenType = SpecimenType.Urine, Status = SampleStatus.Completed, CollectedAt = collectedAt,
+            FacilityId = facilityId,
+            LabOrderId = order.Id,
+            PatientId = patientId,
+            Barcode = $"9{Random.Shared.NextInt64(10_000_000_000, 99_999_999_999)}",
+            SpecimenType = SpecimenType.Urine,
+            Status = SampleStatus.Completed,
+            CollectedAt = collectedAt,
         };
         var item = new LabOrderItem
         {
-            FacilityId = facilityId, LabOrderId = order.Id, LabTestId = test.Id, TestCode = test.Code, TestName = test.Name, SampleId = sample.Id,
+            FacilityId = facilityId,
+            LabOrderId = order.Id,
+            LabTestId = test.Id,
+            TestCode = test.Code,
+            TestName = test.Name,
+            SampleId = sample.Id,
             Status = LabOrderItemStatus.Released,
         };
         var result = new LabResult
         {
-            FacilityId = facilityId, LabOrderId = order.Id, LabOrderItemId = item.Id, LabTestId = test.Id, SampleId = sample.Id, PatientId = patientId,
-            TestCode = test.Code, TestName = test.Name, ResultType = LabResultType.Culture, Status = LabResultStatus.Verified, ValueText = "Growth",
-            Organism = organism, ColonyCount = "> 10^5 CFU/ml", VerifiedAt = DateTimeOffset.UtcNow,
+            FacilityId = facilityId,
+            LabOrderId = order.Id,
+            LabOrderItemId = item.Id,
+            LabTestId = test.Id,
+            SampleId = sample.Id,
+            PatientId = patientId,
+            TestCode = test.Code,
+            TestName = test.Name,
+            ResultType = LabResultType.Culture,
+            Status = LabResultStatus.Verified,
+            ValueText = "Growth",
+            Organism = organism,
+            ColonyCount = "> 10^5 CFU/ml",
+            VerifiedAt = DateTimeOffset.UtcNow,
         };
         db.AddRange(order, sample, item, result);
         await db.SaveChangesAsync(Ct);
