@@ -366,7 +366,7 @@ internal static class SmartEndpoints
         {
             await context.HttpContext.Request.ReadFormAsync(context.HttpContext.RequestAborted);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or Microsoft.AspNetCore.Http.BadHttpRequestException)
+        catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or IOException)
         {
             return OAuth(OAuthError.InvalidRequest("Send the parameters as application/x-www-form-urlencoded."));
         }

@@ -94,7 +94,8 @@ public sealed class SmartOnFhirTests(HospitalServer server)
 
         // The partner moved to SMART no longer reads with its password session; a partner not moved still does.
         (await FhirAsync(partner, $"Patient/{shared}", null)).Refusal.ShouldBe((403, "smart-required"));
-        await frontOffice.PostAsync<Created>($"/api/v1/patients/{notShared}/consents", new CaptureConsentRequest(ConsentType.DataSharing, null, true, null, null, null, null, null));
+        await frontOffice.PostAsync<Created>($"/api/v1/patients/{notShared}/consents", new CaptureConsentRequest(ConsentType.DataSharing, null, true, null, null, null, null, null,
+            WitnessConfirmationId: await server.RecordSharingWitnessAsync(frontOffice, notShared)));
         (await FhirAsync(legacy, $"Patient/{notShared}", null)).Status.ShouldBe(200);
 
         // Introspection, for the client the token is its own; then revoked, it reads nothing.
@@ -146,7 +147,8 @@ public sealed class SmartOnFhirTests(HospitalServer server)
         var other = await RegisterAsync(frontOffice);
         foreach (var id in new[] { patient, other })
         {
-            await frontOffice.PostAsync<Created>($"/api/v1/patients/{id}/consents", new CaptureConsentRequest(ConsentType.DataSharing, null, true, null, null, null, null, null));
+            await frontOffice.PostAsync<Created>($"/api/v1/patients/{id}/consents", new CaptureConsentRequest(ConsentType.DataSharing, null, true, null, null, null, null, null,
+                WitnessConfirmationId: await server.RecordSharingWitnessAsync(frontOffice, id)));
         }
 
         var uhid = (await frontOffice.GetAsync<JsonElement>($"/api/v1/patients/{patient}")).GetProperty("uhid").GetString()!;
