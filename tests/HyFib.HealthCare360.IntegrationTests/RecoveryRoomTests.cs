@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.SharedKernel;
 using Users = HyFib.HealthCare360.IntegrationTests.HospitalServer.Users;
 
 namespace HyFib.HealthCare360.IntegrationTests;
