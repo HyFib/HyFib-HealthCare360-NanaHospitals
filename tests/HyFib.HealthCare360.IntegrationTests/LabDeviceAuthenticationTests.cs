@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Devices;
 using HyFib.HealthCare360.Platform.Approvals;
@@ -48,7 +49,7 @@ public sealed class LabDeviceAuthenticationTests(HospitalServer server)
         (await SharedSecretAsync(gate, connection, added.KeyId!, added.Secret!)).ShouldBe(LabDeviceAdmission.NotApproved);
 
         // Not by the one who added it; by another.
-        var self = await BirthsAndDeathsTests.RefusalAsync(maker, HttpMethod.Post, $"/api/v1/approvals/{added.Approval.Id}/approve", new ApproveRequest(null, added.Approval.Version));
+        var self = await RefusedCodeAsync(maker, $"/api/v1/approvals/{added.Approval.Id}/approve", new ApproveRequest(null, added.Approval.Version));
         self.ShouldBe("approval.self");
         await checker.PostAsync($"/api/v1/approvals/{added.Approval.Id}/approve", new ApproveRequest(null, added.Approval.Version));
 
@@ -200,4 +201,14 @@ public sealed class LabDeviceAuthenticationTests(HospitalServer server)
         using var created = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(1));
         return X509CertificateLoader.LoadPkcs12(created.Export(X509ContentType.Pkcs12), null);
     }
+
+    /// <summary>The refusal's code, whatever its status (an approval by the one who asked is 403 approval.self).</summary>
+    private static async Task<string?> RefusedCodeAsync(ApiClient client, string path, object body)
+    {
+        using var response = await client.SendRawAsync(HttpMethod.Post, path, body);
+        ((int)response.StatusCode).ShouldBeGreaterThanOrEqualTo(400);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
+        return problem.TryGetProperty("code", out var code) ? code.GetString() : null;
+    }
+
 }

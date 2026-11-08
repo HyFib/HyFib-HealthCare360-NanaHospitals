@@ -32,6 +32,12 @@ internal static class PcmAudio
     /// <summary>A frame is speech when it is this many times louder than the recording's background (its quietest tenth).</summary>
     public const double SpeechOverBackground = 4.0;
 
+    /// <summary>
+    /// The background is never taken as louder than this (about −34 dBFS): a recording without a pause, whose quietest
+    /// tenth is speech itself, is then still heard as speech rather than all dropped as background.
+    /// </summary>
+    public const double BackgroundCeiling = 0.02;
+
     public static bool TryRead(ReadOnlySpan<byte> wav, out PcmClip clip, out string problem)
     {
         clip = null!;
@@ -128,7 +134,7 @@ internal static class PcmAudio
 
         var sorted = levels.Order().ToArray();
         var background = sorted[Math.Min(sorted.Length - 1, sorted.Length / 10)];
-        var threshold = Math.Max(SilenceFloor, background * SpeechOverBackground);
+        var threshold = Math.Max(SilenceFloor, Math.Min(background, BackgroundCeiling) * SpeechOverBackground);
 
         var keep = new bool[frameCount];
         for (var f = 0; f < frameCount; f++)

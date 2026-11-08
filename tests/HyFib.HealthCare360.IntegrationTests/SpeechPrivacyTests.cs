@@ -44,7 +44,7 @@ public sealed class SpeechPrivacyTests(HospitalServer server)
             // Turning the agreement on is loosening a guarded setting: it waits for a second administrator.
             var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
             ApprovalRequestDto request;
-            using (var asked = await admin.SendRawAsync(HttpMethod.Put, "/api/v1/settings/ai.processingAgreement",
+            using (var asked = await admin.SendRawAsync(HttpMethod.Put, "/api/v1/admin/settings/ai.processingAgreement",
                        new SaveSettingRequest(JsonValue.Create(true), facilityId, false, null, null, "Agreement signed with the speech service.")))
             {
                 asked.StatusCode.ShouldBe(HttpStatusCode.Accepted);

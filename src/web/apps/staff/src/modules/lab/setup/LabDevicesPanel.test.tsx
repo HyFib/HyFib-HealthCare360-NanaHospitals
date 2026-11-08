@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { stubBrowserApis } from '@/test/appScreen';
 import { labDevicesApi, type LabDeviceDto } from '../api';
 import { describeDevice, LabDevicesPanel } from './LabDevicesPanel';
 
@@ -42,6 +43,10 @@ function renderPanel() {
     </Hc360ThemeProvider>,
   );
 }
+
+beforeEach(() => {
+  stubBrowserApis();
+});
 
 describe('LabDevicesPanel', () => {
   beforeEach(() => {

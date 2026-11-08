@@ -192,6 +192,7 @@ describe('the save request', () => {
       agentDeviceId: null,
       serial: null,
       listVersion: 7,
+      deviceAuthentication: 'None',
     });
   });
 

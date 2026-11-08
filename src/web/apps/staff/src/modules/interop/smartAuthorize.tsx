@@ -1,4 +1,14 @@
-import { Button, Field, Input, makeStyles, MessageBar, MessageBarBody, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Field,
+  Input,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { Page, PageHeader, Section } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -85,6 +95,7 @@ export function SmartAuthorizeScreen({
         {preview.isError ? (
           <MessageBar intent="error">
             <MessageBarBody>
+              <MessageBarTitle>Unknown app</MessageBarTitle>
               This app is not registered here, or it asked to return to an address not registered for it.
             </MessageBarBody>
           </MessageBar>
@@ -112,7 +123,10 @@ export function SmartAuthorizeScreen({
             )}
             {decide.isError && (
               <MessageBar intent="error">
-                <MessageBarBody>The app could not be authorized. Check the UHID and try again.</MessageBarBody>
+                <MessageBarBody>
+                  <MessageBarTitle>Not authorized</MessageBarTitle>
+                  The app could not be authorized. Check the UHID and try again.
+                </MessageBarBody>
               </MessageBar>
             )}
             <div className={styles.actions}>

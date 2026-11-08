@@ -97,7 +97,7 @@ public static class PersonalDataCatalogue
                 new("clinical.record_requests", "Requests for your medical records"),
                 new("interop.abdm_link_requests", "Records linked to your ABHA"),
                 new("interop.smart_authorization_codes", "Apps a staff member authorized to read your record", Counted: false),
-                new("interop.smart_access_tokens", "Access an authorized app was given to your record"),
+                new("interop.smart_access_tokens", "Access an authorized app was given to your record", Counted: false),
                 new("interop.abdm_care_contexts", "Each record linked to your ABHA", Counted: false),
                 new("interop.abdm_discoveries", "Searches for your records from your ABHA app", Counted: false),
                 new("interop.abdm_transfers", "Times your records were sent to another provider through ABDM"),

@@ -217,7 +217,7 @@ public sealed class SmartOnFhirTests(HospitalServer server)
             authorize.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         }
 
-        (await BirthsAndDeathsTests.RefusalAsync(maker, HttpMethod.Post, $"/api/v1/approvals/{registered.Approval.Id}/approve",
+        (await RefusedCodeAsync(maker, $"/api/v1/approvals/{registered.Approval.Id}/approve",
             new ApproveRequest(null, registered.Approval.Version))).ShouldBe("approval.self");
 
         // A write scope, a private key or a plain-http redirect cannot be registered.
@@ -306,4 +306,14 @@ public sealed class SmartOnFhirTests(HospitalServer server)
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/fhir+json"));
         return await client.Http.SendAsync(request, Ct);
     }
+
+    /// <summary>The refusal's code, whatever its status (an approval by the one who asked is 403 approval.self).</summary>
+    private static async Task<string?> RefusedCodeAsync(ApiClient client, string path, object body)
+    {
+        using var response = await client.SendRawAsync(HttpMethod.Post, path, body);
+        ((int)response.StatusCode).ShouldBeGreaterThanOrEqualTo(400);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
+        return problem.TryGetProperty("code", out var code) ? code.GetString() : null;
+    }
+
 }

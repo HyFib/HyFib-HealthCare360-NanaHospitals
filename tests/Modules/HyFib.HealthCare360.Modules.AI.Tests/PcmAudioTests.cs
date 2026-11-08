@@ -26,6 +26,10 @@ public sealed class PcmAudioTests
     }
 
     [Fact]
+    public void Speech_without_a_pause_is_kept_whole() =>
+        PcmAudio.StripSilence(new PcmClip(Rate, Tone(3))).Duration.TotalSeconds.ShouldBe(3, 0.02);
+
+    [Fact]
     public void A_recording_without_speech_keeps_nothing() =>
         PcmAudio.StripSilence(new PcmClip(Rate, Hiss(3))).Samples.ShouldBeEmpty();
 

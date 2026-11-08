@@ -4,7 +4,8 @@ import { expectNoAxeViolations } from '@hc360/ui/testing';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { stubBrowserApis } from '@/test/appScreen';
 import { mastersApi, type PractitionerDto, type PractitionerHprCheck } from './api';
 import { describeHprCheck, HprCheckPanel } from './HprCheckPanel';
 
@@ -37,6 +38,10 @@ function renderPanel(practitioner: PractitionerDto, dirty = false) {
     </Hc360ThemeProvider>,
   );
 }
+
+beforeEach(() => {
+  stubBrowserApis();
+});
 
 describe('describeHprCheck', () => {
   it('says what matched, what differs and where the answer came from', () => {

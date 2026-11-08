@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { stubBrowserApis } from '@/test/appScreen';
 import { api } from '@/lib/api';
 import { describeScope, SmartAuthorizeScreen } from './smartAuthorize';
 
@@ -29,6 +30,10 @@ function renderScreen(onRedirect = vi.fn()) {
   );
   return { ...view, onRedirect };
 }
+
+beforeEach(() => {
+  stubBrowserApis();
+});
 
 describe('describeScope', () => {
   it('says a scope in words', () => {
