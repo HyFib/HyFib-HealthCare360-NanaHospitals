@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.Patients.Features.Identity;
@@ -52,6 +53,18 @@ public static class PatientsPermissions
 
     /// <summary>Issue blocks of UHIDs for the desks' downtime kits, see which were entered from paper, and void the unusable.</summary>
     public const string Downtime = "patients.downtime";
+
+    /// <summary>
+    /// Enter records from paper older than their back-entry window: ask a second person to approve a late batch, and see
+    /// the windows in force.
+    /// </summary>
+    public const string BackEntry = "patients.back_entry";
+
+    /// <summary>Approve someone else's late back-entry of paper records.</summary>
+    public const string BackEntryApprove = "patients.back_entry.approve";
+
+    /// <summary>Print or read the pre-downtime pack (census, medication sheets, pending orders, OT list), on demand or the nightly one.</summary>
+    public const string DowntimePack = "patients.downtime_pack";
     public const string VisitsRead = "visits.read";
     public const string VisitsManage = "visits.manage";
 
@@ -96,7 +109,12 @@ public static class PatientsPermissions
         new(Consents, "Patients", "Capture and revoke patient consents", [.. Desk, .. Clinical]),
         new(Documents, "Patients", "Attach and view patient documents", [.. Desk, .. Clinical, SystemRoles.MrdOfficer, SystemRoles.InsuranceDesk]),
         new(IdentityVerify, "Patients", "Check a patient's identity with their Aadhaar fingerprint (UIDAI) or their ABHA (a code from ABDM)", Desk),
-        new(Downtime, "Patients", "Issue downtime UHID blocks for paper registration and follow their entry", [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
+        new(Downtime, "Patients", "Issue downtime UHID, visit, bill and receipt blocks for paper work, follow their entry and return them", [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
+        new(BackEntry, "Downtime", "Ask for a late back-entry of paper records older than their window",
+            [.. Desk, .. Clinical, SystemRoles.Billing, SystemRoles.Cashier, SystemRoles.MrdOfficer]),
+        new(BackEntryApprove, "Downtime", "Approve someone else's late back-entry of paper records", [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
+        new(DowntimePack, "Downtime", "Print the pre-downtime pack and read the nightly one (census, medication sheets, pending orders, OT list)",
+            [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer, SystemRoles.Nurse, SystemRoles.Doctor]),
         new(VisitsRead, "Visits", "View visits and queues", PlatformPermissions.PatientFacingStaff),
         new(VisitsManage, "Visits", "Create, cancel and complete visits", [.. Desk, .. Clinical]),
         new(VisitsCancelApprove, "Visits",
@@ -140,6 +158,12 @@ public sealed class PatientsModule : IModule
         services.AddScoped<IPatientLanguageSource, PatientLanguageSource>();
         services.AddScoped<IdentityCheckService>();
         services.AddScoped<DowntimeUhidService>();
+        services.AddScoped<BackEntryService>();
+        services.AddScoped<DowntimeNumberService>();
+        services.AddScoped<DowntimePackService>();
+        services.AddScoped<IDowntimePackSource, DowntimePackNumbers>();
+        services.AddHostedService<DowntimePackJob>();
+        services.AddSingleton(new DowntimeNumberSeries(DowntimeNumberKind.Visit, PatientsNumberSeries.Visit, BackEntryRecord.Visit, "visit"));
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -153,5 +177,6 @@ public sealed class PatientsModule : IModule
         PatientPhoneChangeEndpoints.Map(endpoints);
         IdentityCheckEndpoints.Map(endpoints);
         DowntimeUhidEndpoints.Map(endpoints);
+        DowntimeNumberEndpoints.Map(endpoints);
     }
 }

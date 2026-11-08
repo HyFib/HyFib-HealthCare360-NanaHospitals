@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 
@@ -17,7 +18,11 @@ public sealed record PaymentLineInput(
     public PaymentLineData ToData() => new(Mode, Amount, Reference, CardLast4, CardNetwork, ChequeNumber, ChequeBank, ChequeDate);
 }
 
-public sealed record CollectPaymentRequest(Guid BillId, IReadOnlyList<PaymentLineInput> Payments, string? Notes);
+/// <param name="Paper">
+/// A receipt written in the manual receipt book during a downtime: the downtime receipt number on it and the time on it,
+/// which the receipt keeps. The money is counted into the cashier's shift open now.
+/// </param>
+public sealed record CollectPaymentRequest(Guid BillId, IReadOnlyList<PaymentLineInput> Payments, string? Notes, PaperNumber? Paper = null);
 
 public sealed record CollectDepositRequest(IReadOnlyList<PaymentLineInput> Payments, string? Notes);
 
@@ -178,8 +183,9 @@ public sealed class PaymentLineInputValidator : AbstractValidator<PaymentLineInp
 
 public sealed class CollectPaymentRequestValidator : AbstractValidator<CollectPaymentRequest>
 {
-    public CollectPaymentRequestValidator()
+    public CollectPaymentRequestValidator(TimeProvider time)
     {
+        RuleFor(x => x.Paper!).SetValidator(new PaperNumberValidator(time)).OverridePropertyName("paper").When(x => x.Paper is not null);
         RuleFor(x => x.BillId).NotEmpty();
         RuleFor(x => x.Payments).NotEmpty().WithMessage("Add at least one payment.").Must(p => p.Count <= 10).WithMessage("Split a payment into at most 10 modes.");
         RuleForEach(x => x.Payments).SetValidator(new PaymentLineInputValidator());

@@ -108,6 +108,7 @@ public sealed class DiagnosticsModule : IModule
     {
         DiagnosticsRealtimeTopics.Register(services);
         services.AddScoped<DiagnosticsLookups>();
+        services.AddScoped<HyFib.HealthCare360.Modules.Patients.Domain.IDowntimePackSource, Features.DowntimePack.DowntimePackOrders>();
         services.AddScoped<ReportDocumentFrame>();
         services.AddScoped<INotificationDocumentSource, LabReportDocumentSource>();
         services.AddScoped<INotificationDocumentSource, RadiologyReportDocumentSource>();

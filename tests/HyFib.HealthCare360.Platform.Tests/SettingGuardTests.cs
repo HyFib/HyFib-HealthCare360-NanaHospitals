@@ -100,6 +100,22 @@ public sealed class SettingGuardTests
     }
 
     [Fact]
+    public void A_longer_back_entry_window_waits_and_a_shorter_one_is_saved_at_once()
+    {
+        // Each record type's window: more hours let older paper in without a second person's approval.
+        Waits("downtime.backEntryHours.visit", null, Number(96)).ShouldBeTrue("72 hours unless set");
+        Waits("downtime.backEntryHours.visit", Number(72), Number(24)).ShouldBeFalse();
+        Waits("downtime.backEntryHours.visit", Number(72), Number(14 * 24 + 1)).ShouldBeFalse("past 14 days the window keeps its 72 hours");
+        Waits("downtime.backEntryHours.visit", Number(72), Number(12.5m)).ShouldBeTrue("not a whole number: the window cannot read it");
+        Waits("downtime.backEntryHours.nursingChart", Number(24), Number(14 * 24)).ShouldBeTrue();
+        Waits("downtime.backEntryHours.registration", Number(2160), Number(24)).ShouldBeFalse();
+        Waits("downtime.backEntryHours.registration", Number(24), Number(2160)).ShouldBeTrue();
+        Waits("downtime.backEntryHours.receipt", Number(48), null).ShouldBeTrue("cleared, the default applies and nobody looked at which");
+        SettingGuard.Judge("downtime.backEntryHours.bill", Number(24), Number(48), secret: false).Summary
+            .ShouldBe("Back-entry window: bill from paper: 24 hours → 48 hours");
+    }
+
+    [Fact]
     public void A_grace_or_look_back_is_judged_as_its_module_reads_it()
     {
         Waits("inpatient.marGraceMinutes", Number(30), Number(60)).ShouldBeTrue("a dose shows overdue later");

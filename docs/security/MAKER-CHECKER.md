@@ -33,7 +33,7 @@ restriction lifted, the deceased status set or taken back at the desk, a sensiti
 put on only by a doctor), an allergy taken out of the checks or lowered, and a stay's medico-legal flag cleared; and a
 stay closed as expired (only with a confirmed death certificate, or a second doctor's approval pending post-mortem) or
 absconded (the nurse in charge approves), LAMA and DAMA witnessed (on the ward and from the emergency department), and a
-confirmed death certificate voided; a visit cancelled after the doctor started it; and in the theatre a side or
+confirmed death certificate voided; a visit cancelled after the doctor started it; paper entered after its back-entry window (a late back-entry, approved for one user, record type, span and count) and a back-entry window lengthened (a second administrator); and in the theatre a side or
 procedure changed after the WHO Sign-in (the checklist redone), site marking with a side booked, the swab and
 instrument counts witnessed with their discrepancies settled, and implants corrected, not deleted, after the operation
 starts.

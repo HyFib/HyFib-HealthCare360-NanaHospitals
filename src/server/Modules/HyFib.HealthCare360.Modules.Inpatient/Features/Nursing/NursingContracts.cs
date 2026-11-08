@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 
@@ -80,20 +82,18 @@ public sealed record PainAssessmentRequest(int Score, PainScaleKind Scale, strin
 
 internal static class NursingRules
 {
-    public static readonly TimeSpan LateEntryLimit = TimeSpan.FromHours(24);
-
-    public static bool WithinCharting(DateTimeOffset? at, DateTimeOffset now) =>
-        at is null || (at <= now.AddMinutes(5) && at >= now - LateEntryLimit);
+    // How far back an entry may be charted is the nursing chart's back-entry window (BackEntryWindows, 24 hours unless
+    // the administrator sets otherwise, at most 14 days); older needs a late back-entry approval.
 }
 
 public sealed class AddNursingNoteRequestValidator : AbstractValidator<AddNursingNoteRequest>
 {
-    public AddNursingNoteRequestValidator(TimeProvider time)
+    public AddNursingNoteRequestValidator(TimeProvider time, BackEntryService backEntry)
     {
         RuleFor(x => x.Category).IsInEnum();
         RuleFor(x => x.Note).NotEmpty().SafeText(4000);
-        RuleFor(x => x.NoteFor).Must(at => NursingRules.WithinCharting(at, time.GetUtcNow()))
-            .WithMessage("A note can describe the last 24 hours only, and not the future.");
+        RuleFor(x => x.NoteFor).NotInFuture(time).WithMessage("A note cannot describe the future.")
+            .WithinBackEntry(backEntry, BackEntryRecord.NursingChart);
     }
 }
 
@@ -111,15 +111,15 @@ public sealed class AddHandoverRequestValidator : AbstractValidator<AddHandoverR
 
 public sealed class AddIntakeOutputRequestValidator : AbstractValidator<AddIntakeOutputRequest>
 {
-    public AddIntakeOutputRequestValidator(TimeProvider time)
+    public AddIntakeOutputRequestValidator(TimeProvider time, BackEntryService backEntry)
     {
         RuleFor(x => x.Direction).IsInEnum();
         RuleFor(x => x.Route).IsInEnum();
         RuleFor(x => x).Must(x => FluidBalance.RouteMatches(x.Direction, x.Route)).WithName("route")
             .WithMessage("This route does not match the direction (for example urine is an output).");
         RuleFor(x => x.VolumeMl).InclusiveBetween(1, 10_000).WithMessage("Enter a volume between 1 and 10,000 ml.");
-        RuleFor(x => x.RecordedAt).Must(at => NursingRules.WithinCharting(at, time.GetUtcNow()))
-            .WithMessage("Entries can be made for the last 24 hours only, and not the future.");
+        RuleFor(x => x.RecordedAt).NotInFuture(time).WithMessage("An entry cannot be made for the future.")
+            .WithinBackEntry(backEntry, BackEntryRecord.NursingChart);
         RuleFor(x => x.Description).SafeText(200);
         RuleFor(x => x.Notes).SafeText(500);
     }
