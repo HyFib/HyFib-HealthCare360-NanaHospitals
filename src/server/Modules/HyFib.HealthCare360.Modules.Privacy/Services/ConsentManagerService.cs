@@ -245,7 +245,7 @@ public sealed class ConsentManagerService(
             || !long.TryParse(timestamp, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds)
             || !ConsentManagerProtocol.Verify(secret, timestamp, body, signature))
         {
-            logger.LogWarning("A consent manager event for {Code} was refused: its signature did not verify", code);
+            logger.LogWarning("A consent manager event for {Code} was refused: its signature did not verify", manager.Code);
             return Error.Forbidden("privacy.cm_signature", "The signature does not verify.");
         }
 
