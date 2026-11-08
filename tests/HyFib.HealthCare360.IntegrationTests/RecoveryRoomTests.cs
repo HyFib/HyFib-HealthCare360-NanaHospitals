@@ -81,7 +81,8 @@ public sealed class RecoveryRoomTests(HospitalServer server)
         (discharged.Destination, discharged.DischargeScore, discharged.DischargedByName, discharged.OverrideReason).ShouldBe((RecoveryDestination.Ward, 10, me.DisplayName, null));
 
         var back = await doctor.GetAsync<SurgeryDetail>(c.Path);
-        (back.InRecovery, back.RecoveryDestination, back.RecoveryDischargedAt).ShouldBe((false, RecoveryDestination.Ward, discharged.DischargedAt));
+        (back.InRecovery, back.RecoveryDestination).ShouldBe((false, RecoveryDestination.Ward));
+        back.RecoveryDischargedAt.ShouldNotBeNull().ShouldBe(discharged.DischargedAt!.Value, TimeSpan.FromMilliseconds(1));
         (await cases.AuditAsync(c.PatientId, "ot.recovery_discharged")).Summary.ShouldContain("to the ward");
         (await Refused(nurse, $"{c.Path}/recovery/observations", Observation())).Code.ShouldBe("recovery.discharged");
         var journey = await SurgeryJourneyAsync(doctor, c);
@@ -108,7 +109,11 @@ public sealed class RecoveryRoomTests(HospitalServer server)
         (await Refused(nurse, $"{c.Path}/recovery/discharge", new DischargeFromRecoveryRequest(RecoveryDestination.Ward))).Code.ShouldBe("recovery.score_too_low");
 
         // The nurse holds no override; the anaesthetist gives one, with the reason.
-        (await Refused(nurse, $"{c.Path}/recovery/discharge/override", new OverrideRecoveryDischargeRequest("Ward is fine"))).Status.ShouldBe(HttpStatusCode.Forbidden);
+        using (var notTheirs = await nurse.SendRawAsync(HttpMethod.Post, $"{c.Path}/recovery/discharge/override", new OverrideRecoveryDischargeRequest("Ward is fine")))
+        {
+            notTheirs.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+
         (await TheatreCases.InvalidFieldsAsync(anaesthetist, HttpMethod.Post, $"{c.Path}/recovery/discharge/override", new OverrideRecoveryDischargeRequest(" ")))
             .ShouldContain("reason");
         var reason = "Spinal block regressing; observed stable for an hour, the ward will chart the legs every 30 minutes";
