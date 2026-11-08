@@ -201,4 +201,10 @@ export const APPROVAL_PERMISSIONS = [
   'insurance.claims.manage',
   'insurance.claims.writeoff.approve',
   'insurance.preauth.manage',
+  // Support services and slice 15: a canteen sale cancelled, an ambulance charge waived, a transfusion reaction lowered,
+  // a dialysis patient's infection status taken off positive (each decided by whoever approves that kind).
+  'canteen.cancellations.approve',
+  'ambulance.waivers.approve',
+  'bloodbank.reactions.approve',
+  'dialysis.infection_status.approve',
 ] as const;
