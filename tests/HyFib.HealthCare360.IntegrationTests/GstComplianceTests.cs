@@ -137,7 +137,7 @@ public sealed class GstComplianceTests(HospitalServer server)
         await using var einvoicing = await server.EInvoicingAsync(EInvoicing.Today().AddDays(-1), Ct);
         await using var portal = await PortalAsync(enabled: true);
         var bill = await BillAsync(company, service);
-        var line = bill.Lines.Single();
+        var line = bill.Lines.Single(l => l.ServiceItemId == service.Id);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
 
@@ -192,7 +192,7 @@ public sealed class GstComplianceTests(HospitalServer server)
         var service = await TaxedServiceAsync(admin);
         var company = await CompanyAsync(admin);
         var bill = await BillAsync(company, service);
-        var line = bill.Lines.Single();
+        var line = bill.Lines.Single(l => l.ServiceItemId == service.Id);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
         var path = $"/api/v1/billing/bills/{bill.Id}/credit-notes";
