@@ -218,6 +218,20 @@ public sealed class SimulatorRecordSweep(HospitalDbContext db, IAuditLogger audi
                  AND u.instrument_code = split_part(l.provider, ':', 2) AND u.status = 'Open' AND NOT u.is_deleted
             WHERE l.provider LIKE 'simulator:%' AND l.operation = 'results' AND l.success
             """),
+        new("einvoices", "IRNs the e-invoice portal simulator made up", "critical",
+            "The Invoice Registration Portal never registered these invoices and notes, though they print an IRN and a QR code: the buyer's GSTR-2B and the hospital's GSTR-1 do not hold them. Cancel each IRN here as cancelled on the portal (the e-invoice register › the document), then get a real IRN from the portal; where the portal's 30 days have passed, settle it with the GST adviser.",
+            """
+            SELECT count(*) AS count, sum(e.invoice_value) AS amount, min(e.created_at) AS first, max(e.created_at) AS last,
+                   (array_agg(e.document_number ORDER BY e.created_at DESC))[1:5] AS examples
+            FROM billing.einvoices e
+            WHERE lower(trim(e.provider)) = 'simulator' AND NOT e.is_deleted
+            """,
+            // Open while the made-up IRN stands as registered.
+            """
+            SELECT e.document_number AS reference, e.created_at AS at, e.invoice_value AS amount, 'EInvoice' AS entity, e.id AS entity_id, NULL::uuid AS patient_id
+            FROM billing.einvoices e
+            WHERE lower(trim(e.provider)) = 'simulator' AND NOT e.is_deleted AND e.status = 'Registered'
+            """),
         new("gateway-settlements", "Settlements the payment simulator made up", "warning",
             "No money reached the bank: reverse the bank-credit and gateway-charge entries they made in the day book.",
             """

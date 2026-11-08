@@ -47,9 +47,10 @@ import { billDocument, billingApi, billingQueries, creditNoteDocument, type Bill
 import { BillLinesTable } from './BillLinesTable';
 import { BillPackagePanel } from './BillPackagePanel';
 import { BillTotalsCard } from './BillTotalsCard';
-import { creditableAmount } from './billTotals';
+import { creditableAmount, payerCreditableAmount } from './billTotals';
 import { CollectPaymentDialog } from './CollectPaymentDialog';
 import { CreditNoteDialog } from './CreditNoteDialog';
+import { DebitNoteDialog } from './DebitNoteDialog';
 import { DiscountDialog } from './DiscountDialog';
 import { useBillingPrint, useRefreshBilling } from './hooks';
 import { CREDIT_NOTE_KIND_LABEL, RECEIPT_PURPOSE_LABEL, REFUND_STATUS_LABEL, modeSummaryLabel } from './labels';
@@ -78,7 +79,7 @@ const useStyles = makeStyles({
   toolbar: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '8px' },
 });
 
-type DialogKind = 'discount' | 'finalize' | 'collect' | 'discard' | 'cancel' | 'refund' | 'credit' | 'link' | null;
+type DialogKind = 'discount' | 'finalize' | 'collect' | 'discard' | 'cancel' | 'refund' | 'credit' | 'debit' | 'link' | null;
 
 /** Refundable balance less refunds already requested or approved (they count against it until paid). */
 function refundableNow(bill: BillDetail): number {
@@ -551,9 +552,14 @@ export function BillWorkspace({
                       Request refund of {formatInr(refundable)}
                     </MenuItem>
                   )}
-                  {canCredit && creditable > 0 && (
+                  {canCredit && (creditable > 0 || payerCreditableAmount(bill) > 0) && (
                     <MenuItem icon={<ReceiptRegular />} onClick={openDialog('credit')}>
                       Credit note or write-off
+                    </MenuItem>
+                  )}
+                  {canCredit && !isDraft && !isCancelled && (
+                    <MenuItem icon={<ReceiptRegular />} onClick={openDialog('debit')}>
+                      Debit note
                     </MenuItem>
                   )}
                   {(isDraft || (!isCancelled && canCancel)) && <MenuDivider />}
@@ -658,6 +664,7 @@ export function BillWorkspace({
         />
       )}
       {dialog === 'credit' && <CreditNoteDialog bill={bill} open onClose={() => setDialog(null)} />}
+      {dialog === 'debit' && <DebitNoteDialog bill={bill} open onClose={() => setDialog(null)} />}
       {reversing && <ReceiptReversalDialog receiptId={reversing} open onClose={() => setReversing(null)} />}
     </div>
   );
