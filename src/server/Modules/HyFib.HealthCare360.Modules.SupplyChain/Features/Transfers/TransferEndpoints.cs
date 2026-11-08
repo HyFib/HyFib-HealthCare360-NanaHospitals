@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Purchase;
 using HyFib.HealthCare360.Modules.SupplyChain.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.SupplyChain.Features.Transfers;
 
@@ -8,6 +9,13 @@ namespace HyFib.HealthCare360.Modules.SupplyChain.Features.Transfers;
 public sealed record TransferLineInput(Guid ItemId, decimal Quantity, Guid? BatchId);
 
 public sealed record DispatchTransferRequest(Guid FromStoreId, Guid ToStoreId, string? Remarks, IReadOnlyList<TransferLineInput> Lines);
+
+/// <summary>A line counted in at the receiving store: only lines counted short need be sent.</summary>
+public sealed record ReceivedLineInput(Guid LineId, decimal ReceivedQuantity);
+
+/// <param name="Lines">The lines counted short; leave out to receive every line as sent.</param>
+/// <param name="Note">Why it arrived short (broken, missing), for whoever decides the shortfall.</param>
+public sealed record ReceiveTransferRequest(IReadOnlyList<ReceivedLineInput>? Lines, string? Note);
 
 public sealed record TransferListItem(
     Guid Id,
@@ -32,7 +40,8 @@ public sealed record TransferLineDto(
     decimal Mrp,
     decimal PurchaseRate,
     Guid SourceBatchId,
-    Guid? DestinationBatchId);
+    Guid? DestinationBatchId,
+    decimal? ReceivedQuantity = null);
 
 public sealed record TransferDetail(
     Guid Id,
@@ -68,6 +77,21 @@ public sealed class DispatchTransferRequestValidator : AbstractValidator<Dispatc
     }
 }
 
+public sealed class ReceiveTransferRequestValidator : AbstractValidator<ReceiveTransferRequest>
+{
+    public ReceiveTransferRequestValidator()
+    {
+        RuleFor(x => x.Note).SafeText(500);
+        RuleFor(x => x.Lines).Must(l => l is null || l.Count <= 200).WithMessage("A transfer has at most 200 lines.")
+            .Must(l => l is null || l.Select(x => x.LineId).Distinct().Count() == l.Count).WithMessage("Count each line once.");
+        RuleForEach(x => x.Lines).ChildRules(line =>
+        {
+            line.RuleFor(l => l.LineId).NotEmpty();
+            line.RuleFor(l => l.ReceivedQuantity).GreaterThanOrEqualTo(0);
+        });
+    }
+}
+
 /// <summary>/api/v1/inventory/transfers — stock transfer notes between stores (INV-06, PH-04).</summary>
 internal static class TransferEndpoints
 {
@@ -82,12 +106,23 @@ internal static class TransferEndpoints
         group.MapPost("/", async (DispatchTransferRequest r, TransferService transfers, CancellationToken ct) =>
                 (await transfers.DispatchAsync(r, ct)).ToCreated(d => $"/api/v1/inventory/transfers/{d.Id}"))
             .RequirePermission(SupplyChainPermissions.Transfers).WithValidation<DispatchTransferRequest>();
-        group.MapPost("/{id:guid}/receive", async (Guid id, TransferService transfers, CancellationToken ct) =>
-                (await transfers.ReceiveAsync(id, ct)).ToNoContent())
-            .RequirePermission(SupplyChainPermissions.Transfers);
+        group.MapPost("/{id:guid}/receive", Receive)
+            .RequirePermission(SupplyChainPermissions.Transfers).WithValidation<ReceiveTransferRequest>();
         group.MapPost("/{id:guid}/cancel", async (Guid id, InventoryReasonRequest r, TransferService transfers, CancellationToken ct) =>
                 (await transfers.CancelAsync(id, r.Reason, ct)).ToNoContent())
             .RequirePermission(SupplyChainPermissions.Transfers).WithValidation<InventoryReasonRequest>();
+    }
+
+    /// <summary>Received at once (204), or 202 with the request when a line was counted short and a second person decides.</summary>
+    private static async Task<IResult> Receive(Guid id, ReceiveTransferRequest request, TransferService transfers, CancellationToken ct)
+    {
+        var received = await transfers.ReceiveAsync(id, request, ct);
+        if (received.IsFailure)
+        {
+            return received.Error!.ToProblem();
+        }
+
+        return received.Value is { } asked ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked) : TypedResults.NoContent();
     }
 
     private static async Task<IResult> List(
@@ -137,7 +172,8 @@ internal static class TransferEndpoints
             stores.GetValueOrDefault(t.ToStoreId) ?? string.Empty, t.Status, t.DispatchedAt, t.ReceivedAt, t.CancelledAt, t.CancelReason, t.Remarks,
             t.TotalValue,
             t.Lines.OrderBy(l => l.ItemName).Select(l => new TransferLineDto(
-                l.Id, l.ItemId, l.ItemName, l.BatchNumber, l.ExpiryDate, l.Quantity, l.Mrp, l.PurchaseRate, l.SourceBatchId, l.DestinationBatchId)).ToList(),
+                l.Id, l.ItemId, l.ItemName, l.BatchNumber, l.ExpiryDate, l.Quantity, l.Mrp, l.PurchaseRate, l.SourceBatchId, l.DestinationBatchId,
+                l.ReceivedQuantity)).ToList(),
             t.Version));
     }
 }

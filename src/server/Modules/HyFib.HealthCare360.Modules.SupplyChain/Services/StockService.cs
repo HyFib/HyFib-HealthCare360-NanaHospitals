@@ -101,7 +101,8 @@ public sealed record BatchStock(
     bool IsExpired,
     bool IsBlocked,
     string? BlockReason,
-    int? DaysToExpiry);
+    int? DaysToExpiry,
+    bool IsRecalled = false);
 
 /// <summary>
 /// The only way stock quantities change (INV-04); used by SupplyChain documents and by other modules (Pharmacy
@@ -683,7 +684,8 @@ public sealed class StockService(HospitalDbContext db, ICurrentUser currentUser,
 
     internal static BatchStock ToBatchStock(StockBatch b, DateOnly today) => new(
         b.Id, b.StoreId, b.ItemId, b.BatchNumber, b.ExpiryDate, b.Mrp, b.PurchaseRate, b.GstRate, b.QuantityOnHand, b.QuantityReserved,
-        b.QuantityAvailable, b.IsExpired(today), b.IsBlocked, b.BlockReason, b.ExpiryDate is { } expiry ? expiry.DayNumber - today.DayNumber : null);
+        b.QuantityAvailable, b.IsExpired(today), b.IsBlocked, b.BlockReason, b.ExpiryDate is { } expiry ? expiry.DayNumber - today.DayNumber : null,
+        b.IsRecalled);
 
     // ------------------------------------------------------------------ internals
 

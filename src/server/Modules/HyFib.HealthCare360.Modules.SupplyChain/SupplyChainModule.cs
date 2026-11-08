@@ -30,6 +30,9 @@ public static class SupplyChainPermissions
     public const string IndentsIssue = "inventory.indents.issue";
     public const string Transfers = "inventory.transfers";
     public const string AdjustmentsApprove = "inventory.adjustments.approve";
+
+    /// <summary>Approve a batch held on a recall released for use, asked for by someone else (<see cref="Services.RecallReleaseApprovals"/>).</summary>
+    public const string RecallRelease = "inventory.recall.release";
     public const string Counts = "inventory.counts";
     public const string PurchaseManage = "purchase.manage";
     public const string PurchaseApprove = "purchase.approve";
@@ -75,6 +78,9 @@ public static class SupplyChainPermissions
         // PH-04: pharmacies move stock between OP and IP pharmacy and back to the central store.
         new(Transfers, "Inventory", "Dispatch and receive stock transfers between stores", [.. StoreStaff, SystemRoles.Pharmacist]),
         new(AdjustmentsApprove, "Inventory", "Approve stock adjustments and write-offs (not your own)", [SystemRoles.HospitalAdmin]),
+
+        // A recall is a patient-safety hold: the pharmacist decides when a recalled batch may be used again.
+        new(RecallRelease, "Inventory", "Approve a recalled batch released for use (not your own request)", [SystemRoles.Pharmacist, SystemRoles.HospitalAdmin]),
         new(Counts, "Inventory", "Run physical stock counts and raise stock adjustments", StoreStaff),
         new(PurchaseManage, "Purchase", "Vendors, purchase requisitions and purchase orders", [.. StoreStaff, SystemRoles.PurchaseOfficer]),
         new(PurchaseApprove, "Purchase", "Approve purchase requisitions and purchase orders", [SystemRoles.HospitalAdmin]),
@@ -113,6 +119,7 @@ public sealed class SupplyChainModule : IModule
         services.AddScoped<StockService>();
         services.AddScoped<DrugClassApprovals>();
         services.AddScoped<ItemPriceApprovals>();
+        services.AddScoped<RecallReleaseApprovals>();
         services.AddScoped<PurchaseService>();
         services.AddScoped<GoodsReceiptService>();
         services.AddScoped<IndentService>();
@@ -131,6 +138,7 @@ public sealed class SupplyChainModule : IModule
         ItemEndpoints.Map(endpoints);
         ColdChainEndpoints.Map(endpoints);
         StoreEndpoints.Map(endpoints);
+        StoreLevelEndpoints.Map(endpoints);
         StockEndpoints.Map(endpoints);
         InventoryReportEndpoints.Map(endpoints);
         IndentEndpoints.Map(endpoints);
