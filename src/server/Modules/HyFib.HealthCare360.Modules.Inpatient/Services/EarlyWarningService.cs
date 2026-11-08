@@ -88,15 +88,15 @@ public sealed class EarlyWarningService(
     }
 
     /// <summary>
-    /// The reminder: every escalation still open past its level's time (<see cref="EarlyWarningEscalation.ReminderAfter"/>,
-    /// 30 minutes urgent, 15 emergency) is told again, once, to the stay's consultant and the nurses in charge, marked as a
+    /// The reminder: every escalation still open 30 minutes after it was raised (<see cref="EarlyWarningEscalation.ReminderAfter"/>,
+    /// urgent or emergency) is told again, once, to the stay's consultant and the nurses in charge, marked as a
     /// reminder and audited at Warning (<c>inpatient.news2_reminder</c>). One answered before its time is never reminded.
     /// Run by <see cref="EarlyWarningReminderJob"/> every 5 minutes across facilities; returns how many it reminded of.
     /// </summary>
     public async Task<int> RemindUnansweredAsync(CancellationToken ct)
     {
         var now = time.GetUtcNow();
-        var earliestDue = now - EarlyWarningEscalation.ReminderAfter(EscalationLevel.Emergency);
+        var earliestDue = now - EarlyWarningEscalation.ReminderAfter;
         var candidates = await db.Set<EarlyWarningEscalation>()
             .IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(e => e.Status == EscalationStatus.Open && e.ReminderSentAt == null && e.RaisedAt <= earliestDue)

@@ -33,9 +33,9 @@ public sealed class WardCareRuleTests
     [Theory]
     [InlineData(EscalationLevel.Urgent, 29, false)]
     [InlineData(EscalationLevel.Urgent, 30, true)]
-    [InlineData(EscalationLevel.Emergency, 14, false)]
-    [InlineData(EscalationLevel.Emergency, 15, true)]
-    public void An_unanswered_escalation_is_due_a_reminder_after_30_minutes_urgent_and_15_emergency(EscalationLevel level, int minutes, bool due) =>
+    [InlineData(EscalationLevel.Emergency, 29, false)]
+    [InlineData(EscalationLevel.Emergency, 30, true)]
+    public void An_unanswered_escalation_urgent_or_emergency_is_due_a_reminder_after_30_minutes(EscalationLevel level, int minutes, bool due) =>
         new EarlyWarningEscalation { Level = level, RaisedAt = Now, VitalsRecordedAt = Now.AddHours(-6) }
             .IsReminderDue(Now.AddMinutes(minutes)).ShouldBe(due, "counted from when it was raised, not from vital signs entered late");
 

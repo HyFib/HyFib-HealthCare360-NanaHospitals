@@ -167,8 +167,7 @@ isScoreComplete, summary, level, status (Open, Responded), raisedAt, openMinutes
 respondedByDoctor, outcome, response, minutesToRespond, version, reminderSentAt}`.
 
 **Reminder.** An escalation nobody has answered is told again, once, to the same people, titled "Reminder: NEWS2 …
-unanswered for N min": 30 minutes after it was raised for an urgent review, 15 for an emergency (NEWS2 asks for an
-emergency response at once). The time counts from when the escalation was raised, so vital signs entered late do not set
+unanswered for N min": 30 minutes after it was raised, for an urgent review and an emergency alike. The time counts from when the escalation was raised, so vital signs entered late do not set
 one off at once; one answered first is never reminded. `EarlyWarningReminderJob` checks every 5 minutes on nodes that run
 jobs, so a reminder is at most 5 minutes late; it records `reminderSentAt` on the escalation (shown on the ward's list)
 and audits `inpatient.news2_reminder` (Warning). It does not widen the circle (a duty doctor or the rapid response team)
@@ -339,7 +338,7 @@ clearance check, so the final bill is complete.
 * Number series: `admission` → `{FAC}IP{YY}{SEQ:6}`, yearly reset.
 * Notifications (platform templates, SMS): `admission.admitted` {name, ward, bed, doctor}; `discharge.completed` {name}.
 * Job: `CountersignOverdueJob` — every 15 minutes when `PlatformOptions.RunsJobs`: tells the doctor and the nurses in charge of each verbal or telephone order, and each nurse's stop, past its countersign time (once each); and the nurses in charge of each urgent transfer not accepted within the hour (once each).
-* Job: `EarlyWarningReminderJob` — every 5 minutes when `PlatformOptions.RunsJobs`: reminds the consultant and the nurses in charge, once, of each NEWS2 escalation unanswered after 30 minutes (urgent) or 15 (emergency).
+* Job: `EarlyWarningReminderJob` — every 5 minutes when `PlatformOptions.RunsJobs`: reminds the consultant and the nurses in charge, once, of each NEWS2 escalation unanswered after 30 minutes, urgent or emergency.
 * Job: `BedDayChargeJob` — runs at start-up and hourly when `PlatformOptions.RunsJobs`; posts missing bed/nursing days of active and recently discharged admissions (`InpatientChargeService.StaysDueAsync`) and retries unaccepted consultant-visit charges. A day or visit billing refuses is kept by billing until it is charged: System health warns of it, the stay's final bill and discharge wait for it, and the stay's days are posted again however long ago it ended (`docs/modules/billing.md`, automatic charges); a ward's bed charge, and the one a stay in progress took with its bed, can't be taken out of use meanwhile (`docs/modules/masters.md`). Each bed day tells Billing whether the bed was in a critical-care ward (`Ward.IsCriticalCareType`: ICU, NICU, PICU, HDU) or a room, which decides its GST (room rent above ₹5,000 a day, see `docs/modules/billing.md`).
 * Seed `InpatientSeeder` (Order 160, only with `SeedDemoData`): GWM General Ward — Male (12, BED-GEN), GWF General Ward — Female (12, BED-GEN), SPW Semi-Private (8 in 4 rooms, BED-SEMI), PVT Private (8 rooms, BED-PVT), DLX Deluxe (4 rooms, BED-DLX), ICU (8, BED-ICU, monitors, 4 ventilators), NICU (6, BED-NICU).
 

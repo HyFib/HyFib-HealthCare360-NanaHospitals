@@ -7,7 +7,7 @@ namespace HyFib.HealthCare360.Modules.Inpatient.Services;
 
 /// <summary>
 /// Every 5 minutes, reminds the ward of each NEWS2 escalation nobody has answered in its time
-/// (<see cref="EarlyWarningService.RemindUnansweredAsync"/>): 30 minutes for an urgent review, 15 for an emergency, so a
+/// (<see cref="EarlyWarningService.RemindUnansweredAsync"/>) 30 minutes after it was raised, urgent or emergency, so a
 /// reminder is at most 5 minutes late. Runs only on nodes that run jobs (<see cref="PlatformOptions.RunsJobs"/>).
 /// </summary>
 internal sealed class EarlyWarningReminderJob(IServiceScopeFactory scopeFactory, IOptions<PlatformOptions> options, TimeProvider time, ILogger<EarlyWarningReminderJob> logger)

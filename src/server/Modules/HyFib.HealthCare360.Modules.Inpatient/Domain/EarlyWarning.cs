@@ -77,16 +77,14 @@ public sealed class EarlyWarningEscalation : AuditableEntity, IFacilityScoped
     public DateTimeOffset? ReminderSentAt { get; set; }
 
     /// <summary>
-    /// How long an escalation waits for a response before the ward is reminded: 30 minutes for an urgent review, 15 for an
-    /// emergency (NEWS2 asks for an emergency response at once). Counted from when the escalation was raised, so vital signs
-    /// entered late do not set off a reminder the moment they are saved.
+    /// How long an escalation, urgent or emergency, waits for a response before the ward is reminded: 30 minutes. Counted
+    /// from when the escalation was raised, so vital signs entered late do not set off a reminder the moment they are saved.
     /// </summary>
-    public static TimeSpan ReminderAfter(EscalationLevel level) =>
-        level == EscalationLevel.Emergency ? TimeSpan.FromMinutes(15) : TimeSpan.FromMinutes(30);
+    public static readonly TimeSpan ReminderAfter = TimeSpan.FromMinutes(30);
 
     /// <summary>Still open, not yet reminded, and waiting longer than its level allows.</summary>
     public bool IsReminderDue(DateTimeOffset now) =>
-        Status == EscalationStatus.Open && ReminderSentAt is null && now - RaisedAt >= ReminderAfter(Level);
+        Status == EscalationStatus.Open && ReminderSentAt is null && now - RaisedAt >= ReminderAfter;
 
     /// <summary>Minutes from the vital signs being recorded to the response.</summary>
     public int? MinutesToRespond => RespondedAt is { } at ? (int)Math.Max(0, (at - VitalsRecordedAt).TotalMinutes) : null;
