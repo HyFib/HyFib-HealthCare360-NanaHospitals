@@ -1,6 +1,7 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import { ApiError, formatDate } from '@hc360/core';
 import type * as Ui from '@hc360/ui';
+import { expectNoAxeViolations } from '@hc360/ui/testing';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -9,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as PatientsApi from './api';
 import { consentApi, type ConsentDto, type WhatsAppConsentDto } from './api';
 import { ConsentsPanel, RecordConsentForm } from './ConsentsPanel';
+import type * as WitnessApi from '@/modules/witness/api';
 
 // The server, the toasts and the signed-in user are outside the test; the panel's own behaviour is what is tested.
 const listConsents = vi.hoisted(() => vi.fn());
@@ -30,6 +32,13 @@ vi.mock('./api', async (importOriginal) => {
 const notify = vi.hoisted(() => ({ success: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn() }));
 vi.mock('@hc360/ui', async (importOriginal) => ({ ...(await importOriginal<typeof Ui>()), useNotify: () => notify }));
 vi.mock('@/lib/permissions', () => ({ usePermission: () => true }));
+// The whole record shared with no signed form is witnessed at this screen (MAKER-CHECKER.md, slice 14).
+const confirmWitness = vi.hoisted(() => vi.fn());
+vi.mock('@/modules/witness/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof WitnessApi>();
+  return { ...actual, witnessApi: { ...actual.witnessApi, confirm: confirmWitness } };
+});
+const PASSWORD = 'Witness-pass-1';
 
 function renderWithProviders(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -73,12 +82,30 @@ describe('RecordConsentForm', () => {
     Object.values(notify).forEach((spy) => spy.mockClear());
   });
 
-  it('saves only once the consent is chosen, then says what changes and closes', async () => {
+  it('saves the whole record shared only once a witness confirms at the screen, then says what changes and closes', async () => {
+    confirmWitness.mockReset().mockResolvedValue({
+      confirmationId: 'w1',
+      userId: 'u2',
+      name: 'Meena Iyer',
+      expiresAt: '2026-11-08T10:05:00Z',
+    });
     const user = userEvent.setup();
     const { onClose, save } = renderForm();
     expect(save).toBeDisabled();
 
     await user.selectOptions(screen.getByRole('combobox', { name: /^Consent/ }), 'DataSharing');
+    // No typed witness name: the witness proves who they are.
+    expect(screen.queryByRole('textbox', { name: /^Witness$/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/Sharing the whole record with no signed form is witnessed/)).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    await expectNoAxeViolations(document.body);
+
+    await user.type(screen.getByLabelText(/Witness's user name/), 'meena');
+    await user.type(screen.getByLabelText(/Witness's password/), PASSWORD);
+    await user.click(screen.getByRole('button', { name: 'Confirm witness' }));
+    expect(confirmWitness).toHaveBeenCalledWith(
+      expect.objectContaining({ userName: 'meena', purpose: 'consent.record_sharing', patientId: 'p1' }),
+    );
     await waitFor(() => expect(save).toBeEnabled());
     await user.click(save);
 
@@ -93,6 +120,7 @@ describe('RecordConsentForm', () => {
       documentFileId: null,
       notes: null,
       sharingScope: null,
+      witnessConfirmationId: 'w1',
     });
     expect(notify.success).toHaveBeenCalledWith(
       'Consent recorded',

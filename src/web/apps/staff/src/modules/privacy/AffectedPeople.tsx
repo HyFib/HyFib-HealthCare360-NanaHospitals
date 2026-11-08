@@ -32,6 +32,7 @@ import {
 } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { ReasonDialog } from '@/modules/hr/shared/ReasonDialog';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 import {
   AFFECTED_PAGE_SIZE,
@@ -80,15 +81,21 @@ export function AffectedPeople({
   const styles = useStyles();
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<AffectedPatientItem | null>(null);
   const affected = useQuery(privacyQueries.affected(breach.id, page));
   const step = breachSteps(breach).addPeople;
   const closed = breach.status === 'Closed';
 
-  const remove = async (person: AffectedPatientItem) => {
-    await command.run(() => privacyApi.removeAffected(breach.id, person.patientId), {
-      success: `${person.fullName} removed from the list`,
-      failure: 'Could not remove the patient',
+  // Taking someone off the list waits for the Data Protection Officer, with why (MAKER-CHECKER.md, slice 14).
+  const remove = async (person: AffectedPatientItem, reason: string) => {
+    const result = await command.run(() => privacyApi.removeAffected(breach.id, [person.patientId], reason), {
+      success: 'Asked for approval',
+      successBody: `${person.fullName} stays on the list, and is sent the notice if it goes out meanwhile, until the Data Protection Officer agrees.`,
+      failure: 'Could not ask to take the patient off the list',
     });
+    if (result.ok) {
+      setRemoving(null);
+    }
     void queryClient.invalidateQueries({ queryKey: privacyKeys.affected(breach.id) });
   };
 
@@ -173,11 +180,11 @@ export function AffectedPeople({
               size="small"
               appearance="subtle"
               icon={<PersonDeleteRegular />}
-              disabled={command.busy}
-              onClick={() => void remove(p)}
-              aria-label={`Remove ${p.fullName} from the list`}
+              disabled={command.busy || Boolean(breach.removalAskedAt)}
+              onClick={() => setRemoving(p)}
+              aria-label={`Ask to take ${p.fullName} off the list`}
             >
-              Remove
+              Take off
             </Button>
           ) : null
         }
@@ -188,7 +195,30 @@ export function AffectedPeople({
         totalCount={affected.data?.totalCount}
         onPageChange={onPageChange}
       />
+      {breach.removalAskedAt && (
+        <MessageBar intent="info" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Waiting for the Data Protection Officer</MessageBarTitle>
+            Taking patients off this list was asked for {formatDateTime(breach.removalAskedAt)} and waits for the Data
+            Protection Officer. They stay on it until then; another request waits until this one is decided.
+          </MessageBarBody>
+        </MessageBar>
+      )}
       <AddPeopleDialog open={adding} breachId={breach.id} onClose={() => setAdding(false)} />
+      {removing && (
+        <ReasonDialog
+          open
+          title={`Take ${removing.fullName} off the list`}
+          description="Say why this patient was not affected. The Data Protection Officer decides, not you; the audit trail keeps who was taken off and why."
+          label="Why they are taken off"
+          required
+          maxLength={500}
+          confirmLabel="Ask for approval"
+          busy={command.busy}
+          onConfirm={(reason) => void remove(removing, reason)}
+          onCancel={() => setRemoving(null)}
+        />
+      )}
     </Section>
   );
 }

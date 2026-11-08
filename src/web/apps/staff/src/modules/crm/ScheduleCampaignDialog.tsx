@@ -11,6 +11,7 @@ import {
   Input,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Spinner,
 } from '@fluentui/react-components';
 import { CalendarClockRegular } from '@fluentui/react-icons';
@@ -36,11 +37,14 @@ const REFUSALS: Record<string, string> = {
   'campaign.no_portal_url':
     "The hospital's public portal address is not set, so the opt-out link cannot be built. Ask an administrator to set 'portal.baseUrl'.",
   'campaign.not_draft': 'Only a draft can be scheduled. Someone may have scheduled or cancelled it already.',
+  'approval.already_requested':
+    'Scheduling this campaign has been asked for already and waits for approval. Withdraw that request first to ask again.',
 };
 
 /**
- * Schedules a draft campaign. Messages go out only between 10:00 and 21:00 (TRAI); a time outside the window waits for
- * the next morning. The audience is counted again at send time, so late opt-outs are respected.
+ * Asks for a draft campaign to be scheduled: someone other than its author approves it first (MAKER-CHECKER.md, slice
+ * 14), and it stays a draft until then. Messages go out only between 10:00 and 21:00 (TRAI); a time outside the window
+ * waits for the next morning. The audience is counted again at send time, so late opt-outs are respected.
  */
 export function ScheduleCampaignDialog({
   open,
@@ -85,8 +89,10 @@ function Body({ onClose, campaign }: { onClose: () => void; campaign: CampaignDe
     try {
       await crmApi.scheduleCampaign(campaign.id, at);
       notify.success(
-        'Campaign scheduled',
-        inSendingWindow(value) ? undefined : 'It will start at 10:00, when the sending window opens.',
+        'Asked for approval',
+        `“${campaign.name}” is scheduled when someone other than its author approves it; it stays a draft until then.${
+          inSendingWindow(value) ? '' : ' Sending will start at 10:00, when the sending window opens.'
+        }`,
       );
       void queryClient.invalidateQueries({ queryKey: crmKeys.campaigns });
       onClose();
@@ -138,6 +144,13 @@ function Body({ onClose, campaign }: { onClose: () => void; campaign: CampaignDe
             </Caption1>
           )}
           <Caption1>The saved draft is what gets sent. Save any changes to the message or audience first.</Caption1>
+          <MessageBar intent="info" layout="multiline">
+            <MessageBarBody>
+              <MessageBarTitle>Approved by someone else</MessageBarTitle>
+              Someone other than the campaign&apos;s author approves it before it is scheduled: not you if you wrote or
+              last edited it. Editing the draft meanwhile means asking again.
+            </MessageBarBody>
+          </MessageBar>
           {error && (
             <MessageBar intent="error">
               <MessageBarBody>{error}</MessageBarBody>
@@ -154,7 +167,7 @@ function Body({ onClose, campaign }: { onClose: () => void; campaign: CampaignDe
             disabled={busy || audience.data?.count === 0}
             icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
-            Schedule
+            Ask for approval
           </Button>
         </DialogActions>
       </DialogBody>

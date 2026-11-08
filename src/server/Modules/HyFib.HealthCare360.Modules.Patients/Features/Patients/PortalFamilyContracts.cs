@@ -12,6 +12,12 @@ public sealed record LinkFamilyMemberRequest(string AccountPhone, FamilyRelation
 
 public sealed record FamilyLinkCreated(Guid Id);
 
+/// <summary>The code went to the patient's own number (<paramref name="SentTo"/>, masked); nothing is shared until it is entered.</summary>
+public sealed record FamilyDeskCodeSent(Guid CodeId, string SentTo, DateTimeOffset ExpiresAt);
+
+/// <summary>The code the patient read out, and who agreed (the patient, or their guardian by name).</summary>
+public sealed record ConfirmFamilyLinkRequest(string Code, string ConsentGivenBy);
+
 public sealed record RevokeFamilyLinkRequest(string Reason);
 
 public sealed record PortalFamilyLinkDto(
@@ -73,6 +79,16 @@ public sealed class LinkFamilyMemberRequestValidator : AbstractValidator<LinkFam
             .WithMessage("Say who agreed: the patient, or their guardian by name.");
         RuleFor(x => x.IdentityChecked).Equal(true)
             .WithMessage("Check who the patient and the family member are before sharing the records.");
+    }
+}
+
+public sealed class ConfirmFamilyLinkRequestValidator : AbstractValidator<ConfirmFamilyLinkRequest>
+{
+    public ConfirmFamilyLinkRequestValidator()
+    {
+        RuleFor(x => x.Code).NotEmpty().WithMessage("Enter the code the patient received.").MaximumLength(10);
+        RuleFor(x => x.ConsentGivenBy).NotEmpty().SafeText(200)
+            .WithMessage("Say who agreed: the patient, or their guardian by name.");
     }
 }
 

@@ -112,7 +112,7 @@ public sealed class FhirSortTests(HospitalServer server)
     }
 
     /// <summary>A patient registered at the front desk, with a consent to share their records.</summary>
-    private static async Task<string> RegisterAsync(ApiClient frontOffice, string firstName, string lastName, Gender gender, DateOnly? born, int? ageYears)
+    private async Task<string> RegisterAsync(ApiClient frontOffice, string firstName, string lastName, Gender gender, DateOnly? born, int? ageYears)
     {
         var phone = "9" + string.Concat(Enumerable.Range(0, 9).Select(_ => (char)('0' + Random.Shared.Next(10))));
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
@@ -124,7 +124,8 @@ public sealed class FhirSortTests(HospitalServer server)
             Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
             ConfirmedNotDuplicate: true));
         await frontOffice.PostAsync<Created>($"/api/v1/patients/{patient.Id}/consents",
-            new CaptureConsentRequest(ConsentType.DataSharing, null, true, null, null, null, null, null));
+            new CaptureConsentRequest(ConsentType.DataSharing, null, true, null, null, null, null, null,
+                WitnessConfirmationId: await server.RecordSharingWitnessAsync(frontOffice, patient.Id)));
         return patient.Id.ToString("D");
     }
 }

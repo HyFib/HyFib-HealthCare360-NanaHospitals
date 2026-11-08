@@ -82,7 +82,9 @@ public sealed record IncidentDetail(
     bool InvolvesDevice,
     bool IsDeviceRelated,
     IReadOnlyList<IncidentMvpiItem> MvpiReports,
-    uint Version);
+    uint Version,
+    DateTimeOffset? ClosureAskedAt = null,
+    DateTimeOffset? DowngradeAskedAt = null);
 
 /// <summary>
 /// Re-grading after review (type, harm grade, sentinel classification, location details, and whether a medical device was
@@ -98,7 +100,8 @@ public sealed record UpdateIncidentRequest(
     Guid? PatientId,
     IReadOnlyList<Guid>? InvolvedStaffUserIds,
     uint Version,
-    bool InvolvesDevice = false);
+    bool InvolvesDevice = false,
+    string? Reason = null);
 
 public sealed record TransitionIncidentRequest(IncidentStatus Status, string? Note);
 
@@ -159,6 +162,7 @@ public sealed class UpdateIncidentRequestValidator : AbstractValidator<UpdateInc
     {
         RuleFor(x => x.Location).NotEmpty().SafeText(150);
         RuleFor(x => x.InvolvedStaffUserIds).Must(ids => ids is null || ids.Count <= 20).WithMessage("At most 20 staff members.");
+        RuleFor(x => x.Reason).SafeText(500);
     }
 }
 
