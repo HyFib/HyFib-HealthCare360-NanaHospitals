@@ -12,6 +12,7 @@ import {
   makeStyles,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Spinner,
   Table,
   TableBody,
@@ -359,7 +360,10 @@ function ResultBody({
         </div>
         {review && result.hasCriticalFindings && (
           <MessageBar intent="error">
-            <MessageBarBody>This report has critical findings. Act on it and record what you did.</MessageBarBody>
+            <MessageBarBody>
+              <MessageBarTitle>Critical findings</MessageBarTitle>
+              Act on this report and record what you did.
+            </MessageBarBody>
           </MessageBar>
         )}
         <ResultReport result={result} study={study} canOpen={canOpen} />
