@@ -115,8 +115,19 @@ public sealed class AnalyticsTargetsAndStatutoryReportTests(HospitalServer serve
             // A bill of 15 Feb 2019: a consultation at 0% (₹1,000) and a procedure at 18% (₹2,000 + ₹180 CGST + ₹180 SGST).
             var bill = new Bill
             {
-                FacilityId = facilityId, BillNumber = "ITGST" + Guid.NewGuid().ToString("N")[..8], Type = BillType.OutPatient, Status = BillStatus.Paid, PatientId = patientId,
-                GrossAmount = 3360m, TaxableAmount = 3000m, CgstAmount = 180m, SgstAmount = 180m, TaxAmount = 360m, NetAmount = 3360m, PatientAmount = 3360m, PaidAmount = 3360m,
+                FacilityId = facilityId,
+                BillNumber = "ITGST" + Guid.NewGuid().ToString("N")[..8],
+                Type = BillType.OutPatient,
+                Status = BillStatus.Paid,
+                PatientId = patientId,
+                GrossAmount = 3360m,
+                TaxableAmount = 3000m,
+                CgstAmount = 180m,
+                SgstAmount = 180m,
+                TaxAmount = 360m,
+                NetAmount = 3360m,
+                PatientAmount = 3360m,
+                PaidAmount = 3360m,
                 FinalizedAt = new DateTimeOffset(2019, 2, 15, 12, 0, 0, TimeSpan.FromMinutes(330)),
             };
             var consultation = Line(bill, serviceItemId, "999311", 0m, 1000m, 0m);
@@ -127,8 +138,14 @@ public sealed class AnalyticsTargetsAndStatutoryReportTests(HospitalServer serve
             // A GST credit note of 20 Feb 2019 takes ₹590 off the procedure: ₹500 taxable value and ₹90 GST.
             var note = new CreditNote
             {
-                FacilityId = facilityId, Number = "ITCN" + Guid.NewGuid().ToString("N")[..8], Kind = CreditNoteKind.CreditNote, BillId = bill.Id, PatientId = patientId,
-                Amount = 590m, Reason = "Rate corrected", IssuedAt = new DateTimeOffset(2019, 2, 20, 12, 0, 0, TimeSpan.FromMinutes(330)),
+                FacilityId = facilityId,
+                Number = "ITCN" + Guid.NewGuid().ToString("N")[..8],
+                Kind = CreditNoteKind.CreditNote,
+                BillId = bill.Id,
+                PatientId = patientId,
+                Amount = 590m,
+                Reason = "Rate corrected",
+                IssuedAt = new DateTimeOffset(2019, 2, 20, 12, 0, 0, TimeSpan.FromMinutes(330)),
             };
             note.Credit(procedure, 0m, 590m, interState: false, timeBarred: false);
             db.Add(note);
@@ -169,15 +186,29 @@ public sealed class AnalyticsTargetsAndStatutoryReportTests(HospitalServer serve
             db.Add(payer);
             var bill = new Bill
             {
-                FacilityId = facilityId, BillNumber = "ITCL" + Guid.NewGuid().ToString("N")[..8], Type = BillType.InPatient, Status = BillStatus.Finalized, PatientId = patientId,
-                GrossAmount = 250000m, NetAmount = 250000m, PayerAmount = 250000m, PayerId = payer.Id, PayerType = PayerType.Insurance,
+                FacilityId = facilityId,
+                BillNumber = "ITCL" + Guid.NewGuid().ToString("N")[..8],
+                Type = BillType.InPatient,
+                Status = BillStatus.Finalized,
+                PatientId = patientId,
+                GrossAmount = 250000m,
+                NetAmount = 250000m,
+                PayerAmount = 250000m,
+                PayerId = payer.Id,
+                PayerType = PayerType.Insurance,
                 FinalizedAt = new DateTimeOffset(2019, 2, 1, 12, 0, 0, TimeSpan.FromMinutes(330)),
             };
             db.Add(bill);
             InsuranceClaim Claim(int day, decimal claimed, ClaimStatus status) => new()
             {
-                FacilityId = facilityId, ClaimNumber = "ITC" + Guid.NewGuid().ToString("N")[..10], BillId = bill.Id, PatientId = patientId, PayerId = payer.Id,
-                ClaimedAmount = claimed, Status = status, SubmittedAt = new DateTimeOffset(2019, 2, day, 12, 0, 0, TimeSpan.FromMinutes(330)),
+                FacilityId = facilityId,
+                ClaimNumber = "ITC" + Guid.NewGuid().ToString("N")[..10],
+                BillId = bill.Id,
+                PatientId = patientId,
+                PayerId = payer.Id,
+                ClaimedAmount = claimed,
+                Status = status,
+                SubmittedAt = new DateTimeOffset(2019, 2, day, 12, 0, 0, TimeSpan.FromMinutes(330)),
             };
 
             // Settled: ₹1,00,000 claimed, ₹90,000 paid ten days later, ₹10,000 deducted for non-medical items.
@@ -296,16 +327,44 @@ public sealed class AnalyticsTargetsAndStatutoryReportTests(HospitalServer serve
 
     private static BillLine Line(Bill bill, Guid serviceItemId, string sac, decimal rate, decimal taxable, decimal halfTax) => new()
     {
-        BillId = bill.Id, ChargeId = Guid.NewGuid(), ServiceItemId = serviceItemId, ServiceCode = sac, Description = "Service " + sac, Category = ServiceCategory.Procedure,
-        SacCode = sac, Quantity = 1m, UnitPrice = taxable, GrossAmount = taxable + (2 * halfTax), TaxRate = rate, TaxableAmount = taxable, CgstAmount = halfTax, SgstAmount = halfTax,
-        TaxAmount = 2 * halfTax, NetAmount = taxable + (2 * halfTax), ServiceDate = bill.FinalizedAt!.Value,
+        BillId = bill.Id,
+        ChargeId = Guid.NewGuid(),
+        ServiceItemId = serviceItemId,
+        ServiceCode = sac,
+        Description = "Service " + sac,
+        Category = ServiceCategory.Procedure,
+        SacCode = sac,
+        Quantity = 1m,
+        UnitPrice = taxable,
+        GrossAmount = taxable + (2 * halfTax),
+        TaxRate = rate,
+        TaxableAmount = taxable,
+        CgstAmount = halfTax,
+        SgstAmount = halfTax,
+        TaxAmount = 2 * halfTax,
+        NetAmount = taxable + (2 * halfTax),
+        ServiceDate = bill.FinalizedAt!.Value,
     };
 
     private static Payslip Payslip(PayrollRun run, Guid employeeId, string code, string name, string department, decimal gross, decimal pf, decimal esi, decimal tds) => new()
     {
-        FacilityId = run.FacilityId, PayrollRunId = run.Id, EmployeeId = employeeId, Year = run.Year, Month = run.Month, EmployeeCode = code, EmployeeName = name,
-        DepartmentName = department, DaysInMonth = 28, PayableDays = 28, StandardGross = gross, GrossEarnings = gross, TotalDeductions = tds, NetPay = gross - tds,
-        EmployerPf = pf, EmployerEsi = esi, Tds = tds,
+        FacilityId = run.FacilityId,
+        PayrollRunId = run.Id,
+        EmployeeId = employeeId,
+        Year = run.Year,
+        Month = run.Month,
+        EmployeeCode = code,
+        EmployeeName = name,
+        DepartmentName = department,
+        DaysInMonth = 28,
+        PayableDays = 28,
+        StandardGross = gross,
+        GrossEarnings = gross,
+        TotalDeductions = tds,
+        NetPay = gross - tds,
+        EmployerPf = pf,
+        EmployerEsi = esi,
+        Tds = tds,
     };
 
     private static PayslipLine Earning(Payslip slip, string code, string name, decimal amount) =>

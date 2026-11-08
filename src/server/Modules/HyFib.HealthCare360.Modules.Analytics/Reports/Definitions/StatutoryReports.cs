@@ -592,11 +592,11 @@ internal sealed class ClaimsAgeingReport : ReportDefinition
 
         var open = await ctx.ListAsync(
             claims.Select(c => new
-                {
-                    c.PayerId,
-                    Due = c.ClaimedAmount - c.SettledAmount - c.DeductionAmount,
-                    Age = today - DateOnly.FromDateTime(c.SubmittedAt.AddMinutes(AnalyticsClock.OffsetMinutes).UtcDateTime).DayNumber,
-                })
+            {
+                c.PayerId,
+                Due = c.ClaimedAmount - c.SettledAmount - c.DeductionAmount,
+                Age = today - DateOnly.FromDateTime(c.SubmittedAt.AddMinutes(AnalyticsClock.OffsetMinutes).UtcDateTime).DayNumber,
+            })
                 .GroupBy(x => x.PayerId)
                 .Select(g => new ClaimAgeing(
                     g.Key,
