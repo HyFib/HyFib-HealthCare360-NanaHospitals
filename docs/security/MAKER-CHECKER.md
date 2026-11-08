@@ -28,7 +28,9 @@ staff password reset sent to the account's own mobile number and e-mail address,
 user's contact details, an account linked to a practitioner, a linked doctor's registration and signature, another
 administration desktop enrolled, a ward medication order written in a doctor's name by anyone else (countersigned by
 that doctor) and a nurse's stop of one, a dose with no order, a refill's safety override and a controlled drug's
-refill, the prescribing-safety tables loosened, and the patient's record: an existing patient's identity, a VIP
+refill, the prescribing-safety tables loosened, a move of a patient to another ward (accepted by the receiving ward's nurse in charge or a doctor, never whoever asked;
+an urgent move to or from critical care accepted within the hour or flagged), the response to a NEWS2 escalation
+(recorded by a clinician other than whoever took the observations), and the patient's record: an existing patient's identity, a VIP
 restriction lifted, the deceased status set or taken back at the desk, a sensitive category removed, DNR taken off (and
 put on only by a doctor), an allergy taken out of the checks or lowered, and a stay's medico-legal flag cleared.
 
