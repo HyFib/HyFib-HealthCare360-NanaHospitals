@@ -12,14 +12,21 @@ internal sealed class GoodsReceiptGstSource(HospitalDbContext db) : IGstPurchase
     {
         var receipts = await db.Set<GoodsReceiptNote>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(g => facilityIds.Contains(g.FacilityId) && g.Status == GoodsReceiptStatus.Posted && g.ReceivedOn >= from && g.ReceivedOn <= to)
-            .Join(db.Set<Vendor>().IgnoreQueryFilters(), g => g.VendorId, v => v.Id, (g, v) => new
-            {
-                g.Id, v.Gstin, v.Name, g.VendorInvoiceNumber, g.VendorInvoiceDate, g.ReceivedOn, g.TaxableAmount, g.IgstAmount, g.CgstAmount, g.SgstAmount,
-            })
+            .Select(g => new { g.Id, g.VendorId, g.VendorInvoiceNumber, g.VendorInvoiceDate, g.ReceivedOn, g.TaxableAmount, g.IgstAmount, g.CgstAmount, g.SgstAmount })
             .ToListAsync(cancellationToken);
+
+        // A vendor deleted since still supplied these goods: its GSTIN is read without the soft-delete filter, on its own.
+        var vendorIds = receipts.Select(g => g.VendorId).Distinct().ToList();
+        var vendors = await db.Set<Vendor>().AsNoTracking().IgnoreQueryFilters()
+            .Where(v => vendorIds.Contains(v.Id))
+            .ToDictionaryAsync(v => v.Id, v => (v.Gstin, v.Name), cancellationToken);
         return receipts
-            .Select(g => new GstPurchase("grn", g.Id, g.Gstin, g.Name, g.VendorInvoiceNumber, g.VendorInvoiceDate ?? g.ReceivedOn, g.TaxableAmount, g.IgstAmount,
-                g.CgstAmount, g.SgstAmount))
+            .Select(g =>
+            {
+                var vendor = vendors.GetValueOrDefault(g.VendorId);
+                return new GstPurchase("grn", g.Id, vendor.Gstin, vendor.Name ?? string.Empty, g.VendorInvoiceNumber, g.VendorInvoiceDate ?? g.ReceivedOn,
+                    g.TaxableAmount, g.IgstAmount, g.CgstAmount, g.SgstAmount);
+            })
             .ToList();
     }
 }
