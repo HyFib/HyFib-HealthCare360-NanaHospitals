@@ -241,23 +241,35 @@ export function calculateBillTotals(
 
 // ------------------------------------------------------------------ discount authority (DiscountPolicy)
 
-/** How much discount a user may give on their own (GET /api/v1/billing/discount-limits/me). */
+/**
+ * How much discount a user may give on their own (GET /api/v1/billing/discount-limits/me): their own limit or the
+ * hospital's default. Holding the approval permission gives no more: an approver's own discount above it waits for
+ * another approver.
+ */
 export interface DiscountAuthority {
-  canApprove: boolean;
   maxPercent: number;
   maxAmount: number | null;
 }
 
-export const NO_DISCOUNT_AUTHORITY: DiscountAuthority = { canApprove: false, maxPercent: 0, maxAmount: 0 };
+export const NO_DISCOUNT_AUTHORITY: DiscountAuthority = { maxPercent: 0, maxAmount: 0 };
 
 /** `DiscountPolicy.AllowedWithoutApproval`. */
 export function allowedWithoutApproval(discountBase: number, authority: DiscountAuthority): number {
   const base = maxBig(toPaise(discountBase), 0n);
-  if (authority.canApprove) {
-    return fromPaise(base);
-  }
   const limit = percentOfPaise(base, clampBig(toCentiPercent(authority.maxPercent), 0n, WHOLE));
   return fromPaise(authority.maxAmount !== null ? minBig(limit, maxBig(toPaise(authority.maxAmount), 0n)) : limit);
+}
+
+/**
+ * `DiscountPolicy.Raises`: whether a limit lets the user give more on their own than `before` (a higher percentage, or
+ * a rupee cap raised or taken away). Raising waits for another approver; anything else is saved at once.
+ */
+export function limitRaises(before: DiscountAuthority, asked: DiscountAuthority): boolean {
+  const clamp = (percent: number) => Math.min(Math.max(percent, 0), 100);
+  const percentUp = toCentiPercent(clamp(asked.maxPercent)) > toCentiPercent(clamp(before.maxPercent));
+  const capUp =
+    before.maxAmount !== null && (asked.maxAmount === null || toPaise(asked.maxAmount) > toPaise(before.maxAmount));
+  return percentUp || capUp;
 }
 
 /** `DiscountPolicy.RequiresApproval`. */
@@ -270,7 +282,6 @@ export function requiresApproval(
   const discount = toPaise(userDiscount);
   return (
     discount > 0n &&
-    !authority.canApprove &&
     discount > toPaise(approvedAmount) &&
     discount > toPaise(allowedWithoutApproval(discountBase, authority))
   );

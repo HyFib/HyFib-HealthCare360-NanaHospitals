@@ -14,6 +14,7 @@ import {
   mergeClasses,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Spinner,
   Text,
   Textarea,
@@ -26,7 +27,7 @@ import {
   LockClosedRegular,
 } from '@fluentui/react-icons';
 import { formatInr, formatTime } from '@hc360/core';
-import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
+import { StatusBadge, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
@@ -35,7 +36,7 @@ import { saveCounterPrefs, useCounterPrefs } from './counterPrefs';
 import { useRefreshBilling } from './hooks';
 import { PAYMENT_MODE_LABEL } from './labels';
 import { fromPaise, parseRupees, toPaise } from './money';
-import { ActionError, Amount, AmountField, SummaryList, SummaryRow } from './ui';
+import { ActionError, Amount, AmountField, ReasonDialog, SummaryList, SummaryRow } from './ui';
 
 const useStyles = makeStyles({
   bar: {
@@ -273,15 +274,25 @@ export function CloseShiftDialog({
   const variance = parsed.ok ? parsed.paise - toPaise(current.expectedCash) : null;
   const verdict = variance !== null ? varianceText(variance) : null;
   const needsNote = variance !== null && variance !== 0n && !notes.trim();
+  // A shortage beyond the hospital's tolerance is not settled on the cashier's word: the shift closes, and a supervisor
+  // (never its cashier) accepts the shortage. An excess needs no one.
+  const askSupervisor = variance !== null && -variance > toPaise(current.shortageTolerance ?? 0);
 
   const close = useMutation({
     mutationFn: () =>
       billingApi.closeShift(shift.id, parsed.ok ? parsed.rupees : 0, notes.trim() || null, current.version),
     onSuccess: (closed) => {
-      notify.success(
-        'Shift closed',
-        closed.variance ? `Variance ${formatInr(closed.variance)} recorded` : 'The drawer tallied',
-      );
+      if (closed.shortageAwaiting) {
+        notify.warning(
+          'Shift closed, shortage asked for approval',
+          `Cash short by ${formatInr(-(closed.variance ?? 0))}: a supervisor other than the cashier accepts it. Until then the shift shows "shortage awaiting supervisor".`,
+        );
+      } else {
+        notify.success(
+          'Shift closed',
+          closed.variance ? `Variance ${formatInr(closed.variance)} recorded` : 'The drawer tallied',
+        );
+      }
       void refresh();
       onClosed(closed);
     },
@@ -365,16 +376,29 @@ export function CloseShiftDialog({
                 intent={verdict.tone === 'positive' ? 'success' : verdict.tone === 'negative' ? 'error' : 'warning'}
               >
                 <MessageBarBody>
-                  <span className={styles.variance}>{verdict.text}</span>
+                  <MessageBarTitle>
+                    <span className={styles.variance}>{verdict.text}</span>
+                  </MessageBarTitle>
+                  {askSupervisor && (
+                    <Text block>
+                      A supervisor other than the cashier accepts the shortage: the shift closes now, and shows
+                      &ldquo;shortage awaiting supervisor&rdquo; until then.
+                    </Text>
+                  )}
+                  {variance !== null && variance > 0n && (
+                    <Text block>An excess is recorded and flagged; it needs no one&rsquo;s approval.</Text>
+                  )}
                 </MessageBarBody>
               </MessageBar>
             )}
             <Field
               label="Notes"
               hint={
-                variance !== null && variance !== 0n
-                  ? 'Explain the difference; it is recorded against the shift.'
-                  : 'Optional'
+                askSupervisor
+                  ? 'Why the cash is short: the supervisor reads it when accepting the shortage.'
+                  : variance !== null && variance !== 0n
+                    ? 'Explain the difference; it is recorded against the shift.'
+                    : 'Optional'
               }
               required={needsNote}
             >
@@ -393,12 +417,86 @@ export function CloseShiftDialog({
               icon={close.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => close.mutate()}
             >
-              Close shift
+              {askSupervisor ? 'Close and ask for approval' : 'Close shift'}
             </Button>
           </DialogActions>
         </DialogBody>
         {guard.dialogs}
       </DialogSurface>
     </Dialog>
+  );
+}
+
+/**
+ * A shift's state as staff read it: open, closed, or closed with its shortage awaiting a supervisor (or accepted by one).
+ * A shortage beyond the hospital's tolerance is not settled on the cashier's word (maker-checker, slice 6).
+ */
+export function ShiftStatusBadge({
+  shift,
+}: {
+  shift: Pick<ShiftDto, 'status' | 'shortageAwaiting' | 'shortageAcceptedBy'>;
+}) {
+  if (shift.status === 'Closed' && shift.shortageAwaiting) {
+    return (
+      <Badge appearance="filled" color="warning">
+        Closed — shortage awaiting supervisor
+      </Badge>
+    );
+  }
+  if (shift.status === 'Closed' && shift.shortageAcceptedBy) {
+    return (
+      <Badge appearance="tint" color="informative" title={`Shortage accepted by ${shift.shortageAcceptedBy}`}>
+        Closed — shortage accepted
+      </Badge>
+    );
+  }
+  return <StatusBadge status={shift.status} />;
+}
+
+/**
+ * What waits on a shift closed short: the request a supervisor decides (never the cashier), or, when it was rejected,
+ * withdrawn or expired, asking again with a reason.
+ */
+export function ShortageActions({
+  shift,
+  onOpenRequest,
+}: {
+  shift: ShiftDto;
+  onOpenRequest: (approvalId: string) => void;
+}) {
+  const notify = useNotify();
+  const refresh = useRefreshBilling();
+  const [asking, setAsking] = useState(false);
+  const ask = useMutation({
+    mutationFn: (reason: string) => billingApi.askShortage(shift.id, reason),
+    onSuccess: (asked) => {
+      notify.success('Asked for approval', `${asked.summary}. A supervisor other than the cashier accepts it.`);
+      setAsking(false);
+      void refresh();
+    },
+    onError: (error) => notify.error(error, 'The shortage was not asked for'),
+  });
+  if (!shift.shortageAwaiting) {
+    return null;
+  }
+  const approvalId = shift.shortageApprovalId;
+  return (
+    <>
+      {approvalId ? (
+        <Button onClick={() => onOpenRequest(approvalId)}>Open the request</Button>
+      ) : (
+        <Button onClick={() => setAsking(true)}>Ask for approval again</Button>
+      )}
+      <ReasonDialog
+        open={asking}
+        title="Ask a supervisor to accept the shortage"
+        description={`Cash short by ${formatInr(-(shift.variance ?? 0))} at ${shift.counter} (${shift.userName}). A supervisor other than the cashier accepts it.`}
+        label="Why is the cash short?"
+        confirmLabel="Ask for approval"
+        busy={ask.isPending}
+        onConfirm={(reason) => ask.mutate(reason)}
+        onCancel={() => setAsking(false)}
+      />
+    </>
   );
 }

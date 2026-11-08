@@ -1,12 +1,16 @@
 import {
   Button,
   Caption1,
+  Link,
   makeStyles,
   Menu,
   MenuItem,
   MenuList,
   MenuPopover,
   MenuTrigger,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
   Tab,
   TabList,
   Text,
@@ -88,7 +92,7 @@ function DiscountApprovalsPage() {
     <Page>
       <PageHeader
         title="Discount approvals"
-        subtitle="Discounts above a cashier's limit wait here; the requester cannot approve their own"
+        subtitle="Discounts above the giver's own limit wait here, an approver's own included; nobody approves their own"
         icon={<TagPercentRegular />}
       />
       <Section flush>
@@ -252,13 +256,22 @@ function LimitsView() {
   // Closing a dialog opened from a row's menu returns focus to that row's menu button.
   const restoreFocusTarget = useRestoreFocusTarget();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const limits = useQuery(billingQueries.discountLimits());
+  const pending = useQuery(billingQueries.pendingDiscountLimits());
   const [editing, setEditing] = useState<DiscountLimitDto | 'new' | null>(null);
   const [deleting, setDeleting] = useState<DiscountLimitDto | null>(null);
   const remove = useMutation({
     mutationFn: (id: string) => billingApi.deleteDiscountLimit(id),
-    onSuccess: () => {
-      notify.success('Limit removed', 'The user now gets the hospital default limit.');
+    onSuccess: (asked) => {
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. The hospital default lets them give more, so another approver decides it; their limit stays until then.`,
+        );
+      } else {
+        notify.success('Limit removed', 'The user now gets the hospital default limit.');
+      }
       setDeleting(null);
       void queryClient.invalidateQueries({ queryKey: billingKeys.discounts() });
     },
@@ -272,9 +285,35 @@ function LimitsView() {
         </Button>
         <Caption1 block style={{ marginTop: 6 }}>
           Users without a limit may give only the hospital default (usually 0 %), so every discount they give needs
-          approval.
+          approval. Approvers are held to their own limit too. Raising a limit waits for another approver, never the one
+          who asked and never the user whose limit it is; lowering it is saved at once.
         </Caption1>
       </div>
+      {(pending.data?.length ?? 0) > 0 && (
+        <div style={{ padding: '0 16px 12px' }}>
+          <MessageBar intent="warning" layout="multiline">
+            <MessageBarBody>
+              <MessageBarTitle>Asked for approval</MessageBarTitle>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                {pending.data?.map((p) => (
+                  <li key={p.approvalId}>
+                    {p.userName ?? 'A user'}: {p.before} → {p.asked}, asked for by{' '}
+                    {p.askedByYou ? 'you' : p.requestedBy} on {formatDateTime(p.requestedAt)}.{' '}
+                    <Link
+                      inline
+                      onClick={() =>
+                        void navigate({ to: '/approvals/$approvalId', params: { approvalId: p.approvalId } })
+                      }
+                    >
+                      Open the request
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </MessageBarBody>
+          </MessageBar>
+        </div>
+      )}
       <DataTable
         ariaLabel="Discount limits"
         rows={limits.data}
@@ -331,7 +370,8 @@ function LimitsView() {
         onConfirm={() => deleting && remove.mutate(deleting.id)}
         onCancel={() => setDeleting(null)}
       >
-        They fall back to the hospital default limit.
+        They fall back to the hospital default limit. If the default lets them give more, this waits for another
+        approver.
         <ActionError error={remove.error} />
       </ConfirmDialog>
     </>

@@ -15,7 +15,7 @@ import {
 } from '@fluentui/react-components';
 import { DocumentTableRegular, DoorArrowLeftRegular, LockClosedRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, todayIso, useSession } from '@hc360/core';
-import { DataTable, ErrorState, FilterBar, LoadingState, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
+import { DataTable, ErrorState, FilterBar, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -24,7 +24,7 @@ import { billingQueries, type ShiftDto } from '@/modules/billing/api';
 import { useBillingLive } from '@/modules/billing/hooks';
 import { PAYMENT_MODE_LABEL, SHIFT_STATUSES, type ShiftStatus } from '@/modules/billing/labels';
 import { dateParam, enumParam, pageParam } from '@/modules/billing/searchParams';
-import { CloseShiftDialog, ShiftBar } from '@/modules/billing/ShiftControls';
+import { CloseShiftDialog, ShiftBar, ShiftStatusBadge, ShortageActions } from '@/modules/billing/ShiftControls';
 import { Amount, NoAccess, SummaryList, SummaryRow } from '@/modules/billing/ui';
 
 interface ShiftsSearch {
@@ -170,7 +170,7 @@ function ShiftsPage() {
             },
             { key: 'declared', header: 'Declared', align: 'end', render: (s) => <Amount value={s.declaredCash} /> },
             { key: 'variance', header: 'Short / excess', align: 'end', render: (s) => <Variance value={s.variance} /> },
-            { key: 'status', header: 'Status', width: 100, render: (s) => <StatusBadge status={s.status} /> },
+            { key: 'status', header: 'Status', width: 180, render: (s) => <ShiftStatusBadge shift={s} /> },
           ]}
           emptyTitle="No shifts on this day"
           page={search.page ?? 1}
@@ -221,10 +221,25 @@ function ShiftsPage() {
                   </SummaryRow>
                   <SummaryRow label="Receipts">{d.receiptCount}</SummaryRow>
                   {d.notes && <SummaryRow label="Notes">{d.notes}</SummaryRow>}
+                  {d.status === 'Closed' && (d.shortageAwaiting || d.shortageAcceptedBy) && (
+                    <SummaryRow label="Shortage">
+                      {d.shortageAwaiting
+                        ? 'Awaiting a supervisor, who is not the cashier'
+                        : `Accepted by ${d.shortageAcceptedBy}${d.shortageAcceptedAt ? ` on ${formatDateTime(d.shortageAcceptedAt)}` : ''}`}
+                    </SummaryRow>
+                  )}
                 </SummaryList>
               )}
             </DialogContent>
             <DialogActions>
+              {d && (
+                <ShortageActions
+                  shift={d}
+                  onOpenRequest={(approvalId) =>
+                    void navigate({ to: '/approvals/$approvalId', params: { approvalId } })
+                  }
+                />
+              )}
               {d && d.status === 'Open' && (d.userId === userId || isSupervisor) && (
                 <Button
                   icon={<DoorArrowLeftRegular />}

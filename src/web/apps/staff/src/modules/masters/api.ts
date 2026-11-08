@@ -148,6 +148,31 @@ export interface PractitionerDto {
   linkedAccounts?: string[] | null;
   /** On a single practitioner's read: a registration number, HPR ID or signature waiting for a second administrator. */
   pendingIdentity?: PendingPractitionerIdentity | null;
+  /** On a single practitioner's read: consultation fees waiting for someone who approves prices. */
+  pendingFee?: PendingPractitionerFee | null;
+}
+
+/** A doctor's own consultation fees (0: the consultation service's approved price applies). */
+export interface PractitionerFees {
+  newVisit: number;
+  followUp: number;
+}
+
+/**
+ * A doctor's consultation fees asked for, waiting for someone who approves prices (masters.practitioner_fee): until
+ * then the fees in force are charged, and a new doctor's are none (the service price).
+ */
+export interface PendingPractitionerFee {
+  approvalId: string;
+  asked: PractitionerFees;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** A practitioner added (201): their id, and the request for their consultation fees when they set any. */
+export interface PractitionerCreated {
+  id: string;
+  feeApprovalId: string | null;
 }
 
 /** What identifies a practitioner on what they sign. */
@@ -167,7 +192,14 @@ export interface PendingPractitionerIdentity {
 
 export type SavePractitionerRequest = Omit<
   PractitionerDto,
-  'id' | 'displayName' | 'specialtyName' | 'departmentName' | 'version' | 'linkedAccounts' | 'pendingIdentity'
+  | 'id'
+  | 'displayName'
+  | 'specialtyName'
+  | 'departmentName'
+  | 'version'
+  | 'linkedAccounts'
+  | 'pendingIdentity'
+  | 'pendingFee'
 > & {
   version: number | null;
   /** Take the doctor out of use although work is still ahead (the person saw the list the server named). */

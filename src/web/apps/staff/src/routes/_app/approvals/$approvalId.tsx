@@ -40,7 +40,8 @@ function subjectLink(
     // contact details, a practitioner link): the request names the user and what changes; the list shows the account.
     case 'User':
       return { label: 'Open the users', to: '/admin/users' };
-    // A linked doctor's registration number, HPR ID or signature: the record with the identity that waits.
+    // A linked doctor's registration number, HPR ID or signature, or a doctor's consultation fee: the record with what
+    // waits. An accountant, who approves fees but does not edit doctors, decides from what the request says changes.
     case 'Practitioner':
       return canManageMasters
         ? { label: 'Open the doctor', to: '/setup/practitioners', search: { edit: request.subjectId } }
@@ -77,6 +78,16 @@ function subjectLink(
       return can.wardIssues
         ? { label: 'Open the issue', to: '/pharmacy/ip-issues', search: { id: request.subjectId } }
         : null;
+    // A discount limit raised: the limits, with what waits.
+    case 'DiscountLimit':
+      return { label: 'Open the discount limits', to: '/billing/discount-approvals', search: { view: 'limits' } };
+    // A charge cancelled at the billing desk: the request names the service, the patient and the amount; the patient's
+    // record shows their visits and stays.
+    case 'Charge':
+      return request.patientId ? { label: "Open the patient's record", to: `/patients/${request.patientId}` } : null;
+    // A shift closed short: the day's shifts, with the shortage awaiting a supervisor.
+    case 'CashierShift':
+      return { label: 'Open the shifts', to: '/billing/shifts' };
     // A drug interaction or a maximum dose loosened: the table, which shows the change waiting. The request says what the
     // row is now and what it becomes.
     case 'DrugInteraction':
