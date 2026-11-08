@@ -227,7 +227,7 @@ public sealed class PayMakerCheckerTests(HospitalServer server)
         (earning.Kind, lop.Kind, tds.Kind).ShouldBe((PayApprovals.InputKind, PayApprovals.InputKind, PayApprovals.InputKind));
         earning.Summary.ShouldContain("Earning INCENTIVE ₹3,000.00");
         (await InputsAsync(admin, run, employee.Id)).Select(i => i.Kind).ShouldBe([PayrollInputKind.Deduction]);
-        (await admin.GetAsync<List<PendingPayChange>>($"/api/v1/hr/payroll/pending-changes?runId={run}")).Select(p => p.ApprovalId)
+        (await admin.GetAsync<List<PendingPayChange>>($"/api/v1/hr/payroll/pending-changes?runId={run}&employeeId={employee.Id}")).Select(p => p.ApprovalId)
             .ShouldBe([earning.Id, lop.Id, tds.Id], ignoreOrder: true);
 
         // The one who asked does not approve; the HR manager does, and it is audited with both names.
