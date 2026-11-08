@@ -76,6 +76,8 @@ conflicts (slot full, overlap, duplicates, concurrency) 409.
 | POST | `/exceptions` | `scheduling.schedules.manage` | `SaveScheduleExceptionRequest` (practitionerId, type, fromDate, toDate, startTime?, endTime?, reason, allFacilities, extra-session fields) → 201 `ScheduleSaved` (bookings inside new leave/blocks) |
 | PUT | `/exceptions/{id}` | `scheduling.schedules.manage` | `SaveScheduleExceptionRequest` (+ version) → `ScheduleSaved` |
 | DELETE | `/exceptions/{id}` | `scheduling.schedules.manage` | → 204 |
+| GET | `/exceptions/{id}/stranded` | `scheduling.appointments.manage` | → `StrandedPatients { exceptionId, smsReady, smsNote, patients[] { appointmentId, number, patientName, phoneMasked, startsAt, status, toldAt, notices[] { channel, status, error }, notToldReason } }` |
+| POST | `/exceptions/{id}/notify-patients` | `scheduling.appointments.manage` | → `StrandedPatients`: every patient the leave or block strands, not told yet about it, is told by SMS and WhatsApp (`appointment.doctor_unavailable`) with a link to choose another time; nothing is rebooked |
 
 ### Slots — `/api/v1/scheduling/slots`
 
@@ -132,7 +134,7 @@ the scope answers 404.
 |---|---|---|
 | GET | `/api/v1/portal/appointments?scope=upcoming|past|all` | → `PortalAppointment[]` (doctor, specialty, department, branch, status, payment, fee, `canCancel`, `canReschedule`, `canPay`) |
 | GET | `/api/v1/portal/appointments/{id}` | → `PortalAppointment` |
-| POST | `/api/v1/portal/appointments` | `PortalBookAppointmentRequest` (patientId, practitionerId, startsAt, visitType, isTelehealth, reason, payOnline) → 201 `PortalBookingResult { appointment, payment?: PaymentCheckout, message? }` |
+| POST | `/api/v1/portal/appointments` | `PortalBookAppointmentRequest` (patientId, practitionerId, startsAt, visitType, isTelehealth, reason, payOnline, telehealthConsent: required true for a video consultation, recorded as the patient's `Telehealth` consent unless one is in force) → 201 `PortalBookingResult { appointment, payment?: PaymentCheckout, message? }` |
 | POST | `/api/v1/portal/appointments/{id}/cancel` | `PortalCancelAppointmentRequest` (reason) → 204 |
 | POST | `/api/v1/portal/appointments/{id}/reschedule` | `PortalRescheduleAppointmentRequest` (startsAt, reason) → `PortalAppointment` (new booking) |
 | POST | `/api/v1/portal/appointments/{id}/payment` | → `PaymentCheckout { provider, orderId, amount, currency, checkoutKey, paymentLinkUrl }` (422 when the gateway is unavailable) |
@@ -192,8 +194,20 @@ startsAt }` after every change. Check-ins through the Patients visit screen also
 | `appointment.reminder` | SMS, WhatsApp | 24 h and 2 h before (job) | same |
 | `appointment.cancelled` | SMS, WhatsApp (WhatsApp template seeded here) | cancelled | same |
 | `appointment.waitlist` | SMS, WhatsApp (seeded here) | a matching slot was freed | name, doctor, date, time, link, hospital |
+| `appointment.doctor_unavailable` | SMS, WhatsApp (seeded here) | staff tell the patients a leave or block strands (`POST /exceptions/{id}/notify-patients`) | name, doctor, date, time, reference, mode, hospital, link (`{portal}/portal/doctors/{doctorId}?reschedule={appointmentId}`) |
 
 Messages expire at the appointment time (outbox TTL).
+
+**Telling the patients a doctor's leave strands.** Saving a leave or block lists the bookings it strands; the staff
+then tell those patients in one action (the schedules screen's *Tell the patients by SMS/WhatsApp*). A patient is told
+once per leave: a message of this template queued for them after the leave was last saved counts, so asking again
+tells only those not told yet. The list says who was told, when, on which channel and how each message fared (queued,
+sent, failed, skipped, suppressed by a WhatsApp STOP), and who cannot be told by message (no mobile number) for the
+desk to call. SMS in India goes only on a template registered on the DLT portal (TRAI TCCCPR 2018): where the SMS
+provider needs the DLT template id (anything but the simulator and Twilio) and the template has none, the SMS is not
+queued, the patients are told on WhatsApp alone and the list says why (`smsReady`, `smsNote`). Nothing is rebooked or
+cancelled: the patient chooses another time from the link, or the desk moves the booking. The action is audited
+(`scheduling.leave.patients_notified`). A patient whose booking was moved off the leave no longer shows in the list.
 
 ## Background job
 

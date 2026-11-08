@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
+using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Scheduling.Features.Schedules;
 
@@ -60,6 +61,30 @@ public sealed record SchedulesCreated(IReadOnlyList<Guid> Ids);
 public sealed record AffectedAppointment(Guid Id, string Number, Guid PatientId, string PatientName, string? PhoneMasked, DateTimeOffset StartsAt, AppointmentStatus Status);
 
 public sealed record ScheduleSaved(Guid Id, IReadOnlyList<AffectedAppointment> AffectedAppointments);
+
+/// <summary>
+/// The bookings a leave or block strands and whether each patient was told (GET/POST
+/// /api/v1/scheduling/exceptions/{id}/stranded and /notify-patients).
+/// </summary>
+/// <param name="SmsReady">The SMS goes with the WhatsApp message; false when it cannot (no DLT template id), said in <paramref name="SmsNote"/>.</param>
+public sealed record StrandedPatients(Guid ExceptionId, bool SmsReady, string? SmsNote, IReadOnlyList<StrandedPatient> Patients);
+
+/// <param name="ToldAt">When the patient was first told about this leave; null while not told.</param>
+/// <param name="Notices">Each message queued, by channel, with how it fared (queued, sent, failed, skipped, suppressed).</param>
+/// <param name="NotToldReason">Why the patient cannot be told by message (no mobile number); the desk calls instead.</param>
+public sealed record StrandedPatient(
+    Guid AppointmentId,
+    string Number,
+    Guid PatientId,
+    string PatientName,
+    string? PhoneMasked,
+    DateTimeOffset StartsAt,
+    AppointmentStatus Status,
+    DateTimeOffset? ToldAt,
+    IReadOnlyList<StrandedNotice> Notices,
+    string? NotToldReason);
+
+public sealed record StrandedNotice(NotificationChannel Channel, NotificationStatus Status, string? Error);
 
 public sealed record ScheduleExceptionDto(
     Guid Id,
