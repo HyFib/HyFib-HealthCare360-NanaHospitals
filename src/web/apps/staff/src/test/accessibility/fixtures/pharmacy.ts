@@ -424,7 +424,10 @@ export const OVERRIDE_ENTRY: QueueEntryDetail = {
   safetyOverrideReason: 'Rash only, in childhood; tolerated a course last year',
   lines: ENTRY.lines.map((line, index) =>
     index === 0
-      ? { ...line, safetyOverride: `ALLERGY: ${line.drugName} contains paracetamol; the patient is allergic to paracetamol.` }
+      ? {
+          ...line,
+          safetyOverride: `ALLERGY: ${line.drugName} contains paracetamol; the patient is allergic to paracetamol.`,
+        }
       : line,
   ),
 };
