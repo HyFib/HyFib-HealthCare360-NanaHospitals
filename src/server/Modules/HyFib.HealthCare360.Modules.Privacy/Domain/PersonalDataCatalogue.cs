@@ -167,6 +167,7 @@ public static class PersonalDataCatalogue
                 new("specialtycare.surgery_bookings", "Surgeries"),
                 new("specialtycare.operation_notes", "Operation notes", Counted: false),
                 new("specialtycare.anaesthesia_records", "Anaesthesia records", Counted: false),
+                new("specialtycare.recovery_records", "Recovery room records", Counted: false),
                 new("specialtycare.surgery_materials", "Implants and materials used", Counted: false),
                 new("specialtycare.admissions", "Day-care admissions"),
                 new("specialtycare.blood_requests", "Blood requests"),
