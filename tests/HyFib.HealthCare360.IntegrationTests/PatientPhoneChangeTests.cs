@@ -375,8 +375,8 @@ public sealed class PatientPhoneChangeTests(HospitalServer server)
     private static Task<PatientPortalAccessDto> AccessAsync(ApiClient staff, Guid patientId) =>
         staff.GetAsync<PatientPortalAccessDto>($"/api/v1/patients/{patientId}/portal-family");
 
-    private static Task ShareAsync(ApiClient staff, Guid patientId, string accountPhone) =>
-        staff.PostAsync($"/api/v1/patients/{patientId}/portal-family", new LinkFamilyMemberRequest(accountPhone, FamilyRelation.Other, "Patient", true));
+    private Task ShareAsync(ApiClient staff, Guid patientId, string accountPhone) =>
+        server.LinkFamilyAtDeskAsync(staff, patientId, new LinkFamilyMemberRequest(accountPhone, FamilyRelation.Other, "Patient", true));
 
     /// <summary>The change waiting for its code, or null (204).</summary>
     private static async Task<PhoneChangeDto?> PendingAsync(ApiClient staff, Guid patientId)

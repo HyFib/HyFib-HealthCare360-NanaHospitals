@@ -151,7 +151,7 @@ function CampaignView({
                 appearance="primary"
                 icon={<CalendarClockRegular />}
                 onClick={() => setScheduling(true)}
-                disabled={busy}
+                disabled={busy || Boolean(c.scheduleAskedAt)}
               >
                 Schedule…
               </Button>
@@ -170,6 +170,14 @@ function CampaignView({
         }
       />
 
+      {c.status === 'Draft' && c.scheduleAskedAt && (
+        <MessageBar intent="info" style={{ marginBottom: 12 }}>
+          <MessageBarBody>
+            Scheduling was asked for {formatDateTime(c.scheduleAskedAt)} and waits for someone other than the
+            campaign&apos;s author to approve it. Nothing is sent until then; editing the draft means asking again.
+          </MessageBarBody>
+        </MessageBar>
+      )}
       {c.status === 'Scheduled' && (
         <MessageBar intent="info" style={{ marginBottom: 12 }}>
           <MessageBarBody>

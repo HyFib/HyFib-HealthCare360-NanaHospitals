@@ -33,7 +33,7 @@ internal static class BreachEndpoints
                 (await breaches.RecordCertInReportedAsync(id, r, ct)).ToNoContent())
             .WithValidation<CertInReportedRequest>();
         group.MapPost("/{id:guid}/close", async (Guid id, CloseBreachRequest r, BreachService breaches, CancellationToken ct) =>
-                (await breaches.CloseAsync(id, r, ct)).ToNoContent())
+                (await breaches.CloseAsync(id, r, ct)).ToHttpResult(asked => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
             .WithValidation<CloseBreachRequest>();
         group.MapGet("/{id:guid}/report", async (Guid id, BreachService breaches, CancellationToken ct) =>
             await breaches.ReportAsync(id, ct) is { } report ? TypedResults.Ok(report) : Error.NotFound(nameof(Breach), id).ToProblem());
@@ -43,8 +43,10 @@ internal static class BreachEndpoints
         group.MapPost("/{id:guid}/affected", async (Guid id, AddAffectedRequest r, BreachService breaches, CancellationToken ct) =>
                 (await breaches.AddAffectedAsync(id, r, ct)).ToOk())
             .WithValidation<AddAffectedRequest>();
-        group.MapDelete("/{id:guid}/affected/{patientId:guid}", async (Guid id, Guid patientId, BreachService breaches, CancellationToken ct) =>
-            (await breaches.RemoveAffectedAsync(id, patientId, ct)).ToNoContent());
+        // Taking patients off the list waits for the Data Protection Officer (202 with the approval), audited with why.
+        group.MapPost("/{id:guid}/affected/remove", async (Guid id, RemoveAffectedRequest r, BreachService breaches, CancellationToken ct) =>
+                (await breaches.RemoveAffectedAsync(id, r, ct)).ToHttpResult(asked => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
+            .WithValidation<RemoveAffectedRequest>();
         group.MapPost("/{id:guid}/notify", async (Guid id, BreachService breaches, CancellationToken ct) =>
             (await breaches.NotifyAsync(id, ct)).ToOk());
     }
