@@ -120,6 +120,44 @@ public sealed class InsuranceClaim : AuditableEntity, IFacilityScoped
     /// </summary>
     public Result<ClaimSettlement> Settle(decimal amount, IReadOnlyList<DeductionInput> deductions, string? utrNumber, string? reference, DateOnly settledOn, DateTimeOffset now)
     {
+        var valid = ValidateSettlement(amount, deductions, utrNumber);
+        if (valid.IsFailure)
+        {
+            return valid.Error!;
+        }
+
+        var deducted = deductions.Sum(d => Money.Round(d.Amount));
+        var settlement = new ClaimSettlement
+        {
+            ClaimId = Id,
+            Amount = Money.Round(amount),
+            DeductionAmount = deducted,
+            UtrNumber = Clean(utrNumber),
+            Reference = Clean(reference),
+            SettledOn = settledOn,
+            RecordedAt = now,
+        };
+        Settlements.Add(settlement);
+        foreach (var deduction in deductions)
+        {
+            Deductions.Add(new ClaimDeduction { ClaimId = Id, SettlementId = settlement.Id, Reason = deduction.Reason.Trim(), Amount = Money.Round(deduction.Amount) });
+        }
+
+        SettledAmount += settlement.Amount;
+        DeductionAmount += deducted;
+        SettledAt = now;
+        UtrNumber = settlement.UtrNumber ?? UtrNumber;
+        Status = Outstanding == 0 ? ClaimStatus.Settled : ClaimStatus.PartiallySettled;
+        return settlement;
+    }
+
+    /// <summary>
+    /// Whether a settlement of <paramref name="amount"/> with these deductions could be recorded now, without recording it:
+    /// the claim open to settlement, every deduction with a reason and an amount, no more than is outstanding, and the
+    /// UTR of any money received.
+    /// </summary>
+    public Result ValidateSettlement(decimal amount, IReadOnlyList<DeductionInput> deductions, string? utrNumber)
+    {
         if (Status is not (ClaimStatus.Submitted or ClaimStatus.Approved or ClaimStatus.PartiallySettled))
         {
             return Error.Rule("insurance.claim_not_settleable", "Answer open queries before recording a settlement; settled or rejected claims are closed.");
@@ -147,29 +185,14 @@ public sealed class InsuranceClaim : AuditableEntity, IFacilityScoped
             return Error.Field("utrNumber", "Enter the UTR of the bank transfer.");
         }
 
-        var settlement = new ClaimSettlement
-        {
-            ClaimId = Id,
-            Amount = Money.Round(amount),
-            DeductionAmount = deducted,
-            UtrNumber = Clean(utrNumber),
-            Reference = Clean(reference),
-            SettledOn = settledOn,
-            RecordedAt = now,
-        };
-        Settlements.Add(settlement);
-        foreach (var deduction in deductions)
-        {
-            Deductions.Add(new ClaimDeduction { ClaimId = Id, SettlementId = settlement.Id, Reason = deduction.Reason.Trim(), Amount = Money.Round(deduction.Amount) });
-        }
-
-        SettledAmount += settlement.Amount;
-        DeductionAmount += deducted;
-        SettledAt = now;
-        UtrNumber = settlement.UtrNumber ?? UtrNumber;
-        Status = Outstanding == 0 ? ClaimStatus.Settled : ClaimStatus.PartiallySettled;
-        return settlement;
+        return Result.Success();
     }
+
+    /// <summary>Whether the claim could be rejected now (none of it settled, not already rejected), without rejecting it.</summary>
+    public Result ValidateRejection() =>
+        Status is ClaimStatus.Settled or ClaimStatus.PartiallySettled or ClaimStatus.Rejected
+            ? Error.Rule("insurance.claim_not_rejectable", "Claims with settlements, or already rejected, cannot be rejected.")
+            : Result.Success();
 
     /// <summary>
     /// Rejects the claim. The unpaid balance is recorded as a full deduction (a zero-amount settlement), so the bill's
@@ -177,9 +200,10 @@ public sealed class InsuranceClaim : AuditableEntity, IFacilityScoped
     /// </summary>
     public Result<ClaimSettlement?> Reject(string reason, DateOnly rejectedOn, DateTimeOffset now)
     {
-        if (Status is ClaimStatus.Settled or ClaimStatus.PartiallySettled or ClaimStatus.Rejected)
+        var valid = ValidateRejection();
+        if (valid.IsFailure)
         {
-            return Error.Rule("insurance.claim_not_rejectable", "Claims with settlements, or already rejected, cannot be rejected.");
+            return valid.Error!;
         }
 
         var outstanding = Outstanding;

@@ -59,7 +59,8 @@ public sealed record PreAuthDetail(
     DateTimeOffset? ApprovedAt,
     DateTimeOffset? RejectedAt,
     IReadOnlyList<EnhancementDto> Enhancements,
-    uint Version);
+    uint Version,
+    DateTimeOffset? AmountAskedAt = null);
 
 public sealed record SavePreAuthRequest(
     Guid PolicyId,
@@ -75,15 +76,16 @@ public sealed record SavePreAuthRequest(
 
 public sealed record PreAuthTextRequest(string Text);
 
-public sealed record ApprovePreAuthRequest(decimal ApprovedAmount, string? Reference);
+/// <param name="Version">The pre-authorisation's version the desk saw.</param>
+public sealed record ApprovePreAuthRequest(decimal ApprovedAmount, string? Reference, uint Version);
 
 public sealed record RejectPreAuthRequest(string Reason);
 
 public sealed record RequestEnhancementRequest(decimal Amount, string Reason);
 
-public sealed record RespondEnhancementRequest(bool Approved, decimal ApprovedAmount, string? Reference);
+public sealed record RespondEnhancementRequest(bool Approved, decimal ApprovedAmount, string? Reference, uint Version);
 
-public sealed record FinalApprovalRequest(decimal Amount, string? Reference);
+public sealed record FinalApprovalRequest(decimal Amount, string? Reference, uint Version);
 
 public sealed class SavePreAuthRequestValidator : AbstractValidator<SavePreAuthRequest>
 {
@@ -110,6 +112,7 @@ public sealed class ApprovePreAuthRequestValidator : AbstractValidator<ApprovePr
     {
         RuleFor(x => x.ApprovedAmount).Amount();
         RuleFor(x => x.Reference).MaximumLength(64);
+        RuleFor(x => x.Version).SeenVersion();
     }
 }
 
@@ -133,6 +136,7 @@ public sealed class RespondEnhancementRequestValidator : AbstractValidator<Respo
     {
         RuleFor(x => x.ApprovedAmount).NonNegativeAmount();
         RuleFor(x => x.Reference).MaximumLength(64);
+        RuleFor(x => x.Version).SeenVersion();
     }
 }
 
@@ -142,5 +146,6 @@ public sealed class FinalApprovalRequestValidator : AbstractValidator<FinalAppro
     {
         RuleFor(x => x.Amount).NonNegativeAmount();
         RuleFor(x => x.Reference).MaximumLength(64);
+        RuleFor(x => x.Version).SeenVersion();
     }
 }
