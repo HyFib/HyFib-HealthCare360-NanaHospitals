@@ -663,6 +663,26 @@ and grants nothing.
       new doctor starts with none of their own (the service price) until theirs is approved. Another fee while one waits
       is refused (`approval.already_requested`), and a fee is set only over the fees it replaces (`approval.stale`),
       audited `practitioner.fee_changed` with both names;
+    - an insurance write-off (`insurance.claim_writeoff`, MAKER-CHECKER.md slice 12): what the insurer deducts in a
+      settlement, or the unpaid claim when it rejects it, is money never collected, so above
+      `billing.claimWriteOff.approvalAbove` (per facility, ₹0 by default: every write-off) the insurance desk
+      (`insurance.claims.manage`) asks and someone else who holds `insurance.claims.writeoff.approve` (the hospital
+      administrator, the accountant) approves, never the asker (`approval.self`; the insurance desk itself may not:
+      `approval.not_permitted`). `POST /api/v1/insurance/claims/{id}/settle` posts the money received at once (its payer
+      receipt and UTR) and answers 202 for the deductions, which stay owed by the insurer meanwhile; `…/reject` answers
+      202 and changes nothing until approved. Both take the claim's version (409 on a claim changed since it was read),
+      and the approval is made only over the claim as it was asked about (`approval.stale`), audited
+      `insurance.claim.written_off` at Warning with both names. Raising the amount waits for a second administrator
+      (SettingGuard); lowering it is at once;
+    - an amount the insurer approved on a pre-authorisation (`insurance.preauth_amount`): the approval, an enhancement
+      approved and the final approval each set how much of the bill the insurer pays, so
+      `POST /api/v1/insurance/preauths/{id}/approve`, `…/enhancements/{eid}/respond` (approved) and `…/final-approval`
+      answer 202 and record nothing until another user who holds `insurance.preauth.manage` checks it against the
+      insurer's letter, never whoever recorded it. Until then the insurer's cap stays where it was (none before the
+      first approval), so the patient pays that part. The amount is tried on a copy first (a request the record would
+      refuse is refused at once), taken with the pre-authorisation's version, made only over the pre-authorisation as it
+      was (`approval.stale`) and audited `insurance.preauth.approved`, `.enhancement` or `.final_approval` at Warning with
+      both names. A rejection or a refused enhancement is recorded at once: it leaves the bill with the patient;
   - a visit the doctor has started, cancelled at the desk (`patients.visit_cancel`, MAKER-CHECKER.md slice 15): once the
     consultation is under way (the token started or an encounter opened), or the visit has an encounter, a note, an order
     line or an e-prescription not cancelled, `POST /api/v1/visits/{id}/cancel` (`visits.manage`) answers 202 with the
@@ -779,6 +799,53 @@ and grants nothing.
       hospital administrator by default), never the one who asked. The original line is kept; its charge is withdrawn
       and its stock returned, and the corrected line is issued and charged, through the same stock and charge paths, only
       over the line as asked (`approval.stale`), audited `ot.material_corrected` with both names;
+  - quality, privacy, engagement and the patient's own sharing (MAKER-CHECKER.md, slice 14):
+    - a sentinel or never event (Quality): it is not closed, from Reported or any other status, until its root-cause
+      analysis is completed (`incident.sentinel_needs_rca`; closing a duplicate straight from Reported is no longer a way
+      round it). Closing one (`POST /api/v1/quality/incidents/{id}/transition`) and re-grading one so it is no longer
+      sentinel (`PUT /api/v1/quality/incidents/{id}`, with a `reason`; refused without one) answer 202 with the approval
+      (`quality.sentinel_close`, `quality.sentinel_downgrade`), the status, harm grade and never event before → after in
+      words. The quality manager decides (the new `quality.incidents.approve`: the QualityManager role and the hospital
+      administrator), never the one who asked (`approval.self`) nor the incident's reporter
+      (`incident.reporter_approves`, 403, which leaves it waiting; an anonymous report has no reporter to refuse). Until
+      then the incident stays as it was, and its read shows what waits (`closureAskedAt`, `downgradeAskedAt`). Made only
+      over the incident as asked (`approval.stale`), with the analysis and corrective actions checked again; audited
+      `quality.incident.sentinel_closed` / `quality.incident.sentinel_downgraded` at Warning with both names. Raising a
+      grade, and keeping one sentinel, apply at once; the theatre's retained-item never event (`IIncidentRegister`) is
+      raised as before, named to the member of staff who raised it, who then does not approve its closing;
+    - a personal data breach (Privacy, DPDP Act 2023 and Rules 2025, rule 7): it closes only on its detailed report to
+      the Board recorded with the Board's reference and day (`privacy.breach_board_report_required`; a reason alone no
+      longer closes a breach never reported). Closing it (`POST /api/v1/privacy/breaches/{id}/close`) and taking patients
+      off its notification list (`POST /api/v1/privacy/breaches/{id}/affected/remove` with the patients and why; the
+      one-person `DELETE …/affected/{patientId}` is gone) answer 202 (`privacy.breach_close`,
+      `privacy.breach_affected_remove`). The Data Protection Officer decides (the new `privacy.breaches.approve`, the
+      hospital administrator by default; grant it to the DPO's or privacy officer's role), never the one who asked. A
+      patient already sent the notice stays on the list (`privacy.breach_already_notified`); until approved the patients
+      stay listed and a notice sent meanwhile reaches them, and approval fails if any was notified or taken off since
+      (`approval.stale`). Audited `privacy.breach.closed` and `privacy.breach.affected_removed` at Warning with both
+      names, the latter with each patient's UHID and the reason (and an entry on each patient's own trail);
+    - a bulk campaign (Engagement): asking to schedule one (`POST /api/v1/crm/campaigns/{id}/schedule`,
+      `crm.campaigns.send`) runs the scheduling checks (template and opt-out link, portal address, a time to come, a
+      consenting audience) and answers 202 (`engagement.campaign_schedule`); the campaign stays a draft and nothing is
+      sent. Someone other than its author approves (the new `crm.campaigns.approve`, the hospital administrator by
+      default): not the one who asked (`approval.self`) nor the one who wrote or last edited it
+      (`campaign.author_approves`, 403). A draft edited meanwhile, or a time that has passed, fails it
+      (`approval.stale`); audited `crm.campaign.scheduled` at Warning with both names;
+    - a patient's reports and bills shared with another mobile number in the portal (Patients, `POST
+      /api/v1/patients/{id}/portal-family`): the desk's request now sends a six-digit code by SMS to the patient's own
+      registered mobile number (`portal.family_code_desk`), the portal family code and the mechanism a new mobile number
+      is confirmed with (PR #279): ten minutes, five tries judged one at a time under a lock, used once, kept only hashed,
+      and the portal's limits per number. No link exists until the desk enters it as the patient reads it out (`POST
+      …/portal-family/codes/{codeId}/confirm`, with who agreed); a patient with no mobile number of their own cannot share
+      this way (`portal.family_no_patient_phone`), and a code sent to a number the patient no longer has shares nothing
+      (`portal.family_number_changed`). Protected (restricted) records stay hidden in the portal as before. The portal's
+      own path already sent its code to the patient's number;
+    - a record-sharing consent with no scope (no recipient, purpose, kinds of records or period) and no signed form
+      (`POST /api/v1/patients/{id}/consents`): a witness, another member of staff holding `patients.consents`, confirms at
+      the screen with their own credentials (`POST /api/v1/auth/witness`, purpose `consent.record_sharing`; never the same
+      account, used once, for that patient), and the consent names them (`consent.witness_required` otherwise; audited
+      `patient.consent.witnessed`). A signed form attached must be a file stored for that patient (`documentFileId`). A
+      scoped consent, a refusal, or one with the signed form is recorded as before;
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was

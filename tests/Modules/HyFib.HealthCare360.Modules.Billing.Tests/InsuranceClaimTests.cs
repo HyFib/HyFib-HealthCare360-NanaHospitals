@@ -57,6 +57,45 @@ public sealed class InsuranceClaimTests
     }
 
     [Fact]
+    public void A_settlement_is_checked_before_anything_is_written_and_checking_it_changes_nothing()
+    {
+        var claim = NewClaim();
+
+        claim.ValidateSettlement(90_000m, [new DeductionInput("Room rent capping", 10_000m)], "UTR").IsSuccess.ShouldBeTrue();
+        claim.ValidateSettlement(90_000m, [new DeductionInput("Other", 10_000.01m)], "UTR").Error!.Code.ShouldBe("insurance.settlement_exceeds");
+        claim.ValidateSettlement(0m, [], null).IsFailure.ShouldBeTrue("nothing settled and nothing deducted");
+        claim.ValidateSettlement(10_000m, [], null).IsFailure.ShouldBeTrue("money needs a UTR");
+        (claim.Status, claim.SettledAmount, claim.DeductionAmount, claim.Settlements.Count).ShouldBe((ClaimStatus.Submitted, 0m, 0m, 0));
+
+        claim.RaiseQuery("Send the discharge summary", TestData.Now);
+        claim.ValidateSettlement(10_000m, [], "UTR").Error!.Code.ShouldBe("insurance.claim_not_settleable");
+    }
+
+    [Fact]
+    public void A_rejection_is_checked_before_it_is_asked_for_and_a_claim_with_money_received_cannot_be_rejected()
+    {
+        var claim = NewClaim();
+        claim.ValidateRejection().IsSuccess.ShouldBeTrue();
+        claim.Status.ShouldBe(ClaimStatus.Submitted);
+
+        claim.Settle(10_000m, [], "UTR1", null, Today, TestData.Now);
+        claim.ValidateRejection().Error!.Code.ShouldBe("insurance.claim_not_rejectable");
+        claim.Reject("Not covered", Today, TestData.Now).Error!.Code.ShouldBe("insurance.claim_not_rejectable");
+    }
+
+    [Theory]
+    [InlineData(200, 0, true)]
+    [InlineData(1, 0, true)]
+    [InlineData(0, 0, false)]
+    [InlineData(500, 500, false)]
+    [InlineData(500.01, 500, true)]
+    [InlineData(200, -50, true)]
+    public void A_write_off_waits_for_a_second_person_when_it_is_more_than_the_desk_writes_off_alone(decimal writtenOff, decimal approvalAbove, bool waits)
+    {
+        ClaimWriteOffs.NeedsApproval(writtenOff, approvalAbove).ShouldBe(waits);
+    }
+
+    [Fact]
     public void Queries_return_the_claim_to_where_it_was()
     {
         var claim = NewClaim();

@@ -1,6 +1,7 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import { ApiError } from '@hc360/core';
 import type * as Ui from '@hc360/ui';
+import { expectNoAxeViolations } from '@hc360/ui/testing';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -24,7 +25,7 @@ vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof PatientsApi>();
   return {
     ...actual,
-    portalFamilyApi: { link: vi.fn(), revoke: vi.fn() },
+    portalFamilyApi: { sendCode: vi.fn(), confirm: vi.fn(), revoke: vi.fn() },
     portalLinkApi: { send: vi.fn() },
     patientQueries: {
       ...actual.patientQueries,
@@ -98,47 +99,91 @@ function portalLinks(patch: Partial<PatientPortalLinksDto> = {}): PatientPortalL
 
 describe('ShareForm', () => {
   beforeEach(() => {
-    vi.mocked(portalFamilyApi.link).mockReset().mockResolvedValue({ id: 'new' });
+    vi.mocked(portalFamilyApi.sendCode)
+      .mockReset()
+      .mockResolvedValue({ codeId: 'c1', sentTo: '+91******0001', expiresAt: '2026-11-08T10:10:00Z' });
+    vi.mocked(portalFamilyApi.confirm).mockReset().mockResolvedValue({ id: 'new' });
     Object.values(notify).forEach((spy) => spy.mockClear());
   });
 
-  function renderForm() {
+  function renderForm(ownPhone: string | null = '+919800000001') {
     const onClose = vi.fn();
-    renderWithProviders(<ShareForm patientId="p1" ownPhone="+919800000001" onClose={onClose} />);
-    return { onClose, share: screen.getByRole('button', { name: 'Share' }) };
+    renderWithProviders(<ShareForm patientId="p1" ownPhone={ownPhone} onClose={onClose} />);
+    return { onClose, send: screen.getByRole('button', { name: 'Send code to the patient' }) };
   }
 
-  it('shares only once the identities are checked, then closes', async () => {
+  it('sends a code to the patient’s own number, and shares only once the patient’s code is entered', async () => {
+    // MAKER-CHECKER.md, slice 14: no link until the code sent to the patient's registered number comes back.
     const user = userEvent.setup();
-    const { onClose, share } = renderForm();
-    expect(share).toBeDisabled();
+    const { onClose, send } = renderForm();
+    expect(send).toBeDisabled();
 
     await user.type(screen.getByRole('textbox', { name: /^Family member’s mobile number/ }), '98111 22233');
     await user.selectOptions(screen.getByRole('combobox', { name: /^The patient is their/ }), 'Parent');
     await user.click(screen.getByRole('radio', { name: 'A guardian, for the patient' }));
     await user.type(screen.getByRole('textbox', { name: /^Guardian’s name/ }), 'Ravi Kumar');
-    expect(share).toBeDisabled();
+    expect(send).toBeDisabled();
     await user.click(screen.getByRole('checkbox', { name: /checked the identity documents/ }));
-    await waitFor(() => expect(share).toBeEnabled());
-    await user.click(share);
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
 
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
-    expect(portalFamilyApi.link).toHaveBeenCalledWith('p1', {
+    expect(portalFamilyApi.sendCode).toHaveBeenCalledWith('p1', {
       accountPhone: '+919811122233',
       relation: 'Parent',
       consentGivenBy: 'Ravi Kumar, guardian',
       identityChecked: true,
     });
+    expect(await screen.findByText('Code sent to the patient’s own number')).toBeInTheDocument();
+    expect(screen.getByText(/A code went by SMS to \+91\*{6}0001/)).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(notify.success).not.toHaveBeenCalled();
+    await expectNoAxeViolations(document.body);
+
+    const share = screen.getByRole('button', { name: 'Share' });
+    expect(share).toBeDisabled();
+    await user.type(screen.getByRole('textbox', { name: /^Code from the patient’s SMS/ }), '482913');
+    await user.click(share);
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(portalFamilyApi.confirm).toHaveBeenCalledWith('p1', 'c1', '482913', 'Ravi Kumar, guardian');
     expect(notify.success).toHaveBeenCalledWith(
       'Records shared',
       '+91 98111 22233 sees the patient’s records the next time they open the patient portal.',
     );
   });
 
+  it('explains a wrong code and keeps the dialog open', async () => {
+    const user = userEvent.setup();
+    const { onClose, send } = renderForm();
+    vi.mocked(portalFamilyApi.confirm).mockRejectedValueOnce(
+      new ApiError({
+        status: 400,
+        title: 'Please correct the highlighted fields.',
+        errors: { code: ['The code is incorrect.'] },
+      }),
+    );
+    await user.type(screen.getByRole('textbox', { name: /^Family member’s mobile number/ }), '9811122233');
+    await user.selectOptions(screen.getByRole('combobox', { name: /^The patient is their/ }), 'Spouse');
+    await user.click(screen.getByRole('checkbox', { name: /checked the identity documents/ }));
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
+    await user.type(await screen.findByRole('textbox', { name: /^Code from the patient’s SMS/ }), '000000');
+    await user.click(screen.getByRole('button', { name: 'Share' }));
+
+    expect(await screen.findByText(/That is not the code sent to the patient/)).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('says a patient with no mobile number of their own cannot share this way', () => {
+    const { send } = renderForm(null);
+    expect(screen.getByText(/no mobile number of their own/)).toBeInTheDocument();
+    expect(send).toBeDisabled();
+  });
+
   it('shows the server’s refusal in the dialog', async () => {
     const user = userEvent.setup();
-    const { onClose, share } = renderForm();
-    vi.mocked(portalFamilyApi.link).mockRejectedValueOnce(
+    const { onClose, send } = renderForm();
+    vi.mocked(portalFamilyApi.sendCode).mockRejectedValueOnce(
       new ApiError({
         status: 409,
         title: 'Conflict',
@@ -149,8 +194,8 @@ describe('ShareForm', () => {
     await user.type(screen.getByRole('textbox', { name: /^Family member’s mobile number/ }), '9811122233');
     await user.selectOptions(screen.getByRole('combobox', { name: /^The patient is their/ }), 'Spouse');
     await user.click(screen.getByRole('checkbox', { name: /checked the identity documents/ }));
-    await waitFor(() => expect(share).toBeEnabled());
-    await user.click(share);
+    await waitFor(() => expect(send).toBeEnabled());
+    await user.click(send);
 
     expect(await screen.findByText('This mobile number can already see the record.')).toBeInTheDocument();
     expect(screen.getByText('The records were not shared')).toBeInTheDocument();

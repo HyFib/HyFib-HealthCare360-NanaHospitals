@@ -54,7 +54,9 @@ public sealed record ClaimDetail(
     IReadOnlyList<ClaimSettlementDto> Settlements,
     IReadOnlyList<ClaimDeductionDto> Deductions,
     VerifiedClaimCoding? VerifiedCoding,
-    uint Version);
+    uint Version,
+    DateTimeOffset? WriteOffAskedAt = null,
+    decimal WriteOffApprovalAbove = 0m);
 
 /// <summary>
 /// The coding medical records verified for the bill's stay or visit (MRD-02, MB-03), as the text of a claim's codes: what
@@ -86,9 +88,11 @@ public sealed record ClaimTextRequest(string Text);
 
 public sealed record ApproveClaimRequest(decimal ApprovedAmount);
 
-public sealed record SettleClaimRequest(decimal Amount, IReadOnlyList<DeductionInput>? Deductions, string? UtrNumber, string? Reference, DateOnly? SettledOn);
+/// <param name="Version">The claim's version the desk saw: a settlement on a claim that changed meanwhile is refused (409).</param>
+public sealed record SettleClaimRequest(decimal Amount, IReadOnlyList<DeductionInput>? Deductions, string? UtrNumber, string? Reference, DateOnly? SettledOn, uint Version);
 
-public sealed record RejectClaimRequest(string Reason);
+/// <param name="Version">The claim's version the desk saw.</param>
+public sealed record RejectClaimRequest(string Reason, uint Version);
 
 public sealed record AgeingRow(
     Guid PayerId,
@@ -150,6 +154,7 @@ public sealed class SettleClaimRequestValidator : AbstractValidator<SettleClaimR
     public SettleClaimRequestValidator()
     {
         RuleFor(x => x.Amount).NonNegativeAmount();
+        RuleFor(x => x.Version).SeenVersion();
         RuleFor(x => x.UtrNumber).MaximumLength(64);
         RuleFor(x => x.Reference).MaximumLength(64);
         RuleFor(x => x.Deductions).Must(d => d is null || d.Count <= 50).WithMessage("Record at most 50 deductions per settlement.");
@@ -163,5 +168,9 @@ public sealed class SettleClaimRequestValidator : AbstractValidator<SettleClaimR
 
 public sealed class RejectClaimRequestValidator : AbstractValidator<RejectClaimRequest>
 {
-    public RejectClaimRequestValidator() => RuleFor(x => x.Reason).Reason(1000);
+    public RejectClaimRequestValidator()
+    {
+        RuleFor(x => x.Reason).Reason(1000);
+        RuleFor(x => x.Version).SeenVersion();
+    }
 }

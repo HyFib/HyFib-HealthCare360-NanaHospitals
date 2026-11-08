@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Queue;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Numbering;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -134,6 +135,7 @@ public sealed class PatientsModule : IModule
         services.AddScoped<VisitService>();
         services.AddScoped<PortalPatientScope>();
         services.AddScoped<PortalFamilyService>();
+        services.AddWitnessPurpose(FrontOfficeEndpoints.RecordSharingWitness);
         services.AddScoped<PortalLinkService>();
         services.AddScoped<PatientPhoneChangeService>();
         services.AddScoped<IPortalAccountResolver, PortalAccountResolver>();

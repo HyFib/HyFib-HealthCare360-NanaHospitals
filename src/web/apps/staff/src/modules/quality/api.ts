@@ -1,6 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type {
   CapaSource,
   CapaStatus,
@@ -134,6 +135,10 @@ export interface IncidentDetail {
   isDeviceRelated: boolean;
   mvpiReports: IncidentMvpiItem[];
   version: number;
+  /** A sentinel event's closing, asked for and waiting for the quality manager (MAKER-CHECKER.md, slice 14). */
+  closureAskedAt?: string | null;
+  /** A sentinel event's re-grading out of sentinel, asked for and waiting for the quality manager. */
+  downgradeAskedAt?: string | null;
 }
 
 export interface UpdateIncidentRequest {
@@ -147,6 +152,8 @@ export interface UpdateIncidentRequest {
   involvedStaffUserIds: string[] | null;
   version: number;
   involvesDevice: boolean;
+  /** Why a sentinel event is no longer sentinel: required when the re-grading takes it out of sentinel. */
+  reason?: string | null;
 }
 
 export interface RcaFactorInput {
@@ -620,10 +627,18 @@ export const qualityQueries = {
 
 export const qualityApi = {
   report: (request: ReportIncidentRequest) => api.post<IncidentReceipt>('/api/v1/quality/incidents', request),
+  /**
+   * Re-grades the incident. Taking a sentinel event out of sentinel answers 202 with the approval it waits for (the
+   * quality manager decides, never the one who asked nor the reporter): nothing changes until then.
+   */
   updateIncident: (id: string, request: UpdateIncidentRequest) =>
-    api.put<void>(`/api/v1/quality/incidents/${id}`, request),
+    api.put<ApprovalRequestDto | undefined>(`/api/v1/quality/incidents/${id}`, request),
+  /**
+   * Moves the incident along. Closing a sentinel or never event (only on its completed root-cause analysis) answers 202
+   * with the approval it waits for: the quality manager closes it, never the one who asked nor the reporter.
+   */
   transition: (id: string, status: IncidentStatus, note: string | null) =>
-    api.post<void>(`/api/v1/quality/incidents/${id}/transition`, { status, note }),
+    api.post<ApprovalRequestDto | undefined>(`/api/v1/quality/incidents/${id}/transition`, { status, note }),
   assign: (id: string, userId: string) => api.post<void>(`/api/v1/quality/incidents/${id}/assign`, { userId }),
   saveInvestigation: (incidentId: string, request: SaveInvestigationRequest) =>
     api.put<string>(`/api/v1/quality/incidents/${incidentId}/investigation`, request),

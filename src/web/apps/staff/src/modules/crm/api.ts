@@ -1,6 +1,7 @@
 import type { Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { PatientCategory } from '@/modules/patients/api';
 import type { CommunicationEntry, CommunicationKind } from './communications';
 import type {
@@ -322,6 +323,8 @@ export interface CampaignDetail {
   queuedCount: number;
   skippedCount: number;
   version: number;
+  /** Asked to be scheduled, waiting for someone other than its author (MAKER-CHECKER.md, slice 14). */
+  scheduleAskedAt?: string | null;
 }
 
 export interface CampaignDelivery {
@@ -573,8 +576,12 @@ export const crmApi = {
     api.post<AudiencePreview>('/api/v1/crm/campaigns/audience-preview', segment, { query: { channel } }),
   createCampaign: (request: SaveCampaignRequest) => api.post<string>('/api/v1/crm/campaigns', request),
   updateCampaign: (id: string, request: SaveCampaignRequest) => api.put<void>(`/api/v1/crm/campaigns/${id}`, request),
+  /**
+   * Asks for the draft to be scheduled: 202 with the approval it waits for. Someone other than its author (who wrote or
+   * last edited it, or asked) approves; it stays a draft, and nothing is sent, until then.
+   */
   scheduleCampaign: (id: string, scheduledAt: string) =>
-    api.post<void>(`/api/v1/crm/campaigns/${id}/schedule`, { scheduledAt }),
+    api.post<ApprovalRequestDto>(`/api/v1/crm/campaigns/${id}/schedule`, { scheduledAt }),
   unscheduleCampaign: (id: string) => api.post<void>(`/api/v1/crm/campaigns/${id}/unschedule`),
   cancelCampaign: (id: string, reason: string) => api.post<void>(`/api/v1/crm/campaigns/${id}/cancel`, { reason }),
 
