@@ -20,6 +20,8 @@ internal static class QueueEndpoints
         group.MapPost("/{id:guid}/dispense", async (Guid id, DispenseRequest r, DispensingService dispensing, CancellationToken ct) =>
                 (await dispensing.DispenseAsync(id, r, ct)).ToCreated(s => $"/api/v1/pharmacy/sales/{s.Id}"))
             .RequirePermission(PharmacyPermissions.Dispense).WithValidation<DispenseRequest>();
+        group.MapPost("/{id:guid}/lines/{lineId:guid}/acknowledge-override", AcknowledgeOverride)
+            .RequirePermission(PharmacyPermissions.Dispense).WithValidation<AcknowledgeOverrideRequest>();
         group.MapPost("/{id:guid}/close", Close)
             .RequireAnyPermission(PharmacyPermissions.Dispense, PharmacyPermissions.IpIssue).WithValidation<PharmacyReasonRequest>();
         group.MapPost("/{id:guid}/refills", async (Guid id, AuthorizeRefillsRequest r, RefillService refills, CancellationToken ct) =>
@@ -83,6 +85,7 @@ internal static class QueueEndpoints
                     IsRefill = e.RefillOfEntryId != null,
                     e.SignedAt,
                     e.ReceivedAt,
+                    Unacknowledged = e.Lines.Any(l => l.SafetyOverride != null && l.OverrideAcknowledgedAt == null),
                 })
             .ToPagedResultAsync(page, ct);
 
@@ -91,7 +94,7 @@ internal static class QueueEndpoints
         return TypedResults.Ok(result.Map(e => new QueueListItem(
             e.Id, e.PrescriptionNumber, e.PatientId, e.FullName, e.Uhid, e.Gender, e.DateOfBirth is { } dob ? Age.Format(dob, today) : null,
             e.Prescriber, e.IsInpatient, e.Status, e.LineCount, e.OpenLines, e.HasControlledDrugs, e.IsRefill, e.SignedAt, e.ReceivedAt,
-            (int)Math.Max((now - e.ReceivedAt).TotalMinutes, 0))));
+            (int)Math.Max((now - e.ReceivedAt).TotalMinutes, 0), e.Unacknowledged)));
     }
 
     /// <summary>Opens a prescription for dispensing, with the chosen store's stock per line (PHI read is audited).</summary>
@@ -146,11 +149,70 @@ internal static class QueueEndpoints
                 return new QueueLineDto(
                     l.Id, l.PrescriptionLineId, l.DrugItemId, l.DrugName, l.GenericName, l.Strength, l.DosageForm, l.Route, l.Dose, l.Frequency,
                     l.DurationDays, l.Instructions, l.IsControlledDrug, l.RequestedQuantity, l.DispensedQuantity, l.RemainingQuantity, l.Status,
-                    available?.Available, available?.CurrentMrp, available?.NearestExpiry, master?.Schedule, master?.IsControlled ?? false);
+                    available?.Available, available?.CurrentMrp, available?.NearestExpiry, master?.Schedule, master?.IsControlled ?? false,
+                    l.SafetyOverride, l.OverrideAcknowledgedByName, l.OverrideAcknowledgedAt, l.OverrideAcknowledgementNote);
             }).ToList(),
             entry.Version,
-            await DispensingService.FreeTreatmentAsync(db, entry.VisitId, ct)));
+            await DispensingService.FreeTreatmentAsync(db, entry.VisitId, ct),
+            entry.SafetyOverrideReason));
     }
+
+    /// <summary>
+    /// A pharmacist acknowledges, from their own sign-in, that a line was signed over a blocking safety alert: the line is
+    /// then dispensed or issued as any other. Audited (Warning) with the alert, the prescriber's reason and the pharmacist.
+    /// </summary>
+    private static async Task<IResult> AcknowledgeOverride(
+        Guid id,
+        Guid lineId,
+        AcknowledgeOverrideRequest request,
+        HospitalDbContext db,
+        PatientAccessGuard guard,
+        ICurrentUser current,
+        IAuditLogger audit,
+        PharmacyRealtime realtime,
+        TimeProvider time,
+        CancellationToken ct)
+    {
+        var entry = await db.Set<PharmacyQueueEntry>().Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == id, ct);
+        if (entry is null)
+        {
+            return Error.NotFound(nameof(PharmacyQueueEntry), id).ToProblem();
+        }
+
+        var access = await guard.EnsureCanOpenAsync(entry.PatientId, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
+        }
+
+        if (current.UserId is not { } userId)
+        {
+            return Error.Forbidden("auth.user_required", "Sign in as yourself to acknowledge a safety override.").ToProblem();
+        }
+
+        var name = current.DisplayName ?? current.UserName ?? userId.ToString();
+        var acknowledged = entry.AcknowledgeOverride(lineId, userId, name, request.Note, time.GetUtcNow());
+        if (acknowledged.IsFailure)
+        {
+            return acknowledged.Error!.ToProblem();
+        }
+
+        var line = entry.Lines.First(l => l.Id == lineId);
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "pharmacy.safety_override_acknowledged",
+            Fit($"{entry.PrescriptionNumber}, {line.DrugName}: override acknowledged by {name}. Alert: {line.SafetyOverride} Prescriber's reason: {entry.SafetyOverrideReason}", 1000))
+        {
+            PatientId = entry.PatientId,
+            EntityType = nameof(PharmacyQueueEntry),
+            EntityId = entry.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { queueLineId = line.Id, line.PrescriptionLineId, alert = line.SafetyOverride, reason = entry.SafetyOverrideReason, note = line.OverrideAcknowledgementNote },
+        });
+        await db.SaveChangesAsync(ct);
+        await realtime.QueueChangedAsync(entry.FacilityId, entry.Id, entry.Status, ct);
+        return TypedResults.NoContent();
+    }
+
+    private static string Fit(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
     private static async Task<IResult> Close(Guid id, PharmacyReasonRequest request, HospitalDbContext db, PharmacyRealtime realtime, TimeProvider time, CancellationToken ct)
     {

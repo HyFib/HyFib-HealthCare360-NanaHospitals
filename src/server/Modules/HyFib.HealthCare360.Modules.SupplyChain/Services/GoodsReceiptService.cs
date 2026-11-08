@@ -132,6 +132,7 @@ public sealed class GoodsReceiptService(
                 // An implant's MRP is what its bill may charge at most (NPPA), so its batch must carry one, as a medicine's does.
                 RequiresMrp = item.Type is ItemType.Drug or ItemType.Implant,
                 AcceptShortExpiry = input.AcceptShortExpiry,
+                CeilingPrice = PriceCeiling.AppliesTo(item.Type, item.CeilingPrice) ? item.CeilingPrice : null,
             });
         }
 
@@ -285,6 +286,20 @@ public sealed class GoodsReceiptService(
         if (posted.IsFailure)
         {
             return posted;
+        }
+
+        // The ceiling as it is now: one lowered since the receipt was entered refuses a pack priced above it.
+        var lineItems = grn.Lines.Select(l => l.ItemId).Distinct().ToList();
+        var ceilings = await db.Set<Item>().AsNoTracking().Where(i => lineItems.Contains(i.Id))
+            .Select(i => new { i.Id, i.Type, i.CeilingPrice })
+            .ToDictionaryAsync(i => i.Id, i => PriceCeiling.AppliesTo(i.Type, i.CeilingPrice) ? i.CeilingPrice : null, ct);
+        foreach (var line in grn.Lines)
+        {
+            var priced = line.CheckCeiling(ceilings.GetValueOrDefault(line.ItemId));
+            if (priced.IsFailure)
+            {
+                return priced;
+            }
         }
 
         var reference = new StockReference(ReferenceModule, grn.Id, grn.Number, $"Invoice {grn.VendorInvoiceNumber}");

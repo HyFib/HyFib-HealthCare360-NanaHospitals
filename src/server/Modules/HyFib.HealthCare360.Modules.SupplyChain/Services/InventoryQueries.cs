@@ -21,8 +21,19 @@ public sealed record ItemSummary(
     bool IsActive,
     string? Manufacturer,
     string? Specification,
-    decimal? CeilingPrice)
+    decimal? CeilingPrice,
+    decimal PurchaseUnitFactor = 1,
+    string? CeilingNotification = null)
 {
+    /// <summary>
+    /// The refusal of a sale or issue of a batch at <paramref name="unitMrp"/> a base unit, when it is above the NPPA ceiling
+    /// of a scheduled medicine (<see cref="PriceCeiling"/>); null when it may be sold.
+    /// </summary>
+    public Error? CeilingRefusal(string batchNumber, decimal unitMrp) =>
+        PriceCeiling.AppliesTo(Type, CeilingPrice) && PriceCeiling.UnitExceeds(unitMrp, CeilingPrice!.Value, PurchaseUnitFactor)
+            ? PriceCeiling.SaleRefusal(Id, Name, batchNumber, unitMrp, CeilingPrice.Value, BaseUnit, CeilingNotification)
+            : null;
+
     public bool RequiresPrescription => Item.NeedsPrescription(Schedule, IsControlled);
 
     public bool RequiresRegister => Item.NeedsRegister(Schedule, IsControlled);
@@ -89,7 +100,8 @@ public static class InventoryQueries
         return await db.Set<Item>().AsNoTracking()
             .Where(i => idList.Contains(i.Id))
             .Select(i => new ItemSummary(i.Id, i.Code, i.Name, i.GenericName, i.BrandName, i.Strength, i.DosageForm, i.Type, i.Schedule,
-                i.IsControlled, i.IsColdChain, i.BaseUnit, i.HsnCode, i.GstRate, i.IsActive, i.Manufacturer, i.Specification, i.CeilingPrice))
+                i.IsControlled, i.IsColdChain, i.BaseUnit, i.HsnCode, i.GstRate, i.IsActive, i.Manufacturer, i.Specification, i.CeilingPrice,
+                i.PurchaseUnitFactor, i.CeilingNotification))
             .ToDictionaryAsync(i => i.Id, ct);
     }
 
