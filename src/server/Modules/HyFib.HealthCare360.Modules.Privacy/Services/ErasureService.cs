@@ -6,7 +6,9 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Privacy.Domain;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Notifications;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Modules.Privacy.Services;
 
@@ -35,6 +37,8 @@ public sealed class ErasureService(
     ISessionValidator sessions,
     IAuditLogger audit,
     ICurrentUser currentUser,
+    ErasureLedger ledger,
+    IOptions<PlatformOptions> platform,
     TimeProvider time)
 {
     public const string Messages = "messages";
@@ -78,36 +82,18 @@ public sealed class ErasureService(
         }
 
         var now = time.GetUtcNow();
-        var closedSessions = new List<Guid>();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        foreach (var item in chosen)
+        var applied = await ApplyAsync(patientId, chosen, $"privacy request {request.RequestNumber}", now, ct);
+        if (applied.IsFailure)
         {
-            switch (item)
-            {
-                case Messages:
-                    var withdrawn = await consents.SetPreferencesAsync(patientId, marketing: false, updates: false, $"privacy request {request.RequestNumber}", ct);
-                    if (withdrawn.IsFailure)
-                    {
-                        return withdrawn.Error!;
-                    }
-
-                    break;
-                case Feedback:
-                    await feedback.EraseAsync(patientId, ct);
-                    break;
-                case NomineeItem:
-                    db.RemoveRange(await db.Set<Nominee>().Where(n => n.PatientId == patientId).ToListAsync(ct));
-                    break;
-                case PortalAccount:
-                    closedSessions.AddRange(await ClosePortalAccountAsync(patientId, now, ct));
-                    break;
-            }
+            return applied.Error!;
         }
 
+        var closedSessions = applied.Value!;
         var holds = await HoldsAsync(patientId, ct);
         var keepUntil = KeepUntil(holds);
         var keepPermanently = KeepPermanently(holds);
-        var summary = Describe(chosen, holds);
+        var summary = Describe(chosen, holds, platform.Value.Backup.RetentionDays);
         var recorded = request.RecordErasure(chosen, summary, keepUntil, keepPermanently, currentUser.UserId, now);
         if (recorded.IsFailure)
         {
@@ -130,7 +116,73 @@ public sealed class ErasureService(
             sessions.Invalidate(session);
         }
 
+        // After the commit, so the ledger never holds an erasure the database does not. Should the write fail, the next
+        // replay finds the erasure in the database and writes it then (ErasureLedgerReplay.BackfillAsync).
+        try
+        {
+            ledger.Append(new ErasureLedgerEntry(Guid.NewGuid(), request.Id, request.RequestNumber, patientId, chosen, now));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            audit.Add(new AuditEntry(AuditCategories.Security, "privacy.erasure_ledger_failed",
+                $"Erasure for privacy request {request.RequestNumber} could not be written to the erasure ledger: {ex.Message}")
+            {
+                PatientId = patientId,
+                EntityType = nameof(DataRequest),
+                EntityId = request.Id.ToString(),
+                Severity = AuditSeverity.Critical,
+            });
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+
         return new ErasureOutcome(chosen, keepUntil, keepPermanently, summary);
+    }
+
+    /// <summary>
+    /// Carries out the erasures in <paramref name="items"/> for a patient, in the caller's transaction, and returns the
+    /// portal sessions it ended (to be dropped from every node once the transaction commits). Used for a request
+    /// (<see cref="EraseAsync"/>) and to apply a request's erasure again after a restore (<see cref="ErasureLedgerReplay"/>).
+    /// </summary>
+    internal async Task<Result<List<Guid>>> ApplyAsync(Guid patientId, IReadOnlyList<string> items, string via, DateTimeOffset now, CancellationToken ct)
+    {
+        var closedSessions = new List<Guid>();
+        foreach (var item in items)
+        {
+            switch (item)
+            {
+                case Messages:
+                    var withdrawn = await consents.SetPreferencesAsync(patientId, marketing: false, updates: false, via, ct);
+                    if (withdrawn.IsFailure)
+                    {
+                        return withdrawn.Error!;
+                    }
+
+                    break;
+                case Feedback:
+                    await feedback.EraseAsync(patientId, ct);
+                    break;
+                case NomineeItem:
+                    db.RemoveRange(await db.Set<Nominee>().Where(n => n.PatientId == patientId).ToListAsync(ct));
+                    break;
+                case PortalAccount:
+                    closedSessions.AddRange(await ClosePortalAccountAsync(patientId, now, ct));
+                    break;
+            }
+        }
+
+        return closedSessions;
+    }
+
+    /// <summary>
+    /// The items among <paramref name="items"/> that can be applied again for the patient now, and those held back. Applying
+    /// an erasure already done changes nothing, so only a portal account that other patients now sign in with is held
+    /// back, as it would be for a request.
+    /// </summary>
+    internal async Task<(List<string> Available, List<string> HeldBack)> SplitAsync(Guid patientId, IReadOnlyList<string> items, CancellationToken ct)
+    {
+        var (_, sharing) = await PortalAccountAsync(patientId, ct);
+        var known = items.Distinct(StringComparer.Ordinal).Where(IsKnownItem).ToList();
+        return ([.. known.Where(i => i != PortalAccount || sharing == 0)], [.. known.Where(i => i == PortalAccount && sharing > 0)]);
     }
 
     private async Task<List<ErasureOption>> OptionsAsync(Guid patientId, CancellationToken ct)
@@ -273,7 +325,11 @@ public sealed class ErasureService(
         holds.Any(h => h.Key != AuditHold && h.Permanently);
 
     /// <summary>The line recorded on the request (and shown to the principal) for what was erased and what is kept.</summary>
-    internal static string Describe(IReadOnlyList<string> erased, IReadOnlyList<ErasureHoldItem> holds)
+    /// <param name="backupDays">
+    /// How long backups are kept (<c>HealthCare360:Backup:RetentionDays</c>): when given, the line also says that copies in
+    /// backups go within that many days, and that a restore before then applies the erasure again (the erasure ledger).
+    /// </param>
+    internal static string Describe(IReadOnlyList<string> erased, IReadOnlyList<ErasureHoldItem> holds, int? backupDays = null)
     {
         var done = erased.Select(i => i switch
         {
@@ -294,10 +350,24 @@ public sealed class ErasureService(
         }
 
         // The hospital's own decision, not the law's: said apart, so the principal is not told the law requires it.
-        return holds.FirstOrDefault(h => h.Key == AuditHold) is { } log
-            ? $"{text} The record access log is kept {(log.Permanently ? "permanently" : $"until {log.Until!.Value.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)}")} and never edited."
-            : text;
+        if (holds.FirstOrDefault(h => h.Key == AuditHold) is { } log)
+        {
+            text += $" The record access log is kept {(log.Permanently ? "permanently" : $"until {log.Until!.Value.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)}")} and never edited.";
+        }
+
+        return backupDays is { } days ? $"{text} {BackupSentence(days)}" : text;
     }
+
+    /// <summary>
+    /// What happens to erased data in backups, in the erasure answer and the privacy notice (English). Backups older than
+    /// <paramref name="days"/> are deleted by the next nightly backup, so the last copy made before an erasure is gone at
+    /// most a day after it is <paramref name="days"/> days old: <see cref="BackupWindowDays"/>.
+    /// </summary>
+    public static string BackupSentence(int days) => string.Create(CultureInfo.InvariantCulture,
+        $"Copies in the hospital's encrypted backups are deleted as those backups expire, within {BackupWindowDays(days)} days; if a backup is restored before then, this erasure is carried out again before the data is used.");
+
+    /// <summary>The longest erased data stays in backups: the backup period, and the day until the next nightly clean-up.</summary>
+    public static int BackupWindowDays(int days) => Math.Max(days, 1) + 1;
 
     private static DateOnly? Latest(params DateOnly?[] dates) => dates.Max();
 

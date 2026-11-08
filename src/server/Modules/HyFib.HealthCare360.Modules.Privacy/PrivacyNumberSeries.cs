@@ -13,5 +13,9 @@ public static class PrivacyNumberSeries
     public static NumberSeriesDefinition Breach { get; } =
         new("privacy.breach", "Data breach", "Privacy", "DPB{YY}{SEQ:4}", NumberResetPolicy.Yearly, MaxLength: 24) { PerFacility = false };
 
-    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [DataRequest, Breach];
+    /// <summary>Data Protection Impact Assessments of a Significant Data Fiduciary (DPDP Act 2023 s.10(2)(c)), for the hospital as a whole.</summary>
+    public static NumberSeriesDefinition Dpia { get; } =
+        new("privacy.dpia", "Data protection impact assessment", "Privacy", "DPIA{YY}{SEQ:3}", NumberResetPolicy.Yearly, MaxLength: 24) { PerFacility = false };
+
+    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [DataRequest, Breach, Dpia];
 }
