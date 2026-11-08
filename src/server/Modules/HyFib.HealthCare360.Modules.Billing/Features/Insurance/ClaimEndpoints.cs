@@ -94,7 +94,9 @@ internal static class ClaimEndpoints
             c.Settlements.OrderBy(s => s.RecordedAt).Select(s => new ClaimSettlementDto(s.Id, s.Amount, s.DeductionAmount, s.UtrNumber, s.Reference, s.SettledOn, s.ReceiptId)).ToList(),
             c.Deductions.Select(d => new ClaimDeductionDto(d.Id, d.SettlementId, d.Reason, d.Amount)).ToList(),
             verified,
-            c.Version));
+            c.Version,
+            (await claims.WriteOffsAskedAsync([c.Id], ct)).TryGetValue(c.Id, out var asked) ? asked : null,
+            await claims.WriteOffApprovalAboveAsync(c.FacilityId, ct)));
     }
 
     private static async Task<IResult> Create(CreateClaimRequest request, ClaimService claims, CancellationToken ct)
@@ -115,11 +117,16 @@ internal static class ClaimEndpoints
     private static async Task<IResult> Approve(Guid id, ApproveClaimRequest request, ClaimService claims, CancellationToken ct) =>
         (await claims.ApproveAsync(id, request.ApprovedAmount, ct)).ToNoContent();
 
+    /// <summary>204 once posted; 202 with the approval when the deductions above the threshold wait (the money is posted).</summary>
     private static async Task<IResult> Settle(Guid id, SettleClaimRequest request, ClaimService claims, CancellationToken ct) =>
-        (await claims.SettleAsync(id, request, ct)).ToNoContent();
+        (await claims.SettleAsync(id, request, ct)).ToHttpResult(WrittenOffOrAsked);
 
+    /// <summary>204 once rejected; 202 with the approval when the unpaid balance above the threshold waits (nothing changes).</summary>
     private static async Task<IResult> Reject(Guid id, RejectClaimRequest request, ClaimService claims, CancellationToken ct) =>
-        (await claims.RejectAsync(id, request.Reason, ct)).ToNoContent();
+        (await claims.RejectAsync(id, request, ct)).ToHttpResult(WrittenOffOrAsked);
+
+    private static IResult WrittenOffOrAsked(ClaimWriteOffOutcome outcome) =>
+        outcome.Asked is { } asked ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked) : TypedResults.NoContent();
 
     private static async Task<IResult> Ageing(DateOnly? asOf, ClaimService claims, TimeProvider time, CancellationToken ct) =>
         TypedResults.Ok(await claims.AgeingAsync(asOf ?? BillingTime.Today(time), ct));

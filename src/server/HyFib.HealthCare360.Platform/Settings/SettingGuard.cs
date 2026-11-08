@@ -272,6 +272,11 @@ public static class SettingGuard
             "The amount up to which the billing desk cancels an unbilled charge on its own; a larger one, and every OT, procedure, implant or bed-day charge, waits for someone who approves discounts. 0 makes every cancellation wait.",
             1000m, v => Math.Max(v, 0m), v => "₹" + Money.FormatInr(v)),
 
+        // ClaimService.WriteOffApprovalAboveSetting and DefaultWriteOffApprovalAbove: below 0 acts as 0 (every write-off waits).
+        ["billing.claimWriteOff.approvalAbove"] = new SettingLimit("Insurance write-off without approval",
+            "The amount up to which the claims desk writes off what an insurer will not pay (its deductions on a settlement, or a rejected claim's unpaid balance) on its own; a larger one waits for someone who approves insurance write-offs. 0 makes every write-off wait.",
+            0m, v => Math.Max(v, 0m), v => "₹" + Money.FormatInr(v)),
+
         // ShiftService.ShortageToleranceSetting and DefaultShortageTolerance: below 0 acts as 0 (every shortage waits).
         ["billing.shift.shortageTolerance"] = new SettingLimit("Cash shortage closed without a supervisor",
             "How much cash a cashier's drawer may be short at the shift's close before a supervisor must accept the shortage; 0 makes every shortage wait.",
