@@ -326,9 +326,13 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - **Privacy › Settings › CERT-In point of contact**: name the person CERT-In writes to and who reports an incident
      within the 6 hours, with an e-mail address and a phone number (direction (iii)). System health warns until it is
      set.
-6. **Administration › Users**: create staff accounts, giving each person only the roles their job needs. HC360
-   refuses passwords on public breach lists or holding a facility's name, for temporary passwords too. A temporary
-   password works for 72 hours; after that, reset the password to give out a new one.
+6. **Administration › Users**: create staff accounts, giving each person only the roles their job needs, with their
+   own mobile number (and e-mail address, if they have one). HC360 refuses passwords on public breach lists or holding a
+   facility's name, for temporary passwords too. A temporary password works for 72 hours; after that, reset the
+   password to give out a new one. A reset sends it to the person's own mobile number and e-mail address, and you are
+   told only where it went; for an account with neither, the reset waits for another administrator who may approve
+   grants, who is shown it once and gives it in person. Another user's mobile number or e-mail address, two-step
+   verification resets and linking an account to a doctor wait for such an administrator too.
    Access is given by two people: create the hospital administrators first, while the Super Administrator is the only
    one who may approve grants, so their roles are given at once (and audited so). From then on, the roles and
    facilities you give, and the permissions you add to a role, wait for another administrator who may approve grants
@@ -529,6 +533,10 @@ Administration works only in HC360 Desktop on an enrolled workstation or tablet 
 is enrolled, a browser signed in as an administrator can open Administration › Devices and make its code, and nothing
 else of administration: enrol IT's own workstation first, and set up the rest of the hospital from it. Once one is
 enrolled, browsers keep everything but administration.
+
+Once a workstation or tablet is enrolled, the code for another waits for a second administrator who may approve grants
+(Approvals): once approved, Administration › Devices shows it to the administrator who asked, once, and it works for the
+minutes chosen from the approval. Codes for kiosks, queue displays and lab agents are made at once.
 
 Create one-time enrolment codes in **Administration › Devices › Enrol a device**, then on each workstation run
 (Administrator PowerShell, from the extracted desktop package):

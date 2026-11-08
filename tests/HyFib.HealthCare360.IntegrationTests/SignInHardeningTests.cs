@@ -193,7 +193,7 @@ public sealed class SignInHardeningTests(HospitalServer server)
     public async Task An_enrolment_code_sent_twice_at_once_enrols_one_device()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
-        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
+        var code = await server.EnrollmentCodeAsync(admin,
             new CreateEnrollmentCodeRequest(DeviceKind.Workstation, null, "Enrolment race", 30));
 
         var name = "Race PC " + Guid.NewGuid().ToString("N")[..8];
@@ -224,7 +224,7 @@ public sealed class SignInHardeningTests(HospitalServer server)
         (await UserAsync(name)).PinHash.ShouldNotBeNull();
 
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
-        await admin.PostAsync<TemporaryPasswordResponse>($"/api/v1/admin/users/{(await UserAsync(name)).Id}/reset-password");
+        await server.ResetPasswordAsync(admin, (await UserAsync(name)).Id);
 
         // Whoever may know the old password may know the PIN: until the holder sets a new one, the password unlocks.
         (await UserAsync(name)).PinHash.ShouldBeNull();
@@ -340,8 +340,8 @@ public sealed class SignInHardeningTests(HospitalServer server)
         }
 
         // An administrator gives out a new one, which works.
-        var reset = await admin.PostAsync<TemporaryPasswordResponse>($"/api/v1/admin/users/{created.UserId}/reset-password");
-        using var signedIn = await LogInAsync(name, reset.TemporaryPassword);
+        var reset = await server.ResetPasswordAsync(admin, created.UserId);
+        using var signedIn = await LogInAsync(name, reset);
         signedIn.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await signedIn.Content.ReadFromJsonAsync<AuthResult>(ApiClient.Json, Ct))!.Restriction.ShouldBe(AuthService.RestrictionPasswordChange);
     }
@@ -361,7 +361,7 @@ public sealed class SignInHardeningTests(HospitalServer server)
             change.StatusCode.ShouldBe(HttpStatusCode.OK);
         }
 
-        await admin.PostAsync<TemporaryPasswordResponse>($"/api/v1/admin/users/{created.UserId}/reset-password");
+        await server.ResetPasswordAsync(admin, created.UserId);
 
         await using var scope = server.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
@@ -384,7 +384,7 @@ public sealed class SignInHardeningTests(HospitalServer server)
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
         var before = await db.Set<NotificationLog>().CountAsync(l => l.TemplateKey == CredentialNotices.TemplateKey, Ct);
 
-        await admin.PostAsync<TemporaryPasswordResponse>($"/api/v1/admin/users/{created.UserId}/reset-password");
+        await server.ResetPasswordAsync(admin, created.UserId);
 
         (await db.Set<UserNotification>().CountAsync(n => n.UserId == created.UserId, Ct)).ShouldBe(1);
         (await db.Set<NotificationLog>().CountAsync(l => l.TemplateKey == CredentialNotices.TemplateKey, Ct)).ShouldBe(before);

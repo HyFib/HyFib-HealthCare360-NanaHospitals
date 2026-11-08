@@ -179,7 +179,7 @@ public sealed class CaRolloverDeviceTests(HospitalServer server) : IDisposable
 
     private async Task<Enrolled> EnrolAsync(ApiClient admin, DeviceKind kind, string name)
     {
-        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
+        var code = await server.EnrollmentCodeAsync(admin,
             new CreateEnrollmentCodeRequest(kind, null, "CA rollover test", 30));
         var enrolled = await server.Anonymous(ownAddress: true).PostAsync<EnrollDeviceResponse>("/api/v1/devices/enroll",
             new EnrollDeviceRequest(code.Code, name, "ROLLOVER-PC", "Windows 11", "1.0.0"));

@@ -59,8 +59,8 @@ embeds), keeping PNG transparency for logos and signatures, then stored in the f
 | POST · PUT | `/departments` · `/departments/{id}` | masters.manage | `SaveDepartmentRequest` (+`version`) → 201 · 204; 422 `facility.required` without a facility |
 | GET | `/specialties` · `/specialties/{id}` | masters.read | → `SpecialtyDto[]` · `SpecialtyDto` |
 | POST · PUT | `/specialties` · `/specialties/{id}` | masters.manage | `SaveSpecialtyRequest` (+`version`) → 201 · 204 |
-| GET | `/practitioners?page&pageSize&search&departmentId&specialtyId&kind&active` · `/practitioners/{id}` | masters.read | → `PagedResult<PractitionerDto>` (search: name, code, registration number) · `PractitionerDto` |
-| POST · PUT | `/practitioners` · `/practitioners/{id}` | masters.manage | `SavePractitionerRequest` (+`version`; `takeOutOfUseAnyway` after a 409 `practitioner.work_ahead`) → 201 · 204 |
+| GET | `/practitioners?page&pageSize&search&departmentId&specialtyId&kind&active` · `/practitioners/{id}` | masters.read | → `PagedResult<PractitionerDto>` (search: name, code, registration number) · `PractitionerDto` (one read also gives `linkedAccounts`, the accounts that sign as them, and `pendingIdentity`) |
+| POST · PUT | `/practitioners` · `/practitioners/{id}` | masters.manage | `SavePractitionerRequest` (+`version`; `takeOutOfUseAnyway` after a 409 `practitioner.work_ahead`) → 201 · 204, or 202 with the `ApprovalRequestDto` when a linked doctor's registration number, HPR ID or signature waits for approval; 409 `approval.already_requested` when another one waits |
 | GET | `/services?page&pageSize&search&sort&desc&category&departmentId&active` · `/services/{id}` | masters.read | → `PagedResult<ServiceItemDto>` (sort: code, name, price, category) · `ServiceItemDto` |
 | POST · PUT | `/services` · `/services/{id}` | masters.manage | `SaveServiceItemRequest` (+`version`, `reason` for the approver) → 201 `{ id, approvalId }` · 204, or 202 with the `ApprovalRequestDto` when the price waits for approval; 409 `approval.already_requested` when a change to the price waits and this save does not fit it |
 | GET | `/lookups/departments?kind` · `/lookups/specialties` · `/lookups/practitioners?departmentId&search&kind` (`kind` repeated to narrow to those kinds, e.g. `kind=Nurse&kind=Technician` for the OT nurse picker) · `/lookups/services?category&search` | masters.read | → active items for pickers (at most 50 doctors or services) |
@@ -90,6 +90,15 @@ A save replaces every field, so screens send the whole record.
   any facility.
 - **Images.** A new logo, photo or signature must be a PNG, JPEG or WebP of at most 300 KB uploaded for the purpose, not
   a patient's document. Before, a bigger image was saved and then silently left off documents.
+- **A doctor someone signs in as keeps their identity until a second administrator agrees** (MAKER-CHECKER.md, slice 4;
+  `PractitionerIdentityApprovals`). The registration number, HPR ID and signature image print on the prescriptions,
+  certificates and discharge summaries the linked account signs, and identify the doctor in ABDM records. For a
+  practitioner linked to a staff account, a change to any of them waits for another administrator who holds
+  `admin.grants.approve` (`masters.practitioner_identity`): the rest of the save is made at once, the form says it was
+  asked for, and the approver reads the before and after ("Registration number: 45120 → 45210", "a signature image
+  uploaded now"). It is made only over the identity it replaces (`approval.stale`; a fee changed meanwhile does not
+  stand in the way), and audited with both names (`practitioner.identity_changed`). A practitioner with no account is
+  edited at once, as before. Linking an account to a practitioner waits too (`identity.practitioner_link`, SECURITY.md).
 - **Facilities in use.** Staff sign in only to a facility in use, so the facility the user is signed in to (422
   `facility.current`) and the last facility in use (422 `facility.last_active`) can't be taken out of use.
 - **Out of use, not deleted.** A department out of use takes no new visits; a doctor out of use can't be booked or chosen

@@ -135,6 +135,22 @@ internal sealed class GrantApprovals(
             Details = new { breakGlass = decision == GrantDecision.GiveBreakGlass },
         });
 
+    /// <summary>
+    /// Audits a change to an account, a practitioner's identity or an administration desktop's enrolment made without a
+    /// second person (<see cref="AccountApprovals"/>), as <paramref name="decision"/> allowed it: the same entry as access
+    /// given alone, so System health counts a break-glass among them.
+    /// </summary>
+    public void AuditMadeAlone(GrantDecision decision, string entityType, Guid entityId, string what) =>
+        audit.Add(new AuditEntry(AuditCategories.Admin, AloneAction, Fit(decision == GrantDecision.GiveBreakGlass
+            ? $"Made by a Super Administrator with nobody else to approve it (break-glass): {what}"
+            : $"Made before the hospital had a second person to approve it: {what}", 1000))
+        {
+            EntityType = entityType,
+            EntityId = entityId.ToString(),
+            Severity = decision == GrantDecision.GiveBreakGlass ? AuditSeverity.Critical : AuditSeverity.Warning,
+            Details = new { breakGlass = decision == GrantDecision.GiveBreakGlass },
+        });
+
     /// <summary>Asks a second person to give <paramref name="user"/> these roles and facilities, or to reactivate them.</summary>
     public async Task<Result<ApprovalRequestDto>> AskForUserAsync(
         User user, IReadOnlyList<Guid> roleIds, IReadOnlyList<Guid> facilityIds, bool activate, string? reason, CancellationToken ct)
@@ -379,6 +395,17 @@ internal sealed class GrantApprovals(
             ? []
             : (await db.Set<RolePermission>().Where(rp => roleIds.Contains(rp.RoleId)).Select(rp => rp.Permission).Distinct().ToListAsync(ct))
                 .Where(PlatformPermissions.IsAdministrative).ToList();
+
+    /// <summary>
+    /// The administrative permissions an account holds through its roles, active or not: only someone who holds them all may
+    /// change the account (<see cref="AccessAdminEndpoints.EnsureMayManageAsync"/>), or approve a change to it.
+    /// </summary>
+    public async Task<List<string>> AdministrativeOfUserAsync(Guid userId, CancellationToken ct) =>
+        (await (from ur in db.Set<UserRole>()
+                join rp in db.Set<RolePermission>() on ur.RoleId equals rp.RoleId
+                where ur.UserId == userId
+                select rp.Permission).Distinct().ToListAsync(ct))
+            .Where(PlatformPermissions.IsAdministrative).ToList();
 
     /// <summary>The administrative permissions (all-access included) the active members of staff hold, through their roles.</summary>
     private static async Task<List<(Guid User, string Permission)>> HoldingsAsync(HospitalDbContext db, CancellationToken ct) =>

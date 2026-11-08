@@ -431,8 +431,9 @@ public sealed class AbdmExportTests(HospitalServer server)
         var hpr = Digits(14);
         var written = $"{hpr[..2]}-{hpr[2..6]}-{hpr[6..10]}-{hpr[10..]}";
 
-        // The hospital administrator enters it as the registry's card shows it, in groups of digits.
-        await hospitalAdmin.PutAsync(master, With(await hospitalAdmin.GetAsync<JsonObject>(master), "hprId", written.Replace('-', ' ')));
+        // The hospital administrator enters it as the registry's card shows it, in groups of digits; the doctor signs in, so
+        // the Super Administrator approves it.
+        await server.SavePractitionerAsync(hospitalAdmin, master, With(await hospitalAdmin.GetAsync<JsonObject>(master), "hprId", written.Replace('-', ' ')));
         try
         {
             var abha = NewAbha();
@@ -465,7 +466,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         finally
         {
             await SwitchAsync(enabled: false);
-            await hospitalAdmin.PutAsync(master, With(await hospitalAdmin.GetAsync<JsonObject>(master), "hprId", null));
+            await server.SavePractitionerAsync(hospitalAdmin, master, With(await hospitalAdmin.GetAsync<JsonObject>(master), "hprId", null));
         }
     }
 

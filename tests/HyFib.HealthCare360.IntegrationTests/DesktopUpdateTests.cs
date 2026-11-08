@@ -262,7 +262,7 @@ public sealed class DesktopUpdateTests : IDisposable
 
     private async Task<(Guid DeviceId, string Secret)> EnrolAsync(ApiClient admin, DeviceKind kind)
     {
-        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
+        var code = await _server.EnrollmentCodeAsync(admin,
             new CreateEnrollmentCodeRequest(kind, null, "Self-update test", 30));
         var enrolled = await _server.Anonymous(ownAddress: true).PostAsync<EnrollDeviceResponse>("/api/v1/devices/enroll",
             new EnrollDeviceRequest(code.Code, "Update test " + Guid.NewGuid().ToString("N")[..6], "OPD-PC-1", "Windows 11", "1.0.0"));

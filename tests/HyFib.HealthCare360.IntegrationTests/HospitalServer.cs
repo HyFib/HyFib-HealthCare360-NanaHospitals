@@ -591,7 +591,7 @@ public sealed class HospitalServer : IAsyncLifetime
     /// administrators (the Super Administrator and the hospital administrator) did not ask for it, as a second
     /// administrator approves a new member of staff's roles.
     /// </summary>
-    public async Task ApproveGrantAsync(Guid approvalId)
+    public async Task<ApprovalRequestDto> ApproveGrantAsync(Guid approvalId)
     {
         var checker = await SignInAsync(Users.Admin);
         var request = await checker.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
@@ -601,7 +601,100 @@ public sealed class HospitalServer : IAsyncLifetime
             request = await checker.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
         }
 
-        await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Approved for the tests.", request.Version));
+        return await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Approved for the tests.", request.Version));
+    }
+
+    /// <summary>
+    /// A member of staff's password reset by <paramref name="maker"/> as Administration › Users resets it: the temporary
+    /// password, read where it went. The administrator is never shown it: it goes to the account's own mobile number or
+    /// e-mail address (the test server sends nothing, so it is read from the outbox), or, for an account with neither, the
+    /// reset waits for the other administrator, who is shown it once when they approve.
+    /// </summary>
+    public async Task<string> ResetPasswordAsync(ApiClient maker, Guid userId)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        var path = $"/api/v1/admin/users/{userId}/reset-password";
+        using var response = await maker.SendRawAsync(HttpMethod.Post, path);
+        if (response.StatusCode == HttpStatusCode.Accepted)
+        {
+            var approved = await ApproveGrantAsync((await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Post, path)).Id);
+            return approved.Handover?.Secret ?? throw new InvalidOperationException($"Approving the password reset of {userId} handed over no password ({approved.Status}: {approved.Outcome}).");
+        }
+
+        var reset = await ApiClient.ReadAsync<PasswordResetResponse>(response, HttpMethod.Post, path);
+        return reset.TemporaryPassword ?? await TemporaryPasswordSentAsync(userId);
+    }
+
+    /// <summary>The last temporary password sent to the account's own mobile number or e-mail address: the test server sends nothing, so it is read from the outbox.</summary>
+    public async Task<string> TemporaryPasswordSentAsync(Guid userId)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var scope = Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var user = await db.Set<User>().AsNoTracking().SingleAsync(u => u.Id == userId, ct);
+        var deliveries = await db.Set<OutboxMessage>().AsNoTracking()
+            .Where(m => m.Type == NotificationService.SmsType || m.Type == NotificationService.EmailType)
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(200)
+            .ToListAsync(ct);
+        return deliveries.Select(m => m.Read<NotificationDelivery>())
+            .First(d => d.TemplateKey == "auth.temporary_password" && (d.To == user.Phone || d.To == user.Email))
+            .Values["password"];
+    }
+
+    /// <summary>A member of staff's two-step verification reset by <paramref name="maker"/>, approved by the other administrator.</summary>
+    public async Task ResetMfaAsync(ApiClient maker, Guid userId)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        var path = $"/api/v1/admin/users/{userId}/reset-mfa";
+        using var response = await maker.SendRawAsync(HttpMethod.Post, path);
+        if (response.StatusCode == HttpStatusCode.Accepted)
+        {
+            await ApproveGrantAsync((await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Post, path)).Id);
+        }
+        else if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"POST {path}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)}");
+        }
+    }
+
+    /// <summary>
+    /// A device enrolment code made by <paramref name="maker"/> as Administration › Devices makes it. A workstation's or a
+    /// tablet's, from which the hospital can be administered, waits for the other administrator once one is enrolled (the test
+    /// server's own is): approved, and then shown to the administrator who asked.
+    /// </summary>
+    public async Task<EnrollmentCodeResponse> EnrollmentCodeAsync(ApiClient maker, CreateEnrollmentCodeRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        const string path = "/api/v1/admin/devices/enrollment-codes";
+        using var response = await maker.SendRawAsync(HttpMethod.Post, path, request);
+        if (response.StatusCode != HttpStatusCode.Accepted)
+        {
+            return await ApiClient.ReadAsync<EnrollmentCodeResponse>(response, HttpMethod.Post, path);
+        }
+
+        var asked = await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Post, path);
+        await ApproveGrantAsync(asked.Id);
+        return await maker.PostAsync<EnrollmentCodeResponse>($"{path}/requests/{asked.Id}/code");
+    }
+
+    /// <summary>
+    /// A practitioner saved through the masters API (PUT), a linked doctor's registration number, HPR ID or signature, which
+    /// wait for a second administrator, approved by the other administrator: the record is then as it would have been in one
+    /// step.
+    /// </summary>
+    public async Task SavePractitionerAsync(ApiClient maker, string path, object body)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        using var response = await maker.SendRawAsync(HttpMethod.Put, path, body);
+        if (response.StatusCode == HttpStatusCode.Accepted)
+        {
+            await ApproveGrantAsync((await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Put, path)).Id);
+        }
+        else if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"PUT {path}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)}");
+        }
     }
 
     /// <summary>
@@ -827,13 +920,21 @@ public sealed class HospitalServer : IAsyncLifetime
     /// </summary>
     public Task ApproveSettingAsync(Guid approvalId) => ApproveGrantAsync(approvalId);
 
-    /// <summary>A member of staff created through the admin API, their roles and facilities approved by the other administrator.</summary>
+    /// <summary>
+    /// A member of staff created through the admin API, their roles and facilities, and the practitioner the account is linked
+    /// to, approved by the other administrator.
+    /// </summary>
     public async Task<TemporaryPasswordResponse> CreateUserAsync(ApiClient maker, CreateUserRequest request)
     {
         var created = await maker.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", request);
         if (created.ApprovalId is { } approval)
         {
             await ApproveGrantAsync(approval);
+        }
+
+        if (created.PractitionerLinkApprovalId is { } link)
+        {
+            await ApproveGrantAsync(link);
         }
 
         return created;
@@ -862,6 +963,23 @@ public sealed class HospitalServer : IAsyncLifetime
         if (response.StatusCode == HttpStatusCode.Accepted)
         {
             await ApproveGrantAsync((await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Put, path)).Id);
+
+            // One save of a user may ask for several things (roles, contact details, the practitioner): the answer names
+            // the first, and the user's page lists the rest.
+            if (path.StartsWith("/api/v1/admin/users/", StringComparison.Ordinal))
+            {
+                var user = await maker.GetAsync<UserDetail>(path);
+                foreach (var waiting in user.PendingChanges ?? [])
+                {
+                    await ApproveGrantAsync(waiting.ApprovalId);
+                }
+
+                if (user.PendingGrant is { } grant)
+                {
+                    await ApproveGrantAsync(grant.ApprovalId);
+                }
+            }
+
             return;
         }
 

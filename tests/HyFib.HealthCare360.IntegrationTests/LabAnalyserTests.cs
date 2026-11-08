@@ -1033,7 +1033,7 @@ public sealed class LabAnalyserTests(HospitalServer server)
     private async Task<(Guid DeviceId, string Secret)> EnrolDeviceAsync(
         ApiClient admin, DeviceKind kind, Guid? facilityId = null)
     {
-        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
+        var code = await server.EnrollmentCodeAsync(admin,
             new CreateEnrollmentCodeRequest(kind, facilityId, "Lab PC for serial analysers", 30));
         var enrolled = await server.Anonymous(ownAddress: true).PostAsync<EnrollDeviceResponse>("/api/v1/devices/enroll",
             new EnrollDeviceRequest(code.Code, "Lab PC " + Guid.NewGuid().ToString("N")[..6], "LAB-PC-1", "Windows 11", "1.0.0"));

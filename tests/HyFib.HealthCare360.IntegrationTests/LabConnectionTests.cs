@@ -348,7 +348,7 @@ public sealed class LabConnectionTests(HospitalServer server)
     private async Task<(Guid DeviceId, string Secret)> EnrolAsync(
         ApiClient admin, DeviceKind kind, Guid? facilityId = null)
     {
-        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
+        var code = await server.EnrollmentCodeAsync(admin,
             new CreateEnrollmentCodeRequest(kind, facilityId, "Lab connection test", 30));
         var enrolled = await server.Anonymous(ownAddress: true).PostAsync<EnrollDeviceResponse>(
             "/api/v1/devices/enroll",

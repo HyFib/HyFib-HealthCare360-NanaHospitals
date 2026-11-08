@@ -235,8 +235,7 @@ public sealed class AdministrationDesktopTests(HospitalServer server)
 
     private async Task<(Guid DeviceId, string Secret)> EnrolAsync(ApiClient admin, DeviceKind kind)
     {
-        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
-            new CreateEnrollmentCodeRequest(kind, null, "SEC-08 test", 30));
+        var code = await server.EnrollmentCodeAsync(admin, new CreateEnrollmentCodeRequest(kind, null, "SEC-08 test", 30));
         var enrolled = await server.Anonymous(ownAddress: true).PostAsync<EnrollDeviceResponse>("/api/v1/devices/enroll",
             new EnrollDeviceRequest(code.Code, $"SEC-08 {kind} {Guid.NewGuid().ToString("N")[..6]}", "ADMIN-PC", "Windows 11", "1.0.0"));
         return (enrolled.DeviceId, enrolled.DeviceSecret);

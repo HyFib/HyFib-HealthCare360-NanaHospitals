@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
@@ -44,12 +45,15 @@ public sealed record SpecialtyDto(Guid Id, string Code, string Name, string? Des
 
 public sealed record SaveSpecialtyRequest(string Code, string Name, string? Description, bool IsActive, uint? Version);
 
+/// <param name="LinkedAccounts">On a single practitioner's read: the staff accounts that sign as them.</param>
+/// <param name="PendingIdentity">On a single practitioner's read: a registration number, HPR ID or signature waiting for a second administrator.</param>
 public sealed record PractitionerDto(
     Guid Id, string Code, string Title, string FirstName, string? LastName, string DisplayName, Gender Gender, string? Qualification,
     string? RegistrationCouncil, string? RegistrationNumber, string? HprId, Guid? SpecialtyId, string? SpecialtyName, Guid? DepartmentId, string? DepartmentName,
     PractitionerKind Kind, string? Phone, string? Email, decimal ConsultationFeeNew, decimal ConsultationFeeFollowUp, int FollowUpValidityDays,
     IReadOnlyList<string> Languages, string? Bio, Guid? PhotoFileId, Guid? SignatureFileId, bool AvailableForOnlineBooking,
-    bool AvailableForTelehealth, IReadOnlyList<Guid> FacilityIds, bool IsActive, uint Version);
+    bool AvailableForTelehealth, IReadOnlyList<Guid> FacilityIds, bool IsActive, uint Version,
+    IReadOnlyList<string>? LinkedAccounts = null, PendingPractitionerIdentity? PendingIdentity = null);
 
 public sealed record SavePractitionerRequest(
     string Code, string Title, string FirstName, string? LastName, Gender Gender, string? Qualification, string? RegistrationCouncil,
@@ -298,16 +302,22 @@ internal static class OrganizationEndpoints
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveSpecialtyRequest>().RequireVersion();
 
         masters.MapGet("/practitioners", ListPractitioners).RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapGet("/practitioners/{id:guid}", async (Guid id, HospitalDbContext db, CancellationToken ct) =>
+        masters.MapGet("/practitioners/{id:guid}", async (Guid id, HospitalDbContext db, PractitionerIdentityApprovals identities, CancellationToken ct) =>
                 await PractitionerQuery(db, db.Set<Practitioner>().Where(p => p.Id == id)).FirstOrDefaultAsync(ct) is { } dto
-                    ? TypedResults.Ok(dto)
+                    ? TypedResults.Ok(dto with
+                    {
+                        LinkedAccounts = await identities.LinkedAccountsAsync(id, ct),
+                        PendingIdentity = await identities.PendingAsync(id, ct),
+                    })
                     : Error.NotFound(nameof(Practitioner), id).ToProblem())
             .RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapPost("/practitioners", (SavePractitionerRequest r, HospitalDbContext db, PractitionerWorkSources work, IAuditLogger audit, CancellationToken ct) =>
-                SavePractitioner(null, r, db, work, audit, ct))
+        masters.MapPost("/practitioners", (SavePractitionerRequest r, HospitalDbContext db, PractitionerWorkSources work, PractitionerIdentityApprovals identities, IAuditLogger audit,
+                    CancellationToken ct) =>
+                SavePractitioner(null, r, db, work, identities, audit, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SavePractitionerRequest>();
-        masters.MapPut("/practitioners/{id:guid}", (Guid id, SavePractitionerRequest r, HospitalDbContext db, PractitionerWorkSources work, IAuditLogger audit, CancellationToken ct) =>
-                SavePractitioner(id, r, db, work, audit, ct))
+        masters.MapPut("/practitioners/{id:guid}", (Guid id, SavePractitionerRequest r, HospitalDbContext db, PractitionerWorkSources work, PractitionerIdentityApprovals identities,
+                    IAuditLogger audit, CancellationToken ct) =>
+                SavePractitioner(id, r, db, work, identities, audit, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SavePractitionerRequest>().RequireVersion();
 
         masters.MapGet("/services", ListServices).RequirePermission(PlatformPermissions.MastersRead);
@@ -680,7 +690,7 @@ internal static class OrganizationEndpoints
             p.Id, p.Code, p.Title, p.FirstName, p.LastName, p.DisplayName, p.Gender, p.Qualification, p.RegistrationCouncil, p.RegistrationNumber,
             p.HprId, p.SpecialtyId, s != null ? s.Name : null, p.DepartmentId, d != null ? d.Name : null, p.Kind, p.Phone, p.Email,
             p.ConsultationFeeNew, p.ConsultationFeeFollowUp, p.FollowUpValidityDays, p.Languages, p.Bio, p.PhotoFileId, p.SignatureFileId,
-            p.AvailableForOnlineBooking, p.AvailableForTelehealth, p.FacilityIds, p.IsActive, p.Version);
+            p.AvailableForOnlineBooking, p.AvailableForTelehealth, p.FacilityIds, p.IsActive, p.Version, null, null);
 
     private static async Task<IResult> ListPractitioners(
         [AsParameters] PageQuery query, Guid? departmentId, Guid? specialtyId, PractitionerKind? kind, bool? active, HospitalDbContext db, CancellationToken ct)
@@ -723,10 +733,12 @@ internal static class OrganizationEndpoints
     }
 
     private static async Task<IResult> SavePractitioner(
-        Guid? id, SavePractitionerRequest request, HospitalDbContext db, PractitionerWorkSources workSources, IAuditLogger audit, CancellationToken ct)
+        Guid? id, SavePractitionerRequest request, HospitalDbContext db, PractitionerWorkSources workSources, PractitionerIdentityApprovals identities, IAuditLogger audit,
+        CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         Practitioner practitioner;
+        PractitionerIdentity? before = null;
         if (id is { } existingId)
         {
             var found = await db.Set<Practitioner>().FirstOrDefaultAsync(p => p.Id == existingId, ct);
@@ -741,6 +753,7 @@ internal static class OrganizationEndpoints
             }
 
             practitioner = found;
+            before = PractitionerIdentityApprovals.Of(found);
             if (request.Version is { } v)
             {
                 db.SetExpectedVersion(practitioner, v);
@@ -822,7 +835,61 @@ internal static class OrganizationEndpoints
         practitioner.FacilityIds = facilityIds;
         practitioner.IsActive = request.IsActive;
 
+        // The registration number, HPR ID and signature of a practitioner someone signs in as print on what that account
+        // signs: they change only when a second administrator agrees, and stay as they are meanwhile. The rest is saved at
+        // once; a practitioner with no account is edited at once. What already waits is not asked for again.
+        PractitionerIdentity? identityBefore = null;
+        PractitionerIdentity? identityAsked = null;
+        List<string> linked = [];
+        if (before is not null && PractitionerIdentityApprovals.Of(practitioner) != before)
+        {
+            linked = await identities.LinkedAccountsAsync(practitioner.Id, ct);
+            if (linked.Count > 0)
+            {
+                var asked = PractitionerIdentityApprovals.Of(practitioner);
+                var waiting = await identities.PendingAsync(practitioner.Id, ct);
+                var decision = GrantDecision.Ask;
+                if (waiting?.Asked != asked)
+                {
+                    var decided = await identities.DecideAsync(practitioner.Id, ct);
+                    if (decided.IsFailure)
+                    {
+                        return decided.Error!.ToProblem();
+                    }
+
+                    decision = decided.Value;
+                }
+
+                if (decision == GrantDecision.Ask)
+                {
+                    practitioner.RegistrationNumber = before.RegistrationNumber;
+                    practitioner.HprId = before.HprId;
+                    practitioner.SignatureFileId = before.SignatureFileId;
+                    (identityBefore, identityAsked) = waiting?.Asked == asked ? (null, null) : (before, asked);
+                }
+                else
+                {
+                    identities.AuditMadeAlone(decision, practitioner);
+                }
+            }
+        }
+
+        // The record, and the request for its identity, are kept together or not at all.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        if (identityBefore is not null && identityAsked is not null)
+        {
+            var approval = await identities.AskAsync(practitioner, identityBefore, identityAsked, linked, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            await transaction.CommitAsync(ct);
+            return TypedResults.Accepted($"/api/v1/approvals/{approval.Value.Id}", approval.Value);
+        }
+
+        await transaction.CommitAsync(ct);
         return id is null ? TypedResults.Created($"/api/v1/masters/practitioners/{practitioner.Id}", new { practitioner.Id }) : TypedResults.NoContent();
     }
 
