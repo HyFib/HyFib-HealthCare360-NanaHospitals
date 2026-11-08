@@ -44,8 +44,15 @@ public sealed class MtpCaseTests
     public void From_20_weeks_the_second_doctor_records_their_own_opinion_before_the_termination()
     {
         var mtp = new MtpCase();
-        mtp.Certify(Certification() with { WeeksOfGestation = 22, Category = MtpRule3BCategory.Minor, AgeYears = 16, ConsentBy = MtpConsentBy.Guardian,
-            GuardianName = "Selvi", GuardianRelation = "Mother" }, Today, Certifier, Now).IsSuccess.ShouldBeTrue();
+        mtp.Certify(Certification() with
+        {
+            WeeksOfGestation = 22,
+            Category = MtpRule3BCategory.Minor,
+            AgeYears = 16,
+            ConsentBy = MtpConsentBy.Guardian,
+            GuardianName = "Selvi",
+            GuardianRelation = "Mother"
+        }, Today, Certifier, Now).IsSuccess.ShouldBeTrue();
         mtp.Terminate(Termination(), Today, Now).Error!.Code.ShouldBe("mtp.second_opinion_required");
 
         // Not the doctor who certified the case, nor the doctor of the first opinion under another account.
@@ -64,8 +71,16 @@ public sealed class MtpCaseTests
             .ShouldBe("mtp.second_opinion_recorded");
 
         // A correction drops it: the second doctor gives it again on the case as corrected.
-        mtp.Certify(Certification() with { WeeksOfGestation = 23, Category = MtpRule3BCategory.Minor, AgeYears = 16, ConsentBy = MtpConsentBy.Guardian,
-            GuardianName = "Selvi", GuardianRelation = "Mother", Opinions = [First with { UserId = SecondDoctor }] }, Today, Certifier, Now).IsSuccess.ShouldBeTrue();
+        mtp.Certify(Certification() with
+        {
+            WeeksOfGestation = 23,
+            Category = MtpRule3BCategory.Minor,
+            AgeYears = 16,
+            ConsentBy = MtpConsentBy.Guardian,
+            GuardianName = "Selvi",
+            GuardianRelation = "Mother",
+            Opinions = [First with { UserId = SecondDoctor }]
+        }, Today, Certifier, Now).IsSuccess.ShouldBeTrue();
         (mtp.SecondOpinion, mtp.AwaitingSecondOpinion).ShouldBe(((MtpOpinion?)null, true), "an opinion typed on the case is never the doctor's own");
         mtp.RecordSecondOpinion(new MtpSecondOpinion(SecondDoctor, "Dr. Lata", "TNMC 51877", Today, SecondDoctor), Today).IsSuccess.ShouldBeTrue();
         mtp.Terminate(Termination(), Today, Now).IsSuccess.ShouldBeTrue();
