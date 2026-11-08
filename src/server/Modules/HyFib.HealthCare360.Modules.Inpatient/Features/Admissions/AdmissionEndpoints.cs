@@ -18,8 +18,10 @@ internal static class AdmissionEndpoints
         group.MapPost("/", async (AdmitPatientRequest r, AdmissionService admissions, CancellationToken ct) =>
                 (await admissions.AdmitAsync(r, ct)).ToCreated(a => $"/api/v1/inpatient/admissions/{a.Id}"))
             .RequirePermission(InpatientPermissions.Admit).WithValidation<AdmitPatientRequest>();
+        // Saved at once (204); clearing or unlinking the medico-legal flag is asked for, and the answer is its request (202).
         group.MapPut("/{id:guid}", async (Guid id, UpdateAdmissionRequest r, AdmissionService admissions, CancellationToken ct) =>
-                (await admissions.UpdateAsync(id, r, ct)).ToNoContent())
+                (await admissions.UpdateAsync(id, r, ct)).ToHttpResult(asked =>
+                    asked is null ? TypedResults.NoContent() : TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
             .RequirePermission(InpatientPermissions.Admit).WithValidation<UpdateAdmissionRequest>();
         group.MapPost("/{id:guid}/transfer", async (Guid id, TransferPatientRequest r, AdmissionService admissions, CancellationToken ct) =>
                 (await admissions.TransferAsync(id, r, ct)).ToNoContent())
@@ -141,7 +143,7 @@ internal static class AdmissionEndpoints
             LengthOfStay.Days(a.AdmittedAt, a.DischargedAt ?? now), a.PayerType, a.IsMlc)));
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Get(Guid id, HospitalDbContext db, PatientAccessGuard guard, MlcApprovals mlc, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
         var a = await db.Set<Admission>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (a is null)
@@ -179,7 +181,7 @@ internal static class AdmissionEndpoints
             Name(practitioners, a.ConsultantPractitionerId), a.DepartmentId, departmentName, a.WardId, wardName, a.BedId, bedLabel, a.ProvisionalDiagnosis,
             a.ReferredBy, a.PayerType, a.PayerId, a.PolicyNumberMasked, a.IsMlc, a.MlcNumber, a.ExpectedDischargeDate, a.AttendantName, a.AttendantRelation,
             a.AttendantPhone, a.Notes, LengthOfStay.Days(a.AdmittedAt, a.DischargedAt ?? now), a.DischargeInitiatedAt, a.DischargeType, a.DischargedAt,
-            a.DischargeNotes, a.CancelledAt, a.CancelReason, a.Version));
+            a.DischargeNotes, a.CancelledAt, a.CancelReason, a.Version, await mlc.PendingAsync(a.Id, ct)));
     }
 
     /// <summary>

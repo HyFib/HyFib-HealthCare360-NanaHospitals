@@ -15,6 +15,13 @@ public static class PatientsPermissions
     public const string Read = "patients.read";
     public const string Register = "patients.register";
     public const string Merge = "patients.merge";
+
+    /// <summary>
+    /// Approve a change someone else asked for to an existing patient's identity (name, sex, date of birth, ABHA, Aadhaar)
+    /// or deceased status (maker-checker, slice 7). The medical records officer and the hospital administrator hold it by
+    /// default; grant it to a front-office supervisor's role.
+    /// </summary>
+    public const string IdentityApprove = "patients.identity.approve";
     public const string ReadRestricted = "patients.restricted.read";
 
     /// <summary>
@@ -63,6 +70,8 @@ public static class PatientsPermissions
         new(Read, "Patients", "Search and view patient demographics", PlatformPermissions.PatientFacingStaff),
         new(Register, "Patients", "Register patients and edit demographics", [.. Desk, SystemRoles.Nurse, SystemRoles.Billing, SystemRoles.InsuranceDesk]),
         new(Merge, "Patients", "Merge duplicate patient records", [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
+        new(IdentityApprove, "Patients", "Approve a change someone else asked for to a patient's name, sex, date of birth, ABHA, Aadhaar or deceased status",
+            [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
         new(ReadRestricted, "Patients", "Open restricted (VIP/confidential) records without break-the-glass", [SystemRoles.HospitalAdmin]),
         new(ContactRead, "Patients", "See patients' phone numbers, email and address in full (others see them masked); needed to edit a patient",
         [
@@ -107,6 +116,7 @@ public sealed class PatientsModule : IModule
         services.AddScoped<Seed.LoadTestPatients>();
         services.AddScoped<PatientAccessGuard>();
         services.AddScoped<PatientDeaths>();
+        services.AddScoped<PatientRecordApprovals>();
         services.AddScoped<PatientContactAccess>();
         services.AddScoped<IPatientRecordAccess>(sp => sp.GetRequiredService<PatientAccessGuard>());
         services.AddScoped<VisitService>();

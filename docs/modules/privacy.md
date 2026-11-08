@@ -34,7 +34,10 @@ audited, and a restricted (VIP) record needs `patients.restricted.read` or break
 Two things the default roles leave to the hospital:
 - **Restricted (VIP) patients.** Only a HospitalAdmin can open their requests by default: QualityManager and MrdOfficer
   have neither `patients.restricted.read` nor break-the-glass. Give the grievance officer's role
-  `patients.restricted.read` if they are to handle them.
+  `patients.restricted.read` if they are to handle them. A restriction is added at once; lifting it, and taking a record
+  out of a sensitive category, wait for a second person (maker-checker slice 7: someone else who opens restricted
+  records; another doctor who manages the categories). A category's removal is asked about the record's categories, so
+  neither the request nor its decision shows in the patient's history to staff who may not manage them.
 - **Correcting registration details** needs `patients.register`, which the front desk and HospitalAdmin have and
   QualityManager and MrdOfficer do not. The officer decides the correction; the desk or an administrator makes it in
   the patient record.

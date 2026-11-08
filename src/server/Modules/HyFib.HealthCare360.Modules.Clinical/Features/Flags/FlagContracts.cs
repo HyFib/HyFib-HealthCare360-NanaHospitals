@@ -1,11 +1,17 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Flags;
 
 public sealed record RecordAllergyRequest(string Allergen, AllergyType Type, string? Reaction, AllergySeverity Severity, DateOnly? OnsetDate, string? Notes);
 
-public sealed record UpdateAllergyRequest(string? Reaction, AllergySeverity Severity, AllergyStatus Status, string? StatusReason, string? Notes, uint Version);
+/// <param name="ChangeReason">
+/// Why, when the change waits for a second clinician (a lower severity; a status change gives its reason in
+/// <paramref name="StatusReason"/>).
+/// </param>
+public sealed record UpdateAllergyRequest(
+    string? Reaction, AllergySeverity Severity, AllergyStatus Status, string? StatusReason, string? Notes, uint Version, string? ChangeReason = null);
 
 public sealed record AllergyDto(
     Guid Id,
@@ -20,7 +26,8 @@ public sealed record AllergyDto(
     DateTimeOffset RecordedAt,
     Guid? RecordedByUserId,
     string? Notes,
-    uint Version);
+    uint Version,
+    PendingFlagChange? PendingChange = null);
 
 /// <summary>
 /// What the banner may claim about allergies. <c>Recorded</c>: active allergies exist (time and author of the most
@@ -45,7 +52,8 @@ public sealed record PatientAlertDto(
     bool IsActive,
     bool IsCurrent,
     DateTimeOffset? DeactivatedAt,
-    string? DeactivationReason);
+    string? DeactivationReason,
+    PendingFlagChange? PendingChange = null);
 
 public sealed class RecordAllergyRequestValidator : AbstractValidator<RecordAllergyRequest>
 {
@@ -68,6 +76,7 @@ public sealed class UpdateAllergyRequestValidator : AbstractValidator<UpdateAlle
         RuleFor(x => x.StatusReason).SafeText(300);
         RuleFor(x => x.StatusReason).NotEmpty().When(x => x.Status != AllergyStatus.Active)
             .WithMessage("Give a reason: this stops the allergy from appearing in prescribing checks.");
+        RuleFor(x => x.ChangeReason).SafeText(300);
     }
 }
 
@@ -80,6 +89,10 @@ public sealed class RaiseAlertRequestValidator : AbstractValidator<RaiseAlertReq
         RuleFor(x => x.Detail).SafeText(500);
         RuleFor(x => x.Detail).NotEmpty().When(x => x.Type == PatientAlertType.InfectionControl)
             .WithMessage("Name the organism or infection (for example MRSA, open TB).");
+
+        // An end date would take DNR off on its own, without the second doctor that taking it off needs (slice 7).
+        RuleFor(x => x.ExpiresOn).Null().When(x => x.Type == PatientAlertType.Dnr)
+            .WithMessage("A DNR order has no end date: it stays until a doctor takes it off with a second doctor's agreement.");
     }
 }
 

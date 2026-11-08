@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Realtime;
@@ -28,6 +29,7 @@ public sealed class AdmissionService(
     VisitService visits,
     ICurrentUser currentUser,
     IPayerDirectory payers,
+    MlcApprovals mlc,
     TimeProvider time)
 {
     public async Task<Result<AdmissionCreated>> AdmitAsync(AdmitPatientRequest request, CancellationToken ct)
@@ -250,7 +252,12 @@ public sealed class AdmissionService(
         return new AdmissionCreated(admission.Id, admission.AdmissionNumber, visit.Id, visit.VisitNumber, bed.Id, bed.Label);
     }
 
-    public async Task<Result> UpdateAsync(Guid admissionId, UpdateAdmissionRequest request, CancellationToken ct)
+    /// <summary>
+    /// Saves a stay's details at once. Clearing its medico-legal flag, or changing the MLC number it is linked by, waits for
+    /// someone who keeps the MLC register (<see cref="MlcApprovals"/>): the flag, the visit's and a victim's free treatment
+    /// stay as they are meanwhile, and the answer names the request.
+    /// </summary>
+    public async Task<Result<ApprovalRequestDto?>> UpdateAsync(Guid admissionId, UpdateAdmissionRequest request, CancellationToken ct)
     {
         var admission = await db.Set<Admission>().FirstOrDefaultAsync(a => a.Id == admissionId, ct);
         if (admission is null)
@@ -274,13 +281,43 @@ public sealed class AdmissionService(
             return Error.Field("departmentId", "Choose an active department.");
         }
 
+        var mlcNow = new MlcStanding(admission.IsMlc, admission.MlcNumber);
+        var mlcAsked = new MlcStanding(request.IsMlc, request.IsMlc ? Clean(request.MlcNumber) : null);
+        var askMlc = false;
+        var keepMlc = MlcChangeRule.Waits(mlcNow, mlcAsked);
+        if (keepMlc)
+        {
+            var waiting = await mlc.PendingAsync(admission.Id, ct);
+            if (waiting is not null && waiting.Asked != mlcAsked)
+            {
+                return Error.Conflict(MlcApprovals.WaitingCode,
+                    $"A change to this stay's medico-legal flag, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.");
+            }
+
+            askMlc = waiting is null;
+            if (askMlc && string.IsNullOrWhiteSpace(request.ChangeReason))
+            {
+                return Error.Field("changeReason", "Say why the stay is no longer medico-legal: someone who keeps the MLC register approves it, and reads your reason.");
+            }
+        }
+
         db.SetExpectedVersion(admission, request.Version);
+        if (askMlc)
+        {
+            // Asked for over the stay as the desk saw it, even when nothing else on it changes.
+            db.GuardVersion(admission, request.Version);
+        }
+
         admission.ConsultantPractitionerId = consultant.Value.Id;
         admission.DepartmentId = request.DepartmentId ?? admission.DepartmentId;
         admission.ProvisionalDiagnosis = Clean(request.ProvisionalDiagnosis);
         admission.ExpectedDischargeDate = request.ExpectedDischargeDate;
-        admission.IsMlc = request.IsMlc;
-        admission.MlcNumber = Clean(request.MlcNumber);
+        if (!keepMlc)
+        {
+            admission.IsMlc = request.IsMlc;
+            admission.MlcNumber = Clean(request.MlcNumber);
+        }
+
         admission.AttendantName = Clean(request.AttendantName);
         admission.AttendantRelation = Clean(request.AttendantRelation);
         admission.AttendantPhone = Phone.Normalize(request.AttendantPhone);
@@ -301,8 +338,22 @@ public sealed class AdmissionService(
             visit.FreeTreatmentReason = await FreeTreatment.ForVisitAsync(db, visit, ct);
         }
 
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return Result.Success();
+        ApprovalRequestDto? asked = null;
+        if (askMlc)
+        {
+            var requested = await mlc.AskAsync(admission, mlcNow, mlcAsked, request.ChangeReason!.Trim(), ct);
+            if (requested.IsFailure)
+            {
+                return requested.Error!;
+            }
+
+            asked = requested.Value;
+        }
+
+        await transaction.CommitAsync(ct);
+        return asked;
     }
 
     public async Task<Result> TransferAsync(Guid admissionId, TransferPatientRequest request, CancellationToken ct)

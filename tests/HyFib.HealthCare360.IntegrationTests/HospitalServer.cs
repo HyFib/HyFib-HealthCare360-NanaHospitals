@@ -1145,6 +1145,68 @@ public sealed class HospitalServer : IAsyncLifetime
     private static ApprovalRequestDto Approved(ApprovalRequestDto approved) =>
         approved.Status == ApprovalStatus.Approved ? approved : throw new InvalidOperationException($"Approving {approved.Summary}: {approved.Status} ({approved.Outcome})");
 
+    /// <summary>
+    /// The approvals of a patient's record (slice 7) are decided by whoever of these may decide <paramref name="approvalId"/>
+    /// and did not ask for it: the medical records officer (identity, deceased status, the MLC flag), the hospital
+    /// administrator (a VIP restriction), the doctor or the second doctor (a sensitive category, an allergy, DNR), or the
+    /// super administrator.
+    /// </summary>
+    public async Task<ApprovalRequestDto> ApproveRecordChangeAsync(Guid approvalId)
+    {
+        foreach (var userName in new[] { Users.MrdOfficer, Users.HospitalAdmin, Users.Doctor, Users.SecondDoctor, Users.Admin })
+        {
+            var checker = await SignInAsync(userName);
+
+            // Someone who neither asked nor may decide it is not shown it.
+            using var shown = await checker.SendRawAsync(HttpMethod.Get, $"/api/v1/approvals/{approvalId}", null);
+            if (!shown.IsSuccessStatusCode)
+            {
+                continue;
+            }
+
+            var request = await ApiClient.ReadAsync<ApprovalRequestDto>(shown, HttpMethod.Get, $"/api/v1/approvals/{approvalId}");
+            if (request.CanDecide)
+            {
+                return Approved(await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Approved for the tests.", request.Version)));
+            }
+        }
+
+        throw new InvalidOperationException($"Nobody the tests sign in as may decide approval {approvalId}.");
+    }
+
+    /// <summary>
+    /// A write to a patient's record (a patient's details, sensitive categories, an allergy, an alert, an admission) sent by
+    /// <paramref name="maker"/>; what it asked a second person for (202) approved by another (<see cref="ApproveRecordChangeAsync"/>),
+    /// together with anything else the record's read shows waiting: the record as it would have been in one step.
+    /// </summary>
+    public async Task SaveRecordAsync(ApiClient maker, HttpMethod method, string path, object body)
+    {
+        ArgumentNullException.ThrowIfNull(maker);
+        using var response = await maker.SendRawAsync(method, path, body);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"{method} {path}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)}");
+        }
+
+        if (response.StatusCode != HttpStatusCode.Accepted)
+        {
+            return;
+        }
+
+        var asked = await ApiClient.ReadAsync<ApprovalRequestDto>(response, method, path);
+        await ApproveRecordChangeAsync(asked.Id);
+        if (asked.SubjectType == "Patient")
+        {
+            // One save may ask for several changes (identity, restriction, deceased status): each is approved.
+            var lister = await SignInAsync(Users.HospitalAdmin);
+            foreach (var waiting in (await lister.GetAsync<PagedResult<ApprovalRequestDto>>($"/api/v1/approvals?view=Subject&subjectId={asked.SubjectId}&pageSize=50")).Items
+                         .Where(r => r.Status == ApprovalStatus.Pending && r.Kind.StartsWith("patients.", StringComparison.Ordinal) && r.Kind != "patients.merge"))
+            {
+                await ApproveRecordChangeAsync(waiting.Id);
+            }
+        }
+    }
+
     // The seed signs the first consultant (by code) in as the doctor; the second doctor is the next one.
     private async Task<Guid?> SecondConsultantAsync()
     {
