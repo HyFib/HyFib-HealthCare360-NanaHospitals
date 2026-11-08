@@ -67,6 +67,7 @@ public enum HprCheckResult
 /// said, and the result. Kept as history; the practitioner master shows the latest, and whether the master has changed
 /// since (then the check no longer vouches for it).
 /// </summary>
+[Audited]
 public sealed class PractitionerHprCheck : Entity
 {
     public Guid PractitionerId { get; set; }

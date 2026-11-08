@@ -64,12 +64,13 @@ public sealed class PcmAudioTests
         wav.AddRange(data);
 
         PcmAudio.TryRead([.. wav], out var clip, out _).ShouldBeTrue();
-        (clip.SampleRate, clip.Samples).ShouldBe((44_100, new short[] { 200, -300 }));
+        clip.SampleRate.ShouldBe(44_100);
+        clip.Samples.ShouldBe([200, -300]);
 
         var plain = PcmAudio.ToWav(clip);
         plain.Length.ShouldBe(44 + 4, "no chunk but the format and the samples: the recorder's metadata is not sent");
         PcmAudio.TryRead(plain, out var back, out _).ShouldBeTrue();
-        back.ShouldBe(clip with { Samples = back.Samples });
+        back.SampleRate.ShouldBe(clip.SampleRate);
         back.Samples.ShouldBe(clip.Samples);
     }
 

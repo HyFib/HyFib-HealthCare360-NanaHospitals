@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Features;
 using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Approvals;
