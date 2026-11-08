@@ -372,8 +372,8 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    another administrator approves it. They are: switching off `lab.separateVerifier`,
    `mrd.deathCertificateConfirmation`, `bloodbank.separateVerifier`, `security.administrationRequiresDesktop`,
    `lab.requirePaymentBeforeCollection` or `billing.shift.required`; switching on `ui.biometricUnlock` or `ai.enabled`;
-   raising `billing.discount.defaultMaxPercent`, `pharmacy.discount.max_percent`,
-   `supportservices.canteen.staffCreditLimit`, `security.maxSessionsPerUser`, `ui.idleLockMinutes`,
+   raising `billing.discount.defaultMaxPercent`, `pharmacy.discount.max_percent`, `billing.chargeCancel.approvalAbove`,
+   `billing.shift.shortageTolerance`, `supportservices.canteen.staffCreditLimit`, `security.maxSessionsPerUser`, `ui.idleLockMinutes`,
    `inpatient.marGraceMinutes`, `inpatient.verbalOrderCountersignHours` or `lab.deltaCheckPercent` (0, for no limit or
    no check, counts as the highest), or
    lowering `lab.deltaCheckWindowDays`; clearing any of these, so the default decides; and any change at all to
@@ -388,6 +388,16 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    ward sisters' role (Administration › Roles). The drug-safety tables are loosened only with the pharmacy and
    therapeutics committee's approval (`clinical.drug_safety.approve`, pharmacists and hospital administrators by
    default): grant it to the committee's members, and take it from anyone who should not approve.
+   **The billing desk's money decisions wait for a second person** (SECURITY.md, Maker-checker): a discount above the
+   giver's own limit (an approver's included), a discount limit raised, a charge cancelled at the desk (every OT,
+   procedure, implant or bed-day charge, and others above `billing.chargeCancel.approvalAbove`, ₹1,000 by default; set
+   0 to make every cancellation wait), a cash shortage at a shift's close beyond `billing.shift.shortageTolerance` (₹0 by
+   default: every shortage waits for a supervisor who is not the cashier) and a doctor's consultation fee. So the hospital
+   needs at least two people holding `billing.discounts.approve`, `billing.refunds.approve` and `masters.prices.approve`
+   (the accountant and the hospital administrator out of the box), and the hospital administrator who bills at a counter
+   has the default discount limit (0%) like everyone else: give them a limit in Billing › Discount approvals › Discount
+   limits, which another approver approves. Doctors added in **Hospital setup › Doctors and clinical staff** charge the
+   consultation service's price until someone who approves prices approves their own fee.
 8. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a

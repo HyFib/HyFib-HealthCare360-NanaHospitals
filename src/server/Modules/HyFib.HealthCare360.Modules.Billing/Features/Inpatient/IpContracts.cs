@@ -101,7 +101,9 @@ public sealed record RunningBillLine(
     Guid? BillId,
     string? PractitionerName,
     bool IsReturn,
-    DeviceDetails? Device = null);
+    DeviceDetails? Device = null,
+    bool CancelNeedsApproval = false,
+    DateTimeOffset? CancellationAskedAt = null);
 
 public sealed record PackageLineStatus(Guid ChargeId, string ServiceCode, string Description, decimal Gross, decimal Covered, decimal Excess);
 

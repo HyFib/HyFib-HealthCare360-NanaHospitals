@@ -16,7 +16,8 @@ public sealed record TallyCheckLine(
 }
 
 /// <summary>A cashier shift's day-end variance: declared cash minus expected (negative is a shortage).</summary>
-public sealed record TallyCashVariance(string Counter, string Cashier, decimal Variance);
+/// <param name="AwaitingSupervisor">A shortage no supervisor has accepted yet: it stands on the cashier's word alone.</param>
+public sealed record TallyCashVariance(string Counter, string Cashier, decimal Variance, bool AwaitingSupervisor = false);
 
 /// <summary>
 /// A day's figures read from HC360's records, independently of the day book: bills, the cashier day-end by payment
@@ -184,7 +185,8 @@ public static class TallyRecordsCheck
         foreach (var variance in records.CashVariances.Where(v => v.Variance != 0))
         {
             var kind = variance.Variance < 0 ? "short" : "over";
-            notes.Add($"Cash was {kind} by ₹{Money.FormatInr(Math.Abs(variance.Variance))} at {variance.Counter} ({variance.Cashier}). The day book has no voucher for it: record it in Tally.");
+            var awaiting = variance.AwaitingSupervisor ? " No supervisor has accepted the shortage yet." : string.Empty;
+            notes.Add($"Cash was {kind} by ₹{Money.FormatInr(Math.Abs(variance.Variance))} at {variance.Counter} ({variance.Cashier}).{awaiting} The day book has no voucher for it: record it in Tally.");
         }
 
         return notes;

@@ -256,6 +256,8 @@ public sealed class IpBillingService(
         var free = await BillFreeTreatment.ReasonAsync(db, account.VisitId, ct);
         var estimate = await EstimateAsync(services, package, terms, free is not null, ct);
         var payerName = terms.HasPayer ? await db.Set<Payer>().Where(p => p.Id == terms.PayerId).Select(p => p.Name).FirstOrDefaultAsync(ct) : null;
+        var cancelAbove = await charges.CancelApprovalAboveAsync(account.FacilityId, ct);
+        var cancelsAsked = await charges.CancellationsAskedAsync(all.Where(c => c.Status == ChargeStatus.Unbilled).Select(c => c.Id).ToList(), ct);
 
         return new RunningBill(
             account.Id,
@@ -269,7 +271,8 @@ public sealed class IpBillingService(
                 .ToList(),
             all.Select(c => new RunningBillLine(
                 c.Id, c.ServiceDate, c.ServiceCode, c.Description, c.Category, c.Quantity, c.UnitPrice, c.NetAmount, c.Status, c.BillId,
-                c.PractitionerId is { } pid ? doctors.GetValueOrDefault(pid) : null, c.IsCredit, c.Device)).ToList(),
+                c.PractitionerId is { } pid ? doctors.GetValueOrDefault(pid) : null, c.IsCredit, c.Device,
+                ChargeService.CancelNeedsApproval(c, cancelAbove), cancelsAsked.TryGetValue(c.Id, out var asked) ? asked : null)).ToList(),
             GrossTotal: all.Sum(c => c.GrossAmount),
             DiscountTotal: all.Sum(c => c.DiscountAmount),
             TaxTotal: all.Sum(c => c.TaxAmount),

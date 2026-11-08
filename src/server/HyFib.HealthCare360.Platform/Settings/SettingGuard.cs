@@ -252,6 +252,16 @@ public static class SettingGuard
             "The discount, as a percentage of the bill, that staff without a limit of their own may give without anyone's approval.",
             0m, v => Math.Clamp(v, 0m, 100m), Percent),
 
+        // ChargeService.CancelApprovalAboveSetting and DefaultCancelApprovalAbove: below 0 acts as 0 (every cancellation waits).
+        ["billing.chargeCancel.approvalAbove"] = new SettingLimit("Charge cancelled without approval",
+            "The amount up to which the billing desk cancels an unbilled charge on its own; a larger one, and every OT, procedure, implant or bed-day charge, waits for someone who approves discounts. 0 makes every cancellation wait.",
+            1000m, v => Math.Max(v, 0m), v => "₹" + Money.FormatInr(v)),
+
+        // ShiftService.ShortageToleranceSetting and DefaultShortageTolerance: below 0 acts as 0 (every shortage waits).
+        ["billing.shift.shortageTolerance"] = new SettingLimit("Cash shortage closed without a supervisor",
+            "How much cash a cashier's drawer may be short at the shift's close before a supervisor must accept the shortage; 0 makes every shortage wait.",
+            0m, v => Math.Max(v, 0m), v => "₹" + Money.FormatInr(v)),
+
         // DispensingService.MaxDiscountSetting and DefaultMaxDiscountPercent.
         ["pharmacy.discount.max_percent"] = new SettingLimit("Pharmacy discount limit",
             "The largest discount, as a percentage, the pharmacy counter may give on a sale.",

@@ -330,15 +330,16 @@ public sealed class RateListTests(HospitalServer server)
 
     private static string Json(RateList rates) => JsonSerializer.Serialize(rates);
 
-    private static async Task<PractitionerDto> DoctorAsync(ApiClient admin, Guid departmentId, PractitionerKind kind, decimal fee, int freeFollowUpDays)
+    private async Task<PractitionerDto> DoctorAsync(ApiClient admin, Guid departmentId, PractitionerKind kind, decimal fee, int freeFollowUpDays)
     {
-        var added = await admin.PostAsync<PractitionerDto>("/api/v1/masters/practitioners", new SavePractitionerRequest(
+        // A doctor's own fee waits for someone who approves prices; the other administrator approves it.
+        var added = await server.CreatePractitionerAsync(admin, new SavePractitionerRequest(
             Code: $"DR{Letters(6)}", Title: "Dr.", FirstName: "Meena", LastName: "Rates" + Letters(6), Gender: Gender.Female, Qualification: "MBBS, MS (General Surgery)",
             RegistrationCouncil: "Tamil Nadu Medical Council", RegistrationNumber: $"TNMC {Digits(6)}", HprId: null, SpecialtyId: null, DepartmentId: departmentId,
             Kind: kind, Phone: null, Email: null, ConsultationFeeNew: fee, ConsultationFeeFollowUp: 0m, FollowUpValidityDays: freeFollowUpDays,
             Languages: null, Bio: null, PhotoFileId: null, SignatureFileId: null, AvailableForOnlineBooking: false, AvailableForTelehealth: false,
             FacilityIds: null, IsActive: true, Version: null));
-        return await admin.GetAsync<PractitionerDto>($"/api/v1/masters/practitioners/{added.Id}");
+        return await admin.GetAsync<PractitionerDto>($"/api/v1/masters/practitioners/{added}");
     }
 
     private async Task<PackageDetail> PackageAsync(ApiClient admin, string name, Guid? tariffPlanId)

@@ -236,6 +236,11 @@ public sealed record CreditNoteLineRequest(Guid BillLineId, decimal Amount);
 
 public sealed record DiscountLimitDto(Guid Id, Guid UserId, string? UserName, decimal MaxPercent, decimal? MaxAmount, string? Notes, uint Version);
 
+/// <summary>A user's discount limit raised (or removed, so a higher default applies) that waits for a second approver.</summary>
+/// <param name="AskedByYou">The reader asked for it, so they may withdraw it and may not approve it.</param>
+public sealed record PendingDiscountLimitDto(
+    Guid ApprovalId, Guid UserId, string? UserName, string Before, string Asked, string RequestedBy, DateTimeOffset RequestedAt, bool AskedByYou);
+
 public sealed record SaveDiscountLimitRequest(Guid UserId, decimal MaxPercent, decimal? MaxAmount, string? Notes, uint? Version = null);
 
 public sealed class CreateBillRequestValidator : AbstractValidator<CreateBillRequest>

@@ -245,7 +245,8 @@ public sealed class AccountAdministrationApprovalTests(HospitalServer server)
         var unlinked = await DoctorAsync(admin);
         await CreateUserAsync(admin, "it-signs-as-" + Letters(6), email: null, phone: null, linked);
 
-        // The doctor signs in: the new number waits, and the fee changed with it is saved at once.
+        // The doctor signs in: the new number waits, and so does the fee changed with it (a doctor's fee waits for someone
+        // who approves prices, slice 6); the answer names the identity's request, and the record shows both.
         var doctor = await admin.GetAsync<PractitionerDto>($"{Practitioners}/{linked}");
         doctor.LinkedAccounts.ShouldNotBeNull().ShouldNotBeEmpty();
         var number = Digits(7);
@@ -256,8 +257,9 @@ public sealed class AccountAdministrationApprovalTests(HospitalServer server)
         asked.Kind.ShouldBe(PractitionerIdentityApprovals.Kind);
         asked.Details.ShouldContain(new ApprovalDetail("Registration number", $"{doctor.RegistrationNumber} → {number}"));
         var waiting = await admin.GetAsync<PractitionerDto>($"{Practitioners}/{linked}");
-        (waiting.RegistrationNumber, waiting.ConsultationFeeNew).ShouldBe((doctor.RegistrationNumber, 750m));
+        (waiting.RegistrationNumber, waiting.ConsultationFeeNew).ShouldBe((doctor.RegistrationNumber, doctor.ConsultationFeeNew));
         waiting.PendingIdentity.ShouldNotBeNull().Asked.RegistrationNumber.ShouldBe(number);
+        waiting.PendingFee.ShouldNotBeNull().Asked.NewVisit.ShouldBe(750m);
 
         (await RefusalAsync(admin, $"/api/v1/approvals/{asked.Id}/approve", new ApproveRequest(null, asked.Version))).ShouldBe((HttpStatusCode.Forbidden, "approval.self"));
         await server.ApproveGrantAsync(asked.Id);
@@ -330,7 +332,7 @@ public sealed class AccountAdministrationApprovalTests(HospitalServer server)
         var created = await admin.PostAsync<JsonElement>(Practitioners, new SavePractitionerRequest(
             Code: $"AC{Letters(8)}", Title: "Dr.", FirstName: "Arun", LastName: "Acct" + Letters(6), Gender: Gender.Male, Qualification: "MD (General Medicine)",
             RegistrationCouncil: "Tamil Nadu Medical Council", RegistrationNumber: Digits(6), HprId: null, SpecialtyId: null, DepartmentId: null,
-            Kind: PractitionerKind.Consultant, Phone: null, Email: null, ConsultationFeeNew: 500m, ConsultationFeeFollowUp: 300m, FollowUpValidityDays: 7,
+            Kind: PractitionerKind.Consultant, Phone: null, Email: null, ConsultationFeeNew: 0m, ConsultationFeeFollowUp: 0m, FollowUpValidityDays: 7,
             Languages: null, Bio: null, PhotoFileId: null, SignatureFileId: null, AvailableForOnlineBooking: false, AvailableForTelehealth: false,
             FacilityIds: null, IsActive: true, Version: null));
         return created.GetProperty("id").GetGuid();
