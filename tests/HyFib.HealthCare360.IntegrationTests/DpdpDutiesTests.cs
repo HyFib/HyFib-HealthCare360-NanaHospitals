@@ -454,7 +454,10 @@ public sealed class DpdpDutiesTests(HospitalServer server)
         return await server.Anonymous(ownAddress: true).Http.SendAsync(request, Ct);
     }
 
-    private static CaptureConsentRequest Consent(ConsentType type) => new(type, null, true, null, null, null, null, null, null);
+    // Record sharing is limited to the next month: sharing the whole record with no signed form needs a witness (slice 14),
+    // which these tests are not about.
+    private CaptureConsentRequest Consent(ConsentType type) => new(type, null, true, null, null, null, null, null,
+        type == ConsentType.DataSharing ? new RecordSharingScope(null, null, null, null, null, server.Today.AddMonths(1)) : null);
 
     private async Task<List<PatientConsent>> ConsentsAsync(Guid patientId, ConsentType type)
     {
