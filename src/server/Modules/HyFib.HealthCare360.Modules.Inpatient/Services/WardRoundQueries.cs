@@ -69,6 +69,12 @@ public sealed class WardRoundQueries(HospitalDbContext db, PatientAccessGuard gu
             .ToListAsync(ct);
 
         var latestVitals = (await LatestVitals(patientIds, since).ToListAsync(ct)).ToDictionary(v => v.PatientId);
+        var escalated = (await db.Set<EarlyWarningEscalation>().AsNoTracking()
+                .Where(e => admissionIds.Contains(e.AdmissionId) && e.Status == EscalationStatus.Open)
+                .Select(e => e.AdmissionId)
+                .Distinct()
+                .ToListAsync(ct))
+            .ToHashSet();
 
         var withheldCharts = await guard.WithheldChartsAsync(patientIds, ct);
         var startOfToday = IndiaClock.StartOfDayUtc(today);
@@ -88,6 +94,7 @@ public sealed class WardRoundQueries(HospitalDbContext db, PatientAccessGuard gu
                 var flags = reading is null
                     ? []
                     : VitalSignsAssessor.Assess(reading.ToReading(), r.DateOfBirth, today).OrderByDescending(f => f.Severity).ToList();
+                var news2 = reading is null ? null : News2.Score(reading.ToNews2Reading(), r.DateOfBirth, today);
                 var withheldWhy = withheldCharts.TryGetValue(a.PatientId, out var why) ? why : (ChartWithholding?)null;
                 var withheld = withheldWhy is not null;
                 return new WardRoundPatient(
@@ -97,7 +104,8 @@ public sealed class WardRoundQueries(HospitalDbContext db, PatientAccessGuard gu
                     today.DayNumber - IndiaClock.LocalDate(a.AdmittedAt).DayNumber + 1, a.ExpectedDischargeDate, withheld ? null : a.ProvisionalDiagnosis,
                     a.IsMlc, r.IsVip, a.ConsultantPractitionerId, r.ConsultantName, practitionerId is null || a.ConsultantPractitionerId == practitionerId,
                     r.HasAllergies, r.HasCriticalAlerts, lastVisit, lastVisit >= startOfToday, lastNote, pending.Count, pending.Any(x => x.HasCriticalFindings),
-                    reading?.RecordedAt, flags.Count == 0 ? null : flags[0].Severity, withheld ? [] : [.. flags.Take(MaxVitalFlags).Select(f => f.Message)])
+                    reading?.RecordedAt, flags.Count == 0 ? null : flags[0].Severity, withheld ? [] : [.. flags.Take(MaxVitalFlags).Select(f => f.Message)],
+                    news2?.Total, news2?.Response, news2?.IsComplete ?? false, escalated.Contains(a.Id))
                 {
                     IsConfidential = withheldWhy == ChartWithholding.Confidential,
                 };

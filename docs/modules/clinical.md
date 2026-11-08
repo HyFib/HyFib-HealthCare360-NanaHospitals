@@ -79,7 +79,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | PUT | `/emr/encounters/{id}` | emr.write | `UpdateEncounterRequest{chiefComplaint, historyOfPresentIllness, examination, assessment, plan, followUpDate, followUpAdvice, referral*, version}` |
 | POST | `/emr/encounters/{id}/sign` | encounters.sign | `SignEncounterRequest{version}` → `EncounterDetail` |
 | POST | `/emr/encounters/{id}/amend` | encounters.sign | `AmendEncounterRequest{reason, …content, version}` → 200 `EncounterDetail` from the encounter's author; → 202 `ApprovalRequestDto` (`clinical.encounter_amend`) from any other doctor, made when the author or the head of the encounter's department approves (see *Who signs off another doctor's work*). Either way the original is kept in the amendment history |
-| GET / POST | `/emr/patients/{patientId}/vitals` | emr.read / vitals.record | `RecordVitalsRequest{encounterId?, recordedAt?, temperature, temperatureUnit, pulse, respiratoryRate, systolicBp, diastolicBp, spO2, onSupplementalOxygen, heightCm, weightKg, painScore, bloodGlucose, glucoseTiming, gcs, notes}` → `VitalsDto` with `flags` |
+| GET / POST | `/emr/patients/{patientId}/vitals` | emr.read / vitals.record | `RecordVitalsRequest{encounterId?, recordedAt?, temperature, temperatureUnit, pulse, respiratoryRate, systolicBp, diastolicBp, spO2, onSupplementalOxygen, heightCm, weightKg, painScore, bloodGlucose, glucoseTiming, gcs, notes, consciousness? (ACVPU: Alert, NewConfusion, Voice, Pain, Unresponsive), spO2Scale (Scale1 default; Scale2 only when a doctor prescribed a target of 88–92 %)}` → `VitalsDto` with `flags` and `news2` (see *NEWS2* below) |
 | POST | `/emr/patients/{patientId}/vitals/preview` | vitals.record | same request → `VitalFlag[]` (nothing saved) |
 | POST | `/emr/vitals/{id}/entered-in-error` | vitals.record | `EnteredInErrorRequest{reason}` |
 | GET / POST | `/emr/patients/{patientId}/allergies` | emr.read / allergies.manage | `RecordAllergyRequest{allergen, type, reaction, severity, onsetDate, notes}` → `AllergyDto` (409 `allergy.duplicate`). Recording an allergy removes a "no known allergies" statement in the same save |
@@ -1133,3 +1133,17 @@ Documents that messages can carry (`INotificationDocumentSource`, made when the 
   LAB-LFT, LAB-KFT, LAB-TFT, LAB-URINE-RE, LAB-ESR, LAB-CRP, LAB-VITD, LAB-VITB12, LAB-PSA, LAB-ELECTROLYTES,
   RAD-XR-CHEST, RAD-USG-ABD, RAD-USG-PELVIS, RAD-MAMMO, CARD-ECG, CARD-ECHO, CARD-TMT and CONS-NEW. Codes not yet
   seeded by Diagnostics are skipped (logged) and added on a later start unless the hospital has edited the entry.
+
+## NEWS2 (National Early Warning Score 2)
+
+`News2` (`Domain/News2.cs`) scores every set of vital signs on the Royal College of Physicians' NEWS2 chart (2017):
+respiration rate, oxygen saturation on scale 1 (or scale 2, for a patient in hypercapnic respiratory failure whose doctor
+prescribed a target of 88–92 %: 88–92 % scores 0, and above 92 % scores 1–3 only on oxygen), air or supplemental oxygen
+(2), systolic pressure, pulse, consciousness on ACVPU (anything but Alert scores 3, new confusion included) and
+temperature. `VitalsDto.news2` = `News2Score{total, anySingleParameterThree, response (Routine | Urgent | Emergency),
+isComplete, scale, parts[{parameter, value, points}], missing[], summary}`: urgent at 5–6 or any single parameter
+scoring 3, emergency at 7 or more. A set missing parameters is still scored (a missing parameter can only add) and marked
+incomplete. NEWS2 is validated for adults: it is not calculated under 16 years (a paediatric score, PEWS, is not part of
+this release) and pregnancy is not detected (the chart's own caveat: use an obstetric score). Each recorded set raises
+`VitalSignsRecorded` with its score, which Inpatient turns into an early-warning escalation for a patient in a bed (see
+inpatient.md, *NEWS2 escalation*).

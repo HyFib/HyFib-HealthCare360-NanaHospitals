@@ -41,7 +41,11 @@ public sealed record WardRoundPatient(
     bool HasCriticalResults,
     DateTimeOffset? VitalsAt,
     FlagSeverity? VitalsSeverity,
-    IReadOnlyList<string> VitalsFlags)
+    IReadOnlyList<string> VitalsFlags,
+    int? News2Score = null,
+    News2Response? News2Response = null,
+    bool News2Complete = false,
+    bool HasOpenEscalation = false)
 {
     /// <summary>
     /// A record in a sensitive category the user does not hold (HIV, mental health, MTP, sexual violence): named, as on the

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
+using HyFib.HealthCare360.Modules.Inpatient.Features.CarePlan;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 
@@ -194,7 +195,9 @@ internal static class NursingEndpoints
             EntityType = nameof(Ward),
             EntityId = wardId.ToString(),
         }, ct);
-        return TypedResults.Ok(rows.Select(r => new WardHandoverItem(ToDto(r.Handover), r.Uhid, r.FullName, r.BedLabel)).ToList());
+        var carePlans = (await CarePlanQueries.ForAdmissionsAsync(db, rows.Select(r => r.Handover.AdmissionId).Distinct().ToList(), true, time.GetUtcNow(), ct))
+            .ToLookup(p => p.AdmissionId);
+        return TypedResults.Ok(rows.Select(r => new WardHandoverItem(ToDto(r.Handover), r.Uhid, r.FullName, r.BedLabel, carePlans[r.Handover.AdmissionId].ToList())).ToList());
     }
 
     // ------------------------------------------------------------------ intake / output

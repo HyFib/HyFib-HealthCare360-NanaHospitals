@@ -57,6 +57,12 @@ public sealed class VitalSigns : AuditableEntity
     /// <summary>Glasgow Coma Scale total (3–15).</summary>
     public int? Gcs { get; set; }
 
+    /// <summary>Level of consciousness on the ACVPU scale, for NEWS2.</summary>
+    public Consciousness? Consciousness { get; set; }
+
+    /// <summary>The NEWS2 oxygen-saturation scale: 2 only when a doctor has prescribed a target of 88–92 %.</summary>
+    public SpO2Scale SpO2Scale { get; set; } = SpO2Scale.Scale1;
+
     public string? Notes { get; set; }
     public bool IsEnteredInError { get; private set; }
     public string? EnteredInErrorReason { get; private set; }
@@ -78,6 +84,17 @@ public sealed class VitalSigns : AuditableEntity
         EnteredInErrorReason = reason.Trim();
         return Result.Success();
     }
+
+    public News2Reading ToNews2Reading() =>
+        new(RespiratoryRate, SpO2, SpO2Scale, OnSupplementalOxygen, SystolicBp, Pulse, Consciousness, TemperatureCelsius);
+
+    /// <summary>
+    /// Tells the other modules a set of vital signs was taken, with its NEWS2 (null for a child or when nothing NEWS2 reads
+    /// was measured): the ward escalates an early-warning score that calls for a doctor. Call once, before saving.
+    /// </summary>
+    public void MarkRecorded(News2Score? news2) =>
+        Raise(new VitalSignsRecorded(Id, PatientId, FacilityId, RecordedAt, RecordedByUserId, news2?.Total, news2?.AnySingleParameterThree ?? false,
+            news2?.IsComplete ?? false, news2?.Summary));
 
     public VitalReading ToReading() => new(
         TemperatureCelsius, Pulse, RespiratoryRate, SystolicBp, DiastolicBp, SpO2, OnSupplementalOxygen, Bmi, PainScore,
