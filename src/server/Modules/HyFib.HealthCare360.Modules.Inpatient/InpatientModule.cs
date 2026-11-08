@@ -84,6 +84,7 @@ public sealed class InpatientModule : IModule
         services.Replace(ServiceDescriptor.Scoped<IAdmissionDirectory, AdmissionDirectory>());
         services.AddScoped<MarService>();
         services.AddWitnessPurpose(MarService.DoseWitness);
+        services.AddWitnessPurpose(DischargeService.AgainstAdviceWitness);
         services.AddScoped<AdmissionAccess>();
         services.AddScoped<WardRoundQueries>();
         services.AddHostedService<BedDayChargeJob>();
