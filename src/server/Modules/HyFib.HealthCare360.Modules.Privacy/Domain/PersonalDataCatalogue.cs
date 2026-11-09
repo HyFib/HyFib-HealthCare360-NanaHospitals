@@ -220,6 +220,7 @@ public static class PersonalDataCatalogue
                 new("billing.receipts", "Payments"),
                 new("billing.refunds", "Refunds"),
                 new("billing.credit_notes", "Credit notes", Counted: false),
+                new("billing.debit_notes", "Debit notes", Counted: false),
                 new("billing.receipt_reversals", "Payments recorded that did not arrive", Counted: false),
                 new("billing.refund_reversals", "Refunds recorded that were not paid out", Counted: false),
                 new("billing.payment_disputes", "Payments your bank took back (chargebacks)", Counted: false),

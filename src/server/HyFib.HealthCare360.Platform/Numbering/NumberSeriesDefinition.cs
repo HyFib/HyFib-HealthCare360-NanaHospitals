@@ -36,6 +36,13 @@ public sealed record NumberSeriesDefinition(
     public bool Hidden { get; init; }
 
     /// <summary>
+    /// A GST tax invoice, bill of supply, credit note or debit note (GST rules 46, 49 and 53): its serial number has at
+    /// most <see cref="NumberFormatRules.GstMaxLength"/> characters, and the e-invoice portal refuses one that starts
+    /// with 0, so its format is held to both when it is saved (<see cref="NumberFormatRules.GstProblems"/>).
+    /// </summary>
+    public bool GstDocument { get; init; }
+
+    /// <summary>
     /// Null when the format may leave out {FAC} while the hospital has one facility. Otherwise, in a plain sentence, why
     /// every format of this series must carry the facility code: its numbers must never be the same as another
     /// facility's, even one opened later. A stored format without it (from before the rule) has the code put in front

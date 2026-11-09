@@ -59,6 +59,12 @@ internal static class BillQueries
                 .Where(e => e.Source == CreditNoteEInvoiceSource.Key && creditIds.Contains(e.SourceId) && e.Status == EInvoiceStatus.Registered)
                 .ToListAsync(ct))
             .ToDictionary(e => e.SourceId);
+        var debits = await db.Set<DebitNote>().AsNoTracking().Include(n => n.Lines).Where(n => n.BillId == billId).OrderBy(n => n.IssuedAt).ToListAsync(ct);
+        var debitIds = debits.Select(n => n.Id).ToList();
+        var debitIrns = (await db.Set<EInvoice>().AsNoTracking()
+                .Where(e => e.Source == DebitNoteEInvoiceSource.Key && debitIds.Contains(e.SourceId) && e.Status == EInvoiceStatus.Registered)
+                .ToListAsync(ct))
+            .ToDictionary(e => e.SourceId);
         var pending = await db.Set<DiscountApproval>().AsNoTracking()
             .Where(a => a.BillId == billId && a.Status == DiscountApprovalStatus.Pending)
             .OrderByDescending(a => a.RequestedAt)
@@ -92,7 +98,15 @@ internal static class BillQueries
             bill.Version,
             einvoice is null ? null : EInvoiceService.Stamp(einvoice),
             bill.FreeTreatmentReason,
-            bill.FreeTreatmentAmount);
+            bill.FreeTreatmentAmount,
+            debits.Select(n => new DebitNoteDto(
+                n.Id, n.Number, n.Party, n.Amount, n.TaxableAmount, n.GstAmount, n.Reason, n.IssuedAt, n.IssuedByName, n.RequestedByName,
+                n.Lines.OrderBy(l => l.SortOrder)
+                    .Select(l => new DebitNoteLineDto(l.BillLineId, l.Description, l.SacCode, l.GstRate, l.Amount, l.TaxableAmount, l.CgstAmount, l.SgstAmount, l.IgstAmount))
+                    .ToList(),
+                debitIrns.TryGetValue(n.Id, out var irn) ? EInvoiceService.Stamp(irn) : null)).ToList(),
+            bill.DebitAmount,
+            bill.PayerDebitAmount);
     }
 
     /// <summary>A credit note with the lines it corrects, their GST, and its IRN when it is a registered e-invoice.</summary>

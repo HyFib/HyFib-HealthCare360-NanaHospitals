@@ -45,6 +45,7 @@ import { Route as AppBillingCardSettlementsRouteImport } from './routes/_app/bil
 import { Route as AppBillingDayEndRouteImport } from './routes/_app/billing/day-end'
 import { Route as AppBillingDepositsRouteImport } from './routes/_app/billing/deposits'
 import { Route as AppBillingEinvoicesRouteImport } from './routes/_app/billing/einvoices'
+import { Route as AppBillingGstReturnsRouteImport } from './routes/_app/billing/gst-returns'
 import { Route as AppBillingHbpRouteImport } from './routes/_app/billing/hbp'
 import { Route as AppBillingOpRouteImport } from './routes/_app/billing/op'
 import { Route as AppBillingPackagesRouteImport } from './routes/_app/billing/packages'
@@ -537,6 +538,11 @@ const AppBillingDepositsRoute = AppBillingDepositsRouteImport.update({
 const AppBillingEinvoicesRoute = AppBillingEinvoicesRouteImport.update({
   id: '/billing/einvoices',
   path: '/billing/einvoices',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBillingGstReturnsRoute = AppBillingGstReturnsRouteImport.update({
+  id: '/billing/gst-returns',
+  path: '/billing/gst-returns',
   getParentRoute: () => AppRoute,
 } as any)
 const AppBillingHbpRoute = AppBillingHbpRouteImport.update({
@@ -2188,6 +2194,7 @@ export interface FileRoutesByFullPath {
   '/billing/day-end': typeof AppBillingDayEndRoute
   '/billing/deposits': typeof AppBillingDepositsRoute
   '/billing/einvoices': typeof AppBillingEinvoicesRoute
+  '/billing/gst-returns': typeof AppBillingGstReturnsRoute
   '/billing/hbp': typeof AppBillingHbpRoute
   '/billing/op': typeof AppBillingOpRoute
   '/billing/packages': typeof AppBillingPackagesRoute
@@ -2535,6 +2542,7 @@ export interface FileRoutesByTo {
   '/billing/day-end': typeof AppBillingDayEndRoute
   '/billing/deposits': typeof AppBillingDepositsRoute
   '/billing/einvoices': typeof AppBillingEinvoicesRoute
+  '/billing/gst-returns': typeof AppBillingGstReturnsRoute
   '/billing/hbp': typeof AppBillingHbpRoute
   '/billing/op': typeof AppBillingOpRoute
   '/billing/packages': typeof AppBillingPackagesRoute
@@ -2884,6 +2892,7 @@ export interface FileRoutesById {
   '/_app/billing/day-end': typeof AppBillingDayEndRoute
   '/_app/billing/deposits': typeof AppBillingDepositsRoute
   '/_app/billing/einvoices': typeof AppBillingEinvoicesRoute
+  '/_app/billing/gst-returns': typeof AppBillingGstReturnsRoute
   '/_app/billing/hbp': typeof AppBillingHbpRoute
   '/_app/billing/op': typeof AppBillingOpRoute
   '/_app/billing/packages': typeof AppBillingPackagesRoute
@@ -3233,6 +3242,7 @@ export interface FileRouteTypes {
     | '/billing/day-end'
     | '/billing/deposits'
     | '/billing/einvoices'
+    | '/billing/gst-returns'
     | '/billing/hbp'
     | '/billing/op'
     | '/billing/packages'
@@ -3580,6 +3590,7 @@ export interface FileRouteTypes {
     | '/billing/day-end'
     | '/billing/deposits'
     | '/billing/einvoices'
+    | '/billing/gst-returns'
     | '/billing/hbp'
     | '/billing/op'
     | '/billing/packages'
@@ -3928,6 +3939,7 @@ export interface FileRouteTypes {
     | '/_app/billing/day-end'
     | '/_app/billing/deposits'
     | '/_app/billing/einvoices'
+    | '/_app/billing/gst-returns'
     | '/_app/billing/hbp'
     | '/_app/billing/op'
     | '/_app/billing/packages'
@@ -4504,6 +4516,13 @@ declare module '@tanstack/react-router' {
       path: '/billing/einvoices'
       fullPath: '/billing/einvoices'
       preLoaderRoute: typeof AppBillingEinvoicesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/billing/gst-returns': {
+      id: '/_app/billing/gst-returns'
+      path: '/billing/gst-returns'
+      fullPath: '/billing/gst-returns'
+      preLoaderRoute: typeof AppBillingGstReturnsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/billing/hbp': {
@@ -6707,6 +6726,7 @@ interface AppRouteChildren {
   AppBillingDayEndRoute: typeof AppBillingDayEndRoute
   AppBillingDepositsRoute: typeof AppBillingDepositsRoute
   AppBillingEinvoicesRoute: typeof AppBillingEinvoicesRoute
+  AppBillingGstReturnsRoute: typeof AppBillingGstReturnsRoute
   AppBillingHbpRoute: typeof AppBillingHbpRoute
   AppBillingOpRoute: typeof AppBillingOpRoute
   AppBillingPackagesRoute: typeof AppBillingPackagesRoute
@@ -7053,6 +7073,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppBillingDayEndRoute: AppBillingDayEndRoute,
   AppBillingDepositsRoute: AppBillingDepositsRoute,
   AppBillingEinvoicesRoute: AppBillingEinvoicesRoute,
+  AppBillingGstReturnsRoute: AppBillingGstReturnsRoute,
   AppBillingHbpRoute: AppBillingHbpRoute,
   AppBillingOpRoute: AppBillingOpRoute,
   AppBillingPackagesRoute: AppBillingPackagesRoute,

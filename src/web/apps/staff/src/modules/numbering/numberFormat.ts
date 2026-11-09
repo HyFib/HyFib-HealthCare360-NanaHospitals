@@ -24,6 +24,12 @@ export const FORMAT_COLUMN_LENGTH = 64;
 export const MAX_SEQUENCE_WIDTH = 12;
 /** A running number is measured as at least this many digits: it grows past its padding over the years. */
 export const ASSUMED_SEQUENCE_DIGITS = 8;
+
+/** GST rules 46, 49 and 53: an invoice's, bill of supply's or note's serial number has at most 16 characters. */
+export const GST_MAX_LENGTH = 16;
+
+/** A GST document's running number, restarting at least yearly, is measured at its padding and at least this many digits. */
+export const GST_ASSUMED_SEQUENCE_DIGITS = 6;
 export const MAX_FACILITY_CODE_LENGTH = 6;
 
 /** The parts the format buttons insert, with what they stand for. */
@@ -333,6 +339,8 @@ export interface FormatChange {
   facilityCodeReason?: string | null;
   isLocked: boolean;
   maxLength: number;
+  /** A GST invoice or note series (rule 46: at most 16 characters, not starting with 0). */
+  gstDocument?: boolean;
   defaultFormat: string;
   format: string;
   resetPolicy: NumberResetPolicy;
@@ -420,6 +428,59 @@ function needsFacilityCode(change: FormatChange, parts: FormatPart[]): boolean {
 /** What the screen says when {FAC} is missing: the series' own reason, or the general one. */
 function facilityCodeNeeded(change: FormatChange): string {
   return change.facilityCodeReason ? `Add {FAC}. ${change.facilityCodeReason}` : FACILITY_CODE_NEEDED;
+}
+
+/**
+ * What stops `format` from numbering a GST document: numbers longer than 16 characters (GST rule 46) with the longest
+ * facility code in use, and numbers that can start with 0, which the e-invoice portal refuses. The server's words.
+ */
+export function gstProblems(format: string, policy: NumberResetPolicy, facilityCodeLength: number): string[] {
+  const problems: string[] = [];
+  const parts = parseFormat(format);
+  const base = longestNumber(format, facilityCodeLength);
+  const width = Math.max(0, ...parts.filter((p) => p.kind === 'sequence').map((p) => p.width ?? 0));
+  const runningNumber =
+    policy === 'Never' ? Math.max(width, ASSUMED_SEQUENCE_DIGITS) : Math.max(width, GST_ASSUMED_SEQUENCE_DIGITS);
+  const total = base.facilityCode + base.date + runningNumber + base.fixedText;
+  if (total > GST_MAX_LENGTH) {
+    const pieces: string[] = [];
+    if (base.facilityCode > 0) pieces.push(`facility code ${base.facilityCode}`);
+    if (base.date > 0) pieces.push(`date ${base.date}`);
+    pieces.push(
+      policy === 'Never'
+        ? `running number ${runningNumber}, since it never starts again`
+        : `running number ${runningNumber}`,
+    );
+    if (base.fixedText > 0) pieces.push(`fixed text ${base.fixedText}`);
+    problems.push(
+      `GST rule 46 allows at most ${GST_MAX_LENGTH} characters in an invoice or note number; numbers in this format can reach ${total} ` +
+        `(${pieces.join(', ')}). Shorten the fixed text, use {YY} instead of {YYYY}, or use fewer digits in {SEQ:n}` +
+        (policy === 'Never' ? ', and start again every year.' : '.'),
+    );
+  }
+  const first = parts[0];
+  if (
+    first &&
+    (first.kind === 'sequence' ||
+      first.kind === 'month' ||
+      first.kind === 'day' ||
+      (first.kind === 'text' && first.text.startsWith('0')))
+  ) {
+    problems.push(
+      'The e-invoice portal refuses invoice and note numbers that start with 0. Start the format with a letter, {FAC} or the year.',
+    );
+  }
+  return problems;
+}
+
+function gstProblemsOf(change: FormatChange): string[] {
+  return change.gstDocument
+    ? gstProblems(
+        change.format,
+        change.resetPolicy,
+        Math.min(Math.max(change.longestFacilityCode, 0), MAX_FACILITY_CODE_LENGTH),
+      )
+    : [];
 }
 
 function lengthOf(change: FormatChange): NumberLength {
@@ -653,6 +714,7 @@ export function checkChange(change: FormatChange): FormatErrors {
     if (length.total > change.maxLength) {
       add('format', tooLong(change, parts, length));
     }
+    gstProblemsOf(change).forEach((problem) => add('format', problem));
     const same = sameFormatAs(change);
     if (same) {
       add('format', sameFormatMessage(same, change));
@@ -725,6 +787,14 @@ export function formatChecks(change: FormatChange): FormatCheck[] {
           text: `Numbers are at most ${length.total} characters long, and there is room for ${change.maxLength}.`,
         },
   );
+  if (change.gstDocument) {
+    const gst = gstProblemsOf(change);
+    checks.push(
+      ...(gst.length > 0
+        ? gst.map((text) => ({ ok: false, text }))
+        : [{ ok: true, text: `Invoice and note numbers stay within the ${GST_MAX_LENGTH} characters GST allows.` }]),
+    );
+  }
   const same = sameFormatAs(change);
   checks.push(
     same

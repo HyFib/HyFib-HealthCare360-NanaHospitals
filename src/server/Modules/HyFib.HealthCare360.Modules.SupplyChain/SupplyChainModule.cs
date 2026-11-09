@@ -122,6 +122,7 @@ public sealed class SupplyChainModule : IModule
         services.AddScoped<ItemPriceApprovals>();
         services.AddScoped<RecallReleaseApprovals>();
         services.AddScoped<PurchaseService>();
+        services.AddScoped<IGstPurchaseSource, GoodsReceiptGstSource>();
         services.AddScoped<GoodsReceiptService>();
         services.AddScoped<IndentService>();
         services.AddScoped<TransferService>();
