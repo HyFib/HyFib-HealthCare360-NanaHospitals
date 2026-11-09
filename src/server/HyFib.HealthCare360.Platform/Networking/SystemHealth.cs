@@ -27,8 +27,13 @@ using Microsoft.Extensions.Options;
 namespace HyFib.HealthCare360.Platform.Networking;
 
 /// <param name="Clock">The last check of this server's clock against the national time servers (<see cref="ServerClock"/>); null before the first.</param>
+/// <param name="Node">With several servers, the server's id (<see cref="ServerNodeBoard.Node"/>); null on a single Server Node.</param>
+/// <param name="Jobs">
+/// With several servers taking turns at the background jobs (<see cref="JobLeadership"/>), whether this one runs them now;
+/// null where its role alone decides.
+/// </param>
 public sealed record ServerInfo(string MachineName, string OsDescription, string Version, string Environment, string Role, DateTimeOffset StartedAt,
-    double UptimeHours, int ProcessorCount, long WorkingSetBytes, string Framework, ClockCheck? Clock = null);
+    double UptimeHours, int ProcessorCount, long WorkingSetBytes, string Framework, ClockCheck? Clock = null, string? Node = null, JobNodeState? Jobs = null);
 
 public sealed record NetworkInfo(bool WifiSupported, WifiConnectionInfo? Wifi, DateTimeOffset? ConnectedSince, DateTimeOffset? LastDisconnectAt,
     IReadOnlyList<WifiEvent> RecentEvents, IReadOnlyList<string> IpAddresses, int HttpsPort, int PortalHttpsPort, bool MdnsEnabled);
@@ -144,7 +149,8 @@ public sealed class SystemHealthService(
     ServerClock clock,
     IAdministrationDesktops administrationDesktops,
     ISettingsService settings,
-    TimeProvider time)
+    TimeProvider time,
+    JobLeadership? jobs = null)
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
 
@@ -333,11 +339,13 @@ public sealed class SystemHealthService(
 
     /// <summary>
     /// The warnings about every server, each naming it: its own while it reports, and that it has stopped when it has not;
-    /// when none of them runs the jobs, that nothing runs them; and when more than one that reports does, that one should.
+    /// when none of them runs the jobs, that nothing runs them, or, while servers stand by for the job lease, that one of
+    /// them is about to; and when more than one that reports does, that one should.
     /// </summary>
     internal static IReadOnlyList<HealthWarning> ServerWarnings(IReadOnlyList<ServerNodeHealth> servers)
     {
         var warnings = new List<HealthWarning>();
+        var standingBy = servers.Where(s => s.Reporting && s.Server.Jobs is { Active: false }).Select(s => s.Server.MachineName).ToArray();
         foreach (var server in servers)
         {
             var name = server.Server.MachineName;
@@ -345,46 +353,80 @@ public sealed class SystemHealthService(
             {
                 warnings.AddRange(server.Warnings.Select(w => w with { Server = name }));
             }
+            else if (!RunsJobs(server))
+            {
+                warnings.Add(new("server.not_reporting", "warning",
+                    $"{name} has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. The reverse proxy sends requests to the other servers meanwhile.",
+                    name));
+            }
             else
             {
-                warnings.Add(RunsJobs(server)
-                    ? new("server.not_reporting", "critical",
-                        $"{name}, which runs the background jobs, has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. Until it is back, nothing makes the backups, sends messages or listens for analysers and modalities.",
-                        name)
-                    : new("server.not_reporting", "warning",
-                        $"{name} has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. The reverse proxy sends requests to the other servers meanwhile.",
-                        name));
+                warnings.Add(new("server.not_reporting", "critical",
+                    $"{name}, which ran the background jobs, has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. " +
+                    (standingBy.Length > 0
+                        ? $"{string.Join(", ", standingBy)} stand{(standingBy.Length == 1 ? "s" : string.Empty)} by to take the jobs over within a minute."
+                        : "Until it is back, nothing makes the backups, sends messages or listens for analysers and modalities."),
+                    name));
             }
         }
 
-        if (!servers.Any(RunsJobs))
+        if (!servers.Any(s => s.Reporting && RunsJobs(s)))
         {
-            warnings.Add(new("server.no_jobs", "critical",
-                "No server that runs the background jobs is reporting: nothing makes the backups, sends messages or listens for analysers and modalities. Start HC360 on the server that runs them."));
+            warnings.Add(standingBy.Length > 0
+                ? new("server.jobs_taking_over", "warning",
+                    $"No server holds the job lease at this moment: {string.Join(", ", standingBy)} stand{(standingBy.Length == 1 ? "s" : string.Empty)} by, and one takes the background jobs over within a minute. If this lasts, the servers that stand by cannot reach the database; their log says why.")
+                : new("server.no_jobs", "critical",
+                    "No server that runs the background jobs is reporting: nothing makes the backups, sends messages or listens for analysers and modalities. Start HC360 on a server that runs them."));
         }
 
-        // Exactly one should (DEPLOYMENT.md section 10); an API node whose settings miss "Role": "api" runs them as "all".
-        // Nothing shares the nightly backup out between them, so each makes it: a warning, as nothing is lost meanwhile.
-        var running = servers.Where(s => s.Reporting && RunsJobs(s)).Select(s => s.Server.MachineName).ToArray();
+        // Exactly one should. With the job lease that is the database's to say, so two of them means something is badly
+        // wrong; without it, an API node whose settings miss "Role": "api" runs them as "all", and nothing shares the
+        // nightly backup out between them, so each makes it: a warning, as nothing is lost meanwhile.
+        var running = servers.Where(s => s.Reporting && RunsJobs(s)).ToArray();
         if (running.Length > 1)
         {
-            warnings.Add(new("server.several_jobs", "warning",
-                $"{string.Join(", ", running[..^1])} and {running[^1]} {(running.Length == 2 ? "both" : "all")} run the background jobs, and only one server should: each makes the nightly backup, and listens for analysers and modalities. Give all but one of them \"Role\": \"api\" in hc360.settings.json, and restart their HC360Server service."));
+            var names = running.Select(s => s.Server.MachineName).ToArray();
+            var both = $"{string.Join(", ", names[..^1])} and {names[^1]} {(names.Length == 2 ? "both" : "all")}";
+            warnings.Add(running.All(s => s.Server.Jobs is not null)
+                ? new("server.several_jobs", "critical",
+                    $"{both} hold the job lease, which only one server can: restart the HC360Server service on each of them but one, and send their logs to HyFib support.")
+                : new("server.several_jobs", "warning",
+                    $"{both} run the background jobs, and only one server should: each makes the nightly backup, and listens for analysers and modalities. Give all but one of them \"Role\": \"api\" in hc360.settings.json, or let them take turns through the job lease (HealthCare360:JobLeadership), and restart their HC360Server service."));
         }
 
         return warnings;
     }
 
-    /// <summary>This server and every other one that reports or stopped reporting less than a day ago, the nodes that run the jobs first.</summary>
-    private async Task<IReadOnlyList<ServerNodeHealth>> EveryServerAsync(ServerNodeHealth self, CancellationToken ct) =>
-    [
-        .. (await servers.ReadOthersAsync(ct)).Prepend(self)
-            .OrderBy(s => RunsJobs(s) ? 0 : 1)
-            .ThenBy(s => s.Server.MachineName, StringComparer.OrdinalIgnoreCase),
-    ];
+    /// <summary>
+    /// This server and every other one that reports or stopped reporting less than a day ago, the nodes that run the jobs
+    /// first. Which one holds the job lease is read from the database at once (<see cref="JobLeadership.ReadHolderAsync"/>),
+    /// not from what each wrote up to a minute ago, so the page is right the moment the lease changes hands.
+    /// </summary>
+    private async Task<IReadOnlyList<ServerNodeHealth>> EveryServerAsync(ServerNodeHealth self, CancellationToken ct)
+    {
+        var everyServer = (await servers.ReadOthersAsync(ct)).Prepend(self).ToList();
+        if (everyServer.Any(s => s.Server.Jobs is not null))
+        {
+            var holder = await JobLeadership.ReadHolderAsync(db, ct);
+            everyServer = [.. everyServer.Select(s => s.Server.Jobs is { } state && s.Server.Node is { } node
+                ? s with { Server = s.Server with { Jobs = state with { Active = node == holder, Since = node == holder ? state.Since : null } } }
+                : s)];
+        }
 
-    /// <summary>Whether a server runs the background jobs: a <c>worker</c>, or a whole Server Node (<c>all</c>).</summary>
-    internal static bool RunsJobs(ServerNodeHealth server) => !string.Equals(server.Server.Role, "api", StringComparison.OrdinalIgnoreCase);
+        return
+        [
+            .. everyServer
+                .OrderBy(s => RunsJobs(s) ? 0 : 1)
+                .ThenBy(s => s.Server.MachineName, StringComparer.OrdinalIgnoreCase),
+        ];
+    }
+
+    /// <summary>
+    /// Whether a server runs the background jobs: the one holding the job lease, where the servers take turns at them
+    /// (<see cref="ServerInfo.Jobs"/>); else a <c>worker</c>, or a whole Server Node (<c>all</c>).
+    /// </summary>
+    internal static bool RunsJobs(ServerNodeHealth server) =>
+        server.Server.Jobs is { } jobs ? jobs.Active : !string.Equals(server.Server.Role, "api", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// This server's own part of the report: its machine and the warnings about it, in the three places System health has
@@ -404,7 +446,9 @@ public sealed class SystemHealthService(
             Environment.ProcessorCount,
             process.WorkingSet64,
             RuntimeInformation.FrameworkDescription,
-            clock.Last);
+            clock.Last,
+            directories.IsShared ? servers.Node : null,
+            jobs?.State);
 
         var network = new NetworkInfo(
             wifi.Supported, wifi.Current, wifi.ConnectedSince, wifi.LastDisconnectAt, wifi.RecentEvents,

@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using HyFib.HealthCare360.Platform;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Networking;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -34,6 +35,10 @@ public static class ServerComposition
         });
 
         AddRealtime(builder.Services, builder.Configuration);
+
+        // With several servers, the one holding the job lease runs the background jobs, and the others stand by (SCAL-05).
+        // Last, once every job is registered: it holds them back until this server holds the lease.
+        builder.Services.AddJobLeadership(builder.Configuration);
     }
 
     /// <summary>
@@ -42,7 +47,8 @@ public static class ServerComposition
     /// other. A Redis that is down when a node starts, or goes away later, is connected to again in the background: the API
     /// keeps working, but meanwhile no client gets real-time updates on any node (every event goes through Redis, to the
     /// clients of the node that raised it too), and a real-time connection opened meanwhile is refused and tried again.
-    /// Once Redis is back, every screen is told to refetch what it shows (<see cref="RealtimeResync"/>).
+    /// Once Redis is back, every screen is told to refetch what it shows (<see cref="RealtimeResync"/>). The request limits
+    /// are counted on the same Redis for every node (<see cref="RedisRateLimitStore"/>).
     /// </summary>
     internal static Microsoft.AspNetCore.SignalR.ISignalRServerBuilder AddRealtime(IServiceCollection services, IConfiguration configuration)
     {
@@ -71,6 +77,10 @@ public static class ServerComposition
             services.AddOptions<RedisOptions>().Configure<RedisBackplaneConnections>((redisOptions, connections) =>
                 redisOptions.ConnectionFactory = log => connections.ConnectAsync(redisOptions.Configuration, log));
             services.AddSingleton<RedisBackplane>();
+
+            // The request limits other than sign-in's count for the hospital on the same Redis (SEC-06), and on each node
+            // alone while it cannot be reached (RateLimitPolicies).
+            services.AddSingleton<ISharedRateLimitStore, RedisRateLimitStore>();
             services.AddHealthChecks().AddCheck<RedisBackplane>(
                 "redis-backplane", failureStatus: Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded, tags: ["ready"]);
         }
@@ -169,6 +179,7 @@ public static class ServerComposition
 }
 
 /// <summary>Brings the database up to date as the host starts (<see cref="ServerComposition.AddDatabaseStartup"/>).</summary>
+[NodeLocal]
 public sealed class DatabaseStartup(IServiceProvider services) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken) => ServerComposition.InitializeDatabaseAsync(services, cancellationToken);

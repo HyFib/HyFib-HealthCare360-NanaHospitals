@@ -1,4 +1,4 @@
-import type { IntegrationHealthSummary, ServerNodeHealth, SystemHealthReport, ClockCheck } from './api';
+import type { IntegrationHealthSummary, ServerInfo, ServerNodeHealth, SystemHealthReport, ClockCheck } from './api';
 
 export type HealthTone = 'ok' | 'warn' | 'bad';
 
@@ -73,14 +73,31 @@ export function integrationsSummary(rows: IntegrationHealthSummary[]): { text: s
   };
 }
 
-/** Whether a server runs the background jobs (backups, messages, the analysers' and modalities' listeners). */
-export function runsJobs(role: string): boolean {
-  return role.toLowerCase() !== 'api';
+/**
+ * Whether a server runs the background jobs (backups, messages, the analysers' and modalities' listeners): the one
+ * holding the job lease, where the servers take turns at them; else any but an API node.
+ */
+export function runsJobs(server: Pick<ServerInfo, 'role' | 'jobs'>): boolean {
+  return server.jobs ? server.jobs.active : server.role.toLowerCase() !== 'api';
+}
+
+/** Whether a server stands by to take the background jobs over (the job lease). */
+export function standsBy(server: Pick<ServerInfo, 'jobs'>): boolean {
+  return server.jobs?.active === false;
 }
 
 /** What one server of several is for, as System health names it. */
-export function serverRole(role: string): string {
-  switch (role.toLowerCase()) {
+export function serverRole(server: Pick<ServerInfo, 'role' | 'jobs'>): string {
+  const role = server.role.toLowerCase();
+  if (server.jobs) {
+    if (server.jobs.active) {
+      return role === 'worker'
+        ? 'Runs the background jobs (holds the job lease)'
+        : 'API and background jobs (holds the job lease)';
+    }
+    return role === 'worker' ? 'Stands by for the background jobs' : 'API node, standing by for the background jobs';
+  }
+  switch (role) {
     case 'api':
       return 'API node';
     case 'worker':
@@ -92,21 +109,26 @@ export function serverRole(role: string): string {
 
 /**
  * The home screen's line for several servers (SCAL-01): all of them reporting, or which have stopped; when none of them
- * runs the background jobs, that nothing does; and when more than one that reports runs them, which, as only one should.
+ * runs the background jobs, that nothing does, or, while others stand by for the job lease, that one is about to; and when
+ * more than one that reports runs them, which, as only one should.
  */
 export function serversSummary(servers: ServerNodeHealth[]): { text: string; tone: HealthTone } {
   const silent = servers.filter((node) => !node.reporting).map((node) => node.server.machineName);
-  const jobs = servers.some((node) => runsJobs(node.server.role));
   const running = servers
-    .filter((node) => node.reporting && runsJobs(node.server.role))
+    .filter((node) => node.reporting && runsJobs(node.server))
     .map((node) => node.server.machineName);
+  const jobs = servers.some((node) => runsJobs(node.server));
+  const standingBy = servers.some((node) => node.reporting && standsBy(node.server));
   const parts = [silent.length === 0 ? `All ${servers.length} reporting` : `${silent.join(', ')} not reporting`];
-  if (!jobs) {
+  if (running.length === 0 && standingBy) {
+    parts.push('another server is taking the background jobs over');
+  } else if (!jobs) {
     parts.push('none runs the background jobs');
   } else if (running.length > 1) {
     parts.push(`${running.join(', ')} each run the background jobs`);
   }
-  return { text: parts.join('; '), tone: silent.length > 0 || !jobs ? 'bad' : running.length > 1 ? 'warn' : 'ok' };
+  const tone: HealthTone = silent.length > 0 || (!jobs && !standingBy) ? 'bad' : running.length !== 1 ? 'warn' : 'ok';
+  return { text: parts.join('; '), tone };
 }
 
 /**
