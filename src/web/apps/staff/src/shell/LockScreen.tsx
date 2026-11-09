@@ -32,6 +32,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
+import { wipeOfflineCopy } from '@/lib/offline/wipe';
 
 const useStyles = makeStyles({
   overlay: {
@@ -123,6 +124,7 @@ function LockPanel({ user }: { user: AuthUser }) {
   // Signing out a locked session ends it: the screens behind the lock are not asked about (they are not this
   // person's to keep or discard).
   const signOut = async () => {
+    await wipeOfflineCopy();
     await auth.logout();
     queryClient.clear();
     await navigate({ to: '/login', search: {}, ignoreBlocker: true });

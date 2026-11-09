@@ -41,7 +41,9 @@ stay closed as expired (only with a confirmed death certificate, or a second doc
 absconded (the nurse in charge approves), LAMA and DAMA witnessed (on the ward and from the emergency department), and a
 confirmed death certificate voided; a visit cancelled after the doctor started it; a pregnancy ultrasound cancelled after
 its scan (refused: its Form F is completed), the MTP second opinion from 20 weeks (the second doctor's own) and a body
-released from the mortuary on the police's clearance (witnessed); and in the theatre a side or
+released from the mortuary on the police's clearance (witnessed); paper entered after its back-entry window (a late
+back-entry, approved for one user, record type, span and count) and a back-entry window lengthened (a second
+administrator); and in the theatre a side or
 procedure changed after the WHO Sign-in (the checklist redone), site marking with a side booked, the swab and
 instrument counts witnessed with their discrepancies settled, and implants corrected, not deleted, after the operation
 starts; and a sentinel or never event closed (on its completed analysis) or re-graded out of sentinel, a data breach

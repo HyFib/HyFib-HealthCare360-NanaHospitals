@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Payments;
 using HyFib.HealthCare360.Modules.Patients.Domain;
@@ -40,7 +41,8 @@ public sealed class ReceiptService(
     IRealtimePublisher realtime,
     CashLimit cashLimit,
     ICurrentUser currentUser,
-    TimeProvider time)
+    TimeProvider time,
+    DowntimeNumberService downtimeNumbers)
 {
     public async Task<Result<Guid>> CollectForBillAsync(CollectPaymentRequest request, CancellationToken ct)
     {
@@ -74,7 +76,24 @@ public sealed class ReceiptService(
             return cash.Error!;
         }
 
-        var receipt = await NewReceiptAsync(bill.FacilityId, ReceiptPurpose.BillPayment, bill.PatientId, ReceiptSource.Counter, shift.Value, ct);
+        Receipt receipt;
+        if (request.Paper is { } paper)
+        {
+            // From the manual receipt book: the number and time on the paper, claimed from the counter's downtime block.
+            var receiptId = Guid.CreateVersion7();
+            var claimed = await downtimeNumbers.ClaimAsync(DowntimeNumberKind.Receipt, paper, nameof(Receipt), receiptId, bill.PatientId, ct);
+            if (claimed.IsFailure)
+            {
+                return claimed.Error!;
+            }
+
+            receipt = NewReceipt(receiptId, claimed.Value.Number, bill.FacilityId, ReceiptPurpose.BillPayment, bill.PatientId, ReceiptSource.Counter, shift.Value);
+        }
+        else
+        {
+            receipt = await NewReceiptAsync(bill.FacilityId, ReceiptPurpose.BillPayment, bill.PatientId, ReceiptSource.Counter, shift.Value, ct);
+        }
+
         receipt.BillId = bill.Id;
         receipt.VisitId = bill.VisitId;
         receipt.AdmissionId = bill.AdmissionId;
@@ -85,7 +104,7 @@ public sealed class ReceiptService(
             receipt.AddPayment(line);
         }
 
-        var recorded = receipt.Record(time.GetUtcNow());
+        var recorded = receipt.Record(request.Paper?.At ?? time.GetUtcNow());
         if (recorded.IsFailure)
         {
             return recorded.Error!;
@@ -376,10 +395,14 @@ public sealed class ReceiptService(
         return lines;
     }
 
-    private async Task<Receipt> NewReceiptAsync(Guid facilityId, ReceiptPurpose purpose, Guid patientId, ReceiptSource source, CashierShift? shift, CancellationToken ct) => new()
+    private async Task<Receipt> NewReceiptAsync(Guid facilityId, ReceiptPurpose purpose, Guid patientId, ReceiptSource source, CashierShift? shift, CancellationToken ct) =>
+        NewReceipt(Guid.CreateVersion7(), await numbers.NextAsync(BillingNumberSeries.Receipt, facilityId, ct), facilityId, purpose, patientId, source, shift);
+
+    private Receipt NewReceipt(Guid id, string number, Guid facilityId, ReceiptPurpose purpose, Guid patientId, ReceiptSource source, CashierShift? shift) => new()
     {
+        Id = id,
         FacilityId = facilityId,
-        ReceiptNumber = await numbers.NextAsync(BillingNumberSeries.Receipt, facilityId, ct),
+        ReceiptNumber = number,
         Purpose = purpose,
         PatientId = patientId,
         Source = source,

@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Bills;
@@ -207,6 +208,21 @@ public sealed record BillVersionRequest(uint Version);
 public sealed class BillVersionRequestValidator : AbstractValidator<BillVersionRequest>
 {
     public BillVersionRequestValidator() => RuleFor(x => x.Version).SeenVersion();
+}
+
+/// <param name="Paper">
+/// A bill written on paper during a downtime: the downtime bill number on it and the time on it, which the bill keeps
+/// (docs/modules/downtime.md). Null for a bill finalized now, which takes the next number.
+/// </param>
+public sealed record FinalizeBillRequest(uint Version, PaperNumber? Paper = null);
+
+public sealed class FinalizeBillRequestValidator : AbstractValidator<FinalizeBillRequest>
+{
+    public FinalizeBillRequestValidator(TimeProvider time)
+    {
+        RuleFor(x => x.Version).SeenVersion();
+        RuleFor(x => x.Paper!).SetValidator(new PaperNumberValidator(time)).OverridePropertyName("paper").When(x => x.Paper is not null);
+    }
 }
 
 public sealed record LineDiscountInput(Guid LineId, decimal? Percent, decimal? Amount);
