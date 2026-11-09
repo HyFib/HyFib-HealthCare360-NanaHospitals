@@ -43,7 +43,7 @@ internal static class BillEndpoints
         group.MapPost("/{id:guid}/refresh", Refresh).RequirePermission(BillingPermissions.OpCreate).WithValidation<BillVersionRequest>();
         group.MapPost("/{id:guid}/discount", ApplyDiscount).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage)
             .WithValidation<ApplyDiscountRequest>();
-        group.MapPost("/{id:guid}/finalize", FinalizeBill).RequirePermission(BillingPermissions.BillsFinalize).WithValidation<BillVersionRequest>();
+        group.MapPost("/{id:guid}/finalize", FinalizeBill).RequirePermission(BillingPermissions.BillsFinalize).WithValidation<FinalizeBillRequest>();
         group.MapPost("/{id:guid}/cancel", Cancel).RequirePermission(BillingPermissions.BillsCancel).WithValidation<CancelBillRequest>();
         group.MapDelete("/{id:guid}", Discard).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage);
         group.MapPost("/{id:guid}/send-whatsapp", SendOnWhatsApp)
@@ -238,8 +238,8 @@ internal static class BillEndpoints
     private static async Task<IResult> ApplyDiscount(Guid id, ApplyDiscountRequest request, DiscountService discounts, CancellationToken ct) =>
         (await discounts.ApplyAsync(id, request, ct)).ToOk();
 
-    private static async Task<IResult> FinalizeBill(Guid id, BillVersionRequest request, BillService bills, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
-        await DetailAfterAsync(await bills.FinalizeAsync(id, request.Version, ct), db, id, time, ct);
+    private static async Task<IResult> FinalizeBill(Guid id, FinalizeBillRequest request, BillService bills, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
+        await DetailAfterAsync(await bills.FinalizeAsync(id, request.Version, request.Paper, ct), db, id, time, ct);
 
     private static async Task<IResult> Cancel(Guid id, CancelBillRequest request, BillService bills, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
         await DetailAfterAsync(await bills.CancelAsync(id, request, ct), db, id, time, ct);

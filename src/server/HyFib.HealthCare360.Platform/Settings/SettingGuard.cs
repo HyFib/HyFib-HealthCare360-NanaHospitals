@@ -302,6 +302,41 @@ public static class SettingGuard
             "Hours within which the doctor countersigns a verbal or telephone medication order a nurse wrote in their name, or a nurse's stop of a medicine, before it is flagged and the ward's nurse in charge is told.",
             24m, v => v is >= 1m and <= 72m ? v : 24m, v => Count(v, "hour"), Whole: true),
 
+        // BackEntryWindows (the Patients module): how far back paper, or a time typed in, may be dated when it is entered,
+        // per record type; 1 hour to the record's maximum, its default for any other. Past the window a second person
+        // approves each late batch, so lengthening a window waits.
+        ["downtime.backEntryHours.registration"] = new SettingLimit("Back-entry window: registration from paper",
+            "How far back the time on a registration from paper record may be when it is entered; older records need a second person's approval first.",
+            2160m, v => v is >= 1m and <= 2160m ? v : 2160m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.visit"] = new SettingLimit("Back-entry window: visit from paper",
+            "How far back the time on a visit from paper record may be when it is entered; older records need a second person's approval first.",
+            72m, v => v is >= 1m and <= 336m ? v : 72m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.bill"] = new SettingLimit("Back-entry window: bill from paper",
+            "How far back the time on a bill from paper record may be when it is entered; older records need a second person's approval first.",
+            72m, v => v is >= 1m and <= 336m ? v : 72m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.receipt"] = new SettingLimit("Back-entry window: receipt from the manual receipt book",
+            "How far back the time on a receipt from the manual receipt book record may be when it is entered; older records need a second person's approval first.",
+            72m, v => v is >= 1m and <= 336m ? v : 72m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.admission"] = new SettingLimit("Back-entry window: admission time",
+            "How far back the time on a admission time record may be when it is entered; older records need a second person's approval first.",
+            72m, v => v is >= 1m and <= 336m ? v : 72m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.transfer"] = new SettingLimit("Back-entry window: bed transfer time",
+            "How far back the time on a bed transfer time record may be when it is entered; older records need a second person's approval first.",
+            24m, v => v is >= 1m and <= 336m ? v : 24m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.consultantVisit"] = new SettingLimit("Back-entry window: Consultant's ward visit time",
+            "How far back the time on a consultant's ward visit time record may be when it is entered; older records need a second person's approval first.",
+            48m, v => v is >= 1m and <= 336m ? v : 48m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.nursingChart"] = new SettingLimit("Back-entry window: nursing notes and intake/output",
+            "How far back the time on a nursing notes and intake/output record may be when it is entered; older records need a second person's approval first.",
+            24m, v => v is >= 1m and <= 336m ? v : 24m, v => Count(v, "hour"), Whole: true),
+
         // ResultEvaluator.DeltaPercentSetting and DefaultDeltaPercent: 0 or less turns the check off (DeltaCheck).
         ["lab.deltaCheckPercent"] = new SettingLimit("Delta check threshold",
             "How far, as a percentage, a result may move from the patient's previous one before it is held for review; 0 turns the check off.",
