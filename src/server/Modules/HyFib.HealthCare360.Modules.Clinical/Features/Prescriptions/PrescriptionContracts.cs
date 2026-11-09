@@ -195,7 +195,9 @@ public sealed record PrescriptionVerification(
 /// <summary>
 /// What anyone may see of a DSC signature: no patient data, only the signer, the certificate and the hash.
 /// <see cref="ChainTrusted"/> is whether the certificate chains to a CCA India root installed on the server (a DSC from a
-/// licensed Certifying Authority); revocation is not checked.
+/// licensed Certifying Authority). <see cref="RevocationStatus"/> is how the certificate's revocation was checked when it
+/// signed (online, or the CA's cached CRL with its date and age, or not checked); null for a signature made before HC360
+/// checked revocation.
 /// </summary>
 public sealed record PublicDigitalSignature(
     DigitalSignatureState State,
@@ -205,7 +207,8 @@ public sealed record PublicDigitalSignature(
     DateTimeOffset SignedAt,
     string ContentHash,
     bool ChainTrusted,
-    string Message);
+    string Message,
+    string? RevocationStatus = null);
 
 public enum DigitalSignatureState
 {
@@ -285,7 +288,8 @@ public sealed record PrescriptionDigitalSignatureDto(
     string? ChainStatus,
     bool ChainTrusted,
     string? Message,
-    bool FinalCopyAvailable = true);
+    bool FinalCopyAvailable = true,
+    string? RevocationStatus = null);
 
 public sealed class PrescriptionItemRequestValidator : AbstractValidator<PrescriptionItemRequest>
 {

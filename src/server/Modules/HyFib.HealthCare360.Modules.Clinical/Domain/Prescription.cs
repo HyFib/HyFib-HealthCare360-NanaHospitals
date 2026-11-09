@@ -64,7 +64,8 @@ public sealed record PrescriptionDigitalSignature(
     string SignerSerialNumber,
     string SignerIssuer,
     string SignerThumbprint,
-    string ChainStatus);
+    string ChainStatus,
+    string? RevocationStatus = null);
 
 /// <summary>
 /// An e-prescription (ERX-01..06). Drafts are freely editable; signing runs the safety checks (in the service),
@@ -166,6 +167,15 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
     /// check builds the chain again against the folder as it is then.
     /// </summary>
     public string? SignerChainStatus { get; private set; }
+
+    /// <summary>
+    /// How the certificate's revocation was checked when the signature was attached, in words: online (OCSP, or the CA's
+    /// CRL fetched then), or against the cached CRL with its date and age, or not at all when no CRL of the CA was cached
+    /// and the CA could not be reached. A revoked or expired certificate is refused, so it never reads "revoked".
+    /// </summary>
+    public string? SignerRevocationStatus { get; private set; }
+
+    public const int SignerRevocationStatusMaxLength = 300;
 
     public bool IsDigitallySigned => DigitalSignature is not null;
 
@@ -296,6 +306,9 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
         SignerIssuer = signature.SignerIssuer;
         SignerThumbprint = signature.SignerThumbprint;
         SignerChainStatus = signature.ChainStatus;
+        SignerRevocationStatus = signature.RevocationStatus is { } revocation && revocation.Length > SignerRevocationStatusMaxLength
+            ? revocation[..(SignerRevocationStatusMaxLength - 1)] + "…"
+            : signature.RevocationStatus;
         return Result.Success();
     }
 

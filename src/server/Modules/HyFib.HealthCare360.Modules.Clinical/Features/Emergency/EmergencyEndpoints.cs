@@ -37,6 +37,88 @@ internal static class EmergencyEndpoints
         group.MapPost("/cases/{id:guid}/mlc/report", ForwardReport).RequirePermission(ClinicalPermissions.ErMlc).WithValidation<MlcReportRequest>();
         group.MapGet("/cases/{id:guid}/mlc/document", Document).RequireAnyPermission(MlcReaders);
         group.MapGet("/mlc", Register).RequireAnyPermission(MlcReaders);
+
+        // Bays: the department's beds, who is in each, moved and freed by the nurse or the doctor (the disposition frees one too).
+        group.MapGet("/bays", async (EmergencyService er, CancellationToken ct) => TypedResults.Ok(await er.BaysAsync(ct))).RequireAnyPermission(CaseReaders);
+        group.MapPost("/bays", async (SaveErBayRequest request, EmergencyService er, CancellationToken ct) => (await er.SaveBayAsync(null, request, ct)).ToOk())
+            .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveErBayRequest>();
+        group.MapPut("/bays/{bayId:guid}", async (Guid bayId, SaveErBayRequest request, EmergencyService er, CancellationToken ct) => (await er.SaveBayAsync(bayId, request, ct)).ToOk())
+            .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveErBayRequest>().RequireVersion();
+        group.MapPut("/cases/{id:guid}/bay", AssignBay).RequirePermission(ClinicalPermissions.ErTriage).WithValidation<AssignBayRequest>();
+        group.MapPost("/cases/{id:guid}/bay/release", ReleaseBay).RequirePermission(ClinicalPermissions.ErTriage).WithValidation<CaseVersionRequest>();
+
+        // The wound certificate and the medico-legal report for a court, from the MLC record.
+        group.MapPut("/cases/{id:guid}/mlc/wound-certificate", SaveWoundCertificate).RequirePermission(ClinicalPermissions.ErMlc)
+            .WithValidation<SaveWoundCertificateRequest>().FirstSaveCreates();
+        group.MapPost("/cases/{id:guid}/mlc/wound-certificate/sign", SignWoundCertificate).RequirePermission(ClinicalPermissions.ErMlc)
+            .WithValidation<CaseVersionRequest>();
+        group.MapGet("/cases/{id:guid}/mlc/wound-certificate/document", WoundCertificateDocument).RequireAnyPermission(MlcReaders);
+        group.MapPost("/cases/{id:guid}/mlc/court-report", CourtReport).RequireAnyPermission(MlcReaders).WithValidation<CourtReportRequest>();
+    }
+
+    private static async Task<IResult> AssignBay(Guid id, AssignBayRequest request, EmergencyService er, PatientAccessGuard guard, CancellationToken ct)
+    {
+        var opened = await OpenAsync(id, er, guard, ct);
+        return opened.IsFailure ? opened.Error!.ToProblem() : (await er.AssignBayAsync(id, request, ct)).ToOk();
+    }
+
+    private static async Task<IResult> ReleaseBay(Guid id, CaseVersionRequest request, EmergencyService er, PatientAccessGuard guard, CancellationToken ct)
+    {
+        var opened = await OpenAsync(id, er, guard, ct);
+        return opened.IsFailure ? opened.Error!.ToProblem() : (await er.ReleaseBayAsync(id, request.Version, ct)).ToOk();
+    }
+
+    private static async Task<IResult> SaveWoundCertificate(Guid id, SaveWoundCertificateRequest request, EmergencyService er, PatientAccessGuard guard, CancellationToken ct)
+    {
+        var opened = await OpenAsync(id, er, guard, ct);
+        return opened.IsFailure ? opened.Error!.ToProblem() : (await er.SaveWoundCertificateAsync(id, request, ct)).ToOk();
+    }
+
+    private static async Task<IResult> SignWoundCertificate(Guid id, CaseVersionRequest request, EmergencyService er, PatientAccessGuard guard, CancellationToken ct)
+    {
+        var opened = await OpenAsync(id, er, guard, ct);
+        return opened.IsFailure ? opened.Error!.ToProblem() : (await er.SignWoundCertificateAsync(id, request.Version, ct)).ToOk();
+    }
+
+    private static async Task<IResult> WoundCertificateDocument(
+        Guid id, EmergencyService er, PatientAccessGuard guard, IAuditLogger audit, DocumentAssets assets, CancellationToken ct)
+    {
+        var opened = await OpenAsync(id, er, guard, ct);
+        if (opened.IsFailure)
+        {
+            return opened.Error!.ToProblem();
+        }
+
+        if (await er.MedicoLegalAsync(opened.Value, ct) is not { Wound: { } wound } record)
+        {
+            return Error.NotFound("Wound certificate", id).ToProblem();
+        }
+
+        await audit.PatientRecordAccessedAsync(opened.Value.PatientId, $"Printed the wound certificate of MLC {record.Entry.Number}", ct);
+        var signature = await assets.ImageAsync(record.Doctor?.SignatureFileId, ct);
+        return TypedResults.Ok(MedicoLegalDocuments.WoundCertificate(record, wound, await assets.LetterheadAsync(record.Entry.FacilityId, ct), signature).ToDto());
+    }
+
+    private static async Task<IResult> CourtReport(
+        Guid id, CourtReportRequest request, EmergencyService er, PatientAccessGuard guard, IAuditLogger audit, DocumentAssets assets, TimeProvider time,
+        CancellationToken ct)
+    {
+        var opened = await OpenAsync(id, er, guard, ct);
+        if (opened.IsFailure)
+        {
+            return opened.Error!.ToProblem();
+        }
+
+        if (await er.MedicoLegalAsync(opened.Value, ct) is not { } record)
+        {
+            return Error.NotFound("MLC entry", id).ToProblem();
+        }
+
+        // The report goes out of the hospital to a court: its issue is on the patient's record, with the court it went to.
+        await audit.PatientRecordAccessedAsync(opened.Value.PatientId,
+            $"Issued the medico-legal report of MLC {record.Entry.Number} to {request.Court.Trim()}{(request.CaseReference is { Length: > 0 } c ? $" ({c.Trim()})" : string.Empty)}", ct);
+        var signature = await assets.ImageAsync(record.Doctor?.SignatureFileId, ct);
+        return TypedResults.Ok(MedicoLegalDocuments.CourtReport(record, request, await assets.LetterheadAsync(record.Entry.FacilityId, ct), signature, time.GetUtcNow()).ToDto());
     }
 
     private static async Task<IResult> Get(Guid id, EmergencyService er, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)

@@ -88,11 +88,20 @@ public sealed class DscTrustStore(IConfiguration configuration, DataDirectories 
 /// A folder the server cannot read is the same warning, saying so (<see cref="UnreadableCode"/>); files the folder holds
 /// that are not certificates are a warning too.
 /// </summary>
-internal sealed class DscTrustHealthWarnings(HospitalDbContext db, DscTrustStore trust) : IHealthWarningSource
+internal sealed class DscTrustHealthWarnings(HospitalDbContext db, DscTrustStore trust, DscCrlCache crls, TimeProvider time) : IHealthWarningSource
 {
     public const string EmptyCode = "prescriptions.dsc_trust_empty";
 
     public const string UnreadableCode = "prescriptions.dsc_trust_unreadable";
+
+    /// <summary>No CRL is cached: a DSC is checked for revocation only while its CA can be reached.</summary>
+    public const string CrlMissingCode = "prescriptions.dsc_crl_missing";
+
+    /// <summary>A cached CRL is past its next update: a DSC revoked since is not seen while the CA cannot be reached.</summary>
+    public const string CrlStaleCode = "prescriptions.dsc_crl_stale";
+
+    /// <summary>The cached CRLs and their age, for IT to see at a glance.</summary>
+    public const string CrlAgeCode = "prescriptions.dsc_crl_age";
 
     public async Task<IReadOnlyList<HealthWarning>> WarningsAsync(CancellationToken cancellationToken)
     {
@@ -101,9 +110,43 @@ internal sealed class DscTrustHealthWarnings(HospitalDbContext db, DscTrustStore
             .Select(s => s.Value)
             .ToListAsync(cancellationToken);
         var policies = values.Select(Policy).ToList();
-        return Warnings(policies.Contains(PrescriptionSignaturePolicy.Required) ? PrescriptionSignaturePolicy.Required
+        var policy = policies.Contains(PrescriptionSignaturePolicy.Required) ? PrescriptionSignaturePolicy.Required
             : policies.Contains(PrescriptionSignaturePolicy.Optional) ? PrescriptionSignaturePolicy.Optional
-            : PrescriptionSignaturePolicy.Off, trust.Current, trust.Folder);
+            : PrescriptionSignaturePolicy.Off;
+        return [.. Warnings(policy, trust.Current, trust.Folder), .. CrlWarnings(policy, crls.Lists, crls.Folder, time.GetUtcNow())];
+    }
+
+    /// <summary>
+    /// The revocation lists HC360 checks DSCs against when the CAs cannot be reached: their age always (info), a warning for
+    /// one past its next update, and a warning when none is cached.
+    /// </summary>
+    public static IReadOnlyList<HealthWarning> CrlWarnings(PrescriptionSignaturePolicy policy, IReadOnlyList<CachedCrl> lists, string folder, DateTimeOffset now)
+    {
+        if (policy == PrescriptionSignaturePolicy.Off)
+        {
+            return [];
+        }
+
+        if (lists.Count == 0)
+        {
+            return [new(CrlMissingCode, "warning",
+                $"No Certifying Authority's revocation list (CRL) is cached in {folder}. A doctor's DSC is checked for revocation only while HC360 can reach "
+                + "its CA; offline, a revoked DSC could sign. Let the server reach the CAs' CRL addresses, or copy their CRLs there (DEPLOYMENT.md, section 4, step 8).")];
+        }
+
+        var warnings = new List<HealthWarning>
+        {
+            new(CrlAgeCode, "info", "DSC revocation lists cached: " + string.Join("; ", lists.Select(l => CrlAges.Describe(l, now))) + "."),
+        };
+        var stale = lists.Where(l => l.NextUpdate is { } next && now > next).ToList();
+        if (stale.Count > 0)
+        {
+            warnings.Add(new(CrlStaleCode, "warning",
+                "These DSC revocation lists are past their next update, so a DSC revoked since is not seen while the CA cannot be reached: "
+                + string.Join("; ", stale.Select(l => CrlAges.Describe(l, now))) + $". Let the server reach the CAs' CRL addresses, or copy fresh CRLs to {folder}."));
+        }
+
+        return warnings;
     }
 
     /// <param name="policy">The strictest setting of any facility or the hospital.</param>
