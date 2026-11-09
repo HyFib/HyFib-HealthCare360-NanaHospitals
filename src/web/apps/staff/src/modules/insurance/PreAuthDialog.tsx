@@ -29,6 +29,7 @@ import { patientQueries } from '@/modules/patients/api';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 import { insuranceApi, insuranceKeys, insuranceQueries, type PreAuthDetail } from './api';
 import { Attachments } from './Attachments';
+import { checkProcedureDraft, ProcedureLines, toProcedureDrafts, type ProcedureDraft } from './ProcedureLines';
 
 const useStyles = makeStyles({
   body: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -70,7 +71,7 @@ export function PreAuthDialog({
   const [amount, setAmount] = useState(preAuth ? amountInputText(preAuth.requestedAmount) : '');
   const [stay, setStay] = useState(preAuth?.expectedStayDays ? String(preAuth.expectedStayDays) : '');
   const [diagnosis, setDiagnosis] = useState(preAuth?.diagnosisCodes ?? '');
-  const [procedures, setProcedures] = useState(preAuth?.procedureCodes ?? '');
+  const [procedures, setProcedures] = useState<ProcedureDraft[]>(toProcedureDrafts(preAuth?.procedures ?? []));
   const [summary, setSummary] = useState(preAuth?.clinicalSummary ?? '');
   const [documents, setDocuments] = useState<string[]>(preAuth?.documentFileIds ?? []);
   // The version the fields were filled from: the pre-authorisation page reads it again in the background, and a newer
@@ -91,7 +92,12 @@ export function PreAuthDialog({
   const parsedAmount = amount.trim() ? parseRupees(amount, { allowZero: true }) : null;
   const stayDays = stay.trim() ? Number(stay) : null;
   const stayOk = stayDays === null || (Number.isInteger(stayDays) && stayDays >= 1 && stayDays <= 365);
-  const valid = patient !== null && policyId !== '' && (parsedAmount === null || parsedAmount.ok) && stayOk;
+  const proceduresOk = procedures.every((l) => {
+    const check = checkProcedureDraft(l);
+    return check.quantityOk && check.amountError === null;
+  });
+  const valid =
+    patient !== null && policyId !== '' && (parsedAmount === null || parsedAmount.ok) && stayOk && proceduresOk;
 
   const save = useMutation({
     mutationFn: async () => {
@@ -101,7 +107,10 @@ export function PreAuthDialog({
         visitId: preAuth?.visitId ?? null,
         requestedAmount: parsedAmount?.ok ? parsedAmount.rupees : 0,
         diagnosisCodes: diagnosis.trim() || null,
-        procedureCodes: procedures.trim() || null,
+        procedures: procedures.map((l) => {
+          const check = checkProcedureDraft(l);
+          return { system: l.system, code: l.code, quantity: check.quantity, amount: check.rupees };
+        }),
         clinicalSummary: summary.trim() || null,
         expectedStayDays: stayDays,
         documentFileIds: documents,
@@ -235,8 +244,8 @@ export function PreAuthDialog({
               <Field label="Diagnosis (ICD-10)" hint="Codes with descriptions, e.g. K35.8 Acute appendicitis">
                 <Textarea value={diagnosis} onChange={(_, d) => setDiagnosis(d.value)} maxLength={1000} rows={2} />
               </Field>
-              <Field label="Planned procedures" hint="e.g. 0DTJ4ZZ Laparoscopic appendicectomy">
-                <Textarea value={procedures} onChange={(_, d) => setProcedures(d.value)} maxLength={1000} rows={2} />
+              <Field label="Planned procedures" hint="Each from PM-JAY's HBP master or the ICD-10-PCS catalogue">
+                <ProcedureLines lines={procedures} onChange={setProcedures} legacyText={preAuth?.legacyProcedureText} />
               </Field>
               <Field label="Clinical summary" hint="Presenting complaints, findings and why admission is needed">
                 <Textarea value={summary} onChange={(_, d) => setSummary(d.value)} maxLength={4000} rows={4} />
