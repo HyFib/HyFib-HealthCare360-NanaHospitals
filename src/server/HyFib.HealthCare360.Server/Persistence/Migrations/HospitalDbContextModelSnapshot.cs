@@ -34943,14 +34943,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(300)")
                         .HasColumnName("reason");
 
-                    b.Property<DateTimeOffset?>("Reminder24hSentAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("reminder24h_sent_at");
-
-                    b.Property<DateTimeOffset?>("Reminder2hSentAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("reminder2h_sent_at");
-
                     b.Property<Guid?>("RescheduledFromId")
                         .HasColumnType("uuid")
                         .HasColumnName("rescheduled_from_id");
@@ -35051,6 +35043,27 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasFilter("status NOT IN ('Cancelled', 'Rescheduled') AND is_deleted = false");
 
                     b.ToTable("appointments", "scheduling");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Scheduling.Domain.AppointmentReminderSent", b =>
+                {
+                    b.Property<Guid>("AppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("appointment_id");
+
+                    b.Property<string>("Kind")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
+                    b.HasKey("AppointmentId", "Kind")
+                        .HasName("pk_appointment_reminders");
+
+                    b.ToTable("appointment_reminders", "scheduling");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Scheduling.Domain.DoctorSchedule", b =>
@@ -53368,6 +53381,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_appointments_patients_patient_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Scheduling.Domain.AppointmentReminderSent", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Scheduling.Domain.Appointment", null)
+                        .WithMany()
+                        .HasForeignKey("AppointmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_appointment_reminders_appointments_appointment_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Scheduling.Domain.ReplacedPaymentOrder", b =>

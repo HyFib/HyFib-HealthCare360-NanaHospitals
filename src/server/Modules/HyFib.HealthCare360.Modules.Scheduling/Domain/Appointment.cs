@@ -155,12 +155,6 @@ public sealed class Appointment : AuditableEntity, IFacilityScoped
     /// <summary>Set when the booking fulfilled a waitlist request.</summary>
     public Guid? WaitlistEntryId { get; set; }
 
-    /// <summary>When the 24-hour reminder was sent (or deliberately skipped); never sent twice.</summary>
-    public DateTimeOffset? Reminder24hSentAt { get; set; }
-
-    /// <summary>When the 2-hour reminder was sent (or deliberately skipped); never sent twice.</summary>
-    public DateTimeOffset? Reminder2hSentAt { get; set; }
-
     /// <summary>Still holds its seat (everything except cancelled and rescheduled).</summary>
     public bool HoldsSeat => Status is not (AppointmentStatus.Cancelled or AppointmentStatus.Rescheduled);
 
@@ -522,18 +516,6 @@ public sealed class Appointment : AuditableEntity, IFacilityScoped
         if (PaymentStatus != AppointmentPaymentStatus.PaidOnline)
         {
             PaymentStatus = AppointmentPaymentStatus.PayAtHospital;
-        }
-    }
-
-    public void MarkReminderSent(AppointmentReminder reminder, DateTimeOffset now)
-    {
-        if (reminder == AppointmentReminder.DayBefore)
-        {
-            Reminder24hSentAt ??= now;
-        }
-        else
-        {
-            Reminder2hSentAt ??= now;
         }
     }
 
