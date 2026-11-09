@@ -162,6 +162,7 @@ public sealed class PatientsModule : IModule
         services.AddScoped<DowntimeUhidService>();
         services.AddScoped<BackEntryService>();
         services.AddScoped<DowntimeNumberService>();
+        services.AddScoped<IVoidedDocumentNumbers, DowntimeVoidedNumbers>();
         services.AddScoped<DowntimePackService>();
         services.AddScoped<IDowntimePackSource, DowntimePackNumbers>();
         services.AddHostedService<DowntimePackJob>();

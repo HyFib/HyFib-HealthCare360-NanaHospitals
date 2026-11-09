@@ -90,7 +90,7 @@ public sealed class GstReturnService(
 /// invoice to it, as for the e-invoice), credit notes (not write-offs, nor notes issued after the bill's GST could be
 /// reduced) and debit notes. A line with GST is taxable; a line without is an exempt healthcare service.
 /// </summary>
-internal sealed class BillingGstReturnSource(HospitalDbContext db) : IGstReturnSource
+internal sealed class BillingGstReturnSource(HospitalDbContext db, IEnumerable<IVoidedDocumentNumbers> voided) : IGstReturnSource
 {
     public async Task<IReadOnlyList<GstReturnDocument>> OutwardAsync(IReadOnlyCollection<Guid> facilityIds, DateOnly from, DateOnly to, CancellationToken ct)
     {
@@ -144,6 +144,22 @@ internal sealed class BillingGstReturnSource(HospitalDbContext db) : IGstReturnS
                 payer?.Gstin is not null ? payer.Name : "Patient", d.PlaceOfSupply ?? string.Empty, d.Note.Amount, IsCancelled: false,
                 d.Note.Lines.OrderBy(l => l.SortOrder).Select(l => Line(l.SacCode, l.Description, l.GstRate, l.TaxableAmount, l.IgstAmount, l.CgstAmount, l.SgstAmount)).ToList(),
                 "Debit notes", d.BillNumber, d.FinalizedAt is { } f ? BillingTime.LocalDate(f) : null, d.NetAmount, d.PlaceOfSupply));
+        }
+
+        // GSTR-1 table 13, "Documents issued during the tax period": per nature and series, Sr. No. From and To, Total number,
+        // Cancelled and Net issued (Form GSTR-1). A bill number reserved for a downtime and voided unused lies inside the
+        // series' From–To range without a bill: it is counted in Total and in Cancelled, so Net issued is what was billed.
+        var series = new Dictionary<string, string>(StringComparer.Ordinal) { [BillingNumberSeries.OpBill.Key] = "OP bills", [BillingNumberSeries.IpBill.Key] = "IP bills" };
+        foreach (var source in voided)
+        {
+            foreach (var number in await source.VoidedAsync(facilityIds, from, to, ct))
+            {
+                if (series.TryGetValue(number.SeriesKey, out var name))
+                {
+                    documents.Add(new GstReturnDocument("voided", Guid.Empty, GstDocumentKind.Invoice, number.Number, number.VoidedOn, null, "Voided unused", string.Empty, 0m,
+                        true, [], name));
+                }
+            }
         }
 
         return documents;

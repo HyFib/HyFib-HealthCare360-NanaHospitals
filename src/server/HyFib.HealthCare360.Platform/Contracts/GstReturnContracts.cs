@@ -90,6 +90,19 @@ public interface IGstReturnSource
     Task<IReadOnlyList<GstReturnDocument>> OutwardAsync(IReadOnlyCollection<Guid> facilityIds, DateOnly from, DateOnly to, CancellationToken cancellationToken);
 }
 
+/// <summary>A number reserved from a series and voided unused (a downtime number spoilt, or returned with its block).</summary>
+public sealed record VoidedDocumentNumber(string SeriesKey, string Number, DateOnly VoidedOn);
+
+/// <summary>
+/// Numbers taken out of a document series without a document: Patients' downtime blocks reserve bill numbers ahead and
+/// void the ones never written. GSTR-1 table 13 counts them as cancelled. Numbers of the facilities given, voided from
+/// <c>from</c> to <c>to</c> (hospital calendar days).
+/// </summary>
+public interface IVoidedDocumentNumbers
+{
+    Task<IReadOnlyList<VoidedDocumentNumber>> VoidedAsync(IReadOnlyCollection<Guid> facilityIds, DateOnly from, DateOnly to, CancellationToken cancellationToken);
+}
+
 /// <summary>A module whose purchase invoices carry input tax: the stores' goods receipts.</summary>
 public interface IGstPurchaseSource
 {

@@ -248,6 +248,37 @@ public sealed class DowntimeNumberTests(HospitalServer server)
         patientId, VisitType.HealthCheckup, null, null, null, PayerType.Self, null, ReferralSource.Self, null, null, false, null, null,
         TokenPriority.Normal, IssueToken: false, NotifyPatient: false, Paper: paper);
 
+    [Fact]
+    public async Task Bill_numbers_voided_unused_count_as_cancelled_in_gstr1_table_13()
+    {
+        await using var einvoicing = await server.EInvoicingAsync(EInvoicing.Today().AddDays(-1), Ct);
+        var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+        var month = $"{EInvoicing.Today():yyyy-MM}";
+        var before = await OpBillsIssuedAsync(accountant, month);
+
+        // Three OP bill numbers reserved for a downtime: one written on a paper bill, one spoilt, one returned unused.
+        var block = await mrd.PostAsync<DowntimeNumberBlockDetail>(Blocks, new IssueDowntimeNumbersRequest(DowntimeNumberKind.OpBill, "OPD billing counter 2", 3));
+        var draft = await DraftAsync(frontOffice, billing, (await RegisterAsync(frontOffice)).Id);
+        await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize",
+            new FinalizeBillRequest(draft.Version, new PaperNumber(block.Numbers[0].Number, block.Block.IssuedAt.AddSeconds(5))));
+        var current = await mrd.GetAsync<DowntimeNumberBlockDetail>($"{Blocks}/{block.Block.Id}");
+        await mrd.PostAsync($"{Blocks}/{block.Block.Id}/void", new VoidDowntimeNumberRequest(block.Numbers[2].Number, "Torn", current.Block.Version));
+        current = await mrd.GetAsync<DowntimeNumberBlockDetail>($"{Blocks}/{block.Block.Id}");
+        await mrd.PostAsync<DowntimeNumberBlockDetail>($"{Blocks}/{block.Block.Id}/return", new ReturnDowntimeBlockRequest("Counter closed", current.Block.Version));
+
+        // Table 13 counts all three serials and the two voided ones as cancelled: one more bill was issued, net.
+        var after = await OpBillsIssuedAsync(accountant, month);
+        (after.Total - before.Total, after.Cancelled - before.Cancelled).ShouldBe((3, 2));
+        block.Numbers.ShouldAllBe(n => string.CompareOrdinal(n.Number, after.From) >= 0 && string.CompareOrdinal(n.Number, after.To) <= 0);
+    }
+
+    private static async Task<Gstr1DocumentsIssued> OpBillsIssuedAsync(ApiClient accountant, string month) =>
+        (await accountant.GetAsync<Gstr1Return>($"/api/v1/billing/gst-returns/gstr1?month={month}")).DocumentsIssued.SingleOrDefault(d => d.Series == "OP bills")
+        ?? new Gstr1DocumentsIssued(1, "OP bills", string.Empty, string.Empty, 0, 0);
+
     private static async Task<BillDetail> DraftAsync(ApiClient frontOffice, ApiClient billing, Guid patientId)
     {
         var visit = await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", Visit(patientId, null));
