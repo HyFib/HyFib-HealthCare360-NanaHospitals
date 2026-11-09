@@ -64,6 +64,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<PreAuthService>();
         services.AddScoped<ClaimService>();
         services.AddScoped<DoctorFeeService>();
+        services.AddScoped<DoctorTaxService>();
         services.AddScoped<TallyService>();
         services.AddScoped<EInvoiceService>();
         services.AddScoped<IEInvoiceSource, BillEInvoiceSource>();
