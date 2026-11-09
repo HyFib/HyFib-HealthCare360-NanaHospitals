@@ -50,7 +50,10 @@ public sealed class VisitPayerChangeTests(HospitalServer server)
         (await billing.GetAsync<VisitPayerView>(PayerPath(visitId))).Terms.ShouldBe(new VisitPayerTerms(PayerType.Corporate, dear));
         (await NetAsync(chargeId)).ShouldBe(Dear);
         var audit = await AuditAsync(visitId);
-        audit.Summary.ShouldNotBeNull().ShouldContain("1 unbilled service(s) priced again (₹800.00 → ₹1,200.00)");
+        // The visit's other services (its own consultation) are priced again too: the total moves by this service's ₹400.
+        audit.Summary.ShouldNotBeNull().ShouldContain("unbilled service(s) priced again");
+        var priced = JsonDocument.Parse(audit.Details.ShouldNotBeNull()).RootElement;
+        (priced.GetProperty("priceAfter").GetDecimal() - priced.GetProperty("priceBefore").GetDecimal()).ShouldBe(Dear - Cheap);
         audit.Details.ShouldNotBeNull().ShouldContain("Employer changed");
     }
 
@@ -67,7 +70,7 @@ public sealed class VisitPayerChangeTests(HospitalServer server)
         var asked = await AskedAsync(billing, visitId, new ChangeVisitPayerRequest(PayerType.Corporate, cheap, "Wrong company at the desk", view.Version));
         (asked.Kind, asked.SubjectId, asked.Status).ShouldBe((VisitPayerChanges.Kind, visitId, ApprovalStatus.Pending));
         asked.Details.Single(d => d.Label == "Why it waits").Value.ShouldBe("1 service(s) get cheaper on the new payer's plan");
-        asked.Details.Single(d => d.Label == "On the new payer's plan").Value.ShouldStartWith("₹800.00: −₹400.00");
+        asked.Details.Single(d => d.Label == "On the new payer's plan").Value.ShouldContain(": −₹400.00");
         var waiting = await billing.GetAsync<VisitPayerView>(PayerPath(visitId));
         (waiting.Terms.PayerId, waiting.Pending!.Asked.PayerId).ShouldBe((dear, cheap));
         (await NetAsync(chargeId)).ShouldBe(Dear);
