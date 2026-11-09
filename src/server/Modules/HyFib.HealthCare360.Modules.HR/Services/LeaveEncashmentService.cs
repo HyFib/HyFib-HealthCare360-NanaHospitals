@@ -69,6 +69,12 @@ public sealed class LeaveEncashmentService(
             return Error.Rule(refused.Code, refused.Message);
         }
 
+        var today = time.LocalToday();
+        if ((request.PayYear * 100) + request.PayMonth > (today.Year * 100) + today.Month)
+        {
+            return Error.Rule("payroll.future_month", "Payroll cannot be created for a future month: pay the encashment in this month's payroll or an earlier one still open.");
+        }
+
         var run = await db.Set<PayrollRun>().AsNoTracking()
             .FirstOrDefaultAsync(r => r.FacilityId == employee.FacilityId && r.Year == request.PayYear && r.Month == request.PayMonth, ct);
         if (run is { IsEditable: false })

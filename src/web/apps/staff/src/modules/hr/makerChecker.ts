@@ -25,6 +25,8 @@ export function payRefusal(code: string | undefined): string | null {
       return 'That would leave less than the balance the leave policy keeps. Encash fewer days.';
     case 'leave.encash_leaving':
       return 'The employee is leaving: unused leave is paid in the full and final settlement instead.';
+    case 'payroll.future_month':
+      return 'Payroll cannot be made for a month still to come. Pay it in this month or an earlier one still open.';
     case 'payroll.closed':
       return "That month's payroll is already approved. Choose a later month.";
     case 'concurrency':

@@ -20,8 +20,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <remarks>
 /// Each test makes its own leave type (encashable, at most 10 days a year in service, 15 days kept) and employee, on
 /// ₹20,000 basic and 40% house rent: ₹20,000 of wages a month, so ₹666.67 a day at the divisor of 30. Its salary structure
-/// starts in 2031, and the encashments are paid in 2031's payroll, months no other test approves (approving a month closes
-/// salary revisions dated in it or before, for the whole facility).
+/// starts in October 2026 and the encashments are paid in October 2026's payroll, a month no other test approves (approving
+/// a month closes salary revisions dated in it or before, for the whole facility, and payroll is never made for a month to
+/// come).
 /// </remarks>
 public sealed class LeaveEncashmentTests(HospitalServer server)
 {
@@ -37,11 +38,11 @@ public sealed class LeaveEncashmentTests(HospitalServer server)
         var hr = await server.SignInAsync(Users.HospitalAdmin);
         var (type, code) = await LeaveTypeAsync(hr);
         var employee = await EmployeeAsync(hr, type, credit: 30);
-        var run = await RunAsync(hr, 2031, 2);
+        var run = await RunAsync(hr, 2026, 10);
 
         // Asked for: nothing is paid or debited yet, and the days are reserved against the balance.
         var asked = await TheatreCases.AcceptedAsync(hr, HttpMethod.Post, $"{Leave}/encashments",
-            new EncashLeaveRequest(employee.Id, type, 2026, 10, 2031, 2, "Encashment asked for in February"));
+            new EncashLeaveRequest(employee.Id, type, 2026, 10, 2026, 10, "Encashment asked for in October"));
         asked.Kind.ShouldBe(LeaveEncashmentService.Kind);
         var balance = await BalanceAsync(hr, employee.Id, code);
         (balance.Closing, balance.Encashed, balance.Pending, balance.Available).ShouldBe((30m, 0m, 10m, 20m));
@@ -64,7 +65,7 @@ public sealed class LeaveEncashmentTests(HospitalServer server)
         var component = (await hr.GetAsync<List<SalaryComponentDto>>("/api/v1/hr/payroll/components")).Single(c => c.Code == LeaveEncashmentService.ComponentCode);
         component.IsTaxable.ShouldBeTrue();
         var made = (await hr.GetAsync<List<LeaveEncashmentDto>>($"{Leave}/encashments?employeeId={employee.Id}")).ShouldHaveSingleItem();
-        (made.Kind, made.Days, made.DailyRate, made.Amount, made.PayrollMonth).ShouldBe((LeaveEncashmentKind.InService, 10m, DailyRate, 6_666.70m, "02/2031"));
+        (made.Kind, made.Days, made.DailyRate, made.Amount, made.PayrollMonth).ShouldBe((LeaveEncashmentKind.InService, 10m, DailyRate, 6_666.70m, "10/2026"));
     }
 
     [Fact]
@@ -76,20 +77,20 @@ public sealed class LeaveEncashmentTests(HospitalServer server)
         // 40 in the balance: the cap of 10 a year decides.
         var rich = await EmployeeAsync(hr, type, credit: 40);
         (await TheatreCases.RefusalAsync(hr, HttpMethod.Post, $"{Leave}/encashments",
-            new EncashLeaveRequest(rich.Id, type, 2026, 11, 2031, 2, "Too many"))).Code.ShouldBe(LeaveEncashmentPolicy.OverCapCode);
+            new EncashLeaveRequest(rich.Id, type, 2026, 11, 2026, 10, "Too many"))).Code.ShouldBe(LeaveEncashmentPolicy.OverCapCode);
         var first = await TheatreCases.AcceptedAsync(hr, HttpMethod.Post, $"{Leave}/encashments",
-            new EncashLeaveRequest(rich.Id, type, 2026, 6, 2031, 2, "First part"));
+            new EncashLeaveRequest(rich.Id, type, 2026, 6, 2026, 10, "First part"));
         await server.ApproveHrChangeAsync(first.Id);
         (await TheatreCases.RefusalAsync(hr, HttpMethod.Post, $"{Leave}/encashments",
-            new EncashLeaveRequest(rich.Id, type, 2026, 5, 2031, 3, "Over what is left of the cap"))).Code.ShouldBe(LeaveEncashmentPolicy.OverCapCode);
+            new EncashLeaveRequest(rich.Id, type, 2026, 5, 2026, 10, "Over what is left of the cap"))).Code.ShouldBe(LeaveEncashmentPolicy.OverCapCode);
 
         // 20 in the balance: 15 are kept, so at most 5.
         var poor = await EmployeeAsync(hr, type, credit: 20);
         (await TheatreCases.RefusalAsync(hr, HttpMethod.Post, $"{Leave}/encashments",
-            new EncashLeaveRequest(poor.Id, type, 2026, 6, 2031, 2, "Below the minimum"))).Code.ShouldBe(LeaveEncashmentPolicy.BelowMinimumCode);
+            new EncashLeaveRequest(poor.Id, type, 2026, 6, 2026, 10, "Below the minimum"))).Code.ShouldBe(LeaveEncashmentPolicy.BelowMinimumCode);
         (await hr.GetAsync<List<EncashableLeaveDto>>($"{Leave}/encashments/encashable?employeeId={poor.Id}&year=2026"))
             .Single(e => e.LeaveTypeId == type).MostDays.ShouldBe(5);
-        await TheatreCases.AcceptedAsync(hr, HttpMethod.Post, $"{Leave}/encashments", new EncashLeaveRequest(poor.Id, type, 2026, 5, 2031, 2, "Up to the minimum"));
+        await TheatreCases.AcceptedAsync(hr, HttpMethod.Post, $"{Leave}/encashments", new EncashLeaveRequest(poor.Id, type, 2026, 5, 2026, 10, "Up to the minimum"));
     }
 
     [Fact]
@@ -104,7 +105,7 @@ public sealed class LeaveEncashmentTests(HospitalServer server)
 
         // Leaving: unused leave is paid in the settlement, not encashed in service.
         (await TheatreCases.RefusalAsync(hr, HttpMethod.Post, $"{Leave}/encashments",
-            new EncashLeaveRequest(employee.Id, type, 2026, 5, 2031, 2, "Before leaving"))).Code.ShouldBe(LeaveEncashmentService.LeavingCode);
+            new EncashLeaveRequest(employee.Id, type, 2026, 5, 2026, 10, "Before leaving"))).Code.ShouldBe(LeaveEncashmentService.LeavingCode);
 
         // Working the statement out changes nothing; settling it pays the 30 days out and debits them.
         var request = new FullAndFinalRequest(new DateOnly(2026, 10, 31), 30, 30, false, false, 0, null, 30, 8.33m, 0, null);
@@ -142,7 +143,7 @@ public sealed class LeaveEncashmentTests(HospitalServer server)
             IsAttendanceExempt: true, SalaryPaymentMode.Cash, null, null, null, null, null, null, null, null));
         var components = (await hr.GetAsync<List<SalaryComponentDto>>("/api/v1/hr/payroll/components")).ToDictionary(c => c.Code);
         var structure = await hr.PostAsync<ApprovalRequestDto>($"{Employees}/{employee.Id}/salary-structures", new SaveSalaryStructureRequest(
-            new DateOnly(2031, 1, 1), null, 0, PfApplicable: false, PfOnActualBasic: false, EsiApplicable: false, null, "Appointment letter",
+            new DateOnly(2026, 10, 1), null, 0, PfApplicable: false, PfOnActualBasic: false, EsiApplicable: false, null, "Appointment letter",
             [new SalaryStructureLineInput(components["BASIC"].Id, 20_000), new SalaryStructureLineInput(components["HRA"].Id, 40)]));
         await server.ApproveHrChangeAsync(structure.Id);
         var credited = await TheatreCases.AcceptedAsync(hr, HttpMethod.Post, $"{Leave}/balances/adjust",

@@ -80,16 +80,14 @@ export function EncashmentsTable({
   );
 }
 
-const MONTH_COUNT = 3;
-
-/** This month and the next two, the months an encashment can be paid in. */
+/** This month and the one before: an encashment is paid in a payroll month that has come, never a future one. */
 function payMonths(): { value: string; label: string }[] {
   const { year, month } = currentMonth();
-  return Array.from({ length: MONTH_COUNT }, (_, i) => {
-    const m = ((month - 1 + i) % 12) + 1;
-    const y = year + Math.floor((month - 1 + i) / 12);
-    return { value: `${y}-${m}`, label: monthLabel(y, m) };
-  });
+  const previous = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+  return [
+    { value: `${year}-${month}`, label: monthLabel(year, month) },
+    { value: `${previous.year}-${previous.month}`, label: monthLabel(previous.year, previous.month) },
+  ];
 }
 
 const encashSchema = z.object({
