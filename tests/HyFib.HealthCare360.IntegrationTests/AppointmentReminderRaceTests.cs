@@ -28,9 +28,9 @@ public sealed class AppointmentReminderRaceTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var practitionerId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
-        var slot = await TeleconsultationJourneyTests.FreeVideoSlotAsync(frontOffice, practitionerId);
-        var booked = await frontOffice.PostAsync<AppointmentDetail>("/api/v1/scheduling/appointments", new BookAppointmentRequest(
-            patient.Id, practitionerId, slot.StartsAt, AppointmentChannel.Phone, AppointmentVisitType.New, IsTelehealth: true, "Follow-up of a rash", Notes: null));
+
+        // Only today's bookings are checked in.
+        var booked = await BookTodayAsync(frontOffice, patient.Id, practitionerId);
 
         // The desk opens the booking: the screen holds its version, and the server holds the row as check-in loads it.
         var held = await frontOffice.GetAsync<AppointmentDetail>($"/api/v1/scheduling/appointments/{booked.Id}");
@@ -38,9 +38,9 @@ public sealed class AppointmentReminderRaceTests(HospitalServer server)
         var deskDb = desk.ServiceProvider.GetRequiredService<HospitalDbContext>();
         var loaded = await deskDb.Set<Appointment>().SingleAsync(a => a.Id == booked.Id, Ct);
 
-        // A reminder pass lands in between: 90 minutes before the appointment the 2-hour reminder goes (the 24-hour one,
-        // now pointless, is marked skipped).
-        await RemindAsync(slot.StartsAt.AddMinutes(-90), booked.Id, AppointmentReminder.TwoHoursBefore);
+        // A reminder pass lands in between, 90 minutes before the appointment: the 24-hour reminder, now pointless, is
+        // marked skipped, and the 2-hour one is sent (or skipped too, for a booking made less than 2 hours ahead).
+        await RemindAsync(booked.StartsAt.AddMinutes(-90), booked.Id, AppointmentReminder.TwoHoursBefore);
 
         // The desk's save goes through, and the version the screen holds is still the booking's.
         loaded.Confirm(DateTimeOffset.UtcNow).IsSuccess.ShouldBeTrue();
@@ -102,6 +102,49 @@ public sealed class AppointmentReminderRaceTests(HospitalServer server)
         (await RemindersSentAsync(patient.Id)).ShouldBe(2, "one 24-hour and one 2-hour reminder");
         var second = await frontOffice.GetAsync<AppointmentDetail>($"/api/v1/scheduling/appointments/{booked.Id}");
         (second.Reminder24hSentAt, second.Reminder2hSentAt.ShouldNotBeNull()).ShouldBe((first.Reminder24hSentAt, second.Reminder2hSentAt!.Value));
+    }
+
+    /// <summary>
+    /// A video consultation of the patient's that starts later today (India), as check-in needs: today's first free video
+    /// slot, or, when the rest of today is booked (the full suite books the doctor's slots), the first free slot moved to
+    /// later today, as tests set up state.
+    /// </summary>
+    private async Task<AppointmentDetail> BookTodayAsync(ApiClient frontOffice, Guid patientId, Guid practitionerId)
+    {
+        var india = HospitalCalendar.India;
+        var now = DateTimeOffset.UtcNow;
+        var today = india.DateOf(now);
+        var availability = await frontOffice.GetAsync<List<PractitionerAvailability>>(
+            $"/api/v1/scheduling/slots?practitionerId={practitionerId}&from={today:O}&to={today:O}&mode=Telehealth&includeFull=false");
+        var todays = availability.SelectMany(a => a.Slots)
+            .Where(s => s.Available > 0 && s.StartsAt > now.AddMinutes(2) && india.DateOf(s.StartsAt) == today)
+            .MinBy(s => s.StartsAt);
+        var slot = todays ?? await TeleconsultationJourneyTests.FreeVideoSlotAsync(frontOffice, practitionerId);
+        var booked = await frontOffice.PostAsync<AppointmentDetail>("/api/v1/scheduling/appointments", new BookAppointmentRequest(
+            patientId, practitionerId, slot.StartsAt, AppointmentChannel.Phone, AppointmentVisitType.New, IsTelehealth: true, "Follow-up of a rash", Notes: null));
+        if (todays is not null)
+        {
+            return booked;
+        }
+
+        // Later today, a few minutes from now (a random second keeps it off any other booking's start), never past midnight.
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            var appointment = await db.Set<Appointment>().SingleAsync(a => a.Id == booked.Id, Ct);
+            var length = appointment.EndsAt - appointment.StartsAt;
+            var startsAt = now.AddMinutes(3).AddSeconds(Random.Shared.Next(600));
+            while (india.DateOf(startsAt) != today)
+            {
+                startsAt = startsAt.AddMinutes(-5);
+            }
+
+            appointment.StartsAt = startsAt;
+            appointment.EndsAt = startsAt + length;
+            await db.SaveChangesAsync(Ct);
+        }
+
+        return await frontOffice.GetAsync<AppointmentDetail>($"/api/v1/scheduling/appointments/{booked.Id}");
     }
 
     /// <summary>The doctor's first free video slot after <paramref name="after"/>, in the coming week.</summary>
