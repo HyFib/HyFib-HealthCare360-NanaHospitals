@@ -150,6 +150,18 @@ A save replaces every field, so screens send the whole record.
   part (`address.city`), as are the other compound values in the system: patients', employees' and donors' addresses,
   cardiology findings and TTI results.
 
+## HPR verification
+
+A practitioner's HPR ID is checked against ABDM's Healthcare Professionals Registry from the practitioner's editor
+(**Check with the HPR registry**, `POST /api/v1/masters/practitioners/{id}/hpr-check` with the version last read,
+`masters.manage`). The registry's name, council and registration number are compared with the master's: names without
+titles, case, accents, punctuation or word order; councils without case, punctuation or the words council, medical,
+of and the (abbreviations are not guessed); registration numbers without case, punctuation or leading zeros; and the
+registration must be active. The result (verified, mismatch with what differs, or not in the registry), when, by whom
+and against what source is shown on the master, and kept as history (`org.practitioner_hpr_checks`). Once the HPR ID,
+council, registration number or name changes, the check is shown as no longer current. The registry is reached through
+`IHprRegistry`; until the hospital is connected to ABDM's HPR service it is the simulator, and every check says so.
+
 ## The letterhead
 
 Documents print the facility's name, address and contact, NABH number, letterhead line and logo; bills add the legal

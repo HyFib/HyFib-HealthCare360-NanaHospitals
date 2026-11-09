@@ -38,6 +38,8 @@ export interface NumberSeriesItem {
   maxLength: number;
   defaultFormat: string;
   defaultResetPolicy: NumberResetPolicy;
+  /** Why every format of this series must carry {FAC} (a sentence), whatever the number of facilities; null otherwise. */
+  facilityCodeReason?: string | null;
 }
 
 export interface NumberSeriesList {
