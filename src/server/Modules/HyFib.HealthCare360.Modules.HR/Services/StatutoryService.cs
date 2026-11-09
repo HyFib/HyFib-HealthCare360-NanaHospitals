@@ -481,19 +481,24 @@ public sealed class StatutoryService(HospitalDbContext db, ICurrentUser currentU
             return run.Error!;
         }
 
+        // The bank's own formats pay the accounts fixed on the payslips when the payroll was approved, as the generic file
+        // does, never the employees' accounts as they are now (maker-checker slice 11).
+        if (run.Value.BankDetailsFixedAt is null)
+        {
+            return Error.Rule(PayrollService.BankDetailsNotFixedCode,
+                "This payroll was approved before the payment details were fixed at approval, so its bank file would read today's accounts. Reopen it and approve it again.");
+        }
+
         var profile = await db.Set<StatutoryEmployerProfile>().AsNoTracking().FirstOrDefaultAsync(ct);
         if (format is BankFileFormat.Sbi or BankFileFormat.Icici && string.IsNullOrEmpty(profile?.SalaryDebitAccount))
         {
             return Error.Rule("statutory.debit_account_missing", "Enter the hospital's salary account under Statutory details first: the bank file names it.");
         }
 
-        var payees = await (
-                from p in db.Set<Payslip>().AsNoTracking()
-                join e in db.Set<Employee>() on p.EmployeeId equals e.Id
-                where p.PayrollRunId == runId && p.NetPay > 0 && e.PaymentMode == SalaryPaymentMode.BankTransfer
-                      && e.BankAccountCipher != null && e.BankIfscCipher != null
-                orderby p.EmployeeCode
-                select new { p.EmployeeCode, p.EmployeeName, p.NetPay, e.BankAccountCipher, e.BankIfscCipher })
+        var payees = await db.Set<Payslip>().AsNoTracking()
+            .Where(p => p.PayrollRunId == runId && p.NetPay > 0 && p.PaymentMode == SalaryPaymentMode.BankTransfer && p.BankAccountCipher != null && p.BankIfscCipher != null)
+            .OrderBy(p => p.EmployeeCode)
+            .Select(p => new { p.EmployeeCode, p.EmployeeName, p.NetPay, p.BankAccountCipher, p.BankIfscCipher })
             .ToListAsync(ct);
         var narration = BankTransferFile.Narration(run.Value.Year, run.Value.Month);
         var rows = payees.Select(p => new BankTransferRow(p.EmployeeCode, p.EmployeeName, protector.Unprotect(p.BankAccountCipher) ?? string.Empty,

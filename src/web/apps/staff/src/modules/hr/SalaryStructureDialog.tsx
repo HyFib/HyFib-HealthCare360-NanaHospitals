@@ -10,6 +10,9 @@ import {
   Field,
   Input,
   makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
   Spinner,
   Table,
   TableBody,
@@ -21,7 +24,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatInr } from '@hc360/core';
+import { formatInr, isApiError } from '@hc360/core';
 import {
   applyServerErrors,
   CloseRequestScope,
@@ -42,6 +45,7 @@ import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { hrApi, hrKeys, hrQueries, type SalaryComponentDto, type SalaryStructureDto } from './api';
+import { payRefusal } from './makerChecker';
 import { structurePreview } from './payroll';
 import { addMonths, currentMonth, monthStart } from './shared/dates';
 
@@ -158,6 +162,7 @@ function StructureForm({
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [linesError, setLinesError] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const { year, month } = currentMonth();
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(
@@ -222,12 +227,18 @@ function StructureForm({
         notes: header.notes.trim() || null,
         lines,
       });
-      notify.success('Salary revised', `${employeeName} · from ${header.effectiveFrom}`);
+      notify.success(
+        'Asked for approval',
+        `${employeeName} · from ${header.effectiveFrom}. Someone else who approves payroll approves the revision; the salary in force stays until then.`,
+      );
       void queryClient.invalidateQueries({ queryKey: hrKeys.payroll });
       onClose();
     } catch (error) {
-      if (!applyServerErrors(error, form.setError)) {
-        notify.error(error, 'Could not save the salary structure');
+      const words = isApiError(error) ? payRefusal(error.code) : null;
+      if (words) {
+        setRefusal(words);
+      } else if (!applyServerErrors(error, form.setError)) {
+        notify.error(error, 'Could not ask for the salary revision');
       }
     } finally {
       setBusy(false);
@@ -350,7 +361,19 @@ function StructureForm({
             rows={2}
             maxLength={500}
             placeholder="For example: annual increment 2026"
+            hint="The person who approves the revision reads this."
           />
+          <Caption1 className={styles.muted}>
+            The revision waits for someone else who approves payroll, never you; nobody revises their own salary.
+          </Caption1>
+          {refusal && (
+            <MessageBar intent="error" layout="multiline" politeness="assertive">
+              <MessageBarBody>
+                <MessageBarTitle>Not asked for</MessageBarTitle>
+                {refusal}
+              </MessageBarBody>
+            </MessageBar>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={guard.requestClose} disabled={busy}>
@@ -362,7 +385,7 @@ function StructureForm({
             disabled={busy}
             icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
-            Save salary
+            Ask for approval
           </Button>
         </DialogActions>
       </DialogBody>

@@ -114,6 +114,8 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
  * restriction lifted, the deceased status, a sensitive category, DNR, an allergy and a stay's MLC flag; discharge and
  * death: an absconded stay closed, a death closed pending post-mortem, a confirmed death certificate voided; a visit the
  * doctor has started, cancelled at the desk; an implant or consumable line corrected after the operation started; and
+ * HR: a salary's bank account or payment mode, a salary structure, a payroll earning or override, an imported file with
+ * earnings, a deduction taken off, and a leave credit;
  * a sentinel event closed or re-graded out of sentinel, a personal data breach closed or patients taken off its notification
  * list, and a bulk campaign scheduled.
  * Every kind's approving permission is in it
@@ -226,4 +228,11 @@ export const APPROVAL_PERMISSIONS = [
   // (and may withdraw it); someone else who approves them, the Data Protection Officer, decides.
   'privacy.sdf.manage',
   'privacy.sdf.approve',
+  // Pay and leave (slice 11): HR asks for a salary's bank account or payment mode to change, a salary structure, an
+  // earning or override, a file of inputs with earnings or a deduction taken off (someone else who approves payroll
+  // decides), or a leave credit (someone else who approves leave decides). Each may withdraw it.
+  'hr.employees.manage',
+  'hr.payroll.process',
+  'hr.payroll.approve',
+  'hr.leave.approve',
 ] as const;

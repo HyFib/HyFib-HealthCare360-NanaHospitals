@@ -42,6 +42,14 @@ public sealed class PayrollRun : AuditableEntity, IFacilityScoped
     public string? Notes { get; set; }
     public string? ReopenReason { get; set; }
 
+    /// <summary>
+    /// When the payslips' payment details (mode, account, IFSC) were fixed from the employees' details in force: at approval.
+    /// The bank file pays these, never the employees' details as they are at export (maker-checker slice 11). Null before
+    /// approval, after a reopening, and for a payroll approved before payment details were fixed (its bank file is refused
+    /// until it is reopened and approved again).
+    /// </summary>
+    public DateTimeOffset? BankDetailsFixedAt { get; set; }
+
     public DateOnly PeriodStart => new(Year, Month, 1);
 
     public DateOnly PeriodEnd => new(Year, Month, DateTime.DaysInMonth(Year, Month));
@@ -81,6 +89,7 @@ public sealed class PayrollRun : AuditableEntity, IFacilityScoped
         Status = PayrollRunStatus.Approved;
         ApprovedByUserId = approverUserId;
         ApprovedAt = now;
+        BankDetailsFixedAt = now;
         return Result.Success();
     }
 
@@ -95,6 +104,7 @@ public sealed class PayrollRun : AuditableEntity, IFacilityScoped
         Status = PayrollRunStatus.Processed;
         ApprovedByUserId = null;
         ApprovedAt = null;
+        BankDetailsFixedAt = null;
         ReopenReason = reason.Trim();
         return Result.Success();
     }

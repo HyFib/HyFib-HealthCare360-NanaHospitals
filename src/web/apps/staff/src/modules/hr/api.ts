@@ -1,6 +1,7 @@
 import type { Address, Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type {
   ApprovalStatus,
   AttendanceStatus,
@@ -92,6 +93,19 @@ export interface EmployeeDetail {
   photoFileId: string | null;
   notes: string | null;
   version: number;
+  /** Salary payment details asked for and waiting for a second person (maker-checker slice 11); the ones above stay in force until then. */
+  pendingPaymentDetails?: PendingPaymentDetails | null;
+}
+
+export interface PendingPaymentDetails {
+  approvalId: string;
+  paymentMode: SalaryPaymentMode;
+  bankName: string | null;
+  bankAccountMasked: string | null;
+  bankIfscMasked: string | null;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface BankDetailsInput {
@@ -137,11 +151,17 @@ export interface SaveEmployeeRequest {
   version: number | null;
 }
 
+/**
+ * Salary payment details as they should be, asked for a second person's approval. No account number keeps the account on
+ * record (switching to cash, or back to it).
+ */
 export interface UpdateBankDetailsRequest {
+  paymentMode: SalaryPaymentMode;
   bankName: string | null;
-  accountNumber: string;
-  ifsc: string;
+  accountNumber: string | null;
+  ifsc: string | null;
   confirmSharedAccount: boolean;
+  reason: string;
   version: number;
 }
 
@@ -155,6 +175,35 @@ export interface SeparateEmployeeRequest {
 export interface EmployeeCreated {
   id: string;
   employeeCode: string;
+  /** The request a new employee's bank account waits in, when one was given. */
+  bankApprovalId?: string | null;
+}
+
+/** A change to pay waiting for a second person: a salary structure, an earning or override, an import, a deduction taken off. */
+export interface PendingPayChange {
+  approvalId: string;
+  kind: string;
+  employeeId: string | null;
+  inputId: string | null;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** A leave credit waiting for a second person. */
+export interface PendingLeaveAdjustment {
+  approvalId: string;
+  leaveTypeId: string;
+  year: number;
+  days: number;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** A write that may answer 202 with the request it waits in: tells the two answers apart. */
+export function isApprovalRequest(value: unknown): value is ApprovalRequestDto {
+  return typeof value === 'object' && value !== null && 'kind' in value && 'status' in value;
 }
 
 export interface DesignationDto {
@@ -973,6 +1022,20 @@ export const hrQueries = {
       queryFn: ({ signal }) =>
         api.get<LeaveBalanceDto[]>('/api/v1/hr/leave/balances', { query: { employeeId, year }, signal }),
     }),
+  /** Leave credits waiting for a second person (maker-checker slice 11). */
+  pendingLeaveAdjustments: (employeeId: string) =>
+    queryOptions({
+      queryKey: ['hr', 'leave', 'balances', employeeId, 'pending'],
+      queryFn: ({ signal }) =>
+        api.get<PendingLeaveAdjustment[]>('/api/v1/hr/leave/balances/pending', { query: { employeeId }, signal }),
+    }),
+  /** Changes to pay waiting for a second person: a run's inputs, or an employee's salary structure. */
+  pendingPayChanges: (filter: { runId?: string; employeeId?: string }) =>
+    queryOptions({
+      queryKey: ['hr', 'payroll', 'pending', filter],
+      queryFn: ({ signal }) =>
+        api.get<PendingPayChange[]>('/api/v1/hr/payroll/pending-changes', { query: filter, signal }),
+    }),
   leaveRequests: (filters: LeaveRequestFilters) =>
     queryOptions({
       queryKey: ['hr', 'leave', 'requests', filters],
@@ -1098,9 +1161,12 @@ export const hrQueries = {
 
 export const hrApi = {
   createEmployee: (request: SaveEmployeeRequest) => api.post<EmployeeCreated>('/api/v1/hr/employees', request),
-  updateEmployee: (id: string, request: SaveEmployeeRequest) => api.put<void>(`/api/v1/hr/employees/${id}`, request),
+  /** 204, or 202 with the request a different payment mode waits in (the rest is saved). */
+  updateEmployee: (id: string, request: SaveEmployeeRequest) =>
+    api.put<ApprovalRequestDto | undefined>(`/api/v1/hr/employees/${id}`, request),
+  /** 202: waits for someone else who approves payroll, never the employee (`hr.bank_details_own`). */
   updateBankDetails: (id: string, request: UpdateBankDetailsRequest) =>
-    api.put<void>(`/api/v1/hr/employees/${id}/bank-details`, request),
+    api.put<ApprovalRequestDto>(`/api/v1/hr/employees/${id}/bank-details`, request),
   separate: (id: string, request: SeparateEmployeeRequest) =>
     api.post<void>(`/api/v1/hr/employees/${id}/separate`, request),
   saveDesignation: (id: string | null, request: SaveDesignationRequest) =>
@@ -1145,7 +1211,9 @@ export const hrApi = {
     api.post<unknown>('/api/v1/hr/holidays', request),
   deleteHoliday: (id: string) => api.delete<void>(`/api/v1/hr/holidays/${id}`),
   creditLeave: (year: number) => api.post<CreditLeaveResult>('/api/v1/hr/leave/balances/credit', { year }),
-  adjustLeave: (request: AdjustLeaveBalanceRequest) => api.post<void>('/api/v1/hr/leave/balances/adjust', request),
+  /** A debit: 204. A credit: 202, approved by someone else who approves leave. Never one's own (`hr.leave_own`). */
+  adjustLeave: (request: AdjustLeaveBalanceRequest) =>
+    api.post<ApprovalRequestDto | undefined>('/api/v1/hr/leave/balances/adjust', request),
   applyLeave: (employeeId: string, request: ApplyLeaveRequest) =>
     api.post<string>(`/api/v1/hr/employees/${employeeId}/leave-requests`, request),
   decideLeave: (id: string, approve: boolean, note: string | null) =>
@@ -1158,8 +1226,9 @@ export const hrApi = {
       : api.post<unknown>('/api/v1/hr/payroll/components', request),
   saveProfessionalTax: (stateCode: string, request: SaveProfessionalTaxRequest) =>
     api.put<void>(`/api/v1/hr/payroll/professional-tax/${encodeURIComponent(stateCode)}`, request),
+  /** 202: a revision waits for someone else who approves payroll; nobody revises their own (`hr.pay_own`). */
   createSalaryStructure: (employeeId: string, request: SaveSalaryStructureRequest) =>
-    api.post<unknown>(`/api/v1/hr/employees/${employeeId}/salary-structures`, request),
+    api.post<ApprovalRequestDto>(`/api/v1/hr/employees/${employeeId}/salary-structures`, request),
 
   createRun: (request: { year: number; month: number; notes: string | null }) =>
     api.post<string>('/api/v1/hr/payroll/runs', request),
@@ -1171,11 +1240,19 @@ export const hrApi = {
     api.post<void>(`/api/v1/hr/payroll/runs/${id}/mark-paid`, { paidOn, reference }),
   lockRun: (id: string) => api.post<void>(`/api/v1/hr/payroll/runs/${id}/lock`),
   bankTransferFile: (id: string) => api.blob(`/api/v1/hr/payroll/runs/${id}/bank-transfer.csv`, { timeoutMs: 120_000 }),
+  /** A deduction: 201 with its id. An earning or override: 202 with the request. Never one's own pay (`hr.pay_own`). */
   addInput: (runId: string, request: SavePayrollInputRequest) =>
-    api.post<string>(`/api/v1/hr/payroll/runs/${runId}/inputs`, request),
+    api.post<string | ApprovalRequestDto>(`/api/v1/hr/payroll/runs/${runId}/inputs`, request),
+  /** A file with an earning in it waits as a whole (202, `approval` set); deductions only are imported at once. */
   importInputs: (runId: string, csv: string) =>
-    api.post<{ imported: number }>(`/api/v1/hr/payroll/runs/${runId}/inputs/import`, { csv }),
-  deleteInput: (inputId: string) => api.delete<void>(`/api/v1/hr/payroll/inputs/${inputId}`),
+    api.post<{ imported: number; approval?: ApprovalRequestDto | null }>(
+      `/api/v1/hr/payroll/runs/${runId}/inputs/import`,
+      {
+        csv,
+      },
+    ),
+  /** 204, or 202 for a deduction another module posted or another person entered. */
+  deleteInput: (inputId: string) => api.delete<ApprovalRequestDto | undefined>(`/api/v1/hr/payroll/inputs/${inputId}`),
 
   myApplyLeave: (request: ApplyLeaveRequest) => api.post<string>('/api/v1/hr/me/leave/requests', request),
   myCancelLeave: (id: string, reason: string) =>
