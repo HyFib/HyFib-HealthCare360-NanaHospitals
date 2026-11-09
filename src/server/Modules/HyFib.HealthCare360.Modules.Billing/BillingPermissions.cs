@@ -64,7 +64,7 @@ public static class BillingPermissions
             [SystemRoles.Billing, SystemRoles.InsuranceDesk, SystemRoles.HospitalAdmin]),
         new(BillsFinalize, "Billing", "Finalize bills (allocates the bill number)", [SystemRoles.Billing, SystemRoles.Cashier, SystemRoles.HospitalAdmin]),
         new(BillsCancel, "Billing", "Approve and perform the cancellation of finalized bills", Approvers),
-        new(DiscountsApprove, "Billing", "Approve discounts above a user's limit, a stay billed on another plan than its payer's, and discharges with dues; set discount limits", Approvers),
+        new(DiscountsApprove, "Billing", "Approve discounts above a user's limit, a stay billed on another plan than its payer's, a visit's payer changed to another kind or a lower price, and discharges with dues; set discount limits", Approvers),
         new(PaymentsCollect, "Billing", "Collect payments, POS and payment-link payments, pay out approved refunds",
             [SystemRoles.Cashier, SystemRoles.Billing, SystemRoles.FrontOffice, SystemRoles.HospitalAdmin]),
         new(RefundsRequest, "Billing", "Request refunds, credit notes and write-offs, and ask to reverse money that did not move (a receipt not received, a refund not paid out)",

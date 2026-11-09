@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HyFib.HealthCare360.Server.Persistence.Migrations
 {
     [DbContext(typeof(HospitalDbContext))]
-    [Migration("20261109153404_PaymentDetailsFixedAtApproval")]
+    [Migration("20261109173311_PaymentDetailsFixedAtApproval")]
     partial class PaymentDetailsFixedAtApproval
     {
         /// <inheritdoc />
@@ -6485,6 +6485,60 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("pre_auth_enhancements", "billing");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.PreAuthProcedure", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("code");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("line_number");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("PreAuthorizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pre_authorization_id");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("System")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("system");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pre_authorization_procedures");
+
+                    b.HasIndex("PreAuthorizationId", "LineNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_pre_authorization_procedures_pre_authorization_id_line_numb");
+
+                    b.HasIndex("System", "Code")
+                        .HasDatabaseName("ix_pre_authorization_procedures_system_code");
+
+                    b.ToTable("pre_authorization_procedures", "billing");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.PreAuthorization", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6561,6 +6615,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
 
+                    b.Property<string>("LegacyProcedureText")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("legacy_procedure_text");
+
                     b.Property<string>("Number")
                         .IsRequired()
                         .HasMaxLength(24)
@@ -6578,11 +6637,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid>("PolicyId")
                         .HasColumnType("uuid")
                         .HasColumnName("policy_id");
-
-                    b.Property<string>("ProcedureCodes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("procedure_codes");
 
                     b.Property<DateTimeOffset?>("QueryRaisedAt")
                         .HasColumnType("timestamp with time zone")
@@ -52206,6 +52260,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_pre_auth_enhancements_pre_authorization_pre_authorization_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.PreAuthProcedure", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.PreAuthorization", null)
+                        .WithMany("Procedures")
+                        .HasForeignKey("PreAuthorizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_pre_authorization_procedures_pre_authorizations_pre_authori");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.PreAuthorization", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
@@ -55493,6 +55557,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.PreAuthorization", b =>
                 {
                     b.Navigation("Enhancements");
+
+                    b.Navigation("Procedures");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.Receipt", b =>
