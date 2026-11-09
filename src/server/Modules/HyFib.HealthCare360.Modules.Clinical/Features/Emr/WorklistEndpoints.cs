@@ -48,10 +48,11 @@ internal static class WorklistEndpoints
     /// <summary>
     /// Records that the doctor has seen a released report (critical results stay on top until acknowledged). Where the lab
     /// asks for a second pathologist, a critical lab result is acknowledged only by its ordering doctor, or by a doctor who
-    /// records that they cover the patient and why (audited).
+    /// records that they cover the patient and why (audited). Another doctor's critical result is acknowledged only by a doctor
+    /// covering for them: on the same stay's care team, or after a recorded handover (maker-checker, slice 15).
     /// </summary>
-    private static async Task<IResult> Acknowledge(Guid id, AcknowledgeResultRequest request, ClinicalAccess access, HospitalDbContext db, ICurrentUser user,
-        ISettingsService settings, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Acknowledge(Guid id, AcknowledgeResultRequest request, ClinicalAccess access, DoctorHandovers handovers, HospitalDbContext db,
+        ICurrentUser user, ISettingsService settings, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
         var review = await db.Set<ResultReview>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstOrDefaultAsync(r => r.Id == id, ct);
         if (review is null)
@@ -63,6 +64,13 @@ internal static class WorklistEndpoints
         if (opened.IsFailure)
         {
             return opened.Error!.ToProblem();
+        }
+
+        // Another doctor's critical result is acknowledged only by a doctor covering for them (maker-checker, slice 15).
+        var mayCover = await handovers.EnsureMayAcknowledgeAsync(review, ct);
+        if (mayCover.IsFailure)
+        {
+            return mayCover.Error!.ToProblem();
         }
 
         string? covering = null;

@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.DischargeSummaries;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Services;
 
@@ -9,7 +10,13 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services;
 /// record, and print with letterhead. Signing closes the MRD "missing discharge summary" deficiency of the chart.
 /// </summary>
 public sealed class DischargeSummaryService(
-    HospitalDbContext db, ClinicalAccess access, ICurrentUser currentUser, PatientContactAccess contacts, TimeProvider time)
+    HospitalDbContext db,
+    ClinicalAccess access,
+    ICurrentUser currentUser,
+    PatientContactAccess contacts,
+    ISettingsService settings,
+    IStayCareTeams careTeams,
+    TimeProvider time)
 {
     public async Task<Result<DischargeSummaryDto>> SaveDraftAsync(Guid admissionId, SaveDischargeSummaryRequest request, CancellationToken ct)
     {
@@ -67,17 +74,46 @@ public sealed class DischargeSummaryService(
         return await ToDtoAsync(summary, ct);
     }
 
+    /// <summary>
+    /// Signs the summary as the signed-in doctor. Only the stay's consultant or a doctor on its care team signs it, and as
+    /// themselves: never in the consultant's name from an account that is not theirs (maker-checker, slice 15), unless the
+    /// hospital lets any doctor sign (<see cref="ClinicalSignOff.DischargeSummaryCareTeamSetting"/> off, which a second
+    /// administrator approves).
+    /// </summary>
     public Task<Result<DischargeSummaryDto>> SignAsync(Guid id, uint version, CancellationToken ct) =>
         ChangeAsync(id, version, async summary =>
         {
-            var signed = summary.Sign(currentUser.UserId, currentUser.PractitionerId, time.GetUtcNow());
-            if (signed.IsSuccess)
+            if (await settings.GetAsync<bool?>(ClinicalSignOff.DischargeSummaryCareTeamSetting, summary.FacilityId, ct) != false)
             {
-                await ResolveChartDeficiencyAsync(summary.AdmissionId, ct);
+                if (currentUser.PractitionerId is not { } signer)
+                {
+                    return Error.Forbidden("discharge_summary.doctor_required",
+                        "A discharge summary is signed by a doctor as themselves: your account is not linked to a doctor in the practitioner list.");
+                }
+
+                var team = await careTeams.OfAdmissionAsync(summary.AdmissionId, ct);
+                if (!ClinicalSignOff.MaySignDischargeSummary(signer, team))
+                {
+                    var consultant = team?.ConsultantId is { } c ? (await PrintQueries.PractitionerNamesAsync(db, [c], ct)).GetValueOrDefault(c) : null;
+                    return Error.Forbidden("discharge_summary.not_care_team",
+                        $"Only the stay's consultant{(consultant is null ? string.Empty : $" ({consultant})")} or a doctor on its care team signs its discharge summary.");
+                }
+
+                return await SignedAsync(summary, summary.Sign(currentUser.UserId, signer, time.GetUtcNow()), ct);
             }
 
-            return signed;
+            return await SignedAsync(summary, summary.Sign(currentUser.UserId, currentUser.PractitionerId, time.GetUtcNow()), ct);
         }, ct);
+
+    private async Task<Result> SignedAsync(DischargeSummary summary, Result signed, CancellationToken ct)
+    {
+        if (signed.IsSuccess)
+        {
+            await ResolveChartDeficiencyAsync(summary.AdmissionId, ct);
+        }
+
+        return signed;
+    }
 
     public async Task<Result<DischargeSummaryDto>> AmendAsync(Guid id, AmendDischargeSummaryRequest request, CancellationToken ct)
     {

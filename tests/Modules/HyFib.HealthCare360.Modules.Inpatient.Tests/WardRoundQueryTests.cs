@@ -29,7 +29,9 @@ public sealed class WardRoundQueryTests : IDisposable
 
     public void Dispose() => _db.Dispose();
 
-    private WardRoundQueries Queries => new(_db, Substitute.For<IPermissionService>(), Substitute.For<ICurrentUser>(), TimeProvider.System);
+    private WardRoundQueries Queries => new(_db, new Patients.Services.PatientAccessGuard(
+        _db, Substitute.For<ICurrentUser>(), Substitute.For<IPermissionService>(), Substitute.For<Platform.Auditing.IAuditLogger>(),
+        Substitute.For<Platform.Notifications.INotificationService>(), TimeProvider.System), TimeProvider.System);
 
     [Fact]
     public void A_doctors_round_covers_their_admissions_and_the_ones_they_visited()

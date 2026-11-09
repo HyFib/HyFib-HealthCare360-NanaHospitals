@@ -1,3 +1,4 @@
+import type { PrintableDocumentDto } from '@hc360/core';
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { AgainstAdviceRequest, AgainstAdviceSignatory } from '@/modules/witness/againstAdvice';
@@ -53,6 +54,9 @@ export interface ErBoardRow {
   mlcNumber: string | null;
   mlcIntimationOverdue: boolean;
   version: number;
+  /** The bay the patient is in now, if any. */
+  bayId?: string | null;
+  bayCode?: string | null;
 }
 
 export interface ErBoard {
@@ -153,6 +157,176 @@ export interface EmergencyCase {
   version: number;
   /** A patient who left against medical advice: who signed (or refused), the doctor, the witness and the scanned form. */
   againstAdvice?: ErAgainstAdvice | null;
+  bayId?: string | null;
+  bayCode?: string | null;
+  bayAssignedAt?: string | null;
+  /** The MLC's wound certificate, once written. */
+  woundCertificate?: WoundCertificate | null;
+}
+
+/** The part of the department a bay is in (server `ErArea`). */
+export type ErArea = 'Resuscitation' | 'Acute' | 'Minor' | 'Observation' | 'Isolation';
+
+/** A bay of the emergency department and who is in it (a free bay has no case). */
+export interface ErBay {
+  id: string;
+  code: string;
+  area: ErArea;
+  displayOrder: number;
+  isActive: boolean;
+  caseId: string | null;
+  patientName: string | null;
+  uhid: string | null;
+  level: number | null;
+  since: string | null;
+  version: number;
+}
+
+export interface ErBays {
+  bays: ErBay[];
+  free: number;
+  occupied: number;
+}
+
+export const AREA_LABELS: Record<ErArea, string> = {
+  Resuscitation: 'Resuscitation',
+  Acute: 'Acute care',
+  Minor: 'Minor injuries',
+  Observation: 'Observation',
+  Isolation: 'Isolation room',
+};
+
+export type InjuryKind =
+  | 'Abrasion'
+  | 'Contusion'
+  | 'Laceration'
+  | 'IncisedWound'
+  | 'StabWound'
+  | 'ChopWound'
+  | 'Fracture'
+  | 'Dislocation'
+  | 'Burn'
+  | 'FirearmWound'
+  | 'Bite'
+  | 'Other';
+export type InjuryWeapon =
+  'Blunt' | 'Sharp' | 'SharpPointed' | 'HeavySharp' | 'Firearm' | 'Thermal' | 'Chemical' | 'Bite' | 'Unknown';
+/** The nature of the hurt under the Bharatiya Nyaya Sanhita 2023 (s.114 hurt, s.116 grievous hurt). */
+export type InjuryNature = 'Simple' | 'Grievous' | 'Reserved';
+/** The kinds of grievous hurt of BNS 2023, s.116 (a) to (h). */
+export type GrievousClause =
+  | 'Emasculation'
+  | 'LossOfSight'
+  | 'LossOfHearing'
+  | 'LossOfMemberOrJoint'
+  | 'ImpairmentOfMemberOrJoint'
+  | 'DisfigurementOfHeadOrFace'
+  | 'FractureOrDislocation'
+  | 'EndangersLifeOrFifteenDays';
+
+export interface WoundInjury {
+  number: number;
+  kind: InjuryKind;
+  site: string;
+  size: string | null;
+  description: string;
+  weapon: InjuryWeapon;
+  age: string;
+  nature: InjuryNature;
+  clause: GrievousClause | null;
+  reservedFor: string | null;
+}
+
+export interface WoundCertificate {
+  id: string;
+  examinedAt: string;
+  identificationMarks: string;
+  history: string | null;
+  injuries: WoundInjury[];
+  remarks: string | null;
+  isSigned: boolean;
+  signedAt: string | null;
+  doctorName: string | null;
+  doctorRegistration: string | null;
+  version: number;
+}
+
+export interface WoundCertificateInput {
+  examinedAt: string;
+  identificationMarks: string;
+  history: string | null;
+  injuries: WoundInjury[];
+  remarks: string | null;
+  version: number | null;
+}
+
+export const INJURY_LABELS: Record<InjuryKind, string> = {
+  Abrasion: 'Abrasion',
+  Contusion: 'Contusion (bruise)',
+  Laceration: 'Laceration',
+  IncisedWound: 'Incised wound',
+  StabWound: 'Stab wound',
+  ChopWound: 'Chop wound',
+  Fracture: 'Fracture',
+  Dislocation: 'Dislocation',
+  Burn: 'Burn',
+  FirearmWound: 'Firearm wound',
+  Bite: 'Bite',
+  Other: 'Other',
+};
+
+export const WEAPON_LABELS: Record<InjuryWeapon, string> = {
+  Blunt: 'Blunt',
+  Sharp: 'Sharp-edged',
+  SharpPointed: 'Sharp-pointed',
+  HeavySharp: 'Heavy sharp-edged',
+  Firearm: 'Firearm',
+  Thermal: 'Heat (thermal)',
+  Chemical: 'Chemical',
+  Bite: 'Bite',
+  Unknown: 'Not known',
+};
+
+export const NATURE_LABELS: Record<InjuryNature, string> = {
+  Simple: 'Simple (BNS s.114)',
+  Grievous: 'Grievous (BNS s.116)',
+  Reserved: 'Opinion reserved',
+};
+
+export const CLAUSE_LABELS: Record<GrievousClause, string> = {
+  Emasculation: '(a) Emasculation',
+  LossOfSight: '(b) Permanent loss of sight of an eye',
+  LossOfHearing: '(c) Permanent loss of hearing of an ear',
+  LossOfMemberOrJoint: '(d) Loss of a member or joint',
+  ImpairmentOfMemberOrJoint: '(e) Destruction or permanent impairment of a member or joint',
+  DisfigurementOfHeadOrFace: '(f) Permanent disfigurement of the head or face',
+  FractureOrDislocation: '(g) Fracture or dislocation of a bone or tooth',
+  EndangersLifeOrFifteenDays: '(h) Endangers life, or 15 days of severe pain or inability',
+};
+
+/**
+ * What the server will refuse in an injury list, said before it is sent: numbered without gaps, a grievous hurt with
+ * its clause, a reserved opinion with what it waits for, and a fracture or dislocation never simple (BNS s.116(g)).
+ */
+export function injuryProblem(injuries: WoundInjury[]): string | null {
+  if (injuries.length === 0) {
+    return 'Record at least one injury.';
+  }
+  for (const i of injuries) {
+    if (!i.site.trim() || !i.description.trim() || !i.age.trim()) {
+      return `Injury ${i.number}: give its site, a description and its age.`;
+    }
+    if (i.nature === 'Grievous' && !i.clause) {
+      return `Injury ${i.number}: say which kind of grievous hurt it is (BNS s.116).`;
+    }
+    if (i.nature === 'Reserved' && !i.reservedFor?.trim()) {
+      return `Injury ${i.number}: say what the reserved opinion waits for.`;
+    }
+    if ((i.kind === 'Fracture' || i.kind === 'Dislocation') && i.nature === 'Simple') {
+      return `Injury ${i.number}: a fracture or dislocation is grievous hurt (BNS s.116(g)), never simple.`;
+    }
+  }
+  return null;
 }
 
 /** LAMA from the emergency department, as recorded (maker-checker, slice 8). */
@@ -371,6 +545,11 @@ export const erQueries = {
       queryKey: erKeys.register(from, to),
       queryFn: ({ signal }) => api.get<MlcRegisterRow[]>(`${base}/mlc`, { query: { from, to }, signal }),
     }),
+  bays: () =>
+    queryOptions({
+      queryKey: [...erKeys.all, 'bays'],
+      queryFn: ({ signal }) => api.get<ErBays>(`${base}/bays`, { signal }),
+    }),
 };
 
 export const erApi = {
@@ -427,4 +606,16 @@ export const erApi = {
   forwardReport: (id: string, forwardedAt: string, investigatingOfficer: string, version: number) =>
     api.post<EmergencyCase>(`${base}/cases/${id}/mlc/report`, { forwardedAt, investigatingOfficer, version }),
   mlcDocument: (id: string) => `${base}/cases/${id}/mlc/document`,
+  /** Puts the patient in a bay, or moves them to another (409 `er.bay_taken` for a bay with a patient in it). */
+  assignBay: (id: string, bayId: string, version: number) =>
+    api.put<EmergencyCase>(`${base}/cases/${id}/bay`, { bayId, version }),
+  releaseBay: (id: string, version: number) => api.post<EmergencyCase>(`${base}/cases/${id}/bay/release`, { version }),
+  saveWoundCertificate: (id: string, input: WoundCertificateInput) =>
+    api.put<EmergencyCase>(`${base}/cases/${id}/mlc/wound-certificate`, input),
+  signWoundCertificate: (id: string, version: number) =>
+    api.post<EmergencyCase>(`${base}/cases/${id}/mlc/wound-certificate/sign`, { version }),
+  woundCertificateDocument: (id: string) => `${base}/cases/${id}/mlc/wound-certificate`,
+  /** The medico-legal report for a court, made from the MLC record; its issue is audited with the court's name. */
+  courtReport: (id: string, court: string, caseReference: string | null, requisition: string | null) =>
+    api.post<PrintableDocumentDto>(`${base}/cases/${id}/mlc/court-report`, { court, caseReference, requisition }),
 };
