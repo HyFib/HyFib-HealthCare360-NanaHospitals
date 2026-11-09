@@ -176,6 +176,9 @@ export const APPROVAL_PERMISSIONS = [
   'clinical.prescriptions.sign',
   'inpatient.admissions.admit',
   'mrd.mlc.register',
+  // Downtime: a back-entry past its window (the in-charge asks once with the tally; whoever approves late back-entry
+  // decides).
+  'patients.back_entry.approve',
   // Discharge and death (slice 8): the ward asks for an absconded patient's stay to be closed (the nurse in charge
   // decides) or a medico-legal death's before its certificate (a doctor who confirms certificates decides); the certifier
   // asks to void a confirmed death certificate (another doctor who confirms certificates decides). Each may withdraw it.

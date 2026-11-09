@@ -103,15 +103,19 @@ public sealed record CreateVisitRequest(
     string? Notes,
     TokenPriority Priority,
     bool IssueToken = true,
-    bool NotifyPatient = true);
+    bool NotifyPatient = true,
+    Features.Downtime.PaperNumber? Paper = null);
 
 public sealed record CancelVisitRequest(string Reason);
 
 public sealed class CreateVisitRequestValidator : AbstractValidator<CreateVisitRequest>
 {
-    public CreateVisitRequestValidator()
+    public CreateVisitRequestValidator(TimeProvider time)
     {
         RuleFor(x => x.PatientId).NotEmpty();
+        RuleFor(x => x.Paper!).SetValidator(new Features.Downtime.PaperNumberValidator(time)).OverridePropertyName("paper").When(x => x.Paper is not null);
+        RuleFor(x => x.IssueToken).Equal(false).When(x => x.Paper is not null)
+            .WithMessage("A visit entered from paper has already been seen: it takes no queue token.");
         RuleFor(x => x.DepartmentId).NotNull()
             .When(x => x.Type is VisitType.OutPatient or VisitType.Emergency or VisitType.DayCare)
             .WithMessage("Choose a department.");
