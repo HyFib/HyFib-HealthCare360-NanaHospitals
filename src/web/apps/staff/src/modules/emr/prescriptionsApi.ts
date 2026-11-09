@@ -98,6 +98,11 @@ export interface PrescriptionDigitalSignatureDto {
   chainStatus: string | null;
   /** Older servers leave it out. */
   chainTrusted?: boolean;
+  /**
+   * How the certificate's revocation was checked when it signed: online, or against the CA's cached CRL with its date and
+   * age, or not checked (no route to the CA and no CRL cached). A revoked or expired DSC is refused, so never "revoked".
+   */
+  revocationStatus?: string | null;
   message: string | null;
   /** The DSC rules let it be printed, downloaded and shared (see `PrescriptionDto.finalCopyAvailable`). */
   finalCopyAvailable?: boolean;

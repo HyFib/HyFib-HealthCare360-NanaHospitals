@@ -4,6 +4,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { expectNoAxeViolations } from '@hc360/ui/testing';
 import type { WardRoundPatient } from '@/modules/inpatient/api';
 import type { WorklistAppointment } from './api';
 import { WardRoundList } from './WardRoundList';
@@ -165,6 +166,27 @@ describe('WorklistAppointments', () => {
 
     const row = screen.getByText('Restricted patient').closest('tr')!;
     expect(within(row).getByText('Restricted')).toBeInTheDocument();
+  });
+
+  it('badges a confidential record by name, without its reason, with no accessibility problems', async () => {
+    wrap(
+      <WorklistAppointments
+        {...props}
+        appointments={[
+          appointment({
+            patientName: 'Asha Rao',
+            reason: null,
+            isConfidential: true,
+            startsAt: '2026-10-02T06:00:00Z',
+          }),
+        ]}
+      />,
+    );
+
+    const row = screen.getByText('Asha Rao').closest('tr')!;
+    expect(within(row).getByText('Confidential')).toBeInTheDocument();
+    expect(within(row).queryByText('Restricted')).not.toBeInTheDocument();
+    await expectNoAxeViolations();
   });
 });
 

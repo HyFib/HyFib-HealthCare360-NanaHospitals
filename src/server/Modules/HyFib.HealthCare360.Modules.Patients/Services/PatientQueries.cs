@@ -272,6 +272,58 @@ public sealed class PatientAccessGuard(
             .Select(g => g.PatientId).ToListAsync(ct)).ToHashSet();
     }
 
+    /// <summary>
+    /// Which of these patients' clinical records the user may not open now, and why: a restricted (VIP) record
+    /// (<see cref="ChartWithholding.Restricted"/>) or one in a sensitive category the user does not hold every permission of
+    /// (<see cref="ChartWithholding.Confidential"/>, R-4). A record the user may open, or opened by break-the-glass that
+    /// is still running, is not listed. Work lists (the doctor's worklist, the ward round) use it to leave out the clinical
+    /// text of the records listed, as the chart would refuse to show it.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, ChartWithholding>> WithheldChartsAsync(IReadOnlyCollection<Guid> patientIds, CancellationToken ct)
+    {
+        if (patientIds.Count == 0)
+        {
+            return new Dictionary<Guid, ChartWithholding>();
+        }
+
+        var guarded = await db.Set<Patient>().AsNoTracking()
+            .Where(p => patientIds.Contains(p.Id) && (p.IsVip || p.SensitiveCategories != SensitiveCategory.None))
+            .Select(p => new { p.Id, p.IsVip, p.SensitiveCategories })
+            .ToListAsync(ct);
+        if (guarded.Count == 0)
+        {
+            return new Dictionary<Guid, ChartWithholding>();
+        }
+
+        if (currentUser.UserId is not { } userId)
+        {
+            return guarded.ToDictionary(p => p.Id, p => p.IsVip ? ChartWithholding.Restricted : ChartWithholding.Confidential);
+        }
+
+        // Whoever opens restricted records opens these too (as CheckRestrictedAsync has it).
+        if (await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct))
+        {
+            return new Dictionary<Guid, ChartWithholding>();
+        }
+
+        var held = SensitiveCategory.None;
+        foreach (var (category, permission) in CategoryPermissions)
+        {
+            if (await permissions.HasPermissionAsync(userId, permission, ct))
+            {
+                held |= category;
+            }
+        }
+
+        var now = time.GetUtcNow();
+        var ids = guarded.Select(p => p.Id).ToList();
+        var opened = (await db.Set<BreakGlassAccess>().AsNoTracking().Where(g => g.UserId == userId && g.ExpiresAt > now && ids.Contains(g.PatientId))
+            .Select(g => g.PatientId).ToListAsync(ct)).ToHashSet();
+        return guarded
+            .Where(p => !opened.Contains(p.Id) && (p.IsVip || (p.SensitiveCategories & ~held) != SensitiveCategory.None))
+            .ToDictionary(p => p.Id, p => p.IsVip ? ChartWithholding.Restricted : ChartWithholding.Confidential);
+    }
+
     private async Task<Result> CheckRestrictedAsync(Guid patientId, CancellationToken ct)
     {
         if (currentUser.UserId is not { } userId)
@@ -291,6 +343,19 @@ public sealed class PatientAccessGuard(
             Data = new { breakGlassAvailable = true },
         };
     }
+}
+
+/// <summary>Why a work list leaves out a patient's clinical text (<see cref="PatientAccessGuard.WithheldChartsAsync"/>).</summary>
+public enum ChartWithholding
+{
+    /// <summary>A restricted (VIP) record: the name is withheld too ("Restricted patient").</summary>
+    Restricted = 0,
+
+    /// <summary>
+    /// A record in a sensitive category (HIV, mental health, MTP, sexual violence) the user does not hold: the name, the
+    /// bed and the UHID stay, as on the bed board, so the patient is still found and served; the clinical text goes.
+    /// </summary>
+    Confidential,
 }
 
 /// <summary>Links a patient-portal sign-in (mobile OTP) to the earliest active patient record with that mobile number.</summary>

@@ -90,15 +90,26 @@ export function useEncounterNote(encounter: EncounterDetail, today: string) {
       if (!values) {
         return null;
       }
-      const updated = await emrApi.amendEncounter(encounter.id, reason, toContent(values), encounter.version);
-      return { updated, values };
+      const answer = await emrApi.amendEncounter(encounter.id, reason, toContent(values), encounter.version);
+      return { answer, values };
     },
     onSuccess: (result) => {
-      if (result) {
-        publish(result.updated, result.values);
-        setAmending(false);
-        notify.success('Amendment recorded', 'The previous text is kept in the amendment history.');
+      if (!result) {
+        return;
       }
+      if ('kind' in result.answer) {
+        // Another doctor's encounter: the author or the head of the department decides; the note stays as it is till then.
+        form.reset(toFormValues(encounter));
+        setAmending(false);
+        notify.info(
+          'Amendment sent for approval',
+          'The author of this note, or the head of the department, decides. The note stays as it is till then.',
+        );
+        return;
+      }
+      publish(result.answer, result.values);
+      setAmending(false);
+      notify.success('Amendment recorded', 'The previous text is kept in the amendment history.');
     },
     onError: (error) =>
       isApiError(error) && error.isConflict ? onConflict() : notify.error(error, 'Could not record the amendment'),

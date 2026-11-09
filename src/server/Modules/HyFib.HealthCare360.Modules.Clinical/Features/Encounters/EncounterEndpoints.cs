@@ -55,6 +55,12 @@ internal static class EncounterEndpoints
     private static async Task<IResult> Sign(Guid id, SignEncounterRequest request, EncounterService encounters, CancellationToken ct) =>
         (await encounters.SignAsync(id, request.Version, ct)).ToOk();
 
+    /// <summary>
+    /// 200 with the encounter when amended at once (by its author); 202 with the approval request when another doctor asks
+    /// and the author or the head of department decides (maker-checker, slice 15).
+    /// </summary>
     private static async Task<IResult> Amend(Guid id, AmendEncounterRequest request, EncounterService encounters, CancellationToken ct) =>
-        (await encounters.AmendAsync(id, request, ct)).ToOk();
+        (await encounters.AmendAsync(id, request, ct)).ToHttpResult(outcome => outcome.Asked is { } asked
+            ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)
+            : TypedResults.Ok(outcome.Amended));
 }

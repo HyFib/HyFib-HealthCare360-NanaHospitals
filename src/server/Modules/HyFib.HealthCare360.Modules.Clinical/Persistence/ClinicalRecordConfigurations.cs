@@ -195,3 +195,14 @@ internal sealed class ResultReviewConfiguration : IEntityTypeConfiguration<Resul
         b.HasIndex(x => x.PatientId);
     }
 }
+
+internal sealed class DoctorHandoverConfiguration : IEntityTypeConfiguration<DoctorHandover>
+{
+    public void Configure(EntityTypeBuilder<DoctorHandover> b)
+    {
+        b.ToTable("doctor_handovers", ClinicalSchema.Name);
+        b.Property(x => x.Note).HasMaxLength(500);
+        b.HasIndex(x => new { x.FromPractitionerId, x.ToPractitionerId, x.Until });
+        b.HasIndex(x => new { x.ToPractitionerId, x.Until });
+    }
+}
