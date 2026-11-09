@@ -43,7 +43,44 @@ internal sealed class QcOverrideConfiguration : IEntityTypeConfiguration<QcOverr
     {
         b.ToTable("qc_overrides", DiagnosticsSchema.Name);
         b.Property(x => x.Reason).HasMaxLength(500);
+        b.Ignore(x => x.CoversDay);
         b.HasOne<QcRun>().WithMany().HasForeignKey(x => x.QcRunId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.LabTestId, x.OverriddenAt });
+    }
+}
+
+internal sealed class EqasSchemeConfiguration : IEntityTypeConfiguration<EqasScheme>
+{
+    public void Configure(EntityTypeBuilder<EqasScheme> b)
+    {
+        b.ToTable("eqas_schemes", DiagnosticsSchema.Name);
+        b.Property(x => x.Name).HasMaxLength(200);
+        b.Property(x => x.Provider).HasMaxLength(200);
+        b.Property(x => x.ParticipantCode).HasMaxLength(64);
+        b.HasIndex(x => new { x.FacilityId, x.Name }).IsUnique();
+    }
+}
+
+internal sealed class EqasRoundConfiguration : IEntityTypeConfiguration<EqasRound>
+{
+    public void Configure(EntityTypeBuilder<EqasRound> b)
+    {
+        b.ToTable("eqas_rounds", DiagnosticsSchema.Name);
+        b.Property(x => x.RoundCode).HasMaxLength(64);
+        b.Property(x => x.PeerGroup).HasMaxLength(200);
+        b.Property(x => x.CapaNumber).HasMaxLength(32);
+        b.Property(x => x.AcceptanceNote).HasMaxLength(1000);
+        b.Property(x => x.ReportedValue).HasPrecision(DiagnosticsSchema.ValuePrecision, DiagnosticsSchema.ValueScale);
+        b.Property(x => x.AssignedValue).HasPrecision(DiagnosticsSchema.ValuePrecision, DiagnosticsSchema.ValueScale);
+        b.Property(x => x.AssignedSd).HasPrecision(DiagnosticsSchema.ValuePrecision, DiagnosticsSchema.ValueScale);
+        b.Property(x => x.ZScore).HasPrecision(10, 2);
+        b.Ignore(x => x.IsReported);
+        b.Ignore(x => x.NeedsCapa);
+        b.HasOne<EqasScheme>().WithMany().HasForeignKey(x => x.SchemeId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<LabTest>().WithMany().HasForeignKey(x => x.LabTestId).OnDelete(DeleteBehavior.Restrict);
+
+        // One round code per scheme and analyte; the register and the dashboard read by due date.
+        b.HasIndex(x => new { x.SchemeId, x.LabTestId, x.RoundCode }).IsUnique();
+        b.HasIndex(x => new { x.FacilityId, x.DueDate });
     }
 }

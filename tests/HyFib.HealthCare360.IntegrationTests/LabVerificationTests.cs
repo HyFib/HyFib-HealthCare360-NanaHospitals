@@ -175,7 +175,7 @@ public sealed class LabVerificationTests(HospitalServer server)
             var audited = (await admin.GetAsync<PagedResult<AuditEventDto>>(
                 $"/api/v1/admin/audit?action=lab.qc.override&entityType=QcRun&entityId={rejected.Id}")).Items.ShouldHaveSingleItem();
             audited.UserId.ShouldBe(pathologistId);
-            audited.Summary.ShouldBe($"QC lockout overridden: {OverrideReason}");
+            audited.Summary.ShouldBe($"QC lockout overridden for the day: {OverrideReason}");
             audited.Severity.ShouldBe(AuditSeverity.Warning);
 
             // The override was for that run only: the next control run is rejected too, and the assay is locked again.

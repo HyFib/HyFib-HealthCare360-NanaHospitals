@@ -187,6 +187,7 @@ internal sealed class ResultReviewConfiguration : IEntityTypeConfiguration<Resul
         b.ToTable("result_reviews", ClinicalSchema.Name);
         b.Property(x => x.Title).HasMaxLength(300);
         b.Property(x => x.ReviewNote).HasMaxLength(500);
+        b.Property(x => x.CoveringReason).HasMaxLength(500);
         b.Ignore(x => x.IsReviewed);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.ReportId).IsUnique();
