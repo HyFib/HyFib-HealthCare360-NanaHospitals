@@ -7,7 +7,7 @@ import { GUARDIAN_RELATIONS, PATIENT_CATEGORIES } from './api';
  * carries the downtime UHID, the date and time, and a box for who entered it in HC360 and when.
  */
 
-export type PaperFormKind = 'registration' | 'consultation' | 'requisition' | 'mar' | 'tally';
+export type PaperFormKind = 'registration' | 'consultation' | 'requisition' | 'mar' | 'bill' | 'tally';
 
 export interface PaperFormInfo {
   kind: PaperFormKind;
@@ -36,6 +36,11 @@ export const PAPER_FORMS: readonly PaperFormInfo[] = [
     kind: 'mar',
     title: 'Medication administration record',
     description: 'Nurses: each dose given, when and by whom.',
+  },
+  {
+    kind: 'bill',
+    title: 'Bill and receipt',
+    description: 'Billing counter: services and payment, under the counter’s next downtime bill and receipt numbers.',
   },
   {
     kind: 'tally',
@@ -67,6 +72,7 @@ const patientHeader = () =>
     'Patient',
     [
       box('Downtime UHID / UHID'),
+      box('Visit number (downtime block) / admission number'),
       box('Date and time'),
       box('Patient name', true),
       box('Age / sex'),
@@ -221,6 +227,35 @@ function mar(): string {
   ].join('');
 }
 
+function bill(): string {
+  return [
+    patientHeader(),
+    section(
+      'Downtime numbers',
+      [
+        box('Downtime bill number (next on the counter’s sheet)'),
+        box('Downtime receipt number (next on the counter’s sheet)'),
+        box('Counter / cashier'),
+        choices('Bill', ['OP', 'IP (interim)', 'IP (final)']),
+      ].join(''),
+    ),
+    '<h2>Services</h2>',
+    table(['Service', 'Quantity', 'Rate (₹)', 'Amount (₹)'], 10),
+    section('Total', [box('Gross (₹)'), box('Discount (₹), and who approved it'), box('Net payable (₹)')].join('')),
+    section(
+      'Payment',
+      [
+        choices('Mode', ['Cash', 'Card', 'UPI', 'Cheque', 'Credit to payer']),
+        box('Amount received (₹)'),
+        box('Reference (card last 4 / UTR / cheque)'),
+        box('Patient’s or attendant’s signature', true),
+      ].join(''),
+    ),
+    '<p class="note">Use the bill and receipt numbers in order; cross out a spoilt one and write "void" on the counter’s sheet. Prices are entered from the tariff when HC360 is back: a price written here that differs is checked then.</p>',
+    enteredFooter(),
+  ].join('');
+}
+
 function tally(): string {
   return [
     section(
@@ -233,13 +268,24 @@ function tally(): string {
       ].join(''),
     ),
     '<h2>Paper records</h2>',
-    table(['Form', 'Kept on paper', 'Entered in HC360', 'Checked (second person)', 'Remarks'], 8),
+    table(
+      ['Form', 'Numbers used (first–last)', 'Kept on paper', 'Entered in HC360', 'Checked (second person)', 'Remarks'],
+      8,
+    ),
+    section(
+      'Late back-entry',
+      [
+        box('Records older than their back-entry window'),
+        box('Late back-entry approval asked on / by'),
+        box('Approved by'),
+      ].join(''),
+    ),
     section('Sign-off', [box('Area in-charge (name and signature)', true), box('Date')].join('')),
     '<p class="note">Send this sheet to the quality team with the area’s count; the downtime is closed when every area’s records are entered and checked.</p>',
   ].join('');
 }
 
-const BUILDERS: Record<PaperFormKind, () => string> = { registration, consultation, requisition, mar, tally };
+const BUILDERS: Record<PaperFormKind, () => string> = { registration, consultation, requisition, mar, bill, tally };
 
 /** The body of a paper form, headed with the facility and the form's title. */
 export function paperFormBody(kind: PaperFormKind, facilityName: string): string {

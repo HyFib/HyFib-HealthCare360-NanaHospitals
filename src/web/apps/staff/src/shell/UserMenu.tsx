@@ -28,6 +28,7 @@ import { confirmLeaving, useNotify, useThemeMode, type ThemeMode } from '@hc360/
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { api } from '@/lib/api';
+import { wipeOfflineCopy } from '@/lib/offline/wipe';
 
 const useStyles = makeStyles({
   header: { display: 'flex', flexDirection: 'column', padding: '8px 12px 6px', maxWidth: '280px' },
@@ -72,6 +73,7 @@ export function UserMenu({ onLock }: { onLock: () => void }) {
     if (!(await confirmLeaving())) {
       return;
     }
+    await wipeOfflineCopy();
     await auth.logout();
     queryClient.clear();
     await navigate({ to: '/login', search: {}, ignoreBlocker: true });

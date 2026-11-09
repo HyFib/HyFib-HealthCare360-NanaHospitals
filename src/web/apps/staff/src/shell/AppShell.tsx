@@ -27,6 +27,7 @@ import { BrandMark } from './BrandMark';
 import { CommandPalette } from './CommandPalette';
 import { ConnectionIndicator, DegradedBanner, OfflineBanner } from './ConnectionIndicator';
 import { NotificationsButton } from './NotificationsButton';
+import { OfflineCopyBanner, OfflineCopyKeeper } from './OfflineCopy';
 import { idleLockMinutes } from './lockSync';
 import { UserMenu } from './UserMenu';
 
@@ -238,6 +239,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <div id="main" className={styles.main} tabIndex={-1}>
           <OfflineBanner />
+          <OfflineCopyBanner />
+          <OfflineCopyKeeper />
           <DegradedBanner />
           {children}
         </div>
