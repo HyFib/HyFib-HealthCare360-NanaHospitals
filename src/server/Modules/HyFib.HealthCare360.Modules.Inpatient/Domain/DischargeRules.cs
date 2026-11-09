@@ -22,6 +22,9 @@ public static class DischargeRules
 
     public static bool RequiresInitiation(DischargeType type) => RequiresBillingClearance(type);
 
+    /// <summary>A discharge the doctor planned: home, or referred to another hospital (not a death, against advice or absconded).</summary>
+    public static bool IsPlanned(DischargeType type) => type is DischargeType.Normal or DischargeType.Referred;
+
     public static bool NotifiesPatient(DischargeType type) => RequiresBillingClearance(type);
 
     /// <summary>LAMA, DAMA and abscondence are medico-legal events: the record must say who was informed and what was signed.</summary>

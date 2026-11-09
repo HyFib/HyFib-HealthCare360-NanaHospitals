@@ -270,6 +270,12 @@ public sealed class HospitalServer : IAsyncLifetime
         {
             await scope.ServiceProvider.GetRequiredService<ISettingsService>().SetAsync(AuthService.MaxSessionsSetting, 0, cancellationToken: ct);
 
+            // The run's other tests discharge their stays without writing a discharge summary: the hospital-wide rule that a
+            // planned discharge waits for the signed summary is off, except for the facility DischargeSummaryHoldTests turns
+            // it on for (where it is on by default, as it ships).
+            await scope.ServiceProvider.GetRequiredService<ISettingsService>().SetAsync(
+                Modules.Clinical.Services.DischargeSummaryDischargeHold.Setting, false, cancellationToken: ct);
+
             var now = DateTimeOffset.UtcNow;
             var desktop = new Device
             {

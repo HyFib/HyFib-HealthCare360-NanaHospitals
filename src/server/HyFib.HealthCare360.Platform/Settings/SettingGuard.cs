@@ -250,6 +250,11 @@ public static class SettingGuard
             "Whether another doctor's critical result is acknowledged only by a doctor on the same stay's care team or one the ordering doctor handed over to. Off, any doctor acknowledges any critical result, and it leaves the ordering doctor's list unseen by them.",
             DefaultOn: true),
 
+        // DischargeSummaryDischargeHold.Setting (the Clinical module): on unless set to false.
+        ["clinical.discharge.signedSummaryRequired"] = new SettingSwitch("Planned discharge waits for the signed discharge summary",
+            "Whether a patient is discharged home or referred only once the stay's discharge summary is signed. Off, the stay closes with the summary unsigned or unwritten (a death, a patient who left against advice or absconded is never held by it).",
+            DefaultOn: true),
+
         // AdministrationOnDesktop.SettingKey; not set, the server's settings file decides (on, as it ships).
         ["security.administrationRequiresDesktop"] = new SettingSwitch("Administration only on enrolled desktops",
             "Whether users and roles, settings, devices, backups, integrations and the audit trail can be changed only in HC360 Desktop on a computer IT enrolled. Off, any browser signed in as an administrator can.",
