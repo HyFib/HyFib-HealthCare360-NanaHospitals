@@ -33,7 +33,6 @@ import {
 } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, isApiError, useDebouncedValue } from '@hc360/core';
 import {
-  ConfirmDialog,
   DataTable,
   EmptyState,
   ErrorState,
@@ -56,6 +55,8 @@ import {
   inventoryKeys,
   inventoryQueries,
   type ItemLookup,
+  type ReceiveTransferBody,
+  type TransferDetail,
   type TransferListItem,
 } from '@/modules/inventory/api';
 import { allocateFefo, allocateFromBatch } from '@/modules/inventory/fefo';
@@ -205,6 +206,100 @@ function TransfersPage() {
   );
 }
 
+/**
+ * The receiving store counts each line in. Counted in full, the goods are booked in at once; a line counted short waits for
+ * a second person, who approves the difference written off. Whoever sent the transfer cannot receive it.
+ */
+function ReceiveDialog({
+  transfer,
+  busy,
+  error,
+  onReceive,
+  onClose,
+}: {
+  transfer: TransferDetail;
+  busy: boolean;
+  error: unknown;
+  onReceive: (body: ReceiveTransferBody) => void;
+  onClose: () => void;
+}) {
+  const [counted, setCounted] = useState<Record<string, string>>(() =>
+    Object.fromEntries(transfer.lines.map((l) => [l.id, String(l.quantity)])),
+  );
+  const [note, setNote] = useState('');
+  const shortLines = transfer.lines
+    .map((l) => ({ line: l, value: Number(counted[l.id]) }))
+    .filter(({ line, value }) => Number.isFinite(value) && value < line.quantity);
+  const invalid = transfer.lines.some((l) => {
+    const value = Number(counted[l.id]);
+    return counted[l.id]?.trim() === '' || !Number.isFinite(value) || value < 0 || value > l.quantity;
+  });
+  return (
+    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+      <DialogSurface>
+        <DialogBody>
+          <DialogTitle>Receive transfer {transfer.number}</DialogTitle>
+          <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Text>
+              Count each line against the note. The same batches, expiry dates and MRPs are booked into{' '}
+              {transfer.toStoreName}.
+            </Text>
+            {transfer.lines.map((l) => (
+              <Field
+                key={l.id}
+                label={`${l.itemName}, batch ${l.batchNumber} (sent ${formatQty(l.quantity)})`}
+                validationMessage={
+                  Number(counted[l.id]) > l.quantity ? 'More than was sent cannot be received.' : undefined
+                }
+              >
+                <Input
+                  type="number"
+                  min={0}
+                  max={l.quantity}
+                  value={counted[l.id] ?? ''}
+                  onChange={(_, d) => setCounted((c) => ({ ...c, [l.id]: d.value }))}
+                />
+              </Field>
+            ))}
+            {shortLines.length > 0 && (
+              <>
+                <MessageBar intent="warning">
+                  <MessageBarBody>
+                    {shortLines.length} line(s) counted short. Nothing is booked in until someone who approves stock
+                    adjustments, and did not send the transfer, decides the shortfall.
+                  </MessageBarBody>
+                </MessageBar>
+                <Field label="Why it arrived short">
+                  <Textarea value={note} maxLength={500} onChange={(_, d) => setNote(d.value)} />
+                </Field>
+              </>
+            )}
+            {error ? <ErrorState error={error} /> : null}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={onClose}>Cancel</Button>
+            <Button
+              appearance="primary"
+              disabled={busy || invalid}
+              onClick={() =>
+                onReceive({
+                  lines:
+                    shortLines.length === 0
+                      ? null
+                      : shortLines.map(({ line, value }) => ({ lineId: line.id, receivedQuantity: value })),
+                  note: note.trim() || null,
+                })
+              }
+            >
+              {shortLines.length > 0 ? 'Send shortfall for approval' : 'Receive'}
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
 function TransferDrawer({ transferId, onClose }: { transferId: string; onClose: () => void }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -219,15 +314,18 @@ function TransferDrawer({ transferId, onClose }: { transferId: string; onClose: 
     void queryClient.invalidateQueries({ queryKey: inventoryKeys.batches });
   };
   const receive = useMutation({
-    mutationFn: () => inventoryApi.receiveTransfer(transferId),
-    onSuccess: () => {
-      notify.success('Transfer received', 'The stock is now in the receiving store.');
+    mutationFn: (body: ReceiveTransferBody) => inventoryApi.receiveTransfer(transferId, body),
+    onSuccess: (asked) => {
+      if (asked) {
+        notify.success(
+          'Shortfall sent for approval',
+          'Nothing is booked in yet: someone who approves stock adjustments, and did not send it, decides the shortfall.',
+        );
+      } else {
+        notify.success('Transfer received', 'The stock is now in the receiving store.');
+      }
       setConfirmReceive(false);
       refresh();
-    },
-    onError: (error) => {
-      setConfirmReceive(false);
-      notify.error(error, 'Could not receive the transfer');
     },
   });
   const cancel = useMutation({
@@ -275,6 +373,17 @@ function TransferDrawer({ transferId, onClose }: { transferId: string; onClose: 
                 { key: 'batch', header: 'Batch', render: (l) => <Text font="monospace">{l.batchNumber}</Text> },
                 { key: 'exp', header: 'Expiry', render: (l) => <ExpiryText date={l.expiryDate} /> },
                 { key: 'qty', header: 'Qty', align: 'end', render: (l) => formatQty(l.quantity) },
+                {
+                  key: 'received',
+                  header: 'Received',
+                  align: 'end',
+                  render: (l) =>
+                    l.receivedQuantity != null
+                      ? formatQty(l.receivedQuantity)
+                      : t.status === 'Received'
+                        ? formatQty(l.quantity)
+                        : '—',
+                },
                 { key: 'mrp', header: 'MRP', align: 'end', priority: 'low', render: (l) => formatInr(l.mrp) },
                 {
                   key: 'rate',
@@ -312,17 +421,18 @@ function TransferDrawer({ transferId, onClose }: { transferId: string; onClose: 
           </>
         )}
       </DrawerFooter>
-      <ConfirmDialog
-        open={confirmReceive}
-        title="Receive this transfer?"
-        confirmLabel="Receive"
-        busy={receive.isPending}
-        onConfirm={() => receive.mutate()}
-        onCancel={() => setConfirmReceive(false)}
-      >
-        Check the goods against the note first. The same batches, expiry dates and MRPs are booked into {t?.toStoreName}
-        .
-      </ConfirmDialog>
+      {confirmReceive && t && (
+        <ReceiveDialog
+          transfer={t}
+          busy={receive.isPending}
+          error={receive.error}
+          onReceive={(body) => receive.mutate(body)}
+          onClose={() => {
+            receive.reset();
+            setConfirmReceive(false);
+          }}
+        />
+      )}
       {cancelling && (
         <ReasonDialog
           title="Cancel this transfer?"

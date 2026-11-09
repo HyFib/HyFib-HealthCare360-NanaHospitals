@@ -94,6 +94,7 @@ internal sealed class StockTransferLineConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.PurchaseRate).IsUnitRate();
         b.Property(x => x.GstRate).IsPercent();
         b.Property(x => x.Quantity).IsQuantity();
+        b.Property(x => x.ReceivedQuantity).IsQuantity();
         b.HasIndex(x => x.SourceBatchId);
     }
 }
