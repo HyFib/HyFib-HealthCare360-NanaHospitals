@@ -143,6 +143,25 @@ public sealed class GstReturnTests
     }
 
     [Fact]
+    public void Gstr3b_nets_a_return_to_the_supplier_off_the_credit_in_4a5()
+    {
+        GstPurchase[] purchases =
+        [
+            new("grn", Guid.NewGuid(), "33AAACC1206D1ZM", "Chennai Pharma", "CP/991", Oct5, 50000m, 0m, 3000m, 3000m),
+            new("grn", Guid.NewGuid(), "29AAACK1234D1ZQ", "Karnataka Surgicals", "KS/12", Oct5, 10000m, 1200m, 0m, 0m),
+            new("vendor_debit_note", Guid.NewGuid(), "33AAACC1206D1ZM", "Chennai Pharma", "NHDN26000001", Oct5, 5000m, 0m, 300m, 300m, IsReturn: true),
+            new("vendor_debit_note", Guid.NewGuid(), "29AAACK1234D1ZQ", "Karnataka Surgicals", "NHDN26000002", Oct5, 1000m, 120m, 0m, 0m, IsReturn: true),
+        ];
+        var r = GstReturnBuilder.Gstr3b(Gstr1, purchases);
+
+        // 60,000 bought (IGST 1,200, CGST and SGST 3,000 each) less 6,000 sent back (IGST 120, CGST and SGST 300 each).
+        r.ItcAllOther.ShouldBe(new GstReturnAmounts(54000m, 1080m, 2700m, 2700m, 0m));
+        r.ItcReversed.ShouldBe(GstReturnAmounts.Zero, "a return is netted in 4(A)(5), not reversed in 4(B)(2)");
+        (r.PurchaseInvoices, r.PurchasesWithoutGstin).ShouldBe((2, 0));
+        r.Notes.ShouldContain(n => n.Contains("2 return(s) to suppliers", StringComparison.Ordinal) && n.Contains("720.00", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Before_august_2024_the_b2cl_limit_was_two_and_a_half_lakh()
     {
         var july = new GstReturnDocument("pharmacy", Guid.NewGuid(), GstDocumentKind.Invoice, "NHPH24000009", new DateOnly(2024, 7, 31), null, "Patient", "32",
