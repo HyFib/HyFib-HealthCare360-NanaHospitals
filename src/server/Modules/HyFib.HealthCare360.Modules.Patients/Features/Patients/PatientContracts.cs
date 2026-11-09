@@ -289,8 +289,6 @@ public sealed class RegisterPatientRequestValidator : AbstractValidator<Register
             .OverridePropertyName("paper.uhid").When(x => x.Paper is not null);
         RuleFor(x => x.Paper!.RegisteredAt)
             .Must(at => at <= time.GetUtcNow().AddMinutes(5)).WithMessage("The registration time cannot be in the future.")
-            .Must(at => at >= time.GetUtcNow() - Services.DowntimeUhidService.LongestBackEntry)
-            .WithMessage("Paper registrations older than 90 days cannot be entered this way.")
             .OverridePropertyName("paper.registeredAt").When(x => x.Paper is not null);
     }
 }
