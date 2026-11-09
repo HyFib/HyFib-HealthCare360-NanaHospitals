@@ -23,6 +23,7 @@ import { PHARMACY_PERMISSIONS } from '@/modules/pharmacy/permissions';
 import {
   printRecallTrace,
   recallTraceApi,
+  operationDetail,
   SOURCE_LABEL,
   type RecallStockRow,
   type RecallTraceRow,
@@ -103,13 +104,28 @@ function RecallTracePage() {
             <DataTable<RecallTraceRow>
               ariaLabel="Patients who had the batch"
               rows={t.patients}
-              getRowId={(r) => `${r.document}-${r.at}`}
+              getRowId={(r) =>
+                `${r.source}-${r.document}-${r.at}-${r.patientId ?? r.patientName}-${r.serialNumber ?? ''}`
+              }
               size="small"
               emptyTitle="No patient had this batch"
               columns={[
                 { key: 'at', header: 'When', render: (r) => formatDateTime(r.at) },
                 { key: 'how', header: 'How', render: (r) => SOURCE_LABEL[r.source] },
-                { key: 'doc', header: 'Document', render: (r) => <Text font="monospace">{r.document}</Text> },
+                {
+                  key: 'doc',
+                  header: 'Document',
+                  render: (r) => (
+                    <span>
+                      <Text font="monospace">{r.document}</Text>
+                      {operationDetail(r) && (
+                        <Text size={200} block>
+                          {operationDetail(r)}
+                        </Text>
+                      )}
+                    </span>
+                  ),
+                },
                 {
                   key: 'patient',
                   header: 'Patient',

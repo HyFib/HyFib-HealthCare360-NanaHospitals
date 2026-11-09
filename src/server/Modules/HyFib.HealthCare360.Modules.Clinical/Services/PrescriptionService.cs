@@ -33,6 +33,7 @@ public sealed class PrescriptionService(
     INotificationService notifications,
     PrescriptionSignatureSettings signatureSettings,
     PrescriptionFinalCopies finalCopies,
+    IEnumerable<ITeleconsultModes> teleconsultModes,
     TimeProvider time)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
@@ -351,8 +352,12 @@ public sealed class PrescriptionService(
         p.SignedByUserId,
         p.RefilledByName);
 
-    /// <summary>The medicines a teleconsultation may not prescribe, for a prescription written in one (TPG 2020).</summary>
-    private async Task<IReadOnlyList<string>> TelemedicineProhibitedAsync(Prescription prescription, CancellationToken ct)
+    /// <summary>
+    /// The refusal of a prescription written in a teleconsultation that prescribes a medicine its list keeps out of it
+    /// (Telemedicine Practice Guidelines 2020, <see cref="TelemedicinePrescribing"/>); null when it is not written in one, or
+    /// all its medicines may be.
+    /// </summary>
+    private async Task<Error?> TelemedicineRefusalAsync(Prescription prescription, CancellationToken ct)
     {
         // A teleconsultation is a telehealth encounter, or anything written on a telehealth visit: the prescription's own
         // visit, or its encounter's.
@@ -360,22 +365,94 @@ public sealed class PrescriptionService(
             ? await db.Set<Encounter>().AsNoTracking().Where(e => e.Id == encounterId).Select(e => new { e.Type, e.VisitId }).FirstOrDefaultAsync(ct)
             : null;
         Guid?[] visitIds = [prescription.VisitId, encounter?.VisitId];
-        var teleconsult = encounter?.Type == EncounterType.Telehealth
-                          || await db.Set<Visit>().AnyAsync(v => visitIds.Contains(v.Id) && v.Type == VisitType.Telehealth, ct);
-        if (!teleconsult)
+        var teleVisitId = await db.Set<Visit>().AsNoTracking()
+            .Where(v => visitIds.Contains(v.Id) && v.Type == VisitType.Telehealth)
+            .Select(v => (Guid?)v.Id)
+            .FirstOrDefaultAsync(ct);
+        if (encounter?.Type != EncounterType.Telehealth && teleVisitId is null)
         {
-            return [];
+            return null;
         }
 
         var drugIds = prescription.Items.Where(i => i.DrugItemId is not null).Select(i => i.DrugItemId!.Value).Distinct().ToList();
         var master = await db.Set<Item>().AsNoTracking().Where(i => drugIds.Contains(i.Id))
-            .Select(i => new { i.Id, i.Schedule, i.IsControlled }).ToDictionaryAsync(i => i.Id, ct);
-        return TelemedicinePrescribing.Prohibited(prescription.Items.Select(i =>
-            i.DrugItemId is { } id && master.TryGetValue(id, out var drug)
-                ? new TelemedicinePrescribing.Medicine(i.DrugName, drug.Schedule, drug.IsControlled)
-                // A medicine typed in, not from the drug master: what the line itself says. A controlled line may be an NDPS
-                // drug, which the line cannot tell from Schedule H1, so it counts as one.
-                : new TelemedicinePrescribing.Medicine(i.DrugName, i.ControlledSchedule == "X" ? DrugSchedule.X : DrugSchedule.None, i.IsControlledDrug)));
+            .Select(i => new { i.Id, i.Schedule, i.IsControlled, i.TelemedicineList }).ToDictionaryAsync(i => i.Id, ct);
+        var medicines = prescription.Items.Select(i =>
+                i.DrugItemId is { } id && master.TryGetValue(id, out var drug)
+                    ? new TelemedicinePrescribing.Medicine(i.DrugName, drug.Schedule, drug.IsControlled, drug.TelemedicineList)
+                    // A medicine typed in, not from the drug master: what the line itself says, on no list. A controlled line may
+                    // be an NDPS drug, which the line cannot tell from Schedule H1, so it counts as one.
+                    : new TelemedicinePrescribing.Medicine(i.DrugName, i.ControlledSchedule == "X" ? DrugSchedule.X : DrugSchedule.None, i.IsControlledDrug))
+            .ToList();
+
+        // Only what List O leaves out needs the consultation's facts.
+        if (medicines.All(m => m.Effective == TelemedicineList.O))
+        {
+            return null;
+        }
+
+        var consult = new TelemedicinePrescribing.Consult(
+            teleVisitId is { } visitId && await HeldByVideoAsync(visitId, ct),
+            await IsFollowUpAsync(prescription, ct));
+        var refused = TelemedicinePrescribing.Refused(medicines, consult);
+        return refused.Count == 0 ? null : TelemedicinePrescribing.Refusal(refused, consult);
+    }
+
+    /// <summary>Whether the doctor saw the patient by video on the telehealth visit, as the module holding the calls says.</summary>
+    private async Task<bool> HeldByVideoAsync(Guid visitId, CancellationToken ct)
+    {
+        foreach (var modes in teleconsultModes)
+        {
+            if (await modes.HeldByVideoAsync(visitId, ct))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the teleconsultation is a follow-up (TPG 2020, section 3.4): the prescribing doctor saw the patient in person
+    /// in the last six months, and a diagnosis recorded then is of the same ICD-10 category (the condition) as one recorded
+    /// in this teleconsultation. A differential is not the condition, and a diagnosis with no ICD-10 code cannot be compared.
+    /// </summary>
+    private async Task<bool> IsFollowUpAsync(Prescription prescription, CancellationToken ct)
+    {
+        var teleEncounters = db.Set<Encounter>().AsNoTracking()
+            .Where(e => e.Id == prescription.EncounterId || (prescription.VisitId != null && e.VisitId == prescription.VisitId))
+            .Select(e => e.Id);
+        var codes = await db.Set<Diagnosis>().AsNoTracking()
+            .Where(d => d.PatientId == prescription.PatientId && d.EncounterId != null && teleEncounters.Contains(d.EncounterId.Value)
+                        && d.Type != DiagnosisType.Differential && d.IcdCode != null)
+            .Select(d => d.IcdCode!)
+            .ToListAsync(ct);
+        var conditions = codes.Select(IcdCategory).Where(c => c.Length > 0).Distinct().ToList();
+        if (conditions.Count == 0)
+        {
+            return false;
+        }
+
+        var now = time.GetUtcNow();
+        var since = now.AddMonths(-TelemedicinePrescribing.FollowUpMonths);
+        var seenInPerson = db.Set<Encounter>().AsNoTracking()
+            .Where(e => e.PatientId == prescription.PatientId && e.PractitionerId == prescription.PractitionerId
+                        && e.Type != EncounterType.Telehealth && e.Type != EncounterType.HealthCheckup
+                        && e.StartedAt >= since && e.StartedAt <= now)
+            .Select(e => e.Id);
+        var earlier = await db.Set<Diagnosis>().AsNoTracking()
+            .Where(d => d.PatientId == prescription.PatientId && d.EncounterId != null && seenInPerson.Contains(d.EncounterId.Value)
+                        && d.Type != DiagnosisType.Differential && d.IcdCode != null)
+            .Select(d => d.IcdCode!)
+            .ToListAsync(ct);
+        return earlier.Select(IcdCategory).Any(conditions.Contains);
+    }
+
+    /// <summary>An ICD-10 code's category, its first three characters ("E11.9" is E11), which names the condition.</summary>
+    private static string IcdCategory(string code)
+    {
+        var trimmed = code.Trim().ToUpperInvariant();
+        return trimmed.Length < 3 ? string.Empty : trimmed[..3];
     }
 
     private async Task<Result<IReadOnlyList<SafetyAlert>>> SignCoreAsync(Prescription prescription, string? overrideReason, bool acknowledgeWarnings,
@@ -397,9 +474,9 @@ public sealed class PrescriptionService(
 
         // Again at signing: a draft saved before the master decided, or whose drug the master has since reclassified.
         await FromDrugMasterAsync(prescription.Items, ct);
-        if (await TelemedicineProhibitedAsync(prescription, ct) is { Count: > 0 } prohibited)
+        if (await TelemedicineRefusalAsync(prescription, ct) is { } telemedicine)
         {
-            return TelemedicinePrescribing.Refusal(prohibited);
+            return telemedicine;
         }
 
         var check = await safety.CheckAsync(prescription, ct);

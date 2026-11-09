@@ -135,7 +135,7 @@ describe('a drug made less strictly handled', SCREEN_TESTS, () => {
       ...TRAMADOL,
       pendingClass: {
         approvalId: REQUEST.id,
-        asked: { schedule: 'H1', isControlled: false, isHighAlert: false },
+        asked: { schedule: 'H1', isControlled: false, isHighAlert: false, telemedicineList: null },
         requestedBy: 'Ravi Store',
         requestedAt: '2026-11-04T09:30:00Z',
       },

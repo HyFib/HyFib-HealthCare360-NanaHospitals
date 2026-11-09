@@ -90,6 +90,7 @@ const ITEM_LIST: ItemListItem[] = ITEMS.map((item) => ({
   reorderLevel: item.reorderLevel,
   isActive: item.isActive,
   isHighAlert: item.isHighAlert,
+  telemedicineList: item.telemedicineList,
 }));
 
 const STOCK: StockSummaryRow[] = [

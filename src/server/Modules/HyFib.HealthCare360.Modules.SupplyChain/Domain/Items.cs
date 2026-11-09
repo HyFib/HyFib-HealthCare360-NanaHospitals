@@ -36,6 +36,32 @@ public enum DrugSchedule
     X,
 }
 
+/// <summary>
+/// The list of the Telemedicine Practice Guidelines 2020 (Board of Governors in supersession of the MCI, 25 March 2020,
+/// section 3.7.4 and Annexure 2) a medicine is on, which decides whether a doctor may prescribe it in a teleconsultation.
+/// Which medicine goes on which list is the pharmacy and therapeutics committee's decision, so nothing but the Prohibited
+/// List is filled in for the hospital: a medicine on no list is not prescribed in a first teleconsultation.
+/// </summary>
+public enum TelemedicineList
+{
+    /// <summary>List O: safe medicines (common over-the-counter ones), prescribed in any teleconsultation.</summary>
+    O = 0,
+
+    /// <summary>
+    /// List A: relatively safe medicines with low potential for abuse, prescribed in a first teleconsultation only when it is
+    /// by video, and re-prescribed in a follow-up.
+    /// </summary>
+    A,
+
+    /// <summary>
+    /// List B: medicines added on in a follow-up teleconsultation, for a condition the doctor saw the patient in person for.
+    /// </summary>
+    B,
+
+    /// <summary>The Prohibited List: never in a teleconsultation (Schedule X of the Drugs and Cosmetics Rules, and NDPS drugs).</summary>
+    Prohibited,
+}
+
 /// <summary>Clinical criticality set by the drug &amp; therapeutics committee, used for VED analysis.</summary>
 public enum VedClass
 {
@@ -107,6 +133,13 @@ public sealed class Item : AuditableEntity
 
     public VedClass VedClass { get; set; }
 
+    /// <summary>
+    /// The Telemedicine Practice Guidelines' list the pharmacy and therapeutics committee put the medicine on; null until it
+    /// has, which keeps it out of a first teleconsultation. A Schedule X or NDPS medicine is on the Prohibited List whatever
+    /// this says (<see cref="TelemedicineLists"/>).
+    /// </summary>
+    public TelemedicineList? TelemedicineList { get; set; }
+
     /// <summary>Reorder when available stock (base units) falls to this level; 0 disables reorder alerts.</summary>
     public decimal ReorderLevel { get; set; }
 
@@ -171,6 +204,17 @@ public sealed class Item : AuditableEntity
         if ((IsControlled || IsHighAlert || Schedule != DrugSchedule.None) && Type != ItemType.Drug)
         {
             return Error.Field("schedule", "Only drugs can carry a schedule, the controlled-drug flag or the high-alert flag.");
+        }
+
+        if (TelemedicineList is not null && Type != ItemType.Drug)
+        {
+            return Error.Field("telemedicineList", "Only a medicine is put on a list of the Telemedicine Practice Guidelines.");
+        }
+
+        if (TelemedicineLists.ByLaw(Schedule, IsControlled) && TelemedicineList is not (null or TelemedicineLists.Prohibited))
+        {
+            return Error.Field("telemedicineList",
+                "A Schedule X or NDPS medicine is on the Prohibited List of the Telemedicine Practice Guidelines and is never prescribed in a teleconsultation. Choose the Prohibited List.");
         }
 
         if (CeilingPrice is not null && (Type is not (ItemType.Implant or ItemType.Drug) || CeilingPrice <= 0))
@@ -279,26 +323,29 @@ public sealed record ItemPricing(decimal? CeilingPrice, string? CeilingNotificat
 /// controlled (NDPS) drug, and whether it is a high-alert medicine. On an item already in the master, any of these made
 /// less strict waits for a second person (<see cref="Services.DrugClassApprovals"/>): one person unticking "controlled"
 /// would otherwise switch off the NDPS register and the witness at the bedside at once. Made stricter, it applies at once.
+/// The Telemedicine Practice Guidelines' list is part of it: moved to a list that lets the medicine into more
+/// teleconsultations (from no list to List B, from List A to List O), it waits for the pharmacist too.
 /// </summary>
-public sealed record DrugSafetyClass(DrugSchedule Schedule, bool IsControlled, bool IsHighAlert)
+public sealed record DrugSafetyClass(DrugSchedule Schedule, bool IsControlled, bool IsHighAlert, TelemedicineList? TelemedicineList = null)
 {
     public static DrugSafetyClass Of(Item item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        return new(item.Schedule, item.IsControlled, item.IsHighAlert);
+        return new(item.Schedule, item.IsControlled, item.IsHighAlert, item.TelemedicineList);
     }
 
     /// <summary>Whether <paramref name="next"/> handles the drug less strictly than this in any way.</summary>
     public bool IsWeakenedBy(DrugSafetyClass next)
     {
         ArgumentNullException.ThrowIfNull(next);
-        return (IsControlled && !next.IsControlled) || (IsHighAlert && !next.IsHighAlert) || Strictness(next.Schedule) < Strictness(Schedule);
+        return (IsControlled && !next.IsControlled) || (IsHighAlert && !next.IsHighAlert) || Strictness(next.Schedule) < Strictness(Schedule)
+               || TelemedicineLists.Strictness(next.TelemedicineList) < TelemedicineLists.Strictness(TelemedicineList);
     }
 
     public void ApplyTo(Item item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        (item.Schedule, item.IsControlled, item.IsHighAlert) = (Schedule, IsControlled, IsHighAlert);
+        (item.Schedule, item.IsControlled, item.IsHighAlert, item.TelemedicineList) = (Schedule, IsControlled, IsHighAlert, TelemedicineList);
     }
 
     /// <summary>The class in words, for the approval and the audit trail: "Schedule H1, controlled (NDPS), high-alert".</summary>
@@ -312,6 +359,11 @@ public sealed record DrugSafetyClass(DrugSchedule Schedule, bool IsControlled, b
         }];
         parts.Add(IsControlled ? "controlled (NDPS)" : "not controlled");
         parts.Add(IsHighAlert ? "high-alert" : "not high-alert");
+        if (TelemedicineList is { } list)
+        {
+            parts.Add(TelemedicineLists.Words(list));
+        }
+
         return string.Join(", ", parts);
     }
 
@@ -322,5 +374,35 @@ public sealed record DrugSafetyClass(DrugSchedule Schedule, bool IsControlled, b
         DrugSchedule.H1 => 2,
         DrugSchedule.H => 1,
         _ => 0,
+    };
+}
+
+/// <summary>The Telemedicine Practice Guidelines' lists (<see cref="TelemedicineList"/>): what the law puts on one, and how strict each is.</summary>
+public static class TelemedicineLists
+{
+    /// <summary>The Prohibited List, named where the property of the same name hides the enum.</summary>
+    public const TelemedicineList Prohibited = Domain.TelemedicineList.Prohibited;
+
+    /// <summary>A Schedule X or NDPS medicine, which the guidelines put on the Prohibited List whatever the item master says.</summary>
+    public static bool ByLaw(DrugSchedule schedule, bool isControlled) => isControlled || schedule == DrugSchedule.X;
+
+    /// <summary>
+    /// How few teleconsultations a list lets the medicine into: the Prohibited List none; no list (the committee has not
+    /// decided) only a follow-up, as List B; List B only a follow-up, as an add-on; List A a video first one too; List O all.
+    /// Unlisted ranks above List B, so putting a medicine on a list for the first time waits for a pharmacist.
+    /// </summary>
+    internal static int Strictness(TelemedicineList? list) => list switch
+    {
+        Domain.TelemedicineList.Prohibited => 4,
+        null => 3,
+        Domain.TelemedicineList.B => 2,
+        Domain.TelemedicineList.A => 1,
+        _ => 0,
+    };
+
+    public static string Words(TelemedicineList list) => list switch
+    {
+        Domain.TelemedicineList.Prohibited => "on the telemedicine Prohibited List",
+        _ => "on telemedicine List " + list,
     };
 }

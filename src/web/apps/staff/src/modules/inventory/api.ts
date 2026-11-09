@@ -15,6 +15,7 @@ import type {
   StockCountStatus,
   StockMovementType,
   StoreType,
+  TelemedicineList,
   TransferStatus,
   VedClass,
 } from './labels';
@@ -70,13 +71,19 @@ export interface ItemListItem {
   reorderLevel: number;
   isActive: boolean;
   isHighAlert: boolean;
+  /** The Telemedicine Practice Guidelines' list; null when the committee has put the medicine on none yet. */
+  telemedicineList: TelemedicineList | null;
 }
 
-/** A drug's classification: its schedule, whether it is controlled (NDPS), and whether it is a high-alert medicine. */
+/**
+ * A drug's classification: its schedule, whether it is controlled (NDPS), whether it is a high-alert medicine, and its
+ * Telemedicine Practice Guidelines list.
+ */
 export interface DrugSafetyClass {
   schedule: DrugSchedule;
   isControlled: boolean;
   isHighAlert: boolean;
+  telemedicineList: TelemedicineList | null;
 }
 
 /** A drug made less strictly handled, waiting for a second person (a pharmacist) to approve it. */
@@ -141,6 +148,11 @@ export interface ItemDetail {
   isHighAlert: boolean;
   /** A less strict classification asked for and waiting for a pharmacist's approval; the item keeps its own till then. */
   pendingClass: PendingDrugClass | null;
+  /**
+   * The Telemedicine Practice Guidelines 2020 list the pharmacy and therapeutics committee put the medicine on; null when on
+   * none yet, which keeps it out of a first teleconsultation.
+   */
+  telemedicineList: TelemedicineList | null;
 }
 
 export type SaveItemRequest = Omit<
