@@ -78,7 +78,7 @@ public sealed class ClaimService(
         }
 
         var preAuth = bill.PreAuthorizationId is { } preAuthId
-            ? await db.Set<PreAuthorization>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == preAuthId, ct)
+            ? await db.Set<PreAuthorization>().AsNoTracking().Include(p => p.Procedures).FirstOrDefaultAsync(p => p.Id == preAuthId, ct)
             : null;
         var tpaId = preAuth?.TpaId ?? (bill.PolicyId is { } policyId
             ? await db.Set<PatientPolicy>().Where(p => p.Id == policyId).Select(p => p.TpaId).FirstOrDefaultAsync(ct)
@@ -449,13 +449,14 @@ public sealed class ClaimService(
 
     /// <summary>
     /// The codes a new claim takes where the desk typed none: the coding medical records verified, procedures included
-    /// (none coded means none done), or else the pre-authorisation's codes, which were provisional.
+    /// (none coded means none done), or else the pre-authorisation's codes, which were provisional (its coded procedures,
+    /// or the text typed before procedures were coded).
     /// </summary>
     internal static (string? Diagnoses, string? Procedures) InitialCoding(
         VerifiedClaimCoding? verified, PreAuthorization? preAuth) =>
         verified is not null
             ? (verified.DiagnosisCodes, verified.ProcedureCodes)
-            : (preAuth?.DiagnosisCodes, preAuth?.ProcedureCodes);
+            : (preAuth?.DiagnosisCodes, preAuth?.ProcedureText(InsuranceClaim.CodesMaxLength));
 
     private Task<InsuranceClaim?> LoadAsync(Guid id, CancellationToken ct) =>
         db.Set<InsuranceClaim>().Include(c => c.Settlements).Include(c => c.Deductions).FirstOrDefaultAsync(c => c.Id == id, ct);

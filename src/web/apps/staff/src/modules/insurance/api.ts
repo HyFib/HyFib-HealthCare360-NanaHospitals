@@ -207,7 +207,10 @@ export interface PreAuthDetail {
   tpaName: string | null;
   requestedAmount: number;
   diagnosisCodes: string | null;
-  procedureCodes: string | null;
+  /** The planned procedures, each coded from PM-JAY's HBP master or the ICD-10-PCS catalogue. */
+  procedures: PreAuthProcedure[];
+  /** The planned procedures as typed before procedures were coded; kept as it was, read only. */
+  legacyProcedureText: string | null;
   clinicalSummary: string | null;
   expectedStayDays: number | null;
   documentFileIds: string[];
@@ -238,11 +241,35 @@ export interface SavePreAuthRequest {
   visitId: string | null;
   requestedAmount: number;
   diagnosisCodes: string | null;
-  procedureCodes: string | null;
+  procedures: PreAuthProcedureLine[] | null;
   clinicalSummary: string | null;
   expectedStayDays: number | null;
   documentFileIds: string[] | null;
   version: number | null;
+}
+
+/** The code system of a planned procedure: PM-JAY's HBP master or the hospital's ICD-10-PCS catalogue. */
+export type PreAuthProcedureSystem = 'Hbp' | 'Icd10Pcs';
+
+/** A planned procedure as the desk codes it. */
+export interface PreAuthProcedureLine {
+  system: PreAuthProcedureSystem;
+  code: string;
+  quantity: number;
+  amount: number;
+}
+
+/** A planned procedure as saved, with the name the master gave it. */
+export interface PreAuthProcedure extends PreAuthProcedureLine {
+  name: string;
+}
+
+/** A procedure the desk may code; the HBP master's carry the scheme's base rate. */
+export interface PreAuthProcedureOption {
+  system: PreAuthProcedureSystem;
+  code: string;
+  name: string;
+  rate: number | null;
 }
 
 export interface PreAuthFilters {
@@ -447,6 +474,16 @@ export const insuranceQueries = {
     queryOptions({
       queryKey: [...insuranceKeys.preAuths, 'detail', id],
       queryFn: ({ signal }) => api.get<PreAuthDetail>(`/api/v1/insurance/preauths/${id}`, { signal }),
+    }),
+  procedureOptions: (system: PreAuthProcedureSystem, search: string) =>
+    queryOptions({
+      queryKey: [...insuranceKeys.preAuths, 'procedure-options', system, search],
+      queryFn: ({ signal }) =>
+        api.get<PreAuthProcedureOption[]>('/api/v1/insurance/preauths/procedure-options', {
+          query: { system, search: search || undefined },
+          signal,
+        }),
+      staleTime: 60_000,
     }),
   claims: (filters: ClaimFilters) =>
     queryOptions({
