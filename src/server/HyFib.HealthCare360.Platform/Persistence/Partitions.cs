@@ -534,8 +534,13 @@ internal sealed class PartitionMaintenanceJob(IServiceScopeFactory scopes, TimeP
         {
             try
             {
+                // As the schema's owner where it has one: adding a partition changes the table (DatabaseOwner).
                 await using var scope = scopes.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<PartitionMaintenance>().RunAsync(stoppingToken);
+                var maintenance = scope.ServiceProvider.GetRequiredService<DatabaseOwner>().Create<PartitionMaintenance>(scope.ServiceProvider, out var owner);
+                await using (owner)
+                {
+                    await maintenance.RunAsync(stoppingToken);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

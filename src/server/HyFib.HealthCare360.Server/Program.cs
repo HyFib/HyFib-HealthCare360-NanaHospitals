@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Platform;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Logging;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Server;
@@ -60,7 +61,8 @@ builder.Services.AddSerilog((services, logger) =>
         .WriteToHospitalSinks(
             directories.Logs,
             builder.Environment.IsDevelopment(),
-            OperatingSystem.IsWindows() && !builder.Environment.IsDevelopment() ? HospitalLogging.EventLog : null);
+            OperatingSystem.IsWindows() && !builder.Environment.IsDevelopment() ? HospitalLogging.EventLog : null,
+            services.GetService<SyslogClient>() is { } syslog ? (syslog, HospitalLogging.Level(platformOptions.Syslog.MinimumLevel)) : null);
 });
 
 // TLS for the hospital LAN/WiFi: generated hospital CA + server certificate (or an admin-supplied PFX).

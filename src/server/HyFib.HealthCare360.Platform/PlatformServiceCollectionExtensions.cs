@@ -10,6 +10,7 @@ using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Localization;
+using HyFib.HealthCare360.Platform.Logging;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Modules;
 using HyFib.HealthCare360.Platform.Networking;
@@ -93,6 +94,14 @@ public static class PlatformServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Hospital")
             ?? throw new InvalidOperationException("Connection string 'Hospital' is not configured.");
 
+        // A PostgreSQL on another machine only over TLS that checks its certificate, unless a lab says otherwise.
+        if (DatabaseTls.Problems(configuration, options.Database) is { Count: > 0 } unencrypted)
+        {
+            throw new InvalidOperationException("HC360 cannot start: " + string.Join(" ", unencrypted));
+        }
+
+        services.AddScoped<IHealthWarningSource, DatabaseTlsWarnings>();
+
         // The password is supplied as each connection opens, so Administration can change it while the server runs.
         var credentials = new DatabaseCredentials(connectionString);
         services.AddSingleton(credentials);
@@ -116,6 +125,26 @@ public static class PlatformServiceCollectionExtensions
             }
         }, ServiceLifetime.Scoped);
         services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<HospitalDbContext>>().CreateDbContext());
+
+        // The account that owns the schema, where it is not the one the server works as: migrations and the jobs that add
+        // partitions sign in as it, every request as the working account (DatabaseOwner).
+        DbContextOptions<HospitalDbContext>? ownerOptions = null;
+        if (configuration.GetConnectionString(DatabaseOwner.ConnectionName) is { Length: > 0 } ownerString)
+        {
+            var (ownerConnection, supplyOwnerPassword) = credentials.For(ownerString);
+            ownerOptions = new DbContextOptionsBuilder<HospitalDbContext>()
+                .UseNpgsql(ownerConnection, npgsql =>
+                {
+                    npgsql.MigrationsAssembly(migrationsAssembly);
+                    npgsql.MigrationsHistoryTable(MigrationBaseline.HistoryTable, MigrationBaseline.HistorySchema);
+                    npgsql.CommandTimeout(60);
+                    npgsql.ConfigureDataSource(supplyOwnerPassword);
+                })
+                .UseSnakeCaseNamingConvention()
+                .Options;
+        }
+
+        services.AddSingleton(sp => new DatabaseOwner(ownerOptions, sp.GetRequiredService<ModuleCatalog>()));
         services.TryAddSingleton(new SettingsFileProtection(ProtectedSettings.ForThisMachine()));
         services.AddSingleton<IDatabaseRolePassword, PostgresRolePassword>();
         services.AddScoped<DatabasePasswordService>();
@@ -232,6 +261,14 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<AuditChainService>();
         services.AddSingleton<AuditSealKey>();
         services.AddSingleton<AuditAnchors>();
+
+        // Off the server (CERT-In, SRS SEC-09): log events to the syslog collector, and each anchor to a second anchor file
+        // on another machine or to the collector, on every node; System health says when either fails.
+        services.AddSingleton(sp => new SyslogClient(options.Syslog, sp.GetRequiredService<TimeProvider>()));
+        services.AddScoped<IHealthWarningSource, SyslogHealthWarnings>();
+        services.AddSingleton<AuditAnchorMirror>();
+        services.AddHostedService<AuditAnchorMirrorService>();
+        services.AddScoped<IHealthWarningSource, AuditAnchorMirrorWarnings>();
 
         // How long the audit trail is kept, and the purge of the months it no longer keeps: two super administrators.
         services.AddScoped<AuditRetentionService>();

@@ -17,7 +17,9 @@
        an environment variable, never on a command line. A damaged backup, the wrong key, or a backup from a newer HC360
        version stops here: nothing has changed and HC360 is still running.
     3. Stops the HC360 service, keeps the current database as hc360_before_restore_<timestamp> (nothing is dropped),
-       creates a fresh one and runs pg_restore into it.
+       creates a fresh one and runs pg_restore into it. Where the installer made the two database accounts (hc360_owner
+       owns the schema, hc360_app is the account the server works as), the restored tables are hc360_owner's and
+       hc360_app gets its rights again (hc360-database-roles.sql); otherwise hc360_app owns them, as before the split.
     4. Puts back the stored documents and then installs the backup's field encryption keys ("backup restore"). A different
        key already here is kept under a new name, never deleted. On new hardware, later backups open with the recovery
        key entered here.
@@ -110,11 +112,19 @@ try {
     }
 
     Write-Step 'Creating a fresh database and restoring'
-    if (-not (Invoke-Sql 'postgres' @("CREATE DATABASE $DatabaseName OWNER hc360_app ENCODING 'UTF8'"))) { throw 'Could not create the database.' }
+    # The schema's owner: hc360_owner where the installer made the two accounts, hc360_app on a server installed before.
+    $split = (& $psql @pgArgs -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'hc360_owner'") -eq '1'
+    $owner = if ($split) { 'hc360_owner' } else { 'hc360_app' }
+    if (-not (Invoke-Sql 'postgres' @("CREATE DATABASE $DatabaseName OWNER $owner ENCODING 'UTF8'"))) { throw 'Could not create the database.' }
     $created = $true
     if (-not (Invoke-Sql $DatabaseName @('CREATE EXTENSION IF NOT EXISTS pg_trgm'))) { throw 'Could not enable the pg_trgm extension.' }
-    & (Join-Path $pgBin 'pg_restore.exe') @pgArgs -d $DatabaseName --no-owner --role=hc360_app --exit-on-error $dump
+    & (Join-Path $pgBin 'pg_restore.exe') @pgArgs -d $DatabaseName --no-owner --role=$owner --exit-on-error $dump
     if ($LASTEXITCODE -ne 0) { throw 'pg_restore failed.' }
+    if ($split) {
+        # hc360_app reads and writes rows, and nothing else, as on the server the backup came from.
+        & $psql @pgArgs -d $DatabaseName -v ON_ERROR_STOP=1 -q -c "SELECT set_config('hc360.owner_role', 'hc360_owner', false), set_config('hc360.app_role', 'hc360_app', false)" -f (Join-Path $PSScriptRoot 'hc360-database-roles.sql')
+        if ($LASTEXITCODE -ne 0) { throw 'Giving hc360_app its rights on the restored database (hc360-database-roles.sql) failed.' }
+    }
 
     # Only now that the backup's database is in place does this server switch to the backup's encryption key.
     Write-Step 'Putting back the documents, then the backup''s encryption key'

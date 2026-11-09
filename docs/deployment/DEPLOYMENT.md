@@ -199,6 +199,52 @@ Get-Content "$env:ProgramData\HyFib\HealthCare360\logs\hc360-server-$(Get-Date -
   ConvertFrom-Json | Where-Object { $_.'@l' -in 'Error', 'Fatal' } | Format-List '@t', '@m', '@x', CorrelationId
 ```
 
+### Sending the log and the audit anchors off the server
+
+The log file and the audit chain's anchor file are on the server's own disk, where the server's administrators, and
+anyone who takes the server over, can change them. To keep a copy they cannot, send both to another machine. Each is
+off until it is set in `config\hc360.settings.json` (then restart the `HC360Server` service):
+
+```json
+"HealthCare360": {
+  "Syslog": {
+    "Enabled": true,
+    "Host": "siem.hospital.lan",
+    "Port": 6514,
+    "CaCertificatePath": "C:\\ProgramData\\HyFib\\HealthCare360\\certs\\siem-ca.cer",
+    "MinimumLevel": "Information"
+  },
+  "Audit": {
+    "AnchorMirrorFile": "\\\\audit-nas\\hc360\\anchors.log",
+    "AnchorsToSyslog": true
+  }
+}
+```
+
+- **Syslog** sends every log event, as it happens, to the hospital's syslog collector or SIEM (rsyslog, syslog-ng, a
+  SIEM's syslog input) in RFC 5424's format over TLS (RFC 5425, TCP 6514). The collector's certificate must carry the
+  name in `Host` and chain to a root this machine trusts, or to the CA in `CaCertificatePath` (the hospital's own CA,
+  say). A collector that asks for a client certificate gets the PFX in `ClientCertificatePath` (with
+  `ClientCertificatePassword`, protected in the file like the other passwords). Phone, Aadhaar and ABHA numbers,
+  e-mail addresses and secrets are masked in every message, as in the log file. `Facility` (default 16, local0),
+  `AppName` (default `hc360`) and `QueueLimit` (default 10,000 events waiting while the collector is away) can be
+  changed. The logger, the request's correlation id and the level are structured data (`[hc360@32473 …]`).
+- **AnchorMirrorFile** appends each audit anchor, as it is written, to a second anchor file, normally on a share on
+  another machine. Give the service's account (`NT SERVICE\HC360Server`, or the computer account `DOMAIN\HC360SRV$` on
+  a share) the right to read the folder and to create and append to files, and not to change or delete them (in the
+  share's advanced permissions: *List folder / read data*, *Create files / write data* on the folder only, *Create
+  folders / append data*; no *Delete*, no *Write attributes*). The file is brought level with the anchor file at every
+  anchor and every five minutes, so anchors written while the share was away follow once it is back.
+- **AnchorsToSyslog** sends each anchor to the collector too (facility 13, "log audit", MSGID `AUDIT_ANCHOR`), which
+  needs Syslog on.
+
+System health says when the collector cannot be reached (`logs.syslog_unreachable`), when log events were dropped
+because too many were waiting (`logs.syslog_dropped`: the log file still has them), when an anchor cannot be copied
+(`audit.anchor_mirror_failed`, critical after a day), and, critical, when the second anchor file holds an anchor the
+anchor file here no longer has (`audit.anchor_mirror_mismatch`): keep both files as they are, and verify the chain
+under Administration › Audit log. A live server that copies its anchors nowhere shows `audit.anchor_mirror_off` (info).
+With several servers each sends its own log events; every one copies the anchors it writes.
+
 ### How the server signs in to the database
 
 The `HC360Server` service signs in to PostgreSQL with its own Windows account, `NT SERVICE\HC360Server`, through
@@ -225,6 +271,47 @@ or after `.\Install-HC360Server.ps1 -DatabaseSignIn Password`. That gives the ac
 for the `postgres` password) and removes the blocks; if HC360 then does not reach the database, it puts everything
 back, as above. Run the installer again without it to go back to the Windows sign-in. After PostgreSQL is reinstalled, or upgraded to a new version with a new data folder, run the HC360 installer
 again: it writes the blocks into the new files.
+
+### Two database accounts
+
+`-CreateDatabase` makes two PostgreSQL accounts:
+
+- `hc360_owner` owns the database and every table in it. HC360 signs in as it only to change the schema: as it starts
+  (database updates, and the audit trail's triggers, which start-up checks and puts back), and in the jobs that add each
+  month's partitions and their indexes. Its connection string is `ConnectionStrings:HospitalOwner`, with a random
+  password, protected in the settings file like the other.
+- `hc360_app` is the account the server works as (`ConnectionStrings:Hospital`): it reads and writes rows, and nothing
+  else. It cannot change a table, nor drop or turn off the audit trail's triggers, nor empty the audit trail, so
+  neither a flaw in a request nor someone who has its password can make the audit trail editable. It is the account
+  the Windows sign-in (above) and the password change (below) are about.
+
+The installer sets their rights with `hc360-database-roles.sql`, in the `deploy` folder, which it runs as `postgres`.
+On a server installed before the split, where `hc360_app` owns everything, run the installer again with
+`-CreateDatabase -PostgresSuperuserPassword (Read-Host -AsSecureString)`: the database is kept, and handed to
+`hc360_owner` as it is (`REASSIGN OWNED`); nothing in it is copied or changed. Like any `-CreateDatabase`, it gives
+`hc360_app` a new password, and the installer then switches it to the Windows sign-in as before. `Restore-HC360.ps1`
+restores the tables as `hc360_owner` where it exists, and gives `hc360_app` its rights again.
+
+A server whose tables belong to another account than the one it works as, with no `ConnectionStrings:HospitalOwner`,
+does not start: the log says which account owns them. Set the owner's connection string (on a promoted standby, copy
+it from the primary's settings), and start HC360 again.
+
+### The database over TLS
+
+PostgreSQL on the Server Node itself, reached through localhost, needs nothing more. When PostgreSQL runs on another
+machine, every PostgreSQL connection string (`Hospital`, `HospitalOwner`, a reporting replica) must check the
+database's certificate, or HC360 does not start, and the log names the connection string:
+
+```
+Host=db.hospital.lan;Port=5432;Database=hc360;Username=hc360_app;SSL Mode=VerifyFull;Root Certificate=C:\ProgramData\HyFib\HealthCare360\certs\db-ca.crt
+```
+
+`SSL Mode=VerifyFull` encrypts the connection and checks that the certificate names `Host` and chains to a trusted
+root: the CA in `Root Certificate` (the hospital's own CA), or the machine's. `SSL Mode=Require` or `VerifyCA` is taken
+only with a `Root Certificate`. On the database machine, turn TLS on in `postgresql.conf` (`ssl = on`, `ssl_cert_file`,
+`ssl_key_file`, the certificate naming the host the server uses), and use `hostssl` lines, not `host`, for the server's
+address in `pg_hba.conf`. For a lab only, `"HealthCare360": { "Database": { "AllowUnverifiedRemoteConnection": true } }`
+lets HC360 start without it; System health warns while it is on (`database.tls_unverified`).
 
 ### Changing the database password
 
@@ -1157,7 +1244,9 @@ password. On the standby, in an elevated PowerShell in the `deploy` folder:
    certificate names it. Lab agents, network analysers and modalities are set up with the server's name or address:
    point it at the standby the same way, or set them up again with the standby's. Without the CA imported at set-up
    (step 6), every workstation must be set up again: Change server…, and compare the new fingerprint.
-6. **Check**: System health; and that the records made just before the failure are there. Where doctors sign
+6. **Check**: System health; and that the records made just before the failure are there. Where the database has two
+   accounts (section 3, "Two database accounts"), the standby's settings need the primary's
+   `ConnectionStrings:HospitalOwner`: HC360 does not start without it, and its log says so. Where doctors sign
    prescriptions with their DSC, System health warns (`prescriptions.dsc_trust_empty`) if the standby's DSC trust
    folder is empty: copy the CCA India roots there (section 4, step 9).
 

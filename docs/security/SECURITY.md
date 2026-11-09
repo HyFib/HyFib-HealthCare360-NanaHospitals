@@ -69,6 +69,12 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   none of it. The standby trusts exactly the primary's own PostgreSQL certificate (`sslmode=verify-ca`). Its PostgreSQL
   listens on localhost only, and HC360 there is disabled and refuses to start on a database in recovery. The standby
   holds every patient record, so it needs the primary's physical security and BitLocker.
+- **PostgreSQL on another machine only over TLS that checks the server** (ASVS V9.2.2): a PostgreSQL connection string
+  to a host that is not this machine (localhost, 127.0.0.0/8, ::1 or a Unix socket) must say `SSL Mode=VerifyFull`, or
+  `Require`/`VerifyCA` with a pinned `Root Certificate`, or the server does not start and names the setting
+  (`DatabaseTls`). Npgsql's default, `Prefer`, would send patients' records and the password in clear to a server that
+  offers no TLS, or to anyone in the way. `HealthCare360:Database:AllowUnverifiedRemoteConnection` lets a lab start
+  without it, and System health warns while it is on (`database.tls_unverified`). Tests: `DatabaseTlsTests`.
 - **Network lab analysers** cannot sign in: HL7 (MLLP) and ASTM have no authentication. Each one's address is
   therefore its check (ASVS V13.2.1): its connection must list its fixed IP address, and its port closes a connection
   from any other address before reading a byte. A connection set up before the address was required takes any address:
@@ -1212,6 +1218,16 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     point it at storage the database's administrators cannot write) and to the server log. Every anchor's position
     must hold that hash, and the chain must reach the last anchor, so a chain cut short, or made again from an earlier
     point, is found even by someone who holds the key.
+  - Copies of the anchors off the server (`AuditAnchorMirror`): each anchor is appended, as it is written, to a second
+    anchor file on another machine (`HealthCare360:Audit:AnchorMirrorFile`, a UNC path to a share the service may read
+    and append to but not change) and/or sent to the syslog collector (`HealthCare360:Audit:AnchorsToSyslog`: facility
+    "log audit", MSGID `AUDIT_ANCHOR`, the position, hash, seal and time as structured data). Someone who holds the
+    server can rewrite its anchor file to match a chain made again; not the copy. The second file is brought level with
+    the anchor file at every anchor and every five minutes, so anchors missed while the share was away follow, and a
+    copy that holds an anchor the anchor file no longer has, or has with another hash, is a critical System health
+    warning (`audit.anchor_mirror_mismatch`). While a copy fails, System health warns (`audit.anchor_mirror_failed`,
+    critical after a day); a live server that copies its anchors nowhere is told so (`audit.anchor_mirror_off`, info).
+    Tests: `AuditAnchorMirrorTests`.
   - Administration › Audit log › *Verify integrity* re-checks the chain, the seals and the anchors, and names the position
     of the first entry changed, moved or removed, even by someone who turned the triggers off (ASVS V16.4.2). It also
     fails on any seal outside the chain. The server that runs the jobs makes the same check by itself an hour after it
@@ -1287,6 +1303,15 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 - CERT-In's Directions of 28 April 2022:
   - The server's log files are kept a year (`HospitalLogging.RetentionDays`, 367 days, so the last events of each day's file are a full year old before it goes, in a leap year too), on the Server Node, in India:
     the 180 days the Directions ask for, and the year the DPDP Rules 2025 ask for from 13 May 2027 (r.6).
+  - Off the server, optionally (`HealthCare360:Syslog`, off by default): every log event, as it happens, to the
+    hospital's syslog collector or SIEM in RFC 5424's format over TLS (RFC 5425, port 6514), so that what the server
+    logged is kept where its own administrators cannot change it. The collector's certificate must name it and chain to
+    the machine's roots or to the CA given (`CaCertificatePath`); a client certificate can be presented for mutual TLS.
+    Each message is masked in the formatter itself, its text and every structured data value (`SensitiveText`, as the
+    log file): no phone, Aadhaar or ABHA number, e-mail address or secret leaves the server. Events wait in a bounded
+    queue while the collector is away; System health says when it cannot be reached (`logs.syslog_unreachable`) and
+    when events were dropped from the queue (`logs.syslog_dropped`; the log file still has them). Tests: `SyslogTests`,
+    `SyslogSinkTests`.
   - Each server checks its clock against NPL's and NIC's NTP servers (time.nplindia.org, samay1/samay2.nic.in; or the
     hospital's own, `HealthCare360:TimeSync:Servers`) every 15 minutes, and System health warns when it is more than a
     second off (`HealthCare360:TimeSync:MaxOffset`) or none answers. Windows Time keeps the clock; the check shows when
@@ -1611,6 +1636,18 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   settings file, `pg_hba.conf` and `pg_ident.conf` back if it does not. With the superuser's password it also removes
   the account's old password; without it, PostgreSQL refuses that password anyway. The Windows sign-in needs PostgreSQL
   on the same machine: elsewhere, or after `-DatabaseSignIn Password`, the server signs in with a password, as below.
+- **Two database accounts** (ASVS V1.4.3, V8.3.7): with `-CreateDatabase` the installer makes `hc360_owner`, which owns
+  the database and every table, and `hc360_app`, the account the server works as, which may SELECT, INSERT, UPDATE and
+  DELETE rows and EXECUTE functions, and nothing else (`deploy/windows/hc360-database-roles.sql`). It owns nothing, so
+  neither a flaw in a request's SQL nor someone holding its password can alter a table, drop or turn off the audit
+  trail's triggers, or TRUNCATE it. Start-up applies migrations and puts the audit triggers back as the owner
+  (`ConnectionStrings:HospitalOwner`, protected like the other connection strings), and so do the jobs that add monthly
+  partitions and their indexes; requests run as `hc360_app`. A purge of the audit trail drops its months through
+  `audit.drop_purged_month`, a SECURITY DEFINER function that drops only the oldest, fully sealed months of the audit
+  trail (a purge record without the server's seal still fails verification). A database installed before the split is
+  handed to `hc360_owner` as it is (`REASSIGN OWNED`). A server whose tables belong to another account and that has no
+  owner connection string stops at start-up and says so. Tests: `DatabaseRolesTests` (on PostgreSQL),
+  `tests/deploy/Test-InstallerDatabaseRoles.ps1`.
 - **Where the server signs in with a password, it is changed from System health** (SRS SEC-07), by holders of
   `admin.system.manage`, which only SuperAdmin has by default. HC360 makes a new random password that nobody sees and
   sends PostgreSQL only its SCRAM-SHA-256 verifier, so the password never appears in a statement or the database's
