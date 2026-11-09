@@ -17,6 +17,16 @@ export function payRefusal(code: string | undefined): string | null {
       return 'You asked for this change, so someone else decides it.';
     case 'payroll.bank_details_not_fixed':
       return 'This payroll was approved before its payment details were fixed at approval. Reopen it and approve it again to get its bank file.';
+    case 'leave.encash_not_allowed':
+      return 'This leave type is not paid out while in service under the leave policy. Set a yearly in-service cap on the leave type first, if the policy allows it.';
+    case 'leave.encash_over_cap':
+      return 'That is more than the leave policy pays out in service this year. Encash fewer days.';
+    case 'leave.encash_below_minimum':
+      return 'That would leave less than the balance the leave policy keeps. Encash fewer days.';
+    case 'leave.encash_leaving':
+      return 'The employee is leaving: unused leave is paid in the full and final settlement instead.';
+    case 'payroll.closed':
+      return "That month's payroll is already approved. Choose a later month.";
     case 'concurrency':
       return 'Someone else changed this record meanwhile. Open it again and ask again.';
     default:

@@ -50,6 +50,12 @@ internal static class StatutoryEndpoints
         group.MapPost("/employees/{employeeId:guid}/full-and-final", async (Guid employeeId, FullAndFinalRequest r, StatutoryService s, CancellationToken ct) =>
                 (await s.FullAndFinalAsync(employeeId, r, ct)).ToOk())
             .RequirePermission(HRPermissions.PayrollProcess).WithValidation<FullAndFinalRequest>();
+
+        // Settling pays the statement out: the leave it encashes is debited from the balances, once, by someone who approves
+        // payroll and is not the employee.
+        group.MapPost("/employees/{employeeId:guid}/full-and-final/settle", async (Guid employeeId, FullAndFinalRequest r, StatutoryService s, CancellationToken ct) =>
+                (await s.SettleFullAndFinalAsync(employeeId, r, ct)).ToOk())
+            .RequirePermission(HRPermissions.PayrollApprove).WithValidation<FullAndFinalRequest>();
         group.MapGet("/bonus/{financialYear:int}", async (int financialYear, decimal? ratePercent, decimal? minimumWage, StatutoryService s, CancellationToken ct) =>
             (await s.BonusRegisterAsync(financialYear, ratePercent ?? StatutoryBonus.MinimumRate, minimumWage ?? 0, ct)).ToOk()).RequireAnyPermission(viewers);
 

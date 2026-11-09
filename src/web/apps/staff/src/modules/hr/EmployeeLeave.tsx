@@ -15,7 +15,13 @@ import {
   Text,
   Tooltip,
 } from '@fluentui/react-components';
-import { AddRegular, ArrowDownloadRegular, CalendarCancelRegular, EditRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  ArrowDownloadRegular,
+  CalendarCancelRegular,
+  EditRegular,
+  MoneyRegular,
+} from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, isApiError, todayIso } from '@hc360/core';
 import {
@@ -43,6 +49,7 @@ import { formatDays } from './attendance';
 import type { PickedEmployee } from './EmployeePicker';
 import { BALANCE_VIEWERS, HR_PERMISSIONS } from './labels';
 import { canCancelLeave, leavePeriodText } from './leave';
+import { EncashLeaveDialog, EncashmentsTable } from './LeaveEncashment';
 import { payRefusal } from './makerChecker';
 import { LeaveOnBehalfDialog } from './LeaveOnBehalfDialog';
 import { ReasonDialog } from './shared/ReasonDialog';
@@ -97,12 +104,20 @@ export function EmployeeLeave({ employee, readOnly }: { employee: PickedEmployee
   const queryClient = useQueryClient();
   const canSeeBalances = usePermission(BALANCE_VIEWERS);
   const canApprove = usePermission(HR_PERMISSIONS.leaveApprove) && !readOnly;
+  const canEncash = usePermission(HR_PERMISSIONS.payrollProcess) && !readOnly;
+  const canSeeEncashments = usePermission([HR_PERMISSIONS.payrollProcess, HR_PERMISSIONS.payrollApprove]);
+  const [encashing, setEncashing] = useState(false);
   const [year, setYear] = useState(currentMonth().year);
   const [applying, setApplying] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
   const [cancelling, setCancelling] = useState<LeaveRequestDto | null>(null);
   const balances = useQuery({ ...hrQueries.leaveBalances(employee.id, year), enabled: canSeeBalances });
   const pendingCredits = useQuery({ ...hrQueries.pendingLeaveAdjustments(employee.id), enabled: canSeeBalances });
+  const encashments = useQuery({ ...hrQueries.leaveEncashments(employee.id), enabled: canSeeEncashments });
+  const pendingEncashments = useQuery({
+    ...hrQueries.pendingLeaveEncashments(employee.id),
+    enabled: canSeeEncashments,
+  });
   const requests = useQuery({
     ...hrQueries.leaveRequests({ employeeId: employee.id, from: `${year}-01-01`, to: `${year}-12-31`, pageSize: 100 }),
     enabled: canApprove,
@@ -142,6 +157,11 @@ export function EmployeeLeave({ employee, readOnly }: { employee: PickedEmployee
             </Button>
           </>
         )}
+        {canEncash && (
+          <Button icon={<MoneyRegular />} onClick={() => setEncashing(true)} style={{ alignSelf: 'flex-end' }}>
+            Encash leave
+          </Button>
+        )}
       </Toolbar>
 
       {(pendingCredits.data ?? []).map((p) => (
@@ -151,6 +171,17 @@ export function EmployeeLeave({ employee, readOnly }: { employee: PickedEmployee
             {p.summary}. Asked for by {p.requestedBy} on {formatDateTime(p.requestedAt)}. Someone else who approves
             leave decides it, never the person who asked and never {employee.name}; the balance below does not include
             it until then.
+          </MessageBarBody>
+        </MessageBar>
+      ))}
+
+      {(pendingEncashments.data ?? []).map((p) => (
+        <MessageBar key={p.approvalId} intent="warning" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Encashment asked for: what waits</MessageBarTitle>
+            {p.summary}. Asked for by {p.requestedBy} on {formatDateTime(p.requestedAt)}. Someone else who approves
+            payroll decides it, never the person who asked and never {employee.name}; its days are reserved meanwhile,
+            and nothing is paid until then.
           </MessageBarBody>
         </MessageBar>
       ))}
@@ -226,7 +257,19 @@ export function EmployeeLeave({ employee, readOnly }: { employee: PickedEmployee
         </Section>
       )}
 
+      {canSeeEncashments && (
+        <Section title="Leave encashed" flush>
+          <EncashmentsTable
+            rows={encashments.data}
+            loading={encashments.isLoading}
+            error={encashments.error}
+            onRetry={() => void encashments.refetch()}
+          />
+        </Section>
+      )}
+
       <LeaveOnBehalfDialog open={applying} onClose={() => setApplying(false)} employee={employee} />
+      <EncashLeaveDialog open={encashing} onClose={() => setEncashing(false)} employee={employee} year={year} />
       <AdjustBalanceDialog open={adjusting} onClose={() => setAdjusting(false)} employee={employee} year={year} />
       <ReasonDialog
         open={cancelling !== null}

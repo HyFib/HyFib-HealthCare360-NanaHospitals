@@ -201,6 +201,61 @@ export interface PendingLeaveAdjustment {
   requestedAt: string;
 }
 
+export type LeaveEncashmentKind = 'InService' | 'Separation';
+
+/** Leave paid out: in service through payroll, or on leaving in the full and final settlement. */
+export interface LeaveEncashmentDto {
+  id: string;
+  leaveTypeId: string;
+  leaveTypeCode: string;
+  year: number;
+  kind: LeaveEncashmentKind;
+  days: number;
+  dailyRate: number;
+  amount: number;
+  payrollRunId: string | null;
+  payrollMonth: string | null;
+  lastWorkingDay: string | null;
+  reason: string;
+  createdAt: string;
+}
+
+/** An in-service encashment waiting for someone else who approves payroll. */
+export interface PendingLeaveEncashment {
+  approvalId: string;
+  leaveTypeId: string;
+  year: number;
+  days: number;
+  amount: number;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** What may be encashed now of a leave type that pays out in service. */
+export interface EncashableLeaveDto {
+  leaveTypeId: string;
+  leaveTypeCode: string;
+  leaveTypeName: string;
+  year: number;
+  capPerYear: number;
+  minimumBalance: number;
+  encashedThisYear: number;
+  waiting: number;
+  mostDays: number;
+  dailyRate: number;
+}
+
+export interface EncashLeaveRequest {
+  employeeId: string;
+  leaveTypeId: string;
+  year: number;
+  days: number;
+  payYear: number;
+  payMonth: number;
+  reason: string;
+}
+
 /** A write that may answer 202 with the request it waits in: tells the two answers apart. */
 export function isApprovalRequest(value: unknown): value is ApprovalRequestDto {
   return typeof value === 'object' && value !== null && 'kind' in value && 'status' in value;
@@ -545,6 +600,10 @@ export interface LeaveTypeDto {
   applicableGender: Gender | null;
   isActive: boolean;
   version: number;
+  /** Most days encashed a year while in service; null when the type pays out only on leaving. */
+  inServiceEncashmentDaysPerYear: number | null;
+  /** Days kept in the balance after an in-service encashment. */
+  minimumBalanceAfterEncashment: number;
 }
 
 export type SaveLeaveTypeRequest = Omit<LeaveTypeDto, 'id' | 'version'> & { version: number | null };
@@ -1029,6 +1088,30 @@ export const hrQueries = {
       queryFn: ({ signal }) =>
         api.get<PendingLeaveAdjustment[]>('/api/v1/hr/leave/balances/pending', { query: { employeeId }, signal }),
     }),
+  /** Leave paid out for this employee, in service and on leaving. */
+  leaveEncashments: (employeeId: string) =>
+    queryOptions({
+      queryKey: ['hr', 'leave', 'encashments', employeeId],
+      queryFn: ({ signal }) =>
+        api.get<LeaveEncashmentDto[]>('/api/v1/hr/leave/encashments', { query: { employeeId }, signal }),
+    }),
+  /** In-service encashments waiting for a second person. */
+  pendingLeaveEncashments: (employeeId: string) =>
+    queryOptions({
+      queryKey: ['hr', 'leave', 'encashments', employeeId, 'pending'],
+      queryFn: ({ signal }) =>
+        api.get<PendingLeaveEncashment[]>('/api/v1/hr/leave/encashments/pending', { query: { employeeId }, signal }),
+    }),
+  /** Per leave type that pays out in service: the cap, what was encashed and waits, and the most days now. */
+  encashableLeave: (employeeId: string, year: number) =>
+    queryOptions({
+      queryKey: ['hr', 'leave', 'encashments', employeeId, 'encashable', year],
+      queryFn: ({ signal }) =>
+        api.get<EncashableLeaveDto[]>('/api/v1/hr/leave/encashments/encashable', {
+          query: { employeeId, year },
+          signal,
+        }),
+    }),
   /** Changes to pay waiting for a second person: a run's inputs, or an employee's salary structure. */
   pendingPayChanges: (filter: { runId?: string; employeeId?: string }) =>
     queryOptions({
@@ -1214,6 +1297,8 @@ export const hrApi = {
   /** A debit: 204. A credit: 202, approved by someone else who approves leave. Never one's own (`hr.leave_own`). */
   adjustLeave: (request: AdjustLeaveBalanceRequest) =>
     api.post<ApprovalRequestDto | undefined>('/api/v1/hr/leave/balances/adjust', request),
+  /** Always 202: approved by someone else who approves payroll, never the employee (`hr.pay_own`). */
+  encashLeave: (request: EncashLeaveRequest) => api.post<ApprovalRequestDto>('/api/v1/hr/leave/encashments', request),
   applyLeave: (employeeId: string, request: ApplyLeaveRequest) =>
     api.post<string>(`/api/v1/hr/employees/${employeeId}/leave-requests`, request),
   decideLeave: (id: string, approve: boolean, note: string | null) =>

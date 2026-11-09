@@ -13,7 +13,7 @@ namespace HyFib.HealthCare360.Modules.HR.Services;
 /// final settlement and the banks' salary upload files. Files holding UANs, PANs or account numbers are made on demand,
 /// never stored, and every one is written to the audit trail.
 /// </summary>
-public sealed class StatutoryService(HospitalDbContext db, ICurrentUser currentUser, IFieldProtector protector, IAuditLogger audit, TimeProvider time)
+public sealed class StatutoryService(HospitalDbContext db, ICurrentUser currentUser, IFieldProtector protector, IAuditLogger audit, PayApprovals pay, TimeProvider time)
 {
     public const string SalarySection = "92B";
 
@@ -471,6 +471,102 @@ public sealed class StatutoryService(HospitalDbContext db, ICurrentUser currentU
             statement);
     }
 
+    /// <summary>
+    /// Settles the full and final statement worked out as <see cref="FullAndFinalAsync"/> does: the leave days it pays out
+    /// are debited from the employee's encashable balances of the last working day's year (<see cref="LeaveBalance.Encashed"/>,
+    /// type by type) and recorded as a separation encashment, so the balance no longer shows days already paid. Only for an
+    /// employee who is leaving, once (<c>settlement.already_settled</c>), with no in-service encashment waiting, and never by
+    /// the employee themself.
+    /// </summary>
+    public async Task<Result<FullAndFinalDto>> SettleFullAndFinalAsync(Guid employeeId, FullAndFinalRequest r, CancellationToken ct)
+    {
+        var employee = await db.Set<Employee>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == employeeId, ct);
+        if (employee is null)
+        {
+            return Error.NotFound(nameof(Employee), employeeId);
+        }
+
+        if (await pay.OwnPayAsync([employeeId], approving: true, ct) is { } own)
+        {
+            return own;
+        }
+
+        if (employee.Status != EmployeeStatus.Separated && employee.LeavingDate is null)
+        {
+            return Error.Rule("settlement.not_leaving", $"{employee.FullName} has no leaving date, so there is no full and final settlement to settle.");
+        }
+
+        if (await db.Set<LeaveEncashmentRecord>().AnyAsync(e => e.EmployeeId == employeeId && e.Kind == LeaveEncashmentKind.Separation, ct))
+        {
+            return Error.Conflict("settlement.already_settled", $"The full and final settlement of {employee.FullName} has already been settled and its leave paid out.");
+        }
+
+        if ((await LeaveEncashmentService.WaitingAsync(db, employeeId, time.GetUtcNow(), ct)).Count > 0)
+        {
+            return Error.Rule("settlement.encashment_waiting", "An in-service leave encashment for this employee is waiting for approval. Decide or withdraw it first.");
+        }
+
+        var worked = await FullAndFinalAsync(employeeId, r, ct);
+        if (worked.IsFailure)
+        {
+            return worked;
+        }
+
+        var statement = worked.Value;
+        var remaining = statement.LeaveEncashment.Days;
+        var year = statement.LastWorkingDay.Year;
+        var encashable = await db.Set<LeaveType>().AsNoTracking().Where(t => t.IsEncashable).OrderBy(t => t.Code).ToListAsync(ct);
+        var encashableIds = encashable.Select(t => t.Id).ToList();
+        var balances = await db.Set<LeaveBalance>()
+            .Where(b => b.EmployeeId == employeeId && b.Year == year && encashableIds.Contains(b.LeaveTypeId))
+            .ToListAsync(ct);
+        if (remaining > balances.Sum(b => Math.Max(0, b.Closing)))
+        {
+            return Error.Rule("settlement.leave_over_balance",
+                $"The settlement pays {remaining:0.#} day(s) of leave, more than the {balances.Sum(b => Math.Max(0, b.Closing)):0.#} left in the encashable balances of {year}. Correct the balance or the days first.");
+        }
+
+        var paid = new List<string>();
+        foreach (var type in encashable)
+        {
+            var balance = balances.FirstOrDefault(b => b.LeaveTypeId == type.Id);
+            if (remaining <= 0 || balance is null || balance.Closing <= 0)
+            {
+                continue;
+            }
+
+            var days = Math.Min(remaining, balance.Closing);
+            balance.Encashed += days;
+            remaining -= days;
+            db.Add(new LeaveEncashmentRecord
+            {
+                FacilityId = employee.FacilityId,
+                EmployeeId = employeeId,
+                LeaveTypeId = type.Id,
+                Year = year,
+                Kind = LeaveEncashmentKind.Separation,
+                Days = days,
+                DailyRate = statement.LeaveEncashment.DailyRate,
+                Amount = Money.Round(days * statement.LeaveEncashment.DailyRate),
+                LastWorkingDay = statement.LastWorkingDay,
+                Reason = "Full and final settlement",
+            });
+            paid.Add($"{days:0.#} {type.Code}");
+        }
+
+        audit.Add(new AuditEntry(AuditCategories.Data, "settlement.settled",
+            $"Full and final settlement of {employee.EmployeeCode} settled to {statement.LastWorkingDay:dd MMM yyyy}: net ₹{Money.FormatInr(statement.Statement.NetPayable)}"
+            + (paid.Count > 0 ? $", leave paid out and debited ({string.Join(", ", paid)}, ₹{Money.FormatInr(statement.LeaveEncashment.Amount)})" : ", no leave paid out"))
+        {
+            EntityType = nameof(Employee),
+            EntityId = employeeId.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { statement.LastWorkingDay, leaveDays = statement.LeaveEncashment.Days, statement.LeaveEncashment.Amount, net = statement.Statement.NetPayable, settledBy = currentUser.UserId },
+        });
+        await db.SaveChangesAsync(ct);
+        return statement;
+    }
+
     // ---- Bank upload files ------------------------------------------------------------------------------------------
 
     public async Task<Result<(string FileName, byte[] Content)>> BankUploadAsync(Guid runId, BankFileFormat format, CancellationToken ct)
@@ -527,6 +623,16 @@ public sealed class StatutoryService(HospitalDbContext db, ICurrentUser currentU
         string.Join(", ", new[] { p.AddressLine1, p.AddressLine2, p.AddressLine3, p.City, p.Pin }.Where(a => !string.IsNullOrWhiteSpace(a)));
 
     /// <summary>Gratuity wages: basic pay under the Act; wages as the Code defines them for anyone leaving from 21 November 2025.</summary>
+    /// <summary>
+    /// The month's wages leave is encashed on, the same as the full and final settlement's: wages under the Code on Wages
+    /// from its commencement (basic before it). Null when the employee has no salary structure.
+    /// </summary>
+    internal async Task<decimal?> EncashmentWagesAsync(Guid employeeId, DateOnly asOf, CancellationToken ct)
+    {
+        var structure = await CurrentStructureAsync(employeeId, ct);
+        return structure is null ? null : GratuityWages(await StructureMonthAsync(structure, ct), asOf);
+    }
+
     private static decimal GratuityWages(StructureMonth month, DateOnly lastDay) => lastDay >= Gratuity.CodeInForce ? month.PfWages : month.Basic;
 
     private sealed record StructureMonth(decimal Gross, decimal Basic, decimal HouseRent, decimal PfWages);

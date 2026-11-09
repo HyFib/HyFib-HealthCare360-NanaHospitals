@@ -258,6 +258,15 @@ public sealed class LeaveService(
             .Select(g => new { g.Key, Days = g.Sum(l => l.Days) })
             .ToDictionaryAsync(g => g.Key, g => g.Days, ct);
 
+        // Days asked to be encashed are reserved too, until that is decided.
+        foreach (var waiting in await LeaveEncashmentService.WaitingAsync(db, employeeId, time.GetUtcNow(), ct))
+        {
+            if (waiting.Payload.Year == year)
+            {
+                pending[waiting.Payload.LeaveTypeId] = pending.GetValueOrDefault(waiting.Payload.LeaveTypeId) + waiting.Payload.Days;
+            }
+        }
+
         return types.Select(t =>
         {
             balances.TryGetValue(t.Id, out var b);
@@ -469,6 +478,7 @@ public sealed class LeaveService(
             .Where(l => l.EmployeeId == employeeId && l.LeaveTypeId == leaveTypeId && l.Status == ApprovalStatus.Pending
                         && l.FromDate.Year == year && l.Id != excludeRequestId)
             .SumAsync(l => l.Days, ct);
+        pending += await LeaveEncashmentService.WaitingDaysAsync(db, employeeId, leaveTypeId, year, time.GetUtcNow(), null, ct);
         return LeaveEntitlement.Available(balance?.Closing ?? 0, pending);
     }
 
