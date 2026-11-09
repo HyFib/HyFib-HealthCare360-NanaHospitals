@@ -211,6 +211,12 @@ export function ProfileForm({
               name="seroStatus"
               label="Sero status"
               required
+              disabled={loaded !== null}
+              hint={
+                loaded !== null
+                  ? 'Once enrolled, the infection status changes only with the lab result (Change infection status); off a positive status it waits for a second person.'
+                  : undefined
+              }
               options={SERO_STATUSES.map((s) => ({ value: s, label: seroLabel[s] }))}
             />
           </FullRow>

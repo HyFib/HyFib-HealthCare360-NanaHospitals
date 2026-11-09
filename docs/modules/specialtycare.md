@@ -1,6 +1,6 @@
 # SpecialtyCare module — Operation Theatre, Dialysis, Physiotherapy, Blood Bank, Termination of Pregnancy
 
-Project `src/server/Modules/HyFib.HealthCare360.Modules.SpecialtyCare` · schema `specialtycare` · layer 6 (references Patients and SupplyChain)
+Project `src/server/Modules/HyFib.HealthCare360.Modules.SpecialtyCare` · schema `specialtycare` · layer 6 (references Patients, SupplyChain, and Diagnostics for the lab result a dialysis patient's infection status changes on)
 · SRS **OT-01..08, DIA-01..05, PHY-01..04, BB-01..07**; MTP Act 1971 (amended 2021) and MTP Regulations 2003.
 
 All times are UTC `timestamptz`; `date` query parameters are hospital-local (IST) calendar dates. Money is INR.
@@ -22,6 +22,8 @@ and write a PHI-access audit entry. Donor detail views write a `donor.accessed` 
 | No double booking of a theatre, surgeon, anaesthetist or patient. Overlap uses half-open intervals, so back-to-back cases are allowed. The check runs under PostgreSQL advisory locks, across all facilities. | `SurgeryScheduling`, `SurgeryService`, `SchedulingLocks` | `SurgerySchedulingTests` |
 | The OT store look-up offers only stock that can be issued now (not expired, blocked or fully reserved), from the same OT store materials are consumed from, with batches in FEFO order. | `OtStoreLookup` | `OtStoreLookupTests` |
 | A dialysis machine must match the patient's sero status (Negative/HBsAg/HCV/HIV). This is checked when the session is scheduled and again when it starts. The machine must also be disinfected after its last session and not be running another one. | `SeroSegregation`, `DialysisMachine.EnsureReadyFor` | `SeroSegregationTests`, `DialysisSessionTests` |
+| **A dialysis patient's infection status** (maker-checker slice 15). The status decides the machine and the isolation, so once the patient is enrolled it changes only through `POST /patients/{patientId}/infection-status`, never the profile form (422 `dialysis.infection_status_change`), and only on a verified lab result of the patient (400 `labResultId`; 422 `dialysis.lab_result_unverified`), for the infection concerned (HBsAg, anti-HCV or HCV RNA, HIV; back to negative, the infection the patient has now: 422 `dialysis.lab_result_mismatch`), verified within the last 90 days (422 `dialysis.lab_result_old`). A sero-negative patient found positive is isolated at once, the stricter direction: an infected patient never waits on a shared machine for an approval. Taking a patient off a positive status (to sero-negative, or to another positive status) waits for a second person who holds `dialysis.infection_status.approve`, never the one who asked (`approval.self`); the status in force stands meanwhile. Approved only over the profile as asked, on a result still recent (`approval.stale`), audited `dialysis.infection_status_changed` with both names. A hospital lets one person make that change only by switching `dialysis.infectionStatusApproval` off (a second administrator approves, SettingGuard); the lab result is required either way. | `InfectionStatusChange`, `InfectionStatusService`, `InfectionStatusApproval` | `InfectionStatusChangeTests`, `DialysisInfectionStatusTests` |
+| **A transfusion reaction lowered** (slice 15). Lowering a reaction's severity, or its imputability below one already assessed (ISBT: excluded, unlikely, possible, probable, definite), can take it out of haemovigilance reporting, so it waits for the blood bank medical officer (`bloodbank.reactions.approve`), never the officer who asked, with the reason; raising either, or a first assessment, is made at once. The classification in force stands meanwhile, and the investigation is not closed the lowered way (422 `bloodbank.reaction_lowered`). Closing needs the imputability assessed. Approved only over the reaction as asked and still open (`approval.stale`), audited `bloodbank.reaction_lowered` with both names. A hospital lets the investigating officer lower it alone only by switching `bloodbank.reactionDowngradeApproval` off (a second administrator approves); it is then audited at Warning. | `ReactionDowngrade`, `ReactionClassificationService`, `TransfusionService.CloseReactionAsync` | `ReactionDowngradeTests`, `TransfusionReactionLowerTests` |
 | A dialyzer is used only for its own patient and only up to its maximum uses. HBsAg-positive patients are always single-use. | `Dialyzer.Use`, `DialysisPatientProfile.EffectiveMaxDialyzerUses` | `DialyzerTests` |
 | Donor eligibility (NBTC 2017): Hb ≥ 12.5 g/dL; weight ≥ 45 kg (≥ 55 kg for 450 ml); age 18–65 (first-time donors ≤ 60); BP 100–140/60–90; pulse 60–100; temperature ≤ 37.5 °C; whole-blood interval 90 days (men) / 120 days (women); questionnaire deferrals. | `DonorEligibility` | `DonorEligibilityTests` |
 | A unit leaves quarantine only when it is grouped **and** all five TTI markers are non-reactive **and** another blood bank officer has verified those results (below, *The second officer*). Any reactive marker discards the unit and defers the donor at once. | `BloodComponent.ApplyLabResults/Release`, `Donation.RecordLabResults/Verify` | `BloodComponentTests`, `SecondOfficerTests`, `BloodBankVerificationTests` |
@@ -86,7 +88,9 @@ screen and in Excel, CSV and PDF. It needs `analytics.clinical.read` and is audi
 | POST / PUT | `/machines`, `/machines/{id}` | `dialysis.machines.manage` | `SaveDialysisMachineRequest` → 201/204. The sero dedication can be changed only when the machine is idle and disinfected |
 | POST | `/machines/{id}/disinfection` | `dialysis.sessions.manage` | `RecordDisinfectionRequest` (method) → 204 |
 | GET | `/patients?sero=&search=` · `/patients/{patientId}` | `dialysis.read` | → paged / single `DialysisProfileDto` (dry weight, access AVF/AVG/Catheter + site, scheduleDays, shift, seroStatus, seroTestedOn, seroRescreeningDue, reuse policy, effectiveMaxDialyzerUses) |
-| PUT | `/patients/{patientId}` | `dialysis.patients.manage` | `SaveDialysisProfileRequest` → `{id}` (enrol or update) |
+| PUT | `/patients/{patientId}` | `dialysis.patients.manage` | `SaveDialysisProfileRequest` → `{id}` (enrol or update; once enrolled the sero status is not changed here: 422 `dialysis.infection_status_change`) |
+| GET | `/patients/{patientId}/infection-results` | `dialysis.read` | → `InfectionResultDto[]`: the patient's verified HBsAg, HCV and HIV results of the last 90 days |
+| POST | `/patients/{patientId}/infection-status` | `dialysis.patients.manage` | `ChangeInfectionStatusRequest{seroStatus, labResultId, reason, version}` → 204 (negative to positive, at once) or 202 the approval request (`dialysis.infection_status`); the profile shows `infectionStatusPendingApprovalId` while it waits |
 | GET / POST | `/patients/{patientId}/dialyzers` | `dialysis.read` / `dialysis.sessions.manage` | `RegisterDialyzerRequest` (serialNumber, brand, model, surfaceArea) → `DialyzerDto` (usesCount, maxUses, remainingUses, discarded) |
 | POST | `/dialyzers/{id}/discard` | `dialysis.sessions.manage` | `DialysisReasonRequest` → 204 |
 | GET | `/board?date=&shift=` | `dialysis.read` | → `DialysisBoard` (machines grouped by sero category with their sessions, unassigned sessions, patients due today by weekly schedule but not booked) |
@@ -148,7 +152,8 @@ screen and in Excel, CSV and PDF. It needs `analytics.clinical.read` and is audi
 | POST | `/transfusions/{id}/end` | `bloodbank.transfuse` | `EndTransfusionRequest` (endedAt, stopped, stopReason, volumeMl, observations, version) → `TransfusionDto` |
 | POST | `/issues/{id}/reactions` | `bloodbank.reactions.report` | `ReportReactionRequest` (onset, symptoms[], vitals, transfusionStopped, volume, actions, severity) → 201 `{id}`; alerts investigators and raises an incident (type TransfusionReaction) in the Quality register in the same save, graded by the severity (life-threatening as severe) |
 | GET | `/reactions?status=` | `bloodbank.read` | → paged `TransfusionReactionDto` |
-| POST | `/reactions/{id}/investigate` · `/close` | `bloodbank.reactions.investigate` | `CloseReactionRequest` (type (HvPI classification), severity, findings, reportedToHaemovigilance) → 204 |
+| PUT | `/reactions/{id}/classification` | `bloodbank.reactions.investigate` | `ClassifyReactionRequest{type, severity, imputability, reason?, version}` → 204 (raised, or a first assessment) or 202 the approval request (`bloodbank.reaction_lower`) when it lowers the severity or imputability (reason required) |
+| POST | `/reactions/{id}/investigate` · `/close` | `bloodbank.reactions.investigate` | `CloseReactionRequest` (type (HvPI classification), severity, findings, reportedToHaemovigilance, imputability (required, assessed)) → 204; 422 `bloodbank.reaction_lowered` when closing would lower it while the medical officer is required |
 
 **The bedside check.** A unit is started on the ward only after two staff check it at the bedside, against the
 patient and the issue (BSH guideline on the administration of blood components, 2017). On the nursing chart's *Blood*
@@ -254,6 +259,7 @@ case, its print and the register export are audited.
 | `dialysis.read` | DialysisTechnician, Nurse, Doctor, HospitalAdmin |
 | `dialysis.machines.manage` | DialysisTechnician, HospitalAdmin |
 | `dialysis.patients.manage`, `dialysis.sessions.manage` | Doctor, DialysisTechnician, Nurse |
+| `dialysis.infection_status.approve` (approve a patient taken off a positive status another asked for) | Doctor |
 | `physio.read` | Physiotherapist, Doctor, Nurse, HospitalAdmin |
 | `physio.referrals.manage` | Doctor, Physiotherapist |
 | `physio.treatment.manage` | Physiotherapist |
@@ -261,6 +267,7 @@ case, its print and the register export are audited.
 | `bloodbank.donors.manage`, `bloodbank.inventory.manage` (also verifies another officer's screening results), `bloodbank.crossmatch.perform`, `bloodbank.units.issue`, `bloodbank.reactions.investigate` | BloodBankOfficer |
 | `bloodbank.requests.create` (a doctor among them, linked to a doctor's practitioner record, authorises uncross-matched release), `bloodbank.reactions.report` | Doctor, Nurse, BloodBankOfficer |
 | `bloodbank.transfuse` (check a unit at the bedside, start and end it, witness another's check) | Nurse, Doctor |
+| `bloodbank.reactions.approve` (the blood bank medical officer: approve a reaction's severity or imputability lowered) | HospitalAdmin; grant it to the medical officer's account |
 | `mtp.read`, `mtp.register` | MrdOfficer |
 | `mtp.certify` | none: grant it, with `patients.sensitive.mtp`, to the gynaecologists the place's approval names |
 

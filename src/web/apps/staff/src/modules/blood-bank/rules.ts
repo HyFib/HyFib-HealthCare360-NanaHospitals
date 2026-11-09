@@ -1,10 +1,14 @@
 import type { BloodGroup } from '@hc360/core';
 import {
   KNOWN_GROUPS,
+  REACTION_IMPUTABILITIES,
+  REACTION_SEVERITIES,
   type BloodBagType,
   type BloodComponentType,
   type BloodUnitStatus,
   type KnownBloodGroup,
+  type ReactionImputability,
+  type ReactionSeverity,
   type TtiPanel,
 } from './api';
 import { groupLabel } from './labels';
@@ -446,4 +450,38 @@ export function stockLevel(component: BloodComponentType, available: number): St
 /** Units that may still be discarded: in stock (quarantine, available, reserved) or already expired. */
 export function canDiscardUnit(status: BloodUnitStatus): boolean {
   return status === 'Quarantine' || status === 'Available' || status === 'Reserved' || status === 'Expired';
+}
+
+/**
+ * What a new classification lowers, as the server judges it (ReactionDowngrade): a lower severity, or a weaker
+ * imputability than one already assessed. Lowering either waits for the blood bank medical officer; raising, or a first
+ * assessment, is made at once.
+ */
+export function reactionLowers(
+  severity: ReactionSeverity,
+  imputability: ReactionImputability,
+  askedSeverity: ReactionSeverity,
+  askedImputability: ReactionImputability,
+): string[] {
+  const lowered: string[] = [];
+  if (REACTION_SEVERITIES.indexOf(askedSeverity) < REACTION_SEVERITIES.indexOf(severity)) {
+    lowered.push(`severity ${severity} → ${askedSeverity}`);
+  }
+
+  if (
+    imputability !== 'NotAssessed' &&
+    REACTION_IMPUTABILITIES.indexOf(askedImputability) < REACTION_IMPUTABILITIES.indexOf(imputability)
+  ) {
+    lowered.push(`imputability ${imputability} → ${askedImputability}`);
+  }
+
+  return lowered;
+}
+
+/** Whether the reaction is reported to haemovigilance: not yet assessed, or at least possible. */
+export function haemovigilanceReportable(imputability: ReactionImputability): boolean {
+  return (
+    imputability === 'NotAssessed' ||
+    REACTION_IMPUTABILITIES.indexOf(imputability) >= REACTION_IMPUTABILITIES.indexOf('Possible')
+  );
 }

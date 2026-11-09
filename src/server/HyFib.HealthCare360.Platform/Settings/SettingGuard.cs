@@ -220,6 +220,21 @@ public static class SettingGuard
             "Whether a second blood bank officer verifies a donation's screening results before its units leave quarantine, and issues blood one officer both grouped and cross-matched. Off, one officer does all of it, and what they release so is listed for the medical officer's review.",
             DefaultOn: true),
 
+        // AmbulanceService.WaiverApprovalSetting (the SupportServices module): on unless set to false.
+        ["ambulance.waiverApproval"] = new SettingSwitch("Second person for an ambulance charge waived",
+            "Whether waiving a completed trip's charge waits for a second person who approves waivers. Off, the desk waives the charge alone, audited.",
+            DefaultOn: true),
+
+        // TransfusionService.DowngradeApprovalSetting (the SpecialtyCare module): on unless set to false.
+        ["bloodbank.reactionDowngradeApproval"] = new SettingSwitch("Medical officer approves a transfusion reaction lowered",
+            "Whether lowering a transfusion reaction's severity or imputability, which can take it out of haemovigilance reporting, waits for the blood bank medical officer. Off, the investigating officer lowers it alone, audited.",
+            DefaultOn: true),
+
+        // DialysisService.InfectionStatusApprovalSetting (the SpecialtyCare module): on unless set to false.
+        ["dialysis.infectionStatusApproval"] = new SettingSwitch("Second person for a dialysis patient's infection status",
+            "Whether taking a dialysis patient off an HBV, HCV or HIV machine (to sero-negative, or to another positive status) waits for a second person, with the lab result. Off, one person changes it with the lab result, audited.",
+            DefaultOn: true),
+
         // ClinicalSignOff.DischargeSummaryCareTeamSetting (the Clinical module): on unless set to false.
         ["clinical.dischargeSummary.careTeamOnly"] = new SettingSwitch("Discharge summary signed by the care team",
             "Whether a discharge summary is signed only by the stay's consultant or a doctor on its care team, as themselves. Off, any doctor signs any stay's summary, and an account not linked to a doctor signs it in the consultant's name.",

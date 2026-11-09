@@ -258,3 +258,16 @@ export function isRescreeningDue(testedOn: string | null, today: string): boolea
   const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${testedOn}T00:00:00Z`)) / 86_400_000);
   return days > RESCREENING_DAYS;
 }
+
+/**
+ * Whether a change of infection status waits for a second person, as the server judges it (InfectionStatusChange):
+ * anything but a sero-negative patient found positive, who is isolated at once.
+ */
+export function infectionStatusWaits(current: SeroStatus, asked: SeroStatus): boolean {
+  return current !== asked && current !== 'Negative';
+}
+
+/** The infection a supporting result must test for: the one asked for, or, back to negative, the one the patient has now. */
+export function infectionTested(current: SeroStatus, asked: SeroStatus): SeroStatus {
+  return asked === 'Negative' ? current : asked;
+}

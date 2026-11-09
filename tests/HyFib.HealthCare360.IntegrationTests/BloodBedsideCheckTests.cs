@@ -45,8 +45,8 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
         var nurse = await RecordingNurseAsync();
         var officer = await BloodBankOfficerAsync();
         var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
-        var admission = await AdmitAsync(frontOffice, doctor, patient.Id);
-        var issue = await IssueUnitAsync(officer.Client, doctor, patient.Id, admission.Id, BloodGroup.BPositive, emergency: false);
+        var admission = await AdmitAsync(server, frontOffice, doctor, patient.Id);
+        var issue = await IssueUnitAsync(server, officer.Client, doctor, patient.Id, admission.Id, BloodGroup.BPositive, emergency: false);
         var start = $"{Bank}/issues/{issue.Id}/transfusion";
 
         // The ward sees the unit, by when it must be started, and that no consent is recorded for this stay yet; the read is on
@@ -153,8 +153,8 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
         var nurse = await RecordingNurseAsync();
         var officer = await BloodBankOfficerAsync();
         var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
-        var admission = await AdmitAsync(frontOffice, doctor, patient.Id);
-        var issue = await IssueUnitAsync(officer.Client, doctor, patient.Id, admission.Id, BloodGroup.ONegative, emergency: true);
+        var admission = await AdmitAsync(server, frontOffice, doctor, patient.Id);
+        var issue = await IssueUnitAsync(server, officer.Client, doctor, patient.Id, admission.Id, BloodGroup.ONegative, emergency: true);
         var start = $"{Bank}/issues/{issue.Id}/transfusion";
         var witness = await nurse.PostAsync<WitnessConfirmed>(Witness, Confirm(HospitalServer.Users.SecondNurse, patient.Id));
 
@@ -195,8 +195,8 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
         var nurse = await RecordingNurseAsync();
         var officer = await BloodBankOfficerAsync();
         var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
-        var admission = await AdmitAsync(frontOffice, doctor, patient.Id);
-        var issue = await IssueUnitAsync(officer.Client, doctor, patient.Id, admission.Id, BloodGroup.APositive, emergency: false);
+        var admission = await AdmitAsync(server, frontOffice, doctor, patient.Id);
+        var issue = await IssueUnitAsync(server, officer.Client, doctor, patient.Id, admission.Id, BloodGroup.APositive, emergency: false);
         await ConsentAsync(frontOffice, patient.Id);
 
         // A unit issued but never started does not hold the discharge: it goes back to the blood bank.
@@ -220,8 +220,8 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
         var nurse = await RecordingNurseAsync();
         var officer = await BloodBankOfficerAsync();
         var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
-        var admission = await AdmitAsync(frontOffice, doctor, patient.Id);
-        var issue = await IssueUnitAsync(officer.Client, doctor, patient.Id, admission.Id, BloodGroup.BNegative, emergency: false);
+        var admission = await AdmitAsync(server, frontOffice, doctor, patient.Id);
+        var issue = await IssueUnitAsync(server, officer.Client, doctor, patient.Id, admission.Id, BloodGroup.BNegative, emergency: false);
         await ConsentAsync(frontOffice, patient.Id);
         var witness = await nurse.PostAsync<WitnessConfirmed>(Witness, Confirm(HospitalServer.Users.SecondNurse, patient.Id));
 
@@ -281,8 +281,8 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
         var nurse = await RecordingNurseAsync();
         var officer = await BloodBankOfficerAsync();
         var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
-        var admission = await AdmitAsync(frontOffice, doctor, patient.Id);
-        var issue = await IssueUnitAsync(officer.Client, doctor, patient.Id, admission.Id, BloodGroup.APositive, emergency: false);
+        var admission = await AdmitAsync(server, frontOffice, doctor, patient.Id);
+        var issue = await IssueUnitAsync(server, officer.Client, doctor, patient.Id, admission.Id, BloodGroup.APositive, emergency: false);
 
         var reaction = await nurse.PostAsync<Created>($"{Bank}/issues/{issue.Id}/reactions", new ReportReactionRequest(
             DateTimeOffset.UtcNow, [ReactionSymptom.Fever, ReactionSymptom.ChillsRigors], "T 38.9 °C, P 112", true, 60, "Stopped, saline running",
@@ -296,7 +296,7 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
                 $"Unit {issue.UnitNumber}"));
     }
 
-    private async Task<BloodIssueDto> IssueUnitAsync(ApiClient officer, ApiClient doctor, Guid patientId, Guid admissionId, BloodGroup group, bool emergency)
+    internal static async Task<BloodIssueDto> IssueUnitAsync(HospitalServer server, ApiClient officer, ApiClient doctor, Guid patientId, Guid admissionId, BloodGroup group, bool emergency)
     {
         var donor = await officer.PostAsync<Created>($"{Bank}/donors", new SaveDonorRequest(
             FirstName: "Ravi", LastName: "Donor" + Letters(8), Gender: Gender.Male, DateOfBirth: new DateOnly(1985, 1, 1).AddDays(Random.Shared.Next(3650)),
@@ -354,7 +354,7 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
         frontOffice.PostAsync<Created>($"/api/v1/patients/{patientId}/consents",
             new CaptureConsentRequest(ConsentType.BloodTransfusion, null, true, "Ward sister", null, null, null, null));
 
-    private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
+    internal static async Task<AdmissionCreated> AdmitAsync(HospitalServer server, ApiClient frontOffice, ApiClient doctor, Guid patientId)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var bed = await TestBeds.AddAsync(server, "SPW");

@@ -1,10 +1,11 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Mtp;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.BloodBank;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Dialysis;
+using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Mtp;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Physio;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Numbering;
 
@@ -39,6 +40,10 @@ public sealed class SpecialtyCareModule : IModule
         services.AddScoped<PhysioService>();
         services.AddScoped<DonorService>();
         services.AddScoped<TransfusionService>();
+        services.AddScoped<ReactionClassificationService>();
+        services.AddScoped<InfectionStatusService>();
+        services.AddScoped<IApprovalAction, InfectionStatusApproval>();
+        services.AddScoped<IApprovalAction, ReactionLowerApproval>();
 
         // Quality's indicators (return to OT, SSI and transfusion reaction rates) and infection surveillance read these facts.
         services.Replace(ServiceDescriptor.Scoped<ISurgeryAndTransfusionFacts, SurgeryAndTransfusionFacts>());

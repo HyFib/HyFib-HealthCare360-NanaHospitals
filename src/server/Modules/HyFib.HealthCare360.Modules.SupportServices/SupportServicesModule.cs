@@ -2,10 +2,12 @@ using HyFib.HealthCare360.Modules.SupportServices.Features.Ambulance;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Canteen;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Cssd;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Dietary;
+using HyFib.HealthCare360.Modules.SupportServices.Features.Housekeeping;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Linen;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Mortuary;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Waste;
 using HyFib.HealthCare360.Modules.SupportServices.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Numbering;
 
@@ -27,6 +29,9 @@ public static class SupportServicesPermissions
 
     public const string CanteenSales = "canteen.sales.create";
     public const string CanteenCancel = "canteen.sales.cancel";
+
+    /// <summary>Approve a canteen bill's cancellation another asked for (never one's own sale): the money goes back.</summary>
+    public const string CanteenCancelApprove = "canteen.cancellations.approve";
     public const string CanteenMenu = "canteen.menu.manage";
     public const string CanteenReports = "canteen.reports.read";
     public const string CanteenCredit = "canteen.credit.manage";
@@ -46,8 +51,23 @@ public static class SupportServicesPermissions
     /// <summary>Take ambulance calls, send vehicles and record each trip.</summary>
     public const string AmbulanceDispatch = "ambulance.dispatch";
 
+    /// <summary>Approve the waiver of a completed trip's charge another asked for.</summary>
+    public const string AmbulanceWaiverApprove = "ambulance.waivers.approve";
+
     /// <summary>Keep the ambulance fleet and its certificates.</summary>
     public const string AmbulanceFleet = "ambulance.fleet";
+
+    /// <summary>Ask housekeeping for a spill, terminal or routine cleaning.</summary>
+    public const string HousekeepingRequest = "housekeeping.request";
+
+    /// <summary>Do the scheduled and asked-for cleaning, against the checklists.</summary>
+    public const string HousekeepingWork = "housekeeping.work";
+
+    /// <summary>Verify cleaning someone else did (a supervisor), and see the report.</summary>
+    public const string HousekeepingVerify = "housekeeping.verify";
+
+    /// <summary>Set up the areas cleaned on a schedule, their frequency and checklists.</summary>
+    public const string HousekeepingManage = "housekeeping.manage";
 
     /// <summary>Send a ward's soiled linen to the laundry and report what it has lost.</summary>
     public const string LinenWard = "linen.ward";
@@ -75,7 +95,9 @@ public static class SupportServicesPermissions
         new(DietMasters, "Dietary", "Maintain the diet master", [SystemRoles.Dietitian, SystemRoles.HospitalAdmin]),
 
         new(CanteenSales, "Canteen", "Bill canteen sales (POS) and take staff credit repayments", [SystemRoles.CanteenManager]),
-        new(CanteenCancel, "Canteen", "Cancel today's canteen bills", [SystemRoles.CanteenManager, SystemRoles.HospitalAdmin]),
+        new(CanteenCancel, "Canteen", "Ask for today's canteen bills to be cancelled", [SystemRoles.CanteenManager, SystemRoles.HospitalAdmin]),
+        new(CanteenCancelApprove, "Canteen", "Approve a canteen bill's cancellation another asked for, never one's own sale (the money goes back)",
+            [SystemRoles.CanteenManager, SystemRoles.Accountant, SystemRoles.HospitalAdmin]),
         new(CanteenMenu, "Canteen", "Maintain the canteen menu, prices and stock", [SystemRoles.CanteenManager, SystemRoles.HospitalAdmin]),
         new(CanteenReports, "Canteen", "View canteen sales reports", [SystemRoles.CanteenManager, SystemRoles.HospitalAdmin, SystemRoles.Accountant]),
         new(CanteenCredit, "Canteen", "Staff credit balances, statements, payroll export and settlement",
@@ -92,8 +114,17 @@ public static class SupportServicesPermissions
 
         new(AmbulanceDispatch, "Ambulance", "Take ambulance calls, send vehicles and record each trip",
             [SystemRoles.FrontOffice, SystemRoles.Nurse, SystemRoles.HospitalAdmin]),
+        new(AmbulanceWaiverApprove, "Ambulance", "Approve the waiver of a completed trip's charge another asked for",
+            [SystemRoles.Accountant, SystemRoles.HospitalAdmin]),
         new(AmbulanceFleet, "Ambulance", "Keep the ambulance fleet and its certificates", [SystemRoles.HospitalAdmin]),
 
+        new(HousekeepingRequest, "Housekeeping", "Ask housekeeping for a spill, terminal or routine cleaning",
+            [SystemRoles.Nurse, SystemRoles.Doctor, SystemRoles.HospitalAdmin]),
+        new(HousekeepingWork, "Housekeeping", "Do the scheduled and asked-for cleaning against the checklists", [SystemRoles.Nurse, SystemRoles.HospitalAdmin]),
+        new(HousekeepingVerify, "Housekeeping", "Verify cleaning someone else did, and see the housekeeping report",
+            [SystemRoles.Nurse, SystemRoles.QualityManager, SystemRoles.HospitalAdmin]),
+        new(HousekeepingManage, "Housekeeping", "Set up the areas cleaned on a schedule, their frequency and checklists",
+            [SystemRoles.QualityManager, SystemRoles.HospitalAdmin]),
         new(LinenWard, "Linen", "Send a ward's soiled linen to the laundry and report what it has lost",
             [SystemRoles.Nurse, SystemRoles.HospitalAdmin]),
         new(LinenManage, "Linen", "Issue, receive, wash and condemn linen, and set ward par levels",
@@ -123,12 +154,15 @@ public sealed class SupportServicesModule : IModule
         services.AddScoped<MealPlanService>();
         services.AddScoped<IServiceChargeSource, DietServiceCharges>();
         services.AddScoped<CanteenService>();
+        services.AddScoped<IApprovalAction, CanteenCancelApproval>();
         services.AddScoped<StaffCreditService>();
         services.AddScoped<WasteService>();
         services.AddScoped<MortuaryService>();
         services.AddWitnessPurpose(MortuaryService.ReleaseWitness);
         services.AddScoped<AmbulanceService>();
+        services.AddScoped<IApprovalAction, AmbulanceWaiverApproval>();
         services.AddScoped<LinenService>();
+        services.AddScoped<HousekeepingService>();
 
         // The canteen's day for Billing's Tally day book (Billing reads it without referencing this module).
         services.AddScoped<ICounterSalesSource, CanteenDayBookSource>();
@@ -148,5 +182,6 @@ public sealed class SupportServicesModule : IModule
         MortuaryEndpoints.Map(endpoints);
         AmbulanceEndpoints.Map(endpoints);
         LinenEndpoints.Map(endpoints);
+        HousekeepingEndpoints.Map(endpoints);
     }
 }

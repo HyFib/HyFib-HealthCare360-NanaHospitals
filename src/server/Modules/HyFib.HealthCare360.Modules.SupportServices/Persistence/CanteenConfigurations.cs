@@ -40,6 +40,8 @@ internal sealed class CanteenSaleConfiguration : IEntityTypeConfiguration<Cantee
         b.Property(x => x.PaymentReference).HasMaxLength(64);
         b.Property(x => x.CashierName).HasMaxLength(200);
         b.Property(x => x.CancelReason).HasMaxLength(300);
+        b.Property(x => x.CancelledByName).HasMaxLength(200);
+        b.Property(x => x.CancelRequestedByName).HasMaxLength(200);
         b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.CanteenSaleId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.BillNumber).IsUnique();
         b.HasIndex(x => new { x.BusinessDate, x.Status });

@@ -31,6 +31,8 @@ internal sealed class AmbulanceTripConfiguration : IEntityTypeConfiguration<Ambu
         b.Property(x => x.CrewName).HasMaxLength(200);
         b.Property(x => x.CancelReason).HasMaxLength(300);
         b.Property(x => x.ChargeWaivedReason).HasMaxLength(300);
+        b.Property(x => x.ChargeWaivedByName).HasMaxLength(200);
+        b.Property(x => x.WaiverRequestedByName).HasMaxLength(200);
         b.Ignore(x => x.Kilometres);
         b.Ignore(x => x.IsActive);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
