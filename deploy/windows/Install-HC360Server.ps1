@@ -6,7 +6,10 @@
 
 .DESCRIPTION
     - Copies the published server to Program Files (the data folder is kept across upgrades).
-    - Creates the PostgreSQL database and a least-privilege application role (optional, -CreateDatabase).
+    - Creates the PostgreSQL database and its two accounts (optional, -CreateDatabase): hc360_owner, which owns the schema and
+      applies the database updates, and hc360_app, the least-privilege account the server works as, which reads and writes
+      rows but cannot change a table or the audit trail's triggers (hc360-database-roles.sql). On a database installed
+      before the split, which hc360_app owns, -CreateDatabase hands it to hc360_owner as it is.
     - Has the service sign in to PostgreSQL with its Windows account (SSPI), so the settings file holds no database
       password (-DatabaseSignIn Windows, the default). The switch is made once the server has started as it was, and is
       undone if the server then cannot reach the database. Needs PostgreSQL on this machine; -DatabaseSignIn Password
@@ -658,6 +661,40 @@ function Get-StandbyProblem([bool] $Standby, [bool] $CreateDatabase, [bool] $Dat
 }
 
 # Runs one statement as the PostgreSQL superuser.
+# ---------------------------------------------------------------- the two database accounts
+# hc360_owner owns the schema (start-up's migrations and the audit trail's triggers run as it); hc360_app is the account the
+# server works as, with rows to read and write and nothing else (docs/deployment/DEPLOYMENT.md, "Two database accounts").
+$OwnerRole = 'hc360_owner'
+$AppRole = 'hc360_app'
+$RolesSqlFile = 'hc360-database-roles.sql'
+
+# The statement that makes the account $Role, able to sign in with $Password, or gives it that password if it exists.
+function Get-RoleSql([string] $Role, [string] $Password) {
+    if ($Role -notmatch '^[a-z_][a-z0-9_]*$') { throw "The database account '$Role' must be named with lower-case letters, digits and underscores." }
+    if ($Password -notmatch '^[A-Za-z0-9_-]+$') { throw "The password for '$Role' must be letters, digits, '-' and '_' only." }
+    return "DO `$`$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$Role') THEN CREATE ROLE $Role LOGIN PASSWORD '$Password'; ELSE ALTER ROLE $Role LOGIN PASSWORD '$Password'; END IF; END `$`$;"
+}
+
+# psql's arguments that run hc360-database-roles.sql in $Database: the two accounts named first, in the session's settings
+# the file reads, then the file itself, which stops at its first error.
+function Get-RolesSqlArguments([string] $Server, [int] $Port, [string] $Superuser, [string] $Database, [string] $SqlFile) {
+    foreach ($role in @($OwnerRole, $AppRole)) {
+        if ($role -notmatch '^[a-z_][a-z0-9_]*$') { throw "The database account '$role' must be named with lower-case letters, digits and underscores." }
+    }
+    if (-not (Test-Path -LiteralPath $SqlFile)) { throw "$SqlFile was not found beside the installer." }
+    return @('-h', $Server, '-p', $Port, '-U', $Superuser, '-d', $Database, '-v', 'ON_ERROR_STOP=1', '-q',
+        '-c', "SELECT set_config('hc360.owner_role', '$OwnerRole', false), set_config('hc360.app_role', '$AppRole', false)",
+        '-f', $SqlFile)
+}
+
+# The connection string the server signs in with as $Role.
+function New-HospitalConnectionString([string] $Server, [int] $Port, [string] $Database, [string] $Role, [string] $Password) {
+    $value = "Host=$Server;Port=$Port;Database=$Database;Username=$Role"
+    if ($Password) { $value += ";Password=$Password" }
+    if ($Role -eq $OwnerRole) { return "$value;Maximum Pool Size=5;Timeout=15;Command Timeout=60" }
+    return "$value;Maximum Pool Size=200;Timeout=15;Command Timeout=60"
+}
+
 function Invoke-SuperuserSql([string] $Server, [int] $Port, [string] $Sql) {
     if (-not $PostgresSuperuserPassword) { $script:PostgresSuperuserPassword = Read-Host -AsSecureString "Password for PostgreSQL user '$PostgresSuperuser'" }
     $env:PGPASSWORD = [System.Net.NetworkCredential]::new('', $PostgresSuperuserPassword).Password
@@ -762,30 +799,38 @@ $settings = Read-SettingsFile $settingsPath
 $settingsBefore = ConvertTo-SettingTable $settings
 
 $connectionString = $null
+$ownerConnectionString = $null
 if ($CreateDatabase) {
     if (-not $pgBin) { throw 'PostgreSQL client tools (psql.exe) were not found.' }
     if (-not $PostgresSuperuserPassword) { $PostgresSuperuserPassword = Read-Host -AsSecureString "Password for PostgreSQL user '$PostgresSuperuser'" }
-    Write-Step "Creating database '$DatabaseName' and application role 'hc360_app'"
+    Write-Step "Creating database '$DatabaseName', its owner '$OwnerRole' and the account the server works as, '$AppRole'"
     $appPassword = New-RandomSecret
+    $ownerPassword = New-RandomSecret
     $env:PGPASSWORD = [System.Net.NetworkCredential]::new('', $PostgresSuperuserPassword).Password
     try {
         $psql = Join-Path $pgBin 'psql.exe'
-        $roleSql = "DO `$`$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'hc360_app') THEN CREATE ROLE hc360_app LOGIN PASSWORD '$appPassword'; ELSE ALTER ROLE hc360_app LOGIN PASSWORD '$appPassword'; END IF; END `$`$;"
-        & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d postgres -v ON_ERROR_STOP=1 -q -c $roleSql
-        if ($LASTEXITCODE -ne 0) { throw 'Creating the application role failed.' }
+        foreach ($account in @(@($OwnerRole, $ownerPassword), @($AppRole, $appPassword))) {
+            & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d postgres -v ON_ERROR_STOP=1 -q -c (Get-RoleSql $account[0] $account[1])
+            if ($LASTEXITCODE -ne 0) { throw "Creating the database account $($account[0]) failed." }
+        }
         $exists = & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DatabaseName'"
         if ($exists -ne '1') {
-            & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE $DatabaseName OWNER hc360_app ENCODING 'UTF8'"
+            & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE $DatabaseName OWNER $OwnerRole ENCODING 'UTF8'"
             if ($LASTEXITCODE -ne 0) { throw 'Creating the database failed.' }
         }
-        # Extensions need superuser; the application role only owns its own schemas.
+        # Extensions need superuser. Then the accounts' rights: the owner owns everything (a database hc360_app owned before
+        # the split included), hc360_app reads and writes rows (hc360-database-roles.sql).
         & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d $DatabaseName -v ON_ERROR_STOP=1 -q -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm; REVOKE ALL ON SCHEMA public FROM PUBLIC;'
         if ($LASTEXITCODE -ne 0) { throw 'Preparing the database failed.' }
+        $rolesArguments = Get-RolesSqlArguments $PostgresHost $PostgresPort $PostgresSuperuser $DatabaseName (Join-Path $PSScriptRoot $RolesSqlFile)
+        & $psql @rolesArguments
+        if ($LASTEXITCODE -ne 0) { throw "Setting up the database accounts ($RolesSqlFile) failed." }
     }
     finally {
         Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
     }
-    $connectionString = "Host=$PostgresHost;Port=$PostgresPort;Database=$DatabaseName;Username=hc360_app;Password=$appPassword;Maximum Pool Size=200;Timeout=15;Command Timeout=60"
+    $connectionString = New-HospitalConnectionString $PostgresHost $PostgresPort $DatabaseName $AppRole $appPassword
+    $ownerConnectionString = New-HospitalConnectionString $PostgresHost $PostgresPort $DatabaseName $OwnerRole $ownerPassword
 }
 elseif ($Standby -and -not $settingsBefore['ConnectionStrings:Hospital']) {
     # The standby's database is a copy of the primary's, with its accounts and its pg_hba.conf and pg_ident.conf: once
@@ -802,6 +847,7 @@ elseif (-not $settingsBefore['ConnectionStrings:Hospital']) {
 Write-Step "Configuring $settingsPath"
 $changed = @(
     if ($CreateDatabase) { Set-Setting $settings 'ConnectionStrings:Hospital' $connectionString -Replace }
+    if ($CreateDatabase) { Set-Setting $settings 'ConnectionStrings:HospitalOwner' $ownerConnectionString -Replace }
     elseif ($connectionString) { Set-Setting $settings 'ConnectionStrings:Hospital' $connectionString }
     Set-Setting $settings 'HealthCare360:HttpsPort' $HttpsPort -Replace:$PSBoundParameters.ContainsKey('HttpsPort')
     Set-Setting $settings 'HealthCare360:PortalHttpsPort' $PortalHttpsPort -Replace:$PSBoundParameters.ContainsKey('PortalHttpsPort')

@@ -25,6 +25,7 @@ stay goes on, read in every facility: Clinical takes no order for a stay that is
 | `beds.housekeeping` | Housekeeping queue, release cleaned beds | Nurse, HospitalAdmin |
 | `nursing.chart` | Notes, handovers, intake/output, risk assessments, consultant visits | Nurse, Doctor |
 | `nursing.mar` | Medication chart and MAR | Nurse, Doctor |
+| `nursing.restraint.order` | Order a patient's restraint, renew it after seeing them again, and end it (MHCA 2017 s.97); the nurses' checks and the debrief are `nursing.chart` | Doctor |
 | `nursing.in_charge` | Ward nurse in charge: the verbal and telephone orders and nurses' stops not countersigned in time, listed and told of each; told of NEWS2 escalations and transfer requests; accepts or declines transfers into the ward | HospitalAdmin (give it to the ward sisters' role) |
 
 "Read set" below = any of `inpatient.admissions.read`, `beds.manage`, `beds.housekeeping`, `nursing.chart`, `inpatient.masters.manage`.
@@ -164,7 +165,13 @@ closing bills the remaining bed days in its own transaction. Audited `discharge.
 `discharge.absconded`, `discharge.expired_pending_postmortem`. Whatever the type, a discharge is not
 completed while another department still has the patient: before anything is charged or changed, `DischargeService`
 asks every `IDischargeHoldSource` (Platform contract; today SpecialtyCare's theatre: a surgery of the stay received in
-pre-op or under way), and refuses with the first hold's code and every hold's message. It asks again in its transaction,
+pre-op or under way; SpecialtyCare's blood bank: a unit being transfused; and Clinical's discharge summary, below), and
+refuses with the first hold's code and every hold's message. A hold marked `PlannedDischargeOnly` holds only a planned
+discharge (Normal or Referred, `DischargeRules.IsPlanned`): a death, LAMA, DAMA or an absconded patient keeps its own
+rules and is not held by it. **A planned discharge waits for the signed discharge summary** (Clinical's
+`DischargeSummaryDischargeHold`, NABH COP/MOM): 422 `discharge.summary_unsigned` while the stay's summary is unwritten or
+a draft; signed or amended, the stay closes. On by default; `clinical.discharge.signedSummaryRequired` set to false for
+the hospital or a facility turns it off, which a second administrator approves (SettingGuard). It asks again in its transaction,
 under the stay's lock (`EncounterLocks`, held to the commit), which the theatre also takes to receive the patient in
 pre-op or start the operation: a case taken into the theatre at the same moment is either seen, or finds the stay
 ended. Completion closes the visit,
@@ -283,6 +290,29 @@ computed NABH indicators (falls and pressure ulcers per 1,000 patient days, [qua
 Reads are PHI-audited and honour restricted records; writes need the chart open (admitted, in discharge, or ≤ 24 h
 after discharge). Vitals are owned by Clinical and are not duplicated here.
 
+### Restraint — `/api/v1/nursing` (MHCA 2017 s.97, NABH COP)
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/admissions/{admissionId}/restraints` | `nursing.chart` | → `RestraintEpisodeDto[]` (newest first, each with its checks, renewals, next check due, `checkOverdue`, `orderLapsed`) |
+| POST | `/admissions/{admissionId}/restraints` | `nursing.restraint.order` | `OrderRestraintRequest` (type Physical or Chemical, method, reason, alternativesTried, hours 1–4, checkIntervalMinutes 15–60) → 200 `RestraintEpisodeDto`; 403 `restraint.doctor_required` from an account not linked to a doctor; 409 `restraint.already_active`; 422 `restraint.stay_closed` once the stay has ended |
+| POST | `/restraints/{id}/checks` | `nursing.chart` | `RecordRestraintCheckRequest` (checkedAt, circulationOk, skinIntact, fluidsOffered, toiletingOffered, notes — required when circulation is poor or the skin broken) → `RestraintEpisodeDto`; 422 `restraint.released` |
+| POST | `/restraints/{id}/renew` | `nursing.restraint.order` | `RenewRestraintRequest` (hours 1–4 from now, reason having seen the patient) → `RestraintEpisodeDto`; 422 `restraint.released` |
+| POST | `/restraints/{id}/release` | `nursing.restraint.order` | `ReleaseRestraintRequest` (reason) → `RestraintEpisodeDto`; 422 `restraint.released` |
+| POST | `/restraints/{id}/debrief` | `nursing.chart` | `RestraintDebriefRequest` (debrief) → `RestraintEpisodeDto`; 422 `restraint.active` before the release, `restraint.debriefed` once recorded |
+| GET | `/wards/{wardId}/restraints` | `nursing.chart` | → `WardRestraintItem[]`: the ward's restrained patients, an overdue check or a lapsed order first (PHI-audited `ward.restraints.viewed`) |
+
+**Restraints** (`RestraintEpisode`, `RestraintCheck`; tables `inpatient.restraint_episodes`, `inpatient.restraint_checks`)
+are never edited. A doctor orders one, signed in as themselves, as the last resort: what is used (for a chemical
+restraint the medicine, dose and route), why, and the less restrictive measures tried first; for at most four hours
+(`RestraintEpisode.MaxOrderHours`) and with the nurses' checks every 15 to 60 minutes. One restraint is active per stay
+at a time. The next check is due an interval after the last (or after the order); past it the check is overdue, and past
+the order's time with the patient still restrained the order has lapsed: both show on the patient's chart and at the top
+of the ward's list on the nursing station. Only a doctor renews (having seen the patient again, up to four hours from
+then, each renewal kept with its reason) or ends it; after the release the debrief (what led to it, what may prevent the
+next) is recorded once. Ordering, renewing and ending are audited (`restraint.ordered`, `restraint.renewed`,
+`restraint.released`, Clinical, Warning). The staff app shows it on the nursing station's *Restraint* tab and the ward
+view's *Restrained patients* list ([Restraints.tsx](../../src/web/apps/staff/src/modules/inpatient/nursing/Restraints.tsx)).
+
 ### Medication chart and MAR — `/api/v1/nursing`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
@@ -378,4 +408,4 @@ clearance check, so the final bill is complete.
 `wards`, `rooms`, `beds`, `housekeeping_tasks`, `admissions`, `bed_assignments`, `bed_day_charges`,
 `consultant_visits`, `nursing_notes`, `shift_handovers`, `intake_output_entries`, `nursing_assessments`,
 `medication_orders`, `medication_administrations`, `early_warning_escalations`, `transfer_requests`, `care_plan_problems`,
-`care_plan_evaluations`. The policy number is AES-GCM encrypted (`IFieldProtector`).
+`care_plan_evaluations`, `restraint_episodes`, `restraint_checks`. The policy number is AES-GCM encrypted (`IFieldProtector`).

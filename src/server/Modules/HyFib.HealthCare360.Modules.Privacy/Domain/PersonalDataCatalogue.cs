@@ -156,6 +156,8 @@ public static class PersonalDataCatalogue
                 new("inpatient.nursing_notes", "Nursing notes"),
                 new("inpatient.nursing_assessments", "Nursing assessments"),
                 new("inpatient.nursing_safety_events", "Falls and pressure injuries recorded during your stay"),
+                new("inpatient.restraint_episodes", "Restraints ordered during your stay: why, for how long, renewals and release"),
+                new("inpatient.restraint_checks", "The nurses' checks while you were restrained"),
                 new("inpatient.medication_orders", "Medicine orders during stays"),
                 new("inpatient.medication_administrations", "Medicines given to you"),
                 // A second nurse confirming at the screen, with their own password, a controlled medicine given to you: who,

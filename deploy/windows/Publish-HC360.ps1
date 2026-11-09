@@ -94,6 +94,8 @@ try {
     $deployOut = Join-Path $OutputDir 'deploy'
     New-Item -ItemType Directory -Force -Path $deployOut | Out-Null
     Get-ChildItem $PSScriptRoot -Filter '*.ps1' | Where-Object Name -ne 'Publish-HC360.ps1' | Copy-Item -Destination $deployOut
+    # The SQL the installer and Restore-HC360.ps1 run (the two database accounts).
+    Get-ChildItem $PSScriptRoot -Filter '*.sql' | Copy-Item -Destination $deployOut
     Copy-Item (Join-Path $repo 'docs\deployment\DEPLOYMENT.md') $deployOut -ErrorAction SilentlyContinue
 
     $serverZip = Join-Path $OutputDir "HC360-Server-$version-$Runtime.zip"

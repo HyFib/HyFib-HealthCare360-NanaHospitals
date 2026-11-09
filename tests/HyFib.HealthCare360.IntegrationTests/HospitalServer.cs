@@ -270,6 +270,12 @@ public sealed class HospitalServer : IAsyncLifetime
         {
             await scope.ServiceProvider.GetRequiredService<ISettingsService>().SetAsync(AuthService.MaxSessionsSetting, 0, cancellationToken: ct);
 
+            // The run's other tests discharge their stays without writing a discharge summary: the hospital-wide rule that a
+            // planned discharge waits for the signed summary is off, except for the facility DischargeSummaryHoldTests turns
+            // it on for (where it is on by default, as it ships).
+            await scope.ServiceProvider.GetRequiredService<ISettingsService>().SetAsync(
+                Modules.Clinical.Services.DischargeSummaryDischargeHold.Setting, false, cancellationToken: ct);
+
             var now = DateTimeOffset.UtcNow;
             var desktop = new Device
             {
@@ -1291,6 +1297,25 @@ public sealed class HospitalServer : IAsyncLifetime
         }
 
         return await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Post, path);
+    }
+
+    /// <summary>
+    /// An HR change (salary payment details, a salary structure, a payroll input, a leave credit: maker-checker slice 11)
+    /// approved by whoever of the HR manager and the hospital administrator did not ask for it.
+    /// </summary>
+    public async Task<ApprovalRequestDto> ApproveHrChangeAsync(Guid approvalId)
+    {
+        foreach (var userName in new[] { Users.HrManager, Users.HospitalAdmin })
+        {
+            var checker = await SignInAsync(userName);
+            var request = await checker.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
+            if (request.CanDecide)
+            {
+                return Approved(await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Checked for the tests.", request.Version)));
+            }
+        }
+
+        throw new InvalidOperationException($"Neither HR user may decide approval {approvalId}.");
     }
 
     /// <summary>

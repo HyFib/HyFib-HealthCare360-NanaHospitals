@@ -135,7 +135,9 @@ public sealed record SavePayrollInputRequest(Guid EmployeeId, PayrollInputKind K
 /// <summary>CSV text: <c>employeeCode,componentCode,amount[,description]</c> (header optional).</summary>
 public sealed record ImportPayrollInputsRequest(string Csv);
 
-public sealed record PayrollImportResult(int Imported);
+/// <param name="Imported">The lines added at once (0 while a file with earnings waits).</param>
+/// <param name="Approval">The request a file with earnings waits in, for a second person (maker-checker slice 11).</param>
+public sealed record PayrollImportResult(int Imported, Platform.Approvals.ApprovalRequestDto? Approval = null);
 
 public sealed record PayslipListItem(
     Guid Id,

@@ -34,14 +34,27 @@ internal static class PayrollEndpoints
         group.MapGet("/runs/{id:guid}/bank-transfer.csv", BankFile).RequirePermission(HRPermissions.PayrollApprove);
 
         group.MapGet("/runs/{id:guid}/inputs", ListInputs).RequireAnyPermission(viewers);
+        // Maker-checker slice 11: a deduction is added at once (201, its id); an earning or an override is asked for (202,
+        // the request), as a file with earnings in it and a deduction another module posted or another person entered,
+        // taken off. Someone else who approves payroll decides; nobody changes their own pay.
         group.MapPost("/runs/{id:guid}/inputs", async (Guid id, SavePayrollInputRequest r, PayrollInputService inputs, CancellationToken ct) =>
-                (await inputs.AddAsync(id, r, ct)).ToCreated(inputId => $"/api/v1/hr/payroll/inputs/{inputId}"))
+                (await inputs.AddAsync(id, r, ct)).ToHttpResult(added => added.Approval is { } asked
+                    ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)
+                    : TypedResults.Created($"/api/v1/hr/payroll/inputs/{added.Id}", added.Id)))
             .RequirePermission(HRPermissions.PayrollProcess).WithValidation<SavePayrollInputRequest>();
         group.MapPost("/runs/{id:guid}/inputs/import", async (Guid id, ImportPayrollInputsRequest r, PayrollInputService inputs, CancellationToken ct) =>
-                (await inputs.ImportAsync(id, r.Csv, ct)).ToOk())
+                (await inputs.ImportAsync(id, r.Csv, ct)).ToHttpResult(imported => imported.Approval is { } asked
+                    ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", imported)
+                    : TypedResults.Ok(imported)))
             .RequirePermission(HRPermissions.PayrollProcess).WithValidation<ImportPayrollInputsRequest>();
-        group.MapDelete("/inputs/{inputId:guid}", async (Guid inputId, PayrollInputService inputs, CancellationToken ct) => (await inputs.RemoveAsync(inputId, ct)).ToNoContent())
+        group.MapDelete("/inputs/{inputId:guid}", async (Guid inputId, PayrollInputService inputs, CancellationToken ct) =>
+                (await inputs.RemoveAsync(inputId, ct)).ToHttpResult(asked => asked is null
+                    ? TypedResults.NoContent()
+                    : TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
             .RequirePermission(HRPermissions.PayrollProcess);
+        group.MapGet("/pending-changes", async (Guid? runId, Guid? employeeId, PayApprovals pay, CancellationToken ct) =>
+                TypedResults.Ok(await pay.PendingAsync(runId, employeeId, ct)))
+            .RequireAnyPermission(viewers);
 
         group.MapGet("/runs/{id:guid}/payslips", ListPayslips).RequireAnyPermission(viewers);
         group.MapGet("/payslips/{id:guid}", GetPayslip).RequireAnyPermission(viewers);

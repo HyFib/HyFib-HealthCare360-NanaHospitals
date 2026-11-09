@@ -1,13 +1,34 @@
 using HyFib.HealthCare360.Modules.HR.Domain;
 using HyFib.HealthCare360.Modules.HR.Features.Leave;
+using HyFib.HealthCare360.Platform.Approvals;
+using ApprovalStatus = HyFib.HealthCare360.Modules.HR.Domain.ApprovalStatus;
 using HyFib.HealthCare360.Platform.Files;
+using PlatformApprovalStatus = HyFib.HealthCare360.Platform.Approvals.ApprovalStatus;
 
 namespace HyFib.HealthCare360.Modules.HR.Services;
 
 /// <summary>
+/// When a manual leave adjustment waits for a second person (maker-checker slice 11): a credit (more days) waits, a debit
+/// (fewer days) is made at once. Nobody adjusts their own balance either way. The yearly credit is worked out by rule
+/// (carry-forward and the pro-rated quota) and stays automatic.
+/// </summary>
+public static class LeaveAdjustmentRule
+{
+    public static bool Waits(decimal days) => days > 0;
+}
+
+/// <summary>A leave credit as asked: whose balance, of which type and year, and by how many days.</summary>
+public sealed record LeaveAdjustmentPayload(Guid EmployeeId, Guid LeaveTypeId, int Year, decimal Days);
+
+/// <summary>A leave credit waiting for a second person, for the employee's leave screen.</summary>
+public sealed record PendingLeaveAdjustment(Guid ApprovalId, Guid LeaveTypeId, int Year, decimal Days, string Summary, string RequestedBy, DateTimeOffset RequestedAt);
+
+/// <summary>
 /// Leave management (HR-05): application with balance and overlap checks, manager/HR approval, cancellation,
 /// yearly credit with carry-forward and pro-rating, and manual adjustments. Approved leave feeds attendance, and
-/// decisions on past dates recompute attendance immediately so payroll never sees stale absences.
+/// decisions on past dates recompute attendance immediately so payroll never sees stale absences. A manual credit waits for
+/// someone else who approves leave, and nobody adjusts, approves or rejects leave on their own record
+/// (<see cref="OwnCode"/>, maker-checker slice 11).
 /// </summary>
 public sealed class LeaveService(
     HospitalDbContext db,
@@ -15,8 +36,14 @@ public sealed class LeaveService(
     HrApprovers approvers,
     AttendanceService attendance,
     IAuditLogger audit,
+    IApprovals approvals,
     TimeProvider time)
 {
+    public const string AdjustmentKind = "hr.leave_adjust";
+
+    /// <summary>Refused: a change to one's own leave balance, or a decision on one's own leave.</summary>
+    public const string OwnCode = "hr.leave_own";
+
     public async Task<Result<Guid>> ApplyAsync(Guid employeeId, ApplyLeaveRequest request, CancellationToken ct)
     {
         var employee = await db.Set<Employee>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
@@ -127,6 +154,11 @@ public sealed class LeaveService(
         if (approver.IsFailure)
         {
             return approver.Error!;
+        }
+
+        if (await OwnRecordAsync(leave.EmployeeId, ct))
+        {
+            return Error.Forbidden(OwnCode, "This is your own leave, so your manager or someone else in HR decides it.");
         }
 
         var now = time.GetUtcNow();
@@ -287,19 +319,50 @@ public sealed class LeaveService(
         return new CreditLeaveResult(employees.Count, created);
     }
 
-    public async Task<Result> AdjustAsync(AdjustLeaveBalanceRequest request, CancellationToken ct)
+    /// <summary>
+    /// Adjusts a balance by hand: a debit at once (null), a credit asked for a second person's approval (the request).
+    /// Nobody adjusts their own balance.
+    /// </summary>
+    public async Task<Result<ApprovalRequestDto?>> AdjustAsync(AdjustLeaveBalanceRequest request, CancellationToken ct)
     {
         var employee = await db.Set<Employee>().AsNoTracking().Where(e => e.Id == request.EmployeeId)
-            .Select(e => new { e.FacilityId, e.EmployeeCode }).FirstOrDefaultAsync(ct);
+            .Select(e => new { e.FacilityId, e.EmployeeCode, e.FullName, e.UserId }).FirstOrDefaultAsync(ct);
         if (employee is null)
         {
             return Error.NotFound(nameof(Employee), request.EmployeeId);
+        }
+
+        if (employee.UserId is { } own && own == currentUser.UserId)
+        {
+            return Error.Forbidden(OwnCode, "This is your own leave balance: someone else in HR adjusts it, and a credit is approved by another person.");
         }
 
         var type = await db.Set<LeaveType>().AsNoTracking().FirstOrDefaultAsync(t => t.Id == request.LeaveTypeId && t.TracksBalance, ct);
         if (type is null)
         {
             return Error.Field("leaveTypeId", "Choose a leave type that keeps a balance.");
+        }
+
+        if (LeaveAdjustmentRule.Waits(request.Days))
+        {
+            var closing = (await db.Set<LeaveBalance>().AsNoTracking()
+                .FirstOrDefaultAsync(b => b.EmployeeId == request.EmployeeId && b.LeaveTypeId == type.Id && b.Year == request.Year, ct))?.Closing ?? 0;
+            var asked = await approvals.RequestAsync(
+                AdjustmentKind,
+                new ApprovalSubject(nameof(Employee), request.EmployeeId, null, employee.FacilityId, null),
+                new LeaveAdjustmentPayload(request.EmployeeId, type.Id, request.Year, request.Days),
+                $"{type.Code} {request.Year} balance of {employee.FullName} ({employee.EmployeeCode}) credited {request.Days:+0.#} day(s)",
+                [
+                    new ApprovalDetail("Employee", $"{employee.FullName} ({employee.EmployeeCode})"),
+                    new ApprovalDetail("Leave", $"{type.Name} ({type.Code}), {request.Year}"),
+                    new ApprovalDetail("Credit", $"{request.Days:0.#} day(s): balance {closing:0.#} → {closing + request.Days:0.#}"),
+                    new ApprovalDetail("What it reaches", type.IsPaid
+                        ? "Paid leave the employee can take without loss of pay. Until it is approved the balance stays as it is."
+                        : "Leave the employee can take. Until it is approved the balance stays as it is."),
+                ],
+                request.Reason,
+                ct);
+            return asked.IsSuccess ? Result<ApprovalRequestDto?>.Ok(asked.Value) : asked.Error!;
         }
 
         var balance = await GetOrCreateBalanceAsync(employee.FacilityId, request.EmployeeId, type.Id, request.Year, ct);
@@ -316,8 +379,68 @@ public sealed class LeaveService(
             EntityId = balance.Id.ToString(),
         });
         await db.SaveChangesAsync(ct);
-        return Result.Success();
+        return (ApprovalRequestDto?)null;
     }
+
+    /// <summary>The leave credits waiting for this employee.</summary>
+    public async Task<IReadOnlyList<PendingLeaveAdjustment>> PendingAdjustmentsAsync(Guid employeeId, CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        var requests = await db.Set<ApprovalRequest>().AsNoTracking()
+            .Where(r => r.Kind == AdjustmentKind && r.SubjectType == nameof(Employee) && r.SubjectId == employeeId && r.Status == PlatformApprovalStatus.Pending && r.ExpiresAt > now)
+            .Select(r => new { r.Id, r.Payload, r.Summary, r.RequestedByName, r.RequestedAt })
+            .ToListAsync(ct);
+        return [.. requests.Select(r =>
+        {
+            var asked = ApprovalPayload.Read<LeaveAdjustmentPayload>(r.Payload);
+            return new PendingLeaveAdjustment(r.Id, asked.LeaveTypeId, asked.Year, asked.Days, r.Summary, r.RequestedByName, r.RequestedAt);
+        })];
+    }
+
+    /// <summary>Makes an approved leave credit, in the approval's transaction, never by the employee whose balance it is.</summary>
+    internal async Task<Result<string>> ApplyAdjustmentAsync(ApprovalRequest request, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<LeaveAdjustmentPayload>(request.Payload);
+        var employee = await db.Set<Employee>().AsNoTracking().Where(e => e.Id == asked.EmployeeId)
+            .Select(e => new { e.FacilityId, e.EmployeeCode, e.UserId, e.Status }).FirstOrDefaultAsync(ct);
+        if (employee is null)
+        {
+            return Error.Rule("employee.gone", "The employee no longer exists, so nothing was changed.");
+        }
+
+        if (employee.UserId is { } own && own == currentUser.UserId)
+        {
+            return Error.Forbidden(OwnCode, "This is your own leave balance, so someone else who approves leave decides it.");
+        }
+
+        if (employee.Status == EmployeeStatus.Separated)
+        {
+            return Error.Rule("employee.separated", $"{employee.EmployeeCode} has been separated, so nothing was changed.");
+        }
+
+        var type = await db.Set<LeaveType>().AsNoTracking().FirstOrDefaultAsync(t => t.Id == asked.LeaveTypeId && t.TracksBalance, ct);
+        if (type is null)
+        {
+            return Error.Rule("approval.stale", "The leave type no longer keeps a balance, so nothing was changed.");
+        }
+
+        var balance = await GetOrCreateBalanceAsync(employee.FacilityId, asked.EmployeeId, type.Id, asked.Year, ct);
+        balance.Adjusted += asked.Days;
+        var words = $"{type.Code} {asked.Year} balance of {employee.EmployeeCode} credited {asked.Days:+0.#} day(s)";
+        audit.Add(new AuditEntry(AuditCategories.Data, "leave.balance_adjusted",
+            $"{words}: {request.Reason} (asked for by {request.RequestedByName}, approved by {currentUser.DisplayName ?? currentUser.UserName})")
+        {
+            EntityType = nameof(LeaveBalance),
+            EntityId = balance.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { asked, approval = request.Id, requestedBy = request.RequestedBy, approvedBy = currentUser.UserId },
+        });
+        return words;
+    }
+
+    private async Task<bool> OwnRecordAsync(Guid employeeId, CancellationToken ct) =>
+        currentUser.UserId is { } userId
+        && await db.Set<Employee>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AnyAsync(e => e.Id == employeeId && e.UserId == userId, ct);
 
     /// <summary>Holidays, week offs (fixed or rostered) — unless a shift is rostered that day.</summary>
     private async Task<Func<DateOnly, bool>> NonWorkingDaysAsync(Employee employee, DateOnly from, DateOnly to, CancellationToken ct)
@@ -374,4 +497,16 @@ public sealed class LeaveService(
         var from = to.AddDays(-(AttendanceService.MaxRangeDays - 1)) > leave.FromDate ? to.AddDays(-(AttendanceService.MaxRangeDays - 1)) : leave.FromDate;
         await attendance.ComputeAsync(leave.FacilityId, from, to, [leave.EmployeeId], ct);
     }
+}
+
+/// <summary>A manual leave credit: one who approves leave asks, another approves (maker-checker slice 11).</summary>
+internal sealed class LeaveAdjustmentApproval(LeaveService leave) : IApprovalAction
+{
+    public string Kind => LeaveService.AdjustmentKind;
+
+    public string Title => "Leave balance credited";
+
+    public string ApprovePermission => HRPermissions.LeaveApprove;
+
+    public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => leave.ApplyAdjustmentAsync(request, ct);
 }

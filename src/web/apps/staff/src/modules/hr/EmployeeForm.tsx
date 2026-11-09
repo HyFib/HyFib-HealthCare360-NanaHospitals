@@ -231,6 +231,11 @@ export function EmployeeForm(props: EmployeeFormProps) {
             name="paymentMode"
             label="Salary paid by"
             required
+            hint={
+              isNew
+                ? undefined
+                : 'A change is asked for: someone else who approves payroll decides it, and the salary is paid as now until then.'
+            }
             options={PAYMENT_MODES.map((m) => ({ value: m, label: humanize(m) }))}
           />
           <TextField
@@ -264,7 +269,7 @@ export function EmployeeForm(props: EmployeeFormProps) {
       {isNew && paymentMode === 'BankTransfer' && (
         <Section
           title="Salary bank account"
-          description="Typed twice to avoid mistakes. After saving only the last four digits are shown; later changes are audited and the employee is notified."
+          description="Typed twice to avoid mistakes. After saving only the last four digits are shown. The account is asked for approval: someone else who approves payroll decides it before any salary is paid into it, as for every later change."
         >
           <FormGrid columns={4}>
             <TextField control={control} name="bankName" label="Bank name" autoComplete="off" />
