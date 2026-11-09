@@ -24,7 +24,8 @@ public sealed record ItemListItem(
     decimal GstRate,
     decimal ReorderLevel,
     bool IsActive,
-    bool IsHighAlert = false);
+    bool IsHighAlert = false,
+    TelemedicineList? TelemedicineList = null);
 
 public sealed record ItemDetail(
     Guid Id,
@@ -61,7 +62,8 @@ public sealed record ItemDetail(
     bool IsHighAlert = false,
     PendingDrugClass? PendingClass = null,
     string? CeilingNotification = null,
-    PendingItemPricing? PendingPricing = null);
+    PendingItemPricing? PendingPricing = null,
+    TelemedicineList? TelemedicineList = null);
 
 public sealed record SaveItemRequest(
     string Code,
@@ -95,7 +97,8 @@ public sealed record SaveItemRequest(
     bool IsHighAlert = false,
     string? ClassChangeReason = null,
     string? CeilingNotification = null,
-    string? PriceChangeReason = null);
+    string? PriceChangeReason = null,
+    TelemedicineList? TelemedicineList = null);
 
 /// <summary>Picker row: the item plus its sellable stock in the chosen store (when a store is given).</summary>
 public sealed record ItemLookup(
@@ -162,5 +165,6 @@ public sealed class SaveItemRequestValidator : AbstractValidator<SaveItemRequest
         RuleFor(x => x.ClassChangeReason).SafeText(500);
         RuleFor(x => x.CeilingNotification).SafeText(100);
         RuleFor(x => x.PriceChangeReason).SafeText(500);
+        RuleFor(x => x.TelemedicineList).IsInEnum().When(x => x.TelemedicineList is not null);
     }
 }

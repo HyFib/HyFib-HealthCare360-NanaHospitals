@@ -83,4 +83,52 @@ public sealed class DrugSafetyClassTests
         result.IsFailure.ShouldBeTrue();
         result.Error!.Fields!.Keys.ShouldContain("schedule");
     }
+
+    [Theory]
+    // A list that lets the medicine into more teleconsultations, including a first list for a medicine on none, waits.
+    [InlineData(TelemedicineList.Prohibited, null)]
+    [InlineData(TelemedicineList.Prohibited, TelemedicineList.O)]
+    [InlineData(null, TelemedicineList.B)]
+    [InlineData(null, TelemedicineList.O)]
+    [InlineData(TelemedicineList.B, TelemedicineList.A)]
+    [InlineData(TelemedicineList.A, TelemedicineList.O)]
+    public void A_telemedicine_list_letting_the_medicine_into_more_teleconsultations_is_weakened(TelemedicineList? from, TelemedicineList? to) =>
+        new DrugSafetyClass(DrugSchedule.H, false, false, from).IsWeakenedBy(new DrugSafetyClass(DrugSchedule.H, false, false, to)).ShouldBeTrue();
+
+    [Theory]
+    [InlineData(TelemedicineList.O, TelemedicineList.A)]
+    [InlineData(TelemedicineList.B, null)]
+    [InlineData(null, TelemedicineList.Prohibited)]
+    [InlineData(TelemedicineList.A, TelemedicineList.A)]
+    public void A_telemedicine_list_as_strict_or_stricter_is_not_weakened(TelemedicineList? from, TelemedicineList? to) =>
+        new DrugSafetyClass(DrugSchedule.H, false, false, from).IsWeakenedBy(new DrugSafetyClass(DrugSchedule.H, false, false, to)).ShouldBeFalse();
+
+    [Fact]
+    public void The_telemedicine_list_is_part_of_the_class_and_its_words()
+    {
+        var item = new Item { Type = ItemType.Drug, Schedule = DrugSchedule.H, TelemedicineList = TelemedicineList.B };
+        DrugSafetyClass.Of(item).ShouldBe(new DrugSafetyClass(DrugSchedule.H, false, false, TelemedicineList.B));
+        DrugSafetyClass.Of(item).Words().ShouldBe("Schedule H, not controlled, not high-alert, on telemedicine List B");
+
+        new DrugSafetyClass(DrugSchedule.H, false, false, TelemedicineList.O).ApplyTo(item);
+        item.TelemedicineList.ShouldBe(TelemedicineList.O);
+
+        DrugClassApprovals.Consequences(new DrugSafetyClass(DrugSchedule.H, false, false, null), new DrugSafetyClass(DrugSchedule.H, false, false, TelemedicineList.A))
+            .ShouldBe("A doctor may prescribe it in a first teleconsultation by video, and in a follow-up (List A).");
+    }
+
+    [Fact]
+    public void Only_a_medicine_is_put_on_a_telemedicine_list_and_a_schedule_X_or_NDPS_one_only_on_the_prohibited_list()
+    {
+        var consumable = new Item { Type = ItemType.Consumable, TelemedicineList = TelemedicineList.O, BaseUnit = "NOS", PurchaseUnit = "NOS", GstRate = 12 };
+        consumable.Validate().Error!.Fields!.Keys.ShouldContain("telemedicineList");
+
+        var morphine = new Item { Type = ItemType.Drug, Schedule = DrugSchedule.X, IsControlled = true, TelemedicineList = TelemedicineList.A, BaseUnit = "AMP", PurchaseUnit = "AMP", GstRate = 5 };
+        morphine.Validate().Error!.Fields!.Keys.ShouldContain("telemedicineList");
+
+        morphine.TelemedicineList = TelemedicineList.Prohibited;
+        morphine.Validate().IsSuccess.ShouldBeTrue();
+        morphine.TelemedicineList = null;
+        morphine.Validate().IsSuccess.ShouldBeTrue();
+    }
 }

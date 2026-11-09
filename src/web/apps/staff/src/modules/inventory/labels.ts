@@ -45,21 +45,72 @@ export function requiresRegister(schedule: DrugSchedule, isControlled: boolean):
   return isControlled || schedule === 'H1' || schedule === 'X';
 }
 
+/**
+ * Telemedicine Practice Guidelines 2020 lists (TelemedicineList). The pharmacy and therapeutics committee puts each
+ * medicine on one; Schedule X and NDPS medicines are on the Prohibited List by law. 'Unlisted' is a medicine on no list
+ * yet (null on the server), which is not prescribed in a first teleconsultation.
+ */
+export const TELEMEDICINE_LISTS = ['Unlisted', 'O', 'A', 'B', 'Prohibited'] as const;
+export type TelemedicineListChoice = (typeof TELEMEDICINE_LISTS)[number];
+export type TelemedicineList = Exclude<TelemedicineListChoice, 'Unlisted'>;
+export const telemedicineListLabel: Record<TelemedicineListChoice, string> = {
+  Unlisted: 'Not on a list yet',
+  O: 'List O',
+  A: 'List A',
+  B: 'List B',
+  Prohibited: 'Prohibited List',
+};
+export const telemedicineListHint: Record<TelemedicineListChoice, string> = {
+  Unlisted:
+    'Not prescribed in a first teleconsultation until the pharmacy and therapeutics committee puts it on a list',
+  O: 'Safe, common medicines: prescribed in any teleconsultation',
+  A: 'Prescribed in a first teleconsultation only by video, and in a follow-up',
+  B: 'Only added on in a follow-up, for a condition the doctor saw the patient in person for',
+  Prohibited: 'Never prescribed in a teleconsultation (Schedule X and NDPS medicines are here by law)',
+};
+
+/** Schedule X and NDPS medicines are on the Prohibited List whatever is chosen (TelemedicineLists.ByLaw). */
+export function prohibitedByLaw(schedule: DrugSchedule, isControlled: boolean): boolean {
+  return isControlled || schedule === 'X';
+}
+
+/** How few teleconsultations a list lets a medicine into (TelemedicineLists.Strictness); no list ranks above List B. */
+const TELEMEDICINE_STRICTNESS: Record<TelemedicineListChoice, number> = {
+  Prohibited: 4,
+  Unlisted: 3,
+  B: 2,
+  A: 1,
+  O: 0,
+};
+
 /** How strict a schedule is (DrugSafetyClass.Strictness): X above H1 above H above the rest. */
 const STRICTNESS: Partial<Record<DrugSchedule, number>> = { X: 3, H1: 2, H: 1 };
 
 /**
  * DrugSafetyClass.IsWeakenedBy: whether a drug's new classification handles it less strictly in any way (no longer
- * controlled, no longer high-alert, or a lower schedule). On an existing drug that waits for a pharmacist's approval.
+ * controlled, no longer high-alert, a lower schedule, or a telemedicine list that lets it into more teleconsultations).
+ * On an existing drug that waits for a pharmacist's approval.
  */
 export function weakensClass(
-  before: { schedule: DrugSchedule; isControlled: boolean; isHighAlert: boolean },
-  after: { schedule: DrugSchedule; isControlled: boolean; isHighAlert: boolean },
+  before: {
+    schedule: DrugSchedule;
+    isControlled: boolean;
+    isHighAlert: boolean;
+    telemedicineList?: TelemedicineList | null;
+  },
+  after: {
+    schedule: DrugSchedule;
+    isControlled: boolean;
+    isHighAlert: boolean;
+    telemedicineList?: TelemedicineList | null;
+  },
 ): boolean {
   return (
     (before.isControlled && !after.isControlled) ||
     (before.isHighAlert && !after.isHighAlert) ||
-    (STRICTNESS[after.schedule] ?? 0) < (STRICTNESS[before.schedule] ?? 0)
+    (STRICTNESS[after.schedule] ?? 0) < (STRICTNESS[before.schedule] ?? 0) ||
+    TELEMEDICINE_STRICTNESS[after.telemedicineList ?? 'Unlisted'] <
+      TELEMEDICINE_STRICTNESS[before.telemedicineList ?? 'Unlisted']
   );
 }
 
