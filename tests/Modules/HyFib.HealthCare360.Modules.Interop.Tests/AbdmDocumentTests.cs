@@ -30,8 +30,18 @@ public sealed class AbdmDocumentTests
     private static readonly string[] Samples =
     [
         "prescription", "op-consultation", "lab-report", "radiology-report", "cardiology-report", "discharge-summary", "immunization",
-        "clinical-note", "home-readings",
+        "clinical-note", "home-readings", "invoice",
     ];
+
+    /// <summary>
+    /// The kinds whose Composition profile, or a profile of an entry, is not in the package the validator has: the guide's
+    /// InvoiceRecord and Invoice (<see cref="AbdmInvoiceRecordTests"/>). The validator reports them unchecked, as errors
+    /// naming them, which is all it may report for these kinds.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string[]> ProfilesNotInThePackage = new Dictionary<string, string[]>
+    {
+        ["invoice"] = [AbdmProfiles.InvoiceRecord, AbdmProfiles.Invoice],
+    };
 
     public static TheoryData<string> RecordTypes => new(Samples);
 
@@ -45,6 +55,7 @@ public sealed class AbdmDocumentTests
         "immunization" => Build(AbdmRecords.Immunization(AbdmTestData.ImmunizationRecord())),
         "clinical-note" => Build(AbdmRecords.ClinicalNote(AbdmTestData.ClinicalNoteRecord())),
         "home-readings" => Build(AbdmRecords.HomeReadings(AbdmTestData.HomeReadingsRecord())),
+        "invoice" => Build(AbdmRecords.Invoice(AbdmTestData.InvoiceRecord(pdf: AbdmTestData.Pdf))),
         _ => Build(AbdmRecords.DischargeSummary(AbdmTestData.DischargeSummaryRecord(pdf: null))),
     };
 
@@ -129,6 +140,21 @@ public sealed class AbdmDocumentTests
         coding.System.ShouldBe("http://snomed.info/sct");
         coding.Code.ShouldBe(code);
         coding.Display.ShouldBe(display);
+        composition.Status.ShouldBe(R4.CompositionStatus.Final);
+    }
+
+    /// <summary>
+    /// SNOMED CT has no concept for an invoice: the InvoiceRecord is typed with the guide's own billing code, as best known
+    /// (not in the package, so not checked against the profile: a sandbox run must confirm it).
+    /// </summary>
+    [Fact]
+    public void The_invoice_record_is_typed_with_the_guides_billing_code()
+    {
+        var composition = (R4.Composition)Sample("invoice").Entry[0].Resource;
+
+        composition.Meta.Profile.ShouldBe([AbdmProfiles.InvoiceRecord]);
+        var coding = composition.Type.Coding.ShouldHaveSingleItem();
+        (coding.System, coding.Code, coding.Display).ShouldBe(("https://nrces.in/ndhm/fhir/r4/CodeSystem/ndhm-billing-codes", "INVOICE", "Invoice"));
         composition.Status.ShouldBe(R4.CompositionStatus.Final);
     }
 
@@ -1051,6 +1077,8 @@ public sealed class AbdmDocumentTests
     /// <summary>
     /// Each sample document validates against the NRCeS ndhm.in 6.5.0 profiles with Firely's validator, as CI runs it
     /// (<see cref="AbdmProfileValidator"/>; <c>ValidatorSetupTests</c> shows it fails documents that break the profiles).
+    /// A kind whose profiles the package lacks (<see cref="ProfilesNotInThePackage"/>) has an error for each of them, that
+    /// it could not be checked against it, and no other.
     /// </summary>
     [Theory]
     [MemberData(nameof(RecordTypes))]
@@ -1058,9 +1086,21 @@ public sealed class AbdmDocumentTests
     {
         var validation = AbdmProfileValidator.Validate(Sample(name), AbdmProfileValidator.DocumentBundle);
 
-        validation.Errors.ShouldBeEmpty(validation.Describe());
+        if (ProfilesNotInThePackage.TryGetValue(name, out var missing))
+        {
+            missing.ShouldAllBe(profile => validation.Errors.Any(e => Says(e, profile)), validation.Describe());
+            validation.Errors.ShouldAllBe(e => missing.Any(profile => Says(e, profile)), validation.Describe());
+        }
+        else
+        {
+            validation.Errors.ShouldBeEmpty(validation.Describe());
+        }
+
         validation.Warnings.ShouldBeEmpty(validation.Describe());
     }
+
+    private static bool Says(R4.OperationOutcome.IssueComponent issue, string profile) =>
+        (issue.Details?.Text ?? issue.Diagnostics ?? string.Empty).Contains(profile, StringComparison.Ordinal);
 
     /// <summary>
     /// The radiology sample validates because it meets DiagnosticReportImaging and ImagingStudy, not because they go

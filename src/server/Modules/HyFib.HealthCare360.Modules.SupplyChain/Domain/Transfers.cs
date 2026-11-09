@@ -29,11 +29,35 @@ public sealed class StockTransfer : AuditableEntity, IFacilityScoped
     public decimal TotalValue { get; set; }
     public List<StockTransferLine> Lines { get; set; } = [];
 
-    public Result Receive(Guid? userId, DateTimeOffset now)
+    /// <summary>Whoever dispatched a transfer received it, or decided a shortfall on it.</summary>
+    public const string ReceiveOwnCode = "transfer.receive_own";
+
+    public const string ShortfallOwnCode = "transfer.shortfall_own";
+
+    public bool IsDispatcher(Guid? userId) => userId is { } user && DispatchedByUserId == user;
+
+    /// <summary>
+    /// Refuses whoever dispatched the transfer: the goods are counted in at the receiving store by someone else, so a
+    /// transfer note cannot be made to say it arrived by the person who sent it (MAKER-CHECKER slice 13).
+    /// </summary>
+    public Result CanBeReceivedBy(Guid? userId)
     {
         if (Status != TransferStatus.InTransit)
         {
             return Error.Rule("transfer.not_in_transit", $"Transfer {Number} is already {Status}.");
+        }
+
+        return IsDispatcher(userId)
+            ? Error.Forbidden(ReceiveOwnCode, $"You dispatched transfer {Number}: someone at the receiving store receives it.")
+            : Result.Success();
+    }
+
+    public Result Receive(Guid? userId, DateTimeOffset now)
+    {
+        var allowed = CanBeReceivedBy(userId);
+        if (allowed.IsFailure)
+        {
+            return allowed;
         }
 
         Status = TransferStatus.Received;
@@ -70,5 +94,8 @@ public sealed class StockTransferLine : Entity
     public decimal PurchaseRate { get; set; }
     public decimal GstRate { get; set; }
     public decimal Quantity { get; set; }
+
+    /// <summary>What the receiving store counted in, when it was less than was sent (null: received in full).</summary>
+    public decimal? ReceivedQuantity { get; set; }
     public Guid? DestinationBatchId { get; set; }
 }

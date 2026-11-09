@@ -99,12 +99,14 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 | `billing.tariffs.manage` | Tariff plans, prices, packages | Billing, HospitalAdmin |
 | `billing.tally.export` | Post and export the Tally day book, mark it imported and reconcile it with Tally | HospitalAdmin, Accountant |
 | `billing.tally.configure` | Set the Tally ledger names the day book posts to | HospitalAdmin, Accountant |
-| `billing.einvoice` | Keep the GST e-invoice register: the e-invoice JSON of B2B invoices, their IRNs and IRN cancellations | Billing, Accountant, Pharmacist, HospitalAdmin |
+| `billing.einvoice` | Keep the GST e-invoice register: the e-invoice JSON of B2B invoices, their IRNs (asked of the portal or recorded), IRN cancellations and e-way bills | Billing, Accountant, Pharmacist, HospitalAdmin |
+| `billing.gst.returns` | Read the GST returns of the facility's GSTIN: GSTR-1 with its GSTN offline-tool JSON, and GSTR-3B | Accountant, HospitalAdmin |
 | `billing.gateway.reconcile` | Gateway reconciliation: settlements, exceptions, record a missed online receipt, send a failed gateway refund again. Card and UPI reconciliation: import the acquirer's settlement reports, review what does not match, ask to withdraw a report imported in error | HospitalAdmin, Accountant |
 | `insurance.payers.manage` | Insurers, TPAs, corporates, schemes, non-payable items | InsuranceDesk, HospitalAdmin |
 | `insurance.policies.manage` | Patient policies | InsuranceDesk, Billing, HospitalAdmin |
 | `insurance.preauth.manage` | Cashless pre-authorisation, enhancements | InsuranceDesk, HospitalAdmin |
-| `insurance.claims.manage` | Claims, settlements, ageing | InsuranceDesk, Accountant, HospitalAdmin |
+| `insurance.claims.manage` | Claims, settlements, ageing (a write-off above `billing.claimWriteOff.approvalAbove` is asked for) | InsuranceDesk, Accountant, HospitalAdmin |
+| `insurance.claims.writeoff.approve` | Approve an insurance write-off another user asked for (the insurer's deductions, a rejected claim) | Accountant, HospitalAdmin |
 | `doctorfees.rules.manage` | Doctor revenue-share rules | HospitalAdmin, Accountant |
 | `doctorfees.payouts.manage` | Accruals, statements, payouts | HospitalAdmin, Accountant |
 
@@ -222,6 +224,7 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | DELETE | `/{id}?version` | `op.create` / `ip.manage` | → 204 (discard a draft) |
 | POST | `/{id}/send-whatsapp` | `op.create` / `ip.manage` / `payments.collect` | → 204: queues the bill's PDF to the patient's mobile number on WhatsApp ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); 422 `billing.bill_not_shareable` (draft or cancelled), `billing.no_mobile`, `billing.whatsapp_opted_out` (the number replied STOP); guarded and audited ("Sent a bill to the patient on WhatsApp"). The staff app's bill page offers it as "Send on WhatsApp" in the More menu |
 | POST | `/{id}/credit-notes` | `refunds.request` / `refunds.approve` | `IssueCreditNoteRequest(kind, amount, reason, lines?)` → 202 `ApprovalRequestDto` (kind `billing.credit_note` or `billing.write_off`): asks for it; 422 `billing.credit_exceeds` / `billing.bill_not_creditable` as the bill is now, 409 `approval.already_requested` while one of the kind waits. A credit note names the services it corrects (`lines`: `billLineId` and `amount`, GST included; `amount` is their sum, 400 otherwise), and must on a bill with GST (400 `lines`); 422 `billing.credit_exceeds_line` past what is left of a service after earlier credit notes, or on a return; a write-off names none (400 `lines`). The approver sees the GST each service gives back ([Credit notes are GST credit notes](#credit-notes-are-gst-credit-notes)). An approver, never the person who asked, issues it at `POST /api/v1/approvals/{id}/approve` (`{FAC}CN{YY}{SEQ:6}`, both names on the note), only on the bill's version it was asked against: 422 `approval.stale` after a payment, refund or another credit |
+| POST | `/{id}/debit-notes` | `refunds.request` / `refunds.approve` | `IssueDebitNoteRequest(party, reason, lines)` → 202 `ApprovalRequestDto` (kind `billing.debit_note`): asks for a debit note ([Debit notes](#debit-notes)); `lines` are `billLineId` and the `taxableAmount` each service is raised by (GST at its rate is added); `party` `Patient` or `Payer`. 422 `billing.bill_not_debitable` (not finalized, or cancelled), `billing.no_payer`, `billing.debit_on_return`, `billing.debit_not_payer_payable`. An approver, never the person who asked, issues it (`{FAC}DB{YY}{SEQ:6}`), on the bill's version it was asked against (422 `approval.stale`) |
 | GET | `/{id}/credit-notes/{noteId}/document` | readers | → `PrintableDocumentDto`: the printed credit note (or write-off note) with what CGST rule 53(1A) asks of it, and its IRN and QR code once the portal registered it; guarded and audited ("Printed credit note …") |
 | GET | `/{id}/credit-notes/{noteId}/pdf` | readers | → `application/pdf` attachment `credit-note-<number>.pdf` (`write-off-<number>.pdf`), the same document; guarded and audited |
 | POST | `/{id}/adjust-advance` | `billing.payments.collect` | `AdjustAdvanceRequest(advanceId, amount?, version)` → 201 `ReceiptDto` (patient advance used on an OP bill) |
@@ -403,11 +406,13 @@ A self-paying patient's long stay can be billed in parts, so the family pays as 
 | POST | `/policies/{id}/verify` | `insurance.policies.manage` | `VerifyPolicyRequest` → 204; 403 `insurance.policy_self_verify` to whoever recorded the terms or last changed them: [someone else verifies](#a-third-party-pays-only-on-a-second-persons-word) |
 | GET | `/preauths?status&patientId&admissionId` (paged) · `/preauths/{id}` | pre-auth/claims manage, `ip.manage` | → `PreAuthListItem` / `PreAuthDetail` |
 | POST · PUT | `/preauths` · `/preauths/{id}` | `insurance.preauth.manage` | `SavePreAuthRequest` → 201 / 204 (`{FAC}PA{YY}{SEQ:6}` on submit) |
-| POST | `/preauths/{id}/submit` · `/query` · `/answer` · `/approve` · `/reject` · `/enhancements` · `/enhancements/{enhancementId}/respond` · `/final-approval` | `insurance.preauth.manage` | `PreAuthTextRequest`, `ApprovePreAuthRequest`, `RejectPreAuthRequest`, `RequestEnhancementRequest`, `RespondEnhancementRequest`, `FinalApprovalRequest` → 204 |
+| POST | `/preauths/{id}/submit` · `/query` · `/answer` · `/reject` · `/enhancements` | `insurance.preauth.manage` | `PreAuthTextRequest`, `RejectPreAuthRequest`, `RequestEnhancementRequest` → 204 |
+| POST | `/preauths/{id}/approve` · `/enhancements/{enhancementId}/respond` · `/final-approval` | `insurance.preauth.manage` | `ApprovePreAuthRequest`, `RespondEnhancementRequest`, `FinalApprovalRequest`, each with the pre-authorisation's `version` (409 when it changed) → **202** `ApprovalRequestDto` (`insurance.preauth_amount`): [another insurance desk user checks the amount](#insurance-money-waits-for-a-second-person); a refused enhancement → 204 at once. `PreAuthDetail.amountAskedAt` says when one waits |
 | GET | `/claims?status&payerId&patientId` (paged) · `/claims/{id}` | `insurance.claims.manage` | → `ClaimListItem` / `ClaimDetail` (`verifiedCoding`: the coding medical records verified for the bill's admission, or for its visit on any other bill, as claim text; null until verified) |
 | POST | `/claims` | `insurance.claims.manage` | `CreateClaimRequest(billId, …)` → 201 (`{FAC}CL{YY}{SEQ:6}`); codes left empty are the verified coding, procedures included, or else the pre-authorisation's |
 | PUT | `/claims/{id}/coding` | `insurance.claims.manage` | `UpdateClaimCodingRequest` (ICD / procedure codes as text) → 204 |
-| POST | `/claims/{id}/query` · `/answer` · `/approve` · `/settle` · `/reject` | `insurance.claims.manage` | `ClaimTextRequest`, `ApproveClaimRequest`, `SettleClaimRequest` (tranche, deductions with reasons, UTR), `RejectClaimRequest` → 204; a rejection is a full disallowance |
+| POST | `/claims/{id}/query` · `/answer` · `/approve` | `insurance.claims.manage` | `ClaimTextRequest`, `ApproveClaimRequest` → 204 |
+| POST | `/claims/{id}/settle` · `/reject` | `insurance.claims.manage` | `SettleClaimRequest` (tranche, deductions with reasons, UTR, the claim's `version`), `RejectClaimRequest(reason, version)` → 204 when the write-off is within `billing.claimWriteOff.approvalAbove`; otherwise **202** `ApprovalRequestDto` (`insurance.claim_writeoff`): the money received is posted at once, the deductions (or the rejection, a full disallowance) wait for [someone who approves insurance write-offs](#insurance-money-waits-for-a-second-person). 409 on a claim changed since it was read. `ClaimDetail` carries `writeOffAskedAt` and `writeOffApprovalAbove` |
 | GET | `/receivables/ageing?asOf` | `insurance.claims.manage` | → `ReceivablesAgeingReport` (0-30 / 31-60 / 61-90 / 90+ by payer) |
 
 **A payer's terms change only when two people agree.** A payer's category (whose default plan prices its patients
@@ -421,6 +426,25 @@ words, and that a new plan or category reaches out-patient services charged afte
 `payer.terms_changed` with before and after. `PayerDetail.pendingTerms` holds what waits; while it waits, a save must ask
 for the same terms (409).
 
+### Insurance money waits for a second person
+
+MAKER-CHECKER.md slice 12. **A write-off** (`insurance.claim_writeoff`): what the insurer deducts in a settlement, or the
+unpaid claim when it rejects it, is never collected from the insurer. Above `billing.claimWriteOff.approvalAbove` (per
+facility, ₹0 by default, so every write-off) the desk asks and someone else who holds
+`insurance.claims.writeoff.approve` (the accountant, the hospital administrator) approves; the insurance desk may not
+approve. In a settlement the money received is posted at once (its payer receipt, its UTR) and only the deductions
+wait, the claim partly settled meanwhile; a rejection changes nothing until approved. The approver reads the claim and
+bill, what the insurer owes before and after, each deduction and its reason, and why it waits. It is made only over the
+claim as it was asked about: a payment, a query or anything else recorded meanwhile makes it stale, and the desk asks
+again. Audited `insurance.claim.written_off` at Warning with both names. **An amount the insurer approved on a
+pre-authorisation** (`insurance.preauth_amount`): the approval, an enhancement approved and the final approval set the
+insurer's cap on the bill (`PayerCoverage.CoverageLimit`). Each is recorded for another user who holds
+`insurance.preauth.manage` to check against the insurer's letter (the approver reads the amount, the reference and the
+cap before and after); until then the cap stays where it was, none before the first approval, so the patient pays that
+part. A bill drafted meanwhile keeps that split: discard it and draft again once the amount is approved. A rejection
+or a refused enhancement is recorded at once. Audited `insurance.preauth.approved`, `.enhancement` or
+`.final_approval` at Warning with both names.
+
 ### Doctor fees — `/api/v1/doctor-fees`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
@@ -429,13 +453,23 @@ for the same terms (409).
 | DELETE | `/rules/{id}` | `doctorfees.rules.manage` | → 204 for a rule out of use; 409 `doctorfees.rule_in_use` for one in use (take it out of use first, which waits for approval) |
 | GET | `/accruals?practitionerId&from&to&status` (paged) | `doctorfees.payouts.manage` | → `PagedResult<AccrualDto>` |
 | GET | `/payouts?practitionerId&status` (paged) · `/payouts/{id}` | `doctorfees.payouts.manage` | → `PayoutDto` |
-| POST | `/payouts` | `doctorfees.payouts.manage` | `CreatePayoutRequest(practitionerId, period, deductions)` → 201 (`{FAC}DP{YY}{SEQ:5}`; TDS `doctorfees.tds.percent` on gross) |
+| POST | `/payouts` | `doctorfees.payouts.manage` | `CreatePayoutRequest(practitionerId, period, deductions, tdsPercent?)` → 201 (`{FAC}DP{YY}{SEQ:5}`; TDS computed under s.194J: nothing within the year's threshold, then 10 % (or `doctorfees.tds.percent`) on the year's fees not yet taxed, 20 % without a valid PAN; `tdsPercent` or the doctor's s.197 certificate can only lower it) |
+| GET/PUT | `/tax-profiles/{practitionerId}` | `doctorfees.payouts.manage` | `SaveDoctorTaxProfileRequest {pan (null keeps, "" removes), nameAsPerPan, certificateNumber, certificateRate, certificateValidFrom, certificateValidTo, version}`: PAN encrypted, shown masked |
+| GET | `/tds/26q/{fy}/{quarter}` · `/file` | `doctorfees.payouts.manage` | Form 26Q check, then the FVU input file (422 `tds_return.problems` until every month with TDS has a 26Q challan) |
+| GET | `/tds/16a/{practitionerId}/{fy}/{quarter}` · `/pdf` | `doctorfees.payouts.manage` | The Form 16A statement to check the TRACES certificate against |
 | POST | `/payouts/{id}/approve` | `doctorfees.payouts.manage` | `PayoutVersionRequest` → 204 (not by its preparer) |
 | POST | `/payouts/{id}/pay` | `doctorfees.payouts.manage` | `PayPayoutRequest(reference)` → 204 |
 | DELETE | `/payouts/{id}?version` | `doctorfees.payouts.manage` | → 204 (draft only) |
 | GET | `/statements?practitionerId&from&to` | `doctorfees.payouts.manage` | → `DoctorStatement`: the doctor's fee lines earned in the period (by the IST day each was earned; a cancelled bill adds a negative line dated the day of the cancellation, which the doctor's next payout recovers if the fee was already in a payout), each with its bill, service, billed value, rule and share; the totals earned, reversed, in a payout, paid out and unpaid; and the payouts whose period overlaps it, each with gross, deductions, TDS and net. 400 when `to` is before `from` |
 
-#### A sharing rule's terms are approved by a second person
+##TDS on doctors' fees follows s.194J and s.206AA (`ProfessionalFeeTds`, rates by financial year): the fees credited to
+the doctor in the year by the facility are compared with the threshold (₹30,000 to FY 2024-25, ₹50,000 from FY 2025-26);
+the payout that crosses it is taxed on all of the year's untaxed fees (`TdsBasis` records the amount taxed), and
+`TdsRemark` carries the return's reason code (`C` without a PAN, `A` under a certificate). The deductor's TAN and the
+challans are HR's statutory details; Form 16A itself comes from TRACES. See
+[statutory-returns.md](statutory-returns.md#tds-on-doctors-fees-s194j).
+
+## A sharing rule's terms are approved by a second person
 A sharing rule decides what a doctor earns of each bill line (DFA-01), and so what the hospital pays out. Its terms
 change only when two people agree (maker-checker): whoever keeps the rules (`doctorfees.rules.manage`) asks, and someone
 else who approves prices (`masters.prices.approve`, the approver of every price in the catalogue) decides, in
@@ -498,8 +532,10 @@ holds and how posting, the checks and the transition for older days work.
 | PUT | `/ledgers` | `billing.tally.configure` | `TallyLedgerMap` → 204; validated (every name present, one line, at most 100 characters, known payment modes). Audited as `billing.tally.ledgers` |
 
 ### GST e-invoices — `/api/v1/billing/einvoices` (`billing.einvoice`)
-See [GST e-invoicing](#gst-e-invoicing). `{source}` is `bill`, `creditnote` (a bill's credit note), `pharmacy` or
-`pharmacyreturn` (a return of a B2B sale). Rows and details carry `type` (`INV` or `CRN`) and, for a credit note, the
+See [GST e-invoicing](#gst-e-invoicing). `{source}` is `bill`, `creditnote` (a bill's credit note), `debitnote` (a
+bill's debit note to the payer), `pharmacy` or `pharmacyreturn` (a return of a B2B sale). Details carry
+`portalConnected`, `ewayBillNeeded`, and on the registration its `provider` (`manual`, `nic`, `gsp`, `simulator`) and
+the e-way bill (`ewbNo`, `ewbDate`, `ewbValidTill`). Rows and details carry `type` (`INV` or `CRN`) and, for a credit note, the
 invoice it reduces (`against`, `againstDate`).
 
 | Method | Path | Request → response |
@@ -508,7 +544,19 @@ invoice it reduces (`against`, `againstDate`).
 | GET | `/{source}/{id}` | → `EInvoiceDetail`: buyer, place of supply, value, state, the problems that would make the portal refuse it, and the latest IRN with its QR code. 422 `einvoice.not_applicable` before e-invoicing applies |
 | GET | `/{source}/{id}/json` | → the INV-01 (version 1.1) JSON, as a list of one invoice for the portal's bulk upload. 422 `einvoice.invalid` with the problems; 422 `einvoice.registered` once it has an IRN |
 | POST | `/{source}/{id}/irn` | `RecordIrnRequest(ackNo, signedQrCode)` → `EInvoiceDetail`. The signed QR code must name this invoice (400 `signedQrCode` with what differs); 409 `einvoice.registered` while an IRN is live, 409 `einvoice.irn_exists` for an IRN already recorded; 422 `einvoice.document_cancelled` |
-| POST | `/{source}/{id}/irn/cancel` | `CancelIrnRequest(reason, remark, version)` → `EInvoiceDetail`. Within 24 hours of the IRN only (422 `einvoice.cancel_window`); reasons are the portal's: `Duplicate`, `DataEntryMistake`, `OrderCancelled`, `Other`. An invoice's IRN is not cancelled while a credit note with an IRN names it (422 `einvoice.credited`) |
+| POST | `/{source}/{id}/irn/generate` | → `EInvoiceDetail`: asks the connected portal for the IRN ([The portal connection](#the-portal-connection)). 422 `einvoice.irp_not_connected`, `einvoice.invalid` (with the problems), `einvoice.irp_refused` (the portal's code and words), `einvoice.irp_unreachable`, `einvoice.irp_mismatch` (the signed QR code is not this document's: nothing recorded); 409 `einvoice.registered`, `einvoice.irn_exists`; 422 `einvoice.document_cancelled` |
+| POST | `/{source}/{id}/irn/cancel` | `CancelIrnRequest(reason, remark, version, cancelledOnPortal?)` → `EInvoiceDetail`. Within 24 hours of the IRN only (422 `einvoice.cancel_window`); reasons are the portal's: `Duplicate`, `DataEntryMistake`, `OrderCancelled`, `Other`. Connected to the portal, HC360 cancels it there first (`cancelledOnPortal: true` records one cancelled there by hand); a refusal is 422 `einvoice.irp_refused`. An invoice's IRN is not cancelled while a credit note with an IRN names it (422 `einvoice.credited`) |
+| POST | `/{source}/{id}/ewaybill` | `GenerateEwayBillRequest(distanceKm, mode, vehicleNumber?, transporterGstin?, transporterName?, transportDocumentNumber?, transportDocumentDate?, overDimensionalCargo?)` → `EInvoiceDetail`: the e-way bill from the live IRN of an invoice of goods above `gst.ewaybill.threshold`. 422 `einvoice.ewaybill_goods`, `einvoice.ewaybill_not_needed`, `einvoice.not_registered`, `einvoice.irp_not_connected`, `einvoice.irp_refused`; 409 `einvoice.ewaybill_exists`; 400 without a vehicle or a transporter |
+
+### GST returns — `/api/v1/billing/gst-returns` (`billing.gst.returns`)
+See [GST returns](#gst-returns). `?month=2026-10`; 400 `month` otherwise; 422 `gst.no_gstin` when the signed-in facility
+has no GSTIN, `facility.required` with none selected.
+
+| Method | Path | Body → Response |
+|---|---|---|
+| GET | `/gstr1` | → `Gstr1Return {gstin, year, month, period (MMYYYY), b2b, b2cl, b2cs, cdnr, cdnur, nil, hsnB2b, hsnB2c, documentsIssued, problems}` |
+| GET | `/gstr1/json` | → the GSTN offline tool's GSTR-1 JSON (`GSTR1_<gstin>_<MMYYYY>.json`) |
+| GET | `/gstr3b` | → `Gstr3bReturn {outwardTaxable (3.1a), zeroRated, nilAndExempt (3.1c), inwardReverseCharge, nonGst (3.1e), interStateToUnregistered (3.2), itcAllOther (4A5), itcReversed, itcNet, purchaseInvoices, purchasesWithoutGstin, exemptShareOfTurnover, notes}` |
 
 ### Gateway reconciliation — `/api/v1/billing/gateway`
 Every route needs `billing.gateway.reconcile` and works on the signed-in facility; a user without one gets 422
@@ -834,6 +882,31 @@ due on the supply whether or not it was paid, and a write-off reduces no tax.
   it is not a GST credit note. On the bill page each note has Print and PDF buttons, and its GST.
 * **Notes issued before** services were named keep no lines and took back no GST; they print and post as they did.
 
+### Payer credit notes
+When a payer (insurer, TPA or corporate) settles less than its share, the settlement records the deduction and the
+payer owes that much less (`payerDisallowedAmount`). Where the deduction is a price the hospital accepts (a tariff
+disallowance), the payer's invoice must be reduced in GST terms too, or the hospital pays output tax on money it never
+gets and the payer's GSTR-2B keeps the full credit. A **payer credit note** (`kind: PayerShare`) does that:
+* up to what the payer's settlements disallowed, less earlier payer credit notes (422 `billing.payer_credit_exceeds`);
+* naming the services, which must be ones the payer pays for (422 `billing.credit_not_payer_payable`), each taking back
+  its own GST as any credit note does, and within the s.34(2) time limit;
+* asked for and approved as a credit note is (approval `billing.credit_note`, the details showing the payer's share,
+  settled, disallowed and already credited), numbered in the credit note series, linked to the bill;
+* it leaves what the patient owes as it was, prints to the payer, and is a `CRN` e-invoice to a payer registered for
+  GST. In the Tally day book its Credit Note debits sales returns and output GST and credits **Insurance
+  Disallowances**, taking back the deduction the claim's journal put there.
+
+## Debit notes
+A **debit note** (supplementary invoice, CGST Act s.34(3), CGST rule 53) raises what a finalized bill charged for
+services on it: a rate charged short, a quantity under-billed. The billing desk names the services and the taxable
+value each is raised by; GST is added at each service's rate, IGST to another state or CGST and SGST within it
+(`DebitNotes.Gst`). It is charged to the patient (`debitAmount`: the bill owes again, a paid bill becomes partly paid)
+or to the payer (`payerDebitAmount`, added to what the payer owes). One person asks and another issues it (approval
+`billing.debit_note`, permission `billing.refunds.approve`), on the bill as it was asked against. It is numbered in its
+own series (`billing.debitnote`, `{FAC}DB{YY}{SEQ:6}`) and listed on the bill (`debitNotes`). A debit note to a payer
+registered for GST on a bill with GST is a `DBN` e-invoice naming the bill (`DebitNoteEInvoiceSource`), after the
+bill's IRN. It is in GSTR-1 (CDNR, or netted into B2CS for a patient) and GSTR-3B.
+
 ## GST e-invoicing
 GST rule 48(4) requires a B2B tax invoice of a taxpayer above the notified turnover to carry an IRN from the Invoice
 Registration Portal (IRP). The date e-invoicing applies from is the setting `gst.einvoice.from`; before it, and when it
@@ -882,6 +955,55 @@ is not set, nothing is listed and nothing can be recorded.
   e-invoicing applied has no IRN, and its credit note goes without one. The signed QR code recorded for a credit note
   must say `CRN`, and the invoice's IRN is not cancelled while a credit note with an IRN names it (422
   `einvoice.credited`); the register row of a credit note names its invoice.
+
+### The portal connection
+A facility can be connected to the IRP (Administration → Integrations → *E-invoice portal (IRP)*, `integrations.irp`
+and its secret, per facility since the credentials are per GSTIN). The platform contract is `IInvoiceRegistrationPortal`
+(Platform), implemented in Integrations by `IrpRouter` over two providers:
+* **`nic` / `gsp`** (`NicIrpClient`): the NIC e-invoice API v1.03 — sign in (`/eivital/v1.04/auth`), generate
+  (`/eicore/v1.03/Invoice`), cancel (`…/Invoice/Cancel`), get by IRN (`…/Invoice/irn/{irn}`), e-way bill by IRN
+  (`/eiewb/v1.03/ewaybill`), with NIC's headers (`client_id`, `client_secret`, `Gstin`, `user_name`, `AuthToken`). For
+  `nic` the sign-in carries a random 32-byte app key under NIC's RSA public key, the session key comes back under the
+  app key, and every payload travels under the session key (AES-256-ECB, `NicIrpCrypto`); a GSP passing the API
+  through usually takes plain JSON (`encrypt` to switch it on). Paths are settings, so a GSP's own prefix works. The
+  token and session key are kept per facility, GSTIN and credential until ten minutes before they expire, and asked
+  for again once on 1005 (token not valid). POSTs are never retried at the HTTP layer.
+* **`simulator`** (`SimulatorIrp`), for training and test servers only: a live server refuses it before any call. It
+  makes the portal's IRN (SHA-256 of the GSTIN, financial year, document type and number), answers a document asked for
+  twice with 2150 and the IRN it holds, signs nothing for real, cancels only within 24 hours (2270 after), and gives an
+  e-way bill valid one day per 200 km. Its IRNs are marked `provider = simulator`.
+
+`POST …/irn/generate` builds the same INV-01 JSON (refused with its problems as before), sends it, and records the IRN,
+acknowledgement, signed invoice and signed QR code after checking the code names the document. A duplicate (2150, as
+after an answer lost on the way back) is fetched by its IRN and recorded the same way, so asking twice never makes two.
+Connected, cancelling goes to the portal first, within the 24 hours. **E-way bills:** an invoice of goods (the
+pharmacy's B2B sales) above `gst.ewaybill.threshold` (₹50,000 by default; lower for movement within some states) gets
+its e-way bill from its live IRN, with the vehicle (Part-B) or the transporter's id (Part-A); its number and validity
+are kept on the registration.
+
+## GST returns
+`GstReturnService` builds the returns of the signed-in facility's GSTIN for a month, with every facility registered
+under it, from every `IGstReturnSource` (Billing's `BillingGstReturnSource`: bills, credit notes, debit notes; the
+pharmacy's `PharmacyGstReturnSource`: sales and returns) and every `IGstPurchaseSource` (the stores'
+`GoodsReceiptGstSource`). `GstReturnBuilder` classifies them as GSTN does:
+* **B2B** (4A): invoices to a registered buyer (a payer with a GSTIN, a pharmacy B2B buyer), taxable lines by rate.
+* **B2CL** (5): invoices to an unregistered buyer in another state above ₹1,00,000 (₹2,50,000 before 1 August 2024).
+* **B2CS** (7): other taxable supplies to unregistered buyers by place of supply and rate, with their notes netted in.
+* **CDNR / CDNUR** (9B): credit and debit notes to registered buyers; notes to unregistered buyers whose invoice was
+  B2CL. Write-offs and notes issued after the s.34(2) limit are not GST notes and are left out.
+* **Table 8**: a bill line without GST is an exempt healthcare service; a medicine at 0% is nil-rated.
+* **Table 12**: every line by HSN or SAC, unit (`NA` for services, `NOS` for medicines) and rate, credit notes taking
+  off, split into B2B and B2C (GSTN, May 2025). A line without a code is listed as a problem.
+* **Table 13**: per series (OP bills, IP bills, pharmacy invoices, credit notes, pharmacy returns, debit notes) the first
+  and last number, how many and how many cancelled. Cancelled documents count only here.
+* **GSTR-3B**: 3.1(a) the taxable outward supplies net of notes, 3.1(c) nil-rated and exempt, 3.1(e) non-GST, 3.2 the
+  inter-state supplies to unregistered persons by state, 4(A)(5) the input tax of goods receipts from suppliers with a
+  GSTIN, by the day received. A hospital's supplies are mostly exempt, so input tax used for them and a share of common
+  credit are reversed (CGST rule 42): the return gives the exempt share of turnover; the reversal itself is the
+  accountant's, as is checking the credit against GSTR-2B (rule 36(4)).
+
+The screen is **Billing → GST returns** (`/billing/gst-returns`), with the GSTR-1 JSON to import into the GSTN offline
+tool or upload on the portal.
 
 ## Contracts for other modules
 
@@ -1458,11 +1580,12 @@ estimate) or a cancelled bill gives no document and is never sent.
 ## Number series
 | Key | Format | Reset |
 |---|---|---|
-| `billing.bill.op` | `{FAC}OB{YY}{SEQ:7}` | yearly |
-| `billing.bill.ip` | `{FAC}IB{YY}{SEQ:7}` | yearly |
+| `billing.bill.op` | `{FAC}OB{YY}{SEQ:6}` | yearly |
+| `billing.bill.ip` | `{FAC}IB{YY}{SEQ:6}` | yearly |
 | `billing.receipt` | `{FAC}RC{YY}{SEQ:7}` | yearly |
 | `billing.refund` | `{FAC}RF{YY}{SEQ:6}` | yearly |
 | `billing.creditnote` | `{FAC}CN{YY}{SEQ:6}` | yearly |
+| `billing.debitnote` | `{FAC}DB{YY}{SEQ:6}` | yearly |
 | `billing.receiptreversal` | `{FAC}RR{YY}{SEQ:6}` | yearly |
 | `billing.refundreversal` | `{FAC}RX{YY}{SEQ:6}` | yearly |
 | `billing.paymentdispute` | `{FAC}CB{YY}{SEQ:5}` | yearly |
@@ -1470,13 +1593,20 @@ estimate) or a cancelled bill gives no document and is never sent.
 | `insurance.claim` | `{FAC}CL{YY}{SEQ:6}` | yearly |
 | `doctorfees.payout` | `{FAC}DP{YY}{SEQ:5}` | yearly |
 
+Bills, credit notes and debit notes are GST series: their formats are held to 16 characters and may not start with 0
+(GST rule 46; see `docs/modules/numbering.md`). The bill defaults were `{SEQ:7}`, which reaches 17 characters at a
+6-letter facility code; series already in use keep the format they were created with.
+
 ## Settings (per facility, `ISettingsService`)
 | Key | Default | Meaning |
 |---|---|---|
+| `gst.ewaybill.threshold` | `50000` | The value above which a B2B invoice of goods needs an e-way bill (CGST rule 138) |
+| `integrations.irp`, `integrations.irp.secret` | — | The e-invoice portal connection, per facility (Administration → Integrations) |
 | `billing.registrationFee.enabled` | `true` | Charge `REG-NEW` on a patient's first visit |
 | `billing.discount.defaultMaxPercent` | `0` | Staff discount allowed without approval when the user has no limit row |
 | `billing.shift.required` | `true` | Counter collections need an open cashier shift |
 | `billing.chargeCancel.approvalAbove` | `1000` | A charge worth more (₹, net) cancelled at the desk waits for someone who approves discounts; 0 makes every cancellation wait. OT, procedure, implant and bed-day charges always wait. Raising it waits for a second administrator |
+| `billing.claimWriteOff.approvalAbove` | `0` | How much (₹) the insurance desk writes off alone on a claim (the insurer's deductions in a settlement, or the unpaid claim on a rejection); more waits for someone who approves insurance write-offs. 0 makes every write-off wait. Raising it waits for a second administrator |
 | `billing.shift.shortageTolerance` | `0` | How much (₹) a drawer may be short and still close on the cashier's word; beyond it a supervisor accepts the shortage. Raising it waits for a second administrator |
 | `billing.tally.ledgers` | built-in names | `TallyLedgerMap` JSON (income by department, mode ledgers, payer and doctor ledgers, `pharmacy` and `canteen` ledgers, `salesLedgerPerGstRate`; for the settlement journal `gatewaySettlementBank` "Bank", `gatewayCharges` "Payment Gateway Charges", `gatewayInputGst` "Input GST", and the clearing ledger is `modeLedgers.PaymentGateway`, "Payment Gateway Clearing" by default; for the card and UPI settlement journal `posSettlementBank` "Bank" and `posCharges` "Card & UPI Charges (MDR)", GST on `gatewayInputGst`); set on the Tally screen |
 | `billing.tally.dailyPost.enabled` | `true` | Queue the daily Tally post |
@@ -1519,14 +1649,22 @@ note, cascade, and to the bill line, restrict; indexed by bill line), the CGST, 
 `gst_time_barred`, and the invoice a credit note's IRN names on `einvoices` (`preceding_source`, `preceding_id`,
 indexed where set). Notes and IRNs from before keep zeros and nulls.
 
+`GstReturnsIrpDebitNotes` adds `debit_notes` and `debit_note_lines` (foreign keys to the bill, restrict, and to the
+bill line, restrict; unique number), `bills.debit_amount` and `payer_debit_amount`, and on `einvoices` the `provider`
+(earlier IRNs `manual`), `signed_invoice` and the e-way bill (`ewb_no`, `ewb_date`, `ewb_valid_till`).
+
 ## Not covered yet
-* **Sending e-invoices to the IRP directly.** The JSON is uploaded on the portal (or through a GST suvidha provider)
-  and the IRN recorded by hand; there is no API connection to the IRP, so no automatic IRN, e-way bill or GSTR-1 data.
-* **A credit note reduces the patient's share.** The payer's share of a bill is reduced by the payer's settlement (a
-  deduction), which takes back no GST and is not reported to the e-invoice portal; a correction of a bill the payer pays
-  in full, after its IRN can no longer be cancelled, has no credit note in HC360.
-* **Debit notes.** A price raised after the bill (a debit note, `DBN`) is not issued: the bill is cancelled and issued
-  again while that is allowed.
+* **The IRP connection has not met NIC or a GSP.** The NIC API client is built to v1.03 and tested against a fake
+  portal and the simulator; it needs the hospital's sandbox credentials to be run for real. IRNs are asked for one
+  document at a time from the register, not in a batch after each day's billing.
+* **A payer credit note does not come from the settlement.** The claim desk records the deduction; the billing desk
+  asks for the GST credit note on the bill afterwards. A deduction that is not a price reduction (a non-payable item
+  the patient pays) needs none.
+* **Debit notes print and post nowhere yet.** A debit note has no printed document and no Tally voucher; the payer
+  receivable ageing (insurance claims) does not add payer debit notes.
+* **GST returns.** The canteen's bills are not in them; amendments of earlier periods (B2BA, CDNRA), filing through a
+  GSP, the rule 42 reversal and the GSTR-2B match are the accountant's. A series already in use with a stored number
+  format longer than 16 characters keeps it until an administrator changes it.
 * **The annual return.** The GST of a bill can be reduced until 30 November after its financial year; when the
   hospital files its annual return earlier, that earlier date ends it (s.34(2)), and HC360 does not know it.
 * **Returns on an IP bill.** A medicine returned to the IP pharmacy is a negative line on the stay's bill, not a credit

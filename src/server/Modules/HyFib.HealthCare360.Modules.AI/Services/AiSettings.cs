@@ -34,6 +34,13 @@ internal static class AiSettingKeys
     /// <summary>The OpenAI-compatible server's bearer key, when it needs one: a JSON string, or <c>{"apiKey":"…"}</c>.</summary>
     public const string OpenAiSecret = "ai.openai.secret";
 
+    /// <summary>
+    /// <c>true</c> once the facility has an AI processing agreement with the speech service it sends dictation to (a
+    /// data processing agreement under the DPDP Act 2023). Read for the facility, else for the hospital; off by default.
+    /// Server speech-to-text sends nothing without it. Turning it on waits for a second administrator (SettingGuard).
+    /// </summary>
+    public const string ProcessingAgreement = "ai.processingAgreement";
+
     public const string Speech = "ai.speech";
     public const string SpeechSecret = "ai.speech.secret";
     public const string Limits = "ai.limits";

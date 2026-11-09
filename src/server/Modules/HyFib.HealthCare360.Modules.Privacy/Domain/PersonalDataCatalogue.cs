@@ -51,6 +51,8 @@ public static class PersonalDataCatalogue
                 new("patients.patient_identity_checks", "Identity checks with your Aadhaar fingerprint"),
                 new("patients.patient_phone_changes", "Changes of your mobile number, each confirmed with a code sent to the new number"),
                 new("patients.downtime_uhids", "Your registration on paper while the system was down"),
+                // The visit, bill or receipt is listed under its own heading: this says it was written on paper first.
+                new("patients.downtime_numbers", "Your visits, bills and receipts written on paper while the system was down", Counted: false),
                 // A change that needed a second person's approval (joining two registrations, a credit note on a bill): what
                 // was asked, by whom, why, and who decided. Listed, not counted: it is about records listed here already.
                 new("platform.approval_requests", "Changes to your records that a second person approved or refused", Counted: false),
@@ -81,6 +83,8 @@ public static class PersonalDataCatalogue
                 new("clinical.notifiable_cases", "Notifiable-disease reports to public health (IDSP)"),
                 new("clinical.emergency_cases", "Emergency department visits and their triage"),
                 new("clinical.mlc_records", "Medico-legal case records"),
+                new("clinical.wound_certificates", "Wound certificates of medico-legal cases"),
+                new("clinical.doctor_handovers", "Doctors' handovers of your care to a covering doctor", Counted: false),
                 new("clinical.antimicrobial_approvals", "Approvals and reviews of restricted antibiotics"),
                 new("clinical.allergies", "Allergies"),
                 new("clinical.no_known_allergies", "No-known-allergy statements", Counted: false),
@@ -96,6 +100,8 @@ public static class PersonalDataCatalogue
                 new("clinical.result_reviews", "Doctors' reviews of your results", Counted: false),
                 new("clinical.record_requests", "Requests for your medical records"),
                 new("interop.abdm_link_requests", "Records linked to your ABHA"),
+                new("interop.smart_authorization_codes", "Apps a staff member authorized to read your record", Counted: false),
+                new("interop.smart_access_tokens", "Access an authorized app was given to your record", Counted: false),
                 new("interop.abdm_care_contexts", "Each record linked to your ABHA", Counted: false),
                 new("interop.abdm_discoveries", "Searches for your records from your ABHA app", Counted: false),
                 new("interop.abdm_transfers", "Times your records were sent to another provider through ABDM"),
@@ -149,6 +155,7 @@ public static class PersonalDataCatalogue
                 new("inpatient.admissions", "Hospital stays"),
                 new("inpatient.nursing_notes", "Nursing notes"),
                 new("inpatient.nursing_assessments", "Nursing assessments"),
+                new("inpatient.nursing_safety_events", "Falls and pressure injuries recorded during your stay"),
                 new("inpatient.medication_orders", "Medicine orders during stays"),
                 new("inpatient.medication_administrations", "Medicines given to you"),
                 // A second nurse confirming at the screen, with their own password, a controlled medicine given to you: who,
@@ -157,6 +164,9 @@ public static class PersonalDataCatalogue
                 new("inpatient.intake_output_entries", "Fluid intake and output"),
                 new("inpatient.consultant_visits", "Doctors' rounds", Counted: false),
                 new("inpatient.shift_handovers", "Nursing handovers", Counted: false),
+                new("inpatient.care_plan_problems", "Your nursing care plan", Counted: false),
+                new("inpatient.early_warning_escalations", "Early-warning alerts from your vital signs and the response to them", Counted: false),
+                new("inpatient.transfer_requests", "Moves between wards", Counted: false),
                 new("inpatient.beds", "Bed reservations", Counted: false, Column: "reserved_for_patient_id"),
             ]),
         new("procedures", "Surgery and specialty care",
@@ -167,6 +177,7 @@ public static class PersonalDataCatalogue
                 new("specialtycare.surgery_bookings", "Surgeries"),
                 new("specialtycare.operation_notes", "Operation notes", Counted: false),
                 new("specialtycare.anaesthesia_records", "Anaesthesia records", Counted: false),
+                new("specialtycare.recovery_records", "Recovery room records", Counted: false),
                 new("specialtycare.surgery_materials", "Implants and materials used", Counted: false),
                 new("specialtycare.admissions", "Day-care admissions"),
                 new("specialtycare.blood_requests", "Blood requests"),
@@ -209,6 +220,7 @@ public static class PersonalDataCatalogue
                 new("billing.receipts", "Payments"),
                 new("billing.refunds", "Refunds"),
                 new("billing.credit_notes", "Credit notes", Counted: false),
+                new("billing.debit_notes", "Debit notes", Counted: false),
                 new("billing.receipt_reversals", "Payments recorded that did not arrive", Counted: false),
                 new("billing.refund_reversals", "Refunds recorded that were not paid out", Counted: false),
                 new("billing.payment_disputes", "Payments your bank took back (chargebacks)", Counted: false),
@@ -254,6 +266,8 @@ public static class PersonalDataCatalogue
             "Required to prove consent was given.", PersonalDataRetention.WithRecords,
             [
                 new("patients.patient_consents", "Consent records"),
+                new("privacy.consent_artefacts", "Consents given through a consent manager"),
+                new("privacy.guardian_consents", "A parent's or guardian's consent for a child"),
                 new("platform.whatsapp_opt_ins", "WhatsApp opt-ins"),
             ]),
         new("documents", "Documents and photos",
@@ -282,6 +296,8 @@ public static class PersonalDataCatalogue
                 new("quality.incidents", "Safety reports that mention you"),
                 // Sent outside the hospital naming you by initials, age and sex only (MvPI's reporting form).
                 new("quality.mvpi_reports", "Reports of a problem with a medical device used in your care (MvPI)"),
+                new("quality.device_episodes", "Lines, catheters and ventilation you had, recorded for infection surveillance"),
+                new("quality.hai_cases", "Possible infections acquired in hospital, reviewed by the infection control team"),
             ]),
         new("ai", "AI assistant",
             "Times staff used the AI assistant while working on your record. Names and numbers are removed before anything is sent to it.",
@@ -304,6 +320,7 @@ public static class PersonalDataCatalogue
                 new("privacy.data_requests", "Privacy requests"),
                 new("privacy.nominees", "Nominee"),
                 new("privacy.breach_affected_patients", "Notices about your data"),
+                new("privacy.erasure_replays", "Erasures carried out again after a restore from a backup", Counted: false),
             ]),
     ];
 

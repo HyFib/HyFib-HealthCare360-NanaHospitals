@@ -30,7 +30,8 @@ public sealed class MarService(
     IPermissionService permissions,
     INotificationService notifications,
     IAuditLogger audit,
-    TimeProvider time)
+    TimeProvider time,
+    IIncidentRegister incidents)
 {
     /// <summary>
     /// What a second nurse witnesses on the MAR: a controlled drug or a high-alert medicine given. Whoever keeps the MAR
@@ -424,9 +425,35 @@ public sealed class MarService(
             return recorded.Error!;
         }
 
+        if (entry.Status != MarStatus.Missed)
+        {
+            await db.SaveChangesAsync(ct);
+            return ToDto(entry, now, await GraceAsync(entry.FacilityId, ct), order);
+        }
+
+        // A dose recorded as missed is an error of omission (NCC MERP): it goes to the incident register in the same save.
+        // A refusal or a dose held on purpose is the patient's choice or a clinical decision, not an error, and is not reported.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        var raised = await incidents.ReportAsync(new ReportedSafetyEvent(
+            entry.FacilityId, entry.PatientId, SafetyEventKind.MedicationError, IncidentHarm.NoHarm, entry.ScheduledAt,
+            await WardNameAsync(entry.AdmissionId, ct),
+            $"Dose missed (omission): {entry.DrugName} {entry.Dose}{(entry.Route is { } route ? " " + route : string.Empty)} due {entry.ScheduledAt:u}. Reason recorded: {entry.Reason}",
+            null, "Inpatient", nameof(MedicationAdministration), entry.Id, $"{entry.DrugName} {entry.Dose}"), ct);
+        if (raised.IsFailure)
+        {
+            return raised.Error!;
+        }
+
+        await transaction.CommitAsync(ct);
         return ToDto(entry, now, await GraceAsync(entry.FacilityId, ct), order);
     }
+
+    private async Task<string> WardNameAsync(Guid admissionId, CancellationToken ct) =>
+        await (from a in db.Set<Admission>()
+               join w in db.Set<Ward>() on a.WardId equals w.Id
+               where a.Id == admissionId
+               select w.Name).FirstOrDefaultAsync(ct) ?? "Ward";
 
     public async Task<Result<MarEntryDto>> AddAdHocAsync(AdmissionRef admission, AddAdHocDoseRequest request, CancellationToken ct)
     {

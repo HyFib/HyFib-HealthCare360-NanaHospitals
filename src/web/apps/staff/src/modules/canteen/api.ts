@@ -1,6 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 
 export const MENU_CATEGORIES = [
   'Breakfast',
@@ -135,7 +136,26 @@ export interface CanteenSaleDto {
   cashierName: string | null;
   cancelledAt: string | null;
   cancelReason: string | null;
+  /** Who asked for the cancellation, and who approved it (a second person, never the cashier who sold the bill). */
+  cancelRequestedByName: string | null;
+  cancelledByName: string | null;
+  /** How the money went back: the way it was paid. */
+  refundMode: CanteenPaymentMode | null;
+  refundAmount: number | null;
+  version: number;
   lines: CanteenSaleLineDto[];
+  /** A cancellation asked for and waiting for someone who approves canteen cancellations. */
+  pendingCancellation?: CanteenPendingCancellation | null;
+  /** The reader sold this bill, and so may not approve its cancellation. */
+  ownSale?: boolean;
+}
+
+export interface CanteenPendingCancellation {
+  approvalId: string;
+  summary: string;
+  requestedByName: string;
+  requestedAt: string;
+  askedByYou: boolean;
 }
 
 export interface CanteenSaleListItem {
@@ -303,8 +323,9 @@ export const canteenApi = {
   moveStock: (id: string, body: { kind: StockMovementKind; quantity: number; reason: string | null }) =>
     api.post<MenuItemDto>(`/api/v1/canteen/menu/${id}/stock`, body),
   createSale: (body: CreateSaleRequest) => api.post<CanteenSaleDto>('/api/v1/canteen/sales', body),
+  /** A bill is paid when it is made: its cancellation is asked for (202) and waits for a second person. */
   cancelSale: (id: string, reason: string) =>
-    api.post<CanteenSaleDto>(`/api/v1/canteen/sales/${id}/cancel`, { reason }),
+    api.post<ApprovalRequestDto>(`/api/v1/canteen/sales/${id}/cancel`, { reason }),
   recordPayment: (body: { employeeCode: string; amount: number; reference: string | null }) =>
     api.post<StaffBalanceDto>('/api/v1/canteen/staff-credit/payments', body),
   settle: (body: { period: string; reference: string; employeeCodes: string[] | null }) =>

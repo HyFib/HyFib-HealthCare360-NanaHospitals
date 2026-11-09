@@ -6,7 +6,11 @@ issues to admitted patients (charged to the IP account) and ward returns; Schedu
 chronic-medication refills with reminders; and the pharmacist dashboard. SRS **PH-01..06** (with ERX-03/06, PP-05).
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Pharmacy` (references SupplyChain for stock and Patients).
-Schema `pharmacy`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Pharmacy.Tests` (89 unit and EF-model tests);
+Schema `pharmacy`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Pharmacy.Tests` (95 unit and EF-model tests);
+`PharmacyJourneyTests` in `tests/HyFib.HealthCare360.IntegrationTests` drives the journey end to end (an e-prescription
+signed over an allergy, acknowledged, dispensed, paid and returned with approval; a ward indent for a narcotic issued,
+charged and returned, with the stock ledger, the NDPS register and the running bill in step); `DrugPriceCeilingTests`
+proves the ceilings;
 `PharmacyRefundApprovalTests` in `tests/HyFib.HealthCare360.IntegrationTests` proves the refunds and write-offs that wait
 for a second person, over the real API.
 All stock movements go through SupplyChain's `StockService` (see `supplychain.md`) in the same transaction as the
@@ -41,13 +45,24 @@ Detail views that show a patient (`/queue/{id}`, `/sales/{id}`, `/ward-indents/{
 ### Queue and dispensing (PH-01, ERX-03)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/queue?page&status&inpatient&includeClosed` | any of `pharmacy.queue.read`, `pharmacy.dispense`, `pharmacy.ip.issue` | → paged `QueueListItem` (oldest first; waiting minutes, controlled flag, refill flag) |
-| GET | `/queue/{id}?storeId` | same | → `QueueEntryDetail` (lines with availability, MRP and nearest expiry in `storeId`; prescriber and registration number; refill status) |
+| GET | `/queue?page&status&inpatient&includeClosed` | any of `pharmacy.queue.read`, `pharmacy.dispense`, `pharmacy.ip.issue` | → paged `QueueListItem` (oldest first; waiting minutes, controlled flag, refill flag, `hasUnacknowledgedOverride`) |
+| GET | `/queue/{id}?storeId` | same | → `QueueEntryDetail` (lines with availability, MRP and nearest expiry in `storeId`; prescriber and registration number; refill status; `safetyOverrideReason`, and on each line its `safetyOverride` and who acknowledged it, when, and their note) |
+| POST | `/queue/{id}/lines/{lineId}/acknowledge-override` | `pharmacy.dispense` | `AcknowledgeOverrideRequest` (note?, up to 500) → 204. 422 `pharmacy.no_override`, `pharmacy.override_acknowledged`, `queue.closed`; 403 `pharmacy.override_own_prescription` for the account that signed the prescription |
 | POST | `/queue/{id}/dispense` | `pharmacy.dispense` | `DispenseRequest` (storeId, lines[queueLineId, itemId, quantity, batchId?, substitutionReason, prescriberConsent], counsellingNotes, discountPercent, payments[mode Cash/Card/Upi/Credit, amount, reference], confirmControlledDrugs) → 201 `PharmacySaleCreated` (id, invoiceNumber, netAmount, paidAmount, dueAmount, status) |
 | POST | `/queue/{id}/close` | `pharmacy.dispense` or `pharmacy.ip.issue` | `PharmacyReasonRequest` → 204. Partly dispensed lines count as dispensed, untouched lines are cancelled |
 | POST | `/queue/{id}/refills` | `pharmacy.refills` | `AuthorizeRefillsRequest` (refills 1–12, validUntil > today, note) → 204 |
 
 Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The store must be a pharmacy store.
+* **A prescriber's safety override** (MAKER-CHECKER.md slice 5, the clinical report's item 25). A line the doctor
+  signed over a blocking safety alert (an allergy or class allergy, a contraindicated interaction, a dose above the
+  maximum, a high-alert pattern) arrives with the alerts it was signed over, in words, and the prescription with the
+  doctor's reason (`PrescriptionSigned`). The queue marks the entry ("Safety override"), the dispensing screen shows the
+  alert and the reason, and the line is neither dispensed nor issued to a ward (422 `pharmacy.override_unacknowledged`)
+  until a pharmacist (`pharmacy.dispense`) acknowledges it from their own sign-in, with what they did if they wish ("spoke
+  to the doctor"). The account that signed the prescription never acknowledges it (403). The acknowledgement is audited
+  at Warning (`pharmacy.safety_override_acknowledged`) with the patient, the alert, the doctor's reason, the note and the
+  pharmacist. A refill is acknowledged again by whoever dispenses it. A ward indent is not tied to a prescription line, so
+  an issue against an indent does not carry the override (the ward's own order did, and the MAR witnesses its doses).
 * **Partial supply**: each line dispenses up to its remaining quantity (`queue.over_dispense`). The entry stays
   *PartiallyDispensed* until every line is done.
 * **FEFO** or a scanned batch, with a minimum shelf life of min(course days, 30), so medicine never expires mid-course.
@@ -57,6 +72,10 @@ Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The 
   Error codes: `pharmacy.substitution_not_equivalent`, `pharmacy.substitution_consent`.
 * **Controlled drugs** (H1/X/NDPS) need `confirmControlledDrugs` (`pharmacy.controlled_confirmation_required`) and
   write register lines with patient, prescriber and registration number.
+* **Price ceilings** (DPCO 2013): a batch of a scheduled medicine whose MRP is above the item's NPPA ceiling price
+  (supplychain.md, *Price ceilings*) is not dispensed, sold at the counter or issued to a ward (422
+  `pharmacy.price_above_ceiling`, naming the batch, its MRP and the ceiling): choose another batch, or the store returns
+  it. An implant is charged at the lower of MRP and ceiling instead, as before.
 * **Pricing**: MRP is GST-inclusive. The discount is capped by the facility setting `pharmacy.discount.max_percent`
   (default 10, `pharmacy.discount_limit`). Each line shows taxable value and CGST = SGST (half the rate each), and
   the bill is rounded to the rupee (round-off shown).
@@ -78,6 +97,15 @@ Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The 
   the GST carved out of its refund at the sale line's rate (`PharmacyReturnEInvoiceSource`), the same split the day
   book posts. A return made after 30 November following the financial year of the sale (s.34(2)) takes back the value
   and not the GST, in the day book too, and is not reported.
+  When the facility is connected to the e-invoice portal (`integrations.irp`, billing.md *The portal connection*), the
+  register asks the portal for the sale's IRN itself; a B2B invoice above `gst.ewaybill.threshold` (₹50,000 by
+  default) then gets its **e-way bill** from the IRN, with the vehicle number or the transporter's GSTIN and the
+  distance (one day's validity per 200 km), and the number and validity are kept with the IRN.
+* **GST returns.** Counter sales and their returns are in Billing's GSTR-1 and GSTR-3B (`PharmacyGstReturnSource`): a
+  sale to a registered buyer is B2B; to a patient, B2CS, or B2CL when dispatched to another state above ₹1,00,000; a
+  medicine at 0% is nil-rated; returns are credit notes at the GST carved out of their refund (CDNR, CDNUR, or netted
+  into B2CS), and each medicine is in the HSN summary at its HSN code and quantity (`NOS`). Sales and returns are their
+  own series in the documents issued.
 * **Payments** may be split across modes and must add up to the bill (`payment.mismatch`). Credit (a due) is
   allowed only for registered patients (`payment.credit_not_allowed`).
 
@@ -196,6 +224,17 @@ The controlled-drug register holds exactly one line per stock-ledger movement (u
 documents write their own lines with the patient and prescriber. Everything else arrives through
 `ControlledStockMoved` (see Events): GRN, transfers, adjustments, write-offs, OT consumption.
 
+### Recall trace — `/recalls/trace`
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/recalls/trace?itemId&batchNumber` | `pharmacy.registers` | → `RecallTrace`: every hand-over of the batch (matched by item and batch number, any case) to a patient, oldest first: OP dispensing against an e-prescription, counter sales (to a registered patient, or a walk-in by the name and phone given at the counter) and issues to the ward for an admitted patient, each with the document, the store, the patient's UHID, name and phone, what was given, what came back and what the patient kept; cancelled sales are left out. Also the stores still holding the batch, and whether each holds it on recall. Audited `pharmacy.recall_trace` (PHI access, Warning) with who ran it, the batch and how many patients |
+
+The staff app's **Recall trace** page (Pharmacy) runs it only when asked, never as one types, and prints the call-back
+list on the letterhead with a column to note each patient contacted. It does not reach implants recorded against an
+operation or stock consumed in a ward sub-store, which are not issued to a named patient by batch through the
+pharmacy; the stock ledger follows those. A batch is held on recall from Stock (`inventory`), and released only with a
+second person's approval (see the Supply chain module).
+
 ### NDPS accounts — `/ndps` (NDPS Rules 52-O to 52-T, as amended in 2015)
 The essential narcotic drugs (`EssentialNarcoticDrugs`: morphine, fentanyl, methadone, oxycodone, codeine and
 hydrocodone, by the item's generic name) are accounted for from the controlled-drug register, which already holds every
@@ -213,7 +252,8 @@ movement with its running balance. Nothing is entered twice: the forms are views
 | POST | `/ndps/counts/{id}/witness` | `pharmacy.ndps.count` | `WitnessNarcoticCountRequest{explanation, version}`: a second user, never the counter (422 `ndps.witness_self`); a difference must be explained (400 `explanation`) and alerts every holder of `pharmacy.registers` after the save |
 
 Not built: the application for recognition (Form 3F) and the certificate (Form 3G), which are paper between the
-hospital and the State Drugs Controller. The annual return's form number and due date are taken from secondary sources
+hospital and the State Drugs Controller (left out of Release 1 again: the recognition is held on paper and its number
+is not yet recorded anywhere in HC360). The annual return's form number and due date are taken from secondary sources
 (Form 3I, before 31 March); check them against the Gazette before relying on them.
 
 ### Adverse drug reactions — `/adr` (Pharmacovigilance Programme of India)
@@ -224,6 +264,11 @@ patient is named by initials, as the form asks. A reporter sees and corrects the
 (`pharmacy.adr.manage`) sees every report, assesses causality (WHO-UMC) and records it as sent to the ADR monitoring
 centre, after which it cannot change. A serious reaction is due within 15 days of the hospital learning of it
 (`dueBy`, `overdue`). Reads and prints go through the patient guard and are audited.
+
+A new report raises an incident (type AdverseDrugReaction) in the Quality register in the same save, unless an incident
+number was given on the form: death is graded death; life-threatening, disability or a congenital anomaly severe (so a
+root-cause analysis is due); any other seriousness moderate; a non-serious reaction mild. The incident's number is kept
+on the report.
 
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
@@ -261,7 +306,7 @@ Refill rules. Authorised on the original OP prescription only, at most 12 refill
 
 | Event | Direction | Behaviour |
 |---|---|---|
-| `PrescriptionSigned` (Platform.Contracts, from Clinical) | handled, same transaction | Creates the queue entry in the prescriber's transaction. Idempotent: at most one non-refill entry per prescription (unique filtered index) |
+| `PrescriptionSigned` (Platform.Contracts, from Clinical) | handled, same transaction | Creates the queue entry in the prescriber's transaction, with the doctor's override reason, the account that signed, and each line's overridden alerts. Idempotent: at most one non-refill entry per prescription (unique filtered index) |
 | `PrescriptionCancelled` | handled | Cancels open entries, revokes refills, lapses pending refill requests |
 | `PatientDischarged` (Inpatient) | handled | Cancels pending ward indents and closes open IP queue entries |
 | `PatientsMerged` (Patients) | handled | Moves queue entries, sales, returns, ward indents/issues/returns, refill requests and register links to the surviving patient (printed names/UHIDs on register lines are kept) |
@@ -298,8 +343,8 @@ while SMS/WhatsApp consent is active.
 
 | Series key | Format |
 |---|---|
-| `pharmacy.invoice` | `{FAC}PH{YY}{SEQ:7}` (OP dispensing and counter sales) |
-| `pharmacy.return` | `{FAC}PHR{YY}{SEQ:6}` |
+| `pharmacy.invoice` | `{FAC}PH{YY}{SEQ:6}` (OP dispensing and counter sales; a GST series, at most 16 characters) |
+| `pharmacy.return` | `{FAC}SR{YY}{SEQ:6}` (a credit note; a GST series, at most 16 characters) |
 | `pharmacy.ward_indent` · `pharmacy.ip_issue` · `pharmacy.ward_return` | `{FAC}WI{YY}{SEQ:6}` · `{FAC}IPI{YY}{SEQ:6}` · `{FAC}WR{YY}{SEQ:6}` |
 | `pharmacy.refill` | `{FAC}RF{YY}{SEQ:6}` |
 
@@ -317,7 +362,8 @@ exceed it.
 
 ## Tables (schema `pharmacy`)
 
-`queue_entries` (unique `prescription_id` where `refill_of_entry_id IS NULL`), `queue_lines`, `sales` (unique
+`queue_entries` (unique `prescription_id` where `refill_of_entry_id IS NULL`; `safety_override_reason`,
+`signed_by_user_id`), `queue_lines` (`safety_override` and who acknowledged it, when, with their note), `sales` (unique
 `invoice_number`), `sale_items`, `sale_payments` (a refund's `refund_of_payment_id`), `sale_returns` (unique `return_number`), `sale_return_items`,
 `ward_indents`, `ward_indent_lines`, `ip_issues`, `ip_issue_lines`, `ward_returns`, `ward_return_lines`,
 `controlled_drug_register` (unique `ledger_entry_id`), `refill_requests`, `narcotic_counts`, `narcotic_count_lines`, `adr_reports` (unique `number`; drugs as jsonb). Queue entries and sales use `xmin`
@@ -325,6 +371,9 @@ optimistic concurrency. Foreign keys go to the Patients `Patient` table and to t
 stock-batch tables.
 
 ## Open items for maintainers
+
+* **GST series in use.** The invoice and return defaults were `{FAC}PH{YY}{SEQ:7}` and `{FAC}PHR{YY}{SEQ:6}`, 17 characters at a
+  6-letter facility code; a series already in use keeps its stored format until an administrator changes it.
 
 * **ServiceCategory**: the IP pharmacy service items are seeded as `ServiceCategory.Consumable`. A
   `ServiceCategory.Pharmacy` value in Billing would give cleaner bill grouping.

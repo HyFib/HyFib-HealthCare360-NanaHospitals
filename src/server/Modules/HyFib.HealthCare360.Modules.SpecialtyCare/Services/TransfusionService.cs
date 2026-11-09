@@ -48,7 +48,8 @@ public sealed class TransfusionService(
     IRealtimePublisher realtime,
     ICurrentUser currentUser,
     ISettingsService settings,
-    TimeProvider time)
+    TimeProvider time,
+    IIncidentRegister incidents)
 {
     private static readonly PractitionerKind[] Doctors = [.. PractitionerKinds.Doctors];
 
@@ -506,7 +507,23 @@ public sealed class TransfusionService(
             Status = ReactionStatus.Reported,
         };
         db.Add(reaction);
+
+        // The reaction is also an incident in the Quality register (NABH COP: transfusion reactions reported and analysed), raised
+        // in the same save so one is never kept without the other.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        var raised = await incidents.ReportAsync(new ReportedSafetyEvent(
+            reaction.FacilityId, reaction.PatientId, SafetyEventKind.TransfusionReaction, ReactionHarm.Of(reaction.Severity), reaction.OnsetAt,
+            "Where the unit was transfused",
+            $"Transfusion reaction to unit {reaction.UnitNumber} ({reaction.Severity}): {string.Join(", ", reaction.Symptoms)}."
+            + (reaction.TransfusionStopped ? " Transfusion stopped." : string.Empty),
+            reaction.ActionsTaken, "SpecialtyCare", nameof(TransfusionReaction), reaction.Id, $"Unit {reaction.UnitNumber}"), ct);
+        if (raised.IsFailure)
+        {
+            return raised.Error!;
+        }
+
+        await transaction.CommitAsync(ct);
 
         await notifications.NotifyPermissionHoldersAsync(SpecialtyCarePermissions.BloodBankReactionsInvestigate, issue.FacilityId,
             reaction.IsSerious ? "Serious transfusion reaction" : "Transfusion reaction reported",
@@ -518,9 +535,48 @@ public sealed class TransfusionService(
     public Task<Result> InvestigateReactionAsync(Guid reactionId, CancellationToken ct) =>
         ChangeReactionAsync(reactionId, r => r.StartInvestigation(), ct);
 
-    public Task<Result> CloseReactionAsync(Guid reactionId, CloseReactionRequest request, CancellationToken ct) =>
-        ChangeReactionAsync(reactionId, r => r.Close(request.Type, request.Severity, request.Findings, request.ReportedToHaemovigilance,
-            currentUser.Stamp(time.GetUtcNow()).Name, time.GetUtcNow()), ct);
+    /// <summary>
+    /// Closes the investigation. A close that would lower the severity or imputability in force is refused while the
+    /// facility asks for the medical officer: the lowering is asked for first (<see cref="ReactionClassificationService"/>).
+    /// </summary>
+    public async Task<Result> CloseReactionAsync(Guid reactionId, CloseReactionRequest request, CancellationToken ct)
+    {
+        var reaction = await db.Set<TransfusionReaction>().FirstOrDefaultAsync(r => r.Id == reactionId, ct);
+        if (reaction is null)
+        {
+            return Error.NotFound(nameof(TransfusionReaction), reactionId);
+        }
+
+        var lowered = ReactionDowngrade.Lowers(reaction.Severity, reaction.Imputability, request.Severity, request.Imputability);
+        var name = currentUser.Stamp(time.GetUtcNow()).Name;
+        if (lowered.Count > 0)
+        {
+            if (await settings.GetAsync<bool?>(ReactionClassificationService.DowngradeApprovalSetting, reaction.FacilityId, ct) != false)
+            {
+                return Error.Rule("bloodbank.reaction_lowered",
+                    $"Closing this way lowers the reaction ({string.Join("; ", lowered)}), which waits for the blood bank medical officer. Record the classification with your reason first, and close once it is approved.");
+            }
+
+            reaction.MarkLowered(request.Findings, name ?? "Staff", null);
+            audit.Add(new AuditEntry(AuditCategories.Data, "bloodbank.reaction_lowered",
+                $"Transfusion reaction on unit {reaction.UnitNumber} lowered at closing by {name} alone (the medical officer is not required here): {string.Join("; ", lowered)}")
+            {
+                PatientId = reaction.PatientId,
+                EntityType = nameof(TransfusionReaction),
+                EntityId = reaction.Id.ToString(),
+                Severity = AuditSeverity.Warning,
+            });
+        }
+
+        var closed = reaction.Close(request.Type, request.Severity, request.Imputability, request.Findings, request.ReportedToHaemovigilance, name ?? "Staff", time.GetUtcNow());
+        if (closed.IsFailure)
+        {
+            return closed;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return Result.Success();
+    }
 
     /// <summary>Returns every unit reserved for the request to general stock.</summary>
     internal async Task ReleaseReservationsAsync(Guid requestId, CancellationToken ct)
@@ -600,4 +656,16 @@ public sealed class TransfusionService(
 
     private Task PublishAsync(Guid facilityId, CancellationToken ct) =>
         realtime.FacilityChangedAsync(facilityId, SpecialtyRealtime.BloodBankChanged, new { area = "requests" }, ct);
+}
+
+/// <summary>The harm grade (NABH incident reporting) a transfusion reaction is reported with.</summary>
+internal static class ReactionHarm
+{
+    public static IncidentHarm Of(ReactionSeverity severity) => severity switch
+    {
+        ReactionSeverity.Mild => IncidentHarm.Mild,
+        ReactionSeverity.Moderate => IncidentHarm.Moderate,
+        ReactionSeverity.Death => IncidentHarm.Death,
+        _ => IncidentHarm.Severe,
+    };
 }

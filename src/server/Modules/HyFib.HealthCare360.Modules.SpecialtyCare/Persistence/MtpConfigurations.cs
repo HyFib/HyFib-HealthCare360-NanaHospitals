@@ -19,6 +19,8 @@ internal sealed class MtpCaseConfiguration : IEntityTypeConfiguration<MtpCase>
         b.Property(x => x.Remarks).HasMaxLength(SpecialtyCareSchema.Note);
         b.Property(x => x.CancelReason).HasMaxLength(SpecialtyCareSchema.Reason);
         b.Ignore(x => x.IsClosed);
+        b.Ignore(x => x.SecondOpinion);
+        b.Ignore(x => x.AwaitingSecondOpinion);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.SerialNumber).IsUnique();
         b.HasIndex(x => new { x.FacilityId, x.Status, x.TerminatedOn });

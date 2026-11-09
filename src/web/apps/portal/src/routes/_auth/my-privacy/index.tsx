@@ -3,6 +3,7 @@ import {
   ClipboardTaskListLtrRegular,
   FolderPersonRegular,
   MegaphoneRegular,
+  PeopleCheckmarkRegular,
   PersonHeartRegular,
 } from '@fluentui/react-icons';
 import { useQuery } from '@tanstack/react-query';
@@ -101,6 +102,13 @@ function PrivacyHubPage() {
         </CardLink>
         <CardLink to="/my-privacy/nominee">
           <ListRow icon={<PersonHeartRegular />} title={t('myPrivacy.hub.nominee')} subtitle={nomineeLine} />
+        </CardLink>
+        <CardLink to="/my-privacy/consents">
+          <ListRow
+            icon={<PeopleCheckmarkRegular />}
+            title={t('myPrivacy.hub.consents')}
+            subtitle={t('myPrivacy.hub.consents.hint')}
+          />
         </CardLink>
         <CardLink to="/profile/preferences">
           <ListRow

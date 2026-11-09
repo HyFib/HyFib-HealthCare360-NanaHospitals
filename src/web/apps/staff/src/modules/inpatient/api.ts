@@ -359,6 +359,11 @@ export interface BedOccupant {
   expectedDischargeDate: string | null;
   status: AdmissionStatus;
   payerType: PayerType;
+  /** The latest NEWS2 of the stay (null for a child, or with no observations yet). */
+  news2Score?: number | null;
+  news2Response?: 'Routine' | 'Urgent' | 'Emergency' | null;
+  news2Complete?: boolean;
+  news2At?: string | null;
 }
 
 export interface BedBoardItem {
@@ -672,6 +677,8 @@ export interface WardRoundPatient {
   isMlc: boolean;
   /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", no diagnosis or vital-sign details. */
   isRestricted: boolean;
+  /** A record in a sensitive category the user does not hold: named, without the diagnosis and vital-sign details. */
+  isConfidential?: boolean;
   consultantId: string | null;
   consultantName: string | null;
   /** False when the doctor follows the patient for another consultant (visited during this stay). */
@@ -688,6 +695,11 @@ export interface WardRoundPatient {
   vitalsSeverity: VitalsSeverity | null;
   /** Up to three plain-language flags, most serious first. */
   vitalsFlags: string[];
+  /** The latest NEWS2 of the stay, the response it calls for, and whether an escalation waits for a response. */
+  news2Score?: number | null;
+  news2Response?: 'Routine' | 'Urgent' | 'Emergency' | null;
+  news2Complete?: boolean;
+  hasOpenEscalation?: boolean;
 }
 
 /** The doctor's (or the department's) in-patients, in the bed board's order. */

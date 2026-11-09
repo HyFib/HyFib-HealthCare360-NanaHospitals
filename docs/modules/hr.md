@@ -216,13 +216,28 @@ Calculators (pure, unit-tested):
   change). Payroll months before November 2025, the month the Code came into force, keep PF on earned basic, as it was
   paid and filed then, when processed late or reopened.
 * **ESI** (`EmployeeStateInsurance`): 0.75 % of earned gross (employer 3.25 %) when *contracted* gross ≤ ₹21,000,
-  rounded up to the next rupee.
+  rounded up to the next rupee. Someone covered earlier in the contribution period (April–September, October–March)
+  stays covered to its end after a raise above the ceiling (s.2(9) proviso).
 * **Professional tax** (`ProfessionalTaxCalculator`): state slab table. Monthly states apply to the month's gross,
   with an optional February amount. Half-yearly states (Tamil Nadu) apply in the deduction months to the half-year's
   gross from earlier payslips, projected ×6 when there is no history.
-* **TDS**: the structure's projected monthly TDS or this month's `TdsOverride`.
+* **TDS** (`PayrollTaxContext`, `TdsProjector`, `IncomeTaxCalculator`): computed every month under s.192, not typed:
+  the year's tax under the employee's regime and declaration (new regime if none), on the salary paid so far this
+  financial year, this month's and the structure's full month for each month left to March (or the last working day),
+  less the TDS already deducted (here and by a previous employer), spread over this and the months left. Rates come
+  from the dated table `IncomeTaxRates` (FY 2024-25 to 2026-27). Without a PAN, at least 20 % (s.206AA). This month's
+  `TdsOverride` still wins; a year without rates falls back to the structure's `monthlyTds` with a warning. See
+  [statutory-returns.md](statutory-returns.md).
 * **Payslip** (`PayrollCalculator`): earnings are pro-rated by payable ÷ calendar days, and %-of-basic heads follow
   basic. One-off inputs are not pro-rated. Negative net pay is an error that blocks approval.
+
+### Statutory returns, TDS and separation dues (`/api/v1/hr/statutory`)
+
+The ECR, ESIC file, Form 24Q (FVU input), Form 16 Part B, bank upload files for SBI, HDFC and ICICI, tax declarations
+and computation (both regimes), gratuity, the bonus register and the full and final statement, with the employer's TAN,
+EPFO and ESIC codes and the TDS challans. Endpoints, rules and file layouts (with sources and dates) are in
+[statutory-returns.md](statutory-returns.md). Employees see and change their own declaration and computation at
+`GET/PUT /api/v1/hr/me/tax-declarations/{fy}` and `GET /api/v1/hr/me/tax-computation/{fy}`.
 
 ### Self-service (`/api/v1/hr/me`, permission `hr.self`)
 `GET profile` · `GET roster?from&to` · `GET attendance?from&to` · `GET credentials` · `GET leave/balances?year` ·

@@ -44,7 +44,7 @@ internal sealed class BillRecordHistory(HospitalDbContext db, PatientAccessGuard
             .. discounts,
             .. receipts.Select(r => new HistoryPart(nameof(Receipt), r.Id, $"Receipt {r.ReceiptNumber}")),
             .. refunds.Select(r => new HistoryPart(nameof(Refund), r.Id, $"Refund {r.RefundNumber}")),
-            .. credits.Select(c => new HistoryPart(nameof(CreditNote), c.Id, $"{(c.Kind == CreditNoteKind.WriteOff ? "Write-off" : "Credit note")} {c.Number}")),
+            .. credits.Select(c => new HistoryPart(nameof(CreditNote), c.Id, $"{CreditNoteApproval.Words(c.Kind)} {c.Number}")),
         ]);
     }
 

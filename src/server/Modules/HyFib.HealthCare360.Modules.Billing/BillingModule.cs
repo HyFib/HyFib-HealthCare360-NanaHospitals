@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Billing.Documents;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
@@ -53,6 +54,9 @@ public sealed class BillingModule : IModule
         services.AddScoped<BillService>();
         services.AddScoped<DiscountService>();
         services.AddScoped<ReceiptService>();
+        services.AddSingleton(new DowntimeNumberSeries(DowntimeNumberKind.OpBill, BillingNumberSeries.OpBill, BackEntryRecord.Bill, "OP bill"));
+        services.AddSingleton(new DowntimeNumberSeries(DowntimeNumberKind.IpBill, BillingNumberSeries.IpBill, BackEntryRecord.Bill, "IP bill"));
+        services.AddSingleton(new DowntimeNumberSeries(DowntimeNumberKind.Receipt, BillingNumberSeries.Receipt, BackEntryRecord.Receipt, "receipt"));
         services.AddScoped<RefundService>();
         services.AddScoped<ReversalService>();
         services.AddScoped<AdvanceService>();
@@ -64,10 +68,15 @@ public sealed class BillingModule : IModule
         services.AddScoped<PreAuthService>();
         services.AddScoped<ClaimService>();
         services.AddScoped<DoctorFeeService>();
+        services.AddScoped<DoctorTaxService>();
         services.AddScoped<TallyService>();
         services.AddScoped<EInvoiceService>();
         services.AddScoped<IEInvoiceSource, BillEInvoiceSource>();
         services.AddScoped<IEInvoiceSource, CreditNoteEInvoiceSource>();
+        services.AddScoped<IEInvoiceSource, DebitNoteEInvoiceSource>();
+        services.AddScoped<DebitNoteService>();
+        services.AddScoped<GstReturnService>();
+        services.AddScoped<IGstReturnSource, BillingGstReturnSource>();
         services.AddScoped<IEInvoiceRegister, EInvoiceRegisterLookup>();
         services.AddScoped<ICashReceiptSource, BillingCashReceipts>();
         services.AddScoped<TallyReconciliationService>();
@@ -121,6 +130,7 @@ public sealed class BillingModule : IModule
         DoctorFeeEndpoints.Map(endpoints);
         TallyEndpoints.Map(endpoints);
         EInvoiceEndpoints.Map(endpoints);
+        GstReturnEndpoints.Map(endpoints);
         PortalBillEndpoints.Map(endpoints);
     }
 }

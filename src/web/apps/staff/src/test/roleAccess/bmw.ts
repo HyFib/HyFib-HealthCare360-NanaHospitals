@@ -1,7 +1,8 @@
-import type { PendingWaste, WasteHandover, WasteMonth, WasteYear } from '@/modules/bmw/api';
+import type { PendingWaste, WasteAccident, WasteHandover, WasteMonth, WasteYear } from '@/modules/bmw/api';
 import type { FakeAnswers } from '../fakeApi';
 
-// Bio-medical waste: two bags waiting (one kept beyond 48 hours, so voiding is offered), a handover, the month and the year.
+// Bio-medical waste: two bags waiting (one kept beyond 48 hours, so voiding is offered), a handover, the month, the year
+// and a needle-stick injury reported for Form I.
 
 const id = (suffix: string) => `0192a000-0000-7000-8000-${suffix.padStart(12, '0')}`;
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
@@ -86,9 +87,29 @@ const YEAR: WasteYear = {
   voidedBags: 12,
 };
 
+const ACCIDENT: WasteAccident = {
+  id: id('x1'),
+  occurredAt: hoursAgo(30),
+  kind: 'NeedleStick',
+  place: 'General ward (male), bed 4',
+  sequence: "A used needle was recapped after an injection and pierced the nurse's finger.",
+  category: 'White',
+  wasteInvolved: 'Used hypodermic needle',
+  personsAffected: 1,
+  effects: 'Puncture wound, no bleeding beyond a drop',
+  emergencyMeasures: 'Washed under running water; post-exposure prophylaxis started within two hours',
+  stepsToAlleviate: null,
+  stepsToPrevent: 'No recapping; needle cutters at every nursing station',
+  authorityInformedAt: null,
+  reportedAt: hoursAgo(28),
+  reportedByName: 'Infection control nurse',
+  reportedByDesignation: 'ICN',
+};
+
 export const ANSWERS: FakeAnswers = {
   'GET /api/v1/bmw/bags/pending': PENDING,
   'GET /api/v1/bmw/handovers': [HANDOVER],
   'GET /api/v1/bmw/register': MONTH,
   'GET /api/v1/bmw/annual': YEAR,
+  'GET /api/v1/bmw/accidents': [ACCIDENT],
 };

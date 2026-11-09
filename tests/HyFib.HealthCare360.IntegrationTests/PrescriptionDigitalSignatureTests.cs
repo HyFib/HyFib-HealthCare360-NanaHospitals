@@ -552,6 +552,51 @@ public sealed class PrescriptionDigitalSignatureTests(HospitalServer server) : I
 
     private Task SetPolicyAsync(string? value) => DscTestPki.SetPolicyAsync(server, _facilityId, value, Ct);
 
+    [Fact]
+    public async Task A_dsc_on_its_cas_cached_crl_is_refused_and_one_not_on_it_signs_with_the_crls_age_recorded()
+    {
+        await SetPolicyAsync("optional");
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        using var revoked = _pki.Doctor(_doctorName);
+        using var good = _pki.Doctor(_doctorName);
+
+        // The CA's CRL, issued a day ago, revokes the first DSC; HC360 cannot reach the CA (no OCSP or CRL address on these
+        // certificates), so the cached CRL decides.
+        var crl = new CertificateRevocationListBuilder();
+        crl.AddEntry(revoked, DateTimeOffset.UtcNow.AddDays(-2));
+        var der = crl.Build(_pki.Ca, System.Numerics.BigInteger.One, DateTimeOffset.UtcNow.AddDays(6), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1,
+            DateTimeOffset.UtcNow.AddHours(-26));
+        var cache = server.Services.GetRequiredService<DscCrlCache>();
+        cache.Save(der, "http://crl.test-ca.example/ca.crl").ShouldBeTrue();
+        var file = Path.Combine(cache.Folder, cache.Lists.Single(l => l.Issuer == _pki.Ca.Subject).File);
+
+        try
+        {
+            var refused = await SignedPrescriptionAsync(doctor);
+            var toSign = await doctor.GetAsync<PrescriptionSigningContent>($"/api/v1/clinical/prescriptions/{refused.Id}/signing-content");
+            var signature = DetachedCms.Sign(Convert.FromBase64String(toSign.Content), revoked, DateTimeOffset.UtcNow, silent: true, issuers: [_pki.Ca]);
+            await ShouldRefuseAsync(doctor.SendRawAsync(HttpMethod.Post, $"/api/v1/clinical/prescriptions/{refused.Id}/digital-signature",
+                new AttachDigitalSignatureRequest(Convert.ToBase64String(signature))), HttpStatusCode.UnprocessableEntity, DscRevocationCheck.RevokedCode);
+            (await doctor.GetAsync<PrescriptionDto>($"/api/v1/clinical/prescriptions/{refused.Id}")).IsDigitallySigned.ShouldBeFalse();
+
+            var rx = await SignedPrescriptionAsync(doctor);
+            var accepted = await _pki.SignAsync(doctor, rx.Id, good);
+            accepted.State.ShouldBe(DigitalSignatureState.Valid, accepted.Message);
+            accepted.RevocationStatus.ShouldNotBeNull().ShouldStartWith("Not revoked on the CRL of");
+            accepted.RevocationStatus.ShouldContain("26 hours old");
+
+            // System health shows the CRL's age.
+            var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+            var age = (await admin.GetAsync<HealthWarnings>("/api/v1/admin/system/health")).Warnings.Single(w => w.Code == DscTrustHealthWarnings.CrlAgeCode);
+            (age.Severity, age.Message.Contains(_pki.Ca.Subject, StringComparison.Ordinal)).ShouldBe(("info", true));
+        }
+        finally
+        {
+            File.Delete(file);
+            File.Delete(Path.ChangeExtension(file, ".url"));
+        }
+    }
+
     private async Task<PrescriptionDto> SignedPrescriptionAsync(ApiClient doctor, Guid? patientId = null)
     {
         patientId ??= (await RegisterPatientAsync(NewMobile())).Id;

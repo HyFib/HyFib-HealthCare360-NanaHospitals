@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Engagement.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Services;
@@ -111,6 +112,16 @@ public sealed class CommunicationConsentService(HospitalDbContext db, ICurrentUs
         if (!await db.Set<Patient>().AnyAsync(p => p.Id == patientId, ct))
         {
             return Error.NotFound(nameof(Patient), patientId);
+        }
+
+        // DPDP Act s.9(3): no marketing to a child, whoever switches it on.
+        if (marketing == true)
+        {
+            var born = await db.Set<Patient>().Where(p => p.Id == patientId).Select(p => p.DateOfBirth).FirstOrDefaultAsync(ct);
+            if (ChildData.WhyRefused(ConsentType.MarketingCommunication, born, DateOnly.FromDateTime(time.GetUtcNow().ToOffset(TimeSpan.FromMinutes(330)).DateTime), true) is { } refused)
+            {
+                return refused;
+            }
         }
 
         if (whatsApp is { } wanted)

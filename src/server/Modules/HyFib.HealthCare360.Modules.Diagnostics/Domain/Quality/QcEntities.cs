@@ -86,6 +86,12 @@ public sealed class QcRun : AuditableEntity, IFacilityScoped
 /// <summary>
 /// Supervisor override of a QC lockout (LIS-06). It is bound to the specific rejected run, so a later rejected run
 /// locks the assay again, and it is always written to the audit trail with its reason.
+/// <para>
+/// An override for the day (<see cref="LabResultIds"/> null) unlocks the assay for every result verified until QC fails
+/// again. Where the lab asks for a second pathologist (<c>lab.separateVerifier</c>), that override waits for another
+/// holder of <c>lab.results.verify</c> (<see cref="ApprovedBy"/>), and the override given at verification covers only the
+/// results verified with it (<see cref="LabResultIds"/>): the next result of the assay is locked again.
+/// </para>
 /// </summary>
 public sealed class QcOverride : AuditableEntity, IFacilityScoped
 {
@@ -94,5 +100,16 @@ public sealed class QcOverride : AuditableEntity, IFacilityScoped
     public Guid QcRunId { get; set; }
     public string Reason { get; set; } = string.Empty;
     public DateTimeOffset OverriddenAt { get; set; }
+
+    /// <summary>Who overrode it (who asked, when a second pathologist approved it).</summary>
     public Guid? OverriddenBy { get; set; }
+
+    /// <summary>The second pathologist who approved an override for the day; null when none was needed.</summary>
+    public Guid? ApprovedBy { get; set; }
+
+    /// <summary>The results this override let through at verification; null for an override for the whole day.</summary>
+    public List<Guid>? LabResultIds { get; set; }
+
+    /// <summary>Whether it unlocks the assay for the rest of the day (not only for the results verified with it).</summary>
+    public bool CoversDay => LabResultIds is null;
 }

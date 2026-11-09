@@ -25,9 +25,16 @@ internal static class StockEndpoints
             .RequireAnyPermission(SupplyChainPermissions.ItemsManage, SupplyChainPermissions.AdjustmentsApprove)
             .WithValidation<BlockBatchRequest>();
         group.MapPost("/batches/{id:guid}/unblock", Unblock)
-            .RequireAnyPermission(SupplyChainPermissions.ItemsManage, SupplyChainPermissions.AdjustmentsApprove);
+            .RequireAnyPermission(SupplyChainPermissions.ItemsManage, SupplyChainPermissions.AdjustmentsApprove)
+            .WithValidation<UnblockBatchRequest>();
     }
 
+    /// <summary>
+    /// The store's stock, item by item. Available is usable stock: not reserved, not expired and not in a blocked batch (a
+    /// recall, a quality hold). An item is below its reorder level by the reorder report's rule (<see cref="ReorderCalculator"/>):
+    /// active, with a level, and its usable stock plus what is still due on the store's open purchase orders at or under it.
+    /// Filtered to items below reorder, an item with no stock left at all is listed too, as the reorder report lists it.
+    /// </summary>
     private static async Task<IResult> Summary(
         Guid storeId, [AsParameters] PageQuery query, ItemType? type, bool? belowReorder, HospitalDbContext db, TimeProvider time, CancellationToken ct)
     {
@@ -39,35 +46,51 @@ internal static class StockEndpoints
             items = items.Where(i => i.Type == type);
         }
 
-        var positions = db.Set<StockBatch>().AsNoTracking()
-            .Where(b => b.StoreId == storeId && b.QuantityOnHand > 0)
-            .GroupBy(b => b.ItemId)
-            .Select(g => new
-            {
-                ItemId = g.Key,
-                OnHand = g.Sum(b => b.QuantityOnHand),
-                Reserved = g.Sum(b => b.QuantityReserved),
-                Expired = g.Sum(b => b.ExpiryDate < today ? b.QuantityOnHand : 0m),
-                Value = g.Sum(b => b.QuantityOnHand * b.PurchaseRate),
-                NearestExpiry = g.Min(b => b.ExpiryDate),
-            });
+        // The store's batches with stock, and what is still due on its approved, sent or part-received orders (in purchase
+        // units), each summed per item as a correlated sub-query EF can translate.
+        var batches = db.Set<StockBatch>().AsNoTracking().Where(b => b.StoreId == storeId && b.QuantityOnHand > 0);
+        var pending =
+            from line in db.Set<PurchaseOrderLine>()
+            join order in db.Set<PurchaseOrder>() on line.PurchaseOrderId equals order.Id
+            where order.StoreId == storeId
+                  && (order.Status == PurchaseOrderStatus.Approved || order.Status == PurchaseOrderStatus.Sent || order.Status == PurchaseOrderStatus.PartiallyReceived)
+                  && line.Quantity > line.ReceivedQuantity
+            select line;
 
-        var rows =
-            from p in positions
-            join i in items on p.ItemId equals i.Id
-            select new { i.Id, i.Code, i.Name, i.Type, i.BaseUnit, i.ReorderLevel, p.OnHand, p.Reserved, p.Expired, p.Value, p.NearestExpiry };
+        // The store's own reorder level for an item overrides the item's (StoreItemLevel).
+        var levels = db.Set<StoreItemLevel>().AsNoTracking().Where(l => l.StoreId == storeId);
+        var listOutOfStock = belowReorder == true;
+        var rows = items
+            .Select(i => new
+            {
+                i.Id,
+                i.Code,
+                i.Name,
+                i.Type,
+                i.BaseUnit,
+                ReorderLevel = levels.Where(l => l.ItemId == i.Id).Select(l => (decimal?)l.ReorderLevel).FirstOrDefault() ?? i.ReorderLevel,
+                i.IsActive,
+                HasStock = batches.Any(b => b.ItemId == i.Id),
+                OnHand = batches.Where(b => b.ItemId == i.Id).Sum(b => (decimal?)b.QuantityOnHand) ?? 0m,
+                Reserved = batches.Where(b => b.ItemId == i.Id).Sum(b => (decimal?)b.QuantityReserved) ?? 0m,
+                Expired = batches.Where(b => b.ItemId == i.Id).Sum(b => (decimal?)(b.ExpiryDate < today ? b.QuantityOnHand : 0m)) ?? 0m,
+                Blocked = batches.Where(b => b.ItemId == i.Id).Sum(b => (decimal?)(b.IsBlocked && !(b.ExpiryDate < today) ? b.QuantityOnHand : 0m)) ?? 0m,
+                Usable = batches.Where(b => b.ItemId == i.Id).Sum(b => (decimal?)(!b.IsBlocked && (b.ExpiryDate == null || b.ExpiryDate >= today) && b.QuantityOnHand > b.QuantityReserved
+                    ? b.QuantityOnHand - b.QuantityReserved
+                    : 0m)) ?? 0m,
+                Value = batches.Where(b => b.ItemId == i.Id).Sum(b => (decimal?)(b.QuantityOnHand * b.PurchaseRate)) ?? 0m,
+                NearestExpiry = batches.Where(b => b.ItemId == i.Id).Min(b => b.ExpiryDate),
+                OnOrder = (pending.Where(l => l.ItemId == i.Id).Sum(l => (decimal?)(l.Quantity - l.ReceivedQuantity)) ?? 0m) * i.PurchaseUnitFactor,
+            });
+        rows = rows.Where(r => r.HasStock || (listOutOfStock && r.IsActive && r.ReorderLevel > 0));
         if (belowReorder == true)
         {
-            rows = rows.Where(r => r.ReorderLevel > 0 && r.OnHand - r.Reserved - r.Expired <= r.ReorderLevel);
+            rows = rows.Where(r => r.IsActive && r.ReorderLevel > 0 && r.Usable + r.OnOrder <= r.ReorderLevel);
         }
 
         var result = await rows.OrderBy(r => r.Name).ToPagedResultAsync(page, ct);
-        return TypedResults.Ok(result.Map(r =>
-        {
-            var available = r.OnHand - r.Reserved - r.Expired;
-            return new StockSummaryRow(r.Id, r.Code, r.Name, r.Type, r.BaseUnit, r.OnHand, r.Reserved, Math.Max(available, 0), r.Expired,
-                r.NearestExpiry, Money.Round(r.Value), r.ReorderLevel, r.ReorderLevel > 0 && available <= r.ReorderLevel);
-        }));
+        return TypedResults.Ok(result.Map(r => new StockSummaryRow(r.Id, r.Code, r.Name, r.Type, r.BaseUnit, r.OnHand, r.Reserved, r.Usable, r.Expired,
+            r.NearestExpiry, Money.Round(r.Value), r.ReorderLevel, ReorderCalculator.IsDue(r.IsActive, r.ReorderLevel, r.Usable, r.OnOrder), r.Blocked, r.OnOrder)));
     }
 
     private static async Task<IResult> Batches(Guid storeId, Guid itemId, bool? includeEmpty, StockService stock, CancellationToken ct) =>
@@ -151,28 +174,41 @@ internal static class StockEndpoints
             return Error.NotFound(nameof(StockBatch), id).ToProblem();
         }
 
-        var result = batch.Block(request.Reason);
+        var result = batch.Block(request.Reason, request.Recall);
         if (result.IsFailure)
         {
             return result.Error!.ToProblem();
         }
 
-        audit.Add(new AuditEntry(AuditCategories.Data, "stock_batch.blocked", $"Batch {batch.BatchNumber} blocked: {batch.BlockReason}")
+        audit.Add(new AuditEntry(AuditCategories.Data, "stock_batch.blocked",
+            $"Batch {batch.BatchNumber} {(batch.IsRecalled ? "recalled" : "blocked")}: {batch.BlockReason}")
         {
             EntityType = nameof(StockBatch),
             EntityId = batch.Id.ToString(),
             Severity = AuditSeverity.Warning,
+            Details = new { recall = batch.IsRecalled },
         });
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();
     }
 
-    private static async Task<IResult> Unblock(Guid id, HospitalDbContext db, IAuditLogger audit, CancellationToken ct)
+    /// <summary>
+    /// A quality hold is released at once. A recalled batch is released only when a second person agrees (202, MAKER-CHECKER
+    /// slice 13): it goes back on the shelf to be sold, dispensed and issued to patients.
+    /// </summary>
+    private static async Task<IResult> Unblock(
+        Guid id, UnblockBatchRequest request, HospitalDbContext db, IAuditLogger audit, RecallReleaseApprovals recalls, CancellationToken ct)
     {
         var batch = await db.Set<StockBatch>().FirstOrDefaultAsync(b => b.Id == id, ct);
         if (batch is null)
         {
             return Error.NotFound(nameof(StockBatch), id).ToProblem();
+        }
+
+        if (batch.IsRecalled)
+        {
+            var asked = await recalls.AskAsync(batch, request.Reason, ct);
+            return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
         }
 
         batch.Unblock();

@@ -109,6 +109,8 @@ export interface WorklistQueueEntry {
   hasCriticalAlerts: boolean;
   /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", without the complaint. */
   isRestricted: boolean;
+  /** A record in a sensitive category the user does not hold: named, without the clinical text. */
+  isConfidential?: boolean;
 }
 
 /** A booking on the doctor's day; once the patient has checked in it carries the visit, token and note. */
@@ -137,6 +139,8 @@ export interface WorklistAppointment {
   hasCriticalAlerts: boolean;
   /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", without the reason. */
   isRestricted: boolean;
+  /** A record in a sensitive category the user does not hold: named, without the clinical text. */
+  isConfidential?: boolean;
 }
 
 export interface WorklistEncounter {
@@ -1087,16 +1091,28 @@ export const emrQueries = {
 // ---------------------------------------------------------------------------------------------------- commands
 
 export const emrApi = {
-  acknowledgeResult: (id: string, note: string | null) =>
-    api.post<void>(`/api/v1/emr/results/${id}/acknowledge`, { note }),
+  /**
+   * Where the lab asks for a second pathologist, a critical lab result is acknowledged by its ordering doctor, or by a
+   * doctor who records that they cover the patient (`coveringReason`; 400 on that field without it).
+   */
+  acknowledgeResult: (id: string, note: string | null, coveringReason?: string | null) =>
+    api.post<void>(`/api/v1/emr/results/${id}/acknowledge`, { note, coveringReason: coveringReason ?? null }),
 
   startEncounter: (request: StartEncounterRequest) => api.post<EncounterDetail>('/api/v1/emr/encounters', request),
   updateEncounter: (id: string, content: EncounterContent, version: number) =>
     api.put<EncounterDetail>(`/api/v1/emr/encounters/${id}`, { ...content, version }),
   signEncounter: (id: string, version: number) =>
     api.post<EncounterDetail>(`/api/v1/emr/encounters/${id}/sign`, { version }),
+  /**
+   * The author amends at once (the encounter); another doctor's amendment waits for the author or the head of the
+   * department (an approval request, 202: maker-checker, slice 15).
+   */
   amendEncounter: (id: string, reason: string, content: EncounterContent, version: number) =>
-    api.post<EncounterDetail>(`/api/v1/emr/encounters/${id}/amend`, { reason, ...content, version }),
+    api.post<EncounterDetail | ApprovalRequestDto>(`/api/v1/emr/encounters/${id}/amend`, {
+      reason,
+      ...content,
+      version,
+    }),
 
   recordVitals: (patientId: string, request: RecordVitalsPayload) =>
     api.post<VitalsDto>(`/api/v1/emr/patients/${patientId}/vitals`, request),

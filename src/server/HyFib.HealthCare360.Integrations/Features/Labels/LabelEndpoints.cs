@@ -37,6 +37,9 @@ internal static class LabelEndpoints
         labels.MapPost("/cssd-packs", (CssdPackLabelsRequest r, LabelJobs jobs, CancellationToken ct) =>
                 jobs.RenderAsync("cssd-packs", r.Printer, r.Labels, r.Copies, CssdPackTemplate.Draw, ct))
             .WithValidation<CssdPackLabelsRequest>();
+        labels.MapPost("/waste-bags", (WasteBagLabelsRequest r, LabelJobs jobs, CancellationToken ct) =>
+                jobs.RenderAsync("waste-bags", r.Printer, r.Labels, r.Copies, WasteBagTemplate.Draw, ct))
+            .WithValidation<WasteBagLabelsRequest>();
         labels.MapPost("/asset-tags", (AssetTagLabelsRequest r, LabelJobs jobs, CancellationToken ct) =>
                 jobs.RenderAsync("asset-tags", r.Printer, r.Labels, r.Copies, AssetTagTemplate.Draw, ct))
             .WithValidation<AssetTagLabelsRequest>();

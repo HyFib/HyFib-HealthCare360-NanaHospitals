@@ -89,8 +89,10 @@ and `npx eslint apps/portal`.
   ways. In the portal (`/profile/family`), the account holder enters the relative's UHID, mobile number and relation;
   the server sends a 6-digit code to that number when the UHID and the number belong to the same active patient, and
   the relative agrees by passing the code on. At the front desk, staff check both people's identity documents, record
-  who agreed (the patient or their guardian), and share the records with the family member's number (the staff
-  console's "Portal access" tab on the patient's profile). Either side can end a link: the account holder removes the
+  who agreed (the patient or their guardian), and ask to share the records with the family member's number (the staff
+  console's "Portal access" tab on the patient's profile): a 6-digit code goes by SMS to the patient's own registered
+  number (`portal.family_code_desk`), and the link is made only when staff enter it as the patient reads it out
+  (MAKER-CHECKER.md, slice 14). A patient with no mobile number of their own cannot share this way. Either side can end a link: the account holder removes the
   relative, and anyone signed in with the patient's own number sees "Who else sees your records" and stops sharing.
   Staff end links at the front desk too. A link in force gives the account the same access as a patient on its own
   number, and ending it takes effect on the next request.

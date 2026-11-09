@@ -126,6 +126,11 @@ const SALE: CanteenSaleDto = {
   cashierName: 'Sanjay Gaikwad',
   cancelledAt: null,
   cancelReason: null,
+  cancelRequestedByName: null,
+  cancelledByName: null,
+  refundMode: null,
+  refundAmount: null,
+  version: 1,
   lines: [
     {
       menuItemId: THALI,

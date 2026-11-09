@@ -2,8 +2,11 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Organization;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Services;
 
@@ -17,8 +20,14 @@ public sealed class EncounterService(
     ClinicalAccess access,
     ICurrentUser currentUser,
     INotificationService notifications,
+    ISettingsService settings,
+    IApprovals approvals,
+    IAuditLogger audit,
     TimeProvider time)
 {
+    /// <summary>Another doctor's signed encounter amended with its author's, or the head of department's, approval (slice 15).</summary>
+    public const string AmendKind = "clinical.encounter_amend";
+
     public async Task<Result<EncounterDetail>> StartAsync(StartEncounterRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -124,8 +133,130 @@ public sealed class EncounterService(
             return result;
         }, ct);
 
-    public Task<Result<EncounterDetail>> AmendAsync(Guid id, AmendEncounterRequest request, CancellationToken ct) =>
-        ChangeAsync(id, request.Version, e => Task.FromResult(e.Amend(request.ToContent(), request.Reason, currentUser.UserId, time.GetUtcNow())), ct);
+    /// <summary>
+    /// Amends a signed encounter, keeping the original (the amendment history holds the text as it was). Its author amends
+    /// at once; another doctor asks, and the amendment is made when the author or the head of the encounter's department
+    /// approves it (maker-checker, slice 15), unless the hospital lets any doctor amend
+    /// (<see cref="ClinicalSignOff.EncounterAmendByAuthorSetting"/> off, which a second administrator approves).
+    /// </summary>
+    public async Task<Result<EncounterAmendOutcome>> AmendAsync(Guid id, AmendEncounterRequest request, CancellationToken ct)
+    {
+        var encounter = await db.Set<Encounter>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
+        if (encounter is null)
+        {
+            return Error.NotFound(nameof(Encounter), id);
+        }
+
+        if (encounter.IsLocked
+            && ClinicalSignOff.AmendNeedsApproval(encounter, currentUser.UserId, currentUser.PractitionerId)
+            && await settings.GetAsync<bool?>(ClinicalSignOff.EncounterAmendByAuthorSetting, encounter.FacilityId, ct) != false)
+        {
+            var allowed = await access.EnsureCanOpenAsync(encounter.PatientId, ct);
+            if (allowed.IsFailure)
+            {
+                return allowed.Error!;
+            }
+
+            if (encounter.Version != request.Version)
+            {
+                return Error.Conflict("concurrency.conflict", "This encounter was changed by someone else. Reload it and make the change again.");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Reason))
+            {
+                return Error.Field("reason", "Give a reason for the amendment.");
+            }
+
+            var asked = await AskAmendAsync(encounter, request, ct);
+            return asked.IsFailure ? asked.Error! : new EncounterAmendOutcome(null, asked.Value);
+        }
+
+        var amended = await ChangeAsync(id, request.Version, e => Task.FromResult(e.Amend(request.ToContent(), request.Reason, currentUser.UserId, time.GetUtcNow())), ct);
+        return amended.IsFailure ? amended.Error! : new EncounterAmendOutcome(amended.Value, null);
+    }
+
+    private async Task<Result<ApprovalRequestDto>> AskAmendAsync(Encounter encounter, AmendEncounterRequest request, CancellationToken ct)
+    {
+        var uhid = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == encounter.PatientId).Select(p => p.Uhid).FirstAsync(ct);
+        var authorId = encounter.SignedByPractitionerId ?? encounter.PractitionerId;
+        var names = await PrintQueries.PractitionerNamesAsync(db, [authorId], ct);
+        var author = names.GetValueOrDefault(authorId) ?? "the author";
+        var changed = EncounterAmendments.Changed(encounter.Content, request.ToContent());
+        return await approvals.RequestAsync(
+            AmendKind,
+            new ApprovalSubject(nameof(Encounter), encounter.Id, encounter.Version, encounter.FacilityId, encounter.PatientId),
+            new EncounterAmendPayload(encounter.Id, request),
+            $"Amend {author}'s signed encounter of {uhid} ({encounter.StartedAt.ToOffset(TimeSpan.FromHours(5.5)):d MMM yyyy})",
+            [
+                new("Patient", uhid),
+                new("Encounter", $"{encounter.Type}, {encounter.StartedAt.ToOffset(TimeSpan.FromHours(5.5)):d MMM yyyy HH:mm}, signed by {author}"),
+                new("What changes", changed.Count == 0 ? "Nothing in the note's text" : string.Join(", ", changed)),
+                new("Who decides", $"{author}, or the head of the encounter's department. The original note is kept in the amendment history either way."),
+            ],
+            request.Reason,
+            ct);
+    }
+
+    /// <summary>
+    /// Makes an amendment another doctor asked for, once the author or the head of the encounter's department approves it:
+    /// over the encounter as it was asked (<c>approval.stale</c>), recorded as the asking doctor's amendment with the approver
+    /// named, and audited with both.
+    /// </summary>
+    internal async Task<Result<string>> ApplyAmendAsync(ApprovalRequest request, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<EncounterAmendPayload>(request.Payload);
+        var encounter = await db.Set<Encounter>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Include(e => e.Amendments)
+            .FirstOrDefaultAsync(e => e.Id == asked.EncounterId, ct);
+        if (encounter is null)
+        {
+            return Error.Rule("encounter.gone", "The encounter no longer exists, so nothing was changed.");
+        }
+
+        if (!await MayApproveAmendAsync(encounter, ct))
+        {
+            return Error.Forbidden("encounter.amend_approver",
+                "Only the doctor who wrote this encounter, or the head of its department, approves another doctor's amendment.");
+        }
+
+        if (encounter.Version != request.SubjectVersion)
+        {
+            return Error.Rule("approval.stale", "The encounter changed after this amendment was asked for, so nothing was changed. Ask again.");
+        }
+
+        var approver = currentUser.DisplayName ?? currentUser.UserName ?? "the approver";
+        var amended = encounter.Amend(asked.Request.ToContent(), $"{asked.Request.Reason.Trim()} (approved by {approver})", request.RequestedBy, time.GetUtcNow());
+        if (amended.IsFailure)
+        {
+            return amended.Error!;
+        }
+
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "encounter.amended_with_approval",
+            $"Signed encounter amended by {request.RequestedByName}, approved by {approver}: {asked.Request.Reason.Trim()}")
+        {
+            PatientId = encounter.PatientId,
+            EntityType = nameof(Encounter),
+            EntityId = encounter.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { approval = request.Id, requestedBy = request.RequestedBy, approvedBy = currentUser.UserId },
+        });
+        return "Encounter amended; the original is kept";
+    }
+
+    /// <summary>The author of the encounter, or the head of its department, approves another doctor's amendment.</summary>
+    private async Task<bool> MayApproveAmendAsync(Encounter encounter, CancellationToken ct)
+    {
+        if (ClinicalSignOff.IsAuthor(encounter, currentUser.UserId, currentUser.PractitionerId))
+        {
+            return true;
+        }
+
+        if (currentUser.PractitionerId is not { } approver || encounter.DepartmentId is not { } departmentId)
+        {
+            return false;
+        }
+
+        return await db.Set<Department>().IgnoreQueryFilters().AnyAsync(d => d.Id == departmentId && d.HeadPractitionerId == approver, ct);
+    }
 
     public async Task<Result<EncounterDetail>> DetailAsync(Encounter encounter, CancellationToken ct)
     {

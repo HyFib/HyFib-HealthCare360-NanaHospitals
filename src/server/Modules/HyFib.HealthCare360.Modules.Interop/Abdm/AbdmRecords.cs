@@ -6,6 +6,10 @@ using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Platform.Documents;
+using Bill = HyFib.HealthCare360.Modules.Billing.Domain.Bill;
+using BillLine = HyFib.HealthCare360.Modules.Billing.Domain.BillLine;
+using BillStatus = HyFib.HealthCare360.Modules.Billing.Domain.BillStatus;
+using BillType = HyFib.HealthCare360.Modules.Billing.Domain.BillType;
 using Modality = HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.Modality;
 using R4 = Hl7.Fhir.Model;
 
@@ -133,6 +137,12 @@ internal sealed record ImmunizationData(AbdmContext Context, ImmunizationRow Dos
 /// API serves it: its encounter and stay kept only when they are the patient's own, its writer and signer named.
 /// </summary>
 internal sealed record ClinicalNoteData(AbdmContext Context, ClinicalNoteRow Note, IReadOnlyList<ClinicalNoteRow> Addenda);
+
+/// <summary>
+/// A finalised bill with its lines (Billing's own entity, read without tracking); the doctors whose services it bills are
+/// among the context's practitioners.
+/// </summary>
+internal sealed record InvoiceData(AbdmContext Context, Bill Bill);
 
 /// <summary>
 /// The home readings of a monitoring programme that one document holds (<see cref="ReadingsSpan"/>), with the programme's
@@ -1246,6 +1256,192 @@ internal static class AbdmRecords
 
         return document;
     }
+
+    /// <summary>
+    /// A finalised bill (InvoiceRecord): the Invoice and the printed bill. The facility that issued the bill is the author,
+    /// the custodian and the invoice's issuer; the doctors whose services it bills are its participants. Its date is when it
+    /// was finalised, when its lines and amounts were frozen; only its status moves after that, from issued to balanced once
+    /// the patient's share is paid and the payer owes nothing (<see cref="InvoiceStatus"/>). Each line's price components
+    /// add up to the line's net amount, and the totals' to the bill's (<see cref="InvoiceLine"/>).
+    /// </summary>
+    public static AbdmDocument Invoice(InvoiceData d)
+    {
+        var bill = d.Bill;
+        var number = bill.BillNumber ?? throw new InvalidOperationException("A bill is exported only once it has its number.");
+        var people = People.Of(d.Context);
+        var hospital = people.Organization(d.Context.FacilityId);
+        var finalized = bill.FinalizedAt ?? bill.CreatedAt;
+        var lines = bill.Lines.OrderBy(l => l.SortOrder).ThenBy(l => l.Id).ToList();
+
+        var invoice = new R4.Invoice
+        {
+            Id = FhirIds.Of(bill.Id),
+            Meta = new R4.Meta { Profile = [AbdmProfiles.Invoice] },
+            Identifier = [new R4.Identifier(AbdmSystems.BillNumber, number)],
+            Status = InvoiceStatus(bill),
+            Type = BillTypeConcept(bill),
+            Subject = FhirReferences.Patient(bill.PatientId),
+            Date = FhirTime.DateTime(finalized),
+            Issuer = people.Names.Organization(d.Context.FacilityId),
+            LineItem = [.. lines.Select((line, i) => InvoiceLine(line, i + 1))],
+            TotalPriceComponent = InvoiceTotals(bill),
+            TotalNet = Inr(bill.TaxableAmount),
+            TotalGross = Inr(bill.NetAmount),
+            PaymentTerms = PaymentTerms(bill),
+        };
+
+        foreach (var doctor in lines.Select(l => l.PractitionerId).OfType<Guid>().Distinct().Order())
+        {
+            if (people.Find(doctor) is not null && people.Names.Practitioner(doctor) is { } reference)
+            {
+                invoice.Participant.Add(new R4.Invoice.ParticipantComponent { Role = new R4.CodeableConcept { Text = "Service provider" }, Actor = reference });
+            }
+        }
+
+        List<R4.Resource> entries = [invoice];
+        if (d.Context.Pdf is { } pdf)
+        {
+            entries.Add(new R4.Binary
+            {
+                Id = FhirIds.Of(bill.Id),
+                Meta = new R4.Meta { Profile = [AbdmProfiles.Binary] },
+                ContentType = pdf.ContentType,
+                Data = pdf.Content,
+            });
+        }
+
+        return new AbdmDocument
+        {
+            Type = AbdmRecordType.Invoice,
+            FileName = AbdmFiles.Name("bill", number),
+            SourceId = bill.Id,
+            Profile = AbdmProfiles.InvoiceRecord,
+            DocumentType = AbdmCodes.Invoice,
+            Title = "Invoice",
+            Status = R4.CompositionStatus.Final,
+            Date = finalized,
+            RecordUpdated = FhirElements.Latest(bill.CreatedAt, bill.UpdatedAt),
+            Patient = Patient(d.Context, people, [bill.PatientId]),
+            Encounter = Encounter(d.Context, people),
+            Author = hospital,
+            Custodian = hospital,
+            Sections = [new AbdmSection(AbdmCodes.Invoice, "Invoice", [], entries)],
+            Supporting = people.All,
+        };
+    }
+
+    /// <summary>
+    /// FHIR's status of a finalised bill: issued while the patient or the payer still owes on it, balanced once the patient's
+    /// share is paid and the payer owes nothing more. A cancelled bill (refunded or not) and a draft are not exported.
+    /// </summary>
+    internal static R4.Invoice.InvoiceStatus InvoiceStatus(Bill bill) => bill.Status switch
+    {
+        BillStatus.Finalized or BillStatus.PartiallyPaid => R4.Invoice.InvoiceStatus.Issued,
+        BillStatus.Paid => bill.PayerOutstanding > 0 ? R4.Invoice.InvoiceStatus.Issued : R4.Invoice.InvoiceStatus.Balanced,
+        _ => throw new InvalidOperationException("Only a finalised bill that has not been cancelled is exported."),
+    };
+
+    private static R4.CodeableConcept BillTypeConcept(Bill bill) =>
+        bill.Type == BillType.OutPatient ? FhirElements.Concept(AbdmSystems.BillType, "op", "Out-patient bill", "Out-patient bill")
+        : bill.IsFinalBill ? FhirElements.Concept(AbdmSystems.BillType, "ip-final", "In-patient final bill", "In-patient final bill")
+        : FhirElements.Concept(AbdmSystems.BillType, "ip-interim", "In-patient interim bill", "In-patient interim bill");
+
+    /// <summary>
+    /// A bill line as an invoice line: the service by its HC360 code and SAC code, then its price components, which add up
+    /// to the line's net amount: the base (the quantity as its factor, the unit price times the quantity as its amount), what
+    /// the package covers, the tariff concession, the staff discount and the line's share of the bill discount, each as a
+    /// negative amount, then CGST, SGST or IGST at their rates. The unit price is stated as information, outside the sum.
+    /// On a bill free of cost by law, what each line is not charged is a deduction of its own, so the line still adds up to
+    /// nothing. A credit line (goods sent back) keeps its negative amounts.
+    /// </summary>
+    internal static R4.Invoice.LineItemComponent InvoiceLine(BillLine line, int sequence)
+    {
+        var service = FhirElements.Concept(FhirSystems.Service, line.ServiceCode.Trim(), line.Description.Trim(), line.Description.Trim());
+        if (FhirElements.Clean(line.SacCode) is { } sac)
+        {
+            service.Coding.Add(new R4.Coding(AbdmSystems.Sac, sac));
+        }
+
+        var item = new R4.Invoice.LineItemComponent { Sequence = sequence, ChargeItem = service };
+        item.PriceComponent.Add(Component(R4.InvoicePriceComponentType.Base, null, line.GrossAmount, line.Quantity));
+        item.PriceComponent.Add(Component(R4.InvoicePriceComponentType.Informational, AbdmPriceComponents.UnitPrice, line.UnitPrice));
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Deduction, AbdmPriceComponents.PackageCover, -line.PackageCoveredAmount);
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Discount, AbdmPriceComponents.TariffDiscount, -line.TariffDiscountAmount);
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Discount, AbdmPriceComponents.LineDiscount, -line.LineDiscountAmount);
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Discount, AbdmPriceComponents.BillDiscount, -line.BillDiscountShare);
+
+        // What a bill free of cost by law does not charge: whatever the components so far leave between the base and the
+        // taxable value, which is nothing on any other bill.
+        var charged = line.GrossAmount - line.PackageCoveredAmount - line.TariffDiscountAmount - line.LineDiscountAmount - line.BillDiscountShare;
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Deduction, AbdmPriceComponents.NotCharged, line.TaxableAmount - charged);
+
+        var halfRate = line.TaxRate / 200m;
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Tax, AbdmPriceComponents.Cgst, line.CgstAmount, halfRate);
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Tax, AbdmPriceComponents.Sgst, line.SgstAmount, halfRate);
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Tax, AbdmPriceComponents.Igst, line.IgstAmount, line.TaxRate / 100m);
+        return item;
+    }
+
+    /// <summary>
+    /// The bill's totals as price components, which add up to its net amount as each line's do to the line's: the gross,
+    /// the package cover and discounts as negative amounts, the GST, and the round-off of the patient's share.
+    /// </summary>
+    private static List<R4.Invoice.PriceComponentComponent> InvoiceTotals(Bill bill)
+    {
+        List<R4.Invoice.PriceComponentComponent> totals = [Component(R4.InvoicePriceComponentType.Base, null, bill.GrossAmount)];
+        AddIfAny(totals, R4.InvoicePriceComponentType.Deduction, AbdmPriceComponents.PackageCover, -bill.PackageCoveredAmount);
+        AddIfAny(totals, R4.InvoicePriceComponentType.Discount, AbdmPriceComponents.TariffDiscount, -bill.TariffDiscountAmount);
+        AddIfAny(totals, R4.InvoicePriceComponentType.Discount, AbdmPriceComponents.LineDiscount, -bill.LineDiscountAmount);
+        AddIfAny(totals, R4.InvoicePriceComponentType.Discount, AbdmPriceComponents.BillDiscount, -bill.BillDiscountAmount);
+        var charged = bill.GrossAmount - bill.PackageCoveredAmount - bill.TariffDiscountAmount - bill.LineDiscountAmount - bill.BillDiscountAmount;
+        AddIfAny(totals, R4.InvoicePriceComponentType.Deduction, AbdmPriceComponents.NotCharged, bill.TaxableAmount - charged);
+        AddIfAny(totals, R4.InvoicePriceComponentType.Tax, AbdmPriceComponents.Cgst, bill.CgstAmount);
+        AddIfAny(totals, R4.InvoicePriceComponentType.Tax, AbdmPriceComponents.Sgst, bill.SgstAmount);
+        AddIfAny(totals, R4.InvoicePriceComponentType.Tax, AbdmPriceComponents.Igst, bill.IgstAmount);
+        if (bill.RoundOffAmount != 0)
+        {
+            totals.Add(Component(
+                bill.RoundOffAmount > 0 ? R4.InvoicePriceComponentType.Surcharge : R4.InvoicePriceComponentType.Deduction, AbdmPriceComponents.RoundOff, bill.RoundOffAmount));
+        }
+
+        return totals;
+    }
+
+    /// <summary>Who pays what: the patient's share, and the payer's when a third party pays part of the bill.</summary>
+    private static string PaymentTerms(Bill bill)
+    {
+        var terms = $"Payable by the patient: {Rupees(bill.PatientAmount)}.";
+        return bill.PayerAmount > 0 ? $"{terms} Payable by the {PayerName(bill.PayerType)}: {Rupees(bill.PayerAmount)}." : terms;
+    }
+
+    private static string PayerName(PayerType type) => type switch
+    {
+        PayerType.Insurance => "insurer",
+        PayerType.Corporate => "corporate",
+        PayerType.GovernmentScheme => "government scheme",
+        _ => "payer",
+    };
+
+    private static void AddIfAny(List<R4.Invoice.PriceComponentComponent> components, R4.InvoicePriceComponentType type, AbdmCode code, decimal amount, decimal? factor = null)
+    {
+        if (amount != 0)
+        {
+            components.Add(Component(type, code, amount, factor));
+        }
+    }
+
+    private static R4.Invoice.PriceComponentComponent Component(R4.InvoicePriceComponentType type, AbdmCode? code, decimal amount, decimal? factor = null) => new()
+    {
+        Type = type,
+        Code = code?.Concept(code.Display),
+        Factor = factor is { } f ? FhirElements.Normalize(f) : null,
+        Amount = Inr(amount),
+    };
+
+    internal static R4.Money Inr(decimal value) => new() { Value = FhirElements.Normalize(value), Currency = R4.Money.Currencies.INR };
+
+    /// <summary>"₹1,180.00", as the bill prints amounts.</summary>
+    internal static string Rupees(decimal value) => "₹" + value.ToString("N2", CultureInfo.GetCultureInfo("en-IN"));
 
     private static string? Field(string label, string? value) => FhirElements.Clean(value) is { } text ? $"{label}: {text}" : null;
 

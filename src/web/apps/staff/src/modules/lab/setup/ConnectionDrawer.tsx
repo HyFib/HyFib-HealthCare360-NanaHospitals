@@ -33,6 +33,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm, useWatch, type Control } from 'react-hook-form';
+import { LabDevicesPanel } from './LabDevicesPanel';
 import {
   HL7_ORDER_MESSAGES,
   labApi,
@@ -136,6 +137,18 @@ export function ConnectionFields({
             disabled={disabled}
             hint="Only this address can send results: the analyser connects without signing in. Give it a fixed address. One per line."
           />
+          <SelectField
+            control={control}
+            name="deviceAuthentication"
+            label="Device authentication"
+            disabled={disabled}
+            options={[
+              { value: 'SharedSecret', label: 'Shared secret: the device answers a challenge' },
+              { value: 'MutualTls', label: 'Client certificate (mutual TLS)' },
+              { value: 'None', label: 'None: only the IP address (not recommended)' },
+            ]}
+            hint="Devices this connection has not approved are refused and listed below for the lab to add."
+          />
         </FormGrid>
       ) : (
         <>
@@ -156,6 +169,17 @@ export function ConnectionFields({
             disabled={disabled}
             placeholder="Choose the lab PC's agent"
             options={agents.map((agent) => ({ value: agent.id, label: agentOptionLabel(agent) }))}
+          />
+          <SelectField
+            control={control}
+            name="deviceAuthentication"
+            label="Device authentication"
+            disabled={disabled}
+            options={[
+              { value: 'LabAgent', label: 'The lab agent must be approved for this connection' },
+              { value: 'None', label: 'None: any enrolled agent set here relays it' },
+            ]}
+            hint="An agent not approved for this connection is refused and listed below for the lab to add."
           />
           <FormGrid columns={3}>
             <TextField
@@ -399,6 +423,7 @@ export function ConnectionDrawer({
               </MessageBar>
             )}
             <ConnectionFields control={form.control} isHl7={isHl7} agents={list.agents} disabled={!canEdit} />
+            {connection && canEdit && <LabDevicesPanel connectionCode={code} />}
           </div>
         </DrawerBody>
         <DrawerFooter>

@@ -65,11 +65,11 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 | GET | `/tests?section&orderable&includeInactive` | orders.read, orders.create or masters.manage | → `PagedResult<LabTestListItem>` (code, name, section, specimen, container, resultType, unit, isPanel, isProvisional, price, preparation) |
 | GET | `/tests/{id}` | same | → `LabTestDetail` (all master fields, `components`, `ranges`, version) |
 | POST | `/tests` | `lab.masters.manage` | `SaveLabTestRequest` (code, name, section, specimenType, container, method, tatHours, loinc, loincName (the code's LOINC name, which ABDM health records give it; only with a code, at most 255 characters; a changed code sent with the old name is refused, 400 on `loincName`), serviceItemId, isOrderable, isPanel, resultType, unit, decimals, options, instrumentChannelCodes, qcGroup, deltaThresholdPercent, allowAutoValidation, preparation, drawSeparately, interpretation, defaultReferralLabId) → 201 `{ id }` |
-| PUT | `/tests/{id}` | `lab.masters.manage` | `SaveLabTestRequest` (+`version`) → 204 |
+| PUT | `/tests/{id}` | `lab.masters.manage` | `SaveLabTestRequest` (+`version`, `reason`) → 204; **202** with the approval request when `allowAutoValidation` goes off → on and the lab asks for a second pathologist (see *Second pathologist for the lab's safety settings*): the rest is saved, automatic verification stays off until another pathologist approves. A new test asked with it on is created with it off and asked for the same way |
 | PUT | `/tests/{id}/components` | `lab.masters.manage` | `SetComponentsRequest` (`ComponentEntry[]` testId/groupName, version) → 204; cycles are refused |
-| PUT | `/tests/{id}/ranges` | `lab.masters.manage` | `SetRangesRequest` (`ReferenceRangeDto[]`: gender, ageFromDays, ageToDays, low, high, criticalLow, criticalHigh, text, normalValues, criticalValues) → 204 |
+| PUT | `/tests/{id}/ranges` | `lab.masters.manage` | `SetRangesRequest` (`ReferenceRangeDto[]`: gender, ageFromDays, ageToDays, low, high, criticalLow, criticalHigh, text, normalValues, criticalValues; version; `reason`) → 204; **202** with the approval request (`lab.safety_limits`) when a critical limit is loosened for any patient and the lab asks for a second pathologist: nothing changes until another pathologist approves; 400 on `reason` without one |
 | GET | `/instruments?includeInactive` | masters.manage or qc.manage | → `LabInstrumentDto[]` |
-| POST · PUT | `/instruments` · `/instruments/{id}` | `lab.masters.manage` | `SaveLabInstrumentRequest` (code, name, manufacturer, model, section, protocol Hl7/Astm, isBidirectional, autoValidationEnabled, location, isActive, version) → 201 / 204; codes are unique across facilities (409 `lab.instrument_code_exists`) |
+| POST · PUT | `/instruments` · `/instruments/{id}` | `lab.masters.manage` | `SaveLabInstrumentRequest` (code, name, manufacturer, model, section, protocol Hl7/Astm, isBidirectional, autoValidationEnabled, location, isActive, version, `reason`) → 201 / 204; codes are unique across facilities (409 `lab.instrument_code_exists`); **202** when `autoValidationEnabled` goes off → on and the analyser's facility asks for a second pathologist (as for a test) |
 | GET | `/instruments/channels` | masters.manage or qc.manage | → `AnalyserChannelDto[]`: the channels the facility's analysers in use send that no active test maps now (see *Channels no test maps*), by analyser and channel code: first and last sent, times, last value and unit, `mapping` (how to write it in a test's channels, the analyser's own code first; null when it cannot be written) and `ignored` (reason, by whom, when) |
 | POST | `/instruments/channels/{id}/ignore` | `lab.masters.manage` | `IgnoreAnalyserChannelRequest` (reason, 5 to 300 characters) → 204; 422 `lab.channel_mapped` (a test maps it now), 409 `lab.channel_ignored`; audited as `IgnoredAnalyserChannel.create` |
 | DELETE | `/instruments/channels/{id}/ignore` | `lab.masters.manage` | → 204, the channel waits to be mapped again; 404 when it is not ignored; audited as `IgnoredAnalyserChannel.delete` |
@@ -153,7 +153,22 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | POST | `/runs` | `lab.qc.manage` | `RecordQcRunRequest` (lotId, value, runAt) → 201 `QcRunDto` (Westgard outcome and violations) |
 | POST | `/runs/{id}/review` | `lab.qc.manage` | `ReviewQcRunRequest` (note, correctiveAction — required for a rejected run) → `QcRunDto` |
 | GET | `/status` | qc.manage, results.verify or results.enter | → `QcStatusRow[]` (today's latest run per lot, locked, overridden) |
-| POST | `/overrides` | `lab.results.verify` | `QcOverrideRequest` (labTestId, reason) → `{ overrides }` (audited) |
+| POST | `/overrides` | `lab.results.verify` | `QcOverrideRequest` (labTestId, reason) → `{ overrides }` (audited); **202** with the approval request (`lab.qc_override`) where the lab asks for a second pathologist: the assay stays locked until another holder of `lab.results.verify` approves it, over the same rejected runs (`approval.stale` after a newer run) |
+
+### External quality assessment — `/api/v1/lab/eqas`
+Proficiency testing for NABL 112 and ISO 15189 7.3.7.3. Every change is audited (`lab.eqas.*`).
+
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/schemes?includeInactive` | qc.manage or results.verify | → `EqasSchemeDto[]` (name, provider, participantCode, roundsPerYear) |
+| POST · PUT | `/schemes` · `/schemes/{id}` | `lab.qc.manage` | `SaveEqasSchemeRequest` → 201 / 204; names are unique (409 `eqas.scheme_exists`) |
+| GET | `/rounds?schemeId&labTestId&performance&overdue&needsCapa&from&to` | qc.manage or results.verify | → `PagedResult<EqasRoundDto>` (the register: round, due date, reported value, assigned value and SD, peer group, z-score, performance, overdue, needsCapa, CAPA number and its status now, acceptance) |
+| GET | `/summary` | qc.manage or results.verify | → `EqasSummary` (overdue, due within a week, unacceptable without CAPA, last 12 months by performance, up to 10 rounds needing attention) for the lab dashboard |
+| POST | `/rounds` | `lab.qc.manage` | `ScheduleEqasRoundRequest` (schemeId, labTestId — a numeric analyte, roundCode, dueDate, sampleReceivedOn) → 201 id; one round code per scheme and analyte (409 `eqas.round_exists`) |
+| PUT | `/rounds/{id}/result` | `lab.qc.manage` | `ReportEqasResultRequest` (value, reportedOn, version) → `EqasRoundDto`; not after the evaluation (`eqas.evaluated`) |
+| PUT | `/rounds/{id}/evaluation` | `lab.qc.manage` | `EvaluateEqasRoundRequest` (assignedValue, assignedSd > 0, peerGroup, evaluatedOn, version) → `EqasRoundDto` with z = (x − X) / σpt to two decimals and its band |
+| PUT | `/rounds/{id}/capa` | `lab.qc.manage` | `LinkEqasCapaRequest` (capaId, version) → `EqasRoundDto`; the action must be in the facility's CAPA register (Quality module, `ICapaRegister`); 422 `eqas.no_capa_register` without the Quality module |
+| POST | `/rounds/{id}/accept` | `lab.results.verify` | `AcceptEqasRoundRequest` (note — required unless acceptable, version) → `EqasRoundDto`; an unacceptable round only once its CAPA is linked (`eqas.capa_required`) |
 
 ### Outsourcing — `/api/v1/lab/outsourcing`
 | Method | Path | Permission | Request → response |
@@ -171,7 +186,7 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | POST | `/studies/{id}/arrive` · `/start` | `radiology.worklist` | → `ImagingStudyDetail` |
 | POST | `/studies/{id}/acquire` | `radiology.worklist` | `AcquireStudyRequest` (contrastUsed, contrastAgent — required with contrast, volume, doseNote, notes) → `ImagingStudyDetail` |
 | POST | `/studies/{id}/repeats` | `radiology.worklist` | `RecordRepeatRequest` (reason, note) → `ImagingStudyDetail` |
-| POST | `/studies/{id}/cancel` | `radiology.worklist` | `CancelStudyRequest` (reason) → `ImagingStudyDetail`; refused once reported |
+| POST | `/studies/{id}/cancel` | `radiology.worklist` | `CancelStudyRequest` (reason) → `ImagingStudyDetail`; refused once reported, and an ultrasound in pregnancy once its scan has begun (422 `form_f.scan_performed`, audited at Warning `form_f.cancel_refused`; see PCPNDT Form F) |
 | POST | `/studies/{id}/reconcile` | `radiology.worklist` | → `ImagingStudyDetail`. Links the study with PACS by accession number (or study UID); refused with the fail-closed codes under Workflow rules |
 | POST | `/pacs/reconcile` | `radiology.worklist` | → `PacsReconciliationSummary` (the facility's recent unlinked studies, finished scans first, batches of 50) |
 | GET | `/studies/{id}/viewer` | `radiology.images.view` | → `ViewerLink`. Before linking, the same PACS patient check as linking. 422 `pacs.not_configured`, `pacs.viewer_not_configured`, `pacs.accession_too_long`, or a linking code. Guard; audit "Opened images of …" |
@@ -211,6 +226,12 @@ acquired until the woman's details and her declaration are recorded (422 `form_f
 until the form is completed (422 `form_f.incomplete`). A completed form cannot change (422 `form_f.completed`). A form is
 recorded only once the facility's `pcpndt.registrationNumber` is set (422 `form_f.not_registered`), and only for an
 ultrasound of a woman.
+
+Cancelling the study closes a declared form as cancelled, only before the scan (maker-checker, slice 9). Once the study
+is started, acquired or found in PACS (`ImagingStudy.PregnancyScanPerformed`), cancelling it is refused (422
+`form_f.scan_performed`) and the form is completed with the result; the clinician withdrawing the order then leaves the
+study and its form as they are and tells the radiologists (`radiology.reports.verify`). Each refusal is audited at
+Warning (`form_f.cancel_refused`), with the reason given. A completed form is never corrected in HC360.
 
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
@@ -351,7 +372,10 @@ diagnostics screen.
 * **Westgard QC**: z-scores against the lot targets; 1-2s warning; 1-3s, 2-2s, R-4s, 4-1s and 10x reject (all rules are
   always checked, limits are strict). Tests in the same QC group (FBS/PPBS share `GLU`) share QC. While today's latest run
   of any lot of the assay is rejected, verification is locked (`lab.qc_lockout`) unless a pathologist records an override
-  reason (audited, bound to that run). A rejected run needs a corrective action at review.
+  reason (audited, bound to that run). A rejected run needs a corrective action at review. Where the lab asks for a
+  second pathologist, an override given while verifying covers only the results verified with it (`QcOverride.LabResultIds`):
+  the next result of the assay is locked again; the override for the day is asked for on the QC screen and approved by
+  another pathologist (see below).
 * **QC per analyser** (ISO 15189: QC shows the measuring system works, and the analyser is the system). A QC lot names
   the analyser it is run on (`instrumentCode`), and each run keeps it. An analyser's result is auto-validated only when
   that analyser ran QC on the assay today and no lot of the assay has a rejected latest run today, overridden or not:
@@ -360,6 +384,27 @@ diagnostics screen.
   so name the analyser on every lot. The lockout stays per assay, whichever analyser failed: a value typed in or
   carried over from another analyser cannot be traced to the failing one with certainty, and a lockout too wide costs an
   audited override where one too narrow would let a failing analyser's result out unchecked.
+* **Second pathologist for the lab's safety settings** (maker-checker slice 15; on where `lab.separateVerifier` is on, the
+  setting whose switching off already waits for a second administrator). One pathologist could otherwise open a failed
+  assay, widen the limits that make the lab call the doctor, or let analyser results out unseen, and then verify what
+  that let through. So: an override of failed QC for the day waits for another holder of `lab.results.verify`
+  (`lab.qc_override`, `QcOverrideApproval`), made only over the rejected runs it was asked against, and audited with both
+  names; the override at verification covers only the results verified. A critical limit loosened for any patient (a
+  critical low lowered or taken away, a critical high raised or taken away, a critical answer no longer critical,
+  compared for each sex and at every age a band starts or ends: `CriticalLimitChanges`) and automatic verification
+  switched on for a test or an analyser wait for another pathologist (`lab.safety_limits`, `LabSafetyLimits`), the
+  record as it was asked (`approval.stale` otherwise); narrowing or adding a limit and switching automatic verification
+  off are made at once. The test master is the whole hospital's, so it is guarded when the hospital or any facility asks
+  for a second pathologist; an analyser when its own facility does.
+* **Who acknowledges a critical result** (Clinical, `POST /api/v1/emr/results/{id}/acknowledge`). Where the lab asks
+  for a second pathologist, a critical lab result is acknowledged by the doctor who ordered it, or by another doctor
+  (a practitioner of kind consultant, resident or visiting linked to the account) who records that they cover the
+  patient and why (`coveringReason`, at least 10 characters; kept on the review and audited at Warning as
+  `result.critical.covering_acknowledged`). Anyone else is refused (`result.critical_doctor_only`).
+* **External quality assessment** (NABL 112, ISO 15189 7.3.7.3): rounds per analyte and scheme with the reported value,
+  the provider's assigned value (target or peer mean) and SD, the z-score of ISO 13528 and its band (|z| ≤ 2 acceptable,
+  ≤ 3 warning, above unacceptable). An unacceptable round is accepted only with its corrective action linked from the
+  Quality module's CAPA register; a round not reported by its due date is overdue, and both are on the lab dashboard.
 * **Critical values**: verifying a critical result (or signing a critical imaging/cardiology finding) requires a
   documented call with read-back (`CriticalCallLog`). The ordering doctor gets the `lab.critical` /
   `diagnostics.critical_finding` SMS in the same transaction, plus in-app alerts to the doctor's user and to holders of
@@ -548,7 +593,11 @@ analyser connects to (with its fixed IP address, which is required), or a COM po
 relays it, with the line settings from the analyser's interface manual. Staff with `integrations.lab.status`
 (LabTechnician, Pathologist, HospitalAdmin) see whether each analyser and its agent are connected and how many orders
 wait for it. The screen warns when the laboratory gateway is off, and when a network analyser set up without its
-address takes results from any device. **Bidirectional** on the analyser is the one switch for host queries and order
+address takes results from any device (`openToAnyDevice`; System health warns of it too, `lab.analyser_any_address`,
+ASVS V13.2.1). A device that connects to a network analyser's port from an address that is not its IP is refused before
+anything it sends is read, and listed with the analyser's status (`status.refusedAddresses`: address, times, first and
+last, on every server), in Lab setup and on System health for a day (`lab.analyser_address_refused`). Serial analysers
+relayed by an enrolled lab agent and the training analyser have no address to pin and are unchanged. **Bidirectional** on the analyser is the one switch for host queries and order
 download; Lab setup › Analysers shows only the signed-in facility's analysers and agents. For training, an analyser's
 connection can be the **training analyser (simulator)**: nothing connects, and *Send results* takes a received
 sample's results on screen and sends them as that analyser would, so they are checked and released like any analyser's

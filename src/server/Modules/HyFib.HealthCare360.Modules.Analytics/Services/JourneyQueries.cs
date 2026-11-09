@@ -187,6 +187,7 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
         var visitTitles = await VisitTitlesAsync(pageVisits, ct);
         var emergency = await EmergencyFactsAsync(pageCases, ct);
         var inpatient = await InpatientFactsAsync(pageStays, ct);
+        var away = await InTheatreAsync(pageStays, ct);
         var people = await PeopleAsync(arrivals.Select(r => r.Visit?.PatientId ?? r.Case?.PatientId ?? r.Stay!.PatientId), ct);
         var departmentIds = arrivals.Select(r => r.Visit?.DepartmentId ?? (r.Case is { } c ? emergency[c.Id].DepartmentId : r.Stay!.DepartmentId))
             .OfType<Guid>().Distinct().ToList();
@@ -201,7 +202,7 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
                 var patient = people.GetValueOrDefault(a.PatientId, Person.Unknown);
                 return new InHospitalPatient(
                     a.PatientId, patient.Uhid, patient.Name, patient.Restricted, patient.Gender, patient.Age, JourneyKind.Inpatient, a.DepartmentId,
-                    DepartmentName(a.DepartmentId), a.WardId, stay.Bed, a.AdmittedAt,
+                    DepartmentName(a.DepartmentId), a.WardId, away.TryGetValue(a.Id, out var where) ? $"{where} · {stay.Bed}" : stay.Bed, a.AdmittedAt,
                     Journey(JourneyKind.Inpatient, a.Id, a.AdmissionNumber, StayTitle(stay), a.AdmittedAt, InpatientJourney.Progress(stay, now)));
             }
 
@@ -484,6 +485,32 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
             .ToDictionary(g => g.Key, g => g.OrderByDescending(t => t.RequestedAt).Select(t => new CleaningFact(t.RequestedAt, t.CompletedAt)).First());
     }
 
+    /// <summary>
+    /// The stays whose patient the theatre has now, and where: in pre-op, in theatre, or in recovery from the WHO Sign-out
+    /// until discharged from it. The ward sees the patient back (the bed alone) only once they leave recovery. Which
+    /// operation is not named: the board is open to the desk, and an operation is part of the clinical record.
+    /// </summary>
+    private async Task<Dictionary<Guid, string>> InTheatreAsync(IReadOnlyCollection<Admission> stays, CancellationToken ct)
+    {
+        if (stays.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = stays.Select(a => (Guid?)a.Id).ToList();
+        var cases = await db.Set<SurgeryBooking>().AsNoTracking()
+            .Where(b => ids.Contains(b.AdmissionId)
+                        && (b.Status == SurgeryStatus.InPreOp || b.Status == SurgeryStatus.InProgress
+                            || (b.Status == SurgeryStatus.Completed && b.SignOutCompletedAt != null && b.RecoveryDischargedAt == null)))
+            .Select(b => new { AdmissionId = b.AdmissionId!.Value, b.BookingNumber, b.Status, InRecovery = b.SignOutCompletedAt != null && b.RecoveryDischargedAt == null })
+            .ToListAsync(ct);
+        return cases.GroupBy(c => c.AdmissionId).ToDictionary(g => g.Key, g =>
+        {
+            var c = g.OrderBy(x => x.BookingNumber).First();
+            return c.InRecovery ? "In recovery" : c.Status == SurgeryStatus.InProgress ? "In theatre" : "In pre-op";
+        });
+    }
+
     private static string StayTitle(InpatientFacts facts) => facts.Bed ?? "In-patient stay";
 
     // ------------------------------------------------------------------ operations
@@ -493,6 +520,7 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
         var bookings = await db.Set<SurgeryBooking>().AsNoTracking()
             .Where(b => b.PatientId == patientId
                         && ((b.Status != SurgeryStatus.Completed && b.Status != SurgeryStatus.Cancelled)
+                            || (b.Status == SurgeryStatus.Completed && b.SignOutCompletedAt != null && b.RecoveryDischargedAt == null)
                             || visitIds.Contains(b.VisitId)
                             || (admissionId != null && b.AdmissionId == admissionId)))
             .OrderByDescending(b => b.CreatedAt)
@@ -500,11 +528,15 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
             .ToListAsync(ct);
         var theatreIds = bookings.Where(b => b.TheatreId is not null).Select(b => b.TheatreId!.Value).Distinct().ToList();
         var theatres = await db.Set<OperationTheatre>().AsNoTracking().Where(t => theatreIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.Code, ct);
+        var bookingIds = bookings.Select(b => b.Id).ToList();
+        var recovery = await db.Set<RecoveryRecord>().AsNoTracking().Where(r => bookingIds.Contains(r.SurgeryBookingId))
+            .ToDictionaryAsync(r => r.SurgeryBookingId, r => new { r.ReceivedAt, r.ReceivedByName }, ct);
 
         return [.. bookings.Select(b => Journey(JourneyKind.Surgery, b.Id, b.BookingNumber, Procedure(b), b.CreatedAt, SurgeryJourney.Progress(new SurgeryFacts(
             b.Status, b.CreatedAt, b.ScheduledStart, b.TheatreId is { } t ? theatres.GetValueOrDefault(t) : null, b.PostponeReason, b.PreOpChecks,
             b.ReceivedInPreOpAt, b.SignInCompletedAt, b.TimeOutCompletedAt, b.StartedAt, b.SignOutCompletedAt, b.CompletedAt,
-            ChargesFailed: b.ChargeStatus == OtChargeStatus.Failed), now)))];
+            ChargesFailed: b.ChargeStatus == OtChargeStatus.Failed, recovery.GetValueOrDefault(b.Id)?.ReceivedAt, recovery.GetValueOrDefault(b.Id)?.ReceivedByName,
+            b.RecoveryDischargedAt, b.RecoveryDestination), now)))];
     }
 
     /// <summary>"Total knee replacement (left)".</summary>

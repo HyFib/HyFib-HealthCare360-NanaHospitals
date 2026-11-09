@@ -101,6 +101,10 @@ public sealed class EndpointAuthorizationTests
         // Provider callbacks, each verified by the provider's signature or shared secret.
         "POST /api/v1/billing/webhooks/payment-gateway",
         "POST /api/v1/billing/webhooks/cashfree",
+
+        // Consent managers' events (DPDP Act s.6(7)): acted on only once their HMAC signature over the timestamp and body
+        // verifies with the secret shared with that consent manager, within five minutes; each event id once.
+        "POST /api/v1/consent-managers/{code}/events",
         "GET /api/v1/integrations/webhooks/sms/generic",
         "POST /api/v1/integrations/webhooks/sms/generic",
         "POST /api/v1/integrations/webhooks/sms/msg91",
@@ -134,6 +138,9 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/hr/attendance/device-punches",
         "POST /api/v1/rpm/ingest",
 
+        // Cold-chain data loggers: the unit's own key (hash compared in constant time), rate-limited per key.
+        "POST /api/v1/inventory/cold-chain/logger/readings",
+
         // HC360 lab agents: an enrolled, unrevoked lab agent's device id and secret (hash compared in constant time); the
         // relay serves only the analysers assigned to that agent.
         "POST /api/v1/integrations/lab/agent/heartbeat",
@@ -141,6 +148,15 @@ public sealed class EndpointAuthorizationTests
 
         // FHIR requires a public capability statement; the catch-all only answers "not found" in FHIR's format.
         "GET /fhir/r4/metadata",
+
+        // SMART on FHIR (rate-limited): discovery, and the OAuth endpoints a partner calls before it has a token. The token,
+        // introspection and revocation endpoints authenticate the client themselves (a signed assertion, or a public app's
+        // PKCE verifier); authorize only checks the request and hands it to the staff app's signed-in screen.
+        "GET /fhir/r4/.well-known/smart-configuration",
+        "GET /oauth2/authorize",
+        "POST /oauth2/token",
+        "POST /oauth2/introspect",
+        "POST /oauth2/revoke",
         "ANY /fhir/{**rest}",
 
         // Health checks for the service manager and monitoring: they say only whether the server and database are up.

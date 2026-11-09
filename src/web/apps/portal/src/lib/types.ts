@@ -686,7 +686,8 @@ export interface PrescriptionVerification {
 /**
  * What anyone may see of a prescription's DSC signature: the signer, the certificate and the hash, no patient data.
  * `Untrusted`: the prescription is as signed, but the certificate does not chain to a CCA India root installed on the
- * server, so it is not presented as a DSC. `chainTrusted` is whether it does; revocation is not checked.
+ * server, so it is not presented as a DSC. `chainTrusted` is whether it does; `revocationStatus` how the certificate's
+ * revocation was checked when it signed (in the server's words; absent for a signature made before HC360 checked it).
  */
 export type DigitalSignatureState = 'NotSigned' | 'Valid' | 'Invalid' | 'Untrusted';
 
@@ -698,6 +699,7 @@ export interface PublicDigitalSignature {
   signedAt: string;
   contentHash: string;
   chainTrusted: boolean;
+  revocationStatus?: string | null;
   message: string;
 }
 
@@ -1215,6 +1217,35 @@ export interface PublicPrivacyInfo {
   responseDays: number;
   /** How long the record access log is kept, in years; null (or missing) while the hospital keeps it permanently (ADR-015). */
   accessLogYears?: number | null;
+  /** The Data Protection Officer, once the hospital names one (DPDP Act s.10). */
+  dpo?: PortalDpoContact | null;
+  /** The longest erased data stays in the hospital's backups, in days. */
+  backupWindowDays?: number | null;
+}
+
+export interface PortalDpoContact {
+  name: string | null;
+  designation: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  basedInIndia: boolean;
+}
+
+/** A consent the patient gave through a consent manager (DPDP Act s.6(7)). */
+export interface PortalConsentArtefact {
+  id: string;
+  consentManagerName: string;
+  artefactId: string;
+  patientId: string;
+  purpose: string;
+  dataItems: string[];
+  validFrom: string;
+  validUntil: string;
+  status: 'Active' | 'Withdrawn' | 'Expired';
+  inForce: boolean;
+  receivedAt: string;
+  withdrawnAt: string | null;
 }
 
 /** The registration details as held. ABHA and Aadhaar arrive masked, exactly as the hospital stores them. */

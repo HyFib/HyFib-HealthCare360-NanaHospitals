@@ -169,6 +169,7 @@ export function DigitalSignatureSection({
             <Detail label="Thumbprint" value={data.certificateThumbprint} mono />
             <Detail label="SHA-256 of the signed data" value={data.contentHash} mono />
             <Detail label="Certificate chain" value={data.chainStatus} />
+            <Detail label="Revocation, when it signed" value={data.revocationStatus ?? null} />
           </dl>
           <div className={styles.actions}>
             <Button

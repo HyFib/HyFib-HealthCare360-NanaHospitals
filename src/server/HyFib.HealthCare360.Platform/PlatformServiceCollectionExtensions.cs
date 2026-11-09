@@ -288,6 +288,10 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IApprovalAction, ContactChangeApproval>();
         services.AddScoped<IApprovalAction, PractitionerLinkApproval>();
         services.AddScoped<PractitionerIdentityApprovals>();
+
+        // HPR verification: the simulator until the hospital is connected to ABDM's HPR service (every check names its source).
+        services.TryAddSingleton<IHprRegistry, SimulatedHprRegistry>();
+        services.AddScoped<PractitionerHprChecks>();
         services.AddScoped<IApprovalAction, PractitionerIdentityApproval>();
         services.AddScoped<PractitionerFeeApprovals>();
         services.AddScoped<IApprovalAction, PractitionerFeeApproval>();
@@ -328,6 +332,7 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddScoped<IRoomClassDirectory, NullRoomClassDirectory>();
         services.TryAddScoped<IAdmissionDirectory, NullAdmissionDirectory>();
         services.TryAddScoped<IIncidentRegister, NullIncidentRegister>();
+        services.TryAddScoped<ISurgeryAndTransfusionFacts, NullSurgeryAndTransfusionFacts>();
         services.TryAddScoped<IBillingStatusProvider, NullBillingStatusProvider>();
         services.TryAddScoped<IPayerDirectory, NullPayerDirectory>();
         services.TryAddScoped<IPortalAccountResolver, NullPortalAccountResolver>();

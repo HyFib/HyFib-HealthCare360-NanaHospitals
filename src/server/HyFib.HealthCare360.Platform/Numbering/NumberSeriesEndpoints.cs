@@ -36,7 +36,9 @@ public sealed record NumberSeriesItem(
     string? LockedReason,
     int MaxLength,
     string DefaultFormat,
-    NumberResetPolicy DefaultResetPolicy);
+    NumberResetPolicy DefaultResetPolicy,
+    bool GstDocument = false,
+    string? FacilityCodeReason = null);
 
 /// <summary>
 /// Every series, by area then name, with what the format rules need to know about the hospital: how many facilities it
@@ -266,14 +268,16 @@ internal static class NumberSeriesEndpoints
             format,
             reset,
             last,
-            NumberFormat.Render(format, last + 1, facilityCode, now),
+            NumberFormat.Render(NumberSeriesService.WithFacilityCode(series, format), last + 1, facilityCode, now),
             facilityCode,
             IsCustomised: !string.Equals(format, series.DefaultFormat, StringComparison.Ordinal) || reset != series.DefaultReset,
             series.IsLocked,
             series.LockedReason,
             series.MaxLength,
             series.DefaultFormat,
-            series.DefaultReset);
+            series.DefaultReset,
+            series.GstDocument,
+            series.FacilityCodeReason);
     }
 
     /// <summary>

@@ -108,6 +108,7 @@ public sealed class DiagnosticsModule : IModule
     {
         DiagnosticsRealtimeTopics.Register(services);
         services.AddScoped<DiagnosticsLookups>();
+        services.AddScoped<HyFib.HealthCare360.Modules.Patients.Domain.IDowntimePackSource, Features.DowntimePack.DowntimePackOrders>();
         services.AddScoped<ReportDocumentFrame>();
         services.AddScoped<INotificationDocumentSource, LabReportDocumentSource>();
         services.AddScoped<INotificationDocumentSource, RadiologyReportDocumentSource>();
@@ -124,6 +125,8 @@ public sealed class DiagnosticsModule : IModule
         services.AddScoped<LabOrderService>();
         services.AddScoped<SampleService>();
         services.AddScoped<QualityControlService>();
+        services.AddScoped<LabSafetyLimits>();
+        services.AddScoped<EqasRegister>();
         services.AddScoped<LabReportService>();
         services.AddScoped<LabReportBuilder>();
         services.AddScoped<LabResultService>();
@@ -165,6 +168,7 @@ public sealed class DiagnosticsModule : IModule
         UnmatchedResultEndpoints.Map(endpoints);
         LabReportEndpoints.Map(endpoints);
         QcEndpoints.Map(endpoints);
+        EqasEndpoints.Map(endpoints);
         OutsourcingEndpoints.Map(endpoints);
         RadiologyEndpoints.Map(endpoints);
         RadiologyReportEndpoints.Map(endpoints);

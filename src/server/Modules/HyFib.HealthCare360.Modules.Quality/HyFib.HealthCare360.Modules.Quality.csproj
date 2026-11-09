@@ -7,6 +7,14 @@
   <ItemGroup>
     <!-- A device adverse event report (MvPI) names its patient by initials, age and sex from the registration. -->
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+    <!--
+      The computed NABH indicators and infection surveillance read the records they are measured from (lower layers only;
+      the theatre and blood bank, in the same layer, through ISurgeryAndTransfusionFacts).
+    -->
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Clinical\HyFib.HealthCare360.Modules.Clinical.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Inpatient\HyFib.HealthCare360.Modules.Inpatient.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Diagnostics\HyFib.HealthCare360.Modules.Diagnostics.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Pharmacy\HyFib.HealthCare360.Modules.Pharmacy.csproj" />
   </ItemGroup>
 
 </Project>

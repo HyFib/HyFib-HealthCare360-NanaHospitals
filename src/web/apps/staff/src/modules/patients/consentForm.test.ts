@@ -4,6 +4,7 @@ import {
   consentFormDefaults,
   consentFormSchema,
   consentServerErrors,
+  needsWitness,
   toCaptureRequest,
   type ConsentFormValues,
 } from './consentForm';
@@ -37,7 +38,17 @@ describe('record consent form', () => {
       documentFileId: null,
       notes: 'Explained in Tamil.',
       sharingScope: null,
+      witnessConfirmationId: null,
     });
+    // The whole record shared is witnessed (MAKER-CHECKER.md, slice 14): the confirmation names the witness, not a typed name.
+    expect(needsWitness(v)).toBe(true);
+    expect(toCaptureRequest(consentFormSchema.parse({ ...v, witnessName: 'Sister Mary' }), 'w1')).toMatchObject({
+      witnessName: null,
+      witnessConfirmationId: 'w1',
+    });
+    expect(needsWitness({ ...v, sharing: 'limited' })).toBe(false);
+    expect(needsWitness({ ...v, decision: 'refused' })).toBe(false);
+    expect(needsWitness({ ...v, type: 'Research' })).toBe(false);
   });
 
   it('needs the name and relation of someone signing on the patient’s behalf', () => {

@@ -11,7 +11,15 @@ export type WitnessPurposeKey =
   // A patient leaving the emergency department against medical advice: a nurse or doctor of the department witnesses.
   | 'er.lama'
   // A swab, needle or instrument count in the theatre: a second member of the OT team witnesses.
-  | 'ot.count';
+  | 'ot.count'
+  // The anaesthetist's handover of a patient in the recovery room, confirmed at the recovery nurse's screen.
+  | 'ot.recovery_handover'
+  // The second registered medical practitioner's opinion on a termination from 20 weeks, confirmed at the first's screen.
+  | 'mtp.second_opinion'
+  // A body released from the mortuary on the police's clearance: a second member of the mortuary staff witnesses.
+  | 'mortuary.release'
+  // A patient's consent to share their whole record, given with no signed form: another member of staff witnesses.
+  | 'consent.record_sharing';
 
 export interface ConfirmWitnessRequest {
   userName: string;

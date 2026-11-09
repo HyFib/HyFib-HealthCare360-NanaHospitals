@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Bills;
@@ -168,7 +169,10 @@ public sealed record BillDetail(
     uint Version,
     EInvoiceStamp? EInvoice = null,
     string? FreeTreatmentReason = null,
-    decimal FreeTreatmentAmount = 0m);
+    decimal FreeTreatmentAmount = 0m,
+    IReadOnlyList<DebitNoteDto>? DebitNotes = null,
+    decimal DebitAmount = 0m,
+    decimal PayerDebitAmount = 0m);
 
 /// <summary>
 /// The package a bill is priced at: an OP bill's own, or the IP account's on a final bill. <see cref="Price"/> is the
@@ -209,6 +213,21 @@ public sealed class BillVersionRequestValidator : AbstractValidator<BillVersionR
     public BillVersionRequestValidator() => RuleFor(x => x.Version).SeenVersion();
 }
 
+/// <param name="Paper">
+/// A bill written on paper during a downtime: the downtime bill number on it and the time on it, which the bill keeps
+/// (docs/modules/downtime.md). Null for a bill finalized now, which takes the next number.
+/// </param>
+public sealed record FinalizeBillRequest(uint Version, PaperNumber? Paper = null);
+
+public sealed class FinalizeBillRequestValidator : AbstractValidator<FinalizeBillRequest>
+{
+    public FinalizeBillRequestValidator(TimeProvider time)
+    {
+        RuleFor(x => x.Version).SeenVersion();
+        RuleFor(x => x.Paper!).SetValidator(new PaperNumberValidator(time)).OverridePropertyName("paper").When(x => x.Paper is not null);
+    }
+}
+
 public sealed record LineDiscountInput(Guid LineId, decimal? Percent, decimal? Amount);
 
 /// <summary>Replaces all staff discounts on a draft bill; above the user's limit the request waits for approval.</summary>
@@ -233,6 +252,31 @@ public sealed record DecideDiscountRequest(string? Remarks);
 public sealed record IssueCreditNoteRequest(CreditNoteKind Kind, decimal Amount, string Reason, IReadOnlyList<CreditNoteLineRequest>? Lines = null);
 
 public sealed record CreditNoteLineRequest(Guid BillLineId, decimal Amount);
+
+/// <summary>
+/// A debit note: the services charged short on a finalized bill, each with the taxable value it is raised by (GST at the
+/// line's rate is added), charged to the patient or the payer.
+/// </summary>
+public sealed record IssueDebitNoteRequest(DebitNoteParty Party, string Reason, IReadOnlyList<DebitNoteLineRequest> Lines);
+
+public sealed record DebitNoteLineRequest(Guid BillLineId, decimal TaxableAmount);
+
+public sealed record DebitNoteDto(
+    Guid Id,
+    string Number,
+    DebitNoteParty Party,
+    decimal Amount,
+    decimal TaxableAmount,
+    decimal GstAmount,
+    string Reason,
+    DateTimeOffset IssuedAt,
+    string? IssuedByName,
+    string? RequestedByName,
+    IReadOnlyList<DebitNoteLineDto> Lines,
+    EInvoiceStamp? EInvoice = null);
+
+public sealed record DebitNoteLineDto(
+    Guid BillLineId, string Description, string? SacCode, decimal GstRate, decimal Amount, decimal TaxableAmount, decimal Cgst, decimal Sgst, decimal Igst);
 
 public sealed record DiscountLimitDto(Guid Id, Guid UserId, string? UserName, decimal MaxPercent, decimal? MaxAmount, string? Notes, uint Version);
 
@@ -312,6 +356,24 @@ public sealed class IssueCreditNoteRequestValidator : AbstractValidator<IssueCre
         {
             line.RuleFor(l => l.BillLineId).NotEmpty().WithMessage("Choose the service.");
             line.RuleFor(l => l.Amount).Amount();
+        });
+    }
+}
+
+public sealed class IssueDebitNoteRequestValidator : AbstractValidator<IssueDebitNoteRequest>
+{
+    public IssueDebitNoteRequestValidator()
+    {
+        RuleFor(x => x.Party).IsInEnum();
+        RuleFor(x => x.Reason).Reason();
+        RuleFor(x => x.Lines).NotEmpty().WithMessage("Name the services charged short, with the taxable value each is raised by.");
+        RuleFor(x => x.Lines).Must(lines => lines is null || lines.Count <= 200).WithMessage("Raise at most 200 services on one note.");
+        RuleFor(x => x.Lines).Must(lines => lines is null || lines.Select(l => l.BillLineId).Distinct().Count() == lines.Count)
+            .WithMessage("Name each service once.");
+        RuleForEach(x => x.Lines).ChildRules(line =>
+        {
+            line.RuleFor(l => l.BillLineId).NotEmpty().WithMessage("Choose the service.");
+            line.RuleFor(l => l.TaxableAmount).Amount();
         });
     }
 }

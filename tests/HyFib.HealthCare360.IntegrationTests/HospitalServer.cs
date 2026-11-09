@@ -75,9 +75,11 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.CssdTechnician] = SystemRoles.CssdTechnician,
         [Users.CardiologyTechnician] = SystemRoles.CardiologyTechnician,
         [Users.SecondDoctor] = SystemRoles.Doctor,
+        [Users.ThirdDoctor] = SystemRoles.Doctor,
         [Users.SecondNurse] = SystemRoles.Nurse,
         [Users.SecondPharmacist] = SystemRoles.Pharmacist,
         [Users.Accountant] = SystemRoles.Accountant,
+        [Users.HrManager] = SystemRoles.HrManager,
         [Users.Radiographer] = SystemRoles.Radiographer,
         [Users.MisAnalyst] = SystemRoles.MisAnalyst,
         [Users.Cashier] = SystemRoles.Cashier,
@@ -86,7 +88,10 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.SecondSystemAdmin] = SystemAdministrationRole,
         [Users.BloodBankOfficer] = SystemRoles.BloodBankOfficer,
         [Users.SecondBloodBankOfficer] = SystemRoles.BloodBankOfficer,
-        [Users.HrManager] = SystemRoles.HrManager,
+        [Users.Gynaecologist] = MtpRole,
+        [Users.SecondGynaecologist] = MtpRole,
+        [Users.InsuranceDesk] = SystemRoles.InsuranceDesk,
+        [Users.SecondInsuranceDesk] = SystemRoles.InsuranceDesk,
     };
 
     /// <summary>
@@ -97,6 +102,23 @@ public sealed class HospitalServer : IAsyncLifetime
     {
         [Users.BloodBankOfficer] = "Santosh Gaikwad",
         [Users.SecondBloodBankOfficer] = "Priya Nair",
+        [Users.Gynaecologist] = "Dr. Sneha Iyer",
+        [Users.SecondGynaecologist] = "Dr. Meera Pillai",
+        [Users.InsuranceDesk] = "Farah Qureshi",
+        [Users.SecondInsuranceDesk] = "Vikram Joshi",
+    };
+
+    /// <summary>
+    /// A role of the tests' own for the gynaecologists a place's MTP approval names (no seeded role holds the MTP
+    /// permissions): they open MTP cases, certify them and give the second opinion from 20 weeks.
+    /// </summary>
+    private const string MtpRole = "IT MTP gynaecologists";
+
+    /// <summary>The practitioner each MTP account is linked to: the seed's consultants DR004 and DR006, with their registrations.</summary>
+    private static readonly Dictionary<string, string> PractitionersCreatedOnFirstUse = new(StringComparer.Ordinal)
+    {
+        [Users.Gynaecologist] = "DR004",
+        [Users.SecondGynaecologist] = "DR006",
     };
 
     /// <summary>
@@ -139,6 +161,9 @@ public sealed class HospitalServer : IAsyncLifetime
 
     /// <summary>The ABDM gateway the server calls (<see cref="FakeAbdmGateway"/>).</summary>
     public FakeAbdmGateway AbdmGateway { get; } = new();
+
+    /// <summary>The speech-to-text service the server sends dictation to (<see cref="FakeSpeechService"/>).</summary>
+    public FakeSpeechService Speech { get; } = new();
 
     /// <summary>Cashfree's API the server calls when a test sets Cashfree up (<see cref="FakeCashfree"/>).</summary>
     public FakeCashfree Cashfree { get; } = new();
@@ -205,6 +230,9 @@ public sealed class HospitalServer : IAsyncLifetime
         builder.Services.AddHttpClient<AbdmGatewayKeys>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
         builder.Services.AddHttpClient<AbdmDataPush>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
         builder.Services.AddHttpClient<AbhaClient>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
+
+        // The speech service is a fake one of this run (SpeechPrivacyTests): it keeps what the server sent it.
+        builder.Services.AddHttpClient<HyFib.HealthCare360.Modules.AI.Services.Speech.WhisperSpeechToText>().ConfigurePrimaryHttpMessageHandler(Speech.Handler);
 
         // Cashfree is a fake one of this run (GatewayReconciliationTests): nothing goes to the network.
         builder.Services.AddHttpClient<CashfreeGateway>().ConfigurePrimaryHttpMessageHandler(Cashfree.Handler);
@@ -566,16 +594,25 @@ public sealed class HospitalServer : IAsyncLifetime
     /// </summary>
     private async Task<string> CreateAccountAsync(HttpClient http, string userName, string role)
     {
-        // Only someone who holds admin.system.manage gives it: the Super Administrator, for the tests' role that holds it.
-        var admin = await SignInAsync(role == SystemAdministrationRole ? Users.Admin : Users.HospitalAdmin);
+        // Only someone who holds admin.system.manage gives it: the Super Administrator, for the tests' role that holds it (and
+        // for the MTP role, whose permissions the hospital administrator does not give).
+        var admin = await SignInAsync(role is SystemAdministrationRole or MtpRole ? Users.Admin : Users.HospitalAdmin);
         var roles = await admin.GetAsync<List<RoleListItem>>("/api/v1/admin/roles");
         var roleId = roles.SingleOrDefault(r => r.Name == role)?.Id
-                     ?? (await CreateRoleAsync(admin, new SaveRoleRequest(role, "Asks for and approves what two super administrators decide (tests)",
-                         [PlatformPermissions.SystemManage], Version: null))).Id;
+                     ?? (role == MtpRole
+                         ? await CreateRoleAsync(admin, new SaveRoleRequest(role, "Certify terminations of pregnancy (tests)",
+                             ["mtp.read", "mtp.certify", "mtp.register", "patients.sensitive.mtp"], Version: null))
+                         : await CreateRoleAsync(admin, new SaveRoleRequest(role, "Asks for and approves what two super administrators decide (tests)",
+                             [PlatformPermissions.SystemManage], Version: null))).Id;
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
                          ?? throw new InvalidOperationException("The hospital administrator has no facility.");
         var temporary = "It-first-" + Guid.NewGuid().ToString("N");
-        var practitionerId = userName == Users.SecondDoctor ? await SecondConsultantAsync() : null;
+        var practitionerId = userName switch
+        {
+            Users.SecondDoctor => await ConsultantAsync(1),
+            Users.ThirdDoctor => await ConsultantAsync(2),
+            _ => PractitionersCreatedOnFirstUse.TryGetValue(userName, out var code) ? await PractitionerAsync(code) : null,
+        };
         await CreateUserAsync(admin, new CreateUserRequest(
             userName, NamesCreatedOnFirstUse.GetValueOrDefault(userName, $"Demo {role}"), Email: null, Phone: null, [roleId], [facilityId], facilityId,
             practitionerId, temporary));
@@ -1213,13 +1250,21 @@ public sealed class HospitalServer : IAsyncLifetime
     /// and password (ADR-014), for <paramref name="purpose"/> and the patient: the confirmation <paramref name="at"/> then
     /// sends once with the record.
     /// </summary>
-    public async Task<WitnessConfirmed> WitnessAsync(ApiClient at, string witnessUserName, string purpose, Guid patientId)
+    public async Task<WitnessConfirmed> WitnessAsync(ApiClient at, string witnessUserName, string purpose, Guid? patientId)
     {
         ArgumentNullException.ThrowIfNull(at);
         await SignInAsync(witnessUserName); // an account created on first use exists before it witnesses
         // From the test's own address: a witness's password counts against the address's sign-in limit.
         return await FromOwnAddress(at).PostAsync<WitnessConfirmed>("/api/v1/auth/witness", new ConfirmWitnessRequest(witnessUserName, _password, null, purpose, patientId));
     }
+
+    /// <summary>
+    /// A witness confirms at <paramref name="at"/>'s screen a consent to share the patient's whole record with no signed form
+    /// (maker-checker, slice 14): the confirmation to send with the consent. <paramref name="witness"/> holds
+    /// <c>patients.consents</c> and is not the one recording it.
+    /// </summary>
+    public async Task<Guid> RecordSharingWitnessAsync(ApiClient at, Guid patientId, string witness = Users.Nurse) =>
+        (await WitnessAsync(at, witness, "consent.record_sharing", patientId)).ConfirmationId;
 
     /// <summary>
     /// The ward reports the patient absconded (maker-checker, slice 8): the nurse asks (202) with the report, and the nurse in
@@ -1249,10 +1294,6 @@ public sealed class HospitalServer : IAsyncLifetime
     }
 
     /// <summary>
-    /// A correction of an implant or consumable line after the operation started, approved by the hospital administrator, who
-    /// holds the OT in-charge's approval and did not ask for it.
-    /// </summary>
-    /// <summary>
     /// An HR change (salary payment details, a salary structure, a payroll input, a leave credit: maker-checker slice 11)
     /// approved by whoever of the HR manager and the hospital administrator did not ask for it.
     /// </summary>
@@ -1271,6 +1312,10 @@ public sealed class HospitalServer : IAsyncLifetime
         throw new InvalidOperationException($"Neither HR user may decide approval {approvalId}.");
     }
 
+    /// <summary>
+    /// A correction of an implant or consumable line after the operation started, approved by the hospital administrator, who
+    /// holds the OT in-charge's approval and did not ask for it.
+    /// </summary>
     public async Task<ApprovalRequestDto> ApproveMaterialCorrectionAsync(Guid approvalId)
     {
         var checker = await SignInAsync(Users.HospitalAdmin);
@@ -1278,12 +1323,19 @@ public sealed class HospitalServer : IAsyncLifetime
         return await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Checked against the pack label.", request.Version));
     }
 
-    // The seed signs the first consultant (by code) in as the doctor; the second doctor is the next one.
-    private async Task<Guid?> SecondConsultantAsync()
+    private async Task<Guid?> PractitionerAsync(string code)
     {
         await using var scope = Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Practitioner>()
-            .Where(p => p.Kind == PractitionerKind.Consultant).OrderBy(p => p.Code).Skip(1).Select(p => (Guid?)p.Id)
+            .Where(p => p.Code == code).Select(p => (Guid?)p.Id).FirstAsync(TestContext.Current.CancellationToken);
+    }
+
+    // The seed signs the first consultant (by code) in as the doctor; the second and third doctors are the next ones.
+    private async Task<Guid?> ConsultantAsync(int skip)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Practitioner>()
+            .Where(p => p.Kind == PractitionerKind.Consultant).OrderBy(p => p.Code).Skip(skip).Select(p => (Guid?)p.Id)
             .FirstAsync(TestContext.Current.CancellationToken);
     }
 
@@ -1342,6 +1394,38 @@ public sealed class HospitalServer : IAsyncLifetime
         var result = await ApiClient.ReadAsync<SignInResult>(verified, HttpMethod.Post, "/api/v1/auth/otp/verify");
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", FullAccess(phone, result));
         return (new ApiClient(http), PortalRefreshCookieOf(verified) ?? throw new InvalidOperationException($"Signing in to the portal as {phone} set no refresh cookie."));
+    }
+
+    /// <summary>
+    /// The front desk shares a patient's records with a family member's portal account (maker-checker, slice 14): a code goes
+    /// to the patient's own mobile number, and the desk enters it as the patient reads it out (read here from the outbox).
+    /// </summary>
+    public async Task<Modules.Patients.Features.Patients.FamilyLinkCreated> LinkFamilyAtDeskAsync(
+        ApiClient staff, Guid patientId, Modules.Patients.Features.Patients.LinkFamilyMemberRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(staff);
+        ArgumentNullException.ThrowIfNull(request);
+        var sent = await staff.PostAsync<Modules.Patients.Features.Patients.FamilyDeskCodeSent>($"/api/v1/patients/{patientId}/portal-family", request);
+        return await staff.PostAsync<Modules.Patients.Features.Patients.FamilyLinkCreated>(
+            $"/api/v1/patients/{patientId}/portal-family/codes/{sent.CodeId}/confirm",
+            new Modules.Patients.Features.Patients.ConfirmFamilyLinkRequest(await DeskFamilyCodeAsync(patientId), request.ConsentGivenBy));
+    }
+
+    /// <summary>The last code the front desk had sent to the patient's own number to share their records: read from the outbox.</summary>
+    public async Task<string> DeskFamilyCodeAsync(Guid patientId)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var scope = Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var phone = await db.Set<Modules.Patients.Domain.Patient>().AsNoTracking().Where(p => p.Id == patientId).Select(p => p.Phone).SingleAsync(ct);
+        var deliveries = await db.Set<OutboxMessage>().AsNoTracking()
+            .Where(m => m.Type == NotificationService.SmsType)
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(200)
+            .ToListAsync(ct);
+        return deliveries.Select(m => m.Read<NotificationDelivery>())
+            .First(d => d.TemplateKey == "portal.family_code_desk" && d.To == phone)
+            .Values["code"];
     }
 
     /// <summary>The last portal sign-in code sent to <paramref name="phone"/>: the test server sends no SMS, so it is read from the outbox.</summary>
@@ -1457,6 +1541,12 @@ public sealed class HospitalServer : IAsyncLifetime
         /// </summary>
         public const string SecondDoctor = "doctor2";
 
+        /// <summary>
+        /// A third doctor, linked to the consultant after <see cref="SecondDoctor"/>'s: a doctor who is neither the author nor
+        /// on the care team, nor covering, for the slice 15 sign-off rules. Created on first use.
+        /// </summary>
+        public const string ThirdDoctor = "doctor3";
+
         /// <summary>A second nurse, who witnesses <see cref="Nurse"/>'s controlled doses at her screen. Created on first use.</summary>
         public const string SecondNurse = "nurse2";
 
@@ -1472,6 +1562,17 @@ public sealed class HospitalServer : IAsyncLifetime
         /// first use.
         /// </summary>
         public const string Accountant = "accountant";
+
+        /// <summary>Approves payroll the hospital administrator processed (maker-checker) and exports its files. Created on first use.</summary>
+        public const string HrManager = "hrmanager";
+
+        /// <summary>
+        /// The insurance (TPA) desk: records pre-authorisations, claims and their settlements. Created on first use.
+        /// </summary>
+        public const string InsuranceDesk = "insurance";
+
+        /// <summary>A second insurance desk user, who checks what the first recorded (MAKER-CHECKER.md, slice 12). Created on first use.</summary>
+        public const string SecondInsuranceDesk = "insurance2";
 
         /// <summary>Performs scans and records the woman's Form F declaration, but does not sign Form F. Created on first use.</summary>
         public const string Radiographer = "radiographer";
@@ -1515,11 +1616,16 @@ public sealed class HospitalServer : IAsyncLifetime
         public const string SecondBloodBankOfficer = "bloodbank2";
 
         /// <summary>
-        /// An HR manager beside the hospital administrator (who holds every HR permission too): approves the salary payment
-        /// details, pay and leave credits the administrator asks for, and asks for some of their own (maker-checker slice 11).
-        /// Created on first use.
+        /// A gynaecologist the place's MTP approval names (Dr. Sneha Iyer, linked to practitioner DR004): opens and certifies
+        /// terminations of pregnancy. Created on first use.
         /// </summary>
-        public const string HrManager = "hrmanager";
+        public const string Gynaecologist = "gynae";
+
+        /// <summary>
+        /// A second gynaecologist (Dr. Meera Pillai, DR006), who gives the second opinion from 20 weeks, from her own sign-in
+        /// or confirming at the first's screen. Created on first use.
+        /// </summary>
+        public const string SecondGynaecologist = "gynae2";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);

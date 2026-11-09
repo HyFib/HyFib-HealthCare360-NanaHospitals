@@ -31,8 +31,22 @@ public sealed record ReceiveBodyRequest(
     string? Belongings,
     Guid SlotId);
 
+/// <summary>
+/// A body released. <paramref name="WitnessConfirmationId"/>: a second member of the mortuary staff's confirmation, given at
+/// this screen with their own user name and password (<c>POST /api/v1/auth/witness</c>, purpose <c>mortuary.release</c>);
+/// required when the release is on the police's clearance (a medico-legal body to the relatives, an unclaimed body to the
+/// municipality).
+/// </summary>
 public sealed record ReleaseBodyRequest(
-    ReleaseTo To, string ReceivedBy, string? Relationship, string? IdProof, string? PoliceClearance, bool BelongingsHandedOver, string? Notes, uint Version);
+    ReleaseTo To,
+    string ReceivedBy,
+    string? Relationship,
+    string? IdProof,
+    string? PoliceClearance,
+    bool BelongingsHandedOver,
+    string? Notes,
+    uint Version,
+    Guid? WitnessConfirmationId = null);
 
 public sealed record BodyDto(
     Guid Id,
@@ -65,7 +79,8 @@ public sealed record BodyDto(
     bool BelongingsHandedOver,
     string? ReleaseNotes,
     string? ReleasedByName,
-    uint Version);
+    uint Version,
+    string? ReleaseWitnessName = null);
 
 public sealed class SaveSlotsRequestValidator : AbstractValidator<SaveSlotsRequest>
 {
@@ -112,5 +127,7 @@ public sealed class ReleaseBodyRequestValidator : AbstractValidator<ReleaseBodyR
         RuleFor(x => x.IdProof).SafeText(200);
         RuleFor(x => x.PoliceClearance).SafeText(200);
         RuleFor(x => x.Notes).SafeText(1000);
+        RuleFor(x => x.Version).SeenVersion();
+        RuleFor(x => x.WitnessConfirmationId).OptionalId();
     }
 }

@@ -21,10 +21,13 @@ import {
   useUnsavedChanges,
 } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { LAB_SECTIONS, labApi, labKeys, type LabInstrumentDto } from '../api';
 import { sectionLabel } from '../labels';
+import { SecondPathologistReasonDialog } from './SecondPathologistReasonDialog';
+import { asksForReason, isApprovalRequest, waitsForSecondPathologist } from './secondPathologist';
 
 const schema = z.object({
   code: z
@@ -75,8 +78,10 @@ export function InstrumentDrawer({
     },
   });
 
+  // Automatic verification switched on where the lab asks for a second pathologist: the server asks why, and it waits.
+  const [askingWhy, setAskingWhy] = useState<InstrumentValues | null>(null);
   const save = useMutation({
-    mutationFn: (values: InstrumentValues) =>
+    mutationFn: ({ values, reason }: { values: InstrumentValues; reason?: string }) =>
       labApi.saveInstrument(instrument?.id ?? null, {
         code: values.code.toUpperCase(),
         name: values.name,
@@ -89,13 +94,23 @@ export function InstrumentDrawer({
         location: values.location || null,
         isActive: values.isActive,
         version: instrument?.version ?? null,
+        reason: reason ?? null,
       }),
-    onSuccess: () => {
-      notify.success(instrument ? 'Analyser saved' : 'Analyser added');
+    onSuccess: (result) => {
+      setAskingWhy(null);
+      if (isApprovalRequest(result)) {
+        notify.info('Saved; automatic verification sent for approval', waitsForSecondPathologist);
+      } else {
+        notify.success(instrument ? 'Analyser saved' : 'Analyser added');
+      }
       void queryClient.invalidateQueries({ queryKey: labKeys.masters });
       onClose();
     },
-    onError: (error) => {
+    onError: (error, { values }) => {
+      if (asksForReason(error)) {
+        setAskingWhy(values);
+        return;
+      }
       if (!applyServerErrors(error, form.setError)) {
         notify.error(error, 'Could not save the analyser');
       }
@@ -106,7 +121,11 @@ export function InstrumentDrawer({
 
   return (
     <OverlayDrawer open position="end" size="medium" onOpenChange={guard.onOpenChange}>
-      <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
+      <form
+        onSubmit={form.handleSubmit((values) => save.mutate({ values }))}
+        noValidate
+        style={{ display: 'contents' }}
+      >
         <DrawerHeader>
           <DrawerHeaderTitle
             action={
@@ -180,6 +199,14 @@ export function InstrumentDrawer({
         </DrawerFooter>
       </form>
       {guard.dialogs}
+      <SecondPathologistReasonDialog
+        key={askingWhy ? 'asking' : 'idle'}
+        open={askingWhy !== null}
+        what="Switching automatic verification on"
+        busy={save.isPending}
+        onConfirm={(reason) => askingWhy && save.mutate({ values: askingWhy, reason })}
+        onCancel={() => setAskingWhy(null)}
+      />
     </OverlayDrawer>
   );
 }

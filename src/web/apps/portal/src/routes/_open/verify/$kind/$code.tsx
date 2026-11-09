@@ -188,7 +188,7 @@ function PrescriptionAnswer({ result }: { result: PrescriptionVerification }) {
               { label: t('verify.dsc.hash'), value: <span className={styles.hash}>{dsc.contentHash}</span> },
             ]}
           />
-          <p className={styles.note}>{t('verify.dsc.revocation')}</p>
+          <p className={styles.note}>{dsc.revocationStatus ?? t('verify.dsc.revocation')}</p>
           {result.signaturePath && (
             <a className={styles.download} href={result.signaturePath} download>
               {t('verify.dsc.download')}

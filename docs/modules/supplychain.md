@@ -24,12 +24,16 @@ are local (IST) calendar dates through `HospitalClock` / `TimeProvider`.
 | `inventory.indents.raise` | Raise (and cancel own) indents | StoreKeeper, HospitalAdmin, Nurse, Pharmacist |
 | `inventory.indents.issue` | Approve (reserve), issue, reject and close indents | StoreKeeper, HospitalAdmin |
 | `inventory.transfers` | Dispatch, receive and cancel transfers | StoreKeeper, HospitalAdmin, Pharmacist |
-| `inventory.adjustments.approve` | Approve/reject adjustments and write-offs (never your own) | HospitalAdmin |
+| `inventory.adjustments.approve` | Approve/reject adjustments and write-offs (never your own), and a transfer received short (neither the receiver nor the dispatcher) | HospitalAdmin |
+| `inventory.recall.release` | Approve a batch held on a recall released for use (not one's own request) | Pharmacist, HospitalAdmin |
 | `inventory.counts` | Physical stock counts; raise adjustments | StoreKeeper, HospitalAdmin |
 | `purchase.manage` | Vendors, requisitions, purchase orders | StoreKeeper, HospitalAdmin, PurchaseOfficer |
-| `purchase.approve` | Approve/reject requisitions and orders | HospitalAdmin |
+| `purchase.approve` | Approve/reject requisitions and orders; post a supplier payable adjustment someone else raised | HospitalAdmin |
 | `purchase.grn.receive` | Goods receipt against vendor invoices; send a receipt for approval | StoreKeeper, HospitalAdmin |
-| `purchase.grn.approve` | Check a goods receipt against the supplier's invoice and post it into stock (never one's own) | HospitalAdmin, PurchaseOfficer |
+| `purchase.grn.approve` | Check a goods receipt against the supplier's invoice and post it into stock (never one's own); post a purchase return (debit note) someone else raised | HospitalAdmin, PurchaseOfficer |
+| `inventory.cold_chain.record` | Record refrigerator and freezer temperatures (the twice-daily register) and the action taken on an excursion | StoreKeeper, HospitalAdmin, Pharmacist, Nurse |
+| `inventory.cold_chain.manage` | Set up refrigerators and freezers, their allowed range and their data loggers' keys | StoreKeeper, HospitalAdmin, Pharmacist |
+| `masters.prices.approve` (Platform's) | Approve an item's NPPA ceiling price raised or removed, or its GST rate changed, asked for by someone else | Accountant, HospitalAdmin |
 | `assets.read` | Asset register; report equipment breakdowns | BiomedicalEngineer, HospitalAdmin, StoreKeeper, PurchaseOfficer, Nurse |
 | `assets.manage` | Register assets and contracts; decide condemnation; dispose | BiomedicalEngineer, HospitalAdmin |
 | `assets.maintenance` | PM plans/visits, tickets, calibration; daily reminder | BiomedicalEngineer, HospitalAdmin |
@@ -42,6 +46,7 @@ Reader sets used below:
 * **Vendor readers**: any of `purchase.manage`, `purchase.approve`, `purchase.grn.receive`, `purchase.grn.approve`,
   `assets.manage`, `assets.maintenance`.
 * **Asset readers**: any of `assets.read`, `assets.manage`, `assets.maintenance`.
+* **Cold-chain readers**: any of `inventory.cold_chain.record`, `inventory.cold_chain.manage`, `inventory.stock.read`.
 
 ## Endpoints
 
@@ -57,7 +62,7 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 | GET | `/items?page&type&categoryId&schedule&controlledOnly&includeInactive` | Catalog readers | → paged `ItemListItem` (trigram name search; sort code/name/genericName/type/gstRate) |
 | GET | `/items/lookup?search&storeId&type&take` | Catalog readers | → `ItemLookup[]` (≤ 50, with available stock, MRP and nearest expiry in `storeId`) |
 | GET | `/items/by-code/{code}` · `/items/{id}` | Catalog readers | → `ItemDetail` |
-| POST · PUT | `/items` · `/items/{id}` | `inventory.items.manage` | `SaveItemRequest` (code, name, genericName, brandName, type, categoryId, strength, dosageForm, packSize, baseUnit, purchaseUnit, purchaseUnitFactor, hsnCode, gstRate ∈ {0, 0.25, 3, 5, 12, 18, 28, 40}, schedule None/Otc/G/H/H1/X, isControlled, isHighAlert, isColdChain, vedClass, reorder/min/max levels, manufacturer (or importer), barcode, isActive, version, specification, ceilingPrice) → 201 `{id}` · 204. `specification` says what a device is, as its bill prints it (for a stent, bare-metal or drug-eluting first, then material and size). `ceilingPrice` is the NPPA ceiling price of a unit of a price-controlled implant (a coronary stent, a knee implant), GST included: only an implant carries one, and it is more than 0 (`ceilingPrice`, 400). No patient is charged more for a unit, whatever an older pack's MRP: the OT and the IP pharmacy price within it, and Billing refuses more. NPPA revises it, so the store updates it |
+| POST · PUT | `/items` · `/items/{id}` | `inventory.items.manage` | `SaveItemRequest` (code, name, genericName, brandName, type, categoryId, strength, dosageForm, packSize, baseUnit, purchaseUnit, purchaseUnitFactor, hsnCode, gstRate ∈ {0, 0.25, 3, 5, 12, 18, 28, 40}, schedule None/Otc/G/H/H1/X, isControlled, isHighAlert, isColdChain, vedClass, reorder/min/max levels, manufacturer (or importer), barcode, isActive, version, specification, ceilingPrice, ceilingNotification, classChangeReason, priceChangeReason) → 201 `{id}` · 204 · 202 `ApprovalRequestDto` (a looser class or pricing waits, below). `specification` says what a device is, as its bill prints it (for a stent, bare-metal or drug-eluting first, then material and size). `ceilingPrice` is the NPPA ceiling price of a base unit, GST included, on a scheduled medicine (DPCO 2013) or a price-controlled implant (a coronary stent, a knee implant); nothing else carries one, and it is more than 0 (`ceilingPrice`, 400). `ceilingNotification` is the NPPA notification that fixed it (S.O. number and date). An implant is charged no more than its ceiling, whatever an older pack's MRP: the OT and the IP pharmacy price within it, and Billing refuses more. A medicine is not received or sold above it (*Price ceilings*, below). NPPA revises it, so the store updates it |
 | GET | `/stores?type&includeInactive` | Catalog readers or `inventory.adjustments.approve` | → `StoreDto[]` (central, pharmacy, ward, OT, lab, canteen, CSSD) |
 | GET | `/stores/{id}` | Catalog readers | → `StoreDto` |
 | POST · PUT | `/stores` · `/stores/{id}` | `inventory.items.manage` | `SaveStoreRequest` (code, name, type, departmentId, inChargeUserId, location, isActive, version) → 201 `{id}` · 204 |
@@ -65,11 +70,12 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 ### Stock — `/api/v1/inventory/stock`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/?storeId&page&type&belowReorder` | `inventory.stock.read` | → paged `StockSummaryRow` (on hand, reserved, available, expired, nearest expiry, value at cost, below-reorder flag) |
+| GET | `/?storeId&page&type&belowReorder` | `inventory.stock.read` | → paged `StockSummaryRow` (on hand, reserved, available, expired, nearest expiry, value at cost, below-reorder flag, blocked quantity, on order). Available is usable stock: not reserved, not expired, not in a blocked batch. The flag is the reorder report's rule (`ReorderCalculator.IsDue`): active, with a level, and usable stock plus what is still due on the store's approved, sent or part-received purchase orders at or under the level. Filtered with `belowReorder=true`, an item with no stock left in the store is listed too, as the report lists it |
 | GET | `/batches?storeId&itemId&includeEmpty` | Batch readers | → `BatchStock[]` in FEFO order |
 | GET | `/ledger?page&storeId&itemId&from&to&movement` | `inventory.stock.read` | → paged `LedgerRow` (stock card with the running balance; IST dates) |
 | GET | `/reservations?storeId&itemId` | Batch readers | → `ReservationRow[]` |
-| POST | `/batches/{id}/block` · `/batches/{id}/unblock` | `inventory.items.manage` or `inventory.adjustments.approve` | `BlockBatchRequest` (reason) → 204. Quality hold or recall: never allocated while blocked |
+| POST | `/batches/{id}/block` | `inventory.items.manage` or `inventory.adjustments.approve` | `BlockBatchRequest` (reason, recall) → 204. A quality hold, or with `recall` a manufacturer's or regulator's recall: never allocated while held. Applies at once |
+| POST | `/batches/{id}/unblock` | `inventory.items.manage` or `inventory.adjustments.approve` | `UnblockBatchRequest` (reason) → 204 for a quality hold, released at once; **202** `ApprovalRequestDto` for a recall (`inventory.recall_release`): the batch stays held until someone else who holds `inventory.recall.release` approves, with the batch, the store, what is on hand and the recall in words. The approval is refused as stale if the hold changed meanwhile, and audited `stock_batch.recall_released` with both names |
 
 ### Reports — `/api/v1/inventory/reports`
 | Method | Path | Permission | Request → response |
@@ -77,7 +83,7 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 | GET | `/summary?storeId` | `inventory.stock.read` | → `InventorySummary` (store dashboard) |
 | GET | `/near-expiry?storeId&days` | `inventory.stock.read` | → `ExpiryReport`: batches holding stock that expire from today to the `days`-th day (default 90, 1–730), soonest first, with days to expiry and value at cost and at MRP |
 | GET | `/expired?storeId` | `inventory.stock.read` | → `ExpiryReport`: batches holding stock whose expiry day has passed (a batch is usable on its expiry day) |
-| GET | `/reorder?storeId` | `inventory.stock.read` or `purchase.manage` | → `ReorderRow[]`: every active item with a reorder level whose usable stock (unreserved, in batches neither blocked nor expired) plus what is still to come on approved, sent or part-received orders is at or under that level. The suggestion tops up to the maximum stock (with no maximum, to the reorder level plus the reorder quantity), never less than the reorder quantity, net of what is on order, in purchase units rounded up; vital items first, then essential, then desirable, each by name (`ReorderCalculator`, unit-tested) |
+| GET | `/reorder?storeId` | `inventory.stock.read` or `purchase.manage` | → `ReorderRow[]`: every active item with a reorder level (the store's own, `StoreItemLevel`, where the store set one, else the item's) whose usable stock (unreserved, in batches neither blocked nor expired) plus what is still to come on approved, sent or part-received orders is at or under that level. The suggestion tops up to the maximum stock (with no maximum, to the reorder level plus the reorder quantity), never less than the reorder quantity, net of what is on order, in purchase units rounded up; vital items first, then essential, then desirable, each by name (`ReorderCalculator`, unit-tested) |
 | GET | `/valuation?storeId` | `inventory.stock.read` | → `ValuationReport` (at cost and at MRP, by store and item type) |
 | GET | `/analysis?from&to&storeId` | `inventory.stock.read` or `purchase.manage` | → `InventoryAnalysis`: ABC (70/90 cumulative value), FSN (issue frequency), VED and the ABC-VED matrix (I: AV, AE, AD, BV, CV; II: BE, CE, BD; III: CD). Default is the last 12 months, max 3 years |
 
@@ -87,8 +93,8 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 | GET | `/?page&status&fromStoreId&toStoreId&departmentId&openOnly` | any of `inventory.indents.raise`, `inventory.indents.issue`, `inventory.stock.read` | → paged `IndentListItem` (urgent first, then oldest) |
 | GET | `/{id}` · `/{id}/issues` | same | → `IndentDetail` · `IndentIssueDto[]` |
 | POST | `/` | `inventory.indents.raise` | `CreateIndentRequest` (fromStoreId, toStoreId (sub-store) or departmentId, priority Routine/Urgent, remarks, lines[itemId, quantity, remarks]) → 201 `DocumentCreated` |
-| POST | `/{id}/approve` | `inventory.indents.issue` | `ApproveIndentRequest` (lines[lineId, approvedQuantity]) → 204; reserves stock FEFO |
-| POST | `/{id}/issue` | `inventory.indents.issue` | `IssueIndentRequest` (lines[lineId, quantity, batchId?], receivedByName, remarks) → 200 `DocumentCreated` (issue slip) |
+| POST | `/{id}/approve` | `inventory.indents.issue` | `ApproveIndentRequest` (lines[lineId, approvedQuantity]) → 204; reserves stock FEFO. Never by whoever raised the indent (403 `indent.approve_own`) |
+| POST | `/{id}/issue` | `inventory.indents.issue` | `IssueIndentRequest` (lines[lineId, quantity, batchId?], receivedByName, remarks) → 200 `DocumentCreated` (issue slip). Never by whoever raised the indent (403 `indent.issue_own`) |
 | POST | `/{id}/reject` · `/{id}/close` | `inventory.indents.issue` | `InventoryReasonRequest` → 204 (releases reservations) |
 | POST | `/{id}/cancel` | `inventory.indents.raise` or `inventory.indents.issue` | `InventoryReasonRequest` → 204 |
 
@@ -97,8 +103,21 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 |---|---|---|---|
 | GET | `/?page&status&storeId` · `/{id}` | `inventory.transfers` or `inventory.stock.read` | → paged `TransferListItem` · `TransferDetail` |
 | POST | `/` | `inventory.transfers` | `DispatchTransferRequest` (fromStoreId, toStoreId, remarks, lines[itemId, quantity, batchId?]) → 201 `DocumentCreated`; stock leaves the source (in transit) |
-| POST | `/{id}/receive` | `inventory.transfers` | → 204; same batch, expiry and MRP booked in at the destination |
+| POST | `/{id}/receive` | `inventory.transfers` | `ReceiveTransferRequest` (lines[lineId, receivedQuantity] counted short, note) → 204 when every line is counted in full: the same batch, expiry and MRP booked in at the destination. Never by whoever dispatched it (403 `transfer.receive_own`); never more than was sent (422 `transfer.over_received`). A line counted short → **202** `ApprovalRequestDto` (`inventory.transfer_shortfall`): nothing moves until someone who holds `inventory.adjustments.approve`, neither the receiver (`approval.self`) nor the dispatcher (403 `transfer.shortfall_own`, the request stays waiting), approves. Approved, over the transfer as counted (`approval.stale`), it books in what was sent and writes the shortfall off the receiving store's batch as an `Adjustment` ("short on receipt"), records the counted quantity on the line, and audits `inventory.transfer_shortfall_accepted` with both names |
 | POST | `/{id}/cancel` | `inventory.transfers` | `InventoryReasonRequest` → 204; returns stock to the exact source batches |
+
+### A store's own reorder levels — `/api/v1/inventory/stores/{storeId}/levels` (INV-08)
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/` | `inventory.items.manage` or `inventory.stock.read` | → `StoreItemLevelDto[]`: the store's levels beside the item master's they override |
+| PUT | `/{itemId}` | `inventory.items.manage` | `SaveStoreItemLevelRequest` (reorderLevel, reorderQuantity, minimumStock, maximumStock, version; no version on the first save) → 201 or 204. Audited `stock_level.saved` with the levels before and after in words |
+| DELETE | `/{itemId}` | `inventory.items.manage` | → 204; the store goes back to the item's levels. Audited `stock_level.removed` |
+
+The reorder report and the stock screen's below-reorder flag use the store's own levels where it set them; a level of
+zero means the store does not reorder the item. No second person approves a change, by design: a reorder level only
+decides when the store is told to buy, so a level set too low risks running short (which the store's own stock screen
+and reorder report show), and never lets stock, money or a medicine out. The audit trail carries every change with
+before and after.
 
 ### Adjustments and physical counts — `/api/v1/inventory/adjustments`, `/api/v1/inventory/counts` (INV-07)
 | Method | Path | Permission | Request → response |
@@ -165,6 +184,29 @@ base unit and a barcode of the item code and batch (`PCM500#AB1234`); so does a 
 inventory search for a tag's barcode finds the item by its exact code. See
 [integrations.md](integrations.md#barcode-labels-int-bar).
 
+### Purchase returns and supplier payables — `/api/v1/purchase/debit-notes`, `/api/v1/purchase/payable-adjustments`
+
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/debit-notes?page&status&vendorId` · `/debit-notes/{id}` | Vendor readers | → paged `DebitNoteDto` · `DebitNoteDto` (with when its approval has been waiting since) |
+| POST | `/debit-notes` | `purchase.grn.receive` or `purchase.manage` | `RaiseDebitNoteRequest` (vendorId, storeId, goodsReceiptId?, vendorReference, reason, lines[batchId, quantity]) → **202** `ApprovalRequestDto` (`purchase.debit_note`). Each batch must be in the store, bought from that supplier (`debit_note.other_supplier`) and have the quantity free; a batch held on a recall can be returned. Valued at the batch's purchase rate, with input GST split CGST/SGST or IGST as the supplier is within or outside the state |
+| POST | `/debit-notes/{id}/approval` · `/debit-notes/{id}/cancel` | `purchase.grn.receive` or `purchase.manage` | → 202 (ask again after a rejection) · `InventoryReasonRequest` → 204 (refused while a request waits) |
+| GET | `/payable-adjustments?page&status&vendorId` | Vendor readers | → paged `PayableAdjustmentDto` |
+| POST | `/payable-adjustments` | `purchase.manage` | `RaisePayableAdjustmentRequest` (vendorId, direction Reduce/Increase, amount, reason, vendorReference) → **202** `ApprovalRequestDto` (`purchase.payable_adjustment`) |
+| POST | `/payable-adjustments/{id}/approval` · `/payable-adjustments/{id}/cancel` | `purchase.manage` | as for debit notes |
+
+A debit note is posted only when someone who holds `purchase.grn.approve`, and did not raise it, approves it (over the
+note as raised, `approval.stale`): the stock then leaves each batch as `PurchaseReturn` (audited
+`purchase.debit_note_posted` with both names), and the note reaches Billing's Tally day book on the day it was posted as
+a **Debit Note** voucher: the supplier's ledger debited with the whole note, Purchase Returns credited at cost and the
+input CGST/SGST/IGST taken back. A payable adjustment is posted only when someone who holds `purchase.approve`, and did
+not raise it, approves it; it reaches the day book as a **Journal** between the supplier's ledger and Purchase Rate
+Differences, whichever way it goes. Supply chain hands both to Billing through the Platform contract
+`IVendorAccountsSource`; the ledger names are in `billing.tally.ledgers` (`purchaseReturns`, `inputCgst`, `inputSgst`,
+`inputIgst`, `vendorAdjustments`, `ledgerPerVendor`, `sundryCreditors`). Goods receipts themselves are not sent to Tally:
+the accounts book the supplier's invoice, and a debit note is set against it there. In the NDPS annual return a
+purchase return counts as written off, with every movement other than a receipt, dispensing or a patient's return.
+
 ### Assets — `/api/v1/assets` (AST-01/02/06, tag Assets)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
@@ -197,6 +239,62 @@ printer the server writes the tag (`asset-tags`); otherwise the tag page prints.
 | POST | `/tickets` | Asset readers (ward staff report breakdowns) | `ReportBreakdownRequest` (assetId, issue, priority?, assetDown) → 201 `DocumentCreated`; priority defaults from asset criticality; `assetDown` puts the asset under maintenance and alerts biomedical engineering |
 | POST | `/tickets/{id}/assign` · `/start` · `/resolve` · `/close` · `/reopen` | `assets.maintenance` | `AssignTicketRequest` · — · `ResolveTicketRequest` (resolution, rootCause, cost, downtimeMinutes) · — · — → 204 |
 | GET · POST | `/{assetId}/calibrations` | Asset readers · `assets.maintenance` | → `CalibrationDto[]` · `RecordCalibrationRequest` (calibratedOn, agency, certificateNumber, certificateFileId, nextDueDate, outcome, remarks) → 201; only the latest certificate counts (`Asset.RecordCalibration`, unit-tested): it sets the asset's next calibration date, and a failed one puts the asset under maintenance. An older certificate entered later changes neither |
+
+### Cold chain — `/api/v1/inventory/cold-chain` (PH-04, INV-04)
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/units?storeId` | Cold-chain readers | → `ColdStorageUnitDto[]` (store, range, last reading and whether it was out of range, open excursion, logger and when it was last heard, today's morning and evening checks: Upcoming, Due, Taken or Missed) |
+| POST · PUT | `/units` · `/units/{id}` | `inventory.cold_chain.manage` | `SaveColdStorageUnitRequest` (storeId, code, name, kind Refrigerator/Freezer/ColdRoom, minCelsius?, maxCelsius?, isActive, version) → 201 id · 204. No range takes the kind's (2–8 °C; a freezer −25 to −15 °C). A range changed is audited (Warning) with what it was |
+| POST | `/units/{id}/logger-key` · `/units/{id}/logger-key/revoke` | `inventory.cold_chain.manage` | → `ColdChainLoggerKey` (key, shown once; path and header to send readings with) · 204. A new key stops the old one; only its SHA-256 is kept |
+| POST | `/units/{id}/readings` | `inventory.cold_chain.record` | `RecordTemperatureRequest` (celsius to one decimal, takenAt? within the last 12 hours, note) → 201 `TemperatureReadingRecorded` (outOfRange, allowedRange, excursionId) |
+| GET | `/units/{id}/register?date` | Cold-chain readers | → `ColdChainDailyRegister`: the day's readings (by hand with who, or from the logger), low and high, the morning and evening checks taken or missed, and the excursions that day with their action |
+| GET | `/excursions?storeId&openOnly` | Cold-chain readers | → `ColdChainExcursionDto[]` (from the first reading out of range to the first back in it: extreme, readings out of range, the cold-chain stock in the store when it began, action taken and by whom). `openOnly` lists those still out of range or with no action recorded |
+| POST | `/excursions/{id}/action` | `inventory.cold_chain.record` | `ExcursionActionRequest` (what was done about the stock) → 204, audited |
+| POST | `/logger/readings` | anonymous, the unit's `X-Device-Key` (rate-limited as patient monitors are) | `LoggerUploadRequest` (readings[takenAt, celsius], up to 500) → 200 `LoggerUploadResult` (accepted, duplicates, rejected with why). A reading already received is skipped (unique unit + time for logger readings); an unknown or wrong key is the same 401 |
+
+**Rules.** A reading is judged at one decimal against the unit's range as it was then (kept on the reading). One out of
+range with no excursion open opens one and alerts, once, the store's in-charge (`Store.InChargeUserId`; with none,
+everyone in the facility holding `inventory.cold_chain.manage`) in the app, critical, with the reading, the range and
+the cold-chain items (`Item.IsColdChain`) with stock in the store, by batch and quantity. Later readings out of range
+widen the same excursion; the first back in range ends it. A logger reading older than the unit's last reading (sent late
+after an outage) is kept in the register and moves nothing. Freezing is an excursion like warming.
+
+**The twice-daily check.** A manual reading between 06:00 and 11:00, and one between 16:00 and 21:00, hospital time, is
+the morning and the evening check. A logger does not stand in for it: the thermometer is read and entered by hand twice a
+day whether or not a logger is fitted, which is also how a failed logger is noticed. `ColdChainJob` (job-running nodes
+only, every 10 minutes) alerts each check missed since it last looked, once (the unit keeps the last check it looked at,
+`missed_alerted_through`; at most two days back; a unit set up during a window is not held to that check), and a logger
+not heard from for two hours, once until it is heard again; both go to the in-charge as warnings.
+
+## Price ceilings (DPCO 2013)
+
+A scheduled formulation's ceiling price is kept per base unit, with GST, on the item (`ceilingPrice`), as NPPA notifies
+it per tablet, capsule or ml. A pack's ceiling is that times the units in the pack, to the paisa (`PriceCeiling`), so a
+pack printed at its ceiling is never refused for the rounding of its MRP per unit.
+
+* **Receipt.** A goods receipt line of a medicine whose printed MRP is above its pack's ceiling is refused when it is
+  entered (422 `grn.mrp_above_ceiling`, naming the batch, the MRP and the ceiling) and again when it is posted, against
+  the ceiling then: a receipt entered before a cut is not posted above the new ceiling. The line keeps the ceiling it was
+  entered under.
+* **Sale.** A batch whose MRP per unit is above the ceiling is not sold at the counter or dispensed, and not issued to a
+  ward (422 `pharmacy.price_above_ceiling`, with the item and batch; see pharmacy.md). The pharmacist picks another
+  batch, or the store returns it to the supplier.
+* **Implants** keep their own rule: charged at the lower of MRP and ceiling, an older pack still used.
+
+## An item's ceiling price or GST rate loosened waits for someone who approves prices
+
+On an item already in the master, a ceiling **raised** or **removed**, or the **GST rate** changed either way, waits
+for a second person (`inventory.item_price`, MAKER-CHECKER.md slice 13). Someone else who holds `masters.prices.approve`
+(accountants and hospital administrators by default, as for every other price master) approves it in Approvals; the one
+who asked never does (`approval.self`). The rest of the item is saved at once, `PUT /items/{id}` answers 202 with the
+request, and the item keeps its ceiling, notification and rate until then (`pendingPricing` on `GET /items/{id}`). The
+request says before and after in words ("Ceiling ₹2.50 a TAB (₹25.00 a STRIP of 10) with GST, S.O. …; GST 5%") and what
+the change lets through (packs priced higher received and sold; every sale and purchase taxed at the new rate). Approved,
+it is made only over the item's pricing as it was asked (`approval.stale` otherwise), audited at Warning with both names
+(`inventory.item_price_changed`). A ceiling **set** or **lowered** applies at once: NPPA's cut is in force from its
+notification. While a change waits, a save asking other loosened pricing is refused (409 `inventory.item_price_waiting`).
+A save that loosens both the class and the pricing asks for both; the answer carries the classification's request, and
+the pricing's waits beside it in Approvals. A new item's pricing applies at once.
 
 ## Stock rules (INV-04)
 
@@ -279,7 +377,8 @@ and `ExpiringAsync(db, storeIds, today, days, includeExpired)` (`ExpiringBatch` 
 |---|---|---|
 | `ControlledStockMoved` (domain event, same transaction) | raised | Every ledger row of a register item (Schedule H1/X or `IsControlled`), with ledger id, batch, signed quantity, balance after and reference. Handled by Pharmacy, which writes the controlled-drug register line for movements made outside pharmacy screens (GRN, transfers, adjustments, write-offs, OT consumption) |
 
-The module handles no events from other modules, and publishes no real-time events.
+The module handles no events from other modules, and publishes no real-time events. Cold-chain alerts go through the
+outbox (`supplychain.cold-chain-alert`), so they are sent only once the reading is saved.
 
 ## Background job and notifications
 
@@ -290,6 +389,8 @@ calibrations due within 7 days or overdue, and warranties or AMC/CMC contracts l
 `supplychain.assets.reminders.last_run`, so a restart never sends the same day twice. A breakdown reported with
 `assetDown` notifies the same holders immediately. There are no SMS/WhatsApp templates.
 
+`ColdChainJob` (above, *Cold chain*) alerts missed temperature checks and silent loggers every 10 minutes.
+
 ## Number series (per facility)
 
 | Series key | Format | Reset |
@@ -297,6 +398,7 @@ calibrations due within 7 days or overdue, and warranties or AMC/CMC contracts l
 | `supplychain.pr` | `{FAC}PR{YY}{SEQ:6}` | yearly |
 | `supplychain.po` | `{FAC}PO{YY}{SEQ:6}` | yearly |
 | `supplychain.grn` | `{FAC}GRN{YY}{SEQ:6}` | yearly |
+| `supplychain.debit_note` / `supplychain.payable_adjustment` | `{FAC}DN{YY}{SEQ:6}` / `{FAC}VPA{YY}{SEQ:6}` | yearly |
 | `supplychain.indent` / `supplychain.issue` | `{FAC}IND{YY}{SEQ:6}` / `{FAC}ISS{YY}{SEQ:6}` | yearly |
 | `supplychain.transfer` | `{FAC}STN{YY}{SEQ:6}` | yearly |
 | `supplychain.adjustment` / `supplychain.count` | `{FAC}ADJ{YY}{SEQ:6}` / `{FAC}PSC{YY}{SEQ:5}` | yearly |
@@ -346,12 +448,15 @@ orders made after it.
 ## Tables (schema `supplychain`)
 
 `item_categories`, `items` (trigram index on name), `stores` (unique facility + code), `vendors`, `stock_batches`
-(check constraint above; unique store + item + batch + expiry + MRP with nulls not distinct), `stock_ledger`,
+(check constraint above; unique store + item + batch + expiry + MRP with nulls not distinct; `is_recalled`), `stock_ledger`,
 `stock_reservations`, `purchase_requisitions`/`_lines`, `purchase_orders`/`_lines`, `goods_receipts`/`_lines` (unique
 vendor + vendor invoice number, filter `status <> 'Cancelled'`), `indents`, `indent_lines`, `indent_issues`,
-`indent_issue_lines`, `stock_transfers`/`_lines`, `stock_adjustments`/`_lines`, `stock_counts`/`_lines`, `assets`
+`indent_issue_lines`, `stock_transfers`/`_lines` (lines carry `received_quantity` when counted short), `store_item_levels`
+(unique store + item), `vendor_debit_notes`/`vendor_debit_note_lines`, `vendor_payable_adjustments`, `stock_adjustments`/`_lines`, `stock_counts`/`_lines`, `assets`
 (unique tag), `asset_contracts`, `pm_plans`, `pm_visits`, `maintenance_tickets`, `calibration_records`,
-`condemnation_requests`. Precision: quantities (18,3), rates (18,4), percentages (6,2). Enums are stored as text,
+`condemnation_requests`, `cold_storage_units` (unique facility + code), `temperature_readings` (unique unit + time for
+logger readings), `cold_chain_excursions`. Items carry `ceiling_notification`; goods receipt lines the `ceiling_price`
+they were entered under. Precision: quantities (18,3), rates (18,4), percentages (6,2). Enums are stored as text,
 so queries that rank by an enum (indent priority, store type) rank explicitly or sort in memory.
 
 ## Open items for maintainers

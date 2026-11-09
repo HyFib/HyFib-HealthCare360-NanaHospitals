@@ -1,4 +1,4 @@
-# Privacy module (DPDP Act 2023: requests, nominees, breaches, retention)
+# Privacy module (DPDP Act 2023: requests, nominees, breaches, retention, consent managers, children, SDF duties)
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Privacy` · schema `privacy` · layer 8 (references Patients,
 Clinical, Engagement and Billing). Covers SRS **PRV-01..04** for India's Digital Personal Data Protection Act 2023 and
@@ -15,6 +15,10 @@ the DPDP Rules 2025, whose duties for hospitals come into force in May 2027:
 | Breach intimation: the Board without delay and a detailed report within 72 hours; each person affected | Act s8(6); Rules r7 | breach register |
 | A cyber security incident of a kind CERT-In lists reported to CERT-In within 6 hours of being noticed | CERT-In Directions under IT Act s70B(6), 28 April 2022, (ii) and Annexure I | breach register (`certInType`) |
 | Logs of processing kept at least one year | Rules r6, r8(3) | retention schedule |
+| Consent through a consent manager registered with the Board, withdrawn as easily as given | Act s6(4), s6(7) to (9); Rules r4, First Schedule | consent managers and artefacts |
+| A child's data: a parent's or lawful guardian's verifiable consent; no tracking or targeted advertising | Act s9; Rules r10 to r12, Fourth Schedule | guardian consent, campaigns |
+| A Significant Data Fiduciary: a DPO based in India, impact assessments and a yearly data audit | Act s10; Rules r13 | Significant data fiduciary |
+| Erasure that a restore from a backup does not undo; the backup period said plainly | Act s8(7), s12(3) | erasure ledger |
 
 ## Permissions
 
@@ -24,8 +28,12 @@ the DPDP Rules 2025, whose duties for hospitals come into force in May 2027:
 | `privacy.requests.manage` | HospitalAdmin, QualityManager, MrdOfficer | Start, verify the requester, assign, note, decide corrections, erase, answer |
 | `privacy.requests.log` | FrontOffice, HospitalAdmin, QualityManager, MrdOfficer | Record a request at the desk (or from e-mail, letter or phone); record a nominee |
 | `privacy.breaches.manage` | HospitalAdmin, QualityManager | The breach register |
+| `privacy.breaches.approve` | HospitalAdmin | Approve closing a breach, and taking patients off its notification list, asked for by someone else: the Data Protection Officer (grant it to the DPO's or privacy officer's role; MAKER-CHECKER.md, slice 14) |
 | `privacy.retention.manage` | HospitalAdmin | Retention periods, the clean-up and the review list |
 | `privacy.settings.manage` | HospitalAdmin | The grievance officer's contact and the response period |
+| `privacy.sdf.manage` | HospitalAdmin, QualityManager | The Significant Data Fiduciary page: the DPO, impact assessments, data audits |
+| `privacy.sdf.approve` | HospitalAdmin | Approve an impact assessment someone else sent (the DPO's role; never one's own) |
+| `privacy.consent_managers.manage` | HospitalAdmin | Register the consent managers the hospital accepts consent from |
 
 Patients use the portal with `portal.access`, limited to the patients registered with their mobile number
 (`PortalPatientScope`). Opening a request, a data summary or an erasure assessment is patient-record access: it is
@@ -147,9 +155,9 @@ the existing record request (`/portal/records/request`).
 
 ## Public (`/api/v1/public/privacy`, anonymous, rate-limited)
 
-→ `PublicPrivacyInfo {hospital, contact {title, name, email, phone, address}, responseDays, accessLogYears}`: the
-grievance officer and response period for the privacy notice, and how long the record access log is kept (null while
-permanently). Until an officer is named, the first facility's e-mail, phone and address stand in.
+→ `PublicPrivacyInfo {hospital, contact {title, name, email, phone, address}, responseDays, accessLogYears, dpo,
+backupWindowDays}`: the grievance officer and response period for the privacy notice, how long the record access log is
+kept (null while permanently), the Data Protection Officer once named, and the longest erased data stays in backups. Until an officer is named, the first facility's e-mail, phone and address stand in.
 
 ## Breach register (`/api/v1/privacy/breaches`, `privacy.breaches.manage`)
 
@@ -165,12 +173,12 @@ Availability`. Data categories: `Identity, Contact, Health, Financial, Governmen
 | POST | `/{id}/board-informed` | `{at, reference?}`: the Board was told |
 | POST | `/{id}/extension` | `{until, reference?}`: the Board allowed more time (after the 72 hours) |
 | POST | `/{id}/report-submitted` | `{at, reference?}`: needs the Board told first, and `missingForReport` empty |
-| POST | `/{id}/close` | `{note?}`: a note is required when the report was never sent |
+| POST | `/{id}/close` | `{note?}` → 202 with the approval (`privacy.breach_close`); 422 `privacy.breach_board_report_required` until the detailed report is recorded with the Board's reference. The Data Protection Officer closes it, never the one who asked; `BreachDetail.closureAskedAt` while it waits |
 | POST | `/{id}/cert-in-reported` | `CertInReportedRequest {at, reference?}`: CERT-In was told (after `awareAt`, not in the future); 422 `privacy.breach_not_cert_in` without a `certInType`, `privacy.breach_cert_in_reported` once recorded |
 | GET | `/{id}/report` | → `BreachReport {hospital, legalName, address, registrationNumber, contact, breach, generatedAt}` for printing (audited) |
 | GET | `/{id}/affected` | → `PagedResult<AffectedPatientItem {patientId, uhid, fullName, phone (masked), hasEmail, addedAt, notifiedAt, noticeChannels}>` |
 | POST | `/{id}/affected` | `{patientIds?[], uhids?[]}` (up to 5,000; a merged record counts as the one it was merged into) → `{added, alreadyListed, notFound[]}` |
-| DELETE | `/{id}/affected/{patientId}` | only before the patient was notified |
+| POST | `/{id}/affected/remove` | `RemoveAffectedRequest {patientIds[≤500], reason}` → 202 with the approval (`privacy.breach_affected_remove`); only patients not yet sent the notice (`privacy.breach_already_notified`). They stay listed until the Data Protection Officer approves; audited with each UHID and the reason. `BreachDetail.removalAskedAt` while it waits |
 | POST | `/{id}/notify` | needs `missingForNotice` empty and the breach not closed → `{queued, withoutContact, alreadyNotified}` |
 
 **The 72-hour clock** starts at `awareAt`. `reportDueAt` = `awareAt` + 72 h, or the extension. `reportOverdue` is
@@ -249,6 +257,7 @@ withdrawing it ends the earlier ones.
 | `privacy.request.received` | SMS, e-mail | `reference, type, received, due, contact` |
 | `privacy.request.closed` | SMS, e-mail | `reference, outcome, response, contact` |
 | `privacy.breach.notice` | SMS, e-mail | `reference, summary, link, description, when, data, consequences, mitigation, steps, contact` |
+| `privacy.guardian.code` | SMS | `code, minutes`: the code that verifies a guardian's consent for a child |
 
 - Seeded by `PrivacySeeder` (order 195) in English. SMS templates need their DLT template id before they can be sent.
 - In-app alerts:
@@ -262,6 +271,7 @@ withdrawing it ends the earlier ones.
 |---|---|---|
 | `privacy.request` | `{FAC}DPR{YY}{SEQ:5}` | per facility, yearly |
 | `privacy.breach` | `DPB{YY}{SEQ:4}` | group-wide, yearly |
+| `privacy.dpia` | `DPIA{YY}{SEQ:3}` | group-wide, yearly |
 
 ## Changes in other modules
 
@@ -274,14 +284,161 @@ withdrawing it ends the earlier ones.
 - **Engagement:** `PatientFeedbackEraser` anonymises the feedback, complaints and enquiries of a patient who asked for
   erasure.
 - **Indexes by patient:** `billing.insurance_claims`, `engagement.campaign_recipients`, `ai.usage_records`.
+- **Patients:** `ChildData` and `IGuardianConsents` (implemented here): the consents screen refuses marketing for a child
+  and, without a guardian's verified consent, sharing, research and photography.
+- **Engagement:** campaign audiences are adults only; the portal refuses marketing for a child.
+
+## Consent managers (Act s6(7) to (9); Rules r4)
+
+A consent manager is a platform registered with the Data Protection Board through which a patient gives, reviews and
+withdraws consent. The hospital registers each one it accepts (Privacy › Consent managers): a short code, its name and
+Board registration number, the address withdrawals go to, and a signing secret HC360 makes and shows once, to give to
+the consent manager. The secret is kept encrypted with the data key.
+
+**The protocol.** The Board has not published a wire format yet, so HC360 speaks a small one of its own
+(`ConsentManagerProtocol`), and an adapter translates once the Board's is out:
+
+- The consent manager POSTs events to `/api/v1/consent-managers/{code}/events` (anonymous, rate-limited as a partner)
+  with `X-CM-Timestamp` (Unix seconds) and `X-CM-Signature`, the hex HMAC-SHA256 of `{timestamp}.{body}` under the
+  shared secret. A bad signature, or a timestamp more than five minutes from the server's clock, is 401. Bodies are at
+  most 32 KB. Each `eventId` is acted on once (a repeat answers `duplicate`).
+- `consent.granted`: `{eventId, kind, artefact {id, principal {uhid, mobile}, purpose, dataItems[], validFrom,
+  validUntil, givenByGuardian}}`. The UHID and the mobile number must both match an active patient. The purpose is one
+  that needs consent and is not health care: `DataSharing`, `Research`, `SmsWhatsAppUpdates`, `MarketingCommunication`,
+  `Photography`.
+- `consent.withdrawn`: `{eventId, kind, artefact {id}}`.
+- A withdrawal made at the hospital goes back as `POST {baseUrl}/artefacts/{id}/withdrawal`, signed the same way, and is
+  sent again every quarter of an hour until the consent manager answers 2xx (at most 48 tries).
+
+**Honouring an artefact.** An accepted artefact is recorded as the patient's consent of its purpose (`patient_consents`,
+version `cm:{code}`, with the artefact, the consent manager and the data items in its notes; a sharing consent ends on
+the artefact's last day). Every existing check that reads consents therefore honours it: campaigns, update messages,
+record sharing, research. It ends:
+
+- at the consent manager (`consent.withdrawn`), when the patient's consent is revoked here;
+- in the portal or at the desk (`POST /api/v1/portal/privacy/consent-artefacts/{id}/withdraw`,
+  `POST /api/v1/privacy/consent-artefacts/{id}/withdraw`), when the consent is revoked at once and the consent manager is told;
+- when its validity ends, or the consent it made is withdrawn on the consents screen, at the next quarter-hourly round
+  (`ConsentManagerService.SweepAsync`); the consent manager is told of a withdrawal made here.
+
+| Method | Path | Permission | Body → Response |
+|---|---|---|---|
+| GET | `/api/v1/privacy/consent-managers` | consent_managers.manage | → `ConsentManagerDto[] {id, code, name, registrationNumber, baseUrl, isSimulator, isActive, activeArtefacts, version}` |
+| POST | `/api/v1/privacy/consent-managers` | consent_managers.manage | `SaveConsentManagerRequest {code, name, registrationNumber, baseUrl?, isSimulator}` → 201 `{id, code, secret}` (the secret is shown once) |
+| POST | `/api/v1/privacy/consent-managers/{id}/deactivate` | consent_managers.manage | → 204: its events are refused from then on; its artefacts stay and can still be withdrawn |
+| POST | `/api/v1/privacy/consent-managers/{id}/simulate` | consent_managers.manage | `SimulateConsentEventRequest {kind, artefactId, uhid?, mobile?, purpose?, dataItems?, validFrom?, validUntil?, givenByGuardian}` → the answer, through the real signed path. Only for the built-in simulator, on a training or demonstration server (`SeedDemoData`) |
+| GET | `/api/v1/privacy/patients/{patientId}/consent-artefacts` | requests.read or requests.log | → `ConsentArtefactDto[] {id, consentManagerId, consentManagerName, artefactId, patientId, purpose, dataItems, validFrom, validUntil, status, inForce, givenByGuardian, receivedAt, withdrawnAt, withdrawnVia, withdrawalPending}` |
+| GET | `/api/v1/portal/privacy/consent-artefacts?patientId=` | portal.access | The same, for the patients the account may act for; the portal's *Consents* page |
+
+## Children (Act s9; Rules r10 to r12)
+
+A child is a patient under 18 (`ChildData`). An unknown date of birth is not taken to be a child's for the consent
+checks, and is never taken to be an adult's for campaigns.
+
+- **Health care needs nothing more.** Clinical establishments are exempt from s9(1) and s9(3) to the extent needed to
+  provide health services and protect the child's health (Fourth Schedule, Part A, item 1). Treatment, reports,
+  reminders and update messages, records, bills and the portal family view go on as before.
+- **Anything else that needs consent waits for a guardian.** Recording `DataSharing`, `Research` or `Photography` as
+  granted for a child, and accepting a consent manager's artefact for one, needs a parent's or lawful guardian's
+  verified consent first (422 `consent.child_guardian_unverified`, `privacy.cm_child_guardian`). An artefact for a
+  child must say `givenByGuardian`.
+- **No marketing, tracking or targeted advertising, ever** (s9(3), not lifted by consent): marketing consent is refused
+  for a child at the desk, in the portal and from a consent manager (422 `consent.child_marketing`), and campaign
+  audiences contain only patients known to be 18 or older (`CampaignAudienceQuery.IsKnownAdult`). HC360 has no
+  behavioural profiling of patients to switch off.
+
+**The guardian's consent** (Privacy, on the patient; front desk and officers):
+
+- Who: the guardian's name, relationship (`Parent`, `LawfulGuardian`) and mobile number, and that the member of staff
+  checked they are an adult (rule 10(1)).
+- Verified either by a 6-digit code sent by SMS to the guardian's own number (`privacy.guardian.code`; 10 minutes, 5
+  tries, at most 3 codes a number in 15 minutes; only its SHA-256 salted with the consent's id is kept), or by the
+  guardian's identity document seen at the desk (its type and only its last four characters, never the number).
+- One verified consent per child; a newer one replaces it. Withdrawn as easily as given; what was recorded under it
+  stays, and nothing new outside health care is recorded until a guardian consents again.
+
+| Method | Path | Permission | Body → Response |
+|---|---|---|---|
+| GET | `/api/v1/privacy/patients/{patientId}/guardian-consent` | requests.log or requests.read | → `GuardianConsentView {patientId, isChild, dateOfBirth, verified, consents[]}` |
+| POST | `…/guardian-consent` | requests.log | `StartGuardianConsentRequest {guardianName, relationship, guardianPhone, guardianIsAdult, method: Otp\|Document, documentType?, documentLast4?}` → 201 `GuardianConsentDto`; 422 `privacy.not_a_child` for an adult |
+| POST | `…/guardian-consent/{id}/verify` | requests.log | `{code}` → the consent, verified; a wrong code counts a try (422 `privacy.guardian_code_wrong`) |
+| POST | `…/guardian-consent/{id}/revoke` | requests.log | `{reason}` → 204 |
+
+## Significant Data Fiduciary (Act s10; Rules r13)
+
+Privacy › Significant data fiduciary. Kept whether or not the Central Government has notified the hospital; the
+designation (`privacy.sdf`: `designated`, `notifiedOn`) changes what System health insists on.
+
+- **The Data Protection Officer**: name, designation, e-mail, phone, address, and that they are based in India
+  (s10(2)(a)); required once designated. Once named, the DPO is on the public privacy notice
+  (`PublicPrivacyInfo.dpo`), beside the grievance officer.
+- **Impact assessments (DPIA)**, numbered `DPIA{YY}{SEQ:3}`: the processing activity, its description, the personal data,
+  whose data, the purpose, the risks (each with likelihood and impact, low to high), the measures and their owners,
+  and a review date after today and within twelve months. A draft is sent for approval (202, approval
+  `privacy.dpia`), and someone else who holds `privacy.sdf.approve` approves it as it was sent: never whoever sent it
+  (`approval.self`), and not once it changed (`approval.stale`) or its review date passed. Changing an approved DPIA
+  makes it a draft again. A DPIA is retired when the processing stops.
+- **Data audits**: the period, the independent data auditor, the scope, findings, significant observations and when
+  they were reported to the Board (required once there are some), and when the next audit is due (twelve months
+  after the period ends, unless set earlier).
+- **Reminders**: once a day after 09:00 IST, holders of `privacy.sdf.manage` are told 30 and 7 days before a DPIA's
+  review date and the next audit, and once when either is overdue; each reminder goes once.
+- **System health**, while designated: `privacy.dpo_missing`, `privacy.dpia_overdue`, `privacy.data_audit_due`.
+
+| Method | Path | Body → Response |
+|---|---|---|
+| GET | `/api/v1/privacy/sdf` | → `SdfOverview {settings, dpias, dpiasDueSoon, dpiasOverdue, nextAuditDue, auditOverdue}` |
+| GET · PUT | `/api/v1/privacy/sdf/settings` | `SdfSettings {designated, notifiedOn?, dpo {name, designation, email, phone, address, basedInIndia}, version?}` |
+| GET | `/api/v1/privacy/sdf/dpias?includeRetired=` | → `DpiaListItem[] {id, number, activity, status, highestRisk, reviewDue, reviewOverdue, daysToReview, approvedAt, approvedByName, awaitingApprovalSince}` |
+| GET · POST · PUT | `/api/v1/privacy/sdf/dpias[/{id}]` | `SaveDpiaRequest {activity, description, dataCategories[], dataPrincipals, purpose, risks[{description, likelihood, impact}], mitigations[{description, owner}], reviewDue, version?}` → `DpiaDetail` |
+| POST | `/api/v1/privacy/sdf/dpias/{id}/submit` | `{reason, version}` → 202 the approval request |
+| POST | `/api/v1/privacy/sdf/dpias/{id}/retire` | `{reason, version}` → 204 |
+| GET · POST · PUT | `/api/v1/privacy/sdf/audits[/{id}]` | `SaveDataAuditRequest {periodFrom, periodTo, auditor, scope, findings?, significantObservations?, completedOn?, reportedToBoardOn?, reportReference?, nextDue?, version?}` → `DataAuditDto` |
+
+## Erasure and backups (Act s8(7), s12(3))
+
+**Why not crypto-shredding.** Destroying a patient's own key would make their data unreadable in every backup at once,
+but HC360 has no per-patient keys: the field keys are per purpose (ABHA and policy numbers, secrets, documents; HKDF
+from the data key ring), most personal data is in plain columns protected by the database and the encrypted backup as
+a whole, and every backup escrows every key so it restores on new hardware (SECURITY.md, Backups and keys). A
+per-patient key that a backup also escrows would still open that backup. So erased data stays in backups until they
+are deleted, and HC360 says so, and keeps a restore from bringing it back.
+
+**How long.** Backups older than `HealthCare360:Backup:RetentionDays` (30 by default) are deleted, on the Server Node
+and on the second copy, by the next nightly backup. The last backup made before an erasure is therefore gone at most
+`RetentionDays + 1` days after it (`ErasureService.BackupWindowDays`, 31 by default). The erasure answer
+(`ErasureService.BackupSentence`), the public notice (`PublicPrivacyInfo.backupWindowDays`) and the portal's privacy
+notice say so. Copies a hospital moves elsewhere by hand are outside this.
+
+**The erasure ledger** (`ErasureLedger`): every erasure is appended, once its transaction commits, to
+`privacy/erasure-ledger.log` beside the audit anchors (in the shared folder when there are several servers), and to a
+copy beside the backups' second copy when one is set. One JSON object a line: the entry, the request, the patient, the
+items and when, by id only, with no name or number. Each line is sealed with the audit seal key (HMAC-SHA256); a line
+whose seal does not verify is reported and never applied. Should writing it fail, the erasure stands, the audit trail
+records `privacy.erasure_ledger_failed`, and the next replay writes it.
+
+**The replay** (`ErasureLedgerReplay`), as the database is brought up to date at start-up (a restore always ends with a
+start; a seeder after all others), every hour on the nodes that run jobs, and on request. An entry is in the database
+when its request records every item it erased, or its replay is recorded (`privacy.erasure_replays`). Otherwise its
+items are applied again for the patient in one transaction with the replay row and a critical audit entry
+(`privacy.erasure_reapplied`), and the grievance officers are told. A portal account other patients now sign in with is
+held back, as it would be for a request. The other way round, an erasure the database has and the ledger does not is
+written to the ledger, so the ledger also covers erasures made before it existed. A PostgreSQL lock keeps two nodes from
+replaying at once. `ErasureRestoreTests` restores a real backup with `backup decrypt` and pg_restore, as
+Restore-HC360.ps1 does, and proves the erasure comes back and is applied again, once.
+
+| Method | Path | Permission | Response |
+|---|---|---|---|
+| GET | `/api/v1/privacy/erasure-ledger` | requests.read | → `ErasureLedgerStatus {path, mirrorPath, entries, rejected, backupRetentionDays, replays[]}` |
+| POST | `/api/v1/privacy/erasure-ledger/replay` | requests.manage | → `ErasureReplayOutcome {entries, rejected, reapplied[], backfilled, mirrorCompleted}`; 409 while another server replays |
 
 ## Not covered yet
 
 - **Deleting clinical records after their retention period.** It needs the medical records committee's and a legal
   adviser's sign-off, and a way to handle free text that names the patient. Records past their period are listed for
   review instead.
-- **Consent managers** (Rules r4), **Significant Data Fiduciary** duties (DPIA and audit), and **cross-border
-  transfer** rules.
+- **Cross-border transfer** rules (s16): no transfer outside India is made today.
+- **The Board's own consent manager format**: HC360's protocol is its own until the Board publishes one.
 - **Erasure and the audit trail.** Erasure never touches the audit trail: it is append-only and hash-chained, and its
   change details keep the old values. The hospital keeps it permanently unless two super administrators set a period of
   at least 8 years (ADR-015). The data summary says the period in force ("Permanently, and never edited", or "For 8
@@ -294,4 +451,4 @@ withdrawing it ends the earlier ones.
   permanently or for the years set; other security records deleted after a while). A request's `retainedUntil` and
   `retainedPermanently` describe what the law keeps only. The printed privacy notice must say the same: when the hospital updates its text, it raises
   `privacy.noticeVersion` so patients are shown the new version. Erased data also stays in backups until they expire
-  (30 days by default).
+  (at most 31 days by default; see Erasure and backups).

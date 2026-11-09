@@ -62,7 +62,9 @@ public sealed record BreachDetail(
     DateTimeOffset? CertInReportDueAt,
     DateTimeOffset? CertInReportedAt,
     string? CertInReference,
-    bool CertInReportOverdue);
+    bool CertInReportOverdue,
+    DateTimeOffset? ClosureAskedAt = null,
+    DateTimeOffset? RemovalAskedAt = null);
 
 /// <summary>A new breach, or changes to one. <see cref="Version"/> is required for changes.</summary>
 public sealed record SaveBreachRequest(
@@ -98,6 +100,9 @@ public sealed record CertInReportedRequest(DateTimeOffset At, string? Reference)
 
 /// <summary>Patients to add to the breach: chosen one by one (ids), or pasted as a list of UHIDs.</summary>
 public sealed record AddAffectedRequest(IReadOnlyList<Guid>? PatientIds, IReadOnlyList<string>? Uhids);
+
+/// <summary>Patients to take off the breach's notification list, and why (the Data Protection Officer approves).</summary>
+public sealed record RemoveAffectedRequest(IReadOnlyList<Guid> PatientIds, string Reason);
 
 public sealed record AddAffectedResult(int Added, int AlreadyListed, IReadOnlyList<string> NotFound);
 
@@ -170,6 +175,17 @@ public sealed class ReportSubmittedRequestValidator : AbstractValidator<ReportSu
 public sealed class CloseBreachRequestValidator : AbstractValidator<CloseBreachRequest>
 {
     public CloseBreachRequestValidator() => RuleFor(x => x.Note).SafeText(1000);
+}
+
+public sealed class RemoveAffectedRequestValidator : AbstractValidator<RemoveAffectedRequest>
+{
+    public RemoveAffectedRequestValidator()
+    {
+        RuleFor(x => x.PatientIds).NotEmpty().WithMessage("Choose the patients to take off the list.")
+            .Must(ids => ids is null || ids.Count <= Services.BreachService.MaxRemovedAtOnce).WithMessage($"Take at most {Services.BreachService.MaxRemovedAtOnce} patients off at a time.");
+        RuleForEach(x => x.PatientIds).NotEmpty();
+        RuleFor(x => x.Reason).NotEmpty().WithMessage("Say why they are taken off the list.").SafeText(500);
+    }
 }
 
 public sealed class AddAffectedRequestValidator : AbstractValidator<AddAffectedRequest>

@@ -23,8 +23,15 @@ public sealed class AuditCoverageTests
     private static readonly Dictionary<string, string> NotInTheTrail = new(StringComparer.Ordinal)
     {
         // The trail itself, and the machinery that runs the servers.
+        ["AppointmentReminderSent"] = "The reminder job's note of which appointment reminders it sent, written once per reminder by the job, never edited; the message itself is in the notification log.",
+        ["TemperatureReading"] = "A refrigerator's readings, many a day from a logger: append-only, never edited; an excursion they open and the action taken on it are audited.",
         ["AuditEvent"] = "The audit trail itself: append-only, hash-chained and sealed.",
         ["AuditPurge"] = "The record of a purge of the audit trail's old months: append-only, sealed, anchored outside the database, and audited as audit.purged.",
+        // SMART on FHIR: only hashes of codes, tokens and assertion ids, with their lifetimes. Issuing, refusing,
+        // authorizing and revoking are audited explicitly (smart.*), and every read with a token is audited as PHI access.
+        ["SmartAuthorizationCode"] = "A hash of a single-use, ten-minute authorization code; the authorization is audited as smart.app_authorized.",
+        ["SmartAccessToken"] = "A hash of a 15-minute access token; issuing and refusing are audited (smart.token_issued, smart.token_refused) and each read with it as PHI access.",
+        ["SmartAssertionUse"] = "The id of a client assertion already used, kept until it expires so it is not accepted twice.",
         ["ClusterEntry"] = "Short-lived keys and counters the servers share (spent challenges, rate limits); expire within minutes.",
         ["IdempotencyRecord"] = "A stored answer replayed when a retry repeats its key; the change it answered is audited.",
         ["OutboxMessage"] = "A message waiting to be sent; the change that queued it is audited, the delivery is in the message log.",
@@ -65,6 +72,8 @@ public sealed class AuditCoverageTests
         ["DischargeSummaryAmendment"] = "The amendment history of a signed discharge summary, with the content as it was; append-only.",
         ["DataRequestEvent"] = "A line of a data principal's request history, written once; the request is audited.",
         ["RetentionRun"] = "A clean-up run; each batch it removed and the run itself are audited (privacy.retention.*).",
+        ["ErasureReplay"] = "An erasure applied again after a restore, written once with its own critical audit entry (privacy.erasure_reapplied); never edited.",
+        ["ConsentManagerEvent"] = "The ids of a consent manager's events, kept so a repeat is acted on once; what each event changed is audited on its artefact (privacy.cm_*).",
         ["RetentionChange"] = "A change to a retention period, also audited as privacy.retention.changed.",
         ["RecordCopyFile"] = "A document of an issued copy, with its SHA-256; the database refuses changes and the issue is audited (record.copy_issued).",
         ["ReportDelivery"] = "A generated scheduled report file (encrypted) and its e-mails; downloading it is audited.",

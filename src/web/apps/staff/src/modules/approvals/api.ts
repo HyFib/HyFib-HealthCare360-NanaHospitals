@@ -115,7 +115,10 @@ export const APPROVAL_STATUS_LABEL: Record<ApprovalStatus, string> = {
  * death: an absconded stay closed, a death closed pending post-mortem, a confirmed death certificate voided; a visit the
  * doctor has started, cancelled at the desk; an implant or consumable line corrected after the operation started; and
  * HR: a salary's bank account or payment mode, a salary structure, a payroll earning or override, an imported file with
- * earnings, a deduction taken off, and a leave credit. Every kind's approving permission is in it
+ * earnings, a deduction taken off, and a leave credit;
+ * a sentinel event closed or re-graded out of sentinel, a personal data breach closed or patients taken off its notification
+ * list, and a bulk campaign scheduled.
+ * Every kind's approving permission is in it
  * (approvalsMenu.test.ts).
  */
 export const APPROVAL_PERMISSIONS = [
@@ -163,6 +166,10 @@ export const APPROVAL_PERMISSIONS = [
   // register decides). Each may withdraw it.
   'patients.register',
   'patients.identity.approve',
+  // A SMART on FHIR client one administrator registered (another approves it); an analyser device one person in the lab
+  // added (someone else who sets up connections approves it). Each may withdraw it.
+  'fhir.clients.manage',
+  'integrations.lab.connections',
   'patients.restricted.read',
   'patients.sensitive.manage',
   'clinical.alerts.manage',
@@ -171,6 +178,9 @@ export const APPROVAL_PERMISSIONS = [
   'clinical.prescriptions.sign',
   'inpatient.admissions.admit',
   'mrd.mlc.register',
+  // Downtime: a back-entry past its window (the in-charge asks once with the tally; whoever approves late back-entry
+  // decides).
+  'patients.back_entry.approve',
   // Discharge and death (slice 8): the ward asks for an absconded patient's stay to be closed (the nurse in charge
   // decides) or a medico-legal death's before its certificate (a doctor who confirms certificates decides); the certifier
   // asks to void a confirmed death certificate (another doctor who confirms certificates decides). Each may withdraw it.
@@ -184,6 +194,40 @@ export const APPROVAL_PERMISSIONS = [
   // started; the OT in-charge decides. Each may withdraw it.
   'ot.materials.record',
   'ot.materials.approve',
+  // Slice 14: the quality team asks to close a sentinel or never event, or re-grade one out of sentinel (the quality
+  // manager decides, never the incident's reporter); the breach team asks to close a breach or take patients off its
+  // notification list (the Data Protection Officer decides); someone who sends campaigns asks to schedule one (someone
+  // other than its author decides). Each may withdraw it.
+  'quality.incidents.manage',
+  'quality.incidents.approve',
+  'privacy.breaches.manage',
+  'privacy.breaches.approve',
+  'crm.campaigns.send',
+  'crm.campaigns.approve',
+  // Insurance money (slice 12): the insurance desk asks for a write-off of what the insurer deducted or rejected
+  // (someone who approves insurance write-offs decides), and records an amount the insurer approved on a
+  // pre-authorisation (another insurance desk user checks it). Each may withdraw it.
+  'insurance.claims.manage',
+  'insurance.claims.writeoff.approve',
+  'insurance.preauth.manage',
+  // Support services and slice 15: a canteen sale cancelled, an ambulance charge waived, a transfusion reaction lowered,
+  // a dialysis patient's infection status taken off positive (each decided by whoever approves that kind).
+  'canteen.cancellations.approve',
+  'ambulance.waivers.approve',
+  'bloodbank.reactions.approve',
+  'dialysis.infection_status.approve',
+  // The stores (slice 13): a recalled batch released (someone else who may release recalls decides), a transfer counted
+  // short at the receiving store (someone who approves stock adjustments, and did not send it, decides), and a supplier
+  // payable adjustment (someone else who approves purchases decides). A purchase return's debit note is approved like a
+  // goods receipt, above. Whoever asked may withdraw it.
+  'inventory.recall.release',
+  'inventory.adjustments.approve',
+  'purchase.manage',
+  'purchase.approve',
+  // A data protection impact assessment (DPDP Act s.10): whoever keeps the Significant Data Fiduciary records sends it
+  // (and may withdraw it); someone else who approves them, the Data Protection Officer, decides.
+  'privacy.sdf.manage',
+  'privacy.sdf.approve',
   // Pay and leave (slice 11): HR asks for a salary's bank account or payment mode to change, a salary structure, an
   // earning or override, a file of inputs with earnings or a deduction taken off (someone else who approves payroll
   // decides), or a leave credit (someone else who approves leave decides). Each may withdraw it.

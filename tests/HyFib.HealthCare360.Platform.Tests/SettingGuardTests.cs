@@ -35,6 +35,14 @@ public sealed class SettingGuardTests
         Waits("bloodbank.separateVerifier", Off, On).ShouldBeFalse();
         SettingGuard.Judge("bloodbank.separateVerifier", null, Off, secret: false).Summary.ShouldBe("Second blood bank officer: not set (on) → off");
 
+        // Slice 15's second persons, on unless set to false: each is switched off only with a second administrator.
+        foreach (var key in new[] { "ambulance.waiverApproval", "bloodbank.reactionDowngradeApproval", "dialysis.infectionStatusApproval" })
+        {
+            Waits(key, null, Off).ShouldBeTrue($"{key} off lets one person do it alone");
+            Waits(key, Off, On).ShouldBeFalse($"{key} on again is stricter");
+            SettingGuard.Judge(key, null, Off, secret: false).From.ShouldBe("not set (on)");
+        }
+
         // Typed as text, as the administration rule reads it too.
         Waits("security.administrationRequiresDesktop", On, JsonValue.Create("false")).ShouldBeTrue();
         Waits("security.administrationRequiresDesktop", Off, JsonValue.Create(" TRUE ")).ShouldBeFalse();
@@ -68,7 +76,7 @@ public sealed class SettingGuardTests
     }
 
     [Fact]
-    public void Raising_what_the_billing_desk_cancels_or_a_shortage_it_closes_alone_waits_and_lowering_is_at_once()
+    public void Raising_what_the_billing_desk_cancels_writes_off_or_closes_short_alone_waits_and_lowering_is_at_once()
     {
         Waits("billing.chargeCancel.approvalAbove", null, Number(500)).ShouldBeFalse("below the ₹1,000 default");
         Waits("billing.chargeCancel.approvalAbove", null, Number(5000)).ShouldBeTrue();
@@ -76,6 +84,11 @@ public sealed class SettingGuardTests
         Waits("billing.chargeCancel.approvalAbove", Number(0), null).ShouldBeTrue("cleared, the ₹1,000 default applies");
         Waits("billing.shift.shortageTolerance", null, Number(50)).ShouldBeTrue("above the ₹0 default: every shortage waits");
         Waits("billing.shift.shortageTolerance", Number(50), Number(20)).ShouldBeFalse();
+
+        Waits("billing.claimWriteOff.approvalAbove", null, Number(500)).ShouldBeTrue("above the ₹0 default: every insurance write-off waits");
+        Waits("billing.claimWriteOff.approvalAbove", Number(500), Number(0)).ShouldBeFalse();
+        SettingGuard.Judge("billing.claimWriteOff.approvalAbove", Number(0), Number(500), secret: false).Summary
+            .ShouldBe("Insurance write-off without approval: ₹0.00 → ₹500.00");
 
         SettingGuard.Judge("billing.chargeCancel.approvalAbove", null, Number(5000), secret: false).Summary
             .ShouldBe("Charge cancelled without approval: not set (₹1,000.00) → ₹5,000.00");
@@ -97,6 +110,22 @@ public sealed class SettingGuardTests
 
         SettingGuard.Judge("security.maxSessionsPerUser", Number(3), Number(0), secret: false).Summary
             .ShouldBe("Sessions per staff account: 3 sessions → no limit");
+    }
+
+    [Fact]
+    public void A_longer_back_entry_window_waits_and_a_shorter_one_is_saved_at_once()
+    {
+        // Each record type's window: more hours let older paper in without a second person's approval.
+        Waits("downtime.backEntryHours.visit", null, Number(96)).ShouldBeTrue("72 hours unless set");
+        Waits("downtime.backEntryHours.visit", Number(72), Number(24)).ShouldBeFalse();
+        Waits("downtime.backEntryHours.visit", Number(72), Number(14 * 24 + 1)).ShouldBeFalse("past 14 days the window keeps its 72 hours");
+        Waits("downtime.backEntryHours.visit", Number(72), Number(12.5m)).ShouldBeTrue("not a whole number: the window cannot read it");
+        Waits("downtime.backEntryHours.nursingChart", Number(24), Number(14 * 24)).ShouldBeTrue();
+        Waits("downtime.backEntryHours.registration", Number(2160), Number(24)).ShouldBeFalse();
+        Waits("downtime.backEntryHours.registration", Number(24), Number(2160)).ShouldBeTrue();
+        Waits("downtime.backEntryHours.receipt", Number(48), null).ShouldBeTrue("cleared, the default applies and nobody looked at which");
+        SettingGuard.Judge("downtime.backEntryHours.bill", Number(24), Number(48), secret: false).Summary
+            .ShouldBe("Back-entry window: bill from paper: 24 hours → 48 hours");
     }
 
     [Fact]
