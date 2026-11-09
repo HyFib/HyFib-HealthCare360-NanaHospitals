@@ -275,6 +275,67 @@ public sealed class DowntimeNumberTests(HospitalServer server)
         block.Numbers.ShouldAllBe(n => string.CompareOrdinal(n.Number, after.From) >= 0 && string.CompareOrdinal(n.Number, after.To) <= 0);
     }
 
+    [Fact]
+    public async Task A_paper_bill_entered_after_its_months_gstr1_was_filed_is_flagged_and_listed_for_amendment()
+    {
+        await using var einvoicing = await server.EInvoicingAsync(EInvoicing.Today().AddDays(-1), Ct);
+        var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+        var today = EInvoicing.Today();
+        var block = await mrd.PostAsync<DowntimeNumberBlockDetail>(Blocks, new IssueDowntimeNumbersRequest(DowntimeNumberKind.OpBill, "OPD billing counter 3", 2));
+
+        // The month's filing not recorded: a paper bill for it is entered without a warning.
+        var first = await DraftAsync(frontOffice, billing, (await RegisterAsync(frontOffice)).Id);
+        var before = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{first.Id}/finalize",
+            new FinalizeBillRequest(first.Version, new PaperNumber(block.Numbers[0].Number, block.Block.IssuedAt.AddSeconds(5))));
+        before.GstFilingWarning.ShouldBeNull();
+
+        // As if this month's GSTR-1 had been filed (the API records a month only once it has ended).
+        var filingId = Guid.NewGuid();
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            await db.Set<GstReturnFiling>().Where(f => f.Gstin == EInvoicing.Hospital && f.Year == today.Year && f.Month == today.Month).ExecuteDeleteAsync(Ct);
+            db.Add(new GstReturnFiling { Id = filingId, Gstin = EInvoicing.Hospital, Year = today.Year, Month = today.Month, Arn = "AA330000000001Z", FiledOn = today, RecordedAt = DateTimeOffset.UtcNow });
+            await db.SaveChangesAsync(Ct);
+        }
+
+        try
+        {
+            // Entered after the filing: the bill says it is not in the filed return.
+            var second = await DraftAsync(frontOffice, billing, (await RegisterAsync(frontOffice)).Id);
+            var after = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{second.Id}/finalize",
+                new FinalizeBillRequest(second.Version, new PaperNumber(block.Numbers[1].Number, block.Block.IssuedAt.AddSeconds(10))));
+            after.GstFilingWarning.ShouldNotBeNull().ShouldContain("AA330000000001Z");
+            after.GstFilingWarning.ShouldContain("amendment");
+            (await billing.GetAsync<BillDetail>($"/api/v1/billing/bills/{first.Id}")).GstFilingWarning.ShouldBeNull("the first was entered before the filing");
+
+            // GSTR-1 of the month it was entered in lists it for amendment; here, as if entered next month.
+            var next = today.AddMonths(1);
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                var enteredNextMonth = new DateTimeOffset(next.Year, next.Month, 1, 6, 0, 0, TimeSpan.Zero);
+                (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Bill>().IgnoreQueryFilters().Where(b => b.Id == second.Id)
+                    .ExecuteUpdateAsync(u => u.SetProperty(b => b.EnteredFromPaperAt, enteredNextMonth), Ct)).ShouldBe(1);
+            }
+
+            var gstr1 = await accountant.GetAsync<Gstr1Return>($"/api/v1/billing/gst-returns/gstr1?month={next:yyyy-MM}");
+            gstr1.Filing.ShouldBeNull("next month's filing is not recorded");
+            var late = gstr1.LateEntries.ShouldNotBeNull().Where(l => l.Number == after.BillNumber).ShouldHaveSingleItem();
+            (late.FiledYear, late.FiledMonth, late.FiledArn).ShouldBe((today.Year, today.Month, "AA330000000001Z"));
+            gstr1.LateEntries.ShouldNotContain(l => l.Number == before.BillNumber);
+            gstr1.Problems.ShouldContain(p => p.Contains(after.BillNumber!, StringComparison.Ordinal) && p.Contains("amendment", StringComparison.Ordinal));
+            (await accountant.GetAsync<Gstr1Return>($"/api/v1/billing/gst-returns/gstr1?month={today:yyyy-MM}")).Filing.ShouldNotBeNull().Arn.ShouldBe("AA330000000001Z");
+        }
+        finally
+        {
+            await using var scope = server.Services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<GstReturnFiling>().Where(f => f.Id == filingId).ExecuteDeleteAsync(Ct);
+        }
+    }
+
     private static async Task<Gstr1DocumentsIssued> OpBillsIssuedAsync(ApiClient accountant, string month) =>
         (await accountant.GetAsync<Gstr1Return>($"/api/v1/billing/gst-returns/gstr1?month={month}")).DocumentsIssued.SingleOrDefault(d => d.Series == "OP bills")
         ?? new Gstr1DocumentsIssued(1, "OP bills", string.Empty, string.Empty, 0, 0);

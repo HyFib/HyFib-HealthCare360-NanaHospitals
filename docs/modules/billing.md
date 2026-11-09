@@ -1009,6 +1009,20 @@ pharmacy's `PharmacyGstReturnSource`: sales and returns) and every `IGstPurchase
 The screen is **Billing → GST returns** (`/billing/gst-returns`), with the GSTR-1 JSON to import into the GSTN offline
 tool or upload on the portal.
 
+**Filing.** Once GSTR-1 is filed on the portal, the accountant records it on the same screen with the ARN and the date
+(`POST /api/v1/billing/gst-returns/gstr1/filing {month, arn, filedOn}`, permission `billing.gst.returns`). It is recorded
+once per GSTIN and month (a second time is 409 `gst.already_filed`), not before the month ends nor in the future, and is
+corrected only with a reason (`PUT` with `{month, arn, filedOn, reason, version}`); both steps are audited
+(`billing.gstr1_filed`, `billing.gstr1_filing_corrected`), and a filing is never deleted. A month with nothing recorded
+says so ("Filing not recorded") and raises no warnings.
+
+**Paper bills entered after filing.** A bill written on paper during a downtime is dated at the time on the paper
+(docs/modules/downtime.md), and can be entered days later. If its month's GSTR-1 was already recorded as filed when it
+is entered, it is not in that return: the bill shows "Entered after its month's GSTR-1 was filed" (`BillDetail.gstFilingWarning`,
+in the finalise response and every time the bill is opened), and the GSTR-1 of the month it was entered in lists it
+under **Late paper entries: amend in this return** (`Gstr1Return.lateEntries`, also a line in its problems). HC360 does
+not build the amendment tables (B2BA, B2CSA); the accountant reports the bill there on the portal.
+
 ## Contracts for other modules
 
 ### `IChargePoster` (implemented by `ChargeService`)

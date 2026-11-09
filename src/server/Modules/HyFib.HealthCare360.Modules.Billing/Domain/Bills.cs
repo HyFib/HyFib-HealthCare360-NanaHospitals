@@ -135,6 +135,12 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     public decimal PayerDebitAmount { get; set; }
     public BillStatus Status { get; set; }
     public DateTimeOffset? FinalizedAt { get; set; }
+
+    /// <summary>
+    /// When a bill written on paper during a downtime was entered: <see cref="FinalizedAt"/> is the time on the paper, so
+    /// this is what tells whether it came in after its month's GSTR-1 was filed.
+    /// </summary>
+    public DateTimeOffset? EnteredFromPaperAt { get; set; }
     public Guid? FinalizedBy { get; set; }
     public DateTimeOffset? CancelledAt { get; set; }
     public Guid? CancelledBy { get; set; }
