@@ -13,7 +13,10 @@ public sealed class ClaimCodingTests
     {
         Number = "NHPA26000001",
         DiagnosisCodes = "N63 Unspecified lump in breast",
-        ProcedureCodes = "0HBU0ZZ Excision of breast lump",
+        Procedures =
+        [
+            new() { LineNumber = 1, System = PreAuthProcedureSystem.Icd10Pcs, Code = "0HBU0ZZ", Name = "Excision of breast lump", Quantity = 1, Amount = 30_000m },
+        ],
     };
 
     [Fact]
@@ -35,7 +38,32 @@ public sealed class ClaimCodingTests
 
     [Fact]
     public void Takes_the_pre_authorisations_codes_until_a_coding_is_verified() =>
-        ClaimService.InitialCoding(null, PreAuth).ShouldBe((PreAuth.DiagnosisCodes, PreAuth.ProcedureCodes));
+        ClaimService.InitialCoding(null, PreAuth).ShouldBe((PreAuth.DiagnosisCodes, "0HBU0ZZ Excision of breast lump"));
+
+    [Fact]
+    public void Takes_the_coded_procedures_in_the_desks_order()
+    {
+        var preAuth = new PreAuthorization
+        {
+            Procedures =
+            [
+                new() { LineNumber = 2, System = PreAuthProcedureSystem.Icd10Pcs, Code = "0FT44ZZ", Name = "Laparoscopic cholecystectomy" },
+                new() { LineNumber = 1, System = PreAuthProcedureSystem.Hbp, Code = "SG039A", Name = "Cholecystectomy" },
+            ],
+            LegacyProcedureText = "typed before coding",
+        };
+
+        ClaimService.InitialCoding(null, preAuth).Procedures.ShouldBe("SG039A Cholecystectomy; 0FT44ZZ Laparoscopic cholecystectomy");
+        preAuth.ProcedureText(16).ShouldBe("SG039A; 0FT44ZZ");
+    }
+
+    [Fact]
+    public void Takes_the_text_typed_before_procedures_were_coded()
+    {
+        var preAuth = new PreAuthorization { LegacyProcedureText = "Lap chole planned" };
+
+        ClaimService.InitialCoding(null, preAuth).Procedures.ShouldBe("Lap chole planned");
+    }
 
     [Fact]
     public void Has_no_codes_without_a_verified_coding_or_a_pre_authorisation() =>

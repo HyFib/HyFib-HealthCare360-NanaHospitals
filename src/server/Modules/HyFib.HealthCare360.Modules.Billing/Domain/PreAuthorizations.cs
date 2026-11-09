@@ -39,8 +39,14 @@ public sealed class PreAuthorization : AuditableEntity, IFacilityScoped
     /// <summary>ICD-10 diagnosis codes with descriptions, as entered for the claim (MB-03).</summary>
     public string? DiagnosisCodes { get; set; }
 
-    /// <summary>ICD-10-PCS / procedure codes with descriptions.</summary>
-    public string? ProcedureCodes { get; set; }
+    /// <summary>
+    /// The planned procedures as they were typed before procedures were coded (free text, kept as it was); new
+    /// pre-authorisations leave it empty and code each procedure in <see cref="Procedures"/>.
+    /// </summary>
+    public string? LegacyProcedureText { get; set; }
+
+    /// <summary>The planned procedures, each coded from PM-JAY's HBP master or the ICD-10-PCS catalogue, in the desk's order.</summary>
+    public List<PreAuthProcedure> Procedures { get; set; } = [];
 
     public string? ClinicalSummary { get; set; }
     public int? ExpectedStayDays { get; set; }
@@ -221,7 +227,45 @@ public sealed class PreAuthorization : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
+    /// <summary>
+    /// The planned procedures as one line of text for a claim form (codes with names, in the desk's order), or the legacy
+    /// text when none is coded; shortened as <see cref="VerifiedEpisodeCoding.AsText"/> does to fit <paramref name="maxLength"/>.
+    /// </summary>
+    public string? ProcedureText(int maxLength) =>
+        Procedures.Count == 0
+            ? LegacyProcedureText is { } legacy && legacy.Length > maxLength ? legacy[..maxLength] : LegacyProcedureText
+            : VerifiedEpisodeCoding.AsText(
+                [.. Procedures.OrderBy(p => p.LineNumber).Select(p => new CodedEntry(p.Code, p.Name, false))], maxLength);
+
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}
+
+/// <summary>The code system a planned procedure is coded in.</summary>
+public enum PreAuthProcedureSystem
+{
+    /// <summary>AB PM-JAY's Health Benefit Package procedure (<c>SG039A</c>), from the imported HBP master.</summary>
+    Hbp = 0,
+
+    /// <summary>An ICD-10-PCS code (<c>0DTJ4ZZ</c>) from the hospital's procedure catalogue.</summary>
+    Icd10Pcs,
+}
+
+/// <summary>
+/// One planned procedure of a pre-authorisation (INS-04): the code, in the HBP master or the ICD-10-PCS catalogue, with
+/// its name as the master gave it when the desk chose it, how many times it is planned, and the amount asked for it.
+/// </summary>
+public sealed class PreAuthProcedure : Entity
+{
+    public const int MaxLines = 20;
+    public const int MaxQuantity = 99;
+
+    public Guid PreAuthorizationId { get; set; }
+    public int LineNumber { get; set; }
+    public PreAuthProcedureSystem System { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public int Quantity { get; set; } = 1;
+    public decimal Amount { get; set; }
 }
 
 public sealed class PreAuthEnhancement : Entity

@@ -14,6 +14,7 @@ using HyFib.HealthCare360.Modules.Billing.Features.Portal;
 using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Billing.Features.Tally;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
+using HyFib.HealthCare360.Modules.Billing.Features.VisitPayer;
 using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
@@ -42,6 +43,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<TariffApprovals>();
         services.AddScoped<PayerApprovals>();
         services.AddScoped<StayPlanApprovals>();
+        services.AddScoped<VisitPayerChanges>();
         services.AddScoped<PackageApprovals>();
         services.AddScoped<ShareRuleApprovals>();
         services.AddScoped<NonPayableApprovals>();
@@ -126,6 +128,7 @@ public sealed class BillingModule : IModule
         IpEndpoints.Map(endpoints);
         PayerEndpoints.Map(endpoints);
         PreAuthEndpoints.Map(endpoints);
+        VisitPayerEndpoints.Map(endpoints);
         ClaimEndpoints.Map(endpoints);
         DoctorFeeEndpoints.Map(endpoints);
         TallyEndpoints.Map(endpoints);
