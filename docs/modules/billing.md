@@ -451,13 +451,23 @@ or a refused enhancement is recorded at once. Audited `insurance.preauth.approve
 | DELETE | `/rules/{id}` | `doctorfees.rules.manage` | → 204 for a rule out of use; 409 `doctorfees.rule_in_use` for one in use (take it out of use first, which waits for approval) |
 | GET | `/accruals?practitionerId&from&to&status` (paged) | `doctorfees.payouts.manage` | → `PagedResult<AccrualDto>` |
 | GET | `/payouts?practitionerId&status` (paged) · `/payouts/{id}` | `doctorfees.payouts.manage` | → `PayoutDto` |
-| POST | `/payouts` | `doctorfees.payouts.manage` | `CreatePayoutRequest(practitionerId, period, deductions)` → 201 (`{FAC}DP{YY}{SEQ:5}`; TDS `doctorfees.tds.percent` on gross) |
+| POST | `/payouts` | `doctorfees.payouts.manage` | `CreatePayoutRequest(practitionerId, period, deductions, tdsPercent?)` → 201 (`{FAC}DP{YY}{SEQ:5}`; TDS computed under s.194J: nothing within the year's threshold, then 10 % (or `doctorfees.tds.percent`) on the year's fees not yet taxed, 20 % without a valid PAN; `tdsPercent` or the doctor's s.197 certificate can only lower it) |
+| GET/PUT | `/tax-profiles/{practitionerId}` | `doctorfees.payouts.manage` | `SaveDoctorTaxProfileRequest {pan (null keeps, "" removes), nameAsPerPan, certificateNumber, certificateRate, certificateValidFrom, certificateValidTo, version}`: PAN encrypted, shown masked |
+| GET | `/tds/26q/{fy}/{quarter}` · `/file` | `doctorfees.payouts.manage` | Form 26Q check, then the FVU input file (422 `tds_return.problems` until every month with TDS has a 26Q challan) |
+| GET | `/tds/16a/{practitionerId}/{fy}/{quarter}` · `/pdf` | `doctorfees.payouts.manage` | The Form 16A statement to check the TRACES certificate against |
 | POST | `/payouts/{id}/approve` | `doctorfees.payouts.manage` | `PayoutVersionRequest` → 204 (not by its preparer) |
 | POST | `/payouts/{id}/pay` | `doctorfees.payouts.manage` | `PayPayoutRequest(reference)` → 204 |
 | DELETE | `/payouts/{id}?version` | `doctorfees.payouts.manage` | → 204 (draft only) |
 | GET | `/statements?practitionerId&from&to` | `doctorfees.payouts.manage` | → `DoctorStatement`: the doctor's fee lines earned in the period (by the IST day each was earned; a cancelled bill adds a negative line dated the day of the cancellation, which the doctor's next payout recovers if the fee was already in a payout), each with its bill, service, billed value, rule and share; the totals earned, reversed, in a payout, paid out and unpaid; and the payouts whose period overlaps it, each with gross, deductions, TDS and net. 400 when `to` is before `from` |
 
-#### A sharing rule's terms are approved by a second person
+##TDS on doctors' fees follows s.194J and s.206AA (`ProfessionalFeeTds`, rates by financial year): the fees credited to
+the doctor in the year by the facility are compared with the threshold (₹30,000 to FY 2024-25, ₹50,000 from FY 2025-26);
+the payout that crosses it is taxed on all of the year's untaxed fees (`TdsBasis` records the amount taxed), and
+`TdsRemark` carries the return's reason code (`C` without a PAN, `A` under a certificate). The deductor's TAN and the
+challans are HR's statutory details; Form 16A itself comes from TRACES. See
+[statutory-returns.md](statutory-returns.md#tds-on-doctors-fees-s194j).
+
+## A sharing rule's terms are approved by a second person
 A sharing rule decides what a doctor earns of each bill line (DFA-01), and so what the hospital pays out. Its terms
 change only when two people agree (maker-checker): whoever keeps the rules (`doctorfees.rules.manage`) asks, and someone
 else who approves prices (`masters.prices.approve`, the approver of every price in the catalogue) decides, in

@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HyFib.HealthCare360.Server.Persistence.Migrations
 {
     [DbContext(typeof(HospitalDbContext))]
-    [Migration("20261109011732_QualitySurveillance")]
+    [Migration("20261109022831_QualitySurveillance")]
     partial class QualitySurveillance
     {
         /// <inheritdoc />
@@ -2855,10 +2855,26 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("tds_amount");
 
+                    b.Property<decimal>("TdsBasis")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("tds_basis");
+
+                    b.Property<string>("TdsPanCipher")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("tds_pan_cipher")
+                        .HasAnnotation("HC360:ProtectedValue", true);
+
                     b.Property<decimal>("TdsPercent")
                         .HasPrecision(5, 2)
                         .HasColumnType("numeric(5,2)")
                         .HasColumnName("tds_percent");
+
+                    b.Property<string>("TdsRemark")
+                        .HasMaxLength(1)
+                        .HasColumnType("character varying(1)")
+                        .HasColumnName("tds_remark");
 
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -3022,6 +3038,98 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_doctor_share_rules_practitioner_id_is_active");
 
                     b.ToTable("doctor_share_rules", "billing");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.DoctorTaxProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CertificateNumber")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("certificate_number");
+
+                    b.Property<decimal?>("CertificateRate")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("certificate_rate");
+
+                    b.Property<DateOnly?>("CertificateValidFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("certificate_valid_from");
+
+                    b.Property<DateOnly?>("CertificateValidTo")
+                        .HasColumnType("date")
+                        .HasColumnName("certificate_valid_to");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("NameAsPerPan")
+                        .HasMaxLength(75)
+                        .HasColumnType("character varying(75)")
+                        .HasColumnName("name_as_per_pan");
+
+                    b.Property<string>("PanCipher")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("pan_cipher")
+                        .HasAnnotation("HC360:ProtectedValue", true);
+
+                    b.Property<string>("PanMasked")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("pan_masked");
+
+                    b.Property<Guid>("PractitionerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("practitioner_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_doctor_tax_profiles");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_doctor_tax_profiles_is_deleted");
+
+                    b.HasIndex("PractitionerId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_doctor_tax_profiles_practitioner_id")
+                        .HasFilter("is_deleted = false");
+
+                    b.ToTable("doctor_tax_profiles", "billing");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.EInvoice", b =>
@@ -21685,6 +21793,454 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasFilter("is_deleted = false");
 
                     b.ToTable("shifts", "hr");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.HR.Domain.Statutory.StatutoryEmployerProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AddressLine1")
+                        .HasMaxLength(25)
+                        .HasColumnType("character varying(25)")
+                        .HasColumnName("address_line1");
+
+                    b.Property<string>("AddressLine2")
+                        .HasMaxLength(25)
+                        .HasColumnType("character varying(25)")
+                        .HasColumnName("address_line2");
+
+                    b.Property<string>("AddressLine3")
+                        .HasMaxLength(25)
+                        .HasColumnType("character varying(25)")
+                        .HasColumnName("address_line3");
+
+                    b.Property<string>("Branch")
+                        .HasMaxLength(75)
+                        .HasColumnType("character varying(75)")
+                        .HasColumnName("branch");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(25)
+                        .HasColumnType("character varying(25)")
+                        .HasColumnName("city");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("DeductorName")
+                        .HasMaxLength(75)
+                        .HasColumnType("character varying(75)")
+                        .HasColumnName("deductor_name");
+
+                    b.Property<string>("DeductorType")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("deductor_type");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(75)
+                        .HasColumnType("character varying(75)")
+                        .HasColumnName("email");
+
+                    b.Property<string>("EpfEstablishmentCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("epf_establishment_code");
+
+                    b.Property<string>("EsicEmployerCode")
+                        .HasMaxLength(17)
+                        .HasColumnType("character varying(17)")
+                        .HasColumnName("esic_employer_code");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Pan")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("pan");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)")
+                        .HasColumnName("phone");
+
+                    b.Property<string>("Pin")
+                        .HasMaxLength(6)
+                        .HasColumnType("character varying(6)")
+                        .HasColumnName("pin");
+
+                    b.Property<string>("ResponsibleDesignation")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("responsible_designation");
+
+                    b.Property<string>("ResponsibleEmail")
+                        .HasMaxLength(75)
+                        .HasColumnType("character varying(75)")
+                        .HasColumnName("responsible_email");
+
+                    b.Property<string>("ResponsibleMobile")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("responsible_mobile");
+
+                    b.Property<string>("ResponsibleName")
+                        .HasMaxLength(75)
+                        .HasColumnType("character varying(75)")
+                        .HasColumnName("responsible_name");
+
+                    b.Property<string>("ResponsiblePan")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("responsible_pan");
+
+                    b.Property<string>("SalaryBank")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("salary_bank");
+
+                    b.Property<string>("SalaryDebitAccount")
+                        .HasMaxLength(18)
+                        .HasColumnType("character varying(18)")
+                        .HasColumnName("salary_debit_account");
+
+                    b.Property<string>("StateCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("state_code");
+
+                    b.Property<string>("Tan")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("tan");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_statutory_employer_profiles");
+
+                    b.HasIndex("FacilityId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_statutory_employer_profiles_facility_id")
+                        .HasFilter("is_deleted = false");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_statutory_employer_profiles_is_deleted");
+
+                    b.ToTable("statutory_employer_profiles", "hr");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.HR.Domain.Statutory.TaxDeclaration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("EmployeeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("employee_id");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<int>("FinancialYear")
+                        .HasColumnType("integer")
+                        .HasColumnName("financial_year");
+
+                    b.Property<decimal>("HousingLoanInterest")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("housing_loan_interest");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<bool>("MetroCity")
+                        .HasColumnType("boolean")
+                        .HasColumnName("metro_city");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("notes");
+
+                    b.Property<decimal>("OtherIncome")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("other_income");
+
+                    b.Property<bool>("ParentsSenior")
+                        .HasColumnType("boolean")
+                        .HasColumnName("parents_senior");
+
+                    b.Property<decimal>("PreviousEmployerSalary")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("previous_employer_salary");
+
+                    b.Property<decimal>("PreviousEmployerTds")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("previous_employer_tds");
+
+                    b.Property<string>("Regime")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("regime");
+
+                    b.Property<decimal>("RentPaid")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("rent_paid");
+
+                    b.Property<decimal>("Section80C")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("section80c");
+
+                    b.Property<decimal>("Section80Ccd1B")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("section80ccd1b");
+
+                    b.Property<decimal>("Section80DParents")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("section80d_parents");
+
+                    b.Property<decimal>("Section80DSelf")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("section80d_self");
+
+                    b.Property<decimal>("Section80E")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("section80e");
+
+                    b.Property<decimal>("Section80G")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("section80g");
+
+                    b.Property<decimal>("Section80Tta")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("section80tta");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tax_declarations");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_tax_declarations_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_tax_declarations_is_deleted");
+
+                    b.HasIndex("EmployeeId", "FinancialYear")
+                        .IsUnique()
+                        .HasDatabaseName("ix_tax_declarations_employee_id_financial_year")
+                        .HasFilter("is_deleted = false");
+
+                    b.ToTable("tax_declarations", "hr");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.HR.Domain.Statutory.TdsChallan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BsrCode")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)")
+                        .HasColumnName("bsr_code");
+
+                    b.Property<decimal>("Cess")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("cess");
+
+                    b.Property<string>("ChallanSerial")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)")
+                        .HasColumnName("challan_serial");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<DateOnly>("DepositedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("deposited_on");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("Form")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("form");
+
+                    b.Property<decimal>("Interest")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("interest");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<decimal>("LateFee")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("late_fee");
+
+                    b.Property<string>("MinorHead")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("minor_head");
+
+                    b.Property<int>("Month")
+                        .HasColumnType("integer")
+                        .HasColumnName("month");
+
+                    b.Property<decimal>("Others")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("others");
+
+                    b.Property<decimal>("Surcharge")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("surcharge");
+
+                    b.Property<decimal>("Tax")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("tax");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("integer")
+                        .HasColumnName("year");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tds_challans");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_tds_challans_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_tds_challans_is_deleted");
+
+                    b.HasIndex("FacilityId", "BsrCode", "DepositedOn", "ChallanSerial")
+                        .IsUnique()
+                        .HasDatabaseName("ix_tds_challans_facility_id_bsr_code_deposited_on_challan_seri")
+                        .HasFilter("is_deleted = false");
+
+                    b.HasIndex("FacilityId", "Form", "Year", "Month")
+                        .HasDatabaseName("ix_tds_challans_facility_id_form_year_month");
+
+                    b.ToTable("tds_challans", "hr");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Inpatient.Domain.Admission", b =>
@@ -49931,6 +50487,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_salary_structure_lines_salary_structures_structure_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.HR.Domain.Statutory.TaxDeclaration", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.HR.Domain.Employee", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_tax_declarations_employees_employee_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Inpatient.Domain.Admission", b =>
