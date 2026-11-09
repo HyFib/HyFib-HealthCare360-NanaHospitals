@@ -1,7 +1,7 @@
 name: Demo site
 
-# Publishes the demo (src/web/demo/README.md) at https://hc360.hyfib.com and https://demo.hc360.hyfib.com (the address
-# given to clients) from Cloudflare: the Worker hc360-demo, with static assets only. What it publishes is src/web/demo/site, the built folder verify.mjs checked, as it is, with the
+# Publishes the demo (src/web/demo/README.md) at https://hc360.hyfib.com from Cloudflare: the Worker hc360-demo, with
+# static assets only. What it publishes is src/web/demo/site, the built folder verify.mjs checked, as it is, with the
 # headers in .github/demo-site/_headers. It runs when either changes on main, and by hand. The first deploy creates the
 # Worker and its Custom Domain. The deploy token is set up once (src/web/demo/README.md); until it is in place, a run
 # says what is missing and deploys nothing. After a deploy, the live site is checked: each file as committed, each
@@ -31,8 +31,6 @@ concurrency:
 
 env:
   DOMAIN: hc360.hyfib.com
-  # The address given to clients; the same Worker answers on it (.github/demo-site/wrangler.jsonc).
-  CLIENT_DOMAIN: demo.hc360.hyfib.com
   SITE: src/web/demo/site
   DEPLOY: .github/demo-site
 
@@ -111,7 +109,4 @@ jobs:
           persist-credentials: false
 
       - name: Check the live site
-        run: |
-          for domain in "$DOMAIN" "$CLIENT_DOMAIN"; do
-            REPORT="$GITHUB_STEP_SUMMARY" bash .github/scripts/demo-site-check.sh "https://$domain" "$SITE" "$DEPLOY/_headers"
-          done
+        run: REPORT="$GITHUB_STEP_SUMMARY" bash .github/scripts/demo-site-check.sh "https://$DOMAIN" "$SITE" "$DEPLOY/_headers"

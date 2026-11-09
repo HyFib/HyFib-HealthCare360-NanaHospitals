@@ -94,16 +94,16 @@ request:
 rm -rf demo/site && cp -r demo/out/demo demo/site
 ```
 
-The first deploy creates the Worker `hc360-demo` and its Custom Domains, `hc360.hyfib.com` and `demo.hc360.hyfib.com`
-(the address given to clients). Cloudflare makes each domain's DNS record and certificate. A deploy token is set up once, by the administrator of the Cloudflare account that
+The first deploy creates the Worker `hc360-demo` and its Custom Domain, `hc360.hyfib.com`. Cloudflare makes the
+domain's DNS record and certificate. A deploy token is set up once, by the administrator of the Cloudflare account that
 holds the `hyfib.com` zone. Until then, a run of the workflow says what is missing and deploys nothing.
 
 1. **The deploy token.** In **Manage Account › Account API Tokens**, create a token with two permissions:
    - _Workers_, role _Admin_. The first deploy creates the Worker. Admin can also change the account's other Workers,
      so the token is kept where only `main`'s runs can read it (step 2).
-   - _Zone › Workers Routes › Edit_, for the `hyfib.com` zone only. Each deploy keeps both domains attached.
-     Cloudflare refuses a Custom Domain on a name that already has a `CNAME` record, so delete any `hc360` or
-     `demo.hc360` record first.
+   - _Zone › Workers Routes › Edit_, for the `hyfib.com` zone only. Each deploy keeps `hc360.hyfib.com` attached.
+     Cloudflare refuses a Custom Domain on a name that already has a `CNAME` record, so delete any `hc360` record
+     first.
 2. **In this repository's Settings**:
    - In **Environments**, create `demo-site`, and set its deployment branches to `main` only.
    - Add the environment secret `CLOUDFLARE_API_TOKEN`, set to the token.
