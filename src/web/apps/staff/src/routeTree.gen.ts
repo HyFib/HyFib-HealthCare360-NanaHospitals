@@ -207,6 +207,7 @@ import { Route as AppSetupPractitionersRouteImport } from './routes/_app/setup/p
 import { Route as AppSetupPrintTemplatesRouteImport } from './routes/_app/setup/print-templates'
 import { Route as AppSetupServicesRouteImport } from './routes/_app/setup/services'
 import { Route as AppSetupSpecialtiesRouteImport } from './routes/_app/setup/specialties'
+import { Route as AppSmartAuthorizeRouteImport } from './routes/_app/smart/authorize'
 import { Route as AppTelehealthIndexRouteImport } from './routes/_app/telehealth/index'
 import { Route as AppTelehealthSessionIdRouteImport } from './routes/_app/telehealth/$sessionId'
 import { Route as AppWorkstationPrintersRouteImport } from './routes/_app/workstation/printers'
@@ -1351,6 +1352,11 @@ const AppSetupSpecialtiesRoute = AppSetupSpecialtiesRouteImport.update({
   path: '/setup/specialties',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSmartAuthorizeRoute = AppSmartAuthorizeRouteImport.update({
+  id: '/smart/authorize',
+  path: '/smart/authorize',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppTelehealthIndexRoute = AppTelehealthIndexRouteImport.update({
   id: '/telehealth/',
   path: '/telehealth/',
@@ -2292,6 +2298,7 @@ export interface FileRoutesByFullPath {
   '/setup/print-templates': typeof AppSetupPrintTemplatesRoute
   '/setup/services': typeof AppSetupServicesRoute
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
+  '/smart/authorize': typeof AppSmartAuthorizeRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/workstation/printers': typeof AppWorkstationPrintersRoute
   '/ambulance/': typeof AppAmbulanceIndexRoute
@@ -2635,6 +2642,7 @@ export interface FileRoutesByTo {
   '/setup/print-templates': typeof AppSetupPrintTemplatesRoute
   '/setup/services': typeof AppSetupServicesRoute
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
+  '/smart/authorize': typeof AppSmartAuthorizeRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/workstation/printers': typeof AppWorkstationPrintersRoute
   '/ambulance': typeof AppAmbulanceIndexRoute
@@ -2980,6 +2988,7 @@ export interface FileRoutesById {
   '/_app/setup/print-templates': typeof AppSetupPrintTemplatesRoute
   '/_app/setup/services': typeof AppSetupServicesRoute
   '/_app/setup/specialties': typeof AppSetupSpecialtiesRoute
+  '/_app/smart/authorize': typeof AppSmartAuthorizeRoute
   '/_app/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/_app/workstation/printers': typeof AppWorkstationPrintersRoute
   '/_app/ambulance/': typeof AppAmbulanceIndexRoute
@@ -3325,6 +3334,7 @@ export interface FileRouteTypes {
     | '/setup/print-templates'
     | '/setup/services'
     | '/setup/specialties'
+    | '/smart/authorize'
     | '/telehealth/$sessionId'
     | '/workstation/printers'
     | '/ambulance/'
@@ -3668,6 +3678,7 @@ export interface FileRouteTypes {
     | '/setup/print-templates'
     | '/setup/services'
     | '/setup/specialties'
+    | '/smart/authorize'
     | '/telehealth/$sessionId'
     | '/workstation/printers'
     | '/ambulance'
@@ -4012,6 +4023,7 @@ export interface FileRouteTypes {
     | '/_app/setup/print-templates'
     | '/_app/setup/services'
     | '/_app/setup/specialties'
+    | '/_app/smart/authorize'
     | '/_app/telehealth/$sessionId'
     | '/_app/workstation/printers'
     | '/_app/ambulance/'
@@ -5592,6 +5604,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSetupSpecialtiesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/smart/authorize': {
+      id: '/_app/smart/authorize'
+      path: '/smart/authorize'
+      fullPath: '/smart/authorize'
+      preLoaderRoute: typeof AppSmartAuthorizeRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/telehealth/': {
       id: '/_app/telehealth/'
       path: '/telehealth'
@@ -6759,6 +6778,7 @@ interface AppRouteChildren {
   AppSetupPrintTemplatesRoute: typeof AppSetupPrintTemplatesRoute
   AppSetupServicesRoute: typeof AppSetupServicesRoute
   AppSetupSpecialtiesRoute: typeof AppSetupSpecialtiesRoute
+  AppSmartAuthorizeRoute: typeof AppSmartAuthorizeRoute
   AppTelehealthSessionIdRoute: typeof AppTelehealthSessionIdRoute
   AppWorkstationPrintersRoute: typeof AppWorkstationPrintersRoute
   AppAmbulanceIndexRoute: typeof AppAmbulanceIndexRoute
@@ -7101,6 +7121,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSetupPrintTemplatesRoute: AppSetupPrintTemplatesRoute,
   AppSetupServicesRoute: AppSetupServicesRoute,
   AppSetupSpecialtiesRoute: AppSetupSpecialtiesRoute,
+  AppSmartAuthorizeRoute: AppSmartAuthorizeRoute,
   AppTelehealthSessionIdRoute: AppTelehealthSessionIdRoute,
   AppWorkstationPrintersRoute: AppWorkstationPrintersRoute,
   AppAmbulanceIndexRoute: AppAmbulanceIndexRoute,

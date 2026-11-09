@@ -14,6 +14,8 @@ using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
+using Bill = HyFib.HealthCare360.Modules.Billing.Domain.Bill;
+using BillStatus = HyFib.HealthCare360.Modules.Billing.Domain.BillStatus;
 using ClinicalEncounter = HyFib.HealthCare360.Modules.Clinical.Domain.Encounter;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
@@ -62,6 +64,7 @@ internal sealed class AbdmRecordLoader(
     private const string LabReportPdf = "diagnostics.lab-report";
     private const string RadiologyReportPdf = "diagnostics.radiology-report";
     private const string CardiologyReportPdf = "diagnostics.cardiology-report";
+    private const string BillPdf = "billing.bill";
 
     private EncounterProvider Encounters => Provider<EncounterProvider>();
     private ProcedureProvider ProcedureRecords => Provider<ProcedureProvider>();
@@ -182,6 +185,19 @@ internal sealed class AbdmRecordLoader(
                 };
             }
 
+            case AbdmRecordType.Invoice:
+            {
+                var row = await db.Set<Bill>().AsNoTracking().Where(b => b.Id == id)
+                    .Select(b => new { b.PatientId, b.FacilityId, b.Status, b.BillNumber, b.FinalizedAt, b.CreatedAt }).FirstOrDefaultAsync(ct);
+                return row is null ? NotFound(type, id)
+                    : new AbdmSource(row.PatientId, row.FacilityId, InvoiceNotExportable(row.Status, row.BillNumber))
+                    {
+                        // A bill is the hospital's from when it is finalised under its number.
+                        RecordedAt = row.FinalizedAt ?? row.CreatedAt,
+                        Label = row.BillNumber,
+                    };
+            }
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports.");
         }
@@ -210,6 +226,18 @@ internal sealed class AbdmRecordLoader(
         isEnteredInError ? "A dose marked as entered in error is not exported."
         : isExternal ? "A dose copied from the patient's vaccination card is not exported: it is the record of whoever gave it. Only doses given here are."
         : null;
+
+    /// <summary>
+    /// Why a bill is not exported. A draft is only an estimate, with no number yet. A cancelled bill is not one the patient
+    /// owes, and one whose payments were refunded after it was cancelled (Refunded) is still a cancelled bill. Finalised,
+    /// partly paid and paid bills are exported, as the patient may download them and the hospital shares them on WhatsApp.
+    /// </summary>
+    internal static string? InvoiceNotExportable(BillStatus status, string? billNumber) => status switch
+    {
+        BillStatus.Cancelled or BillStatus.Refunded => "A cancelled bill is not exported: the patient does not owe it.",
+        BillStatus.Finalized or BillStatus.PartiallyPaid or BillStatus.Paid when !string.IsNullOrWhiteSpace(billNumber) => null,
+        _ => "Only a finalised bill can be exported: a draft is an estimate.",
+    };
 
     /// <summary>A dose as the patient knows it: the vaccine, and its number in the series when known ("Pentavalent, dose 2").</summary>
     internal static string DoseLabel(string vaccineName, int? doseNumber) =>
@@ -241,7 +269,8 @@ internal sealed class AbdmRecordLoader(
     /// <summary>
     /// The patient's records the export would send, newest first, at most <paramref name="limit"/>: signed out-patient
     /// consultations and discharge summaries, issued prescriptions, released lab, radiology and cardiology reports,
-    /// vaccine doses given here, and signed clinical notes other than counselling notes and addenda (the same rules as
+    /// vaccine doses given here, signed clinical notes other than counselling notes and addenda, monitoring programmes
+    /// with readings, and finalised bills not cancelled, each named by its number (the same rules as
     /// <see cref="LocateAsync"/>), in every facility of the hospital, each with its <see cref="AbdmSource.Label"/>.
     /// Records kept under a duplicate UHID merged into the patient are not included; they are linked from the record staff
     /// see.
@@ -280,6 +309,11 @@ internal sealed class AbdmRecordLoader(
                 .Join(db.Set<RpmProgram>(), e => e.ProgramId, p => p.Id, (e, p) => new { e.Id, e.StartDate, p.Kind })
                 .OrderByDescending(e => e.StartDate).Take(limit).ToListAsync(ct))
             .Select(e => (AbdmRecordType.HomeReadings, e.Id, FhirTime.StartOfDay(e.StartDate), ProgrammeLabel(e.Kind))));
+        found.AddRange((await db.Set<Bill>().AsNoTracking()
+                .Where(b => b.PatientId == patientId && b.BillNumber != null && b.FinalizedAt != null
+                    && (b.Status == BillStatus.Finalized || b.Status == BillStatus.PartiallyPaid || b.Status == BillStatus.Paid))
+                .OrderByDescending(b => b.FinalizedAt).Take(limit).Select(b => new { b.Id, FinalizedAt = b.FinalizedAt!.Value, b.BillNumber }).ToListAsync(ct))
+            .Select(b => (AbdmRecordType.Invoice, b.Id, b.FinalizedAt, b.BillNumber)));
 
         // A signed prescription is issued only where the hospital's DSC rule lets it be (the printout's rule).
         var prescriptions = await db.Set<Prescription>().AsNoTracking()
@@ -309,6 +343,7 @@ internal sealed class AbdmRecordLoader(
             AbdmRecordType.Immunization => nameof(Immunization),
             AbdmRecordType.ClinicalNote => "Note",
             AbdmRecordType.HomeReadings => "Enrollment",
+            AbdmRecordType.Invoice => nameof(Bill),
             _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
         },
         id);
@@ -355,6 +390,7 @@ internal sealed class AbdmRecordLoader(
         AbdmRecordType.DischargeSummary => DischargeSummaryAsync(id, source, ct),
         AbdmRecordType.Immunization => ImmunizationAsync(id, source, ct),
         AbdmRecordType.ClinicalNote => ClinicalNoteAsync(id, source, ct),
+        AbdmRecordType.Invoice => InvoiceAsync(id, source, ct),
         AbdmRecordType.HomeReadings => throw new InvalidOperationException("Home readings are made into documents a span at a time (HomeReadingsAsync)."),
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
     };
@@ -632,6 +668,19 @@ internal sealed class AbdmRecordLoader(
             [.. parts.SelectMany(p => new[] { p.AuthorPractitionerId, p.SignedByPractitionerId })],
             [.. parts.Select(p => p.AdmissionId)], [], [.. parts.Select(p => (Guid?)p.FacilityId)], null, id, ct);
         return AbdmRecords.ClinicalNote(new ClinicalNoteData(context, note, addenda));
+    }
+
+    /// <summary>
+    /// A finalised bill with its lines, the visit or stay it was raised for, the doctors whose services it bills, and the
+    /// printed bill (Billing's document, in the patient's language, with the payments received by then).
+    /// </summary>
+    private async Task<AbdmDocument> InvoiceAsync(Guid id, AbdmSource source, CancellationToken ct)
+    {
+        var bill = await db.Set<Bill>().AsNoTracking().Include(b => b.Lines).FirstAsync(b => b.Id == id, ct);
+        var (visit, encounter) = await EncounterRowsAsync(null, bill.VisitId, bill.AdmissionId, ct);
+        var context = await ContextAsync(source, visit, encounter, [.. bill.Lines.Select(l => l.PractitionerId)], [bill.AdmissionId],
+            [], [], BillPdf, id, ct);
+        return AbdmRecords.Invoice(new InvoiceData(context, bill));
     }
 
     /// <summary>

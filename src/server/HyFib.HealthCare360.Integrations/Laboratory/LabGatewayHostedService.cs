@@ -21,7 +21,8 @@ internal sealed class LabGatewayHostedService(
     ILabMessageProcessor processor,
     LabGatewayState state,
     TimeProvider time,
-    ILoggerFactory loggers) : BackgroundService
+    ILoggerFactory loggers,
+    Devices.LabDeviceGate gate) : BackgroundService
 {
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan HousekeepingInterval = TimeSpan.FromHours(1);
@@ -146,7 +147,7 @@ internal sealed class LabGatewayHostedService(
             }
 
             var listener = new LabInstrumentListener(instrument, bindAddress, LabRuntimeOptions.From(gateway, instrument),
-                gateway.MaxConnectionsPerInstrument, processor, state, time, loggers.CreateLogger<LabInstrumentListener>());
+                gateway.MaxConnectionsPerInstrument, processor, state, time, loggers.CreateLogger<LabInstrumentListener>(), gate);
             try
             {
                 listener.Start();

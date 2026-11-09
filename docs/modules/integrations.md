@@ -914,6 +914,22 @@ it, so the lab can practise without an analyser. Code: `Features/LabConnections/
   facility. Values and units cannot hold the characters analyser messages reserve (`| ^ ~ \ &`, line breaks); at most
   100 results a message. Use it only for training: the results are real results on the sample.
 
+#### Device authentication
+
+Each network connection says how its devices prove who they are before a message is read (`DeviceAuthentication`):
+**SharedSecret** (the gateway sends `HC360-CHALLENGE <32 hex>`; the device, or its middleware box or serial-to-network
+converter, answers `HC360-AUTH <key id> <HMAC-SHA256(secret, challenge) in hex>`; the gateway answers `HC360-OK` or
+closes), **MutualTls** (a client certificate whose SHA-256 fingerprint is approved; the gateway serves its LAN
+certificate, TLS 1.2 or 1.3), or **None** (the IP allow-list only: connections saved before this keep it until the lab
+chooses). A serial connection may require its lab agent to be approved for it (**LabAgent**). A device not approved is
+refused and listed in Lab setup › Analysers › Connection (at most 20 unknown devices per connection); someone who sets up
+connections adds it (a shared-secret device is then given a key id and a secret, shown once), and someone else approves
+it in Approvals (`lab.device`, the one who added it cannot). Revoking is immediate. The check lives in the connection
+layer (`Laboratory/Devices/LabDeviceGate.cs`), before the HL7/ASTM session; nothing about results, QC or EQAS changed.
+Endpoints: `GET/POST /api/v1/integrations/lab/devices`, `POST /api/v1/integrations/lab/devices/{id}/revoke`
+(`integrations.lab.connections`). Tests: `LabDeviceAuthenticationTests` (IntegrationTests, over loopback TCP and TLS),
+staff `modules/lab/setup/LabDevicesPanel.test.tsx`.
+
 ### Barcode labels (INT-BAR)
 
 The server writes printer commands; it never prints. HC360 Desktop sends the commands to the workstation's label or

@@ -65,7 +65,7 @@ internal static class FhirEndpoints
             return unknownPurpose;
         }
 
-        if (await NoFacilityAsync(db, user, ct) is { } noFacility)
+        if (await NoFacilityAsync(http, db, user, ct) is { } noFacility)
         {
             return noFacility;
         }
@@ -86,7 +86,7 @@ internal static class FhirEndpoints
             return unknownPurpose;
         }
 
-        if (await NoFacilityAsync(db, user, ct) is { } noFacility)
+        if (await NoFacilityAsync(http, db, user, ct) is { } noFacility)
         {
             return noFacility;
         }
@@ -111,7 +111,7 @@ internal static class FhirEndpoints
             return unknownPurpose;
         }
 
-        if (await NoFacilityAsync(db, user, ct) is { } noFacility)
+        if (await NoFacilityAsync(http, db, user, ct) is { } noFacility)
         {
             return noFacility;
         }
@@ -149,7 +149,7 @@ internal static class FhirEndpoints
             purpose = parsed;
         }
 
-        reader = new SharingReader(user.UserId ?? Guid.Empty, purpose, time.Today());
+        reader = new SharingReader(user.UserId ?? Guid.Empty, purpose, time.Today()) { Smart = SmartClaims.Of(http.User) };
         refused = null!;
         return true;
     }
@@ -158,8 +158,20 @@ internal static class FhirEndpoints
     /// A reader reads for the facility of its session, which must be one its account is assigned to (#251): otherwise
     /// 403 <c>facility-required</c>, before anything is looked up.
     /// </summary>
-    private static async Task<IResult?> NoFacilityAsync(HospitalDbContext db, ICurrentUser user, CancellationToken ct) =>
-        await ReaderFacility.IsAssignedAsync(db, user.UserId, ct) ? null : Error(FhirOutcomes.NoFacility());
+    private static async Task<IResult?> NoFacilityAsync(HttpContext http, HospitalDbContext db, ICurrentUser user, CancellationToken ct)
+    {
+        if (!await ReaderFacility.IsAssignedAsync(db, user.UserId, ct))
+        {
+            return Error(FhirOutcomes.NoFacility());
+        }
+
+        // An integration account migrated to a SMART backend service reads with that client's tokens only, never with
+        // a password session of its own.
+        return SmartClaims.Of(http.User) is null && user.UserId is { } id
+               && await http.RequestServices.GetRequiredService<SmartAuthorization>().MigratedAsync(id, ct)
+            ? Error(FhirOutcomes.MigratedToSmart())
+            : null;
+    }
 
     private static IResult Unmatched(HttpContext http) =>
         HttpMethods.IsGet(http.Request.Method) || HttpMethods.IsHead(http.Request.Method)
