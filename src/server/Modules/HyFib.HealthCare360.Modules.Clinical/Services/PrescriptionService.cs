@@ -377,7 +377,8 @@ public sealed class PrescriptionService(
         var drugIds = prescription.Items.Where(i => i.DrugItemId is not null).Select(i => i.DrugItemId!.Value).Distinct().ToList();
         var master = await db.Set<Item>().AsNoTracking().Where(i => drugIds.Contains(i.Id))
             .Select(i => new { i.Id, i.Schedule, i.IsControlled, i.TelemedicineList }).ToDictionaryAsync(i => i.Id, ct);
-        var medicines = prescription.Items.Select(i =>
+        // In the order the lines were written, as the doctor reads the refusal.
+        var medicines = prescription.Items.OrderBy(i => i.Sequence).Select(i =>
                 i.DrugItemId is { } id && master.TryGetValue(id, out var drug)
                     ? new TelemedicinePrescribing.Medicine(i.DrugName, drug.Schedule, drug.IsControlled, drug.TelemedicineList)
                     // A medicine typed in, not from the drug master: what the line itself says, on no list. A controlled line may
