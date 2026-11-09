@@ -29,18 +29,27 @@ public sealed class NumberFormatTests(HospitalServer server)
         list.Series.ShouldNotContain(s => s.Key.StartsWith("token:", StringComparison.Ordinal), "queue tokens are internal");
         list.Series.Select(s => s.Area).ShouldBe(list.Series.Select(s => s.Area).Order(StringComparer.OrdinalIgnoreCase), "listed by area");
 
-        // Neither the demonstration data nor any test adds a CRM lead (internal audits raise CAPAs, so quality.capa is used).
-        var lead = list.Series.Single(s => s.Key == "crm.lead");
-        lead.ShouldSatisfyAllConditions(
-            () => lead.Format.ShouldBe("{FAC}LD{YY}{SEQ:5}"),
-            () => lead.ResetPolicy.ShouldBe(NumberResetPolicy.Yearly),
-            () => lead.DefaultFormat.ShouldBe(lead.Format),
-            () => lead.IsCustomised.ShouldBeFalse(),
-            () => lead.IsLocked.ShouldBeFalse(),
-            () => lead.Scope.ShouldBe("facility"),
-            () => lead.LastNumber.ShouldBe(0L),
-            () => lead.NextExample.ShouldStartWith(lead.FacilityCode + "LD"),
-            () => lead.NextExample.ShouldEndWith("00001"));
+        // The CAPA register's series keeps its defaults whether or not anything has raised a CAPA yet (an unacceptable
+        // EQAS round or an audit finding may have, earlier in the run).
+        var capa = list.Series.Single(s => s.Key == "quality.capa");
+        capa.ShouldSatisfyAllConditions(
+            () => capa.Format.ShouldBe("{FAC}CAPA{YY}{SEQ:4}"),
+            () => capa.ResetPolicy.ShouldBe(NumberResetPolicy.Yearly),
+            () => capa.DefaultFormat.ShouldBe(capa.Format),
+            () => capa.Scope.ShouldBe("facility"));
+
+        // A series nobody has used or changed (chosen as the run finds them: the database is shared by every test) is
+        // listed with its defaults, and its next number is the first one its format makes.
+        var unused = list.Series.Where(s => s is { Scope: "facility", LastNumber: 0, IsCustomised: false, IsLocked: false }).ToList();
+        unused.ShouldNotBeEmpty("most series are used by no test and no demonstration record");
+        var now = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromMinutes(330));
+        foreach (var series in unused)
+        {
+            series.ShouldSatisfyAllConditions(
+                () => series.Format.ShouldBe(series.DefaultFormat),
+                () => series.ResetPolicy.ShouldBe(series.DefaultResetPolicy),
+                () => series.NextExample.ShouldBe(NumberFormat.Render(series.Format, 1, series.FacilityCode, now), $"{series.Key} starts at its first number"));
+        }
 
         var uhid = list.Series.Single(s => s.Key == "uhid");
         uhid.Scope.ShouldBe("global");

@@ -87,7 +87,13 @@ export function ErrorBlock({ error, onRetry, title }: { error: unknown; onRetry?
   const friendly = describeError(error, t, title);
   const intent = isApiError(error) && error.isNetworkError ? 'warning' : 'error';
   return (
-    <MessageBar intent={intent} layout="multiline" className={styles.message}>
+    // Without a title, nothing labels the bar: Fluent would point aria-labelledby at a title that is not there.
+    <MessageBar
+      intent={intent}
+      layout="multiline"
+      className={styles.message}
+      {...(title ? {} : { 'aria-labelledby': undefined })}
+    >
       <MessageBarBody>
         <MessageBarTitle>{friendly.title}</MessageBarTitle>
         {friendly.message}
@@ -118,7 +124,13 @@ export function Notice({
 }) {
   const styles = useStyles();
   return (
-    <MessageBar intent={intent} layout="multiline" className={styles.message}>
+    // Without a title, nothing labels the bar: Fluent would point aria-labelledby at a title that is not there.
+    <MessageBar
+      intent={intent}
+      layout="multiline"
+      className={styles.message}
+      {...(title ? {} : { 'aria-labelledby': undefined })}
+    >
       <MessageBarBody>
         {title && <MessageBarTitle>{title}</MessageBarTitle>}
         {children}

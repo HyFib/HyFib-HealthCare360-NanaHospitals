@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeServer, openScreen, SCREEN_TESTS, SLOW, STAFF_USER, stubBrowserApis } from '@/test/appScreen';
+import { LEDGER } from '@/test/roleAccess/privacy';
 import type { AuditRetentionStatus, RetentionRuleDto } from './api';
 
 // How long the audit trail is kept (ADR-015), on the retention screen: a super administrator asks to change the period
@@ -70,6 +71,7 @@ beforeEach(() => {
     'GET /api/v1/privacy/retention/runs': [],
     'GET /api/v1/privacy/retention/review': { outpatientChartsDue: 0, inpatientChartsDue: 0, erasureHolds: [] },
     'GET /api/v1/admin/audit/retention': STATUS,
+    'GET /api/v1/privacy/erasure-ledger': LEDGER,
     'POST /api/v1/admin/audit/retention/change': ASKED,
     'POST /api/v1/admin/audit/retention/purge': { ...ASKED, summary: 'Purge of the audit trail before November 2018' },
   });

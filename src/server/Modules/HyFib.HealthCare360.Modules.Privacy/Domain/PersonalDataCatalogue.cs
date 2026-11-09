@@ -258,6 +258,8 @@ public static class PersonalDataCatalogue
             "Required to prove consent was given.", PersonalDataRetention.WithRecords,
             [
                 new("patients.patient_consents", "Consent records"),
+                new("privacy.consent_artefacts", "Consents given through a consent manager"),
+                new("privacy.guardian_consents", "A parent's or guardian's consent for a child"),
                 new("platform.whatsapp_opt_ins", "WhatsApp opt-ins"),
             ]),
         new("documents", "Documents and photos",
@@ -310,6 +312,7 @@ public static class PersonalDataCatalogue
                 new("privacy.data_requests", "Privacy requests"),
                 new("privacy.nominees", "Nominee"),
                 new("privacy.breach_affected_patients", "Notices about your data"),
+                new("privacy.erasure_replays", "Erasures carried out again after a restore from a backup", Counted: false),
             ]),
     ];
 
