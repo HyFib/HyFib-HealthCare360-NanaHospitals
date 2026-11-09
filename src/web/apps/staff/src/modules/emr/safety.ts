@@ -172,6 +172,48 @@ export function alertsFromProblem(code: string | undefined, data: unknown): Safe
     : [];
 }
 
+/**
+ * A medicine a teleconsultation may not prescribe (Telemedicine Practice Guidelines 2020), as the server refuses signing
+ * it: the list it is on ('O', 'A', 'B', 'Prohibited' or 'None' for no list yet), the refusal's code and why.
+ */
+export interface TelemedicineRefusal {
+  name: string;
+  list: string;
+  code: string;
+  reason: string;
+}
+
+/** What the list means in the refusal shown to the doctor. */
+export const telemedicineListLabel: Record<string, string> = {
+  O: 'List O',
+  A: 'List A: a first teleconsultation only by video',
+  B: 'List B: only a follow-up add-on',
+  None: 'On no telemedicine list yet',
+  Prohibited: 'Prohibited List',
+};
+
+function isTelemedicineRefusal(value: unknown): value is TelemedicineRefusal {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const r = value as Record<string, unknown>;
+  return (
+    typeof r.name === 'string' &&
+    typeof r.list === 'string' &&
+    typeof r.code === 'string' &&
+    typeof r.reason === 'string'
+  );
+}
+
+/** The medicines a teleconsultation refused to sign, from the problem's data; null when the refusal is not that. */
+export function telemedicineRefusalsFromProblem(code: string | undefined, data: unknown): TelemedicineRefusal[] | null {
+  if (!code?.startsWith('prescription.telemedicine_') || typeof data !== 'object' || data === null) {
+    return null;
+  }
+  const refused = (data as { telemedicine?: unknown }).telemedicine;
+  return Array.isArray(refused) ? refused.filter(isTelemedicineRefusal) : null;
+}
+
 /** Names of the prescription lines an alert refers to (current medicines are named inside the message). */
 export function affectedDrugs(alert: SafetyAlert, items: readonly { id: string; drugName: string }[]): string[] {
   const names = alert.itemIds

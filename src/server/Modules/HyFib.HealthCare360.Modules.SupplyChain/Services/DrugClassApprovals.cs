@@ -122,6 +122,17 @@ public sealed class DrugClassApprovals(HospitalDbContext db, ICurrentUser curren
             effects.Add("it is sold without a prescription");
         }
 
+        if (TelemedicineLists.Strictness(to.TelemedicineList) < TelemedicineLists.Strictness(from.TelemedicineList))
+        {
+            effects.Add(to.TelemedicineList switch
+            {
+                TelemedicineList.O => "a doctor may prescribe it in any teleconsultation (List O)",
+                TelemedicineList.A => "a doctor may prescribe it in a first teleconsultation by video, and in a follow-up (List A)",
+                TelemedicineList.B => "a doctor may add it on in a follow-up teleconsultation, for a condition seen in person (List B)",
+                _ => "it is off the Prohibited List: on no list, a doctor may prescribe it in a follow-up teleconsultation, for a condition seen in person",
+            });
+        }
+
         if (effects.Count == 0)
         {
             return "It is handled less strictly.";

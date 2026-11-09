@@ -16,11 +16,19 @@ public enum RecallTraceSource
 
     /// <summary>Issued to the ward for an admitted patient.</summary>
     WardIssue,
+
+    /// <summary>Implanted in an operation: the patient carries it.</summary>
+    Implant,
+
+    /// <summary>Used on the patient in an operation (a consumable recorded against the surgery).</summary>
+    OtConsumable,
 }
 
 /// <summary>
 /// One hand-over of the recalled batch to a patient. Kept is what the patient was given less what came back; a row with
-/// nothing kept is still listed, so the list shows the whole history.
+/// nothing kept is still listed, so the list shows the whole history. For an operation, the document is the surgery's
+/// booking number, the store the theatre, and <paramref name="Procedure"/>, <paramref name="SerialNumber"/> and
+/// <paramref name="Clinician"/> the surgery, the implant's serial and the surgeon.
 /// </summary>
 public sealed record RecallTraceRow(
     RecallTraceSource Source,
@@ -33,7 +41,10 @@ public sealed record RecallTraceRow(
     string? Phone,
     decimal Quantity,
     decimal Returned,
-    decimal Kept);
+    decimal Kept,
+    string? Procedure = null,
+    string? SerialNumber = null,
+    string? Clinician = null);
 
 /// <summary>Where the batch is still on hand.</summary>
 public sealed record RecallStockRow(string StoreName, decimal OnHand, bool IsBlocked, bool IsRecalled, string? BlockReason);
@@ -52,8 +63,10 @@ public sealed record RecallTrace(
 
 /// <summary>
 /// /api/v1/pharmacy/recalls/trace — from a recalled batch to every patient it was dispensed, sold or issued to (OP dispense,
-/// counter sale, ward issue), with what came back, and the stores still holding it: the list the pharmacy works through to
-/// call patients back. It shows patients' names and phone numbers, so every run is audited with who ran it and what for.
+/// counter sale, ward issue), or used on in an operation (an implant or a consumable, from the modules that record them:
+/// <see cref="IRecallTraceSource"/>), with what came back, and the stores still holding it: the list the pharmacy works
+/// through to call patients back. It shows patients' names and phone numbers, so every run is audited with who ran it and
+/// what for.
 /// </summary>
 internal static class RecallTraceEndpoints
 {
@@ -61,7 +74,8 @@ internal static class RecallTraceEndpoints
         app.MapGet("/api/v1/pharmacy/recalls/trace", Trace).WithTags("Pharmacy").RequirePermission(PharmacyPermissions.Registers);
 
     private static async Task<IResult> Trace(
-        Guid itemId, string batchNumber, HospitalDbContext db, IAuditLogger audit, ICurrentUser user, TimeProvider time, CancellationToken ct)
+        Guid itemId, string batchNumber, HospitalDbContext db, IEnumerable<IRecallTraceSource> sources, IAuditLogger audit, ICurrentUser user,
+        TimeProvider time, CancellationToken ct)
     {
         var batch = batchNumber?.Trim().ToUpperInvariant() ?? string.Empty;
         if (batch.Length is 0 or > 40)
@@ -117,9 +131,27 @@ internal static class RecallTraceEndpoints
                 })
             .ToListAsync(ct);
 
+        // Implants and consumables recorded against an operation, and whatever else another module used on a patient.
+        List<RecalledUse> used = [];
+        foreach (var source in sources)
+        {
+            used.AddRange(await source.UsesAsync(itemId, batch, ct));
+        }
+
+        var usedOn = used.Select(u => u.PatientId).Distinct().ToList();
+        var people = await patients.Where(p => usedOn.Contains(p.Id)).Select(p => new { p.Id, p.Uhid, p.FullName, p.Phone }).ToDictionaryAsync(p => p.Id, ct);
+        var operated = used.Select(u =>
+        {
+            var person = people.GetValueOrDefault(u.PatientId);
+            return new RecallTraceRow(u.Kind == RecalledUseKind.Implant ? RecallTraceSource.Implant : RecallTraceSource.OtConsumable, u.At, u.Document,
+                u.Place, u.PatientId, person?.Uhid, person?.FullName ?? "Unknown patient", person?.Phone, u.Quantity, 0, u.Quantity, u.Procedure,
+                u.SerialNumber, u.Clinician);
+        });
+
         var rows = sold.Concat(issued)
             .Select(r => new RecallTraceRow(r.Source, r.At, r.Document, r.StoreName ?? string.Empty, r.PatientId, r.Uhid, r.PatientName ?? "Walk-in customer",
                 r.Phone, r.Quantity, r.Returned, r.Quantity - r.Returned))
+            .Concat(operated)
             .OrderBy(r => r.At)
             .ToList();
 
@@ -142,7 +174,7 @@ internal static class RecallTraceEndpoints
             EntityType = nameof(Item),
             EntityId = itemId.ToString(),
             Severity = AuditSeverity.Warning,
-            Details = new { batch, patients = patientCount, handovers = rows.Count },
+            Details = new { batch, patients = patientCount, handovers = rows.Count, operations = rows.Count(r => r.Source is RecallTraceSource.Implant or RecallTraceSource.OtConsumable) },
         }, ct);
 
         return TypedResults.Ok(new RecallTrace(itemId, item.Code, item.Name, batch, time.GetUtcNow(), by, patientCount, withPatients.Sum(r => r.Kept), rows, stock));
