@@ -13,7 +13,11 @@ public sealed record SalaryLineInput(
 /// <summary>A one-off earning or deduction for the month (arrears, canteen credit…).</summary>
 public sealed record PayrollAdjustmentInput(string Code, string Name, SalaryComponentKind Kind, decimal Amount, WageTreatment Treatment = WageTreatment.Wages);
 
-public sealed record StatutoryProfile(bool PfApplicable, bool PfOnActualBasic, bool EsiApplicable, ProfessionalTaxSchedule? ProfessionalTax);
+/// <param name="EsiCoveredInPeriod">
+/// Covered by ESI earlier in the same contribution period (April–September, October–March): coverage lasts to the period's
+/// end even when pay rises above the ceiling (ESI Act s.2(9), proviso).
+/// </param>
+public sealed record StatutoryProfile(bool PfApplicable, bool PfOnActualBasic, bool EsiApplicable, ProfessionalTaxSchedule? ProfessionalTax, bool EsiCoveredInPeriod = false);
 
 public sealed record PayrollCalculationInput(
     int Year,
@@ -114,7 +118,7 @@ public static class PayrollCalculator
         var employeePf = ProvidentFund.EmployeeContribution(pfWage);
         var employerPf = ProvidentFund.EmployerContribution(pfWage);
 
-        var esiCovered = input.Statutory.EsiApplicable && EmployeeStateInsurance.IsCovered(standardGross);
+        var esiCovered = input.Statutory.EsiApplicable && (EmployeeStateInsurance.IsCovered(standardGross) || input.Statutory.EsiCoveredInPeriod);
         var esiWage = esiCovered ? gross : 0;
         var employeeEsi = EmployeeStateInsurance.EmployeeContribution(esiWage);
         var employerEsi = EmployeeStateInsurance.EmployerContribution(esiWage);

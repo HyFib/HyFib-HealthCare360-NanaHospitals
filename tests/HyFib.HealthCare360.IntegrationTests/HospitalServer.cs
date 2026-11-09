@@ -78,6 +78,7 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.SecondNurse] = SystemRoles.Nurse,
         [Users.SecondPharmacist] = SystemRoles.Pharmacist,
         [Users.Accountant] = SystemRoles.Accountant,
+        [Users.HrManager] = SystemRoles.HrManager,
         [Users.Radiographer] = SystemRoles.Radiographer,
         [Users.MisAnalyst] = SystemRoles.MisAnalyst,
         [Users.Cashier] = SystemRoles.Cashier,
@@ -1532,6 +1533,9 @@ public sealed class HospitalServer : IAsyncLifetime
         /// first use.
         /// </summary>
         public const string Accountant = "accountant";
+
+        /// <summary>Approves payroll the hospital administrator processed (maker-checker) and exports its files. Created on first use.</summary>
+        public const string HrManager = "hrmanager";
 
         /// <summary>
         /// The insurance (TPA) desk: records pre-authorisations, claims and their settlements. Created on first use.

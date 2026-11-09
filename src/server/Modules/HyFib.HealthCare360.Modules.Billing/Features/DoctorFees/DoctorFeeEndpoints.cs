@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Services;
 
@@ -23,6 +24,43 @@ internal static class DoctorFeeEndpoints
         payouts.MapPost("/payouts/{id:guid}/pay", PayPayout).RequirePermission(BillingPermissions.PayoutsManage).WithValidation<PayPayoutRequest>();
         payouts.MapDelete("/payouts/{id:guid}", DiscardPayout).RequirePermission(BillingPermissions.PayoutsManage);
         payouts.MapGet("/statements", Statement).RequirePermission(BillingPermissions.PayoutsManage);
+
+        // TDS on doctors' fees (s.194J): PAN and certificate, Form 26Q, and the statement to check Form 16A against.
+        payouts.MapGet("/tax-profiles/{practitionerId:guid}", async (Guid practitionerId, DoctorTaxService tax, CancellationToken ct) =>
+            TypedResults.Ok(await tax.ProfileAsync(practitionerId, ct))).RequirePermission(BillingPermissions.PayoutsManage);
+        payouts.MapPut("/tax-profiles/{practitionerId:guid}", async (Guid practitionerId, SaveDoctorTaxProfileRequest r, DoctorTaxService tax, CancellationToken ct) =>
+                (await tax.SaveProfileAsync(practitionerId, r, ct)).ToNoContent())
+            .RequirePermission(BillingPermissions.PayoutsManage).WithValidation<SaveDoctorTaxProfileRequest>().FirstSaveCreates();
+        payouts.MapGet("/tds/26q/{financialYear:int}/{quarter:int}", async (int financialYear, int quarter, DoctorTaxService tax, CancellationToken ct) =>
+        {
+            var result = await tax.Form26QAsync(financialYear, Math.Clamp(quarter, 1, 4), ct);
+            return result.IsFailure ? result.Error!.ToProblem()
+                : TypedResults.Ok(new { result.Value.Return.Challans, result.Value.Return.Deductees, result.Value.Return.TotalDeposited, result.Value.Return.TotalDeducted, result.Value.Return.Problems });
+        }).RequirePermission(BillingPermissions.PayoutsManage);
+        payouts.MapGet("/tds/26q/{financialYear:int}/{quarter:int}/file", async (int financialYear, int quarter, DoctorTaxService tax, CancellationToken ct) =>
+        {
+            var result = await tax.Form26QAsync(financialYear, Math.Clamp(quarter, 1, 4), ct);
+            if (result.IsFailure)
+            {
+                return result.Error!.ToProblem();
+            }
+
+            return result.Value.Return.Problems.Count > 0
+                ? Error.Rule("tds_return.problems", "Correct these before making the file: " + string.Join(" ", result.Value.Return.Problems)).ToProblem()
+                : TypedResults.File(result.Value.Content, "text/plain; charset=utf-8", result.Value.FileName);
+        }).RequirePermission(BillingPermissions.PayoutsManage);
+        payouts.MapGet("/tds/16a/{practitionerId:guid}/{financialYear:int}/{quarter:int}",
+            async (Guid practitionerId, int financialYear, int quarter, DoctorTaxService tax, CancellationToken ct) =>
+            {
+                var result = await tax.Form16AAsync(practitionerId, financialYear, Math.Clamp(quarter, 1, 4), ct);
+                return result.IsFailure ? result.Error!.ToProblem() : TypedResults.Ok(result.Value.ToDto());
+            }).RequirePermission(BillingPermissions.PayoutsManage);
+        payouts.MapGet("/tds/16a/{practitionerId:guid}/{financialYear:int}/{quarter:int}/pdf",
+            async (Guid practitionerId, int financialYear, int quarter, DoctorTaxService tax, IPdfRenderer pdf, CancellationToken ct) =>
+            {
+                var result = await tax.Form16AAsync(practitionerId, financialYear, Math.Clamp(quarter, 1, 4), ct);
+                return result.IsFailure ? result.Error!.ToProblem() : await result.Value.ToPdfAsync(pdf, ct);
+            }).RequirePermission(BillingPermissions.PayoutsManage);
     }
 
     private static async Task<IResult> ListRules(Guid? practitionerId, bool? includeInactive, HospitalDbContext db, ShareRuleApprovals approvals, CancellationToken ct)
