@@ -31,6 +31,9 @@ export interface WasteBag {
   handoverId: string | null;
   voidReason: string | null;
   version: number;
+  /** The weight on the scale at the handover, and whether it differs from where it was filled beyond the tolerance. */
+  handoverWeightKg?: number | null;
+  weightMismatch?: boolean;
 }
 
 export interface CategoryTotal {
@@ -58,6 +61,8 @@ export interface WasteHandover {
   totalKg: number;
   lateBags: number;
   byCategory: CategoryTotal[];
+  mismatchedBags?: number;
+  bags?: WasteBag[];
 }
 
 export interface WasteMonth {
@@ -89,16 +94,112 @@ export interface RecordBagRequest {
   collectedAt: string | null;
 }
 
+/** One bag scanned at the handover and weighed on the scale before the CBWTF's driver. */
+export interface HandoverBag {
+  barcode: string;
+  weightKg: number;
+}
+
 export interface HandOverRequest {
-  barcodes: string[];
+  bags: HandoverBag[];
   cbwtf: string | null;
   vehicleNumber: string;
   receivedBy: string;
   receiptNumber: string | null;
 }
 
+/** What a bag's label carries (Schedule IV), from the server: refused until the hospital's HCF identifier is set. */
+export interface WasteBagLabelDto {
+  barcode: string;
+  category: WasteCategory;
+  colour: string;
+  symbol: string;
+  source: string;
+  weightKg: number;
+  collectedOn: string;
+  hcfId: string;
+  hcfName: string;
+  authorisationNumber: string | null;
+}
+
+export const ACCIDENT_KINDS = [
+  'NeedleStick',
+  'SharpsInjury',
+  'Spill',
+  'Exposure',
+  'Fire',
+  'SegregationFailure',
+  'TransportAccident',
+  'Other',
+] as const;
+export type WasteAccidentKind = (typeof ACCIDENT_KINDS)[number];
+
+export const ACCIDENT_LABEL: Record<WasteAccidentKind, string> = {
+  NeedleStick: 'Needle-stick injury',
+  SharpsInjury: 'Injury from other sharps',
+  Spill: 'Spill of bio-medical waste',
+  Exposure: 'Exposure to infectious or hazardous waste',
+  Fire: 'Fire',
+  SegregationFailure: 'Waste mixed (segregation failure)',
+  TransportAccident: 'Accident while carrying waste',
+  Other: 'Other',
+};
+
+export interface RecordAccidentRequest {
+  occurredAt: string;
+  kind: WasteAccidentKind;
+  place: string;
+  sequence: string;
+  category: WasteCategory | null;
+  wasteInvolved: string;
+  personsAffected: number;
+  effects: string;
+  emergencyMeasures: string;
+  stepsToAlleviate: string | null;
+  stepsToPrevent: string | null;
+  authorityInformedAt: string | null;
+  designation: string | null;
+}
+
+export interface WasteAccident extends Omit<RecordAccidentRequest, 'designation'> {
+  id: string;
+  reportedAt: string;
+  reportedByName: string;
+  reportedByDesignation: string | null;
+}
+
+/** One numbered item of a statutory form, as the form words it, and the answer. */
+export interface FormLine {
+  number: string;
+  item: string;
+  answer: string;
+}
+
+export interface FormI {
+  hcfName: string;
+  address: string | null;
+  authorisationNumber: string | null;
+  hcfId: string | null;
+  accident: WasteAccident;
+  lines: FormLine[];
+}
+
+export interface FormIv {
+  year: number;
+  hcfName: string;
+  address: string | null;
+  authorisationNumber: string | null;
+  hcfId: string | null;
+  cbwtf: string | null;
+  beds: number;
+  lines: FormLine[];
+  generated: CategoryTotal[];
+  handedOver: CategoryTotal[];
+}
+
 export const bmwKeys = {
   all: ['bmw'] as const,
+  accidents: (year: number) => ['bmw', 'accidents', year] as const,
   pending: () => ['bmw', 'pending'] as const,
   handovers: () => ['bmw', 'handovers'] as const,
   month: (year: number, month: number) => ['bmw', 'month', year, month] as const,
@@ -108,6 +209,11 @@ export const bmwKeys = {
 const base = '/api/v1/bmw';
 
 export const bmwQueries = {
+  accidents: (year: number) =>
+    queryOptions({
+      queryKey: bmwKeys.accidents(year),
+      queryFn: ({ signal }) => api.get<WasteAccident[]>(`${base}/accidents`, { query: { year }, signal }),
+    }),
   pending: () =>
     queryOptions({
       queryKey: bmwKeys.pending(),
@@ -136,6 +242,10 @@ export const bmwApi = {
     api.post<WasteBag>(`${base}/bags/${id}/void`, { reason, version }),
   handOver: (request: HandOverRequest) => api.post<WasteHandover>(`${base}/handovers`, request),
   exportMonth: (year: number, month: number) => api.blob(`${base}/register/export`, { query: { year, month } }),
+  label: (id: string) => api.get<WasteBagLabelDto>(`${base}/bags/${id}/label`),
+  recordAccident: (request: RecordAccidentRequest) => api.post<WasteAccident>(`${base}/accidents`, request),
+  formI: (id: string) => api.get<FormI>(`${base}/accidents/${id}/form-i`),
+  formIv: (year: number) => api.get<FormIv>(`${base}/annual/form-iv`, { query: { year } }),
 };
 
 export const BMW_PERMISSIONS = {
@@ -170,4 +280,26 @@ export function parseBarcodes(text: string): string[] {
         .filter(Boolean),
     ),
   ];
+}
+
+/** How far the weight at handover may differ from where the bag was filled (WasteBag.Tolerance): 5%, at least 0.1 kg. */
+export function weightTolerance(filledKg: number): number {
+  return Math.max(0.1, Math.round(filledKg * 0.05 * 1000) / 1000);
+}
+
+/** Whether a bag weighs differently at the handover from where it was filled: opened, added to or swapped. */
+export function weightMismatch(filledKg: number, atHandoverKg: number): boolean {
+  return Math.abs(atHandoverKg - filledKg) > weightTolerance(filledKg);
+}
+
+/** What stops a handover: every bag scanned weighed on the scale, more than 0 and at most 50 kg. */
+export function handoverWeightProblem(
+  barcodes: readonly string[],
+  weights: Readonly<Record<string, string>>,
+): string | null {
+  const unweighed = barcodes.filter((b) => {
+    const kg = Number(weights[b] ?? '');
+    return !(weights[b]?.trim() && Number.isFinite(kg) && kg > 0 && kg <= 50);
+  });
+  return unweighed.length === 0 ? null : `Weigh every bag at the handover: ${unweighed.join(', ')}.`;
 }

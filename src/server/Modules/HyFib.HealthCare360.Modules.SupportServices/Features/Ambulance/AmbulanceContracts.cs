@@ -77,7 +77,22 @@ public sealed record AmbulanceTripDto(
     int? ResponseMinutes,
     string? ChargeWaivedReason,
     string? CancelReason,
-    uint Version);
+    uint Version)
+{
+    /// <summary>Who waived the charge, and who asked when a second person approved it.</summary>
+    public string? ChargeWaivedByName { get; init; }
+
+    public string? WaiverRequestedByName { get; init; }
+
+    /// <summary>A waiver asked for and waiting for a second person; the charge stands until then.</summary>
+    public PendingWaiver? WaiverPending { get; init; }
+}
+
+/// <summary>A waiver of a trip's charge waiting for someone who approves waivers.</summary>
+public sealed record PendingWaiver(Guid ApprovalId, string Reason, string RequestedByName, DateTimeOffset RequestedAt, bool AskedByYou);
+
+/// <summary>Waive a completed trip's charge, with the reason (a free scheme, a staff member's family).</summary>
+public sealed record WaiveTripChargeRequest(string Reason, uint Version);
 
 /// <summary>The trips of a period, and how quickly the fleet answered emergency calls.</summary>
 /// <param name="MedianDispatchMinutes">Call to dispatch, for emergency pickups.</param>
@@ -138,6 +153,15 @@ public sealed class CompleteTripRequestValidator : AbstractValidator<CompleteTri
     {
         RuleFor(x => x.EndOdometerKm).GreaterThanOrEqualTo(0);
         RuleFor(x => x.WaiveReason).SafeText(300);
+    }
+}
+
+public sealed class WaiveTripChargeRequestValidator : AbstractValidator<WaiveTripChargeRequest>
+{
+    public WaiveTripChargeRequestValidator()
+    {
+        RuleFor(x => x.Reason).NotEmpty().MinimumLength(5).SafeText(300);
+        RuleFor(x => x.Version).SeenVersion();
     }
 }
 

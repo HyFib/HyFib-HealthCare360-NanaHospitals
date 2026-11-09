@@ -23,6 +23,14 @@ public sealed class DialysisPatientProfile : AuditableEntity, IFacilityScoped
     public int SessionMinutes { get; set; } = 240;
     public SeroStatus SeroStatus { get; set; }
     public DateOnly? SeroTestedOn { get; set; }
+
+    /// <summary>The verified lab result the infection status was last changed on (<see cref="InfectionStatusChange"/>).</summary>
+    public Guid? SeroLabResultId { get; set; }
+
+    /// <summary>Who changed the infection status last, and who asked when a second person approved it.</summary>
+    public string? SeroChangedByName { get; set; }
+
+    public string? SeroChangeRequestedByName { get; set; }
     public DialyzerReusePolicy ReusePolicy { get; set; }
 
     /// <summary>Maximum uses per dialyzer when reuse is allowed (unit policy, commonly 6–10).</summary>

@@ -8,5 +8,7 @@
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
     <!-- OT implants and consumables are issued from the OT store (layer 6 → 2 is allowed). -->
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.SupplyChain\HyFib.HealthCare360.Modules.SupplyChain.csproj" />
+    <!-- A dialysis patient's infection status changes only with the verified lab result that supports it (layer 6 → 5). -->
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Diagnostics\HyFib.HealthCare360.Modules.Diagnostics.csproj" />
   </ItemGroup>
 </Project>

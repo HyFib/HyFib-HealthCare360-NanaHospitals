@@ -61,13 +61,13 @@ public sealed class AmbulanceTests
         trip.LeftScene(Now).Error!.Code.ShouldBe("ambulance.out_of_order");
         trip.Dispatch(vehicle, "Raju", "EMT Priya", Today, Now.AddMinutes(-18)).IsSuccess.ShouldBeTrue();
         trip.StartOdometerKm.ShouldBe(45_200);
-        trip.Complete(vehicle, 45_230, null, Now).Error!.Code.ShouldBe("ambulance.not_transporting");
+        trip.Complete(vehicle, 45_230, Now).Error!.Code.ShouldBe("ambulance.not_transporting");
         trip.ReachedScene(Now.AddMinutes(-8)).IsSuccess.ShouldBeTrue();
         trip.LeftScene(Now.AddMinutes(-5)).IsSuccess.ShouldBeTrue();
         trip.Cancel("Not needed", Now).Error!.Code.ShouldBe("ambulance.transporting");
 
-        trip.Complete(vehicle, 45_100, null, Now).Error!.Fields!.Keys.ShouldContain("endOdometerKm");
-        trip.Complete(vehicle, 45_224, null, Now).IsSuccess.ShouldBeTrue();
+        trip.Complete(vehicle, 45_100, Now).Error!.Fields!.Keys.ShouldContain("endOdometerKm");
+        trip.Complete(vehicle, 45_224, Now).IsSuccess.ShouldBeTrue();
         (trip.Status, trip.Kilometres, vehicle.OdometerKm).ShouldBe((TripStatus.Completed, 24, 45_224));
         trip.Chargeable(10).ShouldBe((24, 14));
     }
@@ -80,15 +80,36 @@ public sealed class AmbulanceTests
         trip.Dispatch(vehicle, "Raju", "EMT Priya", Today, Now).IsSuccess.ShouldBeTrue();
         trip.ReachedScene(Now).IsSuccess.ShouldBeTrue();
         trip.LeftScene(Now).IsSuccess.ShouldBeTrue();
-        trip.Complete(vehicle, 45_206, null, Now).IsSuccess.ShouldBeTrue();
+        trip.Complete(vehicle, 45_206, Now).IsSuccess.ShouldBeTrue();
         trip.Chargeable(10).ShouldBeNull();
 
         var waived = Trip();
         waived.Dispatch(vehicle, "Raju", "EMT Priya", Today, Now).IsSuccess.ShouldBeTrue();
         waived.ReachedScene(Now).IsSuccess.ShouldBeTrue();
         waived.LeftScene(Now).IsSuccess.ShouldBeTrue();
-        waived.Complete(vehicle, 45_210, "108 scheme transfer", Now).IsSuccess.ShouldBeTrue();
+        waived.Complete(vehicle, 45_210, Now, "108 scheme transfer").IsSuccess.ShouldBeTrue();
+
+        // A trip for a patient is charged at completion; the waiver is asked for after, and made only once approved.
+        (waived.ChargeWaivedReason, waived.Chargeable(10)).ShouldBe((null, (4, 0)));
+        waived.Waive(" ", null, null, null, Now).Error!.Fields!.Keys.ShouldContain("reason");
+        waived.Waive("108 scheme transfer", Guid.NewGuid(), "Accountant", "Front office", Now).IsSuccess.ShouldBeTrue();
         waived.Chargeable(10).ShouldBeNull();
+        (waived.ChargeWaivedByName, waived.WaiverRequestedByName).ShouldBe(("Accountant", "Front office"));
+        waived.CanWaive().Error!.Code.ShouldBe("ambulance.already_waived");
+    }
+
+    [Fact]
+    public void Only_a_completed_trip_charged_to_a_patient_has_a_charge_to_waive()
+    {
+        var vehicle = Vehicle();
+        var trip = Trip();
+        trip.CanWaive().Error!.Code.ShouldBe("ambulance.not_completed");
+        var unregistered = Trip(patient: false);
+        unregistered.Dispatch(vehicle, "Raju", "EMT Priya", Today, Now).IsSuccess.ShouldBeTrue();
+        unregistered.ReachedScene(Now).IsSuccess.ShouldBeTrue();
+        unregistered.LeftScene(Now).IsSuccess.ShouldBeTrue();
+        unregistered.Complete(vehicle, 45_206, Now).IsSuccess.ShouldBeTrue();
+        unregistered.CanWaive().Error!.Code.ShouldBe("ambulance.nothing_charged");
     }
 
     [Fact]

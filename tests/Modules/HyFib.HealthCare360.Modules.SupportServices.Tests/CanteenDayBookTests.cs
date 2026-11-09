@@ -24,7 +24,7 @@ public sealed class CanteenDayBookTests
         var upi = Sale(CanteenPaymentMode.Upi, (1, 20m, 18m), (1, 50m, 0m));
         var staff = Sale(CanteenPaymentMode.StaffCredit, (3, 10m, 5m));
         var cancelled = Sale(CanteenPaymentMode.Cash, (5, 10m, 5m));
-        cancelled.Cancel("Wrong order", null, Today, DateTimeOffset.UtcNow).IsSuccess.ShouldBeTrue();
+        cancelled.Cancel("Wrong order", null, null, null, null, Today, DateTimeOffset.UtcNow).IsSuccess.ShouldBeTrue();
 
         var day = CanteenDayBook.Day(Today, [cash, upi, staff, cancelled]);
 

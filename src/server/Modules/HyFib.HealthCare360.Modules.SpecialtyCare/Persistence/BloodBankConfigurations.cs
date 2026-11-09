@@ -164,6 +164,9 @@ internal sealed class TransfusionReactionConfiguration : IEntityTypeConfiguratio
         b.Property(x => x.ActionsTaken).HasMaxLength(SpecialtyCareSchema.Note);
         b.Property(x => x.InvestigationFindings).HasMaxLength(4000);
         b.Property(x => x.ClosedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.LoweredByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.LowerRequestedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.LowerReason).HasMaxLength(1000);
         b.Property(x => x.Symptoms).HasJsonRows();
         b.Ignore(x => x.IsSerious);
         b.HasOne<BloodIssue>().WithMany().HasForeignKey(x => x.IssueId).OnDelete(DeleteBehavior.Restrict);

@@ -44,6 +44,8 @@ public sealed record DispensingLabelsRequest(LabelPrinterSetup Printer, IReadOnl
 
 public sealed record BloodUnitLabelsRequest(LabelPrinterSetup Printer, IReadOnlyList<BloodUnitLabel> Labels, int Copies = 1);
 
+public sealed record WasteBagLabelsRequest(LabelPrinterSetup Printer, IReadOnlyList<WasteBagLabelData> Labels, int Copies = 1);
+
 public sealed record CssdPackLabelsRequest(LabelPrinterSetup Printer, IReadOnlyList<CssdPackLabel> Labels, int Copies = 1);
 
 public sealed record AssetTagLabelsRequest(LabelPrinterSetup Printer, IReadOnlyList<AssetTagLabel> Labels, int Copies = 1);
@@ -217,6 +219,20 @@ public sealed class CssdPackLabelValidator : AbstractValidator<CssdPackLabel>
     }
 }
 
+public sealed class WasteBagLabelValidator : AbstractValidator<WasteBagLabelData>
+{
+    public WasteBagLabelValidator()
+    {
+        RuleFor(x => x.Barcode).Cascade(CascadeMode.Stop).NotEmpty().Barcode();
+        RuleFor(x => x.Category).NotEmpty().SafeText(20);
+        RuleFor(x => x.Symbol).NotEmpty().SafeText(40);
+        RuleFor(x => x.HcfId).NotEmpty().SafeText(60);
+        RuleFor(x => x.Hospital).SafeText(200);
+        RuleFor(x => x.Source).NotEmpty().SafeText(120);
+        RuleFor(x => x.WeightKg).GreaterThan(0).LessThanOrEqualTo(50);
+    }
+}
+
 public sealed class AssetTagLabelValidator : AbstractValidator<AssetTagLabel>
 {
     public AssetTagLabelValidator()
@@ -280,6 +296,17 @@ public sealed class BloodUnitLabelsRequestValidator : AbstractValidator<BloodUni
         RuleFor(x => x.Printer).NotNull().ChildRules(p => LabelRules.Printer(p, LabelStock.Label));
         RuleFor(x => x.Labels).NotEmpty().Must(l => l is null || l.Count <= LabelRules.MaxLabels).WithMessage(LabelRules.TooMany(LabelRules.MaxLabels));
         RuleForEach(x => x.Labels).NotNull().SetValidator(new BloodUnitLabelValidator());
+        RuleFor(x => x.Copies).InclusiveBetween(1, LabelRules.MaxCopies);
+    }
+}
+
+public sealed class WasteBagLabelsRequestValidator : AbstractValidator<WasteBagLabelsRequest>
+{
+    public WasteBagLabelsRequestValidator()
+    {
+        RuleFor(x => x.Printer).NotNull().ChildRules(p => LabelRules.Printer(p, LabelStock.Label));
+        RuleFor(x => x.Labels).NotEmpty().Must(l => l is null || l.Count <= LabelRules.MaxLabels).WithMessage(LabelRules.TooMany(LabelRules.MaxLabels));
+        RuleForEach(x => x.Labels).NotNull().SetValidator(new WasteBagLabelValidator());
         RuleFor(x => x.Copies).InclusiveBetween(1, LabelRules.MaxCopies);
     }
 }
