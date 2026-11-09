@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Rounds;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Inpatient.Services;
 
@@ -11,9 +12,11 @@ namespace HyFib.HealthCare360.Modules.Inpatient.Services;
 /// (admitted or with a discharge in progress), in the order of the bed board, with when they were last seen, the latest
 /// note, results not yet reviewed, how worrying the latest vital signs are, and the banner's safety flags. As on the bed
 /// board, a restricted (VIP) patient's name, diagnosis and vital-sign details are withheld unless the user may open
-/// restricted records; the bed, the UHID and what needs attention stay, and the chart opens with break-the-glass.
+/// restricted records, and a patient in a sensitive category the user does not hold (HIV, mental health, MTP, sexual
+/// violence) keeps the name but loses the diagnosis and vital-sign details; the bed, the UHID and what needs attention
+/// stay, and the chart opens with break-the-glass.
 /// </summary>
-public sealed class WardRoundQueries(HospitalDbContext db, IPermissionService permissions, ICurrentUser currentUser, TimeProvider time)
+public sealed class WardRoundQueries(HospitalDbContext db, PatientAccessGuard guard, TimeProvider time)
 {
     internal const string RestrictedName = "Restricted patient";
 
@@ -73,7 +76,7 @@ public sealed class WardRoundQueries(HospitalDbContext db, IPermissionService pe
                 .ToListAsync(ct))
             .ToHashSet();
 
-        var canSeeRestricted = currentUser.UserId is { } userId && await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct);
+        var withheldCharts = await guard.WithheldChartsAsync(patientIds, ct);
         var startOfToday = IndiaClock.StartOfDayUtc(today);
         return new WardRound(today, practitionerId, departmentId, rows
             .OrderBy(r => r.WardOrder ?? int.MaxValue)
@@ -92,16 +95,20 @@ public sealed class WardRoundQueries(HospitalDbContext db, IPermissionService pe
                     ? []
                     : VitalSignsAssessor.Assess(reading.ToReading(), r.DateOfBirth, today).OrderByDescending(f => f.Severity).ToList();
                 var news2 = reading is null ? null : News2.Score(reading.ToNews2Reading(), r.DateOfBirth, today);
-                var withheld = r.IsVip && !canSeeRestricted;
+                var withheldWhy = withheldCharts.TryGetValue(a.PatientId, out var why) ? why : (ChartWithholding?)null;
+                var withheld = withheldWhy is not null;
                 return new WardRoundPatient(
-                    a.Id, a.AdmissionNumber, a.PatientId, r.Uhid, withheld ? RestrictedName : r.FullName, r.Gender,
+                    a.Id, a.AdmissionNumber, a.PatientId, r.Uhid, withheldWhy == ChartWithholding.Restricted ? RestrictedName : r.FullName, r.Gender,
                     r.DateOfBirth is { } dob ? Age.Format(dob, today) : null, a.WardId, r.WardName, r.BedLabel,
                     r.WardType is { } type && Ward.IsCriticalCareType(type), a.Status, a.AdmittedAt,
                     today.DayNumber - IndiaClock.LocalDate(a.AdmittedAt).DayNumber + 1, a.ExpectedDischargeDate, withheld ? null : a.ProvisionalDiagnosis,
                     a.IsMlc, r.IsVip, a.ConsultantPractitionerId, r.ConsultantName, practitionerId is null || a.ConsultantPractitionerId == practitionerId,
                     r.HasAllergies, r.HasCriticalAlerts, lastVisit, lastVisit >= startOfToday, lastNote, pending.Count, pending.Any(x => x.HasCriticalFindings),
                     reading?.RecordedAt, flags.Count == 0 ? null : flags[0].Severity, withheld ? [] : [.. flags.Take(MaxVitalFlags).Select(f => f.Message)],
-                    news2?.Total, news2?.Response, news2?.IsComplete ?? false, escalated.Contains(a.Id));
+                    news2?.Total, news2?.Response, news2?.IsComplete ?? false, escalated.Contains(a.Id))
+                {
+                    IsConfidential = withheldWhy == ChartWithholding.Confidential,
+                };
             })
             .ToList());
     }

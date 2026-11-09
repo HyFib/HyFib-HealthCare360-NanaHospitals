@@ -150,13 +150,15 @@ public sealed class LabJourneyTests(HospitalServer server)
         var review = (await doctor.GetAsync<EmrWorklist>("/api/v1/emr/worklist")).ResultsToReview.Single(r => r.ReportId == reportId);
         review.HasCriticalFindings.ShouldBeTrue();
 
-        // With the second pathologist on, a critical result is acknowledged by its ordering doctor, or by another doctor who
-        // records that they cover the patient.
+        // A critical result is acknowledged by its ordering doctor, a doctor on the same stay's care team, or a doctor the
+        // ordering doctor handed over to; with the second pathologist on, a covering doctor also records why. Another doctor
+        // outside all of these is refused, with a reason or without.
         await using (await SeparateVerifierAsync(admin))
         {
             using (var other = await otherDoctor.SendRawAsync(HttpMethod.Post, $"/api/v1/emr/results/{review.Id}/acknowledge", new AcknowledgeResultRequest(null)))
             {
-                other.StatusCode.ShouldBe(HttpStatusCode.BadRequest, await other.Content.ReadAsStringAsync(Ct));
+                other.StatusCode.ShouldBe(HttpStatusCode.Forbidden, await other.Content.ReadAsStringAsync(Ct));
+                (await CodeAsync(other)).ShouldBe("result.not_covering");
             }
 
             (await ReachedAsync(doctor, patient.Id, tube.LabOrderId, LabJourney.Reviewed.Key)).ShouldBeFalse("the refused acknowledgement reviewed nothing");

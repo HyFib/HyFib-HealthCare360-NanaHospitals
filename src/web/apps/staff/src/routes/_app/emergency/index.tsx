@@ -43,6 +43,7 @@ import {
   ESI_LEVELS,
   formatMinutes,
   isTreatedFree,
+  MLC_READERS,
   REPORTED_TO_LABELS,
   type ArrivalMode,
   type EmergencyCase,
@@ -54,7 +55,10 @@ import {
   type PocsoReportedTo,
   type TriageInput,
 } from '@/modules/emergency/api';
+import { BayControl } from '@/modules/emergency/BayControl';
+import { ErBaysDialog } from '@/modules/emergency/ErBaysDialog';
 import { SexualAssaultExamination } from '@/modules/emergency/SexualAssaultExamination';
+import { WoundCertificateSection } from '@/modules/emergency/WoundCertificateSection';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 import { errorMessage } from '@/modules/lab/common/errors';
 import { AgainstAdviceFields } from '@/modules/witness/AgainstAdviceFields';
@@ -88,6 +92,8 @@ function ErBoardPage() {
   const queryClient = useQueryClient();
   const board = useQuery({ ...erQueries.board(), refetchInterval: 60_000 });
   const [open, setOpen] = useState<string | null>(null);
+  const [baysOpen, setBaysOpen] = useState(false);
+  const canKeepBays = usePermission('masters.manage');
   useRealtimeEvent(facilityId ? `facility:${facilityId}` : null, 'er.changed', () => {
     void queryClient.invalidateQueries({ queryKey: erKeys.all });
   });
@@ -103,6 +109,7 @@ function ErBoardPage() {
               data.byLevel.map((n, i) => `ESI ${i + 1}: ${n}`).join(' · ')
             : 'Patients in the emergency department, most urgent first'
         }
+        actions={canKeepBays ? <Button onClick={() => setBaysOpen(true)}>Bays…</Button> : undefined}
       />
       <Section flush>
         <DataTable<ErBoardRow>
@@ -131,6 +138,7 @@ function ErBoardPage() {
                 </div>
               ),
             },
+            { key: 'bay', header: 'Bay', width: 80, render: (r) => r.bayCode ?? '—' },
             { key: 'complaint', header: 'Complaint', render: (r) => r.chiefComplaint ?? '—' },
             { key: 'in', header: 'In ER', width: 110, render: (r) => formatMinutes(r.minutesInDepartment) },
             {
@@ -163,6 +171,7 @@ function ErBoardPage() {
         />
       </Section>
       {open && <CaseDialog caseId={open} onClose={() => setOpen(null)} />}
+      {baysOpen && <ErBaysDialog onClose={() => setBaysOpen(false)} />}
     </Page>
   );
 }
@@ -198,6 +207,7 @@ function CaseDialog({ caseId, onClose }: { caseId: string; onClose: () => void }
                   {c.doctorName ? ` · seen by ${c.doctorName} at ${formatDateTime(c.doctorSeenAt!)}` : ''}
                   {c.disposition ? ` · ${DISPOSITION_LABELS[c.disposition]} ${formatDateTime(c.disposedAt!)}` : ''}
                 </Caption1>
+                <BayControl c={c} canMove={canTriage} />
                 <TabList selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as CaseTab)}>
                   <Tab value="triage">Triage</Tab>
                   <Tab value="doctor">Doctor</Tab>
@@ -495,6 +505,7 @@ function DoctorTab({ c, canDecide }: { c: EmergencyCase; canDecide: boolean }) {
 }
 
 function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
+  const canReport = usePermission(MLC_READERS);
   const notify = useNotify();
   const queryClient = useQueryClient();
   const { print } = useServerDocuments();
@@ -704,6 +715,7 @@ function MlcTab({ c, canMlc }: { c: EmergencyCase; canMlc: boolean }) {
         </MessageBar>
       )}
       {m?.cause === 'SexualAssault' && <SexualAssaultExamination c={c} canMlc={canMlc} />}
+      {m && <WoundCertificateSection c={c} canMlc={canMlc} canReport={canReport} />}
       {m && (
         <Button
           style={{ alignSelf: 'flex-start' }}

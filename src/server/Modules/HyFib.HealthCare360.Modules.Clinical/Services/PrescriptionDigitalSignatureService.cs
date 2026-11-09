@@ -118,6 +118,7 @@ public sealed class PrescriptionDigitalSignatureService(
     PrescriptionSignatureSettings settings,
     PrescriptionFinalCopies finalCopies,
     DscTrustStore trust,
+    DscRevocationCheck revocation,
     ClinicalAccess access,
     ICurrentUser currentUser,
     IAuditLogger audit,
@@ -212,9 +213,26 @@ public sealed class PrescriptionDigitalSignatureService(
                 + "ask IT to contact HyFib support.");
         }
 
+        // A revoked or expired DSC never signs: asked of the CA when it answers (OCSP, or its CRL), else the cached CRL, whose
+        // date and age are kept with the signature.
+        var revoked = await revocation.CheckAsync(content, signature, anchors, ct);
+        if (revoked.Refusal is { } refusal)
+        {
+            audit.Add(new AuditEntry(AuditCategories.Security, "prescription.dsc_refused",
+                $"{p.PrescriptionNumber}: DSC {signer.SerialNumber} ({signer.SignerName}) refused: {revoked.Words}")
+            {
+                PatientId = p.PatientId,
+                EntityType = nameof(Prescription),
+                EntityId = p.Id.ToString(),
+                Severity = AuditSeverity.Warning,
+            });
+            await db.SaveChangesAsync(ct);
+            return refusal;
+        }
+
         var attached = p.AttachDigitalSignature(new PrescriptionDigitalSignature(signature, content, PrescriptionCanonicalForm.Sha256(content), signedAt,
             currentUser.UserId, signer.SignerName, signer.Subject, signer.SerialNumber, signer.Issuer, signer.Thumbprint,
-            Truncate(check.Chain.Summary, Prescription.SignerChainStatusMaxLength)));
+            Truncate(check.Chain.Summary, Prescription.SignerChainStatusMaxLength), revoked.Words));
         if (attached.IsFailure)
         {
             return attached.Error!;
@@ -276,7 +294,7 @@ public sealed class PrescriptionDigitalSignatureService(
             : (DigitalSignatureState.Valid, "The signature is valid.");
         return new PrescriptionDigitalSignatureDto(state, policy, p.DigitallySignedAt, p.SignerName, p.SignerSubject, p.SignerSerialNumber, p.SignerIssuer,
             p.SignerThumbprint, p.SignedContentHash, recordMatches, cms.Chain?.Summary ?? NotChecked, chainTrusted, message,
-            FinalCopyAvailable(policy, state));
+            FinalCopyAvailable(policy, state), p.SignerRevocationStatus);
     }
 
     /// <summary>What the chain reads when the signature does not check out, so it was not built.</summary>

@@ -33,6 +33,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Features.Rpm;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
@@ -1055,12 +1056,14 @@ public sealed class AbdmExportTests(HospitalServer server)
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
         var signed = await ConsultAsync(doctor, patient.Id, sign: true);
 
-        // A colleague corrects the plan after the note was signed.
+        // A colleague corrects the plan after the note was signed: they ask, and the author approves (maker-checker, slice 15).
         var note = await colleague.GetAsync<EncounterDetail>($"/api/v1/emr/encounters/{signed}");
-        var amended = await colleague.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{signed}/amend", new AmendEncounterRequest(
+        var asked = await colleague.PostAsync<ApprovalRequestDto>($"/api/v1/emr/encounters/{signed}/amend", new AmendEncounterRequest(
             "Review date added", note.ChiefComplaint, note.HistoryOfPresentIllness, note.Examination, note.Assessment,
             "Paracetamol, fluids. Review in two days.", note.FollowUpDate, note.FollowUpAdvice, note.ReferralDepartmentId,
             note.ReferralPractitionerId, note.ReferralExternal, note.ReferralReason, note.Version));
+        await MakerChecker.ApproveAsync(doctor, await doctor.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}"));
+        var amended = await colleague.GetAsync<EncounterDetail>($"/api/v1/emr/encounters/{signed}");
 
         try
         {

@@ -86,6 +86,7 @@ export function WorklistAppointments({
               hasActiveAllergies={a.hasActiveAllergies}
               hasCriticalAlerts={a.hasCriticalAlerts}
               isRestricted={a.isRestricted}
+              isConfidential={a.isConfidential}
             >
               {a.visitType === 'FollowUp' && (
                 <Badge size="small" appearance="outline">

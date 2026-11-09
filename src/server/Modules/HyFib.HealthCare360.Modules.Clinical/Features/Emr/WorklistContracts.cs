@@ -27,6 +27,9 @@ public sealed record WorklistQueueEntry(
 {
     /// <summary>A restricted (VIP) record the user may not open: named "Restricted patient", without the complaint.</summary>
     public bool IsRestricted { get; init; }
+
+    /// <summary>A record in a sensitive category the user does not hold (HIV, mental health, MTP, sexual violence): named, without the complaint.</summary>
+    public bool IsConfidential { get; init; }
 }
 
 /// <summary>
@@ -59,6 +62,9 @@ public sealed record WorklistAppointment(
 {
     /// <summary>A restricted (VIP) record the user may not open: named "Restricted patient", without the reason.</summary>
     public bool IsRestricted { get; init; }
+
+    /// <summary>A record in a sensitive category the user does not hold: named, without the reason.</summary>
+    public bool IsConfidential { get; init; }
 }
 
 public sealed record WorklistEncounter(Guid Id, Guid PatientId, string Uhid, string PatientName, EncounterType Type, DateTimeOffset StartedAt, string? ChiefComplaint);
