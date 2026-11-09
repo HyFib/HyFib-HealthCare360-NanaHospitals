@@ -41,7 +41,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | `clinical.prescriptions.sign` | Sign/cancel prescriptions | Doctor |
 | `clinical.prescriptions.refill` | Issue an authorised refill | Doctor, Pharmacist |
 | `clinical.drug_safety.approve` | Approve, as the pharmacy and therapeutics committee, a drug interaction switched off or made less severe, or a maximum dose raised or switched off, that someone else asked for | Pharmacist, HospitalAdmin |
-| `clinical.discharge_summary.write` | Draft/sign/amend discharge summaries | Doctor |
+| `clinical.discharge_summary.write` | Draft/sign/amend discharge summaries (a planned discharge waits for the signed summary: `DischargeSummaryDischargeHold`, below) | Doctor |
 | `mrd.coding` | Clinical coding and verification | MrdOfficer |
 | `mrd.records` | Charts, deficiencies, record requests, archival, morbidity report | MrdOfficer, HospitalAdmin |
 | `mrd.births.record` | Record births in the hospital (Form 1; Form 3 for a still birth) | Doctor, Nurse, MrdOfficer |
@@ -945,6 +945,13 @@ Clinical through `IStayCareTeams` (`StayCareTeams`), as Inpatient references Cli
 doctor who hands over records it from their own sign-in, to another active doctor, for all their patients or one, for
 up to 7 days; either doctor ends it early. The pure rules are in `ClinicalSignOff` (`ClinicalSignOffTests`); the API,
 the approvals and the settings are tested end to end (`ClinicalSignOffTests`, integration).
+
+**A planned discharge waits for the signed discharge summary** (NABH COP/MOM): Clinical's `DischargeSummaryDischargeHold`
+is one of the Inpatient discharge's `IDischargeHoldSource`s, marked `PlannedDischargeOnly`. While the stay's summary is
+unwritten or a draft, a discharge home or a referral is refused with 422 `discharge.summary_unsigned`; once it is signed
+(or amended after signing) the stay closes. A death, LAMA, DAMA or an absconded patient is not held by it: they keep
+their own rules. On by default; `clinical.discharge.signedSummaryRequired` set to false for the hospital or a facility
+turns it off, which a second administrator approves (SettingGuard). Tested end to end in `DischargeSummaryHoldTests`.
 
 ## Consents (EHR-06)
 

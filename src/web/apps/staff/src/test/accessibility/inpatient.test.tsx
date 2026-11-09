@@ -781,6 +781,7 @@ beforeEach(() => {
     },
     [`GET /api/v1/nursing/wards/${FEMALE_WARD}/mar/due`]: DOSES_DUE,
     [`GET /api/v1/nursing/wards/${FEMALE_WARD}/handovers`]: HANDOVERS,
+    [`GET /api/v1/nursing/wards/${FEMALE_WARD}/restraints`]: [],
     [`GET /api/v1/nursing/admissions/${ASHA.admissionId}/mar`]: MAR,
     [`GET /api/v1/nursing/admissions/${ASHA.admissionId}/medication-orders`]: ORDERS,
     [`GET /api/v1/emr/patients/${ASHA.patientId}/flags`]: FLAGS,
