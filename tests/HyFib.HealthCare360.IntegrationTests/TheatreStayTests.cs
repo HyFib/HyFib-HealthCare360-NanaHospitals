@@ -277,16 +277,27 @@ public sealed class TheatreStayTests(HospitalServer server)
     }
 
     /// <summary>
-    /// The OT coordinator gives the booking an hour in the minor theatre on a day years ahead, when no other test of the run
-    /// has the theatre, the surgeon or the patient.
+    /// The OT coordinator gives the booking an hour in the minor theatre on a random day years ahead. Every theatre test books
+    /// the same seeded surgeon, so on the rare clash with another test's case (surgery.slot_conflict) another day is tried.
     /// </summary>
     private static async Task<(DateTimeOffset Start, DateTimeOffset End)> ScheduleAsync(ApiClient doctor, Guid bookingId)
     {
-        var start = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero).AddDays(Random.Shared.Next(400, 4000)).AddHours(4);
         var booking = await doctor.GetAsync<SurgeryDetail>($"{Bookings}/{bookingId}");
         var theatreId = await MinorTheatreAsync(doctor);
-        await doctor.PostAsync($"{Bookings}/{bookingId}/schedule", new ScheduleSurgeryRequest(theatreId, start, start.AddHours(1), booking.Version));
-        return (start, start.AddHours(1));
+        var path = $"{Bookings}/{bookingId}/schedule";
+        for (var attempt = 0; ; attempt++)
+        {
+            var start = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero).AddDays(Random.Shared.Next(400, 4000)).AddHours(4);
+            using var response = await doctor.SendRawAsync(HttpMethod.Post, path, new ScheduleSurgeryRequest(theatreId, start, start.AddHours(1), booking.Version));
+            var answer = await response.Content.ReadAsStringAsync(Ct);
+            if (response.StatusCode == HttpStatusCode.Conflict && attempt < 5 && answer.Contains("\"surgery.slot_conflict\"", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            response.IsSuccessStatusCode.ShouldBeTrue($"POST {path} answered {(int)response.StatusCode}: {answer}");
+            return (start, start.AddHours(1));
+        }
     }
 
     /// <summary>
