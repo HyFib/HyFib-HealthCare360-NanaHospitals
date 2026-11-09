@@ -31,7 +31,43 @@ public sealed class GstReturnService(
             documents.AddRange(await source.OutwardAsync(facilities, from, to, ct));
         }
 
-        return GstReturnBuilder.Gstr1(gstin, year, month, documents);
+        var built = GstReturnBuilder.Gstr1(gstin, year, month, documents);
+        var filings = db.Set<GstReturnFiling>().AsNoTracking().Where(f => f.Gstin == gstin && f.ReturnType == GstReturnFiling.Gstr1);
+        var filing = await filings.FirstOrDefaultAsync(f => f.Year == year && f.Month == month, ct);
+        var late = await LateEntriesAsync(filings, facilities, from, to, ct);
+        return built with
+        {
+            Filing = filing is null ? null : GstFilingService.Dto(filing),
+            LateEntries = late,
+            Problems = [.. built.Problems, .. late.Select(l => string.Create(CultureInfo.InvariantCulture,
+                $"{l.Number} of {l.Date:d MMM yyyy} was entered from paper on {l.EnteredOn:d MMM yyyy}, after GSTR-1 for {GstFilingService.Words((l.FiledYear, l.FiledMonth))} was filed (ARN {l.FiledArn}): it is not in that return. Report it as an amendment (B2BA or B2CSA) in this one."))],
+        };
+    }
+
+    /// <summary>
+    /// Paper bills entered this month for an earlier month whose GSTR-1 was already recorded as filed when they came in.
+    /// </summary>
+    private async Task<IReadOnlyList<Gstr1LateEntry>> LateEntriesAsync(
+        IQueryable<GstReturnFiling> filings, IReadOnlyCollection<Guid> facilities, DateOnly from, DateOnly to, CancellationToken ct)
+    {
+        var (start, end) = BillingTime.Range(from, to);
+        var bills = await db.Set<Bill>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(b => facilities.Contains(b.FacilityId) && b.EnteredFromPaperAt >= start && b.EnteredFromPaperAt < end && b.FinalizedAt < start && b.BillNumber != null)
+            .Select(b => new { b.BillNumber, b.FinalizedAt, b.EnteredFromPaperAt, b.NetAmount })
+            .ToListAsync(ct);
+        if (bills.Count == 0)
+        {
+            return [];
+        }
+
+        var closed = await filings.Select(f => new { f.Year, f.Month, f.Arn, f.RecordedAt }).ToListAsync(ct);
+        return bills
+            .Select(b => (Bill: b, Date: BillingTime.LocalDate(b.FinalizedAt!.Value)))
+            .Select(x => (x.Bill, x.Date, Filed: closed.FirstOrDefault(f => f.Year == x.Date.Year && f.Month == x.Date.Month && f.RecordedAt <= x.Bill.EnteredFromPaperAt)))
+            .Where(x => x.Filed is not null)
+            .OrderBy(x => x.Date).ThenBy(x => x.Bill.BillNumber, StringComparer.Ordinal)
+            .Select(x => new Gstr1LateEntry(x.Bill.BillNumber!, x.Date, x.Bill.NetAmount, x.Filed!.Year, x.Filed.Month, x.Filed.Arn, BillingTime.LocalDate(x.Bill.EnteredFromPaperAt!.Value)))
+            .ToList();
     }
 
     public async Task<Result<Gstr3bReturn>> Gstr3bAsync(int year, int month, CancellationToken ct)

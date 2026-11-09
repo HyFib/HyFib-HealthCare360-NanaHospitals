@@ -13,8 +13,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HyFib.HealthCare360.Server.Persistence.Migrations
 {
     [DbContext(typeof(HospitalDbContext))]
-    [Migration("20261109212327_LeaveEncashment")]
-    partial class LeaveEncashment
+    [Migration("20261109210539_InpatientRestraints")]
+    partial class InpatientRestraints
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -21348,133 +21348,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("leave_balances", "hr");
                 });
 
-            modelBuilder.Entity("HyFib.HealthCare360.Modules.HR.Domain.LeaveEncashmentRecord", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("amount");
-
-                    b.Property<Guid?>("ApprovalId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("approval_id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<decimal>("DailyRate")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("daily_rate");
-
-                    b.Property<decimal>("Days")
-                        .HasPrecision(6, 2)
-                        .HasColumnType("numeric(6,2)")
-                        .HasColumnName("days");
-
-                    b.Property<DateTimeOffset?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("deleted_at");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("deleted_by");
-
-                    b.Property<Guid>("EmployeeId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("employee_id");
-
-                    b.Property<Guid>("FacilityId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("facility_id");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_deleted");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("kind");
-
-                    b.Property<DateOnly?>("LastWorkingDay")
-                        .HasColumnType("date")
-                        .HasColumnName("last_working_day");
-
-                    b.Property<Guid>("LeaveTypeId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("leave_type_id");
-
-                    b.Property<Guid?>("PayrollInputId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("payroll_input_id");
-
-                    b.Property<Guid?>("PayrollRunId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("payroll_run_id");
-
-                    b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)")
-                        .HasColumnName("reason");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("updated_by");
-
-                    b.Property<uint>("Version")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("xid")
-                        .HasColumnName("xmin");
-
-                    b.Property<int>("Year")
-                        .HasColumnType("integer")
-                        .HasColumnName("year");
-
-                    b.HasKey("Id")
-                        .HasName("pk_leave_encashments");
-
-                    b.HasIndex("ApprovalId")
-                        .IsUnique()
-                        .HasDatabaseName("ix_leave_encashments_approval_id")
-                        .HasFilter("approval_id IS NOT NULL AND is_deleted = false");
-
-                    b.HasIndex("FacilityId")
-                        .HasDatabaseName("ix_leave_encashments_facility_id");
-
-                    b.HasIndex("IsDeleted")
-                        .HasDatabaseName("ix_leave_encashments_is_deleted");
-
-                    b.HasIndex("LeaveTypeId")
-                        .HasDatabaseName("ix_leave_encashments_leave_type_id");
-
-                    b.HasIndex("PayrollInputId")
-                        .IsUnique()
-                        .HasDatabaseName("ix_leave_encashments_payroll_input_id")
-                        .HasFilter("payroll_input_id IS NOT NULL AND is_deleted = false");
-
-                    b.HasIndex("EmployeeId", "LeaveTypeId", "Year")
-                        .HasDatabaseName("ix_leave_encashments_employee_id_leave_type_id_year");
-
-                    b.ToTable("leave_encashments", "hr");
-                });
-
             modelBuilder.Entity("HyFib.HealthCare360.Modules.HR.Domain.LeaveRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -21675,11 +21548,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(6,2)")
                         .HasColumnName("document_required_after_days");
 
-                    b.Property<decimal?>("InServiceEncashmentDaysPerYear")
-                        .HasPrecision(6, 2)
-                        .HasColumnType("numeric(6,2)")
-                        .HasColumnName("in_service_encashment_days_per_year");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
@@ -21700,11 +21568,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasPrecision(6, 2)
                         .HasColumnType("numeric(6,2)")
                         .HasColumnName("max_days_per_request");
-
-                    b.Property<decimal>("MinimumBalanceAfterEncashment")
-                        .HasPrecision(6, 2)
-                        .HasColumnType("numeric(6,2)")
-                        .HasColumnName("minimum_balance_after_encashment");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -25380,6 +25243,287 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_nursing_safety_events_facility_id_kind_occurred_at");
 
                     b.ToTable("nursing_safety_events", "inpatient");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Inpatient.Domain.RestraintCheck", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AdmissionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("admission_id");
+
+                    b.Property<DateTimeOffset>("CheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checked_at");
+
+                    b.Property<string>("CheckedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("checked_by_name");
+
+                    b.Property<Guid?>("CheckedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("checked_by_user_id");
+
+                    b.Property<bool>("CirculationOk")
+                        .HasColumnType("boolean")
+                        .HasColumnName("circulation_ok");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("EpisodeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("episode_id");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("FluidsOffered")
+                        .HasColumnType("boolean")
+                        .HasColumnName("fluids_offered");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("notes");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<bool>("SkinIntact")
+                        .HasColumnType("boolean")
+                        .HasColumnName("skin_intact");
+
+                    b.Property<bool>("ToiletingOffered")
+                        .HasColumnType("boolean")
+                        .HasColumnName("toileting_offered");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_restraint_checks");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_restraint_checks_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_restraint_checks_is_deleted");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_restraint_checks_patient_id");
+
+                    b.HasIndex("EpisodeId", "CheckedAt")
+                        .HasDatabaseName("ix_restraint_checks_episode_id_checked_at");
+
+                    b.ToTable("restraint_checks", "inpatient");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Inpatient.Domain.RestraintEpisode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AdmissionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("admission_id");
+
+                    b.Property<string>("AlternativesTried")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("alternatives_tried");
+
+                    b.Property<int>("CheckIntervalMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("check_interval_minutes");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Debrief")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("debrief");
+
+                    b.Property<DateTimeOffset?>("DebriefedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("debriefed_at");
+
+                    b.Property<string>("DebriefedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("debriefed_by_name");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<DateTimeOffset?>("LastCheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_checked_at");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("method");
+
+                    b.Property<DateTimeOffset>("OrderedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ordered_at");
+
+                    b.Property<string>("OrderedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("ordered_by_name");
+
+                    b.Property<Guid?>("OrderedByPractitionerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ordered_by_practitioner_id");
+
+                    b.Property<Guid?>("OrderedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ordered_by_user_id");
+
+                    b.Property<DateTimeOffset>("OrderedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ordered_until");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("ReleaseReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("release_reason");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("released_at");
+
+                    b.Property<string>("ReleasedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("released_by_name");
+
+                    b.Property<Guid?>("ReleasedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("released_by_user_id");
+
+                    b.Property<string>("Renewals")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("renewals");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("type");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<Guid?>("WardId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ward_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_restraint_episodes");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_restraint_episodes_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_restraint_episodes_is_deleted");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_restraint_episodes_patient_id");
+
+                    b.HasIndex("AdmissionId", "OrderedAt")
+                        .HasDatabaseName("ix_restraint_episodes_admission_id_ordered_at");
+
+                    b.HasIndex("FacilityId", "WardId", "Status")
+                        .HasDatabaseName("ix_restraint_episodes_facility_id_ward_id_status");
+
+                    b.ToTable("restraint_episodes", "inpatient");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Inpatient.Domain.Room", b =>
@@ -53446,23 +53590,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_leave_balances_leave_type_leave_type_id");
                 });
 
-            modelBuilder.Entity("HyFib.HealthCare360.Modules.HR.Domain.LeaveEncashmentRecord", b =>
-                {
-                    b.HasOne("HyFib.HealthCare360.Modules.HR.Domain.Employee", null)
-                        .WithMany()
-                        .HasForeignKey("EmployeeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_leave_encashments_employees_employee_id");
-
-                    b.HasOne("HyFib.HealthCare360.Modules.HR.Domain.LeaveType", null)
-                        .WithMany()
-                        .HasForeignKey("LeaveTypeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_leave_encashments_leave_type_leave_type_id");
-                });
-
             modelBuilder.Entity("HyFib.HealthCare360.Modules.HR.Domain.LeaveRequest", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.HR.Domain.Employee", null)
@@ -53763,6 +53890,26 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_nursing_safety_events_admissions_admission_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Inpatient.Domain.RestraintCheck", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Inpatient.Domain.RestraintEpisode", null)
+                        .WithMany()
+                        .HasForeignKey("EpisodeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_restraint_checks_restraint_episode_episode_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Inpatient.Domain.RestraintEpisode", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Inpatient.Domain.Admission", null)
+                        .WithMany()
+                        .HasForeignKey("AdmissionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_restraint_episodes_admissions_admission_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Inpatient.Domain.Room", b =>

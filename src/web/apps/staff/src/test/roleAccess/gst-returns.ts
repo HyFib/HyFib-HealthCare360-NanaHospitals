@@ -5,7 +5,7 @@ import type { FakeAnswers } from '../fakeApi';
 
 const zero = { taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0 };
 
-const GSTR1: Gstr1Return = {
+export const GSTR1: Gstr1Return = {
   gstin: '33AABCN1234F1Z3',
   year: 2026,
   month: 10,

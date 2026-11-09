@@ -193,7 +193,7 @@ public sealed class DischargeService(
         // However the stay is to end, a patient the theatre still has (in pre-op, on the table) is not discharged: the
         // case is finished, postponed or cancelled there first. Asked before anything is charged, changed or asked for, and
         // again below under the stay's lock, where it holds.
-        if (await HoldAsync(admission.Id, ct) is { } held)
+        if (await HoldAsync(admission.Id, type, ct) is { } held)
         {
             return held;
         }
@@ -417,7 +417,7 @@ public sealed class DischargeService(
         // The stay's lock, held to this commit, is the one the theatre takes to receive the patient in pre-op or start
         // the operation (EncounterLocks): a case taken into the theatre meanwhile is committed first and found here.
         await EncounterLocks.LockAsync(db, [admission.Id, admission.VisitId], ct);
-        if (await HoldAsync(admission.Id, ct) is { } stillHeld)
+        if (await HoldAsync(admission.Id, type, ct) is { } stillHeld)
         {
             return stillHeld;
         }
@@ -485,13 +485,17 @@ public sealed class DischargeService(
             Details = details,
         });
 
-    /// <summary>Why the stay cannot end now, as the modules that hold it say (the theatre), or null when nothing holds it.</summary>
-    private async Task<Error?> HoldAsync(Guid admissionId, CancellationToken ct)
+    /// <summary>
+    /// Why the stay cannot end now as <paramref name="type"/>, as the modules that hold it say (the theatre; for a planned
+    /// discharge, an unsigned discharge summary), or null when nothing holds it.
+    /// </summary>
+    private async Task<Error?> HoldAsync(Guid admissionId, DischargeType type, CancellationToken ct)
     {
+        var planned = DischargeRules.IsPlanned(type);
         var holds = new List<DischargeHold>();
         foreach (var source in holdSources)
         {
-            holds.AddRange(await source.HoldsAsync(admissionId, ct));
+            holds.AddRange((await source.HoldsAsync(admissionId, ct)).Where(h => planned || !h.PlannedDischargeOnly));
         }
 
         return holds.Count > 0 ? Error.Rule(holds[0].Code, string.Join(" ", holds.Select(h => h.Message))) : null;

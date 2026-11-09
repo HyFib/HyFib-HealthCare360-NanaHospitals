@@ -1,3 +1,4 @@
+using System.Globalization;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Patients.Services;
@@ -34,6 +35,32 @@ internal static class BillQueries
                 r.PayerType, r.PayerId, r.PayerId is { } id ? payers.GetValueOrDefault(id) : null, r.NetAmount, r.PatientAmount, r.PayerAmount,
                 r.PaidAmount, r.DueAmount, r.CreatedAt, r.FinalizedAt);
         }).ToList();
+    }
+
+    /// <summary>
+    /// For a bill entered from paper after its month's GSTR-1 was recorded as filed: that it is not in the filed return and
+    /// is to be reported as an amendment in the next one. Null otherwise, and for a month whose filing is not recorded.
+    /// </summary>
+    internal static async Task<string?> LateForFiledReturnAsync(HospitalDbContext db, Bill bill, CancellationToken ct)
+    {
+        if (bill.EnteredFromPaperAt is not { } entered || bill.FinalizedAt is not { } finalized)
+        {
+            return null;
+        }
+
+        var own = await db.Set<Facility>().AsNoTracking().IgnoreQueryFilters().Where(f => f.Id == bill.FacilityId).Select(f => f.Gstin).FirstOrDefaultAsync(ct);
+        if (Gstin.Normalize(own) is not { } gstin)
+        {
+            return null;
+        }
+
+        var date = BillingTime.LocalDate(finalized);
+        var filing = await db.Set<GstReturnFiling>().AsNoTracking()
+            .FirstOrDefaultAsync(f => f.Gstin == gstin && f.ReturnType == GstReturnFiling.Gstr1 && f.Year == date.Year && f.Month == date.Month && f.RecordedAt <= entered, ct);
+        return filing is null
+            ? null
+            : string.Create(CultureInfo.InvariantCulture,
+                $"This bill is dated {date:d MMM yyyy}, but GSTR-1 for {GstFilingService.Words((date.Year, date.Month))} was already filed (ARN {filing.Arn}, {filing.FiledOn:d MMM yyyy}). It is not in that return: report it as an amendment (B2BA or B2CSA) in the next GSTR-1.");
     }
 
     public static async Task<BillDetail?> DetailAsync(HospitalDbContext db, Guid billId, TimeProvider time, CancellationToken ct)
@@ -106,7 +133,8 @@ internal static class BillQueries
                     .ToList(),
                 debitIrns.TryGetValue(n.Id, out var irn) ? EInvoiceService.Stamp(irn) : null)).ToList(),
             bill.DebitAmount,
-            bill.PayerDebitAmount);
+            bill.PayerDebitAmount,
+            await LateForFiledReturnAsync(db, bill, ct));
     }
 
     /// <summary>A credit note with the lines it corrects, their GST, and its IRN when it is a registered e-invoice.</summary>

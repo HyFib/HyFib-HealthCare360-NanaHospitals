@@ -72,7 +72,9 @@ pre-downtime pack.
 3. **During downtime** the counter uses the numbers **in order**, one per paper, and writes the date and time on it.
 4. **When HC360 is back** each paper is entered with its number and the time on it:
    - a visit through *Check in* with `paper {number, at}` (no queue token: the patient has been seen);
-   - a bill through *Finalize* with `paper {number, at}`: it keeps the number and is dated at the time on the paper;
+   - a bill through *Finalize* with `paper {number, at}`: it keeps the number and is dated at the time on the paper; if
+     that month's GSTR-1 is already recorded as filed, the bill warns that it is to be amended in the next return
+     (docs/modules/billing.md);
    - a receipt through *Collect payment* with `paper {number, at}`: it keeps the number and the time; the money is
      counted into the cashier's shift open at entry.
 5. **Return the block** when it is no longer needed: every number not entered is voided as "Returned unused", in one

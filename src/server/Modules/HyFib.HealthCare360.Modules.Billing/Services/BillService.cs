@@ -390,6 +390,11 @@ public sealed class BillService(
             return finalized;
         }
 
+        if (paper is not null)
+        {
+            bill.EnteredFromPaperAt = time.GetUtcNow();
+        }
+
         var chargeIds = bill.Lines.Select(l => l.ChargeId).ToList();
         foreach (var charge in await db.Set<Charge>().Where(c => chargeIds.Contains(c.Id)).ToListAsync(ct))
         {

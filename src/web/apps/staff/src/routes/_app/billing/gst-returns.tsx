@@ -16,6 +16,7 @@ import {
   type Gstr1DocumentsIssued,
   type Gstr1HsnRow,
 } from '@/modules/billing/gstReturnsApi';
+import { GstFilingPanel } from '@/modules/billing/GstFilingPanel';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 import { gstStateName } from '@/modules/inventory/gst';
 import { errorMessage } from '@/modules/lab/common/errors';
@@ -137,6 +138,7 @@ function GstReturnsPage() {
           <MessageBarBody>{errorMessage(gstr1.error, 'The returns could not be built.')}</MessageBarBody>
         </MessageBar>
       )}
+      {r && <GstFilingPanel month={month} filing={r.filing} lateEntries={r.lateEntries} />}
       {r && r.problems.length > 0 && (
         <MessageBar intent="warning">
           <MessageBarBody>

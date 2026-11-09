@@ -288,6 +288,14 @@ export function BillWorkspace({
             </MessageBarBody>
           </MessageBar>
         )}
+        {bill.gstFilingWarning && (
+          <MessageBar intent="warning" layout="multiline">
+            <MessageBarBody>
+              <MessageBarTitle>Entered after its month's GSTR-1 was filed</MessageBarTitle>
+              {bill.gstFilingWarning}
+            </MessageBarBody>
+          </MessageBar>
+        )}
         {bill.pendingDiscount && !isFree && (
           <MessageBar intent="warning" layout="multiline">
             <MessageBarBody>
