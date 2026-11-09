@@ -1,16 +1,21 @@
 using HyFib.HealthCare360.Modules.HR.Domain;
 using HyFib.HealthCare360.Modules.HR.Features.Payroll;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.HR.Services;
+
+/// <summary>An input added at once (its id), or asked for a second person's approval (the request).</summary>
+public sealed record PayrollInputAdded(Guid? Id, ApprovalRequestDto? Approval);
 
 /// <summary>
 /// Variable pay items for a payroll month: entered by payroll staff, imported in bulk (CSV), or posted by other
 /// modules — for example the canteen's staff credit (CAN-03) — through <see cref="PostDeductionAsync"/>, which is
-/// idempotent on the caller's reference so a retried post never deducts twice.
+/// idempotent on the caller's reference so a retried post never deducts twice. What raises pay waits for a second person,
+/// and nobody changes their own pay (<see cref="PayApprovals"/>, maker-checker slice 11).
 /// </summary>
-public sealed class PayrollInputService(HospitalDbContext db)
+public sealed class PayrollInputService(HospitalDbContext db, ICurrentUser currentUser, PayApprovals pay)
 {
-    public async Task<Result<Guid>> AddAsync(Guid runId, SavePayrollInputRequest request, CancellationToken ct)
+    public async Task<Result<PayrollInputAdded>> AddAsync(Guid runId, SavePayrollInputRequest request, CancellationToken ct)
     {
         var run = await EditableRunAsync(runId, ct);
         if (run.IsFailure)
@@ -25,14 +30,26 @@ public sealed class PayrollInputService(HospitalDbContext db)
             return Error.Field("employeeId", "Choose an employee of this facility.");
         }
 
+        if (await pay.OwnPayAsync([employee.Id], approving: false, ct) is { } own)
+        {
+            return own;
+        }
+
         var code = (request.ComponentCode ?? request.Kind.ToString()).Trim().ToUpperInvariant();
         if (request.Kind is PayrollInputKind.Earning or PayrollInputKind.Deduction)
         {
-            var problem = await CheckComponentAsync(code, request.Kind, ct);
+            var problem = await CheckComponentAsync(db, code, request.Kind, ct);
             if (problem is not null)
             {
                 return problem;
             }
+        }
+
+        if (PayChangeRule.InputWaits(request.Kind))
+        {
+            var asked = await pay.AskInputAsync(run.Value,
+                new PayrollInputPayload(Guid.CreateVersion7(), runId, employee.Id, request.Kind, code, request.Description.Trim(), Money.Round(request.Amount)), ct);
+            return asked.IsSuccess ? Result<PayrollInputAdded>.Ok(new PayrollInputAdded(null, asked.Value)) : asked.Error!;
         }
 
         var input = new PayrollInput
@@ -48,10 +65,11 @@ public sealed class PayrollInputService(HospitalDbContext db)
         };
         db.Add(input);
         await db.SaveChangesAsync(ct);
-        return input.Id;
+        return new PayrollInputAdded(input.Id, null);
     }
 
-    public async Task<Result> RemoveAsync(Guid inputId, CancellationToken ct)
+    /// <summary>Removes an input at once (null), or asks for a deduction's removal (the request: <see cref="PayChangeRule.RemovalWaits"/>).</summary>
+    public async Task<Result<ApprovalRequestDto?>> RemoveAsync(Guid inputId, CancellationToken ct)
     {
         var input = await db.Set<PayrollInput>().FirstOrDefaultAsync(i => i.Id == inputId, ct);
         if (input is null)
@@ -65,12 +83,27 @@ public sealed class PayrollInputService(HospitalDbContext db)
             return run.Error!;
         }
 
+        if (await pay.OwnPayAsync([input.EmployeeId], approving: false, ct) is { } own)
+        {
+            return own;
+        }
+
+        if (PayChangeRule.RemovalWaits(input.Kind, input.Source, input.CreatedBy, currentUser.UserId))
+        {
+            var asked = await pay.AskRemovalAsync(run.Value, input, ct);
+            return asked.IsSuccess ? Result<ApprovalRequestDto?>.Ok(asked.Value) : asked.Error!;
+        }
+
         db.Remove(input);
         await db.SaveChangesAsync(ct);
-        return Result.Success();
+        return (ApprovalRequestDto?)null;
     }
 
-    /// <summary>All-or-nothing CSV import: any bad line (format, unknown employee or pay head) rejects the whole file.</summary>
+    /// <summary>
+    /// All-or-nothing CSV import: any bad line (format, unknown employee or pay head) rejects the whole file, and so does a
+    /// line for the importer's own pay. A file of deductions only is imported at once; one with an earning in it waits, as a
+    /// whole, for a second person (its result then carries the request).
+    /// </summary>
     public async Task<Result<PayrollImportResult>> ImportAsync(Guid runId, string csv, CancellationToken ct)
     {
         var run = await EditableRunAsync(runId, ct);
@@ -124,6 +157,18 @@ public sealed class PayrollInputService(HospitalDbContext db)
                 new Dictionary<string, string[]> { ["csv"] = errors.Take(100).ToArray() });
         }
 
+        if (await pay.OwnPayAsync([.. inputs.Select(i => i.EmployeeId).Distinct()], approving: false, ct) is { } own)
+        {
+            return own;
+        }
+
+        if (inputs.Any(i => PayChangeRule.InputWaits(i.Kind)))
+        {
+            var asked = await pay.AskImportAsync(run.Value,
+                [.. inputs.Select(i => new PayrollInputPayload(i.Id, runId, i.EmployeeId, i.Kind, i.ComponentCode, i.Description, i.Amount))], ct);
+            return asked.IsSuccess ? Result<PayrollImportResult>.Ok(new PayrollImportResult(0, asked.Value)) : asked.Error!;
+        }
+
         db.AddRange(inputs);
         await db.SaveChangesAsync(ct);
         return new PayrollImportResult(inputs.Count);
@@ -157,7 +202,7 @@ public sealed class PayrollInputService(HospitalDbContext db)
         }
 
         var code = componentCode.Trim().ToUpperInvariant();
-        var problem = await CheckComponentAsync(code, PayrollInputKind.Deduction, ct);
+        var problem = await CheckComponentAsync(db, code, PayrollInputKind.Deduction, ct);
         if (problem is not null)
         {
             return problem;
@@ -202,7 +247,7 @@ public sealed class PayrollInputService(HospitalDbContext db)
         return input.Id;
     }
 
-    private async Task<Error?> CheckComponentAsync(string code, PayrollInputKind kind, CancellationToken ct)
+    internal static async Task<Error?> CheckComponentAsync(HospitalDbContext db, string code, PayrollInputKind kind, CancellationToken ct)
     {
         var component = await db.Set<SalaryComponent>().AsNoTracking().FirstOrDefaultAsync(c => c.Code == code && c.IsActive, ct);
         if (component is null || component.IsStatutory)

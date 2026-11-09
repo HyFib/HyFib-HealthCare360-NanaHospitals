@@ -31,7 +31,12 @@ function NewEmployeePage() {
   const create = useMutation({
     mutationFn: (values: EmployeeFormValues) => hrApi.createEmployee(formToRequest(values, null)),
     onSuccess: (created, values) => {
-      notify.success('Employee added', `${values.firstName} ${values.lastName} · ${created.employeeCode}`);
+      notify.success(
+        'Employee added',
+        created.bankApprovalId
+          ? `${values.firstName} ${values.lastName} · ${created.employeeCode}. The bank account is asked for approval: someone else who approves payroll decides it.`
+          : `${values.firstName} ${values.lastName} · ${created.employeeCode}`,
+      );
       void queryClient.invalidateQueries({ queryKey: hrKeys.employees });
       void navigate({ to: '/hr/employees/$employeeId', params: { employeeId: created.id } });
     },

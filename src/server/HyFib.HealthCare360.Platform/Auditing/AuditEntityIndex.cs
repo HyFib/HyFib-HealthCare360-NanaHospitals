@@ -159,8 +159,13 @@ internal sealed class AuditEntityIndexJob(IServiceScopeFactory scopes, TimeProvi
         {
             try
             {
+                // As the schema's owner where it has one: an index is the owner's to make (DatabaseOwner).
                 await using var scope = scopes.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<AuditEntityIndex>().EnsureAsync(stoppingToken);
+                var index = scope.ServiceProvider.GetRequiredService<DatabaseOwner>().Create<AuditEntityIndex>(scope.ServiceProvider, out var owner);
+                await using (owner)
+                {
+                    await index.EnsureAsync(stoppingToken);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

@@ -48,10 +48,33 @@ public sealed class PlatformOptionsValidator(IHostEnvironment environment) : IVa
         }
 
         problems.AddRange(ClusterProblems(options.Cluster));
+        problems.AddRange(OffServerLogProblems(options));
         problems.AddRange(Http.ReverseProxy.Problems(options.Network));
         problems.AddRange(Http.ClientAddresses.Problems(options.Network));
         problems.AddRange(PartitionProblems(options.Partitions));
         problems.AddRange(options.RateLimits.Problems());
+        return problems;
+    }
+
+    /// <summary>The syslog collector, and where the audit anchors are copied off the server.</summary>
+    public static IReadOnlyList<string> OffServerLogProblems(PlatformOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var problems = new List<string>(options.Syslog.Problems());
+        if (options.Audit.AnchorsToSyslog && !options.Syslog.Enabled)
+        {
+            problems.Add("HealthCare360:Audit:AnchorsToSyslog is true but the syslog collector is off: set HealthCare360:Syslog:Enabled and Host.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.Audit.AnchorMirrorFile))
+        {
+            var mirror = Path.GetFullPath(Environment.ExpandEnvironmentVariables(options.Audit.AnchorMirrorFile));
+            if (string.Equals(mirror, new DataDirectories(options).AuditAnchors, StringComparison.OrdinalIgnoreCase))
+            {
+                problems.Add("HealthCare360:Audit:AnchorMirrorFile is the anchor file itself: name a file on another machine.");
+            }
+        }
+
         return problems;
     }
 

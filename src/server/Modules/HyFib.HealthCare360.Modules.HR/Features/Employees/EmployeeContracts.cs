@@ -67,13 +67,15 @@ public sealed record EmployeeDetail(
     string? EsiNumber,
     Guid? PhotoFileId,
     string? Notes,
-    uint Version);
+    uint Version,
+    PendingPaymentDetails? PendingPaymentDetails = null);
 
 public sealed record BankDetailsInput(string? BankName, string AccountNumber, string Ifsc);
 
 /// <summary>
-/// Create/update payload. <see cref="Pan"/>: null keeps the stored value, "" removes it. Bank details are accepted
-/// at creation only; later changes go through the dedicated (separately audited) bank-details endpoint.
+/// Create/update payload. <see cref="Pan"/>: null keeps the stored value, "" removes it. Bank details are accepted at
+/// creation only, and wait there for a second person as every later change does (the bank-details endpoint). A payment
+/// mode different from the one in force is asked for, not saved (maker-checker slice 11); a new employee's is saved.
 /// </summary>
 public sealed record SaveEmployeeRequest(
     string? Title,
@@ -110,11 +112,18 @@ public sealed record SaveEmployeeRequest(
     BankDetailsInput? Bank,
     uint? Version);
 
-public sealed record UpdateBankDetailsRequest(string? BankName, string AccountNumber, string Ifsc, bool ConfirmSharedAccount, uint Version);
+/// <summary>
+/// Salary payment details as they should be, asked for a second person's approval (maker-checker slice 11).
+/// <see cref="AccountNumber"/> and <see cref="Ifsc"/> go together; none keeps the account on record (switching to cash, or
+/// back to it from cash or cheque). <see cref="Version"/> is the employee's version as seen.
+/// </summary>
+public sealed record UpdateBankDetailsRequest(
+    SalaryPaymentMode PaymentMode, string? BankName, string? AccountNumber, string? Ifsc, bool ConfirmSharedAccount, string Reason, uint Version);
 
 public sealed record SeparateEmployeeRequest(DateOnly LastWorkingDay, SeparationReason Reason, string? Note, uint Version);
 
-public sealed record EmployeeCreated(Guid Id, string EmployeeCode);
+/// <param name="BankApprovalId">The request a new employee's bank account waits in, when one was given.</param>
+public sealed record EmployeeCreated(Guid Id, string EmployeeCode, Guid? BankApprovalId = null);
 
 internal static class EmployeeRules
 {
@@ -189,9 +198,16 @@ public sealed class UpdateBankDetailsRequestValidator : AbstractValidator<Update
 {
     public UpdateBankDetailsRequestValidator()
     {
+        RuleFor(x => x.PaymentMode).IsInEnum();
         RuleFor(x => x.BankName).SafeText(100);
-        RuleFor(x => x.AccountNumber).Must(HrIdentifiers.IsValidBankAccount).WithMessage("Account numbers have 9 to 18 digits.");
-        RuleFor(x => x.Ifsc).Must(HrIdentifiers.IsValidIfsc).WithMessage("Enter a valid IFSC (for example SBIN0001234).");
+        RuleFor(x => x.AccountNumber).Must(HrIdentifiers.IsValidBankAccount).When(x => !string.IsNullOrWhiteSpace(x.AccountNumber))
+            .WithMessage("Account numbers have 9 to 18 digits.");
+        RuleFor(x => x.Ifsc).Must(HrIdentifiers.IsValidIfsc).When(x => !string.IsNullOrWhiteSpace(x.Ifsc))
+            .WithMessage("Enter a valid IFSC (for example SBIN0001234).");
+        RuleFor(x => x.Ifsc).NotEmpty().When(x => !string.IsNullOrWhiteSpace(x.AccountNumber)).WithMessage("Enter the IFSC of the new account.");
+        RuleFor(x => x.AccountNumber).NotEmpty().When(x => !string.IsNullOrWhiteSpace(x.Ifsc)).WithMessage("Enter the account number for this IFSC.");
+        RuleFor(x => x.Reason).NotEmpty().WithMessage("Say why the payment details change: the person who approves it reads it.").SafeText(500);
+        RuleFor(x => x.Version).SeenVersion();
     }
 }
 

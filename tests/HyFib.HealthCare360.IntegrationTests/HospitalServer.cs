@@ -1300,6 +1300,25 @@ public sealed class HospitalServer : IAsyncLifetime
     }
 
     /// <summary>
+    /// An HR change (salary payment details, a salary structure, a payroll input, a leave credit: maker-checker slice 11)
+    /// approved by whoever of the HR manager and the hospital administrator did not ask for it.
+    /// </summary>
+    public async Task<ApprovalRequestDto> ApproveHrChangeAsync(Guid approvalId)
+    {
+        foreach (var userName in new[] { Users.HrManager, Users.HospitalAdmin })
+        {
+            var checker = await SignInAsync(userName);
+            var request = await checker.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
+            if (request.CanDecide)
+            {
+                return Approved(await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Checked for the tests.", request.Version)));
+            }
+        }
+
+        throw new InvalidOperationException($"Neither HR user may decide approval {approvalId}.");
+    }
+
+    /// <summary>
     /// A correction of an implant or consumable line after the operation started, approved by the hospital administrator, who
     /// holds the OT in-charge's approval and did not ask for it.
     /// </summary>

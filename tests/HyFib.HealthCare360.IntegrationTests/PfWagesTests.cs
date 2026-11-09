@@ -2,6 +2,7 @@ using System.Net;
 using HyFib.HealthCare360.Modules.HR.Domain;
 using HyFib.HealthCare360.Modules.HR.Features.Employees;
 using HyFib.HealthCare360.Modules.HR.Features.Payroll;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.SharedKernel;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -23,7 +24,8 @@ public sealed class PfWagesTests(HospitalServer server)
         // An attendant on ₹6,000 basic, with house rent (40% of basic: ₹2,400), conveyance (₹1,600) and a special allowance
         // (₹2,000).
         var employee = await hr.PostAsync<EmployeeCreated>("/api/v1/hr/employees/", Employee());
-        await hr.PostAsync<Created>($"/api/v1/hr/employees/{employee.Id}/salary-structures", new SaveSalaryStructureRequest(
+        // A salary structure and an earning wait for a second person (maker-checker slice 11): the HR manager approves them.
+        var structure = await hr.PostAsync<ApprovalRequestDto>($"/api/v1/hr/employees/{employee.Id}/salary-structures", new SaveSalaryStructureRequest(
             new DateOnly(2026, 1, 1), null, 0, PfApplicable: true, PfOnActualBasic: false, EsiApplicable: false, null, null,
             [
                 new SalaryStructureLineInput(components["BASIC"].Id, 6_000),
@@ -31,11 +33,13 @@ public sealed class PfWagesTests(HospitalServer server)
                 new SalaryStructureLineInput(components["CONV"].Id, 1_600),
                 new SalaryStructureLineInput(components["SPECIAL"].Id, 2_000),
             ]));
+        await server.ApproveHrChangeAsync(structure.Id);
 
         // June 2026 in full, with ₹8,000 of overtime: ₹20,000 of pay, of which ₹12,000 is house rent, conveyance and overtime.
         var run = await RunAsync(hr, 2026, 6);
-        await hr.PostAsync<Guid>($"/api/v1/hr/payroll/runs/{run}/inputs",
+        var overtime = await hr.PostAsync<ApprovalRequestDto>($"/api/v1/hr/payroll/runs/{run}/inputs",
             new SavePayrollInputRequest(employee.Id, PayrollInputKind.Earning, "OT", "Overtime in June", 8_000));
+        await server.ApproveHrChangeAsync(overtime.Id);
         await hr.PostAsync<PayrollProcessResult>($"/api/v1/hr/payroll/runs/{run}/process");
 
         var listed = (await hr.GetAsync<PagedResult<PayslipListItem>>($"/api/v1/hr/payroll/runs/{run}/payslips?search={employee.EmployeeCode}")).Items
@@ -64,8 +68,9 @@ public sealed class PfWagesTests(HospitalServer server)
             code, "Extra overtime", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 0, true, 60, true, null, WageTreatment.Excluded));
         var employee = await hr.PostAsync<EmployeeCreated>("/api/v1/hr/employees/", Employee());
         var run = await RunAsync(hr, 2026, 6);
-        await hr.PostAsync<Guid>($"/api/v1/hr/payroll/runs/{run}/inputs",
+        var overtime = await hr.PostAsync<ApprovalRequestDto>($"/api/v1/hr/payroll/runs/{run}/inputs",
             new SavePayrollInputRequest(employee.Id, PayrollInputKind.Earning, code, "Overtime in June", 2_000));
+        await server.ApproveHrChangeAsync(overtime.Id);
         var pathOf = $"/api/v1/hr/payroll/components/{created.Id}";
         var version = (await hr.GetAsync<List<SalaryComponentDto>>("/api/v1/hr/payroll/components")).Single(c => c.Id == created.Id).Version;
 

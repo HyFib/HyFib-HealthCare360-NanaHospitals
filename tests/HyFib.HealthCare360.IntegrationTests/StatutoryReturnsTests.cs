@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.HR.Domain.Statutory;
 using HyFib.HealthCare360.Modules.HR.Features.Employees;
 using HyFib.HealthCare360.Modules.HR.Features.Payroll;
 using HyFib.HealthCare360.Modules.HR.Features.Statutory;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.SharedKernel;
 
@@ -37,6 +38,9 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
             new BankDetailsInput("HDFC Bank", "5010" + Digits(10), "HDFC0001234")));
         var attendant = await hr.PostAsync<EmployeeCreated>("/api/v1/hr/employees/", Employee("Murugan", null, uanB, ipB,
             new BankDetailsInput("State Bank of India", "3" + Digits(10), "SBIN0004321")));
+        // Each first account and salary structure waits for a second person (maker-checker slice 11): the HR manager approves.
+        await server.ApproveHrChangeAsync(consultant.BankApprovalId!.Value);
+        await server.ApproveHrChangeAsync(attendant.BankApprovalId!.Value);
         await StructureAsync(hr, consultant.Id, components, 80_000, 20_000, esi: false);
         await StructureAsync(hr, attendant.Id, components, 12_000, 0, esi: true);
         await hr.PutAsync($"{Statutory}/employees/{consultant.Id}/tax-declarations/2025", new SaveTaxDeclarationRequest(
@@ -81,6 +85,19 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
         var hdfc = (await TextAsync(manager, $"{Statutory}/runs/{run}/bank-file/Hdfc")).Split("\r\n");
         var hdfcLine = hdfc.Single(l => l.Contains(a.EmployeeCode, StringComparison.Ordinal)).Split(',');
         (hdfcLine[0], hdfcLine[3], hdfcLine[24]).ShouldBe(("I", "109544.00", "HDFC0001234"));
+
+        // The bank's own format pays the account fixed on the payslip at approval, as the generic file does: an account
+        // changed (and approved) afterwards does not reach a month already approved (maker-checker slice 11).
+        // The new account is this test's own (other tests' employees, paid in the same month, may bank anywhere).
+        var newAccount = "4444" + Digits(8);
+        var version = (await hr.GetAsync<EmployeeDetail>($"/api/v1/hr/employees/{consultant.Id}")).Version;
+        var moved = await TheatreCases.AcceptedAsync(hr, HttpMethod.Put, $"/api/v1/hr/employees/{consultant.Id}/bank-details",
+            new UpdateBankDetailsRequest(SalaryPaymentMode.BankTransfer, "Indian Bank", newAccount, "IDIB000A123", false, "Changed banks", version));
+        await server.ApproveHrChangeAsync(moved.Id);
+        var after = await TextAsync(manager, $"{Statutory}/runs/{run}/bank-file/Hdfc");
+        var consultantLine = after.Split("\r\n").Single(l => l.Contains(a.EmployeeCode, StringComparison.Ordinal)).Split(',');
+        (consultantLine[2], consultantLine[24]).ShouldBe((hdfcLine[2], "HDFC0001234"));
+        after.ShouldNotContain(newAccount);
         var sbi = (await TextAsync(manager, $"{Statutory}/runs/{run}/bank-file/Sbi")).Split("\r\n");
         sbi.Single(l => l.Contains("SBIN0004321", StringComparison.Ordinal) && l.Contains("15234.00", StringComparison.Ordinal)).Split('|')[3].ShouldBe("DCR");
 
@@ -141,7 +158,7 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
             "S Raman", "Finance Manager", "ABCPR1234K", "9876543210", null, "TNMAS0012345000", null, "00000012345678", BankFileFormat.Sbi, current.Version));
     }
 
-    private static async Task StructureAsync(ApiClient hr, Guid employeeId, Dictionary<string, SalaryComponentDto> components, decimal basic, decimal special, bool esi)
+    private async Task StructureAsync(ApiClient hr, Guid employeeId, Dictionary<string, SalaryComponentDto> components, decimal basic, decimal special, bool esi)
     {
         List<SalaryStructureLineInput> lines = [new(components["BASIC"].Id, basic), new(components["HRA"].Id, 40)];
         if (special > 0)
@@ -149,8 +166,9 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
             lines.Add(new SalaryStructureLineInput(components["SPECIAL"].Id, special));
         }
 
-        await hr.PostAsync<JsonElement>($"/api/v1/hr/employees/{employeeId}/salary-structures", new SaveSalaryStructureRequest(
+        var asked = await hr.PostAsync<ApprovalRequestDto>($"/api/v1/hr/employees/{employeeId}/salary-structures", new SaveSalaryStructureRequest(
             new DateOnly(2025, 11, 1), null, 0, PfApplicable: true, PfOnActualBasic: false, EsiApplicable: esi, null, null, lines));
+        await server.ApproveHrChangeAsync(asked.Id);
     }
 
     private static async Task<Guid> RunAsync(ApiClient hr, int year, int month)

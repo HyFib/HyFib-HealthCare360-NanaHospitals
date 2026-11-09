@@ -150,8 +150,10 @@ of the contribution period (April–September, October–March) once covered in 
 
 SBI (pipe-separated, DCR within SBI, else NEFT), HDFC ENet (no header row, `I` within HDFC, `N` NEFT) and ICICI CIB
 (`I` within ICICI, `N` NEFT). SBI and ICICI need the hospital's salary account from the statutory profile. Text is
-stripped of separators and formula characters. **Banks set these layouts per corporate client: confirm each against
-the bank's sample file before the first upload.**
+stripped of separators and formula characters. Each pays the account and IFSC fixed on the payslip when the payroll
+was approved (maker-checker slice 11), never the employee's account at export; a run approved before payment details
+were fixed has no bank file until it is reopened and approved again (`payroll.bank_details_not_fixed`). **Banks set
+these layouts per corporate client: confirm each against the bank's sample file before the first upload.**
 
 ## Field layouts and their sources
 
