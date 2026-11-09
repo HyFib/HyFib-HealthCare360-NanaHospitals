@@ -677,6 +677,8 @@ export interface WardRoundPatient {
   isMlc: boolean;
   /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", no diagnosis or vital-sign details. */
   isRestricted: boolean;
+  /** A record in a sensitive category the user does not hold: named, without the diagnosis and vital-sign details. */
+  isConfidential?: boolean;
   consultantId: string | null;
   consultantName: string | null;
   /** False when the doctor follows the patient for another consultant (visited during this stay). */
