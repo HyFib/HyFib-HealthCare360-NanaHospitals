@@ -102,6 +102,7 @@ public sealed class PharmacyModule : IModule
         SaleEndpoints.Map(endpoints);
         InpatientEndpoints.Map(endpoints);
         RegisterEndpoints.Map(endpoints);
+        RecallTraceEndpoints.Map(endpoints);
         NdpsEndpoints.Map(endpoints);
         AdrEndpoints.Map(endpoints);
         RefillEndpoints.Map(endpoints);

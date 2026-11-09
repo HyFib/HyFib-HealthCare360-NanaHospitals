@@ -62,6 +62,13 @@ public sealed class Indent : AuditableEntity, IFacilityScoped
             return Error.Rule("indent.not_pending", "Only pending indents can be approved.");
         }
 
+        // Stock leaves the store as the department's consumption on an approved indent: whoever asked for it does not
+        // also decide it (MAKER-CHECKER slice 13).
+        if (IsRequester(userId))
+        {
+            return Error.Forbidden(ApproveOwnCode, $"You raised indent {Number}: someone else at the issuing store approves it.");
+        }
+
         foreach (var line in Lines)
         {
             if (approvedQuantities.TryGetValue(line.Id, out var approved))
@@ -89,6 +96,12 @@ public sealed class Indent : AuditableEntity, IFacilityScoped
         DecidedAt = now;
         return Result.Success();
     }
+
+    public const string ApproveOwnCode = "indent.approve_own";
+    public const string IssueOwnCode = "indent.issue_own";
+
+    /// <summary>Whether <paramref name="userId"/> raised the indent: it neither approves nor issues it.</summary>
+    public bool IsRequester(Guid? userId) => userId is { } user && RequestedByUserId == user;
 
     public Result Reject(Guid? userId, string reason, DateTimeOffset now)
     {

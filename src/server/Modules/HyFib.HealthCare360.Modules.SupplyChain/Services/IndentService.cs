@@ -128,6 +128,11 @@ public sealed class IndentService(HospitalDbContext db, INumberSeries numbers, S
             return Error.Rule("indent.closed", $"Indent {indent.Number} is {indent.Status}.");
         }
 
+        if (indent.IsRequester(currentUser.UserId))
+        {
+            return Error.Forbidden(Indent.IssueOwnCode, $"You raised indent {indent.Number}: someone else at the issuing store issues it.");
+        }
+
         var lines = new List<(IndentLine Line, IndentIssueLineInput Input)>();
         foreach (var input in request.Lines)
         {

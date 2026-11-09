@@ -71,3 +71,20 @@ internal sealed class StockReservationConfiguration : IEntityTypeConfiguration<S
         b.HasIndex(x => new { x.StoreId, x.ItemId, x.Status });
     }
 }
+
+internal sealed class StoreItemLevelConfiguration : IEntityTypeConfiguration<StoreItemLevel>
+{
+    public void Configure(EntityTypeBuilder<StoreItemLevel> b)
+    {
+        b.ToTable("store_item_levels", SupplyChainSchema.Name);
+        b.Property(x => x.ReorderLevel).IsQuantity();
+        b.Property(x => x.ReorderQuantity).IsQuantity();
+        b.Property(x => x.MinimumStock).IsQuantity();
+        b.Property(x => x.MaximumStock).IsQuantity();
+        b.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Store>().WithMany().HasForeignKey(x => x.StoreId).OnDelete(DeleteBehavior.Cascade);
+
+        // One set of levels per item per store.
+        b.HasIndex(x => new { x.StoreId, x.ItemId }).IsUnique();
+    }
+}

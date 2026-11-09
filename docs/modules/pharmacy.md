@@ -215,6 +215,17 @@ The controlled-drug register holds exactly one line per stock-ledger movement (u
 documents write their own lines with the patient and prescriber. Everything else arrives through
 `ControlledStockMoved` (see Events): GRN, transfers, adjustments, write-offs, OT consumption.
 
+### Recall trace — `/recalls/trace`
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/recalls/trace?itemId&batchNumber` | `pharmacy.registers` | → `RecallTrace`: every hand-over of the batch (matched by item and batch number, any case) to a patient, oldest first: OP dispensing against an e-prescription, counter sales (to a registered patient, or a walk-in by the name and phone given at the counter) and issues to the ward for an admitted patient, each with the document, the store, the patient's UHID, name and phone, what was given, what came back and what the patient kept; cancelled sales are left out. Also the stores still holding the batch, and whether each holds it on recall. Audited `pharmacy.recall_trace` (PHI access, Warning) with who ran it, the batch and how many patients |
+
+The staff app's **Recall trace** page (Pharmacy) runs it only when asked, never as one types, and prints the call-back
+list on the letterhead with a column to note each patient contacted. It does not reach implants recorded against an
+operation or stock consumed in a ward sub-store, which are not issued to a named patient by batch through the
+pharmacy; the stock ledger follows those. A batch is held on recall from Stock (`inventory`), and released only with a
+second person's approval (see the Supply chain module).
+
 ### NDPS accounts — `/ndps` (NDPS Rules 52-O to 52-T, as amended in 2015)
 The essential narcotic drugs (`EssentialNarcoticDrugs`: morphine, fentanyl, methadone, oxycodone, codeine and
 hydrocodone, by the item's generic name) are accounted for from the controlled-drug register, which already holds every
