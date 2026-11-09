@@ -35,7 +35,13 @@ public sealed class InventoryReportService(HospitalDbContext db, TimeProvider ti
     public async Task<IReadOnlyList<ReorderRow>> ReorderAsync(Guid? storeId, CancellationToken ct)
     {
         var today = HospitalClock.Today(time);
-        var items = await db.Set<Item>().AsNoTracking().Where(i => i.IsActive && i.ReorderLevel > 0).ToListAsync(ct);
+        // A store's own levels override the item's (StoreItemLevel): an item the store reorders by its own level is a candidate
+        // even with no level on the item master, and one the store set to zero is not reordered there.
+        var storeLevels = storeId is null
+            ? new Dictionary<Guid, StoreItemLevel>()
+            : await db.Set<StoreItemLevel>().AsNoTracking().Where(l => l.StoreId == storeId).ToDictionaryAsync(l => l.ItemId, ct);
+        var overridden = storeLevels.Keys.ToList();
+        var items = await db.Set<Item>().AsNoTracking().Where(i => i.IsActive && (i.ReorderLevel > 0 || overridden.Contains(i.Id))).ToListAsync(ct);
 
         var usable = db.Set<StockBatch>().AsNoTracking()
             .Where(b => b.QuantityOnHand > b.QuantityReserved && !b.IsBlocked && (b.ExpiryDate == null || b.ExpiryDate >= today));
@@ -58,7 +64,8 @@ public sealed class InventoryReportService(HospitalDbContext db, TimeProvider ti
             .ToDictionaryAsync(x => x.ItemId, x => x.Pending, ct);
 
         var suggestions = ReorderCalculator.Rank(items
-            .Select(i => ReorderCalculator.Suggest(i, available.GetValueOrDefault(i.Id), onOrder.GetValueOrDefault(i.Id)))
+            .Select(i => ReorderCalculator.Suggest(
+                i, ReorderCalculator.LevelsFor(i, storeLevels.GetValueOrDefault(i.Id)), available.GetValueOrDefault(i.Id), onOrder.GetValueOrDefault(i.Id)))
             .OfType<ReorderSuggestion>());
 
         var candidateIds = suggestions.Select(s => s.Item.Id).ToList();
@@ -70,7 +77,7 @@ public sealed class InventoryReportService(HospitalDbContext db, TimeProvider ti
 
         return suggestions
             .Select(s => new ReorderRow(s.Item.Id, s.Item.Code, s.Item.Name, s.Item.Type, s.Item.VedClass, s.Item.BaseUnit, s.Item.PurchaseUnit,
-                s.Item.PurchaseUnitFactor, s.Available, s.OnOrder, s.Item.ReorderLevel, s.Item.ReorderQuantity, s.Item.MaximumStock, s.Quantity,
+                s.Item.PurchaseUnitFactor, s.Available, s.OnOrder, s.Levels.ReorderLevel, s.Levels.ReorderQuantity, s.Levels.MaximumStock, s.Quantity,
                 s.PurchaseUnits, lastCost.TryGetValue(s.Item.Id, out var cost) ? cost : null))
             .ToList();
     }
