@@ -59,7 +59,7 @@ serves both apps):
 
 ```bash
 export HC360_DEMO_PASSWORD='<demo password>' NODE_EXTRA_CA_CERTS=<the server's CA certificate>
-export HC360_DEMO_DB=postgresql://<user>:<password>@localhost:5432/<demo database>   # the patient's sign-in code
+export HC360_DEMO_DB=postgresql://<user>:<password>@localhost:5432/<demo database>   # codes sent by SMS
 DEMO_CLOCK_FILE=/var/tmp/hc360-demo-clock.txt node demo/story.mjs demo/out/story.json   # about 3 min
 DEMO_PARALLEL=4 node demo/capture.mjs demo/out/recordings                                # 40 to 60 min
 node demo/build.mjs demo/out/recordings demo/out/story.json demo/out/demo
@@ -71,7 +71,8 @@ The demo's clock starts where the story stopped the server's, and runs on from t
 
 The patient (`PORTAL_PATIENT` in `app/personas.ts`) signs in to the portal on the server's patients' port
 (`HC360_PORTAL`, `https://localhost:7361` by default) with a code sent by SMS. A demo server has no SMS gateway, so
-`capture.mjs` reads the code the server queued for one from its database, with `psql` and `HC360_DEMO_DB`.
+`capture.mjs` reads the code the server queued for one from its database, with `psql` and `HC360_DEMO_DB`
+(`lib/db.mjs`). `story.mjs` reads the codes that give the seeded patients their fictional numbers the same way.
 
 ## Publishing at hc360.hyfib.com
 
