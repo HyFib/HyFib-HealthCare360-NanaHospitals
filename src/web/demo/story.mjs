@@ -3,7 +3,11 @@
 // server that has just been seeded with demonstration data at 9:00 am (README.md): patients then stand at every stage
 // the demo shows (seen, tested, waiting to pay, at the pharmacy, admitted, discharged, in casualty, with the doctor).
 //
-//   HC360_DEMO_PASSWORD=… NODE_EXTRA_CA_CERTS=hc360-ca.pem DEMO_CLOCK_FILE=clock.txt node demo/story.mjs [story.json]
+//   HC360_DEMO_PASSWORD=… HC360_DEMO_DB=postgresql://… NODE_EXTRA_CA_CERTS=hc360-ca.pem DEMO_CLOCK_FILE=clock.txt \
+//     node demo/story.mjs [story.json]
+//
+// HC360_DEMO_DB is the demo server's database (a connection URI for psql), where the story reads the codes the server
+// sends by SMS (lib/db.mjs): the demo server has no SMS gateway.
 //
 // DEMO_CLOCK_FILE is the file the demo server and its database take their time from (libfaketime's
 // FAKETIME_TIMESTAMP_FILE): each step moves the hospital's clock to its time of the morning before it happens, and at
@@ -14,6 +18,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { addDays, Api, ApiError, askServerTime, firstSignIn, istAt, istDate, serverNow } from './lib/api.mjs';
+import { sentCodes } from './lib/db.mjs';
 
 const outcome = { recordedAt: null, today: null, demoClock: null, accounts: [], staff: [], scenes: [] };
 let phoneSequence = 1000;
@@ -135,7 +140,7 @@ async function createSpecialists() {
     }
     const role = roles.find((r) => r.name === roleName);
     const temporary = `Demo-first-${crypto.randomUUID().slice(0, 12)}`;
-    await admin.post('/api/v1/admin/users', {
+    const created = await admin.post('/api/v1/admin/users', {
       userName,
       displayName,
       email: null,
@@ -146,9 +151,20 @@ async function createSpecialists() {
       practitionerId: null,
       temporaryPassword: temporary,
     });
+    // Access is given by two people: the hospital administrator approves what the system administrator asked for.
+    await approve(created.approvalId);
+    await approve(created.practitionerLinkApprovalId);
     await firstSignIn(userName, temporary);
     outcome.accounts.push({ userName, displayName, role: roleName });
   }
+}
+
+/** Approves, as the hospital administrator (a second person who may approve grants), a change the admin asked for. */
+async function approve(approvalId) {
+  if (!approvalId) return;
+  const checker = await Api.as('hospitaladmin');
+  const request = await checker.get(`/api/v1/approvals/${approvalId}`);
+  await checker.post(`/api/v1/approvals/${approvalId}/approve`, { note: null, version: request.version });
 }
 
 /**
@@ -356,9 +372,18 @@ async function register(p) {
   return { ...created, phone, fullName: `${p.first} ${p.last}` };
 }
 
-/** The seeded patients' numbers look like anyone's: they get numbers from the fictional series too. */
+/**
+ * The seeded patients' numbers look like anyone's: they get numbers from the fictional series too. A new number is
+ * made only with the code the server sends to it by SMS (Change number); the demo server has none, so the code is
+ * read from the message it queued (lib/db.mjs). The edit then clears what else looks real.
+ */
 async function fictionalPhone(patientId) {
   const frontOffice = await Api.as('frontoffice');
+  const phone = nextPhone();
+  const change = await frontOffice.post(`/api/v1/patients/${patientId}/phone-change`, { phone });
+  const [[, code] = []] = sentCodes('patients.phone_code', `+91${phone}`);
+  if (!code) throw new Error(`The server queued no code for ${phone}`);
+  await frontOffice.post(`/api/v1/patients/${patientId}/phone-change/${change.changeId}/confirm`, { code });
   const detail = await frontOffice.get(`/api/v1/patients/${patientId}`);
   await frontOffice.put(`/api/v1/patients/${patientId}`, {
     title: detail.title ?? null,
@@ -369,7 +394,7 @@ async function fictionalPhone(patientId) {
     dateOfBirth: detail.dateOfBirth ?? null,
     ageYears: null,
     ageMonths: null,
-    phone: nextPhone(),
+    phone,
     alternatePhone: null,
     email: null,
     address: detail.address ?? null,
