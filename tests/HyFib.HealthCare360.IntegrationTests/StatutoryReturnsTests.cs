@@ -88,13 +88,16 @@ public sealed class StatutoryReturnsTests(HospitalServer server)
 
         // The bank's own format pays the account fixed on the payslip at approval, as the generic file does: an account
         // changed (and approved) afterwards does not reach a month already approved (maker-checker slice 11).
+        // The new account is this test's own (other tests' employees, paid in the same month, may bank anywhere).
+        var newAccount = "4444" + Digits(8);
         var version = (await hr.GetAsync<EmployeeDetail>($"/api/v1/hr/employees/{consultant.Id}")).Version;
         var moved = await TheatreCases.AcceptedAsync(hr, HttpMethod.Put, $"/api/v1/hr/employees/{consultant.Id}/bank-details",
-            new UpdateBankDetailsRequest(SalaryPaymentMode.BankTransfer, "Indian Bank", "4444" + Digits(8), "IDIB000A123", false, "Changed banks", version));
+            new UpdateBankDetailsRequest(SalaryPaymentMode.BankTransfer, "Indian Bank", newAccount, "IDIB000A123", false, "Changed banks", version));
         await server.ApproveHrChangeAsync(moved.Id);
         var after = await TextAsync(manager, $"{Statutory}/runs/{run}/bank-file/Hdfc");
-        after.Split("\r\n").Single(l => l.Contains(a.EmployeeCode, StringComparison.Ordinal)).Split(',')[24].ShouldBe("HDFC0001234");
-        after.ShouldNotContain("IDIB000A123");
+        var consultantLine = after.Split("\r\n").Single(l => l.Contains(a.EmployeeCode, StringComparison.Ordinal)).Split(',');
+        (consultantLine[2], consultantLine[24]).ShouldBe((hdfcLine[2], "HDFC0001234"));
+        after.ShouldNotContain(newAccount);
         var sbi = (await TextAsync(manager, $"{Statutory}/runs/{run}/bank-file/Sbi")).Split("\r\n");
         sbi.Single(l => l.Contains("SBIN0004321", StringComparison.Ordinal) && l.Contains("15234.00", StringComparison.Ordinal)).Split('|')[3].ShouldBe("DCR");
 
