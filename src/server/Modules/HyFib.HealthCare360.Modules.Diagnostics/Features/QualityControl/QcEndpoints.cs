@@ -133,7 +133,7 @@ internal static class QcEndpoints
         var lotIds = paged.Items.Select(r => r.QcLotId).Distinct().ToList();
         var runIds = paged.Items.Select(r => r.Id).ToList();
         var lots = await db.Set<QcLot>().AsNoTracking().Where(l => lotIds.Contains(l.Id)).ToDictionaryAsync(l => l.Id, ct);
-        var overridden = await db.Set<QcOverride>().AsNoTracking().Where(o => runIds.Contains(o.QcRunId)).Select(o => o.QcRunId).ToListAsync(ct);
+        var overridden = await db.Set<QcOverride>().AsNoTracking().Where(o => runIds.Contains(o.QcRunId) && o.LabResultIds == null).Select(o => o.QcRunId).ToListAsync(ct);
         var users = await lookups.UserNamesAsync(paged.Items.SelectMany(r => new[] { r.CreatedBy, r.ReviewedBy }), ct);
         return TypedResults.Ok(paged.Map(r => QualityControlService.ToDto(r, lots[r.QcLotId], users, overridden.Contains(r.Id))));
     }
@@ -147,6 +147,9 @@ internal static class QcEndpoints
     private static async Task<IResult> Status(QualityControlService qc, ICurrentUser user, CancellationToken ct) =>
         TypedResults.Ok(await qc.StatusAsync(user.FacilityId, ct));
 
+    /// <summary>200 with the count overridden; 202 with the request when it waits for a second pathologist.</summary>
     private static async Task<IResult> Override(QcOverrideRequest request, QualityControlService qc, CancellationToken ct) =>
-        (await qc.OverrideAsync(request, ct)).ToHttpResult(count => TypedResults.Ok(new { overrides = count }));
+        (await qc.OverrideAsync(request, ct)).ToHttpResult(outcome => outcome.Approval is { } approval
+            ? TypedResults.Accepted($"/api/v1/approvals/{approval.Id}", approval)
+            : TypedResults.Ok(new { overrides = outcome.Overrides }));
 }

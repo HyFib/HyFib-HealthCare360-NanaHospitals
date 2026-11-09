@@ -18,6 +18,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { errorMessage, indexedFieldErrors } from '../common/errors';
 import { labApi, labKeys, labQueries, type LabTestDetail, type ReferenceRangeDto } from '../api';
+import { SecondPathologistReasonDialog } from './SecondPathologistReasonDialog';
+import { asksForReason, isApprovalRequest, waitsForSecondPathologist } from './secondPathologist';
 import {
   emptyRange,
   fromDays,
@@ -174,13 +176,24 @@ export function RangesEditor({
   });
   const valid = problems.every((problem) => problem === null);
 
+  // A critical limit loosened where the lab asks for a second pathologist: the server asks why, and the change waits.
+  const [askingWhy, setAskingWhy] = useState(false);
   const save = useMutation({
-    mutationFn: async () => {
-      await labApi.setRanges(test.id, converted as ReferenceRangeDto[], version);
+    mutationFn: async (reason?: string) => {
+      const asked = await labApi.setRanges(test.id, converted as ReferenceRangeDto[], version, reason);
+      if (isApprovalRequest(asked)) {
+        return { asked, fresh: null };
+      }
       // The save answers with nothing: the rows are filled again from the test read after it, version included.
-      return queryClient.fetchQuery({ ...labQueries.test(test.id), staleTime: 0 }).catch(() => null);
+      const fresh = await queryClient.fetchQuery({ ...labQueries.test(test.id), staleTime: 0 }).catch(() => null);
+      return { asked: null, fresh };
     },
-    onSuccess: (fresh) => {
+    onSuccess: ({ asked, fresh }) => {
+      setAskingWhy(false);
+      if (asked) {
+        notify.info('Critical limits sent for approval', waitsForSecondPathologist);
+        return;
+      }
       setDirty(false);
       if (fresh) {
         setRows(sortRanges(fresh.ranges).map(toRow));
@@ -193,7 +206,13 @@ export function RangesEditor({
       );
       void queryClient.invalidateQueries({ queryKey: labKeys.masters });
     },
-    onError: (error) => notify.error(error, 'Could not save the reference ranges'),
+    onError: (error) => {
+      if (asksForReason(error)) {
+        setAskingWhy(true);
+        return;
+      }
+      notify.error(error, 'Could not save the reference ranges');
+    },
   });
   const serverProblems = indexedFieldErrors(save.error, 'ranges');
 
@@ -397,11 +416,19 @@ export function RangesEditor({
           appearance="primary"
           icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
           disabled={!dirty || !valid || save.isPending || rows.length > 50}
-          onClick={() => save.mutate()}
+          onClick={() => save.mutate(undefined)}
         >
           Save ranges
         </Button>
       </div>
+      <SecondPathologistReasonDialog
+        key={askingWhy ? 'asking' : 'idle'}
+        open={askingWhy}
+        what="Widening or removing a critical limit"
+        busy={save.isPending}
+        onConfirm={(reason) => save.mutate(reason)}
+        onCancel={() => setAskingWhy(false)}
+      />
     </div>
   );
 }

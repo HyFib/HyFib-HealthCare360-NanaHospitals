@@ -1087,8 +1087,12 @@ export const emrQueries = {
 // ---------------------------------------------------------------------------------------------------- commands
 
 export const emrApi = {
-  acknowledgeResult: (id: string, note: string | null) =>
-    api.post<void>(`/api/v1/emr/results/${id}/acknowledge`, { note }),
+  /**
+   * Where the lab asks for a second pathologist, a critical lab result is acknowledged by its ordering doctor, or by a
+   * doctor who records that they cover the patient (`coveringReason`; 400 on that field without it).
+   */
+  acknowledgeResult: (id: string, note: string | null, coveringReason?: string | null) =>
+    api.post<void>(`/api/v1/emr/results/${id}/acknowledge`, { note, coveringReason: coveringReason ?? null }),
 
   startEncounter: (request: StartEncounterRequest) => api.post<EncounterDetail>('/api/v1/emr/encounters', request),
   updateEncounter: (id: string, content: EncounterContent, version: number) =>

@@ -85,6 +85,7 @@ public sealed class QualityModule : IModule
         // Departments that cannot reference Quality raise their never events into the register (SpecialtyCare's theatre).
         services.Replace(ServiceDescriptor.Scoped<IIncidentRegister, IncidentRegister>());
         services.AddScoped<CapaService>();
+        services.AddScoped<ICapaRegister, CapaRegister>();
         services.AddScoped<AnonymousReportingScope>();
         services.AddScoped<MvpiService>();
         services.AddScoped<MvpiAccess>();

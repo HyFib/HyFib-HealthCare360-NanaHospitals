@@ -134,6 +134,7 @@ import { Route as AppInventoryTransfersRouteImport } from './routes/_app/invento
 import { Route as AppLabIndexRouteImport } from './routes/_app/lab/index'
 import { Route as AppLabCollectionRouteImport } from './routes/_app/lab/collection'
 import { Route as AppLabCriticalCallsRouteImport } from './routes/_app/lab/critical-calls'
+import { Route as AppLabEqasRouteImport } from './routes/_app/lab/eqas'
 import { Route as AppLabOutsourcingRouteImport } from './routes/_app/lab/outsourcing'
 import { Route as AppLabReceiveRouteImport } from './routes/_app/lab/receive'
 import { Route as AppLabSetupRouteImport } from './routes/_app/lab/setup'
@@ -981,6 +982,11 @@ const AppLabCollectionRoute = AppLabCollectionRouteImport.update({
 const AppLabCriticalCallsRoute = AppLabCriticalCallsRouteImport.update({
   id: '/lab/critical-calls',
   path: '/lab/critical-calls',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLabEqasRoute = AppLabEqasRouteImport.update({
+  id: '/lab/eqas',
+  path: '/lab/eqas',
   getParentRoute: () => AppRoute,
 } as any)
 const AppLabOutsourcingRoute = AppLabOutsourcingRouteImport.update({
@@ -2228,6 +2234,7 @@ export interface FileRoutesByFullPath {
   '/inventory/transfers': typeof AppInventoryTransfersRoute
   '/lab/collection': typeof AppLabCollectionRoute
   '/lab/critical-calls': typeof AppLabCriticalCallsRoute
+  '/lab/eqas': typeof AppLabEqasRoute
   '/lab/outsourcing': typeof AppLabOutsourcingRoute
   '/lab/receive': typeof AppLabReceiveRoute
   '/lab/setup': typeof AppLabSetupRoute
@@ -2570,6 +2577,7 @@ export interface FileRoutesByTo {
   '/inventory/transfers': typeof AppInventoryTransfersRoute
   '/lab/collection': typeof AppLabCollectionRoute
   '/lab/critical-calls': typeof AppLabCriticalCallsRoute
+  '/lab/eqas': typeof AppLabEqasRoute
   '/lab/outsourcing': typeof AppLabOutsourcingRoute
   '/lab/receive': typeof AppLabReceiveRoute
   '/lab/setup': typeof AppLabSetupRoute
@@ -2914,6 +2922,7 @@ export interface FileRoutesById {
   '/_app/inventory/transfers': typeof AppInventoryTransfersRoute
   '/_app/lab/collection': typeof AppLabCollectionRoute
   '/_app/lab/critical-calls': typeof AppLabCriticalCallsRoute
+  '/_app/lab/eqas': typeof AppLabEqasRoute
   '/_app/lab/outsourcing': typeof AppLabOutsourcingRoute
   '/_app/lab/receive': typeof AppLabReceiveRoute
   '/_app/lab/setup': typeof AppLabSetupRoute
@@ -3258,6 +3267,7 @@ export interface FileRouteTypes {
     | '/inventory/transfers'
     | '/lab/collection'
     | '/lab/critical-calls'
+    | '/lab/eqas'
     | '/lab/outsourcing'
     | '/lab/receive'
     | '/lab/setup'
@@ -3600,6 +3610,7 @@ export interface FileRouteTypes {
     | '/inventory/transfers'
     | '/lab/collection'
     | '/lab/critical-calls'
+    | '/lab/eqas'
     | '/lab/outsourcing'
     | '/lab/receive'
     | '/lab/setup'
@@ -3943,6 +3954,7 @@ export interface FileRouteTypes {
     | '/_app/inventory/transfers'
     | '/_app/lab/collection'
     | '/_app/lab/critical-calls'
+    | '/_app/lab/eqas'
     | '/_app/lab/outsourcing'
     | '/_app/lab/receive'
     | '/_app/lab/setup'
@@ -5067,6 +5079,13 @@ declare module '@tanstack/react-router' {
       path: '/lab/critical-calls'
       fullPath: '/lab/critical-calls'
       preLoaderRoute: typeof AppLabCriticalCallsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/lab/eqas': {
+      id: '/_app/lab/eqas'
+      path: '/lab/eqas'
+      fullPath: '/lab/eqas'
+      preLoaderRoute: typeof AppLabEqasRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/lab/outsourcing': {
@@ -6682,6 +6701,7 @@ interface AppRouteChildren {
   AppInventoryTransfersRoute: typeof AppInventoryTransfersRoute
   AppLabCollectionRoute: typeof AppLabCollectionRoute
   AppLabCriticalCallsRoute: typeof AppLabCriticalCallsRoute
+  AppLabEqasRoute: typeof AppLabEqasRoute
   AppLabOutsourcingRoute: typeof AppLabOutsourcingRoute
   AppLabReceiveRoute: typeof AppLabReceiveRoute
   AppLabSetupRoute: typeof AppLabSetupRoute
@@ -7023,6 +7043,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppInventoryTransfersRoute: AppInventoryTransfersRoute,
   AppLabCollectionRoute: AppLabCollectionRoute,
   AppLabCriticalCallsRoute: AppLabCriticalCallsRoute,
+  AppLabEqasRoute: AppLabEqasRoute,
   AppLabOutsourcingRoute: AppLabOutsourcingRoute,
   AppLabReceiveRoute: AppLabReceiveRoute,
   AppLabSetupRoute: AppLabSetupRoute,
