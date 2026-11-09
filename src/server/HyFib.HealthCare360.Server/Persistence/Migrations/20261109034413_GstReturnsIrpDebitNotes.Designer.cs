@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HyFib.HealthCare360.Server.Persistence.Migrations
 {
     [DbContext(typeof(HospitalDbContext))]
-    [Migration("20261109030807_GstReturnsIrpDebitNotes")]
+    [Migration("20261109034413_GstReturnsIrpDebitNotes")]
     partial class GstReturnsIrpDebitNotes
     {
         /// <inheritdoc />
@@ -40435,6 +40435,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
 
+                    b.Property<bool>("IsRecalled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_recalled");
+
                     b.Property<Guid>("ItemId")
                         .HasColumnType("uuid")
                         .HasColumnName("item_id");
@@ -40985,6 +40989,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,3)")
                         .HasColumnName("quantity");
 
+                    b.Property<decimal?>("ReceivedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)")
+                        .HasColumnName("received_quantity");
+
                     b.Property<Guid>("SourceBatchId")
                         .HasColumnType("uuid")
                         .HasColumnName("source_batch_id");
@@ -41101,6 +41110,97 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_stores_facility_id_code");
 
                     b.ToTable("stores", "supplychain");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.StoreItemLevel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("item_id");
+
+                    b.Property<decimal>("MaximumStock")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)")
+                        .HasColumnName("maximum_stock");
+
+                    b.Property<decimal>("MinimumStock")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)")
+                        .HasColumnName("minimum_stock");
+
+                    b.Property<decimal>("ReorderLevel")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)")
+                        .HasColumnName("reorder_level");
+
+                    b.Property<decimal>("ReorderQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)")
+                        .HasColumnName("reorder_quantity");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("store_id");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_store_item_levels");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_store_item_levels_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_store_item_levels_is_deleted");
+
+                    b.HasIndex("ItemId")
+                        .HasDatabaseName("ix_store_item_levels_item_id");
+
+                    b.HasIndex("StoreId", "ItemId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_store_item_levels_store_id_item_id");
+
+                    b.ToTable("store_item_levels", "supplychain");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.TemperatureReading", b =>
@@ -41342,6 +41442,374 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_vendors_name");
 
                     b.ToTable("vendors", "supplychain");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.VendorDebitNote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("cancel_reason");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<decimal>("CgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("cgst_amount");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<Guid?>("GoodsReceiptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("goods_receipt_id");
+
+                    b.Property<decimal>("IgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("igst_amount");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<bool>("IsInterState")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_inter_state");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("number");
+
+                    b.Property<DateTimeOffset?>("PostedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("posted_at");
+
+                    b.Property<Guid?>("PostedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("posted_by_user_id");
+
+                    b.Property<DateTimeOffset>("RaisedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("raised_at");
+
+                    b.Property<Guid?>("RaisedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("raised_by_user_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<decimal>("SgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("sgst_amount");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("store_id");
+
+                    b.Property<decimal>("TaxableAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("taxable_amount");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("total_amount");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid>("VendorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("vendor_id");
+
+                    b.Property<string>("VendorReference")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("vendor_reference");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_vendor_debit_notes");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_vendor_debit_notes_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_vendor_debit_notes_is_deleted");
+
+                    b.HasIndex("StoreId")
+                        .HasDatabaseName("ix_vendor_debit_notes_store_id");
+
+                    b.HasIndex("VendorId")
+                        .HasDatabaseName("ix_vendor_debit_notes_vendor_id");
+
+                    b.HasIndex("FacilityId", "Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_vendor_debit_notes_facility_id_number");
+
+                    b.HasIndex("FacilityId", "Status", "PostedAt")
+                        .HasDatabaseName("ix_vendor_debit_notes_facility_id_status_posted_at");
+
+                    b.ToTable("vendor_debit_notes", "supplychain");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.VendorDebitNoteLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BatchNumber")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("batch_number");
+
+                    b.Property<decimal>("CgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("cgst_amount");
+
+                    b.Property<DateOnly?>("ExpiryDate")
+                        .HasColumnType("date")
+                        .HasColumnName("expiry_date");
+
+                    b.Property<decimal>("GstRate")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)")
+                        .HasColumnName("gst_rate");
+
+                    b.Property<decimal>("IgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("igst_amount");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("ItemName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("item_name");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)")
+                        .HasColumnName("quantity");
+
+                    b.Property<decimal>("SgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("sgst_amount");
+
+                    b.Property<Guid>("StockBatchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("stock_batch_id");
+
+                    b.Property<decimal>("TaxableAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("taxable_amount");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("unit_cost");
+
+                    b.Property<Guid>("VendorDebitNoteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("vendor_debit_note_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_vendor_debit_note_lines");
+
+                    b.HasIndex("StockBatchId")
+                        .HasDatabaseName("ix_vendor_debit_note_lines_stock_batch_id");
+
+                    b.HasIndex("VendorDebitNoteId")
+                        .HasDatabaseName("ix_vendor_debit_note_lines_vendor_debit_note_id");
+
+                    b.ToTable("vendor_debit_note_lines", "supplychain");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.VendorPayableAdjustment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("cancel_reason");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("direction");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("number");
+
+                    b.Property<DateTimeOffset?>("PostedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("posted_at");
+
+                    b.Property<Guid?>("PostedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("posted_by_user_id");
+
+                    b.Property<DateTimeOffset>("RaisedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("raised_at");
+
+                    b.Property<Guid?>("RaisedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("raised_by_user_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<Guid>("VendorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("vendor_id");
+
+                    b.Property<string>("VendorReference")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("vendor_reference");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_vendor_payable_adjustments");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_vendor_payable_adjustments_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_vendor_payable_adjustments_is_deleted");
+
+                    b.HasIndex("VendorId")
+                        .HasDatabaseName("ix_vendor_payable_adjustments_vendor_id");
+
+                    b.HasIndex("FacilityId", "Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_vendor_payable_adjustments_facility_id_number");
+
+                    b.HasIndex("FacilityId", "Status", "PostedAt")
+                        .HasDatabaseName("ix_vendor_payable_adjustments_facility_id_status_posted_at");
+
+                    b.ToTable("vendor_payable_adjustments", "supplychain");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Ambulance.AmbulanceTrip", b =>
@@ -51520,6 +51988,23 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_stock_transfer_lines_stock_transfers_stock_transfer_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.StoreItemLevel", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SupplyChain.Domain.Item", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_store_item_levels_items_item_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.SupplyChain.Domain.Store", null)
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_store_item_levels_stores_store_id");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.TemperatureReading", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.SupplyChain.Domain.ColdStorageUnit", null)
@@ -51528,6 +52013,43 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_temperature_readings_cold_storage_units_unit_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.VendorDebitNote", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SupplyChain.Domain.Store", null)
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_vendor_debit_notes_stores_store_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.SupplyChain.Domain.Vendor", null)
+                        .WithMany()
+                        .HasForeignKey("VendorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_vendor_debit_notes_vendors_vendor_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.VendorDebitNoteLine", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SupplyChain.Domain.VendorDebitNote", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("VendorDebitNoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_vendor_debit_note_lines_vendor_debit_notes_vendor_debit_not");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.VendorPayableAdjustment", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SupplyChain.Domain.Vendor", null)
+                        .WithMany()
+                        .HasForeignKey("VendorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_vendor_payable_adjustments_vendors_vendor_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Ambulance.AmbulanceTrip", b =>
@@ -52137,6 +52659,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.StockTransfer", b =>
+                {
+                    b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupplyChain.Domain.VendorDebitNote", b =>
                 {
                     b.Navigation("Lines");
                 });
