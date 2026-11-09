@@ -78,7 +78,7 @@ public sealed class SharedRateLimitsTests
     {
         var state = new SharedRateLimitState(TimeProvider.System, NullLogger<SharedRateLimitState>.Instance);
         var hanging = Substitute.For<ISharedRateLimitStore>();
-        hanging.TryTakeAsync(default!, default!, default).ReturnsForAnyArgs(new TaskCompletionSource<SharedLimitDecision>().Task);
+        hanging.TryTakeAsync(default!, default!, Ct).ReturnsForAnyArgs(new TaskCompletionSource<SharedLimitDecision>().Task);
         using var limiter = Limiter(hanging, TimeProvider.System, state);
 
         var started = TimeProvider.System.GetTimestamp();

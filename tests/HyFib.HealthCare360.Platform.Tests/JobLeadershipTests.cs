@@ -125,7 +125,7 @@ public sealed class JobLeadershipTests
         (await second.VetoJobExecution(Trigger(), Fire(due.AddDays(1)), Ct)).ShouldBeFalse("the next night's is a due time of its own");
 
         var down = Substitute.For<IClusterStore>();
-        down.TryAddAsync(default!, default, default).ReturnsForAnyArgs<bool>(_ => throw new TimeoutException());
+        down.TryAddAsync(default!, default, Ct).ReturnsForAnyArgs<bool>(_ => throw new TimeoutException());
         (await new JobSlotClaim(down, NullLogger<JobSlotClaim>.Instance).VetoJobExecution(Trigger(), Fire(due.AddDays(2)), Ct))
             .ShouldBeTrue("a due time that cannot be claimed is not run");
     }
