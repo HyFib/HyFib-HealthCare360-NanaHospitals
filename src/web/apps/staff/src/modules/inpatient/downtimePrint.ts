@@ -84,6 +84,7 @@ function patientBlock(p: DowntimePatient): string {
       }${p.isMlc ? ' · MLC' : ''}</span></div>
     ${p.provisionalDiagnosis ? `<div>Diagnosis: ${escapeHtml(p.provisionalDiagnosis)}</div>` : ''}
     <div>${allergies(p)}</div>
+    ${p.isolation ? `<div class="warn">Isolation: ${escapeHtml(p.isolation)}</div>` : ''}
     <div class="${p.news2 && p.news2.response !== 'Routine' ? 'warn' : ''}">${escapeHtml(news2)}</div>
     ${medicines(p)}
     <div class="tasks"><strong>Pending tasks</strong>${tasks}</div>

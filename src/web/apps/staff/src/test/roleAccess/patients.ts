@@ -9,6 +9,11 @@ import type {
   VisitListItem,
   WhatsAppConsentDto,
 } from '@/modules/patients/api';
+import type {
+  BackEntryWindowDto,
+  DowntimeNumberBlockSummary,
+  LateBackEntryGrantDto,
+} from '@/modules/downtime/continuityApi';
 import type { DowntimeUhidBlockSummary } from '@/modules/patients/downtimeApi';
 import { patientJourneys } from '../accessibility/fixtures/frontOffice';
 import { FACILITY_ID, paged, STAFF_USER, type FakeAnswers } from '../fakeApi';
@@ -287,7 +292,68 @@ const DOWNTIME_BLOCKS: DowntimeUhidBlockSummary[] = [
   },
 ];
 
+/** A billing counter's receipt block, partly entered, and the windows and one late back-entry approval. */
+const NUMBER_BLOCKS: DowntimeNumberBlockSummary[] = [
+  {
+    id: id('41'),
+    kind: 'Receipt',
+    kindName: 'receipt',
+    counter: 'OPD billing counter 1',
+    count: 50,
+    firstNumber: 'NHRC26000101',
+    lastNumber: 'NHRC26000150',
+    issuedAt: minutesAgo(60 * 24 * 3),
+    issuedByName: 'Meena Iyer',
+    entered: 4,
+    voided: 1,
+    open: 45,
+    returnedAt: null,
+    returnedByName: null,
+    returnNote: null,
+    version: 2,
+  },
+];
+
+const BACK_ENTRY_WINDOWS: BackEntryWindowDto[] = [
+  {
+    record: 'Visit',
+    name: 'Visit from paper',
+    settingKey: 'downtime.backEntryHours.visit',
+    hours: 72,
+    defaultHours: 72,
+    maxHours: 336,
+  },
+  {
+    record: 'NursingChart',
+    name: 'Nursing notes and intake/output',
+    settingKey: 'downtime.backEntryHours.nursingChart',
+    hours: 24,
+    defaultHours: 24,
+    maxHours: 336,
+  },
+];
+
+const LATE_GRANTS: LateBackEntryGrantDto[] = [
+  {
+    id: id('42'),
+    record: 'NursingChart',
+    paperFrom: minutesAgo(60 * 50),
+    paperTo: minutesAgo(60 * 30),
+    maxRecords: 12,
+    used: 3,
+    requestedByName: 'Anita Joseph',
+    reason: 'Thirty-hour outage',
+    approvedByName: 'Meena Iyer',
+    approvedAt: minutesAgo(60),
+    expiresAt: minutesAgo(-60 * 70),
+    usable: true,
+  },
+];
+
 export const ANSWERS: FakeAnswers = {
+  'GET /api/v1/downtime/number-blocks': NUMBER_BLOCKS,
+  'GET /api/v1/downtime/back-entry/windows': BACK_ENTRY_WINDOWS,
+  'GET /api/v1/downtime/back-entry/late': LATE_GRANTS,
   'GET /api/v1/patients/downtime-blocks': DOWNTIME_BLOCKS,
   [`GET /api/v1/patients/${RAVI_ID}/payer`]: { current: RAVI_PAYER },
   [`GET /api/v1/patients/${RECORD_ID}`]: PATIENT,

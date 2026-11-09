@@ -159,6 +159,7 @@ import { Route as AppOtBookRouteImport } from './routes/_app/ot/book'
 import { Route as AppOtImplantsRouteImport } from './routes/_app/ot/implants'
 import { Route as AppOtTheatresRouteImport } from './routes/_app/ot/theatres'
 import { Route as AppPatientsIndexRouteImport } from './routes/_app/patients/index'
+import { Route as AppPatientsContinuityRouteImport } from './routes/_app/patients/continuity'
 import { Route as AppPatientsDowntimeRouteImport } from './routes/_app/patients/downtime'
 import { Route as AppPatientsRegisterRouteImport } from './routes/_app/patients/register'
 import { Route as AppPharmacyIndexRouteImport } from './routes/_app/pharmacy/index'
@@ -1107,6 +1108,11 @@ const AppOtTheatresRoute = AppOtTheatresRouteImport.update({
 const AppPatientsIndexRoute = AppPatientsIndexRouteImport.update({
   id: '/patients/',
   path: '/patients/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPatientsContinuityRoute = AppPatientsContinuityRouteImport.update({
+  id: '/patients/continuity',
+  path: '/patients/continuity',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPatientsDowntimeRoute = AppPatientsDowntimeRouteImport.update({
@@ -2246,6 +2252,7 @@ export interface FileRoutesByFullPath {
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
+  '/patients/continuity': typeof AppPatientsContinuityRoute
   '/patients/downtime': typeof AppPatientsDowntimeRoute
   '/patients/register': typeof AppPatientsRegisterRoute
   '/pharmacy/adr': typeof AppPharmacyAdrRoute
@@ -2588,6 +2595,7 @@ export interface FileRoutesByTo {
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
+  '/patients/continuity': typeof AppPatientsContinuityRoute
   '/patients/downtime': typeof AppPatientsDowntimeRoute
   '/patients/register': typeof AppPatientsRegisterRoute
   '/pharmacy/adr': typeof AppPharmacyAdrRoute
@@ -2932,6 +2940,7 @@ export interface FileRoutesById {
   '/_app/ot/book': typeof AppOtBookRoute
   '/_app/ot/implants': typeof AppOtImplantsRoute
   '/_app/ot/theatres': typeof AppOtTheatresRoute
+  '/_app/patients/continuity': typeof AppPatientsContinuityRoute
   '/_app/patients/downtime': typeof AppPatientsDowntimeRoute
   '/_app/patients/register': typeof AppPatientsRegisterRoute
   '/_app/pharmacy/adr': typeof AppPharmacyAdrRoute
@@ -3276,6 +3285,7 @@ export interface FileRouteTypes {
     | '/ot/book'
     | '/ot/implants'
     | '/ot/theatres'
+    | '/patients/continuity'
     | '/patients/downtime'
     | '/patients/register'
     | '/pharmacy/adr'
@@ -3618,6 +3628,7 @@ export interface FileRouteTypes {
     | '/ot/book'
     | '/ot/implants'
     | '/ot/theatres'
+    | '/patients/continuity'
     | '/patients/downtime'
     | '/patients/register'
     | '/pharmacy/adr'
@@ -3961,6 +3972,7 @@ export interface FileRouteTypes {
     | '/_app/ot/book'
     | '/_app/ot/implants'
     | '/_app/ot/theatres'
+    | '/_app/patients/continuity'
     | '/_app/patients/downtime'
     | '/_app/patients/register'
     | '/_app/pharmacy/adr'
@@ -5242,6 +5254,13 @@ declare module '@tanstack/react-router' {
       path: '/patients'
       fullPath: '/patients/'
       preLoaderRoute: typeof AppPatientsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/patients/continuity': {
+      id: '/_app/patients/continuity'
+      path: '/patients/continuity'
+      fullPath: '/patients/continuity'
+      preLoaderRoute: typeof AppPatientsContinuityRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/patients/downtime': {
@@ -6700,6 +6719,7 @@ interface AppRouteChildren {
   AppOtBookRoute: typeof AppOtBookRoute
   AppOtImplantsRoute: typeof AppOtImplantsRoute
   AppOtTheatresRoute: typeof AppOtTheatresRoute
+  AppPatientsContinuityRoute: typeof AppPatientsContinuityRoute
   AppPatientsDowntimeRoute: typeof AppPatientsDowntimeRoute
   AppPatientsRegisterRoute: typeof AppPatientsRegisterRoute
   AppPharmacyAdrRoute: typeof AppPharmacyAdrRoute
@@ -7041,6 +7061,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppOtBookRoute: AppOtBookRoute,
   AppOtImplantsRoute: AppOtImplantsRoute,
   AppOtTheatresRoute: AppOtTheatresRoute,
+  AppPatientsContinuityRoute: AppPatientsContinuityRoute,
   AppPatientsDowntimeRoute: AppPatientsDowntimeRoute,
   AppPatientsRegisterRoute: AppPatientsRegisterRoute,
   AppPharmacyAdrRoute: AppPharmacyAdrRoute,
