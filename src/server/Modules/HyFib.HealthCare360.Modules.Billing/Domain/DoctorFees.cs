@@ -101,6 +101,20 @@ public sealed class DoctorPayout : AuditableEntity, IFacilityScoped
     public decimal DeductionAmount { get; set; }
     public decimal TdsPercent { get; set; }
     public decimal TdsAmount { get; set; }
+
+    /// <summary>
+    /// The amount TDS was deducted on: the gross, or more when this payout took the year's fees over the s.194J threshold and
+    /// tax was deducted on the earlier fees too; nothing when the year's fees are within it.
+    /// </summary>
+    public decimal TdsBasis { get; set; }
+
+    /// <summary>The reason code in Form 26Q: C for the higher rate without a PAN (s.206AA), A for a s.197 certificate.</summary>
+    public string? TdsRemark { get; set; }
+
+    /// <summary>The doctor's PAN when the tax was deducted (encrypted): the return reports it as it was, not a PAN given later.</summary>
+    [SensitiveData]
+    public string? TdsPanCipher { get; set; }
+
     public decimal NetAmount { get; set; }
     public PayoutStatus Status { get; set; }
     public Guid? ApprovedBy { get; set; }
@@ -168,4 +182,27 @@ public sealed class DoctorPayoutDeduction : Entity
     public Guid PayoutId { get; set; }
     public string Description { get; set; } = string.Empty;
     public decimal Amount { get; set; }
+}
+
+/// <summary>
+/// A doctor's tax details for TDS on fees (s.194J): the PAN, encrypted and shown masked, and a lower-deduction certificate
+/// (s.197) with its rate and validity. Without a valid PAN, tax is deducted at 20 % (s.206AA).
+/// </summary>
+public sealed class DoctorTaxProfile : AuditableEntity
+{
+    public Guid PractitionerId { get; set; }
+
+    [SensitiveData]
+    public string? PanCipher { get; set; }
+
+    public string? PanMasked { get; set; }
+    public string? NameAsPerPan { get; set; }
+    public string? CertificateNumber { get; set; }
+    public decimal? CertificateRate { get; set; }
+    public DateOnly? CertificateValidFrom { get; set; }
+    public DateOnly? CertificateValidTo { get; set; }
+
+    /// <summary>The certificate's rate when it covers <paramref name="date"/>.</summary>
+    public decimal? CertificateRateOn(DateOnly date) =>
+        CertificateRate is { } rate && CertificateValidFrom is { } from && CertificateValidTo is { } to && date >= from && date <= to ? rate : null;
 }
