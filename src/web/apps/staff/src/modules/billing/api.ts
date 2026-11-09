@@ -125,6 +125,37 @@ export interface RefundSummary {
   paidAt: string | null;
 }
 
+/** Mirrors `DebitNoteParty`: who a debit note charges. */
+export type DebitNoteParty = 'Patient' | 'Payer';
+
+export interface DebitNoteLineDto {
+  billLineId: string;
+  description: string;
+  sacCode: string | null;
+  gstRate: number;
+  amount: number;
+  taxableAmount: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+}
+
+/** A debit note (supplementary invoice) on a bill: the value and GST it added to each service. */
+export interface DebitNoteDto {
+  id: string;
+  number: string;
+  party: DebitNoteParty;
+  amount: number;
+  taxableAmount: number;
+  gstAmount: number;
+  reason: string;
+  issuedAt: string;
+  issuedByName: string | null;
+  requestedByName: string | null;
+  lines: DebitNoteLineDto[];
+  eInvoice?: EInvoiceStamp | null;
+}
+
 export interface CreditNoteDto {
   id: string;
   number: string;
@@ -277,6 +308,10 @@ export interface BillDetail {
   freeTreatmentReason?: string | null;
   /** What the services would have cost, had the treatment not been free. */
   freeTreatmentAmount?: number;
+  debitNotes?: DebitNoteDto[] | null;
+  /** What debit notes added to the patient's share and to the payer's, GST included. */
+  debitAmount?: number;
+  payerDebitAmount?: number;
 }
 
 export interface CreateBillRequest {
@@ -1005,6 +1040,13 @@ export const billingApi = {
    * approvals inbox, on the bill as it is now. A credit note on a bill with GST names the services it corrects
    * (`lines`, their sum the amount): 400 `lines` without them; 422 `billing.credit_exceeds_line` past a service's value.
    */
+  /** Asks for a debit note: 202 with the approval request; an approver, someone else, issues it. */
+  requestDebitNote: (
+    billId: string,
+    party: DebitNoteParty,
+    reason: string,
+    lines: { billLineId: string; taxableAmount: number }[],
+  ) => api.post<ApprovalRequestDto>(`/api/v1/billing/bills/${billId}/debit-notes`, { party, reason, lines }),
   requestCreditNote: (
     billId: string,
     kind: CreditNoteKind,

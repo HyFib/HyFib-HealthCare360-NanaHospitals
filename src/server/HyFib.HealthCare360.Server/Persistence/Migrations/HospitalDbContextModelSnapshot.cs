@@ -1277,6 +1277,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("credit_amount");
 
+                    b.Property<decimal>("DebitAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("debit_amount");
+
                     b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
@@ -1404,6 +1409,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("payer_coverage_limit");
+
+                    b.Property<decimal>("PayerDebitAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("payer_debit_amount");
 
                     b.Property<decimal>("PayerDisallowedAmount")
                         .HasPrecision(18, 2)
@@ -2501,6 +2511,216 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("credit_note_lines", "billing");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.DebitNote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("BillId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("bill_id");
+
+                    b.Property<decimal>("CgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("cgst_amount");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<decimal>("IgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("igst_amount");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<DateTimeOffset>("IssuedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("issued_at");
+
+                    b.Property<Guid?>("IssuedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("issued_by");
+
+                    b.Property<string>("IssuedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("issued_by_name");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("number");
+
+                    b.Property<string>("Party")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("party");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid?>("RequestedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by");
+
+                    b.Property<string>("RequestedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("requested_by_name");
+
+                    b.Property<decimal>("SgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("sgst_amount");
+
+                    b.Property<decimal>("TaxableAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("taxable_amount");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_debit_notes");
+
+                    b.HasIndex("BillId")
+                        .HasDatabaseName("ix_debit_notes_bill_id");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_debit_notes_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_debit_notes_is_deleted");
+
+                    b.HasIndex("Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_debit_notes_number");
+
+                    b.HasIndex("FacilityId", "IssuedAt")
+                        .HasDatabaseName("ix_debit_notes_facility_id_issued_at");
+
+                    b.ToTable("debit_notes", "billing");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.DebitNoteLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("BillLineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("bill_line_id");
+
+                    b.Property<decimal>("CgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("cgst_amount");
+
+                    b.Property<Guid>("DebitNoteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("debit_note_id");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("description");
+
+                    b.Property<decimal>("GstRate")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("gst_rate");
+
+                    b.Property<decimal>("IgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("igst_amount");
+
+                    b.Property<string>("SacCode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("sac_code");
+
+                    b.Property<decimal>("SgstAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("sgst_amount");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<decimal>("TaxableAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("taxable_amount");
+
+                    b.HasKey("Id")
+                        .HasName("pk_debit_note_lines");
+
+                    b.HasIndex("BillLineId")
+                        .HasDatabaseName("ix_debit_note_lines_bill_line_id");
+
+                    b.HasIndex("DebitNoteId")
+                        .HasDatabaseName("ix_debit_note_lines_debit_note_id");
+
+                    b.ToTable("debit_note_lines", "billing");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.DiscountApproval", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3326,6 +3546,18 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(24)")
                         .HasColumnName("document_number");
 
+                    b.Property<DateTimeOffset?>("EwbDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ewb_date");
+
+                    b.Property<long?>("EwbNo")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ewb_no");
+
+                    b.Property<DateTimeOffset?>("EwbValidTill")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ewb_valid_till");
+
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
@@ -3354,11 +3586,22 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("preceding_source");
 
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("provider");
+
                     b.Property<string>("RecordedByName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("recorded_by_name");
+
+                    b.Property<string>("SignedInvoice")
+                        .HasMaxLength(100000)
+                        .HasColumnType("character varying(100000)")
+                        .HasColumnName("signed_invoice");
 
                     b.Property<string>("SignedQrCode")
                         .IsRequired()
@@ -51148,6 +51391,33 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_credit_note_lines_credit_notes_credit_note_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.DebitNote", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.Bill", null)
+                        .WithMany()
+                        .HasForeignKey("BillId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_debit_notes_bills_bill_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.DebitNoteLine", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.BillLine", null)
+                        .WithMany()
+                        .HasForeignKey("BillLineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_debit_note_lines_bill_lines_bill_line_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.DebitNote", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("DebitNoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_debit_note_lines_debit_notes_debit_note_id");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.DiscountApproval", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.Bill", null)
@@ -54522,6 +54792,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.CreditNote", b =>
+                {
+                    b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.DebitNote", b =>
                 {
                     b.Navigation("Lines");
                 });

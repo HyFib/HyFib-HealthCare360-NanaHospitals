@@ -102,7 +102,7 @@ public sealed class InterimBillTests(HospitalServer server)
         // Finalized, it takes an in-patient bill number and its services are billed; today's visit is still to be billed.
         interim = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{interim.Id}/finalize", new BillVersionRequest(interim.Version));
         interim.Status.ShouldBe(BillStatus.Finalized);
-        interim.BillNumber.ShouldNotBeNull().ShouldMatch(@"IB\d{9}$", "in-patient bills are numbered {FAC}IB{YY}{SEQ:7}");
+        interim.BillNumber.ShouldNotBeNull().ShouldMatch(@"IB\d{8}$", "in-patient bills are numbered {FAC}IB{YY}{SEQ:6}, within the 16 characters of GST rule 46");
         interim.DueAmount.ShouldBe(interim.PatientAmount);
         var running = await billing.GetAsync<RunningBill>(Path(account, "running-bill"));
         running.Lines.Where(l => l.BillId == interim.Id).Select(l => (l.ChargeId, l.Status)).Order().ToArray()

@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Integrations.Features.Admin;
 using HyFib.HealthCare360.Integrations.Features.Labels;
 using HyFib.HealthCare360.Integrations.Features.Webhooks;
 using HyFib.HealthCare360.Integrations.Icd;
+using HyFib.HealthCare360.Integrations.Irp;
 using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Orders;
@@ -133,6 +134,12 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddSingleton<IcdTokenCache>();
         services.AddIntegrationHttpClient<WhoIcdApiClient>(CloudAttempt, CloudTotal);
         services.AddScoped<IIcdLookup, IcdLookupRouter>();
+
+        services.AddSingleton<SimulatorIrpLedger>();
+        services.AddIntegrationHttpClient<NicIrpClient>(CloudAttempt, CloudTotal);
+        services.AddScoped<IIrpProvider>(sp => sp.GetRequiredService<NicIrpClient>());
+        services.AddScoped<IIrpProvider, SimulatorIrp>();
+        services.AddScoped<IInvoiceRegistrationPortal, IrpRouter>();
     }
 
     private static void AddLaboratory(IServiceCollection services)

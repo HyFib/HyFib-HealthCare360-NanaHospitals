@@ -561,8 +561,16 @@ public static class TallyVoucherBuilder
         entries.Debit(map.OutputCgst, note.Cgst);
         entries.Debit(map.OutputSgst, note.Sgst);
         entries.Debit(map.OutputIgst, note.Igst);
-        entries.Credit(map.PatientDebtors, note.Amount);
-        return entries.ToVoucher(CreditNoteType, note.Date, note.Number, $"{(note.Kind == CreditNoteKind.WriteOff ? "Write-off" : "Credit note")} {note.Number}", note.Number);
+        // A payer credit note turns the settlement's deduction (already debited to insurance disallowances, the payer
+        // credited) into a GST credit note: the disallowance comes back out, and sales returns and output GST take it.
+        entries.Credit(note.Kind == CreditNoteKind.PayerShare ? map.InsuranceDisallowances : map.PatientDebtors, note.Amount);
+        var words = note.Kind switch
+        {
+            CreditNoteKind.WriteOff => "Write-off",
+            CreditNoteKind.PayerShare => "Payer credit note",
+            _ => "Credit note",
+        };
+        return entries.ToVoucher(CreditNoteType, note.Date, note.Number, $"{words} {note.Number}", note.Number);
     }
 
     /// <summary>

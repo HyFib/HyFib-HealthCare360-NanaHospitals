@@ -22,7 +22,7 @@ import { approvalKeys } from '@/modules/approvals/api';
 import { billingApi, type BillDetail, type CreditNoteLineRequest } from './api';
 import { useRefreshBilling } from './hooks';
 import { CREDIT_NOTE_KIND_LABEL, CREDIT_NOTE_KINDS, type CreditNoteKind } from './labels';
-import { creditableAmount, creditableLines } from './billTotals';
+import { creditableAmount, creditableLines, payerCreditableAmount } from './billTotals';
 import { fromPaise, parseRupees, toPaise } from './money';
 import { ActionError, Amount, AmountField } from './ui';
 
@@ -37,16 +37,19 @@ const useStyles = makeStyles({
  * numbered and audited, reduces what the patient owes and, if the bill was paid, makes the difference refundable.
  * On a bill with GST a credit note names the services it corrects, with the amount on each: the GST it takes back is
  * each service's own (CGST Act s.34), so the books and the e-invoice portal lower the right tax. A write-off is of the
- * due and reduces no GST.
+ * due and reduces no GST. A payer credit note credits the GST of what the payer's settlement disallowed, up to that
+ * amount; it does not change what the patient owes.
  */
 export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; open: boolean; onClose: () => void }) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const refresh = useRefreshBilling();
-  const max = creditableAmount(bill);
-  const services = creditableLines(bill);
   const [kind, setKind] = useState<CreditNoteKind>('CreditNote');
+  const payerMax = payerCreditableAmount(bill);
+  const kinds = CREDIT_NOTE_KINDS.filter((k) => k !== 'PayerShare' || payerMax > 0);
+  const max = kind === 'PayerShare' ? payerMax : creditableAmount(bill);
+  const services = creditableLines(bill);
   const [amount, setAmount] = useState('');
   const [lineAmounts, setLineAmounts] = useState<Record<string, string>>({});
   const [reason, setReason] = useState('');
@@ -62,7 +65,7 @@ export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; op
   }
 
   // A bill with GST: the credit note names its services; the amount is their sum.
-  const byService = kind === 'CreditNote' && bill.taxAmount !== 0;
+  const byService = kind !== 'WriteOff' && bill.taxAmount !== 0;
   const lineEntries = services
     .filter((service) => (lineAmounts[service.id] ?? '').trim() !== '')
     .map((service) => ({ service, parsed: parseRupees(lineAmounts[service.id] ?? '', { max: service.left }) }));
@@ -140,14 +143,16 @@ export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; op
               </Text>
               <Field label="Type" required>
                 <RadioGroup value={kind} onChange={(_, data) => setKind(data.value as CreditNoteKind)}>
-                  {CREDIT_NOTE_KINDS.map((k) => (
+                  {kinds.map((k) => (
                     <Radio
                       key={k}
                       value={k}
                       label={
                         k === 'CreditNote'
                           ? `${CREDIT_NOTE_KIND_LABEL[k]} — wrong rate or service not given`
-                          : `${CREDIT_NOTE_KIND_LABEL[k]} — the due cannot be recovered`
+                          : k === 'PayerShare'
+                            ? `${CREDIT_NOTE_KIND_LABEL[k]} — up to ${formatInr(payerMax)}`
+                            : `${CREDIT_NOTE_KIND_LABEL[k]} — the due cannot be recovered`
                       }
                     />
                   ))}

@@ -37,6 +37,7 @@ public sealed record NumberSeriesItem(
     int MaxLength,
     string DefaultFormat,
     NumberResetPolicy DefaultResetPolicy,
+    bool GstDocument = false,
     string? FacilityCodeReason = null);
 
 /// <summary>
@@ -275,6 +276,7 @@ internal static class NumberSeriesEndpoints
             series.MaxLength,
             series.DefaultFormat,
             series.DefaultReset,
+            series.GstDocument,
             series.FacilityCodeReason);
     }
 

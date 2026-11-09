@@ -59,6 +59,12 @@ const manifest: ModuleManifest = {
       keywords: ['e-invoice', 'IRN', 'IRP', 'B2B invoice', 'signed QR code', 'GST'],
     },
     {
+      label: 'GST returns',
+      to: '/billing/gst-returns',
+      permission: 'billing.gst.returns',
+      keywords: ['GSTR-1', 'GSTR-3B', 'GST return', 'HSN summary', 'B2B', 'B2C', 'offline tool'],
+    },
+    {
       label: 'Refunds',
       to: '/billing/refunds',
       permission: ['billing.refunds.request', 'billing.refunds.approve', 'billing.charges.read'],

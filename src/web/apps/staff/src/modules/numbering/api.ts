@@ -36,6 +36,8 @@ export interface NumberSeriesItem {
   lockedReason: string | null;
   /** The longest number the column holds. */
   maxLength: number;
+  /** A GST invoice, bill of supply, credit or debit note: at most 16 characters (GST rule 46), not starting with 0. */
+  gstDocument: boolean;
   defaultFormat: string;
   defaultResetPolicy: NumberResetPolicy;
   /** Why every format of this series must carry {FAC} (a sentence), whatever the number of facilities; null otherwise. */

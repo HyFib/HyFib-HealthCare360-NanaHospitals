@@ -25,7 +25,10 @@ internal static class IntegrationNames
     /// <summary>Fingerprints checked with UIDAI through the hospital's AUA licence (INT-BIO).</summary>
     public const string Aadhaar = "aadhaar";
 
-    public static IReadOnlyList<string> All { get; } = [Sms, WhatsApp, Email, Payment, Pos, Tally, Pacs, Mwl, Lab, Labels, Icd, Biometric, Aadhaar];
+    /// <summary>The GST Invoice Registration Portal (e-invoice IRNs and e-way bills), directly or through a GSP.</summary>
+    public const string Irp = "irp";
+
+    public static IReadOnlyList<string> All { get; } = [Sms, WhatsApp, Email, Payment, Pos, Tally, Pacs, Mwl, Lab, Labels, Icd, Biometric, Aadhaar, Irp];
 
     public static string SettingsKey(string integration) => $"integrations.{integration}";
 
@@ -46,6 +49,7 @@ internal static class IntegrationNames
         Icd => "ICD lookup",
         Biometric => "Biometric attendance",
         Aadhaar => "Aadhaar authentication",
+        Irp => "E-invoice portal (IRP)",
         _ => integration,
     };
 }
@@ -67,5 +71,11 @@ internal static class ProviderKeys
     public const string WhoIcdApi = "who";
     public const string ZkTeco = "zkteco";
     public const string Uidai = "uidai";
+
+    /// <summary>The NIC e-invoice API itself (requests and answers encrypted, as NIC requires).</summary>
+    public const string Nic = "nic";
+
+    /// <summary>A GST suvidha provider passing the NIC e-invoice API through (plain JSON on the NIC paths).</summary>
+    public const string Gsp = "gsp";
     public const string Disabled = "disabled";
 }

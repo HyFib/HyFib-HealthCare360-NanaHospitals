@@ -127,6 +127,12 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     public decimal RefundableAmount { get; set; }
     public decimal PayerSettledAmount { get; set; }
     public decimal PayerDisallowedAmount { get; set; }
+
+    /// <summary>What debit notes (supplementary invoices, CGST Act s.34(3)) added to the patient's share, GST included.</summary>
+    public decimal DebitAmount { get; set; }
+
+    /// <summary>What debit notes added to the payer's share, GST included.</summary>
+    public decimal PayerDebitAmount { get; set; }
     public BillStatus Status { get; set; }
     public DateTimeOffset? FinalizedAt { get; set; }
     public Guid? FinalizedBy { get; set; }
@@ -136,7 +142,7 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     public string? Notes { get; set; }
     public List<BillLine> Lines { get; set; } = [];
 
-    public decimal PayerOutstanding => Math.Max(PayerAmount - PayerSettledAmount - PayerDisallowedAmount, 0m);
+    public decimal PayerOutstanding => Math.Max(PayerAmount + PayerDebitAmount - PayerSettledAmount - PayerDisallowedAmount, 0m);
 
     public bool IsOpenForPayment => (Status is BillStatus.Finalized or BillStatus.PartiallyPaid) && DueAmount > 0;
 
@@ -437,7 +443,7 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
             return Error.Rule("billing.bill_not_creditable", "Credit notes and write-offs apply to finalized bills only.");
         }
 
-        var creditable = PatientAmount - CreditAmount;
+        var creditable = PatientAmount + DebitAmount - CreditAmount;
         return amount > creditable
             ? Error.Rule("billing.credit_exceeds", $"At most ₹{Money.FormatInr(Math.Max(creditable, 0m))} can be credited on this bill.")
             : Result.Success();
@@ -453,6 +459,40 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
 
         CreditAmount += amount;
         UpdateBalances();
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Adds a debit note's amount (GST included) to what the patient or the payer owes on a finalized bill: a paid bill
+    /// owes again.
+    /// </summary>
+    public Result ApplyDebit(decimal amount, bool toPayer)
+    {
+        if (amount <= 0)
+        {
+            return Error.Rule("billing.amount_invalid", "Enter an amount greater than zero.");
+        }
+
+        if (Status is not (BillStatus.Finalized or BillStatus.PartiallyPaid or BillStatus.Paid))
+        {
+            return Error.Rule("billing.bill_not_debitable", "Debit notes apply to finalized bills that are not cancelled.");
+        }
+
+        if (toPayer && !HasPayer)
+        {
+            return Error.Rule("billing.no_payer", "This bill has no payer to raise a debit note to.");
+        }
+
+        if (toPayer)
+        {
+            PayerDebitAmount += amount;
+        }
+        else
+        {
+            DebitAmount += amount;
+            UpdateBalances();
+        }
+
         return Result.Success();
     }
 
@@ -590,7 +630,7 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     private (decimal Due, decimal Refundable) Balances(decimal paid)
     {
         var cancelled = Status is BillStatus.Cancelled or BillStatus.Refunded;
-        var owed = cancelled ? 0m : PatientAmount - CreditAmount;
+        var owed = cancelled ? 0m : PatientAmount + DebitAmount - CreditAmount;
         var balance = owed - (paid - RefundedAmount);
         return (Math.Max(balance, 0m), Math.Max(-balance, 0m));
     }

@@ -97,6 +97,15 @@ Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The 
   the GST carved out of its refund at the sale line's rate (`PharmacyReturnEInvoiceSource`), the same split the day
   book posts. A return made after 30 November following the financial year of the sale (s.34(2)) takes back the value
   and not the GST, in the day book too, and is not reported.
+  When the facility is connected to the e-invoice portal (`integrations.irp`, billing.md *The portal connection*), the
+  register asks the portal for the sale's IRN itself; a B2B invoice above `gst.ewaybill.threshold` (₹50,000 by
+  default) then gets its **e-way bill** from the IRN, with the vehicle number or the transporter's GSTIN and the
+  distance (one day's validity per 200 km), and the number and validity are kept with the IRN.
+* **GST returns.** Counter sales and their returns are in Billing's GSTR-1 and GSTR-3B (`PharmacyGstReturnSource`): a
+  sale to a registered buyer is B2B; to a patient, B2CS, or B2CL when dispatched to another state above ₹1,00,000; a
+  medicine at 0% is nil-rated; returns are credit notes at the GST carved out of their refund (CDNR, CDNUR, or netted
+  into B2CS), and each medicine is in the HSN summary at its HSN code and quantity (`NOS`). Sales and returns are their
+  own series in the documents issued.
 * **Payments** may be split across modes and must add up to the bill (`payment.mismatch`). Credit (a due) is
   allowed only for registered patients (`payment.credit_not_allowed`).
 
@@ -334,8 +343,8 @@ while SMS/WhatsApp consent is active.
 
 | Series key | Format |
 |---|---|
-| `pharmacy.invoice` | `{FAC}PH{YY}{SEQ:7}` (OP dispensing and counter sales) |
-| `pharmacy.return` | `{FAC}PHR{YY}{SEQ:6}` |
+| `pharmacy.invoice` | `{FAC}PH{YY}{SEQ:6}` (OP dispensing and counter sales; a GST series, at most 16 characters) |
+| `pharmacy.return` | `{FAC}SR{YY}{SEQ:6}` (a credit note; a GST series, at most 16 characters) |
 | `pharmacy.ward_indent` · `pharmacy.ip_issue` · `pharmacy.ward_return` | `{FAC}WI{YY}{SEQ:6}` · `{FAC}IPI{YY}{SEQ:6}` · `{FAC}WR{YY}{SEQ:6}` |
 | `pharmacy.refill` | `{FAC}RF{YY}{SEQ:6}` |
 
@@ -362,6 +371,9 @@ optimistic concurrency. Foreign keys go to the Patients `Patient` table and to t
 stock-batch tables.
 
 ## Open items for maintainers
+
+* **GST series in use.** The invoice and return defaults were `{FAC}PH{YY}{SEQ:7}` and `{FAC}PHR{YY}{SEQ:6}`, 17 characters at a
+  6-letter facility code; a series already in use keeps its stored format until an administrator changes it.
 
 * **ServiceCategory**: the IP pharmacy service items are seeded as `ServiceCategory.Consumable`. A
   `ServiceCategory.Pharmacy` value in Billing would give cleaner bill grouping.

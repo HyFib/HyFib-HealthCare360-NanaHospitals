@@ -148,7 +148,7 @@ public static class TallyRecordsCheck
             day.Receipts.Where(r => r.Purpose == ReceiptPurpose.PayerSettlement).SelectMany(r => r.Payments).Sum(p => p.Amount)));
         lines.Add(new(Insurance, "Claim deductions", records.ClaimDeductions, day.Disallowances.Sum(d => d.Amount)));
 
-        var notes = day.CreditNotes.Where(c => c.Kind == CreditNoteKind.CreditNote).ToList();
+        var notes = day.CreditNotes.Where(c => c.Kind != CreditNoteKind.WriteOff).ToList();
         var writeOffs = day.CreditNotes.Where(c => c.Kind == CreditNoteKind.WriteOff).ToList();
         lines.Add(new(Credits, "Credit notes", records.CreditNotesAmount, notes.Sum(c => c.Amount), records.CreditNotes, notes.Count));
         lines.Add(new(Credits, "Write-offs", records.WriteOffsAmount, writeOffs.Sum(c => c.Amount), records.WriteOffs, writeOffs.Count));
