@@ -40,7 +40,7 @@ internal static class IndicatorEndpoints
             i.Id, i.Code, i.Name, i.Category, i.NumeratorDefinition, i.DenominatorDefinition, i.Unit, i.Multiplier, i.Target, i.Direction, i.Frequency,
             i.NabhReference, i.SortOrder, i.IsActive,
             latest.TryGetValue(i.Id, out var v) ? new IndicatorLatest(v.PeriodStart, IndicatorMath.PeriodLabel(v.PeriodStart, i.Frequency), v.Value, v.MeetsTarget) : null,
-            i.Version)).ToList());
+            i.Version, i.IsComputed)).ToList());
     }
 
     private static async Task<IResult> Save(Guid? id, SaveIndicatorRequest request, HospitalDbContext db, CancellationToken ct)
@@ -119,6 +119,12 @@ internal static class IndicatorEndpoints
             return Error.NotFound(nameof(QualityIndicator), id).ToProblem();
         }
 
+        if (indicator.IsComputed)
+        {
+            return Error.Rule("indicator.computed",
+                "HC360 computes this indicator from its records: recompute the period instead of entering a value.").ToProblem();
+        }
+
         var periodStart = IndicatorMath.PeriodStart(request.PeriodStart, indicator.Frequency);
         if (periodStart > time.LocalToday())
         {
@@ -145,6 +151,8 @@ internal static class IndicatorEndpoints
         existing.Value = value;
         existing.MeetsTarget = IndicatorMath.MeetsTarget(value, indicator.Target, indicator.Direction);
         existing.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
+        existing.IsComputed = false;
+        existing.ComputedAt = null;
         await db.SaveChangesAsync(ct);
         return TypedResults.Ok(ToDto(existing, indicator.Frequency));
     }
@@ -202,6 +210,7 @@ internal static class IndicatorEndpoints
         }).ToList());
     }
 
-    private static IndicatorValueDto ToDto(IndicatorValue v, IndicatorFrequency frequency) =>
-        new(v.Id, v.PeriodStart, IndicatorMath.PeriodLabel(v.PeriodStart, frequency), v.Numerator, v.Denominator, v.Value, v.MeetsTarget, v.Notes, v.Version);
+    internal static IndicatorValueDto ToDto(IndicatorValue v, IndicatorFrequency frequency) =>
+        new(v.Id, v.PeriodStart, IndicatorMath.PeriodLabel(v.PeriodStart, frequency), v.Numerator, v.Denominator, v.Value, v.MeetsTarget, v.Notes, v.Version,
+            v.IsComputed, v.ComputedAt);
 }
