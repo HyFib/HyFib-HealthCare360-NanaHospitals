@@ -18,8 +18,10 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <summary>
 /// Scheduled report e-mails end to end (SRS BI-04): a schedule falls due, the job runs the report and renders the Excel
 /// file, the e-mail handler hands a message with the file attached to the e-mail provider (the simulator) through the
-/// outbox, a failed send is retried with back-off, and while it fails System health says so. The server sends nothing on
-/// its own in the tests, so the job and each outbox message are run here, with the outbox's own retry policy.
+/// outbox, a failed send is retried with back-off, and while it fails System health says so. The test runs the job's
+/// minute itself, but the outbox messages are sent by the server's own dispatcher, which runs in the test server as on
+/// a job node. It claims each message with FOR UPDATE SKIP LOCKED. The test only makes a message due and waits; it never
+/// sends one beside the dispatcher, because two senders at once would both reach the provider.
 /// </summary>
 public sealed class ScheduledReportEmailTests(HospitalServer server)
 {
@@ -77,36 +79,34 @@ public sealed class ScheduledReportEmailTests(HospitalServer server)
 
         var (recipientId, messageId) = await QueuedMessageAsync(delivery.Id);
 
-        // First attempt: the provider refuses; the outbox keeps the message and tries again later.
-        (await DispatchAsync(messageId)).ShouldBeFalse();
-        var afterFailure = await MessageAsync(messageId);
+        // First attempt: e-mail is off, so the provider refuses. The dispatcher keeps the message and tries again later.
+        var afterFailure = await WaitForMessageAsync(messageId, m => m.Attempts >= 1);
         afterFailure.Status.ShouldBe(OutboxStatus.Pending);
-        afterFailure.Attempts.ShouldBe(1);
         afterFailure.LastError.ShouldNotBeNullOrWhiteSpace();
-        afterFailure.NextAttemptAt.ShouldBeGreaterThan(DateTimeOffset.UtcNow, "retried with back-off, not at once");
+        afterFailure.NextAttemptAt.ShouldBeGreaterThan(afterFailure.CreatedAt, "retried with back-off, not at once");
         var failing = (await admin.GetAsync<PagedResult<DeliveryDto>>($"{Schedules}/{schedule.Id}/deliveries")).Items.Single().Recipients.Single();
         failing.Status.ShouldBe(RecipientStatus.Pending);
-        failing.Attempts.ShouldBe(1);
+        failing.Attempts.ShouldBeGreaterThanOrEqualTo(1);
         failing.LastError.ShouldNotBeNullOrWhiteSpace();
 
         // System health says so while it fails.
         var warning = (await sysadmin.GetAsync<SystemHealthReport>("/api/v1/admin/system/health")).Warnings.Single(w => w.Code == ReportEmailHealthWarnings.Code);
         warning.Severity.ShouldBe("warning");
-        warning.Message.ShouldContain("not sent yet after 1 attempt(s)");
+        warning.Message.ShouldContain("not sent yet after");
 
-        // The provider is back (the e-mail simulator); the retry falls due and sends the message with the file attached.
+        // The provider is back (the e-mail simulator); the retry falls due and the dispatcher sends the message with the
+        // file attached.
         await server.SaveSettingAsync(sysadmin, EmailSetting, new SaveSettingRequest(JsonNode.Parse("""{"enabled":true,"provider":"simulator"}"""), null, false, null));
         await MakeMessageDueAsync(messageId);
-        (await DispatchAsync(messageId)).ShouldBeTrue();
-        var sent = await MessageAsync(messageId);
-        sent.Status.ShouldBe(OutboxStatus.Succeeded);
-        sent.Attempts.ShouldBe(2);
+        var sent = await WaitForMessageAsync(messageId, m => m.Status != OutboxStatus.Pending);
+        sent.Status.ShouldBe(OutboxStatus.Succeeded, sent.LastError);
+        sent.Attempts.ShouldBeGreaterThanOrEqualTo(2);
 
         var delivered = (await admin.GetAsync<PagedResult<DeliveryDto>>($"{Schedules}/{schedule.Id}/deliveries")).Items.Single();
         delivered.Sent.ShouldBe(1);
         delivered.Pending.ShouldBe(0);
         delivered.Recipients.Single().Status.ShouldBe(RecipientStatus.Sent);
-        delivered.Recipients.Single().Attempts.ShouldBe(2);
+        delivered.Recipients.Single().Attempts.ShouldBe(sent.Attempts);
 
         var mail = (await sysadmin.GetAsync<PagedResult<SimulatorMessageDto>>(
             $"/api/v1/admin/integrations/simulator/messages?channel=Email&search=analytics-{recipientId:N}")).Items.ShouldHaveSingleItem();
@@ -117,7 +117,8 @@ public sealed class ScheduledReportEmailTests(HospitalServer server)
 
         // Sending it again does nothing: the recipient was sent to once.
         await MakeMessageDueAsync(messageId, reopen: true);
-        (await DispatchAsync(messageId)).ShouldBeTrue();
+        var resent = await WaitForMessageAsync(messageId, m => m.Status != OutboxStatus.Pending);
+        resent.Status.ShouldBe(OutboxStatus.Succeeded, resent.LastError);
         (await sysadmin.GetAsync<PagedResult<SimulatorMessageDto>>(
             $"/api/v1/admin/integrations/simulator/messages?channel=Email&search=analytics-{recipientId:N}")).Items.Count.ShouldBe(1);
     }
@@ -162,36 +163,27 @@ public sealed class ScheduledReportEmailTests(HospitalServer server)
     }
 
     /// <summary>
-    /// One outbox message delivered as the dispatcher delivers it (its handler in a scope of its own, success or a retry
-    /// by <see cref="OutboxDispatcher"/>'s own policy), without touching the rest of the shared server's outbox.
+    /// Waits for the server's outbox dispatcher to act on one message, up to a minute: it polls every 2 s, and a failed
+    /// try waits 10 s or more before the next.
     /// </summary>
-    private async Task<bool> DispatchAsync(Guid id)
+    private async Task<OutboxMessage> WaitForMessageAsync(Guid id, Func<OutboxMessage, bool> done)
     {
-        await using var scope = server.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
-        var handler = scope.ServiceProvider.GetServices<IOutboxHandler>().Single(h => h.Type == ScheduledReportEmailHandler.MessageType);
-        var message = await db.Set<OutboxMessage>().SingleAsync(m => m.Id == id, Ct);
-        message.Status.ShouldBe(OutboxStatus.Pending);
-        message.NextAttemptAt.ShouldBeLessThanOrEqualTo(DateTimeOffset.UtcNow, "only a due message is sent");
-        var now = DateTimeOffset.UtcNow;
-        bool succeeded;
-        try
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(1);
+        while (true)
         {
-            await handler.HandleAsync(message, Ct);
-            message.Status = OutboxStatus.Succeeded;
-            message.ProcessedAt = now;
-            message.Attempts++;
-            message.LastError = null;
-            succeeded = true;
-        }
-        catch (InvalidOperationException ex)
-        {
-            OutboxDispatcher.Fail(message, now, ex.Message, permanent: false, TimeSpan.Zero);
-            succeeded = false;
-        }
+            var message = await MessageAsync(id);
+            if (done(message))
+            {
+                return message;
+            }
 
-        await db.SaveChangesAsync(Ct);
-        return succeeded;
+            if (DateTimeOffset.UtcNow > deadline)
+            {
+                throw new TimeoutException($"Outbox message {id} is still {message.Status} after {message.Attempts} attempt(s).");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250), Ct);
+        }
     }
 
     private static async Task<JsonNode?> EmailSettingAsync(ApiClient admin) =>
