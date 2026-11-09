@@ -55,6 +55,19 @@ internal sealed class PatientPolicyConfiguration : IEntityTypeConfiguration<Pati
     }
 }
 
+internal sealed class PreAuthProcedureConfiguration : IEntityTypeConfiguration<PreAuthProcedure>
+{
+    public void Configure(EntityTypeBuilder<PreAuthProcedure> b)
+    {
+        b.ToTable("pre_authorization_procedures", BillingSchema.Name);
+        b.Property(x => x.Code).HasMaxLength(16);
+        b.Property(x => x.Name).HasMaxLength(500);
+        b.Property(x => x.Amount).HasPrecision(14, 2);
+        b.HasIndex(x => new { x.PreAuthorizationId, x.LineNumber }).IsUnique();
+        b.HasIndex(x => new { x.System, x.Code });
+    }
+}
+
 internal sealed class PreAuthorizationConfiguration : IEntityTypeConfiguration<PreAuthorization>
 {
     public void Configure(EntityTypeBuilder<PreAuthorization> b)
@@ -62,7 +75,7 @@ internal sealed class PreAuthorizationConfiguration : IEntityTypeConfiguration<P
         b.ToTable("pre_authorizations", BillingSchema.Name);
         b.Property(x => x.Number).HasMaxLength(24);
         b.Property(x => x.DiagnosisCodes).HasMaxLength(1000);
-        b.Property(x => x.ProcedureCodes).HasMaxLength(1000);
+        b.Property(x => x.LegacyProcedureText).HasMaxLength(1000);
         b.Property(x => x.ClinicalSummary).HasMaxLength(4000);
         b.Property(x => x.ApprovalReference).HasMaxLength(64);
         b.Property(x => x.QueryText).HasMaxLength(2000);
@@ -71,6 +84,7 @@ internal sealed class PreAuthorizationConfiguration : IEntityTypeConfiguration<P
         b.Ignore(x => x.IsApproved);
         b.Ignore(x => x.EffectiveApprovedAmount);
         b.HasMany(x => x.Enhancements).WithOne().HasForeignKey(x => x.PreAuthorizationId).OnDelete(DeleteBehavior.Cascade);
+        b.HasMany(x => x.Procedures).WithOne().HasForeignKey(x => x.PreAuthorizationId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<PatientPolicy>().WithMany().HasForeignKey(x => x.PolicyId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.Number).IsUnique();

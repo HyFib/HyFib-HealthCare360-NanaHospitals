@@ -337,6 +337,7 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddScoped<IPayerDirectory, NullPayerDirectory>();
         services.TryAddScoped<IPortalAccountResolver, NullPortalAccountResolver>();
         services.TryAddScoped<IVerifiedCodingSource, NullVerifiedCodingSource>();
+        services.TryAddScoped<IProcedureCatalogue, NullProcedureCatalogue>();
         services.TryAddScoped<IPatientLanguageSource, NullPatientLanguageSource>();
 
         services.AddSignalR(hub =>

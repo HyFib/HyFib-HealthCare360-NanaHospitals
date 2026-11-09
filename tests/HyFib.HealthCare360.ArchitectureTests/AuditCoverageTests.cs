@@ -125,6 +125,7 @@ public sealed class AuditCoverageTests
         ["ClaimDeduction"] = "Not yet audited: a deduction the insurer made from a claim, written once with its settlement.",
         ["DoctorPayoutDeduction"] = "Not yet audited: a deduction from a doctor's payout, written once with the audited payout.",
         ["PreAuthEnhancement"] = "Not yet audited: an enhancement of a pre-authorisation, written once with the audited pre-authorisation.",
+        ["PreAuthProcedure"] = "Not audited row by row: a planned procedure of a pre-authorisation, replaced on each save; audited as insurance.preauth.procedures.",
         ["GoodsReceiptLine"] = "Not yet audited: a line of a goods receipt; the stock it brings in is in the stock ledger.",
         ["PurchaseOrderLine"] = "Not yet audited: a line of a purchase order, edited while the audited order is a draft.",
         ["PurchaseRequisitionLine"] = "Not yet audited: a line of a purchase requisition, edited while the audited requisition is a draft.",
