@@ -2,6 +2,7 @@ import {
   Badge,
   Button,
   Caption1,
+  Checkbox,
   DrawerBody,
   DrawerFooter,
   DrawerHeader,
@@ -57,6 +58,7 @@ export function BatchDrawer({
   const canSeeLedger = usePermission(S.stockRead);
   const [includeEmpty, setIncludeEmpty] = useState(false);
   const [blocking, setBlocking] = useState<BatchStock | null>(null);
+  const [recall, setRecall] = useState(false);
   const [releasing, setReleasing] = useState<BatchStock | null>(null);
   const [tagging, setTagging] = useState<BatchStock | null>(null);
   const batches = useQuery({ ...inventoryQueries.batches(storeId, itemId, includeEmpty), enabled: canRead });
@@ -70,7 +72,7 @@ export function BatchDrawer({
 
   const block = useMutation({
     mutationFn: ({ batch, reason }: { batch: BatchStock; reason: string }) =>
-      inventoryApi.blockBatch(batch.batchId, reason),
+      inventoryApi.blockBatch(batch.batchId, reason, recall),
     onSuccess: (_, { batch }) => {
       notify.success(
         `Batch ${batch.batchNumber} is on hold`,
@@ -81,9 +83,17 @@ export function BatchDrawer({
     },
   });
   const release = useMutation({
-    mutationFn: (batch: BatchStock) => inventoryApi.unblockBatch(batch.batchId),
-    onSuccess: (_, batch) => {
-      notify.success(`Batch ${batch.batchNumber} released`);
+    mutationFn: ({ batch, reason }: { batch: BatchStock; reason: string | null }) =>
+      inventoryApi.unblockBatch(batch.batchId, reason),
+    onSuccess: (asked, { batch }) => {
+      if (asked) {
+        notify.success(
+          `Release of batch ${batch.batchNumber} sent for approval`,
+          'A recalled batch stays held until a pharmacist or administrator who did not ask approves its release.',
+        );
+      } else {
+        notify.success(`Batch ${batch.batchNumber} released`);
+      }
       setReleasing(null);
       refresh();
     },
@@ -155,7 +165,7 @@ export function BatchDrawer({
                     b.isBlocked ? (
                       <Tooltip content={b.blockReason ?? 'On hold'} relationship="description">
                         <Badge appearance="tint" color="danger" icon={<LockClosedRegular />}>
-                          On hold
+                          {b.isRecalled ? 'Recalled' : 'On hold'}
                         </Badge>
                       </Tooltip>
                     ) : b.isExpired ? (
@@ -264,26 +274,52 @@ export function BatchDrawer({
           placeholder="e.g. Recall notice 14/2026, quality complaint"
           busy={block.isPending}
           error={block.error}
+          extra={
+            <Checkbox
+              checked={recall}
+              onChange={(_, d) => setRecall(d.checked === true)}
+              label="A manufacturer's or regulator's recall (released only with a second person's approval)"
+            />
+          }
           onSubmit={(reason) => block.mutate({ batch: blocking, reason })}
           onClose={() => {
             block.reset();
             setBlocking(null);
+            setRecall(false);
           }}
         >
           Held stock stays on the shelf but is never sold, dispensed, issued or transferred until someone releases it.
         </ReasonDialog>
       )}
-      <ConfirmDialog
-        open={releasing !== null}
-        title={`Release batch ${releasing?.batchNumber ?? ''}?`}
-        confirmLabel="Release"
-        busy={release.isPending}
-        onConfirm={() => releasing && release.mutate(releasing)}
-        onCancel={() => setReleasing(null)}
-      >
-        The batch can be used again straight away
-        {releasing?.blockReason ? `. It was held for: ${releasing.blockReason}` : ''}.
-      </ConfirmDialog>
+      {releasing?.isRecalled ? (
+        <ReasonDialog
+          title={`Ask to release recalled batch ${releasing.batchNumber}?`}
+          confirmLabel="Send for approval"
+          placeholder="e.g. Recall withdrawn by the manufacturer's letter of 3 November"
+          busy={release.isPending}
+          error={release.error}
+          onSubmit={(reason) => release.mutate({ batch: releasing, reason })}
+          onClose={() => {
+            release.reset();
+            setReleasing(null);
+          }}
+        >
+          It was recalled: {releasing.blockReason}. It stays held until a pharmacist or administrator who did not ask
+          approves its release.
+        </ReasonDialog>
+      ) : (
+        <ConfirmDialog
+          open={releasing !== null}
+          title={`Release batch ${releasing?.batchNumber ?? ''}?`}
+          confirmLabel="Release"
+          busy={release.isPending}
+          onConfirm={() => releasing && release.mutate({ batch: releasing, reason: null })}
+          onCancel={() => setReleasing(null)}
+        >
+          The batch can be used again straight away
+          {releasing?.blockReason ? `. It was held for: ${releasing.blockReason}` : ''}.
+        </ConfirmDialog>
+      )}
     </OverlayDrawer>
   );
 }

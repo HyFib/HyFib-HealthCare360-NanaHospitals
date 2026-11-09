@@ -83,6 +83,12 @@ public sealed class StockBatch : AuditableEntity, IFacilityScoped
 
     public string? BlockReason { get; private set; }
 
+    /// <summary>
+    /// Held on a manufacturer's or regulator's recall, not a local quality hold: released only when a second person agrees
+    /// (<see cref="Services.RecallReleaseApprovals"/>), and traced to the patients who had it.
+    /// </summary>
+    public bool IsRecalled { get; private set; }
+
     public decimal QuantityAvailable => QuantityOnHand - QuantityReserved;
 
     /// <summary>Expired once the expiry day has passed (the expiry day itself is still usable).</summary>
@@ -209,7 +215,7 @@ public sealed class StockBatch : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    public Result Block(string reason)
+    public Result Block(string reason, bool recall = false)
     {
         if (string.IsNullOrWhiteSpace(reason))
         {
@@ -218,6 +224,9 @@ public sealed class StockBatch : AuditableEntity, IFacilityScoped
 
         IsBlocked = true;
         BlockReason = reason.Trim();
+
+        // A recall stays a recall: holding the batch again for another reason does not turn it into a local hold.
+        IsRecalled |= recall;
         return Result.Success();
     }
 
@@ -225,5 +234,6 @@ public sealed class StockBatch : AuditableEntity, IFacilityScoped
     {
         IsBlocked = false;
         BlockReason = null;
+        IsRecalled = false;
     }
 }

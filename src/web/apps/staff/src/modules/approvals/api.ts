@@ -204,6 +204,14 @@ export const APPROVAL_PERMISSIONS = [
   'insurance.claims.manage',
   'insurance.claims.writeoff.approve',
   'insurance.preauth.manage',
+  // The stores (slice 13): a recalled batch released (someone else who may release recalls decides), a transfer counted
+  // short at the receiving store (someone who approves stock adjustments, and did not send it, decides), and a supplier
+  // payable adjustment (someone else who approves purchases decides). A purchase return's debit note is approved like a
+  // goods receipt, above. Whoever asked may withdraw it.
+  'inventory.recall.release',
+  'inventory.adjustments.approve',
+  'purchase.manage',
+  'purchase.approve',
   // A data protection impact assessment (DPDP Act s.10): whoever keeps the Significant Data Fiduciary records sends it
   // (and may withdraw it); someone else who approves them, the Data Protection Officer, decides.
   'privacy.sdf.manage',
