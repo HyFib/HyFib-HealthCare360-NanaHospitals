@@ -23,6 +23,7 @@ public sealed class AuditCoverageTests
     private static readonly Dictionary<string, string> NotInTheTrail = new(StringComparer.Ordinal)
     {
         // The trail itself, and the machinery that runs the servers.
+        ["AppointmentReminderSent"] = "The reminder job's note of which appointment reminders it sent, written once per reminder by the job, never edited; the message itself is in the notification log.",
         ["TemperatureReading"] = "A refrigerator's readings, many a day from a logger: append-only, never edited; an excursion they open and the action taken on it are audited.",
         ["AuditEvent"] = "The audit trail itself: append-only, hash-chained and sealed.",
         ["AuditPurge"] = "The record of a purge of the audit trail's old months: append-only, sealed, anchored outside the database, and audited as audit.purged.",

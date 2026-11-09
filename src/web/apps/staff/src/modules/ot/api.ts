@@ -41,6 +41,24 @@ export type SafetyPhase = (typeof SAFETY_PHASES)[number];
 export const ASA_GRADES = ['I', 'II', 'III', 'IV', 'V', 'VI'] as const;
 export type AsaGrade = (typeof ASA_GRADES)[number];
 
+export const OXYGEN_DELIVERIES = ['RoomAir', 'NasalCannula', 'FaceMask', 'VenturiMask', 'NonRebreatherMask'] as const;
+export type OxygenDelivery = (typeof OXYGEN_DELIVERIES)[number];
+
+/** AVPU. */
+export const CONSCIOUSNESS_LEVELS = ['Alert', 'Voice', 'Pain', 'Unresponsive'] as const;
+export type RecoveryConsciousness = (typeof CONSCIOUSNESS_LEVELS)[number];
+
+export const BREATHING = ['DeepBreathAndCough', 'Limited', 'Apnoeic'] as const;
+export type RecoveryBreathing = (typeof BREATHING)[number];
+
+export const PONV = ['None', 'Nausea', 'Vomiting'] as const;
+export type Ponv = (typeof PONV)[number];
+
+export const RECOVERY_DESTINATIONS = ['Ward', 'Icu', 'Hdu'] as const;
+export type RecoveryDestination = (typeof RECOVERY_DESTINATIONS)[number];
+
+export type AldreteSign = 'Activity' | 'Respiration' | 'Circulation' | 'Consciousness' | 'OxygenSaturation';
+
 export const AIRWAY_DEVICES = ['None', 'FaceMask', 'SupraglotticAirway', 'EndotrachealTube', 'Tracheostomy'] as const;
 export type AirwayDevice = (typeof AIRWAY_DEVICES)[number];
 
@@ -200,6 +218,8 @@ export interface SurgeryListItem {
   timeOutDone: boolean;
   signOutDone: boolean;
   chargeStatus: ChargeStatus;
+  /** Between the WHO Sign-out and the discharge from recovery. */
+  inRecovery?: boolean;
 }
 
 export interface ChecklistItemDto {
@@ -271,6 +291,10 @@ export interface SurgeryDetail {
   countDiscrepancies?: CountDiscrepancy[] | null;
   /** WHO checklist phases voided by a change of side or procedure after the Sign-in. */
   checklistVoids?: ChecklistVoid[] | null;
+  /** Between the WHO Sign-out and the discharge from recovery: shown as "In recovery". */
+  inRecovery?: boolean;
+  recoveryDischargedAt?: string | null;
+  recoveryDestination?: RecoveryDestination | null;
 }
 
 /** One count, by one member of the theatre team and witnessed by a second at the same screen. */
@@ -437,6 +461,93 @@ export interface SchedulingConflict {
 }
 
 // ---------------------------------------------------------------- clinical records
+
+/** One row of the recovery chart. */
+export interface RecoveryObservation {
+  id: string;
+  at: string;
+  heartRate: number | null;
+  systolic: number | null;
+  diastolic: number | null;
+  spO2: number | null;
+  onOxygen: boolean;
+  respiratoryRate: number | null;
+  temperatureC: number | null;
+  consciousness: RecoveryConsciousness | null;
+  breathing: RecoveryBreathing | null;
+  limbsMoving: number | null;
+  painScore: number | null;
+  ponv: Ponv | null;
+  recordedByName: string;
+}
+
+export interface AldreteComponent {
+  sign: AldreteSign;
+  points: number | null;
+  missing: string | null;
+}
+
+/** The modified Aldrete score of the latest observations; `wardBlockedBy` says why the ward waits (null when it need not). */
+export interface RecoveryScore {
+  components: AldreteComponent[];
+  total: number | null;
+  at: string | null;
+  missing: string[];
+  meetsWardDischarge: boolean;
+  wardBlockedBy: string | null;
+}
+
+export interface RecoveryRecordDto {
+  id: string;
+  surgeryBookingId: string;
+  patientId: string;
+  receivedAt: string;
+  receivedByName: string;
+  airway: AirwayDevice;
+  oxygen: OxygenDelivery;
+  oxygenLitresPerMinute: number | null;
+  preAnaesthesiaSystolic: number | null;
+  notes: string | null;
+  handoverRequired: boolean;
+  handoverAt: string | null;
+  handedOverByName: string | null;
+  handoverConfirmedAtScreen: boolean;
+  handoverNotes: string | null;
+  observations: RecoveryObservation[];
+  score: RecoveryScore;
+  dischargedAt: string | null;
+  destination: RecoveryDestination | null;
+  dischargeScore: number | null;
+  dischargedByName: string | null;
+  overrideReason: string | null;
+  overrideByName: string | null;
+  version: number;
+}
+
+export interface ReceiveInRecoveryRequest {
+  airway: AirwayDevice;
+  oxygen: OxygenDelivery;
+  oxygenLitresPerMinute: number | null;
+  preAnaesthesiaSystolic: number | null;
+  receivedAt?: string | null;
+  notes?: string | null;
+}
+
+export interface AddRecoveryObservationRequest {
+  heartRate: number | null;
+  systolic: number | null;
+  diastolic: number | null;
+  spO2: number | null;
+  onOxygen: boolean;
+  respiratoryRate: number | null;
+  temperatureC: number | null;
+  consciousness: RecoveryConsciousness | null;
+  breathing: RecoveryBreathing | null;
+  limbsMoving: number | null;
+  painScore: number | null;
+  ponv: Ponv | null;
+  at?: string | null;
+}
 
 export interface AnaesthesiaVitals {
   at: string;
@@ -681,6 +792,7 @@ export const otKeys = {
   booking: (id: string) => ['ot', 'booking', id] as const,
   anaesthesia: (id: string) => ['ot', 'booking', id, 'anaesthesia'] as const,
   operationNote: (id: string) => ['ot', 'booking', id, 'operation-note'] as const,
+  recovery: (id: string) => ['ot', 'booking', id, 'recovery'] as const,
   materials: (id: string) => ['ot', 'booking', id, 'materials'] as const,
   storeItems: (search: string) => ['ot', 'store-items', search] as const,
   trace: (lot: string, serial: string) => ['ot', 'implant-trace', lot, serial] as const,
@@ -739,6 +851,11 @@ export const otQueries = {
     queryOptions({
       queryKey: otKeys.operationNote(id),
       queryFn: ({ signal }) => getOrNull<OperationNoteDto>(`/api/v1/ot/bookings/${id}/operation-note`, signal),
+    }),
+  recovery: (id: string) =>
+    queryOptions({
+      queryKey: otKeys.recovery(id),
+      queryFn: ({ signal }) => getOrNull<RecoveryRecordDto>(`/api/v1/ot/bookings/${id}/recovery`, signal),
     }),
   materials: (id: string) =>
     queryOptions({
@@ -804,6 +921,18 @@ export const otApi = {
   /** 202: the correction waits for the OT in-charge (`ot.materials.approve`), never the one who asked. */
   correctMaterial: (id: string, materialId: string, request: CorrectSurgeryMaterialRequest) =>
     api.post<ApprovalRequestDto>(`/api/v1/ot/bookings/${id}/materials/${materialId}/corrections`, request),
+  receiveInRecovery: (id: string, request: ReceiveInRecoveryRequest) =>
+    api.post<RecoveryRecordDto>(`/api/v1/ot/bookings/${id}/recovery/receive`, request),
+  /** No confirmation: the signed-in user is the anaesthetist. With one: the anaesthetist confirmed at this screen. */
+  recoveryHandover: (id: string, witnessConfirmationId: string | null, notes: string | null) =>
+    api.post<RecoveryRecordDto>(`/api/v1/ot/bookings/${id}/recovery/handover`, { witnessConfirmationId, notes }),
+  addRecoveryObservation: (id: string, request: AddRecoveryObservationRequest) =>
+    api.post<RecoveryRecordDto>(`/api/v1/ot/bookings/${id}/recovery/observations`, request),
+  dischargeFromRecovery: (id: string, destination: RecoveryDestination) =>
+    api.post<RecoveryRecordDto>(`/api/v1/ot/bookings/${id}/recovery/discharge`, { destination }),
+  /** The anaesthetist (`ot.anaesthesia.record`) sends the patient to the ward below the score, with the reason. */
+  overrideRecoveryDischarge: (id: string, reason: string) =>
+    api.post<RecoveryRecordDto>(`/api/v1/ot/bookings/${id}/recovery/discharge/override`, { reason }),
   recordCount: (id: string, request: RecordSurgicalCountRequest) =>
     api.post<void>(`/api/v1/ot/bookings/${id}/counts`, request),
   resolveDiscrepancy: (id: string, discrepancyId: string, request: ResolveCountDiscrepancyRequest) =>

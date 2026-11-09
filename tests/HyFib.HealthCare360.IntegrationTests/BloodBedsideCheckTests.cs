@@ -273,6 +273,29 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
     /// A unit of <paramref name="group"/> packed red cells collected, tested and verified by a second officer, asked for,
     /// cross-matched by a second officer (or released in an emergency by the doctor) and issued.
     /// </summary>
+    [Fact]
+    public async Task A_transfusion_reaction_is_also_an_incident_in_the_quality_register()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var nurse = await RecordingNurseAsync();
+        var officer = await BloodBankOfficerAsync();
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+        var admission = await AdmitAsync(frontOffice, doctor, patient.Id);
+        var issue = await IssueUnitAsync(officer.Client, doctor, patient.Id, admission.Id, BloodGroup.APositive, emergency: false);
+
+        var reaction = await nurse.PostAsync<Created>($"{Bank}/issues/{issue.Id}/reactions", new ReportReactionRequest(
+            DateTimeOffset.UtcNow, [ReactionSymptom.Fever, ReactionSymptom.ChillsRigors], "T 38.9 °C, P 112", true, 60, "Stopped, saline running",
+            ReactionSeverity.Moderate));
+
+        await using var scope = server.Services.CreateAsyncScope();
+        var incident = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Modules.Quality.Domain.Incident>().IgnoreQueryFilters().AsNoTracking()
+            .SingleAsync(i => i.SourceRecordId == reaction.Id, Ct);
+        (incident.Type, incident.Severity, incident.PatientId, incident.SourceModule, incident.SourceReference)
+            .ShouldBe((Modules.Quality.Domain.IncidentType.TransfusionReaction, Modules.Quality.Domain.IncidentSeverity.Moderate, (Guid?)patient.Id, "SpecialtyCare",
+                $"Unit {issue.UnitNumber}"));
+    }
+
     private async Task<BloodIssueDto> IssueUnitAsync(ApiClient officer, ApiClient doctor, Guid patientId, Guid admissionId, BloodGroup group, bool emergency)
     {
         var donor = await officer.PostAsync<Created>($"{Bank}/donors", new SaveDonorRequest(

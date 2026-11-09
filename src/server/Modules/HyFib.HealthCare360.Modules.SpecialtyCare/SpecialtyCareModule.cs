@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Mtp;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.BloodBank;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Dialysis;
@@ -31,18 +32,23 @@ public sealed class SpecialtyCareModule : IModule
         services.AddScoped<IPractitionerWorkSource, SurgeryPractitionerWork>();
         services.AddScoped<OtClinicalService>();
         services.AddWitnessPurpose(OtClinicalService.CountWitness);
+        services.AddScoped<RecoveryService>();
+        services.AddWitnessPurpose(RecoveryService.HandoverWitness);
         services.AddScoped<OtReportingService>();
         services.AddScoped<DialysisService>();
         services.AddScoped<PhysioService>();
         services.AddScoped<DonorService>();
         services.AddScoped<TransfusionService>();
+
+        // Quality's indicators (return to OT, SSI and transfusion reaction rates) and infection surveillance read these facts.
+        services.Replace(ServiceDescriptor.Scoped<ISurgeryAndTransfusionFacts, SurgeryAndTransfusionFacts>());
         services.AddScoped<BedsideTransfusionService>();
         services.AddWitnessPurpose(BedsideTransfusionService.BedsideWitness);
         services.AddWitnessPurpose(MtpService.SecondOpinionWitness);
         services.AddScoped<BloodInventoryService>();
         services.AddScoped<MtpService>();
 
-        // A patient in pre-op or on the table holds the discharge (Inpatient asks every source).
+        // A patient in pre-op, on the table or in recovery holds the discharge (Inpatient asks every source).
         services.AddScoped<IDischargeHoldSource, TheatreDischargeHolds>();
         services.AddScoped<IDischargeHoldSource, TransfusionDischargeHolds>();
 
@@ -55,6 +61,7 @@ public sealed class SpecialtyCareModule : IModule
         TheatreEndpoints.Map(endpoints);
         SurgeryEndpoints.Map(endpoints);
         OtClinicalEndpoints.Map(endpoints);
+        RecoveryEndpoints.Map(endpoints);
         OtStoreEndpoints.Map(endpoints);
         DialysisSetupEndpoints.Map(endpoints);
         DialysisSessionEndpoints.Map(endpoints);

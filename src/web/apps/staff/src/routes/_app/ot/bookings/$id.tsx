@@ -31,7 +31,7 @@ import { AnaesthesiaPanel } from '@/modules/ot/AnaesthesiaPanel';
 import { otApi, otKeys, otQueries, type SurgeryDetail } from '@/modules/ot/api';
 import { PlanDialog, ScheduleDialog } from '@/modules/ot/BookingDialogs';
 import { CountsPanel } from '@/modules/ot/CountsPanel';
-import { anaesthesiaLabel, lateralityLabel } from '@/modules/ot/labels';
+import { anaesthesiaLabel, destinationLabel, lateralityLabel } from '@/modules/ot/labels';
 import {
   cancelGate,
   currentStepId,
@@ -45,6 +45,7 @@ import {
 import { MaterialsPanel } from '@/modules/ot/MaterialsPanel';
 import { OperationNotePanel } from '@/modules/ot/OperationNotePanel';
 import { PriorityBadge, SideBadge, SurgeryStatusBadge } from '@/modules/ot/OtBadges';
+import { RecoveryPanel } from '@/modules/ot/RecoveryPanel';
 import { formatDuration, minutesBetween } from '@/modules/ot/shared/datetime';
 import {
   ChargeStatusPanel,
@@ -58,7 +59,7 @@ import { useFacilityId } from '@/modules/ot/shared/hooks';
 import { SpecialtyPatientBanner } from '@/modules/ot/shared/SpecialtyPatientBanner';
 import { SurgeryStepper } from '@/modules/ot/SurgeryStepper';
 
-const TABS = ['day', 'counts', 'anaesthesia', 'note', 'materials', 'details'] as const;
+const TABS = ['day', 'counts', 'anaesthesia', 'recovery', 'note', 'materials', 'details'] as const;
 type TabId = (typeof TABS)[number];
 
 interface BookingSearch {
@@ -230,7 +231,7 @@ function BookingView({
             <span className={styles.badges}>
               <SideBadge laterality={b.laterality} size="large" />
               <PriorityBadge priority={b.priority} />
-              <SurgeryStatusBadge status={b.status} />
+              <SurgeryStatusBadge status={b.status} inRecovery={b.inRecovery} />
             </span>
             {canManage && needsSlot && scheduleGate(b).allowed && (
               <Button appearance="primary" icon={<CalendarArrowRightRegular />} onClick={() => setDialog('schedule')}>
@@ -304,6 +305,7 @@ function BookingView({
             <Tab value="day">Day of surgery</Tab>
             <Tab value="counts">Counts</Tab>
             <Tab value="anaesthesia">Anaesthesia</Tab>
+            <Tab value="recovery">Recovery</Tab>
             <Tab value="note">Operation note</Tab>
             <Tab value="materials">Implants and consumables</Tab>
             <Tab value="details">Details and billing</Tab>
@@ -321,6 +323,7 @@ function BookingView({
           )}
           {tab === 'counts' && <CountsPanel booking={b} />}
           {tab === 'anaesthesia' && <AnaesthesiaPanel booking={b} />}
+          {tab === 'recovery' && <RecoveryPanel booking={b} />}
           {tab === 'note' && <OperationNotePanel booking={b} />}
           {tab === 'materials' && <MaterialsPanel booking={b} />}
           {tab === 'details' && (
@@ -413,6 +416,13 @@ function Details({
         <Detail label="Incision">{b.startedAt ? formatDateTime(b.startedAt) : null}</Detail>
         <Detail label="Out of theatre">{b.completedAt ? formatDateTime(b.completedAt) : null}</Detail>
         <Detail label="Time in theatre">{inTheatre !== null ? formatDuration(inTheatre) : null}</Detail>
+        <Detail label="Out of recovery">
+          {b.recoveryDischargedAt
+            ? `${formatDateTime(b.recoveryDischargedAt)}${b.recoveryDestination ? ` to the ${destinationLabel[b.recoveryDestination]}` : ''}`
+            : b.inRecovery
+              ? 'In recovery'
+              : null}
+        </Detail>
         <Detail label="Origin">{b.orderItemId ? 'From a doctor’s order' : 'Booked at the OT desk'}</Detail>
         <Detail label="Encounter">
           {b.admissionId ? 'In-patient (charges go to the IP bill)' : b.visitId ? 'Out-patient / day care visit' : null}

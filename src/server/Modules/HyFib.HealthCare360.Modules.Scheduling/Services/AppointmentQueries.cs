@@ -90,6 +90,8 @@ public static class AppointmentQueries
         var x = row.Appointment;
         var departments = await DepartmentNamesAsync(db, [x.DepartmentId], ct);
         var history = await HistoryAsync(db, x, ct);
+        var reminders = await db.Set<AppointmentReminderSent>().AsNoTracking().Where(r => r.AppointmentId == x.Id)
+            .ToDictionaryAsync(r => r.Kind, r => r.SentAt, ct);
         return new AppointmentDetail(
             x.Id, x.Number, x.FacilityId, x.PatientId, row.Uhid, row.FullName, row.Gender, row.DateOfBirth is { } dob ? Age.Format(dob, today) : null,
             PatientContacts.Phone(row.Phone, fullContacts), x.PractitionerId, row.PractitionerName ?? "Doctor", x.DepartmentId,
@@ -97,7 +99,8 @@ public static class AppointmentQueries
             x.SeatNumber, x.Status, x.Channel, x.VisitType, x.IsTelehealth, x.Room, x.Reason, x.Notes, x.BookedAt, x.ConfirmedAt, x.FeeAmount,
             x.PaymentStatus, x.PaymentProvider, x.GatewayOrderId, x.GatewayPaymentId, x.AmountPaid, x.PaidAt, x.VisitId, x.CheckedInAt,
             x.CompletedAt, x.NoShowAt, x.CancelReasonCode, x.CancelReason, x.CancelledBy, x.CancelledAt, x.RescheduledFromId, x.RescheduledToId,
-            x.WaitlistEntryId, x.Reminder24hSentAt, x.Reminder2hSentAt, history, x.Version);
+            x.WaitlistEntryId, reminders.TryGetValue(AppointmentReminder.DayBefore, out var dayBefore) ? dayBefore : null,
+            reminders.TryGetValue(AppointmentReminder.TwoHoursBefore, out var twoHours) ? twoHours : null, history, x.Version);
     }
 
     /// <summary>Earlier bookings this appointment replaced (reschedule chain), newest first.</summary>

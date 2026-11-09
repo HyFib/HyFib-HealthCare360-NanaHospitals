@@ -399,6 +399,8 @@ export function patientJourneys(patientId: string): PatientJourneys {
           stage('time-out', 'WHO Time-out', 'Pending'),
           stage('incision', 'Incision', 'Pending'),
           stage('sign-out', 'WHO Sign-out', 'Pending'),
+          stage('in-recovery', 'In recovery', 'Pending'),
+          stage('recovery-discharged', 'Discharged from recovery', 'Pending'),
           stage('out-and-billed', 'Out of theatre and billed', 'Pending'),
         ],
       }),

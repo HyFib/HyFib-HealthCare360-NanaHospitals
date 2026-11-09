@@ -43,6 +43,15 @@ public sealed record RaisedIncident(Guid IncidentId, string IncidentNumber);
 public interface IIncidentRegister
 {
     Task<Result<RaisedIncident>> RaiseAsync(PatientSafetyIncident incident, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reports a patient-safety event another module recorded (a transfusion reaction, an ADR, a missed dose, a fall, a
+    /// pressure injury), graded by its harm; sentinel only when its harm makes it so. Added in the caller's unit of work. The
+    /// same source record raises one incident: reporting it again answers the incident it raised.
+    /// </summary>
+    Task<Result<RaisedIncident>> ReportAsync(ReportedSafetyEvent safetyEvent, CancellationToken cancellationToken) =>
+        Task.FromResult<Result<RaisedIncident>>(Error.Rule("incident.register_unavailable",
+            "The incident register is not available here, so the incident could not be raised. Report it on paper to the quality team."));
 }
 
 /// <summary>Fallback used until the Quality module registers its register: nothing can be raised, and the caller is told so.</summary>

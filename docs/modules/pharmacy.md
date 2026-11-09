@@ -265,6 +265,11 @@ patient is named by initials, as the form asks. A reporter sees and corrects the
 centre, after which it cannot change. A serious reaction is due within 15 days of the hospital learning of it
 (`dueBy`, `overdue`). Reads and prints go through the patient guard and are audited.
 
+A new report raises an incident (type AdverseDrugReaction) in the Quality register in the same save, unless an incident
+number was given on the form: death is graded death; life-threatening, disability or a congenital anomaly severe (so a
+root-cause analysis is due); any other seriousness moderate; a non-serious reaction mild. The incident's number is kept
+on the report.
+
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
 | GET | `/adr?status` | `pharmacy.adr.report` or `.manage` | → `AdrReportListItem[]` (one's own, or all for pharmacovigilance) |

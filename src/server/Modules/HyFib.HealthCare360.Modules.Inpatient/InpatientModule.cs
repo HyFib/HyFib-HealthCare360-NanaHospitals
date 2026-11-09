@@ -109,6 +109,7 @@ public sealed class InpatientModule : IModule
         DischargeEndpoints.Map(endpoints);
         CensusEndpoints.Map(endpoints);
         NursingEndpoints.Map(endpoints);
+        SafetyEventEndpoints.Map(endpoints);
         MarEndpoints.Map(endpoints);
         RoundEndpoints.Map(endpoints);
         EarlyWarningEndpoints.Map(endpoints);
