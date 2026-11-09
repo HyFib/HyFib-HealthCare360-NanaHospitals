@@ -281,12 +281,20 @@ public static class GstReturnBuilder
 
         var nilExempt = gstr1.Nil.Sum(n => n.NilRated + n.Exempt);
         var nonGst = gstr1.Nil.Sum(n => n.NonGst);
+        // Returns to suppliers are netted in 4(A)(5), not shown as a 4(B)(2) reversal. GSTN's GSTR-2B FAQ: "4A(5) = (a) – (b) –
+        // (c)", where (b) is "Table 3 Part B Section I – B2B – Credit notes" (the supplier's credit notes); GSTR-3B takes table
+        // 4 on a net basis and allows negative values there.
         var itc = GstReturnAmounts.Zero;
         var withGstin = purchases.Where(p => Gstin.IsWellFormed(p.SupplierGstin)).ToList();
         foreach (var purchase in withGstin)
         {
-            itc = itc.Plus(new GstReturnAmounts(purchase.Taxable, purchase.Igst, purchase.Cgst, purchase.Sgst, purchase.Cess));
+            var amounts = new GstReturnAmounts(purchase.Taxable, purchase.Igst, purchase.Cgst, purchase.Sgst, purchase.Cess);
+            itc = itc.Plus(purchase.IsReturn ? amounts.Times(-1m) : amounts);
         }
+
+        var invoices = purchases.Count(p => !p.IsReturn);
+        var invoicesWithoutGstin = purchases.Count(p => !p.IsReturn && !Gstin.IsWellFormed(p.SupplierGstin));
+        var returns = withGstin.Where(p => p.IsReturn).ToList();
 
         var turnover = outward.Taxable + nilExempt + nonGst;
         var share = turnover <= 0m ? 0m : Math.Round(nilExempt / turnover, 4, MidpointRounding.AwayFromZero);
@@ -297,16 +305,22 @@ public static class GstReturnBuilder
                 $"Exempt and nil-rated supplies are {share:P2} of the month's turnover: input tax on goods and services used for them, and that share of common credit (CGST rule 42), is reversed in table 4(B)(1). HC360 does not know which purchases are common; the accountant enters the reversal."));
         }
 
-        if (purchases.Count > withGstin.Count)
+        if (invoicesWithoutGstin > 0)
         {
-            notes.Add($"{purchases.Count - withGstin.Count} purchase invoice(s) from suppliers without a GSTIN carry no input tax credit.");
+            notes.Add($"{invoicesWithoutGstin} purchase invoice(s) from suppliers without a GSTIN carry no input tax credit.");
+        }
+
+        if (returns.Count > 0)
+        {
+            notes.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{returns.Count} return(s) to suppliers (stores debit notes) reduce the credit in table 4(A)(5) by {Money.Round(returns.Sum(p => p.Igst + p.Cgst + p.Sgst + p.Cess)):0.00}; check the suppliers' credit notes in GSTR-2B match."));
         }
 
         notes.Add("Credit is shown as the hospital's purchase records hold it; claim it only as far as it appears in GSTR-2B (CGST rule 36(4)).");
         return new Gstr3bReturn(
             gstr1.Gstin, gstr1.Year, gstr1.Month, Round(outward), GstReturnAmounts.Zero, Money.Round(nilExempt), GstReturnAmounts.Zero, Money.Round(nonGst),
             inter.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => new Gstr1B2csRow(true, p.Key, 0m, Round(p.Value))).ToList(),
-            Round(itc), GstReturnAmounts.Zero, purchases.Count, purchases.Count - withGstin.Count, share, notes);
+            Round(itc), GstReturnAmounts.Zero, invoices, invoicesWithoutGstin, share, notes);
     }
 
     /// <summary>
