@@ -155,6 +155,7 @@ public static class PersonalDataCatalogue
                 new("inpatient.admissions", "Hospital stays"),
                 new("inpatient.nursing_notes", "Nursing notes"),
                 new("inpatient.nursing_assessments", "Nursing assessments"),
+                new("inpatient.nursing_safety_events", "Falls and pressure injuries recorded during your stay"),
                 new("inpatient.medication_orders", "Medicine orders during stays"),
                 new("inpatient.medication_administrations", "Medicines given to you"),
                 // A second nurse confirming at the screen, with their own password, a controlled medicine given to you: who,
@@ -294,6 +295,8 @@ public static class PersonalDataCatalogue
                 new("quality.incidents", "Safety reports that mention you"),
                 // Sent outside the hospital naming you by initials, age and sex only (MvPI's reporting form).
                 new("quality.mvpi_reports", "Reports of a problem with a medical device used in your care (MvPI)"),
+                new("quality.device_episodes", "Lines, catheters and ventilation you had, recorded for infection surveillance"),
+                new("quality.hai_cases", "Possible infections acquired in hospital, reviewed by the infection control team"),
             ]),
         new("ai", "AI assistant",
             "Times staff used the AI assistant while working on your record. Names and numbers are removed before anything is sent to it.",

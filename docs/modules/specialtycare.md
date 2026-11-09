@@ -146,7 +146,7 @@ screen and in Excel, CSV and PDF. It needs `analytics.clinical.read` and is audi
 | POST | `/issues/{id}/transfusion` | `bloodbank.transfuse` | `StartTransfusionRequest` (wristbandUhid, bagUnitNumber, witnessConfirmationId, baseline observations, consentDeferredReason) → 201 `TransfusionDto`. The bedside check, below |
 | POST | `/transfusions/{id}/observations` | `bloodbank.transfuse` | `RecordTransfusionObservationRequest` (kind FifteenMinutes/Later, recordedAt, values, version) → `TransfusionDto` |
 | POST | `/transfusions/{id}/end` | `bloodbank.transfuse` | `EndTransfusionRequest` (endedAt, stopped, stopReason, volumeMl, observations, version) → `TransfusionDto` |
-| POST | `/issues/{id}/reactions` | `bloodbank.reactions.report` | `ReportReactionRequest` (onset, symptoms[], vitals, transfusionStopped, volume, actions, severity) → 201 `{id}`; alerts investigators |
+| POST | `/issues/{id}/reactions` | `bloodbank.reactions.report` | `ReportReactionRequest` (onset, symptoms[], vitals, transfusionStopped, volume, actions, severity) → 201 `{id}`; alerts investigators and raises an incident (type TransfusionReaction) in the Quality register in the same save, graded by the severity (life-threatening as severe) |
 | GET | `/reactions?status=` | `bloodbank.read` | → paged `TransfusionReactionDto` |
 | POST | `/reactions/{id}/investigate` · `/close` | `bloodbank.reactions.investigate` | `CloseReactionRequest` (type (HvPI classification), severity, findings, reportedToHaemovigilance) → 204 |
 
@@ -345,3 +345,10 @@ With `SeedDemoData`: theatres OT-1 (Major), OT-2 (Ortho), OT-3 (Minor); dialysis
 machine per shift and per patient per shift), `physio_referrals`, `physio_assessments`, `physio_treatment_plans`, `physio_sessions`, `donors`,
 `donor_screenings`, `donations`, `blood_components`, `blood_requests`, `crossmatches`, `blood_issues`, `transfusions` (one per issue), `transfusion_observations`, `transfusion_reactions`, `admissions`,
 `mtp_cases` (opinions as `jsonb`).
+
+## Facts for the Quality module
+
+SpecialtyCare provides `ISurgeryAndTransfusionFacts` (Platform contract; Quality is in the same layer and cannot
+reference it): completed operations (booking, patient, stay, procedure, elective or not, started and completed), a
+patient's operations since a date, bedside transfusions started and reactions by onset. Quality builds the unplanned
+return to OT, SSI rate and transfusion reaction rate indicators, and SSI surveillance, on them.

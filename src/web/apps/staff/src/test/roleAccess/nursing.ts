@@ -12,6 +12,7 @@ import type {
 import { type FakeAnswers, type FakeRequest } from '../fakeApi';
 import { WARD_ID } from '../roleAccessIds';
 import { IN_PATIENTS } from './inpatient';
+import type { NursingSafetyEvent } from '@/modules/inpatient/nursing/SafetyEvents';
 
 // The nursing station on General Ward — Male (the in-patients of ./inpatient): the medication round (one dose
 // overdue, two due within the hour), the shift's handover sheet (one handover to acknowledge, one acknowledged), and
@@ -312,6 +313,26 @@ const ASSESSMENTS: AssessmentDto[] = [
   },
 ];
 
+/** A fall the night nurse recorded, which raised an incident in the quality register. */
+const SAFETY_EVENTS: NursingSafetyEvent[] = [
+  {
+    id: id('63'),
+    kind: 'Fall',
+    occurredAt: minutesFromNow(-300),
+    location: 'Bed 4, beside the commode',
+    description: 'Found on the floor beside the commode, alert, small graze on the left elbow.',
+    immediateAction: 'Doctor informed; hourly observations',
+    fallInjury: 'Minor',
+    witnessed: false,
+    stage: null,
+    bodySite: null,
+    presentOnAdmission: false,
+    recordedAt: minutesFromNow(-290),
+    recordedByName: 'Sr. Kavita Pawar',
+    incidentNumber: 'NHIR2600121',
+  },
+];
+
 /** Each part of an in-patient's nursing chart, by the last segment of its path. */
 const CHART: Record<string, unknown> = {
   mar: MAR,
@@ -320,6 +341,7 @@ const CHART: Record<string, unknown> = {
   handovers: HANDOVERS,
   'intake-output': IO,
   assessments: ASSESSMENTS,
+  'safety-events': SAFETY_EVENTS,
 };
 
 // A telephone order the night nurse wrote in the consultant's name, waiting for his countersignature.
