@@ -39,7 +39,8 @@ public sealed record LabConnectionDto(
     string? Problem,
     LabConnectionStatusDto? Status,
     int PendingOrders,
-    bool OpenToAnyDevice);
+    bool OpenToAnyDevice,
+    Laboratory.Devices.LabDeviceAuthentication DeviceAuthentication = Laboratory.Devices.LabDeviceAuthentication.None);
 
 /// <summary>A COM port's settings (names as Windows uses them: Parity None/Odd/Even/Mark/Space, StopBits One/OnePointFive/Two, Handshake None/XOnXOff/RequestToSend/RequestToSendXOnXOff).</summary>
 public sealed record LabSerialPortDto(string PortName, int BaudRate, int DataBits, string Parity, string StopBits, string Handshake, bool DtrEnable, bool RtsEnable);
@@ -70,7 +71,8 @@ public sealed record SaveLabConnectionRequest(
     string? OrderMessage,
     Guid? AgentDeviceId,
     LabSerialPortDto? Serial,
-    uint ListVersion);
+    uint ListVersion,
+    Laboratory.Devices.LabDeviceAuthentication? DeviceAuthentication = null);
 
 public sealed class SaveLabConnectionRequestValidator : AbstractValidator<SaveLabConnectionRequest>
 {

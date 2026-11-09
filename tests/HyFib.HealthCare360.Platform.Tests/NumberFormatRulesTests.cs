@@ -113,6 +113,24 @@ public sealed class NumberFormatRulesTests
     }
 
     [Fact]
+    public void A_series_that_must_carry_the_facility_code_needs_it_with_one_facility()
+    {
+        var pass = new NumberSeriesDefinition("visitor-pass", "Visitor pass", "Front office", "{FAC}VP{YY}{MM}{DD}-{SEQ:4}", NumberResetPolicy.Daily, MaxLength: 24)
+        {
+            FacilityCodeReason = "Passes are checked at every gate.",
+        };
+
+        NumberFormatRules.Check(Change(pass, "VP{YY}{MM}{DD}-{SEQ:4}") with { ResetPolicy = NumberResetPolicy.Daily })[NumberFormatRules.FormatField]
+            .ShouldBe(["Add {FAC}. Passes are checked at every gate."]);
+        NumberFormatRules.Check(Change(pass, "{FAC}VP{YY}{MM}{DD}-{SEQ:4}") with { ResetPolicy = NumberResetPolicy.Daily }).ShouldBeEmpty();
+
+        // A format saved before the rule gets the facility code in front when numbers are made; others are left as they are.
+        NumberSeriesService.WithFacilityCode(pass, "VP{YY}{MM}{DD}-{SEQ:4}").ShouldBe("{FAC}VP{YY}{MM}{DD}-{SEQ:4}");
+        NumberSeriesService.WithFacilityCode(pass, "V{FAC}{YY}{SEQ:4}").ShouldBe("V{FAC}{YY}{SEQ:4}");
+        NumberSeriesService.WithFacilityCode(OpBill, "OB{YY}{SEQ:7}").ShouldBe("OB{YY}{SEQ:7}");
+    }
+
+    [Fact]
     public void A_changed_format_must_differ_from_the_other_series()
     {
         var change = Change(OpBill, "{FAC}IB{YY}{SEQ:7}") with { OtherFormats = [new OtherNumberFormat("IP bill", "{FAC}IB{YY}{SEQ:7}", IsDefault: true)] };

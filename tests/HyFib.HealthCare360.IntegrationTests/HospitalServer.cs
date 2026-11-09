@@ -161,6 +161,9 @@ public sealed class HospitalServer : IAsyncLifetime
     /// <summary>The ABDM gateway the server calls (<see cref="FakeAbdmGateway"/>).</summary>
     public FakeAbdmGateway AbdmGateway { get; } = new();
 
+    /// <summary>The speech-to-text service the server sends dictation to (<see cref="FakeSpeechService"/>).</summary>
+    public FakeSpeechService Speech { get; } = new();
+
     /// <summary>Cashfree's API the server calls when a test sets Cashfree up (<see cref="FakeCashfree"/>).</summary>
     public FakeCashfree Cashfree { get; } = new();
 
@@ -226,6 +229,9 @@ public sealed class HospitalServer : IAsyncLifetime
         builder.Services.AddHttpClient<AbdmGatewayKeys>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
         builder.Services.AddHttpClient<AbdmDataPush>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
         builder.Services.AddHttpClient<AbhaClient>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
+
+        // The speech service is a fake one of this run (SpeechPrivacyTests): it keeps what the server sent it.
+        builder.Services.AddHttpClient<HyFib.HealthCare360.Modules.AI.Services.Speech.WhisperSpeechToText>().ConfigurePrimaryHttpMessageHandler(Speech.Handler);
 
         // Cashfree is a fake one of this run (GatewayReconciliationTests): nothing goes to the network.
         builder.Services.AddHttpClient<CashfreeGateway>().ConfigurePrimaryHttpMessageHandler(Cashfree.Handler);
