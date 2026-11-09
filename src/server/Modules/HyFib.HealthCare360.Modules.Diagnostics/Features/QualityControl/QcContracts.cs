@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Quality;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Features.QualityControl;
 
@@ -56,6 +57,12 @@ public sealed record QcRunDto(
 public sealed record ReviewQcRunRequest(string? Note, string? CorrectiveAction);
 
 public sealed record QcOverrideRequest(Guid LabTestId, string Reason);
+
+/// <summary>
+/// The override made (<c>Overrides</c> rejected runs overridden for the day), or asked for (<c>Approval</c>, where the lab
+/// asks for a second pathologist: nothing is unlocked until another one approves it).
+/// </summary>
+public sealed record QcOverrideOutcome(int Overrides, ApprovalRequestDto? Approval);
 
 /// <summary>An assay whose verification is locked because today's latest QC run on a control lot was rejected.</summary>
 public sealed record QcLockout(Guid LabTestId, string TestName, IReadOnlyList<Guid> RejectedRunIds, IReadOnlyList<string> Violations);

@@ -15,7 +15,9 @@ public sealed record LabConnectionsDto(bool GatewayEnabled, uint ListVersion, IR
 /// <c>Protocol</c> follows Lab setup
 /// (<c>Hl7v2</c> or <c>Astm</c>). <c>HostQueryRetiredOff</c> means the connection still carries the retired
 /// <c>"hostQuery": false</c>, which keeps host queries and order download off until it is saved again. <c>Problem</c>
-/// says why the gateway ignores it.
+/// says why the gateway ignores it. <c>OpenToAnyDevice</c>: a network connection saved without the analyser's IP address
+/// (before Lab setup required one), which takes results from any device that reaches its port (ASVS V13.2.1); System
+/// health warns of it too, until the address is entered.
 /// </summary>
 public sealed record LabConnectionDto(
     string Code,
@@ -37,15 +39,19 @@ public sealed record LabConnectionDto(
     string? Problem,
     LabConnectionStatusDto? Status,
     int PendingOrders,
+    bool OpenToAnyDevice,
     Laboratory.Devices.LabDeviceAuthentication DeviceAuthentication = Laboratory.Devices.LabDeviceAuthentication.None);
 
 /// <summary>A COM port's settings (names as Windows uses them: Parity None/Odd/Even/Mark/Space, StopBits One/OnePointFive/Two, Handshake None/XOnXOff/RequestToSend/RequestToSendXOnXOff).</summary>
 public sealed record LabSerialPortDto(string PortName, int BaudRate, int DataBits, string Parity, string StopBits, string Handshake, bool DtrEnable, bool RtsEnable);
 
-/// <summary>Live state on this server (see <see cref="LabListenerStatus"/> for the states).</summary>
+/// <summary>
+/// Live state on every server (see <see cref="LabListenerStatus"/> for the states). <c>RefusedAddresses</c>: devices that
+/// connected to a network analyser's port from an address that is not its IP, refused before anything they sent was read.
+/// </summary>
 public sealed record LabConnectionStatusDto(
     string State, int ActiveConnections, DateTimeOffset? ConnectedSince, DateTimeOffset? LastMessageAt, DateTimeOffset? LastErrorAt, string? LastError,
-    long MessagesAccepted, long MessagesRefused);
+    long MessagesAccepted, long MessagesRefused, IReadOnlyList<LabRefusedAddress> RefusedAddresses);
 
 /// <summary>An enrolled lab agent. Online: it called in the last three minutes, or is relaying an analyser now.</summary>
 public sealed record LabAgentDto(Guid Id, string Name, string? MachineName, string? Location, DateTimeOffset? LastSeenAt, bool Online, string? AppVersion, string? LastIpAddress);

@@ -298,6 +298,36 @@ describe('the status shown', () => {
     ).toBe('Port failed');
   });
 
+  it('lists a device refused at an address that is not the analyser for a day, and warns of a connection open to any device', () => {
+    const now = Date.parse('2026-11-08T10:00:00Z');
+    const listening = {
+      state: 'listening',
+      activeConnections: 0,
+      connectedSince: null,
+      lastMessageAt: null,
+      lastErrorAt: null,
+      lastError: null,
+      messagesAccepted: 0,
+      messagesRefused: 0,
+    };
+    const refusedAt = (lastAt: string) => ({
+      ...listening,
+      refusedAddresses: [{ address: '10.0.5.99', count: 3, firstAt: '2026-11-07T08:00:00Z', lastAt }],
+    });
+
+    const refused = connectionStatus(connection({ status: refusedAt('2026-11-08T08:00:00Z') }), list(), now);
+    expect(refused).toMatchObject({ label: 'Refused a device', tone: 'warning' });
+    expect(refused.detail).toContain('10.0.5.99 (3 times)');
+    expect(refused.detail).toContain("not the analyser's IP address");
+    expect(connectionStatus(connection({ status: refusedAt('2026-11-06T08:00:00Z') }), list(), now).label).toBe(
+      'Listening',
+    );
+    // The server's flag: open to any device even before its port is listening.
+    expect(connectionStatus(connection({ allowedIps: [], openToAnyDevice: true }), list(), now).label).toBe(
+      'Open to any device',
+    );
+  });
+
   it('tells an offline agent from a connected relay and a COM port problem', () => {
     const status = {
       activeConnections: 0,

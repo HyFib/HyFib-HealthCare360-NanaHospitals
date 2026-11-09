@@ -12,6 +12,7 @@ import {
   makeStyles,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Spinner,
   Table,
   TableBody,
@@ -307,6 +308,8 @@ function ResultBody({
   const canOpen = useResultReaders()[result.kind];
   const canAcknowledge = usePermission('clinical.emr.write') && review !== null;
   const [note, setNote] = useState('');
+  // A critical lab result this doctor did not order: they record that they cover the patient, and why (server rule).
+  const [covering, setCovering] = useState<string | null>(null);
   // Imaging and cardiology screens open by study: resolve the report id as soon as the result is shown.
   const study = useReportStudy(result, canOpen);
   const studyId = study?.data?.studyId;
@@ -318,13 +321,19 @@ function ResultBody({
     }
   };
   const acknowledge = useMutation({
-    mutationFn: (id: string) => emrApi.acknowledgeResult(id, note.trim() || null),
+    mutationFn: (id: string) => emrApi.acknowledgeResult(id, note.trim() || null, covering?.trim() || null),
     onSuccess: () => {
       notify.success('Result acknowledged');
       void queryClient.invalidateQueries({ queryKey: emrKeys.all });
       onClose();
     },
-    onError: (error) => notify.error(error, 'Could not acknowledge the result'),
+    onError: (error) => {
+      if (isApiError(error) && 'coveringReason' in error.fieldErrors && covering === null) {
+        setCovering('');
+        return;
+      }
+      notify.error(error, 'Could not acknowledge the result');
+    },
   });
 
   const guard = useUnsavedChanges({ dirty: note.trim() !== '', busy: acknowledge.isPending, onClose });
@@ -351,10 +360,28 @@ function ResultBody({
         </div>
         {review && result.hasCriticalFindings && (
           <MessageBar intent="error">
-            <MessageBarBody>This report has critical findings. Act on it and record what you did.</MessageBarBody>
+            <MessageBarBody>
+              <MessageBarTitle>Critical findings</MessageBarTitle>
+              Act on this report and record what you did.
+            </MessageBarBody>
           </MessageBar>
         )}
         <ResultReport result={result} study={study} canOpen={canOpen} />
+        {canAcknowledge && covering !== null && (
+          <Field
+            label="You cover this patient because"
+            required
+            hint="You did not order this test. Say why you are acknowledging its critical result: for example, on call for ward 4 tonight."
+            validationState={acknowledge.isError && covering.trim().length < 10 ? 'error' : 'none'}
+          >
+            <Textarea
+              value={covering}
+              onChange={(_, d) => setCovering(d.value.slice(0, 500))}
+              rows={2}
+              resize="vertical"
+            />
+          </Field>
+        )}
         {canAcknowledge && (
           <Field label="Note (optional)" hint="For example: patient informed, treatment changed">
             <Textarea value={note} onChange={(_, d) => setNote(d.value.slice(0, 500))} rows={2} resize="vertical" />
@@ -385,7 +412,7 @@ function ResultBody({
           <Button
             appearance="primary"
             icon={acknowledge.isPending ? <Spinner size="tiny" aria-hidden /> : <CheckmarkRegular />}
-            disabled={acknowledge.isPending}
+            disabled={acknowledge.isPending || (covering !== null && covering.trim().length < 10)}
             onClick={() => acknowledge.mutate(review.id)}
           >
             Acknowledge

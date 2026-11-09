@@ -96,9 +96,10 @@ internal sealed class LabConnectionService(
                 instrument.Validate(),
                 statuses.TryGetValue(instrument.Code, out var status)
                     ? new LabConnectionStatusDto(status.State, status.ActiveConnections, status.ConnectedSince, status.LastMessageAt, status.LastErrorAt,
-                        status.LastError, status.MessagesAccepted, status.MessagesRefused)
+                        status.LastError, status.MessagesAccepted, status.MessagesRefused, status.RefusedAddresses)
                     : null,
                 pending.GetValueOrDefault(instrument.Code.ToUpperInvariant()),
+                tcp && LabConnectionHealthWarnings.OpenToAnyDevice(instrument),
                 instrument.DeviceAuthentication));
         }
 

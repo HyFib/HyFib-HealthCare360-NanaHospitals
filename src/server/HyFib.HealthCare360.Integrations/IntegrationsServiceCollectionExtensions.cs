@@ -8,6 +8,7 @@ using HyFib.HealthCare360.Integrations.Icd;
 using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Orders;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Integrations.Laboratory.Relay;
 using HyFib.HealthCare360.Integrations.Features.LabConnections;
 using HyFib.HealthCare360.Integrations.Pacs;
@@ -157,5 +158,8 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddHostedService<LabStatusSharing>();
         services.AddScoped<LabAgentAuthenticator>();
         services.AddScoped<LabConnectionService>();
+
+        // Network analysers with no IP pinned, and devices refused on their ports, on System health (ASVS V13.2.1).
+        services.AddScoped<IHealthWarningSource, LabConnectionHealthWarnings>();
     }
 }

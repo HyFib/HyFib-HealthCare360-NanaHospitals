@@ -64,6 +64,12 @@ const manifest: ModuleManifest = {
       keywords: ['qc', 'westgard', 'levey-jennings', 'control lot'],
     },
     {
+      label: 'External quality assessment',
+      to: '/lab/eqas',
+      permission: [P.qc, P.verify],
+      keywords: ['eqas', 'proficiency testing', 'z-score', 'nabl', 'iso 15189', 'capa'],
+    },
+    {
       label: 'Outsourced tests',
       to: '/lab/outsourcing',
       permission: [P.read, P.receive],
