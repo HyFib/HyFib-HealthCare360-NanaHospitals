@@ -24,12 +24,13 @@ are local (IST) calendar dates through `HospitalClock` / `TimeProvider`.
 | `inventory.indents.raise` | Raise (and cancel own) indents | StoreKeeper, HospitalAdmin, Nurse, Pharmacist |
 | `inventory.indents.issue` | Approve (reserve), issue, reject and close indents | StoreKeeper, HospitalAdmin |
 | `inventory.transfers` | Dispatch, receive and cancel transfers | StoreKeeper, HospitalAdmin, Pharmacist |
-| `inventory.adjustments.approve` | Approve/reject adjustments and write-offs (never your own) | HospitalAdmin |
+| `inventory.adjustments.approve` | Approve/reject adjustments and write-offs (never your own), and a transfer received short (neither the receiver nor the dispatcher) | HospitalAdmin |
+| `inventory.recall.release` | Approve a batch held on a recall released for use (not one's own request) | Pharmacist, HospitalAdmin |
 | `inventory.counts` | Physical stock counts; raise adjustments | StoreKeeper, HospitalAdmin |
 | `purchase.manage` | Vendors, requisitions, purchase orders | StoreKeeper, HospitalAdmin, PurchaseOfficer |
-| `purchase.approve` | Approve/reject requisitions and orders | HospitalAdmin |
+| `purchase.approve` | Approve/reject requisitions and orders; post a supplier payable adjustment someone else raised | HospitalAdmin |
 | `purchase.grn.receive` | Goods receipt against vendor invoices; send a receipt for approval | StoreKeeper, HospitalAdmin |
-| `purchase.grn.approve` | Check a goods receipt against the supplier's invoice and post it into stock (never one's own) | HospitalAdmin, PurchaseOfficer |
+| `purchase.grn.approve` | Check a goods receipt against the supplier's invoice and post it into stock (never one's own); post a purchase return (debit note) someone else raised | HospitalAdmin, PurchaseOfficer |
 | `inventory.cold_chain.record` | Record refrigerator and freezer temperatures (the twice-daily register) and the action taken on an excursion | StoreKeeper, HospitalAdmin, Pharmacist, Nurse |
 | `inventory.cold_chain.manage` | Set up refrigerators and freezers, their allowed range and their data loggers' keys | StoreKeeper, HospitalAdmin, Pharmacist |
 | `masters.prices.approve` (Platform's) | Approve an item's NPPA ceiling price raised or removed, or its GST rate changed, asked for by someone else | Accountant, HospitalAdmin |
@@ -73,7 +74,8 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 | GET | `/batches?storeId&itemId&includeEmpty` | Batch readers | → `BatchStock[]` in FEFO order |
 | GET | `/ledger?page&storeId&itemId&from&to&movement` | `inventory.stock.read` | → paged `LedgerRow` (stock card with the running balance; IST dates) |
 | GET | `/reservations?storeId&itemId` | Batch readers | → `ReservationRow[]` |
-| POST | `/batches/{id}/block` · `/batches/{id}/unblock` | `inventory.items.manage` or `inventory.adjustments.approve` | `BlockBatchRequest` (reason) → 204. Quality hold or recall: never allocated while blocked |
+| POST | `/batches/{id}/block` | `inventory.items.manage` or `inventory.adjustments.approve` | `BlockBatchRequest` (reason, recall) → 204. A quality hold, or with `recall` a manufacturer's or regulator's recall: never allocated while held. Applies at once |
+| POST | `/batches/{id}/unblock` | `inventory.items.manage` or `inventory.adjustments.approve` | `UnblockBatchRequest` (reason) → 204 for a quality hold, released at once; **202** `ApprovalRequestDto` for a recall (`inventory.recall_release`): the batch stays held until someone else who holds `inventory.recall.release` approves, with the batch, the store, what is on hand and the recall in words. The approval is refused as stale if the hold changed meanwhile, and audited `stock_batch.recall_released` with both names |
 
 ### Reports — `/api/v1/inventory/reports`
 | Method | Path | Permission | Request → response |
@@ -81,7 +83,7 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 | GET | `/summary?storeId` | `inventory.stock.read` | → `InventorySummary` (store dashboard) |
 | GET | `/near-expiry?storeId&days` | `inventory.stock.read` | → `ExpiryReport`: batches holding stock that expire from today to the `days`-th day (default 90, 1–730), soonest first, with days to expiry and value at cost and at MRP |
 | GET | `/expired?storeId` | `inventory.stock.read` | → `ExpiryReport`: batches holding stock whose expiry day has passed (a batch is usable on its expiry day) |
-| GET | `/reorder?storeId` | `inventory.stock.read` or `purchase.manage` | → `ReorderRow[]`: every active item with a reorder level whose usable stock (unreserved, in batches neither blocked nor expired) plus what is still to come on approved, sent or part-received orders is at or under that level. The suggestion tops up to the maximum stock (with no maximum, to the reorder level plus the reorder quantity), never less than the reorder quantity, net of what is on order, in purchase units rounded up; vital items first, then essential, then desirable, each by name (`ReorderCalculator`, unit-tested) |
+| GET | `/reorder?storeId` | `inventory.stock.read` or `purchase.manage` | → `ReorderRow[]`: every active item with a reorder level (the store's own, `StoreItemLevel`, where the store set one, else the item's) whose usable stock (unreserved, in batches neither blocked nor expired) plus what is still to come on approved, sent or part-received orders is at or under that level. The suggestion tops up to the maximum stock (with no maximum, to the reorder level plus the reorder quantity), never less than the reorder quantity, net of what is on order, in purchase units rounded up; vital items first, then essential, then desirable, each by name (`ReorderCalculator`, unit-tested) |
 | GET | `/valuation?storeId` | `inventory.stock.read` | → `ValuationReport` (at cost and at MRP, by store and item type) |
 | GET | `/analysis?from&to&storeId` | `inventory.stock.read` or `purchase.manage` | → `InventoryAnalysis`: ABC (70/90 cumulative value), FSN (issue frequency), VED and the ABC-VED matrix (I: AV, AE, AD, BV, CV; II: BE, CE, BD; III: CD). Default is the last 12 months, max 3 years |
 
@@ -91,8 +93,8 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 | GET | `/?page&status&fromStoreId&toStoreId&departmentId&openOnly` | any of `inventory.indents.raise`, `inventory.indents.issue`, `inventory.stock.read` | → paged `IndentListItem` (urgent first, then oldest) |
 | GET | `/{id}` · `/{id}/issues` | same | → `IndentDetail` · `IndentIssueDto[]` |
 | POST | `/` | `inventory.indents.raise` | `CreateIndentRequest` (fromStoreId, toStoreId (sub-store) or departmentId, priority Routine/Urgent, remarks, lines[itemId, quantity, remarks]) → 201 `DocumentCreated` |
-| POST | `/{id}/approve` | `inventory.indents.issue` | `ApproveIndentRequest` (lines[lineId, approvedQuantity]) → 204; reserves stock FEFO |
-| POST | `/{id}/issue` | `inventory.indents.issue` | `IssueIndentRequest` (lines[lineId, quantity, batchId?], receivedByName, remarks) → 200 `DocumentCreated` (issue slip) |
+| POST | `/{id}/approve` | `inventory.indents.issue` | `ApproveIndentRequest` (lines[lineId, approvedQuantity]) → 204; reserves stock FEFO. Never by whoever raised the indent (403 `indent.approve_own`) |
+| POST | `/{id}/issue` | `inventory.indents.issue` | `IssueIndentRequest` (lines[lineId, quantity, batchId?], receivedByName, remarks) → 200 `DocumentCreated` (issue slip). Never by whoever raised the indent (403 `indent.issue_own`) |
 | POST | `/{id}/reject` · `/{id}/close` | `inventory.indents.issue` | `InventoryReasonRequest` → 204 (releases reservations) |
 | POST | `/{id}/cancel` | `inventory.indents.raise` or `inventory.indents.issue` | `InventoryReasonRequest` → 204 |
 
@@ -101,8 +103,21 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 |---|---|---|---|
 | GET | `/?page&status&storeId` · `/{id}` | `inventory.transfers` or `inventory.stock.read` | → paged `TransferListItem` · `TransferDetail` |
 | POST | `/` | `inventory.transfers` | `DispatchTransferRequest` (fromStoreId, toStoreId, remarks, lines[itemId, quantity, batchId?]) → 201 `DocumentCreated`; stock leaves the source (in transit) |
-| POST | `/{id}/receive` | `inventory.transfers` | → 204; same batch, expiry and MRP booked in at the destination |
+| POST | `/{id}/receive` | `inventory.transfers` | `ReceiveTransferRequest` (lines[lineId, receivedQuantity] counted short, note) → 204 when every line is counted in full: the same batch, expiry and MRP booked in at the destination. Never by whoever dispatched it (403 `transfer.receive_own`); never more than was sent (422 `transfer.over_received`). A line counted short → **202** `ApprovalRequestDto` (`inventory.transfer_shortfall`): nothing moves until someone who holds `inventory.adjustments.approve`, neither the receiver (`approval.self`) nor the dispatcher (403 `transfer.shortfall_own`, the request stays waiting), approves. Approved, over the transfer as counted (`approval.stale`), it books in what was sent and writes the shortfall off the receiving store's batch as an `Adjustment` ("short on receipt"), records the counted quantity on the line, and audits `inventory.transfer_shortfall_accepted` with both names |
 | POST | `/{id}/cancel` | `inventory.transfers` | `InventoryReasonRequest` → 204; returns stock to the exact source batches |
+
+### A store's own reorder levels — `/api/v1/inventory/stores/{storeId}/levels` (INV-08)
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/` | `inventory.items.manage` or `inventory.stock.read` | → `StoreItemLevelDto[]`: the store's levels beside the item master's they override |
+| PUT | `/{itemId}` | `inventory.items.manage` | `SaveStoreItemLevelRequest` (reorderLevel, reorderQuantity, minimumStock, maximumStock, version; no version on the first save) → 201 or 204. Audited `stock_level.saved` with the levels before and after in words |
+| DELETE | `/{itemId}` | `inventory.items.manage` | → 204; the store goes back to the item's levels. Audited `stock_level.removed` |
+
+The reorder report and the stock screen's below-reorder flag use the store's own levels where it set them; a level of
+zero means the store does not reorder the item. No second person approves a change, by design: a reorder level only
+decides when the store is told to buy, so a level set too low risks running short (which the store's own stock screen
+and reorder report show), and never lets stock, money or a medicine out. The audit trail carries every change with
+before and after.
 
 ### Adjustments and physical counts — `/api/v1/inventory/adjustments`, `/api/v1/inventory/counts` (INV-07)
 | Method | Path | Permission | Request → response |
@@ -168,6 +183,29 @@ Pharmacy tags (INT-BAR): a posted receipt prints a tag per line (Print tags), wi
 base unit and a barcode of the item code and batch (`PCM500#AB1234`); so does a batch on the stock screen (Tags). An
 inventory search for a tag's barcode finds the item by its exact code. See
 [integrations.md](integrations.md#barcode-labels-int-bar).
+
+### Purchase returns and supplier payables — `/api/v1/purchase/debit-notes`, `/api/v1/purchase/payable-adjustments`
+
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/debit-notes?page&status&vendorId` · `/debit-notes/{id}` | Vendor readers | → paged `DebitNoteDto` · `DebitNoteDto` (with when its approval has been waiting since) |
+| POST | `/debit-notes` | `purchase.grn.receive` or `purchase.manage` | `RaiseDebitNoteRequest` (vendorId, storeId, goodsReceiptId?, vendorReference, reason, lines[batchId, quantity]) → **202** `ApprovalRequestDto` (`purchase.debit_note`). Each batch must be in the store, bought from that supplier (`debit_note.other_supplier`) and have the quantity free; a batch held on a recall can be returned. Valued at the batch's purchase rate, with input GST split CGST/SGST or IGST as the supplier is within or outside the state |
+| POST | `/debit-notes/{id}/approval` · `/debit-notes/{id}/cancel` | `purchase.grn.receive` or `purchase.manage` | → 202 (ask again after a rejection) · `InventoryReasonRequest` → 204 (refused while a request waits) |
+| GET | `/payable-adjustments?page&status&vendorId` | Vendor readers | → paged `PayableAdjustmentDto` |
+| POST | `/payable-adjustments` | `purchase.manage` | `RaisePayableAdjustmentRequest` (vendorId, direction Reduce/Increase, amount, reason, vendorReference) → **202** `ApprovalRequestDto` (`purchase.payable_adjustment`) |
+| POST | `/payable-adjustments/{id}/approval` · `/payable-adjustments/{id}/cancel` | `purchase.manage` | as for debit notes |
+
+A debit note is posted only when someone who holds `purchase.grn.approve`, and did not raise it, approves it (over the
+note as raised, `approval.stale`): the stock then leaves each batch as `PurchaseReturn` (audited
+`purchase.debit_note_posted` with both names), and the note reaches Billing's Tally day book on the day it was posted as
+a **Debit Note** voucher: the supplier's ledger debited with the whole note, Purchase Returns credited at cost and the
+input CGST/SGST/IGST taken back. A payable adjustment is posted only when someone who holds `purchase.approve`, and did
+not raise it, approves it; it reaches the day book as a **Journal** between the supplier's ledger and Purchase Rate
+Differences, whichever way it goes. Supply chain hands both to Billing through the Platform contract
+`IVendorAccountsSource`; the ledger names are in `billing.tally.ledgers` (`purchaseReturns`, `inputCgst`, `inputSgst`,
+`inputIgst`, `vendorAdjustments`, `ledgerPerVendor`, `sundryCreditors`). Goods receipts themselves are not sent to Tally:
+the accounts book the supplier's invoice, and a debit note is set against it there. In the NDPS annual return a
+purchase return counts as written off, with every movement other than a receipt, dispensing or a patient's return.
 
 ### Assets — `/api/v1/assets` (AST-01/02/06, tag Assets)
 | Method | Path | Permission | Request → response |
@@ -360,6 +398,7 @@ calibrations due within 7 days or overdue, and warranties or AMC/CMC contracts l
 | `supplychain.pr` | `{FAC}PR{YY}{SEQ:6}` | yearly |
 | `supplychain.po` | `{FAC}PO{YY}{SEQ:6}` | yearly |
 | `supplychain.grn` | `{FAC}GRN{YY}{SEQ:6}` | yearly |
+| `supplychain.debit_note` / `supplychain.payable_adjustment` | `{FAC}DN{YY}{SEQ:6}` / `{FAC}VPA{YY}{SEQ:6}` | yearly |
 | `supplychain.indent` / `supplychain.issue` | `{FAC}IND{YY}{SEQ:6}` / `{FAC}ISS{YY}{SEQ:6}` | yearly |
 | `supplychain.transfer` | `{FAC}STN{YY}{SEQ:6}` | yearly |
 | `supplychain.adjustment` / `supplychain.count` | `{FAC}ADJ{YY}{SEQ:6}` / `{FAC}PSC{YY}{SEQ:5}` | yearly |
@@ -409,10 +448,11 @@ orders made after it.
 ## Tables (schema `supplychain`)
 
 `item_categories`, `items` (trigram index on name), `stores` (unique facility + code), `vendors`, `stock_batches`
-(check constraint above; unique store + item + batch + expiry + MRP with nulls not distinct), `stock_ledger`,
+(check constraint above; unique store + item + batch + expiry + MRP with nulls not distinct; `is_recalled`), `stock_ledger`,
 `stock_reservations`, `purchase_requisitions`/`_lines`, `purchase_orders`/`_lines`, `goods_receipts`/`_lines` (unique
 vendor + vendor invoice number, filter `status <> 'Cancelled'`), `indents`, `indent_lines`, `indent_issues`,
-`indent_issue_lines`, `stock_transfers`/`_lines`, `stock_adjustments`/`_lines`, `stock_counts`/`_lines`, `assets`
+`indent_issue_lines`, `stock_transfers`/`_lines` (lines carry `received_quantity` when counted short), `store_item_levels`
+(unique store + item), `vendor_debit_notes`/`vendor_debit_note_lines`, `vendor_payable_adjustments`, `stock_adjustments`/`_lines`, `stock_counts`/`_lines`, `assets`
 (unique tag), `asset_contracts`, `pm_plans`, `pm_visits`, `maintenance_tickets`, `calibration_records`,
 `condemnation_requests`, `cold_storage_units` (unique facility + code), `temperature_readings` (unique unit + time for
 logger readings), `cold_chain_excursions`. Items carry `ceiling_notification`; goods receipt lines the `ceiling_price`
