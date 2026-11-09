@@ -38,6 +38,12 @@ public enum AbdmRecordType
     /// enrolment, sent as a document for each month of readings in the dates asked for.
     /// </summary>
     HomeReadings,
+
+    /// <summary>
+    /// A finalised bill, with its lines, discounts and GST (InvoiceRecord): a cancelled bill, and a draft, which is only
+    /// an estimate, are not exported.
+    /// </summary>
+    Invoice,
 }
 
 /// <summary>

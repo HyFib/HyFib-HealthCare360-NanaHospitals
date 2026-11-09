@@ -39,6 +39,7 @@ export function toChange(
   return {
     name: series.name,
     perFacility: series.scope === 'facility',
+    facilityCodeReason: series.facilityCodeReason ?? null,
     isLocked: series.isLocked,
     maxLength: series.maxLength,
     defaultFormat: series.defaultFormat,

@@ -400,9 +400,14 @@ public sealed class LabGatewayTests
         services.AddSingleton<ILogger<IntegrationSettingsReader>>(NullLogger<IntegrationSettingsReader>.Instance);
         services.AddSingleton(Options.Create(platform));
         services.AddScoped<IntegrationSettingsReader>();
-        return new LabGatewayHostedService(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+        var scopes = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
+        // These connections ask for no device authentication, so the gate lets them through without looking anything up.
+        var gate = new HyFib.HealthCare360.Integrations.Laboratory.Devices.LabDeviceGate(scopes, () => null, TimeProvider.System,
+            NullLogger<HyFib.HealthCare360.Integrations.Laboratory.Devices.LabDeviceGate>.Instance);
+        return new LabGatewayHostedService(scopes,
             Options.Create(platform), Substitute.For<IHostEnvironment>(), Substitute.For<ILabMessageProcessor>(), _state, TimeProvider.System,
-            NullLoggerFactory.Instance);
+            NullLoggerFactory.Instance, gate);
     }
 
     private static int FreePort()

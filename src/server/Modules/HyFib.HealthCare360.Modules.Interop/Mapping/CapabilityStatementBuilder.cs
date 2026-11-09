@@ -13,6 +13,10 @@ internal static class CapabilityStatementBuilder
 {
     public const string SoftwareName = "HyFib HealthCare360";
 
+    /// <summary>The server's origin (scheme, host and path base) of the FHIR base URL.</summary>
+    private static string Origin(string baseUrl) =>
+        baseUrl.EndsWith(Features.FhirEndpoints.BasePath, StringComparison.Ordinal) ? baseUrl[..^Features.FhirEndpoints.BasePath.Length] : baseUrl;
+
     public static R4.CapabilityStatement Build(string baseUrl, string softwareVersion, DateTimeOffset now)
     {
         var statement = new R4.CapabilityStatement
@@ -49,7 +53,30 @@ internal static class CapabilityStatementBuilder
             Security = new R4.CapabilityStatement.SecurityComponent
             {
                 Cors = false,
-                Description = "Bearer access tokens issued by HC360 (POST /api/v1/auth/login). The caller needs the fhir.read permission. "
+                Service =
+                [
+                    new R4.CodeableConcept("http://terminology.hl7.org/CodeSystem/restful-security-service", "SMART-on-FHIR", "SMART-on-FHIR"),
+                ],
+                Extension =
+                [
+                    new R4.Extension
+                    {
+                        Url = "http://fhir-registry.smarthealthit.org/StructureDefinition/oauth-uris",
+                        Extension =
+                        [
+                            new R4.Extension("authorize", new R4.FhirUri(Origin(baseUrl) + "/oauth2/authorize")),
+                            new R4.Extension("token", new R4.FhirUri(Origin(baseUrl) + "/oauth2/token")),
+                            new R4.Extension("introspect", new R4.FhirUri(Origin(baseUrl) + "/oauth2/introspect")),
+                            new R4.Extension("revoke", new R4.FhirUri(Origin(baseUrl) + "/oauth2/revoke")),
+                        ],
+                    },
+                ],
+                Description = "SMART on FHIR (App Launch 2.0 and Backend Services; discovery at .well-known/smart-configuration): apps get "
+                              + "tokens by authorization code with PKCE (S256), authorized by a staff member who reads FHIR, with patient/ or user/ "
+                              + "read scopes; backend services by client credentials with a JWT client assertion (RS384, ES384, RS256 or ES256), with "
+                              + "system/ read scopes. Clients are registered by an administrator and approved by a second. Tokens are introspected and "
+                              + "revoked at the endpoints named here. Integration accounts not yet moved to SMART still sign in with "
+                              + "POST /api/v1/auth/login. Either way the caller's account needs the fhir.read permission. "
                               + "Records are returned only for patients with a record-sharing (DataSharing) consent that admits the caller today: "
                               + "a consent may name the accounts that may read, the purposes of use, the kinds of records, the records' dates "
                               + "and its last day. State the purpose of use in the X-Purpose-Of-Use header (HL7 v3 ActReason: "
