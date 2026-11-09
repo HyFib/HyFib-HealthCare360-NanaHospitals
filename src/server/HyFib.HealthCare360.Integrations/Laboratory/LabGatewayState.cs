@@ -29,7 +29,16 @@ public sealed record LabListenerStatus(
 
     /// <summary>When the server that reports it last changed it: with several servers, the latest of two says more.</summary>
     public DateTimeOffset? ChangedAt { get; init; }
+
+    /// <summary>
+    /// Network: devices that connected to the analyser's port from an address that is not its IP, refused before anything
+    /// they sent was read (ASVS V13.2.1), most recent first.
+    /// </summary>
+    public IReadOnlyList<LabRefusedAddress> RefusedAddresses { get; init; } = [];
 }
+
+/// <summary>An address refused on an analyser's port: how many times since the server started, first and last.</summary>
+public sealed record LabRefusedAddress(string Address, long Count, DateTimeOffset FirstAt, DateTimeOffset LastAt);
 
 /// <summary>
 /// This server's connection status of the analysers, kept by the gateway and the relays (writers). With several servers
@@ -157,6 +166,31 @@ internal sealed class LabGatewayState(TimeProvider time)
         entry.LastErrorAt = time.GetUtcNow();
     });
 
+    /// <summary>Most refused addresses kept per analyser: a scan of the network does not grow the list without end.</summary>
+    internal const int RefusedAddressesKept = 10;
+
+    /// <summary>A device connected from an address that is not the analyser's IP and was refused.</summary>
+    public void AddressRefused(string code, string? address) => Update(code, entry =>
+    {
+        var now = time.GetUtcNow();
+        var key = string.IsNullOrWhiteSpace(address) ? "unknown" : address;
+        var known = entry.RefusedAddresses.FindIndex(r => r.Address == key);
+        var refused = known < 0 ? new LabRefusedAddress(key, 1, now, now) : entry.RefusedAddresses[known] with { Count = entry.RefusedAddresses[known].Count + 1, LastAt = now };
+        if (known >= 0)
+        {
+            entry.RefusedAddresses.RemoveAt(known);
+        }
+
+        entry.RefusedAddresses.Insert(0, refused);
+        if (entry.RefusedAddresses.Count > RefusedAddressesKept)
+        {
+            entry.RefusedAddresses.RemoveAt(entry.RefusedAddresses.Count - 1);
+        }
+
+        entry.LastError = IntegrationTrace.Truncate($"Refused a connection from {key}: not the analyser's IP address.", 300);
+        entry.LastErrorAt = now;
+    });
+
     public void ConnectionOpened(string code) => Update(code, entry => entry.Connections++);
 
     public void ConnectionClosed(string code) => Update(code, entry => entry.Connections = Math.Max(0, entry.Connections - 1));
@@ -195,6 +229,7 @@ internal sealed class LabGatewayState(TimeProvider time)
             SerialPort = entry.SerialPort,
             ConnectedSince = entry.ConnectedSince,
             ChangedAt = entry.ChangedAt,
+            RefusedAddresses = [.. entry.RefusedAddresses],
         };
 
     private void Update(string code, Action<Entry> change)
@@ -229,5 +264,6 @@ internal sealed class LabGatewayState(TimeProvider time)
         public string? SerialPort { get; set; }
         public DateTimeOffset? ConnectedSince { get; set; }
         public DateTimeOffset? ChangedAt { get; set; }
+        public List<LabRefusedAddress> RefusedAddresses { get; } = [];
     }
 }

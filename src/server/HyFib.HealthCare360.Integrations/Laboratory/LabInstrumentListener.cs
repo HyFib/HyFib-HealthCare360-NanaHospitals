@@ -6,7 +6,7 @@ namespace HyFib.HealthCare360.Integrations.Laboratory;
 
 /// <summary>
 /// TCP listener for one analyser. Connections from addresses outside the instrument's allow-list are closed
-/// immediately, and at most <c>maxConnections</c> are served at once (analysers normally hold one), so a scanner or a
+/// immediately, before anything they send is read, and listed with the analyser's status (Lab setup, System health), and at most <c>maxConnections</c> are served at once (analysers normally hold one), so a scanner or a
 /// misbehaving device cannot exhaust the gateway.
 /// </summary>
 internal sealed class LabInstrumentListener : IAsyncDisposable
@@ -109,6 +109,7 @@ internal sealed class LabInstrumentListener : IAsyncDisposable
             if (_allowed is not null && (remote is null || !_allowed.Contains(remote)))
             {
                 _logger.LogWarning("Refused connection from {Address} to instrument {Instrument}: not in its allow-list", remote, Instrument.Code);
+                _state.AddressRefused(Instrument.Code, remote?.ToString());
                 client.Dispose();
                 continue;
             }
