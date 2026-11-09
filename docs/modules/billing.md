@@ -995,7 +995,9 @@ pharmacy's `PharmacyGstReturnSource`: sales and returns) and every `IGstPurchase
 * **Table 12**: every line by HSN or SAC, unit (`NA` for services, `NOS` for medicines) and rate, credit notes taking
   off, split into B2B and B2C (GSTN, May 2025). A line without a code is listed as a problem.
 * **Table 13**: per series (OP bills, IP bills, pharmacy invoices, credit notes, pharmacy returns, debit notes) the first
-  and last number, how many and how many cancelled. Cancelled documents count only here.
+  and last number, how many and how many cancelled. Cancelled documents count only here. A bill number reserved for a
+  downtime (docs/modules/downtime.md) and voided unused, spoilt or returned with its block, is counted in the month it
+  was voided in the total and as cancelled, so the From–To range accounts for every serial.
 * **GSTR-3B**: 3.1(a) the taxable outward supplies net of notes, 3.1(c) nil-rated and exempt, 3.1(e) non-GST, 3.2 the
   inter-state supplies to unregistered persons by state, 4(A)(5) the input tax of goods receipts from suppliers with a
   GSTIN, by the day received, less the input tax of goods sent back to them on the stores' posted debit notes, by the day

@@ -325,7 +325,10 @@ export interface ServerInfo {
   osDescription: string;
   version: string;
   environment: string;
-  /** `all` on a single Server Node; with several, `api` for an API node and `worker` for the node that runs the jobs. */
+  /**
+   * `all` on a single Server Node; with several, `api` for an API node, and `worker` or `all` for one that may run the
+   * jobs (with the job lease, only the one holding it does).
+   */
   role: string;
   startedAt: string;
   uptimeHours: number;
@@ -334,6 +337,19 @@ export interface ServerInfo {
   framework: string;
   /** The last check of this server's clock against the national time servers (CERT-In 2022); null before the first. */
   clock?: ClockCheck | null;
+  /** With several servers, the server's id; null on a single Server Node. */
+  node?: string | null;
+  /**
+   * With several servers taking turns at the background jobs (the job lease), whether this one runs them now, and since
+   * when; null where its role alone decides.
+   */
+  jobs?: JobNodeState | null;
+}
+
+/** Whether a server that takes turns at the background jobs holds the job lease now. */
+export interface JobNodeState {
+  active: boolean;
+  since: string | null;
 }
 
 /** How far this server's clock was from a national time server (positive: behind), or why none answered. */

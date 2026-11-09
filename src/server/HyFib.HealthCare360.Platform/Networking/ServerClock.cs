@@ -128,6 +128,7 @@ public static class Sntp
 }
 
 /// <summary>Checks this server's clock against <see cref="TimeSyncOptions.ServersToAsk"/> every <see cref="TimeSyncOptions.CheckInterval"/>, on every node.</summary>
+[NodeLocal]
 internal sealed class ServerClockChecker(ServerClock clock, IOptions<PlatformOptions> options, TimeProvider time, ILogger<ServerClockChecker> logger)
     : BackgroundService
 {

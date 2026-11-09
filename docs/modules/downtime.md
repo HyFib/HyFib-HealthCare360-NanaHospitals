@@ -77,6 +77,8 @@ pre-downtime pack.
      counted into the cashier's shift open at entry.
 5. **Return the block** when it is no longer needed: every number not entered is voided as "Returned unused", in one
    audited step, and the block takes no more entries. A single spoilt number is voided on its own with a reason.
+   Voided bill numbers stay in the GST series: GSTR-1 table 13 counts them as cancelled in the month they were voided
+   (`IVoidedDocumentNumbers`, docs/modules/billing.md).
 
 HC360 refuses a number from paper when:
 
