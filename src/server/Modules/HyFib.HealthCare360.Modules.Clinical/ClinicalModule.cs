@@ -70,6 +70,7 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<DischargeSummaryService>();
         services.AddScoped<CodingService>();
         services.AddScoped<IVerifiedCodingSource, VerifiedCodingSource>();
+        services.AddScoped<IProcedureCatalogue, ProcedureCatalogue>();
         services.AddScoped<MedicalRecordService>();
         services.AddScoped<RecordCopyService>();
         services.AddScoped<HealthCheckupService>();
