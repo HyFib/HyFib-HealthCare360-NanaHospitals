@@ -48,6 +48,7 @@ import { QcLotDrawer, QcReviewDialog, QcRunDialog, type RunLot } from '@/modules
 import { QcOverrideDialog } from '@/modules/lab/QcOverrideDialog';
 import { westgardRuleText } from '@/modules/lab/labels';
 import { formatZ, summarizeQc } from '@/modules/lab/qc';
+import { isApprovalRequest } from '@/modules/lab/setup/secondPathologist';
 import { useLabLive } from '@/modules/lab/useLabLive';
 
 interface QcSearch {
@@ -126,8 +127,15 @@ function QcPage() {
 
   const override = useMutation({
     mutationFn: ({ row, reason }: { row: QcStatusRow; reason: string }) => labApi.overrideQc(row.labTestId, reason),
-    onSuccess: (_, { row }) => {
+    onSuccess: (result, { row }) => {
       setOverriding(null);
+      if (isApprovalRequest(result)) {
+        notify.info(
+          `Override asked for: ${row.testName}`,
+          'Another pathologist approves it in the approvals inbox. Verification stays locked until then.',
+        );
+        return;
+      }
       notify.success(`QC lock overridden for ${row.testName}`, 'The override is recorded in the audit trail.');
       void queryClient.invalidateQueries({ queryKey: labKeys.qc });
     },
