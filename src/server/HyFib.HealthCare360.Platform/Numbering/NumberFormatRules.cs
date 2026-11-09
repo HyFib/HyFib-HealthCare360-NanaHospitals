@@ -358,7 +358,11 @@ public static class NumberFormatRules
             }
 
             var parts = NumberFormat.Parse(change.Format);
-            if (series.PerFacility && change.FacilityCount > 1 && parts.All(p => p.Kind != NumberFormatPartKind.FacilityCode))
+            if (series.RequiresFacilityCode && parts.All(p => p.Kind != NumberFormatPartKind.FacilityCode))
+            {
+                Add(FormatField, "Add {FAC}. " + series.FacilityCodeReason);
+            }
+            else if (series.PerFacility && change.FacilityCount > 1 && parts.All(p => p.Kind != NumberFormatPartKind.FacilityCode))
             {
                 Add(FormatField, "Add {FAC}. Each facility counts its own numbers, so without the facility code two facilities would issue the same numbers.");
             }

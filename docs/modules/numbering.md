@@ -211,7 +211,7 @@ again and the next number cannot be set below them.
 | Doctor fees | Doctor payout | `doctorfees.payout` | `{FAC}DP{YY}{SEQ:5}` | every year | per facility | 24 |
 | Equipment and assets | Asset tag | `supplychain.asset` | `{FAC}AS{SEQ:6}` | never | per facility | 24 |
 | Equipment and assets | Maintenance ticket | `supplychain.ticket` | `{FAC}MT{YY}{SEQ:6}` | every year | per facility | 24 |
-| Front office | Visitor pass | `visitor-pass` | `VP{YY}{MM}{DD}-{SEQ:4}` | every day | per facility | 24 |
+| Front office | Visitor pass | `visitor-pass` | `{FAC}VP{YY}{MM}{DD}-{SEQ:4}` | every day | per facility | 24 |
 | Health check-ups | Corporate check-up drive | `healthcheck-batch` | `{FAC}HCB{YY}{SEQ:4}` | every year | per facility | 24 |
 | Health check-ups | Health check-up booking | `healthcheck-booking` | `{FAC}HC{YY}{SEQ:6}` | every year | per facility | 24 |
 | Human resources | Employee code | `hr.employee` | `{FAC}EMP{SEQ:5}` | never | per facility | 20 |
@@ -249,6 +249,7 @@ again and the next number cannot be set below them.
 | Stores and inventory | Store indent | `supplychain.indent` | `{FAC}IND{YY}{SEQ:6}` | every year | per facility | 24 |
 | Stores and inventory | Store issue | `supplychain.issue` | `{FAC}ISS{YY}{SEQ:6}` | every year | per facility | 24 |
 
-Employee codes have room for 20 characters because the canteen's staff credit keeps them that long. The visitor pass
-default has no `{FAC}`: a hospital with more than one facility should add it, or two facilities would issue the same
-pass numbers on the same day.
+Employee codes have room for 20 characters because the canteen's staff credit keeps them that long. Visitor passes
+must always carry `{FAC}`, whatever the number of facilities (a format without it is refused, even with one facility),
+because pass numbers are unique across facilities and a facility opened later must not issue another's numbers; a
+format saved before this rule gets the facility code put in front when passes are made.

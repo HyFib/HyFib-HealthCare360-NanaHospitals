@@ -42,6 +42,16 @@ public sealed record NumberSeriesDefinition(
     /// </summary>
     public bool GstDocument { get; init; }
 
+    /// <summary>
+    /// Null when the format may leave out {FAC} while the hospital has one facility. Otherwise, in a plain sentence, why
+    /// every format of this series must carry the facility code: its numbers must never be the same as another
+    /// facility's, even one opened later. A stored format without it (from before the rule) has the code put in front
+    /// when numbers are made.
+    /// </summary>
+    public string? FacilityCodeReason { get; init; }
+
+    public bool RequiresFacilityCode => FacilityCodeReason is not null;
+
     public bool IsLocked => LockedReason is not null;
 }
 

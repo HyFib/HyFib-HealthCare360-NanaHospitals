@@ -91,6 +91,14 @@ internal sealed partial record LabInstrumentSettings
     /// </summary>
     public IReadOnlyList<string>? AllowedIps { get; init; }
 
+    /// <summary>
+    /// Network: how the device proves who it is before a message is read (<see cref="Devices.LabDeviceGate"/>): a shared
+    /// secret's answer to a challenge, or a client certificate (mutual TLS). <c>None</c>, the value of connections saved
+    /// before device authentication, leaves only the IP allow-list. A serial analyser is behind its lab agent, which
+    /// authenticates with its own device key on every call.
+    /// </summary>
+    public Devices.LabDeviceAuthentication DeviceAuthentication { get; init; }
+
     /// <summary>Serial: the enrolled lab agent (device id) on the PC the analyser is cabled to.</summary>
     public Guid? AgentDeviceId { get; init; }
 
@@ -126,6 +134,9 @@ internal sealed partial record LabInstrumentSettings
 
         return Transport switch
         {
+            LabTransport.Tcp when DeviceAuthentication == Devices.LabDeviceAuthentication.LabAgent => "a network analyser proves itself with a shared secret or a client certificate, not a lab agent",
+            LabTransport.Serial when DeviceAuthentication is Devices.LabDeviceAuthentication.SharedSecret or Devices.LabDeviceAuthentication.MutualTls
+                => "a serial analyser is authenticated through its lab agent: choose lab agent or none",
             LabTransport.Tcp => Port is < 1 or > 65535 ? "port must be between 1 and 65535" : null,
             LabTransport.Serial when AgentDeviceId is null || AgentDeviceId == Guid.Empty => "a serial analyser needs its lab agent",
             LabTransport.Serial => Serial is null ? "a serial analyser needs its port settings" : Serial.Validate(),

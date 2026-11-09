@@ -39,6 +39,7 @@ import {
   toPractitionerRequest,
   type PractitionerForm,
 } from './forms';
+import { HprCheckPanel } from './HprCheckPanel';
 import { ImageField } from './ImageField';
 import { GENDER_LABELS, GENDERS, isDoctor, PRACTITIONER_KIND_LABELS, PRACTITIONER_KINDS, TITLES } from './labels';
 import { LoadingDrawer, MasterDrawer } from './MasterDrawer';
@@ -192,6 +193,8 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
         currentSpecialtyId={practitioner?.specialtyId ?? null}
         departmentOptions={departmentOptions}
         facilities={facilities.data ?? []}
+        practitioner={practitioner}
+        dirty={form.formState.isDirty}
       />
     </MasterDrawer>
   );
@@ -250,6 +253,8 @@ export function PractitionerFields({
   currentSpecialtyId,
   departmentOptions,
   facilities,
+  practitioner = null,
+  dirty = false,
 }: {
   control: Control<PractitionerForm>;
   editing: boolean;
@@ -257,6 +262,9 @@ export function PractitionerFields({
   currentSpecialtyId: string | null;
   departmentOptions: OptionItem[];
   facilities: readonly FacilityDto[];
+  /** The saved practitioner, whose HPR ID can be checked with the registry (none while adding one). */
+  practitioner?: PractitionerDto | null;
+  dirty?: boolean;
 }) {
   const [title, firstName, lastName, kind] = useWatch({ control, name: ['title', 'firstName', 'lastName', 'kind'] });
   const doctor = isDoctor(kind);
@@ -344,6 +352,11 @@ export function PractitionerFields({
             maxLength={17}
             hint="14 digits, from ABDM's Healthcare Professionals Registry. It identifies the doctor in ABDM health records and insurance claims."
           />
+          {practitioner && (
+            <FullRow>
+              <HprCheckPanel practitioner={practitioner} dirty={dirty} />
+            </FullRow>
+          )}
         </FormGrid>
       </EditorSection>
 

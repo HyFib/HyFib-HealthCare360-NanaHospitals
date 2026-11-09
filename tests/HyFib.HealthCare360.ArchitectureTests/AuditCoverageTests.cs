@@ -26,6 +26,11 @@ public sealed class AuditCoverageTests
         ["TemperatureReading"] = "A refrigerator's readings, many a day from a logger: append-only, never edited; an excursion they open and the action taken on it are audited.",
         ["AuditEvent"] = "The audit trail itself: append-only, hash-chained and sealed.",
         ["AuditPurge"] = "The record of a purge of the audit trail's old months: append-only, sealed, anchored outside the database, and audited as audit.purged.",
+        // SMART on FHIR: only hashes of codes, tokens and assertion ids, with their lifetimes. Issuing, refusing,
+        // authorizing and revoking are audited explicitly (smart.*), and every read with a token is audited as PHI access.
+        ["SmartAuthorizationCode"] = "A hash of a single-use, ten-minute authorization code; the authorization is audited as smart.app_authorized.",
+        ["SmartAccessToken"] = "A hash of a 15-minute access token; issuing and refusing are audited (smart.token_issued, smart.token_refused) and each read with it as PHI access.",
+        ["SmartAssertionUse"] = "The id of a client assertion already used, kept until it expires so it is not accepted twice.",
         ["ClusterEntry"] = "Short-lived keys and counters the servers share (spent challenges, rate limits); expire within minutes.",
         ["IdempotencyRecord"] = "A stored answer replayed when a retry repeats its key; the change it answered is audited.",
         ["OutboxMessage"] = "A message waiting to be sent; the change that queued it is audited, the delivery is in the message log.",

@@ -164,6 +164,10 @@ export const APPROVAL_PERMISSIONS = [
   // register decides). Each may withdraw it.
   'patients.register',
   'patients.identity.approve',
+  // A SMART on FHIR client one administrator registered (another approves it); an analyser device one person in the lab
+  // added (someone else who sets up connections approves it). Each may withdraw it.
+  'fhir.clients.manage',
+  'integrations.lab.connections',
   'patients.restricted.read',
   'patients.sensitive.manage',
   'clinical.alerts.manage',

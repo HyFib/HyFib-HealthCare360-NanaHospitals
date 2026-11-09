@@ -11,6 +11,11 @@ internal static class AiProblems
         Problem(StatusCodes.Status503ServiceUnavailable, "Server speech-to-text is not available",
             reason ?? "Use the Desktop's offline dictation instead.", "ai.speech_disabled");
 
+    public static IResult NoProcessingAgreement() =>
+        Problem(StatusCodes.Status409Conflict, "No AI processing agreement for this facility",
+            "Dictation is sent to the speech service only once an administrator records the facility's AI processing agreement. Type instead, or use the Desktop's offline dictation.",
+            "ai.no_processing_agreement");
+
     public static IResult QuotaExceeded(string detail) =>
         Problem(StatusCodes.Status429TooManyRequests, "AI usage limit reached", detail, "ai.quota");
 

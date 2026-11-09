@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Sockets;
 using HyFib.HealthCare360.Integrations.Features.LabConnections;
 using HyFib.HealthCare360.Integrations.Laboratory;
+using HyFib.HealthCare360.Integrations.Laboratory.Devices;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -33,7 +35,7 @@ public sealed class LabAddressPinningTests
         };
         await using (var listener = new LabInstrumentListener(
                          instrument, IPAddress.Loopback, LabRuntimeOptions.From(new LabGatewaySettings(), instrument), 4, processor, state, TimeProvider.System,
-                         NullLogger.Instance))
+                         NullLogger.Instance, PassThroughGate()))
         {
             listener.Start();
 
@@ -148,6 +150,14 @@ public sealed class LabAddressPinningTests
             return 0;
         }
     }
+
+    /// <summary>
+    /// The device gate for a connection that asks for no device authentication: it admits the stream without looking
+    /// anything up. The address pin is checked before the gate, so a device at another address never reaches it.
+    /// </summary>
+    private static LabDeviceGate PassThroughGate() =>
+        new(new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), () => null, TimeProvider.System,
+            NullLogger<LabDeviceGate>.Instance);
 
     private static int FreePort()
     {

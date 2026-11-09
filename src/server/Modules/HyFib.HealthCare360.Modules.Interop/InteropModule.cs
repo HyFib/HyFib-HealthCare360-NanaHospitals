@@ -42,6 +42,9 @@ public sealed class InteropModule : IModule
         services.AddScoped<IFhirDirectoryProvider, OrganizationDirectory>();
         services.AddScoped<IFhirDirectoryProvider, LocationDirectory>();
         services.AddScoped<FhirApi>();
+        services.AddScoped<SmartAuthorization>();
+        services.AddScoped<SmartClientRegistry>();
+        SmartAuthenticationHandler.Register(services);
         FhirAuthorizationResultHandler.Register(services);
 
         services.AddScoped<AbdmRecordLoader>();
@@ -69,6 +72,7 @@ public sealed class InteropModule : IModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         FhirEndpoints.Map(endpoints);
+        SmartEndpoints.Map(endpoints);
         AbdmEndpoints.Map(endpoints);
         AbdmGatewayCallbackEndpoints.Map(endpoints);
     }

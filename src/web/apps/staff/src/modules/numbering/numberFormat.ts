@@ -335,6 +335,8 @@ export interface OtherFormat {
 export interface FormatChange {
   name: string;
   perFacility: boolean;
+  /** Why the format must carry {FAC} whatever the number of facilities (the server's words); null or absent otherwise. */
+  facilityCodeReason?: string | null;
   isLocked: boolean;
   maxLength: number;
   /** A GST invoice or note series (rule 46: at most 16 characters, not starting with 0). */
@@ -412,9 +414,20 @@ export function otherFormats(series: readonly NumberSeriesItem[], key: string): 
 const FACILITY_CODE_NEEDED =
   'Add {FAC}. Each facility counts its own numbers, so without the facility code two facilities would issue the same numbers.';
 
-/** True when the facility code is missing although two facilities count these numbers separately. */
+/**
+ * True when the facility code is missing although two facilities count these numbers separately, or the series must
+ * always carry it.
+ */
 function needsFacilityCode(change: FormatChange, parts: FormatPart[]): boolean {
-  return change.perFacility && change.facilityCount > 1 && !parts.some((p) => p.kind === 'facilityCode');
+  return (
+    (Boolean(change.facilityCodeReason) || (change.perFacility && change.facilityCount > 1)) &&
+    !parts.some((p) => p.kind === 'facilityCode')
+  );
+}
+
+/** What the screen says when {FAC} is missing: the series' own reason, or the general one. */
+function facilityCodeNeeded(change: FormatChange): string {
+  return change.facilityCodeReason ? `Add {FAC}. ${change.facilityCodeReason}` : FACILITY_CODE_NEEDED;
 }
 
 /**
@@ -695,7 +708,7 @@ export function checkChange(change: FormatChange): FormatErrors {
     }
     const parts = parseFormat(change.format);
     if (needsFacilityCode(change, parts)) {
-      add('format', FACILITY_CODE_NEEDED);
+      add('format', facilityCodeNeeded(change));
     }
     const length = lengthOf(change);
     if (length.total > change.maxLength) {
@@ -758,10 +771,10 @@ export function formatChecks(change: FormatChange): FormatCheck[] {
   } else if (resetOk) {
     checks.push({ ok: true, text: resetOk });
   }
-  if (change.perFacility && change.facilityCount > 1) {
+  if (change.facilityCodeReason || (change.perFacility && change.facilityCount > 1)) {
     checks.push(
       needsFacilityCode(change, parts)
-        ? { ok: false, text: FACILITY_CODE_NEEDED }
+        ? { ok: false, text: facilityCodeNeeded(change) }
         : { ok: true, text: 'Contains the facility code, so no two facilities issue the same number.' },
     );
   }

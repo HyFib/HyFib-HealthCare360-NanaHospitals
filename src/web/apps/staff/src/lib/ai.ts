@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { toSpeechWav } from '@/lib/voice/wav';
 
 /**
  * AI module contracts shared by the assistant (shell/assistant), clinical dictation (modules/emr/dictation) and the AI
@@ -27,6 +28,8 @@ export interface TranscriptionResponse {
   provider: string;
   language: string;
   durationMs: number;
+  /** Milliseconds of audio sent to the speech service: the speech alone (0 when nobody spoke and nothing was sent). */
+  sentMs?: number;
 }
 
 /** StructureNoteRequestValidator: the transcript is 10–20,000 characters, the specialty at most 100. */
@@ -89,18 +92,20 @@ export const aiQueries = {
 /**
  * Server speech-to-text for browsers (multipart `audio`, optional `patientId` for the audit trail). The language is
  * left to the server's `ai.speech.language` setting. Transcribing on a CPU-only on-premises server can take a while.
+ * The clip is converted to 16 kHz mono WAV first: the server takes the silence out before sending only the speech.
  */
-export function transcribeAudio(
+export async function transcribeAudio(
   audio: Blob,
   fileName: string,
   patientId: string | null,
 ): Promise<TranscriptionResponse> {
+  const wav = await toSpeechWav(audio);
   const form = new FormData();
-  form.append('audio', audio, fileName);
+  form.append('audio', wav, fileName.replace(/\.[a-z0-9]+$/i, '.wav'));
   if (patientId) {
     form.append('patientId', patientId);
   }
-  return api.post<TranscriptionResponse>('/api/v1/ai/voice/transcribe', form, { timeoutMs: 180_000 });
+  return await api.post<TranscriptionResponse>('/api/v1/ai/voice/transcribe', form, { timeoutMs: 180_000 });
 }
 
 /** How much longer than the server the screen waits, so the server's own answer (a draft, or "took too long") arrives. */

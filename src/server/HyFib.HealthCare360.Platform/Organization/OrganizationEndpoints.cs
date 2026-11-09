@@ -54,7 +54,8 @@ public sealed record PractitionerDto(
     PractitionerKind Kind, string? Phone, string? Email, decimal ConsultationFeeNew, decimal ConsultationFeeFollowUp, int FollowUpValidityDays,
     IReadOnlyList<string> Languages, string? Bio, Guid? PhotoFileId, Guid? SignatureFileId, bool AvailableForOnlineBooking,
     bool AvailableForTelehealth, IReadOnlyList<Guid> FacilityIds, bool IsActive, uint Version,
-    IReadOnlyList<string>? LinkedAccounts = null, PendingPractitionerIdentity? PendingIdentity = null, PendingPractitionerFee? PendingFee = null);
+    IReadOnlyList<string>? LinkedAccounts = null, PendingPractitionerIdentity? PendingIdentity = null, PendingPractitionerFee? PendingFee = null,
+    PractitionerHprCheckDto? HprCheck = null);
 
 public sealed record SavePractitionerRequest(
     string Code, string Title, string FirstName, string? LastName, Gender Gender, string? Qualification, string? RegistrationCouncil,
@@ -303,14 +304,16 @@ internal static class OrganizationEndpoints
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveSpecialtyRequest>().RequireVersion();
 
         masters.MapGet("/practitioners", ListPractitioners).RequirePermission(PlatformPermissions.MastersRead);
+        PractitionerHprEndpoints.Map(masters);
         masters.MapGet("/practitioners/{id:guid}", async (Guid id, HospitalDbContext db, PractitionerIdentityApprovals identities, PractitionerFeeApprovals fees,
-                    CancellationToken ct) =>
+                    PractitionerHprChecks hpr, CancellationToken ct) =>
                 await PractitionerQuery(db, db.Set<Practitioner>().Where(p => p.Id == id)).FirstOrDefaultAsync(ct) is { } dto
                     ? TypedResults.Ok(dto with
                     {
                         LinkedAccounts = await identities.LinkedAccountsAsync(id, ct),
                         PendingIdentity = await identities.PendingAsync(id, ct),
                         PendingFee = await fees.PendingAsync(id, ct),
+                        HprCheck = await hpr.LatestAsync(await db.Set<Practitioner>().AsNoTracking().FirstAsync(p => p.Id == id, ct), ct),
                     })
                     : Error.NotFound(nameof(Practitioner), id).ToProblem())
             .RequirePermission(PlatformPermissions.MastersRead);
