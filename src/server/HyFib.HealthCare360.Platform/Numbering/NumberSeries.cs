@@ -124,12 +124,21 @@ internal sealed class NumberSeriesService(HospitalDbContext db, NumberSeriesCata
             {
                 var facilityCode = await FacilityCodeAsync(scope, cancellationToken);
                 var last = allocated[0].Value;
-                return [.. Enumerable.Range(0, count).Select(i => NumberFormat.Render(allocated[0].Format, last - count + 1 + i, facilityCode, now))];
+                var format = WithFacilityCode(series, allocated[0].Format);
+                return [.. Enumerable.Range(0, count).Select(i => NumberFormat.Render(format, last - count + 1 + i, facilityCode, now))];
             }
         }
 
         throw new InvalidOperationException($"Could not allocate a number for series '{series.Key}'.");
     }
+
+    /// <summary>
+    /// The format numbers are made with: a series that must carry the facility code
+    /// (<see cref="NumberSeriesDefinition.RequiresFacilityCode"/>) gets {FAC} in front of a stored format that lacks it, so
+    /// two facilities never make the same number whatever was saved before the rule.
+    /// </summary>
+    internal static string WithFacilityCode(NumberSeriesDefinition series, string format) =>
+        series.RequiresFacilityCode && NumberFormat.Parse(format).All(p => p.Kind != NumberFormatPartKind.FacilityCode) ? "{FAC}" + format : format;
 
     /// <summary>
     /// The code {FAC} stands for: the facility's own, or for a series all facilities share, the first facility's (the

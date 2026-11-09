@@ -203,6 +203,17 @@ describe('checkChange', () => {
     expect(checkChange(change({ format: 'BR{YY}{SEQ:4}', perFacility: false, facilityCount: 2 }))).toEqual({});
   });
 
+  it('asks for the facility code of a series that must always carry it, even with one facility', () => {
+    const reason = 'Visitor passes are checked at the gates of every facility.';
+    expect(
+      checkChange(change({ format: 'VP{YY}{MM}{DD}-{SEQ:4}', resetPolicy: 'Daily', facilityCodeReason: reason }))
+        .format,
+    ).toEqual([`Add {FAC}. ${reason}`]);
+    expect(
+      checkChange(change({ format: '{FAC}VP{YY}{MM}{DD}-{SEQ:4}', resetPolicy: 'Daily', facilityCodeReason: reason })),
+    ).toEqual({});
+  });
+
   it('keeps a changed format apart from the other series, but lets a default be restored', () => {
     const ipBill = { name: 'IP bill', format: '{FAC}IB{YY}{SEQ:7}', isDefault: true };
     expect(checkChange(change({ format: '{FAC}IB{YY}{SEQ:7}', otherFormats: [ipBill] })).format).toEqual([
