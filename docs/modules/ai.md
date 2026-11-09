@@ -114,6 +114,15 @@ not names.
 * **With either:** the JSON schema the answer must follow, the model name, the answer budget, the provider's key and a
   random correlation id.
 
+* **Dictation audio (server speech-to-text):** nothing at all unless the facility's AI processing agreement is
+  recorded (`ai.processingAgreement`, per facility, off by default; turning it on waits for a second administrator,
+  SettingGuard). Then only a 16-bit mono PCM WAV of the speech: the staff app converts the recording to 16 kHz WAV, the
+  server takes out every 20 ms stretch quieter than the room's background (with 200 ms kept either side of speech, so
+  the conversation and noise in the pauses are not sent), writes a plain WAV with no other chunks (no recorder
+  metadata), and refuses more than two minutes of speech before sending any. A recording with no speech is not sent.
+  Compressed WebM or Ogg is refused, as the server cannot look inside it. The language code and model name go with it;
+  the optional patient id stays on the server for the audit trail. The answer says how much audio was sent (`sentMs`).
+
 Every text is redacted first. Never sent: the patient's id, names, UHID, phone numbers, e-mail or ABHA address, Aadhaar
 number, the user's identity, or audio (audio goes only to the speech server). Names the redactor cannot know, such as
 a relative mentioned in passing, stay in the dictation.

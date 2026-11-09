@@ -51,6 +51,8 @@ public static class PersonalDataCatalogue
                 new("patients.patient_identity_checks", "Identity checks with your Aadhaar fingerprint"),
                 new("patients.patient_phone_changes", "Changes of your mobile number, each confirmed with a code sent to the new number"),
                 new("patients.downtime_uhids", "Your registration on paper while the system was down"),
+                // The visit, bill or receipt is listed under its own heading: this says it was written on paper first.
+                new("patients.downtime_numbers", "Your visits, bills and receipts written on paper while the system was down", Counted: false),
                 // A change that needed a second person's approval (joining two registrations, a credit note on a bill): what
                 // was asked, by whom, why, and who decided. Listed, not counted: it is about records listed here already.
                 new("platform.approval_requests", "Changes to your records that a second person approved or refused", Counted: false),
@@ -81,6 +83,8 @@ public static class PersonalDataCatalogue
                 new("clinical.notifiable_cases", "Notifiable-disease reports to public health (IDSP)"),
                 new("clinical.emergency_cases", "Emergency department visits and their triage"),
                 new("clinical.mlc_records", "Medico-legal case records"),
+                new("clinical.wound_certificates", "Wound certificates of medico-legal cases"),
+                new("clinical.doctor_handovers", "Doctors' handovers of your care to a covering doctor", Counted: false),
                 new("clinical.antimicrobial_approvals", "Approvals and reviews of restricted antibiotics"),
                 new("clinical.allergies", "Allergies"),
                 new("clinical.no_known_allergies", "No-known-allergy statements", Counted: false),
@@ -96,6 +100,8 @@ public static class PersonalDataCatalogue
                 new("clinical.result_reviews", "Doctors' reviews of your results", Counted: false),
                 new("clinical.record_requests", "Requests for your medical records"),
                 new("interop.abdm_link_requests", "Records linked to your ABHA"),
+                new("interop.smart_authorization_codes", "Apps a staff member authorized to read your record", Counted: false),
+                new("interop.smart_access_tokens", "Access an authorized app was given to your record", Counted: false),
                 new("interop.abdm_care_contexts", "Each record linked to your ABHA", Counted: false),
                 new("interop.abdm_discoveries", "Searches for your records from your ABHA app", Counted: false),
                 new("interop.abdm_transfers", "Times your records were sent to another provider through ABDM"),

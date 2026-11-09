@@ -73,6 +73,18 @@ interface SessionState {
   clear(): void;
 }
 
+type SessionKeyListener = (userId: string, key: string) => void;
+const sessionKeyListeners = new Set<SessionKeyListener>();
+
+/**
+ * Tells `listener` the key the server gives the signed-in user (AuthResult.draftKey) each time it comes:
+ * at sign-in, refresh and unlock. The staff app derives the key of its offline copy from it. Answers the unsubscribe.
+ */
+export function onSessionKey(listener: SessionKeyListener): () => void {
+  sessionKeyListeners.add(listener);
+  return () => sessionKeyListeners.delete(listener);
+}
+
 /** In-memory session. The refresh token lives only in an HttpOnly cookie, never in JavaScript. */
 export const useSession = create<SessionState>((set, get) => ({
   status: 'unknown',
@@ -93,6 +105,9 @@ export const useSession = create<SessionState>((set, get) => ({
     const userId = get().user?.id;
     if (result.draftKey && userId) {
       void openDrafts(userId, result.draftKey);
+      for (const listener of sessionKeyListeners) {
+        listener(userId, result.draftKey);
+      }
     }
   },
   setUser: (user) => set({ user }),

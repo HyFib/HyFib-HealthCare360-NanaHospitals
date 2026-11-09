@@ -8,5 +8,7 @@
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
     <!-- Online appointment prepayments (AppointmentPaymentCaptured, reschedule chain) become patient advances. -->
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Scheduling\HyFib.HealthCare360.Modules.Scheduling.csproj" />
+    <!-- Doctors' fee TDS (s.194J) shares HR's statutory layer: the deductor's TAN, TDS challans, the FVU file writer and the rates. -->
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.HR\HyFib.HealthCare360.Modules.HR.csproj" />
   </ItemGroup>
 </Project>

@@ -51,7 +51,15 @@ public sealed record DowntimePatient(
     IReadOnlyList<DowntimeMedication> Medications,
     DowntimeNews2? News2,
     IReadOnlyList<string> PendingTasks,
-    IReadOnlyList<DowntimeCarePlanItem> CarePlan);
+    IReadOnlyList<DowntimeCarePlanItem> CarePlan,
+    string? Isolation = null);
+
+/// <summary>
+/// Whose sheet, for how long, and for whom: the ward sheet is printed by a signed-in nurse for the next
+/// <see cref="DowntimePrintService.WindowHours"/> hours; the pre-downtime pack asks for every ward of a facility for 24
+/// hours, and the nightly pack with no one signed in (no restricted names, and the pack audits itself).
+/// </summary>
+public sealed record DowntimeSheetRequest(Guid? FacilityId, Guid? WardId, int WindowHours, bool CanSeeRestricted, string? PrintedByName, bool Audit);
 
 public sealed record DowntimeWard(Guid WardId, string Code, string Name, WardType Type, BedCounts Counts, IReadOnlyList<DowntimePatient> Patients);
 
@@ -81,12 +89,24 @@ public sealed class DowntimePrintService(
 
     public async Task<DowntimeWardPack> BuildAsync(Guid? wardId, CancellationToken ct)
     {
+        var canSeeRestricted = currentUser.UserId is { } userId && await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct);
+        return await BuildAsync(new DowntimeSheetRequest(currentUser.FacilityId, wardId, WindowHours, canSeeRestricted, currentUser.DisplayName, Audit: true), ct);
+    }
+
+    /// <summary>
+    /// The sheet as <paramref name="request"/> asks. Every ward and stay is read for the facility it names, so it is the
+    /// same with or without someone signed in.
+    /// </summary>
+    public async Task<DowntimeWardPack> BuildAsync(DowntimeSheetRequest request, CancellationToken ct)
+    {
+        var wardId = request.WardId;
+        var facility = request.FacilityId;
         var now = time.GetUtcNow();
-        var windowEnd = now.AddHours(WindowHours);
+        var windowEnd = now.AddHours(request.WindowHours);
         var today = IndiaClock.LocalDate(now);
 
         var wards = await db.Set<Ward>().AsNoTracking()
-            .Where(w => w.IsActive && (wardId == null || w.Id == wardId))
+            .Where(w => w.IsActive && (wardId == null || w.Id == wardId) && (facility == null || w.FacilityId == facility))
             .OrderBy(w => w.DisplayOrder).ThenBy(w => w.Name)
             .ToListAsync(ct);
         var wardIds = wards.Select(w => w.Id).ToList();
@@ -136,7 +156,22 @@ public sealed class DowntimePrintService(
                 .Select(m => new { m.AdmissionId, m.MedicationOrderId, m.ScheduledAt })
                 .ToListAsync(ct))
             .ToLookup(m => m.AdmissionId);
-        var grace = await mar.GraceAsync(currentUser.FacilityId, ct);
+        var grace = await mar.GraceAsync(facility, ct);
+        var isolation = (await (
+                    from x in db.Set<PatientAlert>().AsNoTracking()
+                    where patientIds.Contains(x.PatientId) && x.IsActive
+                          && (x.Type == PatientAlertType.Isolation || x.Type == PatientAlertType.InfectionControl)
+                          && (x.ExpiresOn == null || x.ExpiresOn >= today)
+                    select new { x.PatientId, x.Title })
+                .ToListAsync(ct))
+            .ToLookup(x => x.PatientId, x => x.Title);
+        var isolationRooms = (await (
+                    from b in db.Set<Bed>().AsNoTracking()
+                    join r in db.Set<Room>() on b.RoomId equals r.Id
+                    where wardIds.Contains(b.WardId) && r.IsIsolation
+                    select b.Id)
+                .ToListAsync(ct))
+            .ToHashSet();
 
         var news2 = await earlyWarning.LatestAsync(stays.Select(s => (s.Admission.Id, s.Admission.PatientId, s.Admission.AdmittedAt, s.DateOfBirth)).ToList(), ct);
         var escalations = (await db.Set<EarlyWarningEscalation>().AsNoTracking()
@@ -162,7 +197,7 @@ public sealed class DowntimePrintService(
             .ToDictionary(g => g.Key, g => g.MaxBy(h => h.HandedOverAt)!.PendingTasks!);
         var carePlans = (await CarePlanQueries.ForAdmissionsAsync(db, admissionIds, true, now, ct)).ToLookup(p => p.AdmissionId);
 
-        var canSeeRestricted = currentUser.UserId is { } userId && await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct);
+        var canSeeRestricted = request.CanSeeRestricted;
         var patients = stays.Select(s =>
         {
             var a = s.Admission;
@@ -199,22 +234,27 @@ public sealed class DowntimePrintService(
                 today.DayNumber - IndiaClock.LocalDate(a.AdmittedAt).DayNumber + 1, withheld ? null : a.ProvisionalDiagnosis, a.IsMlc, a.Status,
                 NoKnownAllergiesStatement.StatusOf(patientAllergies.Count > 0, noKnownAllergies.Contains(a.PatientId)), patientAllergies, medications,
                 news2.TryGetValue(a.Id, out var score) ? new DowntimeNews2(score.Score, score.Response, score.IsComplete, score.RecordedAt) : null,
-                tasks, carePlans[a.Id].Select(p => new DowntimeCarePlanItem(p.Title, p.Goal, p.Interventions)).ToList()));
+                tasks, carePlans[a.Id].Select(p => new DowntimeCarePlanItem(p.Title, p.Goal, p.Interventions)).ToList(),
+                isolation[a.PatientId].Any() ? string.Join("; ", isolation[a.PatientId])
+                    : a.BedId is { } bedId && isolationRooms.Contains(bedId) ? "Isolation room" : null));
         }).ToLookup(x => x.WardId, x => x.Patient);
 
-        var facilityName = currentUser.FacilityId is { } facilityId
+        var facilityName = facility is { } facilityId
             ? await db.Set<Facility>().AsNoTracking().Where(f => f.Id == facilityId).Select(f => f.Name).FirstOrDefaultAsync(ct)
             : null;
-        await audit.WriteAsync(new AuditEntry(AuditCategories.PhiAccess, "inpatient.downtime_print",
+        if (request.Audit)
+        {
+            await audit.WriteAsync(new AuditEntry(AuditCategories.PhiAccess, "inpatient.downtime_print",
             wardId is null
                 ? $"Printed the downtime pack of every ward ({admissionIds.Count} patients)"
                 : $"Printed the downtime sheet of {wards.FirstOrDefault()?.Name ?? "a ward"} ({admissionIds.Count} patients)")
-        {
-            EntityType = nameof(Ward),
-            EntityId = wardId?.ToString(),
-        }, ct);
+            {
+                EntityType = nameof(Ward),
+                EntityId = wardId?.ToString(),
+            }, ct);
+        }
 
-        return new DowntimeWardPack(now, windowEnd, facilityName, currentUser.DisplayName, wards.Select(w => new DowntimeWard(w.Id, w.Code, w.Name, w.Type,
+        return new DowntimeWardPack(now, windowEnd, facilityName, request.PrintedByName, wards.Select(w => new DowntimeWard(w.Id, w.Code, w.Name, w.Type,
             BedCounts.From(beds.Where(b => b.WardId == w.Id).Select(b => b.Status)), patients[w.Id].ToList())).ToList());
     }
 }

@@ -74,5 +74,15 @@ describe('Paper forms', () => {
     const tally = text(paperFormBody('tally', 'Nana Hospitals'));
     expect(tally).toContain('Downtime number (from the log)');
     expect(tally).toContain('Checked (second person)');
+    expect(tally).toContain('Numbers used (first–last)');
+    expect(tally).toContain('Late back-entry approval asked on / by');
+  });
+
+  it('puts a bill and its receipt under the counter’s downtime numbers', () => {
+    const bill = text(paperFormBody('bill', 'Nana Hospitals'));
+    expect(bill).toContain('Downtime bill number (next on the counter’s sheet)');
+    expect(bill).toContain('Downtime receipt number (next on the counter’s sheet)');
+    expect(bill).toContain('Entered in HC360 by');
+    expect(text(paperFormBody('consultation', 'Nana Hospitals'))).toContain('Visit number (downtime block)');
   });
 });

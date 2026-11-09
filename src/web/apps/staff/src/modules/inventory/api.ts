@@ -245,6 +245,8 @@ export interface BatchStock {
   isExpired: boolean;
   isBlocked: boolean;
   blockReason: string | null;
+  /** Held on a manufacturer's or regulator's recall: released only with a second person's approval. */
+  isRecalled?: boolean;
   daysToExpiry: number | null;
 }
 
@@ -524,8 +526,16 @@ export interface TransferDetail {
     purchaseRate: number;
     sourceBatchId: string;
     destinationBatchId: string | null;
+    /** What the receiving store counted in, when it was short of what was sent. */
+    receivedQuantity?: number | null;
   }[];
   version: number;
+}
+
+/** Only the lines counted short need be sent; none receives every line as sent. */
+export interface ReceiveTransferBody {
+  lines: { lineId: string; receivedQuantity: number }[] | null;
+  note: string | null;
 }
 
 export interface DispatchTransferRequest {
@@ -901,8 +911,11 @@ export const inventoryApi = {
     id
       ? (await api.put<void>(`${BASE}/stores/${id}`, body), id)
       : (await api.post<{ id: string }>(`${BASE}/stores`, body)).id,
-  blockBatch: (batchId: string, reason: string) => api.post<void>(`${BASE}/stock/batches/${batchId}/block`, { reason }),
-  unblockBatch: (batchId: string) => api.post<void>(`${BASE}/stock/batches/${batchId}/unblock`),
+  blockBatch: (batchId: string, reason: string, recall = false) =>
+    api.post<void>(`${BASE}/stock/batches/${batchId}/block`, { reason, recall }),
+  /** A quality hold is released at once (null); a recall waits for a second person, and the request comes back. */
+  unblockBatch: async (batchId: string, reason: string | null = null) =>
+    (await api.post<ApprovalRequestDto | undefined>(`${BASE}/stock/batches/${batchId}/unblock`, { reason })) ?? null,
 
   createIndent: (body: CreateIndentRequest) => api.post<DocumentCreated>(`${BASE}/indents`, body),
   approveIndent: (id: string, lines: { lineId: string; approvedQuantity: number }[] | null) =>
@@ -913,7 +926,12 @@ export const inventoryApi = {
   cancelIndent: (id: string, reason: string) => api.post<void>(`${BASE}/indents/${id}/cancel`, { reason }),
 
   dispatchTransfer: (body: DispatchTransferRequest) => api.post<DocumentCreated>(`${BASE}/transfers`, body),
-  receiveTransfer: (id: string) => api.post<void>(`${BASE}/transfers/${id}/receive`),
+  /**
+   * Received at once when every line is counted in full (null); a line counted short sends the shortfall to a second
+   * person, and the request waiting for them comes back.
+   */
+  receiveTransfer: async (id: string, body: ReceiveTransferBody = { lines: null, note: null }) =>
+    (await api.post<ApprovalRequestDto | undefined>(`${BASE}/transfers/${id}/receive`, body)) ?? null,
   cancelTransfer: (id: string, reason: string) => api.post<void>(`${BASE}/transfers/${id}/cancel`, { reason }),
 
   createAdjustment: (body: CreateAdjustmentRequest) => api.post<DocumentCreated>(`${BASE}/adjustments`, body),

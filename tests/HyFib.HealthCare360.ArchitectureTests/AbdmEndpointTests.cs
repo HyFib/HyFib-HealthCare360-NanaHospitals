@@ -33,7 +33,7 @@ public sealed class AbdmEndpointTests
         [.. All.Value.Where(e => Route(e).StartsWith("/api/v3/", StringComparison.Ordinal))]);
 
     [Fact]
-    public void The_abdm_api_is_nine_document_exports_the_gateway_status_link_requests_the_share_queue_and_abha_checks()
+    public void The_abdm_api_is_ten_document_exports_the_gateway_status_link_requests_the_share_queue_and_abha_checks()
     {
         Endpoints.Value.Select(e => $"{Method(e)} {Route(e)}").Order().ShouldBe(
         [
@@ -42,6 +42,7 @@ public sealed class AbdmEndpointTests
             "GET /api/v1/abdm/bundles/discharge-summaries/{id:guid}",
             "GET /api/v1/abdm/bundles/home-readings/{id:guid}",
             "GET /api/v1/abdm/bundles/immunizations/{id:guid}",
+            "GET /api/v1/abdm/bundles/invoices/{id:guid}",
             "GET /api/v1/abdm/bundles/lab-reports/{id:guid}",
             "GET /api/v1/abdm/bundles/op-consultations/{id:guid}",
             "GET /api/v1/abdm/bundles/prescriptions/{id:guid}",

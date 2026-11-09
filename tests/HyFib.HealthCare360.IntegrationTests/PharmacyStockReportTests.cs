@@ -151,7 +151,7 @@ public sealed class PharmacyStockReportTests(HospitalServer server)
             .ShouldBe((100m, 0m, 100m, true));
         (await ReorderAsync(pharmacist, store, ours)).Select(r => r.ItemId).ShouldBe([adrenaline, amoxicillin, vitamin]);
         (await BelowReorderAsync(pharmacist, store, ours)).ShouldBe([adrenaline, amoxicillin, vitamin], ignoreOrder: true);
-        await storeKeeper.PostAsync($"/api/v1/inventory/stock/batches/{recalled.BatchId}/unblock");
+        await storeKeeper.PostAsync($"/api/v1/inventory/stock/batches/{recalled.BatchId}/unblock", new UnblockBatchRequest(null));
 
         // A store holding none of them lists all four below reorder, as its report does, though it has no stock rows.
         (await BelowReorderAsync(pharmacist, otherStore, ours)).ShouldBe([adrenaline, amoxicillin, ceftriaxone, vitamin], ignoreOrder: true);

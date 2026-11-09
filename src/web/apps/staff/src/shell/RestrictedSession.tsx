@@ -4,6 +4,7 @@ import { auth, useSession } from '@hc360/core';
 import { useNavigate } from '@tanstack/react-router';
 import { ChangePasswordForm, MfaSetup } from '@/modules/account/security';
 import { BrandMark } from './BrandMark';
+import { wipeOfflineCopy } from '@/lib/offline/wipe';
 
 const useStyles = makeStyles({
   root: {
@@ -39,6 +40,7 @@ export function RestrictedSession({ restriction }: { restriction: 'password' | '
   const navigate = useNavigate();
 
   const signOut = async () => {
+    await wipeOfflineCopy();
     await auth.logout();
     await navigate({ to: '/login', search: {} });
   };

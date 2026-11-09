@@ -8,6 +8,10 @@ using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.SharedKernel;
+using Bill = HyFib.HealthCare360.Modules.Billing.Domain.Bill;
+using BillLine = HyFib.HealthCare360.Modules.Billing.Domain.BillLine;
+using BillStatus = HyFib.HealthCare360.Modules.Billing.Domain.BillStatus;
+using BillType = HyFib.HealthCare360.Modules.Billing.Domain.BillType;
 using Modality = HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.Modality;
 
 namespace HyFib.HealthCare360.Modules.Interop.Tests;
@@ -541,6 +545,74 @@ internal static class AbdmTestData
 
     public static ClinicalNoteData ClinicalNoteRecord(params ClinicalNoteRow[] addenda) =>
         new(Context(encounter: Consultation()), ProgressNote(), addenda);
+
+    /// <summary>The out-patient bill of the consultation, and its three lines.</summary>
+    public static readonly Guid BillId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab01c");
+
+    public const string BillNumber = "NHOB260000123";
+    public static readonly Guid CashierUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab01d");
+
+    /// <summary>When the bill was finalised: an hour and ten minutes after the consultation.</summary>
+    public static DateTimeOffset BillFinalized => Seen.AddMinutes(70);
+
+    /// <summary>
+    /// The consultation's bill as a draft: Dr. Asha Rao's consultation (₹800, a 10% tariff concession, exempt), a complete
+    /// blood count (₹450, ₹50 off it, exempt) and two dressing kits (₹157.50 each, 12% GST), with 5% off the bill. Change it
+    /// (a payer, the place of supply, free treatment), then <see cref="Finalized"/> it as the counter does.
+    /// </summary>
+    public static Bill DraftBill() => new()
+    {
+        Id = BillId,
+        FacilityId = TestData.FacilityId,
+        Type = BillType.OutPatient,
+        PatientId = TestData.PatientId,
+        VisitId = OpVisitId,
+        PayerType = PayerType.Self,
+        BillDiscountPercent = 5m,
+        Status = BillStatus.Draft,
+        CreatedAt = Seen.AddMinutes(60),
+        Lines =
+        [
+            ChargedLine(0xb1, 1, "CONS-GM", "Consultation, General Medicine", "999312", 1m, 800m, 0m, TestData.DoctorId, tariffPercent: 10m),
+            ChargedLine(0xb2, 2, "LAB-CBC", "Complete blood count", "999316", 1m, 450m, 0m, null, staffDiscount: 50m),
+            ChargedLine(0xb3, 3, "CSM-DRK", "Dressing kit", "999319", 2m, 157.50m, 12m, null),
+        ],
+    };
+
+    /// <summary>The bill finalised under its number by the cashier (its totals worked out as finalising does).</summary>
+    public static Bill Finalized(Bill bill)
+    {
+        bill.Finalize(BillNumber, CashierUserId, BillFinalized).IsSuccess.ShouldBeTrue();
+        bill.UpdatedAt = BillFinalized;
+        bill.ClearDomainEvents();
+        return bill;
+    }
+
+    public static Bill OpBill() => Finalized(DraftBill());
+
+    public static InvoiceData InvoiceRecord(Bill? bill = null, AbdmPdf? pdf = null) => new(Context(visit: OpVisit(), pdf: pdf), bill ?? OpBill());
+
+    private static BillLine ChargedLine(
+        int n, int order, string code, string description, string? sac, decimal quantity, decimal unitPrice, decimal taxRate, Guid? doctor,
+        decimal tariffPercent = 0m, decimal staffDiscount = 0m) => new()
+        {
+            TariffDiscountPercent = tariffPercent,
+            LineDiscountAmount = staffDiscount,
+            Id = Guid.Parse($"01923a4b-0000-7000-8000-000000{n:x6}"),
+            BillId = BillId,
+            ServiceCode = code,
+            Description = description,
+            SacCode = sac,
+            Quantity = quantity,
+            UnitPrice = unitPrice,
+            GrossAmount = quantity * unitPrice,
+            TaxRate = taxRate,
+            IsDiscountAllowed = true,
+            PractitionerId = doctor,
+            DepartmentId = TestData.DepartmentId,
+            ServiceDate = Seen,
+            SortOrder = order,
+        };
 
     /// <summary>An instant in India in 2026 (IST, UTC+05:30).</summary>
     public static DateTimeOffset Ist(int month, int day, int hour, int minute, int second = 0) =>

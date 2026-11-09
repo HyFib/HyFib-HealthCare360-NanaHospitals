@@ -27,7 +27,7 @@ public sealed class InteropModuleTests
     [Fact]
     public void Declares_fhir_read_abdm_export_and_abdm_records_request()
     {
-        new InteropModule().Permissions.Select(p => p.Name).ShouldBe([InteropPermissions.FhirRead, InteropPermissions.AbdmExport, InteropPermissions.AbdmRecordsRequest]);
+        new InteropModule().Permissions.Select(p => p.Name).ShouldBe([InteropPermissions.FhirRead, InteropPermissions.AbdmExport, InteropPermissions.AbdmRecordsRequest, InteropPermissions.SmartClientsManage]);
     }
 
     [Fact]

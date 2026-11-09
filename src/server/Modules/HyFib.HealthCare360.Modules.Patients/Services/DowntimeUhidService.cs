@@ -14,11 +14,9 @@ public sealed class DowntimeUhidService(
     INumberSeries numbers,
     ICurrentUser currentUser,
     IAuditLogger audit,
-    TimeProvider time)
+    TimeProvider time,
+    BackEntryService backEntry)
 {
-    /// <summary>How far back a paper registration may be dated: the longest downtime HC360 expects to be entered after.</summary>
-    public static readonly TimeSpan LongestBackEntry = TimeSpan.FromDays(90);
-
     private static readonly Error FacilityRequired = Error.Rule("facility.required", "Select a facility first.");
 
     public async Task<Result<IReadOnlyList<DowntimeUhidBlockSummary>>> ListAsync(CancellationToken ct)
@@ -173,6 +171,16 @@ public sealed class DowntimeUhidService(
         if (paper.RegisteredAt < issuedAt)
         {
             return Error.Field("paper.registeredAt", "The form is dated before its UHID was issued. Check the date and time on the form.");
+        }
+
+        // How far back a paper registration may be dated is the registration's back-entry window (90 days unless the
+        // administrator sets less); older paper needs a late back-entry a second person approved.
+        var allowed = await backEntry.CheckAsync(BackEntryRecord.Registration, paper.RegisteredAt, consume: true, ct);
+        if (allowed.IsFailure)
+        {
+            return allowed.Error!.Type == ErrorType.Validation
+                ? Error.Field("paper.registeredAt", allowed.Error.Message)
+                : allowed.Error;
         }
 
         number.PatientId = patient.Id;

@@ -160,12 +160,14 @@ import { Route as AppOtBookRouteImport } from './routes/_app/ot/book'
 import { Route as AppOtImplantsRouteImport } from './routes/_app/ot/implants'
 import { Route as AppOtTheatresRouteImport } from './routes/_app/ot/theatres'
 import { Route as AppPatientsIndexRouteImport } from './routes/_app/patients/index'
+import { Route as AppPatientsContinuityRouteImport } from './routes/_app/patients/continuity'
 import { Route as AppPatientsDowntimeRouteImport } from './routes/_app/patients/downtime'
 import { Route as AppPatientsRegisterRouteImport } from './routes/_app/patients/register'
 import { Route as AppPharmacyIndexRouteImport } from './routes/_app/pharmacy/index'
 import { Route as AppPharmacyAdrRouteImport } from './routes/_app/pharmacy/adr'
 import { Route as AppPharmacyIpIssuesRouteImport } from './routes/_app/pharmacy/ip-issues'
 import { Route as AppPharmacyNdpsRouteImport } from './routes/_app/pharmacy/ndps'
+import { Route as AppPharmacyRecallTraceRouteImport } from './routes/_app/pharmacy/recall-trace'
 import { Route as AppPharmacyRefillsRouteImport } from './routes/_app/pharmacy/refills'
 import { Route as AppPharmacyRegistersRouteImport } from './routes/_app/pharmacy/registers'
 import { Route as AppPharmacySaleRouteImport } from './routes/_app/pharmacy/sale'
@@ -206,6 +208,7 @@ import { Route as AppSetupPractitionersRouteImport } from './routes/_app/setup/p
 import { Route as AppSetupPrintTemplatesRouteImport } from './routes/_app/setup/print-templates'
 import { Route as AppSetupServicesRouteImport } from './routes/_app/setup/services'
 import { Route as AppSetupSpecialtiesRouteImport } from './routes/_app/setup/specialties'
+import { Route as AppSmartAuthorizeRouteImport } from './routes/_app/smart/authorize'
 import { Route as AppTelehealthIndexRouteImport } from './routes/_app/telehealth/index'
 import { Route as AppTelehealthSessionIdRouteImport } from './routes/_app/telehealth/$sessionId'
 import { Route as AppWorkstationPrintersRouteImport } from './routes/_app/workstation/printers'
@@ -1114,6 +1117,11 @@ const AppPatientsIndexRoute = AppPatientsIndexRouteImport.update({
   path: '/patients/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPatientsContinuityRoute = AppPatientsContinuityRouteImport.update({
+  id: '/patients/continuity',
+  path: '/patients/continuity',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPatientsDowntimeRoute = AppPatientsDowntimeRouteImport.update({
   id: '/patients/downtime',
   path: '/patients/downtime',
@@ -1142,6 +1150,11 @@ const AppPharmacyIpIssuesRoute = AppPharmacyIpIssuesRouteImport.update({
 const AppPharmacyNdpsRoute = AppPharmacyNdpsRouteImport.update({
   id: '/pharmacy/ndps',
   path: '/pharmacy/ndps',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPharmacyRecallTraceRoute = AppPharmacyRecallTraceRouteImport.update({
+  id: '/pharmacy/recall-trace',
+  path: '/pharmacy/recall-trace',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPharmacyRefillsRoute = AppPharmacyRefillsRouteImport.update({
@@ -1343,6 +1356,11 @@ const AppSetupServicesRoute = AppSetupServicesRouteImport.update({
 const AppSetupSpecialtiesRoute = AppSetupSpecialtiesRouteImport.update({
   id: '/setup/specialties',
   path: '/setup/specialties',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSmartAuthorizeRoute = AppSmartAuthorizeRouteImport.update({
+  id: '/smart/authorize',
+  path: '/smart/authorize',
   getParentRoute: () => AppRoute,
 } as any)
 const AppTelehealthIndexRoute = AppTelehealthIndexRouteImport.update({
@@ -2246,11 +2264,13 @@ export interface FileRoutesByFullPath {
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
+  '/patients/continuity': typeof AppPatientsContinuityRoute
   '/patients/downtime': typeof AppPatientsDowntimeRoute
   '/patients/register': typeof AppPatientsRegisterRoute
   '/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
   '/pharmacy/ndps': typeof AppPharmacyNdpsRoute
+  '/pharmacy/recall-trace': typeof AppPharmacyRecallTraceRoute
   '/pharmacy/refills': typeof AppPharmacyRefillsRoute
   '/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/pharmacy/sale': typeof AppPharmacySaleRoute
@@ -2284,6 +2304,7 @@ export interface FileRoutesByFullPath {
   '/setup/print-templates': typeof AppSetupPrintTemplatesRoute
   '/setup/services': typeof AppSetupServicesRoute
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
+  '/smart/authorize': typeof AppSmartAuthorizeRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/workstation/printers': typeof AppWorkstationPrintersRoute
   '/ambulance/': typeof AppAmbulanceIndexRoute
@@ -2588,11 +2609,13 @@ export interface FileRoutesByTo {
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
+  '/patients/continuity': typeof AppPatientsContinuityRoute
   '/patients/downtime': typeof AppPatientsDowntimeRoute
   '/patients/register': typeof AppPatientsRegisterRoute
   '/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
   '/pharmacy/ndps': typeof AppPharmacyNdpsRoute
+  '/pharmacy/recall-trace': typeof AppPharmacyRecallTraceRoute
   '/pharmacy/refills': typeof AppPharmacyRefillsRoute
   '/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/pharmacy/sale': typeof AppPharmacySaleRoute
@@ -2626,6 +2649,7 @@ export interface FileRoutesByTo {
   '/setup/print-templates': typeof AppSetupPrintTemplatesRoute
   '/setup/services': typeof AppSetupServicesRoute
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
+  '/smart/authorize': typeof AppSmartAuthorizeRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/workstation/printers': typeof AppWorkstationPrintersRoute
   '/ambulance': typeof AppAmbulanceIndexRoute
@@ -2932,11 +2956,13 @@ export interface FileRoutesById {
   '/_app/ot/book': typeof AppOtBookRoute
   '/_app/ot/implants': typeof AppOtImplantsRoute
   '/_app/ot/theatres': typeof AppOtTheatresRoute
+  '/_app/patients/continuity': typeof AppPatientsContinuityRoute
   '/_app/patients/downtime': typeof AppPatientsDowntimeRoute
   '/_app/patients/register': typeof AppPatientsRegisterRoute
   '/_app/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/_app/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
   '/_app/pharmacy/ndps': typeof AppPharmacyNdpsRoute
+  '/_app/pharmacy/recall-trace': typeof AppPharmacyRecallTraceRoute
   '/_app/pharmacy/refills': typeof AppPharmacyRefillsRoute
   '/_app/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/_app/pharmacy/sale': typeof AppPharmacySaleRoute
@@ -2970,6 +2996,7 @@ export interface FileRoutesById {
   '/_app/setup/print-templates': typeof AppSetupPrintTemplatesRoute
   '/_app/setup/services': typeof AppSetupServicesRoute
   '/_app/setup/specialties': typeof AppSetupSpecialtiesRoute
+  '/_app/smart/authorize': typeof AppSmartAuthorizeRoute
   '/_app/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/_app/workstation/printers': typeof AppWorkstationPrintersRoute
   '/_app/ambulance/': typeof AppAmbulanceIndexRoute
@@ -3276,11 +3303,13 @@ export interface FileRouteTypes {
     | '/ot/book'
     | '/ot/implants'
     | '/ot/theatres'
+    | '/patients/continuity'
     | '/patients/downtime'
     | '/patients/register'
     | '/pharmacy/adr'
     | '/pharmacy/ip-issues'
     | '/pharmacy/ndps'
+    | '/pharmacy/recall-trace'
     | '/pharmacy/refills'
     | '/pharmacy/registers'
     | '/pharmacy/sale'
@@ -3314,6 +3343,7 @@ export interface FileRouteTypes {
     | '/setup/print-templates'
     | '/setup/services'
     | '/setup/specialties'
+    | '/smart/authorize'
     | '/telehealth/$sessionId'
     | '/workstation/printers'
     | '/ambulance/'
@@ -3618,11 +3648,13 @@ export interface FileRouteTypes {
     | '/ot/book'
     | '/ot/implants'
     | '/ot/theatres'
+    | '/patients/continuity'
     | '/patients/downtime'
     | '/patients/register'
     | '/pharmacy/adr'
     | '/pharmacy/ip-issues'
     | '/pharmacy/ndps'
+    | '/pharmacy/recall-trace'
     | '/pharmacy/refills'
     | '/pharmacy/registers'
     | '/pharmacy/sale'
@@ -3656,6 +3688,7 @@ export interface FileRouteTypes {
     | '/setup/print-templates'
     | '/setup/services'
     | '/setup/specialties'
+    | '/smart/authorize'
     | '/telehealth/$sessionId'
     | '/workstation/printers'
     | '/ambulance'
@@ -3961,11 +3994,13 @@ export interface FileRouteTypes {
     | '/_app/ot/book'
     | '/_app/ot/implants'
     | '/_app/ot/theatres'
+    | '/_app/patients/continuity'
     | '/_app/patients/downtime'
     | '/_app/patients/register'
     | '/_app/pharmacy/adr'
     | '/_app/pharmacy/ip-issues'
     | '/_app/pharmacy/ndps'
+    | '/_app/pharmacy/recall-trace'
     | '/_app/pharmacy/refills'
     | '/_app/pharmacy/registers'
     | '/_app/pharmacy/sale'
@@ -3999,6 +4034,7 @@ export interface FileRouteTypes {
     | '/_app/setup/print-templates'
     | '/_app/setup/services'
     | '/_app/setup/specialties'
+    | '/_app/smart/authorize'
     | '/_app/telehealth/$sessionId'
     | '/_app/workstation/printers'
     | '/_app/ambulance/'
@@ -5251,6 +5287,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPatientsIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/patients/continuity': {
+      id: '/_app/patients/continuity'
+      path: '/patients/continuity'
+      fullPath: '/patients/continuity'
+      preLoaderRoute: typeof AppPatientsContinuityRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/patients/downtime': {
       id: '/_app/patients/downtime'
       path: '/patients/downtime'
@@ -5291,6 +5334,13 @@ declare module '@tanstack/react-router' {
       path: '/pharmacy/ndps'
       fullPath: '/pharmacy/ndps'
       preLoaderRoute: typeof AppPharmacyNdpsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/pharmacy/recall-trace': {
+      id: '/_app/pharmacy/recall-trace'
+      path: '/pharmacy/recall-trace'
+      fullPath: '/pharmacy/recall-trace'
+      preLoaderRoute: typeof AppPharmacyRecallTraceRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/pharmacy/refills': {
@@ -5571,6 +5621,13 @@ declare module '@tanstack/react-router' {
       path: '/setup/specialties'
       fullPath: '/setup/specialties'
       preLoaderRoute: typeof AppSetupSpecialtiesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/smart/authorize': {
+      id: '/_app/smart/authorize'
+      path: '/smart/authorize'
+      fullPath: '/smart/authorize'
+      preLoaderRoute: typeof AppSmartAuthorizeRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/telehealth/': {
@@ -6700,11 +6757,13 @@ interface AppRouteChildren {
   AppOtBookRoute: typeof AppOtBookRoute
   AppOtImplantsRoute: typeof AppOtImplantsRoute
   AppOtTheatresRoute: typeof AppOtTheatresRoute
+  AppPatientsContinuityRoute: typeof AppPatientsContinuityRoute
   AppPatientsDowntimeRoute: typeof AppPatientsDowntimeRoute
   AppPatientsRegisterRoute: typeof AppPatientsRegisterRoute
   AppPharmacyAdrRoute: typeof AppPharmacyAdrRoute
   AppPharmacyIpIssuesRoute: typeof AppPharmacyIpIssuesRoute
   AppPharmacyNdpsRoute: typeof AppPharmacyNdpsRoute
+  AppPharmacyRecallTraceRoute: typeof AppPharmacyRecallTraceRoute
   AppPharmacyRefillsRoute: typeof AppPharmacyRefillsRoute
   AppPharmacyRegistersRoute: typeof AppPharmacyRegistersRoute
   AppPharmacySaleRoute: typeof AppPharmacySaleRoute
@@ -6738,6 +6797,7 @@ interface AppRouteChildren {
   AppSetupPrintTemplatesRoute: typeof AppSetupPrintTemplatesRoute
   AppSetupServicesRoute: typeof AppSetupServicesRoute
   AppSetupSpecialtiesRoute: typeof AppSetupSpecialtiesRoute
+  AppSmartAuthorizeRoute: typeof AppSmartAuthorizeRoute
   AppTelehealthSessionIdRoute: typeof AppTelehealthSessionIdRoute
   AppWorkstationPrintersRoute: typeof AppWorkstationPrintersRoute
   AppAmbulanceIndexRoute: typeof AppAmbulanceIndexRoute
@@ -7041,11 +7101,13 @@ const AppRouteChildren: AppRouteChildren = {
   AppOtBookRoute: AppOtBookRoute,
   AppOtImplantsRoute: AppOtImplantsRoute,
   AppOtTheatresRoute: AppOtTheatresRoute,
+  AppPatientsContinuityRoute: AppPatientsContinuityRoute,
   AppPatientsDowntimeRoute: AppPatientsDowntimeRoute,
   AppPatientsRegisterRoute: AppPatientsRegisterRoute,
   AppPharmacyAdrRoute: AppPharmacyAdrRoute,
   AppPharmacyIpIssuesRoute: AppPharmacyIpIssuesRoute,
   AppPharmacyNdpsRoute: AppPharmacyNdpsRoute,
+  AppPharmacyRecallTraceRoute: AppPharmacyRecallTraceRoute,
   AppPharmacyRefillsRoute: AppPharmacyRefillsRoute,
   AppPharmacyRegistersRoute: AppPharmacyRegistersRoute,
   AppPharmacySaleRoute: AppPharmacySaleRoute,
@@ -7079,6 +7141,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSetupPrintTemplatesRoute: AppSetupPrintTemplatesRoute,
   AppSetupServicesRoute: AppSetupServicesRoute,
   AppSetupSpecialtiesRoute: AppSetupSpecialtiesRoute,
+  AppSmartAuthorizeRoute: AppSmartAuthorizeRoute,
   AppTelehealthSessionIdRoute: AppTelehealthSessionIdRoute,
   AppWorkstationPrintersRoute: AppWorkstationPrintersRoute,
   AppAmbulanceIndexRoute: AppAmbulanceIndexRoute,

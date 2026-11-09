@@ -25,7 +25,8 @@ internal static class StockEndpoints
             .RequireAnyPermission(SupplyChainPermissions.ItemsManage, SupplyChainPermissions.AdjustmentsApprove)
             .WithValidation<BlockBatchRequest>();
         group.MapPost("/batches/{id:guid}/unblock", Unblock)
-            .RequireAnyPermission(SupplyChainPermissions.ItemsManage, SupplyChainPermissions.AdjustmentsApprove);
+            .RequireAnyPermission(SupplyChainPermissions.ItemsManage, SupplyChainPermissions.AdjustmentsApprove)
+            .WithValidation<UnblockBatchRequest>();
     }
 
     /// <summary>
@@ -56,9 +57,10 @@ internal static class StockEndpoints
                   && line.Quantity > line.ReceivedQuantity
             select line;
 
+        // The store's own reorder level for an item overrides the item's (StoreItemLevel).
+        var levels = db.Set<StoreItemLevel>().AsNoTracking().Where(l => l.StoreId == storeId);
         var listOutOfStock = belowReorder == true;
         var rows = items
-            .Where(i => batches.Any(b => b.ItemId == i.Id) || (listOutOfStock && i.IsActive && i.ReorderLevel > 0))
             .Select(i => new
             {
                 i.Id,
@@ -66,8 +68,9 @@ internal static class StockEndpoints
                 i.Name,
                 i.Type,
                 i.BaseUnit,
-                i.ReorderLevel,
+                ReorderLevel = levels.Where(l => l.ItemId == i.Id).Select(l => (decimal?)l.ReorderLevel).FirstOrDefault() ?? i.ReorderLevel,
                 i.IsActive,
+                HasStock = batches.Any(b => b.ItemId == i.Id),
                 OnHand = batches.Where(b => b.ItemId == i.Id).Sum(b => (decimal?)b.QuantityOnHand) ?? 0m,
                 Reserved = batches.Where(b => b.ItemId == i.Id).Sum(b => (decimal?)b.QuantityReserved) ?? 0m,
                 Expired = batches.Where(b => b.ItemId == i.Id).Sum(b => (decimal?)(b.ExpiryDate < today ? b.QuantityOnHand : 0m)) ?? 0m,
@@ -79,6 +82,7 @@ internal static class StockEndpoints
                 NearestExpiry = batches.Where(b => b.ItemId == i.Id).Min(b => b.ExpiryDate),
                 OnOrder = (pending.Where(l => l.ItemId == i.Id).Sum(l => (decimal?)(l.Quantity - l.ReceivedQuantity)) ?? 0m) * i.PurchaseUnitFactor,
             });
+        rows = rows.Where(r => r.HasStock || (listOutOfStock && r.IsActive && r.ReorderLevel > 0));
         if (belowReorder == true)
         {
             rows = rows.Where(r => r.IsActive && r.ReorderLevel > 0 && r.Usable + r.OnOrder <= r.ReorderLevel);
@@ -170,28 +174,41 @@ internal static class StockEndpoints
             return Error.NotFound(nameof(StockBatch), id).ToProblem();
         }
 
-        var result = batch.Block(request.Reason);
+        var result = batch.Block(request.Reason, request.Recall);
         if (result.IsFailure)
         {
             return result.Error!.ToProblem();
         }
 
-        audit.Add(new AuditEntry(AuditCategories.Data, "stock_batch.blocked", $"Batch {batch.BatchNumber} blocked: {batch.BlockReason}")
+        audit.Add(new AuditEntry(AuditCategories.Data, "stock_batch.blocked",
+            $"Batch {batch.BatchNumber} {(batch.IsRecalled ? "recalled" : "blocked")}: {batch.BlockReason}")
         {
             EntityType = nameof(StockBatch),
             EntityId = batch.Id.ToString(),
             Severity = AuditSeverity.Warning,
+            Details = new { recall = batch.IsRecalled },
         });
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();
     }
 
-    private static async Task<IResult> Unblock(Guid id, HospitalDbContext db, IAuditLogger audit, CancellationToken ct)
+    /// <summary>
+    /// A quality hold is released at once. A recalled batch is released only when a second person agrees (202, MAKER-CHECKER
+    /// slice 13): it goes back on the shelf to be sold, dispensed and issued to patients.
+    /// </summary>
+    private static async Task<IResult> Unblock(
+        Guid id, UnblockBatchRequest request, HospitalDbContext db, IAuditLogger audit, RecallReleaseApprovals recalls, CancellationToken ct)
     {
         var batch = await db.Set<StockBatch>().FirstOrDefaultAsync(b => b.Id == id, ct);
         if (batch is null)
         {
             return Error.NotFound(nameof(StockBatch), id).ToProblem();
+        }
+
+        if (batch.IsRecalled)
+        {
+            var asked = await recalls.AskAsync(batch, request.Reason, ct);
+            return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
         }
 
         batch.Unblock();

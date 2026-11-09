@@ -38,6 +38,7 @@ import { useState, type ReactNode } from 'react';
 import { useFeatureOn } from '@/lib/features';
 import { toOptions, useDepartments, usePractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
+import { HandoverDialog } from '@/modules/emr/HandoverDialog';
 import {
   emrKeys,
   emrQueries,
@@ -149,6 +150,7 @@ function WorklistPage() {
   const search = Route.useSearch();
   const userPractitionerId = useSession((s) => s.user?.practitionerId ?? undefined);
   const canQueue = usePermission('queue.manage');
+  const [handingOver, setHandingOver] = useState(false);
   const canWrite = usePermission('clinical.emr.write');
   const canSeeRounds = usePermission('inpatient.admissions.read');
   const canRecordVisit = usePermission('nursing.chart');
@@ -271,20 +273,23 @@ function WorklistPage() {
         title="My worklist"
         subtitle={subtitle}
         actions={
-          canQueue &&
-          isToday && (
-            <Button
-              appearance="primary"
-              icon={<ArrowForwardRegular />}
-              disabled={!departmentId || callNext.isPending}
-              onClick={() => callNext.mutate()}
-              aria-keyshortcuts="F2"
-            >
-              Call next patient (F2)
-            </Button>
-          )
+          <>
+            {userPractitionerId && <Button onClick={() => setHandingOver(true)}>Hand over…</Button>}
+            {canQueue && isToday && (
+              <Button
+                appearance="primary"
+                icon={<ArrowForwardRegular />}
+                disabled={!departmentId || callNext.isPending}
+                onClick={() => callNext.mutate()}
+                aria-keyshortcuts="F2"
+              >
+                Call next patient (F2)
+              </Button>
+            )}
+          </>
         }
       />
+      {handingOver && <HandoverDialog onClose={() => setHandingOver(false)} />}
       <Section>
         <FilterBar>
           <div className={styles.finder}>
@@ -384,6 +389,7 @@ function WorklistPage() {
                           hasActiveAllergies={e.hasActiveAllergies}
                           hasCriticalAlerts={e.hasCriticalAlerts}
                           isRestricted={e.isRestricted}
+                          isConfidential={e.isConfidential}
                         >
                           {e.priority !== 'Normal' && (
                             <Badge size="small" color={e.priority === 'Emergency' ? 'danger' : 'warning'}>

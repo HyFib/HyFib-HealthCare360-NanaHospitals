@@ -122,6 +122,16 @@ internal static class LabAgentEndpoints
             return;
         }
 
+        // A connection that asks for device authentication takes its analyser only through an agent approved for it.
+        if (instrument.DeviceAuthentication != Devices.LabDeviceAuthentication.None
+            && await services.GetRequiredService<Devices.LabDeviceGate>().AdmitAgentAsync(instrument.Code, device.Id, http.Connection.RemoteIpAddress, ct)
+                != Devices.LabDeviceAdmission.Admitted)
+        {
+            await TypedResults.Problem(title: "This lab agent is not approved for this analyser's connection. It is listed in Lab setup for the lab to add.",
+                statusCode: StatusCodes.Status403Forbidden).ExecuteAsync(http);
+            return;
+        }
+
         if (!http.WebSockets.WebSocketRequestedProtocols.Contains(LabAgentProtocol.Subprotocol))
         {
             await TypedResults.Problem(title: $"Ask for the {LabAgentProtocol.Subprotocol} sub-protocol.", statusCode: StatusCodes.Status400BadRequest).ExecuteAsync(http);

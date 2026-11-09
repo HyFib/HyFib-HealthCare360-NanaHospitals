@@ -206,6 +206,9 @@ public sealed class SettingApprovalTests(HospitalServer server)
         Switch(ShiftService.RequiredSetting).DefaultOn.ShouldBeTrue();
         (Switch(AuthService.BiometricUnlockSetting).DefaultOn, Switch(AuthService.BiometricUnlockSetting).OnIsLooser).ShouldBe((false, true));
         (Switch(AiSettingKeys.Enabled).DefaultOn, Switch(AiSettingKeys.Enabled).OnIsLooser).ShouldBe((false, true));
+        Switch(Modules.Clinical.Services.ClinicalSignOff.DischargeSummaryCareTeamSetting).DefaultOn.ShouldBeTrue();
+        Switch(Modules.Clinical.Services.ClinicalSignOff.EncounterAmendByAuthorSetting).DefaultOn.ShouldBeTrue();
+        Switch(Modules.Clinical.Services.ClinicalSignOff.CriticalResultCoveringSetting).DefaultOn.ShouldBeTrue();
 
         Limit(DiscountService.DefaultLimitSetting).Default.ShouldBe(0m);
         Limit(Modules.Billing.Services.ChargeService.CancelApprovalAboveSetting).Default.ShouldBe(Modules.Billing.Services.ChargeService.DefaultCancelApprovalAbove);

@@ -28,6 +28,7 @@ public sealed class SpecialtyCareModule : IModule
         SpecialtyCareRealtimeTopics.Register(services);
         services.AddScoped<SpecialtyChargeService>();
         services.AddScoped<SurgeryService>();
+        services.AddScoped<HyFib.HealthCare360.Modules.Patients.Domain.IDowntimePackSource, Features.DowntimePack.DowntimePackOtList>();
         services.AddScoped<IPractitionerWorkSource, SurgeryPractitionerWork>();
         services.AddScoped<OtClinicalService>();
         services.AddWitnessPurpose(OtClinicalService.CountWitness);

@@ -164,6 +164,10 @@ export const APPROVAL_PERMISSIONS = [
   // register decides). Each may withdraw it.
   'patients.register',
   'patients.identity.approve',
+  // A SMART on FHIR client one administrator registered (another approves it); an analyser device one person in the lab
+  // added (someone else who sets up connections approves it). Each may withdraw it.
+  'fhir.clients.manage',
+  'integrations.lab.connections',
   'patients.restricted.read',
   'patients.sensitive.manage',
   'clinical.alerts.manage',
@@ -172,6 +176,9 @@ export const APPROVAL_PERMISSIONS = [
   'clinical.prescriptions.sign',
   'inpatient.admissions.admit',
   'mrd.mlc.register',
+  // Downtime: a back-entry past its window (the in-charge asks once with the tally; whoever approves late back-entry
+  // decides).
+  'patients.back_entry.approve',
   // Discharge and death (slice 8): the ward asks for an absconded patient's stay to be closed (the nurse in charge
   // decides) or a medico-legal death's before its certificate (a doctor who confirms certificates decides); the certifier
   // asks to void a confirmed death certificate (another doctor who confirms certificates decides). Each may withdraw it.
@@ -207,6 +214,14 @@ export const APPROVAL_PERMISSIONS = [
   'ambulance.waivers.approve',
   'bloodbank.reactions.approve',
   'dialysis.infection_status.approve',
+  // The stores (slice 13): a recalled batch released (someone else who may release recalls decides), a transfer counted
+  // short at the receiving store (someone who approves stock adjustments, and did not send it, decides), and a supplier
+  // payable adjustment (someone else who approves purchases decides). A purchase return's debit note is approved like a
+  // goods receipt, above. Whoever asked may withdraw it.
+  'inventory.recall.release',
+  'inventory.adjustments.approve',
+  'purchase.manage',
+  'purchase.approve',
   // A data protection impact assessment (DPDP Act s.10): whoever keeps the Significant Data Fiduciary records sends it
   // (and may withdraw it); someone else who approves them, the Data Protection Officer, decides.
   'privacy.sdf.manage',

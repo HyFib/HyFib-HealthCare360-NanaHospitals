@@ -235,6 +235,21 @@ public static class SettingGuard
             "Whether taking a dialysis patient off an HBV, HCV or HIV machine (to sero-negative, or to another positive status) waits for a second person, with the lab result. Off, one person changes it with the lab result, audited.",
             DefaultOn: true),
 
+        // ClinicalSignOff.DischargeSummaryCareTeamSetting (the Clinical module): on unless set to false.
+        ["clinical.dischargeSummary.careTeamOnly"] = new SettingSwitch("Discharge summary signed by the care team",
+            "Whether a discharge summary is signed only by the stay's consultant or a doctor on its care team, as themselves. Off, any doctor signs any stay's summary, and an account not linked to a doctor signs it in the consultant's name.",
+            DefaultOn: true),
+
+        // ClinicalSignOff.EncounterAmendByAuthorSetting (the Clinical module): on unless set to false.
+        ["clinical.encounters.amendByAuthorOnly"] = new SettingSwitch("Another doctor's signed encounter amended with approval",
+            "Whether a signed encounter is amended at once only by the doctor who wrote it, and by any other doctor only when its author or the head of its department approves. Off, any doctor amends any signed encounter alone (the original is still kept).",
+            DefaultOn: true),
+
+        // ClinicalSignOff.CriticalResultCoveringSetting (the Clinical module): on unless set to false.
+        ["clinical.criticalResults.coveringOnly"] = new SettingSwitch("Critical results acknowledged by the covering doctor",
+            "Whether another doctor's critical result is acknowledged only by a doctor on the same stay's care team or one the ordering doctor handed over to. Off, any doctor acknowledges any critical result, and it leaves the ordering doctor's list unseen by them.",
+            DefaultOn: true),
+
         // AdministrationOnDesktop.SettingKey; not set, the server's settings file decides (on, as it ships).
         ["security.administrationRequiresDesktop"] = new SettingSwitch("Administration only on enrolled desktops",
             "Whether users and roles, settings, devices, backups, integrations and the audit trail can be changed only in HC360 Desktop on a computer IT enrolled. Off, any browser signed in as an administrator can.",
@@ -258,6 +273,12 @@ public static class SettingGuard
         // AiSettingKeys.Enabled (the AI module): on, clinical text and dictation go to the provider set up (SEC-12).
         ["ai.enabled"] = new SettingSwitch("AI features",
             "Whether clinical text and dictation are sent to the AI provider set up. Off, nothing leaves the hospital for AI.",
+            DefaultOn: false, OnIsLooser: true),
+
+        // AiSettingKeys.ProcessingAgreement (the AI module): on, the facility's dictation goes to the speech service (only
+        // its speech, silence taken out); turning it on says the facility has signed a processing agreement with it.
+        ["ai.processingAgreement"] = new SettingSwitch("AI processing agreement",
+            "Whether the facility has an AI processing agreement with the speech service, so that its staff's dictation may be sent there. Off, no audio leaves the server.",
             DefaultOn: false, OnIsLooser: true),
 
         // ---------------------------------------------------------------- limits
@@ -301,6 +322,41 @@ public static class SettingGuard
         ["inpatient.verbalOrderCountersignHours"] = new SettingLimit("Time to countersign a verbal order",
             "Hours within which the doctor countersigns a verbal or telephone medication order a nurse wrote in their name, or a nurse's stop of a medicine, before it is flagged and the ward's nurse in charge is told.",
             24m, v => v is >= 1m and <= 72m ? v : 24m, v => Count(v, "hour"), Whole: true),
+
+        // BackEntryWindows (the Patients module): how far back paper, or a time typed in, may be dated when it is entered,
+        // per record type; 1 hour to the record's maximum, its default for any other. Past the window a second person
+        // approves each late batch, so lengthening a window waits.
+        ["downtime.backEntryHours.registration"] = new SettingLimit("Back-entry window: registration from paper",
+            "How far back the time on a registration from paper record may be when it is entered; older records need a second person's approval first.",
+            2160m, v => v is >= 1m and <= 2160m ? v : 2160m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.visit"] = new SettingLimit("Back-entry window: visit from paper",
+            "How far back the time on a visit from paper record may be when it is entered; older records need a second person's approval first.",
+            72m, v => v is >= 1m and <= 336m ? v : 72m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.bill"] = new SettingLimit("Back-entry window: bill from paper",
+            "How far back the time on a bill from paper record may be when it is entered; older records need a second person's approval first.",
+            72m, v => v is >= 1m and <= 336m ? v : 72m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.receipt"] = new SettingLimit("Back-entry window: receipt from the manual receipt book",
+            "How far back the time on a receipt from the manual receipt book record may be when it is entered; older records need a second person's approval first.",
+            72m, v => v is >= 1m and <= 336m ? v : 72m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.admission"] = new SettingLimit("Back-entry window: admission time",
+            "How far back the time on a admission time record may be when it is entered; older records need a second person's approval first.",
+            72m, v => v is >= 1m and <= 336m ? v : 72m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.transfer"] = new SettingLimit("Back-entry window: bed transfer time",
+            "How far back the time on a bed transfer time record may be when it is entered; older records need a second person's approval first.",
+            24m, v => v is >= 1m and <= 336m ? v : 24m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.consultantVisit"] = new SettingLimit("Back-entry window: Consultant's ward visit time",
+            "How far back the time on a consultant's ward visit time record may be when it is entered; older records need a second person's approval first.",
+            48m, v => v is >= 1m and <= 336m ? v : 48m, v => Count(v, "hour"), Whole: true),
+
+        ["downtime.backEntryHours.nursingChart"] = new SettingLimit("Back-entry window: nursing notes and intake/output",
+            "How far back the time on a nursing notes and intake/output record may be when it is entered; older records need a second person's approval first.",
+            24m, v => v is >= 1m and <= 336m ? v : 24m, v => Count(v, "hour"), Whole: true),
 
         // ResultEvaluator.DeltaPercentSetting and DefaultDeltaPercent: 0 or less turns the check off (DeltaCheck).
         ["lab.deltaCheckPercent"] = new SettingLimit("Delta check threshold",

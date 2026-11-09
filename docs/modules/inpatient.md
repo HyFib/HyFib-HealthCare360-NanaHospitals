@@ -127,6 +127,16 @@ section of the doctor's worklist (EMR-01, see the Clinical module).
 * **Restricted (VIP) patients**, as on the bed board: unless the user may open restricted records, the name reads
   "Restricted patient" and the diagnosis and vital-sign details are left out (`isRestricted: true`). The bed, UHID,
   flags and what needs attention stay, and opening the chart asks for break-the-glass.
+* **Confidential records** (a sensitive category, R-4: HIV, mental health, MTP, sexual violence) the user does not hold
+  every category of: the name stays, as on the bed board, and the diagnosis and vital-sign details are left out
+  (`isConfidential: true`). The chart's own rule decides (`PatientAccessGuard.WithheldChartsAsync`), so break-the-glass
+  still running opens the record on the round too.
+
+### The care team of a stay (for Clinical's sign-off rules)
+`StayCareTeams` gives Clinical (`IStayCareTeams`) the doctors who answer for a stay: its consultant, the admitting doctor
+and every doctor who recorded a consultant visit during it. Clinical uses it for who signs the discharge summary and who
+acknowledges another doctor's critical result (maker-checker, slice 15; see clinical.md, *Who signs off another doctor's
+work*). Recording a consultant visit (a cross-consultation) is what puts a doctor on the care team.
 
 ### Discharge — `/api/v1/inpatient/admissions/{id}/discharge`
 | Method | Path | Permission | Request → response |
