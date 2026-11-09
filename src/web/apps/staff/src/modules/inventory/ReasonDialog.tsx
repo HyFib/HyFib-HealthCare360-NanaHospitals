@@ -34,11 +34,14 @@ export function ReasonDialog({
   minLength = 3,
   maxLength = 300,
   optional,
+  extra,
   onSubmit,
   onClose,
 }: {
   title: string;
   children?: ReactNode;
+  /** More inputs under the reason (a checkbox). */
+  extra?: ReactNode;
   label?: string;
   placeholder?: string;
   confirmLabel: string;
@@ -89,6 +92,7 @@ export function ReasonDialog({
                     autoFocus
                   />
                 </Field>
+                {extra}
                 {Boolean(error) && (
                   <MessageBar intent="error" layout="multiline">
                     <MessageBarBody>

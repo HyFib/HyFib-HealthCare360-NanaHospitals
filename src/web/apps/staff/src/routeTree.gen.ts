@@ -166,6 +166,7 @@ import { Route as AppPharmacyIndexRouteImport } from './routes/_app/pharmacy/ind
 import { Route as AppPharmacyAdrRouteImport } from './routes/_app/pharmacy/adr'
 import { Route as AppPharmacyIpIssuesRouteImport } from './routes/_app/pharmacy/ip-issues'
 import { Route as AppPharmacyNdpsRouteImport } from './routes/_app/pharmacy/ndps'
+import { Route as AppPharmacyRecallTraceRouteImport } from './routes/_app/pharmacy/recall-trace'
 import { Route as AppPharmacyRefillsRouteImport } from './routes/_app/pharmacy/refills'
 import { Route as AppPharmacyRegistersRouteImport } from './routes/_app/pharmacy/registers'
 import { Route as AppPharmacySaleRouteImport } from './routes/_app/pharmacy/sale'
@@ -1142,6 +1143,11 @@ const AppPharmacyIpIssuesRoute = AppPharmacyIpIssuesRouteImport.update({
 const AppPharmacyNdpsRoute = AppPharmacyNdpsRouteImport.update({
   id: '/pharmacy/ndps',
   path: '/pharmacy/ndps',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPharmacyRecallTraceRoute = AppPharmacyRecallTraceRouteImport.update({
+  id: '/pharmacy/recall-trace',
+  path: '/pharmacy/recall-trace',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPharmacyRefillsRoute = AppPharmacyRefillsRouteImport.update({
@@ -2252,6 +2258,7 @@ export interface FileRoutesByFullPath {
   '/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
   '/pharmacy/ndps': typeof AppPharmacyNdpsRoute
+  '/pharmacy/recall-trace': typeof AppPharmacyRecallTraceRoute
   '/pharmacy/refills': typeof AppPharmacyRefillsRoute
   '/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/pharmacy/sale': typeof AppPharmacySaleRoute
@@ -2594,6 +2601,7 @@ export interface FileRoutesByTo {
   '/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
   '/pharmacy/ndps': typeof AppPharmacyNdpsRoute
+  '/pharmacy/recall-trace': typeof AppPharmacyRecallTraceRoute
   '/pharmacy/refills': typeof AppPharmacyRefillsRoute
   '/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/pharmacy/sale': typeof AppPharmacySaleRoute
@@ -2938,6 +2946,7 @@ export interface FileRoutesById {
   '/_app/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/_app/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
   '/_app/pharmacy/ndps': typeof AppPharmacyNdpsRoute
+  '/_app/pharmacy/recall-trace': typeof AppPharmacyRecallTraceRoute
   '/_app/pharmacy/refills': typeof AppPharmacyRefillsRoute
   '/_app/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/_app/pharmacy/sale': typeof AppPharmacySaleRoute
@@ -3282,6 +3291,7 @@ export interface FileRouteTypes {
     | '/pharmacy/adr'
     | '/pharmacy/ip-issues'
     | '/pharmacy/ndps'
+    | '/pharmacy/recall-trace'
     | '/pharmacy/refills'
     | '/pharmacy/registers'
     | '/pharmacy/sale'
@@ -3624,6 +3634,7 @@ export interface FileRouteTypes {
     | '/pharmacy/adr'
     | '/pharmacy/ip-issues'
     | '/pharmacy/ndps'
+    | '/pharmacy/recall-trace'
     | '/pharmacy/refills'
     | '/pharmacy/registers'
     | '/pharmacy/sale'
@@ -3967,6 +3978,7 @@ export interface FileRouteTypes {
     | '/_app/pharmacy/adr'
     | '/_app/pharmacy/ip-issues'
     | '/_app/pharmacy/ndps'
+    | '/_app/pharmacy/recall-trace'
     | '/_app/pharmacy/refills'
     | '/_app/pharmacy/registers'
     | '/_app/pharmacy/sale'
@@ -5291,6 +5303,13 @@ declare module '@tanstack/react-router' {
       path: '/pharmacy/ndps'
       fullPath: '/pharmacy/ndps'
       preLoaderRoute: typeof AppPharmacyNdpsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/pharmacy/recall-trace': {
+      id: '/_app/pharmacy/recall-trace'
+      path: '/pharmacy/recall-trace'
+      fullPath: '/pharmacy/recall-trace'
+      preLoaderRoute: typeof AppPharmacyRecallTraceRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/pharmacy/refills': {
@@ -6706,6 +6725,7 @@ interface AppRouteChildren {
   AppPharmacyAdrRoute: typeof AppPharmacyAdrRoute
   AppPharmacyIpIssuesRoute: typeof AppPharmacyIpIssuesRoute
   AppPharmacyNdpsRoute: typeof AppPharmacyNdpsRoute
+  AppPharmacyRecallTraceRoute: typeof AppPharmacyRecallTraceRoute
   AppPharmacyRefillsRoute: typeof AppPharmacyRefillsRoute
   AppPharmacyRegistersRoute: typeof AppPharmacyRegistersRoute
   AppPharmacySaleRoute: typeof AppPharmacySaleRoute
@@ -7047,6 +7067,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPharmacyAdrRoute: AppPharmacyAdrRoute,
   AppPharmacyIpIssuesRoute: AppPharmacyIpIssuesRoute,
   AppPharmacyNdpsRoute: AppPharmacyNdpsRoute,
+  AppPharmacyRecallTraceRoute: AppPharmacyRecallTraceRoute,
   AppPharmacyRefillsRoute: AppPharmacyRefillsRoute,
   AppPharmacyRegistersRoute: AppPharmacyRegistersRoute,
   AppPharmacySaleRoute: AppPharmacySaleRoute,

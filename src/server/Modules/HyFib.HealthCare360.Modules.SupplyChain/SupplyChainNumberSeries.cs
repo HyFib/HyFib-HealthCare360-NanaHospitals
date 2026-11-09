@@ -14,6 +14,12 @@ public static class SupplyChainNumberSeries
     public static NumberSeriesDefinition GoodsReceipt { get; } =
         new("supplychain.grn", "Goods receipt (GRN)", "Purchase", "{FAC}GRN{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
 
+    public static NumberSeriesDefinition DebitNote { get; } =
+        new("supplychain.debit_note", "Purchase return (debit note)", "Purchase", "{FAC}DN{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    public static NumberSeriesDefinition PayableAdjustment { get; } =
+        new("supplychain.payable_adjustment", "Supplier payable adjustment", "Purchase", "{FAC}VPA{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
+
     public static NumberSeriesDefinition Indent { get; } =
         new("supplychain.indent", "Store indent", "Stores and inventory", "{FAC}IND{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
 
@@ -38,6 +44,6 @@ public static class SupplyChainNumberSeries
 
     internal static IEnumerable<NumberSeriesDefinition> All { get; } =
     [
-        PurchaseRequisition, PurchaseOrder, GoodsReceipt, Indent, Issue, Transfer, Adjustment, StockCount, AssetTag, MaintenanceTicket,
+        PurchaseRequisition, PurchaseOrder, GoodsReceipt, DebitNote, PayableAdjustment, Indent, Issue, Transfer, Adjustment, StockCount, AssetTag, MaintenanceTicket,
     ];
 }

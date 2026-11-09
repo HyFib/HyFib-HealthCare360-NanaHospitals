@@ -53,6 +53,12 @@ const manifest: ModuleManifest = {
       keywords: ['schedule h', 'h1', 'narcotic', 'ndps', 'controlled'],
     },
     {
+      label: 'Recall trace',
+      to: '/pharmacy/recall-trace',
+      permission: P.registers,
+      keywords: ['recall', 'batch', 'call back', 'patients who had', 'trace'],
+    },
+    {
       label: 'Adverse drug reactions',
       to: '/pharmacy/adr',
       permission: [P.adrReport, P.adrManage],
