@@ -71,3 +71,19 @@ internal sealed class EInvoiceConfiguration : IEntityTypeConfiguration<EInvoice>
         b.HasIndex(x => new { x.FacilityId, x.DocumentDate });
     }
 }
+
+internal sealed class GstReturnFilingConfiguration : IEntityTypeConfiguration<GstReturnFiling>
+{
+    public void Configure(EntityTypeBuilder<GstReturnFiling> b)
+    {
+        b.ToTable("gst_return_filings", BillingSchema.Name);
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Gstin).HasMaxLength(15);
+        b.Property(x => x.ReturnType).HasMaxLength(8);
+        b.Property(x => x.Arn).HasMaxLength(15);
+        b.Property(x => x.RecordedByName).HasMaxLength(200);
+        b.Property(x => x.CorrectedByName).HasMaxLength(200);
+        b.Property(x => x.CorrectionReason).HasMaxLength(500);
+        b.HasIndex(x => new { x.Gstin, x.ReturnType, x.Year, x.Month }).IsUnique();
+    }
+}

@@ -6,7 +6,7 @@ namespace HyFib.HealthCare360.Modules.Billing.Features.EInvoices;
 
 /// <summary>
 /// /api/v1/billing/gst-returns — GSTR-1 and GSTR-3B of the signed-in facility's GSTIN for a month (<c>?month=2026-10</c>),
-/// and the GSTN offline tool's JSON of GSTR-1.
+/// the GSTN offline tool's JSON of GSTR-1, and the record of its filing.
 /// </summary>
 internal static class GstReturnEndpoints
 {
@@ -19,6 +19,13 @@ internal static class GstReturnEndpoints
             Month(month) is not { } m ? BadMonth() : (await returns.Gstr1Async(m.Year, m.Month, ct)).ToOk());
         group.MapGet("/gstr3b", async (string? month, GstReturnService returns, CancellationToken ct) =>
             Month(month) is not { } m ? BadMonth() : (await returns.Gstr3bAsync(m.Year, m.Month, ct)).ToOk());
+        // Whether the month's GSTR-1 was filed on the portal, as the accountant records it: once, then corrected with a reason.
+        group.MapGet("/gstr1/filing", async (string? month, GstFilingService filings, CancellationToken ct) =>
+            Month(month) is not { } m ? BadMonth() : (await filings.GetAsync(m.Year, m.Month, ct)).ToOk());
+        group.MapPost("/gstr1/filing", async (MarkGstr1FiledRequest request, GstFilingService filings, CancellationToken ct) =>
+            (await filings.MarkFiledAsync(request, ct)).ToOk()).WithValidation<MarkGstr1FiledRequest>();
+        group.MapPut("/gstr1/filing", async (CorrectGstr1FilingRequest request, GstFilingService filings, CancellationToken ct) =>
+            (await filings.CorrectAsync(request, ct)).ToOk()).WithValidation<CorrectGstr1FilingRequest>();
         group.MapGet("/gstr1/json", async (string? month, GstReturnService returns, CancellationToken ct) =>
         {
             if (Month(month) is not { } m)

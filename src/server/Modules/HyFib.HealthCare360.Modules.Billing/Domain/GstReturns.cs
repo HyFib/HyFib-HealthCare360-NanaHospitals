@@ -54,7 +54,10 @@ public sealed record Gstr1DocumentsIssued(int Nature, string Series, string From
     };
 }
 
-/// <summary>GSTR-1 for one GSTIN and month, table by table, and what would make GSTN refuse it or misstate it.</summary>
+/// <summary>
+/// GSTR-1 for one GSTIN and month, table by table, and what would make GSTN refuse it or misstate it; whether its filing
+/// has been recorded, and the paper bills entered this month for months already filed (to amend in this return).
+/// </summary>
 public sealed record Gstr1Return(
     string Gstin,
     int Year,
@@ -68,7 +71,9 @@ public sealed record Gstr1Return(
     IReadOnlyList<Gstr1HsnRow> HsnB2b,
     IReadOnlyList<Gstr1HsnRow> HsnB2c,
     IReadOnlyList<Gstr1DocumentsIssued> DocumentsIssued,
-    IReadOnlyList<string> Problems)
+    IReadOnlyList<string> Problems,
+    Gstr1Filing? Filing = null,
+    IReadOnlyList<Gstr1LateEntry>? LateEntries = null)
 {
     /// <summary>GSTN's return period: MMYYYY.</summary>
     public string Period => string.Create(CultureInfo.InvariantCulture, $"{Month:D2}{Year:D4}");

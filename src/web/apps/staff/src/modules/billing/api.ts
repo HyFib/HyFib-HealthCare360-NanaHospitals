@@ -312,6 +312,8 @@ export interface BillDetail {
   /** What debit notes added to the patient's share and to the payer's, GST included. */
   debitAmount?: number;
   payerDebitAmount?: number;
+  /** A paper bill entered after its month's GSTR-1 was filed: it is not in that return; amend it in the next one. */
+  gstFilingWarning?: string | null;
 }
 
 export interface CreateBillRequest {

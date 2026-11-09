@@ -80,6 +80,33 @@ export interface Gstr1Return {
   documentsIssued: Gstr1DocumentsIssued[];
   problems: string[];
   period: string;
+  /** That the month's GSTR-1 was filed on the portal, as recorded here; null while not recorded. */
+  filing?: Gstr1Filing | null;
+  /** Paper bills entered this month for earlier months already filed: report them as amendments in this return. */
+  lateEntries?: Gstr1LateEntry[] | null;
+}
+
+export interface Gstr1Filing {
+  year: number;
+  month: number;
+  arn: string;
+  filedOn: string;
+  recordedAt: string;
+  recordedByName: string | null;
+  correctedAt: string | null;
+  correctedByName: string | null;
+  correctionReason: string | null;
+  version: number;
+}
+
+export interface Gstr1LateEntry {
+  number: string;
+  date: string;
+  value: number;
+  filedYear: number;
+  filedMonth: number;
+  filedArn: string;
+  enteredOn: string;
 }
 
 export interface Gstr3bReturn {
@@ -119,6 +146,12 @@ export const gstReturnQueries = {
 
 export const gstReturnApi = {
   gstr1Json: (month: string) => api.blob(`${base}/gstr1/json`, { query: { month } }),
+  /** Records that the month's GSTR-1 was filed: once per GSTIN and month. */
+  markFiled: (month: string, arn: string, filedOn: string) =>
+    api.post<Gstr1Filing>(`${base}/gstr1/filing`, { month, arn, filedOn }),
+  /** Corrects a recorded filing (a mistyped ARN or date), with the reason. */
+  correctFiling: (month: string, arn: string, filedOn: string, reason: string, version: number) =>
+    api.put<Gstr1Filing>(`${base}/gstr1/filing`, { month, arn, filedOn, reason, version }),
 };
 
 /** The sum of a document's or row's tax: IGST, CGST, SGST and cess. */

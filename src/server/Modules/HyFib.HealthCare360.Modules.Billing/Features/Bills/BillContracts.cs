@@ -172,7 +172,8 @@ public sealed record BillDetail(
     decimal FreeTreatmentAmount = 0m,
     IReadOnlyList<DebitNoteDto>? DebitNotes = null,
     decimal DebitAmount = 0m,
-    decimal PayerDebitAmount = 0m);
+    decimal PayerDebitAmount = 0m,
+    string? GstFilingWarning = null);
 
 /// <summary>
 /// The package a bill is priced at: an OP bill's own, or the IP account's on a final bill. <see cref="Price"/> is the
