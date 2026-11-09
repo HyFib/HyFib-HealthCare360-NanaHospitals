@@ -207,9 +207,13 @@ export interface ConnectionStatus {
 }
 
 /** The analyser's connection state in plain words. */
+/** How long a refused address is shown after its last refusal (System health shows it as long). */
+const REFUSED_SHOWN_MS = 24 * 60 * 60 * 1000;
+
 export function connectionStatus(
   connection: LabConnectionDto | undefined,
   list: Pick<LabConnectionsDto, 'gatewayEnabled' | 'agents'>,
+  now: number = Date.now(),
 ): ConnectionStatus {
   if (!connection) {
     return {
@@ -248,11 +252,24 @@ export function connectionStatus(
   if (connection.transport === 'Tcp') {
     // Set up before HC360 required the analyser's address, or with none it can read: the listener then takes results
     // from any device on the network.
-    if (status?.state === 'listening' && !connection.allowedIps.some(isIpAddress)) {
+    if ((connection.openToAnyDevice || status?.state === 'listening') && !connection.allowedIps.some(isIpAddress)) {
       return {
         label: 'Open to any device',
         tone: 'warning',
         detail: `HC360 takes results on port ${connection.port} from any device on the network. Enter the analyser's fixed IP address in its connection, so that only the analyser can send them.`,
+      };
+    }
+    // A device at another address was refused in the last day: a re-addressed analyser, or something pretending to be one.
+    const refused = (status?.refusedAddresses ?? []).filter((r) => now - Date.parse(r.lastAt) <= REFUSED_SHOWN_MS);
+    if (refused.length > 0) {
+      return {
+        label: 'Refused a device',
+        tone: 'warning',
+        detail: `Connections to port ${connection.port} were refused from ${refused
+          .map((r) => `${r.address} (${r.count} time${r.count === 1 ? '' : 's'})`)
+          .join(
+            ', ',
+          )}: not the analyser's IP address, so nothing they sent was read. If the analyser's address changed, enter the new one; otherwise find the device.`,
       };
     }
     switch (status?.state) {

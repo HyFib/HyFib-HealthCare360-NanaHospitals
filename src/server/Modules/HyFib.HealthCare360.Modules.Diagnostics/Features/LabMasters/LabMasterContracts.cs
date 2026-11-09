@@ -99,13 +99,17 @@ public sealed record SaveLabTestRequest(
     Guid? DefaultReferralLabId,
     int DisplayOrder,
     bool IsActive,
-    uint? Version);
+    uint? Version,
+    string? Reason = null);
 
 public sealed record ComponentEntry(Guid TestId, string? GroupName);
 
 public sealed record SetComponentsRequest(IReadOnlyList<ComponentEntry> Components, uint Version);
 
-public sealed record SetRangesRequest(IReadOnlyList<ReferenceRangeDto> Ranges, uint Version);
+/// <param name="Reason">
+/// Why: required when the change loosens a critical limit and the lab asks for a second pathologist (it then waits for one).
+/// </param>
+public sealed record SetRangesRequest(IReadOnlyList<ReferenceRangeDto> Ranges, uint Version, string? Reason = null);
 
 public sealed record LabInstrumentDto(
     Guid Id,
@@ -132,7 +136,8 @@ public sealed record SaveLabInstrumentRequest(
     bool AutoValidationEnabled,
     string? Location,
     bool IsActive,
-    uint? Version);
+    uint? Version,
+    string? Reason = null);
 
 /// <summary>
 /// A channel an analyser sends that no active test maps. <c>Mapping</c> is how to write it in a test's channel codes,
@@ -205,6 +210,7 @@ public sealed class SaveLabTestRequestValidator : AbstractValidator<SaveLabTestR
         RuleFor(x => x.Container).IsInEnum();
         RuleFor(x => x.ResultType).IsInEnum();
         RuleFor(x => x.Method).SafeText(200);
+        RuleFor(x => x.Reason).SafeText(500);
         RuleFor(x => x.TatHours).InclusiveBetween(0, 24 * 60);
         RuleFor(x => x.Loinc).Matches("^[0-9]{1,7}-[0-9]$").When(x => !string.IsNullOrWhiteSpace(x.Loinc)).WithMessage("Enter a LOINC code such as 718-7.");
         RuleFor(x => x.LoincName).SafeText(255);
@@ -241,6 +247,7 @@ public sealed class SetRangesRequestValidator : AbstractValidator<SetRangesReque
     public SetRangesRequestValidator()
     {
         RuleFor(x => x.Ranges).Must(r => r.Count <= 50).WithMessage("At most 50 reference intervals per test.");
+        RuleFor(x => x.Reason).SafeText(500);
         RuleForEach(x => x.Ranges).ChildRules(r =>
         {
             r.RuleFor(e => e.AgeFromDays).InclusiveBetween(0, 365 * 130);
@@ -263,6 +270,7 @@ public sealed class SaveLabInstrumentRequestValidator : AbstractValidator<SaveLa
         RuleFor(x => x.Location).MaximumLength(100);
         RuleFor(x => x.Section).IsInEnum();
         RuleFor(x => x.Protocol).IsInEnum();
+        RuleFor(x => x.Reason).SafeText(500);
     }
 }
 

@@ -22,6 +22,7 @@ import type {
   WorklistItem,
 } from '@/modules/lab/api';
 import type { CriticalCallDto } from '@/modules/lab/common/types';
+import type { EqasRoundDto, EqasSummary } from '@/modules/lab/eqas';
 import { PATIENTS } from '../accessibility/fixtures/frontOffice';
 import { paged, STAFF_USER, type FakeAnswers } from '../fakeApi';
 import { RECORD_ID } from '../roleAccessIds';
@@ -847,6 +848,48 @@ const TAT: LabTatReport = {
   rejectionsByReason: [],
 };
 
+/** One external quality assessment round, evaluated unacceptable and waiting for its corrective action. */
+const EQAS_ROUND: EqasRoundDto = {
+  id: RECORD_ID,
+  schemeId: '0192a000-0000-7000-8000-00000000e001',
+  schemeName: 'Clinical chemistry monthly',
+  provider: 'CMC Vellore',
+  labTestId: '0192a000-0000-7000-8000-00000000e002',
+  testCode: 'CREA',
+  testName: 'Creatinine',
+  unit: 'mg/dL',
+  roundCode: '2026/10 sample 2',
+  dueDate: '2026-10-28',
+  sampleReceivedOn: '2026-10-20',
+  reportedValue: 1.62,
+  reportedOn: '2026-10-25',
+  assignedValue: 1.2,
+  assignedSd: 0.1,
+  peerGroup: 'Jaffe, kinetic',
+  evaluatedOn: '2026-11-05',
+  zScore: 4.2,
+  performance: 'Unacceptable',
+  isOverdue: false,
+  needsCapa: true,
+  capaId: null,
+  capaNumber: null,
+  capaStatus: null,
+  acceptedAt: null,
+  acceptedByName: null,
+  acceptanceNote: null,
+  version: 3,
+};
+
+const EQAS_SUMMARY: EqasSummary = {
+  overdue: 1,
+  dueThisWeek: 2,
+  needCapa: 1,
+  acceptable: 18,
+  warning: 2,
+  unacceptable: 1,
+  attention: [EQAS_ROUND],
+};
+
 export const ANSWERS: FakeAnswers = {
   'GET /api/v1/lab/tests': paged(TESTS),
   [`GET /api/v1/lab/tests/${RECORD_ID}`]: CBC_DETAIL,
@@ -868,4 +911,7 @@ export const ANSWERS: FakeAnswers = {
   [`GET /api/v1/lab/qc/lots/${RECORD_ID}/levey-jennings`]: LEVEY_JENNINGS,
   'GET /api/v1/lab/outsourcing': paged(OUTSOURCED),
   'GET /api/v1/lab/tat': TAT,
+  'GET /api/v1/lab/eqas/rounds': paged([EQAS_ROUND]),
+  'GET /api/v1/lab/eqas/summary': EQAS_SUMMARY,
+  'GET /api/v1/lab/eqas/schemes': [],
 };
