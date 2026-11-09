@@ -228,7 +228,7 @@ public sealed class TelemedicineListTests(HospitalServer server)
             var appointment = await frontOffice.PostAsync<AppointmentDetail>("/api/v1/scheduling/appointments", new BookAppointmentRequest(
                 patientId, practitionerId, slot.StartsAt, AppointmentChannel.Phone, AppointmentVisitType.New, IsTelehealth: true, "Cough", Notes: null));
             await frontOffice.PostAsync<JsonElement>($"/api/v1/patients/{patientId}/consents",
-                new Modules.Patients.Features.Patients.CaptureConsentRequest(ConsentType.Telehealth, null, true, null, null, null, null, "Agreed on the phone"));
+                new Modules.Patients.Features.FrontOffice.CaptureConsentRequest(ConsentType.Telehealth, null, true, null, null, null, null, "Agreed on the phone"));
             var day = DateOnly.FromDateTime(slot.StartsAt.ToOffset(TimeSpan.FromHours(5.5)).DateTime);
             var session = (await doctor.GetAsync<List<TelehealthSessionListItem>>($"/api/v1/telehealth/sessions?date={day:O}&practitionerId={practitionerId}"))
                 .Single(s => s.AppointmentId == appointment.Id);

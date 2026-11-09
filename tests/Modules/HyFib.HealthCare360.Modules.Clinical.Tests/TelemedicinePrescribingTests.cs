@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
+using HyFib.HealthCare360.SharedKernel;
 using static HyFib.HealthCare360.Modules.Clinical.Domain.TelemedicinePrescribing;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Tests;
