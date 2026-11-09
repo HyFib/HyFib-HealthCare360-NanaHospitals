@@ -28,6 +28,7 @@ import { Route as AuthBillsBillIdRouteImport } from './routes/_auth/bills/$billI
 import { Route as AuthMyFeedbackIndexRouteImport } from './routes/_auth/my-feedback/index'
 import { Route as AuthMyFeedbackFormIdRouteImport } from './routes/_auth/my-feedback/$formId'
 import { Route as AuthMyPrivacyIndexRouteImport } from './routes/_auth/my-privacy/index'
+import { Route as AuthMyPrivacyConsentsRouteImport } from './routes/_auth/my-privacy/consents'
 import { Route as AuthMyPrivacyDataRouteImport } from './routes/_auth/my-privacy/data'
 import { Route as AuthMyPrivacyNomineeRouteImport } from './routes/_auth/my-privacy/nominee'
 import { Route as AuthPrescriptionsIndexRouteImport } from './routes/_auth/prescriptions/index'
@@ -144,6 +145,11 @@ const AuthMyFeedbackFormIdRoute = AuthMyFeedbackFormIdRouteImport.update({
 const AuthMyPrivacyIndexRoute = AuthMyPrivacyIndexRouteImport.update({
   id: '/my-privacy/',
   path: '/my-privacy/',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthMyPrivacyConsentsRoute = AuthMyPrivacyConsentsRouteImport.update({
+  id: '/my-privacy/consents',
+  path: '/my-privacy/consents',
   getParentRoute: () => AuthRoute,
 } as any)
 const AuthMyPrivacyDataRoute = AuthMyPrivacyDataRouteImport.update({
@@ -282,6 +288,7 @@ export interface FileRoutesByFullPath {
   '/appointments/$appointmentId': typeof AuthAppointmentsAppointmentIdRoute
   '/bills/$billId': typeof AuthBillsBillIdRoute
   '/my-feedback/$formId': typeof AuthMyFeedbackFormIdRoute
+  '/my-privacy/consents': typeof AuthMyPrivacyConsentsRoute
   '/my-privacy/data': typeof AuthMyPrivacyDataRoute
   '/my-privacy/nominee': typeof AuthMyPrivacyNomineeRoute
   '/prescriptions/$prescriptionId': typeof AuthPrescriptionsPrescriptionIdRoute
@@ -324,6 +331,7 @@ export interface FileRoutesByTo {
   '/appointments/$appointmentId': typeof AuthAppointmentsAppointmentIdRoute
   '/bills/$billId': typeof AuthBillsBillIdRoute
   '/my-feedback/$formId': typeof AuthMyFeedbackFormIdRoute
+  '/my-privacy/consents': typeof AuthMyPrivacyConsentsRoute
   '/my-privacy/data': typeof AuthMyPrivacyDataRoute
   '/my-privacy/nominee': typeof AuthMyPrivacyNomineeRoute
   '/prescriptions/$prescriptionId': typeof AuthPrescriptionsPrescriptionIdRoute
@@ -369,6 +377,7 @@ export interface FileRoutesById {
   '/_auth/appointments/$appointmentId': typeof AuthAppointmentsAppointmentIdRoute
   '/_auth/bills/$billId': typeof AuthBillsBillIdRoute
   '/_auth/my-feedback/$formId': typeof AuthMyFeedbackFormIdRoute
+  '/_auth/my-privacy/consents': typeof AuthMyPrivacyConsentsRoute
   '/_auth/my-privacy/data': typeof AuthMyPrivacyDataRoute
   '/_auth/my-privacy/nominee': typeof AuthMyPrivacyNomineeRoute
   '/_auth/prescriptions/$prescriptionId': typeof AuthPrescriptionsPrescriptionIdRoute
@@ -413,6 +422,7 @@ export interface FileRouteTypes {
     | '/appointments/$appointmentId'
     | '/bills/$billId'
     | '/my-feedback/$formId'
+    | '/my-privacy/consents'
     | '/my-privacy/data'
     | '/my-privacy/nominee'
     | '/prescriptions/$prescriptionId'
@@ -455,6 +465,7 @@ export interface FileRouteTypes {
     | '/appointments/$appointmentId'
     | '/bills/$billId'
     | '/my-feedback/$formId'
+    | '/my-privacy/consents'
     | '/my-privacy/data'
     | '/my-privacy/nominee'
     | '/prescriptions/$prescriptionId'
@@ -499,6 +510,7 @@ export interface FileRouteTypes {
     | '/_auth/appointments/$appointmentId'
     | '/_auth/bills/$billId'
     | '/_auth/my-feedback/$formId'
+    | '/_auth/my-privacy/consents'
     | '/_auth/my-privacy/data'
     | '/_auth/my-privacy/nominee'
     | '/_auth/prescriptions/$prescriptionId'
@@ -675,6 +687,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthMyPrivacyIndexRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_auth/my-privacy/consents': {
+      id: '/_auth/my-privacy/consents'
+      path: '/my-privacy/consents'
+      fullPath: '/my-privacy/consents'
+      preLoaderRoute: typeof AuthMyPrivacyConsentsRouteImport
+      parentRoute: typeof AuthRoute
+    }
     '/_auth/my-privacy/data': {
       id: '/_auth/my-privacy/data'
       path: '/my-privacy/data'
@@ -844,6 +863,7 @@ interface AuthRouteChildren {
   AuthAppointmentsAppointmentIdRoute: typeof AuthAppointmentsAppointmentIdRoute
   AuthBillsBillIdRoute: typeof AuthBillsBillIdRoute
   AuthMyFeedbackFormIdRoute: typeof AuthMyFeedbackFormIdRoute
+  AuthMyPrivacyConsentsRoute: typeof AuthMyPrivacyConsentsRoute
   AuthMyPrivacyDataRoute: typeof AuthMyPrivacyDataRoute
   AuthMyPrivacyNomineeRoute: typeof AuthMyPrivacyNomineeRoute
   AuthPrescriptionsPrescriptionIdRoute: typeof AuthPrescriptionsPrescriptionIdRoute
@@ -873,6 +893,7 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthAppointmentsAppointmentIdRoute: AuthAppointmentsAppointmentIdRoute,
   AuthBillsBillIdRoute: AuthBillsBillIdRoute,
   AuthMyFeedbackFormIdRoute: AuthMyFeedbackFormIdRoute,
+  AuthMyPrivacyConsentsRoute: AuthMyPrivacyConsentsRoute,
   AuthMyPrivacyDataRoute: AuthMyPrivacyDataRoute,
   AuthMyPrivacyNomineeRoute: AuthMyPrivacyNomineeRoute,
   AuthPrescriptionsPrescriptionIdRoute: AuthPrescriptionsPrescriptionIdRoute,
