@@ -15,6 +15,7 @@ internal static class PreAuthEndpoints
         var group = app.MapGroup("/api/v1/insurance/preauths").WithTags("Insurance - Pre-authorisation");
         group.MapGet("/", List).RequireAnyPermission(Readers);
         group.MapGet("/{id:guid}", Get).RequireAnyPermission(Readers);
+        group.MapGet("/procedure-options", ProcedureOptions).RequirePermission(BillingPermissions.PreAuthManage);
         group.MapPost("/", Create).RequirePermission(BillingPermissions.PreAuthManage).WithValidation<SavePreAuthRequest>();
         group.MapPut("/{id:guid}", Update).RequirePermission(BillingPermissions.PreAuthManage).WithValidation<SavePreAuthRequest>().RequireVersion();
         group.MapPost("/{id:guid}/submit", Submit).RequirePermission(BillingPermissions.PreAuthManage);
@@ -71,7 +72,8 @@ internal static class PreAuthEndpoints
     private static async Task<IResult> Get(
         Guid id, HospitalDbContext db, PreAuthService preAuths, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
-        var p = await db.Set<PreAuthorization>().AsNoTracking().Include(x => x.Enhancements).FirstOrDefaultAsync(x => x.Id == id, ct);
+        var p = await db.Set<PreAuthorization>().AsNoTracking().Include(x => x.Enhancements).Include(x => x.Procedures)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null)
         {
             return Error.NotFound(nameof(PreAuthorization), id).ToProblem();
@@ -96,7 +98,9 @@ internal static class PreAuthEndpoints
 
         return TypedResults.Ok(new PreAuthDetail(
             p.Id, p.Number, p.PatientId, patient?.Uhid, patient?.FullName, p.AdmissionId, p.VisitId, p.PolicyId, masked, p.PayerId, names.GetValueOrDefault(p.PayerId),
-            p.TpaId, p.TpaId is { } tpa ? names.GetValueOrDefault(tpa) : null, p.RequestedAmount, p.DiagnosisCodes, p.ProcedureCodes, p.ClinicalSummary,
+            p.TpaId, p.TpaId is { } tpa ? names.GetValueOrDefault(tpa) : null, p.RequestedAmount, p.DiagnosisCodes,
+            p.Procedures.OrderBy(l => l.LineNumber).Select(l => new PreAuthProcedureDto(l.System, l.Code, l.Name, l.Quantity, l.Amount)).ToList(),
+            p.LegacyProcedureText, p.ClinicalSummary,
             p.ExpectedStayDays, p.DocumentFileIds, p.Status, p.ApprovedAmount, p.ApprovalReference, p.FinalApprovedAmount, p.EffectiveApprovedAmount,
             p.QueryText, p.QueryResponse, p.RejectionReason, p.SubmittedAt, p.ApprovedAt, p.RejectedAt,
             p.Enhancements.OrderBy(e => e.RequestedAt)
@@ -105,6 +109,10 @@ internal static class PreAuthEndpoints
             p.Version,
             (await preAuths.AmountsAskedAsync([p.Id], ct)).TryGetValue(p.Id, out var asked) ? asked : null));
     }
+
+    /// <summary>Procedures to code a planned procedure with: <c>system</c> Hbp (PM-JAY's HBP master) or Icd10Pcs, by code or name.</summary>
+    private static async Task<IResult> ProcedureOptions(PreAuthProcedureSystem? system, string? search, PreAuthService preAuths, CancellationToken ct) =>
+        TypedResults.Ok(await preAuths.ProcedureOptionsAsync(system ?? PreAuthProcedureSystem.Hbp, search is { Length: > 100 } ? search[..100] : search, ct));
 
     private static async Task<IResult> Create(SavePreAuthRequest request, PreAuthService preAuths, CancellationToken ct)
     {

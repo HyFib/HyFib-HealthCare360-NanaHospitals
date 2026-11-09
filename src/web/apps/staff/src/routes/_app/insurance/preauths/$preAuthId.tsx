@@ -335,7 +335,18 @@ function PreAuthPage() {
             {p.diagnosisCodes && <span className={styles.pre}>{p.diagnosisCodes}</span>}
           </Detail>
           <Detail label="Procedures">
-            {p.procedureCodes && <span className={styles.pre}>{p.procedureCodes}</span>}
+            {(p.procedures.length > 0 || p.legacyProcedureText) && (
+              <span className={styles.pre}>
+                {p.procedures
+                  .map(
+                    (l) =>
+                      `${l.code} ${l.name}${l.quantity > 1 ? ` × ${l.quantity}` : ''} · ${formatInr(l.amount)}${l.system === 'Hbp' ? ' (PM-JAY HBP)' : ''}`,
+                  )
+                  .join('\n')}
+                {p.legacyProcedureText &&
+                  `${p.procedures.length > 0 ? '\n' : ''}Typed before coding: ${p.legacyProcedureText}`}
+              </span>
+            )}
           </Detail>
           <Detail label="Expected stay">{p.expectedStayDays ? `${p.expectedStayDays} days` : null}</Detail>
         </DetailGrid>
