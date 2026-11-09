@@ -8,6 +8,7 @@ import {
   weakensClass,
   workflowTone,
   type DrugSchedule,
+  type TelemedicineList,
 } from './labels';
 
 describe('drug schedule rules (Item.NeedsPrescription / NeedsRegister)', () => {
@@ -60,5 +61,15 @@ describe('a drug handled less strictly (DrugSafetyClass.IsWeakenedBy)', () => {
     expect(weakensClass(drug('H'), drug('H'))).toBe(false);
     expect(weakensClass(drug('H'), drug('H1', true, true))).toBe(false);
     expect(weakensClass(drug('G'), drug('Otc'))).toBe(false);
+  });
+
+  it('is put on a telemedicine list that lets it into more teleconsultations, a first list included', () => {
+    const listed = (telemedicineList: TelemedicineList | null) => ({ ...drug('H'), telemedicineList });
+    expect(weakensClass(listed(null), listed('B'))).toBe(true);
+    expect(weakensClass(listed('B'), listed('A'))).toBe(true);
+    expect(weakensClass(listed('A'), listed('O'))).toBe(true);
+    expect(weakensClass(listed('Prohibited'), listed(null))).toBe(true);
+    expect(weakensClass(listed('O'), listed('Prohibited'))).toBe(false);
+    expect(weakensClass(listed('B'), listed(null))).toBe(false);
   });
 });

@@ -62,12 +62,17 @@ import {
   requiresRegister,
   scheduleHint,
   scheduleLabel,
+  prohibitedByLaw,
+  TELEMEDICINE_LISTS,
+  telemedicineListHint,
+  telemedicineListLabel,
   VED_CLASSES,
   vedLabel,
   weakensClass,
   loosensPricing,
   type DrugSchedule,
   type ItemType,
+  type TelemedicineList,
 } from '@/modules/inventory/labels';
 import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { ItemFlags } from '@/modules/inventory/StockBits';
@@ -315,6 +320,7 @@ const itemSchema = z
     schedule: z.enum(DRUG_SCHEDULES),
     isControlled: z.boolean(),
     isHighAlert: z.boolean(),
+    telemedicineList: z.enum(TELEMEDICINE_LISTS),
     classChangeReason: z.string().trim().max(500),
     isColdChain: z.boolean(),
     vedClass: z.enum(VED_CLASSES),
@@ -331,6 +337,18 @@ const itemSchema = z
     isActive: z.boolean(),
   })
   .superRefine((v, ctx) => {
+    if (
+      v.type === 'Drug' &&
+      prohibitedByLaw(v.schedule, v.isControlled) &&
+      !['Unlisted', 'Prohibited'].includes(v.telemedicineList)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['telemedicineList'],
+        message:
+          'A Schedule X or NDPS medicine is on the Prohibited List: it is never prescribed in a teleconsultation.',
+      });
+    }
     if (v.maximumStock > 0 && v.minimumStock > v.maximumStock) {
       ctx.addIssue({ code: 'custom', path: ['minimumStock'], message: 'The minimum cannot be above the maximum.' });
     }
@@ -344,6 +362,25 @@ const itemSchema = z
   });
 
 type ItemValues = z.infer<typeof itemSchema>;
+
+/**
+ * The list saved: none for anything but a medicine; the Prohibited List for a Schedule X or NDPS medicine left on none,
+ * as the server puts it there.
+ */
+function toTelemedicineList(
+  type: ItemType,
+  schedule: DrugSchedule,
+  isControlled: boolean,
+  choice: (typeof TELEMEDICINE_LISTS)[number],
+): TelemedicineList | null {
+  if (type !== 'Drug') {
+    return null;
+  }
+  if (choice === 'Unlisted') {
+    return prohibitedByLaw(schedule, isControlled) ? 'Prohibited' : null;
+  }
+  return choice;
+}
 
 /** NPPA fixes ceilings for scheduled medicines (DPCO 2013) and for implants (coronary stents, knee implants). */
 function hasCeiling(type: ItemType): boolean {
@@ -369,6 +406,7 @@ function toForm(item: ItemDetail | null): ItemValues {
     schedule: item?.schedule ?? 'None',
     isControlled: item?.isControlled ?? false,
     isHighAlert: item?.isHighAlert ?? false,
+    telemedicineList: item?.telemedicineList ?? 'Unlisted',
     classChangeReason: '',
     isColdChain: item?.isColdChain ?? false,
     vedClass: item?.vedClass ?? 'Essential',
@@ -436,12 +474,24 @@ function ItemEditor({
   });
   // The version the form was filled from, not a newer one read since (REL-04).
   const [loadedVersion] = useState(item?.version ?? null);
-  const [schedule, isControlled, isHighAlert, type, baseUnit, purchaseUnit, ceilingPrice, gstRate] = useWatch({
-    control: form.control,
-    name: ['schedule', 'isControlled', 'isHighAlert', 'type', 'baseUnit', 'purchaseUnit', 'ceilingPrice', 'gstRate'],
-  });
+  const [schedule, isControlled, isHighAlert, type, baseUnit, purchaseUnit, ceilingPrice, gstRate, telemedicineChoice] =
+    useWatch({
+      control: form.control,
+      name: [
+        'schedule',
+        'isControlled',
+        'isHighAlert',
+        'type',
+        'baseUnit',
+        'purchaseUnit',
+        'ceilingPrice',
+        'gstRate',
+        'telemedicineList',
+      ],
+    });
+  const telemedicineList = toTelemedicineList(type, schedule, isControlled, telemedicineChoice);
   // An existing drug handled less strictly keeps its class until a pharmacist approves the change (maker-checker).
-  const weakened = item !== null && weakensClass(item, { schedule, isControlled, isHighAlert });
+  const weakened = item !== null && weakensClass(item, { schedule, isControlled, isHighAlert, telemedicineList });
   // A ceiling raised or removed, or another GST rate, waits for someone who approves prices (maker-checker).
   const loosened =
     item !== null &&
@@ -468,6 +518,12 @@ function ItemEditor({
         schedule: values.schedule,
         isControlled: values.isControlled,
         isHighAlert: values.type === 'Drug' && values.isHighAlert,
+        telemedicineList: toTelemedicineList(
+          values.type,
+          values.schedule,
+          values.isControlled,
+          values.telemedicineList,
+        ),
         classChangeReason: values.classChangeReason || null,
         isColdChain: values.isColdChain,
         vedClass: values.vedClass,
@@ -678,6 +734,23 @@ function ItemEditor({
                 />
               )}
             </FormGrid>
+            {type === 'Drug' && (
+              <FormGrid columns={2}>
+                <SelectField
+                  control={form.control}
+                  name="telemedicineList"
+                  label="Telemedicine list (TPG 2020)"
+                  required
+                  disabled={readOnly}
+                  hint={
+                    prohibitedByLaw(schedule, isControlled)
+                      ? telemedicineListHint.Prohibited
+                      : `${telemedicineListHint[telemedicineChoice]}. The pharmacy and therapeutics committee decides.`
+                  }
+                  options={TELEMEDICINE_LISTS.map((l) => ({ value: l, label: telemedicineListLabel[l] }))}
+                />
+              </FormGrid>
+            )}
             {item?.pendingClass && (
               <MessageBar intent="info" layout="multiline">
                 <MessageBarBody>

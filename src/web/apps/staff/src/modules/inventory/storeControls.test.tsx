@@ -60,6 +60,9 @@ const TRACE: RecallTrace = {
       quantity: 3,
       returned: 0,
       kept: 3,
+      procedure: null,
+      serialNumber: null,
+      clinician: null,
     },
     {
       source: 'WardIssue',
@@ -73,6 +76,25 @@ const TRACE: RecallTrace = {
       quantity: 5,
       returned: 1,
       kept: 4,
+      procedure: null,
+      serialNumber: null,
+      clinician: null,
+    },
+    {
+      source: 'Implant',
+      at: '2026-11-04T05:00:00Z',
+      document: 'SUR2600007',
+      storeName: 'OT 1',
+      patientId: '0192a000-0000-7000-8000-00000000dd12',
+      uhid: 'NH2600092',
+      patientName: 'Kumar Velu',
+      phone: '9000000003',
+      quantity: 1,
+      returned: 0,
+      kept: 1,
+      procedure: 'Total knee replacement, right',
+      serialNumber: 'SN-1001',
+      clinician: 'Dr. Arun',
     },
   ],
   stock: [{ storeName: 'Central Store', onHand: 40, isBlocked: false, isRecalled: false, blockReason: null }],
@@ -128,6 +150,8 @@ describe('the recall trace', SCREEN_TESTS, () => {
     await user.click(screen.getByRole('button', { name: 'Trace' }));
     expect(await screen.findByText('Walk-in Ravi', {}, SLOW)).toBeInTheDocument();
     expect(screen.getByText('Meena Raj')).toBeInTheDocument();
+    expect(screen.getByText('Implanted in surgery')).toBeInTheDocument();
+    expect(screen.getByText('Total knee replacement, right; serial SN-1001; surgeon Dr. Arun')).toBeInTheDocument();
     expect(screen.getByText('Not held: hold it in Stock')).toBeInTheDocument();
     const asked = server.requests.find((r) => r.path.endsWith('/recalls/trace'))!.url.searchParams;
     expect([asked.get('itemId'), asked.get('batchNumber')]).toEqual([ITEM.id, 'PC2611']);

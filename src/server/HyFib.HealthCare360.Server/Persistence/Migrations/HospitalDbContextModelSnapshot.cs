@@ -41662,6 +41662,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(60)")
                         .HasColumnName("strength");
 
+                    b.Property<string>("TelemedicineList")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("telemedicine_list");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(64)

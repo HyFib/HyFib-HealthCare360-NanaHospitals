@@ -10,13 +10,26 @@ import {
 import { api } from '@/lib/api';
 import { formatQty } from '@/modules/inventory/format';
 
-export type RecallTraceSource = 'OpDispense' | 'CounterSale' | 'WardIssue';
+export type RecallTraceSource = 'OpDispense' | 'CounterSale' | 'WardIssue' | 'Implant' | 'OtConsumable';
 
 export const SOURCE_LABEL: Record<RecallTraceSource, string> = {
   OpDispense: 'OP dispense',
   CounterSale: 'Counter sale',
   WardIssue: 'Ward issue',
+  Implant: 'Implanted in surgery',
+  OtConsumable: 'Used in surgery',
 };
+
+/** What an operation's row adds: the surgery, the implant's serial number and the surgeon, as one line. */
+export function operationDetail(row: Pick<RecallTraceRow, 'procedure' | 'serialNumber' | 'clinician'>): string {
+  return [
+    row.procedure,
+    row.serialNumber ? `serial ${row.serialNumber}` : null,
+    row.clinician ? `surgeon ${row.clinician}` : null,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join('; ');
+}
 
 /** One hand-over of the batch to a patient: kept is what was given less what came back. */
 export interface RecallTraceRow {
@@ -31,6 +44,12 @@ export interface RecallTraceRow {
   quantity: number;
   returned: number;
   kept: number;
+  /** For an operation: the surgery as booked (the document is its booking number, the store the theatre). */
+  procedure: string | null;
+  /** For an implant: its serial number as recorded. */
+  serialNumber: string | null;
+  /** For an operation: the surgeon, who reviews the patient. */
+  clinician: string | null;
 }
 
 export interface RecallStockRow {
@@ -69,7 +88,7 @@ export function buildRecallTraceHtml(trace: RecallTrace, letterhead: Letterhead)
         p,
         i,
       ) => `<tr><td>${i + 1}</td><td>${escapeHtml(formatDateTime(p.at))}</td><td>${escapeHtml(SOURCE_LABEL[p.source])}</td>
-        <td>${escapeHtml(p.document)}</td><td>${escapeHtml(p.patientName)}${p.uhid ? `<br/><span class="small">${escapeHtml(p.uhid)}</span>` : ''}</td>
+        <td>${escapeHtml(p.document)}${operationDetail(p) ? `<br/><span class="small">${escapeHtml(operationDetail(p))}</span>` : ''}</td><td>${escapeHtml(p.patientName)}${p.uhid ? `<br/><span class="small">${escapeHtml(p.uhid)}</span>` : ''}</td>
         <td>${escapeHtml(p.phone ?? '')}</td><td class="right">${escapeHtml(formatQty(p.quantity))}</td><td class="right">${escapeHtml(formatQty(p.returned))}</td>
         <td class="right"><b>${escapeHtml(formatQty(p.kept))}</b></td><td class="blank"></td></tr>`,
     )

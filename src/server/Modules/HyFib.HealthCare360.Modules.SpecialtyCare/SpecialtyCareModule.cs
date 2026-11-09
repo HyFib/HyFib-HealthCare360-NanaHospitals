@@ -32,6 +32,7 @@ public sealed class SpecialtyCareModule : IModule
         services.AddScoped<HyFib.HealthCare360.Modules.Patients.Domain.IDowntimePackSource, Features.DowntimePack.DowntimePackOtList>();
         services.AddScoped<IPractitionerWorkSource, SurgeryPractitionerWork>();
         services.AddScoped<OtClinicalService>();
+        services.AddScoped<IRecallTraceSource, OtRecallTrace>();
         services.AddWitnessPurpose(OtClinicalService.CountWitness);
         services.AddScoped<RecoveryService>();
         services.AddWitnessPurpose(RecoveryService.HandoverWitness);
