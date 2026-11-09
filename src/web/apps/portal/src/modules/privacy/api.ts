@@ -4,6 +4,7 @@ import type {
   DataSummary,
   NomineeView,
   PortalBreachNotice,
+  PortalConsentArtefact,
   PortalDataRequestCreate,
   PortalDataRequestDetail,
   PortalDataRequestItem,
@@ -59,6 +60,14 @@ export const privacyQueries = {
       staleTime: 60_000,
     }),
 
+  /** Consents given through a consent manager (DPDP Act s.6(7)); reading them is audited as record access. */
+  consentArtefacts: (patientId: string) =>
+    queryOptions({
+      queryKey: ['portal', patientId, 'privacy', 'consent-artefacts'],
+      queryFn: ({ signal }) =>
+        api.get<PortalConsentArtefact[]>(`${base}/consent-artefacts`, { query: { patientId }, signal }),
+    }),
+
   notices: (patientId: string) =>
     queryOptions({
       queryKey: ['portal', patientId, 'privacy', 'notices'],
@@ -75,6 +84,8 @@ export const privacyQueries = {
 };
 
 export const privacyApi = {
+  withdrawConsentArtefact: (artefactId: string) =>
+    api.post<PortalConsentArtefact>(`${base}/consent-artefacts/${id(artefactId)}/withdraw`),
   createRequest: (request: PortalDataRequestCreate) => api.post<PortalRequestCreated>(`${base}/requests`, request),
   withdraw: (requestId: string) => api.post<void>(`${base}/requests/${id(requestId)}/withdraw`),
   saveNominee: (request: PortalNomineeRequest) => api.put<void>(`${base}/nominee`, request),

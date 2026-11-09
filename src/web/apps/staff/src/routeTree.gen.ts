@@ -170,7 +170,9 @@ import { Route as AppPharmacySaleRouteImport } from './routes/_app/pharmacy/sale
 import { Route as AppPharmacySalesRouteImport } from './routes/_app/pharmacy/sales'
 import { Route as AppPhysioIndexRouteImport } from './routes/_app/physio/index'
 import { Route as AppPrivacyIndexRouteImport } from './routes/_app/privacy/index'
+import { Route as AppPrivacyConsentManagersRouteImport } from './routes/_app/privacy/consent-managers'
 import { Route as AppPrivacyRetentionRouteImport } from './routes/_app/privacy/retention'
+import { Route as AppPrivacySdfRouteImport } from './routes/_app/privacy/sdf'
 import { Route as AppPrivacySettingsRouteImport } from './routes/_app/privacy/settings'
 import { Route as AppPurchaseIndexRouteImport } from './routes/_app/purchase/index'
 import { Route as AppPurchaseVendorsRouteImport } from './routes/_app/purchase/vendors'
@@ -1160,9 +1162,20 @@ const AppPrivacyIndexRoute = AppPrivacyIndexRouteImport.update({
   path: '/privacy/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPrivacyConsentManagersRoute =
+  AppPrivacyConsentManagersRouteImport.update({
+    id: '/privacy/consent-managers',
+    path: '/privacy/consent-managers',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppPrivacyRetentionRoute = AppPrivacyRetentionRouteImport.update({
   id: '/privacy/retention',
   path: '/privacy/retention',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPrivacySdfRoute = AppPrivacySdfRouteImport.update({
+  id: '/privacy/sdf',
+  path: '/privacy/sdf',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPrivacySettingsRoute = AppPrivacySettingsRouteImport.update({
@@ -2229,7 +2242,9 @@ export interface FileRoutesByFullPath {
   '/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/pharmacy/sale': typeof AppPharmacySaleRoute
   '/pharmacy/sales': typeof AppPharmacySalesRoute
+  '/privacy/consent-managers': typeof AppPrivacyConsentManagersRoute
   '/privacy/retention': typeof AppPrivacyRetentionRoute
+  '/privacy/sdf': typeof AppPrivacySdfRoute
   '/privacy/settings': typeof AppPrivacySettingsRoute
   '/purchase/vendors': typeof AppPurchaseVendorsRoute
   '/quality/downtime': typeof AppQualityDowntimeRoute
@@ -2567,7 +2582,9 @@ export interface FileRoutesByTo {
   '/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/pharmacy/sale': typeof AppPharmacySaleRoute
   '/pharmacy/sales': typeof AppPharmacySalesRoute
+  '/privacy/consent-managers': typeof AppPrivacyConsentManagersRoute
   '/privacy/retention': typeof AppPrivacyRetentionRoute
+  '/privacy/sdf': typeof AppPrivacySdfRoute
   '/privacy/settings': typeof AppPrivacySettingsRoute
   '/purchase/vendors': typeof AppPurchaseVendorsRoute
   '/quality/downtime': typeof AppQualityDowntimeRoute
@@ -2907,7 +2924,9 @@ export interface FileRoutesById {
   '/_app/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/_app/pharmacy/sale': typeof AppPharmacySaleRoute
   '/_app/pharmacy/sales': typeof AppPharmacySalesRoute
+  '/_app/privacy/consent-managers': typeof AppPrivacyConsentManagersRoute
   '/_app/privacy/retention': typeof AppPrivacyRetentionRoute
+  '/_app/privacy/sdf': typeof AppPrivacySdfRoute
   '/_app/privacy/settings': typeof AppPrivacySettingsRoute
   '/_app/purchase/vendors': typeof AppPurchaseVendorsRoute
   '/_app/quality/downtime': typeof AppQualityDowntimeRoute
@@ -3247,7 +3266,9 @@ export interface FileRouteTypes {
     | '/pharmacy/registers'
     | '/pharmacy/sale'
     | '/pharmacy/sales'
+    | '/privacy/consent-managers'
     | '/privacy/retention'
+    | '/privacy/sdf'
     | '/privacy/settings'
     | '/purchase/vendors'
     | '/quality/downtime'
@@ -3585,7 +3606,9 @@ export interface FileRouteTypes {
     | '/pharmacy/registers'
     | '/pharmacy/sale'
     | '/pharmacy/sales'
+    | '/privacy/consent-managers'
     | '/privacy/retention'
+    | '/privacy/sdf'
     | '/privacy/settings'
     | '/purchase/vendors'
     | '/quality/downtime'
@@ -3924,7 +3947,9 @@ export interface FileRouteTypes {
     | '/_app/pharmacy/registers'
     | '/_app/pharmacy/sale'
     | '/_app/pharmacy/sales'
+    | '/_app/privacy/consent-managers'
     | '/_app/privacy/retention'
+    | '/_app/privacy/sdf'
     | '/_app/privacy/settings'
     | '/_app/purchase/vendors'
     | '/_app/quality/downtime'
@@ -5272,11 +5297,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPrivacyIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/privacy/consent-managers': {
+      id: '/_app/privacy/consent-managers'
+      path: '/privacy/consent-managers'
+      fullPath: '/privacy/consent-managers'
+      preLoaderRoute: typeof AppPrivacyConsentManagersRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/privacy/retention': {
       id: '/_app/privacy/retention'
       path: '/privacy/retention'
       fullPath: '/privacy/retention'
       preLoaderRoute: typeof AppPrivacyRetentionRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/privacy/sdf': {
+      id: '/_app/privacy/sdf'
+      path: '/privacy/sdf'
+      fullPath: '/privacy/sdf'
+      preLoaderRoute: typeof AppPrivacySdfRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/privacy/settings': {
@@ -6631,7 +6670,9 @@ interface AppRouteChildren {
   AppPharmacyRegistersRoute: typeof AppPharmacyRegistersRoute
   AppPharmacySaleRoute: typeof AppPharmacySaleRoute
   AppPharmacySalesRoute: typeof AppPharmacySalesRoute
+  AppPrivacyConsentManagersRoute: typeof AppPrivacyConsentManagersRoute
   AppPrivacyRetentionRoute: typeof AppPrivacyRetentionRoute
+  AppPrivacySdfRoute: typeof AppPrivacySdfRoute
   AppPrivacySettingsRoute: typeof AppPrivacySettingsRoute
   AppPurchaseVendorsRoute: typeof AppPurchaseVendorsRoute
   AppQualityDowntimeRoute: typeof AppQualityDowntimeRoute
@@ -6968,7 +7009,9 @@ const AppRouteChildren: AppRouteChildren = {
   AppPharmacyRegistersRoute: AppPharmacyRegistersRoute,
   AppPharmacySaleRoute: AppPharmacySaleRoute,
   AppPharmacySalesRoute: AppPharmacySalesRoute,
+  AppPrivacyConsentManagersRoute: AppPrivacyConsentManagersRoute,
   AppPrivacyRetentionRoute: AppPrivacyRetentionRoute,
+  AppPrivacySdfRoute: AppPrivacySdfRoute,
   AppPrivacySettingsRoute: AppPrivacySettingsRoute,
   AppPurchaseVendorsRoute: AppPurchaseVendorsRoute,
   AppQualityDowntimeRoute: AppQualityDowntimeRoute,
