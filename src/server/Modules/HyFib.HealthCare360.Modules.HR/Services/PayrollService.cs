@@ -1,5 +1,6 @@
 using System.Text;
 using HyFib.HealthCare360.Modules.HR.Domain;
+using HyFib.HealthCare360.Modules.HR.Domain.Statutory;
 using HyFib.HealthCare360.Modules.HR.Features.Payroll;
 using HyFib.HealthCare360.Platform.Notifications;
 
@@ -253,7 +254,8 @@ public sealed class PayrollService(
         IReadOnlyDictionary<Guid, decimal> EarlierHalfYearGross,
         IReadOnlyDictionary<Guid, Payslip> Existing,
         IReadOnlyDictionary<Guid, string> Departments,
-        IReadOnlyDictionary<Guid, string> Designations);
+        IReadOnlyDictionary<Guid, string> Designations,
+        PayrollTaxContext Tax);
 
     private async Task<PayrollContext> LoadContextAsync(PayrollRun run, CancellationToken ct)
     {
@@ -306,6 +308,7 @@ public sealed class PayrollService(
         var existing = await db.Set<Payslip>().Include(p => p.Lines).Where(p => p.PayrollRunId == run.Id).ToDictionaryAsync(p => p.EmployeeId, ct);
         var departments = await db.Set<Department>().AsNoTracking().ToDictionaryAsync(d => d.Id, d => d.Name, ct);
         var designations = await db.Set<Designation>().AsNoTracking().ToDictionaryAsync(d => d.Id, d => d.Name, ct);
+        var tax = await PayrollTaxContext.LoadAsync(db, run, ids, ct);
 
         return new PayrollContext(
             employees,
@@ -317,7 +320,8 @@ public sealed class PayrollService(
             earlier,
             existing,
             departments,
-            designations);
+            designations,
+            tax);
     }
 
     private static void Compute(PayrollRun run, Employee employee, EmployeeSalaryStructure structure, PayrollContext context, Payslip payslip)
@@ -347,12 +351,22 @@ public sealed class PayrollService(
             ? earlier
             : null;
 
-        var result = PayrollCalculator.Calculate(new PayrollCalculationInput(
+        var calculation = new PayrollCalculationInput(
             run.Year, run.Month, lop.DaysInMonth, lop.PayableDays, lines, adjustments,
-            new StatutoryProfile(structure.PfApplicable, structure.PfOnActualBasic, structure.EsiApplicable, schedule),
-            structure.MonthlyTds, tdsOverride, earlierHalfYear));
+            new StatutoryProfile(structure.PfApplicable, structure.PfOnActualBasic, structure.EsiApplicable, schedule,
+                context.Tax.EsiCoveredInPeriod.Contains(employee.Id)),
+            structure.MonthlyTds, tdsOverride, earlierHalfYear);
+        var result = PayrollCalculator.Calculate(calculation);
+        var warnings = new List<string>();
 
-        var warnings = result.Warnings.ToList();
+        // TDS is computed from the year's salary and the employee's declaration (s.192), unless typed in for this month.
+        if (tdsOverride is null)
+        {
+            var monthlyTds = context.Tax.MonthlyTds(run, employee, structure, schedule, result, warnings);
+            result = PayrollCalculator.Calculate(calculation with { MonthlyTds = monthlyTds });
+        }
+
+        warnings.InsertRange(0, result.Warnings);
         if (lop.MissingAttendanceDays > 0)
         {
             warnings.Add($"{lop.MissingAttendanceDays} day(s) without computed attendance were treated as absent.");

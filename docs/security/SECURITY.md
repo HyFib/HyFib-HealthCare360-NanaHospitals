@@ -72,8 +72,11 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 - **Network lab analysers** cannot sign in: HL7 (MLLP) and ASTM have no authentication. Each one's address is
   therefore its check (ASVS V13.2.1): its connection must list its fixed IP address, and its port closes a connection
   from any other address before reading a byte. A connection set up before the address was required takes any address:
-  the server logs a warning when it starts listening on it, and Lab setup › Analysers shows it as *Open to any device*
-  until its address is added.
+  the server logs a warning when it starts listening on it, and Lab setup › Analysers and System health
+  (`lab.analyser_any_address`) show it as open to any device until its address is added. A connection from any other
+  address is refused, not silently dropped: each refused address is listed with the analyser's status (times, first and
+  last) in Lab setup, and on System health for a day (`lab.analyser_address_refused`), so a re-addressed analyser or a
+  device pretending to be one is seen. Serial analysers relayed by an enrolled lab agent are unchanged.
 - **The DICOM modality worklist** (off by default) listens on its own TCP port, 11112 unless changed, for the CT, MR,
   X-ray and ultrasound consoles. DICOM there has no encryption or passwords, as on most modality networks, so other
   controls apply:
@@ -516,6 +519,13 @@ and grants nothing.
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
     a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.
     A corrected critical value is asked for with the documented call, registered when the correction is made.
+  - the lab's own safety settings where the lab sets `lab.separateVerifier` (maker-checker slice 15): an override of
+    failed QC for the day (`lab.qc_override`) and a loosening of a test's critical limits or automatic verification
+    switched on for a test or an analyser (`lab.safety_limits`) are asked for by one holder of `lab.results.verify` or
+    `lab.masters.manage` and approved by another holder of `lab.results.verify`, over the QC runs or the record as asked
+    (`approval.stale`). The override given at verification covers only the results verified with it. Narrowing a limit or
+    switching automatic verification off is made at once. A critical lab result is acknowledged only by its ordering
+    doctor, or by another doctor recording that they cover the patient and why (audited at Warning).
   - a death certificate (MCCD, Form 4; `mrd.death_certificate`): the doctor who certifies it asks, and a second doctor
     (`mrd.deaths.confirm`) confirms the certificate as it stands before it is reported to the Registrar. The confirming
     doctor must be able to open the patient's record, and is printed on the certificate with the registration number of
@@ -898,8 +908,9 @@ and grants nothing.
     nor approve either (`pharmacy.cancel_own_sale`, `pharmacy.return_own_sale`, 403 whatever else they may do), and the
     pharmacist who asks for a ward return not restocked does not approve it (`approval.self`);
   - a lab that sets `lab.separateVerifier` (per facility, off by default for a lab with one pathologist) refuses
-    verification of a result by whoever entered it (`lab.verify_own_result`), and a correction of a released report
-    waits for a second pathologist (see Maker-checker);
+    verification of a result by whoever entered it (`lab.verify_own_result`), and a correction of a released report,
+    an override of failed QC for the day and a loosened critical limit or automatic verification wait for a second
+    pathologist (see Maker-checker);
   - the doctor who certified a death does not also confirm the certificate (`death.own_certificate`, and
     `approval.self` on the request);
   - a controlled drug given on the MAR is witnessed by a second nurse who proves who they are at the recording nurse's
