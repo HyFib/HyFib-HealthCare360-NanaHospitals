@@ -48,7 +48,8 @@ public sealed class TransfusionService(
     IRealtimePublisher realtime,
     ICurrentUser currentUser,
     ISettingsService settings,
-    TimeProvider time)
+    TimeProvider time,
+    IIncidentRegister incidents)
 {
     private static readonly PractitionerKind[] Doctors = [.. PractitionerKinds.Doctors];
 
@@ -506,7 +507,23 @@ public sealed class TransfusionService(
             Status = ReactionStatus.Reported,
         };
         db.Add(reaction);
+
+        // The reaction is also an incident in the Quality register (NABH COP: transfusion reactions reported and analysed), raised
+        // in the same save so one is never kept without the other.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        var raised = await incidents.ReportAsync(new ReportedSafetyEvent(
+            reaction.FacilityId, reaction.PatientId, SafetyEventKind.TransfusionReaction, ReactionHarm.Of(reaction.Severity), reaction.OnsetAt,
+            "Where the unit was transfused",
+            $"Transfusion reaction to unit {reaction.UnitNumber} ({reaction.Severity}): {string.Join(", ", reaction.Symptoms)}."
+            + (reaction.TransfusionStopped ? " Transfusion stopped." : string.Empty),
+            reaction.ActionsTaken, "SpecialtyCare", nameof(TransfusionReaction), reaction.Id, $"Unit {reaction.UnitNumber}"), ct);
+        if (raised.IsFailure)
+        {
+            return raised.Error!;
+        }
+
+        await transaction.CommitAsync(ct);
 
         await notifications.NotifyPermissionHoldersAsync(SpecialtyCarePermissions.BloodBankReactionsInvestigate, issue.FacilityId,
             reaction.IsSerious ? "Serious transfusion reaction" : "Transfusion reaction reported",
@@ -639,4 +656,16 @@ public sealed class TransfusionService(
 
     private Task PublishAsync(Guid facilityId, CancellationToken ct) =>
         realtime.FacilityChangedAsync(facilityId, SpecialtyRealtime.BloodBankChanged, new { area = "requests" }, ct);
+}
+
+/// <summary>The harm grade (NABH incident reporting) a transfusion reaction is reported with.</summary>
+internal static class ReactionHarm
+{
+    public static IncidentHarm Of(ReactionSeverity severity) => severity switch
+    {
+        ReactionSeverity.Mild => IncidentHarm.Mild,
+        ReactionSeverity.Moderate => IncidentHarm.Moderate,
+        ReactionSeverity.Death => IncidentHarm.Death,
+        _ => IncidentHarm.Severe,
+    };
 }

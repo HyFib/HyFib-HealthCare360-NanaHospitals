@@ -45,6 +45,56 @@ internal sealed class IncidentRegister(HospitalDbContext db, INumberSeries numbe
         return new RaisedIncident(row.Id, row.IncidentNumber);
     }
 
+    public async Task<Result<RaisedIncident>> ReportAsync(ReportedSafetyEvent safetyEvent, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(safetyEvent);
+        var existing = await db.Set<Incident>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(i => i.SourceRecordType == safetyEvent.SourceRecordType && i.SourceRecordId == safetyEvent.SourceRecordId)
+            .Select(i => new RaisedIncident(i.Id, i.IncidentNumber))
+            .FirstOrDefaultAsync(cancellationToken);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var row = new Incident
+        {
+            FacilityId = safetyEvent.FacilityId,
+            OccurredAt = safetyEvent.OccurredAt,
+            ReportedAt = time.GetUtcNow(),
+            Location = Fit(safetyEvent.Location.Length > 0 ? safetyEvent.Location : "Not recorded", 150),
+            PatientId = safetyEvent.PatientId,
+            InvolvedStaffUserIds = [],
+            Description = Fit(safetyEvent.Description, 4000),
+            ImmediateAction = safetyEvent.ImmediateAction is { Length: > 0 } action ? Fit(action, 2000) : null,
+            ReporterUserId = currentUser.UserId,
+            ReporterName = currentUser.DisplayName ?? currentUser.UserName ?? $"HC360 ({safetyEvent.SourceModule})",
+            Status = IncidentStatus.Reported,
+            SourceModule = Fit(safetyEvent.SourceModule, 32),
+            SourceRecordType = Fit(safetyEvent.SourceRecordType, 48),
+            SourceRecordId = safetyEvent.SourceRecordId,
+            SourceReference = Fit(safetyEvent.SourceReference, 120),
+        };
+        row.Classify(TypeOf(safetyEvent.Kind), Harm(safetyEvent.Harm), sentinelKind: null, flaggedSentinel: false);
+        row.IncidentNumber = await numbers.NextAsync(QualityNumberSeries.Incident, safetyEvent.FacilityId, cancellationToken);
+        row.MarkReported();
+        db.Add(row);
+        await db.SaveChangesAsync(cancellationToken);
+        await incidents.EscalateAsync(new IncidentReceipt(row.Id, row.IncidentNumber, row.IsSentinel, row.Severity, row.Type), row.FacilityId, row.Location,
+            cancellationToken);
+        return new RaisedIncident(row.Id, row.IncidentNumber);
+    }
+
+    /// <summary>The incident type each reported event is registered under.</summary>
+    internal static IncidentType TypeOf(SafetyEventKind kind) => kind switch
+    {
+        SafetyEventKind.MedicationError => IncidentType.MedicationError,
+        SafetyEventKind.PatientFall => IncidentType.PatientFall,
+        SafetyEventKind.PressureInjury => IncidentType.PressureInjury,
+        SafetyEventKind.TransfusionReaction => IncidentType.TransfusionReaction,
+        _ => IncidentType.AdverseDrugReaction,
+    };
+
     private static IncidentSeverity Harm(IncidentHarm harm) => harm switch
     {
         IncidentHarm.NearMiss => IncidentSeverity.NearMiss,

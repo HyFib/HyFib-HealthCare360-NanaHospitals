@@ -332,6 +332,7 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddScoped<IRoomClassDirectory, NullRoomClassDirectory>();
         services.TryAddScoped<IAdmissionDirectory, NullAdmissionDirectory>();
         services.TryAddScoped<IIncidentRegister, NullIncidentRegister>();
+        services.TryAddScoped<ISurgeryAndTransfusionFacts, NullSurgeryAndTransfusionFacts>();
         services.TryAddScoped<IBillingStatusProvider, NullBillingStatusProvider>();
         services.TryAddScoped<IPayerDirectory, NullPayerDirectory>();
         services.TryAddScoped<IPortalAccountResolver, NullPortalAccountResolver>();

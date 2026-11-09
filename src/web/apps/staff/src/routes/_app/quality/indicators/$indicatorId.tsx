@@ -1,6 +1,6 @@
 import { Button, Caption1, Field, Select, Text, Tooltip } from '@fluentui/react-components';
 import { DataTrendingRegular, DeleteRegular, EditRegular, NotepadRegular } from '@fluentui/react-icons';
-import { humanize, todayIso } from '@hc360/core';
+import { formatDateTime, humanize, todayIso } from '@hc360/core';
 import {
   ConfirmDialog,
   DataTable,
@@ -29,6 +29,7 @@ import {
   type IndicatorValueDto,
 } from '@/modules/quality/api';
 import { IndicatorDrawer } from '@/modules/quality/IndicatorDrawer';
+import { IndicatorDrilldownPanel } from '@/modules/quality/IndicatorDrilldown';
 import { IndicatorValueDialog } from '@/modules/quality/IndicatorValueDialog';
 import { indicatorUnitLabel, QUALITY_PERMISSIONS as Q } from '@/modules/quality/labels';
 import { formatIndicatorValue, trendText, trendTone } from '@/modules/quality/rules';
@@ -117,9 +118,11 @@ function IndicatorView({ indicator: ind, categories }: { indicator: IndicatorDto
             <Button icon={<EditRegular />} onClick={() => setEditing(true)}>
               Edit
             </Button>
-            <Button appearance="primary" icon={<NotepadRegular />} onClick={() => setRecording('new')}>
-              Record value
-            </Button>
+            {!ind.isComputed && (
+              <Button appearance="primary" icon={<NotepadRegular />} onClick={() => setRecording('new')}>
+                Record value
+              </Button>
+            )}
           </>
         }
       />
@@ -183,8 +186,14 @@ function IndicatorView({ indicator: ind, categories }: { indicator: IndicatorDto
           <Detail label="Unit">{indicatorUnitLabel[ind.unit]}</Detail>
           <Detail label="Multiplier">{ind.multiplier.toLocaleString('en-IN')}</Detail>
           <Detail label="Status">{ind.isActive ? 'In use' : 'No longer used'}</Detail>
+          <Detail label="Measured">
+            {ind.isComputed
+              ? 'Computed by HC360 from its records, monthly'
+              : 'Entered by hand: HC360 cannot compute it'}
+          </Detail>
         </DetailGrid>
       </Section>
+      {ind.isComputed && <IndicatorDrilldownPanel indicator={ind} />}
       <Section title="Recorded values" flush>
         <DataTable
           ariaLabel="Recorded values"
@@ -216,14 +225,23 @@ function IndicatorView({ indicator: ind, categories }: { indicator: IndicatorDto
               key: 'notes',
               header: 'Notes',
               priority: 'low',
-              render: (v) => (v.notes ? <Caption1>{v.notes}</Caption1> : '—'),
+              render: (v) => (
+                <Caption1>
+                  {v.isComputed
+                    ? `Computed${v.computedAt ? ` ${formatDateTime(v.computedAt)}` : ''}. `
+                    : 'Entered by hand. '}
+                  {v.notes ?? ''}
+                </Caption1>
+              ),
             },
           ]}
           rowActions={(v) => (
             <span style={{ display: 'inline-flex', gap: 4 }}>
-              <Tooltip content="Correct this value" relationship="label">
-                <Button size="small" appearance="subtle" icon={<EditRegular />} onClick={() => setRecording(v)} />
-              </Tooltip>
+              {!ind.isComputed && (
+                <Tooltip content="Correct this value" relationship="label">
+                  <Button size="small" appearance="subtle" icon={<EditRegular />} onClick={() => setRecording(v)} />
+                </Tooltip>
+              )}
               <Tooltip content="Remove this value" relationship="label">
                 <Button size="small" appearance="subtle" icon={<DeleteRegular />} onClick={() => setDeleting(v)} />
               </Tooltip>

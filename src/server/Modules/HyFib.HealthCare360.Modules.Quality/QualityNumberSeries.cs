@@ -21,5 +21,13 @@ public static class QualityNumberSeries
     public static NumberSeriesDefinition Mvpi { get; } =
         new("quality.mvpi", "Device adverse event report (MvPI)", "Quality and safety", "{FAC}MDAE{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
 
-    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [Incident, Capa, Risk, Downtime, Mvpi];
+    /// <summary>A possible hospital-acquired infection under review by the infection control team.</summary>
+    public static NumberSeriesDefinition Hai { get; } =
+        new("quality.hai", "Infection surveillance case (HAI)", "Quality and safety", "{FAC}HAI{YY}{SEQ:4}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    /// <summary>An internal NABH audit.</summary>
+    public static NumberSeriesDefinition Audit { get; } =
+        new("quality.audit", "Internal audit", "Quality and safety", "{FAC}AUD{YY}{SEQ:4}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    internal static IEnumerable<NumberSeriesDefinition> All { get; } = [Incident, Capa, Risk, Downtime, Mvpi, Hai, Audit];
 }
