@@ -387,6 +387,8 @@ public static class PlatformServiceCollectionExtensions
 
             services.AddQuartz(quartz =>
             {
+                // Each due time runs once for the hospital, whichever server holds the job lease (SCAL-05).
+                quartz.AddTriggerListener<JobSlotClaim>([GroupMatcher<TriggerKey>.AnyGroup()]);
                 if (options.Backup.Enabled)
                 {
                     quartz.ScheduleJob<BackupJob>(trigger => trigger

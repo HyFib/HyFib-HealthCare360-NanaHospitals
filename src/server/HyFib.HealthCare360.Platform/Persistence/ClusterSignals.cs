@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using HyFib.HealthCare360.Platform.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -49,6 +50,7 @@ public interface IClusterSignals
 /// back, the server says so in its log, and caches are bypassed).
 /// </para>
 /// </summary>
+[NodeLocal]
 internal sealed class ClusterSignals : BackgroundService, IClusterSignals
 {
     public const string Channel = "hc360_cache";

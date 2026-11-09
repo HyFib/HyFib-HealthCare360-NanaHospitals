@@ -1191,9 +1191,10 @@ A planned failover, at a quiet hour, proves the steps and that the people on cal
 ## 10. Several servers behind a reverse proxy (optional)
 
 One Server Node serves about 250 concurrent users (section 1). Beyond that, or to keep HC360 answering while one machine
-is serviced, HC360 runs as **several API nodes behind a reverse proxy and one node that runs the background jobs**, all
+is serviced, HC360 runs as **several API nodes behind a reverse proxy and a node that runs the background jobs**, all
 on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same program on every machine; the setting
-`HealthCare360:Role` says what each one does.
+`HealthCare360:Role` says what each one does. More than one node may be able to run the jobs: they take turns through
+the **job lease**, so exactly one runs them at a time and another takes over if it goes ("The job lease", below).
 
 ```
   Workstations, tablets, the portal ── HTTPS 7360 / 7361 ──► Reverse proxy (IIS ARR, YARP or nginx)
@@ -1215,9 +1216,11 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
 | The database | One PostgreSQL primary, in every node's `ConnectionStrings:Hospital`. Nothing about a user, a sign-in or a request is kept in one node's memory only: sessions, sign-in challenges, one-time codes, emergency access to a restricted record, the attempts counted against the sign-in limits, and the portal's proof of work (challenges spent, failures counted) are all in the database |
 | The keys and the stored documents | The shared folder (`HealthCare360:Cluster:SharedDirectory`). The keys there are protected with a certificate every node holds (`KeyCertificateThumbprint`), because machine DPAPI, which protects them on a single Server Node, opens only on the machine that wrote them. The keys are never in the database: a copy of the database (a backup, the reporting replica) opens no encrypted value without the shared folder too |
 | Real-time updates (queue boards, bed board, critical alerts) | Redis (`ConnectionStrings:Redis`), through which an update raised on any node reaches the screens connected to every node, its own included. While Redis is away no screen gets updates; once it is back, every screen is told to catch up, and does: it subscribes again to what it opened meanwhile, and refetches what it shows |
+| The request limits (public pages, partners, devices, HC360 Desktop's update, requests per user) | Redis as well, so a client's budget is the hospital's whichever node answers. While Redis is away each node counts them on its own (below). The limits on sign-in and one-time codes are in the database |
+| Which node runs the background jobs | The database: the node holding the job lease, a PostgreSQL advisory lock on a connection of its own (below) |
 | Permissions, sessions and settings held in memory for speed | Each node, for a moment. A change on one node expires them on every node at once, through PostgreSQL's LISTEN/NOTIFY on the database they share. A node that stops hearing the others reads them from the database every time until it hears them again |
-| Analyser and modality worklist status (Lab setup › Analysers, Administration › Integrations and its tests) | The database: each node writes its part, the job node's network analysers and worklist server and the relays and heartbeats of the lab agents on the API nodes they reach, within seconds of a change and every minute, and every node shows them together. The worklist's test on an API node reports what the job node says of its worklist server, or that the job node is not reporting: only the job node can send the worklist server its test echo |
-| System health (Administration › System health, and its summary on the home screen) | The database: each node writes what it reports of its own machine (the computer, its network, data drive, certificate and power, and the warnings about them) every minute, and System health on any node shows every node, the job node first, with when each last reported. A node that has not reported for three minutes is shown as such, and a warning says so: critically for the job node, since nothing makes the backups, sends messages or listens for analysers and modalities while it is away. A node is known by an id kept in its own data folder (`config\server-node-id.txt`) for its machine, so one that starts again, after a power cut too, takes its own place again, and a machine cloned from a node's is a node of its own; another warning says when more than one node runs the background jobs. The database, backups, messages, integrations and keys are the hospital's, and shown once |
+| Analyser and modality worklist status (Lab setup › Analysers, Administration › Integrations and its tests) | The database: each node writes its part, the job node's network analysers and worklist server and the relays and heartbeats of the lab agents on the API nodes they reach, within seconds of a change and every minute, and every node shows them together. The worklist's test on an API node (or a node standing by for the job lease) reports what the job node says of its worklist server, or that the job node is not reporting: only the job node can send the worklist server its test echo |
+| System health (Administration › System health, and its summary on the home screen) | The database: each node writes what it reports of its own machine (the computer, its network, data drive, certificate and power, and the warnings about them) every minute, and System health on any node shows every node, the job node first, with when each last reported. A node that has not reported for three minutes is shown as such, and a warning says so: critically for the job node, since nothing makes the backups, sends messages or listens for analysers and modalities while it is away. A node is known by an id kept in its own data folder (`config\server-node-id.txt`) for its machine, so one that starts again, after a power cut too, takes its own place again, and a machine cloned from a node's is a node of its own; another warning says when more than one node runs the background jobs. With the job lease, each node that may run the jobs is shown as holding it or standing by, read from the database's lock at the moment the page is built. The database, backups, messages, integrations and keys are the hospital's, and shown once |
 | Backups | One folder every node names in `HealthCare360:Backup:Directory` (a second share, such as `\\hc360-files\hc360-backups`). The job node makes the scheduled ones; **Back up now** runs on the API node that answers it, so it must write to the same folder, and every API node needs PostgreSQL's client tools (`pg_dump`, `Backup:PgDumpPath`) as the job node does |
 | The settings file, the TLS certificate, logs, temporary files | Each node's own data folder |
 
@@ -1253,7 +1256,8 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
   Keys). Keep the PFX and its password in the hospital's password safe, offline, with the backup recovery key: without
   the certificate no node can open the keys, so give it a long life, as above.
 - **Redis** 6 or later (or Memurai on Windows), reachable only from the nodes, with a password. Without it every node
-  still works, but a screen sees only the updates raised on the node it is connected to. Once it is set, real-time
+  still works, but a screen sees only the updates raised on the node it is connected to, and each node counts the
+  request limits other than sign-in's on its own. Once it is set, real-time
   updates go through it alone: while it is away, no screen gets any, whichever node it is connected to, until it is back.
   Then every node tells the screens connected to it to catch up, and tells the other nodes to tell theirs: each screen
   subscribes again to what it opened meanwhile and refetches what it shows, so the updates missed meanwhile appear, and
@@ -1333,16 +1337,18 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
    workstation appears on the bed board of another (connected, through the proxy, to another node).
 
 **Running several nodes.**
-- Run **exactly one** node that runs the jobs (`worker`, or `all` on a single Server Node). An API node runs none, so it
-  can be stopped or added at any time. System health warns when more than one runs them: a node whose settings miss
-  `"Role": "api"` runs as `all`.
+- Exactly one node runs the jobs at a time. Either give one node `"Role": "worker"` (or `all`) and every other
+  `"Role": "api"`, or give several `"Role": "worker"` or `all` and let them take turns through the job lease (below),
+  which is on whenever the nodes share a folder. An API node runs no jobs, so it can be stopped or added at any time.
+  System health warns when more than one node runs them without the lease: a node whose settings miss `"Role": "api"`
+  runs as `all`, and with the lease off (`"JobLeadership": { "Enabled": false }`) it runs every job beside the others.
 - A node that starts while the others work holds up none of their audit writes. It changes the audit trail's database
   triggers only if it finds one dropped, turned off or changed, and then waits at most two seconds for the audit trail.
   If something holds it longer (a long transaction writing to it, or, to put back the chain-link trigger, a report or
   backup reading it), the node changes nothing and stops, its log saying that an audit trail trigger could not be put
   back because the audit trail is in use. Let that finish or stop it; Windows starts the service again within a minute.
-- **Upgrades:** stop every node. Upgrade and start the job node first: it backs up the database, applies the database
-  changes and starts. Then upgrade and start the API nodes. An upgrade that partitions large tables (below) may take
+- **Upgrades:** stop every node. Upgrade and start one node that may run the jobs first: it backs up the database,
+  applies the database changes and starts. Then upgrade and start the API nodes. An upgrade that partitions large tables (below) may take
   some minutes on the job node before it is ready. If it stops, its log saying that a table the update changes is in use
   ("canceling statement due to lock timeout"), something still uses those tables (a node left running, or a reporting
   tool with a transaction open): nothing has changed. Stop what uses them, then start the job node again. Windows starts
@@ -1352,9 +1358,48 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
   signed with it at once.
 - **Restoring** a backup (section 8): stop every node, restore on the job node from the shared backup folder (its
   settings name the shared folder, so the documents and keys go there), then start the job node and the API nodes.
-- The limits on sign-in and one-time codes per address (10 sign-in attempts a minute, 5 code requests in 15 minutes)
-  are counted for the whole hospital, in the database, whichever node answers. The other limits, on public pages, device
-  requests and requests per user, are each node's own, so with *n* API nodes a client may make up to *n* times as many.
+- **Request limits.** The limits on sign-in and one-time codes per address (10 sign-in attempts a minute, 5 code requests
+  in 15 minutes) are counted for the whole hospital, in the database, whichever node answers. The others (public pages
+  and QR codes, partners' calls, devices, HC360 Desktop's update, and every request per user) are counted for the whole
+  hospital too, on Redis: a sliding window for the per-minute limits, a token bucket for devices and users, each request
+  one atomic script timed by Redis's own clock, so the nodes' clocks need not agree. Redis holds a keyed hash of each
+  address, device or user, never the value. If Redis cannot be reached, or does not answer within half a second, each
+  node counts those limits on its own, as a single Server Node does, and asks Redis again every 5 seconds: the limits
+  still hold, but with *n* API nodes a client may make up to *n* times as many requests until Redis is back. System
+  health says so on each node meanwhile ("Request limits have been counted on this server alone…").
+
+#### The job lease
+
+Any node with `"Role": "worker"` or `all` may run the background jobs: the backups, the outbox (SMS, WhatsApp, e-mail),
+the analysers' and modalities' listeners, and every module's scheduled work. With several such nodes on one database,
+they take turns through the **job lease**, a PostgreSQL advisory lock that the node holding it keeps on a connection of
+its own:
+
+- The node holding it says so to the database every 5 seconds. PostgreSQL ends that connection, and with it the lease,
+  once it has been quiet for 20 seconds (`idle_session_timeout`): the node lost its power or its network, hangs, or
+  stopped. The node itself stops its jobs as soon as a heartbeat fails, and at the latest 10 seconds after the last
+  that succeeded, and then stops its service; Windows starts it again, and it stands by.
+- Every other node asks for the lease every 5 seconds. The one that gets it waits 20 seconds more, so that the last
+  holder has stopped its jobs even if the database let the lease go before it knew (PostgreSQL restarted, or its
+  connection was ended by hand), and then starts them. Nothing else is needed: no table, no clock but each machine's own
+  stopwatch, and the database alone says who holds the lease.
+- So **two nodes never run the jobs at once**, and once the node running them has gone, another runs them within
+  45 seconds (a node whose process ended, rather than its machine, within about 25). A node that takes over finds in the
+  database what the last one did, as after a restart of the job node: each job keeps there what it has done (the
+  ledger of charges posted, the messages sent, each report run), and the nightly backup claims its time once for the
+  hospital (02:00 on the 9th runs once, whichever node fires it), so no job runs twice for the same time.
+- The connection names the node (`HC360 jobs <node id>`): System health reads from PostgreSQL which node holds the lease,
+  and shows it first, "holds the job lease", and the others "standing by". Between one holder and the next it warns that
+  another is taking over; if that lasts more than a minute, the nodes standing by cannot reach the database, and their
+  log says why.
+- Point network analysers and modalities at a name or address that moves with the jobs (a DNS name with a short time
+  to live, or a cluster address), or they keep calling the node that ran the jobs before. HC360 does not move an
+  address itself.
+- Like the cache signals, the lease needs PostgreSQL itself, not PgBouncer in transaction pooling: set
+  `ConnectionStrings:Signals` to PostgreSQL if the nodes go through PgBouncer.
+- The timings are settings (`HealthCare360:JobLeadership`: `Heartbeat`, `LeaseTimeout`, `CandidatePoll`), checked at
+  start-up: the lease must last at least three heartbeats. `"Enabled": false` turns the lease off; each node that may run
+  the jobs then runs them all the time, as before.
 
 ### Monthly partitions of the busiest tables
 
@@ -1445,6 +1490,10 @@ they keep the audit trail for a period (8 years at the least), after it exports 
 | A node of several does not start: "this server has a data encryption key of its own …, and the shared folder … has none" | The keys are not in the shared folder yet. Put them there with `backup restore` (section 10, "Setting it up", step 4) |
 | A node of several does not start: "… names certificate …, which is not in the Local Computer's Personal store", or "… has no RSA private key this server may use" | Import the cluster key certificate on this node, with its private key, and give `NT SERVICE\HC360Server` *Read* on the key (section 10) |
 | `/health/ready` on a node answers 503 (*Unhealthy*) | The node cannot reach the database, or, with several nodes, the shared folder; its log names the check that failed. For the share: is the file server up, and does the node's computer account still have *Modify* on it? |
+| "Request limits have been counted on this server alone since …" (System health, with several nodes) | That node cannot reach Redis, or Redis does not answer within half a second: is Redis up, and does `ConnectionStrings:Redis` name it with its password? The node counts the limits on its own meanwhile, and asks Redis again every 5 seconds; the warning clears once Redis answers |
+| "No server holds the job lease at this moment: … stand by" (System health, with several nodes) | One of them takes the jobs over within a minute. If it lasts, the nodes standing by cannot reach PostgreSQL itself (through PgBouncer in transaction pooling, set `ConnectionStrings:Signals` to PostgreSQL), or PostgreSQL is older than 14 (it has no `idle_session_timeout`); their log says why |
+| "… hold the job lease, which only one server can" (System health, critical) | Should never happen: restart the `HC360Server` service on each of them but one, and send their logs to HyFib support |
+| "This server may no longer hold the job lease …" (a node's log, critical), and the service stopped | It lost the database for a moment, or hung: it stopped its jobs before another node could take them over, and stopped. Windows starts it again within a minute, and it stands by |
 | "… has not reported for more than three minutes" or "No server that runs the background jobs is reporting" (System health, with several nodes) | Is that node on, and its `HC360Server` service running? Its log says why it cannot reach the database, if it cannot. A node stopped on purpose removes itself from System health; one that lost its power is shown as not reporting until it is back, or for a day. A node set up again with a new data folder, or renamed, is a new node: the old one is shown as not reporting for that day |
 | "… both run the background jobs, and only one server should" (System health, with several nodes) | A node meant as an API node runs as `all`: its `hc360.settings.json` misses `"Role": "api"` (section 10, step 3). Add it and restart its `HC360Server` service. Until then each of them makes the nightly backup and listens for analysers and modalities |
 | A node's log: "Not listening for cache signals from the other servers" | It cannot hear the other nodes' changes, so it reads permissions, sessions and settings from the database every time (slower, still correct). Is PostgreSQL reachable? Behind PgBouncer in transaction pooling, set `ConnectionStrings:Signals` to PostgreSQL itself (section 10) |

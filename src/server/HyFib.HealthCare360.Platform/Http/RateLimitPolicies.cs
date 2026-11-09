@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.RateLimiting;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -49,17 +50,22 @@ public static class RateLimitPolicies
     /// <summary>
     /// The server's rate limiter: sign-in and one-time codes (also counted across every node of several,
     /// <see cref="ClusterRateLimits"/>), the public and device policies above, and a global limit per user (or address)
-    /// on every request, each as <see cref="RateLimitOptions"/> sets it. Each server keeps these counts in its own memory.
+    /// on every request, each as <see cref="RateLimitOptions"/> sets it. A single Server Node keeps these counts in its own
+    /// memory. Where a shared store is registered (<see cref="ISharedRateLimitStore"/>, on Redis when there are several
+    /// servers), every policy but sign-in and one-time codes counts there instead, so a client's budget is the hospital's
+    /// whichever server answers, and on each server alone while the store cannot be reached (<see cref="SharedRateLimitState"/>).
     /// </summary>
     public static IServiceCollection AddHospitalRateLimiter(this IServiceCollection services)
     {
         services.TryAddSingleton<ClientAddresses>();
+        services.TryAddSingleton<SharedRateLimitState>();
+        services.AddScoped<IHealthWarningSource, SharedRateLimitWarnings>();
         services.AddRateLimiter(limiter =>
         {
             limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             limiter.OnRejected = (context, _) => AntiAutomationEndpoints.OnRateLimitedAsync(context.HttpContext);
         });
-        services.AddOptions<RateLimiterOptions>().Configure<IOptions<PlatformOptions>>((limiter, platform) =>
+        services.AddOptions<RateLimiterOptions>().Configure<IOptions<PlatformOptions>, IServiceProvider>((limiter, platform, provider) =>
         {
             var limits = platform.Value.RateLimits;
             foreach (var address in new[] { ClusterRateLimits.SignIn, ClusterRateLimits.OneTimeCode })
@@ -68,17 +74,45 @@ public static class RateLimitPolicies
                 limiter.AddPolicy(address.Policy, http => RateLimitPartition.GetFixedWindowLimiter(ClientKey(http), _ => FixedWindow(limit)));
             }
 
-            limiter.AddPolicy(Public, http => RateLimitPartition.GetFixedWindowLimiter(ClientKey(http), _ => FixedWindow(limits.Public)));
-            limiter.AddPolicy(Partner, http => RateLimitPartition.GetFixedWindowLimiter(ClientKey(http), _ => FixedWindow(limits.Partner)));
-            limiter.AddPolicy(Device, http => RateLimitPartition.GetTokenBucketLimiter(DevicePartition(http, ClientKey(http)), _ => TokenBucket(limits.Device)));
-            limiter.AddPolicy(DesktopUpdate, http => RateLimitPartition.GetFixedWindowLimiter(
-                DevicePartition(http, ClientKey(http)), _ => FixedWindow(limits.DesktopUpdate)));
+            var shared = SharedRateLimits.From(provider);
+            limiter.AddPolicy(Public, http => Window(shared, http, Public, ClientKey(http), limits.Public));
+            limiter.AddPolicy(Partner, http => Window(shared, http, Partner, ClientKey(http), limits.Partner));
+            limiter.AddPolicy(Device, http => Bucket(shared, http, Device, DevicePartition(http, ClientKey(http)), limits.Device));
+            limiter.AddPolicy(DesktopUpdate, http => Window(shared, http, DesktopUpdate, DevicePartition(http, ClientKey(http)), limits.DesktopUpdate));
             // A partner's calls count against their own budget alone: the per-address burst would refuse a campaign's receipts.
             limiter.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http => IsPartnerCall(http)
                 ? RateLimitPartition.GetNoLimiter(Partner)
-                : RateLimitPartition.GetTokenBucketLimiter(http.User.FindFirst(HcClaims.UserId)?.Value ?? ClientKey(http), _ => TokenBucket(limits.PerUser)));
+                : Bucket(shared, http, PerUserPolicy, http.User.FindFirst(HcClaims.UserId)?.Value ?? ClientKey(http), limits.PerUser));
         });
         return services;
+    }
+
+    /// <summary>The name the global limit per user (or address) is counted under in the shared store.</summary>
+    internal const string PerUserPolicy = "user";
+
+    /// <summary>A fixed window on this server, or a sliding window in the shared store when there is one.</summary>
+    private static RateLimitPartition<string> Window(SharedRateLimits? shared, HttpContext http, string policy, string partition, FixedWindowLimit limit) =>
+        shared is null
+            ? RateLimitPartition.GetFixedWindowLimiter(partition, _ => FixedWindow(limit))
+            : shared.Partition(http, policy, partition, SharedLimit.From(limit), () => new FixedWindowRateLimiter(Manual(FixedWindow(limit))));
+
+    /// <summary>A token bucket on this server, or in the shared store when there is one.</summary>
+    private static RateLimitPartition<string> Bucket(SharedRateLimits? shared, HttpContext http, string policy, string partition, TokenBucketLimit limit) =>
+        shared is null
+            ? RateLimitPartition.GetTokenBucketLimiter(partition, _ => TokenBucket(limit))
+            : shared.Partition(http, policy, partition, SharedLimit.From(limit), () => new TokenBucketRateLimiter(Manual(TokenBucket(limit))));
+
+    // Refilled by the partitioned limiter's one timer, as the partitions RateLimitPartition makes are, not a timer each.
+    private static FixedWindowRateLimiterOptions Manual(FixedWindowRateLimiterOptions options)
+    {
+        options.AutoReplenishment = false;
+        return options;
+    }
+
+    private static TokenBucketRateLimiterOptions Manual(TokenBucketRateLimiterOptions options)
+    {
+        options.AutoReplenishment = false;
+        return options;
     }
 
     public static FixedWindowRateLimiterOptions FixedWindow(FixedWindowLimit limit)

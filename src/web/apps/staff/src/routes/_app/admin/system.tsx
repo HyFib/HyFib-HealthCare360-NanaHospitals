@@ -342,7 +342,7 @@ function ServerCard({ node }: { node: ServerNodeHealth }) {
   const styles = useStyles();
   const wifi = node.network.wifi;
   return (
-    <Section title={node.server.machineName} description={serverRole(node.server.role)}>
+    <Section title={node.server.machineName} description={serverRole(node.server)}>
       <div className={styles.rows}>
         <Row label="Reported" tone={node.reporting ? undefined : 'bad'}>
           {node.reporting ? formatRelative(node.reportedAt) : `Not since ${formatDateTime(node.reportedAt)}`}
