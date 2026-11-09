@@ -61,6 +61,7 @@ internal sealed class PatientMergeHandler(HospitalDbContext db, IAuditLogger aud
         await RepointAsync<AdmissionRecord>(x => x.PatientId, source, target, moved, ct);
         await RepointAsync<SurgeryBooking>(x => x.PatientId, source, target, moved, ct);
         await RepointAsync<AnaesthesiaRecord>(x => x.PatientId, source, target, moved, ct);
+        await RepointAsync<RecoveryRecord>(x => x.PatientId, source, target, moved, ct);
         await RepointAsync<OperationNote>(x => x.PatientId, source, target, moved, ct);
         await RepointAsync<SurgeryMaterial>(x => x.PatientId, source, target, moved, ct);
         await RepointAsync<Dialyzer>(x => x.PatientId, source, target, moved, ct);

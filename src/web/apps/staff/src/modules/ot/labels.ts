@@ -1,6 +1,7 @@
 import type { StatusTone } from '@hc360/ui';
 import type {
   AirwayDevice,
+  AldreteSign,
   AnaesthesiaType,
   AsaGrade,
   ConflictKind,
@@ -10,6 +11,11 @@ import type {
   IncidentHarm,
   Laterality,
   MaterialKind,
+  OxygenDelivery,
+  Ponv,
+  RecoveryBreathing,
+  RecoveryConsciousness,
+  RecoveryDestination,
   SafetyPhase,
   SpecimenDestination,
   SurgeryPriority,
@@ -127,6 +133,39 @@ export const airwayLabel: Record<AirwayDevice, string> = {
   SupraglotticAirway: 'Supraglottic airway (LMA / i-gel)',
   EndotrachealTube: 'Endotracheal tube',
   Tracheostomy: 'Tracheostomy',
+};
+
+export const oxygenLabel: Record<OxygenDelivery, string> = {
+  RoomAir: 'Room air',
+  NasalCannula: 'Nasal cannula',
+  FaceMask: 'Face mask',
+  VenturiMask: 'Venturi mask',
+  NonRebreatherMask: 'Non-rebreather mask',
+};
+
+export const consciousnessLabel: Record<RecoveryConsciousness, string> = {
+  Alert: 'Alert, fully awake',
+  Voice: 'Rouses to voice',
+  Pain: 'Responds to pain only',
+  Unresponsive: 'Unresponsive',
+};
+
+export const breathingLabel: Record<RecoveryBreathing, string> = {
+  DeepBreathAndCough: 'Breathes deeply and coughs',
+  Limited: 'Shallow or laboured',
+  Apnoeic: 'Apnoeic',
+};
+
+export const ponvLabel: Record<Ponv, string> = { None: 'None', Nausea: 'Nausea', Vomiting: 'Vomiting' };
+
+export const destinationLabel: Record<RecoveryDestination, string> = { Ward: 'Ward', Icu: 'ICU', Hdu: 'HDU' };
+
+export const aldreteSignLabel: Record<AldreteSign, string> = {
+  Activity: 'Activity',
+  Respiration: 'Respiration',
+  Circulation: 'Circulation',
+  Consciousness: 'Consciousness',
+  OxygenSaturation: 'O₂ saturation',
 };
 
 export const specimenLabel: Record<SpecimenDestination, string> = {

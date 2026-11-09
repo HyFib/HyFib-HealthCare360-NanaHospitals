@@ -196,7 +196,7 @@ function SurgeriesPage() {
               key: 'status',
               header: 'Status',
               sortable: true,
-              render: (b) => <SurgeryStatusBadge status={b.status} />,
+              render: (b) => <SurgeryStatusBadge status={b.status} inRecovery={b.inRecovery} />,
             },
             {
               key: 'bookingNumber',

@@ -63,6 +63,14 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
     /// <summary>Patient left the theatre.</summary>
     public DateTimeOffset? CompletedAt { get; set; }
 
+    /// <summary>
+    /// The patient left the recovery room (<see cref="RecoveryRecord"/>), for <see cref="RecoveryDestination"/>. Until then,
+    /// from the WHO Sign-out, the patient is in recovery: not back on the ward.
+    /// </summary>
+    public DateTimeOffset? RecoveryDischargedAt { get; set; }
+
+    public RecoveryDestination? RecoveryDestination { get; set; }
+
     public List<ChecklistEntry> PreOpChecks { get; set; } = PreOpChecklist.NewEntries();
     public List<SafetyChecklistEntry> SafetyChecks { get; set; } = SurgicalSafetyChecklist.NewEntries();
     public DateTimeOffset? SignInCompletedAt { get; set; }
@@ -90,6 +98,12 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
     public bool RequiresAnaesthetist => !AnaesthesiaTypes.GivenBySurgeon(AnaesthesiaType);
 
     public bool IsClosed => Status is SurgeryStatus.Completed or SurgeryStatus.Cancelled;
+
+    /// <summary>
+    /// Between the WHO Sign-out and the discharge from recovery: the theatre still has the patient, in the recovery room
+    /// (or on the way to it), and the ward sees them as returning only once they are discharged from it.
+    /// </summary>
+    public bool InRecovery => SignOutCompletedAt is not null && RecoveryDischargedAt is null && Status is SurgeryStatus.InProgress or SurgeryStatus.Completed;
 
     /// <summary>The procedure and where on the patient, as the WHO checklist confirms it.</summary>
     public SurgicalSite Site => new(ProcedureServiceItemId, ProcedureName, Laterality, SiteLevel);
@@ -444,6 +458,13 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
         Status = SurgeryStatus.Cancelled;
         CancelReason = reason.Trim();
         return Result.Success();
+    }
+
+    /// <summary>The patient left the recovery room (the record's discharge, saved with it).</summary>
+    public void DischargeFromRecovery(DateTimeOffset at, RecoveryDestination destination)
+    {
+        RecoveryDischargedAt = at;
+        RecoveryDestination = destination;
     }
 
     public void RecordCharges(ChargeStatus status, string? error)

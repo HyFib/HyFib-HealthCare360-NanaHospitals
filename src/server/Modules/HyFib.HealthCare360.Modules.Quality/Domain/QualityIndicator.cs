@@ -63,6 +63,14 @@ public sealed class QualityIndicator : AuditableEntity
 
     public int SortOrder { get; set; }
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// The HC360 computation that measures it (a key of <c>IndicatorMeasures</c>), or null for an indicator HC360 cannot
+    /// compute, whose values the quality team enters by hand.
+    /// </summary>
+    public string? ComputedBy { get; set; }
+
+    public bool IsComputed => ComputedBy is not null;
 }
 
 /// <summary>A measured value for one period and facility.</summary>
@@ -82,6 +90,11 @@ public sealed class IndicatorValue : AuditableEntity, IFacilityScoped
     public bool? MeetsTarget { get; set; }
 
     public string? Notes { get; set; }
+
+    /// <summary>Computed by HC360 from its records (false: entered by hand).</summary>
+    public bool IsComputed { get; set; }
+
+    public DateTimeOffset? ComputedAt { get; set; }
 }
 
 /// <summary>Pure indicator arithmetic (value, target evaluation, periods and trend).</summary>

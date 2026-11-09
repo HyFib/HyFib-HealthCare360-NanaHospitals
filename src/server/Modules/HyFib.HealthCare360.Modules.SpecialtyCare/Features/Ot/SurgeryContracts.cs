@@ -54,6 +54,7 @@ public sealed record SurgeryReasonRequest(string Reason);
 
 public sealed record SurgeryCreated(Guid Id, string BookingNumber, SurgeryStatus Status);
 
+/// <param name="InRecovery">Between the WHO Sign-out and the discharge from recovery.</param>
 public sealed record SurgeryListItem(
     Guid Id,
     string BookingNumber,
@@ -77,13 +78,16 @@ public sealed record SurgeryListItem(
     bool SignInDone,
     bool TimeOutDone,
     bool SignOutDone,
-    ChargeStatus ChargeStatus);
+    ChargeStatus ChargeStatus,
+    bool InRecovery = false);
 
 public sealed record ChecklistItemDto(
     string Key, string Text, bool AllowsNotApplicable, ChecklistItemState State, string? Remarks, string? RecordedBy, DateTimeOffset? RecordedAt);
 
 public sealed record SafetyPhaseDto(SafetyPhase Phase, bool IsComplete, DateTimeOffset? CompletedAt, IReadOnlyList<ChecklistItemDto> Items);
 
+/// <param name="InRecovery">Between the WHO Sign-out and the discharge from recovery: shown as "In recovery".</param>
+/// <param name="RecoveryDischargedAt">When the patient left the recovery room, for <paramref name="RecoveryDestination"/>.</param>
 public sealed record SurgeryDetail(
     Guid Id,
     string BookingNumber,
@@ -131,7 +135,10 @@ public sealed record SurgeryDetail(
     IReadOnlyList<SurgicalCount>? Counts = null,
     IReadOnlyList<CountTally>? CountTallies = null,
     IReadOnlyList<CountDiscrepancy>? CountDiscrepancies = null,
-    IReadOnlyList<ChecklistVoid>? ChecklistVoids = null);
+    IReadOnlyList<ChecklistVoid>? ChecklistVoids = null,
+    bool InRecovery = false,
+    DateTimeOffset? RecoveryDischargedAt = null,
+    RecoveryDestination? RecoveryDestination = null);
 
 public sealed class CreateSurgeryBookingRequestValidator : AbstractValidator<CreateSurgeryBookingRequest>
 {

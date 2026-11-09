@@ -121,6 +121,25 @@ internal sealed class MedicationAdministrationConfiguration : IEntityTypeConfigu
     }
 }
 
+internal sealed class NursingSafetyEventConfiguration : IEntityTypeConfiguration<NursingSafetyEvent>
+{
+    public void Configure(EntityTypeBuilder<NursingSafetyEvent> b)
+    {
+        b.ToTable("nursing_safety_events", InpatientSchema.Name);
+        b.Property(x => x.Location).HasMaxLength(150);
+        b.Property(x => x.Description).HasMaxLength(2000);
+        b.Property(x => x.ImmediateAction).HasMaxLength(1000);
+        b.Property(x => x.BodySite).HasMaxLength(100);
+        b.Property(x => x.RecordedByName).HasMaxLength(200);
+        b.Property(x => x.IncidentNumber).HasMaxLength(24);
+        b.Ignore(x => x.IsReportable);
+        b.HasOne<Admission>().WithMany().HasForeignKey(x => x.AdmissionId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.AdmissionId, x.OccurredAt });
+        b.HasIndex(x => new { x.FacilityId, x.Kind, x.OccurredAt });
+        b.HasIndex(x => x.PatientId);
+    }
+}
+
 internal sealed class EarlyWarningEscalationConfiguration : IEntityTypeConfiguration<EarlyWarningEscalation>
 {
     public void Configure(EntityTypeBuilder<EarlyWarningEscalation> b)
