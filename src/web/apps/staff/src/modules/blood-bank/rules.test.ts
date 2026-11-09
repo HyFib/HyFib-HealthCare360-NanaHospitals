@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   compatibilityText,
+  haemovigilanceReportable,
+  reactionLowers,
   compatibleDonorGroups,
   crossmatchValidity,
   expiryFor,
@@ -299,5 +301,23 @@ describe('components, shelf life and screening', () => {
     expect(stockLevel('PRBC', 0)).toBe('out');
     expect(stockLevel('PRBC', 2)).toBe('low');
     expect(stockLevel('PRBC', 6)).toBe('ok');
+  });
+});
+
+describe('reactionLowers', () => {
+  it('finds a lower severity and a weaker imputability than one assessed, but not a raise or a first assessment', () => {
+    expect(reactionLowers('Severe', 'Probable', 'Mild', 'Unlikely')).toEqual([
+      'severity Severe → Mild',
+      'imputability Probable → Unlikely',
+    ]);
+    expect(reactionLowers('Moderate', 'NotAssessed', 'Severe', 'Excluded')).toEqual([]);
+    expect(reactionLowers('Moderate', 'Possible', 'Moderate', 'Definite')).toEqual([]);
+  });
+
+  it('keeps a reaction in haemovigilance reporting until it is unlikely or excluded', () => {
+    expect(haemovigilanceReportable('NotAssessed')).toBe(true);
+    expect(haemovigilanceReportable('Possible')).toBe(true);
+    expect(haemovigilanceReportable('Unlikely')).toBe(false);
+    expect(haemovigilanceReportable('Excluded')).toBe(false);
   });
 });

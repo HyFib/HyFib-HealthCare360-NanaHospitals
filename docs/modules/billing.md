@@ -998,7 +998,9 @@ pharmacy's `PharmacyGstReturnSource`: sales and returns) and every `IGstPurchase
   and last number, how many and how many cancelled. Cancelled documents count only here.
 * **GSTR-3B**: 3.1(a) the taxable outward supplies net of notes, 3.1(c) nil-rated and exempt, 3.1(e) non-GST, 3.2 the
   inter-state supplies to unregistered persons by state, 4(A)(5) the input tax of goods receipts from suppliers with a
-  GSTIN, by the day received. A hospital's supplies are mostly exempt, so input tax used for them and a share of common
+  GSTIN, by the day received, less the input tax of goods sent back to them on the stores' posted debit notes, by the day
+  posted. Returns are netted in 4(A)(5), not reversed in 4(B)(2), as GSTN builds 4(A)(5) from GSTR-2B: "4A(5) = (a) – (b)
+  – (c)", (b) being the suppliers' B2B credit notes. A hospital's supplies are mostly exempt, so input tax used for them and a share of common
   credit are reversed (CGST rule 42): the return gives the exempt share of turnover; the reversal itself is the
   accountant's, as is checking the credit against GSTR-2B (rule 36(4)).
 

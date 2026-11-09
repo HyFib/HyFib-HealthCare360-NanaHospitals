@@ -208,6 +208,12 @@ export const APPROVAL_PERMISSIONS = [
   'insurance.claims.manage',
   'insurance.claims.writeoff.approve',
   'insurance.preauth.manage',
+  // Support services and slice 15: a canteen sale cancelled, an ambulance charge waived, a transfusion reaction lowered,
+  // a dialysis patient's infection status taken off positive (each decided by whoever approves that kind).
+  'canteen.cancellations.approve',
+  'ambulance.waivers.approve',
+  'bloodbank.reactions.approve',
+  'dialysis.infection_status.approve',
   // The stores (slice 13): a recalled batch released (someone else who may release recalls decides), a transfer counted
   // short at the receiving store (someone who approves stock adjustments, and did not send it, decides), and a supplier
   // payable adjustment (someone else who approves purchases decides). A purchase return's debit note is approved like a

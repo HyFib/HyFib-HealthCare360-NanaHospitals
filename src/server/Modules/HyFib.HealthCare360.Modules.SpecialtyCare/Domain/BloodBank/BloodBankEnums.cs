@@ -149,6 +149,21 @@ public enum ReactionSeverity
     Death,
 }
 
+/// <summary>
+/// How sure the blood bank is that the transfusion caused the reaction (ISBT and the Haemovigilance Programme of India),
+/// weakest to strongest; a reaction is reported to haemovigilance while it is at least possible.
+/// </summary>
+public enum ReactionImputability
+{
+    /// <summary>Not yet assessed by the blood bank (the ward reports only what it saw).</summary>
+    NotAssessed = 0,
+    Excluded,
+    Unlikely,
+    Possible,
+    Probable,
+    Definite,
+}
+
 public enum ReactionStatus
 {
     Reported = 0,

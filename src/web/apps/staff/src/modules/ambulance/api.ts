@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 
 // The ambulance desk (server `AmbulanceEndpoints`): the fleet with its certificates, calls taken and vehicles sent, each
 // step of a trip as the crew report it, and the trip log with response times. A completed trip for a registered
@@ -91,6 +92,26 @@ export interface AmbulanceTrip {
   chargeWaivedReason: string | null;
   cancelReason: string | null;
   version: number;
+  /** Who waived the charge, and who asked when a second person approved it. */
+  chargeWaivedByName?: string | null;
+  waiverRequestedByName?: string | null;
+  /** A waiver asked for and waiting for a second person; the charge stands until then. */
+  waiverPending?: PendingWaiver | null;
+}
+
+export interface PendingWaiver {
+  approvalId: string;
+  reason: string;
+  requestedByName: string;
+  requestedAt: string;
+  askedByYou: boolean;
+}
+
+/** A trip charged to a patient whose charge can still be waived: completed, not waived, no waiver waiting. */
+export function canAskWaiver(trip: AmbulanceTrip): boolean {
+  return (
+    trip.status === 'Completed' && trip.patientId !== null && trip.chargeWaivedReason === null && !trip.waiverPending
+  );
 }
 
 export interface RequestTripRequest {
@@ -152,6 +173,9 @@ export const ambulanceApi = {
   leftScene: (id: string, version: number) => api.post<AmbulanceTrip>(`${base}/trips/${id}/left-scene`, { version }),
   complete: (id: string, endOdometerKm: number, waiveReason: string | null, version: number) =>
     api.post<AmbulanceTrip>(`${base}/trips/${id}/complete`, { endOdometerKm, waiveReason, version }),
+  /** Waits for a second person (202, the request) unless the hospital lets the desk waive alone (200, the trip). */
+  waive: (id: string, reason: string, version: number) =>
+    api.post<AmbulanceTrip | ApprovalRequestDto>(`${base}/trips/${id}/waive`, { reason, version }),
   cancel: (id: string, reason: string, version: number) =>
     api.post<AmbulanceTrip>(`${base}/trips/${id}/cancel`, { reason, version }),
 };

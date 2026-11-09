@@ -535,9 +535,48 @@ public sealed class TransfusionService(
     public Task<Result> InvestigateReactionAsync(Guid reactionId, CancellationToken ct) =>
         ChangeReactionAsync(reactionId, r => r.StartInvestigation(), ct);
 
-    public Task<Result> CloseReactionAsync(Guid reactionId, CloseReactionRequest request, CancellationToken ct) =>
-        ChangeReactionAsync(reactionId, r => r.Close(request.Type, request.Severity, request.Findings, request.ReportedToHaemovigilance,
-            currentUser.Stamp(time.GetUtcNow()).Name, time.GetUtcNow()), ct);
+    /// <summary>
+    /// Closes the investigation. A close that would lower the severity or imputability in force is refused while the
+    /// facility asks for the medical officer: the lowering is asked for first (<see cref="ReactionClassificationService"/>).
+    /// </summary>
+    public async Task<Result> CloseReactionAsync(Guid reactionId, CloseReactionRequest request, CancellationToken ct)
+    {
+        var reaction = await db.Set<TransfusionReaction>().FirstOrDefaultAsync(r => r.Id == reactionId, ct);
+        if (reaction is null)
+        {
+            return Error.NotFound(nameof(TransfusionReaction), reactionId);
+        }
+
+        var lowered = ReactionDowngrade.Lowers(reaction.Severity, reaction.Imputability, request.Severity, request.Imputability);
+        var name = currentUser.Stamp(time.GetUtcNow()).Name;
+        if (lowered.Count > 0)
+        {
+            if (await settings.GetAsync<bool?>(ReactionClassificationService.DowngradeApprovalSetting, reaction.FacilityId, ct) != false)
+            {
+                return Error.Rule("bloodbank.reaction_lowered",
+                    $"Closing this way lowers the reaction ({string.Join("; ", lowered)}), which waits for the blood bank medical officer. Record the classification with your reason first, and close once it is approved.");
+            }
+
+            reaction.MarkLowered(request.Findings, name ?? "Staff", null);
+            audit.Add(new AuditEntry(AuditCategories.Data, "bloodbank.reaction_lowered",
+                $"Transfusion reaction on unit {reaction.UnitNumber} lowered at closing by {name} alone (the medical officer is not required here): {string.Join("; ", lowered)}")
+            {
+                PatientId = reaction.PatientId,
+                EntityType = nameof(TransfusionReaction),
+                EntityId = reaction.Id.ToString(),
+                Severity = AuditSeverity.Warning,
+            });
+        }
+
+        var closed = reaction.Close(request.Type, request.Severity, request.Imputability, request.Findings, request.ReportedToHaemovigilance, name ?? "Staff", time.GetUtcNow());
+        if (closed.IsFailure)
+        {
+            return closed;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return Result.Success();
+    }
 
     /// <summary>Returns every unit reserved for the request to general stock.</summary>
     internal async Task ReleaseReservationsAsync(Guid requestId, CancellationToken ct)

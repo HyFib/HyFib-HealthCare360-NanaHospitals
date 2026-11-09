@@ -1,6 +1,7 @@
 import { isApiError, type Gender, type PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { ChargeOutcome, ChargeStatus, Weekday } from '@/modules/ot/shared/types';
 
 // ---------------------------------------------------------------- enums (JSON strings)
@@ -96,6 +97,22 @@ export interface DialysisProfileDto {
   enrolledOn: string;
   isActive: boolean;
   version: number;
+  /** Who changed the infection status last, who asked when a second person approved it, and the result it rests on. */
+  seroChangedByName?: string | null;
+  seroChangeRequestedByName?: string | null;
+  seroLabResultId?: string | null;
+  /** A change asked for and waiting for a second person: the status in force stands until then. */
+  infectionStatusPendingApprovalId?: string | null;
+}
+
+/** A verified HBsAg, HCV or HIV result of the patient, recent enough to change their infection status on. */
+export interface InfectionResultDto {
+  id: string;
+  infection: SeroStatus;
+  testName: string;
+  value: string | null;
+  flag: string | null;
+  verifiedOn: string;
 }
 
 export interface SaveDialysisProfileRequest {
@@ -310,9 +327,16 @@ export const dialysisKeys = {
   profile: (patientId: string) => ['dialysis', 'profile', patientId] as const,
   dialyzers: (patientId: string, includeDiscarded: boolean) =>
     ['dialysis', 'dialyzers', patientId, includeDiscarded] as const,
+  infectionResults: (patientId: string) => ['dialysis', 'infection-results', patientId] as const,
 };
 
 export const dialysisQueries = {
+  infectionResults: (patientId: string) =>
+    queryOptions({
+      queryKey: dialysisKeys.infectionResults(patientId),
+      queryFn: ({ signal }) =>
+        api.get<InfectionResultDto[]>(`/api/v1/dialysis/patients/${patientId}/infection-results`, { signal }),
+    }),
   machines: (includeInactive = false) =>
     queryOptions({
       queryKey: dialysisKeys.machines(includeInactive),
@@ -379,6 +403,11 @@ export const dialysisQueries = {
 };
 
 export const dialysisApi = {
+  /** Made at once (nothing: negative to positive isolates now), or asked for (the request) and waits for a second person. */
+  changeInfectionStatus: (
+    patientId: string,
+    body: { seroStatus: SeroStatus; labResultId: string; reason: string; version: number },
+  ) => api.post<ApprovalRequestDto | undefined>(`/api/v1/dialysis/patients/${patientId}/infection-status`, body),
   saveMachine: async (id: string | null, request: SaveDialysisMachineRequest): Promise<void> => {
     if (id) {
       await api.put<void>(`/api/v1/dialysis/machines/${id}`, request);

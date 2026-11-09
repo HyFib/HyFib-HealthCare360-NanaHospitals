@@ -35,6 +35,14 @@ public sealed class SettingGuardTests
         Waits("bloodbank.separateVerifier", Off, On).ShouldBeFalse();
         SettingGuard.Judge("bloodbank.separateVerifier", null, Off, secret: false).Summary.ShouldBe("Second blood bank officer: not set (on) → off");
 
+        // Slice 15's second persons, on unless set to false: each is switched off only with a second administrator.
+        foreach (var key in new[] { "ambulance.waiverApproval", "bloodbank.reactionDowngradeApproval", "dialysis.infectionStatusApproval" })
+        {
+            Waits(key, null, Off).ShouldBeTrue($"{key} off lets one person do it alone");
+            Waits(key, Off, On).ShouldBeFalse($"{key} on again is stricter");
+            SettingGuard.Judge(key, null, Off, secret: false).From.ShouldBe("not set (on)");
+        }
+
         // Typed as text, as the administration rule reads it too.
         Waits("security.administrationRequiresDesktop", On, JsonValue.Create("false")).ShouldBeTrue();
         Waits("security.administrationRequiresDesktop", Off, JsonValue.Create(" TRUE ")).ShouldBeFalse();
