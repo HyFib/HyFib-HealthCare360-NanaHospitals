@@ -11,6 +11,7 @@ using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
@@ -49,8 +50,8 @@ public sealed class VisitPayerChangeTests(HospitalServer server)
         (await billing.GetAsync<VisitPayerView>(PayerPath(visitId))).Terms.ShouldBe(new VisitPayerTerms(PayerType.Corporate, dear));
         (await NetAsync(chargeId)).ShouldBe(Dear);
         var audit = await AuditAsync(visitId);
-        audit.Summary.ShouldContain("1 unbilled service(s) priced again (₹800.00 → ₹1,200.00)");
-        audit.Details.ShouldContain("Employer changed");
+        audit.Summary.ShouldNotBeNull().ShouldContain("1 unbilled service(s) priced again (₹800.00 → ₹1,200.00)");
+        audit.Details.ShouldNotBeNull().ShouldContain("Employer changed");
     }
 
     [Fact]
@@ -76,7 +77,7 @@ public sealed class VisitPayerChangeTests(HospitalServer server)
         await ApproveAsync(accountant, asked.Id);
         (await billing.GetAsync<VisitPayerView>(PayerPath(visitId))).Terms.PayerId.ShouldBe(cheap);
         (await NetAsync(chargeId)).ShouldBe(Cheap);
-        (await AuditAsync(visitId)).Summary.ShouldContain("approved by");
+        (await AuditAsync(visitId)).Summary.ShouldNotBeNull().ShouldContain("approved by");
 
         // To self-pay, another kind of payer: waits too, though the service is dearer on the general plan.
         var now = await billing.GetAsync<VisitPayerView>(PayerPath(visitId));

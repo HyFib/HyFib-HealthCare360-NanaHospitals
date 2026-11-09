@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Users = HyFib.HealthCare360.IntegrationTests.HospitalServer.Users;
@@ -49,7 +50,7 @@ public sealed class PreAuthProcedureCodingTests(HospitalServer server)
         saved.Procedures[0].Name.ShouldBe("Laparoscopic cholecystectomy (test)");
         saved.Procedures[1].Name.ShouldStartWith("Laparoscopic cholecystectomy");
         saved.LegacyProcedureText.ShouldBeNull();
-        (await AuditAsync("insurance.preauth.procedures", id)).Summary.ShouldContain($"{hbp} Laparoscopic cholecystectomy (test)");
+        (await AuditAsync("insurance.preauth.procedures", id)).Summary.ShouldNotBeNull().ShouldContain($"{hbp} Laparoscopic cholecystectomy (test)");
 
         // Unknown and retired codes are refused, naming the line; nothing is saved.
         await RefusedAsync(desk, id, saved.Version, Line(PreAuthProcedureSystem.Hbp, $"{hbp[..5]}Z", 1, 100m), "procedures[1].code", "not in the imported PM-JAY HBP master");
