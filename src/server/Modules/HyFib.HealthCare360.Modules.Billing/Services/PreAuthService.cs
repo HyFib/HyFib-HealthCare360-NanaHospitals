@@ -15,7 +15,13 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// A rejection, which keeps the bill with the patient, is recorded at once.
 /// </summary>
 public sealed class PreAuthService(
-    HospitalDbContext db, INumberSeries numbers, IApprovals approvals, IAuditLogger audit, ICurrentUser currentUser, TimeProvider time)
+    HospitalDbContext db,
+    INumberSeries numbers,
+    IApprovals approvals,
+    IAuditLogger audit,
+    ICurrentUser currentUser,
+    IProcedureCatalogue procedureCatalogue,
+    TimeProvider time)
 {
     /// <summary>A pre-authorised amount recorded by one insurance desk user, waiting for another to check it.</summary>
     public const string AmountKind = "insurance.preauth_amount";
@@ -43,6 +49,12 @@ public sealed class PreAuthService(
             return links.Error!;
         }
 
+        var procedures = await CodedProceduresAsync(request.Procedures, ct);
+        if (procedures.IsFailure)
+        {
+            return procedures.Error!;
+        }
+
         await using var transaction = await db.BeginOwnedTransactionAsync(ct);
         var preAuth = new PreAuthorization
         {
@@ -54,8 +66,13 @@ public sealed class PreAuthService(
             TpaId = policy.TpaId,
             Status = PreAuthStatus.Draft,
         };
-        Apply(preAuth, request);
+        Apply(preAuth, request, procedures.Value);
         db.Add(preAuth);
+        if (procedures.Value.Count > 0)
+        {
+            AuditProcedures(preAuth);
+        }
+
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return preAuth.Id;
@@ -86,8 +103,22 @@ public sealed class PreAuthService(
             return links;
         }
 
+        var procedures = await CodedProceduresAsync(request.Procedures, ct);
+        if (procedures.IsFailure)
+        {
+            return procedures;
+        }
+
         db.SetExpectedVersion(preAuth, request.Version ?? 0);
-        Apply(preAuth, request);
+        var before = Signature(preAuth.Procedures);
+        db.RemoveRange(preAuth.Procedures);
+        preAuth.Procedures.Clear();
+        Apply(preAuth, request, procedures.Value);
+        if (Signature(preAuth.Procedures) != before)
+        {
+            AuditProcedures(preAuth);
+        }
+
         await db.SaveChangesAsync(ct);
         return Result.Success();
     }
@@ -265,7 +296,102 @@ public sealed class PreAuthService(
     }
 
     private Task<PreAuthorization?> LoadAsync(Guid id, CancellationToken ct) =>
-        db.Set<PreAuthorization>().Include(p => p.Enhancements).FirstOrDefaultAsync(p => p.Id == id, ct);
+        db.Set<PreAuthorization>().Include(p => p.Enhancements).Include(p => p.Procedures).FirstOrDefaultAsync(p => p.Id == id, ct);
+
+    /// <summary>
+    /// Procedures the desk may code, from PM-JAY's HBP master (active procedures, with the scheme's base rate) or the
+    /// hospital's ICD-10-PCS catalogue, by code prefix or words of the name.
+    /// </summary>
+    public async Task<IReadOnlyList<PreAuthProcedureOption>> ProcedureOptionsAsync(PreAuthProcedureSystem system, string? search, CancellationToken ct)
+    {
+        if (system == PreAuthProcedureSystem.Hbp)
+        {
+            var term = (search ?? string.Empty).Trim();
+            var query = db.Set<HbpProcedure>().AsNoTracking().Where(p => p.IsActive);
+            if (term.Length > 0)
+            {
+                var code = term.ToUpperInvariant();
+                var like = term.ToLikePattern();
+                query = query.Where(p => p.Code.StartsWith(code) || EF.Functions.ILike(p.ProcedureName, like, QueryExtensions.LikeEscape)
+                    || (p.PackageName != null && EF.Functions.ILike(p.PackageName, like, QueryExtensions.LikeEscape)));
+            }
+
+            return await query.OrderBy(p => p.Code).Take(25)
+                .Select(p => new PreAuthProcedureOption(PreAuthProcedureSystem.Hbp, p.Code, p.ProcedureName, p.Rate)).ToListAsync(ct);
+        }
+
+        return [.. (await procedureCatalogue.SearchAsync(search, 25, ct))
+            .Select(p => new PreAuthProcedureOption(PreAuthProcedureSystem.Icd10Pcs, p.Code, p.Title, null))];
+    }
+
+    /// <summary>
+    /// The planned procedures checked against the masters: each HBP code must be an active procedure of the imported HBP
+    /// master, each ICD-10-PCS code an active code of the hospital's catalogue. The name each line keeps is the master's.
+    /// </summary>
+    private async Task<Result<List<PreAuthProcedure>>> CodedProceduresAsync(IReadOnlyList<PreAuthProcedureLine>? lines, CancellationToken ct)
+    {
+        if (lines is null || lines.Count == 0)
+        {
+            return new List<PreAuthProcedure>();
+        }
+
+        var normalized = lines.Select(l => l with { Code = l.Code.Trim().ToUpperInvariant() }).ToList();
+        var hbpCodes = normalized.Where(l => l.System == PreAuthProcedureSystem.Hbp).Select(l => l.Code).Distinct().ToList();
+        var hbp = hbpCodes.Count == 0
+            ? new Dictionary<string, (string Name, bool IsActive)>()
+            : await db.Set<HbpProcedure>().AsNoTracking().Where(p => hbpCodes.Contains(p.Code))
+                .ToDictionaryAsync(p => p.Code, p => (Name: p.ProcedureName, p.IsActive), StringComparer.Ordinal, ct);
+        var pcsCodes = normalized.Where(l => l.System == PreAuthProcedureSystem.Icd10Pcs).Select(l => l.Code).Distinct().ToList();
+        var pcs = await procedureCatalogue.FindAsync(pcsCodes, ct);
+
+        var coded = new List<PreAuthProcedure>();
+        for (var i = 0; i < normalized.Count; i++)
+        {
+            var line = normalized[i];
+            var field = $"procedures[{i}].code";
+            string name;
+            if (line.System == PreAuthProcedureSystem.Hbp)
+            {
+                if (!hbp.TryGetValue(line.Code, out var procedure))
+                {
+                    return Error.Field(field, $"{line.Code} is not in the imported PM-JAY HBP master.");
+                }
+
+                if (!procedure.IsActive)
+                {
+                    return Error.Field(field, $"{line.Code} was retired from the HBP master; choose the procedure that replaced it.");
+                }
+
+                name = procedure.Name;
+            }
+            else
+            {
+                if (!pcs.TryGetValue(line.Code, out var procedure))
+                {
+                    return Error.Field(field, $"{line.Code} is not an ICD-10-PCS code of the hospital's procedure catalogue.");
+                }
+
+                if (!procedure.IsActive)
+                {
+                    return Error.Field(field, $"{line.Code} is switched off in the procedure catalogue.");
+                }
+
+                name = procedure.Title;
+            }
+
+            coded.Add(new PreAuthProcedure
+            {
+                LineNumber = i + 1,
+                System = line.System,
+                Code = line.Code,
+                Name = name.Length > 500 ? name[..500] : name,
+                Quantity = line.Quantity,
+                Amount = Money.Round(line.Amount),
+            });
+        }
+
+        return coded;
+    }
 
     private async Task<Result> ValidateLinksAsync(Guid patientId, Guid? admissionId, Guid? visitId, CancellationToken ct)
     {
@@ -286,13 +412,33 @@ public sealed class PreAuthService(
         return Result.Success();
     }
 
-    private static void Apply(PreAuthorization preAuth, SavePreAuthRequest request)
+    private static string Signature(IEnumerable<PreAuthProcedure> lines) =>
+        string.Join('|', lines.OrderBy(l => l.LineNumber).Select(l => $"{l.System}:{l.Code}:{l.Quantity}:{l.Amount:0.00}"));
+
+    /// <summary>The planned procedures as coded, in the audit trail (the lines themselves are replaced on each save).</summary>
+    private void AuditProcedures(PreAuthorization preAuth) =>
+        audit.Add(new AuditEntry(
+            AuditCategories.Data,
+            "insurance.preauth.procedures",
+            $"{preAuth.Number}: planned procedures {preAuth.ProcedureText(500) ?? "cleared"}")
+        {
+            PatientId = preAuth.PatientId,
+            EntityType = nameof(PreAuthorization),
+            EntityId = preAuth.Id.ToString(),
+            Details = new
+            {
+                procedures = preAuth.Procedures.OrderBy(l => l.LineNumber)
+                    .Select(l => new { system = l.System.ToString(), l.Code, l.Quantity, l.Amount }).ToList(),
+            },
+        });
+
+    private static void Apply(PreAuthorization preAuth, SavePreAuthRequest request, List<PreAuthProcedure> procedures)
     {
         preAuth.AdmissionId = request.AdmissionId;
         preAuth.VisitId = request.VisitId;
         preAuth.RequestedAmount = Money.Round(request.RequestedAmount);
         preAuth.DiagnosisCodes = Clean(request.DiagnosisCodes);
-        preAuth.ProcedureCodes = Clean(request.ProcedureCodes);
+        preAuth.Procedures.AddRange(procedures);
         preAuth.ClinicalSummary = Clean(request.ClinicalSummary);
         preAuth.ExpectedStayDays = request.ExpectedStayDays;
         preAuth.DocumentFileIds = request.DocumentFileIds?.Distinct().ToList() ?? [];
