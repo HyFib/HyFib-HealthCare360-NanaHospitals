@@ -38,8 +38,13 @@ const useStyles = makeStyles({
   conflicts: { margin: '4px 0 0', paddingLeft: '18px' },
 });
 
-export function SurgeryStatusBadge({ status }: { status: SurgeryStatus }) {
-  return <StatusBadge status={status} tone={surgeryStatusTone[status]} label={surgeryStatusLabel[status]} />;
+/** From the WHO Sign-out until the discharge from recovery the case reads "In recovery", whatever its theatre status. */
+export function SurgeryStatusBadge({ status, inRecovery }: { status: SurgeryStatus; inRecovery?: boolean }) {
+  return inRecovery ? (
+    <StatusBadge status="InRecovery" tone="brand" label="In recovery" />
+  ) : (
+    <StatusBadge status={status} tone={surgeryStatusTone[status]} label={surgeryStatusLabel[status]} />
+  );
 }
 
 /** Elective cases get no badge (the default); urgent and emergency cases always say so in words. */

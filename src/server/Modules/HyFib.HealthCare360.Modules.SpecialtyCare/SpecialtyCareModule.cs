@@ -32,6 +32,8 @@ public sealed class SpecialtyCareModule : IModule
         services.AddScoped<IPractitionerWorkSource, SurgeryPractitionerWork>();
         services.AddScoped<OtClinicalService>();
         services.AddWitnessPurpose(OtClinicalService.CountWitness);
+        services.AddScoped<RecoveryService>();
+        services.AddWitnessPurpose(RecoveryService.HandoverWitness);
         services.AddScoped<OtReportingService>();
         services.AddScoped<DialysisService>();
         services.AddScoped<PhysioService>();
@@ -46,7 +48,7 @@ public sealed class SpecialtyCareModule : IModule
         services.AddScoped<BloodInventoryService>();
         services.AddScoped<MtpService>();
 
-        // A patient in pre-op or on the table holds the discharge (Inpatient asks every source).
+        // A patient in pre-op, on the table or in recovery holds the discharge (Inpatient asks every source).
         services.AddScoped<IDischargeHoldSource, TheatreDischargeHolds>();
         services.AddScoped<IDischargeHoldSource, TransfusionDischargeHolds>();
 
@@ -59,6 +61,7 @@ public sealed class SpecialtyCareModule : IModule
         TheatreEndpoints.Map(endpoints);
         SurgeryEndpoints.Map(endpoints);
         OtClinicalEndpoints.Map(endpoints);
+        RecoveryEndpoints.Map(endpoints);
         OtStoreEndpoints.Map(endpoints);
         DialysisSetupEndpoints.Map(endpoints);
         DialysisSessionEndpoints.Map(endpoints);
