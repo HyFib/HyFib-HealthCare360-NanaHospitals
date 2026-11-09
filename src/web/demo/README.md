@@ -86,7 +86,7 @@ serves it, as the Worker `hc360-demo` with static assets only (no Worker script 
   committed. It also fails if a header is missing or Cloudflare is not in front.
 - **Check only.** Run by hand with _check only_, it deploys nothing and checks the live site.
 
-`site/` holds the morning recorded on 31 October from `main` at 06e8f71: 12 roles, 1,343 screens walked, no unrecorded
+`site/` holds the morning recorded on 9 November from `main` at b8425c9: 12 roles, 1,440 screens walked, no unrecorded
 calls, no browser errors, and 30 of 30 guided places. Building it again from the same recordings gives the same 16
 files, byte for byte. To publish a new recording, make it and check it as above, then replace the folder in a pull
 request:
