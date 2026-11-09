@@ -155,6 +155,7 @@ internal sealed record LabStatusView(IReadOnlyList<LabListenerStatus> Statuses, 
 /// of several: a few seconds after it changes, and every minute so that it does not expire, and removes it as the server
 /// stops.
 /// </summary>
+[NodeLocal]
 internal sealed class LabStatusSharing(LabStatusBoard board, DataDirectories directories, TimeProvider time, ILogger<LabStatusSharing> logger)
     : BackgroundService
 {

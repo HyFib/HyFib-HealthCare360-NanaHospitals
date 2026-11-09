@@ -652,9 +652,10 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
             return slot;
         }
 
-        // Only today's appointments can be checked in, so a run in the last minutes before midnight waits for the next day.
+        // Only today's appointments can be checked in, so a run too close to midnight waits for the next day: the extra
+        // session below starts leadMinutes (rounded up to 5) from now and must still hold one 5-minute slot before 23:59.
         var now = DateTimeOffset.UtcNow.ToOffset(IndiaOffset);
-        if (now.TimeOfDay > new TimeSpan(23, 45, 0))
+        if (now.TimeOfDay + TimeSpan.FromMinutes(leadMinutes + 10) > new TimeSpan(23, 59, 0))
         {
             await Task.Delay(TimeSpan.FromDays(1) - now.TimeOfDay + TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
             if (await FirstFreeSlotAsync(frontOffice, doctor.Id, leadMinutes) is { } morning)

@@ -26,7 +26,8 @@ internal sealed class ModalityWorklistSelfTest(
     ServerNodeBoard servers,
     IOptions<PlatformOptions> platform,
     TimeProvider time,
-    ILoggerFactory loggers)
+    ILoggerFactory loggers,
+    JobLeadership? jobs = null)
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
@@ -49,7 +50,8 @@ internal sealed class ModalityWorklistSelfTest(
             return Fail(config.Problems.FirstOrDefault() ?? "The worklist settings are not complete.");
         }
 
-        if (!platform.Value.RunsJobs)
+        // A server standing by for the job lease runs no worklist server, as an API node does not.
+        if (!(jobs?.IsActive ?? platform.Value.RunsJobs))
         {
             return await ServedElsewhereAsync(listener, stored, cancellationToken);
         }

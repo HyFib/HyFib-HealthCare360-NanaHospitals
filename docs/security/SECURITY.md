@@ -1381,8 +1381,16 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - `no-store` on API responses.
   - They apply to every response, including the staff and portal pages and their static assets, not just API calls.
 - Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user. With
-  several servers (below), the sign-in and OTP limits per address are counted for the hospital, in the database. The
-  limits are settings (`HealthCare360:RateLimits`, DEPLOYMENT.md), checked at start-up: none can be zero.
+  several servers (below), every limit is counted for the hospital, whichever server answers: the sign-in and OTP limits
+  per address in the database, and the others (public pages, partners, devices, HC360 Desktop's update, every request
+  per user) on the Redis server the nodes share for real-time updates, each request one atomic Lua script timed by
+  Redis's own clock (a sliding window for the per-minute limits, a token bucket for devices and users). Redis holds no
+  address, device credential or user id: each budget's key is an HMAC of it under a key derived from the hospital's data
+  key, as the database's is. While Redis cannot be reached (a call fails, or takes more than half a second), each server
+  counts those limits on its own for 5 seconds at a time before it asks Redis again: the limits never lift (fail-safe),
+  but a client may make each one's requests on every server, and System health warns (`ratelimit.per_server`) on each
+  server that counts alone. A single Server Node counts them in its memory, as before. The limits are settings
+  (`HealthCare360:RateLimits`, DEPLOYMENT.md), checked at start-up: none can be zero.
   - **What counts as one address** (`ClientAddresses`), for these limits and for the proof of work's failure counts
     (below): an IPv4 address; an IPv4 address carried in an IPv6 one (IPv4-mapped, 6to4, Teredo, and NAT64's well-known
     prefix `64:ff9b::/96`, RFC 6052, through which IPv4 clients reach a server on IPv6 alone) as that IPv4 address; and
