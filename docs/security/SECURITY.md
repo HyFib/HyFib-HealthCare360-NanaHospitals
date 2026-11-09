@@ -828,7 +828,8 @@ and grants nothing.
       someone else who holds `hr.payroll.approve` approves, never the employee whose salary it is
       (`hr.bank_details_own`). The account and IFSC asked for stay encrypted in the request; the inbox, the audit trail
       (`employee.bank_changed`) and the notice to the employee show the account's last four digits only;
-    - the bank file (`GET …/payroll/runs/{id}/bank-transfer.csv`) pays the accounts fixed, encrypted, on the payslips when
+    - the bank file (`GET …/payroll/runs/{id}/bank-transfer.csv`, and the banks' own formats,
+      `GET …/statutory/runs/{id}/bank-file/{format}`) pays the accounts fixed, encrypted, on the payslips when
       the run was approved (`payroll_runs.bank_details_fixed_at`), never the employees' accounts at export; a run approved
       before payment details were fixed has none until it is reopened and approved again
       (`payroll.bank_details_not_fixed`);
