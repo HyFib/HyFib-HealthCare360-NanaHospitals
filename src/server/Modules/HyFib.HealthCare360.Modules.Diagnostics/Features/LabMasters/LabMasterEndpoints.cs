@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 
@@ -27,18 +28,18 @@ internal static class LabMasterEndpoints
         var tests = app.MapGroup("/api/v1/lab/tests").WithTags("Laboratory masters");
         tests.MapGet("/", ListTests).RequireAnyPermission(readers);
         tests.MapGet("/{id:guid}", GetTest).RequireAnyPermission(readers);
-        tests.MapPost("/", (SaveLabTestRequest request, HospitalDbContext db, CancellationToken ct) => SaveTest(null, request, db, ct))
+        tests.MapPost("/", (SaveLabTestRequest request, HospitalDbContext db, LabSafetyLimits safety, CancellationToken ct) => SaveTest(null, request, db, safety, ct))
             .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveLabTestRequest>();
-        tests.MapPut("/{id:guid}", (Guid id, SaveLabTestRequest request, HospitalDbContext db, CancellationToken ct) => SaveTest(id, request, db, ct))
+        tests.MapPut("/{id:guid}", (Guid id, SaveLabTestRequest request, HospitalDbContext db, LabSafetyLimits safety, CancellationToken ct) => SaveTest(id, request, db, safety, ct))
             .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveLabTestRequest>().RequireVersion();
         tests.MapPut("/{id:guid}/components", SetComponents).RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SetComponentsRequest>();
         tests.MapPut("/{id:guid}/ranges", SetRanges).RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SetRangesRequest>();
 
         var instruments = app.MapGroup("/api/v1/lab/instruments").WithTags("Laboratory masters");
         instruments.MapGet("/", ListInstruments).RequireAnyPermission(DiagnosticsPermissions.LabMastersManage, DiagnosticsPermissions.LabQcManage);
-        instruments.MapPost("/", (SaveLabInstrumentRequest request, HospitalDbContext db, ICurrentUser user, CancellationToken ct) => SaveInstrument(null, request, db, user, ct))
+        instruments.MapPost("/", (SaveLabInstrumentRequest request, HospitalDbContext db, ICurrentUser user, LabSafetyLimits safety, CancellationToken ct) => SaveInstrument(null, request, db, user, safety, ct))
             .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveLabInstrumentRequest>();
-        instruments.MapPut("/{id:guid}", (Guid id, SaveLabInstrumentRequest request, HospitalDbContext db, ICurrentUser user, CancellationToken ct) => SaveInstrument(id, request, db, user, ct))
+        instruments.MapPut("/{id:guid}", (Guid id, SaveLabInstrumentRequest request, HospitalDbContext db, ICurrentUser user, LabSafetyLimits safety, CancellationToken ct) => SaveInstrument(id, request, db, user, safety, ct))
             .RequirePermission(DiagnosticsPermissions.LabMastersManage).WithValidation<SaveLabInstrumentRequest>().RequireVersion();
 
         var channels = app.MapGroup("/api/v1/lab/instruments/channels").WithTags("Laboratory masters");
@@ -119,7 +120,11 @@ internal static class LabMasterEndpoints
         return test is null ? Error.NotFound(nameof(LabTest), id).ToProblem() : TypedResults.Ok(await ToDetailAsync(test, db, ct));
     }
 
-    private static async Task<IResult> SaveTest(Guid? id, SaveLabTestRequest request, HospitalDbContext db, CancellationToken ct)
+    /// <summary>
+    /// 201/204 when saved; 202 with the request when automatic verification is switched on and the lab asks for a second
+    /// pathologist: the rest is saved, and automatic verification stays off until another pathologist approves it.
+    /// </summary>
+    private static async Task<IResult> SaveTest(Guid? id, SaveLabTestRequest request, HospitalDbContext db, LabSafetyLimits safety, CancellationToken ct)
     {
         var code = request.Code.Trim();
         LabTest test;
@@ -200,7 +205,14 @@ internal static class LabMasterEndpoints
         test.InstrumentChannelCodes = (request.InstrumentChannelCodes ?? []).Select(c => c.Trim().ToUpperInvariant()).Where(c => c.Length > 0).Distinct().ToList();
         test.QcGroup = Clean(request.QcGroup)?.ToUpperInvariant();
         test.DeltaThresholdPercent = request.DeltaThresholdPercent;
-        test.AllowAutoValidation = request.AllowAutoValidation;
+        var autoValidationAsked = request.AllowAutoValidation && (id is null || !test.AllowAutoValidation)
+                                  && await safety.GuardedForTestsAsync(ct);
+        if (autoValidationAsked && string.IsNullOrWhiteSpace(request.Reason))
+        {
+            return Error.Field("reason", "Say why automatic verification is switched on: it waits for a second pathologist, who reads it.").ToProblem();
+        }
+
+        test.AllowAutoValidation = autoValidationAsked ? (id is not null && test.AllowAutoValidation) : request.AllowAutoValidation;
         test.Preparation = Clean(request.Preparation);
         test.DrawSeparately = request.DrawSeparately;
         test.Interpretation = Clean(request.Interpretation);
@@ -212,6 +224,16 @@ internal static class LabMasterEndpoints
         test.IsProvisional = false;
 
         await db.SaveChangesAsync(ct);
+        if (autoValidationAsked)
+        {
+            var asked = await safety.AskAsync(
+                new LabSafetyPayload(LabSafetyTarget.TestAutoValidation, test.Id, null), nameof(LabTest), test.Version, null,
+                $"Switch on automatic verification of {test.Name}",
+                [new("Test", $"{test.Name} ({test.Code})"), new("Automatic verification", "off → on: analyser results within limits are released with nobody looking at them")],
+                request.Reason, ct);
+            return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
+        }
+
         return id is null ? TypedResults.Created($"/api/v1/lab/tests/{test.Id}", new { test.Id }) : TypedResults.NoContent();
     }
 
@@ -264,7 +286,12 @@ internal static class LabMasterEndpoints
         return TypedResults.NoContent();
     }
 
-    private static async Task<IResult> SetRanges(Guid id, SetRangesRequest request, HospitalDbContext db, CancellationToken ct)
+    /// <summary>
+    /// 204 when saved; 202 with the request when a critical limit is loosened (lowered, raised or taken away, or a critical
+    /// answer no longer critical, for any patient) and the lab asks for a second pathologist: nothing changes until another
+    /// pathologist approves it. Narrowing or adding critical limits is saved at once.
+    /// </summary>
+    private static async Task<IResult> SetRanges(Guid id, SetRangesRequest request, HospitalDbContext db, LabSafetyLimits safety, CancellationToken ct)
     {
         var test = await db.Set<LabTest>().Include(t => t.Ranges).FirstOrDefaultAsync(t => t.Id == id, ct);
         if (test is null)
@@ -272,6 +299,37 @@ internal static class LabMasterEndpoints
             return Error.NotFound(nameof(LabTest), id).ToProblem();
         }
 
+        var built = BuildRanges(test, request);
+        if (built.IsFailure)
+        {
+            return built.Error!.ToProblem();
+        }
+
+        var loosened = CriticalLimitChanges.Loosened(test.Ranges, built.Value, test.Decimals);
+        if (loosened.Count > 0 && await safety.GuardedForTestsAsync(ct))
+        {
+            if (test.Version != request.Version)
+            {
+                return Error.Conflict("concurrency", "The test changed since you opened it. Reload it and try again.").ToProblem();
+            }
+
+            var asked = await safety.AskAsync(
+                new LabSafetyPayload(LabSafetyTarget.TestRanges, test.Id, request), nameof(LabTest), test.Version, null,
+                $"Loosen the critical limits of {test.Name}",
+                [new("Test", $"{test.Name} ({test.Code})"), .. loosened.Select(l => new ApprovalDetail("Critical limit", l))],
+                request.Reason, ct);
+            return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
+        }
+
+        db.SetExpectedVersion(test, request.Version);
+        ReplaceRanges(db, test, built.Value);
+        await db.SaveChangesAsync(ct);
+        return TypedResults.NoContent();
+    }
+
+    /// <summary>The intervals asked for, checked against each other and the test's options.</summary>
+    internal static Result<IReadOnlyList<ReferenceRange>> BuildRanges(LabTest test, SetRangesRequest request)
+    {
         var ranges = request.Ranges.Select(r => new ReferenceRange
         {
             LabTestId = test.Id,
@@ -304,10 +362,15 @@ internal static class LabMasterEndpoints
 
         if (errors.Count > 0)
         {
-            return Error.Validation("range.invalid", "Some reference intervals are invalid.", errors).ToProblem();
+            return Error.Validation("range.invalid", "Some reference intervals are invalid.", errors);
         }
 
-        db.SetExpectedVersion(test, request.Version);
+        return Result<IReadOnlyList<ReferenceRange>>.Ok(ranges);
+    }
+
+    /// <summary>Replaces the test's intervals (the test row is touched, so its version guards the change); does not save.</summary>
+    internal static void ReplaceRanges(HospitalDbContext db, LabTest test, IReadOnlyList<ReferenceRange> ranges)
+    {
         db.Entry(test).Property(t => t.UpdatedAt).IsModified = true;
         foreach (var old in test.Ranges.ToList())
         {
@@ -318,9 +381,6 @@ internal static class LabMasterEndpoints
         {
             db.Add(range);
         }
-
-        await db.SaveChangesAsync(ct);
-        return TypedResults.NoContent();
     }
 
     /// <summary>True when one of the proposed components is (or contains, up to three levels) the panel itself.</summary>
@@ -475,7 +535,12 @@ internal static class LabMasterEndpoints
         return MasterRules.IsChannelMapping(own) ? own : MasterRules.IsChannelMapping(channelCode) ? channelCode : null;
     }
 
-    private static async Task<IResult> SaveInstrument(Guid? id, SaveLabInstrumentRequest request, HospitalDbContext db, ICurrentUser user, CancellationToken ct)
+    /// <summary>
+    /// 201/204 when saved; 202 with the request when automatic verification is switched on and the analyser's facility asks
+    /// for a second pathologist: the rest is saved, and automatic verification stays off until another pathologist approves.
+    /// </summary>
+    private static async Task<IResult> SaveInstrument(
+        Guid? id, SaveLabInstrumentRequest request, HospitalDbContext db, ICurrentUser user, LabSafetyLimits safety, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         LabInstrument instrument;
@@ -518,10 +583,27 @@ internal static class LabMasterEndpoints
         instrument.Section = request.Section;
         instrument.Protocol = request.Protocol;
         instrument.IsBidirectional = request.IsBidirectional;
-        instrument.AutoValidationEnabled = request.AutoValidationEnabled;
+        var autoValidationAsked = request.AutoValidationEnabled && (id is null || !instrument.AutoValidationEnabled)
+                                  && await safety.GuardedForFacilityAsync(instrument.FacilityId, ct);
+        if (autoValidationAsked && string.IsNullOrWhiteSpace(request.Reason))
+        {
+            return Error.Field("reason", "Say why automatic verification is switched on: it waits for a second pathologist, who reads it.").ToProblem();
+        }
+
+        instrument.AutoValidationEnabled = autoValidationAsked ? (id is not null && instrument.AutoValidationEnabled) : request.AutoValidationEnabled;
         instrument.Location = Clean(request.Location);
         instrument.IsActive = request.IsActive;
         await db.SaveChangesAsync(ct);
+        if (autoValidationAsked)
+        {
+            var asked = await safety.AskAsync(
+                new LabSafetyPayload(LabSafetyTarget.InstrumentAutoValidation, instrument.Id, null), nameof(LabInstrument), instrument.Version,
+                instrument.FacilityId, $"Switch on automatic verification of analyser {instrument.Code}",
+                [new("Analyser", $"{instrument.Name} ({instrument.Code})"), new("Automatic verification", "off → on: its results within limits are released with nobody looking at them")],
+                request.Reason, ct);
+            return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
+        }
+
         return id is null ? TypedResults.Created($"/api/v1/lab/instruments/{instrument.Id}", new { instrument.Id }) : TypedResults.NoContent();
     }
 

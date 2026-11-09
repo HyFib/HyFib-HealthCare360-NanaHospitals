@@ -52,6 +52,8 @@ import { ComponentsEditor } from './ComponentsEditor';
 import { useLoincNameFollowsCode } from './loincName';
 import { parseList } from './ranges';
 import { RangesEditor } from './RangesEditor';
+import { SecondPathologistReasonDialog } from './SecondPathologistReasonDialog';
+import { asksForReason, isApprovalRequest, waitsForSecondPathologist } from './secondPathologist';
 
 const CODE = /^[A-Za-z0-9_-]+$/;
 const CHANNEL = /^[A-Za-z0-9._%#^-]+(:[A-Za-z0-9._%#^-]+)?$/;
@@ -273,9 +275,11 @@ function TestEditor({
     name: ['resultType', 'isPanel', 'isOrderable'],
   });
 
+  // Automatic verification switched on where the lab asks for a second pathologist: the server asks why, and it waits.
+  const [askingWhy, setAskingWhy] = useState<TestValues | null>(null);
   const save = useMutation({
-    mutationFn: async (values: TestValues) => {
-      const result = await labApi.saveTest(test?.id ?? null, toRequest(values, version));
+    mutationFn: async ({ values, reason }: { values: TestValues; reason?: string }) => {
+      const result = await labApi.saveTest(test?.id ?? null, { ...toRequest(values, version), reason: reason ?? null });
       // A change answers with nothing: the details are filled again from the test read after it, version included.
       const fresh = test
         ? await queryClient.fetchQuery({ ...labQueries.test(test.id), staleTime: 0 }).catch(() => null)
@@ -283,12 +287,22 @@ function TestEditor({
       return { result, fresh };
     },
     onSuccess: ({ result, fresh }) => {
+      setAskingWhy(null);
+      if (isApprovalRequest(result)) {
+        notify.info('Saved; automatic verification sent for approval', waitsForSecondPathologist);
+        if (!test) {
+          onCreated?.(result.subjectId);
+        }
+      }
       if (fresh) {
         form.reset(defaults(fresh));
         setBase(fresh);
         setVersion(fresh.version);
       }
       void queryClient.invalidateQueries({ queryKey: labKeys.masters });
+      if (isApprovalRequest(result)) {
+        return;
+      }
       if (!test && result?.id) {
         notify.success('Test created', isPanel ? 'Now add its analytes.' : 'Now add its reference ranges.');
         onCreated?.(result.id);
@@ -296,7 +310,11 @@ function TestEditor({
         notify.success('Test saved');
       }
     },
-    onError: (error) => {
+    onError: (error, { values }) => {
+      if (asksForReason(error)) {
+        setAskingWhy(values);
+        return;
+      }
       if (!applyServerErrors(error, form.setError)) {
         notify.error(error, 'Could not save the test');
       }
@@ -311,7 +329,11 @@ function TestEditor({
 
   return (
     <OverlayDrawer open position="end" size="large" onOpenChange={guard.onOpenChange}>
-      <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
+      <form
+        onSubmit={form.handleSubmit((values) => save.mutate({ values }))}
+        noValidate
+        style={{ display: 'contents' }}
+      >
         <DrawerHeader>
           <DrawerHeaderTitle
             action={
@@ -544,6 +566,14 @@ function TestEditor({
         )}
       </form>
       {guard.dialogs}
+      <SecondPathologistReasonDialog
+        key={askingWhy ? 'asking' : 'idle'}
+        open={askingWhy !== null}
+        what="Switching automatic verification on"
+        busy={save.isPending}
+        onConfirm={(reason) => askingWhy && save.mutate({ values: askingWhy, reason })}
+        onCancel={() => setAskingWhy(null)}
+      />
     </OverlayDrawer>
   );
 }

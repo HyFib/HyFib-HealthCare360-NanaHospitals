@@ -2,7 +2,9 @@ using System.Globalization;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Quality;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.QualityControl;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
@@ -23,12 +25,19 @@ internal sealed record QcAssay(Guid LabTestId, string TestName, string Key);
 /// day on any control lot is rejected, unless a supervisor records an audited override. Second, an analyser's result
 /// is auto-validated only when that analyser ran the assay's QC today and every lot's latest run today was accepted.
 /// Tests in one QC group (fasting and post-prandial glucose) share the assay's QC.
+/// <para>
+/// Where the lab asks for a second pathologist (<see cref="LabResultService.SeparateVerifierSetting"/>), an override for
+/// the day waits for another holder of <c>lab.results.verify</c> (<see cref="QcOverrideApproval"/>), and the override a
+/// pathologist gives while verifying covers only the results verified with it.
+/// </para>
 /// </summary>
 internal sealed class QualityControlService(
     HospitalDbContext db,
     DiagnosticsLookups lookups,
     DiagnosticsRealtime realtime,
     INotificationService notifications,
+    IApprovals approvals,
+    ISettingsService settings,
     IAuditLogger audit,
     ICurrentUser currentUser,
     TimeProvider time,
@@ -112,9 +121,13 @@ internal sealed class QualityControlService(
 
     /// <summary>
     /// Records an audited supervisor override for every rejected run that is locking the given analytes. Runs in the
-    /// caller's unit of work, because verification with an override reason is one transaction.
+    /// caller's unit of work, because verification with an override reason is one transaction. With
+    /// <paramref name="resultIds"/> the override covers those results only (the lab asks for a second pathologist); without,
+    /// it unlocks the assay for the day. <paramref name="requestedBy"/> is the pathologist who asked, when another approved.
     /// </summary>
-    public async Task<int> RecordOverridesAsync(IReadOnlyCollection<QcLockout> lockouts, string reason, CancellationToken ct)
+    public async Task<int> RecordOverridesAsync(
+        IReadOnlyCollection<QcLockout> lockouts, string reason, CancellationToken ct, IReadOnlyCollection<Guid>? resultIds = null,
+        (Guid Id, string Name)? requestedBy = null)
     {
         var runIds = lockouts.SelectMany(l => l.RejectedRunIds).Distinct().ToList();
         var runs = await db.Set<QcRun>().AsNoTracking()
@@ -122,31 +135,57 @@ internal sealed class QualityControlService(
             .Select(r => new { r.Id, r.FacilityId, r.LabTestId, r.Violations })
             .ToListAsync(ct);
         var now = time.GetUtcNow();
+        var why = reason.Trim();
         foreach (var run in runs)
         {
+            // An override at verification covers the results of the assay verified now (the rest of the batch's tests
+            // are not this run's).
+            var lockout = lockouts.FirstOrDefault(l => l.RejectedRunIds.Contains(run.Id));
+            List<Guid>? covered = resultIds is null ? null : [.. resultIds];
             db.Add(new QcOverride
             {
                 FacilityId = run.FacilityId,
                 LabTestId = run.LabTestId,
                 QcRunId = run.Id,
-                Reason = reason.Trim(),
+                Reason = why,
                 OverriddenAt = now,
-                OverriddenBy = currentUser.UserId,
+                OverriddenBy = requestedBy?.Id ?? currentUser.UserId,
+                ApprovedBy = requestedBy is null ? null : currentUser.UserId,
+                LabResultIds = covered,
             });
-            audit.Add(new AuditEntry(AuditCategories.Clinical, "lab.qc.override", $"QC lockout overridden: {reason.Trim()}")
+            var scope = covered is null ? "for the day" : $"for {covered.Count} result(s) being verified";
+            var who = requestedBy is { } asked ? $" (asked for by {asked.Name}, approved by a second pathologist)" : string.Empty;
+            audit.Add(new AuditEntry(AuditCategories.Clinical, "lab.qc.override", $"QC lockout overridden {scope}{who}: {why}")
             {
                 EntityType = nameof(QcRun),
                 EntityId = run.Id.ToString(),
                 Severity = AuditSeverity.Warning,
-                Details = new { run.LabTestId, violations = run.Violations, reason = reason.Trim() },
+                Details = new
+                {
+                    run.LabTestId,
+                    test = lockout?.TestName,
+                    violations = run.Violations,
+                    reason = why,
+                    resultIds = covered,
+                    requestedBy = requestedBy?.Id,
+                    approvedBy = requestedBy is null ? (Guid?)null : currentUser.UserId,
+                },
             });
         }
 
         return runs.Count;
     }
 
-    /// <summary>Stand-alone override (from the QC screen) for one analyte.</summary>
-    public async Task<Result<int>> OverrideAsync(QcOverrideRequest request, CancellationToken ct)
+    /// <summary>Whether the facility asks for a second pathologist (<see cref="LabResultService.SeparateVerifierSetting"/>).</summary>
+    public async Task<bool> SeparateVerifierAsync(Guid facilityId, CancellationToken ct) =>
+        await settings.GetAsync<bool?>(LabResultService.SeparateVerifierSetting, facilityId, ct) == true;
+
+    /// <summary>
+    /// Stand-alone override (from the QC screen) for one analyte, for the rest of the day. Where the lab asks for a second
+    /// pathologist it is asked for (<see cref="QcOverrideApproval"/>): the assay stays locked until another holder of
+    /// <c>lab.results.verify</c> approves it, over the same rejected runs.
+    /// </summary>
+    public async Task<Result<QcOverrideOutcome>> OverrideAsync(QcOverrideRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
         {
@@ -159,10 +198,51 @@ internal sealed class QualityControlService(
             return Error.Rule("qc.not_locked", "QC is not locking this test today.");
         }
 
+        if (await SeparateVerifierAsync(facilityId, ct))
+        {
+            var runIds = lockouts.SelectMany(l => l.RejectedRunIds).Distinct().Order().ToList();
+            var testName = lockouts[0].TestName;
+            var asked = await approvals.RequestAsync(
+                QcOverrideApproval.Key,
+                new ApprovalSubject(nameof(LabTest), request.LabTestId, null, facilityId, null),
+                new QcOverridePayload(request.LabTestId, runIds, request.Reason.Trim()),
+                $"Override today's failed QC for {testName}",
+                [
+                    new("Test", testName),
+                    new("Failed rules", string.Join(", ", lockouts.SelectMany(l => l.Violations).Distinct())),
+                    new("Change", "verification locked → open for the rest of the day, until QC fails again"),
+                ],
+                request.Reason,
+                ct);
+            return asked.IsFailure ? asked.Error! : new QcOverrideOutcome(0, asked.Value);
+        }
+
         var count = await RecordOverridesAsync(lockouts, request.Reason, ct);
         await db.SaveChangesAsync(ct);
         await realtime.PublishAsync(facilityId, "lab.qc.override", new { request.LabTestId }, ct);
-        return count;
+        return new QcOverrideOutcome(count, null);
+    }
+
+    /// <summary>
+    /// Makes an approved override for the day, in the approval's transaction: only over the rejected runs it was asked
+    /// against (a newer run, passed or failed, or an override someone gave meanwhile, makes it stale).
+    /// </summary>
+    internal async Task<Result<string>> OverrideApprovedAsync(ApprovalRequest approval, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<QcOverridePayload>(approval.Payload);
+        var lockouts = await LockoutsAsync(approval.FacilityId, [asked.LabTestId], ct);
+        var now = lockouts.SelectMany(l => l.RejectedRunIds).Distinct().Order().ToList();
+        if (!now.SequenceEqual(asked.RejectedRunIds))
+        {
+            return Error.Rule("approval.stale",
+                now.Count == 0
+                    ? "QC no longer locks this test (it passed, or was overridden meanwhile). Nothing to override."
+                    : "QC for this test changed after the override was asked for (a newer run). Ask again, against today's QC as it is now.");
+        }
+
+        var count = await RecordOverridesAsync(lockouts, asked.Reason, ct, resultIds: null, (approval.RequestedBy, approval.RequestedByName));
+        realtime.PublishAfterCommit(approval.FacilityId, "lab.qc.override", new { asked.LabTestId });
+        return $"Verification of {lockouts[0].TestName} opened for the day ({count} rejected run(s) overridden)";
     }
 
     public async Task<Result<QcRunDto>> ReviewAsync(Guid runId, ReviewQcRunRequest request, CancellationToken ct)
@@ -181,7 +261,7 @@ internal sealed class QualityControlService(
 
         await db.SaveChangesAsync(ct);
         var lot = await db.Set<QcLot>().AsNoTracking().FirstAsync(l => l.Id == run.QcLotId, ct);
-        var overridden = await db.Set<QcOverride>().AnyAsync(o => o.QcRunId == run.Id, ct);
+        var overridden = await db.Set<QcOverride>().AnyAsync(o => o.QcRunId == run.Id && o.LabResultIds == null, ct);
         var users = await lookups.UserNamesAsync([run.CreatedBy, run.ReviewedBy], ct);
         return ToDto(run, lot, users, overridden);
     }
@@ -229,7 +309,7 @@ internal sealed class QualityControlService(
         var rejectedIds = latest.Values.Where(r => r.Outcome == QcOutcome.Rejected).Select(r => r.Id).ToList();
         var overridden = rejectedIds.Count == 0
             ? []
-            : await db.Set<QcOverride>().AsNoTracking().Where(o => rejectedIds.Contains(o.QcRunId)).Select(o => o.QcRunId).ToListAsync(ct);
+            : await db.Set<QcOverride>().AsNoTracking().Where(o => rejectedIds.Contains(o.QcRunId) && o.LabResultIds == null).Select(o => o.QcRunId).ToListAsync(ct);
 
         return lots.Select(l =>
         {
@@ -280,7 +360,7 @@ internal sealed class QualityControlService(
         var rejectedIds = latestPerLot.Where(r => r.Outcome == QcOutcome.Rejected).Select(r => r.Id).ToList();
         var overridden = rejectedIds.Count == 0
             ? []
-            : await db.Set<QcOverride>().AsNoTracking().Where(o => rejectedIds.Contains(o.QcRunId)).Select(o => o.QcRunId).ToListAsync(ct);
+            : await db.Set<QcOverride>().AsNoTracking().Where(o => rejectedIds.Contains(o.QcRunId) && o.LabResultIds == null).Select(o => o.QcRunId).ToListAsync(ct);
 
         return Judge(tests, keyByTest, latestPerLot, overridden, instrumentCode);
     }
