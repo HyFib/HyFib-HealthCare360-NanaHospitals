@@ -14,6 +14,11 @@ startConnectionMonitor();
 startSerialScans();
 keepFocusInOpenDialogs();
 
+// Read-only offline mode: the app's own files are kept by a service worker so it still opens while the server is down.
+if (import.meta.env.PROD && 'serviceWorker' in navigator && window.isSecureContext) {
+  void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+}
+
 const queryClient = createHc360QueryClient();
 const router = createAppRouter(queryClient);
 

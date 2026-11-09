@@ -92,6 +92,11 @@ describe('downtime ward sheet', () => {
     expect(html).not.toContain('<img');
     expect(html).toContain('&lt;img');
   });
+
+  it('prints a patient in isolation as such', () => {
+    expect(downtimeBody(pack([patient({ isolation: 'Airborne <TB>' })]))).toContain('Isolation: Airborne &lt;TB&gt;');
+    expect(downtimeBody(pack([patient()]))).not.toContain('Isolation:');
+  });
 });
 
 describe('NEWS2 display', () => {
