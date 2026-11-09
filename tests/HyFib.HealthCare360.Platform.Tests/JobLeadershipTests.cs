@@ -116,8 +116,8 @@ public sealed class JobLeadershipTests
     {
         using var cache = new MemoryCache(new MemoryCacheOptions());
         var store = new MemoryClusterStore(cache, TimeProvider.System);
-        var first = new JobSlotClaim(store, NullLogger<JobSlotClaim>.Instance);
-        var second = new JobSlotClaim(store, NullLogger<JobSlotClaim>.Instance);
+        ITriggerListener first = new JobSlotClaim(store, NullLogger<JobSlotClaim>.Instance);
+        ITriggerListener second = new JobSlotClaim(store, NullLogger<JobSlotClaim>.Instance);
         var due = new DateTimeOffset(2026, 11, 9, 20, 30, 0, TimeSpan.Zero);
 
         (await first.VetoJobExecution(Trigger(), Fire(due), Ct)).ShouldBeFalse("the first server to fire it runs it");
@@ -126,8 +126,26 @@ public sealed class JobLeadershipTests
 
         var down = Substitute.For<IClusterStore>();
         down.TryAddAsync(default!, default, Ct).ReturnsForAnyArgs<bool>(_ => throw new TimeoutException());
-        (await new JobSlotClaim(down, NullLogger<JobSlotClaim>.Instance).VetoJobExecution(Trigger(), Fire(due.AddDays(2)), Ct))
+        (await ((ITriggerListener)new JobSlotClaim(down, NullLogger<JobSlotClaim>.Instance)).VetoJobExecution(Trigger(), Fire(due.AddDays(2)), Ct))
             .ShouldBeTrue("a due time that cannot be claimed is not run");
+    }
+
+    /// <summary>
+    /// Quartz takes the claim as a trigger listener, as the platform registers it: Quartz 4 refuses, at registration, a
+    /// listener with a member that matches an interface member by name but not by signature (one Quartz would never call).
+    /// </summary>
+    [Fact]
+    public async Task Quartz_takes_the_claim_as_a_trigger_listener()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IClusterStore>(_ => new MemoryClusterStore(new MemoryCache(new MemoryCacheOptions()), TimeProvider.System));
+        services.AddQuartz(quartz => quartz.AddTriggerListener<JobSlotClaim>([GroupMatcher<TriggerKey>.AnyGroup()]));
+        await using var provider = services.BuildServiceProvider();
+
+        var scheduler = await provider.GetRequiredService<ISchedulerFactory>().GetScheduler(Ct);
+        scheduler.ListenerManager.GetTriggerListeners().ShouldContain(l => l is JobSlotClaim);
+        await scheduler.Shutdown(false, Ct);
     }
 
     private static ITrigger Trigger()

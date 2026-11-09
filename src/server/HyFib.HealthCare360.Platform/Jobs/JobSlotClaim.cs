@@ -24,7 +24,9 @@ internal sealed class JobSlotClaim(IClusterStore store, ILogger<JobSlotClaim> lo
     internal static string Key(TriggerKey trigger, DateTimeOffset due) =>
         string.Create(CultureInfo.InvariantCulture, $"job-slot:{trigger.Group}.{trigger.Name}:{due.UtcDateTime:yyyyMMddTHHmmssZ}");
 
-    public async ValueTask<bool> VetoJobExecution(ITrigger trigger, IJobExecutionContext context, CancellationToken cancellationToken = default)
+    // Explicit, so that a change to Quartz's signature fails the build rather than leaving a method Quartz never calls; the
+    // listener's other members keep the interface's defaults.
+    async ValueTask<bool> ITriggerListener.VetoJobExecution(ITrigger trigger, IJobExecutionContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(trigger);
         ArgumentNullException.ThrowIfNull(context);
@@ -45,12 +47,4 @@ internal sealed class JobSlotClaim(IClusterStore store, ILogger<JobSlotClaim> lo
             return true;
         }
     }
-
-    public ValueTask TriggerFired(ITrigger trigger, IJobExecutionContext context, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
-
-    public ValueTask TriggerMisfired(ITrigger trigger, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
-
-    public ValueTask TriggerComplete(
-        ITrigger trigger, IJobExecutionContext context, SchedulerInstruction triggerInstructionCode, CancellationToken cancellationToken = default) =>
-        ValueTask.CompletedTask;
 }
