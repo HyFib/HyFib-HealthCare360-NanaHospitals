@@ -60,7 +60,11 @@ public sealed record GstReturnDocument(
     decimal? OriginalValue = null,
     string? OriginalPlaceOfSupply = null);
 
-/// <summary>A purchase invoice the hospital received, for the input tax credit of GSTR-3B table 4 (supplier GSTIN null: unregistered, no credit).</summary>
+/// <summary>
+/// A purchase invoice the hospital received, for the input tax credit of GSTR-3B table 4 (supplier GSTIN null: unregistered,
+/// no credit). <paramref name="IsReturn"/> marks goods sent back to the supplier (the stores' debit note, matching the
+/// supplier's credit note): its amounts are positive and reduce the credit.
+/// </summary>
 public sealed record GstPurchase(
     string Source,
     Guid Id,
@@ -72,7 +76,8 @@ public sealed record GstPurchase(
     decimal Igst,
     decimal Cgst,
     decimal Sgst,
-    decimal Cess = 0m);
+    decimal Cess = 0m,
+    bool IsReturn = false);
 
 /// <summary>
 /// A module whose outward documents go into the hospital's GST returns: Billing's bills, credit and debit notes; the
