@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using HyFib.HealthCare360.Platform.Logging;
 using Serilog;
 using Serilog.Configuration;
 using Serilog.Events;
@@ -10,8 +11,10 @@ namespace HyFib.HealthCare360.Server;
 /// Where the server's logs go (SRS OBS-01): the console, for whoever runs the server by hand; a rolling file of structured
 /// events, one JSON object per line (<see cref="JsonLogFormatter"/>), kept for <see cref="RetentionDays"/> days in the logs
 /// folder; and, for the
-/// Windows service, errors in the Event Log, where Windows tools and monitoring agents look first. Every sink masks phone,
-/// Aadhaar and ABHA numbers, e-mail addresses and secrets (SRS SEC-10).
+/// Windows service, errors in the Event Log, where Windows tools and monitoring agents look first; and, where it is set up,
+/// a syslog collector on another machine (<see cref="SyslogSink"/>, RFC 5424 over TLS), which keeps them where this
+/// server's administrators cannot change them. Every sink masks phone, Aadhaar and ABHA numbers, e-mail addresses and
+/// secrets (SRS SEC-10).
 /// </summary>
 internal static class HospitalLogging
 {
@@ -32,8 +35,10 @@ internal static class HospitalLogging
     /// <param name="logs">The folder the rolling file is written in.</param>
     /// <param name="development">A developer's machine: the console shows debug messages too.</param>
     /// <param name="errorLog">Writes errors to the Event Log, given the formatter to write them with; null where there is none.</param>
+    /// <param name="syslog">The syslog collector, when it is on (HealthCare360:Syslog), and the least severe event it gets.</param>
     public static LoggerConfiguration WriteToHospitalSinks(
-        this LoggerConfiguration logger, string logs, bool development, Action<LoggerSinkConfiguration, ITextFormatter>? errorLog)
+        this LoggerConfiguration logger, string logs, bool development, Action<LoggerSinkConfiguration, ITextFormatter>? errorLog,
+        (SyslogClient Client, LogEventLevel MinimumLevel)? syslog = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
         logger.WriteTo.Console(
@@ -54,6 +59,11 @@ internal static class HospitalLogging
             logger.WriteTo.Logger(errors => errorLog(errors.Filter.ByIncludingOnly(e => e.Level >= LogEventLevel.Error).WriteTo, formatter));
         }
 
+        if (syslog is { Client.IsEnabled: true } collector)
+        {
+            logger.WriteTo.Sink(new SyslogSink(collector.Client), collector.MinimumLevel);
+        }
+
         return logger;
     }
 
@@ -61,6 +71,17 @@ internal static class HospitalLogging
     /// The Windows Event Log (Application, source <see cref="EventLogSource"/>, which the installer registers: the service
     /// cannot create it without being an administrator).
     /// </summary>
+    /// <summary>The level HealthCare360:Syslog:MinimumLevel names, Serilog's or Microsoft's word for it (Information when it names none).</summary>
+    public static LogEventLevel Level(string? name) => name?.Trim().ToUpperInvariant() switch
+    {
+        "VERBOSE" or "TRACE" => LogEventLevel.Verbose,
+        "DEBUG" => LogEventLevel.Debug,
+        "WARNING" => LogEventLevel.Warning,
+        "ERROR" => LogEventLevel.Error,
+        "FATAL" or "CRITICAL" => LogEventLevel.Fatal,
+        _ => LogEventLevel.Information,
+    };
+
     [SupportedOSPlatform("windows")]
     public static void EventLog(LoggerSinkConfiguration sink, ITextFormatter formatter) =>
         sink.EventLog(formatter, EventLogSource, manageEventSource: false);

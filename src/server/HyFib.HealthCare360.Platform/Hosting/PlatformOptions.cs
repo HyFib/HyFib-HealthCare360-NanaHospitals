@@ -72,6 +72,12 @@ public sealed class PlatformOptions
 
     public TimeSyncOptions TimeSync { get; set; } = new();
 
+    /// <summary>The server's log events, and the audit chain's anchors, sent off this machine to a syslog collector (off by default).</summary>
+    public SyslogOptions Syslog { get; set; } = new();
+
+    /// <summary>How the server reaches PostgreSQL (<see cref="Persistence.DatabaseTls"/>).</summary>
+    public DatabaseOptions Database { get; set; } = new();
+
     public bool RunsJobs => !string.Equals(Role, "api", StringComparison.OrdinalIgnoreCase);
 
     public bool ServesApi => !string.Equals(Role, "worker", StringComparison.OrdinalIgnoreCase);
@@ -258,6 +264,126 @@ public sealed class AuditOptions
     /// may ask for those months.
     /// </summary>
     public string? ArchiveDirectory { get; set; }
+
+    /// <summary>
+    /// A second anchor file, on another machine (a UNC path such as <c>\\audit-nas\hc360\anchors.log</c>, ideally a share
+    /// the server may only add files to): every anchor is copied there as it is written (<see cref="Auditing.AuditAnchorMirror"/>),
+    /// and System health warns while it cannot be. Empty (the default): no copy on another machine, unless
+    /// <see cref="AnchorsToSyslog"/>.
+    /// </summary>
+    public string? AnchorMirrorFile { get; set; }
+
+    /// <summary>
+    /// Send every anchor to the syslog collector too (<see cref="PlatformOptions.Syslog"/>, which must be on), as a message
+    /// of its own (facility "log audit", MSGID <c>AUDIT_ANCHOR</c>). System health warns while it cannot be delivered.
+    /// </summary>
+    public bool AnchorsToSyslog { get; set; }
+
+    /// <summary>Whether anchors are copied anywhere off this server.</summary>
+    public bool IsMirrored => !string.IsNullOrWhiteSpace(AnchorMirrorFile) || AnchorsToSyslog;
+}
+
+/// <summary>
+/// A syslog collector (a SIEM, or the hospital's rsyslog or syslog-ng server) that receives the server's log events and the
+/// audit chain's anchors as they happen, in RFC 5424's format over TLS (RFC 5425, TCP port 6514), so that what the server
+/// logged is kept on a machine its own administrators cannot change (CERT-In Directions of 28 April 2022, direction (iv)).
+/// Every message is masked as the log file is (<see cref="Security.SensitiveText"/>): no phone, Aadhaar or ABHA number,
+/// e-mail address or secret leaves the server in it.
+/// </summary>
+public sealed class SyslogOptions
+{
+    public const int DefaultPort = 6514;
+
+    /// <summary>Send to the collector (default off).</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>The collector's DNS name, which its certificate must carry (an address only if the certificate names it).</summary>
+    public string? Host { get; set; }
+
+    public int Port { get; set; } = DefaultPort;
+
+    /// <summary>
+    /// The CA certificate (a .cer or .pem file) the collector's certificate must chain to, instead of the machine's trusted
+    /// roots: the hospital's own CA, say. The collector's name is checked either way.
+    /// </summary>
+    public string? CaCertificatePath { get; set; }
+
+    /// <summary>A PFX with this server's own certificate and key, for a collector that asks clients for one (mutual TLS).</summary>
+    public string? ClientCertificatePath { get; set; }
+
+    public string? ClientCertificatePassword { get; set; }
+
+    /// <summary>The APP-NAME field (default <c>hc360</c>): printable ASCII, at most 48 characters.</summary>
+    public string AppName { get; set; } = "hc360";
+
+    /// <summary>
+    /// The facility of the log events (RFC 5424 section 6.2.1; default 16, local0). Anchors always go as 13, log audit.
+    /// </summary>
+    public int Facility { get; set; } = 16;
+
+    /// <summary>The least severe log events sent: Verbose, Debug, Information (the default), Warning, Error or Fatal.</summary>
+    public string MinimumLevel { get; set; } = "Information";
+
+    /// <summary>
+    /// Messages waiting while the collector cannot be reached (default 10,000). Beyond that the newest are dropped, counted,
+    /// and System health says so; the log file on this server still has them.
+    /// </summary>
+    public int QueueLimit { get; set; } = 10_000;
+
+    /// <summary>Problems with these settings, each a sentence; none when it is off.</summary>
+    public IReadOnlyList<string> Problems()
+    {
+        if (!Enabled)
+        {
+            return [];
+        }
+
+        var problems = new List<string>();
+        if (string.IsNullOrWhiteSpace(Host))
+        {
+            problems.Add("HealthCare360:Syslog:Enabled is true but HealthCare360:Syslog:Host is empty: name the syslog collector.");
+        }
+
+        if (Port is < 1 or > 65535)
+        {
+            problems.Add($"HealthCare360:Syslog:Port is {Port}; it must be between 1 and 65535 (6514 for syslog over TLS).");
+        }
+
+        if (Facility is < 0 or > 23)
+        {
+            problems.Add($"HealthCare360:Syslog:Facility is {Facility}; it must be between 0 and 23 (RFC 5424).");
+        }
+
+        if (string.IsNullOrEmpty(AppName) || AppName.Length > 48 || AppName.Any(c => c is < '!' or > '~'))
+        {
+            problems.Add("HealthCare360:Syslog:AppName must be 1 to 48 printable ASCII characters without spaces (RFC 5424).");
+        }
+
+        if (!Enum.TryParse<Microsoft.Extensions.Logging.LogLevel>(MinimumLevel, true, out _)
+            && !new[] { "Verbose", "Fatal" }.Contains(MinimumLevel, StringComparer.OrdinalIgnoreCase))
+        {
+            problems.Add($"HealthCare360:Syslog:MinimumLevel is '{MinimumLevel}'; it must be Verbose, Debug, Information, Warning, Error or Fatal.");
+        }
+
+        if (QueueLimit < 100)
+        {
+            problems.Add($"HealthCare360:Syslog:QueueLimit is {QueueLimit}; it must be at least 100.");
+        }
+
+        return problems;
+    }
+}
+
+/// <summary>How the server reaches PostgreSQL.</summary>
+public sealed class DatabaseOptions
+{
+    /// <summary>
+    /// Let the server reach a PostgreSQL on another machine without checking who it is talking to (no <c>SSL Mode=VerifyFull</c>,
+    /// nor <c>Require</c> with a pinned <c>Root Certificate</c>; <see cref="Persistence.DatabaseTls"/>). For a lab or a
+    /// training server only: anyone on the network between them could then read or change what goes to the database. System
+    /// health says so while it is on.
+    /// </summary>
+    public bool AllowUnverifiedRemoteConnection { get; set; }
 }
 
 /// <summary>

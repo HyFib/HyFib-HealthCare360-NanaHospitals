@@ -163,6 +163,14 @@ jobs:
           pwsh -NoProfile -File tests/deploy/Test-InstallerDatabaseSignIn.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
+      - name: Test the installer's two database accounts (hc360_owner, hc360_app)
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerDatabaseRoles.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-InstallerDatabaseRoles.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
       - name: Test the installers' restart of HC360 and PostgreSQL when they fail
         shell: pwsh
         run: |
