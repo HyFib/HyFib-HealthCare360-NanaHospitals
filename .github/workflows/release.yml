@@ -115,7 +115,9 @@ jobs:
 
       # The SBOMs (CycloneDX) of what this release ships, beside the packages and in SHA256SUMS.txt: one per package (the
       # server's with the staff app and portal it serves) and one per web app (.github/scripts/sbom.mjs; the tools at their
-      # pinned versions; docs/security/SECURITY.md, "SBOMs").
+      # pinned versions; docs/security/SECURITY.md, "SBOMs"). HC360 Desktop's manifest and signature, made after the
+      # packages were listed, go into SHA256SUMS.txt here too, so every file the release attaches can be checked
+      # (docs/deployment/DEPLOYMENT.md, section 1).
       - name: Make the SBOMs
         shell: pwsh
         run: |
@@ -125,7 +127,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'cdxgen could not be installed.' }
           node .github/scripts/sbom.mjs --output artifacts
           if ($LASTEXITCODE -ne 0) { throw 'The SBOMs could not be made.' }
-          Get-ChildItem artifacts -Filter '*.cdx.json' | ForEach-Object {
+          Get-ChildItem artifacts -File | Where-Object { $_.Name -like '*.cdx.json' -or $_.Name -like '*.manifest.json' -or $_.Name -like '*.manifest.sig' } | ForEach-Object {
             '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
           } | Add-Content artifacts/SHA256SUMS.txt -Encoding ascii
 
