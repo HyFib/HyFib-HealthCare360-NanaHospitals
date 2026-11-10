@@ -48,11 +48,12 @@ import {
   useNotify,
   useUnsavedChanges,
 } from '@hc360/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
+import { useShownItems } from '@/lib/useShownItems';
 import {
   MATERIAL_KINDS,
   otApi,
@@ -912,7 +913,10 @@ function StoreItemPicker({
   const styles = useStyles();
   const [term, setTerm] = useState('');
   const search = useDebouncedValue(term.trim(), 300);
-  const items = useQuery(otQueries.storeItems(search));
+  // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+  const items = useQuery({ ...otQueries.storeItems(search), placeholderData: keepPreviousData });
+  // The item comes from the options shown, not from the results as they are by the time one is chosen.
+  const shown = useShownItems(items.data ?? [], (i) => i.itemId);
 
   return (
     <Controller
@@ -942,7 +946,7 @@ function StoreItemPicker({
                 }
               }}
               onOptionSelect={(_, data) => {
-                const item = items.data?.find((i) => i.itemId === data.optionValue) ?? null;
+                const item = shown(data.optionValue) ?? null;
                 field.onChange(item?.itemId ?? null);
                 onPicked(item);
                 setTerm('');
