@@ -21,6 +21,20 @@ internet to work; SMS/WhatsApp, payment gateways, ABDM and the AI assistant use 
 
 ## 1. Before you start
 
+**Read the machine first.** On the machine meant to be the server, from the release's `deploy` folder, in PowerShell as
+Administrator:
+
+```powershell
+.\Test-HC360ServerNode.ps1 -ConcurrentUsers <staff using HC360 at once at the busiest hour>
+```
+
+It changes nothing. It reads what Settings › About does not show and grades each item against this section and the SRS
+server sizing for that many users: which disk Windows is on and whether it is an NVMe SSD, a second disk for backup
+copies, BitLocker and the TPM, the network adapter and profile, a UPS on USB, power cuts and shutdowns in the last 30
+days, the ports HC360 needs, other database engines and remote-access tools. It writes a JSON report with no patient
+data in it, and exits with code 1 if a check failed. [NANA-THENI-READINESS.md](NANA-THENI-READINESS.md) shows how to
+use the report for one hospital.
+
 **Server hardware** (up to about 250 concurrent users):
 - 8-core CPU, 32 GB RAM.
 - 1 TB NVMe SSD, plus a second disk or NAS share for backup copies.
