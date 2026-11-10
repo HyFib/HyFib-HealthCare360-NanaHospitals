@@ -27,7 +27,8 @@ $statement = @($ast.EndBlock.Statements | Where-Object { $_ -is [System.Manageme
 if ($statement.Count -ne 1) { throw 'Install-HC360Server.ps1 no longer sets its own settings in one "$changed = @(...)" statement.' }
 $setOwnSettings = [scriptblock]::Create(
     'param($settings, [string] $DataDir, [string] $pgBin, [int] $HttpsPort = 7360, [int] $PortalHttpsPort = 7361, [string] $FacilityCode = ''NH'', ' +
-    '[string] $FacilityName = ''Nana Hospitals'', [string] $SecondaryBackupDir, [switch] $CreateDatabase, [string] $connectionString) ' +
+    '[string] $FacilityName = ''Nana Hospitals'', [string] $SecondaryBackupDir, [switch] $CreateDatabase, [string] $connectionString, ' +
+    '[string] $ownerConnectionString) ' +
     [Environment]::NewLine + $statement[0].Extent.Text + [Environment]::NewLine + '$changed')
 
 $script:failures = 0
@@ -107,10 +108,11 @@ $pgBin = Join-Path $root 'PostgreSQL\17\bin'
 $pgDump = Join-Path $pgBin 'pg_dump.exe'
 try {
     Write-Host 'Fresh install'
-    $changed = Invoke-ConfigurationStep $path @{ CreateDatabase = $true; connectionString = 'Host=localhost;Database=hc360;Username=hc360_app;Password=p+/&w'; FacilityName = $hindi; SecondaryBackupDir = '\\NAS\HC360-Backups' }
-    Assert ($changed.Count -eq 9) "sets the installer's nine settings ($($changed -join ', '))"
+    $changed = Invoke-ConfigurationStep $path @{ CreateDatabase = $true; connectionString = 'Host=localhost;Database=hc360;Username=hc360_app;Password=p+/&w'; ownerConnectionString = 'Host=localhost;Database=hc360;Username=hc360_owner;Password=o+/&w'; FacilityName = $hindi; SecondaryBackupDir = '\\NAS\HC360-Backups' }
+    Assert ($changed.Count -eq 10) "sets the installer's ten settings ($($changed -join ', '))"
     $table = Read-Table $path
     Assert ($table['ConnectionStrings:Hospital'] -ceq 'Host=localhost;Database=hc360;Username=hc360_app;Password=p+/&w') 'the database connection'
+    Assert ($table['ConnectionStrings:HospitalOwner'] -ceq 'Host=localhost;Database=hc360;Username=hc360_owner;Password=o+/&w') 'the schema owner''s connection'
     Assert ($table['HealthCare360:HttpsPort'] -ceq '7360') 'HttpsPort 7360'
     Assert ($table['HealthCare360:PortalHttpsPort'] -ceq '7361') 'PortalHttpsPort 7361, an address of its own for the patient portal'
     Assert ($table['HealthCare360:DefaultFacilityName'] -ceq $hindi) 'a facility name in Devanagari'

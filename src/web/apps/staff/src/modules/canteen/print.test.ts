@@ -31,6 +31,11 @@ const sale: CanteenSaleDto = {
   cashierName: 'Ravi',
   cancelledAt: null,
   cancelReason: null,
+  cancelRequestedByName: null,
+  cancelledByName: null,
+  refundMode: null,
+  refundAmount: null,
+  version: 1,
   lines: [
     {
       menuItemId: 'm1',

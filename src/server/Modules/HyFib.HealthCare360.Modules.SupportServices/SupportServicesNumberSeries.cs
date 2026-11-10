@@ -17,7 +17,7 @@ public static class SupportServicesNumberSeries
         new("cssd-cycle", "Sterilisation cycle", "CSSD", "{FAC}CS{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
 
     public static NumberSeriesDefinition CanteenBill { get; } =
-        new("canteen-bill", "Canteen bill", "Canteen", "{FAC}CN{YY}{SEQ:7}", NumberResetPolicy.Yearly, MaxLength: 24);
+        new("canteen-bill", "Canteen bill", "Canteen", "{FAC}CN{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24) { GstDocument = true };
 
     /// <summary>The bar code on each bag of bio-medical waste, printed where it is weighed (BMW Rules 2016, as amended in 2018).</summary>
     public static NumberSeriesDefinition WasteBag { get; } =

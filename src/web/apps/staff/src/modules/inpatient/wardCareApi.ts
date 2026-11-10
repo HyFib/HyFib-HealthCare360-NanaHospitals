@@ -255,6 +255,8 @@ export interface DowntimePatient {
   news2: { score: number; response: News2Response; isComplete: boolean; recordedAt: string } | null;
   pendingTasks: string[];
   carePlan: { title: string; goal: string; interventions: CarePlanIntervention[] }[];
+  /** An active isolation or infection-control alert, or "Isolation room"; null when neither. */
+  isolation?: string | null;
 }
 
 export interface DowntimeWard {

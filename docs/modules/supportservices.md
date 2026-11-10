@@ -1,13 +1,17 @@
 # Support Services module (`supportservices`)
 
 CSSD (sterile instrument supply with recall by load), dietary (diet orders, ward-wise meal plans, kitchen production,
-delivery tracking, optional diet charges) and the canteen (POS with GST, staff credit with payroll deduction).
-SRS **CSSD-01..05**, **DIET-01..05**, **CAN-01..04**.
+delivery tracking, optional diet charges), the canteen (POS with GST, staff credit with payroll deduction), bio-medical
+waste, the mortuary, the ambulance fleet, linen and laundry, and housekeeping beyond the bed turnaround.
+SRS **CSSD-01..05**, **DIET-01..05**, **CAN-01..04**. Maker-checker: a canteen bill's cancellation and an ambulance
+trip's waiver wait for a second person (see *Second person* below).
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.SupportServices` (references Patients and Inpatient — layer 6 → 5,
 for the admission's current ward and bed). Schema `supportservices`.
-Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests` (174 unit tests), and the end-to-end `DietChargeTests`
-in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill with the setting on, and none with it off).
+Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests` (192 unit tests), and in
+`tests/HyFib.HealthCare360.IntegrationTests` `DietChargeTests` (diet charges on the IP bill with the setting on, and none
+with it off), `CanteenCancellationApprovalTests`, `AmbulanceWaiverApprovalTests`, `BioMedicalWasteTests` and
+`HousekeepingTests`; screen tests in `src/web/apps/staff/src/modules/housekeeping/supportServices.test.tsx`.
 
 ## Permissions
 
@@ -24,7 +28,8 @@ in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill wit
 | `dietary.meals.manage` | Generate plans, production list, record deliveries | Dietitian, CanteenManager, Nurse, HospitalAdmin |
 | `dietary.masters.manage` | Diet master | Dietitian, HospitalAdmin |
 | `canteen.sales.create` | POS billing, staff credit repayments | CanteenManager |
-| `canteen.sales.cancel` | Cancel today's bills | CanteenManager, HospitalAdmin |
+| `canteen.sales.cancel` | Ask for today's bills to be cancelled | CanteenManager, HospitalAdmin |
+| `canteen.cancellations.approve` | Approve a bill's cancellation another asked for, never one's own sale (the money goes back) | CanteenManager, Accountant, HospitalAdmin |
 | `canteen.menu.manage` | Menu, prices, stock | CanteenManager, HospitalAdmin |
 | `canteen.reports.read` | Sales reports | CanteenManager, HospitalAdmin, Accountant |
 | `canteen.credit.manage` | Staff credit balances, statements, payroll export and settlement | CanteenManager, HrManager, HospitalAdmin |
@@ -33,9 +38,17 @@ in `tests/HyFib.HealthCare360.IntegrationTests` (diet charges on the IP bill wit
 | `mortuary.manage` | Receive and release bodies, the mortuary register and the release slip | Nurse, HospitalAdmin |
 | `mortuary.configure` | Set up the cold-storage slots | HospitalAdmin |
 | `ambulance.dispatch` | Take ambulance calls, send vehicles and record each trip; the trip log | FrontOffice, Nurse, HospitalAdmin |
+| `ambulance.waivers.approve` | Approve the waiver of a completed trip's charge another asked for | Accountant, HospitalAdmin |
 | `ambulance.fleet` | Keep the ambulance fleet and its certificates | HospitalAdmin |
 | `linen.ward` | Send a ward's soiled linen to the laundry and report what it has lost | Nurse, HospitalAdmin |
 | `linen.manage` | Issue, receive, wash and condemn linen; ward par levels; the linen list | StoreKeeper, HospitalAdmin |
+| `housekeeping.request` | Ask for a spill, terminal or routine cleaning | Nurse, Doctor, HospitalAdmin |
+| `housekeeping.work` | Do the scheduled and asked-for cleaning against the checklists | Nurse, HospitalAdmin |
+| `housekeeping.verify` | Verify cleaning someone else did; the housekeeping report | Nurse, QualityManager, HospitalAdmin |
+| `housekeeping.manage` | The areas cleaned on a schedule, their frequency and checklists | QualityManager, HospitalAdmin |
+
+HC360 has no housekeeping role: a hospital gives its housekeeping staff a role holding `housekeeping.work`, and its
+supervisors one holding `housekeeping.verify`.
 
 ## CSSD — `/api/v1/cssd`
 | Method | Path | Permission | Request → response |
@@ -133,9 +146,19 @@ changed. Delivery: Planned → Delivered or NotTaken; Delivered → Returned.
 | POST | `/menu/{id}/stock` | `canteen.menu.manage` | `StockMovementRequest` (Receipt/Adjustment/Wastage, quantity, reason) → `MenuItemDto` |
 | POST | `/sales` | `canteen.sales.create` | `CreateSaleRequest` (customerType Staff/Attendant/Visitor/Patient, customerName, employeeCode + name (StaffCredit), patientId, paymentMode Cash/Upi/Card/StaffCredit, paymentReference, lines[menuItemId, quantity]) → 201 `CanteenSaleDto` (bill number, taxable, CGST, SGST, gross, round-off, net, lines with HSN/SAC code and GST rate) |
 | GET | `/sales?date&status&paymentMode&employeeCode&search` (paged) | sales.create or reports.read | → `PagedResult<CanteenSaleListItem>` |
-| GET | `/sales/{id}` | same | → `CanteenSaleDto` |
-| POST | `/sales/{id}/cancel` | `canteen.sales.cancel` | `CancelSaleRequest` → `CanteenSaleDto` (same business day only; stock restored; staff credit reversed) |
+| GET | `/sales/{id}` | same | → `CanteenSaleDto` with `pendingCancellation` (a cancellation waiting) and `ownSale` (the reader sold it) |
+| POST | `/sales/{id}/cancel` | `canteen.sales.cancel` | `CancelSaleRequest` → 202 the approval request (`canteen.sale_cancel`); the bill stands until approved. Same business day only (422 `canteen.day_closed`, `canteen.sale_cancelled`) |
 | GET | `/reports/daily?date` | `canteen.reports.read` | → `DailySalesSummary` (bills, cancelled, taxable, CGST, SGST, round-off, net; by payment mode, customer type, category; item consumption and closing stock; `byHsnSac`: quantity, taxable, CGST, SGST and total per HSN/SAC code and GST rate, for the GSTR-1 HSN summary) |
+
+A bill is paid when it is made, so its cancellation pays money back and waits for a second person (maker-checker): any
+canteen user who may cancel asks with a reason (the cashier who sold it included), and someone who holds
+`canteen.cancellations.approve` approves it from the approvals inbox, never the one who asked (`approval.self`) nor the
+cashier who sold the bill (403 `canteen.cancel_own_sale`; the seller is the account that made the bill). Approved, the
+money goes back the way it was paid, whole: cash from the till, a card or UPI bill to the card or UPI under its
+reference (never from the till), a staff credit bill off the employee's ledger (a reversal entry); packaged stock comes
+back; the bill keeps who asked, who approved and how the money went back (`refundMode`, `refundAmount`), and the audit
+trail has `canteen.sale_cancelled` with both names. Approved only over the bill as asked, on its business day
+(`approval.stale` otherwise). The day's report counts a cancelled bill and leaves it out of the takings.
 
 A card or UPI bill's `paymentReference` (the RRN or approval code from the charge slip, or the UPI reference) is how
 Billing's card and UPI settlement matches the acquirer's transaction with the bill; a bill without one is listed there
@@ -177,12 +200,36 @@ Administration › Settings, are for the annual report (Form IV) due to the Stat
 | GET | `/bags?from&to` · `/bags/pending` | `bmw.record` or `bmw.manage` | → `WasteBagDto[]` (at most 92 days) / `PendingWaste` (oldest first, totals by colour, `overdue`) |
 | POST | `/bags` | `bmw.record` | `RecordWasteBagRequest{category, departmentId?, source?, weightKg, collectedAt?}` (more than 0, at most 50 kg; not in the future nor over a week old) → the bag with its bar code |
 | POST | `/bags/{id}/void` | `bmw.record` or `bmw.manage` | `VoidWasteBagRequest{reason, version}`; 422 `bmw.bag_not_pending` once handed over |
-| GET · POST | `/handovers` | `bmw.manage` | → the last week's `WasteHandoverDto[]` / `HandOverWasteRequest{barcodes, cbwtf?, vehicleNumber, receivedBy, receiptNumber?}`: every bag must be waiting; the handover counts those kept beyond 48 hours |
+| GET | `/bags/{id}/label` | `bmw.record` or `bmw.manage` | → `WasteBagLabel` (bar code, category, colour, symbol, where filled, weight, date, HCF identifier, hospital); 422 `bmw.hcf_id_required` until `bmw.hcfId` or `bmw.authorisationNumber` is set |
+| GET · POST | `/handovers` | `bmw.manage` | → the last week's `WasteHandoverDto[]` (with each bag's two weights and `mismatchedBags`) / `HandOverWasteRequest{bags: [{barcode, weightKg}], cbwtf?, vehicleNumber, receivedBy, receiptNumber?}`: every bag must be waiting and is weighed again at the handover, once; the handover counts those kept beyond 48 hours and those whose weight differs |
 | GET | `/register?year&month` · `/register/export` | `bmw.manage` | → `WasteMonth` / CSV |
 | GET | `/annual?year` | `bmw.manage` | → `WasteYear` (Form IV totals by colour, average a day, handovers, late and voided bags) |
+| GET | `/annual/form-iv?year` | `bmw.manage` | → `FormIv`: the form's numbered items answered from the year's records |
+| GET · POST | `/accidents?year` · `/accidents` | `bmw.manage` · `bmw.record` or `bmw.manage` | → the year's `WasteAccidentDto[]` / `RecordWasteAccidentRequest` (Form I's items) → 201 |
+| GET | `/accidents/{id}/form-i` | `bmw.manage` | → `FormI`: the form's numbered items answered from the record |
 
-Not built: printing the bar-code label (the number is shown to write or print on the bag), liquid waste and the Form I
-accident report.
+**Labels.** Every bag's label (Schedule IV, as amended in 2018) carries the bar code, the category in white on black
+with its symbol (biohazard; cytotoxic for yellow), the hospital's HCF identifier (`bmw.hcfId`, the identifier for the
+CPCB bar-code system; the authorisation number when it is not set), the weight and the date, and where it was filled.
+The staff app prints it on the workstation's label printer through `POST /api/v1/integrations/labels/waste-bags` (ZPL or
+TSPL; the weight, the date and the HCF identifier are never cut short, and a label too small for them is refused), or on
+the printer's Windows driver.
+
+**The weighed handover.** Each bag is scanned and weighed again on the scale in front of the CBWTF's driver, and both
+weights are kept per bag (`handoverWeightKg`); a bag whose weight at handover differs from where it was filled by more
+than 5% (at least 100 g) is flagged (`weightMismatch`) and counted on the handover (`mismatchedBags`): opened, added to,
+or swapped. The handover's total is the weights at handover, what the CBWTF signs for.
+
+**Form I and Form IV.** An accident (a needle-stick or sharps injury, a spill, an exposure, a fire, waste mixed, an
+accident while carrying waste) is recorded with Form I's items: when, what, the sequence of events, whether the
+authority was told, the waste involved, the persons affected and the effects, the emergency measures, the steps to
+alleviate and to prevent recurrence, and who reported it. Form I and Form IV are generated from the records, item by
+item in the forms' numbering; what HC360 does not record (the emergency control policy, on-site treatment, training
+given, incinerator emissions, liquid waste) is answered "To be filled by the occupier", never left to look answered.
+Form IV counts the beds (active beds), the waste generated and handed over by category, the bags late and weighed
+differently, and the year's accidents with the persons affected and the remedial action.
+
+Not built: liquid waste, the training register, sending the forms to the Board (they are printed to sign).
 
 ## Mortuary — `/api/v1/mortuary`
 The administrator sets up the cold-storage slots (a label per chamber door; a slot holding a body cannot be taken out of
@@ -227,7 +274,14 @@ goes only in the hearse, the hearse carries no patient), only while it is not ou
 or paramedic for an emergency or a transfer. The crew's steps follow in order: reached the pickup, patient on board,
 back, when the odometer gives the kilometres run. A completed trip for a registered patient is charged on their bill in
 the same save: the base fare for the vehicle's kind (`AMB-BLS`, `AMB-ALS`, `AMB-PTS`, `AMB-HEARSE`) covers the first 10
-km, and `AMB-KM` each kilometre beyond; a trip can be left uncharged with a reason (a free scheme transfer, say). The
+km, and `AMB-KM` each kilometre beyond. Waiving the charge (a free scheme transfer, a staff member's family) waits for a
+second person (maker-checker, slice 15): the desk asks with the reason, at completion (`waiveReason`) or afterwards, and
+the charge stays on the bill until someone who holds `ambulance.waivers.approve` approves it, never the one who asked;
+then the trip's charges are withdrawn from the bill (the module cancels its own charges) and the trip keeps the reason,
+who asked and who waived it. A charge already on a final bill cannot be withdrawn: the approval fails and a credit note
+is asked for at the billing desk. A hospital lets the desk waive alone only by switching `ambulance.waiverApproval` off
+(a second administrator approves, SettingGuard); the waiver is then made at once and audited at Warning
+(`ambulance.charge_waived`). A trip with no registered patient is not charged, and its reason is kept as given. The
 trip log gives the period's trips, kilometres, and the median call-to-dispatch and call-to-patient times of emergencies.
 
 | Method | Path | Permission | Request → Response |
@@ -236,7 +290,8 @@ trip log gives the period's trips, kilometres, and the median call-to-dispatch a
 | GET · POST | `/trips` | `ambulance.dispatch` | → open trips, oldest call first / `RequestTripRequest{purpose, patientId?, patientName?, callerName, callerPhone, pickupAddress, dropAddress?, complaint?}` |
 | POST | `/trips/{id}/dispatch` | `ambulance.dispatch` | `DispatchRequest{vehicleId, driverName, crewName?, version}`; 422 `ambulance.papers_lapsed`, 409 `ambulance.vehicle_busy` |
 | POST | `/trips/{id}/at-scene` · `/left-scene` | `ambulance.dispatch` | `TripStepRequest{version}`; 422 `ambulance.out_of_order` |
-| POST | `/trips/{id}/complete` | `ambulance.dispatch` | `CompleteTripRequest{endOdometerKm, waiveReason?, version}`: posts the charges; 422 `ambulance.no_tariff` when a fare is missing from the catalogue |
+| POST | `/trips/{id}/complete` | `ambulance.dispatch` | `CompleteTripRequest{endOdometerKm, waiveReason?, version}`: posts the charges, and with a `waiveReason` asks for the waiver (the trip comes back with `waiverPending`); 422 `ambulance.no_tariff` when a fare is missing from the catalogue |
+| POST | `/trips/{id}/waive` | `ambulance.dispatch` | `WaiveTripChargeRequest{reason, version}` → 202 the approval request (`ambulance.charge_waiver`), or 200 the trip where the desk waives alone; 422 `ambulance.not_completed`, `ambulance.nothing_charged`, `ambulance.already_waived` |
 | POST | `/trips/{id}/cancel` | `ambulance.dispatch` | `CancelTripRequest{reason, version}`; not once the patient is on board |
 | GET | `/trips/log?from&to` | `ambulance.dispatch` | → `TripLog` (at most 92 days; default the last week) |
 
@@ -263,6 +318,40 @@ A ward records soiled returns and losses; the rest is the linen store's and the 
 
 Not built: RFID tags on pieces, an outsourced laundry's challan, linen charges.
 
+## Housekeeping — `/api/v1/housekeeping`
+Beyond the bed turnaround (Inpatient's terminal cleaning of a bed after discharge, which keeps an unclean bed off the
+admission desk's list), housekeeping cleans areas on a schedule and answers the wards.
+
+**Areas on a schedule.** The quality manager sets up each area (code, name, the ward it belongs to, its risk zone: high
+for theatres, ICUs and isolation, moderate for wards, low for corridors and offices), how often it is cleaned (daily, so
+many times a day up to six, or weekly on set days) and its checklist. The day's board lists every cleaning due with
+what was done about it; a cleaning is recorded against the area's checklist, every item answered and one not done saying
+why, once per slot.
+
+**Asked for by the wards.** A ward asks for a spill (blood or body fluid, chemical, mercury), a terminal cleaning (a room
+or bed after discharge, death or isolation) or anything else. Housekeeping is told at once (a spill as critical); the
+response time, from the request to someone on the way (or the cleaning done, if nobody said), is measured against the
+kind's target: 15 minutes for a spill, an hour for a terminal cleaning, two hours for anything else, and a late one is
+flagged while it waits and afterwards. Each kind is done against its own checklist (a spill: area cordoned, PPE, spill
+kit, 1% sodium hypochlorite, waste in the yellow bag; a terminal cleaning: linen and curtains, surfaces top to bottom,
+bed and mattress, equipment, floor, waste and sharps).
+
+**Verified by someone else.** Every cleaning, scheduled or asked for, is verified by a supervisor (`housekeeping.verify`)
+who did not do it (403 `housekeeping.verify_own`). One found not clean is sent back with what was not clean, the cleaner
+is told, and it is done again and checked again.
+
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET · POST · PUT | `/areas` · `/areas/{id}` | any housekeeping permission · `housekeeping.manage` | → `CleaningAreaDto[]` / `SaveCleaningAreaRequest{code, name, wardId?, riskZone, frequency, timesPerDay, weekDays?, checklist, isActive, version?}`; 409 `housekeeping.code_in_use` |
+| GET | `/board?date` | `housekeeping.work`, `.verify` or `.manage` | → `CleaningBoard` (slots due with their latest record; due, not done, to verify, sent back) |
+| POST | `/areas/{id}/cleanings` | `housekeeping.work` | `RecordCleaningRequest{date, slot, checklist: [{item, done, note?}], notes?}` (today, or yesterday after midnight); 409 `housekeeping.slot_done` |
+| POST | `/cleanings/{id}/verify` | `housekeeping.verify` | `VerifyCleaningRequest{passed, remarks?, version}` (remarks required when not clean); 403 `housekeeping.verify_own` |
+| GET · POST | `/requests?open&from&to` · `/requests` | any housekeeping permission · `housekeeping.request` or `.manage` | → open requests by kind, oldest first (or the period's) / `RaiseCleaningRequest{kind, wardId?, location, details?}` → 201 |
+| POST | `/requests/{id}/acknowledge` · `/complete` · `/verify` · `/cancel` | `housekeeping.work` · `.work` · `.verify` · `.request` or `.manage` | `{version}` · `CompleteCleaningRequest{checklist, notes?, version}` · `VerifyCleaningRequest` · `CancelCleaningRequest{reason, version}` |
+| GET | `/report?from&to` | `housekeeping.verify` or `.manage` | → `HousekeepingReport` (requests by kind: count, median response, late, sent back; scheduled cleanings due, done, verified, sent back) |
+
+Not built: assigning a cleaner to an area or a shift, stock of cleaning materials, and swab cultures of surfaces.
+
 ## Integration events
 | Event | Direction | Notes |
 |---|---|---|
@@ -280,7 +369,7 @@ No integration events are raised.
 | `supportservices.diet` | `{dietOrderId}:{yyyy-MM-dd}` | once per admission per day when facility setting `supportservices.diet.chargesEnabled` is true and the diet type has a charge service; a day already charged under an earlier order of the same admission is skipped, also when that order was superseded the same day (checked with `IBillingStatusProvider.GetStatesAsync`). Posted and saved when the day's plan is generated (`DailyMealPlanJob` or `POST /meal-plans/generate`) |
 
 ## Settings, numbers, notifications, jobs, seed
-* Settings: `supportservices.diet.chargesEnabled` (bool, default false; explained on the staff app's Settings page), `supportservices.canteen.staffCreditLimit` (decimal, default 3000; 0 = no limit).
+* Settings: `supportservices.diet.chargesEnabled` (bool, default false; explained on the staff app's Settings page), `supportservices.canteen.staffCreditLimit` (decimal, default 3000; 0 = no limit), `bmw.authorisationNumber`, `bmw.cbwtf`, `bmw.hcfId` (the HCF identifier on every bag's label), `ambulance.waiverApproval` (bool, on unless false; switching it off waits for a second administrator).
 * Number series (yearly): `cssd-wash` → `{FAC}CW{YY}{SEQ:6}`, `cssd-cycle` → `{FAC}CS{YY}{SEQ:6}`, `cssd-request` → `{FAC}CQ{YY}{SEQ:6}`, `canteen-bill` → `{FAC}CN{YY}{SEQ:7}`, `mortuary-body` → `{FAC}MB{YY}{SEQ:5}`, `ambulance-trip` → `{FAC}AT{YY}{SEQ:6}`, `linen-movement` → `{FAC}LN{YY}{SEQ:6}`.
 * Notifications: in-app only — CSSD recall (critical) and count discrepancy (warning) to `cssd.recalls`; urgent request (warning) to `cssd.process`.
 * Job: `DailyMealPlanJob` — at start-up and hourly when `PlatformOptions.RunsJobs`: generates/refreshes today's and tomorrow's plans for every facility and posts today's diet charges when enabled.
@@ -288,7 +377,14 @@ No integration events are raised.
 
 ## Tables (schema `supportservices`)
 
-Bio-medical waste: `waste_bags` (unique `barcode`), `waste_handovers` (unique `number`).
+Bio-medical waste: `waste_bags` (unique `barcode`; `handover_weight_kg`), `waste_handovers` (unique `number`;
+`mismatched_bags`), `waste_accidents`.
+
+Housekeeping: `cleaning_areas` (unique `code` per facility), `cleaning_records` (one standing cleaning per area, day and
+slot; one sent back makes way for the next), `cleaning_requests`.
+
+Canteen bills keep `cancel_requested_by(_name)`, `cancelled_by_name`, `refund_mode` and `refund_amount`; ambulance trips
+keep `charge_waived_by(_name)`, `charge_waived_at` and `waiver_requested_by_name`.
 
 Ambulance: `ambulance_vehicles` (unique registration), `ambulance_trips` (unique `number` per facility; one open trip per vehicle).
 

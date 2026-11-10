@@ -22,7 +22,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
 
@@ -75,11 +75,11 @@ jobs:
         shell: pwsh
         run: tests/deploy/Enable-TestWindowsSignIn.ps1
 
-      # A hung run fails in 35 minutes instead of the runner's six hours. The journeys take 20 to 25, and up to 7 more when
-      # the run crosses midnight in India, where no journey starts (AwayFromMidnightInIndiaAttribute). Each test assembly
-      # also writes a JUnit report.
+      # A hung run fails in 60 minutes instead of the runner's six hours. The whole run takes 30 to 40 minutes on a hosted
+      # Windows runner, and up to 7 more when it crosses midnight in India, where no journey starts
+      # (AwayFromMidnightInIndiaAttribute). Each test assembly also writes a JUnit report.
       - name: Test
-        run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 35m --report-xunit-junit --results-directory "${{ runner.temp }}/test-results"
+        run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 60m --report-xunit-junit --results-directory "${{ runner.temp }}/test-results"
 
       # A failed journey's report is followed by everything the server under test logged meanwhile, tens of thousands of
       # lines that bury the test's name and message. They are here again, alone, as the job's last lines.
@@ -161,6 +161,14 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerDatabaseSignIn.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
           pwsh -NoProfile -File tests/deploy/Test-InstallerDatabaseSignIn.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
+      - name: Test the installer's two database accounts (hc360_owner, hc360_app)
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerDatabaseRoles.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-InstallerDatabaseRoles.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
       - name: Test the installers' restart of HC360 and PostgreSQL when they fail
@@ -331,7 +339,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
 

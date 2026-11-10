@@ -11,6 +11,15 @@ public static partial class HrIdentifiers
     /// <summary>PAN: five letters, four digits, one letter (ABCDE1234F).</summary>
     public static bool IsValidPan(string? value) => value is not null && PanRegex().IsMatch(Normalize(value));
 
+    /// <summary>TAN (tax deduction account number): four letters, five digits, one letter (CHEN12345E).</summary>
+    public static bool IsValidTan(string? value) => value is not null && TanRegex().IsMatch(Normalize(value));
+
+    /// <summary>
+    /// The PAN a deductee gives counts for TDS only when it is in the right form: five letters, four digits and a letter
+    /// (s.206AA(1); a PAN that is not a PAN is "not furnished"). The fourth letter is the holder's status: P for an individual.
+    /// </summary>
+    public static bool IsIndividualPan(string? value) => IsValidPan(value) && Normalize(value!)[3] == 'P';
+
     /// <summary>IFSC: four-letter bank code, a zero, six-character branch code (SBIN0001234).</summary>
     public static bool IsValidIfsc(string? value) => value is not null && IfscRegex().IsMatch(Normalize(value));
 
@@ -44,6 +53,9 @@ public static partial class HrIdentifiers
 
     [GeneratedRegex("^[A-Z]{5}[0-9]{4}[A-Z]$")]
     private static partial Regex PanRegex();
+
+    [GeneratedRegex("^[A-Z]{4}[0-9]{5}[A-Z]$")]
+    private static partial Regex TanRegex();
 
     [GeneratedRegex("^[A-Z]{4}0[A-Z0-9]{6}$")]
     private static partial Regex IfscRegex();

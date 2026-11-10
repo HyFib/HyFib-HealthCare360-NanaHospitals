@@ -61,11 +61,29 @@ internal sealed class EInvoiceConfiguration : IEntityTypeConfiguration<EInvoice>
         b.Property(x => x.CancelReason).HasMaxLength(24);
         b.Property(x => x.CancelRemark).HasMaxLength(100);
         b.Property(x => x.PrecedingSource).HasMaxLength(16);
+        b.Property(x => x.Provider).HasMaxLength(16);
+        b.Property(x => x.SignedInvoice).HasMaxLength(100000);
         b.HasIndex(x => x.Irn).IsUnique();
         b.HasIndex(x => new { x.PrecedingSource, x.PrecedingId }).HasFilter("preceding_id IS NOT NULL");
 
         // One live IRN per invoice; cancelled ones stay as history.
         b.HasIndex(x => new { x.Source, x.SourceId }).IsUnique().HasFilter("status = 'Registered' AND is_deleted = false");
         b.HasIndex(x => new { x.FacilityId, x.DocumentDate });
+    }
+}
+
+internal sealed class GstReturnFilingConfiguration : IEntityTypeConfiguration<GstReturnFiling>
+{
+    public void Configure(EntityTypeBuilder<GstReturnFiling> b)
+    {
+        b.ToTable("gst_return_filings", BillingSchema.Name);
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Gstin).HasMaxLength(15);
+        b.Property(x => x.ReturnType).HasMaxLength(8);
+        b.Property(x => x.Arn).HasMaxLength(15);
+        b.Property(x => x.RecordedByName).HasMaxLength(200);
+        b.Property(x => x.CorrectedByName).HasMaxLength(200);
+        b.Property(x => x.CorrectionReason).HasMaxLength(500);
+        b.HasIndex(x => new { x.Gstin, x.ReturnType, x.Year, x.Month }).IsUnique();
     }
 }

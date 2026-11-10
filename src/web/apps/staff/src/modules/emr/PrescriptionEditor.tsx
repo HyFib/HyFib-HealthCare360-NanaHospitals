@@ -82,9 +82,12 @@ import {
   groupAlerts,
   signBlockers,
   signRequirements,
+  telemedicineListLabel,
+  telemedicineRefusalsFromProblem,
   toSignRequest,
   type SafetyCheckResponse,
   type SignDecision,
+  type TelemedicineRefusal,
 } from './safety';
 
 const useStyles = makeStyles({
@@ -546,6 +549,8 @@ export function PrescriptionEditor({
   const [check, setCheck] = useState<CheckState | null>(null);
   const [decision, setDecision] = useState<SignDecision>(emptyDecision);
   const [signError, setSignError] = useState<string | null>(null);
+  // The medicines a teleconsultation refused, each with its Telemedicine Practice Guidelines list and why.
+  const [teleRefused, setTeleRefused] = useState<TelemedicineRefusal[]>([]);
   const [signed, setSigned] = useState<PrescriptionDto | null>(null);
   const [focusRow, setFocusRow] = useState<number | null>(null);
 
@@ -630,6 +635,7 @@ export function PrescriptionEditor({
         setCheck(result);
         setDecision(emptyDecision);
         setSignError(null);
+        setTeleRefused([]);
       }
     },
     onError: (error) => handleError(error, 'The safety check could not run'),
@@ -655,6 +661,7 @@ export function PrescriptionEditor({
       setCheck(null);
       setDecision(emptyDecision);
       setSignError(null);
+      setTeleRefused([]);
       draft.discard();
       form.reset(emptyRxForm());
       invalidate();
@@ -669,8 +676,14 @@ export function PrescriptionEditor({
         notify.error(error, 'Could not sign the prescription');
         return;
       }
+      const telemedicine = telemedicineRefusalsFromProblem(error.code, error.data);
+      setTeleRefused(telemedicine ?? []);
       const alerts = alertsFromProblem(error.code, error.data);
-      if (alerts && current) {
+      if (telemedicine && telemedicine.length > 0) {
+        setSignError(
+          'This is a teleconsultation, and the Telemedicine Practice Guidelines 2020 keep these medicines out of it. Remove them, or see the patient in person:',
+        );
+      } else if (alerts && current) {
         setCheck({
           response: {
             isBlocked: alerts.some((a) => a.isBlocking),
@@ -920,6 +933,15 @@ export function PrescriptionEditor({
               <MessageBarBody>
                 <MessageBarTitle>Not signed</MessageBarTitle>
                 {signError}
+                {teleRefused.length > 0 && (
+                  <ul aria-label="Medicines not prescribed in this teleconsultation">
+                    {teleRefused.map((r) => (
+                      <li key={r.name}>
+                        <strong>{r.name}</strong> ({telemedicineListLabel[r.list] ?? r.list}): {r.reason}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </MessageBarBody>
             </MessageBar>
           )}

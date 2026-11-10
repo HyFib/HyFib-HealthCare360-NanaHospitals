@@ -44,11 +44,20 @@ public sealed class NumberSeriesDeclarationTests
                 .Append(NumberFormatRules.LongestNumber(s.DefaultFormat, NumberFormatRules.MaxFacilityCodeLength).Total > s.MaxLength
                     ? $"longer than {s.MaxLength} characters with a 6-letter facility code"
                     : null)
+                .Concat(s.GstDocument ? NumberFormatRules.GstProblems(s.DefaultFormat, s.DefaultReset, NumberFormatRules.MaxFacilityCodeLength) : [])
                 .OfType<string>()
                 .Select(problem => $"{s.Key}: {problem}"))
             .ToList();
 
         problems.ShouldBeEmpty("A default the administrator could not save would block \"Restore default\"");
+    }
+
+    /// <summary>GST rule 46: every invoice, bill of supply, credit and debit note series is held to 16 characters.</summary>
+    [Fact]
+    public void Every_gst_invoice_and_note_series_is_marked()
+    {
+        Catalog.All.Where(s => s.GstDocument).Select(s => s.Key).Order(StringComparer.Ordinal).ShouldBe(
+            ["billing.bill.ip", "billing.bill.op", "billing.creditnote", "billing.debitnote", "canteen-bill", "pharmacy.invoice", "pharmacy.return"]);
     }
 
     [Fact]

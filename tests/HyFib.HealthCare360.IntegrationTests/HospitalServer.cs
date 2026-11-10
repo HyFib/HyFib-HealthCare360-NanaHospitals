@@ -75,9 +75,11 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.CssdTechnician] = SystemRoles.CssdTechnician,
         [Users.CardiologyTechnician] = SystemRoles.CardiologyTechnician,
         [Users.SecondDoctor] = SystemRoles.Doctor,
+        [Users.ThirdDoctor] = SystemRoles.Doctor,
         [Users.SecondNurse] = SystemRoles.Nurse,
         [Users.SecondPharmacist] = SystemRoles.Pharmacist,
         [Users.Accountant] = SystemRoles.Accountant,
+        [Users.HrManager] = SystemRoles.HrManager,
         [Users.Radiographer] = SystemRoles.Radiographer,
         [Users.MisAnalyst] = SystemRoles.MisAnalyst,
         [Users.Cashier] = SystemRoles.Cashier,
@@ -160,6 +162,9 @@ public sealed class HospitalServer : IAsyncLifetime
     /// <summary>The ABDM gateway the server calls (<see cref="FakeAbdmGateway"/>).</summary>
     public FakeAbdmGateway AbdmGateway { get; } = new();
 
+    /// <summary>The speech-to-text service the server sends dictation to (<see cref="FakeSpeechService"/>).</summary>
+    public FakeSpeechService Speech { get; } = new();
+
     /// <summary>Cashfree's API the server calls when a test sets Cashfree up (<see cref="FakeCashfree"/>).</summary>
     public FakeCashfree Cashfree { get; } = new();
 
@@ -226,6 +231,9 @@ public sealed class HospitalServer : IAsyncLifetime
         builder.Services.AddHttpClient<AbdmDataPush>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
         builder.Services.AddHttpClient<AbhaClient>().ConfigurePrimaryHttpMessageHandler(AbdmGateway.Handler);
 
+        // The speech service is a fake one of this run (SpeechPrivacyTests): it keeps what the server sent it.
+        builder.Services.AddHttpClient<HyFib.HealthCare360.Modules.AI.Services.Speech.WhisperSpeechToText>().ConfigurePrimaryHttpMessageHandler(Speech.Handler);
+
         // Cashfree is a fake one of this run (GatewayReconciliationTests): nothing goes to the network.
         builder.Services.AddHttpClient<CashfreeGateway>().ConfigurePrimaryHttpMessageHandler(Cashfree.Handler);
 
@@ -261,6 +269,12 @@ public sealed class HospitalServer : IAsyncLifetime
         await using (var scope = _app.Services.CreateAsyncScope())
         {
             await scope.ServiceProvider.GetRequiredService<ISettingsService>().SetAsync(AuthService.MaxSessionsSetting, 0, cancellationToken: ct);
+
+            // The run's other tests discharge their stays without writing a discharge summary: the hospital-wide rule that a
+            // planned discharge waits for the signed summary is off, except for the facility DischargeSummaryHoldTests turns
+            // it on for (where it is on by default, as it ships).
+            await scope.ServiceProvider.GetRequiredService<ISettingsService>().SetAsync(
+                Modules.Clinical.Services.DischargeSummaryDischargeHold.Setting, false, cancellationToken: ct);
 
             var now = DateTimeOffset.UtcNow;
             var desktop = new Device
@@ -599,9 +613,12 @@ public sealed class HospitalServer : IAsyncLifetime
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
                          ?? throw new InvalidOperationException("The hospital administrator has no facility.");
         var temporary = "It-first-" + Guid.NewGuid().ToString("N");
-        var practitionerId = userName == Users.SecondDoctor
-            ? await SecondConsultantAsync()
-            : PractitionersCreatedOnFirstUse.TryGetValue(userName, out var code) ? await PractitionerAsync(code) : null;
+        var practitionerId = userName switch
+        {
+            Users.SecondDoctor => await ConsultantAsync(1),
+            Users.ThirdDoctor => await ConsultantAsync(2),
+            _ => PractitionersCreatedOnFirstUse.TryGetValue(userName, out var code) ? await PractitionerAsync(code) : null,
+        };
         await CreateUserAsync(admin, new CreateUserRequest(
             userName, NamesCreatedOnFirstUse.GetValueOrDefault(userName, $"Demo {role}"), Email: null, Phone: null, [roleId], [facilityId], facilityId,
             practitionerId, temporary));
@@ -1283,6 +1300,25 @@ public sealed class HospitalServer : IAsyncLifetime
     }
 
     /// <summary>
+    /// An HR change (salary payment details, a salary structure, a payroll input, a leave credit: maker-checker slice 11)
+    /// approved by whoever of the HR manager and the hospital administrator did not ask for it.
+    /// </summary>
+    public async Task<ApprovalRequestDto> ApproveHrChangeAsync(Guid approvalId)
+    {
+        foreach (var userName in new[] { Users.HrManager, Users.HospitalAdmin })
+        {
+            var checker = await SignInAsync(userName);
+            var request = await checker.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
+            if (request.CanDecide)
+            {
+                return Approved(await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Checked for the tests.", request.Version)));
+            }
+        }
+
+        throw new InvalidOperationException($"Neither HR user may decide approval {approvalId}.");
+    }
+
+    /// <summary>
     /// A correction of an implant or consumable line after the operation started, approved by the hospital administrator, who
     /// holds the OT in-charge's approval and did not ask for it.
     /// </summary>
@@ -1293,7 +1329,6 @@ public sealed class HospitalServer : IAsyncLifetime
         return await checker.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest("Checked against the pack label.", request.Version));
     }
 
-    // The seed signs the first consultant (by code) in as the doctor; the second doctor is the next one.
     private async Task<Guid?> PractitionerAsync(string code)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -1301,11 +1336,12 @@ public sealed class HospitalServer : IAsyncLifetime
             .Where(p => p.Code == code).Select(p => (Guid?)p.Id).FirstAsync(TestContext.Current.CancellationToken);
     }
 
-    private async Task<Guid?> SecondConsultantAsync()
+    // The seed signs the first consultant (by code) in as the doctor; the second and third doctors are the next ones.
+    private async Task<Guid?> ConsultantAsync(int skip)
     {
         await using var scope = Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Practitioner>()
-            .Where(p => p.Kind == PractitionerKind.Consultant).OrderBy(p => p.Code).Skip(1).Select(p => (Guid?)p.Id)
+            .Where(p => p.Kind == PractitionerKind.Consultant).OrderBy(p => p.Code).Skip(skip).Select(p => (Guid?)p.Id)
             .FirstAsync(TestContext.Current.CancellationToken);
     }
 
@@ -1511,6 +1547,12 @@ public sealed class HospitalServer : IAsyncLifetime
         /// </summary>
         public const string SecondDoctor = "doctor2";
 
+        /// <summary>
+        /// A third doctor, linked to the consultant after <see cref="SecondDoctor"/>'s: a doctor who is neither the author nor
+        /// on the care team, nor covering, for the slice 15 sign-off rules. Created on first use.
+        /// </summary>
+        public const string ThirdDoctor = "doctor3";
+
         /// <summary>A second nurse, who witnesses <see cref="Nurse"/>'s controlled doses at her screen. Created on first use.</summary>
         public const string SecondNurse = "nurse2";
 
@@ -1526,6 +1568,9 @@ public sealed class HospitalServer : IAsyncLifetime
         /// first use.
         /// </summary>
         public const string Accountant = "accountant";
+
+        /// <summary>Approves payroll the hospital administrator processed (maker-checker) and exports its files. Created on first use.</summary>
+        public const string HrManager = "hrmanager";
 
         /// <summary>
         /// The insurance (TPA) desk: records pre-authorisations, claims and their settlements. Created on first use.

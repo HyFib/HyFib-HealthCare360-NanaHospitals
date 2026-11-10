@@ -246,17 +246,4 @@ public sealed class AppointmentTests
 
         appointment.PaymentStatus.ShouldBe(AppointmentPaymentStatus.PaidOnline);
     }
-
-    [Fact]
-    public void Reminder_flags_are_set_once()
-    {
-        var appointment = Booked(Start);
-        var first = Start.AddHours(-24);
-
-        appointment.MarkReminderSent(AppointmentReminder.DayBefore, first);
-        appointment.MarkReminderSent(AppointmentReminder.DayBefore, first.AddMinutes(5));
-
-        appointment.Reminder24hSentAt.ShouldBe(first);
-        appointment.Reminder2hSentAt.ShouldBeNull();
-    }
 }

@@ -98,6 +98,8 @@ internal static class ItemEndpoints
         Guid? categoryId,
         DrugSchedule? schedule,
         bool? controlledOnly,
+        TelemedicineList? telemedicineList,
+        bool? telemedicineUnlisted,
         bool? includeInactive,
         HospitalDbContext db,
         CancellationToken ct)
@@ -124,6 +126,17 @@ internal static class ItemEndpoints
             items = items.Where(i => i.Schedule == schedule);
         }
 
+        // The committee works through the drugs on no list yet, and checks what it put on each.
+        if (telemedicineList is not null)
+        {
+            items = items.Where(i => i.TelemedicineList == telemedicineList);
+        }
+
+        if (telemedicineUnlisted == true)
+        {
+            items = items.Where(i => i.Type == ItemType.Drug && i.TelemedicineList == null);
+        }
+
         if (controlledOnly == true)
         {
             items = items.Where(i => i.IsControlled || i.Schedule == DrugSchedule.H1 || i.Schedule == DrugSchedule.X);
@@ -133,7 +146,7 @@ internal static class ItemEndpoints
             .Select(i => new ItemListItem(
                 i.Id, i.Code, i.Name, i.GenericName, i.Strength, i.DosageForm, i.Type,
                 db.Set<ItemCategory>().Where(c => c.Id == i.CategoryId).Select(c => c.Name).FirstOrDefault(),
-                i.Schedule, i.IsControlled, i.IsColdChain, i.BaseUnit, i.PurchaseUnit, i.GstRate, i.ReorderLevel, i.IsActive, i.IsHighAlert))
+                i.Schedule, i.IsControlled, i.IsColdChain, i.BaseUnit, i.PurchaseUnit, i.GstRate, i.ReorderLevel, i.IsActive, i.IsHighAlert, i.TelemedicineList))
             .ToPagedResultAsync(page, ct);
         return TypedResults.Ok(result);
     }
@@ -249,6 +262,11 @@ internal static class ItemEndpoints
         item.Schedule = request.Schedule;
         item.IsControlled = request.IsControlled;
         item.IsHighAlert = request.IsHighAlert;
+
+        // A Schedule X or NDPS medicine is on the Prohibited List by law: saved on no list, it is put there.
+        item.TelemedicineList = request.TelemedicineList is null && TelemedicineLists.ByLaw(request.Schedule, request.IsControlled)
+            ? TelemedicineLists.Prohibited
+            : request.TelemedicineList;
         item.IsColdChain = request.IsColdChain;
         item.VedClass = request.VedClass;
         item.ReorderLevel = request.ReorderLevel;
@@ -356,7 +374,7 @@ internal static class ItemEndpoints
         i.Id, i.Code, i.Name, i.GenericName, i.BrandName, i.Type, i.CategoryId, i.Strength, i.DosageForm, i.PackSize, i.BaseUnit, i.PurchaseUnit,
         i.PurchaseUnitFactor, i.HsnCode, i.GstRate, i.Schedule, i.IsControlled, i.IsColdChain, i.VedClass, i.ReorderLevel, i.ReorderQuantity,
         i.MinimumStock, i.MaximumStock, i.Manufacturer, i.Barcode, i.IsActive, i.RequiresPrescription, i.RequiresRegister, i.Version,
-        i.Specification, i.CeilingPrice, i.IsHighAlert, CeilingNotification: i.CeilingNotification);
+        i.Specification, i.CeilingPrice, i.IsHighAlert, CeilingNotification: i.CeilingNotification, TelemedicineList: i.TelemedicineList);
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

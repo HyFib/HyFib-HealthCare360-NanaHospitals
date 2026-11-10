@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { DialysisBoard, DialysisSessionListItem, DialysisSessionStatus, DialysisShift } from './api';
 import {
+  infectionStatusWaits,
+  infectionTested,
   checkDialyzer,
   checkMachine,
   effectiveMaxUses,
@@ -189,5 +191,18 @@ describe('session stage and re-screening', () => {
     expect(isRescreeningDue('2026-07-01', '2026-09-26')).toBe(false);
     expect(isRescreeningDue('2026-06-27', '2026-09-26')).toBe(true);
     expect(isRescreeningDue(null, '2026-09-26')).toBe(true);
+  });
+});
+
+describe('infection status changes', () => {
+  it('isolates a sero-negative patient found positive at once, and waits for a second person off a positive status', () => {
+    expect(infectionStatusWaits('Negative', 'HBsAg')).toBe(false);
+    expect(infectionStatusWaits('HBsAg', 'Negative')).toBe(true);
+    expect(infectionStatusWaits('HCV', 'HIV')).toBe(true);
+  });
+
+  it('asks for a result of the infection concerned', () => {
+    expect(infectionTested('Negative', 'HCV')).toBe('HCV');
+    expect(infectionTested('HBsAg', 'Negative')).toBe('HBsAg');
   });
 });

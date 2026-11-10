@@ -177,7 +177,16 @@ const PREAUTH: PreAuthDetail = {
   tpaName: MEDI_ASSIST.payerName,
   requestedAmount: 85000,
   diagnosisCodes: 'K80.20',
-  procedureCodes: '0FT44ZZ',
+  procedures: [
+    {
+      system: 'Icd10Pcs',
+      code: '0FT44ZZ',
+      name: 'Laparoscopic cholecystectomy (resection of gallbladder, percutaneous endoscopic)',
+      quantity: 1,
+      amount: 85000,
+    },
+  ],
+  legacyProcedureText: null,
   clinicalSummary: 'Symptomatic cholelithiasis; planned laparoscopic cholecystectomy under GA, 2 days stay.',
   expectedStayDays: 2,
   documentFileIds: [],

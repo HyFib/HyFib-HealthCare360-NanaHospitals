@@ -49,6 +49,10 @@ internal static class AbdmEndpoints
         bundles.MapGet("/clinical-notes/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
             ExportAsync(AbdmRecordType.ClinicalNote, id, pretty, service, ct));
 
+        // A finalised bill by its own id, as Billing's bill screen names it.
+        bundles.MapGet("/invoices/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
+            ExportAsync(AbdmRecordType.Invoice, id, pretty, service, ct));
+
         // A remote monitoring enrolment's home readings measured in a month (yyyy-MM; the month of the latest reading
         // when none is given).
         bundles.MapGet("/home-readings/{id:guid}", (Guid id, string? month, bool? pretty, AbdmBundleService service, CancellationToken ct) =>

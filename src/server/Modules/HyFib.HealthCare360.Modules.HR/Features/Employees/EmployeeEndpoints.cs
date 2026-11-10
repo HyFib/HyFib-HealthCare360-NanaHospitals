@@ -120,7 +120,7 @@ internal static class EmployeeEndpoints
             e.Status, e.JoiningDate, Phone.Mask(e.Phone), e.UserId != null, e.BiometricPin)));
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> Get(Guid id, HospitalDbContext db, PaymentDetailsApprovals paymentDetails, CancellationToken ct)
     {
         var e = await db.Set<Employee>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (e is null)
@@ -137,17 +137,21 @@ internal static class EmployeeEndpoints
             e.EmergencyContactName, e.EmergencyContactPhone, e.DepartmentId, department, e.DesignationId, designation, e.EmploymentType, e.Status,
             e.JoiningDate, e.ConfirmationDate, e.LeavingDate, e.SeparationReason, e.SeparationNote, e.ReportingManagerId, manager, e.UserId,
             e.PractitionerId, e.BiometricPin, e.DefaultShiftId, e.WeeklyOff, e.IsAttendanceExempt, e.PaymentMode, e.BankName, e.BankAccountMasked,
-            e.BankIfscMasked, e.PanMasked, e.Uan, e.PfNumber, e.EsiNumber, e.PhotoFileId, e.Notes, e.Version));
+            e.BankIfscMasked, e.PanMasked, e.Uan, e.PfNumber, e.EsiNumber, e.PhotoFileId, e.Notes, e.Version, await paymentDetails.PendingAsync(e.Id, ct)));
     }
 
     private static async Task<IResult> Create(SaveEmployeeRequest request, EmployeeService employees, CancellationToken ct) =>
         (await employees.CreateAsync(request, ct)).ToCreated(e => $"/api/v1/hr/employees/{e.Id}");
 
+    /// <summary>Saved (204), or saved with a different payment mode asked for a second person's approval (202, the request).</summary>
     private static async Task<IResult> Update(Guid id, SaveEmployeeRequest request, EmployeeService employees, CancellationToken ct) =>
-        (await employees.UpdateAsync(id, request, ct)).ToNoContent();
+        (await employees.UpdateAsync(id, request, ct)).ToHttpResult(asked => asked is null
+            ? TypedResults.NoContent()
+            : TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked));
 
+    /// <summary>Asked for (202): the payment details wait for someone else who approves payroll (maker-checker slice 11).</summary>
     private static async Task<IResult> UpdateBank(Guid id, UpdateBankDetailsRequest request, EmployeeService employees, CancellationToken ct) =>
-        (await employees.UpdateBankDetailsAsync(id, request, ct)).ToNoContent();
+        (await employees.RequestPaymentDetailsAsync(id, request, ct)).ToHttpResult(asked => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked));
 
     private static async Task<IResult> Separate(Guid id, SeparateEmployeeRequest request, EmployeeService employees, CancellationToken ct) =>
         (await employees.SeparateAsync(id, request, ct)).ToNoContent();

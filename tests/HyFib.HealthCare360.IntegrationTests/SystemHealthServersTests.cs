@@ -2,8 +2,10 @@ using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -149,6 +151,65 @@ public sealed class SystemHealthServersTests(HospitalServer server)
             await jobs.WithdrawAsync(Ct);
             await api.WithdrawAsync(Ct);
         }
+    }
+
+    /// <summary>
+    /// With the job lease (SCAL-05), System health shows the server that holds it as the one running the jobs, read from the
+    /// database's lock at once rather than from what each server wrote up to a minute ago, and the others as standing by.
+    /// Between one holder and the next it says another is taking over, not that nothing runs the jobs.
+    /// </summary>
+    [Fact]
+    public async Task With_the_job_lease_System_health_shows_who_holds_it_now()
+    {
+        var scopes = server.Services.GetRequiredService<IServiceScopeFactory>();
+        var first = new ServerNodeBoard(scopes, NodeFolder());
+        var second = new ServerNodeBoard(scopes, NodeFolder());
+        var suffix = Guid.NewGuid().ToString("N")[..6].ToUpperInvariant();
+        try
+        {
+            // Both wrote a minute ago that they stand by; the first has taken the lease since.
+            await first.PublishAsync(LeaseNode("IT-A-" + suffix, first.Node), Ct);
+            await second.PublishAsync(LeaseNode("IT-B-" + suffix, second.Node), Ct);
+            var connection = new NpgsqlConnectionStringBuilder(server.Services.GetRequiredService<IConfiguration>().GetConnectionString("Hospital"))
+            {
+                ApplicationName = "HC360 jobs " + first.Node,
+                Pooling = false,
+            };
+            await using (var holder = new NpgsqlConnection(connection.ConnectionString))
+            {
+                await holder.OpenAsync(Ct);
+                await using (var take = new NpgsqlCommand($"SELECT pg_advisory_lock({JobLeadership.LockNamespace}, {JobLeadership.LockKey})", holder))
+                {
+                    await take.ExecuteNonQueryAsync(Ct);
+                }
+
+                var report = await ApiNodeReportAsync();
+                var servers = report.Servers.ShouldNotBeNull();
+                servers[0].Server.MachineName.ShouldBe("IT-A-" + suffix, "the server holding the lease comes first");
+                servers[0].Server.Jobs.ShouldNotBeNull().Active.ShouldBeTrue();
+                servers.Single(s => s.Server.MachineName == "IT-B-" + suffix).Server.Jobs.ShouldNotBeNull().Active.ShouldBeFalse();
+                report.Warnings.ShouldNotContain(w => w.Code.StartsWith("server.", StringComparison.Ordinal));
+            }
+
+            // The holder's connection has ended: the lease is free until the other takes it.
+            var between = await ApiNodeReportAsync();
+            between.Servers.ShouldNotBeNull().ShouldNotContain(s => s.Server.Jobs != null && s.Server.Jobs.Active);
+            between.Warnings.Single(w => w.Code.StartsWith("server.", StringComparison.Ordinal)).ShouldSatisfyAllConditions(
+                w => w.Code.ShouldBe("server.jobs_taking_over"),
+                w => w.Severity.ShouldBe("warning"));
+        }
+        finally
+        {
+            await first.WithdrawAsync(Ct);
+            await second.WithdrawAsync(Ct);
+        }
+    }
+
+    /// <summary>The part a server that takes turns at the jobs writes: standing by, as it last said.</summary>
+    private static ServerNodeHealth LeaseNode(string machine, string node)
+    {
+        var part = JobNode(machine, role: "all");
+        return part with { Server = part.Server with { Node = node, Jobs = new JobNodeState(false, null) }, Warnings = [] };
     }
 
     /// <summary>A node of several writes its part as it starts and removes it as it stops.</summary>

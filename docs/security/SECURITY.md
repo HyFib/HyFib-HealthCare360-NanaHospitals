@@ -69,11 +69,20 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   none of it. The standby trusts exactly the primary's own PostgreSQL certificate (`sslmode=verify-ca`). Its PostgreSQL
   listens on localhost only, and HC360 there is disabled and refuses to start on a database in recovery. The standby
   holds every patient record, so it needs the primary's physical security and BitLocker.
+- **PostgreSQL on another machine only over TLS that checks the server** (ASVS V9.2.2): a PostgreSQL connection string
+  to a host that is not this machine (localhost, 127.0.0.0/8, ::1 or a Unix socket) must say `SSL Mode=VerifyFull`, or
+  `Require`/`VerifyCA` with a pinned `Root Certificate`, or the server does not start and names the setting
+  (`DatabaseTls`). Npgsql's default, `Prefer`, would send patients' records and the password in clear to a server that
+  offers no TLS, or to anyone in the way. `HealthCare360:Database:AllowUnverifiedRemoteConnection` lets a lab start
+  without it, and System health warns while it is on (`database.tls_unverified`). Tests: `DatabaseTlsTests`.
 - **Network lab analysers** cannot sign in: HL7 (MLLP) and ASTM have no authentication. Each one's address is
   therefore its check (ASVS V13.2.1): its connection must list its fixed IP address, and its port closes a connection
   from any other address before reading a byte. A connection set up before the address was required takes any address:
-  the server logs a warning when it starts listening on it, and Lab setup › Analysers shows it as *Open to any device*
-  until its address is added.
+  the server logs a warning when it starts listening on it, and Lab setup › Analysers and System health
+  (`lab.analyser_any_address`) show it as open to any device until its address is added. A connection from any other
+  address is refused, not silently dropped: each refused address is listed with the analyser's status (times, first and
+  last) in Lab setup, and on System health for a day (`lab.analyser_address_refused`), so a re-addressed analyser or a
+  device pretending to be one is seen. Serial analysers relayed by an enrolled lab agent are unchanged.
 - **The DICOM modality worklist** (off by default) listens on its own TCP port, 11112 unless changed, for the CT, MR,
   X-ray and ultrasound consoles. DICOM there has no encryption or passwords, as on most modality networks, so other
   controls apply:
@@ -294,12 +303,12 @@ What they all share:
 | **Attendance terminals, JSON punch API** | The serial number and a 256-bit device key | Too large to guess |
 | **Attendance terminals, ADMS** (ZKTeco, eSSL) | The serial number, which is printed on the terminal, and its fixed IP address when one is set: the ADMS protocol carries no key. This is the weakest pathway. Without an address, anyone on the network who knows a serial number can add punches in its name, so set the address of every terminal that pushes over ADMS in HR › Terminals (ASVS V6.3.4) | Only registered, active serials; refusals are logged |
 | **Patient monitors and their gateways** | A device key of 256 random bits that names its device | Too large to guess |
-| **Network lab analysers** | The analyser's fixed IP address: HL7 (MLLP) and ASTM have no authentication. A connection set up before the address was required accepts any address until one is added | Other addresses are closed before a byte is read |
+| **Network lab analysers** | The analyser's fixed IP address, and, for a connection that asks for it, the device itself before a message is read: a shared secret's HMAC-SHA256 answer to a fresh 128-bit challenge (the secret never crosses the network; kept encrypted, as the gateway must check answers), or a client certificate whose SHA-256 fingerprint is approved for the connection (mutual TLS, TLS 1.2/1.3, the LAN certificate as the server's). A serial analyser's lab agent must be approved for its connection too. A device not approved is refused and listed (at most 20 unknown ones per connection); one person adds it and another approves it (`lab.device`); revoking is immediate. Connections saved before this keep `None` (the IP allow-list only) until the lab chooses, and say so | Wrong answers counted on the device's row and logged; 10 seconds to answer |
 | **Modality worklist** (DICOM) | The modality's AE title and IP address together, from the allow-list | Other addresses are closed before a byte is read |
 | **Payment gateway callbacks** | An HMAC-SHA256 signature of the body with the webhook secret | Too large to guess; refusals are logged |
 | **SMS delivery receipts** | MSG91 and generic gateways: a shared token in the address (`?token=`), and the gateway's addresses if an allow-list is set. Twilio: its `X-Twilio-Signature` (HMAC-SHA1, Twilio's scheme) | As strong as the token; refusals are logged |
 | **WhatsApp callbacks** (Meta) | An `X-Hub-Signature-256` (HMAC-SHA256 of the body with the app secret); the verify token for Meta's subscription check | Too large to guess; refusals are logged |
-| **FHIR API** | A staff sign-in whose roles hold `fhir.read` (HospitalAdmin by default): no separate client credentials or SMART on FHIR. `fhir.read` alone does not require two-step verification | As staff sign-in |
+| **FHIR API** | SMART on FHIR (App Launch 2.0, Backend Services): an opaque access token of 256 random bits, 15 minutes, stored only as its SHA-256, from `POST /oauth2/token`. Apps: authorization code with PKCE (S256 only), the code single use for ten minutes, issued after a staff member who holds `fhir.read` authorizes the app in the staff app; a code presented twice revokes the token it bought. Backend services: client credentials with a JWT client assertion signed by a public key registered for the client (RS384, ES384, RS256, ES256; RSA 2048+ or EC P-256/P-384; at most 5 minutes; `aud` the token endpoint; each `jti` accepted once). Clients are registered by one administrator (`fhir.clients.manage`) and issued nothing until a second approves (`interop.smart_client`); suspension revokes every token at once. Tokens read only the FHIR API, as the account they were issued for, so its permissions, its facility and each patient's consent still apply, and their scopes narrow it further. Partners not yet moved keep a staff sign-in whose roles hold `fhir.read`; a client registered to replace an account's password sign-in makes the FHIR API refuse that account's sessions (`smart-required`) | Assertions: signature, one use; codes: PKCE verifier, one use; refusals audited (`smart.token_refused`) |
 | **Patient links** | Feedback forms: a 128-bit token on the hospital's QR poster, which any patient may answer. Feedback invitations: 128 bits, 14 days, one answer. Unsubscribe links: 128 bits; they only stop campaign messages. Prescription checks: 144 bits; the doctor, facility, date and prescription number, and the doctor's DSC signature (signer, certificate, SHA-256 of the signed bytes, re-checked for each answer, and its .p7s), no patient details. Report checks: 100 bits; the patient's initials and the test names, never results | Too large to guess; 60 a minute per address; sending feedback also takes a proof of work (Anti-automation, below) |
 | **Server command line and database** | A Windows administrator's sign-in on the Server Node: the data folder is readable only by them, the service and SYSTEM. PostgreSQL accepts only the service's Windows account, from that machine, unless it runs elsewhere (Keys and certificates, below) | Windows |
 
@@ -463,6 +472,17 @@ and grants nothing.
     it from their own sign-in (`pharmacy.override_unacknowledged`), never the account that signed it
     (`pharmacy.override_own_prescription`); the acknowledgement is audited at Warning with the alert and the doctor's
     reason (`pharmacy.safety_override_acknowledged`).
+  - the store (MAKER-CHECKER slice 13): an indent is approved and issued by someone other than whoever raised it
+    (`indent.approve_own`, `indent.issue_own`); a transfer is received by someone other than whoever dispatched it
+    (`transfer.receive_own`), and a line counted short books nothing until someone who holds
+    `inventory.adjustments.approve`, neither the receiver nor the dispatcher (`transfer.shortfall_own`), approves the
+    write-off (`inventory.transfer_shortfall`); a batch held on a recall is released only by someone else who holds
+    `inventory.recall.release` (`inventory.recall_release`); a purchase return (`purchase.debit_note`, by
+    `purchase.grn.approve`) and a supplier payable adjustment (`purchase.payable_adjustment`, by `purchase.approve`) post,
+    and reach Tally, only when someone other than whoever raised them approves. A store's own reorder levels change at once,
+    audited before and after: they only decide when to reorder. The recall trace, which lists the names and phone numbers of
+    every patient who had a batch, needs `pharmacy.registers` and is audited as PHI access with who ran it
+    (`pharmacy.recall_trace`).
     A new price or GST rate, a price the counter may type, discounts allowed and a service put in use wait; what only
     narrows them (no counter price, no discounts, out of use) applies at once. While a change waits, any other change to
     the price is refused (`approval.already_requested`), the price in use put back included. A new service is made out
@@ -505,6 +525,13 @@ and grants nothing.
     the correction by approving it (`lab.results.verify`). Until then nothing on the report changes, and every copy says
     a correction is waiting. The amendment names both, and the corrected results are verified by the one who approved.
     A corrected critical value is asked for with the documented call, registered when the correction is made.
+  - the lab's own safety settings where the lab sets `lab.separateVerifier` (maker-checker slice 15): an override of
+    failed QC for the day (`lab.qc_override`) and a loosening of a test's critical limits or automatic verification
+    switched on for a test or an analyser (`lab.safety_limits`) are asked for by one holder of `lab.results.verify` or
+    `lab.masters.manage` and approved by another holder of `lab.results.verify`, over the QC runs or the record as asked
+    (`approval.stale`). The override given at verification covers only the results verified with it. Narrowing a limit or
+    switching automatic verification off is made at once. A critical lab result is acknowledged only by its ordering
+    doctor, or by another doctor recording that they cover the patient and why (audited at Warning).
   - a death certificate (MCCD, Form 4; `mrd.death_certificate`): the doctor who certifies it asks, and a second doctor
     (`mrd.deaths.confirm`) confirms the certificate as it stands before it is reported to the Registrar. The confirming
     doctor must be able to open the patient's record, and is printed on the certificate with the registration number of
@@ -799,6 +826,33 @@ and grants nothing.
       hospital administrator by default), never the one who asked. The original line is kept; its charge is withdrawn
       and its stock returned, and the corrected line is issued and charged, through the same stock and charge paths, only
       over the line as asked (`approval.stale`), audited `ot.material_corrected` with both names;
+  - pay and leave (MAKER-CHECKER.md, slice 11). Each waits with the asker's reason in the approvals inbox, and until it
+    is approved what is in force stays in force; approved, it is made over the record as asked (`approval.stale`) and
+    audited with both names:
+    - a salary's bank account, IFSC, bank or payment mode (`hr.bank_details`; `PUT /api/v1/hr/employees/{id}/bank-details`
+      answers 202, as does an employee saved with another payment mode, and a new employee's first account waits too):
+      someone else who holds `hr.payroll.approve` approves, never the employee whose salary it is
+      (`hr.bank_details_own`). The account and IFSC asked for stay encrypted in the request; the inbox, the audit trail
+      (`employee.bank_changed`) and the notice to the employee show the account's last four digits only;
+    - the bank file (`GET …/payroll/runs/{id}/bank-transfer.csv`, and the banks' own formats,
+      `GET …/statutory/runs/{id}/bank-file/{format}`) pays the accounts fixed, encrypted, on the payslips when
+      the run was approved (`payroll_runs.bank_details_fixed_at`), never the employees' accounts at export; a run approved
+      before payment details were fixed has none until it is reopened and approved again
+      (`payroll.bank_details_not_fixed`);
+    - a salary structure (`hr.salary_structure`), an additional earning or a loss-of-pay or TDS override
+      (`hr.payroll_input`), a file of inputs with an earning in it (`hr.payroll_import`) and a deduction another module
+      posted, or another person entered, taken off (`hr.payroll_input_remove`): asked by `hr.payroll.process`, approved
+      by someone else who holds `hr.payroll.approve`. A deduction is added at once. Nobody enters or approves a change to
+      their own pay or structure (403 `hr.pay_own`, checked by the employee record linked to the signed-in account);
+    - a manual leave credit (`hr.leave_adjust`): approved by someone else who holds `hr.leave.approve`; a debit is made at
+      once; nobody adjusts their own balance or decides their own leave request (403 `hr.leave_own`). The yearly credit,
+      worked out by rule, is unchanged;
+    - leave encashed while in service (`hr.leave_encash`, `POST /api/v1/hr/leave/encashments` answers 202): asked by
+      `hr.payroll.process`, approved by someone else who holds `hr.payroll.approve`, never the employee (`hr.pay_own`);
+      checked against the leave policy when asked and again when approved; approved, the balance is debited and the amount
+      posted to the month's payroll inputs, audited `leave.encashed` with both names. Settling a full and final statement
+      (`…/full-and-final/settle`, `hr.payroll.approve`, never one's own) debits the leave it pays out, once
+      (`settlement.already_settled`);
   - the PCPNDT Form F, the MTP second opinion and the mortuary (MAKER-CHECKER.md, slice 9):
     - an **ultrasound in pregnancy** (a study whose procedure requires a Form F) is cancelled only before its scan begins.
       Once started on the machine, acquired, or found in PACS, `POST /api/v1/radiology/studies/{id}/cancel` is refused
@@ -867,6 +921,42 @@ and grants nothing.
       account, used once, for that patient), and the consent names them (`consent.witness_required` otherwise; audited
       `patient.consent.witnessed`). A signed form attached must be a file stored for that patient (`documentFileId`). A
       scoped consent, a refusal, or one with the signed form is recorded as before;
+  - support services and specialty care (MAKER-CHECKER.md, slice 15 and Support services):
+    - a canteen bill cancelled after it was paid (`POST /api/v1/canteen/sales/{id}/cancel` answers 202,
+      `canteen.sale_cancel`): approved by someone who holds the new `canteen.cancellations.approve` (canteen managers,
+      accountants and the hospital administrator by default), never the one who asked nor the cashier who sold it
+      (`canteen.cancel_own_sale`, 403). The money goes back the way it was paid (a card or UPI bill to the card or UPI,
+      never from the till; a staff credit bill off the ledger) and the stock comes back, only over the bill as asked and
+      on its business day (`approval.stale`), audited `canteen.sale_cancelled` with both names;
+    - an ambulance trip's charge waived (`POST /api/v1/ambulance/trips/{id}/waive`, or `waiveReason` at completion,
+      `ambulance.charge_waiver`): the trip is charged at once and the waiver waits for someone who holds
+      `ambulance.waivers.approve` (accountants, the hospital administrator), never the asker; approved, the trip's
+      charges are withdrawn from the bill, audited `ambulance.charge_waived`;
+    - a transfusion reaction's severity, or its imputability below one assessed, lowered
+      (`PUT /api/v1/blood-bank/reactions/{id}/classification`, `bloodbank.reaction_lower`): waits for the blood bank
+      medical officer (`bloodbank.reactions.approve`), never the officer who asked; the investigation is not closed the
+      lowered way meanwhile (`bloodbank.reaction_lowered`); audited with both names;
+    - a dialysis patient's infection status (`POST /api/v1/dialysis/patients/{patientId}/infection-status`,
+      `dialysis.infection_status`): only on the patient's verified lab result for that infection from the last 90 days
+      (`dialysis.lab_result_unverified`, `dialysis.lab_result_mismatch`, `dialysis.lab_result_old`), never from the
+      profile form (`dialysis.infection_status_change`); a sero-negative patient found positive is isolated at once, and
+      taking a patient off a positive status waits for someone who holds `dialysis.infection_status.approve` (doctors by
+      default), never the asker;
+    - each of the last three is strict by default and relaxed only by a guarded setting a second administrator
+      approves (`ambulance.waiverApproval`, `bloodbank.reactionDowngradeApproval`, `dialysis.infectionStatusApproval`):
+      then one person makes the change alone, audited at Warning (the dialysis lab result is still required);
+  - another doctor's work (MAKER-CHECKER.md, slice 15), each strict by default and relaxed only through its setting,
+    which a second administrator approves switching off (SettingGuard):
+    - a discharge summary is signed only by the stay's consultant or a doctor on its care team, as themselves; an
+      account not linked to a doctor no longer signs it in the consultant's name (`discharge_summary.not_care_team`,
+      `discharge_summary.doctor_required`; `clinical.dischargeSummary.careTeamOnly`);
+    - another doctor's signed encounter is amended only when its author or the head of its department approves (202,
+      `clinical.encounter_amend`; anyone else is refused, `encounter.amend_approver`), over the encounter as asked, the
+      original kept and the amendment audited `encounter.amended_with_approval` with both names
+      (`clinical.encounters.amendByAuthorOnly`);
+    - another doctor's critical result is acknowledged only by a doctor on the same stay's care team or one the ordering
+      doctor handed over to, audited `result.acknowledged_covering` (`result.not_covering`;
+      `clinical.criticalResults.coveringOnly`);
   - The person who asked never approves (`approval.self`, checked by user, however many roles they hold), and the
     approver must hold the kind's approving permission when deciding.
   - The request keeps the change exactly as asked, with its SHA-256; a request changed in the database after it was
@@ -886,9 +976,12 @@ and grants nothing.
   - whoever sold a pharmacy invoice, or took a payment on it, does not ask for its cancellation or take a return of it,
     nor approve either (`pharmacy.cancel_own_sale`, `pharmacy.return_own_sale`, 403 whatever else they may do), and the
     pharmacist who asks for a ward return not restocked does not approve it (`approval.self`);
+  - the cashier who sold a canteen bill does not approve its cancellation (`canteen.cancel_own_sale`), and the cleaner
+    does not verify their own cleaning, scheduled or asked for by a ward (`housekeeping.verify_own`);
   - a lab that sets `lab.separateVerifier` (per facility, off by default for a lab with one pathologist) refuses
-    verification of a result by whoever entered it (`lab.verify_own_result`), and a correction of a released report
-    waits for a second pathologist (see Maker-checker);
+    verification of a result by whoever entered it (`lab.verify_own_result`), and a correction of a released report,
+    an override of failed QC for the day and a loosened critical limit or automatic verification wait for a second
+    pathologist (see Maker-checker);
   - the doctor who certified a death does not also confirm the certificate (`death.own_certificate`, and
     `approval.self` on the request);
   - a controlled drug given on the MAR is witnessed by a second nurse who proves who they are at the recording nurse's
@@ -1152,6 +1245,16 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     point it at storage the database's administrators cannot write) and to the server log. Every anchor's position
     must hold that hash, and the chain must reach the last anchor, so a chain cut short, or made again from an earlier
     point, is found even by someone who holds the key.
+  - Copies of the anchors off the server (`AuditAnchorMirror`): each anchor is appended, as it is written, to a second
+    anchor file on another machine (`HealthCare360:Audit:AnchorMirrorFile`, a UNC path to a share the service may read
+    and append to but not change) and/or sent to the syslog collector (`HealthCare360:Audit:AnchorsToSyslog`: facility
+    "log audit", MSGID `AUDIT_ANCHOR`, the position, hash, seal and time as structured data). Someone who holds the
+    server can rewrite its anchor file to match a chain made again; not the copy. The second file is brought level with
+    the anchor file at every anchor and every five minutes, so anchors missed while the share was away follow, and a
+    copy that holds an anchor the anchor file no longer has, or has with another hash, is a critical System health
+    warning (`audit.anchor_mirror_mismatch`). While a copy fails, System health warns (`audit.anchor_mirror_failed`,
+    critical after a day); a live server that copies its anchors nowhere is told so (`audit.anchor_mirror_off`, info).
+    Tests: `AuditAnchorMirrorTests`.
   - Administration › Audit log › *Verify integrity* re-checks the chain, the seals and the anchors, and names the position
     of the first entry changed, moved or removed, even by someone who turned the triggers off (ASVS V16.4.2). It also
     fails on any seal outside the chain. The server that runs the jobs makes the same check by itself an hour after it
@@ -1227,6 +1330,15 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 - CERT-In's Directions of 28 April 2022:
   - The server's log files are kept a year (`HospitalLogging.RetentionDays`, 367 days, so the last events of each day's file are a full year old before it goes, in a leap year too), on the Server Node, in India:
     the 180 days the Directions ask for, and the year the DPDP Rules 2025 ask for from 13 May 2027 (r.6).
+  - Off the server, optionally (`HealthCare360:Syslog`, off by default): every log event, as it happens, to the
+    hospital's syslog collector or SIEM in RFC 5424's format over TLS (RFC 5425, port 6514), so that what the server
+    logged is kept where its own administrators cannot change it. The collector's certificate must name it and chain to
+    the machine's roots or to the CA given (`CaCertificatePath`); a client certificate can be presented for mutual TLS.
+    Each message is masked in the formatter itself, its text and every structured data value (`SensitiveText`, as the
+    log file): no phone, Aadhaar or ABHA number, e-mail address or secret leaves the server. Events wait in a bounded
+    queue while the collector is away; System health says when it cannot be reached (`logs.syslog_unreachable`) and
+    when events were dropped from the queue (`logs.syslog_dropped`; the log file still has them). Tests: `SyslogTests`,
+    `SyslogSinkTests`.
   - Each server checks its clock against NPL's and NIC's NTP servers (time.nplindia.org, samay1/samay2.nic.in; or the
     hospital's own, `HealthCare360:TimeSync:Servers`) every 15 minutes, and System health warns when it is more than a
     second off (`HealthCare360:TimeSync:MaxOffset`) or none answers. Windows Time keeps the clock; the check shows when
@@ -1300,8 +1412,16 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - `no-store` on API responses.
   - They apply to every response, including the staff and portal pages and their static assets, not just API calls.
 - Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user. With
-  several servers (below), the sign-in and OTP limits per address are counted for the hospital, in the database. The
-  limits are settings (`HealthCare360:RateLimits`, DEPLOYMENT.md), checked at start-up: none can be zero.
+  several servers (below), every limit is counted for the hospital, whichever server answers: the sign-in and OTP limits
+  per address in the database, and the others (public pages, partners, devices, HC360 Desktop's update, every request
+  per user) on the Redis server the nodes share for real-time updates, each request one atomic Lua script timed by
+  Redis's own clock (a sliding window for the per-minute limits, a token bucket for devices and users). Redis holds no
+  address, device credential or user id: each budget's key is an HMAC of it under a key derived from the hospital's data
+  key, as the database's is. While Redis cannot be reached (a call fails, or takes more than half a second), each server
+  counts those limits on its own for 5 seconds at a time before it asks Redis again: the limits never lift (fail-safe),
+  but a client may make each one's requests on every server, and System health warns (`ratelimit.per_server`) on each
+  server that counts alone. A single Server Node counts them in its memory, as before. The limits are settings
+  (`HealthCare360:RateLimits`, DEPLOYMENT.md), checked at start-up: none can be zero.
   - **What counts as one address** (`ClientAddresses`), for these limits and for the proof of work's failure counts
     (below): an IPv4 address; an IPv4 address carried in an IPv6 one (IPv4-mapped, 6to4, Teredo, and NAT64's well-known
     prefix `64:ff9b::/96`, RFC 6052, through which IPv4 clients reach a server on IPv6 alone) as that IPv4 address; and
@@ -1532,7 +1652,7 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 | Desktop and lab agent device secrets | Each workstation | DPAPI (user or machine) | A device's sign-in | Revoke and enrol the device again |
 | Release signing key (HyFib's, ECDSA P-256) | The `HC360_RELEASE_SIGNING_KEY` secret of the release workflow, and one copy offline at HyFib; the public keys are built into HC360 (`ReleaseKeys.cs`) | GitHub's encrypted secrets: only the release job reads it, from its environment, never on a command line or in a log | The manifest of each HC360 Desktop package, which the Server Node, HC360 Desktop and its updater check before they take, offer or install it (SRS DED-18; Release signing key, below) | A new pair every few years, at once on exposure or when someone who held it leaves: release with both public keys, then sign with the new one |
 | Doctors' Digital Signature Certificates (DSC) | The doctor's own USB token, issued by a licensed Indian CA; never on the server or in HC360 | The token and its PIN (the vendor's CSP/KSP); HC360 Desktop only asks Windows to sign | Their detached CMS signatures over prescriptions (SHA-256; ERX-04), checked by the server and anyone with OpenSSL | By the CA (one to three years); a new certificate signs new prescriptions, earlier signatures stay checkable with the certificate inside them |
-| DSC trust anchors (the CCA India root certificates) | The server's DSC trust folder (`HealthCare360:Clinical:DscTrustDirectory`, by default `certs\dsc-trust` in the data folder): public certificates only, which IT downloads from cca.gov.in and checks against the thumbprints the CCA publishes | File permissions of the data folder: whoever can write there decides which certificates count as DSCs | Accepting a DSC signature: the certificate must chain to one of them, offline, at the signing time (no revocation check), and be issued in the prescribing doctor's name; every printed copy re-checks it and states the DSC only while it is Valid | When the CCA issues a new root, add it; a removed root turns the signatures under it to "not confirmed as a DSC" (`Untrusted`: printed as "Signed electronically", and not issued at all where the DSC is required). The folder is not in the backups or streamed to the standby: IT copies the roots onto new hardware and the standby (DEPLOYMENT.md, sections 4, 8 and 9), and System health warns while it is empty, or the server cannot read it (which counts as empty), and DSC signing is on |
+| DSC trust anchors (the CCA India root certificates) | The server's DSC trust folder (`HealthCare360:Clinical:DscTrustDirectory`, by default `certs\dsc-trust` in the data folder): public certificates only, which IT downloads from cca.gov.in and checks against the thumbprints the CCA publishes | File permissions of the data folder: whoever can write there decides which certificates count as DSCs | Accepting a DSC signature: the certificate must chain to one of them at the signing time, be valid today and not revoked (OCSP or the CA's CRL when the CA can be reached, else the CA's CRL cached in `certs\dsc-crl`, believed only from the CA that signed it, whose age is kept with the signature), and be issued in the prescribing doctor's name; every printed copy re-checks the signature and chain and states the DSC only while it is Valid | When the CCA issues a new root, add it; a removed root turns the signatures under it to "not confirmed as a DSC" (`Untrusted`: printed as "Signed electronically", and not issued at all where the DSC is required). The folder is not in the backups or streamed to the standby: IT copies the roots onto new hardware and the standby (DEPLOYMENT.md, sections 4, 8 and 9), and System health warns while it is empty, or the server cannot read it (which counts as empty), and DSC signing is on |
 | Passwords, refresh tokens, one-time codes | The database | PBKDF2-SHA512 (passwords), SHA-256 (tokens and codes) | Sign-in | Refresh tokens on every use; passwords rehashed when the work factor rises |
 - Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
   changed.
@@ -1551,6 +1671,18 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   settings file, `pg_hba.conf` and `pg_ident.conf` back if it does not. With the superuser's password it also removes
   the account's old password; without it, PostgreSQL refuses that password anyway. The Windows sign-in needs PostgreSQL
   on the same machine: elsewhere, or after `-DatabaseSignIn Password`, the server signs in with a password, as below.
+- **Two database accounts** (ASVS V1.4.3, V8.3.7): with `-CreateDatabase` the installer makes `hc360_owner`, which owns
+  the database and every table, and `hc360_app`, the account the server works as, which may SELECT, INSERT, UPDATE and
+  DELETE rows and EXECUTE functions, and nothing else (`deploy/windows/hc360-database-roles.sql`). It owns nothing, so
+  neither a flaw in a request's SQL nor someone holding its password can alter a table, drop or turn off the audit
+  trail's triggers, or TRUNCATE it. Start-up applies migrations and puts the audit triggers back as the owner
+  (`ConnectionStrings:HospitalOwner`, protected like the other connection strings), and so do the jobs that add monthly
+  partitions and their indexes; requests run as `hc360_app`. A purge of the audit trail drops its months through
+  `audit.drop_purged_month`, a SECURITY DEFINER function that drops only the oldest, fully sealed months of the audit
+  trail (a purge record without the server's seal still fails verification). A database installed before the split is
+  handed to `hc360_owner` as it is (`REASSIGN OWNED`). A server whose tables belong to another account and that has no
+  owner connection string stops at start-up and says so. Tests: `DatabaseRolesTests` (on PostgreSQL),
+  `tests/deploy/Test-InstallerDatabaseRoles.ps1`.
 - **Where the server signs in with a password, it is changed from System health** (SRS SEC-07), by holders of
   `admin.system.manage`, which only SuperAdmin has by default. HC360 makes a new random password that nobody sees and
   sends PostgreSQL only its SCRAM-SHA-256 verifier, so the password never appears in a statement or the database's

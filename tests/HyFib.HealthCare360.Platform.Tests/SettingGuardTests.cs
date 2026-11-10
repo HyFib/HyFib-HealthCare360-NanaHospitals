@@ -35,6 +35,14 @@ public sealed class SettingGuardTests
         Waits("bloodbank.separateVerifier", Off, On).ShouldBeFalse();
         SettingGuard.Judge("bloodbank.separateVerifier", null, Off, secret: false).Summary.ShouldBe("Second blood bank officer: not set (on) → off");
 
+        // Slice 15's second persons, on unless set to false: each is switched off only with a second administrator.
+        foreach (var key in new[] { "ambulance.waiverApproval", "bloodbank.reactionDowngradeApproval", "dialysis.infectionStatusApproval" })
+        {
+            Waits(key, null, Off).ShouldBeTrue($"{key} off lets one person do it alone");
+            Waits(key, Off, On).ShouldBeFalse($"{key} on again is stricter");
+            SettingGuard.Judge(key, null, Off, secret: false).From.ShouldBe("not set (on)");
+        }
+
         // Typed as text, as the administration rule reads it too.
         Waits("security.administrationRequiresDesktop", On, JsonValue.Create("false")).ShouldBeTrue();
         Waits("security.administrationRequiresDesktop", Off, JsonValue.Create(" TRUE ")).ShouldBeFalse();
@@ -102,6 +110,22 @@ public sealed class SettingGuardTests
 
         SettingGuard.Judge("security.maxSessionsPerUser", Number(3), Number(0), secret: false).Summary
             .ShouldBe("Sessions per staff account: 3 sessions → no limit");
+    }
+
+    [Fact]
+    public void A_longer_back_entry_window_waits_and_a_shorter_one_is_saved_at_once()
+    {
+        // Each record type's window: more hours let older paper in without a second person's approval.
+        Waits("downtime.backEntryHours.visit", null, Number(96)).ShouldBeTrue("72 hours unless set");
+        Waits("downtime.backEntryHours.visit", Number(72), Number(24)).ShouldBeFalse();
+        Waits("downtime.backEntryHours.visit", Number(72), Number(14 * 24 + 1)).ShouldBeFalse("past 14 days the window keeps its 72 hours");
+        Waits("downtime.backEntryHours.visit", Number(72), Number(12.5m)).ShouldBeTrue("not a whole number: the window cannot read it");
+        Waits("downtime.backEntryHours.nursingChart", Number(24), Number(14 * 24)).ShouldBeTrue();
+        Waits("downtime.backEntryHours.registration", Number(2160), Number(24)).ShouldBeFalse();
+        Waits("downtime.backEntryHours.registration", Number(24), Number(2160)).ShouldBeTrue();
+        Waits("downtime.backEntryHours.receipt", Number(48), null).ShouldBeTrue("cleared, the default applies and nobody looked at which");
+        SettingGuard.Judge("downtime.backEntryHours.bill", Number(24), Number(48), secret: false).Summary
+            .ShouldBe("Back-entry window: bill from paper: 24 hours → 48 hours");
     }
 
     [Fact]

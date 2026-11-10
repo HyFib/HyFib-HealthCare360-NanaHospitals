@@ -24,8 +24,31 @@ internal static class LeaveEndpoints
         group.MapGet("/leave/balances", Balances).RequireAnyPermission(HRPermissions.LeaveApprove, HRPermissions.EmployeesRead);
         group.MapPost("/leave/balances/credit", async (CreditLeaveRequest r, LeaveService leave, CancellationToken ct) => (await leave.CreditYearAsync(r.Year, ct)).ToOk())
             .RequirePermission(HRPermissions.LeaveApprove).WithValidation<CreditLeaveRequest>();
-        group.MapPost("/leave/balances/adjust", async (AdjustLeaveBalanceRequest r, LeaveService leave, CancellationToken ct) => (await leave.AdjustAsync(r, ct)).ToNoContent())
+        // A debit is made at once (204); a credit is asked for (202) and approved by someone else who approves leave
+        // (maker-checker slice 11). Nobody adjusts their own balance.
+        group.MapPost("/leave/balances/adjust", async (AdjustLeaveBalanceRequest r, LeaveService leave, CancellationToken ct) =>
+                (await leave.AdjustAsync(r, ct)).ToHttpResult(asked => asked is null
+                    ? TypedResults.NoContent()
+                    : TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
             .RequirePermission(HRPermissions.LeaveApprove).WithValidation<AdjustLeaveBalanceRequest>();
+        group.MapGet("/leave/balances/pending", async (Guid employeeId, LeaveService leave, CancellationToken ct) =>
+                TypedResults.Ok(await leave.PendingAdjustmentsAsync(employeeId, ct)))
+            .RequireAnyPermission(HRPermissions.LeaveApprove, HRPermissions.EmployeesRead);
+
+        // In-service leave encashment (HR-05): asked for by HR who process payroll (202) and approved by someone else who
+        // approves payroll, never the employee; approved, the balance is debited and the amount paid in the month's payroll.
+        group.MapPost("/leave/encashments", async (EncashLeaveRequest r, LeaveEncashmentService encashments, CancellationToken ct) =>
+                (await encashments.AskAsync(r, ct)).ToHttpResult(asked => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
+            .RequirePermission(HRPermissions.PayrollProcess).WithValidation<EncashLeaveRequest>();
+        group.MapGet("/leave/encashments", async (Guid employeeId, LeaveEncashmentService encashments, CancellationToken ct) =>
+                TypedResults.Ok(await encashments.ListAsync(employeeId, ct)))
+            .RequireAnyPermission(HRPermissions.PayrollProcess, HRPermissions.PayrollApprove, HRPermissions.EmployeesRead);
+        group.MapGet("/leave/encashments/pending", async (Guid employeeId, LeaveEncashmentService encashments, CancellationToken ct) =>
+                TypedResults.Ok(await encashments.PendingAsync(employeeId, ct)))
+            .RequireAnyPermission(HRPermissions.PayrollProcess, HRPermissions.PayrollApprove, HRPermissions.EmployeesRead);
+        group.MapGet("/leave/encashments/encashable", async (Guid employeeId, int year, LeaveEncashmentService encashments, CancellationToken ct) =>
+                TypedResults.Ok(await encashments.EncashableAsync(employeeId, year, ct)))
+            .RequireAnyPermission(HRPermissions.PayrollProcess, HRPermissions.PayrollApprove);
 
         group.MapGet("/leave/requests", ListRequests).RequirePermission(HRPermissions.LeaveApprove);
         group.MapPost("/employees/{employeeId:guid}/leave-requests", async (Guid employeeId, ApplyLeaveRequest r, LeaveService leave, CancellationToken ct) =>
@@ -47,7 +70,8 @@ internal static class LeaveEndpoints
             .Where(t => includeInactive == true || t.IsActive)
             .OrderBy(t => t.Code)
             .Select(t => new LeaveTypeDto(t.Id, t.Code, t.Name, t.AnnualQuota, t.CarryForwardCap, t.IsEncashable, t.IsPaid, t.AllowHalfDay, t.TracksBalance,
-                t.CountsNonWorkingDays, t.MaxDaysPerRequest, t.DocumentRequiredAfterDays, t.ApplicableGender, t.IsActive, t.Version))
+                t.CountsNonWorkingDays, t.MaxDaysPerRequest, t.DocumentRequiredAfterDays, t.ApplicableGender, t.IsActive, t.Version,
+                t.InServiceEncashmentDaysPerYear, t.MinimumBalanceAfterEncashment))
             .ToListAsync(ct));
 
     private static async Task<IResult> SaveType(Guid? id, SaveLeaveTypeRequest request, HospitalDbContext db, CancellationToken ct)
@@ -92,6 +116,8 @@ internal static class LeaveEndpoints
         type.DocumentRequiredAfterDays = request.DocumentRequiredAfterDays;
         type.ApplicableGender = request.ApplicableGender;
         type.IsActive = request.IsActive;
+        type.InServiceEncashmentDaysPerYear = request.IsEncashable && request.TracksBalance ? request.InServiceEncashmentDaysPerYear : null;
+        type.MinimumBalanceAfterEncashment = request.MinimumBalanceAfterEncashment;
         await db.SaveChangesAsync(ct);
         return id is null ? TypedResults.Created($"/api/v1/hr/leave/types/{type.Id}", new { type.Id }) : TypedResults.NoContent();
     }

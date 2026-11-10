@@ -54,6 +54,17 @@ public sealed class DatabaseInitializer(
         "Something still uses the audit trail, such as a long transaction writing to it, or a report or backup reading it " +
         "with a transaction open. Let it finish or stop it, then start HC360 again.";
 
+    /// <summary>
+    /// Why start-up stops when the schema belongs to another account than the one the server works as, and no
+    /// <c>ConnectionStrings:HospitalOwner</c> says how to sign in as it ({0}): the audit trail's triggers, which start-up
+    /// checks and puts back, and any migration, are the owner's to change.
+    /// </summary>
+    public const string OwnerMissingMessage =
+        "The database's tables belong to the account {0}, not to the account the server works as, so start-up cannot check the " +
+        "audit trail's triggers or apply a database update. Set ConnectionStrings:HospitalOwner to a connection string that signs " +
+        "in as {0} (Install-HC360Server.ps1 -CreateDatabase writes it; on a promoted standby, copy it from the primary's settings), " +
+        "then start HC360 again (docs/deployment/DEPLOYMENT.md, \"Two database accounts\").";
+
     /// <summary>No limit (0) on a migration's statements: see where the migrations are applied.</summary>
     internal const int MigrationCommandTimeout = 0;
 
@@ -86,12 +97,26 @@ public sealed class DatabaseInitializer(
             throw new DatabaseUpgradeException(StandbyMessage);
         }
 
-        if (options.Value.AutoMigrate)
+        // The schema is changed as its owner where that is an account of its own (DatabaseOwner): the account the server
+        // works as cannot. The seeders write rows, as the server does.
+        await using var owner = scope.ServiceProvider.GetService<DatabaseOwner>()?.CreateContext();
+        var schema = owner ?? db;
+        if (owner is null && await SchemaOwnerAsync(db, cancellationToken) is { } schemaOwner)
         {
-            await MigrateAsync(scope.ServiceProvider, db, cancellationToken);
+            throw new DatabaseUpgradeException(string.Format(CultureInfo.InvariantCulture, OwnerMissingMessage, schemaOwner));
         }
 
-        await ApplyPlatformSqlAsync(db, cancellationToken);
+        if (owner is not null)
+        {
+            logger.LogInformation("The database schema is brought up to date as its owner, {Owner}", Username(owner));
+        }
+
+        if (options.Value.AutoMigrate)
+        {
+            await MigrateAsync(scope.ServiceProvider, schema, cancellationToken);
+        }
+
+        await ApplyPlatformSqlAsync(schema, cancellationToken);
         await TrainingDatabase.CheckAsync(db, options.Value.SeedDemoData, cancellationToken);
 
         foreach (var seeder in scope.ServiceProvider.GetServices<ISeeder>().OrderBy(s => s.Order))
@@ -101,6 +126,15 @@ public sealed class DatabaseInitializer(
             db.ChangeTracker.Clear();
         }
     }
+
+    /// <summary>The account that owns the audit trail's schema when it is not the one <paramref name="db"/> signs in as (nor one it is a member of); null otherwise, and on a new database.</summary>
+    private static async Task<string?> SchemaOwnerAsync(HospitalDbContext db, CancellationToken ct) =>
+        await db.Database.SqlQuery<string?>(
+                $"SELECT (SELECT pg_get_userbyid(n.nspowner) FROM pg_namespace n WHERE n.nspname = 'audit' AND NOT pg_has_role(current_user, n.nspowner, 'MEMBER')) AS \"Value\"")
+            .SingleAsync(ct);
+
+    private static string? Username(HospitalDbContext db) =>
+        new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString()).Username;
 
     /// <summary>
     /// <see cref="PlatformSql.PostMigrationScript"/> in a transaction of its own, one node at a time (several may start at
@@ -400,6 +434,35 @@ internal static class PlatformSql
             RAISE EXCEPTION 'audit purge records are append-only';
         END;
         $$ LANGUAGE plpgsql;
+
+        -- A purge of the audit trail (AuditRetentionService) removes its oldest months. Only the schema's owner may drop a
+        -- table, and the account the server works as is not it where the two are apart (DatabaseOwner): it drops a month
+        -- through this function, which drops nothing else. The month must be one of the audit trail's, every event in it
+        -- sealed, and no sealed event may come before it in the chain: the chain then starts after it, where a purge record
+        -- says, and one made up without the server's seal fails verification (critical on System health).
+        CREATE OR REPLACE FUNCTION audit.drop_purged_month(target regclass) RETURNS void
+        LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+        DECLARE
+            first_index bigint;
+            unsealed boolean;
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
+                           WHERE i.inhrelid = target AND i.inhparent = 'audit.audit_events'::regclass AND c.relkind = 'r') THEN
+                RAISE EXCEPTION '% is not a month of the audit trail', target;
+            END IF;
+            EXECUTE format('SELECT min(chain_index), bool_or(chain_index IS NULL) FROM %s', target) INTO first_index, unsealed;
+            IF unsealed THEN
+                RAISE EXCEPTION '% holds audit events not sealed yet', target;
+            END IF;
+            IF first_index IS NOT NULL AND EXISTS (
+                SELECT 1 FROM audit.audit_events e WHERE e.chain_index < first_index AND e.tableoid <> target) THEN
+                RAISE EXCEPTION 'audit events before % in the chain are kept: a purge removes the oldest months only', target;
+            END IF;
+            EXECUTE format('ALTER TABLE audit.audit_events DETACH PARTITION %s', target);
+            EXECUTE format('DROP TABLE %s', target);
+        END;
+        $$;
+        REVOKE ALL ON FUNCTION audit.drop_purged_month(regclass) FROM PUBLIC;
 
         DO $purges$
         BEGIN

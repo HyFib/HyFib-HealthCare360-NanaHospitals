@@ -26,6 +26,12 @@ const manifest: ModuleManifest = {
       permission: 'patients.downtime',
       keywords: ['downtime', 'paper', 'kit', 'offline', 'back-entry', 'uhid'],
     },
+    {
+      label: 'Downtime continuity',
+      to: '/patients/continuity',
+      permission: ['patients.downtime_pack', 'patients.downtime', 'patients.back_entry'],
+      keywords: ['downtime', 'pack', 'census', 'mar', 'print', 'back-entry', 'late', 'bill', 'receipt', 'visit number'],
+    },
   ],
   quickActions: [
     {

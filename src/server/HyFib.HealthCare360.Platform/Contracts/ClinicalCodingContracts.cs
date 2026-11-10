@@ -59,3 +59,30 @@ internal sealed class NullVerifiedCodingSource : IVerifiedCodingSource
         Guid patientId, Guid? admissionId, Guid? visitId, CancellationToken cancellationToken) =>
         Task.FromResult<VerifiedEpisodeCoding?>(null);
 }
+
+/// <summary>An ICD-10-PCS procedure of the hospital's catalogue, as Medical records keeps it.</summary>
+public sealed record CataloguedProcedure(string Code, string Title, bool IsActive);
+
+/// <summary>
+/// Implemented by the Clinical module, for pre-authorisations in the Billing module: the hospital's ICD-10-PCS catalogue
+/// (seeded, imported from the CMS order file, or added by Medical records), looked up when the insurance desk codes a
+/// planned procedure.
+/// </summary>
+public interface IProcedureCatalogue
+{
+    /// <summary>Active codes whose code starts with, or whose title or keywords contain, the text; at most <paramref name="take"/>.</summary>
+    Task<IReadOnlyList<CataloguedProcedure>> SearchAsync(string? search, int take, CancellationToken cancellationToken);
+
+    /// <summary>The catalogue's entries for these codes (active or not), by code; a code it does not list is absent.</summary>
+    Task<IReadOnlyDictionary<string, CataloguedProcedure>> FindAsync(IReadOnlyCollection<string> codes, CancellationToken cancellationToken);
+}
+
+/// <summary>Fallback used until the Clinical module registers its implementation: an empty catalogue.</summary>
+internal sealed class NullProcedureCatalogue : IProcedureCatalogue
+{
+    public Task<IReadOnlyList<CataloguedProcedure>> SearchAsync(string? search, int take, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<CataloguedProcedure>>([]);
+
+    public Task<IReadOnlyDictionary<string, CataloguedProcedure>> FindAsync(IReadOnlyCollection<string> codes, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyDictionary<string, CataloguedProcedure>>(new Dictionary<string, CataloguedProcedure>());
+}

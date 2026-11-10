@@ -35,6 +35,16 @@ internal sealed class ScheduleExceptionConfiguration : IEntityTypeConfiguration<
     }
 }
 
+internal sealed class AppointmentReminderSentConfiguration : IEntityTypeConfiguration<AppointmentReminderSent>
+{
+    public void Configure(EntityTypeBuilder<AppointmentReminderSent> b)
+    {
+        b.ToTable(AppointmentReminderSent.Table, SchedulingSchema.Name);
+        b.HasKey(x => new { x.AppointmentId, x.Kind });
+        b.HasOne<Appointment>().WithMany().HasForeignKey(x => x.AppointmentId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 internal sealed class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
 {
     /// <summary>Seat uniqueness applies only to bookings that still hold their seat.</summary>

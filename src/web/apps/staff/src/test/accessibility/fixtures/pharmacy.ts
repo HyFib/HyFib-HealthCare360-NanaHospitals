@@ -293,6 +293,7 @@ const drug = (
   isHighAlert: false,
   pendingClass: null,
   pendingPricing: null,
+  telemedicineList: null,
   ...overrides,
 });
 

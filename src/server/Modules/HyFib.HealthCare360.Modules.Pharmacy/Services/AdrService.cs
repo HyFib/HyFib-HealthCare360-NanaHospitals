@@ -10,7 +10,7 @@ namespace HyFib.HealthCare360.Modules.Pharmacy.Services;
 /// Suspected adverse drug reactions, reported on the PvPI form by whoever saw them and sent by pharmacovigilance to the
 /// ADR monitoring centre with its causality assessment. The form names the patient by initials only.
 /// </summary>
-internal sealed class AdrService(HospitalDbContext db, INumberSeries numbers, ICurrentUser currentUser, TimeProvider time)
+internal sealed class AdrService(HospitalDbContext db, INumberSeries numbers, ICurrentUser currentUser, TimeProvider time, IIncidentRegister incidents)
 {
     public Task<AdrReport?> FindAsync(Guid id, CancellationToken ct) => db.Set<AdrReport>().AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
 
@@ -75,7 +75,33 @@ internal sealed class AdrService(HospitalDbContext db, INumberSeries numbers, IC
         report.LearnedOn = request.LearnedOn;
         report.IncidentNumber = string.IsNullOrWhiteSpace(request.IncidentNumber) ? null : request.IncidentNumber.Trim().ToUpperInvariant();
         report.ReporterDesignation = string.IsNullOrWhiteSpace(request.ReporterDesignation) ? report.ReporterDesignation : request.ReporterDesignation.Trim();
+        if (id is not null)
+        {
+            await db.SaveChangesAsync(ct);
+            return Dto(report, patient, today);
+        }
+
+        // A new report raises an incident in the Quality register in the same save (NABH: ADRs are reported incidents), unless
+        // it was reported there already and its number given.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        if (report.IncidentNumber is null)
+        {
+            var raised = await incidents.ReportAsync(new ReportedSafetyEvent(
+                report.FacilityId, report.PatientId, SafetyEventKind.AdverseDrugReaction, AdrHarm.Of(report.Seriousness),
+                HospitalClock.StartOfDayUtc(report.ReactionStartedOn), "Not recorded on the ADR form",
+                $"Suspected adverse drug reaction ({report.Number}): {report.Reaction}. Suspected: {string.Join(", ", report.Drugs.Where(d => d.Suspected).Select(d => d.Name))}.",
+                null, "Pharmacy", nameof(AdrReport), report.Id, report.Number), ct);
+            if (raised.IsFailure)
+            {
+                return raised.Error!;
+            }
+
+            report.IncidentNumber = raised.Value.IncidentNumber;
+            await db.SaveChangesAsync(ct);
+        }
+
+        await transaction.CommitAsync(ct);
         return Dto(report, patient, today);
     }
 
@@ -185,4 +211,14 @@ internal sealed class AdrService(HospitalDbContext db, INumberSeries numbers, IC
             r.MedicalHistory, r.Drugs, r.ReporterName, r.ReporterDesignation, r.Causality, r.AssessedByName, r.SubmittedOn, r.SubmissionReference,
             r.Version);
     }
+}
+
+/// <summary>The harm grade (NABH incident reporting) an ADR is reported with, from the PvPI seriousness ticked.</summary>
+internal static class AdrHarm
+{
+    public static IncidentHarm Of(AdrSeriousness seriousness) =>
+        seriousness.HasFlag(AdrSeriousness.Death) ? IncidentHarm.Death
+        : (seriousness & (AdrSeriousness.LifeThreatening | AdrSeriousness.Disability | AdrSeriousness.CongenitalAnomaly)) != 0 ? IncidentHarm.Severe
+        : seriousness != AdrSeriousness.None ? IncidentHarm.Moderate
+        : IncidentHarm.Mild;
 }

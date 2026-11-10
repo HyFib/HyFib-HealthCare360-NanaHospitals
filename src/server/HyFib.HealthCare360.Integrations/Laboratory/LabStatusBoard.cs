@@ -117,9 +117,19 @@ internal sealed class LabStatusBoard(LabGatewayState state, LabRelayRegistry rel
                     LastMessageAt = said.Max(s => s.LastMessageAt),
                     LastErrorAt = failed?.LastErrorAt,
                     LastError = failed?.LastError,
+                    RefusedAddresses = MergeRefused(said.SelectMany(s => s.RefusedAddresses)),
                 };
             })
             .OrderBy(s => s.InstrumentCode, StringComparer.OrdinalIgnoreCase),
+    ];
+
+    /// <summary>The addresses refused on any server, one row each, most recent first.</summary>
+    internal static IReadOnlyList<LabRefusedAddress> MergeRefused(IEnumerable<LabRefusedAddress> refused) =>
+    [
+        .. refused.GroupBy(r => r.Address, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new LabRefusedAddress(g.First().Address, g.Sum(r => r.Count), g.Min(r => r.FirstAt), g.Max(r => r.LastAt)))
+            .OrderByDescending(r => r.LastAt)
+            .Take(LabGatewayState.RefusedAddressesKept),
     ];
 
     private static int Weight(LabListenerStatus status) => status.State switch
@@ -145,6 +155,7 @@ internal sealed record LabStatusView(IReadOnlyList<LabListenerStatus> Statuses, 
 /// of several: a few seconds after it changes, and every minute so that it does not expire, and removes it as the server
 /// stops.
 /// </summary>
+[NodeLocal]
 internal sealed class LabStatusSharing(LabStatusBoard board, DataDirectories directories, TimeProvider time, ILogger<LabStatusSharing> logger)
     : BackgroundService
 {

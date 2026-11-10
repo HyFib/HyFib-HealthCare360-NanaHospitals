@@ -119,6 +119,15 @@ public sealed class AmbulanceTrip : AuditableEntity, IFacilityScoped
     /// <summary>Why the trip was not charged, when it was not.</summary>
     public string? ChargeWaivedReason { get; private set; }
 
+    /// <summary>Who waived the charge: the second person who approved it, or the desk alone where the hospital allows that.</summary>
+    public Guid? ChargeWaivedBy { get; private set; }
+
+    public string? ChargeWaivedByName { get; private set; }
+    public DateTimeOffset? ChargeWaivedAt { get; private set; }
+
+    /// <summary>Who asked for the waiver, when a second person approved it.</summary>
+    public string? WaiverRequestedByName { get; private set; }
+
     public int? Kilometres => EndOdometerKm - StartOdometerKm;
 
     public bool IsActive => Status is TripStatus.Requested or TripStatus.Dispatched or TripStatus.AtScene or TripStatus.Transporting;
@@ -171,8 +180,12 @@ public sealed class AmbulanceTrip : AuditableEntity, IFacilityScoped
 
     public Result LeftScene(DateTimeOffset now) => Step(TripStatus.AtScene, TripStatus.Transporting, now, () => LeftSceneAt = now, "leave the pickup");
 
-    /// <summary>The vehicle is back: the kilometres run come from the odometer, and the vehicle's odometer moves on.</summary>
-    public Result Complete(AmbulanceVehicle vehicle, int endOdometerKm, string? waiveReason, DateTimeOffset now)
+    /// <summary>
+    /// The vehicle is back: the kilometres run come from the odometer, and the vehicle's odometer moves on. The trip is
+    /// charged (<see cref="Chargeable"/>); a waiver is asked for after (<see cref="Waive"/>). A trip with no registered
+    /// patient has nothing to charge, and its reason is kept as given.
+    /// </summary>
+    public Result Complete(AmbulanceVehicle vehicle, int endOdometerKm, DateTimeOffset now, string? noChargeReason = null)
     {
         if (Status != TripStatus.Transporting)
         {
@@ -192,8 +205,46 @@ public sealed class AmbulanceTrip : AuditableEntity, IFacilityScoped
         Status = TripStatus.Completed;
         EndOdometerKm = endOdometerKm;
         CompletedAt = now;
-        ChargeWaivedReason = string.IsNullOrWhiteSpace(waiveReason) ? null : waiveReason.Trim();
+        ChargeWaivedReason = PatientId is null && !string.IsNullOrWhiteSpace(noChargeReason) ? noChargeReason.Trim() : null;
         vehicle.OdometerKm = endOdometerKm;
+        return Result.Success();
+    }
+
+    /// <summary>Whether a waiver can be asked for: a completed trip charged to a patient, not already waived.</summary>
+    public Result CanWaive()
+    {
+        if (Status != TripStatus.Completed)
+        {
+            return Error.Rule("ambulance.not_completed", "Only a completed trip's charge can be waived.");
+        }
+
+        if (PatientId is null)
+        {
+            return Error.Rule("ambulance.nothing_charged", "This trip was not charged to a patient, so there is nothing to waive.");
+        }
+
+        return ChargeWaivedReason is not null ? Error.Rule("ambulance.already_waived", "This trip's charge is already waived.") : Result.Success();
+    }
+
+    /// <summary>The trip's charge waived, with the reason (a free scheme, a staff member), and both names where a second person approved it.</summary>
+    public Result Waive(string reason, Guid? by, string? byName, string? requestedByName, DateTimeOffset now)
+    {
+        var waivable = CanWaive();
+        if (waivable.IsFailure)
+        {
+            return waivable;
+        }
+
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return Error.Field("reason", "Say why the charge is waived.");
+        }
+
+        ChargeWaivedReason = reason.Trim();
+        ChargeWaivedBy = by;
+        ChargeWaivedByName = byName;
+        ChargeWaivedAt = now;
+        WaiverRequestedByName = requestedByName;
         return Result.Success();
     }
 

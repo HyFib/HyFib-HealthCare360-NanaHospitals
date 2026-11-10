@@ -16,6 +16,9 @@ public enum StockMovementType
 
     /// <summary>Opening balance loaded at go-live or by demo seeding.</summary>
     Opening,
+
+    /// <summary>Handed back to the supplier on a posted debit note (<see cref="VendorDebitNote"/>).</summary>
+    PurchaseReturn,
 }
 
 /// <summary>

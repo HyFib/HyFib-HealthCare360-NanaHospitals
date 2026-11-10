@@ -27,7 +27,7 @@ Code: `src/server/HyFib.HealthCare360.Platform/Organization` (schema `org`). Scr
 | Specialities | `/setup/specialties` | Shared by every facility; patients choose one when booking online |
 | Doctors and clinical staff | `/setup/practitioners` | Name and role, council registration (required for doctors), HPR ID (ABDM's Healthcare Professionals Registry, which identifies the doctor in ABDM health records and NHCX claims), department, speciality, facilities, fees (approved by someone who approves prices) and follow-up days, online and video booking, languages, profile, photo and signature |
 | Services and prices | `/setup/services` | Category, department, base price, GST, SAC, whether discounts and price changes are allowed, and a name in each facility's local language, which that facility's rate list prints under the English name (billing.md, *The rate list*) |
-| Number formats | `/setup/numbering` | The format of every number the hospital issues, set before the first one if needed (`admin.numbering.manage`; see `docs/modules/numbering.md`) |
+| Number formats | `/setup/numbering` | The format of every number the hospital issues, set before the first one if needed (`admin.numbering.manage`; see `docs/modules/numbering.md`). Invoice, bill of supply, credit and debit note series are held to the 16 characters of GST rule 46, measured with the longest facility code in use, so a longer facility code can make a saved format refuse |
 | Print templates | `/setup/print-templates` | How each kind of document prints: the letterhead or pre-printed stationery, the logo, a closing note and the paper, hospital-wide or for one facility (`admin.print.manage`; see `docs/modules/print-templates.md`) |
 | Features | `/setup/features` | Switch the patient portal and video consultations on or off (`admin.settings.manage`; see `docs/modules/features.md`) |
 
@@ -149,6 +149,18 @@ A save replaces every field, so screens send the whole record.
 - **Audit.** Every save writes a data audit event with each changed value (from/to). Addresses are recorded part by
   part (`address.city`), as are the other compound values in the system: patients', employees' and donors' addresses,
   cardiology findings and TTI results.
+
+## HPR verification
+
+A practitioner's HPR ID is checked against ABDM's Healthcare Professionals Registry from the practitioner's editor
+(**Check with the HPR registry**, `POST /api/v1/masters/practitioners/{id}/hpr-check` with the version last read,
+`masters.manage`). The registry's name, council and registration number are compared with the master's: names without
+titles, case, accents, punctuation or word order; councils without case, punctuation or the words council, medical,
+of and the (abbreviations are not guessed); registration numbers without case, punctuation or leading zeros; and the
+registration must be active. The result (verified, mismatch with what differs, or not in the registry), when, by whom
+and against what source is shown on the master, and kept as history (`org.practitioner_hpr_checks`). Once the HPR ID,
+council, registration number or name changes, the check is shown as no longer current. The registry is reached through
+`IHprRegistry`; until the hospital is connected to ABDM's HPR service it is the simulator, and every check says so.
 
 ## The letterhead
 

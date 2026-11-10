@@ -25,6 +25,7 @@ internal sealed class PrescriptionConfiguration : IEntityTypeConfiguration<Presc
         b.Property(x => x.SignerIssuer).HasMaxLength(Prescription.SignerDistinguishedNameMaxLength);
         b.Property(x => x.SignerThumbprint).HasMaxLength(Prescription.SignerThumbprintMaxLength);
         b.Property(x => x.SignerChainStatus).HasMaxLength(Prescription.SignerChainStatusMaxLength);
+        b.Property(x => x.SignerRevocationStatus).HasMaxLength(Prescription.SignerRevocationStatusMaxLength);
         b.Ignore(x => x.HasControlledDrugs);
         b.Ignore(x => x.IsDigitallySigned);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);

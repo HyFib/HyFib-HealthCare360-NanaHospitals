@@ -19,7 +19,13 @@ import {
   Text,
   Textarea,
 } from '@fluentui/react-components';
-import { AddRegular, ArrowDownloadRegular, DeleteRegular, VehicleTruckProfileRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  ArrowDownloadRegular,
+  DeleteRegular,
+  PrintRegular,
+  VehicleTruckProfileRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, todayIso } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -35,17 +41,21 @@ import {
   bmwKeys,
   bmwQueries,
   categoryHint,
+  handoverWeightProblem,
   parseBarcodes,
   WASTE_CATEGORIES,
   type CategoryTotal,
   type WasteBag,
   type WasteCategory,
   type WasteHandover,
+  weightMismatch,
 } from '@/modules/bmw/api';
+import { AccidentsPanel } from '@/modules/bmw/AccidentsPanel';
+import { printBagLabel, printFormIv } from '@/modules/bmw/print';
 import { errorMessage } from '@/modules/lab/common/errors';
 
-type BmwTab = 'storage' | 'handovers' | 'register' | 'annual';
-const TABS: BmwTab[] = ['storage', 'handovers', 'register', 'annual'];
+type BmwTab = 'storage' | 'handovers' | 'register' | 'annual' | 'accidents';
+const TABS: BmwTab[] = ['storage', 'handovers', 'register', 'annual', 'accidents'];
 const MONTH = /^\d{4}-\d{2}$/;
 
 export const Route = createFileRoute('/_app/bmw/')({
@@ -78,7 +88,7 @@ function BmwPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const canManage = usePermission(BMW_PERMISSIONS.manage);
-  const tabs = canManage ? TABS : (['storage'] as BmwTab[]);
+  const tabs = canManage ? TABS : (['storage', 'accidents'] as BmwTab[]);
   const tab = search.tab && tabs.includes(search.tab) ? search.tab : 'storage';
 
   return (
@@ -87,18 +97,18 @@ function BmwPage() {
         title="Bio-medical waste"
         subtitle="Weigh and bar-code each bag where the waste is generated. The treatment facility collects it within 48 hours; the month's register is published, and the year's totals go in the annual report (Form IV)."
       />
-      {canManage && (
-        <TabList selectedValue={tab} onTabSelect={(_, d) => void navigate({ search: { tab: d.value as BmwTab } })}>
-          <Tab value="storage">Storage area</Tab>
-          <Tab value="handovers">Handovers</Tab>
-          <Tab value="register">Monthly register</Tab>
-          <Tab value="annual">Annual report</Tab>
-        </TabList>
-      )}
+      <TabList selectedValue={tab} onTabSelect={(_, d) => void navigate({ search: { tab: d.value as BmwTab } })}>
+        <Tab value="storage">Storage area</Tab>
+        {canManage && <Tab value="handovers">Handovers</Tab>}
+        {canManage && <Tab value="register">Monthly register</Tab>}
+        {canManage && <Tab value="annual">Annual report</Tab>}
+        <Tab value="accidents">Accidents (Form I)</Tab>
+      </TabList>
       {tab === 'storage' && <StorageTab />}
       {tab === 'handovers' && <HandoversTab />}
       {tab === 'register' && <RegisterTab />}
       {tab === 'annual' && <AnnualTab />}
+      {tab === 'accidents' && <AccidentsPanel />}
     </Page>
   );
 }
@@ -116,7 +126,12 @@ function Totals({ totals }: { totals: CategoryTotal[] }) {
 }
 
 function StorageTab() {
+  const notify = useNotify();
   const canRecord = usePermission(BMW_PERMISSIONS.record);
+  const label = useMutation({
+    mutationFn: async (id: string) => printBagLabel(await bmwApi.label(id)),
+    onError: (error) => notify.error(error, 'The label could not be printed'),
+  });
   const pending = useQuery(bmwQueries.pending());
   const [recording, setRecording] = useState(false);
   const [voiding, setVoiding] = useState<WasteBag | null>(null);
@@ -184,9 +199,14 @@ function StorageTab() {
           },
         ]}
         rowActions={(b) => (
-          <Button size="small" icon={<DeleteRegular />} onClick={() => setVoiding(b)}>
-            Void
-          </Button>
+          <>
+            <Button size="small" icon={<PrintRegular />} disabled={label.isPending} onClick={() => label.mutate(b.id)}>
+              Label
+            </Button>
+            <Button size="small" icon={<DeleteRegular />} onClick={() => setVoiding(b)}>
+              Void
+            </Button>
+          </>
         )}
         emptyTitle="The storage area is empty"
         emptyDescription="Bags appear here once weighed, until the treatment facility collects them."
@@ -431,17 +451,18 @@ function HandOverDialog({ onClose }: { onClose: () => void }) {
   const [receivedBy, setReceivedBy] = useState('');
   const [receipt, setReceipt] = useState('');
   const [tried, setTried] = useState(false);
+  const [weights, setWeights] = useState<Record<string, string>>({});
   const scanned = parseBarcodes(barcodes);
+  const filled = new Map((pending.data?.bags ?? []).map((b) => [b.barcode, b.weightKg]));
   const problem =
     scanned.length === 0
       ? 'Scan the bags the vehicle takes.'
-      : !vehicle.trim() || !receivedBy.trim()
-        ? 'Enter the vehicle number and who received the bags.'
-        : null;
+      : (handoverWeightProblem(scanned, weights) ??
+        (!vehicle.trim() || !receivedBy.trim() ? 'Enter the vehicle number and who received the bags.' : null));
   const save = useMutation({
     mutationFn: () =>
       bmwApi.handOver({
-        barcodes: scanned,
+        bags: scanned.map((barcode) => ({ barcode, weightKg: Number(weights[barcode]) })),
         cbwtf: cbwtf.trim() || null,
         vehicleNumber: vehicle.trim(),
         receivedBy: receivedBy.trim(),
@@ -449,7 +470,10 @@ function HandOverDialog({ onClose }: { onClose: () => void }) {
       }),
     onSuccess: (h) => {
       void queryClient.invalidateQueries({ queryKey: bmwKeys.all });
-      notify.success('Handed over', `${h.number}: ${h.bagCount} bags, ${kg(h.totalKg)}.`);
+      notify.success(
+        'Handed over',
+        `${h.number}: ${h.bagCount} bags, ${kg(h.totalKg)} on the scale.${h.mismatchedBags ? ` ${h.mismatchedBags} weighed differently from where they were filled: check them.` : ''}`,
+      );
       onClose();
     },
   });
@@ -485,6 +509,37 @@ function HandOverDialog({ onClose }: { onClose: () => void }) {
                 <Button size="small" onClick={() => setBarcodes(pending.data!.bags.map((b) => b.barcode).join('\n'))}>
                   All waiting bags
                 </Button>
+              )}
+              {scanned.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <Caption1>Weigh each bag on the scale in front of the driver.</Caption1>
+                  {scanned.map((barcode) => {
+                    const at = Number(weights[barcode]);
+                    const before = filled.get(barcode);
+                    const differs =
+                      before !== undefined && weights[barcode]?.trim() && at > 0 && weightMismatch(before, at);
+                    return (
+                      <Field
+                        key={barcode}
+                        label={`${barcode}${before !== undefined ? ` (filled ${kg(before)})` : ''}`}
+                        orientation="horizontal"
+                        validationState={differs ? 'warning' : 'none'}
+                        validationMessage={
+                          differs ? 'Weighs differently from where it was filled: check the bag.' : undefined
+                        }
+                      >
+                        <Input
+                          type="number"
+                          min={0}
+                          step={0.001}
+                          contentAfter="kg"
+                          value={weights[barcode] ?? ''}
+                          onChange={(_, d) => setWeights((w) => ({ ...w, [barcode]: d.value }))}
+                        />
+                      </Field>
+                    );
+                  })}
+                </div>
               )}
               <Field
                 label="Treatment facility"
@@ -608,9 +663,14 @@ function RegisterTab() {
 }
 
 function AnnualTab() {
+  const notify = useNotify();
   const lastYear = Number(todayIso().slice(0, 4)) - 1;
   const [year, setYear] = useState(lastYear);
   const report = useQuery(bmwQueries.year(year));
+  const formIv = useMutation({
+    mutationFn: async () => printFormIv(await bmwApi.formIv(year)),
+    onError: (error) => notify.error(error, 'Form IV could not be printed'),
+  });
   const data = report.data;
 
   return (
@@ -651,6 +711,11 @@ function AnnualTab() {
           <Caption1>
             Form IV is due to the State Pollution Control Board by 30 June for the calendar year before.
           </Caption1>
+          <div>
+            <Button icon={<PrintRegular />} disabled={formIv.isPending} onClick={() => formIv.mutate()}>
+              Print Form IV
+            </Button>
+          </div>
         </div>
       )}
     </Section>

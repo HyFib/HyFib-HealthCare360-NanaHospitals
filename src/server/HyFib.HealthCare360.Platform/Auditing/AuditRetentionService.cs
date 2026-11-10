@@ -353,8 +353,8 @@ public sealed class AuditRetentionService(
             foreach (var month in asked.Months)
             {
                 var partition = $"audit.\"{PartitionedTables.Audit.PartitionFor(month)}\"";
-                await ExecuteAsync($"ALTER TABLE audit.audit_events DETACH PARTITION {partition}", ct);
-                await ExecuteAsync($"DROP TABLE {partition}", ct);
+                // Through the function that drops nothing else: the account the server works as may not drop a table.
+                await ExecuteAsync($"SELECT audit.drop_purged_month('{partition}'::regclass)", ct);
             }
 
             await db.Database.ExecuteSqlAsync($"SELECT set_config('lock_timeout', {timeout}, true)", ct);

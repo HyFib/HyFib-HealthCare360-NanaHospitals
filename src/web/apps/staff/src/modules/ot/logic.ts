@@ -636,3 +636,8 @@ export function utilisationTotals(
     ),
   };
 }
+
+/** True once the WHO Sign-out is complete: the patient then belongs to the recovery room. */
+export function isSignedOut(booking: SurgeryDetail): boolean {
+  return booking.safetyChecklist.some((p) => p.phase === 'SignOut' && p.isComplete);
+}

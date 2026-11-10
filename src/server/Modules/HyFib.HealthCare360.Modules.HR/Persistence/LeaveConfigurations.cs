@@ -13,7 +13,26 @@ internal sealed class LeaveTypeConfiguration : IEntityTypeConfiguration<LeaveTyp
         b.Property(x => x.CarryForwardCap).HasPrecision(6, 2);
         b.Property(x => x.MaxDaysPerRequest).HasPrecision(6, 2);
         b.Property(x => x.DocumentRequiredAfterDays).HasPrecision(6, 2);
+        b.Property(x => x.InServiceEncashmentDaysPerYear).HasPrecision(6, 2);
+        b.Property(x => x.MinimumBalanceAfterEncashment).HasPrecision(6, 2);
         b.HasIndex(x => x.Code).IsUnique().HasFilter(HrSchema.NotDeleted);
+    }
+}
+
+internal sealed class LeaveEncashmentRecordConfiguration : IEntityTypeConfiguration<LeaveEncashmentRecord>
+{
+    public void Configure(EntityTypeBuilder<LeaveEncashmentRecord> b)
+    {
+        b.ToTable("leave_encashments", HrSchema.Name);
+        b.Property(x => x.Days).HasPrecision(6, 2);
+        b.Property(x => x.Reason).HasMaxLength(300);
+        b.HasOne<Employee>().WithMany().HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<LeaveType>().WithMany().HasForeignKey(x => x.LeaveTypeId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.EmployeeId, x.LeaveTypeId, x.Year });
+
+        // An approval makes one encashment, and a payroll earning pays one.
+        b.HasIndex(x => x.ApprovalId).IsUnique().HasFilter("approval_id IS NOT NULL AND " + HrSchema.NotDeleted);
+        b.HasIndex(x => x.PayrollInputId).IsUnique().HasFilter("payroll_input_id IS NOT NULL AND " + HrSchema.NotDeleted);
     }
 }
 

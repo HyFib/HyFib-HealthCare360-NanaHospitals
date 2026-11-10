@@ -24,7 +24,7 @@ import {
   PersonDeleteRegular,
   ShieldKeyholeRegular,
 } from '@fluentui/react-icons';
-import { formatAge, formatDateOnly, formatPhone, humanize } from '@hc360/core';
+import { formatAge, formatDateOnly, formatDateTime, formatPhone, humanize } from '@hc360/core';
 import { ErrorState, LoadingState, Page, Section, StatusBadge } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
@@ -169,7 +169,7 @@ function EmployeeProfilePage() {
                 <MenuPopover>
                   <MenuList>
                     <MenuItem icon={<BuildingBankRegular />} onClick={() => setBankOpen(true)}>
-                      Change bank account
+                      Change payment details
                     </MenuItem>
                     <MenuItem icon={<PersonDeleteRegular />} onClick={() => setSeparateOpen(true)}>
                       Separate employee
@@ -314,6 +314,17 @@ function PayTab({
           server only in the payroll bank-transfer file, and every download is recorded.
         </MessageBarBody>
       </MessageBar>
+      {e.pendingPaymentDetails && (
+        <MessageBar intent="warning" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Asked for approval: what waits</MessageBarTitle>
+            {e.pendingPaymentDetails.summary}. Asked for by {e.pendingPaymentDetails.requestedBy} on{' '}
+            {formatDateTime(e.pendingPaymentDetails.requestedAt)}. Someone else who approves payroll decides it, never
+            the person who asked and never {e.fullName}; until then the details below stay in force and the salary is
+            paid as they say.
+          </MessageBarBody>
+        </MessageBar>
+      )}
       <DetailGrid>
         <Detail label="Salary paid by">{humanize(e.paymentMode)}</Detail>
         <Detail label="Bank">{e.bankName}</Detail>
@@ -338,8 +349,8 @@ function PayTab({
       </DetailGrid>
       {canChange && (
         <div>
-          <Button icon={<BuildingBankRegular />} onClick={onChangeBank}>
-            Change bank account
+          <Button icon={<BuildingBankRegular />} onClick={onChangeBank} disabled={Boolean(e.pendingPaymentDetails)}>
+            Change payment details
           </Button>
         </div>
       )}

@@ -74,6 +74,23 @@ export interface CssdPackLabel {
   sterileUntil?: string | null;
 }
 
+/**
+ * A bio-medical waste bag label (BMW Rules 2016, Schedule IV): the category and its symbol, the hospital's HCF
+ * identifier, the bag's bar code, where it was filled, its weight and the date.
+ */
+export interface WasteBagLabel {
+  barcode: string;
+  /** The colour category: Yellow, Red, White, Blue. */
+  category: string;
+  symbol: string;
+  hcfId: string;
+  hospital?: string | null;
+  source: string;
+  weightKg: number;
+  /** yyyy-MM-dd */
+  collectedOn: string;
+}
+
 export interface AssetTagLabel {
   assetTag: string;
   assetName: string;
@@ -102,6 +119,7 @@ export interface LabelData {
   dispensing: DispensingLabel;
   'blood-units': BloodUnitLabel;
   'cssd-packs': CssdPackLabel;
+  'waste-bags': WasteBagLabel;
   'asset-tags': AssetTagLabel;
   'pharmacy-tags': PharmacyTagLabel;
 }

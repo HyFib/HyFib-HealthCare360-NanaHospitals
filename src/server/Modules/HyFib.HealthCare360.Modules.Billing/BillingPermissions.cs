@@ -35,6 +35,9 @@ public static class BillingPermissions
     /// </summary>
     public const string EInvoice = "billing.einvoice";
 
+    /// <summary>Read the GST returns: GSTR-1 (with the GSTN offline tool's JSON) and GSTR-3B of the facility's GSTIN.</summary>
+    public const string GstReturns = "billing.gst.returns";
+
     public const string PayersManage = "insurance.payers.manage";
     public const string PoliciesManage = "insurance.policies.manage";
     public const string PreAuthManage = "insurance.preauth.manage";
@@ -61,7 +64,7 @@ public static class BillingPermissions
             [SystemRoles.Billing, SystemRoles.InsuranceDesk, SystemRoles.HospitalAdmin]),
         new(BillsFinalize, "Billing", "Finalize bills (allocates the bill number)", [SystemRoles.Billing, SystemRoles.Cashier, SystemRoles.HospitalAdmin]),
         new(BillsCancel, "Billing", "Approve and perform the cancellation of finalized bills", Approvers),
-        new(DiscountsApprove, "Billing", "Approve discounts above a user's limit, a stay billed on another plan than its payer's, and discharges with dues; set discount limits", Approvers),
+        new(DiscountsApprove, "Billing", "Approve discounts above a user's limit, a stay billed on another plan than its payer's, a visit's payer changed to another kind or a lower price, and discharges with dues; set discount limits", Approvers),
         new(PaymentsCollect, "Billing", "Collect payments, POS and payment-link payments, pay out approved refunds",
             [SystemRoles.Cashier, SystemRoles.Billing, SystemRoles.FrontOffice, SystemRoles.HospitalAdmin]),
         new(RefundsRequest, "Billing", "Request refunds, credit notes and write-offs, and ask to reverse money that did not move (a receipt not received, a refund not paid out)",
@@ -76,8 +79,10 @@ public static class BillingPermissions
         new(GatewayReconcile, "Billing",
             "Reconcile online, card and UPI payments with the gateway's and the acquirer's settlements: record missed receipts, send failed refunds again, resolve exceptions",
             Approvers),
-        new(EInvoice, "Billing", "Keep the GST e-invoice register: the e-invoice JSON of B2B invoices, their IRNs and IRN cancellations",
+        new(EInvoice, "Billing", "Keep the GST e-invoice register: the e-invoice JSON of B2B invoices, their IRNs (asked of the portal or recorded), IRN cancellations and e-way bills",
             [SystemRoles.Billing, SystemRoles.Accountant, SystemRoles.Pharmacist, SystemRoles.HospitalAdmin]),
+        new(GstReturns, "Billing", "Read the GST returns of the facility's GSTIN: GSTR-1 with its GSTN offline-tool JSON, and GSTR-3B",
+            [SystemRoles.Accountant, SystemRoles.HospitalAdmin]),
         new(PayersManage, "Insurance", "Maintain insurers, TPAs, corporates, schemes and non-payable items", [SystemRoles.InsuranceDesk, SystemRoles.HospitalAdmin]),
         new(PoliciesManage, "Insurance", "Record and verify patient insurance policies",
             [SystemRoles.InsuranceDesk, SystemRoles.Billing, SystemRoles.HospitalAdmin]),

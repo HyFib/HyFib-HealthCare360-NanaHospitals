@@ -45,6 +45,10 @@ public sealed class ApiClient(HttpClient http)
         return http.SendAsync(request, TestContext.Current.CancellationToken);
     }
 
+    /// <summary>Sends <paramref name="content"/> as it is (a multipart form, for example).</summary>
+    public Task<HttpResponseMessage> SendContentAsync(HttpMethod method, string path, HttpContent content) =>
+        http.SendAsync(new HttpRequestMessage(method, path) { Content = content }, TestContext.Current.CancellationToken);
+
     internal static async Task<T> ReadAsync<T>(HttpResponseMessage response, HttpMethod method, string path)
     {
         await EnsureSuccessAsync(response, method, path);

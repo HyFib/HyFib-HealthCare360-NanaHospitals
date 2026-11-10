@@ -1,6 +1,8 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Realtime;
 
@@ -23,7 +25,8 @@ public sealed class BillService(
     IAuditLogger audit,
     ChargeRefusals refusals,
     ICurrentUser currentUser,
-    TimeProvider time)
+    TimeProvider time,
+    DowntimeNumberService downtimeNumbers)
 {
     public async Task<Result<Guid>> CreateOpDraftAsync(CreateBillRequest request, CancellationToken ct)
     {
@@ -313,7 +316,10 @@ public sealed class BillService(
     /// the same transaction as the update (gap-free), marks the charges billed and raises BillFinalized. An online
     /// prepayment of the visit's appointment is adjusted against the new OP bill in the same transaction.
     /// </summary>
-    public async Task<Result> FinalizeAsync(Guid billId, uint version, CancellationToken ct)
+    public async Task<Result> FinalizeAsync(Guid billId, uint version, CancellationToken ct) => await FinalizeAsync(billId, version, null, ct);
+
+    /// <param name="paper">A bill written on paper during a downtime: it keeps the downtime bill number and the time on the paper.</param>
+    public async Task<Result> FinalizeAsync(Guid billId, uint version, PaperNumber? paper, CancellationToken ct)
     {
         var bill = await BillQueries.LoadAsync(db, billId, ct);
         if (bill is null)
@@ -359,13 +365,34 @@ public sealed class BillService(
         }
 
         await using var transaction = await db.BeginOwnedTransactionAsync(ct);
-        var number = bill.Type == BillType.InPatient
-            ? await numbers.NextAsync(BillingNumberSeries.IpBill, bill.FacilityId, ct)
-            : await numbers.NextAsync(BillingNumberSeries.OpBill, bill.FacilityId, ct);
-        var finalized = bill.Finalize(number, currentUser.UserId, time.GetUtcNow());
+        string number;
+        if (paper is not null)
+        {
+            var claimed = await downtimeNumbers.ClaimAsync(bill.Type == BillType.InPatient ? DowntimeNumberKind.IpBill : DowntimeNumberKind.OpBill,
+                paper, nameof(Bill), bill.Id, bill.PatientId, ct);
+            if (claimed.IsFailure)
+            {
+                return claimed.Error!;
+            }
+
+            number = claimed.Value.Number;
+        }
+        else
+        {
+            number = bill.Type == BillType.InPatient
+                ? await numbers.NextAsync(BillingNumberSeries.IpBill, bill.FacilityId, ct)
+                : await numbers.NextAsync(BillingNumberSeries.OpBill, bill.FacilityId, ct);
+        }
+
+        var finalized = bill.Finalize(number, currentUser.UserId, paper?.At ?? time.GetUtcNow());
         if (finalized.IsFailure)
         {
             return finalized;
+        }
+
+        if (paper is not null)
+        {
+            bill.EnteredFromPaperAt = time.GetUtcNow();
         }
 
         var chargeIds = bill.Lines.Select(l => l.ChargeId).ToList();

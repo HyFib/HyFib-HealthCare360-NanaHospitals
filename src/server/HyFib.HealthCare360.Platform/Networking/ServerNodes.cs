@@ -160,6 +160,7 @@ public sealed class ServerNodeBoard(IServiceScopeFactory scopes, DataDirectories
 /// Writes this server's part of System health for the others (<see cref="ServerNodeBoard"/>) on a node of several, the node
 /// that runs the jobs included: as it starts and every minute, and removes it as the server stops.
 /// </summary>
+[NodeLocal]
 internal sealed class ServerNodeSharing(
     ServerNodeBoard board, IServiceScopeFactory scopes, DataDirectories directories, TimeProvider time, ILogger<ServerNodeSharing> logger)
     : BackgroundService

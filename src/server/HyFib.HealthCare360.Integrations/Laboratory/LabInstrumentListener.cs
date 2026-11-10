@@ -6,7 +6,7 @@ namespace HyFib.HealthCare360.Integrations.Laboratory;
 
 /// <summary>
 /// TCP listener for one analyser. Connections from addresses outside the instrument's allow-list are closed
-/// immediately, and at most <c>maxConnections</c> are served at once (analysers normally hold one), so a scanner or a
+/// immediately, before anything they send is read, and listed with the analyser's status (Lab setup, System health), and at most <c>maxConnections</c> are served at once (analysers normally hold one), so a scanner or a
 /// misbehaving device cannot exhaust the gateway.
 /// </summary>
 internal sealed class LabInstrumentListener : IAsyncDisposable
@@ -14,6 +14,7 @@ internal sealed class LabInstrumentListener : IAsyncDisposable
     private readonly LabRuntimeOptions _options;
     private readonly int _maxConnections;
     private readonly ILabMessageProcessor _processor;
+    private readonly Devices.LabDeviceGate _gate;
     private readonly LabGatewayState _state;
     private readonly TimeProvider _time;
     private readonly ILogger _logger;
@@ -27,8 +28,9 @@ internal sealed class LabInstrumentListener : IAsyncDisposable
 
     public LabInstrumentListener(
         LabInstrumentSettings instrument, IPAddress bindAddress, LabRuntimeOptions options, int maxConnections,
-        ILabMessageProcessor processor, LabGatewayState state, TimeProvider time, ILogger logger)
+        ILabMessageProcessor processor, LabGatewayState state, TimeProvider time, ILogger logger, Devices.LabDeviceGate gate)
     {
+        _gate = gate;
         Instrument = instrument;
         _options = options;
         _maxConnections = Math.Clamp(maxConnections, 1, 32);
@@ -109,6 +111,7 @@ internal sealed class LabInstrumentListener : IAsyncDisposable
             if (_allowed is not null && (remote is null || !_allowed.Contains(remote)))
             {
                 _logger.LogWarning("Refused connection from {Address} to instrument {Instrument}: not in its allow-list", remote, Instrument.Code);
+                _state.AddressRefused(Instrument.Code, remote?.ToString());
                 client.Dispose();
                 continue;
             }
@@ -122,7 +125,7 @@ internal sealed class LabInstrumentListener : IAsyncDisposable
             }
 
             var id = Interlocked.Increment(ref _connectionIds);
-            var task = HandleAsync(id, client, cancellationToken);
+            var task = HandleAsync(id, client, remote, cancellationToken);
             _connections[id] = task;
             if (task.IsCompleted)
             {
@@ -131,7 +134,7 @@ internal sealed class LabInstrumentListener : IAsyncDisposable
         }
     }
 
-    private async Task HandleAsync(int id, TcpClient client, CancellationToken cancellationToken)
+    private async Task HandleAsync(int id, TcpClient client, IPAddress? remote, CancellationToken cancellationToken)
     {
         _state.ConnectionOpened(Instrument.Code);
         try
@@ -140,7 +143,17 @@ internal sealed class LabInstrumentListener : IAsyncDisposable
             {
                 client.NoDelay = true;
                 client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
-                await LabSessionRunner.RunAsync(Instrument, _options, client.GetStream(), _processor, _time, _logger, cancellationToken);
+                // The device proves who it is before a message is read; one this connection has not approved is refused.
+                var (stream, _) = await _gate.AdmitAsync(Instrument, client.GetStream(), remote, cancellationToken);
+                if (stream is null)
+                {
+                    return;
+                }
+
+                await using (stream)
+                {
+                    await LabSessionRunner.RunAsync(Instrument, _options, stream, _processor, _time, _logger, cancellationToken);
+                }
             }
         }
         catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or ObjectDisposedException)

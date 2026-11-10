@@ -194,6 +194,53 @@ public sealed class AbdmDataFlowTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_bill_is_sent_only_under_a_consent_for_invoices()
+    {
+        var (patientId, address, reference, billNumber) = await LinkedBillAsync();
+        var hiu = Fidelius.Generate();
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            await AbdmLinkingTests.SetUpGatewayAsync(server, enabled: true);
+
+            // The patient chose the bill for a consent to share consultations: the consent does not cover it, and it is not sent.
+            var consultations = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.ConsentNotifyPath, Notify(consultations, "GRANTED", address, patientId, reference, "OPConsultation"));
+            var refused = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.HealthInformationRequestPath, Request(refused, consultations, hiu, PushUrl));
+            var notSent = await TransferAsync(refused);
+            notSent.Status.ShouldBe(AbdmTransferStatus.Failed);
+            notSent.Error.ShouldBe(AbdmDataFlowService.NotCovered);
+            Gateway.CallsTo(PushUrl).ShouldNotContain(c => c.Json().GetProperty("transactionId").GetString() == refused);
+
+            // Under a consent for invoices it reaches the HIU as the guide's invoice record, the bill's Invoice in it.
+            var invoices = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.ConsentNotifyPath, Notify(invoices, "GRANTED", address, patientId, reference, "Invoice"));
+            var transaction = Guid.NewGuid().ToString();
+            await CallAsync(AbdmGatewayCallbackEndpoints.HealthInformationRequestPath, Request(transaction, invoices, hiu, PushUrl));
+            var sent = await TransferAsync(transaction);
+            sent.Status.ShouldBe(AbdmTransferStatus.Transferred, sent.Error);
+            var page = Gateway.Calls.Single(c => c.Path == PushUrl && c.Json().GetProperty("transactionId").GetString() == transaction).Json();
+            var entry = page.GetProperty("entries").EnumerateArray().ShouldHaveSingleItem();
+            entry.GetProperty("careContextReference").GetString().ShouldBe(reference);
+            var keyMaterial = page.GetProperty("keyMaterial");
+            var document = Fidelius.Decrypt(
+                entry.GetProperty("content").GetString()!, hiu.PrivateKey, hiu.Nonce,
+                keyMaterial.GetProperty("dhPublicKey").GetProperty("keyValue").GetString()!, keyMaterial.GetProperty("nonce").GetString()!);
+            var resources = JsonDocument.Parse(document.Value).RootElement.GetProperty("entry").EnumerateArray().Select(e => e.GetProperty("resource")).ToList();
+            resources[0].GetProperty("type").GetProperty("coding")[0].GetProperty("code").GetString().ShouldBe("INVOICE");
+            resources.Single(r => r.GetProperty("resourceType").GetString() == "Invoice").GetProperty("identifier")[0].GetProperty("value").GetString()
+                .ShouldBe(billNumber);
+        }
+        finally
+        {
+            await AbdmLinkingTests.RemoveGatewayAsync(server);
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    [Fact]
     public async Task A_clinical_note_is_sent_with_its_addendum_only_under_a_consent_for_health_documents()
     {
         var (patientId, address, reference) = await LinkedNoteAsync();
@@ -435,6 +482,18 @@ public sealed class AbdmDataFlowTests(HospitalServer server)
             null, "Td", "TD", 1, today, "IM", "Left deltoid", "TD2608-114", "Biological E. Limited", today.AddMonths(10), null, false, today.AddDays(28), null));
         await LinkAsync(patient.Id, address, AbdmRecordType.Immunization, dose.Id, "Immunisation record: Td, dose 1");
         return (patient.Id, address, AbdmLinkingService.ReferenceNumber(AbdmRecordType.Immunization, dose.Id));
+    }
+
+    /// <summary>A patient with an ABHA address and a finalised bill linked to it as a care context.</summary>
+    private async Task<(Guid PatientId, string Address, string Reference, string BillNumber)> LinkedBillAsync()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var address = "neha." + AbdmExportTests.Letters(8) + "@sbx";
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", AbdmExportTests.Registration(AbdmExportTests.NewAbha(), address));
+        var bill = await AbdmInvoiceExportTests.FinalizedBillAsync(frontOffice, billing, patient.Id, dressings: 1m);
+        await LinkAsync(patient.Id, address, AbdmRecordType.Invoice, bill.Id, $"Bill: {bill.BillNumber}");
+        return (patient.Id, address, AbdmLinkingService.ReferenceNumber(AbdmRecordType.Invoice, bill.Id), bill.BillNumber!);
     }
 
     private async Task LinkAsync(Guid patientId, string address, AbdmRecordType type, Guid recordId, string display)

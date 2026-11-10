@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using HyFib.HealthCare360.Modules.Analytics.Features.Journeys;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
@@ -30,7 +31,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// Operations and the stay, over the real API. A surgery booked at the OPD joins the stay when the patient is admitted, and
 /// one booked while the patient is in a bed is the stay's from whatever visit it came, so the theatre's and the implant's
 /// charges reach the IP bill and its discharge clearance. A surgery booked before the stay and still waiting when the stay
-/// ends goes back to waiting on its own. A patient the theatre has (in pre-op, on the table) is not discharged.
+/// ends goes back to waiting on its own. A patient the theatre has (in pre-op, on the table, in recovery until discharged
+/// from it) is not discharged, and the ward sees him back only once he leaves recovery.
 /// </summary>
 public sealed class TheatreStayTests(HospitalServer server)
 {
@@ -63,6 +65,7 @@ public sealed class TheatreStayTests(HospitalServer server)
             MaterialKind.Implant, null, "Polypropylene mesh", "Ethicon", "PM2611", null, null, 1m, 4_500m, "Prolene", "Polypropylene, 15 x 15 cm", 5_200m));
         mesh.ChargeStatus.ShouldBe(OtChargeStatus.Posted, mesh.ChargeError);
         await doctor.PostAsync($"{Bookings}/{booking.Id}/complete");
+        await BackFromRecoveryAsync(nurse, booking.Id);
 
         // The implant, the procedure, the theatre's time and the surgeon's fee are on the stay's account...
         string[] theatre = ["OT-IMPLANT", Hernia, "OT-MINOR-HR", "OT-SURGEON-FEE"];
@@ -127,7 +130,7 @@ public sealed class TheatreStayTests(HospitalServer server)
     }
 
     [Fact]
-    public async Task A_patient_in_pre_op_or_on_the_table_is_not_discharged_until_the_theatre_has_finished()
+    public async Task A_patient_in_pre_op_on_the_table_or_in_recovery_is_not_discharged_until_back_on_the_ward()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
@@ -150,13 +153,25 @@ public sealed class TheatreStayTests(HospitalServer server)
             $"The patient is in pre-op for surgery {booking.BookingNumber} ({HerniaRepair}): complete, postpone or cancel it before the discharge."));
 
         // Nor on the table.
-        await OnTheTableAsync(doctor, booking.Id);
+        await OnTheTableAsync(doctor, booking.Id, signedOut: false);
         (await DischargeRefusalAsync(nurse, admission.Id)).ShouldBe(("discharge.in_theatre",
             $"Surgery {booking.BookingNumber} ({HerniaRepair}) is in progress: the patient can be discharged once it is completed in the theatre."));
         (await nurse.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admission.Id}")).Status.ShouldBe(AdmissionStatus.DischargeInitiated);
+        (await WhereOnTheBoardAsync(nurse, admission.Id)).ShouldStartWith("In theatre · ");
 
-        // Once the surgeon has completed the operation, he goes home.
+        // Nor in recovery, from the WHO Sign-out, even once the surgeon has completed the operation: the ward sees him in
+        // recovery, not back in his bed.
+        await OnTheTableAsync(doctor, booking.Id);
+        var inRecovery = ("discharge.in_recovery",
+            $"The patient is in recovery after surgery {booking.BookingNumber} ({HerniaRepair}): discharge them from recovery before the discharge.");
+        (await DischargeRefusalAsync(nurse, admission.Id)).ShouldBe(inRecovery);
         await doctor.PostAsync($"{Bookings}/{booking.Id}/complete");
+        (await DischargeRefusalAsync(nurse, admission.Id)).ShouldBe(inRecovery);
+        (await WhereOnTheBoardAsync(nurse, admission.Id)).ShouldStartWith("In recovery · ");
+
+        // Discharged from recovery, he is back on the ward, in his bed, and goes home.
+        await BackFromRecoveryAsync(nurse, booking.Id);
+        (await WhereOnTheBoardAsync(nurse, admission.Id)).ShouldNotContain("recovery");
         var discharged = await nurse.PostAsync<DischargeResult>($"/api/v1/inpatient/admissions/{admission.Id}/discharge/complete",
             new CompleteDischargeRequest(DischargeType.Normal, null, "Discharged home after the repair", NotifyPatient: false));
         discharged.Status.ShouldBe(AdmissionStatus.Discharged);
@@ -262,23 +277,34 @@ public sealed class TheatreStayTests(HospitalServer server)
     }
 
     /// <summary>
-    /// The OT coordinator gives the booking an hour in the minor theatre on a day years ahead, when no other test of the run
-    /// has the theatre, the surgeon or the patient.
+    /// The OT coordinator gives the booking an hour in the minor theatre on a random day years ahead. Every theatre test books
+    /// the same seeded surgeon, so on the rare clash with another test's case (surgery.slot_conflict) another day is tried.
     /// </summary>
     private static async Task<(DateTimeOffset Start, DateTimeOffset End)> ScheduleAsync(ApiClient doctor, Guid bookingId)
     {
-        var start = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero).AddDays(Random.Shared.Next(400, 4000)).AddHours(4);
         var booking = await doctor.GetAsync<SurgeryDetail>($"{Bookings}/{bookingId}");
         var theatreId = await MinorTheatreAsync(doctor);
-        await doctor.PostAsync($"{Bookings}/{bookingId}/schedule", new ScheduleSurgeryRequest(theatreId, start, start.AddHours(1), booking.Version));
-        return (start, start.AddHours(1));
+        var path = $"{Bookings}/{bookingId}/schedule";
+        for (var attempt = 0; ; attempt++)
+        {
+            var start = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero).AddDays(Random.Shared.Next(400, 4000)).AddHours(4);
+            using var response = await doctor.SendRawAsync(HttpMethod.Post, path, new ScheduleSurgeryRequest(theatreId, start, start.AddHours(1), booking.Version));
+            var answer = await response.Content.ReadAsStringAsync(Ct);
+            if (response.StatusCode == HttpStatusCode.Conflict && attempt < 5 && answer.Contains("\"surgery.slot_conflict\"", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            response.IsSuccessStatusCode.ShouldBeTrue($"POST {path} answered {(int)response.StatusCode}: {answer}");
+            return (start, start.AddHours(1));
+        }
     }
 
     /// <summary>
     /// The surgery is under way in the minor theatre, its WHO Sign-in, Time-out and Sign-out done: the theatre's steps before
     /// completion are covered by their own tests.
     /// </summary>
-    private async Task OnTheTableAsync(ApiClient doctor, Guid bookingId)
+    private async Task OnTheTableAsync(ApiClient doctor, Guid bookingId, bool signedOut = true)
     {
         var theatreId = await MinorTheatreAsync(doctor);
         await using var scope = server.Services.CreateAsyncScope();
@@ -290,8 +316,30 @@ public sealed class TheatreStayTests(HospitalServer server)
         booking.SignInCompletedAt = booking.InRoomAt = now.AddMinutes(-70);
         booking.TimeOutCompletedAt = now.AddMinutes(-65);
         booking.StartedAt = now.AddMinutes(-60);
-        booking.SignOutCompletedAt = now.AddMinutes(-5);
+        booking.SignOutCompletedAt = signedOut ? now.AddMinutes(-5) : null;
         await db.SaveChangesAsync(Ct);
+    }
+
+    /// <summary>
+    /// The recovery nurse receives the patient, charts him awake on room air (a modified Aldrete score of 10) and sends him
+    /// back to the ward. The repair was under local anaesthesia, so there is no anaesthetist to hand over.
+    /// </summary>
+    private static async Task BackFromRecoveryAsync(ApiClient nurse, Guid bookingId)
+    {
+        var recovery = $"{Bookings}/{bookingId}/recovery";
+        await nurse.PostAsync<RecoveryRecordDto>($"{recovery}/receive", new ReceiveInRecoveryRequest(AirwayDevice.None, OxygenDelivery.RoomAir, PreAnaesthesiaSystolic: 130));
+        await nurse.PostAsync<RecoveryRecordDto>($"{recovery}/observations", new AddRecoveryObservationRequest(
+            80, 128, 78, 98, false, 14, 36.6m, RecoveryConsciousness.Alert, RecoveryBreathing.DeepBreathAndCough, 4, 1, Ponv.None));
+        (await nurse.PostAsync<RecoveryRecordDto>($"{recovery}/discharge", new DischargeFromRecoveryRequest(RecoveryDestination.Ward)))
+            .Destination.ShouldBe(RecoveryDestination.Ward);
+    }
+
+    /// <summary>Where the board of in-patients of the ward says the patient is: the bed, or in theatre or recovery and the bed.</summary>
+    private static async Task<string> WhereOnTheBoardAsync(ApiClient nurse, Guid admissionId)
+    {
+        var stay = await nurse.GetAsync<AdmissionDetail>($"/api/v1/inpatient/admissions/{admissionId}");
+        var board = await nurse.GetAsync<PagedResult<InHospitalPatient>>($"/api/v1/journeys/in-hospital?kind=Inpatient&wardId={stay.WardId}&pageSize=100");
+        return board.Items.Single(r => r.Journey.Id == admissionId).Place.ShouldNotBeNull();
     }
 
     private static async Task<Guid> MinorTheatreAsync(ApiClient doctor) =>

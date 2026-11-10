@@ -27,11 +27,18 @@ public interface IAdmissionDirectory
 }
 
 /// <summary>
-/// Work of a stay that keeps the patient in the hospital, however the stay is to end: an operation under way in the
-/// theatre. <see cref="Code"/> is the code the discharge is refused with; <see cref="Message"/> names the work and says
+/// Work of a stay that keeps the patient in the hospital: an operation under way in the theatre, however the stay is to
+/// end; or, for a planned discharge only (<see cref="PlannedDischargeOnly"/>), a discharge summary not yet signed. <see cref="Code"/> is the code the discharge is refused with; <see cref="Message"/> names the work and says
 /// what is to be done first.
 /// </summary>
-public sealed record DischargeHold(string Code, string Message);
+public sealed record DischargeHold(string Code, string Message)
+{
+    /// <summary>
+    /// Holds only a planned discharge (home, or referred to another hospital); a death, a patient who left against advice
+    /// or absconded keeps its own rules and is not held by it (an unsigned discharge summary).
+    /// </summary>
+    public bool PlannedDischargeOnly { get; init; }
+}
 
 /// <summary>
 /// A department's word on whether a stay may end now, from a module Inpatient cannot reference (SpecialtyCare's theatre).

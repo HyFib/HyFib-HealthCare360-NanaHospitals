@@ -174,14 +174,41 @@ describe('serversSummary', () => {
     const stopped = [server('JOBS', 'worker', false), server('JOBS2', 'worker'), server('API1', 'api')];
     expect(serversSummary(stopped)).toEqual({ text: 'JOBS not reporting', tone: 'bad' });
   });
+
+  it('with the job lease, is green for one holder and says when another is taking the jobs over', () => {
+    const lease = (name: string, active: boolean, reporting = true): ServerNodeHealth => {
+      const node = server(name, 'all', reporting);
+      return { ...node, server: { ...node.server, jobs: { active, since: active ? '2026-11-09T10:00:00Z' : null } } };
+    };
+    expect(serversSummary([lease('A', true), lease('B', false)])).toEqual({ text: 'All 2 reporting', tone: 'ok' });
+    expect(serversSummary([lease('A', false), lease('B', false)])).toEqual({
+      text: 'All 2 reporting; another server is taking the background jobs over',
+      tone: 'warn',
+    });
+  });
 });
 
 describe('servers', () => {
   it('names what each server is for', () => {
-    expect(serverRole('api')).toBe('API node');
-    expect(serverRole('worker')).toBe('Runs the background jobs');
-    expect(serverRole('all')).toBe('API and background jobs');
-    expect([runsJobs('api'), runsJobs('worker'), runsJobs('All')]).toEqual([false, true, true]);
+    expect(serverRole({ role: 'api' })).toBe('API node');
+    expect(serverRole({ role: 'worker' })).toBe('Runs the background jobs');
+    expect(serverRole({ role: 'all' })).toBe('API and background jobs');
+    expect([runsJobs({ role: 'api' }), runsJobs({ role: 'worker' }), runsJobs({ role: 'All' })]).toEqual([
+      false,
+      true,
+      true,
+    ]);
+  });
+
+  it('says which server holds the job lease, and which stand by', () => {
+    const holds = { role: 'all', jobs: { active: true, since: '2026-11-09T10:00:00Z' } };
+    const standsBy = { role: 'worker', jobs: { active: false, since: null } };
+    expect(serverRole(holds)).toBe('API and background jobs (holds the job lease)');
+    expect(serverRole(standsBy)).toBe('Stands by for the background jobs');
+    expect(serverRole({ role: 'all', jobs: { active: false, since: null } })).toBe(
+      'API node, standing by for the background jobs',
+    );
+    expect([runsJobs(holds), runsJobs(standsBy)]).toEqual([true, false]);
   });
 
   it('says how long a server has run, and when its data drive is nearly full', () => {

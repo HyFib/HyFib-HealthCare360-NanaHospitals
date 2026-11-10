@@ -11,6 +11,7 @@ import { SeroBadge, SessionStatusBadge } from '@/modules/dialysis/DialysisBadges
 import { ScheduleSessionDialog } from '@/modules/dialysis/DialysisDialogs';
 import { DialyzersPanel } from '@/modules/dialysis/DialyzersPanel';
 import { accessLabel, reuseLabel, seroLabel, shiftLabel, weekdayShort } from '@/modules/dialysis/labels';
+import { InfectionStatusDialog } from '@/modules/dialysis/InfectionStatusDialog';
 import { ProfileForm } from '@/modules/dialysis/ProfileForm';
 import { Detail, DetailGrid, NoAccess, RecordLoadError } from '@/modules/ot/shared/feedback';
 import { SpecialtyPatientBanner } from '@/modules/ot/shared/SpecialtyPatientBanner';
@@ -30,6 +31,7 @@ function DialysisPatientPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const canRead = usePermission('dialysis.read');
   const canEdit = usePermission('dialysis.patients.manage');
+  const [changingStatus, setChangingStatus] = useState(false);
   const canSessions = usePermission('dialysis.sessions.manage');
   const profile = useQuery({ ...dialysisQueries.profile(patientId), enabled: canRead });
   const [booking, setBooking] = useState(false);
@@ -99,6 +101,11 @@ function DialysisPatientPage() {
         actions={
           <>
             <SeroBadge sero={p.seroStatus} long size="large" />
+            {canEdit && (
+              <Button disabled={!!p.infectionStatusPendingApprovalId} onClick={() => setChangingStatus(true)}>
+                {p.infectionStatusPendingApprovalId ? 'Status change waiting for approval' : 'Change infection status'}
+              </Button>
+            )}
             {canSessions && p.isActive && (
               <Button appearance="primary" icon={<CalendarAddRegular />} onClick={() => setBooking(true)}>
                 Book session
@@ -136,6 +143,7 @@ function DialysisPatientPage() {
           preset={{ patient: { id: p.patientId, uhid: p.uhid, fullName: p.patientName }, shift: p.shift }}
         />
       )}
+      {changingStatus && <InfectionStatusDialog profile={p} onClose={() => setChangingStatus(false)} />}
     </Page>
   );
 }

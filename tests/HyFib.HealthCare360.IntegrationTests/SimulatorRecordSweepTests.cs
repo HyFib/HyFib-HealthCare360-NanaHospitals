@@ -47,7 +47,7 @@ public sealed class SimulatorRecordSweepTests(HospitalServer server)
 
         sweep.Findings.Select(f => f.Code).ShouldBe(
         [
-            "payments", "refunds", "card-sales", "aadhaar-links", "imaging", "lab-results", "gateway-settlements", "card-settlements",
+            "payments", "refunds", "card-sales", "aadhaar-links", "imaging", "lab-results", "einvoices", "gateway-settlements", "card-settlements",
             "messages", "tally", "attendance", "cardiology-files", "labels",
         ]);
         var found = sweep.Findings.Single(f => f.Code == "payments");

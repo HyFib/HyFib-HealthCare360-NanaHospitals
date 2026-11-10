@@ -23,8 +23,9 @@ internal static class CanteenEndpoints
             .RequirePermission(SupportServicesPermissions.CanteenSales).WithValidation<CreateSaleRequest>();
         group.MapGet("/sales", ListSales).RequireAnyPermission(SupportServicesPermissions.CanteenSales, SupportServicesPermissions.CanteenReports);
         group.MapGet("/sales/{id:guid}", GetSale).RequireAnyPermission(SupportServicesPermissions.CanteenSales, SupportServicesPermissions.CanteenReports);
+        // A bill is paid when it is made: its cancellation waits for a second person, never the cashier who sold it (202).
         group.MapPost("/sales/{id:guid}/cancel", async (Guid id, CancelSaleRequest r, CanteenService canteen, CancellationToken ct) =>
-                (await canteen.CancelSaleAsync(id, r.Reason, ct)).ToOk())
+                (await canteen.AskCancelAsync(id, r.Reason, ct)).ToHttpResult(asked => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
             .RequirePermission(SupportServicesPermissions.CanteenCancel).WithValidation<CancelSaleRequest>();
 
         group.MapGet("/reports/daily", async (DateOnly? date, CanteenService canteen, TimeProvider time, CancellationToken ct) =>
@@ -129,10 +130,10 @@ internal static class CanteenEndpoints
         return TypedResults.Ok(result);
     }
 
-    private static async Task<IResult> GetSale(Guid id, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> GetSale(Guid id, HospitalDbContext db, CanteenService canteen, CancellationToken ct)
     {
         var sale = await db.Set<CanteenSale>().AsNoTracking().Include(s => s.Lines).FirstOrDefaultAsync(s => s.Id == id, ct);
-        return sale is null ? Error.NotFound("Canteen bill", id).ToProblem() : TypedResults.Ok(CanteenService.ToDto(sale));
+        return sale is null ? Error.NotFound("Canteen bill", id).ToProblem() : TypedResults.Ok(await canteen.WithPendingAsync(sale, ct));
     }
 
     private static void Apply(MenuItem item, SaveMenuItemRequest request, string code)
