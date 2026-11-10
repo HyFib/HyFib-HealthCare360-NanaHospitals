@@ -125,7 +125,7 @@ public sealed class AiGuardTests
 
         foreach (var message in parameters.Messages)
         {
-            if (message.Content.TryPickString(out var content))
+            if (message.Content is { } body && body.TryPickString(out var content))
             {
                 parts.Add(content);
             }
