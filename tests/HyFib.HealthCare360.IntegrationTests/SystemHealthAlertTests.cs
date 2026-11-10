@@ -44,7 +44,10 @@ public sealed class SystemHealthAlertTests(HospitalServer server)
         settings.SecondaryDirectory = Path.Combine(unplugged, "HC360-Backups");
         var lastCopy = new BackupRun
         {
-            Kind = BackupKind.Scheduled, Status = BackupStatus.Succeeded, SecondaryCopied = true, FileName = "hc360-copied-scheduled.hc360bak",
+            Kind = BackupKind.Scheduled,
+            Status = BackupStatus.Succeeded,
+            SecondaryCopied = true,
+            FileName = "hc360-copied-scheduled.hc360bak",
         };
 
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
