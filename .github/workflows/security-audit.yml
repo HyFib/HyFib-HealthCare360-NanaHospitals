@@ -68,6 +68,15 @@ jobs:
       - name: Audit packages
         run: pnpm audit --audit-level low
 
+      # The tools that do not ship: the SBOM tool, which runs inside the release build, and the demo site's deploy tool.
+      # High and critical advisories fail (docs/security/SECURITY.md, "Tools that do not ship").
+      - name: Audit the SBOM tool and the demo site's deploy tool
+        if: ${{ !cancelled() }}
+        working-directory: .
+        run: |
+          npm audit --prefix .github/sbom --package-lock-only --audit-level=high
+          npm audit --prefix .github/demo-site --package-lock-only --audit-level=high
+
       # For the patch-windows job below. pnpm audit exits 1 when it finds an advisory; the script reads the file.
       - name: Audit packages for the patch windows
         if: ${{ !cancelled() }}

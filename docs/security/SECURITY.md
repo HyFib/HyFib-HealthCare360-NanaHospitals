@@ -1777,6 +1777,20 @@ CI runs these checks on every pull request and on main. A pull request cannot me
     updates them. `.github/scripts/sbom.mjs` makes the files and checks each against the CycloneDX schema.
   - HC360 ships no container images, so there is no image to scan. `deploy/docker/compose.dev.yml` is for developers
     only.
+- **Tools that do not ship**: the SBOM tool (cdxgen, `.github/sbom`), which runs inside the release build, and the
+  demo site's deploy tool (wrangler, `.github/demo-site`) each pin their whole tree in a lockfile of their own.
+  - CI and the daily Security audit fail on a high or critical advisory against either (`npm audit --audit-level=high`).
+    The patch windows (SEC-11) cover only what HC360 ships, so these are not recorded in
+    `.github/security-advisories.json`.
+  - Fix one by updating the tool, past Dependabot's 7-day wait. Where no release of the tool has the fix yet, hold the
+    package at a fixed version in the tool's `overrides`, within the same major version, and say why in its
+    `package.json`: body-parser is held at 2.4.0 under cdxgen 12.9.0 (GHSA-27r3-jxmh-p828; cdxgen's server mode, which
+    the release does not run, is where it is used).
+  - Moderate and low ones wait for the tool's next update. On 10 November 2026 these were five moderate advisories
+    under cdxgen 12.9.0, all through glob 13 and minimatch 10, whose fixes are in their next major versions: a glob
+    that keeps walking after its AbortSignal fires (GHSA-3g3m-2fjr-6pw4) and pattern amplification in minimatch
+    (GHSA-g3hv-75wg-m249). The release build gives cdxgen the repository's own lockfile and patterns, so neither is
+    reachable with outside input.
 - **Dependabot** proposes updates every Monday: NuGet packages, the web packages, the .NET SDK (the server and HC360
   Desktop ship the runtime that comes with it) and the CI actions.
   - Minor and patch updates come grouped, and CI tests them like any change.

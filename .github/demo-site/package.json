@@ -3,6 +3,6 @@
   "private": true,
   "description": "Wrangler, which the Demo site workflow runs to deploy the demo to Cloudflare, pinned with its whole tree in package-lock.json. Install with: npm ci --prefix .github/demo-site --ignore-scripts --no-audit --no-fund",
   "dependencies": {
-    "wrangler": "4.151.1"
+    "wrangler": "4.156.2"
   }
 }

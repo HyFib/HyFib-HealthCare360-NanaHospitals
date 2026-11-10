@@ -378,6 +378,14 @@ jobs:
           dotnet tool restore
           npm ci --prefix .github/sbom --ignore-scripts --omit=optional --no-audit --no-fund
 
+      # The SBOM tool runs inside the release build, and the demo site's tool deploys the demo. Neither ships, so the patch
+      # windows (SEC-11) do not cover them, but a high or critical advisory against either fails here. Moderate and low
+      # ones wait for Dependabot's next update of the tool (docs/security/SECURITY.md, "Tools that do not ship").
+      - name: Audit the SBOM tool and the demo site's deploy tool
+        run: |
+          npm audit --prefix .github/sbom --package-lock-only --audit-level=high
+          npm audit --prefix .github/demo-site --package-lock-only --audit-level=high
+
       - name: Make the SBOMs
         run: node .github/scripts/sbom.mjs --output "$RUNNER_TEMP/sbom"
 

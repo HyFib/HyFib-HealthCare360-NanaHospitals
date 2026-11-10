@@ -1,8 +1,11 @@
 {
   "name": "hc360-sbom-tools",
   "private": true,
-  "description": "cdxgen, which .github/scripts/sbom.mjs runs to read the web apps' pnpm-lock.yaml, pinned with its whole tree in package-lock.json. Install with: npm ci --prefix .github/sbom --ignore-scripts --omit=optional --no-audit --no-fund",
+  "description": "cdxgen, which .github/scripts/sbom.mjs runs to read the web apps' pnpm-lock.yaml, pinned with its whole tree in package-lock.json. body-parser is held at 2.4.0, past GHSA-27r3-jxmh-p828, until cdxgen takes the fix itself. Install with: npm ci --prefix .github/sbom --ignore-scripts --omit=optional --no-audit --no-fund",
   "dependencies": {
-    "@cyclonedx/cdxgen": "12.8.5"
+    "@cyclonedx/cdxgen": "12.9.0"
+  },
+  "overrides": {
+    "body-parser": "2.4.0"
   }
 }
