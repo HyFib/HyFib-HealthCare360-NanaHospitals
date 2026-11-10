@@ -1043,8 +1043,10 @@ each.
    & 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe' backup verify --in '<file>'
    ```
 
-   It says `PreMigration backup ... by HC360 <the previous version>`. An upgrade that changed no table made no such
-   backup, and the previous version starts on the database as it is: skip step 3.
+   It says `PreMigration backup ... taken <the time of the upgrade> ... by HC360 <the version upgraded to>`: the new
+   version takes it as it starts, just before it changes the database, so the backup names the new version while its
+   database is still the previous version's, which the previous version restores. An upgrade that changed no table made
+   no such backup, and the previous version starts on the database as it is: skip step 3.
 2. **Put the previous version back, stopped.** From the previous release's `deploy` folder, checked and unblocked as in
    section 1, run `.\Install-HC360Server.ps1 -NoStart`. It replaces the program files and keeps the configuration and
    data.
