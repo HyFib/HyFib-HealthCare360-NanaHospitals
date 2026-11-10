@@ -27,11 +27,9 @@ internal static class ClaudeRequestBuilder
     public static MessageCreateParams Build(AiRequest request, string model)
     {
         var messages = request.Messages
-            .Select(m => new BetaMessageParam
-            {
-                Role = string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase) ? Role.Assistant : Role.User,
-                Content = m.Content,
-            })
+            .Select(m => string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase)
+                ? (BetaMessageParam)new BetaAssistantMessageParam { Content = m.Content }
+                : new BetaUserMessageParam { Content = m.Content })
             .ToList();
 
         var output = string.IsNullOrWhiteSpace(request.JsonSchema)
