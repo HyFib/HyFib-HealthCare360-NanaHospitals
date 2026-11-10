@@ -179,7 +179,10 @@ SRS 3.2 asks every profile for a UPS and an external backup target, and the hosp
 
 Each step ends with a check, and the next step starts only once it passes.
 
-1. **Read the machine.** On it, as Administrator, from the release's `deploy` folder, run:
+1. **Read the machine.** First download the release and check it before anything in it runs: compare each file with
+   `SHA256SUMS.txt` and with the checksums HyFib sends separately, unblock the checked zip, extract it, and let the
+   PowerShell window run scripts (DEPLOYMENT.md section 1, *The release files*). Then, on the machine, as Administrator,
+   from the release's `deploy` folder, run:
 
    ```powershell
    .\Test-HC360ServerNode.ps1 -ConcurrentUsers 40
@@ -203,7 +206,8 @@ Each step ends with a check, and the next step starts only once it passes.
    - Keep one remote-access tool, protected, and remove the rest.
 
    *Check:* run the preflight again. Nothing fails, and BitLocker passes.
-4. **Check the release files** with `Get-FileHash` against `SHA256SUMS.txt` (DEPLOYMENT.md section 1).
+4. **Check the release files again** if any were downloaded since step 1, for a newer release: the same check, and
+   the same unblocking, as in step 1. The release installed must be the one checked.
 5. **Install PostgreSQL** with `.\Install-PostgreSQL.ps1` (DEPLOYMENT.md section 2). Then measure how fast its disk
    commits, with PostgreSQL's own tool:
 
