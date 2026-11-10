@@ -652,7 +652,9 @@ function CalendarGrid({
                         (a.status === 'Completed' || a.status === 'NoShow') && styles.blockDone,
                       )}
                       style={style}
-                      aria-label={`${formatTime(a.startsAt)}, ${a.patientName}, ${status.label}`}
+                      // The name follows the block's own words in their order (name, then time and status), so voice
+                      // control finds it by what it shows (WCAG 2.5.3).
+                      aria-label={`${a.patientName}, ${formatTime(a.startsAt)}, ${status.label}`}
                       onClick={() => onOpen(a.id)}
                     >
                       <span className={styles.blockName}>
@@ -660,7 +662,7 @@ function CalendarGrid({
                           <VideoRegular aria-hidden style={{ verticalAlign: 'middle', marginRight: 2 }} />
                         )}
                         {a.patientName}
-                      </span>
+                      </span>{' '}
                       <span className={styles.blockDetail}>
                         {formatTime(a.startsAt)} · {status.label}
                       </span>

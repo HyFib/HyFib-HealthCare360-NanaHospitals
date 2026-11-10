@@ -34,6 +34,14 @@ const useStyles = makeStyles({
   header: { display: 'flex', flexDirection: 'column', padding: '8px 12px 6px', maxWidth: '280px' },
   muted: { color: tokens.colorNeutralForeground3 },
   trigger: { minWidth: 'auto', padding: '2px' },
+  srOnly: {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    overflow: 'hidden',
+    clip: 'rect(0 0 0 0)',
+    whiteSpace: 'nowrap',
+  },
 });
 
 const THEMES: { value: ThemeMode; label: string }[] = [
@@ -82,8 +90,11 @@ export function UserMenu({ onLock }: { onLock: () => void }) {
   return (
     <Menu positioning="below-end" hasCheckmarks>
       <MenuTrigger disableButtonEnhancement>
-        <Button appearance="subtle" className={styles.trigger} aria-label={`Account menu for ${user.displayName}`}>
-          <Avatar name={user.displayName} size={32} color="colorful" />
+        {/* Named by hidden words rather than an aria-label: the initials on screen are not in the name, so they are hidden
+            from it and an aria-label would not hold the visible text (WCAG 2.5.3). */}
+        <Button appearance="subtle" className={styles.trigger}>
+          <Avatar name={user.displayName} size={32} color="colorful" aria-hidden="true" />
+          <span className={styles.srOnly}>{`Account menu for ${user.displayName}`}</span>
         </Button>
       </MenuTrigger>
       <MenuPopover>

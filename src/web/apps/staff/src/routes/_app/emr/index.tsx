@@ -472,7 +472,10 @@ function WorklistPage() {
                         </Button>
                       )}
                       {canQueue && e.tokenStatus === 'InService' && (
-                        <Tooltip content="Consultation over: free the queue for the next patient" relationship="label">
+                        <Tooltip
+                          content="Consultation over: free the queue for the next patient"
+                          relationship="description"
+                        >
                           <Button
                             size="small"
                             icon={<CheckmarkRegular />}

@@ -30,6 +30,7 @@ export function BrandMark({ facility, compact }: { facility?: string | null; com
       {!compact && (
         <span className={styles.text}>
           <Text className={styles.product}>HealthCare360</Text>
+          {/* A space between the two lines, so the text reads as words, not "HealthCare360Nana" (WCAG 2.5.3). */}{' '}
           {facility && (
             <Text size={200} className={styles.facility}>
               {facility}
