@@ -22,9 +22,9 @@ import {
   ToggleButton,
 } from '@fluentui/react-components';
 import { FoodRegular } from '@fluentui/react-icons';
-import { isApiError, todayIso, useDebouncedValue, type LookupItem } from '@hc360/core';
+import { isApiError, todayIso, useDebouncedValue } from '@hc360/core';
 import { CheckboxGroup, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { searchPractitioners } from '@/lib/lookups';
 import { PatientFlagsStrip } from '@/modules/emr/PatientFlagsStrip';
@@ -92,14 +92,18 @@ export function DietOrderDialog({
   const [slots, setSlots] = useState<MealSlot[] | null>(current?.meals ?? null);
   const [startDate, setStartDate] = useState(todayIso());
   const [doctorTerm, setDoctorTerm] = useState('');
-  const [doctor, setDoctor] = useState<LookupItem | null>(null);
+  const [doctor, setDoctor] = useState<{ id: string; name: string } | null>(null);
   const doctorSearch = useDebouncedValue(doctorTerm.trim(), 250);
   const doctors = useQuery({
     queryKey: ['lookups', 'practitioners', 'search', doctorSearch],
     queryFn: () => searchPractitioners(doctorSearch),
     enabled: doctorSearch.length >= 2,
     staleTime: 5 * 60_000,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
+  // Below 2 characters there is no search, and the last one's results are not offered either.
+  const doctorOptions = doctorSearch.length >= 2 ? (doctors.data ?? []) : [];
   const type = types.data?.find((t) => t.id === dietTypeId) ?? null;
   const rounds = slots ?? type?.defaultMeals ?? [];
   const nilByMouth = type?.category === 'NilByMouth';
@@ -336,12 +340,13 @@ export function DietOrderDialog({
                     }
                   }}
                   onOptionSelect={(_, d) => {
-                    setDoctor((doctors.data ?? []).find((x) => x.id === d.optionValue) ?? null);
+                    // The doctor comes from the option chosen, not from the results as they are by now.
+                    setDoctor(d.optionValue ? { id: d.optionValue, name: d.optionText ?? '' } : null);
                     setDoctorTerm('');
                   }}
                   clearable
                 >
-                  {(doctors.data ?? []).map((d) => (
+                  {doctorOptions.map((d) => (
                     <Option key={d.id} value={d.id} text={d.name}>
                       {d.name}
                     </Option>
