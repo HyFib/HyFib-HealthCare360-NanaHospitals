@@ -24,6 +24,14 @@ import type { PortalProfile } from '@/lib/types';
 
 const useStyles = makeStyles({
   trigger: { minHeight: '44px', maxWidth: '200px', paddingInline: '6px' },
+  srOnly: {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    overflow: 'hidden',
+    clip: 'rect(0 0 0 0)',
+    whiteSpace: 'nowrap',
+  },
   triggerName: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '110px' },
   drawer: {
     '@media (max-width: 899px)': {
@@ -77,11 +85,15 @@ export function ProfileSwitcher({ profiles, active }: { profiles: PortalProfile[
         className={styles.trigger}
         icon={<Avatar name={active.fullName} size={32} color="colorful" aria-hidden />}
         iconPosition="before"
-        aria-label={t('shell.profile.button', { name: active.fullName })}
         aria-haspopup="dialog"
         onClick={() => setOpen(true)}
       >
-        <span className={styles.triggerName}>{firstName(active.fullName)}</span>
+        {/* Named by hidden words, not an aria-label: the initials and first name on screen are not the whole name, and
+            an aria-label must hold every word shown (WCAG 2.5.3), so the shown words are left out of the name. */}
+        <span className={styles.srOnly}>{t('shell.profile.button', { name: active.fullName })}</span>
+        <span className={styles.triggerName} aria-hidden>
+          {firstName(active.fullName)}
+        </span>
         <ChevronDownRegular aria-hidden />
       </Button>
       <OverlayDrawer

@@ -59,7 +59,19 @@ const useStyles = makeStyles({
     marginInline: 'auto',
     '@media (max-width: 640px)': { flex: '0 0 auto' },
   },
-  searchText: { flex: 1, textAlign: 'start', '@media (max-width: 640px)': { display: 'none' } },
+  // Below 640 px the words are hidden from sight but stay in the button, so it keeps its name from them.
+  searchText: {
+    flex: 1,
+    textAlign: 'start',
+    '@media (max-width: 640px)': {
+      position: 'absolute',
+      width: '1px',
+      height: '1px',
+      overflow: 'hidden',
+      clip: 'rect(0 0 0 0)',
+      whiteSpace: 'nowrap',
+    },
+  },
   kbd: {
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     borderRadius: tokens.borderRadiusSmall,
@@ -147,7 +159,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Tooltip content={navOpen ? 'Hide navigation' : 'Show navigation'} relationship="label">
           <Hamburger onClick={() => setNavOpen((open) => !open)} aria-expanded={navOpen} />
         </Tooltip>
-        <Link to="/" className={styles.brandLink} aria-label="Home">
+        {/* The name starts with the words beside the logo, so voice control finds the link by what it shows (WCAG 2.5.3). */}
+        <Link
+          to="/"
+          className={styles.brandLink}
+          aria-label={`HealthCare360${!narrow && user?.facilityName ? ` ${user.facilityName}` : ''}, home`}
+        >
           <BrandMark facility={user?.facilityName} compact={narrow} />
         </Link>
         <Button
@@ -155,13 +172,15 @@ export function AppShell({ children }: { children: ReactNode }) {
           appearance="outline"
           icon={<SearchRegular />}
           onClick={() => setPaletteOpen(true)}
-          // Named in words at every width: below 640 px it shows its icon alone, the words hidden. The shortcut is said
-          // by aria-keyshortcuts, so it is not read out again as part of the name.
-          aria-label="Search patients or screens"
+          // Named by its words at every width (below 640 px they are hidden from sight, the icon alone showing), not by an
+          // aria-label, so the name always holds the words on screen (WCAG 2.5.3). The shortcut is said by
+          // aria-keyshortcuts, so its hint is hidden from the name.
           aria-keyshortcuts="Control+K"
         >
           <span className={styles.searchText}>Search patients or screens</span>
-          <Caption1 className={styles.kbd}>Ctrl+K</Caption1>
+          <Caption1 className={styles.kbd} aria-hidden="true">
+            Ctrl+K
+          </Caption1>
         </Button>
         <div className={styles.actions}>
           <AssistantButton />

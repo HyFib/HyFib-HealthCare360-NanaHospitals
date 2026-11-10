@@ -16,6 +16,14 @@ const SHORT: Record<Language, string> = { en: 'EN', hi: 'हि', ta: 'த' };
 
 const useStyles = makeStyles({
   trigger: { minWidth: '48px', minHeight: '44px' },
+  srOnly: {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    overflow: 'hidden',
+    clip: 'rect(0 0 0 0)',
+    whiteSpace: 'nowrap',
+  },
   group: {
     display: 'inline-flex',
     padding: '4px',
@@ -65,13 +73,9 @@ export function LanguageMenu() {
       }}
     >
       <MenuTrigger disableButtonEnhancement>
-        <Button
-          appearance="subtle"
-          size="large"
-          className={styles.trigger}
-          icon={<LocalLanguageRegular />}
-          aria-label={t('shell.language.change', { language: LANGUAGE_NAMES[language] })}
-        >
+        <Button appearance="subtle" size="large" className={styles.trigger} icon={<LocalLanguageRegular />}>
+          {/* Named by hidden words, not an aria-label, which would have to hold the short code shown (WCAG 2.5.3). */}
+          <span className={styles.srOnly}>{t('shell.language.change', { language: LANGUAGE_NAMES[language] })}</span>
           <span aria-hidden>{SHORT[language]}</span>
         </Button>
       </MenuTrigger>
