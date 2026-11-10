@@ -1,11 +1,13 @@
 import type * as Core from '@hc360/core';
 import { expectNoAxeViolations } from '@hc360/ui/testing';
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, stubBrowserApis } from '@/test/appScreen';
+import { typeAndChooseAsTheSearchRuns } from '@/test/searchPickers';
 import type { NonPayableItemDto, PayerDetail, PayerListItem } from '@/modules/insurance/api';
+import type { ServiceItemDto } from './api';
 import type { IpAccountDetail } from './ipApi';
 import type { TariffPlanListItem } from './mastersApi';
 
@@ -174,6 +176,24 @@ const NON_PAYABLES: NonPayableItemDto[] = [
   },
 ];
 
+/** A service from the catalogue, to put on the non-payable list. */
+const ADMISSION_KIT: ServiceItemDto = {
+  id: '0192a000-0000-7000-8000-00000000f502',
+  code: 'CONS-KIT',
+  name: 'Admission kit',
+  shortName: null,
+  category: 'Consumable',
+  departmentId: null,
+  basePrice: 450,
+  taxRate: 0,
+  sacCode: null,
+  isDiscountAllowed: false,
+  isPriceEditable: false,
+  description: null,
+  isActive: true,
+  version: 1,
+};
+
 let server: ReturnType<typeof fakeServer>;
 
 beforeEach(() => {
@@ -302,6 +322,58 @@ describe('the plan a patient is priced on, waiting for approval', SCREEN_TESTS, 
     const posts = server.requests.filter((request) => request.method === 'POST');
     expect(posts).toHaveLength(1);
     expect(posts[0]?.body).toEqual({ reason: 'Covered under the new agreement' });
+  });
+
+  it('a service chosen for the non-payable list as the search for what was typed runs is still the one chosen', async () => {
+    server = fakeServer({
+      'GET /api/v1/insurance/payers': [LISTED],
+      'GET /api/v1/billing/tariffs': PLANS,
+      'GET /api/v1/insurance/non-payable-items': [],
+      'GET /api/v1/masters/lookups/services': [ADMISSION_KIT],
+      'POST /api/v1/insurance/non-payable-items': {
+        id: '0192a000-0000-7000-8000-00000000f507',
+        summary: 'Non-payable for every payer: CONS-KIT Admission kit',
+      },
+    });
+    const user = userEvent.setup();
+    openScreen('/insurance/payers');
+
+    await user.click(await screen.findByRole('button', { name: 'Add item' }, SLOW));
+    const dialog = await screen.findByRole('dialog', { name: 'Add a non-payable item' });
+    const service = within(dialog).getByRole('combobox', { name: /^Service/ });
+    await user.type(service, 'Kit');
+    await screen.findByRole('option', { name: 'Admission kit (CONS-KIT)' });
+    await typeAndChooseAsTheSearchRuns(user, service, 's', 'Admission kit (CONS-KIT)');
+    expect(service).toHaveValue('Admission kit (CONS-KIT)');
+
+    await user.type(within(dialog).getByRole('textbox', { name: /Reason, for the approver/ }), 'Not payable');
+    await user.click(within(dialog).getByRole('button', { name: 'Ask to add' }));
+
+    expect((await screen.findAllByText('Asked for approval', {}, SLOW)).length).toBeGreaterThan(0);
+    const posts = server.requests.filter((request) => request.method === 'POST');
+    expect(posts).toHaveLength(1);
+    expect(posts[0]?.body).toMatchObject({ serviceItemId: ADMISSION_KIT.id, category: null });
+  });
+
+  it('offers no service of the last search for the non-payable list once the text is shorter than a search', async () => {
+    server = fakeServer({
+      'GET /api/v1/insurance/payers': [LISTED],
+      'GET /api/v1/billing/tariffs': PLANS,
+      'GET /api/v1/insurance/non-payable-items': [],
+      'GET /api/v1/masters/lookups/services': [ADMISSION_KIT],
+    });
+    const user = userEvent.setup();
+    openScreen('/insurance/payers');
+
+    await user.click(await screen.findByRole('button', { name: 'Add item' }, SLOW));
+    const dialog = await screen.findByRole('dialog', { name: 'Add a non-payable item' });
+    const service = within(dialog).getByRole('combobox', { name: /^Service/ });
+    await user.type(service, 'Ki');
+    await screen.findByRole('option', { name: 'Admission kit (CONS-KIT)' });
+    await user.type(service, '{Backspace}', { skipClick: true });
+
+    await waitFor(() => expect(screen.queryByRole('option', { name: /Admission kit/ })).not.toBeInTheDocument());
+    expect(service).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('asks a second person to add an item to the non-payable list, with a reason', async () => {

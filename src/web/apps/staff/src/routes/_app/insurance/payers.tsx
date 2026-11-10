@@ -35,7 +35,7 @@ import {
   useUnsavedChanges,
   useValuesChanged,
 } from '@hc360/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
@@ -366,7 +366,11 @@ function AddNonPayableDialog({ onClose }: { onClose: () => void }) {
     queryKey: ['billing', 'service-search', debounced],
     queryFn: () => searchServices(debounced),
     enabled: kind === 'service' && debounced.length >= 2,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
+  // Below 2 letters there is no search, and the last one's results are not offered either.
+  const services = debounced.length >= 2 ? (results.data ?? []) : [];
   const valid = kind === 'service' ? service !== null : category !== '';
 
   const add = useMutation({
@@ -434,13 +438,14 @@ function AddNonPayableDialog({ onClose }: { onClose: () => void }) {
                     selectedOptions={service ? [service.id] : []}
                     onChange={(event) => setTerm(event.target.value)}
                     onOptionSelect={(_, data) => {
-                      const item = results.data?.find((s) => s.id === data.optionValue);
-                      setService(item ? { id: item.id, label: `${item.name} (${item.code})` } : null);
+                      // The service comes from the option chosen (its text is the label), not from the results as
+                      // they are by now: the search runs a moment after the last key.
+                      setService(data.optionValue ? { id: data.optionValue, label: data.optionText ?? '' } : null);
                       setTerm('');
                     }}
                     autoFocus
                   >
-                    {(results.data ?? []).map((s) => (
+                    {services.map((s) => (
                       <Option key={s.id} value={s.id} text={`${s.name} (${s.code})`}>
                         {s.name} ({s.code})
                       </Option>
