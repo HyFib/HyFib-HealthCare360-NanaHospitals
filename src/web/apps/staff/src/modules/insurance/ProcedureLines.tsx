@@ -13,8 +13,9 @@ import {
 } from '@fluentui/react-components';
 import { DeleteRegular } from '@fluentui/react-icons';
 import { formatInr, useDebouncedValue } from '@hc360/core';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useShownItems } from '@/lib/useShownItems';
 import { amountInputText, parseRupees } from '@/modules/billing/money';
 import { insuranceQueries, type PreAuthProcedureSystem } from './api';
 
@@ -100,8 +101,18 @@ export function ProcedureLines({
   const [system, setSystem] = useState<PreAuthProcedureSystem>('Hbp');
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term.trim(), 250);
-  const options = useQuery({ ...insuranceQueries.procedureOptions(system, debounced), enabled: debounced.length > 0 });
-  const items = (options.data ?? []).filter((o) => !lines.some((l) => l.system === o.system && l.code === o.code));
+  const options = useQuery({
+    ...insuranceQueries.procedureOptions(system, debounced),
+    enabled: debounced.length > 0,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
+  });
+  // With nothing typed there is no search, and the last one's results are not offered either.
+  const items = debounced
+    ? (options.data ?? []).filter((o) => !lines.some((l) => l.system === o.system && l.code === o.code))
+    : [];
+  // The procedure comes from the options shown, not from the results as they are by the time one is chosen.
+  const shown = useShownItems(items, (o) => `${o.system}:${o.code}`);
   const full = lines.length >= MAX_PROCEDURE_LINES;
   const total = lines.reduce((sum, l) => sum + checkProcedureDraft(l).rupees, 0);
 
@@ -185,7 +196,7 @@ export function ProcedureLines({
             disabled={full}
             onChange={(event) => setTerm(event.target.value)}
             onOptionSelect={(_, data) => {
-              const option = items.find((o) => `${o.system}:${o.code}` === data.optionValue);
+              const option = shown(data.optionValue);
               if (option) {
                 onChange([
                   ...lines,
