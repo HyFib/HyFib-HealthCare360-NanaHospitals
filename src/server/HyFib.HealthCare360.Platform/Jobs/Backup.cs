@@ -134,6 +134,12 @@ internal sealed class BackupService(
     public const string FileExtension = ".hc360bak";
     private const string PartialExtension = ".partial";
 
+    /// <summary>
+    /// Starts the part of a backup's note (<see cref="BackupRun.Error"/>) that says why its copy to the secondary directory
+    /// failed. System health reads it back to tell a failed copy from one never attempted (<see cref="BackupCopies"/>).
+    /// </summary>
+    internal const string CopyFailedNote = "Secondary copy failed: ";
+
     private static readonly string ServerVersion =
         typeof(BackupService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
 
@@ -162,7 +168,30 @@ internal sealed class BackupService(
         run.CompletedAt ??= time.GetUtcNow();
         db.Add(AuditEventFor(run));
         await db.SaveChangesAsync(CancellationToken.None);
+        if (run.Status == BackupStatus.Succeeded && !run.SecondaryCopied && options.Value.Backup.SecondaryDirectory is { Length: > 0 } secondary)
+        {
+            await TellNotCopiedAsync(run, secondary);
+        }
+
         return ToDto(run);
+    }
+
+    /// <summary>
+    /// A backup that was made but not copied to the secondary directory is on the server's own disk only. The
+    /// administrators are told in the app, as of a failed backup, rather than when someone next opens System health, which
+    /// warns too (<see cref="BackupCopies"/>). It is told once the run is recorded, so a failure to tell loses nothing.
+    /// </summary>
+    private async Task TellNotCopiedAsync(BackupRun run, string secondary)
+    {
+        try
+        {
+            await notifications.NotifyPermissionHoldersAsync(PlatformPermissions.SystemRead, null, BackupCopies.NotCopiedTitle,
+                BackupCopies.NotCopiedBody(run.FileName!, secondary, run.Error), "/admin/system", "system", "warning", CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not tell the administrators that backup {File} was not copied to {Directory}", run.FileName, secondary);
+        }
     }
 
     /// <summary>
@@ -266,7 +295,7 @@ internal sealed class BackupService(
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     logger.LogWarning(ex, "Backup copy to secondary location {Directory} failed", secondary);
-                    warning = Join(warning, "Secondary copy failed: " + ex.Message);
+                    warning = Join(warning, CopyFailedNote + ex.Message);
                 }
             }
 

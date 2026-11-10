@@ -213,6 +213,12 @@ public sealed class SystemHealthService(
             backupWarnings.Add(new("backup.stale", "critical", "No successful backup in the last 36 hours."));
         }
 
+        // Whether the backups leave the server's own disk: the copy to the USB disk or NAS share.
+        if (await BackupCopies.WarningAsync(db, options.Value, now, ct) is { } notCopied)
+        {
+            backupWarnings.Add(notCopied);
+        }
+
         var messageWarnings = new List<HealthWarning>();
         if (outbox.FailedLast24Hours > 0)
         {
