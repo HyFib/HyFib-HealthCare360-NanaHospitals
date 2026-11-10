@@ -65,6 +65,17 @@ public sealed class DatabaseInitializer(
         "in as {0} (Install-HC360Server.ps1 -CreateDatabase writes it; on a promoted standby, copy it from the primary's settings), " +
         "then start HC360 again (docs/deployment/DEPLOYMENT.md, \"Two database accounts\").";
 
+    /// <summary>
+    /// Why start-up stops on a database that a newer version of HC360 has changed ({0}: the database changes this version
+    /// does not know). It would run against tables it does not expect, and write rows the newer version reads differently.
+    /// The way back from an upgrade is the backup taken before it, restored first: never the previous version alone.
+    /// </summary>
+    public const string NewerDatabaseMessage =
+        "The database was changed by a newer version of HC360 (database changes this version does not know: {0}). This " +
+        "version would run against tables it does not expect, so it changes nothing and stops. Start the newer version " +
+        "again, or, to go back to this one, first restore the backup taken before the update with Restore-HC360.ps1 " +
+        "(docs/deployment/DEPLOYMENT.md, section 7, \"Going back\").";
+
     /// <summary>No limit (0) on a migration's statements: see where the migrations are applied.</summary>
     internal const int MigrationCommandTimeout = 0;
 
@@ -111,6 +122,10 @@ public sealed class DatabaseInitializer(
             logger.LogInformation("The database schema is brought up to date as its owner, {Owner}", Username(owner));
         }
 
+        // Before anything is changed, and whether or not this server applies migrations: a version older than the database
+        // would run against tables it does not expect.
+        await RefuseNewerDatabaseAsync(schema, cancellationToken);
+
         if (options.Value.AutoMigrate)
         {
             await MigrateAsync(scope.ServiceProvider, schema, cancellationToken);
@@ -125,6 +140,31 @@ public sealed class DatabaseInitializer(
             await seeder.SeedAsync(db, cancellationToken);
             db.ChangeTracker.Clear();
         }
+    }
+
+    /// <summary>
+    /// Stops start-up (<see cref="NewerDatabaseMessage"/>) when the database has migrations this build does not know: a newer
+    /// version applied them. A database with no migration history yet (new, or created before migrations existed) has none.
+    /// </summary>
+    internal static async Task RefuseNewerDatabaseAsync(HospitalDbContext db, CancellationToken ct)
+    {
+        if (!await MigrationBaseline.HistoryExistsAsync(db, ct))
+        {
+            return;
+        }
+
+        var unknown = UnknownMigrations(await db.Database.GetAppliedMigrationsAsync(ct), db.Database.GetMigrations());
+        if (unknown.Count > 0)
+        {
+            throw new DatabaseUpgradeException(string.Format(CultureInfo.InvariantCulture, NewerDatabaseMessage, string.Join(", ", unknown)));
+        }
+    }
+
+    /// <summary>The migrations <paramref name="applied"/> to a database that are not among this build's (<paramref name="known"/>), in their order.</summary>
+    internal static IReadOnlyList<string> UnknownMigrations(IEnumerable<string> applied, IEnumerable<string> known)
+    {
+        var ours = known.ToHashSet(StringComparer.Ordinal);
+        return [.. applied.Where(migration => !ours.Contains(migration))];
     }
 
     /// <summary>The account that owns the audit trail's schema when it is not the one <paramref name="db"/> signs in as (nor one it is a member of); null otherwise, and on a new database.</summary>
