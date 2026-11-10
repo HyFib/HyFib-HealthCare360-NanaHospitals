@@ -15,6 +15,12 @@ on:
 permissions:
   contents: write
 
+# A pull request's build takes over an hour on Windows, and each push to it starts one: a newer push stops the older
+# build, which it supersedes. A tag's build, which publishes, is never stopped.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   package:
     name: Build, test and package
