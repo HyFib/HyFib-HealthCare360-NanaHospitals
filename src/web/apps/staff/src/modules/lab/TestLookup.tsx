@@ -40,7 +40,8 @@ export function TestLookup({
   const [term, setTerm] = useState('');
   const search = useDebouncedValue(term.trim(), 250);
   const results = useQuery({ ...labQueries.tests({ search, pageSize: 30 }), enabled: search.length >= 2 });
-  const items = (results.data?.items ?? []).filter((test) => !filter || filter(test));
+  // Below 2 characters there is no search, and the last one's results (kept by the query) are not offered either.
+  const items = search.length >= 2 ? (results.data?.items ?? []).filter((test) => !filter || filter(test)) : [];
 
   return (
     <Field
