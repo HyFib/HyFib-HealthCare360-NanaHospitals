@@ -322,10 +322,10 @@ public sealed class FreeTreatmentTests(HospitalServer server)
         (await billing.PostAsync<BillDetail>(Bills, new CreateBillRequest(accident.Visit.Id, null, null))).FreeTreatmentReason.ShouldBeNull();
     }
 
-    private sealed record ErCase(Guid PatientId, string Uhid, VisitDetail Visit, Guid CaseId, MlcDto Mlc);
+    internal sealed record ErCase(Guid PatientId, string Uhid, VisitDetail Visit, Guid CaseId, MlcDto Mlc);
 
     /// <summary>A new emergency patient whose case the doctor enters in the MLC register as <paramref name="cause"/>.</summary>
-    private static async Task<ErCase> ErCaseAsync(ApiClient frontOffice, ApiClient doctor, MlcCause cause, Gender gender)
+    internal static async Task<ErCase> ErCaseAsync(ApiClient frontOffice, ApiClient doctor, MlcCause cause, Gender gender)
     {
         var (patientId, visit) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice, gender);
         var row = (await doctor.GetAsync<ErBoard>($"{Er}/board")).Rows.Single(r => r.VisitId == visit.Id);
@@ -385,12 +385,11 @@ public sealed class FreeTreatmentTests(HospitalServer server)
     /// The front office admits the patient under the doctor to a free bed of a general ward (<paramref name="wardCode"/>), from
     /// the ER visit when there is one.
     /// </summary>
-    private static async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId, Guid? erVisitId, string wardCode)
+    private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId, Guid? erVisitId, string wardCode)
     {
         var consultantId = await PractitionerIdAsync(doctor);
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == wardCode);
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(server, ward.Id);
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Emergency, Source: erVisitId is null ? AdmissionSource.Direct : AdmissionSource.Emergency,
             SourceVisitId: erVisitId,
@@ -401,8 +400,8 @@ public sealed class FreeTreatmentTests(HospitalServer server)
     }
 
     /// <summary>
-    /// The front office cancels an admission made only to look at its account, and the bed is cleaned: the wards' beds are
-    /// shared by every test of the run.
+    /// The front office cancels an admission made only to look at its account, and the bed is cleaned: the run's tests read
+    /// the same wards' boards and housekeeping lists.
     /// </summary>
     private static async Task CancelAdmissionAsync(ApiClient frontOffice, ApiClient nurse, Guid admissionId)
     {
@@ -437,13 +436,13 @@ public sealed class FreeTreatmentTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
             .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
-        await admin.SaveSettingAsync(key, new SaveSettingRequest(
+        await server.SaveSettingAsync(admin, key, new SaveSettingRequest(
             new JsonObject { ["enabled"] = true, ["provider"] = "simulator", ["simulatorSettlementDays"] = 0 }, null, false, null));
-        await admin.SaveSettingAsync(secretKey, new SaveSettingRequest(new JsonObject { ["simulatorSecret"] = "free-treatment-simulator-key" }, null, true, null));
+        await server.SaveSettingAsync(admin, secretKey, new SaveSettingRequest(new JsonObject { ["simulatorSecret"] = "free-treatment-simulator-key" }, null, true, null));
         return new Restore(async () =>
         {
-            await admin.SaveSettingAsync(key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null));
-            await admin.SaveSettingAsync(secretKey, new SaveSettingRequest(new JsonObject(), null, true, null));
+            await server.SaveSettingAsync(admin, key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null));
+            await server.SaveSettingAsync(admin, secretKey, new SaveSettingRequest(new JsonObject(), null, true, null));
         });
     }
 

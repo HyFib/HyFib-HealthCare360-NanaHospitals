@@ -41,6 +41,12 @@ public static class BillingValidation
             .MaximumLength(maxLength)
             .Matches("^[A-Za-z0-9][A-Za-z0-9._-]*$").WithMessage("Use letters, digits, dots, dashes or underscores.");
 
+    /// <summary>How it was found that money recorded as moved did not move: the bank's return memo, the gateway's word, the patient.</summary>
+    public static IRuleBuilderOptions<T, string?> Reversal<T>(this IRuleBuilder<T, string> rule) =>
+        rule.NotEmpty().WithMessage("Say how it was found that the money did not move.")
+            .MinimumLength(Domain.ReversalRules.NoteMinLength).WithMessage("Say in a sentence how it was found that the money did not move: the bank's memo, the gateway, the patient.")
+            .SafeText(Domain.ReversalRules.NoteMaxLength);
+
     public static IRuleBuilderOptions<T, string?> Reason<T>(this IRuleBuilder<T, string> rule, int maxLength = 300) =>
         rule.NotEmpty().WithMessage("Enter a reason.")
             .MinimumLength(5).WithMessage("Describe the reason in a few words.")

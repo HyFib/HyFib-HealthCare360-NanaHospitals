@@ -18,6 +18,18 @@ internal sealed class AppointmentPaymentCapturedHandler(AdvanceService advances)
     }
 }
 
+/// <summary>A second payment for a booking already paid becomes a patient advance, with its refund asked for.</summary>
+internal sealed class AppointmentPaidTwiceHandler(AdvanceService advances) : IDomainEventHandler<AppointmentPaidTwice>
+{
+    public Task HandleAsync(AppointmentPaidTwice paid, CancellationToken cancellationToken)
+    {
+        advances.QueueSync(new AppointmentPrepayment(
+            paid.AppointmentId, paid.AppointmentNumber, paid.PatientId, paid.FacilityId, paid.Amount, paid.Provider,
+            paid.GatewayOrderId, paid.GatewayPaymentId, paid.PaidAt, SecondPayment: true));
+        return Task.CompletedTask;
+    }
+}
+
 /// <summary>
 /// A cancelled prepaid booking is refunded. A rescheduled booking also raises AppointmentCancelled, but its payment moves
 /// to the new booking, so only a booking whose own status is Cancelled is acted on.

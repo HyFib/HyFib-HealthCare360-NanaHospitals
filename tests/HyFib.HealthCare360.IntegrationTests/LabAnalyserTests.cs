@@ -9,10 +9,13 @@ using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Astm;
 using HyFib.HealthCare360.Integrations.Laboratory.Relay;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Quality;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabOrders;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabSamples;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.QualityControl;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.UnmatchedResults;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
@@ -20,6 +23,7 @@ using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Messaging;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
@@ -200,6 +204,129 @@ public sealed class LabAnalyserTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_result_from_the_training_analyser_is_open_until_it_is_entered_again_from_a_real_measurement()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        await Em360RanGlucoseQcTodayAsync(lab);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+        await EnableGatewayAsync(admin);
+        const string connections = "/api/v1/integrations/lab/connections";
+        var version = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+        await admin.PutAsync($"{connections}/EM360", new SaveLabConnectionRequest("Simulator", true, null, null, null, null, null, null, null, version));
+        try
+        {
+            var channel = (await admin.GetAsync<TrainingSampleDto>($"{connections}/EM360/training/samples/{tube.Barcode}")).Channels.ShouldHaveSingleItem();
+            (await admin.PostAsync<TrainingResultsOutcome>($"{connections}/EM360/training/results",
+                new TrainingResultsRequest(tube.Barcode, [new TrainingResult(channel, "96", "mg/dL")]))).Accepted.ShouldBeTrue();
+
+            // The result came from no analyser: open, by the sample's barcode, on its order.
+            var open = (await SimulatorRecords.OpenAsync(admin, "lab-results")).Single(r => r.Reference == tube.Barcode);
+            open.Entity.ShouldBe("LabOrder");
+
+            // The analyser's result was verified on its own rules: a pathologist reopens it, and it is entered again from a
+            // real measurement. It is the lab's result then, no longer the training analyser's.
+            var sheet = await lab.GetAsync<ResultSheet>($"/api/v1/lab/samples/{tube.Id}/results");
+            var resultId = sheet.Lines.Single().ResultId;
+            var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
+            using (var reopened = await pathologist.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/results/{resultId}/reopen",
+                       new ReopenResultRequest("Typed into the training analyser: to be measured again.")))
+            {
+                reopened.IsSuccessStatusCode.ShouldBeTrue(await reopened.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+            }
+
+            await lab.PostAsync<List<ResultSheetLine>>("/api/v1/lab/results",
+                new EnterResultsRequest([new ResultEntry(resultId, "98", "Measured again on the laboratory's own analyser.", null, null, null)]));
+            (await SimulatorRecords.OpenAsync(admin, "lab-results")).ShouldNotContain(r => r.Reference == tube.Barcode);
+        }
+        finally
+        {
+            var current = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+            using var removed = await admin.SendRawAsync(HttpMethod.Delete, $"{connections}/EM360?version={current}");
+            removed.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+    }
+
+    [Fact]
+    public async Task A_result_from_the_training_analyser_for_no_known_sample_is_open_until_it_is_discarded()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        await EnableGatewayAsync(admin);
+        const string connections = "/api/v1/integrations/lab/connections";
+        var version = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+        await admin.PutAsync($"{connections}/EM360", new SaveLabConnectionRequest("Simulator", true, null, null, null, null, null, null, null, version));
+        try
+        {
+            var unknown = "9" + Digits(8);
+            (await admin.PostAsync<TrainingResultsOutcome>($"{connections}/EM360/training/results",
+                new TrainingResultsRequest(unknown, [new TrainingResult("GLU", "97", "mg/dL")]))).Accepted.ShouldBeTrue();
+
+            // Kept aside for a person to place, and open while it waits.
+            var kept = (await UnmatchedAsync(lab, unknown)).ShouldHaveSingleItem();
+            var open = (await SimulatorRecords.OpenAsync(admin, "lab-results")).Single(r => r.Reference == unknown);
+            (open.Entity, open.EntityId).ShouldBe(("UnmatchedLabResult", kept.Id));
+
+            using (var discarded = await lab.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/unmatched-results/{kept.Id}/discard",
+                       new DiscardUnmatchedResultRequest("Typed into the training analyser: no sample was measured.")))
+            {
+                discarded.StatusCode.ShouldBe(HttpStatusCode.NoContent, await discarded.Content.ReadAsStringAsync(Ct));
+            }
+
+            (await SimulatorRecords.OpenAsync(admin, "lab-results")).ShouldNotContain(r => r.Reference == unknown);
+        }
+        finally
+        {
+            var current = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+            using var removed = await admin.SendRawAsync(HttpMethod.Delete, $"{connections}/EM360?version={current}");
+            removed.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+    }
+
+    [Fact]
+    public async Task A_released_result_from_the_training_analyser_is_open_until_the_report_is_amended_from_a_real_measurement()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+        await EnableGatewayAsync(admin);
+        const string connections = "/api/v1/integrations/lab/connections";
+        var version = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+        await admin.PutAsync($"{connections}/EM360", new SaveLabConnectionRequest("Simulator", true, null, null, null, null, null, null, null, version));
+        try
+        {
+            var channel = (await admin.GetAsync<TrainingSampleDto>($"{connections}/EM360/training/samples/{tube.Barcode}")).Channels.ShouldHaveSingleItem();
+            (await admin.PostAsync<TrainingResultsOutcome>($"{connections}/EM360/training/results",
+                new TrainingResultsRequest(tube.Barcode, [new TrainingResult(channel, "96", "mg/dL")]))).Accepted.ShouldBeTrue();
+
+            // Released as the analyser's value, before anyone knew it came from no analyser: open.
+            var sheet = await lab.GetAsync<ResultSheet>($"/api/v1/lab/samples/{tube.Id}/results");
+            var resultId = sheet.Lines.Single().ResultId;
+            (await pathologist.PostAsync<VerificationOutcome>("/api/v1/lab/results/verify",
+                new VerifyResultsRequest([resultId], null, null, Release: true))).ReleasedItemIds.ShouldNotBeEmpty();
+            (await SimulatorRecords.OpenAsync(admin, "lab-results")).ShouldContain(r => r.Reference == tube.Barcode);
+
+            // The report amended with a real measurement: the result keeps the analyser's code, but no longer its value.
+            var reportId = (await lab.GetAsync<LabOrderDetail>($"/api/v1/lab/orders/{sheet.LabOrderId}")).ReportId.ShouldNotBeNull();
+            using (var amended = await pathologist.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/reports/{reportId}/amend",
+                       new AmendReportRequest("Typed into the training analyser: measured again on the laboratory's own analyser.",
+                           [new AmendmentChange(resultId, "98", null, null, null)], null)))
+            {
+                amended.StatusCode.ShouldBe(HttpStatusCode.NoContent, await amended.Content.ReadAsStringAsync(Ct));
+            }
+
+            (await SimulatorRecords.OpenAsync(admin, "lab-results")).ShouldNotContain(r => r.Reference == tube.Barcode);
+        }
+        finally
+        {
+            var current = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+            using var removed = await admin.SendRawAsync(HttpMethod.Delete, $"{connections}/EM360?version={current}");
+            removed.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+    }
+
+    [Fact]
     public async Task Results_sent_from_the_training_analyser_reach_the_sample_as_that_analysers()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
@@ -296,7 +423,8 @@ public sealed class LabAnalyserTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
 
-        // A back-up chemistry analyser, auto-validation on, beside the EM 360 that ran this morning's glucose QC.
+        // A back-up chemistry analyser, auto-validation on, beside the EM 360, which ran today's glucose QC.
+        await Em360RanGlucoseQcTodayAsync(lab);
         var backup = "QCB" + Letters(5).ToUpperInvariant();
         await admin.PostAsync<JsonObject>("/api/v1/lab/instruments", new SaveLabInstrumentRequest(
             backup, "Back-up chemistry analyser", "Erba", "Chem 7", LabSection.Biochemistry, InstrumentProtocol.Astm,
@@ -316,6 +444,192 @@ public sealed class LabAnalyserTests(HospitalServer server)
         var held = (await SheetAsync(lab, onBackup)).Lines.ShouldHaveSingleItem();
         (held.Status, held.Value, held.InstrumentCode).ShouldBe((LabResultStatus.Entered, "92", backup));
         held.HeldReasons.ShouldBe(["Today's QC for this test on this analyser is missing or not accepted."]);
+    }
+
+    [Fact]
+    public async Task A_value_in_another_spelling_of_the_tests_unit_is_auto_validated_and_one_in_another_unit_waits()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        await Em360RanGlucoseQcTodayAsync(lab);
+        var inPerCent = await ReceivedFastingSugarSampleAsync(admin, lab);
+        var inMillimoles = await ReceivedFastingSugarSampleAsync(admin, lab);
+
+        // mg% is milligrams per 100 mL, the test's mg/dL as Indian analysers print it; mmol/L is another unit.
+        (await AnalyserSendsAsync("EM360", $"O|1|{inPerCent.Barcode}||^^^GLU|R", "R|1|^^^GLU|92|mg%||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await AnalyserSendsAsync("EM360", $"O|1|{inMillimoles.Barcode}||^^^GLU|R", "R|1|^^^GLU|5.1|mmol/L||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+
+        var trusted = (await SheetAsync(lab, inPerCent)).Lines.ShouldHaveSingleItem();
+        (trusted.Status, trusted.AutoValidated, trusted.InstrumentUnit).ShouldBe((LabResultStatus.Verified, true, "mg%"));
+        var held = (await SheetAsync(lab, inMillimoles)).Lines.ShouldHaveSingleItem();
+        held.Status.ShouldBe(LabResultStatus.Entered);
+        held.HeldReasons.ShouldContain("The analyser sent the value in mmol/L, not in the test's unit, mg/dL.");
+    }
+
+    [Fact]
+    public async Task A_strip_readers_words_go_on_the_urine_tests_as_their_answers_and_the_readers_own_word_is_kept()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+
+        // A urine strip reader of the test's own, its protein and nitrite channels mapped as the masters screen maps them.
+        var reader = "URS" + Letters(5).ToUpperInvariant();
+        await admin.PostAsync<JsonObject>("/api/v1/lab/instruments", new SaveLabInstrumentRequest(
+            reader, "Urine strip reader", "ACON", "U120", LabSection.ClinicalPathology, InstrumentProtocol.Astm,
+            IsBidirectional: false, AutoValidationEnabled: true, Location: null, IsActive: true, Version: null));
+        await MapChannelAsync(admin, "UR-PROT", reader, "PRO");
+        await MapChannelAsync(admin, "UR-NIT", reader, "NIT");
+        await MapChannelAsync(admin, "UR-GLU", reader, "GLU");
+        var urine = await ReceivedSampleAsync(admin, lab, "LAB-URINE-RE");
+
+        // "NEG", "POS" and "++" in the reader's words; a glucose as a concentration needs the strip maker's chart.
+        (await AnalyserSendsAsync(reader, $"O|1|{urine.Barcode}||^^^PRO|R",
+            "R|1|^^^PRO|NEG|||||F", "R|2|^^^NIT|POS|||||F", "R|3|^^^GLU|250 mg/dL|||||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+
+        var sheet = await SheetAsync(lab, urine);
+        var protein = sheet.Lines.Single(l => l.TestCode == "UR-PROT");
+        (protein.Value, protein.InstrumentValue, protein.InstrumentCode).ShouldBe(("Nil", "NEG", reader));
+        var nitrite = sheet.Lines.Single(l => l.TestCode == "UR-NIT");
+        (nitrite.Value, nitrite.InstrumentValue, nitrite.Flag).ShouldBe(("Positive", "POS", ResultFlag.Abnormal));
+        sheet.Lines.Single(l => l.TestCode == "UR-GLU").Value.ShouldBeNull();
+        var kept = (await UnmatchedAsync(lab, reader)).ShouldHaveSingleItem();
+        (kept.Reason, kept.Value).ShouldBe((UnmatchedResultReason.InvalidValue, "250 mg/dL"));
+        await DiscardAsync(lab, kept.Id);
+
+        // A reading sent without a sample id, put on the right tube's protein by the technician: read the same way.
+        var second = await ReceivedSampleAsync(admin, lab, "LAB-URINE-RE");
+        (await AnalyserSendsAsync(reader, "O|1||||R", "R|1|^^^PRO|TR|||||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        var sentAlone = (await UnmatchedAsync(lab, reader)).ShouldHaveSingleItem();
+        await AssignAsync(lab, sentAlone.Id, (await SheetAsync(lab, second)).Lines.Single(l => l.TestCode == "UR-PROT").ResultId);
+        var assigned = (await SheetAsync(lab, second)).Lines.Single(l => l.TestCode == "UR-PROT");
+        (assigned.Value, assigned.InstrumentValue, assigned.Status).ShouldBe(("Trace", "TR", LabResultStatus.Entered));
+    }
+
+    [Fact]
+    public async Task Channels_an_analyser_sends_that_no_test_maps_are_listed_until_mapped_or_ignored_and_the_lab_is_told_once()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+
+        // A chemistry analyser of the test's own, sending its whole profile for a tube that needs the fasting sugar.
+        var analyser = "CHM" + Letters(5).ToUpperInvariant();
+        await admin.PostAsync<JsonObject>("/api/v1/lab/instruments", new SaveLabInstrumentRequest(
+            analyser, "Chemistry analyser", "HORIBA", "Yumizen C150", LabSection.Biochemistry, InstrumentProtocol.Astm,
+            IsBidirectional: false, AutoValidationEnabled: true, Location: null, IsActive: true, Version: null));
+        await MapChannelAsync(admin, "LAB-FBS", analyser, "GLU");
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+
+        // GLU goes on the tube; CHOL maps a test the tube did not need; CA, CHOL-T and NA/K map no test at all.
+        (await AnalyserSendsAsync(analyser, $"O|1|{tube.Barcode}||^^^GLU|R",
+            "R|1|^^^GLU|95|mg/dL||N||F", "R|2|^^^CHOL|180|mg/dL||N||F", "R|3|^^^CA|9.1|mg/dL||N||F",
+            "R|4|^^^CHOL-T|182|mg/dL||N||F", "R|5|^^^NA/K|33.6|||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+
+        (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Value.ShouldBe("95");
+        var listed = await ChannelsAsync(lab, analyser);
+        listed.Select(c => c.ChannelCode).ShouldBe(["CA", "CHOL-T", "NA/K"]);
+        var calcium = listed[0];
+        (calcium.TimesSeen, calcium.LastValue, calcium.LastUnit, calcium.Mapping, calcium.Ignored)
+            .ShouldBe((1, "9.1", "mg/dL", $"{analyser}:CA", (IgnoredAnalyserChannelDto?)null));
+        listed[2].Mapping.ShouldBeNull("a mapping cannot hold '/', so the lab is told rather than shown a code it cannot save");
+
+        // Whoever manages the masters is told once, with every channel the analyser sent for the first time.
+        var told = await ToldAsync(admin, analyser);
+        told.ShouldHaveSingleItem().Body.ShouldNotBeNull().ShouldContain("CA, CHOL-T, NA/K");
+        told[0].Link.ShouldBe("/lab/setup?tab=analysers");
+
+        // A message without a sample id is kept for the lab, and its channels are noted too: CA again, PHOS for the first time.
+        (await AnalyserSendsAsync(analyser, "O|1||||R", "R|1|^^^CA|9.4|mg/dL||N||F", "R|2|^^^PHOS|3.8|mg/dL||N||F"))
+            .ShouldNotBeNull().Accepted.ShouldBeTrue();
+        listed = await ChannelsAsync(lab, analyser);
+        listed.Select(c => c.ChannelCode).ShouldBe(["CA", "CHOL-T", "NA/K", "PHOS"]);
+        (listed[0].TimesSeen, listed[0].LastValue).ShouldBe((2, "9.4"));
+        listed[0].LastSeenAt.ShouldBeGreaterThan(calcium.LastSeenAt);
+        listed[0].FirstSeenAt.ShouldBe(calcium.FirstSeenAt);
+        told = await ToldAsync(admin, analyser);
+        told.Count.ShouldBe(2);
+        told[0].Body.ShouldNotBeNull().ShouldContain("sent PHOS, which");
+
+        // Mapped in a test as the list says to write it, CHOL-T leaves the list, and has nothing left to ignore.
+        var cholesterol = listed[1];
+        await MapChannelAsync(admin, "CHOL", analyser, "CHOL-T");
+        (await ChannelsAsync(lab, analyser)).Select(c => c.ChannelCode).ShouldBe(["CA", "NA/K", "PHOS"]);
+        using (var mapped = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/instruments/channels/{cholesterol.Id}/ignore",
+                   new IgnoreAnalyserChannelRequest("Reported from the CHOL channel.")))
+        {
+            mapped.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            (await mapped.Content.ReadAsStringAsync(Ct)).ShouldContain("lab.channel_mapped");
+        }
+
+        // A technician sees the list but does not decide what goes on no report; whoever manages the masters does, with why.
+        var ratio = listed[2];
+        var why = "A ratio the analyser works out; the report shows sodium and potassium.";
+        using (var refused = await lab.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore", new IgnoreAnalyserChannelRequest(why)))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        using (var unsaid = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore", new IgnoreAnalyserChannelRequest("No")))
+        {
+            unsaid.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        }
+
+        using (var ignored = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore", new IgnoreAnalyserChannelRequest(why)))
+        {
+            ignored.StatusCode.ShouldBe(HttpStatusCode.NoContent, await ignored.Content.ReadAsStringAsync(Ct));
+        }
+
+        var decision = (await ChannelsAsync(lab, analyser)).Single(c => c.ChannelCode == "NA/K").Ignored.ShouldNotBeNull();
+        (decision.Reason, decision.IgnoredBy).ShouldBe((why, (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).DisplayName));
+        using (var twice = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore", new IgnoreAnalyserChannelRequest(why)))
+        {
+            twice.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+            (await twice.Content.ReadAsStringAsync(Ct)).ShouldContain("lab.channel_ignored", Case.Sensitive, "said as already ignored, not as a clash in the database");
+        }
+
+        // Taken back, it waits to be mapped again; both decisions are in the audit trail.
+        using (var back = await admin.SendRawAsync(HttpMethod.Delete, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore"))
+        {
+            back.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+
+        (await ChannelsAsync(lab, analyser)).Single(c => c.ChannelCode == "NA/K").Ignored.ShouldBeNull();
+        using (var none = await admin.SendRawAsync(HttpMethod.Delete, $"/api/v1/lab/instruments/channels/{ratio.Id}/ignore"))
+        {
+            none.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        }
+
+        var trail = (await admin.GetAsync<PagedResult<AuditEventDto>>("/api/v1/admin/audit?entityType=IgnoredAnalyserChannel&pageSize=200")).Items
+            .Where(e => e.Details?.Contains(ratio.InstrumentId.ToString(), StringComparison.Ordinal) == true)
+            .Select(e => e.Action)
+            .ToList();
+        trail.ShouldBe(["IgnoredAnalyserChannel.delete", "IgnoredAnalyserChannel.create"], ignoreOrder: true);
+
+        // An analyser taken out of use sends nothing more: its channels leave the list with it.
+        var saved = (await admin.GetAsync<List<LabInstrumentDto>>("/api/v1/lab/instruments")).Single(i => i.Code == analyser);
+        await admin.PutAsync($"/api/v1/lab/instruments/{saved.Id}", new SaveLabInstrumentRequest(
+            saved.Code, saved.Name, saved.Manufacturer, saved.Model, saved.Section, saved.Protocol, saved.IsBidirectional,
+            saved.AutoValidationEnabled, saved.Location, IsActive: false, saved.Version));
+        (await ChannelsAsync(lab, analyser)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Two_messages_at_once_with_a_new_channel_count_it_twice_and_tell_the_lab_once()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var analyser = "IMM" + Letters(5).ToUpperInvariant();
+        await admin.PostAsync<JsonObject>("/api/v1/lab/instruments", new SaveLabInstrumentRequest(
+            analyser, "Immunoassay analyser", "Boditech", "AFIAS-1", LabSection.Biochemistry, InstrumentProtocol.Astm,
+            IsBidirectional: false, AutoValidationEnabled: true, Location: null, IsActive: true, Version: null));
+
+        // Two results without a sample id, each kept for the lab, sent on two connections at the same moment.
+        var sends = await Task.WhenAll(
+            AnalyserSendsAsync(analyser, "O|1||||R", "R|1|^^^TNI|0.02|ng/mL||N||F"),
+            AnalyserSendsAsync(analyser, "O|1||||R", "R|1|^^^TNI|0.03|ng/mL||N||F"));
+
+        sends.ShouldAllBe(outcome => outcome != null && outcome.Accepted);
+        (await ChannelsAsync(lab, analyser)).ShouldHaveSingleItem().TimesSeen.ShouldBe(2);
+        (await ToldAsync(admin, analyser)).ShouldHaveSingleItem().Body.ShouldNotBeNull().ShouldContain("sent TNI, which");
     }
 
     [Fact]
@@ -427,6 +741,7 @@ public sealed class LabAnalyserTests(HospitalServer server)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        await Em360RanGlucoseQcTodayAsync(lab);
         var preliminary = await ReceivedFastingSugarSampleAsync(admin, lab);
         var otherUnit = await ReceivedFastingSugarSampleAsync(admin, lab);
 
@@ -581,13 +896,49 @@ public sealed class LabAnalyserTests(HospitalServer server)
             .ShouldBeInRange(before.AddSeconds(-1), DateTimeOffset.UtcNow.AddSeconds(1));
     }
 
+    /// <summary>
+    /// The EM 360 runs each of its glucose controls today, on its target mean, so today's QC for glucose on it is accepted
+    /// and its results may auto-validate. The demo seed runs them on the morning the server starts, which is yesterday once
+    /// a run of the tests goes past midnight in India.
+    /// </summary>
+    private static async Task Em360RanGlucoseQcTodayAsync(ApiClient lab)
+    {
+        var fbs = (await lab.GetAsync<PagedResult<LabTestListItem>>("/api/v1/lab/tests?search=LAB-FBS")).Items.Single(t => t.Code == "LAB-FBS");
+        var controls = (await lab.GetAsync<List<QcLotDto>>($"/api/v1/lab/qc/lots?labTestId={fbs.Id}"))
+            .Where(l => l.InstrumentCode == "EM360" && !l.IsExpired).ToList();
+        controls.ShouldNotBeEmpty();
+        foreach (var control in controls)
+        {
+            var run = await lab.PostAsync<QcRunDto>("/api/v1/lab/qc/runs", new RecordQcRunRequest(control.Id, control.TargetMean, null));
+            run.Outcome.ShouldBe(QcOutcome.Accepted);
+        }
+    }
+
     /// <summary>A walk-in fasting blood sugar, collected and received in the lab (the counter's payment gate waived).</summary>
-    private async Task<CreatedSample> ReceivedFastingSugarSampleAsync(ApiClient admin, ApiClient lab)
+    private Task<CreatedSample> ReceivedFastingSugarSampleAsync(ApiClient admin, ApiClient lab) => ReceivedSampleAsync(admin, lab, "LAB-FBS");
+
+    /// <summary>
+    /// Maps the analyte <paramref name="code"/> to <paramref name="instrument"/>'s channel as well, as the masters screen
+    /// saves it: an analyser of the test's own, so other tests' analysers are untouched.
+    /// </summary>
+    private static async Task MapChannelAsync(ApiClient admin, string code, string instrument, string channel)
+    {
+        var listed = (await admin.GetAsync<PagedResult<LabTestListItem>>($"/api/v1/lab/tests?search={code}")).Items.Single(t => t.Code == code);
+        var t = await admin.GetAsync<LabTestDetail>($"/api/v1/lab/tests/{listed.Id}");
+        await admin.PutAsync($"/api/v1/lab/tests/{t.Id}", new SaveLabTestRequest(
+            t.Code, t.Name, t.ShortName, t.Section, t.SpecimenType, t.Container, t.Method, t.TatHours, t.Loinc, t.LoincName, t.ServiceItemId,
+            t.IsOrderable, t.IsPanel, t.ResultType, t.Unit, t.Decimals, t.Options, [.. t.InstrumentChannelCodes, $"{instrument}:{channel}"], t.QcGroup,
+            t.DeltaThresholdPercent, t.AllowAutoValidation, t.Preparation, t.DrawSeparately, t.Interpretation, t.DefaultReferralLabId, t.DisplayOrder,
+            t.IsActive, t.Version));
+    }
+
+    /// <summary>A walk-in order for the test <paramref name="code"/>, its one tube collected and received in the lab.</summary>
+    private async Task<CreatedSample> ReceivedSampleAsync(ApiClient admin, ApiClient lab, string code)
     {
         var patient = await RegisterPatientAsync();
-        var fbs = (await lab.GetAsync<PagedResult<LabTestListItem>>("/api/v1/lab/tests?search=LAB-FBS")).Items.Single(t => t.Code == "LAB-FBS");
+        var test = (await lab.GetAsync<PagedResult<LabTestListItem>>($"/api/v1/lab/tests?search={code}")).Items.Single(t => t.Code == code);
         var order = await lab.PostAsync<LabOrderCreated>("/api/v1/lab/orders", new CreateLabOrderRequest(
-            patient.Id, null, [fbs.Id], OrderPriority.Routine, LabOrderSource.WalkIn, null, null, null));
+            patient.Id, null, [test.Id], OrderPriority.Routine, LabOrderSource.WalkIn, null, null, null));
         var tube = order.Samples.ShouldHaveSingleItem();
 
         // A walk-in test is drawn only once paid; these tests are about the analyser, so the counter waives that here.
@@ -627,6 +978,25 @@ public sealed class LabAnalyserTests(HospitalServer server)
         return await server.Services.GetRequiredService<ILabMessageProcessor>().SubmitResultsAsync(instrument, results, raw, Ct);
     }
 
+    /// <summary>The channels <paramref name="analyser"/> sends that no test maps, as Lab setup lists them.</summary>
+    private static async Task<List<AnalyserChannelDto>> ChannelsAsync(ApiClient api, string analyser) =>
+        [.. (await api.GetAsync<List<AnalyserChannelDto>>("/api/v1/lab/instruments/channels")).Where(c => c.InstrumentCode == analyser)];
+
+    /// <summary>
+    /// The notifications <paramref name="user"/> was sent about channels <paramref name="analyser"/> sends that no test
+    /// maps, newest first: read where they are kept, as other tests notify the same user meanwhile.
+    /// </summary>
+    private async Task<List<UserNotification>> ToldAsync(ApiClient user, string analyser)
+    {
+        var userId = (await user.GetAsync<AuthUser>("/api/v1/auth/me")).Id;
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        return await db.Set<UserNotification>().AsNoTracking()
+            .Where(n => n.UserId == userId && EF.Functions.Like(n.Title, analyser + " sends %"))
+            .OrderByDescending(n => n.CreatedAt)
+            .ToListAsync(Ct);
+    }
+
     private static Task<ResultSheet> SheetAsync(ApiClient api, CreatedSample tube) => api.GetAsync<ResultSheet>($"/api/v1/lab/samples/{tube.Id}/results");
 
     /// <summary>The facility's analyser results kept aside, found by sample barcode, analyser or channel.</summary>
@@ -642,6 +1012,14 @@ public sealed class LabAnalyserTests(HospitalServer server)
         assigned.StatusCode.ShouldBe(HttpStatusCode.NoContent, await assigned.Content.ReadAsStringAsync(Ct));
     }
 
+    /// <summary>A lab user sets aside for good an analyser result kept for the lab, with the reason.</summary>
+    private static async Task DiscardAsync(ApiClient lab, Guid unmatchedId)
+    {
+        using var discarded = await lab.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/unmatched-results/{unmatchedId}/discard",
+            new DiscardUnmatchedResultRequest("A strip concentration, read against the strip maker's chart by hand."));
+        discarded.StatusCode.ShouldBe(HttpStatusCode.NoContent, await discarded.Content.ReadAsStringAsync(Ct));
+    }
+
     /// <summary>A time as an analyser in the lab writes it (ASTM, the lab's zone).</summary>
     private static string Stamp(DateTimeOffset at) => TimeZoneInfo.ConvertTime(at, India).ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
 
@@ -655,7 +1033,7 @@ public sealed class LabAnalyserTests(HospitalServer server)
     private async Task<(Guid DeviceId, string Secret)> EnrolDeviceAsync(
         ApiClient admin, DeviceKind kind, Guid? facilityId = null)
     {
-        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
+        var code = await server.EnrollmentCodeAsync(admin,
             new CreateEnrollmentCodeRequest(kind, facilityId, "Lab PC for serial analysers", 30));
         var enrolled = await server.Anonymous(ownAddress: true).PostAsync<EnrollDeviceResponse>("/api/v1/devices/enroll",
             new EnrollDeviceRequest(code.Code, "Lab PC " + Guid.NewGuid().ToString("N")[..6], "LAB-PC-1", "Windows 11", "1.0.0"));
@@ -669,11 +1047,11 @@ public sealed class LabAnalyserTests(HospitalServer server)
     private static async Task<SessionInfo> CurrentSessionAsync(ApiClient client) =>
         (await client.GetAsync<List<SessionInfo>>("/api/v1/auth/sessions")).Single(s => s.IsCurrent);
 
-    private static Task EnableGatewayAsync(ApiClient admin) =>
-        admin.SaveSettingAsync("integrations.lab", new SaveSettingRequest(JsonNode.Parse("""{"enabled":true}"""), null, false, null));
+    private Task EnableGatewayAsync(ApiClient admin) =>
+        server.SaveSettingAsync(admin, "integrations.lab", new SaveSettingRequest(JsonNode.Parse("""{"enabled":true}"""), null, false, null));
 
-    private static Task SetPaymentGateAsync(ApiClient admin, Guid facilityId, bool required) =>
-        admin.SaveSettingAsync("lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
+    private Task SetPaymentGateAsync(ApiClient admin, Guid facilityId, bool required) =>
+        server.SaveSettingAsync(admin, "lab.requirePaymentBeforeCollection", new SaveSettingRequest(JsonValue.Create(required), facilityId, false, null));
 
     private ApiClient AgentClient(Guid deviceId, string secret)
     {

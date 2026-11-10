@@ -20,6 +20,16 @@ internal static class OtClinicalEndpoints
         group.MapPost("/safety-checklist/{phase}", ConfirmSafety)
             .RequirePermission(SpecialtyCarePermissions.OtChecklists).WithValidation<RecordChecklistRequest>();
 
+        // Swab, needle and instrument counts, each witnessed by a second member of the team; a count that does not tally is
+        // settled before the Sign-out (maker-checker slice 10).
+        group.MapPost("/counts", async (Guid id, RecordSurgicalCountRequest r, OtClinicalService s, CancellationToken ct) =>
+                (await s.RecordCountAsync(id, r, ct)).ToNoContent())
+            .RequirePermission(SpecialtyCarePermissions.OtChecklists).WithValidation<RecordSurgicalCountRequest>();
+        group.MapPost("/counts/discrepancies/{discrepancyId:guid}/resolve",
+                async (Guid id, Guid discrepancyId, ResolveCountDiscrepancyRequest r, OtClinicalService s, CancellationToken ct) =>
+                    (await s.ResolveDiscrepancyAsync(id, discrepancyId, r, ct)).ToOk())
+            .RequirePermission(SpecialtyCarePermissions.OtChecklists).WithValidation<ResolveCountDiscrepancyRequest>();
+
         group.MapGet("/anaesthesia", GetAnaesthesia).RequirePermission(SpecialtyCarePermissions.OtRead);
         group.MapPut("/anaesthesia", async (Guid id, SaveAnaesthesiaRecordRequest r, OtClinicalService s, CancellationToken ct) =>
                 (await s.SaveAnaesthesiaAsync(id, r, ct)).ToOk())
@@ -40,6 +50,12 @@ internal static class OtClinicalEndpoints
         group.MapDelete("/materials/{materialId:guid}", async (Guid id, Guid materialId, OtClinicalService s, CancellationToken ct) =>
                 (await s.RemoveMaterialAsync(id, materialId, ct)).ToNoContent())
             .RequirePermission(SpecialtyCarePermissions.OtMaterials);
+
+        // Once the operation has started a line is corrected, not removed: 202 with the request the OT in-charge decides.
+        group.MapPost("/materials/{materialId:guid}/corrections",
+                async (Guid id, Guid materialId, CorrectSurgeryMaterialRequest r, OtClinicalService s, CancellationToken ct) =>
+                    (await s.RequestCorrectionAsync(id, materialId, r, ct)).ToHttpResult(asked => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
+            .RequirePermission(SpecialtyCarePermissions.OtMaterials).WithValidation<CorrectSurgeryMaterialRequest>();
     }
 
     /// <summary>Phase in the route: sign-in, time-out or sign-out (enum names are accepted too).</summary>
@@ -82,13 +98,14 @@ internal static class OtClinicalEndpoints
         return access ?? TypedResults.Ok(OtClinicalService.ToDto(note));
     }
 
-    private static async Task<IResult> ListMaterials(Guid id, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> ListMaterials(Guid id, HospitalDbContext db, OtClinicalService clinical, CancellationToken ct)
     {
         var materials = await db.Set<SurgeryMaterial>().AsNoTracking()
             .Where(m => m.SurgeryBookingId == id)
             .OrderBy(m => m.CreatedAt)
             .ToListAsync(ct);
-        return TypedResults.Ok(materials.Select(OtClinicalService.ToDto).ToList());
+        var pending = await clinical.PendingCorrectionsAsync(materials.Select(m => m.Id).ToList(), ct);
+        return TypedResults.Ok(materials.Select(m => OtClinicalService.ToDto(m, pending.GetValueOrDefault(m.Id))).ToList());
     }
 
     /// <summary>Restricted-record guard plus PHI access audit; returns a problem result when access is refused.</summary>

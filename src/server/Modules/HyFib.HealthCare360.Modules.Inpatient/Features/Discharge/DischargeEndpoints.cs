@@ -19,9 +19,13 @@ internal static class DischargeEndpoints
             .RequirePermission(InpatientPermissions.Discharge).WithValidation<RevokeDischargeRequest>();
         group.MapGet("/clearance", async (Guid id, DischargeService discharges, CancellationToken ct) => (await discharges.ClearanceAsync(id, ct)).ToOk())
             .RequireAnyPermission(InpatientPermissions.Discharge, InpatientPermissions.AdmissionsRead);
+        // Closed at once (200), or, for an absconded patient or a death pending post-mortem, asked for (202 with the request).
         group.MapPost("/complete", async (Guid id, CompleteDischargeRequest r, DischargeService discharges, CancellationToken ct) =>
-                (await discharges.CompleteAsync(id, r, ct)).ToOk())
+                (await discharges.CompleteAsync(id, r, ct)).ToHttpResult(outcome =>
+                    outcome.Asked is { } asked ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked) : TypedResults.Ok(outcome.Discharged)))
             .RequirePermission(InpatientPermissions.Discharge).WithValidation<CompleteDischargeRequest>();
+        group.MapGet("/death-certificate", async (Guid id, DischargeService discharges, CancellationToken ct) => (await discharges.DeathCertificateAsync(id, ct)).ToOk())
+            .RequireAnyPermission(InpatientPermissions.Discharge, InpatientPermissions.AdmissionsRead);
 
         app.MapGet("/api/v1/inpatient/discharges/pending", Pending)
             .WithTags("Discharge")

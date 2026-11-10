@@ -97,6 +97,13 @@ public sealed class PatientPolicy : AuditableEntity
 
     public string? Notes { get; set; }
 
+    /// <summary>
+    /// Who last recorded what verification vouches for (payer, TPA, number, member, holder, validity, sum insured, co-pay,
+    /// in use): the policy's recorder, then whoever changed it. They may not verify it; a second person does. Null on a
+    /// policy recorded before this was kept: its recorder (<see cref="AuditableEntity.CreatedBy"/>) stands for it.
+    /// </summary>
+    public Guid? TermsRecordedBy { get; set; }
+
     public bool IsValidOn(DateOnly date) => IsActive && ValidFrom <= date && date <= ValidTo;
 
     public void MarkVerified(Guid? userId, string? notes, DateTimeOffset now)
@@ -104,5 +111,15 @@ public sealed class PatientPolicy : AuditableEntity
         VerifiedAt = now;
         VerifiedBy = userId;
         VerificationNotes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+    }
+
+    /// <summary>Whether <paramref name="userId"/> recorded the terms a verification would vouch for, and so may not verify them.</summary>
+    public bool RecordedBy(Guid? userId) => userId is not null && userId == (TermsRecordedBy ?? CreatedBy);
+
+    /// <summary>What verification vouched for changed: the verification is withdrawn, and whoever changed it may not verify it.</summary>
+    public void TermsChanged(Guid? userId)
+    {
+        (VerifiedAt, VerifiedBy, VerificationNotes) = (null, null, null);
+        TermsRecordedBy = userId;
     }
 }

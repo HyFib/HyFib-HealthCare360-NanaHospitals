@@ -9,11 +9,13 @@ import {
   DialogSurface,
   DialogTitle,
   Field,
+  Input,
   makeStyles,
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
   Spinner,
+  Subtitle2,
   Text,
   tokens,
 } from '@fluentui/react-components';
@@ -41,6 +43,7 @@ import {
   patientKeys,
   patientQueries,
   portalFamilyApi,
+  type FamilyDeskCodeSent,
   type LinkFamilyMemberRequest,
   type PortalFamilyLinkDto,
 } from './api';
@@ -57,8 +60,10 @@ import {
   toLinkRequest,
   type ShareFormValues,
 } from './portalAccess';
+import { PortalLinksSection } from './PortalLinksSection';
 
 const useStyles = makeStyles({
+  heading: { margin: '0 0 8px' },
   intro: { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px', maxWidth: '72ch' },
   toolbar: { display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' },
   cell: {
@@ -84,6 +89,7 @@ interface Ending {
  * family members on other numbers. Staff with `patients.consents` share the records with a family member's number once
  * they have checked who both people are and the patient (or their guardian) has agreed, and stop sharing when asked.
  * Links made in the portal, with a code sent to the patient's number, show here too. An ended link stays as history.
+ * Above them, the links to the portal sent to the patient's own number (PortalLinksSection).
  */
 export function PortalAccessPanel({ patientId }: { patientId: string }) {
   const styles = useStyles();
@@ -128,6 +134,10 @@ export function PortalAccessPanel({ patientId }: { patientId: string }) {
 
   return (
     <>
+      <PortalLinksSection patientId={patientId} />
+      <Subtitle2 as="h2" className={styles.heading}>
+        Who sees the records in the portal
+      </Subtitle2>
       <div className={styles.intro}>
         {access.data && <Text>{ownNumberText(access.data)}</Text>}
         <Caption1 className={styles.muted}>
@@ -292,16 +302,17 @@ export function ShareForm({
     defaultValues: shareFormDefaults(),
   });
   const agreedBy = useWatch({ control: form.control, name: 'agreedBy' });
+  // Step two: the code sent to the patient's own number, entered as the patient reads it out (MAKER-CHECKER.md, slice 14).
+  const [sent, setSent] = useState<{ code: FamilyDeskCodeSent; request: LinkFamilyMemberRequest } | null>(null);
+  const [code, setCode] = useState('');
+  const [codeProblem, setCodeProblem] = useState<string | null>(null);
 
   const save = useMutation({
-    mutationFn: (request: LinkFamilyMemberRequest) => portalFamilyApi.link(patientId, request),
-    onSuccess: (_, request) => {
-      notify.success(
-        'Records shared',
-        `${formatPhone(request.accountPhone)} sees the patient’s records the next time they open the patient portal.`,
-      );
-      void queryClient.invalidateQueries({ queryKey: patientKeys.portalFamily(patientId) });
-      onClose();
+    mutationFn: (request: LinkFamilyMemberRequest) => portalFamilyApi.sendCode(patientId, request),
+    onSuccess: (result, request) => {
+      setSent({ code: result, request });
+      setCode('');
+      setCodeProblem(null);
     },
     onError: (error) => {
       const { fields, other } = shareServerErrors(error);
@@ -312,7 +323,98 @@ export function ShareForm({
     },
   });
 
-  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
+  const confirm = useMutation({
+    mutationFn: () => {
+      if (!sent) {
+        throw new Error('No code was sent.');
+      }
+      return portalFamilyApi.confirm(patientId, sent.code.codeId, code.trim(), sent.request.consentGivenBy);
+    },
+    onSuccess: () => {
+      notify.success(
+        'Records shared',
+        `${formatPhone(sent?.request.accountPhone ?? '')} sees the patient’s records the next time they open the patient portal.`,
+      );
+      void queryClient.invalidateQueries({ queryKey: patientKeys.portalFamily(patientId) });
+      onClose();
+    },
+    onError: (error) => {
+      if (isApiError(error) && error.isValidation) {
+        setCodeProblem(
+          'That is not the code sent to the patient. Check it with the patient; a few wrong tries spend it.',
+        );
+      } else if (isApiError(error)) {
+        setCodeProblem(error.userMessage);
+      } else {
+        setCodeProblem('Please try again.');
+      }
+    },
+  });
+
+  const guard = useUnsavedChanges({
+    dirty: form.formState.isDirty,
+    busy: save.isPending || confirm.isPending,
+    onClose,
+  });
+
+  if (sent) {
+    return (
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (code.trim()) {
+            confirm.mutate();
+          }
+        }}
+        noValidate
+      >
+        <DialogBody>
+          <DialogTitle>Enter the patient’s code</DialogTitle>
+          <DialogContent className={styles.form}>
+            <MessageBar intent="info" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle>Code sent to the patient’s own number</MessageBarTitle>A code went by SMS to{' '}
+                {sent.code.sentTo}, the patient’s registered mobile number. Ask the patient to read it out. Nothing is
+                shared with {formatPhone(sent.request.accountPhone)} until it is entered. It works until{' '}
+                {formatDateTime(sent.code.expiresAt)}.
+              </MessageBarBody>
+            </MessageBar>
+            <Field
+              label="Code from the patient’s SMS"
+              required
+              validationMessage={codeProblem ?? undefined}
+              validationState={codeProblem ? 'error' : 'none'}
+            >
+              <Input
+                value={code}
+                onChange={(_, data) => setCode(data.value)}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={10}
+              />
+            </Field>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={guard.requestClose} disabled={confirm.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={() => save.mutate(sent.request)} disabled={save.isPending || confirm.isPending}>
+              Send a new code
+            </Button>
+            <Button
+              type="submit"
+              appearance="primary"
+              disabled={!code.trim() || confirm.isPending}
+              icon={confirm.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
+            >
+              Share
+            </Button>
+          </DialogActions>
+        </DialogBody>
+        {guard.dialogs}
+      </form>
+    );
+  }
 
   return (
     <form
@@ -329,6 +431,20 @@ export function ShareForm({
             The family member signs in to the patient portal with their own number and sees the patient’s appointments,
             prescriptions, reports, bills and discharge summaries, and can book and pay for them.
           </Text>
+          {ownPhone ? (
+            <Caption1 block>
+              A code goes by SMS to the patient’s own number, {formatPhone(ownPhone)}: the patient reads it out to you
+              before anything is shared.
+            </Caption1>
+          ) : (
+            <MessageBar intent="warning" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle>No mobile number to send the code to</MessageBarTitle>
+                The patient has no mobile number of their own, so a code cannot be sent to them and their records cannot
+                be shared in the portal. Record their number first.
+              </MessageBarBody>
+            </MessageBar>
+          )}
           <TextField
             control={form.control}
             name="accountPhone"
@@ -403,10 +519,10 @@ export function ShareForm({
           <Button
             type="submit"
             appearance="primary"
-            disabled={!form.formState.isValid || save.isPending}
+            disabled={!form.formState.isValid || save.isPending || !ownPhone}
             icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
-            Share
+            Send code to the patient
           </Button>
         </DialogActions>
       </DialogBody>

@@ -4,14 +4,31 @@ using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 namespace HyFib.HealthCare360.Modules.Pharmacy.Services;
 
 /// <summary>
-/// The pharmacy counter's day for Billing's Tally day book (INT-TALLY), through the Platform contract
-/// <see cref="ICounterSalesSource"/>. In-patient issues are not here: they reach the IP bill as charges.
+/// The pharmacy counter's day for Billing's Tally day book (INT-TALLY), and its card and UPI payments for the card and
+/// UPI settlement match, through the Platform contract <see cref="ICounterSalesSource"/>. In-patient issues are not here:
+/// they reach the IP bill as charges.
 /// </summary>
 internal sealed class PharmacyDayBookSource(HospitalDbContext db) : ICounterSalesSource
 {
     public const string Key = "pharmacy";
 
     public string Counter => Key;
+
+    /// <summary>
+    /// Card and UPI payments on invoices, later collections included, and money paid back to a card or by UPI on a return
+    /// or a cancellation (a refund carries the payment's own reference, under which the acquirer reports it). A cancelled
+    /// invoice's card payment is still here: the terminal settles it, and its refund settles too.
+    /// </summary>
+    public async Task<IReadOnlyList<CounterCardPayment>> GetCardPaymentsAsync(Guid facilityId, DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken) =>
+        await (
+                from p in db.Set<PharmacyPayment>().AsNoTracking()
+                join s in db.Set<PharmacySale>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on p.PharmacySaleId equals s.Id
+                where s.FacilityId == facilityId && (p.Mode == PaymentMode.Card || p.Mode == PaymentMode.Upi) && p.ReceivedAt >= @from && p.ReceivedAt < to
+                orderby p.ReceivedAt
+                select new CounterCardPayment(
+                    p.Id, s.InvoiceNumber, p.Mode == PaymentMode.Card ? CounterPaymentMode.Card : CounterPaymentMode.Upi, p.Amount, p.Reference, p.ReceivedAt,
+                    p.IsRefund, s.Status == SaleStatus.Cancelled))
+            .ToListAsync(cancellationToken);
 
     public async Task<CounterSalesDay> GetDayAsync(Guid facilityId, DateOnly date, CancellationToken cancellationToken)
     {
@@ -29,12 +46,16 @@ internal sealed class PharmacyDayBookSource(HospitalDbContext db) : ICounterSale
         var rates = await db.Set<PharmacySaleItem>().AsNoTracking()
             .Where(i => returnedItems.Contains(i.Id))
             .ToDictionaryAsync(i => i.Id, i => i.GstRate, cancellationToken);
-        var interState = (await (
+        var returnedSales = await (
                 from i in db.Set<PharmacySaleItem>().AsNoTracking()
                 join s in db.Set<PharmacySale>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on i.PharmacySaleId equals s.Id
-                where returnedItems.Contains(i.Id) && s.IsInterState
-                select i.Id)
-            .ToListAsync(cancellationToken)).ToHashSet();
+                where returnedItems.Contains(i.Id)
+                select new { i.Id, s.IsInterState, s.SoldAt })
+            .ToListAsync(cancellationToken);
+        var interState = returnedSales.Where(r => r.IsInterState).Select(r => r.Id).ToHashSet();
+
+        // A return after the time to reduce the sale's GST has passed (CGST Act s.34(2)) takes back the value, not the GST.
+        var timeBarred = returnedSales.Where(r => date > GstCreditNotes.LastDay(HospitalClock.ToLocalDate(r.SoldAt))).Select(r => r.Id).ToHashSet();
 
         // Balances on account paid at the counter on the day: payments after the sale, of invoices still standing.
         var collected = await (
@@ -45,11 +66,20 @@ internal sealed class PharmacyDayBookSource(HospitalDbContext db) : ICounterSale
                 select new PharmacyCollection(payment.Mode, payment.Amount))
             .ToListAsync(cancellationToken);
 
-        return PharmacyDayBook.Day(date, sales, returns, rates, collected, interState);
+        // Money paid back on the day's returns, in the mode each part went back in (a sale paid by card and in cash is paid
+        // back in both): the refunds of invoices still standing, as a cancelled invoice leaves the books with its refunds.
+        var paidBack = await (
+                from payment in db.Set<PharmacyPayment>()
+                join sale in db.Set<PharmacySale>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on payment.PharmacySaleId equals sale.Id
+                where sale.FacilityId == facilityId && sale.Status != SaleStatus.Cancelled && payment.IsRefund && payment.ReceivedAt >= start && payment.ReceivedAt < end
+                select new PharmacyCollection(payment.Mode, payment.Amount))
+            .ToListAsync(cancellationToken);
+
+        return PharmacyDayBook.Day(date, sales, returns, rates, collected, interState, timeBarred, paidBack);
     }
 }
 
-/// <summary>A balance on account paid at the counter.</summary>
+/// <summary>Money that changed hands at the counter, by mode: a balance on account paid, or a refund paid back.</summary>
 internal sealed record PharmacyCollection(PaymentMode Mode, decimal Amount);
 
 /// <summary>
@@ -58,8 +88,11 @@ internal sealed record PharmacyCollection(PaymentMode Mode, decimal Amount);
 /// <item>Invoices sold that day, at their GST rates. Money taken with the invoice counts as paid at the counter; the
 /// rest of the invoice went on the patient's account. A same-day cancellation removes the invoice, with its payments
 /// and its refund, so it never reaches the books.</item>
-/// <item>Returns booked that day: the GST is carved out of each line's refund at the line's rate. Money paid back counts
-/// by mode; what was set against a balance due comes off the account.</item>
+/// <item>Returns booked that day: the GST is carved out of each line's refund at the line's rate, as the return's credit
+/// note to a registered buyer tells the Invoice Registration Portal; a return after the time to reduce the sale's GST
+/// (CGST Act s.34(2)) takes back the value alone. Money paid back counts by the mode it went back in (the refunds of the
+/// day: a return of a sale paid by card and in cash goes back in both); what was set against
+/// a balance due comes off the account.</item>
 /// <item>Balances on account paid later, by mode.</item>
 /// </list>
 /// </summary>
@@ -71,7 +104,9 @@ internal static class PharmacyDayBook
         IReadOnlyList<PharmacySaleReturn> returns,
         IReadOnlyDictionary<Guid, decimal> returnedItemRates,
         IReadOnlyList<PharmacyCollection> collected,
-        IReadOnlySet<Guid>? interStateItems = null)
+        IReadOnlySet<Guid>? interStateItems = null,
+        IReadOnlySet<Guid>? timeBarredItems = null,
+        IReadOnlyList<PharmacyCollection>? paidBack = null)
     {
         var standing = sales.Where(s => s.Status != SaleStatus.Cancelled).ToList();
         var sold = new CounterDocuments(
@@ -86,11 +121,15 @@ internal static class PharmacyDayBook
             Tax(returns.SelectMany(r => r.Items).Select(i =>
             {
                 var rate = returnedItemRates.GetValueOrDefault(i.SaleItemId);
-                var split = GstCalculator.FromInclusive(i.RefundAmount, rate, interStateItems?.Contains(i.SaleItemId) == true);
+                var split = timeBarredItems?.Contains(i.SaleItemId) == true
+                    ? new TaxBreakup(Money.Round(i.RefundAmount), 0m, 0m, 0m, 0m)
+                    : GstCalculator.FromInclusive(i.RefundAmount, rate, interStateItems?.Contains(i.SaleItemId) == true);
                 return (rate, split.Taxable, split.Cgst, split.Sgst, split.Igst);
             })),
             0m,
-            ByMode(returns.Where(r => r.CashRefund > 0).Select(r => (r.RefundMode == PaymentMode.Credit ? PaymentMode.Cash : r.RefundMode, r.CashRefund))));
+            paidBack is not null
+                ? ByMode(paidBack.Select(p => (p.Mode, p.Amount)))
+                : ByMode(returns.Where(r => r.CashRefund > 0).Select(r => (r.RefundMode == PaymentMode.Credit ? PaymentMode.Cash : r.RefundMode, r.CashRefund))));
 
         return new CounterSalesDay(PharmacyDayBookSource.Key, date, sold, returned, ByMode(collected.Select(c => (c.Mode, c.Amount))));
     }

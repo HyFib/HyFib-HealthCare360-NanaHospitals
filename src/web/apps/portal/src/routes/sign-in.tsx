@@ -20,8 +20,7 @@ import {
   VideoRegular,
 } from '@fluentui/react-icons';
 import { auth, featureOf, isApiError, isFeatureDisabled } from '@hc360/core';
-import { useQueryClient } from '@tanstack/react-query';
-import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { CheckingBrowser } from '@/components/CheckingBrowser';
 import { PortalUnavailable } from '@/components/FeatureOff';
@@ -34,21 +33,18 @@ import { useFeatureRefusals } from '@/lib/featureSwitches';
 import { useNow } from '@/lib/hooks';
 import {
   isValidMobile,
-  OTP_LENGTH,
   otpDeadline,
   resendCooldownSeconds,
-  sanitizeCode,
   sanitizePhoneInput,
   secondsUntil,
-  THROTTLED_COOLDOWN_SECONDS,
+  throttledWaitSeconds,
   toE164,
 } from '@/lib/otp';
-import { useProfileStore } from '@/lib/profileStore';
 import { prepareProof, withProof } from '@/lib/proofOfWork';
 import { safeRedirect } from '@/lib/redirect';
 import { ensurePortalSession } from '@/lib/session';
 import { IDLE_SIGN_OUT_MINUTES, isSessionEndReason, type SessionEndReason } from '@/lib/sessionEnd';
-import { profileQueries } from '@/modules/profiles/api';
+import { CodeStep, type CodeChallenge } from '@/modules/signIn/CodeStep';
 import { LogoMark } from '@/shell/BrandMark';
 import { useHospitalName } from '@/shell/hooks';
 import { LanguageChoice } from '@/shell/LanguageMenu';
@@ -173,8 +169,6 @@ const useStyles = makeStyles({
   },
   muted: { color: tokens.colorNeutralForeground2 },
   form: { display: 'flex', flexDirection: 'column', gap: '16px' },
-  code: { letterSpacing: '0.5em', fontSize: '24px', textAlign: 'center', fontVariantNumeric: 'tabular-nums' },
-  row: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
   small: { color: tokens.colorNeutralForeground3, display: 'flex', alignItems: 'center', gap: '6px' },
   links: { display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-start' },
   linkRow: { display: 'inline-flex', alignItems: 'center', gap: '8px', minHeight: '32px' },
@@ -189,38 +183,30 @@ const useStyles = makeStyles({
 
 type Step = 'phone' | 'code';
 
-interface Challenge {
-  id: string;
-  maskedPhone: string;
-  deadline: number;
-}
-
 function SignInPage() {
   const styles = useStyles();
   const t = useT();
   const { language } = useLanguage();
   const { redirect: target, ended } = Route.useSearch();
   const hospital = useHospitalName();
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
   // The hospital may have turned the portal (or video consultations) off: then there is nothing to sign in to.
   const features = usePortalFeatures();
 
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
-  const [challenge, setChallenge] = useState<Challenge | null>(null);
+  const [challenge, setChallenge] = useState<CodeChallenge | null>(null);
   const [sent, setSent] = useState(0);
   const [resendAt, setResendAt] = useState(0);
-  const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState<'send' | 'verify' | null>(null);
+  const [sending, setSending] = useState(false);
   // The anti-automation check (SRS SEC-06) is solved in the background while the number is typed; the page says it is
   // checking only when that takes longer than usual.
   const [checking, setChecking] = useState(false);
-  const codeInput = useRef<HTMLInputElement>(null);
   const phoneInput = useRef<HTMLInputElement>(null);
-  const now = useNow(1000, step === 'code');
+  // The clock runs on both steps. A wait can start on the number's step ("too many codes", or a resend wait carried back
+  // by "Change number"); a clock stopped there would hold its countdown, and the Send code button, until a reload.
+  const now = useNow(1000);
 
   useEffect(() => {
     if (features.portal) {
@@ -230,7 +216,6 @@ function SignInPage() {
 
   const digits = sanitizePhoneInput(phone);
   const resendIn = secondsUntil(resendAt, now);
-  const expiresIn = challenge ? secondsUntil(challenge.deadline, now) : 0;
 
   const requestCode = async (resend: boolean) => {
     if (!isValidMobile(digits)) {
@@ -238,7 +223,7 @@ function SignInPage() {
       phoneInput.current?.focus();
       return;
     }
-    setBusy('send');
+    setSending(true);
     setError(null);
     setNotice(null);
     try {
@@ -257,11 +242,10 @@ function SignInPage() {
         deadline: otpDeadline(result.expiresAt, receivedAt),
       });
       setResendAt(receivedAt + resendCooldownSeconds(count) * 1000);
-      setCode('');
       setStep('code');
       if (resend) {
+        // The code step starts again for the new code (keyed by its challenge), with its field focused.
         setNotice(t('auth.resent'));
-        codeInput.current?.focus();
       }
     } catch (err) {
       if (isFeatureDisabled(err)) {
@@ -270,7 +254,7 @@ function SignInPage() {
       }
       const throttled = errorCode(err) === 'auth.otp_throttled' || (isApiError(err) && err.status === 429);
       if (throttled) {
-        setResendAt(Date.now() + THROTTLED_COOLDOWN_SECONDS * 1000);
+        setResendAt(Date.now() + throttledWaitSeconds(isApiError(err) ? err.data : undefined) * 1000);
       }
       setError(
         throttled
@@ -280,64 +264,7 @@ function SignInPage() {
             : describeError(err, t).message,
       );
     } finally {
-      setBusy(null);
-    }
-  };
-
-  const verify = async (value: string) => {
-    if (!challenge) {
-      return;
-    }
-    if (value.length !== OTP_LENGTH) {
-      setError(t('auth.code.incomplete'));
-      codeInput.current?.focus();
-      return;
-    }
-    setBusy('verify');
-    setError(null);
-    setNotice(null);
-    try {
-      // No number with the code's proof: the server asks the address's work only, and finds the number from the
-      // challenge when the code is wrong.
-      await withProof('otp', (headers) => auth.verifyOtp(challenge.id, value, { language, headers }), {
-        onSlow: setChecking,
-      });
-      // A new person may be signing in on this tab: nothing cached from an earlier session may be shown.
-      queryClient.removeQueries({ queryKey: ['portal'] });
-      let profiles: { id: string }[] = [];
-      try {
-        profiles = await queryClient.fetchQuery(profileQueries.list());
-      } catch {
-        // The signed-in layout loads (and retries) the family list itself.
-      }
-      const store = useProfileStore.getState();
-      if (!profiles.some((profile) => profile.id === store.profileId)) {
-        store.select(profiles.length === 1 ? (profiles[0]?.id ?? null) : null);
-      }
-      await navigate({ href: safeRedirect(target), replace: true });
-    } catch (err) {
-      if (isFeatureDisabled(err)) {
-        useFeatureRefusals.getState().refuse(featureOf(err));
-        return;
-      }
-      setCode('');
-      const expired = errorCode(err) === 'auth.challenge_expired' || (isApiError(err) && err.status === 401);
-      setError(
-        expired
-          ? t('auth.code.expired')
-          : fieldError(err, 'code')
-            ? t('auth.code.wrong')
-            : isApiError(err) && err.status === 429
-              ? t('auth.throttled')
-              : describeError(err, t).message,
-      );
-      if (expired) {
-        setResendAt(Math.min(resendAt, Date.now()));
-      }
-      prepareProof('otp');
-      codeInput.current?.focus();
-    } finally {
-      setBusy(null);
+      setSending(false);
     }
   };
 
@@ -346,15 +273,9 @@ function SignInPage() {
     void requestCode(false);
   };
 
-  const onCodeSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    void verify(code);
-  };
-
   const changeNumber = () => {
     setStep('phone');
     setChallenge(null);
-    setCode('');
     setError(null);
     setNotice(null);
   };
@@ -461,17 +382,17 @@ function SignInPage() {
                           {t('auth.phone.prefix')}
                         </span>
                       }
-                      disabled={busy !== null}
+                      disabled={sending}
                     />
                   </Field>
                   <Button
                     type="submit"
                     appearance="primary"
                     size="large"
-                    disabled={busy !== null || resendIn > 0}
-                    icon={busy === 'send' ? <Spinner size="tiny" aria-hidden /> : undefined}
+                    disabled={sending || resendIn > 0}
+                    icon={sending ? <Spinner size="tiny" aria-hidden /> : undefined}
                   >
-                    {busy === 'send'
+                    {sending
                       ? t('common.sending')
                       : resendIn > 0
                         ? t('auth.resendIn', { time: formatCountdown(resendIn * 1000) })
@@ -487,71 +408,20 @@ function SignInPage() {
                 </form>
               </>
             ) : (
-              <>
-                <div className={styles.heading}>
-                  <h1 className={styles.title}>{t('auth.code.title')}</h1>
-                  <Text className={styles.muted}>{t('auth.code.sentTo', { phone: challenge.maskedPhone })}</Text>
-                </div>
-                {notice && (
-                  <MessageBar intent="success">
-                    <MessageBarBody>{notice}</MessageBarBody>
-                  </MessageBar>
-                )}
-                <form className={styles.form} onSubmit={onCodeSubmit} noValidate>
-                  <Field
-                    label={t('auth.code.label')}
-                    required
-                    validationState={error ? 'error' : 'none'}
-                    validationMessage={error ?? undefined}
-                    hint={
-                      expiresIn > 0
-                        ? t('auth.code.expiresIn', { time: formatCountdown(expiresIn * 1000) })
-                        : t('auth.code.expiredShort')
-                    }
-                  >
-                    <Input
-                      ref={codeInput}
-                      value={code}
-                      onChange={(_, data) => {
-                        const next = sanitizeCode(data.value);
-                        setCode(next);
-                        setError(null);
-                        if (next.length === OTP_LENGTH && busy === null) {
-                          void verify(next);
-                        }
-                      }}
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      autoFocus
-                      size="large"
-                      input={{ className: styles.code, maxLength: 12 }}
-                      disabled={busy === 'verify'}
-                    />
-                  </Field>
-                  <Button
-                    type="submit"
-                    appearance="primary"
-                    size="large"
-                    disabled={busy !== null || code.length !== OTP_LENGTH}
-                    icon={busy === 'verify' ? <Spinner size="tiny" aria-hidden /> : undefined}
-                  >
-                    {busy === 'verify' ? t('auth.verifying') : t('auth.verify')}
-                  </Button>
-                  <CheckingBrowser active={checking} />
-                  <div className={styles.row}>
-                    <Button appearance="subtle" onClick={changeNumber} disabled={busy !== null}>
-                      {t('auth.changeNumber')}
-                    </Button>
-                    <Button
-                      appearance="secondary"
-                      onClick={() => void requestCode(true)}
-                      disabled={busy !== null || resendIn > 0}
-                    >
-                      {resendIn > 0 ? t('auth.resendIn', { time: formatCountdown(resendIn * 1000) }) : t('auth.resend')}
-                    </Button>
-                  </div>
-                </form>
-              </>
+              <CodeStep
+                key={challenge.id}
+                challenge={challenge}
+                notice={notice}
+                problem={error}
+                onDismissProblem={() => setError(null)}
+                resendIn={resendIn}
+                sending={sending}
+                checkingResend={checking}
+                onResend={() => void requestCode(true)}
+                onChangeNumber={changeNumber}
+                onExpired={() => setResendAt((at) => Math.min(at, Date.now()))}
+                redirect={target}
+              />
             )}
             {features.portal && (
               <div className={styles.links}>

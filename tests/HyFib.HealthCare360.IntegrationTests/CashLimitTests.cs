@@ -50,7 +50,6 @@ public sealed class CashLimitTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
-        await HospitalDayAsync();
         var patientId = await RegisterPatientAsync(frontOffice);
         await using var stay = await AdmitAsync(frontOffice, doctor, billing, patientId);
         var account = stay.Account;
@@ -111,7 +110,7 @@ public sealed class CashLimitTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var patientId = await RegisterPatientAsync(frontOffice);
         await using var stay = await AdmitAsync(frontOffice, doctor, billing, patientId);
         var account = stay.Account;
@@ -175,7 +174,6 @@ public sealed class CashLimitTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
-        await HospitalDayAsync();
         var patientId = await RegisterPatientAsync(frontOffice);
         await using var stay = await AdmitAsync(frontOffice, doctor, billing, patientId);
         var account = stay.Account;
@@ -205,7 +203,6 @@ public sealed class CashLimitTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
-        await HospitalDayAsync();
         var patientId = await RegisterPatientAsync(frontOffice);
         await using var stay = await AdmitAsync(frontOffice, doctor, billing, patientId);
         var account = stay.Account;
@@ -246,7 +243,7 @@ public sealed class CashLimitTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var patientId = await RegisterPatientAsync(frontOffice);
         await using var stay = await AdmitAsync(frontOffice, doctor, billing, patientId);
         var account = stay.Account;
@@ -289,7 +286,6 @@ public sealed class CashLimitTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
-        await HospitalDayAsync();
         var patientId = await RegisterPatientAsync(frontOffice);
         await using var stay = await AdmitAsync(frontOffice, doctor, billing, patientId);
         var account = stay.Account;
@@ -326,8 +322,7 @@ public sealed class CashLimitTests(HospitalServer server)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWM");
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(server, ward.Id);
         var admission = await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,
@@ -529,23 +524,6 @@ public sealed class CashLimitTests(HospitalServer server)
     }
 
     // ---------------------------------------------------------------------- look-ups
-
-    /// <summary>
-    /// Today in the hospital's calendar (IST). The limit counts a day's cash, so the test must not straddle midnight:
-    /// started in the last two minutes of a day, it waits for the next.
-    /// </summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var now = clock.GetUtcNow();
-        var untilMidnight = IndiaClock.StartOfDayUtc(IndiaClock.LocalDate(now).AddDays(1)) - now;
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, Ct);
-        }
-
-        return IndiaClock.LocalDate(clock.GetUtcNow());
-    }
 
     private static string Deposits(IpAccountDetail account) => $"/api/v1/billing/ip-accounts/{account.Id}/deposits";
 

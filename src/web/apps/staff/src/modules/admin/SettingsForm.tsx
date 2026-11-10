@@ -6,6 +6,7 @@ import {
   makeStyles,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Radio,
   RadioGroup,
   Spinner,
@@ -36,7 +37,8 @@ import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
 import { z } from 'zod';
 import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
-import type { SettingDto } from './api';
+import { settingsApi, type SaveSettingBody, type SettingChangeCheck, type SettingDto } from './api';
+import { PendingGrantNotice } from './PendingGrantNotice';
 import {
   buildSecretChanges,
   buildSettingChanges,
@@ -95,7 +97,9 @@ const formSchema = (spec: SettingsSpec) =>
 
 /**
  * Edits one group of platform settings (an integration, or AI) as a form. Needs `admin.settings.manage`, which the
- * settings API requires. Credentials are write-only: the form shows whether they are set and can replace them.
+ * settings API requires. Credentials are write-only: the form shows whether they are set and can replace them. A change
+ * that waits for a second administrator (an integration's provider, address or credentials; AI turned on) is asked for
+ * with a reason, which the form asks for only once the server says so; the changes that wait show above the form.
  */
 export function SettingsForm({ spec }: { spec: SettingsSpec }) {
   const canEdit = usePermission('admin.settings.manage');
@@ -184,6 +188,14 @@ function ScopedSettings({
   );
 }
 
+/** The changes a form's values make, credentials only by which of them are replaced: what a check was made for. */
+function standingOf(spec: SettingsSpec, values: FormValues, stored: Record<string, unknown>): string {
+  return JSON.stringify([
+    buildSettingChanges(spec, values, stored),
+    buildSecretChanges(spec, values).map((secret) => [secret.key, Object.keys(secret.value).sort()]),
+  ]);
+}
+
 /** Splits the fields into titled groups (a field with `group` starts a new one). */
 function groupsOf(fields: readonly SettingField[]): { title?: string; fields: SettingField[] }[] {
   const groups: { title?: string; fields: SettingField[] }[] = [];
@@ -220,40 +232,77 @@ function SettingsFormBody({
   const values: FormValues = { ...defaults, ...(watched as FormValues) };
   const target = scope === 'facility' ? facilityId : null;
 
+  const [reason, setReason] = useState('');
+  // The changes the server said wait for a second administrator, for the changes as they stand: any edit asks again.
+  const [checked, setChecked] = useState<{ standing: string; waiting: SettingChangeCheck[] } | null>(null);
+  const waiting = checked?.standing === standingOf(spec, values, scoped.stored) ? checked.waiting : null;
+  const pending = rows.flatMap((row) =>
+    row.pending && (row.facilityId ?? null) === target ? [{ key: row.key, change: row.pending }] : [],
+  );
+
   const save = useMutation({
     mutationFn: async (submitted: FormValues) => {
       const changes = buildSettingChanges(spec, submitted, scoped.stored);
       const secrets = buildSecretChanges(spec, submitted);
       const stored = (key: string) => rows.find((row) => row.key === key && (row.facilityId ?? null) === target);
       const description = (key: string) => (stored(key) ? null : `${spec.title} (set in Administration)`);
-      for (const change of changes) {
-        await api.put(`/api/v1/admin/settings/${encodeURIComponent(change.key)}`, {
-          value: change.value,
-          facilityId: target,
-          secret: false,
-          description: description(change.key),
-          version: stored(change.key)?.version,
-        });
+      const body = (key: string, value: unknown, secret: boolean): SaveSettingBody => ({
+        value,
+        facilityId: target,
+        secret,
+        description: description(key),
+        version: stored(key)?.version,
+      });
+      const saves = [
+        ...changes.map((change) => ({ key: change.key, body: body(change.key, change.value, false) })),
+        ...secrets.map((secret) => ({ key: secret.key, body: body(secret.key, secret.value, true) })),
+      ];
+
+      // First, whether any of it waits for a second administrator: then a reason is asked for before anything is sent.
+      if (!waiting) {
+        const checks: SettingChangeCheck[] = [];
+        for (const { key, body: asked } of saves) {
+          const check = await settingsApi.check(key, asked);
+          if (check.waits) {
+            checks.push(check);
+          }
+        }
+        if (checks.length > 0) {
+          return { kind: 'check' as const, waiting: checks };
+        }
       }
-      for (const secret of secrets) {
-        await api.put(`/api/v1/admin/settings/${encodeURIComponent(secret.key)}`, {
-          value: secret.value,
-          facilityId: target,
-          secret: true,
-          description: description(secret.key),
-          version: stored(secret.key)?.version,
-        });
+
+      let asked = 0;
+      for (const { key, body: change } of saves) {
+        if (await settingsApi.save(key, { ...change, reason: waiting ? reason.trim() : null })) {
+          asked += 1;
+        }
       }
-      return changes.length + secrets.length;
+      return { kind: 'sent' as const, saved: saves.length - asked, asked };
     },
-    onSuccess: (saved, submitted) => {
-      // What the form shows is saved now: leaving does not ask (SRS UX-08).
+    onSuccess: (outcome, submitted) => {
+      if (outcome.kind === 'check') {
+        setChecked({ standing: standingOf(spec, submitted, scoped.stored), waiting: outcome.waiting });
+        return;
+      }
+      // What the form shows is saved, or asked for, now: leaving does not ask (SRS UX-08).
       form.reset(submitted);
-      if (saved === 0) {
+      setChecked(null);
+      setReason('');
+      if (outcome.saved + outcome.asked === 0) {
         notify.info('Nothing to save', 'The settings are already like this.');
         return;
       }
-      notify.success(`${spec.title} settings saved`, 'Changes apply within a minute.');
+      if (outcome.asked > 0) {
+        notify.success(
+          'Asked for approval',
+          outcome.saved > 0
+            ? `${outcome.saved} saved; ${outcome.asked} wait for another administrator who may change settings, and stay as they are until then.`
+            : 'Another administrator who may change settings decides; until then the settings stay as they are.',
+        );
+      } else {
+        notify.success(`${spec.title} settings saved`, 'Changes apply within a minute.');
+      }
       void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
       void queryClient.invalidateQueries({ queryKey: ['admin', 'integrations'] });
       void queryClient.invalidateQueries({ queryKey: ['ai'] });
@@ -277,6 +326,16 @@ function SettingsFormBody({
 
   return (
     <form className={styles.form} onSubmit={(event) => void submit(event)} noValidate>
+      {pending.map(({ key, change }) => (
+        <PendingGrantNotice
+          key={key}
+          approvalId={change.approvalId}
+          what={change.summary}
+          requestedBy={change.requestedBy}
+          requestedAt={change.requestedAt}
+          decides="Another administrator who may change settings decides it; until then the setting stays as it is."
+        />
+      ))}
       {scoped.inherited.length > 0 && (
         <MessageBar intent="info">
           <MessageBarBody>
@@ -333,14 +392,29 @@ function SettingsFormBody({
         </Caption1>
       )}
 
+      {waiting && (
+        <>
+          <MessageBar intent="warning" layout="multiline">
+            <MessageBarBody>
+              <MessageBarTitle>Waits for a second administrator</MessageBarTitle>
+              {waiting.map((check) => `${check.setting}: ${check.from} → ${check.to}`).join('; ')}. Another
+              administrator who may change settings decides; until then the settings stay as they are.
+            </MessageBarBody>
+          </MessageBar>
+          <Field label="Reason, for the administrator who decides" required>
+            <Textarea value={reason} onChange={(_, data) => setReason(data.value)} rows={2} maxLength={500} />
+          </Field>
+        </>
+      )}
+
       <div className={styles.actions}>
         <Button
           type="submit"
           appearance="primary"
           icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : <SaveRegular />}
-          disabled={save.isPending || !form.formState.isDirty}
+          disabled={save.isPending || !form.formState.isDirty || (waiting !== null && !reason.trim())}
         >
-          Save
+          {waiting ? 'Ask for approval' : 'Save'}
         </Button>
         <Button onClick={() => form.reset(defaults)} disabled={save.isPending || !form.formState.isDirty}>
           Undo changes

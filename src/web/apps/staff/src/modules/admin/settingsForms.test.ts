@@ -317,6 +317,66 @@ describe('setting names', () => {
   });
 });
 
+describe('payment gateway settings', () => {
+  const payment = INTEGRATION_SETTINGS.payment as SettingsSpec;
+  const PAY = 'integrations.payment';
+  const CASHFREE_SECRET = 'integrations.payment.cashfree.secret';
+  const provider = id(PAY, 'provider');
+  const clientId = id(PAY, 'cashfreeClientId');
+  const visible = (values: FormValues) => payment.fields.filter((item) => isFieldVisible(item, values)).map(fieldId);
+  const stored = {
+    [PAY]: {
+      enabled: true,
+      provider: 'cashfree',
+      cashfreeBaseUrl: 'https://sandbox.cashfree.com/pg',
+      cashfreeClientId: 'TEST10182934a7c1f0',
+      baseUrl: 'https://api.razorpay.com',
+      keyId: 'rzp_test_1DP5mmOlF5G5ag',
+    },
+  };
+
+  it('offers Cashfree beside Razorpay and shows only the chosen gateway’s account', () => {
+    const select = payment.fields.find((item) => fieldId(item) === provider);
+    expect(select?.options?.map((option) => option.value)).toEqual(['razorpay', 'cashfree', 'simulator']);
+
+    const cashfree = visible(toFormValues(payment, stored));
+    expect(cashfree).toEqual(
+      expect.arrayContaining([id(PAY, 'cashfreeBaseUrl'), clientId, id(PAY, 'paymentLinkCallbackUrl')]),
+    );
+    expect(cashfree).not.toContain(id(PAY, 'keyId'));
+
+    const razorpay = visible({ ...toFormValues(payment, stored), [provider]: 'razorpay' });
+    expect(razorpay).toContain(id(PAY, 'keyId'));
+    expect(razorpay).not.toContain(clientId);
+  });
+
+  it('keeps the other gateway’s account when new payments switch, so the payments it took can still be refunded', () => {
+    const values = { ...toFormValues(payment, stored), [provider]: 'razorpay' };
+    expect(validateSettings(payment, values)).toEqual({});
+    expect(buildSettingChanges(payment, values, stored)).toEqual([
+      { key: PAY, value: { ...stored[PAY], provider: 'razorpay' } },
+    ]);
+  });
+
+  it('checks the Cashfree client id only while Cashfree is chosen', () => {
+    const values = { ...toFormValues(payment, stored), [clientId]: 'not an id' };
+    expect(validateSettings(payment, values)[clientId]).toBe('A Cashfree client id is letters and digits.');
+    expect(validateSettings(payment, { ...values, [provider]: 'razorpay' })).toEqual({});
+  });
+
+  it('saves Cashfree’s client secret under a key of its own, so Razorpay’s credentials are never replaced with it', () => {
+    const values = {
+      ...toFormValues(payment, stored),
+      [replaceFlagId(CASHFREE_SECRET)]: true,
+      [secretFieldId({ key: CASHFREE_SECRET, prop: 'clientSecret' })]: ' cf-secret ',
+    };
+    expect(buildSecretChanges(payment, values)).toEqual([
+      { key: CASHFREE_SECRET, value: { clientSecret: 'cf-secret' } },
+    ]);
+    expect(isValidSettingKey(CASHFREE_SECRET)).toBe(true);
+  });
+});
+
 describe('AI settings', () => {
   const provider = id('ai.provider');
   const baseUrl = id('ai.openai', 'baseUrl');

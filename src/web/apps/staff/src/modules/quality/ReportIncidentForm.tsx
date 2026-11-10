@@ -78,6 +78,8 @@ const schema = z.object({
   sentinelKind: z.enum(SENTINEL_KINDS).nullable(),
   flagAsSentinel: z.boolean(),
   isAnonymous: z.boolean(),
+  // Optional: a report drafted before the question was asked comes back without it.
+  involvesDevice: z.boolean().optional(),
 });
 
 type Values = z.infer<typeof schema>;
@@ -127,6 +129,7 @@ function defaults(): Values {
     sentinelKind: null,
     flagAsSentinel: false,
     isAnonymous: false,
+    involvesDevice: false,
   };
 }
 
@@ -175,6 +178,7 @@ export function ReportIncidentForm({
         sentinelKind: values.sentinelKind,
         flagAsSentinel: values.flagAsSentinel,
         isAnonymous: values.isAnonymous,
+        involvesDevice: values.involvesDevice ?? false,
       });
       draft.clear();
       form.reset(defaults());
@@ -345,6 +349,12 @@ export function ReportIncidentForm({
             name="flagAsSentinel"
             label="Treat as a sentinel (very serious) event"
             hint="Alerts the quality team immediately."
+          />
+          <SwitchField
+            control={form.control}
+            name="involvesDevice"
+            label="A medical device was involved"
+            hint="An implant, instrument, monitor or consumable that failed or caused harm."
           />
         </FormGrid>
         {sentinel && (

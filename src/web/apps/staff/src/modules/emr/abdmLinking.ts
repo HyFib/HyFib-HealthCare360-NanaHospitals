@@ -6,7 +6,15 @@ import { api } from '@/lib/api';
 
 /** A record the server links to an ABHA (`AbdmRecordType` on the server), by its own id. */
 export type AbdmLinkRecordType =
-  'DischargeSummary' | 'LabReport' | 'OpConsultation' | 'Prescription' | 'RadiologyReport' | 'CardiologyReport';
+  | 'DischargeSummary'
+  | 'LabReport'
+  | 'OpConsultation'
+  | 'Prescription'
+  | 'RadiologyReport'
+  | 'CardiologyReport'
+  | 'Immunization'
+  | 'ClinicalNote'
+  | 'HomeReadings';
 
 export interface AbdmLinkRecord {
   type: AbdmLinkRecordType;

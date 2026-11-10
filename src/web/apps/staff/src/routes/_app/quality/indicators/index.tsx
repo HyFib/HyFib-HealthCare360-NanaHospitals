@@ -134,6 +134,7 @@ function IndicatorsPage() {
                         {i.code}
                         {i.nabhReference ? ` · NABH ${i.nabhReference}` : ''} · {humanize(i.frequency)}
                         {i.isActive ? '' : ' · not in use'}
+                        {i.isComputed ? ' · computed by HC360' : ' · entered by hand'}
                       </Caption1>
                     </span>
                   ),
@@ -176,11 +177,13 @@ function IndicatorsPage() {
               ]}
               rowActions={(i) => (
                 <span style={{ display: 'inline-flex', gap: 4 }}>
-                  <Tooltip content="Record this period's value" relationship="label">
-                    <Button size="small" icon={<NotepadRegular />} onClick={() => setRecording(i)}>
-                      Record
-                    </Button>
-                  </Tooltip>
+                  {!i.isComputed && (
+                    <Tooltip content="Record this period's value" relationship="label">
+                      <Button size="small" icon={<NotepadRegular />} onClick={() => setRecording(i)}>
+                        Record
+                      </Button>
+                    </Tooltip>
+                  )}
                   <Tooltip content="Edit definition and target" relationship="label">
                     <Button size="small" appearance="subtle" icon={<EditRegular />} onClick={() => setEditing(i)} />
                   </Tooltip>

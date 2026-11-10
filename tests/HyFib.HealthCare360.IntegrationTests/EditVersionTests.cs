@@ -56,8 +56,9 @@ public sealed class EditVersionTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var userId = await NewUserAsync(admin);
 
-        // The first save creates the limit: there was nothing to load, so there is no version to send.
-        await admin.PutAsync("/api/v1/billing/discount-limits/", new SaveDiscountLimitRequest(userId, 10m, null, "First"));
+        // The first save creates the limit: there was nothing to load, so there is no version to send. (Raising a limit waits
+        // for a second approver: the helper has the other administrator approve it.)
+        await server.SaveDiscountLimitAsync(admin, new SaveDiscountLimitRequest(userId, 10m, null, "First"));
         var first = await LimitAsync(admin, userId);
 
         // A second "first" save, from someone who never saw the limit, would overwrite it unseen.
@@ -66,7 +67,7 @@ public sealed class EditVersionTests(HospitalServer server)
             unseen.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         }
 
-        await admin.PutAsync("/api/v1/billing/discount-limits/", new SaveDiscountLimitRequest(userId, 15m, null, "Seen", first.Version));
+        await server.SaveDiscountLimitAsync(admin, new SaveDiscountLimitRequest(userId, 15m, null, "Seen", first.Version));
         using (var stale = await admin.SendRawAsync(HttpMethod.Put, "/api/v1/billing/discount-limits/", new SaveDiscountLimitRequest(userId, 20m, null, "Stale", first.Version)))
         {
             stale.StatusCode.ShouldBe(HttpStatusCode.Conflict);

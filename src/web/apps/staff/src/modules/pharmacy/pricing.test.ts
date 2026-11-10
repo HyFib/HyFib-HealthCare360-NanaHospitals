@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ipIssueAmount, priceSaleLine, refundFor, saleTotals } from './pricing';
+import type { PharmacyPaymentDto } from './api';
+import { ipIssueAmount, priceSaleLine, refundFor, refundSplit, refundWords, saleTotals } from './pricing';
 
 // Worked with the server's SalePricing / GstCalculator rules (C# decimal, half away from zero).
 describe('pharmacy bill preview', () => {
@@ -64,5 +65,66 @@ describe('pharmacy bill preview', () => {
     expect(refundFor(100, 3, 2, 66.66, 1)).toBe(33.34);
     expect(refundFor(100, 3, 0, 0, 3)).toBe(100);
     expect(refundFor(100, 3, 0, 0, 0)).toBe(0);
+  });
+});
+
+describe('money paid back, as the server pays it', () => {
+  const at = '2026-11-07T05:00:00Z';
+  const card: PharmacyPaymentDto = {
+    id: 'p-card',
+    mode: 'Card',
+    amount: 600,
+    reference: '627910123456',
+    receivedAt: at,
+    isRefund: false,
+  };
+  const cash: PharmacyPaymentDto = {
+    id: 'p-cash',
+    mode: 'Cash',
+    amount: 400,
+    reference: null,
+    receivedAt: at,
+    isRefund: false,
+  };
+  const due: PharmacyPaymentDto = {
+    id: 'p-due',
+    mode: 'Credit',
+    amount: 200,
+    reference: null,
+    receivedAt: at,
+    isRefund: false,
+  };
+
+  it('goes back to the card a card sale was paid by, never in cash', () => {
+    expect(refundSplit([card], 600)).toEqual([
+      { paymentId: 'p-card', mode: 'Card', amount: 600, reference: '627910123456' },
+    ]);
+    expect(refundWords(refundSplit([card], 600))).toBe('₹600.00 back to the card (RRN or approval code 627910123456)');
+  });
+
+  it('shares a partial refund in proportion, to the paisa, and leaves out what is on credit', () => {
+    expect(refundSplit([card, cash, due], 100).map((p) => [p.mode, p.amount])).toEqual([
+      ['Cash', 40],
+      ['Card', 60],
+    ]);
+    // 3333 paise: 1333.2 to the cash, 1999.8 to the card; the paisa left over goes to the larger remainder.
+    expect(refundSplit([card, cash], 33.33).map((p) => p.amount)).toEqual([13.33, 20]);
+  });
+
+  it('pays back no more than each payment has left after earlier refunds', () => {
+    const refunded: PharmacyPaymentDto = {
+      id: 'r1',
+      mode: 'Card',
+      amount: 540,
+      reference: '627910123456',
+      receivedAt: at,
+      isRefund: true,
+      refundOfPaymentId: 'p-card',
+    };
+    expect(refundSplit([card, cash, refunded], 1000).map((p) => [p.mode, p.amount])).toEqual([
+      ['Cash', 400],
+      ['Card', 60],
+    ]);
+    expect(refundWords([])).toBe('Nothing is paid back');
   });
 });

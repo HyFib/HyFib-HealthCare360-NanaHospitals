@@ -36,7 +36,7 @@ public static class PartitionedTables
 {
     public const string AuditEvents = "audit.audit_events";
 
-    /// <summary>The append-only, hash-chained audit trail, kept at least ten years (SEC-04).</summary>
+    /// <summary>The append-only, hash-chained audit trail, kept permanently (SEC-04).</summary>
     public static readonly PartitionedTable Audit = new("audit", "audit_events", "occurred_at", AppendOnly: true);
 
     /// <summary>Every SMS, WhatsApp message and e-mail sent to patients and staff.</summary>
@@ -534,8 +534,13 @@ internal sealed class PartitionMaintenanceJob(IServiceScopeFactory scopes, TimeP
         {
             try
             {
+                // As the schema's owner where it has one: adding a partition changes the table (DatabaseOwner).
                 await using var scope = scopes.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<PartitionMaintenance>().RunAsync(stoppingToken);
+                var maintenance = scope.ServiceProvider.GetRequiredService<DatabaseOwner>().Create<PartitionMaintenance>(scope.ServiceProvider, out var owner);
+                await using (owner)
+                {
+                    await maintenance.RunAsync(stoppingToken);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

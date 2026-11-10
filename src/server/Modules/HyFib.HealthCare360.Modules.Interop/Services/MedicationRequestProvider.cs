@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Modules.Interop.Search;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using R4 = Hl7.Fhir.Model;
 
@@ -19,8 +20,10 @@ internal sealed class MedicationRequestProvider(HospitalDbContext db, ReferenceD
             return ResourceLookup.Missing;
         }
 
+        // Removed lines and prescriptions too, only to tell a removed line (410) from one that never was (404); what is shared
+        // is read below with every filter.
         var state = await (from i in db.Set<PrescriptionItem>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).AsNoTracking()
-                           join p in db.Set<Prescription>() on i.PrescriptionId equals p.Id
+                           join p in db.Set<Prescription>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]) on i.PrescriptionId equals p.Id
                            where i.Id == itemId
                            select new RowState(p.PatientId, i.IsDeleted)).FirstOrDefaultAsync(ct);
         if (ResourceLookup.Unavailable(state) is { } unavailable)
@@ -32,10 +35,10 @@ internal sealed class MedicationRequestProvider(HospitalDbContext db, ReferenceD
         return rows.Count == 0 ? ResourceLookup.Missing : ResourceLookup.Found((await MapAsync(rows, ct))[0], state!.PatientId);
     }
 
-    public async Task<IReadOnlyList<R4.Resource>> ListForPatientAsync(Guid patientId, CancellationToken ct)
+    public async Task<SearchCandidates> ListForPatientAsync(Guid patientId, SearchRequest request, PatientAccess access, CancellationToken ct)
     {
         var rows = await SignedLines(i => true, p => p.PatientId == patientId).ToListAsync(ct);
-        return await MapAsync(rows, ct);
+        return new SearchCandidates(await MapAsync(rows, ct));
     }
 
     /// <summary>Lines of signed prescriptions, and of signed ones cancelled later; drafts never leave the hospital.</summary>

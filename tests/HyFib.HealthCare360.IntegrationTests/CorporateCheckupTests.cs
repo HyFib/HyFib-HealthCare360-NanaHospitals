@@ -152,6 +152,8 @@ public sealed class CorporateCheckupTests(HospitalServer server)
         }
 
         (await frontOffice.GetAsync<BookingDto>($"/api/v1/health-checkups/bookings/{analystBooking.Id}")).Status.ShouldBe(BookingStatus.Booked);
+        // The desk opens a visit on the company only on her membership, verified by someone other than whoever recorded it.
+        await server.VerifiedPolicyAsync(analyst, company.Id);
         var companyVisit = await VisitAsync(frontOffice, analyst, PayerType.Corporate, company.Id);
         var linked = await frontOffice.PostAsync<BookingDto>(CheckIn(analystBooking), new CheckInCheckupRequest(companyVisit.Id));
         (linked.Status, linked.VisitId).ShouldBe((BookingStatus.CheckedIn, companyVisit.Id));
@@ -199,6 +201,7 @@ public sealed class CorporateCheckupTests(HospitalServer server)
         (await VisitStatusAsync(frontOffice, abandoned)).ShouldBe(VisitStatus.Cancelled);
 
         // He came in on a visit the desk opened for the company: it is the desk's to close, not the check-up's.
+        await server.VerifiedPolicyAsync(linked, company.Id);
         var deskVisit = await VisitAsync(frontOffice, linked, PayerType.Corporate, company.Id);
         var onDeskVisit = await frontOffice.PostAsync<BookingDto>(CheckIn(bookings[linked]), new CheckInCheckupRequest(deskVisit.Id));
         await frontOffice.PostAsync<BookingDto>($"{Booking(onDeskVisit)}/cancel", new CancelBookingRequest("Rescheduled by HR"));
@@ -214,7 +217,7 @@ public sealed class CorporateCheckupTests(HospitalServer server)
 
         // A role the hospital made for its check-up desk: health check-ups, nothing of billing or insurance.
         var suffix = Letters(8).ToLowerInvariant();
-        var role = await (await server.SignInAsync(HospitalServer.Users.Admin)).PostAsync<RoleDetail>("/api/v1/admin/roles", new SaveRoleRequest(
+        var role = await server.CreateRoleAsync(await server.SignInAsync(HospitalServer.Users.Admin), new SaveRoleRequest(
             "IT check-up desk " + suffix, "Runs corporate check-up drives", [ClinicalPermissions.HealthCheckManage], Version: null));
         await server.CreateStaffAccountAsync("it-checkup-" + suffix, role.Name);
         var desk = await server.SignInAsync("it-checkup-" + suffix);
@@ -270,16 +273,19 @@ public sealed class CorporateCheckupTests(HospitalServer server)
     private static async Task<VisitStatus> VisitStatusAsync(ApiClient frontOffice, BookingDto booking) =>
         (await frontOffice.GetAsync<VisitDetail>($"/api/v1/visits/{booking.VisitId.ShouldNotBeNull()}")).Status;
 
-    /// <summary>A company the hospital has a tie-up with, as the insurance desk adds it to the payer master.</summary>
-    private static Task<PayerDetail> CompanyAsync(ApiClient admin, bool isActive, string? name = null) =>
-        admin.PostAsync<PayerDetail>("/api/v1/insurance/payers", new SavePayerRequest(
+    /// <summary>
+    /// A company the hospital has a tie-up with, as the insurance desk adds it to the payer master and a second person
+    /// approves its terms.
+    /// </summary>
+    private Task<PayerDetail> CompanyAsync(ApiClient admin, bool isActive, string? name = null) =>
+        server.CreatePayerAsync(admin, new SavePayerRequest(
             $"CO{Letters(8).ToUpperInvariant()}", name is null ? $"Acme Steel {Letters(6).ToUpperInvariant()} Ltd" : $"{name} {Letters(4).ToUpperInvariant()}",
             PayerCategory.Corporate, "Meena Iyer", "9876543210", null, null, null, null,
             CreditDays: 45, DefaultCoPayPercent: 0m, PortalUrl: null, IsActive: isActive, Notes: null, Version: null));
 
     /// <summary>A package for adults from 30, with one consultation.</summary>
-    private static Task<PackageDto> PackageFromThirtyAsync(ApiClient admin) =>
-        admin.PostAsync<PackageDto>("/api/v1/health-checkups/packages", new SavePackageRequest(
+    private Task<PackageDto> PackageFromThirtyAsync(ApiClient admin) =>
+        server.SaveCheckupPackageAsync(admin, new SavePackageRequest(
             $"HC-CO{Letters(8).ToUpperInvariant()}", "Employee Annual Checkup", null, PackageGender.Any, MinAgeYears: 30, MaxAgeYears: null, Price: 2400m, IsActive: true,
             [new PackageItemRequest(PackageItemKind.Consultation, null, "GM", PackageGender.Any, null)], Version: null));
 
@@ -305,12 +311,12 @@ public sealed class CorporateCheckupTests(HospitalServer server)
     /// A women's check-up package of the run's own (women of 18 to 55; a blood count for everyone, mammography from 40 and
     /// a general medicine consultation), made from the seeded women's package's tests, with the mammography's name.
     /// </summary>
-    private static async Task<(PackageDto Package, string Mammography)> WomensPackageAsync(ApiClient frontOffice)
+    private async Task<(PackageDto Package, string Mammography)> WomensPackageAsync(ApiClient frontOffice)
     {
         var seeded = (await frontOffice.GetAsync<List<PackageDto>>("/api/v1/health-checkups/packages?search=HC-WOMEN")).Single(p => p.Code == "HC-WOMEN");
         var bloodCount = seeded.Items.Single(i => i.ServiceCode == "LAB-CBC");
         var mammography = seeded.Items.Single(i => i.ServiceCode == "RAD-MAMMO");
-        var package = await frontOffice.PostAsync<PackageDto>("/api/v1/health-checkups/packages", new SavePackageRequest(
+        var package = await server.SaveCheckupPackageAsync(frontOffice, new SavePackageRequest(
             "HC-IT-" + Letters(8).ToUpperInvariant(), "Working women's check-up", null, PackageGender.Female, MinAgeYears: 18, MaxAgeYears: 55,
             Price: 2500m, IsActive: true,
             [

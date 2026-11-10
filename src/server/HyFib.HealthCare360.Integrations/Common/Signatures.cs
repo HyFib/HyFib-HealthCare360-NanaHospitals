@@ -33,6 +33,27 @@ internal static class Signatures
     public static bool VerifyHmacSha256Hex(string? secret, string payload, string? providedHex) =>
         VerifyHmacSha256Hex(secret, Encoding.UTF8.GetBytes(payload), providedHex);
 
+    /// <summary>True when <paramref name="providedBase64"/> is the standard Base64 HMAC-SHA256 of <paramref name="payload"/> (Cashfree's webhooks).</summary>
+    public static bool VerifyHmacSha256Base64(string? secret, string payload, string? providedBase64)
+    {
+        if (string.IsNullOrEmpty(secret) || string.IsNullOrWhiteSpace(providedBase64))
+        {
+            return false;
+        }
+
+        byte[] provided;
+        try
+        {
+            provided = Convert.FromBase64String(providedBase64.Trim());
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        return CryptographicOperations.FixedTimeEquals(HmacSha256(secret, Encoding.UTF8.GetBytes(payload)), provided);
+    }
+
     /// <summary>Base64 HMAC-SHA1 — the algorithm Twilio mandates for <c>X-Twilio-Signature</c>.</summary>
     [SuppressMessage("Security", "CA5350:Do Not Use Weak Cryptographic Algorithms", Justification = TwilioMandatesSha1)]
     public static string HmacSha1Base64(string secret, string payload) =>

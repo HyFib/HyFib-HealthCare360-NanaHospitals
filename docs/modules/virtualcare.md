@@ -7,7 +7,7 @@ Telehealth video consultations (WebRTC signalling, waiting room, chat) and Remot
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare` (layer 5, references Patients and Scheduling) |
 | Schema | `virtualcare` — `telehealth_sessions`, `telehealth_participants`, `telehealth_messages`, `rpm_programs`, `rpm_enrollments`, `rpm_devices`, `rpm_readings`, `rpm_thresholds`, `rpm_alerts` |
 | Requirements | TEL-01..06, RPM-01..05 |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.VirtualCare.Tests` (join tokens, session state machine, thresholds, units, adherence, FHIR and device parsers, device keys, ICE settings, alerts, permissions, prescription notice channels); end to end, `TeleconsultationJourneyTests` and `RpmAlertJourneyTests` (an alert sent to the care team by SMS and WhatsApp, and a failed send tried again) in `tests/HyFib.HealthCare360.IntegrationTests` |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.VirtualCare.Tests` (join tokens, session state machine, thresholds, units, adherence, FHIR and device parsers, device keys, ICE settings, alerts, permissions, prescription notice channels); end to end, `TeleconsultationJourneyTests`, `RpmAlertJourneyTests` (an alert sent to the care team by SMS and WhatsApp, and a failed send tried again) `DeviceReadingSharingTests` (readings shared with another provider through the FHIR API, and moved by a merge of duplicate records), and `AbdmExportTests` and `AbdmDataFlowTests` (home readings as ABDM wellness records, a month at a time) in `tests/HyFib.HealthCare360.IntegrationTests` |
 
 ## Telehealth
 
@@ -27,6 +27,16 @@ Telehealth video consultations (WebRTC signalling, waiting room, chat) and Remot
   requires the doctor's DSC, once it is signed with it: Clinical ERX-04). The call screen's
   "Open chart" and "Notes and prescription" open in a new browser tab, or in HC360 Desktop in a second window, so the
   call keeps running while the doctor writes.
+* **Consent to a video consultation** – the Telemedicine Practice Guidelines 2020 (s.3.3) ask the doctor to have the
+  patient's consent before a teleconsultation. It is the patient's `ConsentType.Telehealth` consent (Patients,
+  `TelehealthConsents`), a standing permission in force until withdrawn or refused again. It is given on the portal when
+  the patient books a video consultation (the booking is refused without it), at the desk (the consents panel), or by
+  voice to the doctor at the start of the call, which the doctor records with what the patient was told
+  (`POST …/telehealth-consent`, on the patient's consents as the doctor's). Without one in force, neither `POST …/start`
+  (422 `telehealth.consent_required`) nor the hub's `Admit` starts a consultation not yet under way; a call already
+  under way goes on if the consent is withdrawn, and the next one does not start. `TelehealthSessionDetail
+  .telehealthConsentGivenAt` says whether one is on record; the call screen asks the doctor to record it before
+  admitting.
 * Sessions nobody started become `Missed` one hour after their scheduled end (job).
 * **Switched off** ([features.md](features.md), `features.telehealth`): every `/api/v1/telehealth` and
   `/api/v1/portal/telehealth` endpoint answers 503 `feature.disabled`, except `end` and `cancel`, so a call already
@@ -45,7 +55,7 @@ The hub accepts anonymous connections (guests have no JWT) and authorises every 
 | `JoinAsClinician(sessionId)` → `TelehealthJoinResult` | staff with `telehealth.consult` at the session's facility | joins the room; sees who is waiting; PHI access audited |
 | `JoinAsPatient(sessionId)` → `TelehealthJoinResult` | portal user with `portal.access` whose `PortalPatientScope` covers the patient | waiting room (re-admitted automatically after a reconnect) |
 | `JoinAsGuest(sessionId, token)` → `TelehealthJoinResult` | holder of the SMS/WhatsApp link | waiting room; sees first names only; 5 failed tries abort the connection |
-| `Admit(sessionId, participantId?)` | clinician | admits one/all waiting; starts the clock |
+| `Admit(sessionId, participantId?)` | clinician | admits one/all waiting; starts the clock; refused while the patient's consent to a video consultation is not on record and the call is not yet under way |
 | `SendOffer` / `SendAnswer(sessionId, sdp)`, `SendIceCandidate(sessionId, candidate)` | admitted participants | relayed to the others in the room |
 | `SendChat(sessionId, text)` → `TelehealthMessageDto` | admitted participants | stored and broadcast (max 2 000 chars); the reply shows it to the sender even if the broadcast could not be sent |
 | `ChangeMediaMode(sessionId, audioOnly)` | admitted participants | audio-only fallback, recorded |
@@ -72,11 +82,12 @@ request or hub call that saved it still succeeds (REL-03), so nobody sends a cha
 | GET | `/sessions?date&to&practitionerId&status&mine` | `telehealth.sessions.read` | ≤ 31 days → `TelehealthSessionListItem[]` |
 | GET | `/sessions/{id}` | `telehealth.sessions.read` | → `TelehealthSessionDetail` (participants with quality, message count, link info); guard + PHI audit |
 | POST | `/sessions` | `telehealth.sessions.manage` | `CreateTelehealthSessionRequest` (appointmentId **or** patientId + practitionerId + scheduledStartAt, durationMinutes 5–120, sendLink) → 201 `TelehealthLinkIssued { sessionId, joinUrl, expiresAt, sent }` |
-| POST | `/sessions/{id}/start` | `telehealth.consult` | → `TelehealthSessionDetail` (visit created, appointment InConsultation) |
+| POST | `/sessions/{id}/start` | `telehealth.consult` | → `TelehealthSessionDetail` (visit created, appointment InConsultation); 422 `telehealth.consent_required` without the patient's consent to a video consultation |
 | POST | `/sessions/{id}/end` | `telehealth.consult` | `EndTelehealthSessionRequest` (qualityNotes) → `TelehealthSessionDetail` |
 | POST | `/sessions/{id}/cancel` | `telehealth.sessions.manage` | `CancelTelehealthSessionRequest` (reason) → `TelehealthSessionDetail` |
 | POST | `/sessions/{id}/resend-link` | `telehealth.sessions.manage` | → `TelehealthLinkIssued` (old link stops working) |
 | POST | `/sessions/{id}/recording-consent` | `telehealth.consult` | `RecordingConsentRequest { granted }` → 204 |
+| POST | `/sessions/{id}/telehealth-consent` | `telehealth.consult` | `TelehealthConsentRequest { notes }` (what the patient was told and agreed to, by voice; required, ≤ 800) → `TelehealthSessionDetail`; adds a `Telehealth` consent unless one is in force; chart access checked |
 | GET | `/sessions/{id}/messages` | `telehealth.sessions.read` | → `TelehealthMessageDto[]` (PHI audit) |
 | POST | `/sessions/{id}/messages` | `telehealth.consult` | `PostTelehealthMessageRequest { text }` → 201 `TelehealthMessageDto` |
 
@@ -149,8 +160,19 @@ refused. Bodies accepted (≤ 500 readings):
 ```
 
 or a FHIR R4 `Observation` / `Bundle` of Observations identified by LOINC (`8480-6`, `8462-4`, `85354-9` panel
-components, `8867-4`, `59408-5`/`2708-6`, `2339-0`/`2345-7`/`41653-7`/`15074-8`, `29463-7`, `8310-5`, `8601-7`
-with `valueCodeableConcept`). 422 when the device is not assigned; 400 when nothing could be accepted.
+components, `8867-4`, `59408-5`/`2708-6`, `2339-0`/`2345-7`/`41653-7`/`15074-8`, `29463-7`, `8310-5`, `8601-7`/`8884-9`
+with `valueCodeableConcept`). A quantity's unit is read from its UCUM `code` when it has one (`/min`, `Cel`, `mm[Hg]`),
+else from its `unit` label: a label is worded for a person ("beats/minute" in ABDM's own heart rate example) and once
+had such a reading refused as an unsupported unit. 422 when the device is not assigned; 400 when nothing could be
+accepted.
+
+**Shared with other providers.** The readings are served by the FHIR API as Observations (`rpm-{readingId}`), coded as
+the clinic's vital signs are, under the patient's record-sharing consent: vital signs with the vital signs, a glucose
+with the lab results, an ECG patch's rhythm with the heart tests ([interop.md](interop.md#observation--home-monitoring-rpm--remote-patient-monitoring)).
+What HC360 serves, this intake reads back as the reading it was (`DeviceReadingObservationsTests`). Through ABDM, an
+enrolment is one care context on the patient's ABHA, sent under a consent for wellness records as a document for each
+month of readings in the dates the consent asks for; staff download a month's, or link the programme, from the
+enrolment ([interop.md](interop.md#abdm-health-records-ehr-08)).
 
 **Alert routing (RPM-03).** New or escalated alerts: SMS/WhatsApp `rpm.alert` to the active care-team practitioners with
 a mobile number (first name + UHID only), queued in the outbox in the ingestion transaction; in-app notification to every
@@ -165,6 +187,7 @@ and the alert stays open in the queue meanwhile (`RpmAlertJourneyTests`).
 | `AppointmentCancelled` | cancels the not-yet-started session, invalidates the link, tells waiting clients |
 | `VisitCreated` (Patients) | links the visit to the appointment's session |
 | `PrescriptionSharedWithPatient` (Clinical) | for a teleconsultation visit: `prescription.shared` to the patient by SMS, at the moment Clinical sends the WhatsApp message it sends for every OP prescription — at signing, or, where the hospital requires the doctor's DSC, once signed with it; once per prescription |
+| `PatientsMerged` (Patients) | in the merge's transaction, across facilities: the duplicate's enrolments with their readings and alerts, the devices assigned to it and its telehealth sessions move to the surviving record, so its charts, alerts and shared record (FHIR) hold everything measured under the duplicate and its devices go on filing readings under the survivor. Set-based statements (readings run to thousands), so one audit entry `virtualcare.records_moved` names the enrolments, alerts, devices and sessions moved and the number of readings (a reading belongs to its enrolment). An enrolment moves as it is: if both records were enrolled in one programme, the survivor has two open enrolments in it for the care team to close one |
 
 No events are raised. Real time: `telehealth.changed` on `Topics.Facility(facilityId)` (`{ id, status, practitionerId }`).
 

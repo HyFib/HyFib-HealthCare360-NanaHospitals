@@ -120,6 +120,34 @@ public sealed class IpIssue : AuditableEntity, IFacilityScoped
         Lines.Select(l => new DispensedLine(l.PrescriptionLineId, l.ItemId, l.ItemName, l.BatchNumber, l.Quantity)).ToList(),
         IssuedAt));
 
+    /// <summary>
+    /// Works out a ward return before anything changes: each line's credit at the price it was charged, and whether it goes
+    /// back on the shelf (only unexpired stock is restocked). One not restocked waits for a second pharmacist.
+    /// </summary>
+    public Result<WardReturnPlan> PlanReturn(IReadOnlyList<ReturnInput> lines, DateOnly today)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        var planned = new List<WardReturnPlanLine>();
+        foreach (var input in lines)
+        {
+            var line = Lines.FirstOrDefault(l => l.Id == input.LineId);
+            if (line is null)
+            {
+                return Error.NotFound(nameof(IpIssueLine), input.LineId);
+            }
+
+            if (input.Quantity <= 0 || input.Quantity > line.Quantity - line.ReturnedQuantity)
+            {
+                return Error.Rule("ward_return.exceeds_issued", $"{line.ItemName}: at most {StockErrors.Format(line.Quantity - line.ReturnedQuantity)} can be returned.");
+            }
+
+            var expired = line.ExpiryDate is { } expiry && expiry < today;
+            planned.Add(new WardReturnPlanLine(line, input.Quantity, Money.Round(input.Quantity * line.UnitPrice), input.Restock && !expired, expired));
+        }
+
+        return new WardReturnPlan(planned);
+    }
+
     /// <summary>Returns part of a line from the ward and gives the credit due at the line's unit price, as it was charged.</summary>
     public Result<decimal> ReturnLine(Guid lineId, decimal quantity, DateTimeOffset now)
     {
@@ -206,4 +234,18 @@ public sealed class WardReturnLine : Entity
     public decimal CreditAmount { get; set; }
     public bool Restocked { get; set; }
     public ChargeReversal ChargeReversal { get; set; }
+}
+
+/// <summary>A line of a ward return as worked out: the credit due, and whether it is restocked or written off.</summary>
+public sealed record WardReturnPlanLine(IpIssueLine Line, decimal Quantity, decimal Credit, bool Restock, bool Expired);
+
+/// <summary>
+/// A ward return worked out before anything changes (<see cref="IpIssue.PlanReturn"/>). Restocked, it is made at once; a
+/// line not restocked (opened, damaged or expired) is a write-off, made only when a second pharmacist approves it.
+/// </summary>
+public sealed record WardReturnPlan(IReadOnlyList<WardReturnPlanLine> Lines)
+{
+    public decimal Credit => Lines.Sum(l => l.Credit);
+
+    public bool WritesOff => Lines.Any(l => !l.Restock);
 }

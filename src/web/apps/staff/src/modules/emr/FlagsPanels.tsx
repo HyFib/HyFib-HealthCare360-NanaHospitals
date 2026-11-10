@@ -42,7 +42,15 @@ import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { usePermission } from '@/lib/permissions';
-import { canRecordNoKnownAllergies, noKnownAllergiesRefusal, recordedByText } from './allergyStatus';
+import { askedForApproval } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
+import { approvalKeys } from '@/modules/approvals/api';
+import {
+  allergyChangeWaits,
+  canRecordNoKnownAllergies,
+  noKnownAllergiesRefusal,
+  recordedByText,
+} from './allergyStatus';
 import {
   ALERT_TYPES,
   alertTypeLabel,
@@ -91,6 +99,7 @@ const updateAllergySchema = z
     reaction: z.string().max(300),
     statusReason: z.string().max(300),
     notes: z.string().max(500),
+    changeReason: z.string().max(300),
   })
   .superRefine((values, ctx) => {
     if (values.status !== 'Active' && !values.statusReason.trim()) {
@@ -287,9 +296,14 @@ function UpdateAllergyForm({
       reaction: allergy.reaction ?? '',
       statusReason: allergy.statusReason ?? '',
       notes: allergy.notes ?? '',
+      changeReason: '',
     },
   });
   const status = useWatch({ control: form.control, name: 'status' });
+  const severity = useWatch({ control: form.control, name: 'severity' });
+  // Taken out of the checks, or a lower severity: a prescriber who did not ask decides it (slice 7).
+  const waits = !voided && !allergy.pendingChange && allergyChangeWaits(allergy, { status, severity });
+  const lowers = waits && status === 'Active';
 
   const save = useMutation({
     mutationFn: (values: UpdateAllergyValues) =>
@@ -300,9 +314,19 @@ function UpdateAllergyForm({
         statusReason: values.statusReason.trim() || null,
         notes: values.notes.trim() || null,
         version: allergy.version,
+        changeReason: values.changeReason.trim() || null,
       }),
-    onSuccess: () => {
-      notify.success('Allergy updated');
+    onSuccess: (saved) => {
+      const asked = askedForApproval(saved);
+      if (asked) {
+        void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. A prescriber who did not ask decides it; until then the allergy stays in the prescribing checks as it is.`,
+        );
+      } else {
+        notify.success('Allergy updated');
+      }
       void queryClient.invalidateQueries({ queryKey: emrKeys.patient(patientId) });
       onClose();
     },
@@ -320,7 +344,18 @@ function UpdateAllergyForm({
   const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
 
   return (
-    <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
+    <form
+      onSubmit={form.handleSubmit((values) => {
+        if (lowers && !values.changeReason.trim()) {
+          form.setError('changeReason', {
+            message: 'Say why: a lower severity goes to a prescriber for approval, and they read your reason.',
+          });
+          return;
+        }
+        save.mutate(values);
+      })}
+      noValidate
+    >
       <DialogBody>
         <DialogTitle>
           {allergy.allergen}
@@ -337,6 +372,15 @@ function UpdateAllergyForm({
             </MessageBar>
           ) : (
             <>
+              {allergy.pendingChange && (
+                <PendingGrantNotice
+                  approvalId={allergy.pendingChange.approvalId}
+                  what={allergy.pendingChange.summary}
+                  requestedBy={allergy.pendingChange.requestedBy}
+                  requestedAt={allergy.pendingChange.requestedAt}
+                  decides="A prescriber who did not ask decides it; until then the allergy stays in the prescribing checks as it is."
+                />
+              )}
               <ChoiceField
                 control={form.control}
                 name="severity"
@@ -359,10 +403,30 @@ function UpdateAllergyForm({
                 <>
                   <MessageBar intent="warning">
                     <MessageBarBody>
-                      An allergy that is not active is no longer checked when prescribing.
+                      <MessageBarTitle>Asked for approval</MessageBarTitle>
+                      An allergy that is not active is no longer checked when prescribing, so a prescriber who did not
+                      ask approves it first; it stays active until then.
                     </MessageBarBody>
                   </MessageBar>
                   <TextField control={form.control} name="statusReason" label="Reason" required maxLength={300} />
+                </>
+              )}
+              {lowers && (
+                <>
+                  <MessageBar intent="warning">
+                    <MessageBarBody>
+                      <MessageBarTitle>Asked for approval</MessageBarTitle>A lower severity softens the alert
+                      prescribers see, so a prescriber who did not ask approves it first; the present severity stays
+                      until then.
+                    </MessageBarBody>
+                  </MessageBar>
+                  <TextField
+                    control={form.control}
+                    name="changeReason"
+                    label="Why the severity is lower"
+                    required
+                    maxLength={300}
+                  />
                 </>
               )}
               <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={500} />
@@ -380,7 +444,7 @@ function UpdateAllergyForm({
               disabled={save.isPending}
               icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
             >
-              Save
+              {waits ? 'Ask for approval' : 'Save'}
             </Button>
           )}
         </DialogActions>
@@ -476,11 +540,18 @@ export function AllergiesTab({ patientId }: { patientId: string }) {
             key: 'status',
             header: 'Status',
             render: (a) => (
-              <StatusBadge
-                status={a.status}
-                tone={a.status === 'Active' ? 'danger' : 'informative'}
-                label={a.status === 'EnteredInError' ? 'Entered in error' : undefined}
-              />
+              <span>
+                <StatusBadge
+                  status={a.status}
+                  tone={a.status === 'Active' ? 'danger' : 'informative'}
+                  label={a.status === 'EnteredInError' ? 'Entered in error' : undefined}
+                />
+                {a.pendingChange && (
+                  <Caption1 block className={styles.muted}>
+                    Change asked for approval: {a.pendingChange.summary}
+                  </Caption1>
+                )}
+              </span>
             ),
           },
           { key: 'recorded', header: 'Recorded', priority: 'low', render: (a) => formatDate(a.recordedAt) },
@@ -535,6 +606,9 @@ export function AllergiesTab({ patientId }: { patientId: string }) {
 
 // ------------------------------------------------------------------------------------------------ alerts
 
+/** Signs clinical notes: a doctor, who alone puts DNR on and asks for it to come off (slice 7). */
+const SIGNS_NOTES = 'clinical.encounters.sign';
+
 const raiseAlertSchema = z
   .object({
     type: z.enum(['Dnr', 'FallRisk', 'Isolation', 'InfectionControl', 'Pregnancy', 'Custom']),
@@ -546,6 +620,13 @@ const raiseAlertSchema = z
   .superRefine((values, ctx) => {
     if (values.type === 'Custom' && !values.title.trim()) {
       ctx.addIssue({ code: 'custom', path: ['title'], message: 'Give the alert a title.' });
+    }
+    if (values.type === 'Dnr' && values.expiresOn) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expiresOn'],
+        message: "A DNR order has no end date: it stays until a doctor takes it off with a second doctor's agreement.",
+      });
     }
     if (values.type === 'InfectionControl' && !values.detail.trim()) {
       ctx.addIssue({
@@ -597,6 +678,8 @@ function RaiseAlertForm({ patientId, onClose }: { patientId: string; onClose: ()
     defaultValues: { type: 'FallRisk', title: '', detail: '', severity: null, expiresOn: null },
   });
   const type = useWatch({ control: form.control, name: 'type' });
+  // DNR records the treating doctor's decision: only someone who signs clinical notes puts it on (slice 7).
+  const canDecideDnr = usePermission(SIGNS_NOTES);
 
   const save = useMutation({
     mutationFn: (values: RaiseAlertValues) =>
@@ -634,7 +717,10 @@ function RaiseAlertForm({ patientId, onClose }: { patientId: string; onClose: ()
             control={form.control}
             name="type"
             label="Alert"
-            options={ALERT_TYPES.map((t) => ({ value: t, label: alertTypeLabel[t] }))}
+            options={ALERT_TYPES.filter((t) => t !== 'Dnr' || canDecideDnr).map((t) => ({
+              value: t,
+              label: alertTypeLabel[t],
+            }))}
           />
           {type === 'Custom' && (
             <TextField control={form.control} name="title" label="Title" required autoFocus maxLength={200} />
@@ -660,7 +746,9 @@ function RaiseAlertForm({ patientId, onClose }: { patientId: string; onClose: ()
                 { value: 'Info', label: 'Information' },
               ]}
             />
-            <DateField control={form.control} name="expiresOn" label="Until (optional)" min={todayIso()} />
+            {type !== 'Dnr' && (
+              <DateField control={form.control} name="expiresOn" label="Until (optional)" min={todayIso()} />
+            )}
           </FormGrid>
         </DialogContent>
         <DialogActions>
@@ -689,16 +777,27 @@ export function AlertsTab({ patientId }: { patientId: string }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canManage = usePermission('clinical.alerts.manage');
+  const canDecideDnr = usePermission(SIGNS_NOTES);
   const [showAll, setShowAll] = useState(false);
   const [raising, setRaising] = useState(false);
   const [deactivating, setDeactivating] = useState<PatientAlertDto | null>(null);
   const alerts = useQuery(emrQueries.alerts(patientId, showAll));
+  const dnr = deactivating?.type === 'Dnr';
 
   const deactivate = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => emrApi.deactivateAlert(id, reason),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       setDeactivating(null);
-      notify.success('Alert removed from the banner');
+      const asked = askedForApproval(saved);
+      if (asked) {
+        void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
+        notify.success(
+          'Asked for approval',
+          'A second doctor decides whether DNR comes off; until then it stays on the banner and the wristband.',
+        );
+      } else {
+        notify.success('Alert removed from the banner');
+      }
       void queryClient.invalidateQueries({ queryKey: emrKeys.patient(patientId) });
     },
     onError: (error) => notify.error(error, 'Could not deactivate the alert'),
@@ -750,7 +849,14 @@ export function AlertsTab({ patientId }: { patientId: string }) {
             header: 'Status',
             render: (a) =>
               a.isActive ? (
-                <StatusBadge status={a.isCurrent ? 'Active' : 'Expired'} />
+                <span>
+                  <StatusBadge status={a.isCurrent ? 'Active' : 'Expired'} />
+                  {a.pendingChange && (
+                    <Caption1 block className={styles.muted}>
+                      Asked to take off by {a.pendingChange.requestedBy}: waiting for a second doctor
+                    </Caption1>
+                  )}
+                </span>
               ) : (
                 <span>
                   <StatusBadge status="Inactive" tone="informative" />
@@ -766,9 +872,15 @@ export function AlertsTab({ patientId }: { patientId: string }) {
         rowActions={
           canManage
             ? (a) =>
-                a.isActive ? (
+                !a.isActive ? null : a.type !== 'Dnr' ? (
                   <Button size="small" onClick={() => setDeactivating(a)}>
                     Deactivate
+                  </Button>
+                ) : a.pendingChange ? (
+                  <Text size={200}>Asked for approval</Text>
+                ) : canDecideDnr ? (
+                  <Button size="small" onClick={() => setDeactivating(a)}>
+                    Ask to take off
                   </Button>
                 ) : null
             : undefined
@@ -779,9 +891,13 @@ export function AlertsTab({ patientId }: { patientId: string }) {
       <RaiseAlertDialog patientId={patientId} open={raising} onClose={() => setRaising(false)} />
       <ReasonDialog
         open={deactivating !== null}
-        title={`Deactivate "${deactivating?.title ?? ''}"?`}
-        description="The alert is removed from the banner. It stays in the history with your reason."
-        confirmLabel="Deactivate"
+        title={dnr ? 'Ask to take Do Not Resuscitate off?' : `Deactivate "${deactivating?.title ?? ''}"?`}
+        description={
+          dnr
+            ? 'Taking DNR off overrides a documented end-of-life decision, so a second doctor agrees first. Until then it stays on the banner and the wristband.'
+            : 'The alert is removed from the banner. It stays in the history with your reason.'
+        }
+        confirmLabel={dnr ? 'Ask for approval' : 'Deactivate'}
         destructive
         busy={deactivate.isPending}
         onConfirm={(reason) => deactivating && deactivate.mutate({ id: deactivating.id, reason })}

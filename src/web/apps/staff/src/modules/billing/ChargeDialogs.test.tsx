@@ -1,6 +1,7 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import { ApiError, todayIso } from '@hc360/core';
 import type * as Ui from '@hc360/ui';
+import { expectNoAxeViolations } from '@hc360/ui/testing';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -257,6 +258,37 @@ describe('CancelChargeDialog', () => {
     expect(notify.success).toHaveBeenCalledWith('Charge cancelled', 'CBC will not be billed.');
     expect(onClose).toHaveBeenCalled();
     await waitFor(() => expect(client.getQueryState(UNBILLED_KEY)?.isInvalidated).toBe(true));
+  });
+
+  it('asks for approval to cancel an OT, procedure, implant or bed-day charge, saying it stays billed until then', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    vi.mocked(billingApi.cancelCharge).mockResolvedValue({
+      id: 'approval-1',
+      kind: 'billing.charge_cancel',
+      summary: 'Cancel Suturing (₹400.00) for Ravi Desk (NH-001)',
+    } as Awaited<ReturnType<typeof billingApi.cancelCharge>>);
+    setUp(
+      <CancelChargeDialog
+        charge={{ ...charge, description: 'Suturing', netAmount: 400, needsApproval: true, onDraft: false }}
+        onClose={onClose}
+      />,
+    );
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Cancel Suturing?' });
+    expect(dialog).toHaveTextContent(
+      'Cancelling it waits for someone else who approves discounts: until then ₹400.00 stays billed to the patient.',
+    );
+    await expectNoAxeViolations();
+    await user.type(within(dialog).getByRole('textbox'), 'Not done, glued instead');
+    await user.click(within(dialog).getByRole('button', { name: 'Ask for approval' }));
+
+    await waitFor(() => expect(billingApi.cancelCharge).toHaveBeenCalledWith('charge-7', 'Not done, glued instead'));
+    expect(notify.success).toHaveBeenCalledWith(
+      'Asked for approval',
+      expect.stringContaining('Someone else who approves discounts decides it'),
+    );
+    expect(onClose).toHaveBeenCalled();
   });
 
   it('shows the server problem when the charge is already billed', async () => {

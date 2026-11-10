@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Services;
 
@@ -23,14 +24,53 @@ internal static class DoctorFeeEndpoints
         payouts.MapPost("/payouts/{id:guid}/pay", PayPayout).RequirePermission(BillingPermissions.PayoutsManage).WithValidation<PayPayoutRequest>();
         payouts.MapDelete("/payouts/{id:guid}", DiscardPayout).RequirePermission(BillingPermissions.PayoutsManage);
         payouts.MapGet("/statements", Statement).RequirePermission(BillingPermissions.PayoutsManage);
+
+        // TDS on doctors' fees (s.194J): PAN and certificate, Form 26Q, and the statement to check Form 16A against.
+        payouts.MapGet("/tax-profiles/{practitionerId:guid}", async (Guid practitionerId, DoctorTaxService tax, CancellationToken ct) =>
+            TypedResults.Ok(await tax.ProfileAsync(practitionerId, ct))).RequirePermission(BillingPermissions.PayoutsManage);
+        payouts.MapPut("/tax-profiles/{practitionerId:guid}", async (Guid practitionerId, SaveDoctorTaxProfileRequest r, DoctorTaxService tax, CancellationToken ct) =>
+                (await tax.SaveProfileAsync(practitionerId, r, ct)).ToNoContent())
+            .RequirePermission(BillingPermissions.PayoutsManage).WithValidation<SaveDoctorTaxProfileRequest>().FirstSaveCreates();
+        payouts.MapGet("/tds/26q/{financialYear:int}/{quarter:int}", async (int financialYear, int quarter, DoctorTaxService tax, CancellationToken ct) =>
+        {
+            var result = await tax.Form26QAsync(financialYear, Math.Clamp(quarter, 1, 4), ct);
+            return result.IsFailure ? result.Error!.ToProblem()
+                : TypedResults.Ok(new { result.Value.Return.Challans, result.Value.Return.Deductees, result.Value.Return.TotalDeposited, result.Value.Return.TotalDeducted, result.Value.Return.Problems });
+        }).RequirePermission(BillingPermissions.PayoutsManage);
+        payouts.MapGet("/tds/26q/{financialYear:int}/{quarter:int}/file", async (int financialYear, int quarter, DoctorTaxService tax, CancellationToken ct) =>
+        {
+            var result = await tax.Form26QAsync(financialYear, Math.Clamp(quarter, 1, 4), ct);
+            if (result.IsFailure)
+            {
+                return result.Error!.ToProblem();
+            }
+
+            return result.Value.Return.Problems.Count > 0
+                ? Error.Rule("tds_return.problems", "Correct these before making the file: " + string.Join(" ", result.Value.Return.Problems)).ToProblem()
+                : TypedResults.File(result.Value.Content, "text/plain; charset=utf-8", result.Value.FileName);
+        }).RequirePermission(BillingPermissions.PayoutsManage);
+        payouts.MapGet("/tds/16a/{practitionerId:guid}/{financialYear:int}/{quarter:int}",
+            async (Guid practitionerId, int financialYear, int quarter, DoctorTaxService tax, CancellationToken ct) =>
+            {
+                var result = await tax.Form16AAsync(practitionerId, financialYear, Math.Clamp(quarter, 1, 4), ct);
+                return result.IsFailure ? result.Error!.ToProblem() : TypedResults.Ok(result.Value.ToDto());
+            }).RequirePermission(BillingPermissions.PayoutsManage);
+        payouts.MapGet("/tds/16a/{practitionerId:guid}/{financialYear:int}/{quarter:int}/pdf",
+            async (Guid practitionerId, int financialYear, int quarter, DoctorTaxService tax, IPdfRenderer pdf, CancellationToken ct) =>
+            {
+                var result = await tax.Form16AAsync(practitionerId, financialYear, Math.Clamp(quarter, 1, 4), ct);
+                return result.IsFailure ? result.Error!.ToProblem() : await result.Value.ToPdfAsync(pdf, ct);
+            }).RequirePermission(BillingPermissions.PayoutsManage);
     }
 
-    private static async Task<IResult> ListRules(Guid? practitionerId, bool? includeInactive, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> ListRules(Guid? practitionerId, bool? includeInactive, HospitalDbContext db, ShareRuleApprovals approvals, CancellationToken ct)
     {
         var rules = db.Set<DoctorShareRule>().AsNoTracking();
         if (includeInactive != true)
         {
-            rules = rules.Where(r => r.IsActive);
+            // A rule out of use with a change waiting (a new rule, say) is listed, so whoever asked sees it waiting.
+            var waiting = await approvals.WaitingAsync(ct);
+            rules = rules.Where(r => r.IsActive || waiting.Contains(r.Id));
         }
 
         if (practitionerId is not null)
@@ -47,34 +87,33 @@ internal static class DoctorFeeEndpoints
                 orderby r.PractitionerId, r.EffectiveFrom descending
                 select new ShareRuleDto(
                     r.Id, r.PractitionerId, p == null ? null : p.DisplayName, r.ServiceItemId, s == null ? null : s.Code, r.Category, r.PayerType, r.Method,
-                    r.Value, r.EffectiveFrom, r.EffectiveTo, r.IsActive, r.Notes, r.Version))
+                    r.Value, r.EffectiveFrom, r.EffectiveTo, r.IsActive, r.Notes, r.Version, null))
             .ToListAsync(ct);
-        return TypedResults.Ok(rows);
+        var pending = await approvals.PendingAsync([.. rows.Select(r => r.Id)], ct);
+        return TypedResults.Ok(rows.Select(r => pending.TryGetValue(r.Id, out var waits) ? r with { Pending = waits } : r).ToList());
     }
 
+    /// <summary>201 with the rule's id and the approval its terms wait for (a rule asked for in use is made out of use until then).</summary>
     private static async Task<IResult> CreateRule(SaveShareRuleRequest request, DoctorFeeService fees, CancellationToken ct)
     {
         var saved = await fees.SaveRuleAsync(null, request, ct);
-        return saved.IsSuccess ? TypedResults.Created($"/api/v1/doctor-fees/rules/{saved.Value}", new { id = saved.Value }) : saved.Error!.ToProblem();
+        return saved.IsSuccess ? TypedResults.Created($"/api/v1/doctor-fees/rules/{saved.Value.Id}", saved.Value) : saved.Error!.ToProblem();
     }
 
+    /// <summary>204 when only the notes changed (or the terms asked already wait); 202 with the approval when terms are asked for; 409 when another change waits.</summary>
     private static async Task<IResult> UpdateRule(Guid id, SaveShareRuleRequest request, DoctorFeeService fees, CancellationToken ct)
     {
         var saved = await fees.SaveRuleAsync(id, request, ct);
-        return saved.IsSuccess ? TypedResults.NoContent() : saved.Error!.ToProblem();
+        return saved.IsFailure
+            ? saved.Error!.ToProblem()
+            : saved.Value.Asked is { } asked ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked) : TypedResults.NoContent();
     }
 
-    private static async Task<IResult> DeleteRule(Guid id, HospitalDbContext db, CancellationToken ct)
+    /// <summary>204 for a rule out of use; 409 <c>doctorfees.rule_in_use</c> for one in use.</summary>
+    private static async Task<IResult> DeleteRule(Guid id, DoctorFeeService fees, CancellationToken ct)
     {
-        var rule = await db.Set<DoctorShareRule>().FirstOrDefaultAsync(r => r.Id == id, ct);
-        if (rule is null)
-        {
-            return Error.NotFound(nameof(DoctorShareRule), id).ToProblem();
-        }
-
-        db.Remove(rule);
-        await db.SaveChangesAsync(ct);
-        return TypedResults.NoContent();
+        var deleted = await fees.DeleteRuleAsync(id, ct);
+        return deleted.IsSuccess ? TypedResults.NoContent() : deleted.Error!.ToProblem();
     }
 
     private static async Task<IResult> ListAccruals(

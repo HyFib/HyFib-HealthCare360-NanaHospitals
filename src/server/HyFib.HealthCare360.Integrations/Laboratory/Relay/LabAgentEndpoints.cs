@@ -72,8 +72,10 @@ internal static class LabAgentEndpoints
         var now = time.GetUtcNow();
         var address = http.Connection.RemoteIpAddress?.ToString();
         var version = request.AppVersion?.Trim() is { Length: > 0 } reported ? reported : device.AppVersion;
+        var trusted = DeviceCaFingerprints.Stored(request.CaFingerprints) ?? device.TrustedCaFingerprints;
         await db.Set<Device>().Where(d => d.Id == device.Id)
-            .ExecuteUpdateAsync(s => s.SetProperty(d => d.LastSeenAt, now).SetProperty(d => d.LastIpAddress, address).SetProperty(d => d.AppVersion, version), ct);
+            .ExecuteUpdateAsync(s => s.SetProperty(d => d.LastSeenAt, now).SetProperty(d => d.LastIpAddress, address).SetProperty(d => d.AppVersion, version)
+                .SetProperty(d => d.TrustedCaFingerprints, trusted), ct);
 
         var gateway = await settings.ReadValueAsync<LabGatewaySettings>(LabSettingKeys.Gateway, null, ct) ?? new LabGatewaySettings();
         var assigned = gateway.Enabled ? await AssignedAsync(settings, device.Id, ct) : [];
@@ -117,6 +119,16 @@ internal static class LabAgentEndpoints
                 ? TypedResults.Problem(title: "This analyser is not assigned to this lab agent.", statusCode: StatusCodes.Status404NotFound)
                 : TypedResults.Problem(title: "The laboratory gateway is switched off.", statusCode: StatusCodes.Status503ServiceUnavailable);
             await problem.ExecuteAsync(http);
+            return;
+        }
+
+        // A connection that asks for device authentication takes its analyser only through an agent approved for it.
+        if (instrument.DeviceAuthentication != Devices.LabDeviceAuthentication.None
+            && await services.GetRequiredService<Devices.LabDeviceGate>().AdmitAgentAsync(instrument.Code, device.Id, http.Connection.RemoteIpAddress, ct)
+                != Devices.LabDeviceAdmission.Admitted)
+        {
+            await TypedResults.Problem(title: "This lab agent is not approved for this analyser's connection. It is listed in Lab setup for the lab to add.",
+                statusCode: StatusCodes.Status403Forbidden).ExecuteAsync(http);
             return;
         }
 

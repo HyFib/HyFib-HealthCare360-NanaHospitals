@@ -107,7 +107,7 @@ export function buildReceiptHtml(
         ${sale.buyerGstin ? `<tr><td>Buyer GSTIN</td><td class="right">${escapeHtml(sale.buyerGstin)}</td></tr>` : ''}
         ${sale.placeOfSupply ? `<tr><td>Place of supply</td><td class="right">${escapeHtml(gstStateName(sale.placeOfSupply) ?? sale.placeOfSupply)}</td></tr>` : ''}
         ${sale.prescriberName ? `<tr><td>Prescriber</td><td class="right">${escapeHtml(sale.prescriberName)}${sale.prescriberRegistrationNumber ? ` (Reg. ${escapeHtml(sale.prescriberRegistrationNumber)})` : ''}</td></tr>` : ''}
-        ${sale.prescriptionNumber ? `<tr><td>Prescription</td><td class="right">${escapeHtml(sale.prescriptionNumber)}</td></tr>` : ''}
+        ${sale.prescriptionNumber || sale.prescriptionDate ? `<tr><td>Prescription</td><td class="right">${escapeHtml([sale.prescriptionNumber, sale.prescriptionDate ? `dated ${formatDateOnly(sale.prescriptionDate)}` : null].filter(Boolean).join(' '))}</td></tr>` : ''}
       </table>
       <div class="dash"></div>
       <table>${rows}</table>

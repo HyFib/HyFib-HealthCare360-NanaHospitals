@@ -110,6 +110,28 @@ export interface PatientDetail {
    * patients (`patients.contact.read`, SRS PRV-03), and so does not edit their details either.
    */
   contactsMasked?: boolean;
+  /**
+   * Changes to the record waiting for a second person (maker-checker, slice 7): an identity change, a VIP restriction
+   * lifted, the deceased status set or taken back. The record shows its present values everywhere until one is approved.
+   * Absent when nothing waits.
+   */
+  pendingChanges?: PendingPatientChange[] | null;
+  /**
+   * Until when the signed-in user may still correct the name, sex, date of birth, ABHA or Aadhaar at once: they
+   * registered the patient within the last day and the patient has not been seen yet. Absent or null: a change to them
+   * is asked for, and someone who approves identity changes decides it.
+   */
+  identityCorrectableUntil?: string | null;
+}
+
+/** A change to a patient's record waiting for a second person: the request, its kind, what it does, who asked and when. */
+export interface PendingPatientChange {
+  approvalId: string;
+  kind: string;
+  title: string;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface PatientSummary {
@@ -181,6 +203,11 @@ export interface UpdatePatientRequest extends PatientFormPayload {
    * takes it away. See `photoChange`.
    */
   removePhoto: boolean;
+  /**
+   * Why, when the save asks a second person for something (an identity change after the correction window, a VIP
+   * restriction lifted, the deceased status): the server answers 400 on `changeReason` without one.
+   */
+  changeReason?: string | null;
 }
 
 export interface DuplicateCandidate {
@@ -349,6 +376,70 @@ export interface ConsentDto {
   notes: string | null;
   /** Given and not withdrawn. */
   isActive: boolean;
+  /** A record-sharing consent limited to some accounts, purposes, records or dates; null shares the whole record. */
+  sharingScope?: RecordSharingScopeDto | null;
+}
+
+/** Why another provider reads the record: the HL7 v3 purposes of use, as the server names them. */
+export const SHARING_PURPOSES = [
+  'Treatment',
+  'EmergencyTreatment',
+  'CareManagement',
+  'Payment',
+  'PublicHealth',
+  'Research',
+  'PatientRequest',
+] as const;
+export type SharingPurpose = (typeof SHARING_PURPOSES)[number];
+
+/**
+ * The kinds of records a record-sharing consent can name. Counselling notes are shared only when a consent names them
+ * (`NAMED_ONLY_RECORD_KINDS`); a consent that names no kinds shares every other kind.
+ */
+export const SHARED_RECORD_KINDS = [
+  'Visits',
+  'Allergies',
+  'Medicines',
+  'LabResults',
+  'ScansAndHeartTests',
+  'VitalSigns',
+  'Documents',
+  'Immunisations',
+  'ClinicalNotes',
+  'CounsellingNotes',
+  'Procedures',
+] as const;
+export type SharedRecordKind = (typeof SHARED_RECORD_KINDS)[number];
+
+/** Kinds a consent shares only when it names them (the server's `SharedRecordKinds.NamedOnly`). */
+export const NAMED_ONLY_RECORD_KINDS: readonly SharedRecordKind[] = ['CounsellingNotes'];
+
+/** An account another care provider reads records with through the FHIR API. */
+export interface SharingPartner {
+  id: string;
+  name: string;
+}
+
+/** What a record-sharing consent covers; an empty or null list, or a null date, leaves that part open. */
+export interface RecordSharingScope {
+  shareWith: string[] | null;
+  purposes: SharingPurpose[] | null;
+  kinds: SharedRecordKind[] | null;
+  /** yyyy-MM-dd, hospital dates. */
+  recordsFrom: string | null;
+  recordsTo: string | null;
+  /** The last day the consent lets anyone read. */
+  until: string | null;
+}
+
+/** A record-sharing consent's scope as shown, the accounts by name. */
+export interface RecordSharingScopeDto {
+  shareWith: SharingPartner[];
+  purposes: SharingPurpose[];
+  kinds: SharedRecordKind[];
+  recordsFrom: string | null;
+  recordsTo: string | null;
+  until: string | null;
 }
 
 export interface CaptureConsentRequest {
@@ -362,6 +453,14 @@ export interface CaptureConsentRequest {
   signedByName: string | null;
   documentFileId: string | null;
   notes: string | null;
+  /** Only for a given record-sharing consent; null shares the whole record with every partner account. */
+  sharingScope?: RecordSharingScope | null;
+  /**
+   * The whole record shared with no signed form: the confirmation of the witness, another member of staff who confirmed at
+   * this screen (`POST /api/v1/auth/witness`, purpose `consent.record_sharing`). Without it the server answers 422
+   * `consent.witness_required` (MAKER-CHECKER.md, slice 14).
+   */
+  witnessConfirmationId?: string | null;
 }
 
 /** Where a WhatsApp opt-in was given. */
@@ -423,6 +522,55 @@ export interface LinkFamilyMemberRequest {
   relation: FamilyRelation;
   consentGivenBy: string;
   identityChecked: boolean;
+}
+
+/** The channels a link to the patient portal goes on (PP-01). */
+export const PORTAL_LINK_CHANNELS = ['Sms', 'WhatsApp'] as const;
+export type PortalLinkChannel = (typeof PORTAL_LINK_CHANNELS)[number];
+
+/** Opened: a sign-in code was asked for through it; it keeps working until it expires. */
+export type PortalLinkState = 'Active' | 'Opened' | 'Expired' | 'Revoked';
+
+/** A link to the portal sent to the patient's registered number. Neither the link nor its token is ever shown. */
+export interface PortalLinkDto {
+  id: string;
+  sentAt: string;
+  sentByName: string | null;
+  channels: PortalLinkChannel[];
+  /** The number it went to, masked (+91******3210). */
+  maskedPhone: string;
+  expiresAt: string;
+  openedAt: string | null;
+  state: PortalLinkState;
+  revokedAt: string | null;
+  /** `replaced` (a newer link was sent) or `number_changed` (the patient's number changed). */
+  revokedReason: string | null;
+}
+
+/** Why no link can be sent now, by code (`portal.link_sensitive`, `portal.link_no_mobile`…) and in words. */
+export interface PortalLinkRefusal {
+  code: string;
+  message: string;
+}
+
+/** The latest links sent to the patient (5 at most), and what a new one would go to. */
+export interface PatientPortalLinksDto {
+  /** The patient's number, masked; null without one. */
+  maskedPhone: string | null;
+  /** For staff who may send links: why none can be sent now; null when one can. */
+  cannotSend: PortalLinkRefusal | null;
+  /** The number replied STOP on WhatsApp: a link goes by SMS only. */
+  whatsAppStopped: boolean;
+  links: PortalLinkDto[];
+}
+
+/** The link sent: SMS only when WhatsApp was stopped for the number, which `notice` then says. */
+export interface PortalLinkSent {
+  id: string;
+  channels: PortalLinkChannel[];
+  expiresAt: string;
+  maskedPhone: string;
+  notice: string | null;
 }
 
 export const PATIENT_DOCUMENT_TYPES = [
@@ -532,6 +680,10 @@ export type SensitiveCategory = (typeof SENSITIVE_CATEGORIES)[number];
 export interface SensitiveCategoriesDto {
   categories: SensitiveCategory[];
   version: number;
+  /** Categories asked to be taken out: still in force until another doctor who manages them approves (slice 7). */
+  waitingRemoval?: SensitiveCategory[] | null;
+  /** That request: who asked and when. */
+  waiting?: PendingPatientChange | null;
 }
 
 export const patientKeys = {
@@ -543,13 +695,16 @@ export const patientKeys = {
   /** Under the patient's visits, so whatever refreshes the visits refreshes the banner's payer too. */
   payer: (id: string) => ['patients', 'visits', id, 'payer'] as const,
   consents: (id: string) => ['patients', 'consents', id] as const,
+  sharingPartners: () => ['patients', 'sharing-partners'] as const,
   whatsApp: (id: string) => ['patients', 'whatsapp', id] as const,
   portalFamily: (id: string) => ['patients', 'portal-family', id] as const,
+  portalLinks: (id: string) => ['patients', 'portal-links', id] as const,
   documents: (id: string) => ['patients', 'documents', id] as const,
   photo: (fileId: string) => ['patients', 'photo', fileId] as const,
   identityChecks: (id: string) => ['patients', 'identity-checks', id] as const,
   identitySetup: ['patients', 'identity-setup'] as const,
   sensitive: (id: string) => ['patients', 'sensitive', id] as const,
+  phoneChange: (id: string) => ['patients', 'phone-change', id] as const,
 };
 
 export const patientQueries = {
@@ -594,6 +749,13 @@ export const patientQueries = {
       queryKey: patientKeys.consents(id),
       queryFn: ({ signal }) => api.get<ConsentDto[]>(`/api/v1/patients/${id}/consents`, { signal }),
     }),
+  /** The accounts a record-sharing consent can name: other care providers' FHIR integration accounts. */
+  sharingPartners: () =>
+    queryOptions({
+      queryKey: patientKeys.sharingPartners(),
+      queryFn: ({ signal }) => api.get<SharingPartner[]>('/api/v1/patients/consents/sharing-partners', { signal }),
+      staleTime: 5 * 60_000,
+    }),
   whatsApp: (id: string) =>
     queryOptions({
       queryKey: patientKeys.whatsApp(id),
@@ -603,6 +765,12 @@ export const patientQueries = {
     queryOptions({
       queryKey: patientKeys.portalFamily(id),
       queryFn: ({ signal }) => api.get<PatientPortalAccessDto>(`/api/v1/patients/${id}/portal-family`, { signal }),
+    }),
+  /** The links to the portal sent to the patient's number (needs `patients.read`). */
+  portalLinks: (id: string) =>
+    queryOptions({
+      queryKey: patientKeys.portalLinks(id),
+      queryFn: ({ signal }) => api.get<PatientPortalLinksDto>(`/api/v1/patients/${id}/portal-links`, { signal }),
     }),
   documents: (id: string) =>
     queryOptions({
@@ -634,7 +802,13 @@ export const patientQueries = {
 
 export const patientApi = {
   register: (request: RegisterPatientRequest) => api.post<{ id: string; uhid: string }>('/api/v1/patients', request),
-  update: (id: string, request: UpdatePatientRequest) => api.put<void>(`/api/v1/patients/${id}`, request),
+  /**
+   * Saves the details: 204 (nothing back) when all is saved; 202 with the request when something waits for a second
+   * person (the rest is saved): an identity change past the correction window, a VIP restriction lifted, the deceased
+   * status. 409 `approval.already_requested` while another change of that kind waits.
+   */
+  update: (id: string, request: UpdatePatientRequest) =>
+    api.put<ApprovalRequestDto | null | undefined>(`/api/v1/patients/${id}`, request),
   duplicates: (request: DuplicateCheckRequest, signal?: AbortSignal) =>
     api.post<DuplicateCandidate[]>('/api/v1/patients/duplicates', request, { signal }),
   /**
@@ -649,9 +823,16 @@ export const patientApi = {
   breakGlass: (id: string, reason: string) =>
     api.post<{ patientId: string; expiresAt: string }>(`/api/v1/patients/${id}/break-glass`, { reason }),
   createVisit: (request: CreateVisitRequest) => api.post<VisitDetail>('/api/v1/visits', request),
-  /** Puts the record in exactly these categories (none takes it out of all), with the reason kept in the audit trail. */
+  /**
+   * Puts the record in exactly these categories, with the reason kept in the audit trail. A category added applies at
+   * once (the categories back); one taken out waits for another doctor who manages them (202, the request back).
+   */
   setSensitive: (id: string, categories: SensitiveCategory[], reason: string, version: number) =>
-    api.put<SensitiveCategoriesDto>(`/api/v1/patients/${id}/sensitive-categories`, { categories, reason, version }),
+    api.put<SensitiveCategoriesDto | ApprovalRequestDto>(`/api/v1/patients/${id}/sensitive-categories`, {
+      categories,
+      reason,
+      version,
+    }),
 };
 
 /** Recording and withdrawing consents needs `patients.consents`; a restricted record answers 403 `patient.restricted`. */
@@ -684,16 +865,77 @@ export const documentApi = {
   remove: (documentId: string) => api.delete<void>(`/api/v1/patients/documents/${documentId}`),
 };
 
+/** The code went to the patient's own number (`sentTo`, masked); nothing is shared until it is entered. */
+export interface FamilyDeskCodeSent {
+  codeId: string;
+  sentTo: string;
+  expiresAt: string;
+}
+
 /**
- * Sharing the patient's records with a family member's portal account needs `patients.consents`. Linking answers 422
- * `portal.family_same_number` for the patient's own number and 409 `portal.family_already_linked`; ending answers 422
- * `portal.family_link_ended` when it has already ended.
+ * Sharing the patient's records with a family member's portal account needs `patients.consents`, and a code sent by SMS
+ * to the patient's own registered number that the desk enters as the patient reads it out (MAKER-CHECKER.md, slice 14):
+ * no link exists until then. Sending answers 422 `portal.family_same_number` for the patient's own number,
+ * `portal.family_no_patient_phone` when the patient has no mobile number, `portal.family_code_throttled` after several
+ * codes, and 409 `portal.family_already_linked`. Confirming answers 400 for a wrong code (five tries), 422
+ * `portal.family_code_expired`, and 409 `portal.family_number_changed` when the patient's number changed since. Ending
+ * answers 422 `portal.family_link_ended` when it has already ended.
  */
 export const portalFamilyApi = {
-  link: (patientId: string, request: LinkFamilyMemberRequest) =>
-    api.post<{ id: string }>(`/api/v1/patients/${patientId}/portal-family`, request),
+  sendCode: (patientId: string, request: LinkFamilyMemberRequest) =>
+    api.post<FamilyDeskCodeSent>(`/api/v1/patients/${patientId}/portal-family`, request),
+  confirm: (patientId: string, codeId: string, code: string, consentGivenBy: string) =>
+    api.post<{ id: string }>(`/api/v1/patients/${patientId}/portal-family/codes/${codeId}/confirm`, {
+      code,
+      consentGivenBy,
+    }),
   revoke: (linkId: string, reason: string) =>
     api.post<void>(`/api/v1/patients/portal-family/${linkId}/revoke`, { reason }),
+};
+
+/**
+ * Sending a link to the patient portal to the patient's registered number needs `patients.register`. A new link replaces
+ * the one sent before. The server answers 422 with `portal.link_no_address` (the portal is off or has no public
+ * address), `portal.link_inactive`, `portal.link_no_mobile`, `portal.link_sensitive` (a protected category: portal
+ * access is given at the desk), `portal.link_whatsapp_stopped` (WhatsApp alone, to a number that replied STOP) and
+ * `portal.link_throttled` (3 links in 24 hours).
+ */
+export const portalLinkApi = {
+  send: (patientId: string, channels: PortalLinkChannel[]) =>
+    api.post<PortalLinkSent>(`/api/v1/patients/${patientId}/portal-link`, { channels }),
+};
+
+/** A change of the patient's mobile number waiting for its code: the new number masked, the code's expiry and tries left. */
+export interface PhoneChange {
+  changeId: string;
+  maskedPhone: string;
+  expiresAt: string;
+  attemptsLeft: number;
+}
+
+/** The number changed, and what followed: family members' records moved with it, the old number's portal signed out. */
+export interface PhoneChangeConfirmed {
+  maskedPhone: string;
+  familyLinksMoved: number;
+  oldNumberSignedOut: boolean;
+}
+
+/**
+ * Changing the patient's registered mobile number (needs `patients.register` and `patients.contact.read`, as editing
+ * does): a 6-digit code goes by SMS to the new number, and the number changes when the code the patient reads out is
+ * entered. Sending answers 202 with the change; 400 on `phone` for a number that is not an Indian mobile number or that
+ * the record has already, 422 `patient.phone_code_throttled` with `data.retryAfterSeconds` after 3 codes to the number
+ * in 15 minutes. Confirming answers 400 on `code` with `data.attemptsLeft` for a wrong code, 422
+ * `patient.phone_code_expired` once it cannot be used, and 409 `patient.phone_changed_meanwhile` when the record's
+ * number changed after the code was sent. `pending` is null (204) when nothing waits for a code.
+ */
+export const phoneChangeApi = {
+  pending: async (patientId: string, signal?: AbortSignal) =>
+    (await api.get<PhoneChange | undefined>(`/api/v1/patients/${patientId}/phone-change`, { signal })) ?? null,
+  request: (patientId: string, phone: string) =>
+    api.post<PhoneChange>(`/api/v1/patients/${patientId}/phone-change`, { phone }),
+  confirm: (patientId: string, changeId: string, code: string) =>
+    api.post<PhoneChangeConfirmed>(`/api/v1/patients/${patientId}/phone-change/${changeId}/confirm`, { code }),
 };
 
 /**

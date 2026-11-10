@@ -33,6 +33,19 @@ public sealed class Payslip : AuditableEntity, IFacilityScoped
     public decimal Tds { get; set; }
     public SalaryPaymentMode PaymentMode { get; set; }
     public string? BankAccountMasked { get; set; }
+
+    /// <summary>
+    /// The salary account the bank file pays, encrypted: the employee's account in force when the payroll was approved
+    /// (<see cref="PayrollRun.BankDetailsFixedAt"/>), so a change approved afterwards does not reach a payroll already
+    /// approved (maker-checker slice 11). Null before approval, and for a payslip not paid by bank transfer.
+    /// </summary>
+    [SensitiveData]
+    public string? BankAccountCipher { get; set; }
+
+    /// <summary>The IFSC of <see cref="BankAccountCipher"/>, encrypted, fixed with it.</summary>
+    [SensitiveData]
+    public string? BankIfscCipher { get; set; }
+
     public List<string> Warnings { get; set; } = [];
 
     /// <summary>Blocks approval (for example deductions exceed earnings).</summary>

@@ -8,6 +8,13 @@ public sealed class Immunization : AuditableEntity
 {
     public Guid PatientId { get; set; }
     public Guid? EncounterId { get; set; }
+
+    /// <summary>
+    /// The facility where the dose was recorded: where it was given, for a dose given here, and so the custodian of its
+    /// ABDM immunisation record. The immunisation history itself is the patient's in every facility.
+    /// </summary>
+    public Guid FacilityId { get; set; }
+
     public string VaccineName { get; set; } = string.Empty;
 
     /// <summary>Short code used on Indian immunisation cards (BCG, OPV, PENTA, MR, HPV…).</summary>

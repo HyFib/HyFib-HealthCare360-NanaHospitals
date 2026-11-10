@@ -1,6 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { ServiceCategory } from '@/modules/billing/labels';
 import type { ClaimStatus, EnhancementStatus, PayerCategory, PreAuthStatus } from './labels';
 
@@ -41,6 +42,23 @@ export interface PayerDetail {
   isActive: boolean;
   notes: string | null;
   version: number;
+  /** The terms waiting for a second person, if any. */
+  pendingTerms?: PendingPayerTerms | null;
+}
+
+/** What a payer's agreement decides about what its patients pay: these change only when two people agree. */
+export interface PayerTerms {
+  category: PayerCategory;
+  tariffPlanId: string | null;
+  defaultCoPayPercent: number;
+  isActive: boolean;
+}
+
+export interface PendingPayerTerms {
+  approvalId: string;
+  asked: PayerTerms;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface SavePayerRequest {
@@ -59,6 +77,8 @@ export interface SavePayerRequest {
   isActive: boolean;
   notes: string | null;
   version: number | null;
+  /** For the approver, when the terms change. */
+  reason?: string | null;
 }
 
 export interface NonPayableItemDto {
@@ -70,6 +90,15 @@ export interface NonPayableItemDto {
   serviceName: string | null;
   category: ServiceCategory | null;
   notes: string | null;
+  /** A change waiting for a second person: an item to be added (not in force yet) or taken off (in force until then). */
+  waiting?: PendingNonPayable | null;
+}
+
+export interface PendingNonPayable {
+  approvalId: string;
+  change: 'Add' | 'Remove';
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface SaveNonPayableItemRequest {
@@ -77,6 +106,8 @@ export interface SaveNonPayableItemRequest {
   serviceItemId: string | null;
   category: ServiceCategory | null;
   notes: string | null;
+  /** For the second person who approves it. */
+  reason?: string | null;
 }
 
 // ------------------------------------------------------------------ policies
@@ -103,6 +134,8 @@ export interface PolicyDto {
   cardFileId: string | null;
   notes: string | null;
   version: number;
+  /** The signed-in user recorded the terms a verification vouches for (or last changed them): someone else verifies it. */
+  recordedByYou: boolean;
 }
 
 export interface SavePolicyRequest {
@@ -174,7 +207,10 @@ export interface PreAuthDetail {
   tpaName: string | null;
   requestedAmount: number;
   diagnosisCodes: string | null;
-  procedureCodes: string | null;
+  /** The planned procedures, each coded from PM-JAY's HBP master or the ICD-10-PCS catalogue. */
+  procedures: PreAuthProcedure[];
+  /** The planned procedures as typed before procedures were coded; kept as it was, read only. */
+  legacyProcedureText: string | null;
   clinicalSummary: string | null;
   expectedStayDays: number | null;
   documentFileIds: string[];
@@ -191,6 +227,12 @@ export interface PreAuthDetail {
   rejectedAt: string | null;
   enhancements: EnhancementDto[];
   version: number;
+  /**
+   * When an amount the insurer approved (the approval, an enhancement or the final approval) was recorded and sent to
+   * another insurance desk user to check against the letter; null when none waits. Until it is checked the patient pays
+   * that part of the bill.
+   */
+  amountAskedAt?: string | null;
 }
 
 export interface SavePreAuthRequest {
@@ -199,11 +241,35 @@ export interface SavePreAuthRequest {
   visitId: string | null;
   requestedAmount: number;
   diagnosisCodes: string | null;
-  procedureCodes: string | null;
+  procedures: PreAuthProcedureLine[] | null;
   clinicalSummary: string | null;
   expectedStayDays: number | null;
   documentFileIds: string[] | null;
   version: number | null;
+}
+
+/** The code system of a planned procedure: PM-JAY's HBP master or the hospital's ICD-10-PCS catalogue. */
+export type PreAuthProcedureSystem = 'Hbp' | 'Icd10Pcs';
+
+/** A planned procedure as the desk codes it. */
+export interface PreAuthProcedureLine {
+  system: PreAuthProcedureSystem;
+  code: string;
+  quantity: number;
+  amount: number;
+}
+
+/** A planned procedure as saved, with the name the master gave it. */
+export interface PreAuthProcedure extends PreAuthProcedureLine {
+  name: string;
+}
+
+/** A procedure the desk may code; the HBP master's carry the scheme's base rate. */
+export interface PreAuthProcedureOption {
+  system: PreAuthProcedureSystem;
+  code: string;
+  name: string;
+  rate: number | null;
 }
 
 export interface PreAuthFilters {
@@ -284,6 +350,10 @@ export interface ClaimDetail {
   /** The coding medical records verified for the bill's stay or visit; null until a second coder verifies it. */
   verifiedCoding: VerifiedClaimCoding | null;
   version: number;
+  /** When a write-off (the insurer's deductions, or a rejection) was asked for and still waits for a second person. */
+  writeOffAskedAt?: string | null;
+  /** The most the desk writes off alone at this facility; more waits for someone who approves insurance write-offs. */
+  writeOffApprovalAbove?: number;
 }
 
 /** Verified medical records coding (MB-03), as the text of a claim's codes. */
@@ -316,6 +386,8 @@ export interface SettleClaimRequest {
   utrNumber: string | null;
   reference: string | null;
   settledOn: string | null;
+  /** The claim's version the desk saw: a claim that changed meanwhile is refused (409). */
+  version: number;
 }
 
 export interface ClaimFilters {
@@ -403,6 +475,16 @@ export const insuranceQueries = {
       queryKey: [...insuranceKeys.preAuths, 'detail', id],
       queryFn: ({ signal }) => api.get<PreAuthDetail>(`/api/v1/insurance/preauths/${id}`, { signal }),
     }),
+  procedureOptions: (system: PreAuthProcedureSystem, search: string) =>
+    queryOptions({
+      queryKey: [...insuranceKeys.preAuths, 'procedure-options', system, search],
+      queryFn: ({ signal }) =>
+        api.get<PreAuthProcedureOption[]>('/api/v1/insurance/preauths/procedure-options', {
+          query: { system, search: search || undefined },
+          signal,
+        }),
+      staleTime: 60_000,
+    }),
   claims: (filters: ClaimFilters) =>
     queryOptions({
       queryKey: [...insuranceKeys.claims, 'list', filters],
@@ -454,11 +536,15 @@ export const insuranceQueries = {
 
 export const insuranceApi = {
   createPayer: (request: SavePayerRequest) => api.post<PayerDetail>('/api/v1/insurance/payers', request),
+  /** The payer as saved, or the request asking a second person for the terms changed. */
   updatePayer: (id: string, request: SavePayerRequest) =>
-    api.put<PayerDetail>(`/api/v1/insurance/payers/${id}`, request),
+    api.put<PayerDetail | ApprovalRequestDto>(`/api/v1/insurance/payers/${id}`, request),
+  /** Asks a second person to add the item to the non-payable list; nothing is added until they approve it. */
   addNonPayable: (request: SaveNonPayableItemRequest) =>
-    api.post<{ id: string }>('/api/v1/insurance/non-payable-items', request),
-  deleteNonPayable: (id: string) => api.delete<void>(`/api/v1/insurance/non-payable-items/${id}`),
+    api.post<ApprovalRequestDto>('/api/v1/insurance/non-payable-items', request),
+  /** Asks a second person to take the item off the non-payable list; it stays in force until they approve it. */
+  removeNonPayable: (id: string, reason: string | null) =>
+    api.post<ApprovalRequestDto>(`/api/v1/insurance/non-payable-items/${id}/remove`, { reason }),
   searchPolicies: (policyNumber: string) =>
     api.get<PolicyDto[]>('/api/v1/insurance/policies/search', { query: { policyNumber } }),
   revealPolicyNumber: (id: string) => api.get<PolicyNumberDto>(`/api/v1/insurance/policies/${id}/policy-number`),
@@ -472,8 +558,9 @@ export const insuranceApi = {
   submitPreAuth: (id: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/submit`),
   preAuthQuery: (id: string, text: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/query`, { text }),
   preAuthAnswer: (id: string, text: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/answer`, { text }),
-  approvePreAuth: (id: string, approvedAmount: number, reference: string | null) =>
-    api.post<void>(`/api/v1/insurance/preauths/${id}/approve`, { approvedAmount, reference }),
+  /** Records the insurer's approval for another insurance desk user to check (202): nothing moves to the insurer until then. */
+  approvePreAuth: (id: string, approvedAmount: number, reference: string | null, version: number) =>
+    api.post<ApprovalRequestDto>(`/api/v1/insurance/preauths/${id}/approve`, { approvedAmount, reference, version }),
   rejectPreAuth: (id: string, reason: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/reject`, { reason }),
   requestEnhancement: (id: string, amount: number, reason: string) =>
     api.post<void>(`/api/v1/insurance/preauths/${id}/enhancements`, { amount, reason }),
@@ -483,14 +570,17 @@ export const insuranceApi = {
     approved: boolean,
     approvedAmount: number,
     reference: string | null,
+    version: number,
   ) =>
-    api.post<void>(`/api/v1/insurance/preauths/${id}/enhancements/${enhancementId}/respond`, {
+    // A refusal is recorded at once (undefined); an approval waits for another insurance desk user to check it.
+    api.post<ApprovalRequestDto | undefined>(`/api/v1/insurance/preauths/${id}/enhancements/${enhancementId}/respond`, {
       approved,
       approvedAmount,
       reference,
+      version,
     }),
-  finalApproval: (id: string, amount: number, reference: string | null) =>
-    api.post<void>(`/api/v1/insurance/preauths/${id}/final-approval`, { amount, reference }),
+  finalApproval: (id: string, amount: number, reference: string | null, version: number) =>
+    api.post<ApprovalRequestDto>(`/api/v1/insurance/preauths/${id}/final-approval`, { amount, reference, version }),
   createClaim: (request: CreateClaimRequest) => api.post<{ id: string }>('/api/v1/insurance/claims', request),
   updateClaimCoding: (id: string, request: UpdateClaimCodingRequest) =>
     api.put<void>(`/api/v1/insurance/claims/${id}/coding`, request),
@@ -498,9 +588,12 @@ export const insuranceApi = {
   claimAnswer: (id: string, text: string) => api.post<void>(`/api/v1/insurance/claims/${id}/answer`, { text }),
   approveClaim: (id: string, approvedAmount: number) =>
     api.post<void>(`/api/v1/insurance/claims/${id}/approve`, { approvedAmount }),
+  /** Recorded at once (undefined), or, with deductions above the facility's amount, the money posted and the write-off asked for. */
   settleClaim: (id: string, request: SettleClaimRequest, idempotencyKey?: string) =>
-    api.post<void>(`/api/v1/insurance/claims/${id}/settle`, request, { idempotencyKey }),
-  rejectClaim: (id: string, reason: string) => api.post<void>(`/api/v1/insurance/claims/${id}/reject`, { reason }),
+    api.post<ApprovalRequestDto | undefined>(`/api/v1/insurance/claims/${id}/settle`, request, { idempotencyKey }),
+  /** Recorded at once (undefined), or, above the facility's amount, asked for and nothing changes until approved. */
+  rejectClaim: (id: string, reason: string, version: number) =>
+    api.post<ApprovalRequestDto | undefined>(`/api/v1/insurance/claims/${id}/reject`, { reason, version }),
 };
 
 /** Uploads a supporting document (discharge summary, investigation report) to the encrypted file store. */

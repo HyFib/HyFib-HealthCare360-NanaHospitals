@@ -118,7 +118,12 @@ public sealed class PatientFlagsTests(HospitalServer server)
         }
         finally
         {
-            await ExecuteAsync($"DROP TRIGGER {refuse} ON audit.audit_events; DROP FUNCTION public.{refuse}();");
+            // The partitioned table is locked first. DROP TRIGGER alone locks each monthly partition and only then the
+            // table, while every audit write locks the table and then its month: with another test writing the trail,
+            // the two wait for each other and PostgreSQL ends one of them (40P01, deadlock detected).
+            await ExecuteInTransactionAsync(
+                "LOCK TABLE audit.audit_events IN ACCESS EXCLUSIVE MODE",
+                $"DROP TRIGGER {refuse} ON audit.audit_events; DROP FUNCTION public.{refuse}();");
         }
 
         // No record of the emergency access, so no access: the record stays closed to the doctor.
@@ -170,6 +175,20 @@ public sealed class PatientFlagsTests(HospitalServer server)
     {
         await using var scope = server.Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Database.ExecuteSqlRawAsync(sql, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>The statements one after another in one transaction, so a lock the first takes is held to the end.</summary>
+    private async Task ExecuteInTransactionAsync(params string[] statements)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Database;
+        await using var transaction = await database.BeginTransactionAsync(TestContext.Current.CancellationToken);
+        foreach (var sql in statements)
+        {
+            await database.ExecuteSqlRawAsync(sql, TestContext.Current.CancellationToken);
+        }
+
+        await transaction.CommitAsync(TestContext.Current.CancellationToken);
     }
 
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));

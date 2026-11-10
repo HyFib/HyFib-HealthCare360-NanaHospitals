@@ -241,23 +241,35 @@ export function calculateBillTotals(
 
 // ------------------------------------------------------------------ discount authority (DiscountPolicy)
 
-/** How much discount a user may give on their own (GET /api/v1/billing/discount-limits/me). */
+/**
+ * How much discount a user may give on their own (GET /api/v1/billing/discount-limits/me): their own limit or the
+ * hospital's default. Holding the approval permission gives no more: an approver's own discount above it waits for
+ * another approver.
+ */
 export interface DiscountAuthority {
-  canApprove: boolean;
   maxPercent: number;
   maxAmount: number | null;
 }
 
-export const NO_DISCOUNT_AUTHORITY: DiscountAuthority = { canApprove: false, maxPercent: 0, maxAmount: 0 };
+export const NO_DISCOUNT_AUTHORITY: DiscountAuthority = { maxPercent: 0, maxAmount: 0 };
 
 /** `DiscountPolicy.AllowedWithoutApproval`. */
 export function allowedWithoutApproval(discountBase: number, authority: DiscountAuthority): number {
   const base = maxBig(toPaise(discountBase), 0n);
-  if (authority.canApprove) {
-    return fromPaise(base);
-  }
   const limit = percentOfPaise(base, clampBig(toCentiPercent(authority.maxPercent), 0n, WHOLE));
   return fromPaise(authority.maxAmount !== null ? minBig(limit, maxBig(toPaise(authority.maxAmount), 0n)) : limit);
+}
+
+/**
+ * `DiscountPolicy.Raises`: whether a limit lets the user give more on their own than `before` (a higher percentage, or
+ * a rupee cap raised or taken away). Raising waits for another approver; anything else is saved at once.
+ */
+export function limitRaises(before: DiscountAuthority, asked: DiscountAuthority): boolean {
+  const clamp = (percent: number) => Math.min(Math.max(percent, 0), 100);
+  const percentUp = toCentiPercent(clamp(asked.maxPercent)) > toCentiPercent(clamp(before.maxPercent));
+  const capUp =
+    before.maxAmount !== null && (asked.maxAmount === null || toPaise(asked.maxAmount) > toPaise(before.maxAmount));
+  return percentUp || capUp;
 }
 
 /** `DiscountPolicy.RequiresApproval`. */
@@ -270,7 +282,6 @@ export function requiresApproval(
   const discount = toPaise(userDiscount);
   return (
     discount > 0n &&
-    !authority.canApprove &&
     discount > toPaise(approvedAmount) &&
     discount > toPaise(allowedWithoutApproval(discountBase, authority))
   );
@@ -445,6 +456,67 @@ export function creditableAmount(bill: { patientAmount: number; creditAmount: nu
 }
 
 /**
+ * What a payer credit note can still credit (`RefundService.PayerCreditableAsync`): what the payer's settlements
+ * disallowed, less earlier payer credit notes.
+ */
+export function payerCreditableAmount(bill: {
+  payerDisallowedAmount?: number | null;
+  creditNotes: { kind: string; amount: number }[];
+}): number {
+  if (!bill.payerDisallowedAmount) {
+    return 0;
+  }
+  const credited = bill.creditNotes
+    .filter((n) => n.kind === 'PayerShare')
+    .reduce((sum, n) => sum + toPaise(n.amount), 0n);
+  return fromPaise(maxBig(toPaise(bill.payerDisallowedAmount) - credited, 0n));
+}
+
+/** A service a credit note can correct, and what is left of its value after earlier credit notes. */
+export interface CreditableLine {
+  id: string;
+  description: string;
+  sacCode: string | null;
+  taxRate: number;
+  netAmount: number;
+  left: number;
+}
+
+/**
+ * The services of a bill a credit note can name (`RefundService.CreditedLinesAsync`): charged lines (not returns) worth
+ * something, each with its value less what earlier credit notes took off it. Fully credited services are left out.
+ */
+export function creditableLines(bill: {
+  lines: {
+    id: string;
+    description: string;
+    sacCode: string | null;
+    taxRate: number;
+    netAmount: number;
+    isReturn: boolean;
+  }[];
+  creditNotes: { lines: { billLineId: string; amount: number }[] | null }[];
+}): CreditableLine[] {
+  const credited = new Map<string, bigint>();
+  for (const note of bill.creditNotes) {
+    for (const line of note.lines ?? []) {
+      credited.set(line.billLineId, (credited.get(line.billLineId) ?? 0n) + toPaise(line.amount));
+    }
+  }
+  return bill.lines
+    .filter((l) => !l.isReturn && l.netAmount > 0)
+    .map((l) => ({
+      id: l.id,
+      description: l.description,
+      sacCode: l.sacCode,
+      taxRate: l.taxRate,
+      netAmount: l.netAmount,
+      left: fromPaise(maxBig(toPaise(l.netAmount) - (credited.get(l.id) ?? 0n), 0n)),
+    }))
+    .filter((l) => l.left > 0);
+}
+
+/**
  * How the GST in a preview is shown: as IGST on a bill whose place of supply is another state (the server charges
  * IGST on it, and a discount does not change where the supply goes, even when the bill's tax is zero now), otherwise as
  * CGST and SGST.
@@ -459,4 +531,9 @@ export function gstBreakdown(
         { label: 'CGST', amount: totals.cgst },
         { label: 'SGST', amount: totals.sgst },
       ];
+}
+
+/** The GST a debit note adds on `taxable` at `rate`% (paise), as `DebitNotes.Gst` rounds it. */
+export function debitGst(taxable: number, rate: number): number {
+  return fromPaise((toPaise(taxable) * BigInt(Math.round(rate * 100)) + 5000n) / 10000n);
 }

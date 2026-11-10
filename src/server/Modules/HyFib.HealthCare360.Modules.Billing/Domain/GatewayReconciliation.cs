@@ -77,6 +77,34 @@ public sealed class GatewaySettlement : Entity, IFacilityScoped
     public List<GatewaySettlementLine> Lines { get; set; } = [];
 
     /// <summary>
+    /// What happened to the settlement after it was paid out, in order: reversed when it failed (the bank refused or
+    /// returned the transfer), restored when the gateway paid it out after all. Each is a journal of the day it was
+    /// learnt; the settlement's own journal stays in its own day.
+    /// </summary>
+    public List<GatewaySettlementCorrection> Corrections { get; set; } = [];
+
+    /// <summary>Its journal stands reversed: the last correction reversed it.</summary>
+    public bool IsReversed => Corrections.Count > 0 && Corrections.MaxBy(c => c.Seq)!.Kind == SettlementCorrectionKind.Reversed;
+
+    /// <summary>
+    /// Reverses its journal, or restores it, in the books of <paramref name="on"/> (the Indian calendar day this is
+    /// learnt), as the next correction.
+    /// </summary>
+    public GatewaySettlementCorrection Correct(SettlementCorrectionKind kind, DateOnly on, DateTimeOffset now)
+    {
+        var correction = new GatewaySettlementCorrection
+        {
+            GatewaySettlementId = Id,
+            Seq = Corrections.Count == 0 ? 1 : Corrections.Max(c => c.Seq) + 1,
+            Kind = kind,
+            On = on,
+            At = now,
+        };
+        Corrections.Add(correction);
+        return correction;
+    }
+
+    /// <summary>
     /// What reached the bank less what the transactions add up to. Zero when the settlement is consistent; anything else
     /// stays in the clearing ledger and is listed as an exception.
     /// </summary>
@@ -118,6 +146,7 @@ public sealed class GatewaySettlement : Entity, IFacilityScoped
                 Credit = Money.Round(item.Credit),
                 Debit = Money.Round(item.Debit),
                 Method = item.Method,
+                DisputeId = item.DisputeId,
                 TransactionAt = item.CreatedAt,
                 SettledAt = reported.SettledAt,
                 Match = item.Type is PaymentTransactionType.Payment ? SettlementMatch.NoReceipt
@@ -154,6 +183,37 @@ public sealed class GatewaySettlement : Entity, IFacilityScoped
     }
 }
 
+public enum SettlementCorrectionKind
+{
+    /// <summary>The settlement failed after it was paid out (the bank refused or returned the transfer): its journal is reversed.</summary>
+    Reversed = 0,
+
+    /// <summary>The gateway paid it out after all: its journal stands again.</summary>
+    Restored,
+}
+
+/// <summary>
+/// A settlement's journal reversed, or restored, in the books of the day HC360 learnt that its payout failed, or went
+/// through after all. Kept, never changed: the journal, its reversal and its restoration each stay in their own day,
+/// as an accountant corrects a posted voucher, rather than the journal being altered in a day already in Tally. Each is
+/// audited as it is made (billing.gateway.settlement_failed, billing.gateway.settlement_restored).
+/// </summary>
+[NotAudited]
+public sealed class GatewaySettlementCorrection : Entity
+{
+    public Guid GatewaySettlementId { get; set; }
+
+    /// <summary>1 for the settlement's first correction, 2 for the next: part of its voucher number.</summary>
+    public int Seq { get; set; }
+
+    public SettlementCorrectionKind Kind { get; set; }
+
+    /// <summary>The Indian calendar day it was learnt: the date of its journal.</summary>
+    public DateOnly On { get; set; }
+
+    public DateTimeOffset At { get; set; }
+}
+
 /// <summary>One transaction of a settlement and what it matched in HC360.</summary>
 [NotAudited]
 public sealed class GatewaySettlementLine : Entity
@@ -181,6 +241,9 @@ public sealed class GatewaySettlementLine : Entity
     public decimal Credit { get; set; }
     public decimal Debit { get; set; }
     public string? Method { get; set; }
+
+    /// <summary>For an adjustment a dispute made, the gateway's dispute (<c>disp_…</c>): the case it belongs to.</summary>
+    public string? DisputeId { get; set; }
 
     /// <summary>When the payment was taken or the refund made at the gateway.</summary>
     public DateTimeOffset? TransactionAt { get; set; }
@@ -264,6 +327,13 @@ public static class SettlementJournal
     /// <summary>The settlement journal's voucher number: the settlement id, with a facility suffix for a shared account's other facilities.</summary>
     public static string VoucherNumber(GatewaySettlement settlement, SettlementPortion portion) =>
         portion.IsOwner ? settlement.SettlementId : $"{settlement.SettlementId}-{portion.FacilityId.ToString("N")[..6]}";
+
+    /// <summary>
+    /// The voucher number of a correction of the settlement's journal: the journal's, then R for a reversal or S for a
+    /// restoration, and its place among the settlement's corrections (setl_N8a1Bc2d3E4f5G-R1).
+    /// </summary>
+    public static string CorrectionNumber(GatewaySettlement settlement, SettlementPortion portion, GatewaySettlementCorrection correction) =>
+        $"{VoucherNumber(settlement, portion)}-{(correction.Kind == SettlementCorrectionKind.Reversed ? "R" : "S")}{correction.Seq.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 }
 
 /// <summary>
@@ -333,6 +403,12 @@ public enum DiscrepancyKind
 
     /// <summary>The gateway reports a refund differently from HC360: unknown to HC360, a different amount, or failed.</summary>
     RefundMismatch,
+
+    /// <summary>
+    /// A settlement the gateway had paid out failed afterwards (the bank refused or returned the transfer): its journal is
+    /// reversed, and the gateway owes the money until it pays it out again.
+    /// </summary>
+    FailedSettlement,
 }
 
 public enum DiscrepancyStatus
@@ -396,7 +472,7 @@ public sealed class GatewayDiscrepancy : AuditableEntity, IFacilityScoped
     public static int RankOf(DiscrepancyKind kind) => kind switch
     {
         DiscrepancyKind.UnrecordedPayment => 1,
-        DiscrepancyKind.UnsettledReceipt => 2,
+        DiscrepancyKind.UnsettledReceipt or DiscrepancyKind.FailedSettlement => 2,
         DiscrepancyKind.AmountMismatch => 3,
         _ => 4,
     };
@@ -532,6 +608,10 @@ public sealed class GatewayWebhookEvent : Entity
     public string? PaymentId { get; set; }
     public string? RefundId { get; set; }
     public string? SettlementId { get; set; }
+
+    /// <summary>The gateway's dispute the event was about (<c>payment.dispute.*</c>).</summary>
+    public string? DisputeId { get; set; }
+
     public Guid? FacilityId { get; set; }
     public DateTimeOffset ReceivedAt { get; set; }
 

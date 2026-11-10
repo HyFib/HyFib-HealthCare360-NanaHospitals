@@ -85,5 +85,5 @@ internal static class InventoryEndpoints
 
     internal static BloodUnitDto ToDto(BloodComponent u, DateTimeOffset now) => new(
         u.Id, u.UnitNumber, u.DonationId, u.ComponentType, u.BloodGroup, u.VolumeMl, u.CollectedAt, u.ExpiresAt, u.Status, u.Tti, u.StorageLocation,
-        u.ReservedForRequestId, u.IssuedAt, u.DiscardReason, u.Status == BloodUnitStatus.Expired || u.IsExpiredAt(now));
+        u.ReservedForRequestId, u.IssuedAt, u.DiscardReason, u.Status == BloodUnitStatus.Expired || u.IsExpiredAt(now), u.AwaitingVerification);
 }

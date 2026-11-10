@@ -4,6 +4,12 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Modules.VirtualCare.Domain;
+using HyFib.HealthCare360.Platform.Documents;
+using Bill = HyFib.HealthCare360.Modules.Billing.Domain.Bill;
+using BillLine = HyFib.HealthCare360.Modules.Billing.Domain.BillLine;
+using BillStatus = HyFib.HealthCare360.Modules.Billing.Domain.BillStatus;
+using BillType = HyFib.HealthCare360.Modules.Billing.Domain.BillType;
 using Modality = HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.Modality;
 using R4 = Hl7.Fhir.Model;
 
@@ -97,18 +103,20 @@ internal sealed record ConsultationNote
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
-/// <summary>A consultation with its diagnoses, vital signs, prescriptions and the patient's allergies.</summary>
+/// <summary>A consultation with its diagnoses, vital signs, prescriptions, procedures and the patient's allergies.</summary>
 internal sealed record ConsultationData(
     AbdmContext Context,
     ConsultationNote Note,
     IReadOnlyList<DiagnosisRow> Diagnoses,
     IReadOnlyList<VitalSignsRow> Vitals,
     IReadOnlyList<PrescriptionItemRow> Lines,
-    IReadOnlyList<AllergyRow> Allergies);
+    IReadOnlyList<AllergyRow> Allergies,
+    IReadOnlyList<ProcedureRow>? Procedures = null);
 
 /// <summary>
-/// A signed discharge summary with the stay's diagnoses, prescriptions and lab reports, the patient's allergies, and the
-/// doctor who made the latest amendment, when its author is a doctor.
+/// A signed discharge summary with the stay's diagnoses, prescriptions, lab reports and procedures (operations the
+/// theatre completed included), the patient's allergies, and the doctor who made the latest amendment, when its author
+/// is a doctor.
 /// </summary>
 internal sealed record DischargeSummaryData(
     AbdmContext Context,
@@ -118,7 +126,93 @@ internal sealed record DischargeSummaryData(
     IReadOnlyList<AllergyRow> Allergies,
     IReadOnlyList<LabReportRow> LabReports,
     IReadOnlyList<LabResultRow> LabResults,
-    Guid? AmendedByPractitionerId = null);
+    Guid? AmendedByPractitionerId = null,
+    IReadOnlyList<ProcedureRow>? Procedures = null);
+
+/// <summary>A vaccine dose given here, as the FHIR read API serves it.</summary>
+internal sealed record ImmunizationData(AbdmContext Context, ImmunizationRow Dose);
+
+/// <summary>
+/// A signed clinical note and the addenda signed to it since (an addendum to one of them included), each as the FHIR read
+/// API serves it: its encounter and stay kept only when they are the patient's own, its writer and signer named.
+/// </summary>
+internal sealed record ClinicalNoteData(AbdmContext Context, ClinicalNoteRow Note, IReadOnlyList<ClinicalNoteRow> Addenda);
+
+/// <summary>
+/// A finalised bill with its lines (Billing's own entity, read without tracking); the doctors whose services it bills are
+/// among the context's practitioners.
+/// </summary>
+internal sealed record InvoiceData(AbdmContext Context, Bill Bill);
+
+/// <summary>
+/// The home readings of a monitoring programme that one document holds (<see cref="ReadingsSpan"/>), with the programme's
+/// name, each as the FHIR read API serves it: the device that sent it, and who entered one read out on the phone. A month
+/// of more readings than one document holds goes in parts (<see cref="AbdmRecords.Parts"/>): this is part
+/// <see cref="Part"/> of <see cref="Parts"/>.
+/// </summary>
+internal sealed record HomeReadingsData(AbdmContext Context, Guid EnrollmentId, string Programme, ReadingsSpan Span, IReadOnlyList<DeviceReadingRow> Readings)
+{
+    public int Part { get; init; } = 1;
+    public int Parts { get; init; } = 1;
+}
+
+/// <summary>
+/// The readings one document holds: those measured in a calendar month in IST (<see cref="Month"/>, its first day), cut
+/// where the dates asked for begin after the month does (<see cref="From"/>) or end before it (<see cref="To"/>), both
+/// inclusive as a consent's dates are. A month is the unit, so no document grows with the years a programme runs: a year
+/// of readings at a few a day in one document would be megabytes for a PHR app to open.
+/// </summary>
+internal sealed record ReadingsSpan
+{
+    private ReadingsSpan(DateOnly month, DateTimeOffset? from, DateTimeOffset? to)
+    {
+        Month = month;
+        From = from;
+        To = to;
+    }
+
+    public DateOnly Month { get; }
+
+    /// <summary>The first instant it holds, when the dates asked for begin after the month does.</summary>
+    public DateTimeOffset? From { get; }
+
+    /// <summary>The last instant it holds, when the dates asked for end before the month does.</summary>
+    public DateTimeOffset? To { get; }
+
+    /// <summary>The month's first instant: midnight IST on its first day.</summary>
+    public DateTimeOffset Start => FhirTime.StartOfDay(Month);
+
+    /// <summary>The next month's first instant, which the month ends before.</summary>
+    public DateTimeOffset End => FhirTime.StartOfDay(Month.AddMonths(1));
+
+    /// <summary>The span as part of a document's identity: the month, and where the dates asked for cut it.</summary>
+    public string Key =>
+        Month.ToString("yyyy-MM", CultureInfo.InvariantCulture)
+        + (From is { } from ? "/from-" + from.UtcTicks.ToString(CultureInfo.InvariantCulture) : string.Empty)
+        + (To is { } to ? "/to-" + to.UtcTicks.ToString(CultureInfo.InvariantCulture) : string.Empty);
+
+    /// <summary>The time it covers: the month's days, or the instants the dates asked for cut it at.</summary>
+    public R4.Period Period => new()
+    {
+        Start = From is { } from ? FhirTime.DateTime(from) : FhirTime.Date(Month),
+        End = To is { } to ? FhirTime.DateTime(to) : FhirTime.Date(Month.AddMonths(1).AddDays(-1)),
+    };
+
+    /// <summary>
+    /// The readings of the month <paramref name="day"/> is in, measured from <paramref name="from"/> to
+    /// <paramref name="to"/> (either open): a cut is kept only where it falls inside the month.
+    /// </summary>
+    public static ReadingsSpan Of(DateOnly day, DateTimeOffset? from = null, DateTimeOffset? to = null)
+    {
+        var month = new DateOnly(day.Year, day.Month, 1);
+        var start = FhirTime.StartOfDay(month);
+        var end = FhirTime.StartOfDay(month.AddMonths(1));
+        return new ReadingsSpan(month, from is { } f && f > start ? f : null, to is { } t && t < end ? t : null);
+    }
+
+    /// <summary>Whether a reading measured then is in it.</summary>
+    public bool Holds(DateTimeOffset measuredAt) => measuredAt >= (From ?? Start) && measuredAt < End && (To is null || measuredAt <= To);
+}
 
 /// <summary>The names ABDM documents download under: the record's kind, its number or the UHID and day, then <c>-abdm.json</c>.</summary>
 internal static class AbdmFiles
@@ -173,6 +267,10 @@ internal static class AbdmAsOf
 
     public static List<VitalSignsRow> Vitals(IEnumerable<VitalSignsRow> rows, DateTimeOffset asOf) =>
         [.. rows.Where(v => v.CreatedAt <= asOf && !v.IsEnteredInError)];
+
+    /// <summary>Procedures recorded by then; one corrected since shows as it is now, and one recorded in error is left out.</summary>
+    public static List<ProcedureRow> Procedures(IEnumerable<ProcedureRow> rows, DateTimeOffset asOf) =>
+        [.. rows.Where(p => p.CreatedAt <= asOf && p.Status != ProcedureStatus.EnteredInError)];
 
     /// <summary>Lines of prescriptions signed by then and not cancelled by then.</summary>
     public static List<PrescriptionItemRow> Lines(IEnumerable<PrescriptionItemRow> rows, DateTimeOffset asOf) =>
@@ -394,7 +492,8 @@ internal static class AbdmRecords
 
     /// <summary>
     /// A signed consultation (OPConsultRecord): complaint and diagnoses, history, examination with the vital signs,
-    /// allergies, medicines prescribed, follow-up and referral, then the assessment and plan in a section of its own (the
+    /// allergies, medicines prescribed, follow-up, the procedures done in the consultation (the IG's Procedure section,
+    /// SNOMED CT 371525003) and referral, then the assessment and plan in a section of its own (the
     /// IG has none; its slicing is open at the end). An amended note is attested by the doctor who amended it.
     /// </summary>
     public static AbdmDocument Consultation(ConsultationData d)
@@ -414,6 +513,7 @@ internal static class AbdmRecords
 
         var requests = Undated(MedicationRequests(AbdmAsOf.Lines(d.Lines, date), people, date));
         var allergies = Undated(Allergies(AbdmAsOf.Allergies(d.Allergies, date)));
+        var procedures = Undated(Procedures(AbdmAsOf.Procedures(d.Procedures ?? [], date), people));
         var author = people.Practitioner(note.SignedByPractitionerId ?? note.PractitionerId);
         var amended = note.Status == EncounterStatus.Amended;
         var amender = amended ? people.Find(note.AmendedByPractitionerId) : null;
@@ -436,6 +536,7 @@ internal static class AbdmRecords
             new(AbdmCodes.FollowUp, "Follow up", Lines(
                 note.FollowUpDate is { } followUp ? $"Follow-up on {FhirTime.Date(followUp)}" : null,
                 FhirElements.Clean(note.FollowUpAdvice)), []),
+            new(AbdmCodes.ClinicalProcedureReport, "Procedures", [], procedures),
             new(AbdmCodes.Referral, "Referral", Lines(referral), []),
             new(AbdmCodes.AssessmentAndPlan, "Assessment and plan", Lines(Field("Assessment", note.Assessment), Field("Plan", note.Plan)), []),
         ];
@@ -467,7 +568,8 @@ internal static class AbdmRecords
     /// A signed discharge summary (DischargeSummaryRecord): the stay as the encounter; complaints and the diagnoses
     /// recorded during the stay (the IG has no diagnosis section; its examples put them here); allergies; the stay's lab
     /// reports; the medicines prescribed during the stay, each active or completed as of the summary's date, under the
-    /// doctor's own list of medicines on discharge; procedures; the care plan; the summary itself (the printed PDF, else
+    /// doctor's own list of medicines on discharge; the procedures done during the stay (operations the theatre completed
+    /// included) under the doctor's own words; the care plan; the summary itself (the printed PDF, else
     /// its text); and the hospital course in a section of its own at the end. An amended summary is attested by the doctor
     /// who amended it.
     /// </summary>
@@ -480,6 +582,7 @@ internal static class AbdmRecords
         var conditions = Undated(Conditions(AbdmAsOf.Diagnoses(d.Diagnoses, date)));
         var requests = Undated(MedicationRequests(AbdmAsOf.Lines(d.Lines, date), people, date));
         var allergies = Undated(Allergies(AbdmAsOf.Allergies(d.Allergies, date)));
+        var procedures = Undated(Procedures(AbdmAsOf.Procedures(d.Procedures ?? [], date), people));
         var reports = new List<R4.DiagnosticReport>();
         var results = new List<R4.Observation>();
         var (heldReports, heldResults) = AbdmAsOf.LabReports(d.LabReports, d.LabResults, date);
@@ -526,7 +629,7 @@ internal static class AbdmRecords
             new(AbdmCodes.Investigations, "Investigations", Lines(Field("Investigations", summary.InvestigationsSummary)), reports, "Lab reports:"),
             new(AbdmCodes.MedicationHistory, "Medications", Lines(Field("Medications on discharge", summary.Medications)), requests,
                 "Prescribed during the stay:"),
-            new(AbdmCodes.PastProcedures, "Procedures", Lines(Field("Procedures", summary.Procedures)), []),
+            new(AbdmCodes.PastProcedures, "Procedures", Lines(Field("Procedures", summary.Procedures)), procedures, "Recorded during the stay:"),
             new(AbdmCodes.CarePlan, "Care plan", Lines(
                 Field("Advice", summary.Advice),
                 summary.FollowUpDate is { } followUp ? $"Follow-up on {FhirTime.Date(followUp)}" : null,
@@ -625,6 +728,15 @@ internal static class AbdmRecords
     [
         .. diagnoses.OrderByDescending(d => d.IsPrimary).ThenBy(d => d.RecordedAt).ThenBy(d => d.Id)
             .Select(d => AbdmProfiler.Condition(ConditionMapper.Map(d))),
+    ];
+
+    /// <summary>
+    /// Procedures in the order they were done, as the FHIR read API serves them under the IG's Procedure profile: by name
+    /// (the IG allows SNOMED CT codes only), the performer a practitioner of the document or the name written.
+    /// </summary>
+    private static List<R4.Procedure> Procedures(IReadOnlyList<ProcedureRow> procedures, People people) =>
+    [
+        .. procedures.OrderBy(p => p.PerformedAt).ThenBy(p => p.Id).Select(p => AbdmProfiler.Procedure(ProcedureMapper.Map(p, people.Names))),
     ];
 
     /// <summary>Allergies, except those recorded in error.</summary>
@@ -731,6 +843,318 @@ internal static class AbdmRecords
         };
     }
 
+    /// <summary>LOINC's "Date vaccine due": the date an immunisation recommendation is for.</summary>
+    private const string DateVaccineDueLoinc = "30980-7";
+
+    /// <summary>
+    /// A vaccine dose given here (ImmunizationRecord): the dose as the FHIR API serves it (the vaccine as the SNOMED CT
+    /// product of the guide's value set when its card code is known, the batch, expiry, manufacturer, site, route and dose
+    /// number, and who gave it, by name), and, when staff wrote when the next dose is due, the hospital's recommendation
+    /// of it (<see cref="NextDose"/>). The facility where it was given is the author and the custodian; the nurse or
+    /// doctor who gave it is the dose's administering provider. Its date is when it was recorded: a dose is not changed
+    /// afterwards, only marked as entered in error, and then not exported (<c>AbdmRecordLoader</c>).
+    /// </summary>
+    public static AbdmDocument Immunization(ImmunizationData d)
+    {
+        var row = d.Dose;
+        var people = People.Of(d.Context);
+        var hospital = people.Organization(d.Context.FacilityId);
+        var encounter = Encounter(d.Context, people);
+        var dose = AbdmProfiler.Immunization(ImmunizationMapper.Map(row));
+
+        // A dose recorded in an encounter the document does not hold does not point to it: a reference to nothing could
+        // say no more than that it is an encounter.
+        if (encounter is null)
+        {
+            dose.Encounter = null;
+        }
+
+        List<R4.Resource> entries = [dose];
+        if (row.NextDueOn is { } due)
+        {
+            entries.Add(NextDose(row, dose, due, people.Names.Organization(d.Context.FacilityId)!));
+        }
+
+        return new AbdmDocument
+        {
+            Type = AbdmRecordType.Immunization,
+
+            // Three vaccines are given at birth: the card code tells the files of one day apart.
+            FileName = AbdmFiles.Name("immunization", $"{d.Context.Patient.Uhid}-{VaccineCodes.Find(row.VaccineCode)?.Code ?? "vaccine"}", row.AdministeredOn),
+            SourceId = row.Id,
+            Profile = AbdmProfiles.ImmunizationRecord,
+            DocumentType = AbdmCodes.ImmunizationRecord,
+            Title = "Immunisation record",
+            Status = R4.CompositionStatus.Final,
+            Date = row.CreatedAt,
+            RecordUpdated = FhirElements.Latest(row.CreatedAt, row.UpdatedAt),
+            Patient = Patient(d.Context, people, [row.PatientId]),
+            Encounter = encounter,
+            Author = hospital,
+            Custodian = hospital,
+            Sections = [new AbdmSection(AbdmCodes.ImmunizationRecord, "Immunisation record", [], entries)],
+            Supporting = [.. people.All],
+        };
+    }
+
+    /// <summary>
+    /// The next dose staff wrote is due (ImmunizationRecommendation): the same vaccine, due that day (LOINC "Date vaccine
+    /// due"), the dose after this one when its number is known, on the strength of this dose. The hospital recommends it,
+    /// as of when the dose was recorded.
+    /// </summary>
+    private static R4.ImmunizationRecommendation NextDose(ImmunizationRow row, R4.Immunization dose, DateOnly due, R4.ResourceReference hospital) => new()
+    {
+        Id = dose.Id,
+        Meta = new R4.Meta { Profile = [AbdmProfiles.ImmunizationRecommendation] },
+        Patient = FhirReferences.Patient(row.PatientId),
+        Date = FhirTime.DateTime(row.CreatedAt),
+        Authority = R4.BaseExtensions.DeepCopy(hospital),
+        Recommendation =
+        [
+            new R4.ImmunizationRecommendation.RecommendationComponent
+            {
+                VaccineCode = [R4.BaseExtensions.DeepCopy(dose.VaccineCode)],
+                ForecastStatus = FhirElements.Concept(FhirSystems.ImmunizationRecommendationStatus, "due", "Due"),
+                DateCriterion =
+                [
+                    new R4.ImmunizationRecommendation.DateCriterionComponent
+                    {
+                        Code = FhirElements.Concept(FhirSystems.Loinc, DateVaccineDueLoinc, "Date vaccine due"),
+                        Value = FhirTime.Date(due),
+                    },
+                ],
+                DoseNumber = row.DoseNumber is int number && number > 0 ? new R4.PositiveInt(number + 1) : null,
+                SupportingImmunization = [new R4.ResourceReference($"Immunization/{dose.Id}") { Type = "Immunization" }],
+            },
+        ],
+    };
+
+    /// <summary>
+    /// A signed clinical note (HealthDocumentRecord): the note as the FHIR API serves it (LOINC's document type for its
+    /// kind, the text exactly as signed, who wrote and signed it, the facility that keeps it, its encounter), then each
+    /// addendum signed to it since, oldest first, which appends to the note it adds to. The hospital prints no clinical
+    /// note, so each document is the signed text, and the section's narrative is that text: the note's, then each
+    /// addendum's, each after who signed it and when. The doctor who wrote the note is its author (the facility, for a
+    /// note written by staff who are not doctors), and the doctor who signed it attests it; once an addendum is signed the
+    /// note is amended, dated and attested as of the latest addendum, whose writer is an author of that version too.
+    /// </summary>
+    public static AbdmDocument ClinicalNote(ClinicalNoteData d)
+    {
+        var note = d.Note;
+        var people = People.Of(d.Context);
+        var hospital = people.Organization(d.Context.FacilityId);
+        List<ClinicalNoteRow> parts = [note, .. d.Addenda.OrderBy(a => a.SignedAt).ThenBy(a => a.Id)];
+        var latest = parts[^1];
+        var amended = parts.Count > 1;
+        var kind = DocumentReferenceMapper.NoteName(note.Type);
+        var encounter = Encounter(d.Context, people);
+        var documents = new List<R4.Resource>();
+        var text = new List<string>();
+        foreach (var part in parts)
+        {
+            var document = AbdmProfiler.DocumentReference(DocumentReferenceMapper.FromClinicalNote(part, people.Names));
+
+            // A note written in an encounter the document does not hold does not point to it (its context is that encounter
+            // alone): a reference to nothing could say no more than that it is an encounter.
+            if (encounter is null)
+            {
+                document.Context = null;
+            }
+
+            documents.Add(document);
+            text.Add(Signed(part.Id == note.Id ? kind : "Addendum", part, people.Names));
+            text.Add(part.Body);
+        }
+
+        var attester = people.Find(latest.SignedByPractitionerId);
+        return new AbdmDocument
+        {
+            Type = AbdmRecordType.ClinicalNote,
+            FileName = AbdmFiles.Name(kind.ToLowerInvariant().Replace(' ', '-'), d.Context.Patient.Uhid, FhirTime.IstDate(note.SignedAt)),
+            SourceId = note.Id,
+            Profile = AbdmProfiles.HealthDocumentRecord,
+            DocumentType = AbdmCodes.RecordArtifact,
+            Title = kind,
+            Status = amended ? R4.CompositionStatus.Amended : R4.CompositionStatus.Final,
+            Date = latest.SignedAt,
+            RecordUpdated = parts.Max(p => FhirElements.Latest(p.CreatedAt, p.UpdatedAt)),
+            Patient = Patient(d.Context, people, [note.PatientId]),
+            Encounter = encounter,
+            Author = (R4.Resource?)Writer(note, people) ?? hospital,
+            AmendedBy = amended ? Writer(latest, people) : null,
+            Attester = attester,
+            AttestedAt = attester is null ? null : latest.SignedAt,
+            Custodian = hospital,
+            Sections = [new AbdmSection(AbdmCodes.RecordArtifact, FhirElements.Clean(note.Title) ?? kind, text, documents) { TextIsEntries = true }],
+            Supporting = [.. people.All],
+        };
+    }
+
+    /// <summary>The doctor who wrote a note, else the doctor who signed it, when the document knows them.</summary>
+    private static R4.Practitioner? Writer(ClinicalNoteRow note, People people) =>
+        people.Find(note.AuthorPractitionerId) ?? people.Find(note.SignedByPractitionerId);
+
+    /// <summary>"Progress note, signed by Dr Asha Rao on 04 Nov 2026, 3:45 pm": who signed a note (by name) and when, in IST.</summary>
+    private static string Signed(string what, ClinicalNoteRow note, ReferenceDirectory names)
+    {
+        var signer = names.Practitioner(note.SignedByPractitionerId)?.Display ?? FhirElements.Clean(note.SignedByUserName);
+        var at = DocumentFormat.DateTime(note.SignedAt);
+        return signer is null ? $"{what}, signed on {at}" : $"{what}, signed by {signer} on {at}";
+    }
+
+    /// <summary>The WellnessRecord's type, which the IG fixes as text alone.</summary>
+    public const string WellnessRecordType = "Wellness Record";
+
+    /// <summary>
+    /// The most readings one document of home readings holds: a few months of a programme's readings at the rate any
+    /// programme asks for, and about a megabyte of FHIR. Devices send as often as they are set to, so a month can hold
+    /// more; it then goes in parts.
+    /// </summary>
+    public const int MaxReadingsPerDocument = 1000;
+
+    /// <summary>
+    /// The readings in the order they were measured, in parts of at most <see cref="MaxReadingsPerDocument"/>: one part
+    /// when they fit. Readings measured at the same instant stay in one part, so a blood pressure's systolic and diastolic
+    /// readings are never sent apart.
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyList<DeviceReadingRow>> Parts(IEnumerable<DeviceReadingRow> readings)
+    {
+        var parts = new List<IReadOnlyList<DeviceReadingRow>>();
+        var part = new List<DeviceReadingRow>();
+        foreach (var instant in readings.OrderBy(r => r.MeasuredAt).ThenBy(r => r.Id).GroupBy(r => r.MeasuredAt))
+        {
+            if (part.Count > 0 && part.Count + instant.Count() > MaxReadingsPerDocument)
+            {
+                parts.Add(part);
+                part = [];
+            }
+
+            part.AddRange(instant);
+        }
+
+        if (part.Count > 0)
+        {
+            parts.Add(part);
+        }
+
+        return parts;
+    }
+
+    /// <summary>
+    /// The IG's WellnessRecord sections a home reading goes in, each with the profile it asks of its entries: blood
+    /// pressure, heart rate, oxygen saturation and temperature are vital signs; weight is a body measurement; a glucometer
+    /// reading is a general assessment (the IG's value set for it names blood glucose); an ECG patch's rhythm is none of
+    /// those, so it goes in the section for other observations.
+    /// </summary>
+    internal static (string Title, string Profile) WellnessSection(RpmReadingType type) => type switch
+    {
+        RpmReadingType.SystolicBp or RpmReadingType.DiastolicBp or RpmReadingType.HeartRate or RpmReadingType.SpO2 or RpmReadingType.Temperature
+            => ("Vital Signs", AbdmProfiles.ObservationVitalSigns),
+        RpmReadingType.Weight => ("Body Measurement", AbdmProfiles.ObservationBodyMeasurement),
+        RpmReadingType.Glucose => ("General Assessment", AbdmProfiles.ObservationGeneralAssessment),
+        RpmReadingType.EcgRhythm => ("Other Observations", AbdmProfiles.Observation),
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of home reading."),
+    };
+
+    /// <summary>
+    /// A month of the readings a patient took at home in a remote monitoring programme (WellnessRecord), or the part of it
+    /// in the dates a consent asks for (<see cref="ReadingsSpan"/>, which the Composition's event period states). Each
+    /// reading is as the FHIR API serves it: the patient measured it, with the device named; one read out on the phone
+    /// says who entered it; each stood against the limits the care team set (normal, outside them, beyond the critical
+    /// ones). They go in the IG's sections for them (<see cref="WellnessSection"/>), in the order they were measured, and
+    /// each section's narrative is its readings with the time each was measured in IST, as a chart of them reads. No one
+    /// signs a reading: the facility that runs the programme is the author and the custodian, and the document is dated
+    /// when it received the latest of them.
+    /// </summary>
+    public static AbdmDocument HomeReadings(HomeReadingsData d)
+    {
+        if (d.Readings.Count == 0)
+        {
+            throw new InvalidOperationException("A document of home readings needs a reading.");
+        }
+
+        var people = People.Of(d.Context);
+        var hospital = people.Organization(d.Context.FacilityId);
+        var rows = d.Readings.ToDictionary(r => FhirIds.Of(FhirIds.DeviceReading, r.Id));
+        var sections = new List<AbdmSection>();
+        foreach (var group in d.Readings.GroupBy(r => WellnessSection(r.Type)).OrderBy(g => SectionOrder(g.Key.Title)))
+        {
+            // A blood pressure panel goes under its systolic reading's id (its diastolic one's, taken alone): both were
+            // measured at the same instant, which orders it.
+            var observations = DeviceReadingObservations.Map([.. group])
+                .OrderBy(o => rows[o.Id!].MeasuredAt).ThenBy(o => o.Id, StringComparer.Ordinal)
+                .Select(o => AbdmProfiler.Observation(o, group.Key.Profile))
+                .ToList();
+            var lines = new List<string>();
+            foreach (var observation in observations)
+            {
+                var line = ReadingLine(observation, rows[observation.Id!]);
+                observation.Text = AbdmNarrative.Generated([line]);
+                lines.Add(line);
+            }
+
+            sections.Add(new AbdmSection(null, group.Key.Title, lines, observations) { TextIsEntries = true });
+        }
+
+        var received = d.Readings.Max(r => r.ReceivedAt);
+        var month = d.Span.Month.ToString("MMMM yyyy", CultureInfo.InvariantCulture);
+        var title = FhirElements.Clean(d.Programme) is { } programme ? $"Home readings: {programme}, {month}" : $"Home readings, {month}";
+        var part = d.Parts > 1 ? $"-part-{d.Part}" : string.Empty;
+        return new AbdmDocument
+        {
+            Type = AbdmRecordType.HomeReadings,
+            FileName = AbdmFiles.Name("home-readings", $"{d.Context.Patient.Uhid}-{d.Span.Month.ToString("yyyy-MM", CultureInfo.InvariantCulture)}{part}"),
+            SourceId = d.EnrollmentId,
+
+            // A month's first part keeps the month's identity as the month grows into more parts.
+            Part = d.Part > 1 ? $"{d.Span.Key}/part-{d.Part}" : d.Span.Key,
+            Profile = AbdmProfiles.WellnessRecord,
+            DocumentType = null,
+            TypeText = WellnessRecordType,
+            Title = d.Parts > 1 ? $"{title} (part {d.Part} of {d.Parts})" : title,
+            Status = R4.CompositionStatus.Final,
+            Covers = d.Span.Period,
+            Date = received,
+            RecordUpdated = received,
+            Patient = Patient(d.Context, people, d.Readings.Select(r => r.PatientId)),
+            Author = hospital,
+            Custodian = hospital,
+            Sections = sections,
+            Supporting = [.. people.All],
+        };
+    }
+
+    /// <summary>The IG's order of the WellnessRecord sections.</summary>
+    private static int SectionOrder(string title) => title switch
+    {
+        "Vital Signs" => 0,
+        "Body Measurement" => 1,
+        "General Assessment" => 2,
+        _ => 3,
+    };
+
+    /// <summary>
+    /// "25 Sep 2026, 7:30 am: Blood pressure: 150 / 95 mmHg, outside the limits set for the patient": a reading as a
+    /// chart of them reads, when it was measured in IST, how it stood when it was not normal, and who entered one read out
+    /// on the phone.
+    /// </summary>
+    private static string ReadingLine(R4.Observation observation, DeviceReadingRow row)
+    {
+        var what = observation.Value is R4.CodeableConcept rhythm
+            ? $"{observation.Code.Text}: {rhythm.Text}"
+            : AbdmNarrative.Summary(observation) ?? observation.Code.Text;
+        var stood = observation.Interpretation.FirstOrDefault()?.Coding.FirstOrDefault()?.Code switch
+        {
+            "A" => ", outside the limits set for the patient",
+            "AA" => ", beyond the critical limits set for the patient",
+            _ => string.Empty,
+        };
+        var entered = row.Source != ReadingSource.Manual ? string.Empty
+            : FhirElements.Clean(row.RecordedByUserName) is { } who ? $" (read out by the patient, entered by {who})"
+            : " (read out by the patient, entered by hand)";
+        return $"{DocumentFormat.DateTime(row.MeasuredAt)}: {what}{stood}{entered}";
+    }
+
     /// <summary>LOINC's document type for cardiology studies, for the printed copy of one LOINC names no study for.</summary>
     private const string CardiologyStudiesLoinc = "26441-6";
 
@@ -832,6 +1256,192 @@ internal static class AbdmRecords
 
         return document;
     }
+
+    /// <summary>
+    /// A finalised bill (InvoiceRecord): the Invoice and the printed bill. The facility that issued the bill is the author,
+    /// the custodian and the invoice's issuer; the doctors whose services it bills are its participants. Its date is when it
+    /// was finalised, when its lines and amounts were frozen; only its status moves after that, from issued to balanced once
+    /// the patient's share is paid and the payer owes nothing (<see cref="InvoiceStatus"/>). Each line's price components
+    /// add up to the line's net amount, and the totals' to the bill's (<see cref="InvoiceLine"/>).
+    /// </summary>
+    public static AbdmDocument Invoice(InvoiceData d)
+    {
+        var bill = d.Bill;
+        var number = bill.BillNumber ?? throw new InvalidOperationException("A bill is exported only once it has its number.");
+        var people = People.Of(d.Context);
+        var hospital = people.Organization(d.Context.FacilityId);
+        var finalized = bill.FinalizedAt ?? bill.CreatedAt;
+        var lines = bill.Lines.OrderBy(l => l.SortOrder).ThenBy(l => l.Id).ToList();
+
+        var invoice = new R4.Invoice
+        {
+            Id = FhirIds.Of(bill.Id),
+            Meta = new R4.Meta { Profile = [AbdmProfiles.Invoice] },
+            Identifier = [new R4.Identifier(AbdmSystems.BillNumber, number)],
+            Status = InvoiceStatus(bill),
+            Type = BillTypeConcept(bill),
+            Subject = FhirReferences.Patient(bill.PatientId),
+            Date = FhirTime.DateTime(finalized),
+            Issuer = people.Names.Organization(d.Context.FacilityId),
+            LineItem = [.. lines.Select((line, i) => InvoiceLine(line, i + 1))],
+            TotalPriceComponent = InvoiceTotals(bill),
+            TotalNet = Inr(bill.TaxableAmount),
+            TotalGross = Inr(bill.NetAmount),
+            PaymentTerms = PaymentTerms(bill),
+        };
+
+        foreach (var doctor in lines.Select(l => l.PractitionerId).OfType<Guid>().Distinct().Order())
+        {
+            if (people.Find(doctor) is not null && people.Names.Practitioner(doctor) is { } reference)
+            {
+                invoice.Participant.Add(new R4.Invoice.ParticipantComponent { Role = new R4.CodeableConcept { Text = "Service provider" }, Actor = reference });
+            }
+        }
+
+        List<R4.Resource> entries = [invoice];
+        if (d.Context.Pdf is { } pdf)
+        {
+            entries.Add(new R4.Binary
+            {
+                Id = FhirIds.Of(bill.Id),
+                Meta = new R4.Meta { Profile = [AbdmProfiles.Binary] },
+                ContentType = pdf.ContentType,
+                Data = pdf.Content,
+            });
+        }
+
+        return new AbdmDocument
+        {
+            Type = AbdmRecordType.Invoice,
+            FileName = AbdmFiles.Name("bill", number),
+            SourceId = bill.Id,
+            Profile = AbdmProfiles.InvoiceRecord,
+            DocumentType = AbdmCodes.Invoice,
+            Title = "Invoice",
+            Status = R4.CompositionStatus.Final,
+            Date = finalized,
+            RecordUpdated = FhirElements.Latest(bill.CreatedAt, bill.UpdatedAt),
+            Patient = Patient(d.Context, people, [bill.PatientId]),
+            Encounter = Encounter(d.Context, people),
+            Author = hospital,
+            Custodian = hospital,
+            Sections = [new AbdmSection(AbdmCodes.Invoice, "Invoice", [], entries)],
+            Supporting = people.All,
+        };
+    }
+
+    /// <summary>
+    /// FHIR's status of a finalised bill: issued while the patient or the payer still owes on it, balanced once the patient's
+    /// share is paid and the payer owes nothing more. A cancelled bill (refunded or not) and a draft are not exported.
+    /// </summary>
+    internal static R4.Invoice.InvoiceStatus InvoiceStatus(Bill bill) => bill.Status switch
+    {
+        BillStatus.Finalized or BillStatus.PartiallyPaid => R4.Invoice.InvoiceStatus.Issued,
+        BillStatus.Paid => bill.PayerOutstanding > 0 ? R4.Invoice.InvoiceStatus.Issued : R4.Invoice.InvoiceStatus.Balanced,
+        _ => throw new InvalidOperationException("Only a finalised bill that has not been cancelled is exported."),
+    };
+
+    private static R4.CodeableConcept BillTypeConcept(Bill bill) =>
+        bill.Type == BillType.OutPatient ? FhirElements.Concept(AbdmSystems.BillType, "op", "Out-patient bill", "Out-patient bill")
+        : bill.IsFinalBill ? FhirElements.Concept(AbdmSystems.BillType, "ip-final", "In-patient final bill", "In-patient final bill")
+        : FhirElements.Concept(AbdmSystems.BillType, "ip-interim", "In-patient interim bill", "In-patient interim bill");
+
+    /// <summary>
+    /// A bill line as an invoice line: the service by its HC360 code and SAC code, then its price components, which add up
+    /// to the line's net amount: the base (the quantity as its factor, the unit price times the quantity as its amount), what
+    /// the package covers, the tariff concession, the staff discount and the line's share of the bill discount, each as a
+    /// negative amount, then CGST, SGST or IGST at their rates. The unit price is stated as information, outside the sum.
+    /// On a bill free of cost by law, what each line is not charged is a deduction of its own, so the line still adds up to
+    /// nothing. A credit line (goods sent back) keeps its negative amounts.
+    /// </summary>
+    internal static R4.Invoice.LineItemComponent InvoiceLine(BillLine line, int sequence)
+    {
+        var service = FhirElements.Concept(FhirSystems.Service, line.ServiceCode.Trim(), line.Description.Trim(), line.Description.Trim());
+        if (FhirElements.Clean(line.SacCode) is { } sac)
+        {
+            service.Coding.Add(new R4.Coding(AbdmSystems.Sac, sac));
+        }
+
+        var item = new R4.Invoice.LineItemComponent { Sequence = sequence, ChargeItem = service };
+        item.PriceComponent.Add(Component(R4.InvoicePriceComponentType.Base, null, line.GrossAmount, line.Quantity));
+        item.PriceComponent.Add(Component(R4.InvoicePriceComponentType.Informational, AbdmPriceComponents.UnitPrice, line.UnitPrice));
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Deduction, AbdmPriceComponents.PackageCover, -line.PackageCoveredAmount);
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Discount, AbdmPriceComponents.TariffDiscount, -line.TariffDiscountAmount);
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Discount, AbdmPriceComponents.LineDiscount, -line.LineDiscountAmount);
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Discount, AbdmPriceComponents.BillDiscount, -line.BillDiscountShare);
+
+        // What a bill free of cost by law does not charge: whatever the components so far leave between the base and the
+        // taxable value, which is nothing on any other bill.
+        var charged = line.GrossAmount - line.PackageCoveredAmount - line.TariffDiscountAmount - line.LineDiscountAmount - line.BillDiscountShare;
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Deduction, AbdmPriceComponents.NotCharged, line.TaxableAmount - charged);
+
+        var halfRate = line.TaxRate / 200m;
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Tax, AbdmPriceComponents.Cgst, line.CgstAmount, halfRate);
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Tax, AbdmPriceComponents.Sgst, line.SgstAmount, halfRate);
+        AddIfAny(item.PriceComponent, R4.InvoicePriceComponentType.Tax, AbdmPriceComponents.Igst, line.IgstAmount, line.TaxRate / 100m);
+        return item;
+    }
+
+    /// <summary>
+    /// The bill's totals as price components, which add up to its net amount as each line's do to the line's: the gross,
+    /// the package cover and discounts as negative amounts, the GST, and the round-off of the patient's share.
+    /// </summary>
+    private static List<R4.Invoice.PriceComponentComponent> InvoiceTotals(Bill bill)
+    {
+        List<R4.Invoice.PriceComponentComponent> totals = [Component(R4.InvoicePriceComponentType.Base, null, bill.GrossAmount)];
+        AddIfAny(totals, R4.InvoicePriceComponentType.Deduction, AbdmPriceComponents.PackageCover, -bill.PackageCoveredAmount);
+        AddIfAny(totals, R4.InvoicePriceComponentType.Discount, AbdmPriceComponents.TariffDiscount, -bill.TariffDiscountAmount);
+        AddIfAny(totals, R4.InvoicePriceComponentType.Discount, AbdmPriceComponents.LineDiscount, -bill.LineDiscountAmount);
+        AddIfAny(totals, R4.InvoicePriceComponentType.Discount, AbdmPriceComponents.BillDiscount, -bill.BillDiscountAmount);
+        var charged = bill.GrossAmount - bill.PackageCoveredAmount - bill.TariffDiscountAmount - bill.LineDiscountAmount - bill.BillDiscountAmount;
+        AddIfAny(totals, R4.InvoicePriceComponentType.Deduction, AbdmPriceComponents.NotCharged, bill.TaxableAmount - charged);
+        AddIfAny(totals, R4.InvoicePriceComponentType.Tax, AbdmPriceComponents.Cgst, bill.CgstAmount);
+        AddIfAny(totals, R4.InvoicePriceComponentType.Tax, AbdmPriceComponents.Sgst, bill.SgstAmount);
+        AddIfAny(totals, R4.InvoicePriceComponentType.Tax, AbdmPriceComponents.Igst, bill.IgstAmount);
+        if (bill.RoundOffAmount != 0)
+        {
+            totals.Add(Component(
+                bill.RoundOffAmount > 0 ? R4.InvoicePriceComponentType.Surcharge : R4.InvoicePriceComponentType.Deduction, AbdmPriceComponents.RoundOff, bill.RoundOffAmount));
+        }
+
+        return totals;
+    }
+
+    /// <summary>Who pays what: the patient's share, and the payer's when a third party pays part of the bill.</summary>
+    private static string PaymentTerms(Bill bill)
+    {
+        var terms = $"Payable by the patient: {Rupees(bill.PatientAmount)}.";
+        return bill.PayerAmount > 0 ? $"{terms} Payable by the {PayerName(bill.PayerType)}: {Rupees(bill.PayerAmount)}." : terms;
+    }
+
+    private static string PayerName(PayerType type) => type switch
+    {
+        PayerType.Insurance => "insurer",
+        PayerType.Corporate => "corporate",
+        PayerType.GovernmentScheme => "government scheme",
+        _ => "payer",
+    };
+
+    private static void AddIfAny(List<R4.Invoice.PriceComponentComponent> components, R4.InvoicePriceComponentType type, AbdmCode code, decimal amount, decimal? factor = null)
+    {
+        if (amount != 0)
+        {
+            components.Add(Component(type, code, amount, factor));
+        }
+    }
+
+    private static R4.Invoice.PriceComponentComponent Component(R4.InvoicePriceComponentType type, AbdmCode? code, decimal amount, decimal? factor = null) => new()
+    {
+        Type = type,
+        Code = code?.Concept(code.Display),
+        Factor = factor is { } f ? FhirElements.Normalize(f) : null,
+        Amount = Inr(amount),
+    };
+
+    internal static R4.Money Inr(decimal value) => new() { Value = FhirElements.Normalize(value), Currency = R4.Money.Currencies.INR };
+
+    /// <summary>"₹1,180.00", as the bill prints amounts.</summary>
+    internal static string Rupees(decimal value) => "₹" + value.ToString("N2", CultureInfo.GetCultureInfo("en-IN"));
 
     private static string? Field(string label, string? value) => FhirElements.Clean(value) is { } text ? $"{label}: {text}" : null;
 

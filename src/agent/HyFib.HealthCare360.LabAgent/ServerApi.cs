@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 
 namespace HyFib.HealthCare360.LabAgent;
 
@@ -54,6 +55,14 @@ internal sealed class ServerApi(Uri baseUri, ServerTrust trust) : IDisposable
 
         return new HeartbeatOutcome(await response.Content.ReadFromJsonAsync<Assignments>(Json, cancellationToken), NotEnrolled: false);
     }
+
+    /// <summary>
+    /// The hospital CA rollover's next step for this agent (<see cref="HospitalCaFollow.CheckAsync"/>): hold the next CA the
+    /// server prepared, on the word of the CA it pins, or switch to it once the server did. Asked over the pinned connection;
+    /// null when there is nothing to do.
+    /// </summary>
+    public Task<HospitalCaStep?> CheckCaAsync(DateTimeOffset now, CancellationToken cancellationToken) =>
+        HospitalCaFollow.CheckAsync(_http, trust.Pins, now, cancellationToken);
 
     /// <summary>
     /// First contact with a server not yet trusted: download its public CA certificate. The TLS certificate cannot be

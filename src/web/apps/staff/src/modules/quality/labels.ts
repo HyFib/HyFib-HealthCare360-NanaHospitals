@@ -6,6 +6,9 @@ export const QUALITY_PERMISSIONS = {
   capaManage: 'quality.capa.manage',
   risksManage: 'quality.risks.manage',
   indicatorsManage: 'quality.indicators.manage',
+  haiManage: 'quality.hai.manage',
+  haiDevices: 'quality.hai.devices',
+  auditsManage: 'quality.audits.manage',
 } as const;
 
 const Q = QUALITY_PERMISSIONS;
@@ -26,6 +29,8 @@ export const INCIDENT_TYPES = [
   'AdverseDrugReaction',
   'HospitalAcquiredInfection',
   'Other',
+  'PressureInjury',
+  'TransfusionReaction',
 ] as const;
 export type IncidentType = (typeof INCIDENT_TYPES)[number];
 export const incidentTypeLabel: Record<IncidentType, string> = {
@@ -41,6 +46,8 @@ export const incidentTypeLabel: Record<IncidentType, string> = {
   AdverseDrugReaction: 'Adverse drug reaction',
   HospitalAcquiredInfection: 'Hospital-acquired infection',
   Other: 'Something else',
+  PressureInjury: 'Pressure injury (developed in hospital)',
+  TransfusionReaction: 'Transfusion reaction',
 };
 
 export const INCIDENT_SEVERITIES = ['NearMiss', 'NoHarm', 'Mild', 'Moderate', 'Severe', 'Death'] as const;

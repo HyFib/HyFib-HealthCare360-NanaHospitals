@@ -35,6 +35,12 @@ const manifest: ModuleManifest = {
       keywords: ['sentinel', 'rca', 'investigation', 'root cause'],
     },
     {
+      label: 'Device adverse events (MvPI)',
+      to: '/quality/mvpi',
+      permission: Q.incidentsManage,
+      keywords: ['mvpi', 'materiovigilance', 'medical device', 'mdae', 'implant', 'equipment failure', 'ipc'],
+    },
+    {
       label: 'Corrective actions (CAPA)',
       to: '/quality/capas',
       permission: Q.capaManage,
@@ -51,6 +57,30 @@ const manifest: ModuleManifest = {
       to: '/quality/indicators',
       permission: Q.indicatorsManage,
       keywords: ['kpi', 'nabh indicators', 'scorecard', 'trend'],
+    },
+    {
+      label: 'Infection surveillance (HAI)',
+      to: '/quality/hai',
+      permission: [Q.haiManage, Q.haiDevices],
+      keywords: [
+        'hai',
+        'clabsi',
+        'cauti',
+        'vap',
+        'ssi',
+        'infection control',
+        'central line',
+        'catheter',
+        'ventilator',
+        'device days',
+        'nhsn',
+      ],
+    },
+    {
+      label: 'Internal audits',
+      to: '/quality/audits',
+      permission: Q.incidentsReport,
+      keywords: ['audit', 'nabh', 'checklist', 'findings', 'aac', 'cop', 'mom', 'hic', 'fms', 'self-assessment'],
     },
     {
       label: 'Downtime',

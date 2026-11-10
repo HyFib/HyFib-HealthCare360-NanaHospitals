@@ -14,8 +14,11 @@ import {
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
+  Radio,
+  RadioGroup,
   Spinner,
   Text,
+  Textarea,
   tokens,
   Tooltip,
 } from '@fluentui/react-components';
@@ -23,15 +26,18 @@ import {
   ArchiveRegular,
   BroomRegular,
   CalendarClockRegular,
+  DeleteRegular,
   EditRegular,
   EyeRegular,
   LockClosedRegular,
+  ShieldKeyholeRegular,
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, isApiError } from '@hc360/core';
 import { applyServerErrors, DataTable, ErrorState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { ErasureLedgerSection } from '@/modules/privacy/ErasureLedgerSection';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -39,13 +45,23 @@ import { usePermission } from '@/lib/permissions';
 import { EditorDrawer } from '@/modules/hr/shared/EditorDrawer';
 import { Columns, Stack } from '@/modules/hr/shared/layout';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
-import { privacyApi, privacyKeys, privacyQueries, type RetentionRuleDto } from '@/modules/privacy/api';
+import {
+  privacyApi,
+  privacyKeys,
+  privacyQueries,
+  type AuditRetentionStatus,
+  type RetentionRuleDto,
+} from '@/modules/privacy/api';
 import { RetentionActionBadge } from '@/modules/privacy/badges';
 import { PRIVACY_PERMISSIONS as P, retentionKeyName } from '@/modules/privacy/labels';
 import { PlainTable } from '@/modules/privacy/PlainTable';
 import {
+  auditPeriodMeaning,
+  auditYearsError,
   isMedicalRecordsRule,
   keptUntilText,
+  monthsText,
+  monthText,
   retentionFixedReason,
   retentionPeriodText,
   retentionRange,
@@ -81,6 +97,7 @@ const useStyles = makeStyles({
   },
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
   pad: { padding: '0 16px 12px' },
+  buttons: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
 });
 
 type CleanupMode = 'preview' | 'run';
@@ -225,6 +242,8 @@ function RetentionPage() {
         )}
       </Section>
 
+      <AuditTrailSection />
+
       <Columns>
         <ReviewSection />
         <Section title="Recent clean-ups" description="Nightly runs, and those started from here." flush>
@@ -288,10 +307,267 @@ function RetentionPage() {
           />
         </Section>
       </Columns>
+      <ErasureLedgerSection />
 
       {editing && <RetentionDrawer rule={editing} onClose={() => setEditing(null)} />}
       {cleanup && <CleanupDialog mode={cleanup} onClose={() => setCleanup(null)} />}
     </Page>
+  );
+}
+
+/**
+ * How long the audit trail is kept (ADR-015), for super administrators (`admin.system.manage`): permanently until two of
+ * them agree on a period of 8 years at the least, and a purge of the months that period no longer keeps, which a second
+ * one approves under Approvals. A purge exports what it removes and re-anchors the chain where it now starts.
+ */
+function AuditTrailSection() {
+  const styles = useStyles();
+  const canManage = usePermission('admin.system.manage');
+  const status = useQuery({ ...privacyQueries.auditRetention(), enabled: canManage });
+  const [dialog, setDialog] = useState<'period' | 'purge' | null>(null);
+  if (!canManage) {
+    return null;
+  }
+
+  const s = status.data;
+  return (
+    <Section
+      title="Audit trail"
+      description="Kept permanently unless two super administrators set a period of 8 years at the least. Months older than the period are removed only by a purge another super administrator approves, after they are exported."
+    >
+      {status.error ? (
+        <ErrorState error={status.error} onRetry={() => void status.refetch()} />
+      ) : !s ? (
+        <Spinner size="small" label="Loading…" labelPosition="after" />
+      ) : (
+        <Stack>
+          <div className={styles.facts}>
+            <div className={styles.fact}>
+              <span className={styles.factValue}>{retentionPeriodText(s.years, 'Years')}</span>
+              <Text>Kept for</Text>
+            </div>
+            <div className={styles.fact}>
+              <span className={styles.factValue}>
+                {s.purge.months.length === 0 ? 'None' : s.purge.rows.toLocaleString('en-IN')}
+              </span>
+              <Text>
+                {s.purge.months.length === 0
+                  ? 'Months a purge would remove now'
+                  : `Records a purge would remove now (${monthsText(s.purge.months.map((m) => m.month))})`}
+              </Text>
+            </div>
+          </div>
+          <Caption1 className={styles.muted}>
+            {auditPeriodMeaning(s.years)} {s.basis}
+          </Caption1>
+          {s.pendingChange && (
+            <MessageBar intent="info" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle>A change waits for approval</MessageBarTitle>
+                {s.pendingChange.summary}. Asked for by {s.pendingChange.requestedByName} on{' '}
+                {formatDateTime(s.pendingChange.requestedAt)}; another super administrator decides it under Approvals.
+              </MessageBarBody>
+            </MessageBar>
+          )}
+          {s.pendingPurge && (
+            <MessageBar intent="warning" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle>A purge waits for approval</MessageBarTitle>
+                {s.pendingPurge.summary}. Asked for by {s.pendingPurge.requestedByName} on{' '}
+                {formatDateTime(s.pendingPurge.requestedAt)}.
+              </MessageBarBody>
+            </MessageBar>
+          )}
+          {s.lastPurge && (
+            <Caption1 className={styles.muted}>
+              Last purge {formatDateTime(s.lastPurge.purgedAt)}: {s.lastPurge.rows.toLocaleString('en-IN')} records of{' '}
+              {monthsText(s.lastPurge.months)} (positions {s.lastPurge.firstChainIndex.toLocaleString('en-IN')} to{' '}
+              {s.lastPurge.boundaryChainIndex.toLocaleString('en-IN')}), exported to {s.lastPurge.exportFile}; asked for
+              by {s.lastPurge.requestedByName}, approved by {s.lastPurge.approvedByName}.
+            </Caption1>
+          )}
+          <div className={styles.buttons}>
+            <Button icon={<EditRegular />} disabled={Boolean(s.pendingChange)} onClick={() => setDialog('period')}>
+              Ask to change
+            </Button>
+            {s.purge.problem ? (
+              <Tooltip content={s.purge.problem} relationship="description">
+                <Button icon={<DeleteRegular />} disabledFocusable>
+                  Ask to purge
+                </Button>
+              </Tooltip>
+            ) : (
+              <Button icon={<DeleteRegular />} disabled={Boolean(s.pendingPurge)} onClick={() => setDialog('purge')}>
+                Ask to purge
+              </Button>
+            )}
+          </div>
+          {s.purge.problem && <Caption1 className={styles.muted}>{s.purge.problem}</Caption1>}
+        </Stack>
+      )}
+      {dialog === 'period' && s && <AuditPeriodDialog status={s} onClose={() => setDialog(null)} />}
+      {dialog === 'purge' && s && <AuditPurgeDialog status={s} onClose={() => setDialog(null)} />}
+    </Section>
+  );
+}
+
+/** Asks another super administrator to keep the audit trail permanently, or for a number of years (8 at the least). */
+function AuditPeriodDialog({ status, onClose }: { status: AuditRetentionStatus; onClose: () => void }) {
+  const styles = useStyles();
+  const notify = useNotify();
+  const queryClient = useQueryClient();
+  const [permanent, setPermanent] = useState(status.years === null);
+  const [years, setYears] = useState<number | null>(status.years ?? status.minimumYears);
+  const [reason, setReason] = useState('');
+  const asked = permanent ? null : years;
+  const error = permanent
+    ? null
+    : years === null
+      ? 'Enter a whole number of years.'
+      : auditYearsError(years, status.minimumYears, status.maximumYears);
+  const unchanged = asked === status.years;
+  const ask = useMutation({
+    mutationFn: () => privacyApi.askAuditRetention(asked, reason.trim()),
+    onSuccess: (request) => {
+      notify.success(
+        'Asked for approval',
+        `${request.summary}. Another super administrator decides it under Approvals.`,
+      );
+      void queryClient.invalidateQueries({ queryKey: privacyKeys.retention });
+      onClose();
+    },
+    onError: (e) => notify.error(e, 'Could not ask for the change'),
+  });
+
+  return (
+    <Dialog open onOpenChange={(_, d) => !d.open && !ask.isPending && onClose()}>
+      <DialogSurface style={{ maxWidth: 560 }}>
+        <DialogBody>
+          <DialogTitle>How long to keep the audit trail</DialogTitle>
+          <DialogContent className={styles.stack}>
+            <Text>
+              Now: {retentionPeriodText(status.years, 'Years')}. The change is made only when another super
+              administrator approves it.
+            </Text>
+            <RadioGroup
+              value={permanent ? 'permanent' : 'years'}
+              onChange={(_, d) => setPermanent(d.value === 'permanent')}
+            >
+              <Radio value="permanent" label="Permanently" />
+              <Radio value="years" label="For a number of years" />
+            </RadioGroup>
+            {!permanent && (
+              <Field
+                label="Years"
+                required
+                hint={`Between ${status.minimumYears} and ${status.maximumYears}.`}
+                validationMessage={error ?? undefined}
+                validationState={error ? 'error' : 'none'}
+              >
+                <Input
+                  type="number"
+                  value={years === null || Number.isNaN(years) ? '' : String(years)}
+                  onChange={(_, d) => setYears(d.value === '' ? null : Number(d.value))}
+                  min={status.minimumYears}
+                  max={status.maximumYears}
+                />
+              </Field>
+            )}
+            {!error && <Caption1>{auditPeriodMeaning(asked)}</Caption1>}
+            <Field label="Reason" required>
+              <Textarea value={reason} onChange={(_, d) => setReason(d.value)} maxLength={500} resize="vertical" />
+            </Field>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={onClose} disabled={ask.isPending}>
+              Cancel
+            </Button>
+            <Button
+              appearance="primary"
+              icon={ask.isPending ? <Spinner size="tiny" aria-hidden /> : <ShieldKeyholeRegular />}
+              disabled={ask.isPending || Boolean(error) || unchanged || reason.trim() === ''}
+              onClick={() => ask.mutate()}
+            >
+              Ask for approval
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
+/** Shows what a purge would remove, and asks another super administrator to approve it. */
+function AuditPurgeDialog({ status, onClose }: { status: AuditRetentionStatus; onClose: () => void }) {
+  const styles = useStyles();
+  const notify = useNotify();
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState('');
+  const plan = status.purge;
+  const ask = useMutation({
+    mutationFn: () => privacyApi.askAuditPurge(reason.trim()),
+    onSuccess: (request) => {
+      notify.success(
+        'Asked for approval',
+        `${request.summary}. Another super administrator decides it under Approvals.`,
+      );
+      void queryClient.invalidateQueries({ queryKey: privacyKeys.retention });
+      onClose();
+    },
+    onError: (e) => notify.error(e, 'Could not ask for the purge'),
+  });
+
+  return (
+    <Dialog open onOpenChange={(_, d) => !d.open && !ask.isPending && onClose()}>
+      <DialogSurface style={{ maxWidth: 620 }}>
+        <DialogBody>
+          <DialogTitle>Purge the audit trail before {plan.cutoffMonth ? monthText(plan.cutoffMonth) : ''}?</DialogTitle>
+          <DialogContent className={styles.stack}>
+            <Text>
+              When another super administrator approves it, these months are exported in the auditor’s format to the
+              server’s audit archive, checked, recorded with a sealed purge record and an anchor outside the database,
+              and then removed. The chain is verified from where it then starts.
+            </Text>
+            <PlainTable
+              ariaLabel="What the purge would remove"
+              rows={plan.months}
+              getRowId={(m) => m.month}
+              columns={[
+                { key: 'month', header: 'Month', render: (m) => monthText(m.month) },
+                {
+                  key: 'positions',
+                  header: 'Chain positions',
+                  render: (m) =>
+                    m.firstChainIndex === null
+                      ? '—'
+                      : `${m.firstChainIndex.toLocaleString('en-IN')} to ${(m.lastChainIndex ?? m.firstChainIndex).toLocaleString('en-IN')}`,
+                },
+                { key: 'rows', header: 'Records', align: 'end', render: (m) => m.rows.toLocaleString('en-IN') },
+              ]}
+            />
+            <Text weight="semibold">
+              {plan.rows.toLocaleString('en-IN')} records in all. Removed records stay only in the export.
+            </Text>
+            <Field label="Reason" required>
+              <Textarea value={reason} onChange={(_, d) => setReason(d.value)} maxLength={500} resize="vertical" />
+            </Field>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={onClose} disabled={ask.isPending}>
+              Cancel
+            </Button>
+            <Button
+              appearance="primary"
+              icon={ask.isPending ? <Spinner size="tiny" aria-hidden /> : <DeleteRegular />}
+              disabled={ask.isPending || reason.trim() === ''}
+              onClick={() => ask.mutate()}
+            >
+              Ask for approval
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
   );
 }
 

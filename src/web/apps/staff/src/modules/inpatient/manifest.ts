@@ -34,6 +34,12 @@ const manifest: ModuleManifest = {
       keywords: ['IP list', 'discharge', 'transfer', 'in-patients'],
     },
     {
+      label: 'Transfer requests',
+      to: '/inpatient/transfers',
+      permission: ['inpatient.admissions.read', 'nursing.in_charge'],
+      keywords: ['transfer', 'move ward', 'accept transfer', 'step up', 'step down', 'ICU'],
+    },
+    {
       label: 'Nursing station',
       to: '/nursing',
       permission: ['nursing.chart', 'nursing.mar'],
@@ -47,6 +53,19 @@ const manifest: ModuleManifest = {
         'fall risk',
         'Braden',
         'nursing notes',
+      ],
+    },
+    {
+      label: 'Orders to countersign',
+      to: '/nursing/countersignatures',
+      permission: ['nursing.mar', 'nursing.in_charge'],
+      keywords: [
+        'verbal order',
+        'telephone order',
+        'countersign',
+        'read back',
+        'stop pending',
+        'overdue countersignature',
       ],
     },
     {

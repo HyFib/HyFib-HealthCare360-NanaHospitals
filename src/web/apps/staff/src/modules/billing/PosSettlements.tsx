@@ -39,6 +39,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useRef, useState, type ChangeEvent } from 'react';
 import {
+  counterDocumentText,
   matchText,
   POS_LINE_TYPE_LABEL,
   POS_MATCH_LABEL,
@@ -47,6 +48,7 @@ import {
   posSettlementQueries,
   references,
   type PosPayoutDto,
+  type PosSettlementImportDto,
   type PosSettlementImportResult,
   type PosSettlementLineDto,
   type PosSettlementMatch,
@@ -71,6 +73,7 @@ const MATCH_TONE: Record<PosSettlementMatch, 'danger' | 'warning' | 'informative
   Review: 'warning',
   Matched: 'success',
   OtherCounter: 'subtle',
+  Withdrawn: 'subtle',
 };
 
 /** The accepted report files: CSV (or text) and Excel workbooks. */
@@ -418,14 +421,17 @@ export function PosToLookAt({ page, onPage }: { page: number; onPage: (page: num
   );
 }
 
-/** Card and UPI receipts the acquirer has not settled after the expected days, oldest first. */
+/**
+ * Card and UPI receipts the acquirer has not settled after the expected days, oldest first, with the pharmacy's and the
+ * canteen's card and UPI payments (once their terminal's reports are imported). A receipt opens its bill.
+ */
 export function PosUnsettled({ settlementDays }: { settlementDays: number }) {
   const styles = useStyles();
   const navigate = useNavigate();
   const list = useQuery(posSettlementQueries.unsettled());
   return (
     <DataTable
-      ariaLabel="Card and UPI receipts not settled"
+      ariaLabel="Card and UPI payments not settled"
       rows={list.data}
       loading={list.isLoading}
       error={list.error}
@@ -440,8 +446,13 @@ export function PosUnsettled({ settlementDays }: { settlementDays: number }) {
           header: 'Receipt',
           render: (receipt) => (
             <span className={styles.stack}>
-              <Text weight="semibold">{receipt.receiptNumber}</Text>
-              <Caption1 className={styles.muted}>{formatDateTime(receipt.receivedAt)}</Caption1>
+              <Text weight="semibold">
+                {receipt.counter ? counterDocumentText(receipt.counter, receipt.receiptNumber) : receipt.receiptNumber}
+              </Text>
+              <Caption1 className={styles.muted}>
+                {formatDateTime(receipt.receivedAt)}
+                {receipt.cancelled && ' · Cancelled since: it settles unless it was voided on the terminal'}
+              </Caption1>
             </span>
           ),
         },
@@ -479,7 +490,7 @@ export function PosUnsettled({ settlementDays }: { settlementDays: number }) {
         },
       ]}
       emptyTitle="Nothing waiting"
-      emptyDescription={`The acquirer's reports carry every card and UPI receipt older than ${settlementDays} days.`}
+      emptyDescription={`The acquirer's reports carry every card and UPI payment older than ${settlementDays} days.`}
       size="small"
     />
   );
@@ -644,62 +655,124 @@ export function PosPayouts({
   );
 }
 
-/** The reports imported, newest first: who imported what, and what was new. */
+/** The reports imported, newest first: who imported what, and what was new; one imported in error can be withdrawn. */
 export function PosImports({ page, onPage }: { page: number; onPage: (page: number) => void }) {
   const styles = useStyles();
+  const notify = useNotify();
+  const refresh = useRefreshSettlements();
   const list = useQuery(posSettlementQueries.imports(page));
+  const [withdrawing, setWithdrawing] = useState<PosSettlementImportDto | null>(null);
+  const withdraw = useMutation({
+    mutationFn: ({ report, reason }: { report: PosSettlementImportDto; reason: string }) =>
+      posSettlementApi.withdraw(report.id, reason),
+    onSuccess: () => {
+      notify.success(
+        'Asked for approval',
+        'Someone else who approves reversals withdraws the report. Until then it stands.',
+      );
+      setWithdrawing(null);
+      refresh();
+    },
+  });
   return (
-    <DataTable
-      ariaLabel="Settlement reports imported"
-      rows={list.data?.items}
-      loading={list.isLoading}
-      error={list.error}
-      onRetry={() => void list.refetch()}
-      getRowId={(i) => i.id}
-      columns={[
-        {
-          key: 'file',
-          header: 'Report',
-          render: (i) => (
-            <span className={styles.stack}>
-              <Text weight="semibold">{i.fileName}</Text>
-              <Caption1 className={styles.muted}>
-                {i.acquirer}
-                {i.firstSettledOn && i.lastSettledOn
-                  ? ` · paid ${formatDateOnly(i.firstSettledOn)}${i.lastSettledOn !== i.firstSettledOn ? ` to ${formatDateOnly(i.lastSettledOn)}` : ''}`
-                  : ''}
-              </Caption1>
-            </span>
-          ),
-        },
-        {
-          key: 'rows',
-          header: 'Transactions',
-          render: (i) => (
-            <span className={styles.stack}>
-              <Text>{i.added} new</Text>
-              <Caption1 className={styles.muted}>
-                {i.alreadyImported > 0 ? `${i.alreadyImported} already imported · ` : ''}
-                {i.ignored > 0 ? `${i.ignored} rows left out` : 'no rows left out'}
-              </Caption1>
-            </span>
-          ),
-        },
-        {
-          key: 'when',
-          header: 'Imported',
-          width: 220,
-          priority: 'low',
-          render: (i) => `${formatDateTime(i.importedAt)}${i.importedByName ? ` by ${i.importedByName}` : ''}`,
-        },
-      ]}
-      emptyTitle="No reports imported yet"
-      emptyDescription="Import the acquirer's settlement report to reconcile card and UPI payments."
-      page={page}
-      pageSize={25}
-      totalCount={list.data?.totalCount}
-      onPageChange={onPage}
-      size="small"
-    />
+    <>
+      <DataTable
+        ariaLabel="Settlement reports imported"
+        rows={list.data?.items}
+        loading={list.isLoading}
+        error={list.error}
+        onRetry={() => void list.refetch()}
+        getRowId={(i) => i.id}
+        columns={[
+          {
+            key: 'file',
+            header: 'Report',
+            render: (i) => (
+              <span className={styles.stack}>
+                <Text weight="semibold">{i.fileName}</Text>
+                <Caption1 className={styles.muted}>
+                  {i.acquirer}
+                  {i.firstSettledOn && i.lastSettledOn
+                    ? ` · paid ${formatDateOnly(i.firstSettledOn)}${i.lastSettledOn !== i.firstSettledOn ? ` to ${formatDateOnly(i.lastSettledOn)}` : ''}`
+                    : ''}
+                </Caption1>
+              </span>
+            ),
+          },
+          {
+            key: 'rows',
+            header: 'Transactions',
+            render: (i) => (
+              <span className={styles.stack}>
+                <Text>{i.added} new</Text>
+                <Caption1 className={styles.muted}>
+                  {i.alreadyImported > 0 ? `${i.alreadyImported} already imported · ` : ''}
+                  {i.ignored > 0 ? `${i.ignored} rows left out` : 'no rows left out'}
+                </Caption1>
+              </span>
+            ),
+          },
+          {
+            key: 'when',
+            header: 'Imported',
+            width: 220,
+            priority: 'low',
+            render: (i) => `${formatDateTime(i.importedAt)}${i.importedByName ? ` by ${i.importedByName}` : ''}`,
+          },
+          {
+            key: 'status',
+            header: 'Status',
+            width: 240,
+            render: (i) =>
+              i.withdrawnOn ? (
+                <span className={styles.stack}>
+                  <StatusBadge
+                    status="Withdrawn"
+                    tone="subtle"
+                    label={`Withdrawn on ${formatDateOnly(i.withdrawnOn)}`}
+                  />
+                  <Caption1 className={styles.muted}>
+                    {i.withdrawnByName ? `Approved by ${i.withdrawnByName}: ` : ''}
+                    {i.withdrawReason}
+                  </Caption1>
+                </span>
+              ) : i.withdrawalAskedAt ? (
+                <StatusBadge status="Waiting" tone="warning" label="Withdrawal waiting for approval" />
+              ) : (
+                <Button size="small" appearance="subtle" onClick={() => setWithdrawing(i)}>
+                  Withdraw…
+                </Button>
+              ),
+          },
+        ]}
+        emptyTitle="No reports imported yet"
+        emptyDescription="Import the acquirer's settlement report to reconcile card and UPI payments."
+        page={page}
+        pageSize={25}
+        totalCount={list.data?.totalCount}
+        onPageChange={onPage}
+        size="small"
+      />
+      <ReasonDialog
+        open={withdrawing !== null}
+        title="Withdraw this report as imported in error?"
+        description={
+          withdrawing
+            ? `${withdrawing.fileName} (${withdrawing.acquirer}): its ${withdrawing.added} transaction(s) stop matching receipts and refunds, and their journals are reversed in the books of the day it is approved. Someone else who approves reversals decides.`
+            : undefined
+        }
+        label="Why it was imported in error"
+        placeholder="For example: the report of another branch; or the wrong settlement date"
+        confirmLabel="Ask for approval"
+        maxLength={500}
+        busy={withdraw.isPending}
+        error={withdraw.error}
+        onConfirm={(reason) => withdrawing && withdraw.mutate({ report: withdrawing, reason })}
+        onCancel={() => {
+          setWithdrawing(null);
+          withdraw.reset();
+        }}
+      />
+    </>
   );
 }

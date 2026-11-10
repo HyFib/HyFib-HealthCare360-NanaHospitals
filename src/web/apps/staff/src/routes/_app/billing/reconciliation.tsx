@@ -15,11 +15,12 @@ import {
 } from '@/modules/billing/gatewayApi';
 import { GatewayExceptions } from '@/modules/billing/GatewayExceptions';
 import { GatewaySettlements } from '@/modules/billing/GatewaySettlements';
+import { PaymentDisputes } from '@/modules/billing/PaymentDisputes';
 import { dateParam, enumParam, pageParam } from '@/modules/billing/searchParams';
 import { NoAccess } from '@/modules/billing/ui';
 
 interface ReconciliationSearch {
-  view?: 'settlements';
+  view?: 'settlements' | 'chargebacks';
   status?: DiscrepancyStatus;
   kind?: DiscrepancyKind;
   page?: number;
@@ -29,7 +30,7 @@ interface ReconciliationSearch {
 
 export const Route = createFileRoute('/_app/billing/reconciliation')({
   validateSearch: (s: Record<string, unknown>): ReconciliationSearch => ({
-    view: s.view === 'settlements' ? 'settlements' : undefined,
+    view: s.view === 'settlements' || s.view === 'chargebacks' ? s.view : undefined,
     status: enumParam(s.status, ['Open', 'Resolved'] as const),
     kind: enumParam(s.kind, DISCREPANCY_KINDS),
     page: pageParam(s.page),
@@ -116,10 +117,15 @@ function ReconciliationPage() {
         <div style={{ padding: '0 8px' }}>
           <TabList
             selectedValue={view}
-            onTabSelect={(_, d) => void navigate({ search: d.value === 'settlements' ? { view: 'settlements' } : {} })}
+            onTabSelect={(_, d) =>
+              void navigate({
+                search: d.value === 'exceptions' ? {} : { view: d.value as 'settlements' | 'chargebacks' },
+              })
+            }
           >
             <Tab value="exceptions">Exceptions</Tab>
             <Tab value="settlements">Settlements</Tab>
+            <Tab value="chargebacks">Chargebacks</Tab>
           </TabList>
         </div>
         {view === 'exceptions' ? (
@@ -127,6 +133,8 @@ function ReconciliationPage() {
             filters={{ status: search.status, kind: search.kind, page: search.page }}
             onFilters={(next) => void navigate({ search: { status: next.status, kind: next.kind, page: next.page } })}
           />
+        ) : view === 'chargebacks' ? (
+          <PaymentDisputes terminal={false} />
         ) : (
           <GatewaySettlements
             from={search.from ?? todayIso(-6)}

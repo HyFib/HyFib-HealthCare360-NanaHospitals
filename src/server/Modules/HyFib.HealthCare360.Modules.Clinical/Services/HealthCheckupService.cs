@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.HealthCheckups;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 
@@ -25,9 +26,16 @@ public sealed class HealthCheckupService(
     ICurrentUser currentUser,
     PatientContactAccess contacts,
     INotificationService notifications,
+    ServicePrices prices,
     TimeProvider time)
 {
     private readonly PackageBilling billing = new(charges);
+
+    /// <summary>
+    /// What a new check-up's service is asked for besides its price and use: discounts allowed (a company's rate is a
+    /// discount), no GST as health care (SAC 999312), no price typed at the counter.
+    /// </summary>
+    private static readonly ServicePriceTerms NewCheckupTerms = ServicePriceTerms.None with { IsDiscountAllowed = true };
 
     public const string DefaultConsultationCode = "CONS-NEW";
 
@@ -38,7 +46,13 @@ public sealed class HealthCheckupService(
 
     // ------------------------------------------------------------------ packages
 
-    public async Task<Result<PackageDto>> SavePackageAsync(Guid? id, SavePackageRequest request, CancellationToken ct)
+    /// <summary>
+    /// Saves a package: its name, description, eligibility and lines at once. Its price and putting it in use are its
+    /// billable service's price terms, which change only when two people agree (maker-checker, <see cref="ServicePrices"/>):
+    /// they are asked for, and only taking it out of use is made at once. A new package is made out of use, at no price,
+    /// until its price is approved. The package as it is then, and the request asking for its price, if one was made.
+    /// </summary>
+    public async Task<Result<SavedPackage>> SavePackageAsync(Guid? id, SavePackageRequest request, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         HealthPackage? package = null;
@@ -80,8 +94,6 @@ public sealed class HealthCheckupService(
         package.Gender = request.Gender;
         package.MinAgeYears = request.MinAgeYears;
         package.MaxAgeYears = request.MaxAgeYears;
-        package.Price = Money.Round(request.Price);
-        package.IsActive = request.IsActive;
         package.Items.Clear();
         foreach (var item in items.Value)
         {
@@ -89,9 +101,40 @@ public sealed class HealthCheckupService(
             package.Items.Add(item);
         }
 
-        await SyncServiceItemAsync(package, ct);
+        // What its patients pay changes only when two people agree, as any service's price does. While a change waits, a
+        // save must fit it: nothing is asked for twice, and anything else is refused rather than saved under it.
+        var (service, isNew) = await ServiceAsync(package, ct);
+        var before = ServicePriceTerms.Of(service);
+        var asked = (isNew ? NewCheckupTerms : before) with { BasePrice = Money.Round(request.Price), IsActive = request.IsActive };
+        var now = before.Narrowed(asked);
+        var waiting = isNew ? null : await prices.PendingAsync(service.Id, ct);
+        if (waiting is not null && !ServicePriceTerms.Covers(waiting.Asked, now, asked))
+        {
+            return Error.Conflict(ServicePrices.WaitingCode,
+                $"A change to {package.Code}'s price, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.");
+        }
+
+        // The package shows, and is booked at, its service's price in use (CheckupPackageFollowsServicePrice keeps it so).
+        now.ApplyTo(service);
+        package.Price = now.BasePrice;
+        package.IsActive = now.IsActive;
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return ToDto(package);
+        ApprovalRequestDto? requested = null;
+        if (waiting is null && asked != now)
+        {
+            var approval = await prices.AskAsync(service, now, asked, request.Reason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!;
+            }
+
+            requested = approval.Value;
+        }
+
+        await transaction.CommitAsync(ct);
+        return new SavedPackage(ToDto(package) with { PendingPrice = await prices.PendingAsync(service.Id, ct) }, requested);
     }
 
     public async Task<Result<PackageEligibility>> EligibilityAsync(Guid packageId, Guid patientId, CancellationToken ct)
@@ -436,6 +479,13 @@ public sealed class HealthCheckupService(
     private async Task<Result<PackageBooking>> BookCoreAsync(Guid facilityId, Guid patientId, HealthPackage package, DateOnly scheduledDate, Guid? visitId,
         string? notes, CorporateCheckupBatch? batch, CancellationToken ct)
     {
+        // A package out of use is not booked: taken out of use, or a new one whose price waits for approval. Its service
+        // could not be charged at check-in.
+        if (!package.IsActive)
+        {
+            return Error.Rule("package.not_in_use", $"{package.Name} is not in use: it was taken out of use, or its price is waiting for approval.");
+        }
+
         if (visitId is { } walkInVisitId && await ClosedVisitAsync(walkInVisitId, ct) is { } closed)
         {
             return closed;
@@ -599,23 +649,28 @@ public sealed class HealthCheckupService(
         return items;
     }
 
-    /// <summary>Keeps the package's billable service item (category HealthCheckup) in step with its name and price.</summary>
-    private async Task SyncServiceItemAsync(HealthPackage package, CancellationToken ct)
+    /// <summary>
+    /// The package's billable service (category HealthCheckup), its code, name and description kept in step with the
+    /// package's, and whether it is new. A new one is made out of use at no price, as any new service is, and goes live at
+    /// the price a second person approves.
+    /// </summary>
+    private async Task<(ServiceItem Service, bool IsNew)> ServiceAsync(HealthPackage package, CancellationToken ct)
     {
         var service = package.ServiceItemId is { } sid ? await db.Set<ServiceItem>().FirstOrDefaultAsync(s => s.Id == sid, ct) : null;
+        var isNew = service is null;
         if (service is null)
         {
-            service = new ServiceItem { Code = package.Code, Category = ServiceCategory.HealthCheckup, SacCode = "999312", IsDiscountAllowed = true };
+            service = new ServiceItem { Code = package.Code, Category = ServiceCategory.HealthCheckup, SacCode = "999312" };
             db.Add(service);
+            ServicePriceTerms.None.ApplyTo(service);
             package.ServiceItemId = service.Id;
         }
 
         service.Code = package.Code;
         service.Name = package.Name;
         service.ShortName = package.Code;
-        service.BasePrice = package.Price;
         service.Description = package.Description;
-        service.IsActive = package.IsActive;
+        return (service, isNew);
     }
 
     /// <summary>Billing takes the facility and tariff from the visit, so a visit of another patient must never be used.</summary>

@@ -82,7 +82,22 @@ public sealed record CanteenSaleDto(
     string? CashierName,
     DateTimeOffset? CancelledAt,
     string? CancelReason,
-    IReadOnlyList<CanteenSaleLineDto> Lines);
+    string? CancelRequestedByName,
+    string? CancelledByName,
+    CanteenPaymentMode? RefundMode,
+    decimal? RefundAmount,
+    uint Version,
+    IReadOnlyList<CanteenSaleLineDto> Lines)
+{
+    /// <summary>The cancellation waiting for a second person, if one was asked for.</summary>
+    public CanteenPendingCancellation? PendingCancellation { get; init; }
+
+    /// <summary>Whether the reader sold this bill (and so may not approve its cancellation).</summary>
+    public bool OwnSale { get; init; }
+}
+
+/// <summary>A cancellation asked for and waiting for someone who approves canteen cancellations.</summary>
+public sealed record CanteenPendingCancellation(Guid ApprovalId, string Summary, string RequestedByName, DateTimeOffset RequestedAt, bool AskedByYou);
 
 public sealed record CanteenSaleListItem(
     Guid Id,

@@ -16,7 +16,7 @@ import { EmptyState, ErrorState, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { nursingQueries, type MarOutcome, type WardMarItem } from '../nursingApi';
+import { DOSE_HOLD_LABEL, nursingQueries, type MarOutcome, type WardMarItem } from '../nursingApi';
 import { formatDuration } from '../time';
 import { RecordDoseDialog, type DoseToRecord } from './RecordDoseDialog';
 
@@ -101,9 +101,11 @@ export function WardMarDue({
         scheduledAt: item.scheduledAt,
         version: item.version,
         admissionId: item.admissionId,
+        patientId: item.patientId,
         patientName: item.patientName,
         bedLabel: item.bedLabel,
         isOverdue: item.isOverdue,
+        needsWitness: item.needsWitness,
       },
     });
 
@@ -180,16 +182,19 @@ export function WardMarDue({
                       {item.dose}
                       {item.route ? ` · ${item.route}` : ''}
                     </Caption1>
+                    {item.heldBecause && <Caption1 block>{DOSE_HOLD_LABEL[item.heldBecause]}</Caption1>}
                   </span>
                   <span className={styles.actions}>
-                    <Button
-                      className={styles.big}
-                      appearance="primary"
-                      icon={<CheckmarkRegular />}
-                      onClick={() => open(item, 'Given')}
-                    >
-                      Given
-                    </Button>
+                    {!item.heldBecause && (
+                      <Button
+                        className={styles.big}
+                        appearance="primary"
+                        icon={<CheckmarkRegular />}
+                        onClick={() => open(item, 'Given')}
+                      >
+                        Given
+                      </Button>
+                    )}
                     <Button className={styles.big} onClick={() => open(item, 'Held')}>
                       Not given
                     </Button>

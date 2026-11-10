@@ -51,6 +51,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { askedForApproval } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import { insuranceQueries } from '@/modules/insurance/api';
 import { PAYER_CATEGORY_LABEL, PREAUTH_STATUS_LABEL, preAuthTone } from '@/modules/insurance/labels';
 import { billingQueries } from './api';
@@ -427,6 +429,7 @@ export function IpPayerPanel({ account }: { account: IpAccountDetail }) {
           <Detail label="Attending doctor">{account.attendingPractitionerName}</Detail>
           <Detail label="Notes">{account.notes}</Detail>
         </DetailGrid>
+        {account.pendingPlan && <PendingPlanNotice account={account} />}
       </Section>
       {canSeePreAuths && (
         <Section title="Pre-authorisations" description="Cashless approvals of the insurer for this admission" flush>
@@ -476,18 +479,46 @@ export function IpPayerPanel({ account }: { account: IpAccountDetail }) {
   );
 }
 
+/** The payer and plan a stay waits to be billed on, against those in use. */
+function PendingPlanNotice({ account }: { account: IpAccountDetail }) {
+  const pending = account.pendingPlan;
+  if (!pending) {
+    return null;
+  }
+  const payer =
+    pending.asked.payerType !== account.payerType || pending.asked.payerId !== account.payerId
+      ? `, paid by ${PAYER_TYPE_LABEL[pending.asked.payerType]}`
+      : '';
+  return (
+    <PendingGrantNotice
+      approvalId={pending.approvalId}
+      what={`Billed on ${pending.tariffPlanName ?? 'another plan'}${payer} (now ${account.tariffPlanName ?? 'no plan'})`}
+      requestedBy={pending.requestedBy}
+      requestedAt={pending.requestedAt}
+      decides="Someone who may approve discounts decides it; until then the stay is billed on its plan in use."
+    />
+  );
+}
+
 function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose: () => void }) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const refresh = useRefreshBilling();
+  // A stay on its payer's plan starts at "Default for the payer", so a new payer brings its own plan; a stay on another
+  // plan (approved by a second person) starts at that plan, which is kept while the payer stays.
+  const initialPlan =
+    account.payerPlanId !== undefined && account.tariffPlanId === account.payerPlanId
+      ? ''
+      : (account.tariffPlanId ?? '');
   const [payerType, setPayerType] = useState<PayerType>(account.payerType);
   const [payerId, setPayerId] = useState(account.payerId ?? '');
-  const [tariffPlanId, setTariffPlanId] = useState(account.tariffPlanId ?? '');
+  const [tariffPlanId, setTariffPlanId] = useState(initialPlan);
   const [policyId, setPolicyId] = useState(account.policyId ?? '');
   const [estimate, setEstimate] = useState(amountInputText(account.estimatedAmount));
   const [reprice, setReprice] = useState(true);
   const [notes, setNotes] = useState(account.notes ?? '');
+  const [reason, setReason] = useState('');
   const needsPayer = THIRD_PARTY.includes(payerType);
   const payers = useQuery({ ...insuranceQueries.payers(), enabled: needsPayer });
   const plans = useQuery(mastersQueries.tariffPlans());
@@ -501,10 +532,10 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
         : p.category === 'GovernmentScheme',
   );
   const valid = parsedEstimate.ok && (!needsPayer || payerId !== '');
-  const changesPricing =
-    payerType !== account.payerType ||
-    (payerId || null) !== account.payerId ||
-    (tariffPlanId || null) !== account.tariffPlanId;
+  const samePayer = payerType === account.payerType && (needsPayer ? payerId || null : null) === account.payerId;
+  const changesPricing = !samePayer || tariffPlanId !== initialPlan;
+  // A plan other than the payer's waits for a second person, unless it is the stay's own plan and the payer stays.
+  const mayWait = tariffPlanId !== '' && !(tariffPlanId === account.tariffPlanId && samePayer);
 
   const save = useMutation({
     mutationFn: () =>
@@ -517,12 +548,21 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
         repriceUnbilledCharges: changesPricing && reprice,
         notes: notes.trim() || null,
         version: account.version,
+        reason: mayWait ? reason.trim() || null : null,
       }),
-    onSuccess: () => {
-      notify.success(
-        'IP account updated',
-        changesPricing && reprice ? 'Unbilled services were priced again on the new tariff.' : undefined,
-      );
+    onSuccess: (result) => {
+      const asked = askedForApproval(result);
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Someone who may approve discounts decides it; until then the stay is billed on its plan in use.`,
+        );
+      } else {
+        notify.success(
+          'IP account updated',
+          changesPricing && reprice ? 'Unbilled services were priced again on the new tariff.' : undefined,
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: ipKeys.account(account.id) });
       void refresh();
       onClose();
@@ -530,7 +570,7 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
   });
 
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ payerType, payerId, tariffPlanId, policyId, estimate, reprice, notes }),
+    dirty: useValuesChanged({ payerType, payerId, tariffPlanId, policyId, estimate, reprice, notes, reason }),
     busy: save.isPending,
     onClose,
   });
@@ -549,6 +589,7 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
           <DialogBody>
             <DialogTitle>Payer and estimate</DialogTitle>
             <DialogContent className={styles.body}>
+              {account.pendingPlan && <PendingPlanNotice account={account} />}
               <Field label="Paid by" required>
                 <Select value={payerType} onChange={(_, d) => setPayerType(d.value as PayerType)}>
                   {PAYER_TYPES.map((t) => (
@@ -583,7 +624,14 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
                   </Select>
                 </Field>
               )}
-              <Field label="Tariff" hint="Leave as is to use the payer's tariff">
+              <Field
+                label="Tariff"
+                hint={
+                  mayWait
+                    ? "A plan other than the payer's waits for someone who may approve discounts."
+                    : "Default for the payer uses the payer's tariff."
+                }
+              >
                 <Select value={tariffPlanId} onChange={(_, d) => setTariffPlanId(d.value)}>
                   <option value="">Default for the payer</option>
                   {(plans.data ?? []).map((p) => (
@@ -605,6 +653,11 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
                   onChange={(_, d) => setReprice(d.checked)}
                   label="Price the services not yet billed again on the new tariff"
                 />
+              )}
+              {mayWait && (
+                <Field label="Reason for another plan, for the approver">
+                  <Textarea value={reason} onChange={(_, d) => setReason(d.value)} maxLength={500} rows={2} />
+                </Field>
               )}
               <Field label="Notes">
                 <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} maxLength={1000} rows={2} />

@@ -59,14 +59,16 @@ public sealed class ComponentShelfLifeTests
         new Donation { Status = DonationStatus.Separated }.EnsureCanSeparate().Error!.Code.ShouldBe("bloodbank.already_separated");
 
     [Fact]
-    public void Donation_lab_results_are_final_once_complete()
+    public void Donation_lab_results_are_final_once_verified()
     {
         var donation = new Donation();
         var complete = new TtiPanel { Hiv = TtiResult.NonReactive, HbsAg = TtiResult.NonReactive, Hcv = TtiResult.NonReactive, Syphilis = TtiResult.NonReactive, Malaria = TtiResult.NonReactive };
+        var officer = TestData.Staff(name: "Mr. Santosh Gaikwad");
 
-        donation.RecordLabResults(BloodGroup.Unknown, complete, TestData.Now).IsFailure.ShouldBeTrue();
-        donation.RecordLabResults(BloodGroup.ONegative, complete, TestData.Now).IsSuccess.ShouldBeTrue();
-        donation.RecordLabResults(BloodGroup.ONegative, complete, TestData.Now).Error!.Code.ShouldBe("bloodbank.results_final");
+        donation.RecordLabResults(BloodGroup.Unknown, complete, officer).IsFailure.ShouldBeTrue();
+        donation.RecordLabResults(BloodGroup.ONegative, complete, officer).IsSuccess.ShouldBeTrue();
+        donation.Verify(TestData.Staff(name: "Dr. Sunita Rane"), separateVerifier: true).IsSuccess.ShouldBeTrue();
+        donation.RecordLabResults(BloodGroup.ONegative, complete, officer).Error!.Code.ShouldBe("bloodbank.results_final");
     }
 
     [Fact]
@@ -76,7 +78,7 @@ public sealed class ComponentShelfLifeTests
     private static Donation ReactiveDonation()
     {
         var donation = new Donation();
-        donation.RecordLabResults(BloodGroup.APositive, new TtiPanel { Hcv = TtiResult.Reactive }, TestData.Now).IsSuccess.ShouldBeTrue();
+        donation.RecordLabResults(BloodGroup.APositive, new TtiPanel { Hcv = TtiResult.Reactive }, TestData.Staff()).IsSuccess.ShouldBeTrue();
         return donation;
     }
 }

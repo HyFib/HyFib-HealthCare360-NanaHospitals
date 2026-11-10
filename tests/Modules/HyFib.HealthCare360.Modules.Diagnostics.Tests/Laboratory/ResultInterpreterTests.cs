@@ -173,6 +173,18 @@ public sealed class ResultInterpreterTests
     }
 
     [Fact]
+    public void A_strip_readers_word_is_read_as_the_tests_answer_and_flagged_as_that_answer()
+    {
+        var protein = Options("Nil", "Trace", "1+", "2+", "3+", "4+");
+        var range = Answers(["Nil"]);
+
+        ResultInterpreter.Interpret(protein, range, "Neg").Value.ShouldBe(new InterpretedResult("Nil", null, ResultFlag.Normal, "Nil"));
+        ResultInterpreter.Interpret(protein, range, "++").Value.ShouldBe(new InterpretedResult("2+", null, ResultFlag.Abnormal, "Nil"));
+        ResultInterpreter.Interpret(protein, range, "15 mg/dL").IsFailure.ShouldBeTrue();
+        ResultInterpreter.Interpret(Options("Negative", "Positive"), Answers(["Negative"]), "1+").IsFailure.ShouldBeTrue();
+    }
+
+    [Fact]
     public void Culture_with_an_isolate_is_abnormal_and_no_growth_is_normal()
     {
         var culture = new LabTest { Code = "UC", Name = "Urine culture", ResultType = LabResultType.Culture };

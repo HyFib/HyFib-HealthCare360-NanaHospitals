@@ -35,11 +35,11 @@ internal sealed record OwnMedicine(Guid StoreId, Guid ItemId, BatchStock Batch)
         var vendor = (await storeKeeper.GetAsync<PagedResult<VendorListItem>>("/api/v1/purchase/vendors?pageSize=100")).Items.Single(v => v.Code == "VEN-SBPD");
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var batchNumber = $"OWN{Letters(8)}";
-        var receipt = await storeKeeper.PostAsync<GoodsReceiptCreated>("/api/v1/purchase/grns", new CreateGoodsReceiptRequest(
+        // The store keeper enters the receipt; someone else approves it into stock.
+        await GoodsReceipts.IntoStockAsync(server, storeKeeper, new CreateGoodsReceiptRequest(
             vendor.Id, store.Id, null, $"INV-{Letters(10)}", today, today, null,
             [new GoodsReceiptLineInput(itemId, null, batchNumber, null, today.AddYears(2), tablets, 0m, mrp / 2, mrp, 0m, null, AcceptShortExpiry: false)],
-            Post: true));
-        receipt.Status.ShouldBe(GoodsReceiptStatus.Posted);
+            SendForApproval: true));
 
         var batch = (await pharmacist.GetAsync<List<BatchStock>>($"/api/v1/pharmacy/stock/batches?storeId={store.Id}&itemId={itemId}"))
             .Single(b => b.BatchNumber == batchNumber);

@@ -12,6 +12,7 @@ import {
   makeStyles,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Radio,
   RadioGroup,
   Spinner,
@@ -297,6 +298,9 @@ export function SettleClaimDialog({ claim, onClose }: { claim: ClaimDetail; onCl
   const exceeds = total > outstanding;
   const needsUtr = received.ok && received.paise > 0n && !utr.trim();
   const valid = received.ok && total > 0n && !exceeds && !deductionProblem && !needsUtr && Boolean(settledOn);
+  // Deductions are money the insurer will never pay: above the facility's amount a second person approves the write-off.
+  const approvalAbove = claim.writeOffApprovalAbove ?? 0;
+  const deductionsWait = deducted > 0n && deducted > toPaise(approvalAbove);
 
   const settle = useMutation({
     mutationFn: () =>
@@ -313,14 +317,22 @@ export function SettleClaimDialog({ claim, onClose }: { claim: ClaimDetail; onCl
           utrNumber: utr.trim() || null,
           reference: reference.trim() || null,
           settledOn,
+          version: claim.version,
         },
         attemptKey,
       ),
-    onSuccess: () => {
-      notify.success(
-        'Settlement recorded',
-        left > 0 ? `${formatInr(left)} is still outstanding.` : 'The claim is fully settled.',
-      );
+    onSuccess: (asked) => {
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${received.ok && received.paise > 0n ? `${formatInr(received.rupees)} received is recorded. ` : ''}The ${formatInr(fromPaise(deducted))} deducted is written off only when someone who approves insurance write-offs agrees; until then the insurer still owes it.`,
+        );
+      } else {
+        notify.success(
+          'Settlement recorded',
+          left > 0 ? `${formatInr(left)} is still outstanding.` : 'The claim is fully settled.',
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: insuranceKeys.all });
       void refresh();
       onClose();
@@ -433,6 +445,17 @@ export function SettleClaimDialog({ claim, onClose }: { claim: ClaimDetail; onCl
                 <MessageBar intent="error">
                   <MessageBarBody>
                     Received plus deductions cannot be more than the {formatInr(claim.outstanding)} outstanding.
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+              {deductionsWait && (
+                <MessageBar intent="info" layout="multiline">
+                  <MessageBarBody>
+                    <MessageBarTitle>The deductions wait for approval</MessageBarTitle>
+                    {approvalAbove > 0
+                      ? `More than ${formatInr(approvalAbove)} written off waits for someone who approves insurance write-offs.`
+                      : 'Every insurance write-off waits for someone who approves insurance write-offs.'}{' '}
+                    The money received is recorded now; the deductions are written off once they approve.
                   </MessageBarBody>
                 </MessageBar>
               )}

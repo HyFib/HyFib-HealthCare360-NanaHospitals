@@ -19,6 +19,7 @@ function series(overrides: Partial<NumberSeriesItem> = {}): NumberSeriesItem {
     maxLength: 24,
     defaultFormat: '{FAC}OB{YY}{SEQ:7}',
     defaultResetPolicy: 'Yearly',
+    gstDocument: false,
     ...overrides,
   };
 }

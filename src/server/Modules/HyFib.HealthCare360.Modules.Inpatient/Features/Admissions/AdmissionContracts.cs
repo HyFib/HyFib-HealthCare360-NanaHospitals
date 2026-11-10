@@ -1,5 +1,7 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
+using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
+using HyFib.HealthCare360.Modules.Inpatient.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 
@@ -47,7 +49,8 @@ public sealed record UpdateAdmissionRequest(
     string? AttendantRelation,
     string? AttendantPhone,
     string? Notes,
-    uint Version);
+    uint Version,
+    string? ChangeReason = null);
 
 public sealed record TransferPatientRequest(Guid ToBedId, string Reason, Guid? ConsultantPractitionerId, Guid? DepartmentId, DateTimeOffset? TransferredAt);
 
@@ -119,7 +122,10 @@ public sealed record AdmissionDetail(
     string? DischargeNotes,
     DateTimeOffset? CancelledAt,
     string? CancelReason,
-    uint Version);
+    uint Version,
+    PendingMlcChange? PendingMlc = null,
+    PendingDischarge? PendingDischarge = null,
+    DischargeDeclarationDto? Declaration = null);
 
 /// <summary>
 /// What an in-patient's wristband shows (FO-03): who, the UHID to scan, the admission and the bed, and what the chart
@@ -261,7 +267,7 @@ internal static class AdmissionRules
 
 public sealed class AdmitPatientRequestValidator : AbstractValidator<AdmitPatientRequest>
 {
-    public AdmitPatientRequestValidator(TimeProvider time)
+    public AdmitPatientRequestValidator(TimeProvider time, BackEntryService backEntry)
     {
         RuleFor(x => x.PatientId).NotEmpty();
         RuleFor(x => x.BedId).NotEmpty().WithMessage("Choose a bed.");
@@ -279,8 +285,8 @@ public sealed class AdmitPatientRequestValidator : AbstractValidator<AdmitPatien
         RuleFor(x => x.AttendantPhone).PhoneNumber();
         RuleFor(x => x.Notes).SafeText(1000);
         RuleFor(x => x.AdmittedAt)
-            .Must(at => AdmissionRules.WithinWindow(at, time.GetUtcNow(), AdmissionRules.BackdateWindow))
-            .WithMessage("The admission time must be within the last 3 days and not in the future.");
+            .NotInFuture(time).WithMessage("The admission time cannot be in the future.")
+            .WithinBackEntry(backEntry, BackEntryRecord.Admission);
         RuleFor(x => x.ExpectedDischargeDate)
             .Must(d => d is null || d >= time.Today().AddDays(-1))
             .WithMessage("The expected discharge date cannot be in the past.");
@@ -295,6 +301,7 @@ public sealed class UpdateAdmissionRequestValidator : AbstractValidator<UpdateAd
         RuleFor(x => x.ProvisionalDiagnosis).SafeText(500);
         RuleFor(x => x.PolicyNumber).MaximumLength(64).Matches(AdmissionRules.PolicyPattern).WithMessage("Use letters, digits, spaces, '/' or '-'.");
         RuleFor(x => x.MlcNumber).MaximumLength(64);
+        RuleFor(x => x.ChangeReason).SafeText(500);
         RuleFor(x => x.AttendantName).MaximumLength(200);
         RuleFor(x => x.AttendantRelation).MaximumLength(64);
         RuleFor(x => x.AttendantPhone).PhoneNumber();
@@ -304,13 +311,13 @@ public sealed class UpdateAdmissionRequestValidator : AbstractValidator<UpdateAd
 
 public sealed class TransferPatientRequestValidator : AbstractValidator<TransferPatientRequest>
 {
-    public TransferPatientRequestValidator(TimeProvider time)
+    public TransferPatientRequestValidator(TimeProvider time, BackEntryService backEntry)
     {
         RuleFor(x => x.ToBedId).NotEmpty().WithMessage("Choose the destination bed.");
         RuleFor(x => x.Reason).NotEmpty().SafeText(300);
         RuleFor(x => x.TransferredAt)
-            .Must(at => AdmissionRules.WithinWindow(at, time.GetUtcNow(), TimeSpan.FromHours(24)))
-            .WithMessage("The transfer time must be within the last 24 hours and not in the future.");
+            .NotInFuture(time).WithMessage("The transfer time cannot be in the future.")
+            .WithinBackEntry(backEntry, BackEntryRecord.Transfer);
     }
 }
 
@@ -322,11 +329,11 @@ public sealed class CancelAdmissionRequestValidator : AbstractValidator<CancelAd
 
 public sealed class RecordConsultantVisitRequestValidator : AbstractValidator<RecordConsultantVisitRequest>
 {
-    public RecordConsultantVisitRequestValidator(TimeProvider time)
+    public RecordConsultantVisitRequestValidator(TimeProvider time, BackEntryService backEntry)
     {
         RuleFor(x => x.VisitedAt)
-            .Must(at => AdmissionRules.WithinWindow(at, time.GetUtcNow(), TimeSpan.FromHours(48)))
-            .WithMessage("The visit time must be within the last 48 hours and not in the future.");
+            .NotInFuture(time).WithMessage("The visit time cannot be in the future.")
+            .WithinBackEntry(backEntry, BackEntryRecord.ConsultantVisit);
         RuleFor(x => x.Notes).SafeText(1000);
     }
 }

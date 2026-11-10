@@ -24,6 +24,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
   CANCEL_REASONS,
+  documentLabel,
   EINVOICE_PERMISSION,
   einvoiceApi,
   einvoiceKeys,
@@ -32,7 +33,6 @@ import {
   STATE_LABELS,
   type EInvoiceCancelReason,
   type EInvoiceRow,
-  type EInvoiceSource,
   type EInvoiceState,
 } from '@/modules/billing/einvoiceApi';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
@@ -59,8 +59,6 @@ const TONES: Record<EInvoiceState, 'warning' | 'success' | 'danger' | 'subtle'> 
   IrnCancelled: 'danger',
   NotNeeded: 'subtle',
 };
-
-const SOURCES: Record<EInvoiceSource, string> = { bill: 'Bill', pharmacy: 'Pharmacy' };
 
 function EInvoicesPage() {
   const search = Route.useSearch();
@@ -128,7 +126,7 @@ function EInvoicesPage() {
           emptyTitle="No B2B tax invoices in these days"
           columns={[
             { key: 'date', header: 'Date', width: 110, render: (r) => formatDateOnly(r.date) },
-            { key: 'number', header: 'Invoice', width: 150, render: (r) => `${r.number} (${SOURCES[r.source]})` },
+            { key: 'number', header: 'Document', width: 190, render: (r) => documentLabel(r) },
             { key: 'buyer', header: 'Buyer', render: (r) => `${r.buyerName} · ${r.buyerGstin}` },
             { key: 'total', header: 'Value', align: 'end', width: 110, render: (r) => formatInr(r.total) },
             {
@@ -182,6 +180,32 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
       refresh();
     },
   });
+  const generate = useMutation({
+    mutationFn: () => einvoiceApi.generate(row.source, row.id),
+    onSuccess: () => {
+      notify.success('IRN received', 'The portal registered the document; it now prints its IRN and signed QR code.');
+      refresh();
+    },
+  });
+  const [distance, setDistance] = useState('');
+  const [vehicle, setVehicle] = useState('');
+  const [transporter, setTransporter] = useState('');
+  const ewayBill = useMutation({
+    mutationFn: () =>
+      einvoiceApi.ewayBill(row.source, row.id, {
+        distanceKm: Number(distance) || 0,
+        mode: 'Road',
+        vehicleNumber: vehicle.trim() || null,
+        transporterGstin: transporter.trim() || null,
+        transporterName: null,
+        transportDocumentNumber: null,
+        transportDocumentDate: null,
+      }),
+    onSuccess: () => {
+      notify.success('E-way bill generated', 'The goods can move with it until it expires.');
+      refresh();
+    },
+  });
   const cancel = useMutation({
     mutationFn: (version: number) => einvoiceApi.cancel(row.source, row.id, reason, remark.trim(), version),
     onSuccess: () => {
@@ -200,7 +224,7 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
       <DialogSurface style={{ maxWidth: 720 }}>
         <DialogBody>
           <DialogTitle>
-            E-invoice {row.number} · {formatDateOnly(row.date)}
+            {row.type === 'CRN' ? 'Credit note' : 'E-invoice'} {row.number} · {formatDateOnly(row.date)}
           </DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {detail.isLoading && <Spinner size="small" label="Loading the invoice…" />}
@@ -215,10 +239,17 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                   {d.buyerName} · GSTIN {d.buyerGstin} · place of supply{' '}
                   {gstStateName(d.placeOfSupply) ?? d.placeOfSupply} · {d.lines} line(s) · {formatInr(d.total)}
                 </Text>
+                {d.type === 'CRN' && d.against && (
+                  <Text>
+                    Credit note against invoice {d.against}
+                    {d.againstDate ? ` of ${formatDateOnly(d.againstDate)}` : ''}: it goes to the portal after that
+                    invoice&apos;s IRN.
+                  </Text>
+                )}
                 {d.problems.length > 0 && (
                   <MessageBar intent="warning">
                     <MessageBarBody>
-                      The portal would refuse this invoice:
+                      The portal would refuse this {d.type === 'CRN' ? 'credit note' : 'invoice'}:
                       <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
                         {d.problems.map((p) => (
                           <li key={p}>{p}</li>
@@ -239,6 +270,14 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                         Ack no. {registration.ackNo} · {formatDateTime(registration.ackDate)} · recorded by{' '}
                         {registration.recordedByName}
                       </Caption1>
+                      {registration.ewbNo && (
+                        <Caption1>
+                          E-way bill {registration.ewbNo}
+                          {registration.ewbValidTill
+                            ? ` · valid until ${formatDateTime(registration.ewbValidTill)}`
+                            : ''}
+                        </Caption1>
+                      )}
                       {registration.cancelledAt && (
                         <Caption1>
                           Cancelled {formatDateTime(registration.cancelledAt)}: {registration.cancelRemark}
@@ -247,7 +286,47 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                     </div>
                   </div>
                 )}
-                {!live && d.state !== 'NotNeeded' && (
+                {!live && d.state !== 'NotNeeded' && d.portalConnected && (
+                  <>
+                    <Text>This facility is connected to the e-invoice portal: HC360 asks it for the IRN.</Text>
+                    {generate.error && (
+                      <MessageBar intent="error">
+                        <MessageBarBody>{errorMessage(generate.error, 'The portal gave no IRN.')}</MessageBarBody>
+                      </MessageBar>
+                    )}
+                  </>
+                )}
+                {live && d.ewayBillNeeded && !registration.ewbNo && (
+                  <>
+                    <Text weight="semibold">E-way bill</Text>
+                    <div
+                      style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8 }}
+                    >
+                      <Field label="Distance (km)" hint="0: the portal works it out from the PIN codes">
+                        <Input
+                          value={distance}
+                          inputMode="numeric"
+                          maxLength={4}
+                          onChange={(_, v) => setDistance(v.value)}
+                        />
+                      </Field>
+                      <Field label="Vehicle number">
+                        <Input value={vehicle} maxLength={20} onChange={(_, v) => setVehicle(v.value)} />
+                      </Field>
+                      <Field label="Transporter's GSTIN or id" hint="When the transporter fills the vehicle in">
+                        <Input value={transporter} maxLength={15} onChange={(_, v) => setTransporter(v.value)} />
+                      </Field>
+                    </div>
+                    {ewayBill.error && (
+                      <MessageBar intent="error">
+                        <MessageBarBody>
+                          {errorMessage(ewayBill.error, 'The e-way bill was not generated.')}
+                        </MessageBarBody>
+                      </MessageBar>
+                    )}
+                  </>
+                )}
+                {!live && d.state !== 'NotNeeded' && !d.portalConnected && (
                   <>
                     <Button
                       icon={<ArrowDownloadRegular />}
@@ -277,8 +356,10 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                 {live && registration.canCancel && (
                   <>
                     <Caption1>
-                      The portal cancels an IRN only until {formatDateTime(registration.cancelBy)}. Cancel it there
-                      first, then record it here.
+                      The portal cancels an IRN only until {formatDateTime(registration.cancelBy)}.{' '}
+                      {d.portalConnected
+                        ? 'HC360 cancels it on the portal and records it.'
+                        : 'Cancel it there first, then record it here.'}
                     </Caption1>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
                       <Field label="Reason">
@@ -313,7 +394,25 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
           </DialogContent>
           <DialogActions>
             <Button onClick={onClose}>Close</Button>
-            {d && !live && d.state !== 'NotNeeded' && (
+            {d && !live && d.state !== 'NotNeeded' && d.portalConnected && (
+              <Button
+                appearance="primary"
+                icon={<DocumentCheckmarkRegular />}
+                disabled={d.problems.length > 0 || generate.isPending}
+                onClick={() => generate.mutate()}
+              >
+                Get IRN from the portal
+              </Button>
+            )}
+            {d && live && d.ewayBillNeeded && !registration.ewbNo && (
+              <Button
+                disabled={(!vehicle.trim() && !transporter.trim()) || ewayBill.isPending}
+                onClick={() => ewayBill.mutate()}
+              >
+                Generate e-way bill
+              </Button>
+            )}
+            {d && !live && d.state !== 'NotNeeded' && !d.portalConnected && (
               <Button
                 appearance="primary"
                 icon={<DocumentCheckmarkRegular />}
@@ -330,7 +429,7 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                 disabled={!remark.trim() || cancel.isPending}
                 onClick={() => cancel.mutate(registration.version)}
               >
-                Record IRN cancellation
+                {d?.portalConnected ? 'Cancel IRN on the portal' : 'Record IRN cancellation'}
               </Button>
             )}
           </DialogActions>

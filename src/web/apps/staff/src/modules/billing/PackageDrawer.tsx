@@ -14,6 +14,7 @@ import {
   Select,
   Spinner,
   Text,
+  Textarea,
   tokens,
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular, DismissRegular } from '@fluentui/react-icons';
@@ -21,6 +22,8 @@ import { formatInr, useDebouncedValue } from '@hc360/core';
 import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { askedForApproval } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import { searchServices } from './api';
 import { HBP_CODE, hbpQueries } from './hbpApi';
 import {
@@ -31,7 +34,14 @@ import {
   type PackageUse,
   type ServiceCategory,
 } from './labels';
-import { mastersApi, mastersKeys, mastersQueries, type PackageDetail, type PackageInclusionInput } from './mastersApi';
+import {
+  mastersApi,
+  mastersKeys,
+  mastersQueries,
+  type PackageDetail,
+  type PackageInclusionInput,
+  type PackageTerms,
+} from './mastersApi';
 import { amountInputText, parseRupees } from './money';
 import { ActionError, AmountField } from './ui';
 
@@ -113,7 +123,9 @@ function ServiceSearch({
 
 /**
  * Create or edit a treatment package: price, whether it prices admissions, OP bills or both, stay, and what it includes
- * (a service or a whole category, with caps).
+ * (a service or a whole category, with caps). What its patients pay (its price, the service it is billed as, what it
+ * covers, its tariff, the bills it prices and putting it in use) changes only when a second person who may approve prices
+ * agrees; the form holds the terms that wait, so saving again asks for nothing twice.
  */
 export function PackageDrawer({
   packageDetail,
@@ -127,20 +139,28 @@ export function PackageDrawer({
   const queryClient = useQueryClient();
   const plans = useQuery(mastersQueries.tariffPlans());
   const p = packageDetail;
+  const pending = p?.pendingTerms ?? null;
+  const terms = pending?.asked;
   const [code, setCode] = useState(p?.code ?? '');
   const [name, setName] = useState(p?.name ?? '');
   const [billing, setBilling] = useState<{ id: string; label: string } | null>(
-    p ? { id: p.serviceItemId, label: p.serviceCode ?? 'Package service' } : null,
+    p
+      ? {
+          id: terms?.serviceItemId ?? p.serviceItemId,
+          label: (terms ? pending?.serviceCode : p.serviceCode) ?? 'Package service',
+        }
+      : null,
   );
-  const [price, setPrice] = useState(p ? amountInputText(p.price) : '');
-  const [usedFor, setUsedFor] = useState<PackageUse>(p?.usedFor ?? 'InPatient');
+  const [price, setPrice] = useState(p ? amountInputText(terms?.price ?? p.price) : '');
+  const [usedFor, setUsedFor] = useState<PackageUse>(terms?.usedFor ?? p?.usedFor ?? 'InPatient');
   const [stay, setStay] = useState(p?.lengthOfStayDays ? String(p.lengthOfStayDays) : '');
-  const [planId, setPlanId] = useState(p?.tariffPlanId ?? '');
+  const [planId, setPlanId] = useState((terms ? terms.tariffPlanId : p?.tariffPlanId) ?? '');
   const [description, setDescription] = useState(p?.description ?? '');
-  const [active, setActive] = useState(p?.isActive ?? true);
+  const [active, setActive] = useState(terms?.isActive ?? p?.isActive ?? true);
   const [hbpCode, setHbpCode] = useState(p?.hbpCode ?? '');
+  const [reason, setReason] = useState('');
   const [inclusions, setInclusions] = useState<InclusionDraft[]>(() =>
-    (p?.inclusions ?? []).map((i) => ({
+    ((terms ? pending?.inclusions : null) ?? p?.inclusions ?? []).map((i) => ({
       key: nextKey(),
       serviceItemId: i.serviceItemId,
       label: i.serviceItemId ? `${i.serviceName ?? ''} (${i.serviceCode ?? ''})` : '',
@@ -209,18 +229,46 @@ export function PackageDrawer({
         }),
         version: p?.version ?? null,
         hbpCode: hbp || null,
+        reason: reason.trim() || null,
       };
       return p ? mastersApi.updatePackage(p.id, request) : mastersApi.createPackage(request);
     },
-    onSuccess: (saved) => {
-      notify.success(p ? 'Package saved' : 'Package created', saved.name);
+    onSuccess: (result) => {
+      // A package's price and cover change only when two people agree: a save that changes them says they were asked for.
+      const asked = askedForApproval(result);
+      const created = p ? null : (result as PackageDetail);
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Someone who may approve prices decides it; until then the package's terms in use apply.`,
+        );
+      } else if (created?.pendingTerms) {
+        notify.success(
+          'Asked for approval',
+          `${name.trim()} is made out of use (listed under Show inactive); its price and cover wait for someone who may approve prices.`,
+        );
+      } else {
+        notify.success(p ? 'Package saved' : 'Package created', name.trim());
+      }
       void queryClient.invalidateQueries({ queryKey: mastersKeys.packages });
       onClose();
     },
   });
 
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ code, name, billing, price, usedFor, stay, planId, description, active, inclusions }),
+    dirty: useValuesChanged({
+      code,
+      name,
+      billing,
+      price,
+      usedFor,
+      stay,
+      planId,
+      description,
+      active,
+      inclusions,
+      reason,
+    }),
     busy: save.isPending,
     onClose,
   });
@@ -247,6 +295,15 @@ export function PackageDrawer({
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
+            {pending && p && (
+              <PendingGrantNotice
+                approvalId={pending.approvalId}
+                what={pendingTermsWhat(p, pending.asked)}
+                requestedBy={pending.requestedBy}
+                requestedAt={pending.requestedAt}
+                decides="Someone who may approve prices decides it; until then the package's terms in use apply. The form shows them as asked."
+              />
+            )}
             <div className={styles.grid}>
               <Field
                 label="Code"
@@ -341,6 +398,12 @@ export function PackageDrawer({
             )}
             <Field label="Description">
               <Input value={description} onChange={(_, d) => setDescription(d.value)} maxLength={1000} />
+            </Field>
+            <Field
+              label="Reason for a change to the price or cover, for the approver"
+              hint="The price, the service it is billed as, what it covers, its tariff, the bills it prices and putting it in use wait for someone who may approve prices."
+            >
+              <Textarea value={reason} onChange={(_, d) => setReason(d.value)} maxLength={500} rows={2} />
             </Field>
 
             <Text weight="semibold">What the package includes</Text>
@@ -486,4 +549,35 @@ function hbpHint(
   ]
     .filter(Boolean)
     .join(' · ');
+}
+
+/** What waits for approval in a package's terms, against what applies now. */
+function pendingTermsWhat(p: PackageDetail, asked: PackageTerms): string {
+  const parts: string[] = [];
+  if (asked.isActive !== p.isActive) {
+    parts.push(asked.isActive ? 'put in use' : 'taken out of use');
+  }
+  if (asked.price !== p.price) {
+    parts.push(`price ${formatInr(asked.price)} (now ${formatInr(p.price)})`);
+  }
+  if (asked.serviceItemId !== p.serviceItemId) {
+    parts.push('billed as another service');
+  }
+  if (asked.tariffPlanId !== p.tariffPlanId) {
+    parts.push('another tariff');
+  }
+  if (asked.usedFor !== p.usedFor) {
+    parts.push(`used for ${PACKAGE_USE_LABEL[asked.usedFor].toLowerCase()}`);
+  }
+  const rule = (c: {
+    serviceItemId: string | null;
+    category: string | null;
+    maxQuantity: number | null;
+    maxAmount: number | null;
+  }) => `${c.serviceItemId ?? ''}|${c.category ?? ''}|${c.maxQuantity ?? ''}|${c.maxAmount ?? ''}`;
+  const covers = (list: Parameters<typeof rule>[0][]) => list.map(rule).sort().join(',');
+  if (covers(asked.covers) !== covers(p.inclusions)) {
+    parts.push('what it covers');
+  }
+  return parts.length > 0 ? `Price and cover: ${parts.join('; ')}` : 'Price and cover';
 }

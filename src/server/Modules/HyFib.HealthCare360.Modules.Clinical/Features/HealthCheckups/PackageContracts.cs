@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.HealthCheckups;
 
@@ -8,6 +9,11 @@ namespace HyFib.HealthCare360.Modules.Clinical.Features.HealthCheckups;
 /// </summary>
 public sealed record PackageItemRequest(PackageItemKind Kind, Guid? ServiceItemId, string? DepartmentCode, PackageGender Gender, int? MinAgeYears);
 
+/// <summary>
+/// A health package saved. Its price and putting it in use are its billable service's price terms: they change only when
+/// a second person who may approve prices agrees (<paramref name="Reason"/> is for them); taking it out of use, and the
+/// rest, are saved at once.
+/// </summary>
 public sealed record SavePackageRequest(
     string Code,
     string Name,
@@ -18,7 +24,8 @@ public sealed record SavePackageRequest(
     decimal Price,
     bool IsActive,
     IReadOnlyList<PackageItemRequest> Items,
-    uint? Version);
+    uint? Version,
+    string? Reason = null);
 
 public sealed record PackageItemDto(
     Guid Id,
@@ -44,7 +51,11 @@ public sealed record PackageDto(
     Guid? ServiceItemId,
     bool IsActive,
     IReadOnlyList<PackageItemDto> Items,
-    uint Version);
+    uint Version,
+    PendingServicePrice? PendingPrice = null);
+
+/// <summary>A package as saved, and the request asking a second person for its price or use, if the save made one.</summary>
+public sealed record SavedPackage(PackageDto Package, ApprovalRequestDto? Asked);
 
 public sealed record PackageEligibility(bool IsEligible, string? Reason, IReadOnlyList<string> ExcludedItems);
 
@@ -56,6 +67,7 @@ public sealed class SavePackageRequestValidator : AbstractValidator<SavePackageR
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Description).SafeText(1000);
         RuleFor(x => x.Price).GreaterThanOrEqualTo(0).LessThan(10_000_000);
+        RuleFor(x => x.Reason).SafeText(500);
         RuleFor(x => x.MinAgeYears).InclusiveBetween(0, 120).When(x => x.MinAgeYears is not null);
         RuleFor(x => x.MaxAgeYears).InclusiveBetween(0, 130).When(x => x.MaxAgeYears is not null);
         RuleFor(x => x.MaxAgeYears).GreaterThanOrEqualTo(x => x.MinAgeYears).When(x => x.MinAgeYears is not null && x.MaxAgeYears is not null)

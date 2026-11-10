@@ -1,6 +1,7 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import { ApiError, formatDate } from '@hc360/core';
 import type * as Ui from '@hc360/ui';
+import { expectNoAxeViolations } from '@hc360/ui/testing';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -9,10 +10,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as PatientsApi from './api';
 import { consentApi, type ConsentDto, type WhatsAppConsentDto } from './api';
 import { ConsentsPanel, RecordConsentForm } from './ConsentsPanel';
+import type * as WitnessApi from '@/modules/witness/api';
 
 // The server, the toasts and the signed-in user are outside the test; the panel's own behaviour is what is tested.
 const listConsents = vi.hoisted(() => vi.fn());
 const whatsAppStatus = vi.hoisted(() => vi.fn());
+const sharingPartners = vi.hoisted(() => vi.fn());
 vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof PatientsApi>();
   return {
@@ -22,12 +25,20 @@ vi.mock('./api', async (importOriginal) => {
       ...actual.patientQueries,
       consents: (id: string) => ({ queryKey: actual.patientKeys.consents(id), queryFn: () => listConsents(id) }),
       whatsApp: (id: string) => ({ queryKey: actual.patientKeys.whatsApp(id), queryFn: () => whatsAppStatus(id) }),
+      sharingPartners: () => ({ queryKey: actual.patientKeys.sharingPartners(), queryFn: () => sharingPartners() }),
     },
   };
 });
 const notify = vi.hoisted(() => ({ success: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn() }));
 vi.mock('@hc360/ui', async (importOriginal) => ({ ...(await importOriginal<typeof Ui>()), useNotify: () => notify }));
 vi.mock('@/lib/permissions', () => ({ usePermission: () => true }));
+// The whole record shared with no signed form is witnessed at this screen (MAKER-CHECKER.md, slice 14).
+const confirmWitness = vi.hoisted(() => vi.fn());
+vi.mock('@/modules/witness/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof WitnessApi>();
+  return { ...actual, witnessApi: { ...actual.witnessApi, confirm: confirmWitness } };
+});
+const PASSWORD = 'Witness-pass-1';
 
 function renderWithProviders(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -71,12 +82,30 @@ describe('RecordConsentForm', () => {
     Object.values(notify).forEach((spy) => spy.mockClear());
   });
 
-  it('saves only once the consent is chosen, then says what changes and closes', async () => {
+  it('saves the whole record shared only once a witness confirms at the screen, then says what changes and closes', async () => {
+    confirmWitness.mockReset().mockResolvedValue({
+      confirmationId: 'w1',
+      userId: 'u2',
+      name: 'Meena Iyer',
+      expiresAt: '2026-11-08T10:05:00Z',
+    });
     const user = userEvent.setup();
     const { onClose, save } = renderForm();
     expect(save).toBeDisabled();
 
     await user.selectOptions(screen.getByRole('combobox', { name: /^Consent/ }), 'DataSharing');
+    // No typed witness name: the witness proves who they are.
+    expect(screen.queryByRole('textbox', { name: /^Witness$/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/Sharing the whole record with no signed form is witnessed/)).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    await expectNoAxeViolations(document.body);
+
+    await user.type(screen.getByLabelText(/Witness's user name/), 'meena');
+    await user.type(screen.getByLabelText(/Witness's password/), PASSWORD);
+    await user.click(screen.getByRole('button', { name: 'Confirm witness' }));
+    expect(confirmWitness).toHaveBeenCalledWith(
+      expect.objectContaining({ userName: 'meena', purpose: 'consent.record_sharing', patientId: 'p1' }),
+    );
     await waitFor(() => expect(save).toBeEnabled());
     await user.click(save);
 
@@ -90,11 +119,60 @@ describe('RecordConsentForm', () => {
       signedByName: null,
       documentFileId: null,
       notes: null,
+      sharingScope: null,
+      witnessConfirmationId: 'w1',
     });
     expect(notify.success).toHaveBeenCalledWith(
       'Consent recorded',
       'HC360 can now share this patient’s records with other care providers.',
     );
+  });
+
+  it('records only what the patient agreed to share, naming the partner accounts (gap #28)', async () => {
+    sharingPartners.mockResolvedValue([
+      { id: 'acc-1', name: 'Apollo Clinic' },
+      { id: 'acc-2', name: 'Star Health' },
+    ]);
+    const user = userEvent.setup();
+    const { onClose, save } = renderForm();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /^Consent/ }), 'DataSharing');
+    await user.click(screen.getByRole('radio', { name: 'Only what the patient chose' }));
+    await waitFor(() => expect(save).toBeDisabled());
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Apollo Clinic' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Treating the patient (TREAT)' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Allergies' }));
+    await waitFor(() => expect(save).toBeEnabled());
+    await user.click(save);
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(consentApi.capture).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({
+        type: 'DataSharing',
+        granted: true,
+        sharingScope: {
+          shareWith: ['acc-1'],
+          purposes: ['Treatment'],
+          kinds: ['Allergies'],
+          recordsFrom: null,
+          recordsTo: null,
+          until: null,
+        },
+      }),
+    );
+  });
+
+  it('asks what is shared only for a record-sharing consent that is given', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /^Consent/ }), 'Research');
+    expect(screen.queryByRole('radio', { name: 'Only what the patient chose' })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: /^Consent/ }), 'DataSharing');
+    await user.click(screen.getByRole('radio', { name: 'Refused' }));
+    expect(screen.queryByRole('radio', { name: 'Only what the patient chose' })).not.toBeInTheDocument();
   });
 
   it('needs the name and relation of someone signing on the patient’s behalf', async () => {
@@ -221,7 +299,18 @@ describe('ConsentsPanel', () => {
 
   it('lists each consent with its decision, and offers withdrawal only for one that stands', async () => {
     listConsents.mockResolvedValue([
-      consent({ id: 'given', notes: 'Wants records sent to Apollo only.' }),
+      consent({
+        id: 'given',
+        notes: 'Wants records sent to Apollo only.',
+        sharingScope: {
+          shareWith: [{ id: 'acc-1', name: 'Apollo Clinic' }],
+          purposes: ['Treatment'],
+          kinds: ['Allergies'],
+          recordsFrom: null,
+          recordsTo: null,
+          until: null,
+        },
+      }),
       consent({
         id: 'withdrawn',
         type: 'SmsWhatsAppUpdates',
@@ -241,6 +330,7 @@ describe('ConsentsPanel', () => {
     const [, given, withdrawn] = within(screen.getByRole('table', { name: 'Consents' })).getAllByRole('row');
     expect(given).toHaveTextContent('Sharing records with other care providers');
     expect(given).toHaveTextContent('Wants records sent to Apollo only.');
+    expect(given).toHaveTextContent('Shared with Apollo Clinic, for treating the patient: allergies.');
     expect(within(given!).getByText('Given')).toBeInTheDocument();
     expect(given).toHaveTextContent('by Asha Nair');
 

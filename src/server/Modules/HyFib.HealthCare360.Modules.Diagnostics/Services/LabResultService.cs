@@ -8,7 +8,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// <summary>
 /// Result entry and pathologist verification (LIS-02, LIS-04, LIS-05, LIS-06). Values are interpreted against the
 /// patient's reference interval and delta-checked at entry. Verification is refused while QC is failing for the assay
-/// (unless overridden with an audited reason). A critical value cannot be verified until the call to the clinician is
+/// (unless overridden with an audited reason; where the lab asks for a second pathologist, that override covers only the
+/// results verified with it). A critical value cannot be verified until the call to the clinician is
 /// documented with read-back. Verification sends the critical SMS in the same transaction and in-app alerts after commit.
 /// </summary>
 internal sealed class LabResultService(
@@ -161,7 +162,14 @@ internal sealed class LabResultService(
                 return qcFailed with { Data = new { lockouts } };
             }
 
-            overrides += await qc.RecordOverridesAsync(lockouts, request.QcOverrideReason, ct);
+            // Where the lab asks for a second pathologist, the override covers the locked results verified now and no
+            // other: the next result of the assay is locked again (an override for the day is asked for on the QC screen
+            // and approved by another pathologist).
+            var lockedIds = lockouts.Select(l => l.LabTestId).ToHashSet();
+            var covered = await qc.SeparateVerifierAsync(facility.Key, ct)
+                ? facility.Where(r => lockedIds.Contains(r.LabTestId)).Select(r => r.Id).ToList()
+                : null;
+            overrides += await qc.RecordOverridesAsync(lockouts, request.QcOverrideReason, ct, covered);
         }
 
         // Critical values (LIS-05): a documented call with read-back is mandatory before verification.
@@ -383,7 +391,7 @@ internal sealed class LabResultService(
                     r.InstrumentComment, r.HeldReasons, r.Method, r.Remarks, r.Organism, r.ColonyCount,
                     r.Susceptibilities.Where(s => !s.IsDeleted).OrderBy(s => s.DisplayOrder)
                         .Select(s => new SusceptibilityDto(s.Antibiotic, s.Interpretation, s.Mic)).ToList(),
-                    r.EnteredAt, r.VerifiedAt, called.Contains(r.Id), r.Version);
+                    r.EnteredAt, r.VerifiedAt, called.Contains(r.Id), r.Version, r.InstrumentValue);
             })
             .ToList();
     }

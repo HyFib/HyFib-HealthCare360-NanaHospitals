@@ -32,11 +32,15 @@ internal static class SaleEndpoints
         group.MapPost("/sales/{id:guid}/payments", async (Guid id, CollectPaymentRequest r, SaleAdjustmentService sales, CancellationToken ct) =>
                 (await sales.CollectAsync(id, r, ct)).ToNoContent())
             .RequirePermission(PharmacyPermissions.Sales).WithValidation<CollectPaymentRequest>();
+        // A cancellation always waits for someone who approves refunds (202); a return waits when it pays money out or
+        // writes stock off, and is made at once (201) when it is restocked and set against the balance due.
         group.MapPost("/sales/{id:guid}/cancel", async (Guid id, PharmacyReasonRequest r, SaleAdjustmentService sales, CancellationToken ct) =>
-                (await sales.CancelAsync(id, r.Reason, ct)).ToNoContent())
+                (await sales.AskCancelAsync(id, r.Reason, ct)).ToHttpResult(asked => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
             .RequirePermission(PharmacyPermissions.Returns).WithValidation<PharmacyReasonRequest>();
         group.MapPost("/sales/{id:guid}/returns", async (Guid id, SaleReturnRequest r, SaleAdjustmentService sales, CancellationToken ct) =>
-                (await sales.ReturnAsync(id, r, ct)).ToCreated(ret => $"/api/v1/pharmacy/sales/{id}/returns"))
+                (await sales.ReturnAsync(id, r, ct)).ToHttpResult(outcome => outcome.Asked is { } asked
+                    ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)
+                    : TypedResults.Created($"/api/v1/pharmacy/sales/{id}/returns", outcome.Created)))
             .RequirePermission(PharmacyPermissions.Returns).WithValidation<SaleReturnRequest>();
     }
 
@@ -152,7 +156,7 @@ internal static class SaleEndpoints
 
     private static async Task<IResult> Get(
         Guid id, HospitalDbContext db, PatientAccessGuard guard, PatientContactAccess contacts, IAuditLogger audit, IEInvoiceRegister einvoices,
-        CancellationToken ct)
+        SaleAdjustmentService adjustments, ICurrentUser currentUser, CancellationToken ct)
     {
         var sale = await db.Set<PharmacySale>().AsNoTracking().Include(s => s.Items).Include(s => s.Payments).FirstOrDefaultAsync(s => s.Id == id, ct);
         if (sale is null)
@@ -186,11 +190,14 @@ internal static class SaleEndpoints
                 i.Id, i.ItemId, i.ItemName, i.GenericName, i.HsnCode, i.Schedule, i.BatchNumber, i.ExpiryDate, i.Quantity, i.UnitMrp, i.GstRate,
                 i.GrossAmount, i.DiscountAmount, i.TaxableAmount, i.CgstAmount, i.SgstAmount, i.IgstAmount, i.NetAmount, i.ReturnedQuantity, i.IsSubstitution,
                 i.PrescribedDrugName, i.SubstitutionReason)).ToList(),
-            sale.Payments.OrderBy(p => p.ReceivedAt).Select(p => new PharmacyPaymentDto(p.Id, p.Mode, p.Amount, p.Reference, p.ReceivedAt, p.IsRefund)).ToList(),
+            sale.Payments.OrderBy(p => p.ReceivedAt).Select(p => new PharmacyPaymentDto(p.Id, p.Mode, p.Amount, p.Reference, p.ReceivedAt, p.IsRefund, p.RefundOfPaymentId)).ToList(),
             sale.Version,
             sale.BuyerAddress,
             sale.BuyerGstin is null ? null : await einvoices.FindAsync(PharmacyEInvoiceSource.Key, sale.Id, ct),
-            sale.FreeTreatmentReason));
+            sale.FreeTreatmentReason,
+            sale.PrescriptionDate,
+            await adjustments.PendingAsync(sale.Id, ct),
+            sale.HandledBy(currentUser.UserId)));
     }
 
     private static async Task<IResult> Returns(Guid id, HospitalDbContext db, CancellationToken ct)

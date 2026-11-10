@@ -32,6 +32,12 @@ public static class ClinicalPermissions
 
     public const string DischargeSummaryWrite = "clinical.discharge_summary.write";
     public const string TemplatesManage = "clinical.templates.manage";
+
+    /// <summary>
+    /// Approve, as the pharmacy and therapeutics committee, a drug interaction switched off or made less severe, or a maximum
+    /// dose raised or switched off, that someone else asked for (<see cref="Services.DrugSafetyApprovals"/>).
+    /// </summary>
+    public const string DrugSafetyApprove = "clinical.drug_safety.approve";
     public const string MrdCoding = "mrd.coding";
     public const string MrdRecords = "mrd.records";
 
@@ -48,6 +54,9 @@ public static class ClinicalPermissions
 
     /// <summary>Certify the cause of a death (MCCD, Form 4): the doctor who attended the patient in the last illness.</summary>
     public const string DeathsCertify = "mrd.deaths.certify";
+
+    /// <summary>Confirm, as a second doctor, a death certificate another doctor certified, before it is reported.</summary>
+    public const string DeathsConfirm = "mrd.deaths.confirm";
 
     /// <summary>The births and deaths registers, and reporting each event to the Registrar.</summary>
     public const string VitalRegister = "mrd.vital.register";
@@ -108,6 +117,9 @@ public static class ClinicalPermissions
         new(ImmunizationsRecord, Emr, "Record immunisations", [SystemRoles.Doctor, SystemRoles.Nurse]),
         new(OrdersPlace, Emr, "Place and cancel lab, imaging, cardiology and procedure orders", [SystemRoles.Doctor]),
         new(TemplatesManage, Emr, "Maintain clinical templates, order sets and the drug-safety tables", [SystemRoles.Doctor, SystemRoles.HospitalAdmin]),
+        new(DrugSafetyApprove, Prescribing,
+            "Approve a drug interaction switched off or made less severe, or a maximum dose raised or switched off, that someone else asked for (pharmacy and therapeutics committee)",
+            [SystemRoles.Pharmacist, SystemRoles.HospitalAdmin]),
         new(PrescriptionsWrite, Prescribing, "Draft e-prescriptions", [SystemRoles.Doctor]),
         new(PrescriptionsSign, Prescribing, "Sign and cancel e-prescriptions (sends them to the pharmacy)", [SystemRoles.Doctor]),
         new(PrescriptionsRefill, Prescribing, "Issue an authorised refill of a signed prescription", [SystemRoles.Doctor, SystemRoles.Pharmacist]),
@@ -120,6 +132,7 @@ public static class ClinicalPermissions
         new(BirthsRecord, Records, "Record births in the hospital (Form 1, and Form 3 for a still birth)",
             [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.MrdOfficer]),
         new(DeathsCertify, Records, "Certify the cause of death (MCCD, Form 4)", [SystemRoles.Doctor]),
+        new(DeathsConfirm, Records, "Confirm, as a second doctor, a death certificate another doctor certified, before it is reported", [SystemRoles.Doctor]),
         new(VitalRegister, Records, "The births and deaths registers, and reporting them to the Registrar within 21 days",
             [SystemRoles.MrdOfficer, SystemRoles.HospitalAdmin]),
         new(IdspReport, Surveillance, "Notifiable diseases (IDSP): the cases, the weekly P and L forms to IHIP, and the outbreak alerts",

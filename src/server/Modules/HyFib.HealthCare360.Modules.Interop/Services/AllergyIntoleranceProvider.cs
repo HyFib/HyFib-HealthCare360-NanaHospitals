@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Modules.Interop.Search;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
@@ -29,10 +30,10 @@ internal sealed class AllergyIntoleranceProvider(HospitalDbContext db) : IFhirRe
         return allergy is null ? ResourceLookup.Missing : ResourceLookup.Found(AllergyIntoleranceMapper.Map(allergy), allergy.PatientId);
     }
 
-    public async Task<IReadOnlyList<R4.Resource>> ListForPatientAsync(Guid patientId, CancellationToken ct)
+    public async Task<SearchCandidates> ListForPatientAsync(Guid patientId, SearchRequest request, PatientAccess access, CancellationToken ct)
     {
         var allergies = await Allergies(a => a.PatientId == patientId).ToListAsync(ct);
-        return [.. allergies.Select(AllergyIntoleranceMapper.Map)];
+        return new SearchCandidates([.. allergies.Select(AllergyIntoleranceMapper.Map)]);
     }
 
     internal IQueryable<AllergyRow> Allergies(Expression<Func<Allergy, bool>> filter) =>

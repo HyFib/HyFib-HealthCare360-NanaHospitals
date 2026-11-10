@@ -28,23 +28,41 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBlood } from '@/modules/blood-bank/PatientBlood';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { inpatientQueries, PAYER_LABEL, type BedBoardItem, type BedOccupant } from '@/modules/inpatient/api';
 import { bedAlertBadge, bedAlertInfo } from '@/modules/inpatient/bedState';
 import { BedAlertBadges } from '@/modules/inpatient/BedTile';
 import { useStoredState, useWardRealtime } from '@/modules/inpatient/hooks';
+import { DowntimePrintButton } from '@/modules/inpatient/DowntimePrintButton';
 import { Assessments } from '@/modules/inpatient/nursing/Assessments';
+import { Restraints, WardRestraints } from '@/modules/inpatient/nursing/Restraints';
+import { SafetyEvents } from '@/modules/inpatient/nursing/SafetyEvents';
+import { CarePlan } from '@/modules/inpatient/nursing/CarePlan';
+import { PatientObservations, WardEscalations } from '@/modules/inpatient/nursing/EarlyWarning';
 import { PatientHandovers, WardHandoverSheet } from '@/modules/inpatient/nursing/Handovers';
 import { IntakeOutput } from '@/modules/inpatient/nursing/IntakeOutput';
 import { MedicationOrders } from '@/modules/inpatient/nursing/MedicationOrders';
 import { NursingNotes } from '@/modules/inpatient/nursing/NursingNotes';
 import { PatientMar } from '@/modules/inpatient/nursing/PatientMar';
 import { WardMarDue } from '@/modules/inpatient/nursing/WardMarDue';
+import { TransferRequestList } from '@/modules/inpatient/TransferRequests';
 import { nursingQueries } from '@/modules/inpatient/nursingApi';
 import { dutyDate, SHIFT_LABEL, shiftAt } from '@/modules/inpatient/time';
 
-type ChartTab = 'mar' | 'medicines' | 'notes' | 'handover' | 'io' | 'risk';
-const CHART_TABS: ChartTab[] = ['mar', 'medicines', 'notes', 'handover', 'io', 'risk'];
+type ChartTab = 'mar' | 'medicines' | 'obs' | 'blood' | 'notes' | 'handover' | 'careplan' | 'io' | 'risk' | 'restraint';
+const CHART_TABS: ChartTab[] = [
+  'mar',
+  'medicines',
+  'obs',
+  'blood',
+  'notes',
+  'handover',
+  'careplan',
+  'io',
+  'risk',
+  'restraint',
+];
 
 interface NursingSearch {
   wardId?: string;
@@ -136,7 +154,10 @@ function NursingStationPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const canChart = usePermission('nursing.chart');
   const canMar = usePermission('nursing.mar');
+  const canTransfuse = usePermission('bloodbank.transfuse');
   const canReadAdmissions = usePermission('inpatient.admissions.read');
+  const canTransfer = usePermission('inpatient.admissions.transfer');
+  const canOrderRestraint = usePermission('nursing.restraint.order');
   const [storedWard, setStoredWard] = useStoredState(WARD_KEY);
   const [term, setTerm] = useState('');
   const [now] = useState(() => new Date());
@@ -206,6 +227,7 @@ function NursingStationPage() {
                 Bed board
               </Button>
             )}
+            {wardId && canChart && <DowntimePrintButton wardId={wardId} label="Print downtime sheet" />}
           </>
         }
       />
@@ -299,6 +321,8 @@ function NursingStationPage() {
               tab={search.tab ?? (canMar ? 'mar' : 'notes')}
               canChart={canChart}
               canMar={canMar}
+              canTransfuse={canTransfuse}
+              canOrderRestraint={canOrderRestraint}
               onTab={(tab) => void navigate({ search: (prev) => ({ ...prev, tab }), replace: true })}
               onBack={() => openPatient(undefined)}
               onOpenAdmission={() =>
@@ -316,6 +340,9 @@ function NursingStationPage() {
             />
           ) : (
             <div className={styles.wardView}>
+              {canChart && <WardEscalations wardId={wardId} onOpenPatient={(id) => openPatient(id)} />}
+              {canChart && <WardRestraints wardId={wardId} onOpenPatient={(id) => openPatient(id)} />}
+              {canReadAdmissions && <TransferRequestList wardId={wardId} canSend={canTransfer} />}
               {canMar && <WardMarDue wardId={wardId} onOpenPatient={(id) => openPatient(id)} />}
               {canChart && <WardHandoverSheet wardId={wardId} canWrite={canChart} />}
               {!canMar && !canChart && (
@@ -336,6 +363,8 @@ function PatientChart({
   tab,
   canChart,
   canMar,
+  canTransfuse,
+  canOrderRestraint,
   onTab,
   onBack,
   onOpenAdmission,
@@ -344,6 +373,8 @@ function PatientChart({
   tab: ChartTab;
   canChart: boolean;
   canMar: boolean;
+  canTransfuse: boolean;
+  canOrderRestraint: boolean;
   onTab: (tab: ChartTab) => void;
   onBack: () => void;
   onOpenAdmission: () => void;
@@ -355,10 +386,14 @@ function PatientChart({
   const tabs: { id: ChartTab; label: string; show: boolean }[] = [
     { id: 'mar', label: 'MAR', show: canView },
     { id: 'medicines', label: 'Medicines', show: canView },
+    { id: 'obs', label: 'Observations (NEWS2)', show: canChart },
+    { id: 'blood', label: 'Blood', show: canTransfuse },
     { id: 'notes', label: 'Notes', show: canChart },
     { id: 'handover', label: 'Handover', show: canChart },
+    { id: 'careplan', label: 'Care plan', show: canChart },
     { id: 'io', label: 'Intake / output', show: canChart },
     { id: 'risk', label: 'Risk scores', show: canChart },
+    { id: 'restraint', label: 'Restraint', show: canChart },
   ];
   const visible = tabs.filter((t) => t.show);
   const current = visible.some((t) => t.id === tab) ? tab : (visible[0]?.id ?? 'notes');
@@ -396,12 +431,32 @@ function PatientChart({
           </TabList>
         </div>
         <div style={{ padding: 16 }} key={`${admissionId}-${current}`}>
-          {current === 'mar' && <PatientMar admissionId={admissionId} patientName={occupant.patientName} />}
+          {current === 'mar' && (
+            <PatientMar admissionId={admissionId} patientId={occupant.patientId} patientName={occupant.patientName} />
+          )}
           {current === 'medicines' && <MedicationOrders admissionId={admissionId} />}
+          {current === 'blood' && <PatientBlood patientId={occupant.patientId} canTransfuse={canTransfuse} />}
           {current === 'notes' && <NursingNotes admissionId={admissionId} canWrite={canChart} />}
           {current === 'handover' && <PatientHandovers admissionId={admissionId} canWrite={canChart} />}
+          {current === 'obs' && (
+            <PatientObservations
+              admissionId={admissionId}
+              patientId={occupant.patientId}
+              admittedAt={occupant.admittedAt}
+              canWrite={canChart}
+            />
+          )}
+          {current === 'careplan' && <CarePlan admissionId={admissionId} canWrite={canChart} />}
           {current === 'io' && <IntakeOutput admissionId={admissionId} canWrite={canChart} />}
-          {current === 'risk' && <Assessments admissionId={admissionId} canWrite={canChart} />}
+          {current === 'risk' && (
+            <>
+              <Assessments admissionId={admissionId} canWrite={canChart} />
+              <SafetyEvents admissionId={admissionId} canWrite={canChart} />
+            </>
+          )}
+          {current === 'restraint' && (
+            <Restraints admissionId={admissionId} canChart={canChart} canOrder={canOrderRestraint} />
+          )}
         </div>
       </Section>
     </div>

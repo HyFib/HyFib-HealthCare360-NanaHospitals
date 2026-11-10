@@ -27,7 +27,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { toOptions, useDepartments, usePractitioners } from '@/lib/lookups';
+import { askedForApproval } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
+import { approvalKeys } from '@/modules/approvals/api';
 import { admissionApi, inpatientKeys, type AdmissionDetail } from './api';
+import { mlcChangeWaits } from './mlcFlag';
 
 const schema = z
   .object({
@@ -47,6 +51,7 @@ const schema = z
     attendantRelation: z.string().trim().max(64),
     attendantPhone: z.string().trim(),
     notes: z.string().trim().max(1000),
+    changeReason: z.string().trim().max(500),
   })
   .superRefine((v, ctx) => {
     if (!v.consultantPractitionerId) {
@@ -89,9 +94,14 @@ export function EditAdmissionDrawer({
       attendantRelation: admission.attendantRelation ?? '',
       attendantPhone: admission.attendantPhone ?? '',
       notes: admission.notes ?? '',
+      changeReason: '',
     },
   });
-  const [departmentId, isMlc] = useWatch({ control: form.control, name: ['departmentId', 'isMlc'] });
+  const [departmentId, isMlc, mlcNumber] = useWatch({
+    control: form.control,
+    name: ['departmentId', 'isMlc', 'mlcNumber'],
+  });
+  const waits = !admission.pendingMlc && mlcChangeWaits(admission, { isMlc, mlcNumber });
   const departments = useDepartments('Clinical');
   const practitioners = usePractitioners(departmentId);
 
@@ -110,9 +120,19 @@ export function EditAdmissionDrawer({
         attendantPhone: v.attendantPhone ? normalizePhone(v.attendantPhone) : null,
         notes: v.notes || null,
         version: admission.version,
+        changeReason: waits ? v.changeReason : null,
       }),
-    onSuccess: () => {
-      notify.success('Admission details saved');
+    onSuccess: (saved) => {
+      const asked = askedForApproval(saved);
+      if (asked) {
+        void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Someone who keeps the MLC register decides it; until then the stay stays medico-legal. The rest is saved.`,
+        );
+      } else {
+        notify.success('Admission details saved');
+      }
       void queryClient.invalidateQueries({ queryKey: inpatientKeys.all });
       onClose();
     },
@@ -134,7 +154,17 @@ export function EditAdmissionDrawer({
   return (
     <OverlayDrawer open={open} position="end" size="medium" onOpenChange={guard.onOpenChange}>
       <form
-        onSubmit={form.handleSubmit((values) => !save.isPending && save.mutate(values))}
+        onSubmit={form.handleSubmit((values) => {
+          if (waits && !values.changeReason) {
+            form.setError('changeReason', {
+              message: 'Say why the stay is no longer medico-legal: someone who keeps the MLC register reads it.',
+            });
+            return;
+          }
+          if (!save.isPending) {
+            save.mutate(values);
+          }
+        })}
         noValidate
         style={{ display: 'contents' }}
       >
@@ -197,8 +227,34 @@ export function EditAdmissionDrawer({
             {admission.policyNumberMasked && (
               <SwitchField control={form.control} name="removePolicy" label="Remove the policy number on file" />
             )}
+            {admission.pendingMlc && (
+              <PendingGrantNotice
+                approvalId={admission.pendingMlc.approvalId}
+                what={admission.pendingMlc.summary}
+                requestedBy={admission.pendingMlc.requestedBy}
+                requestedAt={admission.pendingMlc.requestedAt}
+                decides="Someone who keeps the MLC register decides it; until then the stay stays medico-legal, and free treatment under BNSS s.397 stays."
+              />
+            )}
             <SwitchField control={form.control} name="isMlc" label="Medico-legal case (MLC)" />
             {isMlc && <TextField control={form.control} name="mlcNumber" label="MLC number" required maxLength={64} />}
+            {waits && (
+              <>
+                <Caption1>
+                  Clearing the MLC flag or changing its number unlinks the stay from the MLC register (and ends free
+                  treatment under BNSS s.397 for a victim), so someone who keeps the register approves it first. The
+                  stay stays medico-legal until then.
+                </Caption1>
+                <TextAreaField
+                  control={form.control}
+                  name="changeReason"
+                  label="Why the stay is no longer medico-legal"
+                  required
+                  rows={2}
+                  maxLength={500}
+                />
+              </>
+            )}
             <FormGrid columns={3} minColumnWidth={160}>
               <TextField control={form.control} name="attendantName" label="Attendant name" maxLength={200} />
               <TextField control={form.control} name="attendantRelation" label="Relation" maxLength={64} />
@@ -222,7 +278,7 @@ export function EditAdmissionDrawer({
             disabledFocusable={save.isPending}
             icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
-            Save
+            {waits ? 'Ask for approval' : 'Save'}
           </Button>
           <Button onClick={guard.requestClose}>Cancel</Button>
         </DrawerFooter>

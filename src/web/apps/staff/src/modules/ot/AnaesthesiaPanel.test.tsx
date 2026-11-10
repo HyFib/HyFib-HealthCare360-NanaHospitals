@@ -76,6 +76,8 @@ const booking: SurgeryDetail = {
   chargeStatus: 'NotDue',
   chargeError: null,
   version: 11,
+  nurseId: null,
+  nurseName: null,
 };
 
 /** Version 1 of the record, as the form is filled from it. */

@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Services;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Packages;
 
@@ -39,11 +40,17 @@ public sealed record PackageDetail(
     IReadOnlyList<PackageInclusionDto> Inclusions,
     uint Version,
     string? HbpCode = null,
-    string? HbpProcedureName = null);
+    string? HbpProcedureName = null,
+    PendingPackageTerms? PendingTerms = null);
 
 /// <summary>An inclusion names one service item <em>or</em> a category, with optional quantity and amount caps.</summary>
 public sealed record PackageInclusionInput(Guid? ServiceItemId, ServiceCategory? Category, decimal? MaxQuantity, decimal? MaxAmount, string? Notes);
 
+/// <summary>
+/// A package saved. Its price, the service it is billed as, what it covers, the plan it is priced for, the bills it may
+/// price and putting it in use change only when a second person approves them (<paramref name="Reason"/> is for the
+/// approver); its name, stay, description and PM-JAY procedure, and taking it out of use, are saved at once.
+/// </summary>
 public sealed record SavePackageRequest(
     string Code,
     string Name,
@@ -56,7 +63,8 @@ public sealed record SavePackageRequest(
     bool IsActive,
     IReadOnlyList<PackageInclusionInput> Inclusions,
     uint? Version,
-    string? HbpCode = null);
+    string? HbpCode = null,
+    string? Reason = null);
 
 public sealed class SavePackageRequestValidator : AbstractValidator<SavePackageRequest>
 {
@@ -70,6 +78,7 @@ public sealed class SavePackageRequestValidator : AbstractValidator<SavePackageR
         RuleFor(x => x.UsedFor).IsInEnum();
         RuleFor(x => x.Description).SafeText(1000);
         RuleFor(x => x.HbpCode).MaximumLength(8).SafeText(8);
+        RuleFor(x => x.Reason).SafeText(500);
         RuleFor(x => x.Inclusions).NotNull().Must(i => i.Count <= 100).WithMessage("A package can have at most 100 inclusions.");
         RuleForEach(x => x.Inclusions).ChildRules(inclusion =>
         {

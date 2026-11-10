@@ -9,6 +9,7 @@ import {
   mergeClasses,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   OverlayDrawer,
   Spinner,
   Table,
@@ -39,7 +40,11 @@ const useStyles = makeStyles({
   right: { textAlign: 'end' },
 });
 
-/** One canteen bill: lines with GST, payment, reprint and same-day cancellation (stock and staff credit are reversed). */
+/**
+ * One canteen bill: lines with GST, payment, reprint and same-day cancellation. A bill is paid when it is made, so a
+ * cancellation is asked for and waits for someone who approves canteen cancellations, never the cashier who sold it; the
+ * money then goes back the way it was paid and the stock comes back.
+ */
 export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () => void }) {
   const styles = useStyles();
   const notify = useNotify();
@@ -51,12 +56,10 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
 
   const cancel = useMutation({
     mutationFn: (reason: string) => canteenApi.cancelSale(saleId, reason),
-    onSuccess: (s) => {
+    onSuccess: (asked) => {
       notify.success(
-        `Bill ${s.billNumber} cancelled`,
-        s.paymentMode === 'StaffCredit'
-          ? 'Stock restored and the staff credit reversed.'
-          : 'Stock restored. Return the money to the customer.',
+        'Cancellation asked for',
+        `${asked.summary}. It waits for someone who approves canteen cancellations; the bill stands until then.`,
       );
       setCancelling(false);
       void queryClient.invalidateQueries({ queryKey: canteenKeys.all });
@@ -99,6 +102,21 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
               <MessageBar intent="warning">
                 <MessageBarBody>
                   Cancelled {s.cancelledAt ? formatDateTime(s.cancelledAt) : ''}: {s.cancelReason}
+                  {s.refundAmount !== null && s.refundMode
+                    ? ` · ${formatInr(s.refundAmount)} back by ${PAYMENT_LABEL[s.refundMode]}`
+                    : ''}
+                  {s.cancelRequestedByName ? ` · asked for by ${s.cancelRequestedByName}` : ''}
+                  {s.cancelledByName ? `, approved by ${s.cancelledByName}` : ''}
+                </MessageBarBody>
+              </MessageBar>
+            )}
+            {s.status === 'Completed' && s.pendingCancellation && (
+              <MessageBar intent="info">
+                <MessageBarBody>
+                  <MessageBarTitle>Cancellation waiting for approval</MessageBarTitle>
+                  Asked for by {s.pendingCancellation.askedByYou ? 'you' : s.pendingCancellation.requestedByName}. The
+                  bill stands until someone who approves canteen cancellations decides
+                  {s.ownSale ? '; you sold it, so you cannot approve it' : ''}.
                 </MessageBarBody>
               </MessageBar>
             )}
@@ -166,7 +184,7 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
         >
           Reprint
         </Button>
-        {canCancel && s?.status === 'Completed' && sameDay && (
+        {canCancel && s?.status === 'Completed' && sameDay && !s.pendingCancellation && (
           <Button icon={<DismissCircleRegular />} onClick={() => setCancelling(true)}>
             Cancel bill
           </Button>
@@ -177,12 +195,12 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
         title={s ? `Cancel bill ${s.billNumber}?` : 'Cancel bill?'}
         description={
           s
-            ? `${formatInr(s.netAmount)} by ${PAYMENT_LABEL[s.paymentMode]}. Stock is put back${s.paymentMode === 'StaffCredit' ? ' and the staff credit is reversed' : '; return the money to the customer'}.`
+            ? `${formatInr(s.netAmount)} by ${PAYMENT_LABEL[s.paymentMode]}. The cancellation waits for someone who approves canteen cancellations, never the cashier who sold the bill; then the money goes back by ${PAYMENT_LABEL[s.paymentMode]}${s.paymentMode === 'StaffCredit' ? ' (the staff credit is reversed)' : ''} and the stock is put back.`
             : undefined
         }
         minLength={5}
         placeholder="e.g. Wrong item billed, customer changed order"
-        confirmLabel="Cancel bill"
+        confirmLabel="Ask to cancel"
         destructive
         busy={cancel.isPending}
         error={cancel.error}

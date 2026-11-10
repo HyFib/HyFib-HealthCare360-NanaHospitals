@@ -18,6 +18,7 @@ import {
   Spinner,
   Switch,
   Text,
+  Textarea,
   tokens,
 } from '@fluentui/react-components';
 import { AddRegular, BuildingRegular, DeleteRegular } from '@fluentui/react-icons';
@@ -225,13 +226,18 @@ function NonPayablesSection({ canManage }: { canManage: boolean }) {
   const [payerId, setPayerId] = useState('');
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<NonPayableItemDto | null>(null);
+  const [reason, setReason] = useState('');
   const payers = useQuery(insuranceQueries.payers());
   const items = useQuery({ ...insuranceQueries.nonPayables(payerId || undefined), enabled: canRead });
   const remove = useMutation({
-    mutationFn: (id: string) => insuranceApi.deleteNonPayable(id),
+    mutationFn: (id: string) => insuranceApi.removeNonPayable(id, reason.trim() || null),
     onSuccess: () => {
-      notify.success('Removed from the non-payable list');
+      notify.success(
+        'Asked for approval',
+        'It stays on the non-payable list until someone who may approve prices approves taking it off.',
+      );
       setDeleting(null);
+      setReason('');
       void queryClient.invalidateQueries({ queryKey: insuranceKeys.nonPayables });
     },
   });
@@ -283,18 +289,38 @@ function NonPayablesSection({ canManage }: { canManage: boolean }) {
           },
           { key: 'payer', header: 'Payer', render: (i) => i.payerName ?? 'Every payer' },
           { key: 'notes', header: 'Notes', priority: 'low', render: (i) => i.notes ?? '—' },
+          {
+            key: 'waiting',
+            header: 'Status',
+            render: (i) =>
+              i.waiting ? (
+                <StatusBadge
+                  status="Waiting"
+                  tone="warning"
+                  label={
+                    i.waiting.change === 'Add'
+                      ? 'To be added: waiting for approval'
+                      : 'To be taken off: waiting for approval'
+                  }
+                />
+              ) : (
+                <StatusBadge status="Active" tone="success" label="In force" />
+              ),
+          },
         ]}
         rowActions={
           canManage
-            ? (i) => (
-                <Button
-                  size="small"
-                  appearance="subtle"
-                  icon={<DeleteRegular />}
-                  aria-label="Remove item"
-                  onClick={() => setDeleting(i)}
-                />
-              )
+            ? (i) =>
+                // One change of an item waits at a time; an item waiting to be added is not in force yet.
+                i.waiting ? null : (
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    aria-label="Remove item"
+                    onClick={() => setDeleting(i)}
+                  />
+                )
             : undefined
         }
         emptyTitle="No non-payable items"
@@ -303,14 +329,21 @@ function NonPayablesSection({ canManage }: { canManage: boolean }) {
       {adding && <AddNonPayableDialog onClose={() => setAdding(false)} />}
       <ConfirmDialog
         open={deleting !== null}
-        title="Remove this item from the non-payable list?"
-        confirmLabel="Remove"
+        title="Take this item off the non-payable list?"
+        confirmLabel="Ask for approval"
         destructive
         busy={remove.isPending}
         onConfirm={() => deleting && remove.mutate(deleting.id)}
-        onCancel={() => setDeleting(null)}
+        onCancel={() => {
+          setDeleting(null);
+          setReason('');
+        }}
       >
-        Insurers will be asked to pay for it on new bills.
+        Insurers will be charged for it on bills made after it is approved by someone who may approve prices; until then
+        the patient pays for it.
+        <Field label="Reason, for the approver">
+          <Textarea value={reason} onChange={(_, d) => setReason(d.value)} maxLength={500} rows={2} />
+        </Field>
         <ActionError error={remove.error} />
       </ConfirmDialog>
     </Section>
@@ -327,6 +360,7 @@ function AddNonPayableDialog({ onClose }: { onClose: () => void }) {
   const [category, setCategory] = useState<ServiceCategory | ''>('');
   const [term, setTerm] = useState('');
   const [notes, setNotes] = useState('');
+  const [reason, setReason] = useState('');
   const debounced = useDebouncedValue(term.trim(), 250);
   const results = useQuery({
     queryKey: ['billing', 'service-search', debounced],
@@ -342,16 +376,20 @@ function AddNonPayableDialog({ onClose }: { onClose: () => void }) {
         serviceItemId: kind === 'service' ? (service?.id ?? null) : null,
         category: kind === 'category' && category ? category : null,
         notes: notes.trim() || null,
+        reason: reason.trim() || null,
       }),
     onSuccess: () => {
-      notify.success('Added to the non-payable list');
+      notify.success(
+        'Asked for approval',
+        'It is added to the non-payable list when someone who may approve prices approves it; until then the payer is charged for it.',
+      );
       void queryClient.invalidateQueries({ queryKey: insuranceKeys.nonPayables });
       onClose();
     },
   });
 
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ payerId, kind, service, category, notes }),
+    dirty: useValuesChanged({ payerId, kind, service, category, notes, reason }),
     busy: add.isPending,
     onClose,
   });
@@ -424,6 +462,12 @@ function AddNonPayableDialog({ onClose }: { onClose: () => void }) {
               <Field label="Notes">
                 <Input value={notes} onChange={(_, d) => setNotes(d.value)} maxLength={300} />
               </Field>
+              <Field
+                label="Reason, for the approver"
+                hint="Added items wait for someone who may approve prices: on insured bills the patient then pays for them."
+              >
+                <Textarea value={reason} onChange={(_, d) => setReason(d.value)} maxLength={500} rows={2} />
+              </Field>
               <ActionError error={add.error} />
             </DialogContent>
             <DialogActions>
@@ -436,7 +480,7 @@ function AddNonPayableDialog({ onClose }: { onClose: () => void }) {
                 disabled={!valid || add.isPending}
                 icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
-                Add
+                Ask to add
               </Button>
             </DialogActions>
           </DialogBody>

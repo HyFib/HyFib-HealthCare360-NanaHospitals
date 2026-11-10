@@ -1,8 +1,8 @@
 {
   "resourceType": "Bundle",
-  "id": "b8209db2-8f1b-82a7-b880-9e7825b2033d",
+  "id": "7b5b651b-fc61-8330-8d46-a3566a8afafe",
   "meta": {
-    "versionId": "1790053200000-152e10bde89c240c",
+    "versionId": "1790053200000-be8514d26e7d46d8",
     "lastUpdated": "2026-09-22T10:30:00+05:30",
     "profile": [
       "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
@@ -17,7 +17,7 @@
   },
   "identifier": {
     "system": "urn:ietf:rfc:3986",
-    "value": "urn:uuid:b8209db2-8f1b-82a7-b880-9e7825b2033d"
+    "value": "urn:uuid:7b5b651b-fc61-8330-8d46-a3566a8afafe"
   },
   "type": "document",
   "timestamp": "2026-09-22T10:30:00+05:30",
@@ -28,7 +28,7 @@
         "resourceType": "Composition",
         "id": "1d78966a-4639-8c28-aa2c-61c6019f0e70",
         "meta": {
-          "versionId": "1790053200000-152e10bde89c240c",
+          "versionId": "1790053200000-be8514d26e7d46d8",
           "lastUpdated": "2026-09-22T10:30:00+05:30",
           "profile": [
             "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DischargeSummaryRecord"
@@ -194,8 +194,15 @@
             },
             "text": {
               "status": "additional",
-              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Procedures: None</p></div>"
-            }
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Procedures: Coronary angiography; PCI to the LAD with one drug-eluting stent.</p><p>Recorded during the stay:</p><p>Coronary angioplasty with a drug-eluting stent to one artery: performed 2026-09-06T06:30:00+05:30, Left anterior descending artery, by Dr. Vikram Shah. Outcome: TIMI 3 flow restored</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:43dfae14-11ae-80af-ac48-5d7a80ec723e",
+                "type": "Procedure",
+                "display": "Coronary angioplasty with a drug-eluting stent to one artery: performed 2026-09-06T06:30:00+05:30, Left anterior descending artery, by Dr. Vikram Shah. Outcome: TIMI 3 flow restored"
+              }
+            ]
           },
           {
             "title": "Care plan",
@@ -249,7 +256,7 @@
             },
             "text": {
               "status": "additional",
-              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Course in hospital: Managed medically in the CCU. Pain settled; no arrhythmia. Coronary angiography advised as an out-patient.</p><p>Condition at discharge: Stable, pain free.</p></div>"
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Course in hospital: Admitted to the CCU. Coronary angiography showed a tight LAD stenosis, treated with one drug-eluting stent. Pain settled; no arrhythmia.</p><p>Condition at discharge: Stable, pain free.</p></div>"
             }
           }
         ]
@@ -939,6 +946,59 @@
       }
     },
     {
+      "fullUrl": "urn:uuid:43dfae14-11ae-80af-ac48-5d7a80ec723e",
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "43dfae14-11ae-80af-ac48-5d7a80ec723e",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Procedure"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Coronary angioplasty with a drug-eluting stent to one artery: performed 2026-09-06T06:30:00+05:30, Left anterior descending artery, by Dr. Vikram Shah. Outcome: TIMI 3 flow restored</p></div>"
+        },
+        "status": "completed",
+        "category": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "387713003",
+              "display": "Surgical procedure"
+            }
+          ]
+        },
+        "code": {
+          "text": "Coronary angioplasty with a drug-eluting stent to one artery"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "encounter": {
+          "reference": "urn:uuid:3ef3437d-ea0d-8b2a-a7be-79d97989e4a1"
+        },
+        "performedDateTime": "2026-09-06T06:30:00+05:30",
+        "performer": [
+          {
+            "actor": {
+              "reference": "urn:uuid:a67f7352-7304-8581-aef6-41a64671558c",
+              "type": "Practitioner",
+              "display": "Dr. Vikram Shah"
+            }
+          }
+        ],
+        "bodySite": [
+          {
+            "text": "Left anterior descending artery"
+          }
+        ],
+        "outcome": {
+          "text": "TIMI 3 flow restored"
+        }
+      }
+    },
+    {
       "fullUrl": "urn:uuid:370ccd6e-2798-807f-ade5-6a7c7a4c798c",
       "resource": {
         "resourceType": "DocumentReference",
@@ -987,8 +1047,8 @@
             "attachment": {
               "contentType": "text/plain; charset=utf-8",
               "language": "en",
-              "data": "RGlzY2hhcmdlIHN1bW1hcnkKQWRtaXR0ZWQ6IDIwMjYtMDktMDVUMTA6MzA6MDArMDU6MzAKRGlzY2hhcmdlZDogMjAyNi0wOS0xMFQxMDozMDowMCswNTozMApEaWFnbm9zZXM6IE5vbi1TVCBlbGV2YXRpb24gbXlvY2FyZGlhbCBpbmZhcmN0aW9uCklDRC0xMCBjb2RlczogSTIxLjQKUHJlc2VudGluZyBjb21wbGFpbnRzOiBDZW50cmFsIGNoZXN0IHBhaW4gZm9yIHR3byBob3Vycywgc3dlYXRpbmcuCkNvdXJzZSBpbiBob3NwaXRhbDogTWFuYWdlZCBtZWRpY2FsbHkgaW4gdGhlIENDVS4gUGFpbiBzZXR0bGVkOyBubyBhcnJoeXRobWlhLiBDb3JvbmFyeSBhbmdpb2dyYXBoeSBhZHZpc2VkIGFzIGFuIG91dC1wYXRpZW50LgpQcm9jZWR1cmVzOiBOb25lCkludmVzdGlnYXRpb25zOiBUcm9wb25pbiBJIHJhaXNlZDsgRUNHIHdpdGggU1QgZGVwcmVzc2lvbiBpbiBWNCB0byBWNi4KQ29uZGl0aW9uIGF0IGRpc2NoYXJnZTogU3RhYmxlLCBwYWluIGZyZWUuCk1lZGljYXRpb25zIG9uIGRpc2NoYXJnZTogQXNwaXJpbiA3NSBtZyBvbmNlIGRhaWx5OyBBdG9ydmFzdGF0aW4gNDAgbWcgYXQgbmlnaHQuCkFkdmljZTogTG93LXNhbHQsIGxvdy1mYXQgZGlldC4gTm8gaGVhdnkgZXhlcnRpb24gZm9yIGZvdXIgd2Vla3MuCkZvbGxvdy11cCBkYXRlOiAyMDI2LTEwLTAyCkZvbGxvdy11cCBpbnN0cnVjdGlvbnM6IENhcmRpb2xvZ3kgT1BEIHdpdGggdGhlIGFuZ2lvZ3JhcGh5IHJlcG9ydC4=",
-              "size": 728,
+              "data": "RGlzY2hhcmdlIHN1bW1hcnkKQWRtaXR0ZWQ6IDIwMjYtMDktMDVUMTA6MzA6MDArMDU6MzAKRGlzY2hhcmdlZDogMjAyNi0wOS0xMFQxMDozMDowMCswNTozMApEaWFnbm9zZXM6IE5vbi1TVCBlbGV2YXRpb24gbXlvY2FyZGlhbCBpbmZhcmN0aW9uCklDRC0xMCBjb2RlczogSTIxLjQKUHJlc2VudGluZyBjb21wbGFpbnRzOiBDZW50cmFsIGNoZXN0IHBhaW4gZm9yIHR3byBob3Vycywgc3dlYXRpbmcuCkNvdXJzZSBpbiBob3NwaXRhbDogQWRtaXR0ZWQgdG8gdGhlIENDVS4gQ29yb25hcnkgYW5naW9ncmFwaHkgc2hvd2VkIGEgdGlnaHQgTEFEIHN0ZW5vc2lzLCB0cmVhdGVkIHdpdGggb25lIGRydWctZWx1dGluZyBzdGVudC4gUGFpbiBzZXR0bGVkOyBubyBhcnJoeXRobWlhLgpQcm9jZWR1cmVzOiBDb3JvbmFyeSBhbmdpb2dyYXBoeTsgUENJIHRvIHRoZSBMQUQgd2l0aCBvbmUgZHJ1Zy1lbHV0aW5nIHN0ZW50LgpJbnZlc3RpZ2F0aW9uczogVHJvcG9uaW4gSSByYWlzZWQ7IEVDRyB3aXRoIFNUIGRlcHJlc3Npb24gaW4gVjQgdG8gVjYuCkNvbmRpdGlvbiBhdCBkaXNjaGFyZ2U6IFN0YWJsZSwgcGFpbiBmcmVlLgpNZWRpY2F0aW9ucyBvbiBkaXNjaGFyZ2U6IEFzcGlyaW4gNzUgbWcgb25jZSBkYWlseTsgQXRvcnZhc3RhdGluIDQwIG1nIGF0IG5pZ2h0LgpBZHZpY2U6IExvdy1zYWx0LCBsb3ctZmF0IGRpZXQuIE5vIGhlYXZ5IGV4ZXJ0aW9uIGZvciBmb3VyIHdlZWtzLgpGb2xsb3ctdXAgZGF0ZTogMjAyNi0xMC0wMgpGb2xsb3ctdXAgaW5zdHJ1Y3Rpb25zOiBDYXJkaW9sb2d5IE9QRCB3aXRoIHRoZSBhbmdpb2dyYXBoeSByZXBvcnQu",
+              "size": 819,
               "title": "Discharge summary",
               "creation": "2026-09-10T08:30:00+05:30"
             }

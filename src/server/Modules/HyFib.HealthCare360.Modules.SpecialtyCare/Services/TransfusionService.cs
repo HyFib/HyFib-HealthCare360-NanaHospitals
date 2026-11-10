@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.SpecialtyCare.Features.BloodBank;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Realtime;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare.Services;
 
@@ -32,10 +33,11 @@ public static class BloodBankServiceCodes
 }
 
 /// <summary>
-/// Patient side of the blood bank (BB-06/07): requests, blood-bank grouping of the patient sample, cross-match and
-/// reservation, issue through the <see cref="IssueCompatibility"/> gate, returns under the cold-chain rule, and
-/// transfusion reaction reporting. Charges: cross-match when performed, component when issued (withdrawn if the
-/// unit comes back in time and is restocked).
+/// Patient side of the blood bank (BB-06/07): requests, blood-bank grouping of the patient sample (compared with the
+/// patient's earlier requests), cross-match and reservation, issue through the <see cref="IssueCompatibility"/> gate and
+/// the second-officer rule (<see cref="IssueSeparation"/>), the doctor's own authorisation of uncross-matched release,
+/// returns under the cold-chain rule, and transfusion reaction reporting. Charges: cross-match when performed, component
+/// when issued (withdrawn if the unit comes back in time and is restocked).
 /// </summary>
 public sealed class TransfusionService(
     HospitalDbContext db,
@@ -45,8 +47,12 @@ public sealed class TransfusionService(
     IAuditLogger audit,
     IRealtimePublisher realtime,
     ICurrentUser currentUser,
-    TimeProvider time)
+    ISettingsService settings,
+    TimeProvider time,
+    IIncidentRegister incidents)
 {
+    private static readonly PractitionerKind[] Doctors = [.. PractitionerKinds.Doctors];
+
     public async Task<Result<BloodRequest>> CreateRequestAsync(CreateBloodRequestRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -96,27 +102,112 @@ public sealed class TransfusionService(
         return bloodRequest;
     }
 
-    public Task<Result> GroupPatientAsync(Guid requestId, BloodGroup group, CancellationToken ct) =>
-        ChangeRequestAsync(requestId, r => Task.FromResult(r.RecordGrouping(group, currentUser.Stamp(time.GetUtcNow()).Name, time.GetUtcNow())), ct);
-
-    public Task<Result> AuthoriseEmergencyReleaseAsync(Guid requestId, EmergencyReleaseRequest request, CancellationToken ct) =>
-        ChangeRequestAsync(requestId, r =>
+    /// <summary>
+    /// Records the blood bank's grouping of the request sample, compared with this request's first sample (a disagreement
+    /// is refused) and with the patient's earlier confirmed groupings on other requests, in any facility (a disagreement is
+    /// recorded and holds the request: audited at Warning, and the officers are told). A new sample
+    /// (<see cref="GroupPatientRequest.NewSample"/>) for a held request is grouped by another officer and replaces the
+    /// first.
+    /// </summary>
+    public async Task<Result> GroupPatientAsync(Guid requestId, GroupPatientRequest request, CancellationToken ct)
+    {
+        var bloodRequest = await db.Set<BloodRequest>().FirstOrDefaultAsync(r => r.Id == requestId, ct);
+        if (bloodRequest is null)
         {
-            var result = r.AuthoriseEmergencyRelease(request.AuthorisedBy, request.Reason, time.GetUtcNow());
+            return Error.NotFound(nameof(BloodRequest), requestId);
+        }
+
+        var by = currentUser.Stamp(time.GetUtcNow());
+        var wasHeld = bloodRequest.GroupingHeld;
+        Result result;
+        if (request.NewSample)
+        {
+            var heldGroup = bloodRequest.PatientBloodGroup;
+            result = bloodRequest.Regroup(request.BloodGroup, by);
             if (result.IsSuccess)
             {
-                audit.Add(new AuditEntry(AuditCategories.Clinical, "bloodbank.emergency_release_authorised",
-                    $"Uncross-matched release authorised by {request.AuthorisedBy} for {r.RequestNumber}: {request.Reason}")
-                {
-                    PatientId = r.PatientId,
-                    EntityType = nameof(BloodRequest),
-                    EntityId = r.Id.ToString(),
-                    Severity = AuditSeverity.Warning,
-                });
+                audit.Add(RequestAudit(bloodRequest, "bloodbank.regrouped", bloodRequest.PatientBloodGroup == bloodRequest.EarlierGroup
+                    ? $"New sample for {bloodRequest.RequestNumber} grouped {bloodRequest.PatientBloodGroup} by {by.Name}, as on the patient's earlier requests; the first sample ({heldGroup}) is set aside"
+                    : $"New sample for {bloodRequest.RequestNumber} grouped {bloodRequest.PatientBloodGroup} by {by.Name}, as the first sample, against {bloodRequest.EarlierGroup} on the patient's earlier requests: investigate the earlier grouping",
+                    AuditSeverity.Warning));
             }
+        }
+        else
+        {
+            var earlier = await EarlierGroupsAsync(bloodRequest, ct);
+            result = bloodRequest.RecordGrouping(request.BloodGroup, by, GroupingHistory.Disagreement(request.BloodGroup, earlier));
+        }
 
-            return Task.FromResult(result);
-        }, ct);
+        if (result.IsFailure)
+        {
+            return result;
+        }
+
+        var held = !wasHeld && bloodRequest.GroupingHeld;
+        if (held)
+        {
+            audit.Add(RequestAudit(bloodRequest, "bloodbank.grouping_history_discrepancy",
+                $"Sample for {bloodRequest.RequestNumber} grouped {bloodRequest.PatientBloodGroup} by {by.Name}; the patient's earlier requests were grouped {bloodRequest.EarlierGroup}. Held for a new sample",
+                AuditSeverity.Warning));
+        }
+
+        await db.SaveChangesAsync(ct);
+        if (held)
+        {
+            await notifications.NotifyPermissionHoldersAsync(SpecialtyCarePermissions.BloodBankCrossmatch, bloodRequest.FacilityId,
+                "Blood group differs from earlier requests",
+                $"{bloodRequest.RequestNumber}: the sample groups differently from the patient's earlier requests. Collect a new sample; another officer groups it.",
+                $"/blood-bank/requests/{bloodRequest.Id}", "bloodbank", "warning", ct);
+        }
+
+        await PublishAsync(bloodRequest.FacilityId, ct);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// The treating doctor authorises uncross-matched release from their own sign-in: a holder of
+    /// <c>bloodbank.requests.create</c> whose account is linked to a doctor in the practitioner list, never a name typed by
+    /// the blood bank (403 <c>bloodbank.doctor_required</c> otherwise). Their account, practitioner record and the time are
+    /// recorded, audited at Warning, and the blood bank is told it may issue.
+    /// </summary>
+    public async Task<Result> AuthoriseEmergencyReleaseAsync(Guid requestId, EmergencyReleaseRequest request, CancellationToken ct)
+    {
+        var doctor = currentUser.PractitionerId is { } practitionerId
+            ? await db.Set<Practitioner>().AsNoTracking()
+                .Where(p => p.Id == practitionerId && p.IsActive && Doctors.Contains(p.Kind))
+                .Select(p => new { p.Id, p.DisplayName, p.RegistrationNumber })
+                .FirstOrDefaultAsync(ct)
+            : null;
+        if (currentUser.UserId is null || doctor is null)
+        {
+            return Error.Forbidden("bloodbank.doctor_required",
+                "Uncross-matched release is authorised by the treating doctor, signed in as themselves. Your account is not linked to a doctor in the practitioner list.");
+        }
+
+        var bloodRequest = await db.Set<BloodRequest>().FirstOrDefaultAsync(r => r.Id == requestId, ct);
+        if (bloodRequest is null)
+        {
+            return Error.NotFound(nameof(BloodRequest), requestId);
+        }
+
+        var stamp = currentUser.Stamp(time.GetUtcNow()) with { Name = doctor.DisplayName };
+        var result = bloodRequest.AuthoriseEmergencyRelease(stamp, doctor.Id, request.Reason);
+        if (result.IsFailure)
+        {
+            return result;
+        }
+
+        var registration = string.IsNullOrWhiteSpace(doctor.RegistrationNumber) ? string.Empty : $" (registration {doctor.RegistrationNumber})";
+        audit.Add(RequestAudit(bloodRequest, "bloodbank.emergency_release_authorised",
+            $"Uncross-matched release for {bloodRequest.RequestNumber} authorised by {doctor.DisplayName}{registration}, signed in as themselves: {bloodRequest.EmergencyReleaseReason}",
+            AuditSeverity.Warning));
+        await db.SaveChangesAsync(ct);
+        await notifications.NotifyPermissionHoldersAsync(SpecialtyCarePermissions.BloodBankIssue, bloodRequest.FacilityId,
+            "Uncross-matched release authorised", $"{bloodRequest.RequestNumber}: {doctor.DisplayName} authorised uncross-matched release.",
+            $"/blood-bank/requests/{bloodRequest.Id}", "bloodbank", "critical", ct);
+        await PublishAsync(bloodRequest.FacilityId, ct);
+        return Result.Success();
+    }
 
     /// <summary>Cancels the request and returns its reserved units to general stock.</summary>
     public Task<Result> CancelRequestAsync(Guid requestId, string reason, CancellationToken ct) =>
@@ -144,6 +235,11 @@ public sealed class TransfusionService(
         if (open.IsFailure)
         {
             return open.Error!;
+        }
+
+        if (bloodRequest.GroupingHeld)
+        {
+            return GroupingHeldError(bloodRequest);
         }
 
         if (unit is null || unit.ComponentType != bloodRequest.ComponentType)
@@ -189,6 +285,7 @@ public sealed class TransfusionService(
             Method = request.Method,
             Result = request.Result,
             PerformedAt = now,
+            PerformedByUserId = stamp.UserId,
             PerformedByName = stamp.Name,
             Remarks = string.IsNullOrWhiteSpace(request.Remarks) ? null : request.Remarks.Trim(),
         };
@@ -226,19 +323,41 @@ public sealed class TransfusionService(
             return Error.Field("componentId", $"Scan a {bloodRequest.ComponentType} unit for this request.");
         }
 
+        // A grouping held against the patient's earlier groups is not relied on: only what an ungrouped patient may have
+        // under the doctor's emergency release (O Rh(D)-negative red cells, AB plasma) goes before the new sample is grouped.
+        var held = bloodRequest.GroupingHeld;
+        if (held && !bloodRequest.EmergencyReleaseAuthorised)
+        {
+            return GroupingHeldError(bloodRequest);
+        }
+
         var now = time.GetUtcNow();
         var crossMatches = await db.Set<CrossMatch>().AsNoTracking()
             .Where(c => c.RequestId == requestId && c.ComponentId == unit.Id)
             .OrderByDescending(c => c.PerformedAt)
             .ToListAsync(ct);
         var latest = crossMatches.FirstOrDefault();
-        var validCrossMatch = latest is not null && latest.IsValidCompatibleAt(now) ? latest : null;
+        var validCrossMatch = !held && latest is not null && latest.IsValidCompatibleAt(now) ? latest : null;
 
         var compatibility = IssueCompatibility.Check(new IssueContext(
-            unit.ComponentType, unit.BloodGroup, bloodRequest.PatientBloodGroup, validCrossMatch is not null, bloodRequest.EmergencyReleaseAuthorised));
+            unit.ComponentType, unit.BloodGroup, held ? BloodGroup.Unknown : bloodRequest.PatientBloodGroup, validCrossMatch is not null,
+            bloodRequest.EmergencyReleaseAuthorised));
         if (compatibility.IsFailure)
         {
             return compatibility.Error!;
+        }
+
+        // Grouping, cross-match and issue are not all one person: refused, or where the facility has one officer, issued and
+        // listed for the medical officer's review.
+        var stamp = currentUser.Stamp(now);
+        var ownChecks = stamp.UserId is { } issuer
+            ? IssueSeparation.OwnChecksReason(issuer, new IssueChecks(
+                bloodRequest.GroupedByUserId, validCrossMatch?.PerformedByUserId, validCrossMatch is not null, compatibility.Value,
+                bloodRequest.EmergencyReleaseByUserId))
+            : null;
+        if (ownChecks is not null && await settings.SeparateVerifierAsync(bloodRequest.FacilityId, ct))
+        {
+            return Error.Forbidden(IssueSeparation.OwnChecks, ownChecks);
         }
 
         var wasReserved = unit.Status == BloodUnitStatus.Reserved && unit.ReservedForRequestId == requestId;
@@ -248,7 +367,6 @@ public sealed class TransfusionService(
             return issued.Error!;
         }
 
-        var stamp = currentUser.Stamp(now);
         var issue = new BloodIssue
         {
             FacilityId = bloodRequest.FacilityId,
@@ -263,6 +381,7 @@ public sealed class TransfusionService(
             IssuedAt = now,
             IssuedByUserId = stamp.UserId,
             IssuedByName = stamp.Name,
+            IssuedOnOwnChecks = ownChecks is not null,
             IssuedToName = request.IssuedToName.Trim(),
         };
         db.Add(issue);
@@ -270,7 +389,22 @@ public sealed class TransfusionService(
 
         if (issue.IsEmergencyRelease)
         {
-            audit.Add(new AuditEntry(AuditCategories.Clinical, "bloodbank.emergency_release", $"Uncross-matched {unit.UnitNumber} issued for {bloodRequest.RequestNumber}")
+            audit.Add(new AuditEntry(AuditCategories.Clinical, "bloodbank.emergency_release",
+                $"Uncross-matched {unit.UnitNumber} issued for {bloodRequest.RequestNumber} by {stamp.Name}, on the release {bloodRequest.EmergencyReleaseAuthorisedBy} authorised")
+            {
+                PatientId = bloodRequest.PatientId,
+                EntityType = nameof(BloodIssue),
+                EntityId = issue.Id.ToString(),
+                Severity = AuditSeverity.Warning,
+            });
+        }
+
+        if (issue.IssuedOnOwnChecks)
+        {
+            var checks = issue.IsEmergencyRelease ? "authorised its uncross-matched release"
+                : validCrossMatch is not null ? "grouped the patient and cross-matched the unit" : "grouped the patient";
+            audit.Add(new AuditEntry(AuditCategories.Clinical, "bloodbank.issued_on_own_checks",
+                $"{unit.UnitNumber} issued for {bloodRequest.RequestNumber} by {stamp.Name}, who also {checks} (no second officer at this facility): for the medical officer's review")
             {
                 PatientId = bloodRequest.PatientId,
                 EntityType = nameof(BloodIssue),
@@ -300,6 +434,13 @@ public sealed class TransfusionService(
         if (issue is null)
         {
             return Error.NotFound(nameof(BloodIssue), issueId);
+        }
+
+        // A unit started on the ward has been given, in full or in part: it is not stock again.
+        if (await db.Set<Transfusion>().AnyAsync(t => t.IssueId == issueId, ct))
+        {
+            return Error.Rule("bloodbank.transfusion_started",
+                $"Unit {issue.UnitNumber} was started on the ward and cannot be returned to stock. End the transfusion there, and report a reaction if there was one.");
         }
 
         var unit = await db.Set<BloodComponent>().FirstAsync(c => c.Id == issue.ComponentId, ct);
@@ -366,7 +507,23 @@ public sealed class TransfusionService(
             Status = ReactionStatus.Reported,
         };
         db.Add(reaction);
+
+        // The reaction is also an incident in the Quality register (NABH COP: transfusion reactions reported and analysed), raised
+        // in the same save so one is never kept without the other.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        var raised = await incidents.ReportAsync(new ReportedSafetyEvent(
+            reaction.FacilityId, reaction.PatientId, SafetyEventKind.TransfusionReaction, ReactionHarm.Of(reaction.Severity), reaction.OnsetAt,
+            "Where the unit was transfused",
+            $"Transfusion reaction to unit {reaction.UnitNumber} ({reaction.Severity}): {string.Join(", ", reaction.Symptoms)}."
+            + (reaction.TransfusionStopped ? " Transfusion stopped." : string.Empty),
+            reaction.ActionsTaken, "SpecialtyCare", nameof(TransfusionReaction), reaction.Id, $"Unit {reaction.UnitNumber}"), ct);
+        if (raised.IsFailure)
+        {
+            return raised.Error!;
+        }
+
+        await transaction.CommitAsync(ct);
 
         await notifications.NotifyPermissionHoldersAsync(SpecialtyCarePermissions.BloodBankReactionsInvestigate, issue.FacilityId,
             reaction.IsSerious ? "Serious transfusion reaction" : "Transfusion reaction reported",
@@ -378,9 +535,48 @@ public sealed class TransfusionService(
     public Task<Result> InvestigateReactionAsync(Guid reactionId, CancellationToken ct) =>
         ChangeReactionAsync(reactionId, r => r.StartInvestigation(), ct);
 
-    public Task<Result> CloseReactionAsync(Guid reactionId, CloseReactionRequest request, CancellationToken ct) =>
-        ChangeReactionAsync(reactionId, r => r.Close(request.Type, request.Severity, request.Findings, request.ReportedToHaemovigilance,
-            currentUser.Stamp(time.GetUtcNow()).Name, time.GetUtcNow()), ct);
+    /// <summary>
+    /// Closes the investigation. A close that would lower the severity or imputability in force is refused while the
+    /// facility asks for the medical officer: the lowering is asked for first (<see cref="ReactionClassificationService"/>).
+    /// </summary>
+    public async Task<Result> CloseReactionAsync(Guid reactionId, CloseReactionRequest request, CancellationToken ct)
+    {
+        var reaction = await db.Set<TransfusionReaction>().FirstOrDefaultAsync(r => r.Id == reactionId, ct);
+        if (reaction is null)
+        {
+            return Error.NotFound(nameof(TransfusionReaction), reactionId);
+        }
+
+        var lowered = ReactionDowngrade.Lowers(reaction.Severity, reaction.Imputability, request.Severity, request.Imputability);
+        var name = currentUser.Stamp(time.GetUtcNow()).Name;
+        if (lowered.Count > 0)
+        {
+            if (await settings.GetAsync<bool?>(ReactionClassificationService.DowngradeApprovalSetting, reaction.FacilityId, ct) != false)
+            {
+                return Error.Rule("bloodbank.reaction_lowered",
+                    $"Closing this way lowers the reaction ({string.Join("; ", lowered)}), which waits for the blood bank medical officer. Record the classification with your reason first, and close once it is approved.");
+            }
+
+            reaction.MarkLowered(request.Findings, name ?? "Staff", null);
+            audit.Add(new AuditEntry(AuditCategories.Data, "bloodbank.reaction_lowered",
+                $"Transfusion reaction on unit {reaction.UnitNumber} lowered at closing by {name} alone (the medical officer is not required here): {string.Join("; ", lowered)}")
+            {
+                PatientId = reaction.PatientId,
+                EntityType = nameof(TransfusionReaction),
+                EntityId = reaction.Id.ToString(),
+                Severity = AuditSeverity.Warning,
+            });
+        }
+
+        var closed = reaction.Close(request.Type, request.Severity, request.Imputability, request.Findings, request.ReportedToHaemovigilance, name ?? "Staff", time.GetUtcNow());
+        if (closed.IsFailure)
+        {
+            return closed;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return Result.Success();
+    }
 
     /// <summary>Returns every unit reserved for the request to general stock.</summary>
     internal async Task ReleaseReservationsAsync(Guid requestId, CancellationToken ct)
@@ -431,6 +627,45 @@ public sealed class TransfusionService(
 
     private static string IssueReference(BloodIssue issue) => $"issue:{issue.Id}";
 
+    /// <summary>
+    /// The groups the blood bank confirmed on the patient's other requests, most recent first, in every facility (a
+    /// patient's group does not change with the branch): a request held for a disagreement and not regrouped confirms
+    /// nothing.
+    /// </summary>
+    private Task<List<BloodGroup>> EarlierGroupsAsync(BloodRequest bloodRequest, CancellationToken ct) =>
+        db.Set<BloodRequest>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(r => r.PatientId == bloodRequest.PatientId && r.Id != bloodRequest.Id && r.GroupedAt != null && r.PatientBloodGroup != BloodGroup.Unknown
+                        && (r.EarlierGroup == null || r.RegroupedAt != null))
+            .OrderByDescending(r => r.GroupedAt)
+            .Select(r => r.PatientBloodGroup)
+            .Take(20)
+            .ToListAsync(ct);
+
+    internal static Error GroupingHeldError(BloodRequest bloodRequest) =>
+        Error.Rule("bloodbank.grouping_history_discrepancy",
+            $"This request's sample grouped {bloodRequest.PatientBloodGroup}, but the patient's earlier requests were grouped {bloodRequest.EarlierGroup}. Collect a new sample: another officer groups it before anything is cross-matched or issued.");
+
+    private static AuditEntry RequestAudit(BloodRequest bloodRequest, string action, string summary, AuditSeverity severity) =>
+        new(AuditCategories.Clinical, action, summary)
+        {
+            PatientId = bloodRequest.PatientId,
+            EntityType = nameof(BloodRequest),
+            EntityId = bloodRequest.Id.ToString(),
+            Severity = severity,
+        };
+
     private Task PublishAsync(Guid facilityId, CancellationToken ct) =>
         realtime.FacilityChangedAsync(facilityId, SpecialtyRealtime.BloodBankChanged, new { area = "requests" }, ct);
+}
+
+/// <summary>The harm grade (NABH incident reporting) a transfusion reaction is reported with.</summary>
+internal static class ReactionHarm
+{
+    public static IncidentHarm Of(ReactionSeverity severity) => severity switch
+    {
+        ReactionSeverity.Mild => IncidentHarm.Mild,
+        ReactionSeverity.Moderate => IncidentHarm.Moderate,
+        ReactionSeverity.Death => IncidentHarm.Death,
+        _ => IncidentHarm.Severe,
+    };
 }

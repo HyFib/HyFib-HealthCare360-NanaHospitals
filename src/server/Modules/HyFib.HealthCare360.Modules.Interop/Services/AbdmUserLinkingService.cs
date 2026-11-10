@@ -47,12 +47,26 @@ internal static class AbdmCareContexts
             .Select(c => c.ReferenceNumber)
             .ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
 
-    /// <summary>A record as a care context: its reference and what the patient sees, for example "Lab report, 12 Oct 2026".</summary>
-    public static AbdmLinkedRecord Describe(AbdmRecordType type, Guid id, DateTimeOffset recordedAt)
+    /// <summary>The longest <c>label</c> a care context's display carries, so the display fits its column with the date.</summary>
+    public const int MaxLabel = 120;
+
+    /// <summary>
+    /// A record as a care context: its reference and what the patient sees, for example "Lab report, 12 Oct 2026", or
+    /// with what tells it apart from the patient's other records of that kind on the same day ("Immunisation record:
+    /// BCG, 24 Sep 2026"; three vaccines are given at birth). Home readings run on from when the patient was enrolled
+    /// ("Home readings: Hypertension monitoring, from 02 Sep 2026").
+    /// </summary>
+    public static AbdmLinkedRecord Describe(AbdmRecordType type, Guid id, DateTimeOffset recordedAt, string? label = null)
     {
         var kind = AbdmBundleService.Describe(type);
-        return new AbdmLinkedRecord(
-            type, id, AbdmLinkingService.ReferenceNumber(type, id), $"{char.ToUpperInvariant(kind[0])}{kind[1..]}, {DocumentFormat.Date(recordedAt)}");
+        var what = $"{char.ToUpperInvariant(kind[0])}{kind[1..]}";
+        if (label?.Trim() is { Length: > 0 } named)
+        {
+            what += ": " + (named.Length > MaxLabel ? named[..(MaxLabel - 1)].TrimEnd() + "…" : named);
+        }
+
+        var when = type == AbdmRecordType.HomeReadings ? $"from {DocumentFormat.Date(recordedAt)}" : DocumentFormat.Date(recordedAt);
+        return new AbdmLinkedRecord(type, id, AbdmLinkingService.ReferenceNumber(type, id), $"{what}, {when}");
     }
 }
 
@@ -140,7 +154,7 @@ internal sealed class AbdmUserLinkingService(
         var (settings, _, _) = await configuration.ReadAsync(ct);
         var linked = await AbdmCareContexts.LinkedAsync(db, settings.HipId!, abhaAddress, ct);
         var offered = (await records.ListExportableAsync(patient.Id, MaxOffered, ct))
-            .Select(r => AbdmCareContexts.Describe(r.Type, r.Id, r.RecordedAt))
+            .Select(r => AbdmCareContexts.Describe(r.Type, r.Id, r.RecordedAt, r.Label))
             .Where(r => !linked.Contains(r.ReferenceNumber))
             .ToList();
         if (offered.Count == 0)

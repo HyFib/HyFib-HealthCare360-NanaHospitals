@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
+using HyFib.HealthCare360.Modules.Pharmacy.Services;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 
 namespace HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
@@ -71,9 +72,12 @@ public sealed record PharmacySaleItemDto(
     string? PrescribedDrugName,
     string? SubstitutionReason);
 
-public sealed record PharmacyPaymentDto(Guid Id, PaymentMode Mode, decimal Amount, string? Reference, DateTimeOffset ReceivedAt, bool IsRefund);
+/// <param name="RefundOfPaymentId">A refund: the payment it paid back, in that payment's mode.</param>
+public sealed record PharmacyPaymentDto(Guid Id, PaymentMode Mode, decimal Amount, string? Reference, DateTimeOffset ReceivedAt, bool IsRefund, Guid? RefundOfPaymentId = null);
 
 /// <summary>Everything the GST invoice print needs (letterhead comes from the facility master).</summary>
+/// <param name="Pending">A cancellation or a return of the invoice waiting for someone who approves refunds: nothing has moved yet.</param>
+/// <param name="OwnSale">The signed-in user sold the invoice or took its payment: someone else asks to cancel it or takes its returns.</param>
 public sealed record PharmacySaleDetail(
     Guid Id,
     string InvoiceNumber,
@@ -113,14 +117,21 @@ public sealed record PharmacySaleDetail(
     uint Version,
     string? BuyerAddress = null,
     EInvoiceStamp? EInvoice = null,
-    string? FreeTreatmentReason = null);
+    string? FreeTreatmentReason = null,
+    DateOnly? PrescriptionDate = null,
+    IReadOnlyList<PendingApproval>? Pending = null,
+    bool OwnSale = false);
 
 public sealed record CollectPaymentRequest(PaymentMode Mode, decimal Amount, string? Reference);
 
 /// <param name="Restock">Put the returned quantity back on the shelf (unopened and in date); damaged returns are not restocked.</param>
 public sealed record SaleReturnLine(Guid SaleItemId, decimal Quantity, bool Restock);
 
-public sealed record SaleReturnRequest(IReadOnlyList<SaleReturnLine> Lines, string Reason, PaymentMode RefundMode, string? RefundReference);
+/// <summary>
+/// A return of some of an invoice's lines. The refund first comes off any balance due; the rest goes back the way the sale
+/// was paid (cash as cash, a card payment to the card, UPI by UPI), so it names no mode of its own.
+/// </summary>
+public sealed record SaleReturnRequest(IReadOnlyList<SaleReturnLine> Lines, string Reason);
 
 public sealed record SaleReturnCreated(Guid Id, string ReturnNumber, decimal RefundAmount, decimal AdjustedAgainstDue, decimal CashRefund);
 
@@ -204,13 +215,13 @@ public sealed class SaleReturnRequestValidator : AbstractValidator<SaleReturnReq
 {
     public SaleReturnRequestValidator()
     {
-        RuleFor(x => x.Lines).NotEmpty().WithMessage("Choose what is being returned.");
+        RuleFor(x => x.Lines).NotEmpty().WithMessage("Choose what is being returned.")
+            .Must(l => l.Select(x => x.SaleItemId).Distinct().Count() == l.Count).WithMessage("Enter each medicine once.");
         RuleForEach(x => x.Lines).ChildRules(line =>
         {
             line.RuleFor(l => l.SaleItemId).NotEmpty();
             line.RuleFor(l => l.Quantity).GreaterThan(0);
         });
         RuleFor(x => x.Reason).NotEmpty().SafeText(300);
-        RuleFor(x => x.RefundReference).MaximumLength(64);
     }
 }

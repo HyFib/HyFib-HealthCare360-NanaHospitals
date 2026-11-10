@@ -103,6 +103,7 @@ internal sealed class GoodsReceiptLineConfiguration : IEntityTypeConfiguration<G
         b.Property(x => x.FreeQuantity).IsQuantity();
         b.Property(x => x.Rate).IsUnitRate();
         b.Property(x => x.Mrp).IsUnitRate();
+        b.Property(x => x.CeilingPrice).HasPrecision(18, 4);
         b.Property(x => x.DiscountPercent).IsPercent();
         b.Property(x => x.GstRate).IsPercent();
         b.Property(x => x.UnitsPerPurchaseUnit).IsQuantity();
@@ -112,5 +113,51 @@ internal sealed class GoodsReceiptLineConfiguration : IEntityTypeConfiguration<G
         b.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.PurchaseOrderLineId);
         b.HasIndex(x => x.StockBatchId);
+    }
+}
+
+internal sealed class VendorDebitNoteConfiguration : IEntityTypeConfiguration<VendorDebitNote>
+{
+    public void Configure(EntityTypeBuilder<VendorDebitNote> b)
+    {
+        b.ToTable("vendor_debit_notes", SupplyChainSchema.Name);
+        b.Property(x => x.Number).HasMaxLength(24);
+        b.Property(x => x.VendorReference).HasMaxLength(60);
+        b.Property(x => x.Reason).HasMaxLength(500);
+        b.Property(x => x.CancelReason).HasMaxLength(500);
+        b.HasOne<Vendor>().WithMany().HasForeignKey(x => x.VendorId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Store>().WithMany().HasForeignKey(x => x.StoreId).OnDelete(DeleteBehavior.Restrict);
+        b.HasMany(x => x.Lines).WithOne().HasForeignKey(l => l.VendorDebitNoteId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => new { x.FacilityId, x.Number }).IsUnique();
+        b.HasIndex(x => new { x.FacilityId, x.Status, x.PostedAt });
+    }
+}
+
+internal sealed class VendorDebitNoteLineConfiguration : IEntityTypeConfiguration<VendorDebitNoteLine>
+{
+    public void Configure(EntityTypeBuilder<VendorDebitNoteLine> b)
+    {
+        b.ToTable("vendor_debit_note_lines", SupplyChainSchema.Name);
+        b.Property(x => x.ItemName).HasMaxLength(200);
+        b.Property(x => x.BatchNumber).HasMaxLength(40);
+        b.Property(x => x.Quantity).IsQuantity();
+        b.Property(x => x.UnitCost).IsUnitRate();
+        b.Property(x => x.GstRate).IsPercent();
+        b.HasIndex(x => x.StockBatchId);
+    }
+}
+
+internal sealed class VendorPayableAdjustmentConfiguration : IEntityTypeConfiguration<VendorPayableAdjustment>
+{
+    public void Configure(EntityTypeBuilder<VendorPayableAdjustment> b)
+    {
+        b.ToTable("vendor_payable_adjustments", SupplyChainSchema.Name);
+        b.Property(x => x.Number).HasMaxLength(24);
+        b.Property(x => x.Reason).HasMaxLength(500);
+        b.Property(x => x.VendorReference).HasMaxLength(60);
+        b.Property(x => x.CancelReason).HasMaxLength(500);
+        b.HasOne<Vendor>().WithMany().HasForeignKey(x => x.VendorId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.FacilityId, x.Number }).IsUnique();
+        b.HasIndex(x => new { x.FacilityId, x.Status, x.PostedAt });
     }
 }

@@ -67,7 +67,9 @@ public sealed class AuditTrailTests(HospitalServer server)
 
         verification.Valid.ShouldBeTrue(verification.Message);
         verification.FirstInvalidChainIndex.ShouldBeNull();
-        verification.CheckedCount.ShouldBeGreaterThanOrEqualTo(recorded.Max(e => e.ChainIndex!.Value), "Every sealed record up to these was checked.");
+        // From the start of the chain: position 1, or the one after the last purge (AuditRetentionTests).
+        verification.CheckedCount.ShouldBeGreaterThanOrEqualTo(recorded.Max(e => e.ChainIndex!.Value) - (verification.PurgedThrough ?? 0),
+            "Every sealed record up to these was checked.");
     }
 
     [Fact]
@@ -137,7 +139,7 @@ public sealed class AuditTrailTests(HospitalServer server)
             var verification = await VerifyAsync();
             verification.Valid.ShouldBeFalse();
             verification.FirstInvalidChainIndex.ShouldBe(position);
-            verification.CheckedCount.ShouldBe(position - 1, "Everything before it still verifies.");
+            verification.CheckedCount.ShouldBe(position - 1 - (verification.PurgedThrough ?? 0), "Everything before it, from the start of the chain, still verifies.");
             verification.Message.ShouldBe($"The audit chain is broken at position {position}. Records may have been altered or removed.");
         }
         finally

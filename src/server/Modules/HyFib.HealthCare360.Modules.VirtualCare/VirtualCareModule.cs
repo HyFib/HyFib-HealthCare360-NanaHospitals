@@ -50,6 +50,8 @@ public sealed class VirtualCareModule : IModule
         services.AddScoped<VirtualCareSettings>();
         services.AddScoped<TelehealthLinkSender>();
         services.AddScoped<TelehealthBroadcaster>();
+        services.AddScoped<IPractitionerWorkSource, VirtualCarePractitionerWork>();
+        services.AddScoped<ITeleconsultModes, TelehealthConsultModes>();
         services.AddScoped<TelehealthSessionService>();
         services.AddScoped<RpmEnrollmentService>();
         services.AddScoped<RpmAlertService>();

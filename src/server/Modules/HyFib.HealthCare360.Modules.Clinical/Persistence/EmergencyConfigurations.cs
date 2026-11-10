@@ -1,5 +1,7 @@
+using System.Text.Json;
 using HyFib.HealthCare360.Modules.Clinical.Domain.Emergency;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Persistence;
 
@@ -12,6 +14,10 @@ internal sealed class EmergencyCaseConfiguration : IEntityTypeConfiguration<Emer
         b.Property(x => x.DisposedByName).HasMaxLength(200);
         b.Property(x => x.DispositionNotes).HasMaxLength(1000);
         b.Property(x => x.ReferredTo).HasMaxLength(200);
+        b.Property(x => x.LamaSignatoryName).HasMaxLength(200);
+        b.Property(x => x.LamaRelationship).HasMaxLength(64);
+        b.Property(x => x.LamaDoctorName).HasMaxLength(200);
+        b.Property(x => x.LamaWitnessName).HasMaxLength(200);
         b.Ignore(x => x.IsOpen);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Visit>().WithMany().HasForeignKey(x => x.VisitId).OnDelete(DeleteBehavior.Restrict);
@@ -19,6 +25,45 @@ internal sealed class EmergencyCaseConfiguration : IEntityTypeConfiguration<Emer
 
         // The board reads the open cases of the facility.
         b.HasIndex(x => new { x.FacilityId, x.Disposition });
+
+        // A bay holds one patient: two nurses putting two patients in the same bay at once cannot both succeed.
+        b.HasOne<ErBay>().WithMany().HasForeignKey(x => x.BayId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.BayId).IsUnique().HasFilter("bay_id IS NOT NULL");
+    }
+}
+
+internal sealed class ErBayConfiguration : IEntityTypeConfiguration<ErBay>
+{
+    public void Configure(EntityTypeBuilder<ErBay> b)
+    {
+        b.ToTable("er_bays", ClinicalSchema.Name);
+        b.Property(x => x.Code).HasMaxLength(16);
+        b.HasIndex(x => new { x.FacilityId, x.Code }).IsUnique();
+    }
+}
+
+internal sealed class WoundCertificateConfiguration : IEntityTypeConfiguration<WoundCertificate>
+{
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public void Configure(EntityTypeBuilder<WoundCertificate> b)
+    {
+        b.ToTable("wound_certificates", ClinicalSchema.Name);
+        b.Property(x => x.IdentificationMarks).HasMaxLength(500);
+        b.Property(x => x.History).HasMaxLength(2000);
+        b.Property(x => x.Remarks).HasMaxLength(2000);
+        b.Property(x => x.DoctorName).HasMaxLength(200);
+        b.Property(x => x.DoctorRegistration).HasMaxLength(100);
+        b.Property(x => x.Injuries)
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, Json),
+                v => JsonSerializer.Deserialize<List<WoundInjury>>(v, Json) ?? new List<WoundInjury>(),
+                new ValueComparer<List<WoundInjury>>((x, y) => x!.SequenceEqual(y!), v => v.Count, v => v.ToList()))
+            .HasColumnType("jsonb");
+        b.Ignore(x => x.IsSigned);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<MlcRecord>().WithMany().HasForeignKey(x => x.MlcRecordId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.MlcRecordId).IsUnique();
     }
 }
 

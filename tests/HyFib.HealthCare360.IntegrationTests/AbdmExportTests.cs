@@ -9,8 +9,12 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Diagnoses;
 using HyFib.HealthCare360.Modules.Clinical.Features.DischargeSummaries;
 using HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
 using HyFib.HealthCare360.Modules.Clinical.Features.Flags;
+using HyFib.HealthCare360.Modules.Clinical.Features.Immunizations;
+using HyFib.HealthCare360.Modules.Clinical.Features.Notes;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
+using HyFib.HealthCare360.Modules.Clinical.Features.Procedures;
+using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
@@ -23,8 +27,13 @@ using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Beds;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
+using HyFib.HealthCare360.Modules.Interop.Abdm;
+using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Modules.VirtualCare.Domain;
+using HyFib.HealthCare360.Modules.VirtualCare.Features.Rpm;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
@@ -60,6 +69,13 @@ public sealed class AbdmExportTests(HospitalServer server)
     private const string PrescriptionRecord = "440545006";
     private const string DiagnosticReportRecord = "721981007";
     private const string DischargeSummaryRecord = "373942005";
+    private const string ImmunizationRecord = "41000179103";
+    private const string HealthDocumentRecord = "419891008";
+
+    /// <summary>The IG types a wellness record by its text alone.</summary>
+    private const string WellnessRecord = "Wellness Record";
+
+    private static readonly TimeSpan Ist = TimeSpan.FromMinutes(330);
 
     /// <summary>The CRP the lab reports, in mg/L: within the reference interval, so it needs no critical call.</summary>
     private const decimal Crp = 3.2m;
@@ -147,17 +163,16 @@ public sealed class AbdmExportTests(HospitalServer server)
                 .ExecuteUpdateAsync(s => s.SetProperty(p => p.AbhaAddress, legacy), Ct);
         }
 
-        // The form sends it back with every edit: a new phone number is saved and the address is kept.
+        // The form sends it back with every edit: another detail is saved and the address is kept.
         var record = await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}");
         record.AbhaAddress.ShouldBe(legacy);
-        var phone = "9" + Digits(9);
-        await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(record, phone, legacy));
+        await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(record, legacy) with { Occupation = "Teacher" });
         record = await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}");
-        record.Phone.ShouldBe(Phone.Normalize(phone), "Phone numbers are stored in E.164.");
+        record.Occupation.ShouldBe("Teacher");
         record.AbhaAddress.ShouldBe(legacy);
 
         // A changed address must be an ABHA address.
-        using (var refused = await frontOffice.SendRawAsync(HttpMethod.Put, $"/api/v1/patients/{patient.Id}", Edit(record, phone, "meera." + Letters(6) + "@ndhm")))
+        using (var refused = await frontOffice.SendRawAsync(HttpMethod.Put, $"/api/v1/patients/{patient.Id}", Edit(record, "meera." + Letters(6) + "@ndhm")))
         {
             refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
             var problem = await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
@@ -165,7 +180,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         }
 
         var current = "meera." + Letters(6) + "@abdm";
-        await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(record, phone, current));
+        await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", Edit(record, current));
         (await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}")).AbhaAddress.ShouldBe(current);
         (await AuditAsync(patient.Id, "patient.abha_changed")).ShouldNotBeNull().Summary.ShouldBe("ABHA address changed");
     }
@@ -178,8 +193,13 @@ public sealed class AbdmExportTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var abha = NewAbha();
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
-        var signed = await ConsultAsync(doctor, patient.Id, sign: true);
-        var unsigned = await ConsultAsync(doctor, patient.Id, sign: false);
+
+        // Two consultations, an abscess drained in each: first the one left open, its drainage on the record before the other
+        // is signed; then the one signed, its drainage done by a colleague who wrote nothing else in it.
+        var colleague = await server.SignInAsync(HospitalServer.Users.SecondDoctor);
+        var colleagueId = (await colleague.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
+        var unsigned = await ConsultAsync(doctor, patient.Id, sign: false, procedure: true);
+        var signed = await ConsultAsync(doctor, patient.Id, sign: true, procedure: true, performer: colleagueId);
         var path = $"/api/v1/abdm/bundles/op-consultations/{signed}";
 
         // Off by default: nothing is exported, for anyone.
@@ -209,6 +229,22 @@ public sealed class AbdmExportTests(HospitalServer server)
                 var identifiers = resources.Single(r => r.GetProperty("resourceType").GetString() == "Patient").GetProperty("identifier").EnumerateArray();
                 identifiers.Single(i => i.GetProperty("system").GetString() == "https://healthid.ndhm.gov.in").GetProperty("value").GetString()
                     .ShouldBe(Abha.Format(abha));
+
+                // The abscess drained in this consultation, under the IG's Procedure section (SNOMED CT 371525003); not the
+                // one drained in the patient's other consultation, though it was on the record before this one was signed.
+                var procedure = resources.Where(r => r.GetProperty("resourceType").GetString() == "Procedure")
+                    .ShouldHaveSingleItem("a consultation holds the procedures done in it, not those of the patient's other consultations");
+                procedure.GetProperty("code").GetProperty("text").GetString().ShouldBe("Incision and drainage of abscess");
+                composition.GetProperty("section").EnumerateArray()
+                    .Single(s => s.GetProperty("code").GetProperty("coding")[0].GetProperty("code").GetString() == "371525003")
+                    .GetProperty("entry").GetArrayLength().ShouldBe(1);
+
+                // Done by the colleague, who is a practitioner of the document though they wrote nothing else in it.
+                procedure.TryGetProperty("performer", out var performers).ShouldBeTrue("the colleague who drained it is named, with their record");
+                var surgeon = Entry(bundle, performers[0].GetProperty("actor").GetProperty("reference").GetString()!);
+                surgeon.GetProperty("resourceType").GetString().ShouldBe("Practitioner");
+                surgeon.GetProperty("name")[0].GetProperty("text").GetString()
+                    .ShouldBe((await admin.GetAsync<JsonElement>($"/api/v1/masters/practitioners/{colleagueId}")).GetProperty("displayName").GetString());
                 resources.ShouldContain(r => r.GetProperty("resourceType").GetString() == "Condition");
                 version = bundle.GetProperty("meta").GetProperty("versionId").GetString();
             }
@@ -396,8 +432,9 @@ public sealed class AbdmExportTests(HospitalServer server)
         var hpr = Digits(14);
         var written = $"{hpr[..2]}-{hpr[2..6]}-{hpr[6..10]}-{hpr[10..]}";
 
-        // The hospital administrator enters it as the registry's card shows it, in groups of digits.
-        await hospitalAdmin.PutAsync(master, With(await hospitalAdmin.GetAsync<JsonObject>(master), "hprId", written.Replace('-', ' ')));
+        // The hospital administrator enters it as the registry's card shows it, in groups of digits; the doctor signs in, so
+        // the Super Administrator approves it.
+        await server.SavePractitionerAsync(hospitalAdmin, master, With(await hospitalAdmin.GetAsync<JsonObject>(master), "hprId", written.Replace('-', ' ')));
         try
         {
             var abha = NewAbha();
@@ -430,7 +467,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         finally
         {
             await SwitchAsync(enabled: false);
-            await hospitalAdmin.PutAsync(master, With(await hospitalAdmin.GetAsync<JsonObject>(master), "hprId", null));
+            await server.SavePractitionerAsync(hospitalAdmin, master, With(await hospitalAdmin.GetAsync<JsonObject>(master), "hprId", null));
         }
     }
 
@@ -440,7 +477,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var abha = NewAbha();
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
-        var admission = await AdmitAsync(patient.Id);
+        var admission = await AdmitAsync(server, patient.Id);
 
         // From the admission on, the bed is given back whatever happens.
         try
@@ -474,7 +511,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         finally
         {
             await SwitchAsync(enabled: false);
-            await CancelAdmissionAsync(admission);
+            await CancelAdmissionAsync(server, admission);
         }
     }
 
@@ -614,22 +651,340 @@ public sealed class AbdmExportTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_vaccine_dose_given_here_is_exported_as_an_immunisation_record_with_the_next_dose_due()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var abha = NewAbha();
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+        var someoneElse = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
+        var nurseFacility = (await nurse.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
+
+        // The patient is registered at the hospital's annexe; the nurse gives the vaccines at the main hospital.
+        var annexe = await RegisteredAtAnnexeAsync(patient.Id);
+        annexe.ShouldNotBe(nurseFacility);
+        var today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromMinutes(330)).DateTime);
+        var doses = $"/api/v1/emr/patients/{patient.Id}/immunizations";
+        RecordImmunizationRequest Td(Guid encounter) => new(
+            encounter, "Td", "TD", 1, today, "IM", "Left deltoid", "TD2608-114", "Biological E. Limited", today.AddMonths(10), null, false, today.AddDays(28), null);
+
+        // A dose cannot be put in another patient's encounter: its record would carry theirs.
+        var theirs = await ConsultAsync(doctor, someoneElse.Id, sign: true);
+        using (var refused = await nurse.SendRawAsync(HttpMethod.Post, doses, Td(theirs)))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, await refused.Content.ReadAsStringAsync(Ct));
+            (await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString().ShouldBe("immunization.encounter_not_patients");
+        }
+
+        // Td given here in the patient's consultation, the second dose due in four weeks; hepatitis B copied from the card;
+        // and an OPV recorded by mistake.
+        var consultation = await ConsultAsync(doctor, patient.Id, sign: true);
+        var td = await nurse.PostAsync<ImmunizationDto>(doses, Td(consultation));
+        var fromCard = await nurse.PostAsync<ImmunizationDto>(doses, new RecordImmunizationRequest(
+            null, "Hepatitis B", "HEPB", 1, today.AddDays(-30), "IM", null, null, null, null, "PHC Thiruvallur", true, null, null));
+        var opv = await nurse.PostAsync<ImmunizationDto>(doses, new RecordImmunizationRequest(
+            null, "Oral polio vaccine", "OPV", 1, today, "Oral", null, "OPV-26-31", "Bharat Biotech", today.AddMonths(3), null, false, null, null));
+        await nurse.PostAsync<ImmunizationDto>($"/api/v1/emr/immunizations/{opv.Id}/entered-in-error", new EnteredInErrorRequest("Recorded for the twin"));
+
+        // Each dose keeps the facility where it was recorded, not the patient's own, and that facility keeps its record.
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Immunization>().AsNoTracking()
+                .Where(i => i.PatientId == patient.Id).Select(i => i.FacilityId).Distinct().ToListAsync(Ct)).ShouldBe([nurseFacility]);
+        }
+
+        var path = $"/api/v1/abdm/bundles/immunizations/{td.Id}";
+        try
+        {
+            await SwitchAsync(enabled: true);
+
+            // Only a dose given here is the hospital's to send: not one copied from the card, nor one in error.
+            (await NotExportableAsync($"/api/v1/abdm/bundles/immunizations/{fromCard.Id}")).ShouldNotBeNull().ShouldContain("vaccination card");
+            (await NotExportableAsync($"/api/v1/abdm/bundles/immunizations/{opv.Id}")).ShouldBe("A dose marked as entered in error is not exported.");
+
+            var bundle = await ExportAsync(path, ImmunizationRecord, abha, $"immunization-{patient.Uhid}-TD-");
+            ShouldBeTheSameDocument(await ExportAsync(path, ImmunizationRecord, abha, "immunization-"), bundle);
+            var composition = Composition(bundle);
+            composition.GetProperty("status").GetString().ShouldBe("final");
+
+            // The facility where it was given keeps the record and wrote it.
+            var custodian = composition.GetProperty("custodian").GetProperty("reference").GetString()!;
+            Entry(bundle, custodian).GetProperty("id").GetString().ShouldBe(AbdmDocumentBuilder.Uuid($"Organization/{nurseFacility:D}"));
+            composition.GetProperty("author")[0].GetProperty("reference").GetString().ShouldBe(custodian);
+
+            // The dose, in the consultation it was given in, and the second dose due in four weeks.
+            var dose = Resources(bundle, "Immunization").ShouldHaveSingleItem();
+            dose.GetProperty("vaccineCode").GetProperty("coding")[0].GetProperty("code").GetString().ShouldBe("871827009");
+            dose.GetProperty("lotNumber").GetString().ShouldBe("TD2608-114");
+            dose.GetProperty("encounter").GetProperty("reference").GetString().ShouldBe(composition.GetProperty("encounter").GetProperty("reference").GetString());
+            var next = Resources(bundle, "ImmunizationRecommendation").ShouldHaveSingleItem().GetProperty("recommendation")[0];
+            next.GetProperty("dateCriterion")[0].GetProperty("value").GetString().ShouldBe(today.AddDays(28).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            next.GetProperty("doseNumberPositiveInt").GetInt32().ShouldBe(2);
+
+            var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
+            exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: immunisation record");
+            exportAudit.EntityId.ShouldBe(td.Id.ToString("D"));
+
+            // The patient's app is offered the dose given here to link to their ABHA, named by its vaccine.
+            await using var linking = server.Services.CreateAsyncScope();
+            var offered = await linking.ServiceProvider.GetRequiredService<AbdmRecordLoader>().ListExportableAsync(patient.Id, 50, Ct);
+            offered.Where(r => r.Type == AbdmRecordType.Immunization).Select(r => (r.Id, r.Label)).ShouldBe([(td.Id, (string?)"Td, dose 1")]);
+        }
+        finally
+        {
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    [Fact]
+    public async Task A_signed_note_is_exported_as_a_health_document_carrying_every_addendum_signed_to_it_wherever_it_was_written()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var abha = NewAbha();
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+        var hospital = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
+        var consultation = await ConsultAsync(doctor, patient.Id, sign: true);
+        var notes = $"/api/v1/emr/patients/{patient.Id}/notes";
+        const string Review = "Afebrile since morning. Chest clear.\n\nPlan: stop the antibiotic after today's dose.";
+        Task<ClinicalNoteDto> Signed(ClinicalNoteDto note) =>
+            doctor.PostAsync<ClinicalNoteDto>($"/api/v1/emr/notes/{note.Id}/sign", new SignNoteRequest(note.Version));
+        Task<ClinicalNoteDto> AddTo(Guid noteId, string body) => doctor.PostAsync<ClinicalNoteDto>($"/api/v1/emr/notes/{noteId}/addendum", new AddendumRequest(body));
+
+        // A progress note in the consultation and an addendum to it, signed, and another to that addendum, signed and kept by
+        // the hospital's annexe, where it was written (the record staff see adds to a note from any facility); an addendum
+        // still a draft; a counselling note; and a procedure note left as a draft.
+        var note = await Signed(await doctor.PostAsync<ClinicalNoteDto>(notes,
+            new WriteNoteRequest(consultation, null, ClinicalNoteType.ProgressNote, "Day 2 review", Review)));
+        var addendum = await Signed(await AddTo(note.Id, "Rash on both forearms since last night."));
+        var later = await Signed(await AddTo(addendum.Id, "Rash fading; antihistamine stopped."));
+        await AddTo(note.Id, "Not signed yet.");
+        var counselling = await Signed(await doctor.PostAsync<ClinicalNoteDto>(notes,
+            new WriteNoteRequest(consultation, null, ClinicalNoteType.Counselling, null, "Talked through the result with her.")));
+        var draft = await doctor.PostAsync<ClinicalNoteDto>(notes, new WriteNoteRequest(consultation, null, ClinicalNoteType.Procedure, "Ascitic tap", "Planned."));
+        var annexe = await AnnexeAsync();
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<ClinicalNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .Where(n => n.Id == later.Id).ExecuteUpdateAsync(s => s.SetProperty(n => n.FacilityId, annexe), Ct);
+        }
+
+        var path = $"/api/v1/abdm/bundles/clinical-notes/{note.Id}";
+        try
+        {
+            await SwitchAsync(enabled: true);
+
+            // A counselling note never goes, a draft is not yet the hospital's record, and an addendum goes with its note.
+            (await NotExportableAsync($"/api/v1/abdm/bundles/clinical-notes/{counselling.Id}")).ShouldNotBeNull().ShouldContain("counselling note");
+            (await NotExportableAsync($"/api/v1/abdm/bundles/clinical-notes/{draft.Id}")).ShouldBe("Sign the note before exporting it.");
+            (await NotExportableAsync($"/api/v1/abdm/bundles/clinical-notes/{addendum.Id}")).ShouldNotBeNull().ShouldContain("with the note it adds to");
+
+            var bundle = await ExportAsync(path, HealthDocumentRecord, abha, $"progress-note-{patient.Uhid}-");
+            ShouldBeTheSameDocument(await ExportAsync(path, HealthDocumentRecord, abha, "progress-note-"), bundle);
+            var composition = Composition(bundle);
+            composition.GetProperty("status").GetString().ShouldBe("amended");
+            composition.GetProperty("title").GetString().ShouldBe("Progress note");
+            composition.GetProperty("encounter").GetProperty("reference").GetString().ShouldNotBeNull();
+
+            // The note, then its two signed addenda in the order they were signed, each appending to the one it adds to, each
+            // kept by the facility where it was written: the later addendum by the annexe.
+            var entries = composition.GetProperty("section").EnumerateArray().ShouldHaveSingleItem().GetProperty("entry").EnumerateArray()
+                .Select(e => e.GetProperty("reference").GetString()!).ToList();
+            var documents = entries.Select(e => Entry(bundle, e)).ToList();
+            documents.Select(d => d.GetProperty("description").GetString())
+                .ShouldBe(["Day 2 review", "Addendum to Day 2 review", "Addendum to Addendum to Day 2 review"]);
+            Encoding.UTF8.GetString(documents[0].GetProperty("content")[0].GetProperty("attachment").GetProperty("data").GetBytesFromBase64())
+                .ShouldBe(Review, "the note as it was signed");
+            documents[1].GetProperty("relatesTo")[0].GetProperty("target").GetProperty("reference").GetString().ShouldBe(entries[0]);
+            documents[2].GetProperty("relatesTo")[0].GetProperty("target").GetProperty("reference").GetString().ShouldBe(entries[1]);
+            string Keeper(JsonElement document) => Entry(bundle, document.GetProperty("custodian").GetProperty("reference").GetString()!).GetProperty("id").GetString()!;
+            documents.Select(Keeper).ShouldBe([.. new[] { hospital, hospital, annexe }.Select(f => AbdmDocumentBuilder.Uuid($"Organization/{f:D}"))]);
+            Entry(bundle, composition.GetProperty("custodian").GetProperty("reference").GetString()!).GetProperty("id").GetString()
+                .ShouldBe(AbdmDocumentBuilder.Uuid($"Organization/{hospital:D}"));
+
+            var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
+            exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: clinical note");
+            exportAudit.EntityId.ShouldBe(note.Id.ToString("D"));
+
+            // The patient's app is offered the note to link, by its kind and when it was signed: not the counselling note,
+            // the draft, or an addendum on its own.
+            await using var linking = server.Services.CreateAsyncScope();
+            var offered = (await linking.ServiceProvider.GetRequiredService<AbdmRecordLoader>().ListExportableAsync(patient.Id, 50, Ct))
+                .Where(r => r.Type == AbdmRecordType.ClinicalNote).ToList();
+            offered.Select(r => r.Id).ShouldBe([note.Id]);
+            offered[0].Label.ShouldNotBeNull().ShouldStartWith("Progress note, signed at ");
+        }
+        finally
+        {
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    [Fact]
+    public async Task Home_readings_are_exported_a_month_at_a_time_as_wellness_records_of_the_readings_measured_in_it()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var abha = NewAbha();
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
+        var enrollment = await EnrolAsync(doctor, patient.Id);
+        var path = $"/api/v1/abdm/bundles/home-readings/{enrollment}";
+
+        // This month and the one before, in India: a blood pressure and a glucose last month, a pulse at its last second,
+        // and a weight at the first second of this one.
+        var thisMonth = ReadingsSpan.Of(DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(Ist).DateTime));
+        var lastMonth = ReadingsSpan.Of(thisMonth.Month.AddMonths(-1));
+        var pressure = new DateTimeOffset(lastMonth.Month.AddDays(2).ToDateTime(new TimeOnly(8, 0)), Ist);
+        var pulse = lastMonth.End.AddSeconds(-1);
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            (await NotExportableAsync(path)).ShouldBe("No readings have been received in this programme yet.");
+
+            await ReadAsync(server, enrollment,
+                (RpmReadingType.SystolicBp, 150m, pressure), (RpmReadingType.DiastolicBp, 95m, pressure),
+                (RpmReadingType.Glucose, 182m, pressure.AddDays(7)), (RpmReadingType.HeartRate, 70m, pulse), (RpmReadingType.Weight, 71.5m, thisMonth.Start));
+
+            // With no month named, the month of the latest reading: only the weight.
+            var latest = await ExportAsync(path, WellnessRecord, abha, $"home-readings-{patient.Uhid}-{thisMonth.Month:yyyy-MM}");
+            var composition = Composition(latest);
+            composition.GetProperty("title").GetString().ShouldEndWith(thisMonth.Month.ToString("MMMM yyyy", CultureInfo.InvariantCulture));
+            composition.GetProperty("section").EnumerateArray().Select(s => s.GetProperty("title").GetString()).ShouldBe(["Body Measurement"]);
+            var period = composition.GetProperty("event")[0].GetProperty("period");
+            period.GetProperty("start").GetString().ShouldBe(thisMonth.Month.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+
+            // Last month, named: the blood pressure as one panel, the pulse measured in its last second, and the glucose.
+            var earlier = await ExportAsync($"{path}?month={lastMonth.Month:yyyy-MM}", WellnessRecord, abha, $"home-readings-{patient.Uhid}-{lastMonth.Month:yyyy-MM}");
+            ShouldBeTheSameDocument(await ExportAsync($"{path}?month={lastMonth.Month:yyyy-MM}", WellnessRecord, abha, "home-readings-"), earlier);
+            var sections = Composition(earlier).GetProperty("section").EnumerateArray().ToList();
+            sections.Select(s => s.GetProperty("title").GetString()).ShouldBe(["Vital Signs", "General Assessment"]);
+            var vitals = sections[0].GetProperty("entry").EnumerateArray().Select(e => Entry(earlier, e.GetProperty("reference").GetString()!)).ToList();
+            vitals.Select(v => v.GetProperty("code").GetProperty("coding")[0].GetProperty("code").GetString()).ShouldBe(["85354-9", "8867-4"]);
+            vitals[1].GetProperty("effectiveDateTime").GetString().ShouldBe(pulse.ToOffset(Ist).ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture));
+            vitals[0].GetProperty("meta").GetProperty("profile")[0].GetString().ShouldBe(AbdmProfiles.ObservationVitalSigns);
+            sections[1].GetProperty("text").GetProperty("div").GetString().ShouldNotBeNull().ShouldContain("beyond the critical limits set for the patient");
+
+            // A month with no readings, and a month that is not one.
+            (await NotExportableAsync($"{path}?month=2020-01")).ShouldBe("No readings were measured in January 2020.");
+            var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+            using (var badMonth = await admin.SendRawAsync(HttpMethod.Get, $"{path}?month=September"))
+            {
+                badMonth.StatusCode.ShouldBe(HttpStatusCode.BadRequest, await badMonth.Content.ReadAsStringAsync(Ct));
+            }
+
+            var exportAudit = await AuditAsync(patient.Id, "patient.accessed");
+            exportAudit.ShouldNotBeNull().Summary.ShouldBe("ABDM health record exported: home readings");
+            exportAudit.EntityId.ShouldBe(enrollment.ToString("D"));
+
+            // The patient's app is offered the programme to link, by its kind, from the day they were enrolled.
+            await using var linking = server.Services.CreateAsyncScope();
+            var offered = (await linking.ServiceProvider.GetRequiredService<AbdmRecordLoader>().ListExportableAsync(patient.Id, 50, Ct))
+                .Where(r => r.Type == AbdmRecordType.HomeReadings).ToList();
+            offered.Select(r => (r.Id, r.Label)).ShouldBe([(enrollment, (string?)"Hypertension monitoring")]);
+        }
+        finally
+        {
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    /// <summary>The doctor enrols the patient in hypertension home monitoring, with themself as the care team.</summary>
+    internal static async Task<Guid> EnrolAsync(ApiClient doctor, Guid patientId)
+    {
+        var practitioner = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
+        var program = (await doctor.GetAsync<List<RpmProgramDto>>("/api/v1/rpm/programs")).Single(p => p.Code == "HTN");
+        return (await doctor.PostAsync<Created>("/api/v1/rpm/enrollments",
+            new EnrollPatientRequest(patientId, program.Id, [practitioner], practitioner, StartDate: null, Goals: null, Notes: null))).Id;
+    }
+
+    /// <summary>
+    /// Readings of the enrolment's devices, each received a minute after it was measured, written as the intake writes them
+    /// (it takes only the last 30 days' readings, so older ones are written here). Over 150 systolic, 90 diastolic or 180
+    /// glucose is outside the limits.
+    /// </summary>
+    internal static async Task ReadAsync(HospitalServer server, Guid enrollment, params (RpmReadingType Type, decimal Value, DateTimeOffset MeasuredAt)[] readings)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var owner = await db.Set<RpmEnrollment>().IgnoreQueryFilters().Where(e => e.Id == enrollment).Select(e => new { e.FacilityId, e.PatientId }).SingleAsync(Ct);
+        db.AddRange(readings.Select(r => new RpmReading
+        {
+            FacilityId = owner.FacilityId,
+            EnrollmentId = enrollment,
+            PatientId = owner.PatientId,
+            Type = r.Type,
+            Value = r.Value,
+            Unit = ReadingUnits.CanonicalUnit(r.Type),
+            MeasuredAt = r.MeasuredAt.ToUniversalTime(),
+            ReceivedAt = r.MeasuredAt.ToUniversalTime().AddMinutes(1),
+            Severity = (r.Type, r.Value) switch
+            {
+                (RpmReadingType.Glucose, > 180m) => ReadingSeverity.Critical,
+                (RpmReadingType.SystolicBp, >= 150m) or (RpmReadingType.DiastolicBp, > 90m) => ReadingSeverity.Warning,
+                _ => ReadingSeverity.Normal,
+            },
+            Source = ReadingSource.Device,
+        }));
+        await db.SaveChangesAsync(Ct);
+    }
+
+    /// <summary>Moves the patient's registration to a new facility of the hospital, an annexe, whose id is returned.</summary>
+    private async Task<Guid> RegisteredAtAnnexeAsync(Guid patientId)
+    {
+        var annexe = await AnnexeAsync();
+        await using var scope = server.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Patient>().Where(p => p.Id == patientId)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.RegisteredFacilityId, annexe), Ct);
+        return annexe;
+    }
+
+    /// <summary>A new facility of the hospital, an annexe.</summary>
+    private async Task<Guid> AnnexeAsync()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        return (await admin.PostAsync<Created>("/api/v1/masters/facilities", new SaveFacilityRequest(
+            Letters(6).ToUpperInvariant(), "Nana Hospitals Annexe " + Letters(4), null, new Address { City = "Chennai", PinCode = "600002" },
+            null, null, null, null, null, null, null, null, null, null, IsActive: false, null))).Id;
+    }
+
+    private sealed record Created(Guid Id);
+
+    [Fact]
     public async Task A_discharge_summary_is_exported_with_the_stays_diagnoses_medicines_and_lab_report_once_signed()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var abha = NewAbha();
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
-        var admission = await AdmitAsync(patient.Id);
+        var admission = await AdmitAsync(server, patient.Id);
 
         // From the admission on, the bed is given back whatever happens.
         try
         {
+            // A colleague puts a chest drain in, in theatre, before any doctor has opened a note in the stay: the operation is
+            // the stay's, with no encounter of its own.
+            var colleagueId = (await (await server.SignInAsync(HospitalServer.Users.SecondDoctor)).GetAsync<JsonElement>("/api/v1/auth/me"))
+                .GetProperty("practitionerId").GetGuid();
+            var facilityId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<ProcedureService>().RecordSurgeryAsync(new SurgeryCompleted(
+                    Guid.CreateVersion7(), "OT-STAY-2", facilityId, patient.Id, admission.Id, admission.VisitId, null, "Intercostal chest drain insertion",
+                    ProcedureSide.Left, colleagueId, DateTimeOffset.UtcNow.AddHours(-3), DateTimeOffset.UtcNow.AddHours(-2)), Ct);
+                await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().SaveChangesAsync(Ct);
+            }
+
             // The stay: the doctor's admission note with its diagnosis, a CRP, and paracetamol for the fever.
             var note = await AdmissionNoteAsync(doctor, patient.Id, admission);
             await ReleaseAsync(await CrpAsync(patient, admission));
             var paracetamol = await DrugAsync(doctor, "Paracetamol", "DRG-PCM500");
             await SignAsync(doctor, await PrescribeAsync(doctor, patient.Id, note, Tablet(paracetamol, DoseFrequency.TDS, days: 3, "After food")));
+
+            // A pleural tap during the stay, recorded on the chart in the admission note's encounter.
+            await doctor.PostAsync<ProcedureDto>($"/api/v1/emr/patients/{patient.Id}/procedures", new RecordProcedureRequest(
+                note, DateTimeOffset.UtcNow.AddHours(-1), null, "Diagnostic pleural tap", null, null, ProcedureSide.Left, "Chest", "Straw-coloured fluid", null));
             var admissionNote = await doctor.GetAsync<EncounterDetail>($"/api/v1/emr/encounters/{note}");
             await doctor.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{note}/sign", new SignEncounterRequest(admissionNote.Version));
 
@@ -650,6 +1005,19 @@ public sealed class AbdmExportTests(HospitalServer server)
                 .ShouldBe("R50.9");
             Resources(bundle, "MedicationRequest").ShouldHaveSingleItem().GetProperty("medicationCodeableConcept").GetProperty("text").GetString()
                 .ShouldBe(paracetamol.Name);
+
+            // The stay's procedures: the pleural tap on the chart, and the drain put in in theatre, which has no encounter of its
+            // own; the drain done by the colleague, a practitioner of the document though they wrote nothing else in it.
+            var procedures = Resources(bundle, "Procedure");
+            procedures.Select(p => p.GetProperty("code").GetProperty("text").GetString())
+                .ShouldBe(["Intercostal chest drain insertion", "Diagnostic pleural tap"], ignoreOrder: true, "an operation of the stay is in its summary, encounter or none");
+            var drain = procedures.Single(p => p.GetProperty("code").GetProperty("text").GetString() == "Intercostal chest drain insertion");
+            drain.TryGetProperty("performer", out var performers).ShouldBeTrue("the colleague who put the drain in is named, with their record");
+            var surgeon = Entry(bundle, performers[0].GetProperty("actor").GetProperty("reference").GetString()!);
+            surgeon.GetProperty("resourceType").GetString().ShouldBe("Practitioner");
+            var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+            surgeon.GetProperty("name")[0].GetProperty("text").GetString()
+                .ShouldBe((await hospitalAdmin.GetAsync<JsonElement>($"/api/v1/masters/practitioners/{colleagueId}")).GetProperty("displayName").GetString());
 
             // The section reads whole: the doctor's list of medicines on discharge, then what was prescribed during the stay.
             var medications = Composition(bundle).GetProperty("section").EnumerateArray().Single(s => s.GetProperty("title").GetString() == "Medications");
@@ -674,7 +1042,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         finally
         {
             await SwitchAsync(enabled: false);
-            await CancelAdmissionAsync(admission);
+            await CancelAdmissionAsync(server, admission);
         }
     }
 
@@ -688,12 +1056,14 @@ public sealed class AbdmExportTests(HospitalServer server)
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
         var signed = await ConsultAsync(doctor, patient.Id, sign: true);
 
-        // A colleague corrects the plan after the note was signed.
+        // A colleague corrects the plan after the note was signed: they ask, and the author approves (maker-checker, slice 15).
         var note = await colleague.GetAsync<EncounterDetail>($"/api/v1/emr/encounters/{signed}");
-        var amended = await colleague.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{signed}/amend", new AmendEncounterRequest(
+        var asked = await colleague.PostAsync<ApprovalRequestDto>($"/api/v1/emr/encounters/{signed}/amend", new AmendEncounterRequest(
             "Review date added", note.ChiefComplaint, note.HistoryOfPresentIllness, note.Examination, note.Assessment,
             "Paracetamol, fluids. Review in two days.", note.FollowUpDate, note.FollowUpAdvice, note.ReferralDepartmentId,
             note.ReferralPractitionerId, note.ReferralExternal, note.ReferralReason, note.Version));
+        await MakerChecker.ApproveAsync(doctor, await doctor.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}"));
+        var amended = await colleague.GetAsync<EncounterDetail>($"/api/v1/emr/encounters/{signed}");
 
         try
         {
@@ -724,7 +1094,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         var abha = NewAbha();
         var kept = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
         var duplicate = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
-        var admission = await AdmitAsync(duplicate.Id);
+        var admission = await AdmitAsync(server, duplicate.Id);
 
         // From the admission on, the bed is given back whatever happens.
         try
@@ -773,7 +1143,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         {
             await SetPatientAsync(kept.Id, deleted: false);
             await SwitchAsync(enabled: false);
-            await CancelAdmissionAsync(admission);
+            await CancelAdmissionAsync(server, admission);
         }
     }
 
@@ -786,7 +1156,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         var abha = NewAbha();
         var kept = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(abha, null));
         var duplicate = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", Registration(NewAbha(), null));
-        var admission = await AdmitAsync(duplicate.Id);
+        var admission = await AdmitAsync(server, duplicate.Id);
 
         // From the admission on, the bed is given back whatever happens.
         try
@@ -852,7 +1222,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         finally
         {
             await SwitchAsync(enabled: false);
-            await CancelAdmissionAsync(admission);
+            await CancelAdmissionAsync(server, admission);
         }
     }
 
@@ -885,8 +1255,11 @@ public sealed class AbdmExportTests(HospitalServer server)
         (test.Loinc, test.LoincName).ShouldBe(("1988-5", null));
     }
 
-    /// <summary>A consultation without a visit: complaint, assessment and a coded diagnosis; signed or left open.</summary>
-    internal static async Task<Guid> ConsultAsync(ApiClient doctor, Guid patientId, bool sign)
+    /// <summary>
+    /// A consultation without a visit: complaint, assessment and a coded diagnosis, and an abscess drained in it when asked
+    /// (by the doctor, or the practitioner named); signed or left open.
+    /// </summary>
+    internal static async Task<Guid> ConsultAsync(ApiClient doctor, Guid patientId, bool sign, bool procedure = false, Guid? performer = null)
     {
         var encounter = await doctor.PostAsync<EncounterDetail>("/api/v1/emr/encounters", new StartEncounterRequest(
             patientId, VisitId: null, AdmissionId: null, Type: null, DepartmentId: null, PractitionerId: null, TemplateId: null,
@@ -897,6 +1270,14 @@ public sealed class AbdmExportTests(HospitalServer server)
             ReferralDepartmentId: null, ReferralPractitionerId: null, ReferralExternal: null, ReferralReason: null, encounter.Version));
         await doctor.PostAsync<DiagnosisDto>($"/api/v1/emr/encounters/{encounter.Id}/diagnoses",
             new AddDiagnosisRequest("R50.9", Title: null, DiagnosisType.Provisional, IsPrimary: true, OnsetDate: null, DiagnosisStatus.Active, Notes: null));
+        if (procedure)
+        {
+            // An abscess drained in the consultation, described in words, by the doctor or the practitioner named.
+            await doctor.PostAsync<ProcedureDto>($"/api/v1/emr/patients/{patientId}/procedures", new RecordProcedureRequest(
+                encounter.Id, DateTimeOffset.UtcNow.AddMinutes(-5), null, "Incision and drainage of abscess", performer, null, ProcedureSide.Right, "Axilla",
+                "Pus drained", null));
+        }
+
         if (sign)
         {
             await doctor.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{encounter.Id}/sign", new SignEncounterRequest(encounter.Version));
@@ -930,14 +1311,13 @@ public sealed class AbdmExportTests(HospitalServer server)
             .Prescription.Status.ShouldBe(PrescriptionStatus.Signed);
 
     /// <summary>The front office admits the patient under the doctor to a free bed of the female general ward.</summary>
-    private async Task<AdmissionCreated> AdmitAsync(Guid patientId)
+    internal static async Task<AdmissionCreated> AdmitAsync(HospitalServer server, Guid patientId)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWF");
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(server, ward.Id);
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Emergency, Source: AdmissionSource.Emergency, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,
@@ -946,7 +1326,8 @@ public sealed class AbdmExportTests(HospitalServer server)
             AdmittedAt: null, Notes: null, NotifyPatient: false));
     }
 
-    private async Task CancelAdmissionAsync(AdmissionCreated admission)
+    /// <summary>The hospital administrator cancels the admission, which gives the bed back.</summary>
+    internal static async Task CancelAdmissionAsync(HospitalServer server, AdmissionCreated admission)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         await admin.PostAsync($"/api/v1/inpatient/admissions/{admission.Id}/cancel", new CancelAdmissionRequest("Admitted for a test of ABDM health records"));
@@ -1231,7 +1612,8 @@ public sealed class AbdmExportTests(HospitalServer server)
         var entries = bundle.GetProperty("entry").EnumerateArray().ToList();
         var composition = entries[0].GetProperty("resource");
         composition.GetProperty("resourceType").GetString().ShouldBe("Composition");
-        composition.GetProperty("type").GetProperty("coding")[0].GetProperty("code").GetString().ShouldBe(documentType);
+        var type = composition.GetProperty("type");
+        (type.TryGetProperty("coding", out var coding) ? coding[0].GetProperty("code").GetString() : type.GetProperty("text").GetString()).ShouldBe(documentType);
         Resources(bundle, "Patient").ShouldHaveSingleItem().GetProperty("identifier").EnumerateArray()
             .Single(i => i.GetProperty("system").GetString() == "https://healthid.ndhm.gov.in").GetProperty("value").GetString()
             .ShouldBe(Abha.Format(abha));
@@ -1385,10 +1767,10 @@ public sealed class AbdmExportTests(HospitalServer server)
         Category: null, AbhaNumber: abha, AbhaAddress: address, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
         ConfirmedNotDuplicate: true);
 
-    /// <summary>The record as the edit screen sends it back, with a new phone number and ABHA address.</summary>
-    private static UpdatePatientRequest Edit(PatientDetail p, string phone, string? abhaAddress) => new(
+    /// <summary>The record as the edit screen sends it back, with a new ABHA address.</summary>
+    private static UpdatePatientRequest Edit(PatientDetail p, string? abhaAddress) => new(
         p.Title, p.FirstName, p.MiddleName, p.LastName, p.Gender, p.DateOfBirth, AgeYears: null, AgeMonths: null,
-        Phone: phone, p.AlternatePhone, p.Email, p.Address, p.BloodGroup, p.MaritalStatus, p.GuardianName, p.GuardianRelation,
+        p.Phone, p.AlternatePhone, p.Email, p.Address, p.BloodGroup, p.MaritalStatus, p.GuardianName, p.GuardianRelation,
         p.EmergencyContactName, p.EmergencyContactPhone, p.EmergencyContactRelation, p.Occupation, p.Religion, p.Nationality,
         p.PreferredLanguage, p.Category, AbhaNumber: null, AbhaAddress: abhaAddress, AadhaarNumber: null, p.PhotoFileId, p.IsVip,
         p.IsDeceased, p.DeceasedAt, p.Notes, p.IsActive, p.Version);

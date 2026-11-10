@@ -254,7 +254,25 @@ function receiptTitle(receipt: ReceiptDto): string {
   }
 }
 
-/** Payment or advance receipt. */
+/**
+ * Rows for money reversals took back from the receipt (a cheque returned, a payment never settled), then what it holds
+ * after them: a reprint must not show money that never arrived as received.
+ */
+function reversalRows(receipt: ReceiptDto): string {
+  const reversals = receipt.reversals ?? [];
+  if (!receipt.reversedAmount || reversals.length === 0) {
+    return '';
+  }
+  const rows = reversals
+    .map(
+      (r) =>
+        `<tr><td>Not received: ${e(r.number)}, ${e(formatDateTime(r.reversedAt))}</td><td class="num">−${money(r.amount)}</td></tr>`,
+    )
+    .join('');
+  return `${rows}<tr class="strong"><td>Received, after reversals</td><td class="num">${money(receipt.amount - receipt.reversedAmount)}</td></tr>`;
+}
+
+/** Payment or advance receipt; money a reversal took back is shown, with what the receipt holds after it. */
 export function buildReceiptHtml(receipt: ReceiptDto, letterhead: Letterhead, format: PrintFormat): string {
   const title = receiptTitle(receipt);
   const template = templateFor(letterhead, 'receipt');
@@ -276,7 +294,7 @@ export function buildReceiptHtml(receipt: ReceiptDto, letterhead: Letterhead, fo
       .join('');
     const body = `${header(letterhead, 'receipt', title, [...meta, ['Patient', patient]], { compact: true })}
       <div class="rule"></div>
-      <table class="sum">${lines}<tr class="strong"><td>Total received</td><td class="num">${money(receipt.amount)}</td></tr></table>
+      <table class="sum">${lines}<tr class="strong"><td>Total received</td><td class="num">${money(receipt.amount)}</td></tr>${reversalRows(receipt)}</table>
       <div class="words">${e(amountInWords(receipt.amount))}</div>
       <div class="rule"></div>
       <div class="small">Received by ${e(receipt.receivedByName ?? '—')}${receipt.counter ? ` at ${e(receipt.counter)}` : ''}</div>
@@ -303,7 +321,7 @@ export function buildReceiptHtml(receipt: ReceiptDto, letterhead: Letterhead, fo
       <div>Towards: ${e(RECEIPT_PURPOSE_LABEL[receipt.purpose])}${receipt.billNumber ? ` (bill ${e(receipt.billNumber)})` : ''}</div>
     </div>
     <table class="lines"><tr><th>Mode</th><th>Details</th><th class="num">Amount</th></tr>${rows}</table>
-    <table class="totals"><tr class="strong"><td>Total received</td><td class="num">${money(receipt.amount)}</td></tr></table>
+    <table class="totals"><tr class="strong"><td>Total received</td><td class="num">${money(receipt.amount)}</td></tr>${reversalRows(receipt)}</table>
     <div class="words">${e(amountInWords(receipt.amount))}</div>
     ${receipt.notes ? `<div class="foot">${e(receipt.notes)}</div>` : ''}
     <div class="sign"><div>Received by ${e(receipt.receivedByName ?? '')}${receipt.counter ? `, ${e(receipt.counter)}` : ''}</div><div>Authorised signatory</div></div>
@@ -338,11 +356,12 @@ export function buildDayEndHtml(
       (
         s,
       ) => `<tr><td>${e(s.userName)}</td><td>${e(s.counter)}</td><td>${e(formatDateTime(s.openedAt))}</td><td>${e(s.closedAt ? formatDateTime(s.closedAt) : 'Still open')}</td>
-      <td class="num">${money(s.collected)}</td><td class="num">${money(s.refunded)}</td><td class="num">${money(s.expectedCash)}</td><td class="num">${money(s.declaredCash)}</td><td class="num">${money(s.variance)}</td></tr>`,
+      <td class="num">${money(s.collected)}</td><td class="num">${money(s.refunded)}</td><td class="num">${money(s.expectedCash)}</td><td class="num">${money(s.declaredCash)}</td><td class="num">${money(s.variance)}${s.shortageAwaiting ? '<br>Shortage awaiting supervisor' : s.shortageAcceptedBy ? `<br>Shortage accepted by ${e(s.shortageAcceptedBy)}` : ''}</td></tr>`,
     )
     .join('');
   const body = `${header(letterhead, 'other', 'Day-end collection report', meta, { compact: false, ids: false })}
     ${report.openShifts > 0 ? `<div class="box"><b>${e(report.openShifts)} shift(s) still open.</b> Their figures can still change.</div>` : ''}
+    ${(report.shortagesAwaiting ?? 0) > 0 ? `<div class="box"><b>${e(report.shortagesAwaiting ?? 0)} shift(s) closed short, the shortage awaiting a supervisor.</b></div>` : ''}
     <table class="totals" style="width:100%">
       <tr><td>Total collected</td><td class="num">${money(report.totalCollected)}</td><td>Bills finalised</td><td class="num">${e(report.billsFinalized)} (${money(report.billedAmount)})</td></tr>
       <tr><td>Total refunded</td><td class="num">${money(report.totalRefunded)}</td><td>Discounts given</td><td class="num">${money(report.discountGiven)}</td></tr>

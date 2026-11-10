@@ -18,6 +18,8 @@ public static class FhirObservationParser
 {
     public const int MaxEntries = 500;
 
+    private const string Ucum = "http://unitsofmeasure.org";
+
     private static readonly Dictionary<string, RpmReadingType> Loinc = new(StringComparer.Ordinal)
     {
         ["8480-6"] = RpmReadingType.SystolicBp,
@@ -168,6 +170,11 @@ public static class FhirObservationParser
         return codes;
     }
 
+    /// <summary>
+    /// A quantity's value and unit. The unit is its UCUM code when it has one, the unit as a machine reads it (<c>/min</c>,
+    /// <c>Cel</c>, <c>mm[Hg]</c>); <c>unit</c> is the label a person reads, which a sender words as it likes ("beats/minute"
+    /// in the FHIR specification's own heart rate example), so it is read only when there is no UCUM code.
+    /// </summary>
     private static bool TryQuantity(JsonElement element, string property, out decimal value, out string? unit)
     {
         value = 0;
@@ -178,7 +185,9 @@ public static class FhirObservationParser
             return false;
         }
 
-        unit = ReadString(quantity, "unit") ?? ReadString(quantity, "code");
+        unit = ReadString(quantity, "system") == Ucum && ReadString(quantity, "code") is { Length: > 0 } code
+            ? code
+            : ReadString(quantity, "unit") ?? ReadString(quantity, "code");
         return true;
     }
 

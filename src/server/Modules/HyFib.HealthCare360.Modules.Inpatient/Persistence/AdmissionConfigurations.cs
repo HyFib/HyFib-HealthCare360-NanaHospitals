@@ -43,6 +43,29 @@ internal sealed class AdmissionConfiguration : IEntityTypeConfiguration<Admissio
     }
 }
 
+internal sealed class DischargeDeclarationConfiguration : IEntityTypeConfiguration<DischargeDeclaration>
+{
+    public void Configure(EntityTypeBuilder<DischargeDeclaration> b)
+    {
+        b.ToTable("discharge_declarations", InpatientSchema.Name);
+        b.Property(x => x.SignatoryName).HasMaxLength(200);
+        b.Property(x => x.SignatoryRelationship).HasMaxLength(64);
+        b.Property(x => x.RisksExplainedByName).HasMaxLength(200);
+        b.Property(x => x.WitnessName).HasMaxLength(200);
+        b.Property(x => x.SearchedBy).HasMaxLength(300);
+        b.Property(x => x.PoliceStation).HasMaxLength(200);
+        b.Property(x => x.PoliceReference).HasMaxLength(100);
+        b.Property(x => x.RelativeInformed).HasMaxLength(200);
+        b.Property(x => x.DeathCertificateNumber).HasMaxLength(32);
+        b.Property(x => x.RecordedByName).HasMaxLength(200);
+        b.Property(x => x.ApprovedByName).HasMaxLength(200);
+        b.HasOne<Admission>().WithMany().HasForeignKey(x => x.AdmissionId).OnDelete(DeleteBehavior.Restrict);
+
+        // One declaration per stay: a stay ends once.
+        b.HasIndex(x => x.AdmissionId).IsUnique();
+    }
+}
+
 internal sealed class BedAssignmentConfiguration : IEntityTypeConfiguration<BedAssignment>
 {
     public void Configure(EntityTypeBuilder<BedAssignment> b)
@@ -82,5 +105,29 @@ internal sealed class ConsultantVisitConfiguration : IEntityTypeConfiguration<Co
         b.HasIndex(x => new { x.PractitionerId, x.VisitedAt });
         // Lets the hourly job find visits whose charge Billing has not accepted yet.
         b.HasIndex(x => x.VisitedAt).HasFilter("charge_id IS NULL AND NOT is_deleted").HasDatabaseName("ix_consultant_visits_uncharged");
+    }
+}
+
+internal sealed class TransferRequestConfiguration : IEntityTypeConfiguration<TransferRequest>
+{
+    public void Configure(EntityTypeBuilder<TransferRequest> b)
+    {
+        b.ToTable("transfer_requests", InpatientSchema.Name);
+        b.Property(x => x.Reason).HasMaxLength(300);
+        b.Property(x => x.ClinicalSummary).HasMaxLength(2000);
+        b.Property(x => x.RequestedByName).HasMaxLength(200);
+        b.Property(x => x.DecidedByName).HasMaxLength(200);
+        b.Property(x => x.DecisionNote).HasMaxLength(500);
+        b.Ignore(x => x.AcceptanceDueAt);
+        b.Ignore(x => x.WasAcceptedLate);
+        b.Ignore(x => x.IsOpen);
+        b.HasOne<Admission>().WithMany().HasForeignKey(x => x.AdmissionId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Bed>().WithMany().HasForeignKey(x => x.ToBedId).OnDelete(DeleteBehavior.Restrict);
+
+        // One request waiting for the receiving ward per stay.
+        b.HasIndex(x => x.AdmissionId).IsUnique().HasFilter("status = 'Pending'").HasDatabaseName("ux_transfer_requests_pending_admission");
+        b.HasIndex(x => new { x.ToWardId, x.Status });
+        b.HasIndex(x => new { x.FromWardId, x.Status });
+        b.HasIndex(x => x.PatientId);
     }
 }

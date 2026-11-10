@@ -5,7 +5,8 @@ census statistics, automatic bed/nursing/consultant-visit charges, and nursing d
 administration record. SRS **WB-01..06**, IPB auto charges (IPB-01), PH-03 MAR feed.
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Inpatient` (references Patients, and Clinical for the ward
-round). Schema `inpatient`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Inpatient.Tests` (214 unit tests).
+round). Schema `inpatient`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Inpatient.Tests` (237 unit tests); integration `WardCareTests`,
+`InpatientJourneyTests`.
 
 It implements the Platform contracts `IRoomClassDirectory` (Billing's rate list) and `IAdmissionDirectory` (whether a
 stay goes on, read in every facility: Clinical takes no order for a stay that is discharged or cancelled), and asks
@@ -17,13 +18,15 @@ stay goes on, read in every facility: Clinical takes no order for a stay that is
 |---|---|---|
 | `inpatient.admissions.read` | Admissions, bed board, discharges, census | FrontOffice, Nurse, Doctor, HospitalAdmin, Billing, Cashier, InsuranceDesk, Pharmacist, Dietitian, MrdOfficer |
 | `inpatient.admissions.admit` | Admit, edit, cancel admissions | FrontOffice, Nurse, Doctor, HospitalAdmin |
-| `inpatient.admissions.transfer` | Bed/ward transfers | FrontOffice, Nurse, Doctor, HospitalAdmin |
+| `inpatient.admissions.transfer` | Bed moves within a ward; asking another ward for a transfer; a doctor holding it also accepts one | FrontOffice, Nurse, Doctor, HospitalAdmin |
 | `inpatient.admissions.discharge` | Initiate, revoke, complete discharge | Doctor, Nurse, HospitalAdmin |
 | `inpatient.masters.manage` | Wards, rooms, beds | HospitalAdmin |
 | `beds.manage` | Reserve, block, maintenance, send for cleaning | FrontOffice, Nurse, HospitalAdmin |
 | `beds.housekeeping` | Housekeeping queue, release cleaned beds | Nurse, HospitalAdmin |
 | `nursing.chart` | Notes, handovers, intake/output, risk assessments, consultant visits | Nurse, Doctor |
 | `nursing.mar` | Medication chart and MAR | Nurse, Doctor |
+| `nursing.restraint.order` | Order a patient's restraint, renew it after seeing them again, and end it (MHCA 2017 s.97); the nurses' checks and the debrief are `nursing.chart` | Doctor |
+| `nursing.in_charge` | Ward nurse in charge: the verbal and telephone orders and nurses' stops not countersigned in time, listed and told of each; told of NEWS2 escalations and transfer requests; accepts or declines transfers into the ward | HospitalAdmin (give it to the ward sisters' role) |
 
 "Read set" below = any of `inpatient.admissions.read`, `beds.manage`, `beds.housekeeping`, `nursing.chart`, `inpatient.masters.manage`.
 
@@ -63,16 +66,18 @@ stay goes on, read in every facility: Clinical takes no order for a stay that is
 
 Bed board alerts (`BedAlert`): `Mlc`, `Restricted` (VIP — name shown as "Restricted patient" without `patients.restricted.read`),
 `HighFallRisk` (Morse ≥ 45), `PressureInjuryRisk` (Braden ≤ 12), `SeverePain` (≥ 7), `MedicationOverdue`,
-`DischargeInitiated`, `DischargeDueToday`, `ReservationExpired`, `CleaningDelayed` (> 60 min).
+`DischargeInitiated`, `DischargeDueToday`, `ReservationExpired`, `CleaningDelayed` (> 60 min), `News2Urgent` / `News2Emergency`
+(the latest NEWS2 of the stay), `EscalationOpen` (a NEWS2 escalation waits for a response), `TransferPending` (a transfer
+to another ward waits for the receiving ward). `BedOccupant` carries `news2Score`, `news2Response`, `news2Complete` and `news2At`.
 
 ### Admissions — `/api/v1/inpatient/admissions`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/?search&status&activeOnly&wardId&consultantId&from&to` (paged) | `inpatient.admissions.read` | → `PagedResult<AdmissionListItem>` (search: UHID/name/phone/ABHA or admission number) |
 | GET | `/{id}` | `inpatient.admissions.read` | → `AdmissionDetail` (restricted-record guard + PHI audit; policy number masked) |
-| POST | `/` | `inpatient.admissions.admit` | `AdmitPatientRequest` (patientId, bedId, type, source, sourceVisitId, departmentId, admitting/consultant practitioner, provisionalDiagnosis, payerType/payerId, policyNumber, isMlc/mlcNumber, expectedDischargeDate, attendant*, admittedAt ≤ 3 days back, notifyPatient) → 201 `AdmissionCreated` (id, admissionNumber, visitId, visitNumber, bedId, bedLabel). The visit named as `sourceVisitId` must be the patient's own (400) and one the Admit screen offers (staff app `modules/inpatient/sourceVisit.ts`), else 422 naming it: of the source's kind, an OPD visit for `OutPatient` and a casualty visit for `Emergency`, none for `Referral` or `Direct` (`admission.source_visit_type`); not cancelled (`admission.source_visit_cancelled`); checked in no later than the admission time (`admission.source_visit_after_admission`: a late entry cannot come from a later visit) and no more than 3 days before it (`admission.source_visit_too_old`). An admission entered as earlier counts back from its own `admittedAt`. An OPD visit so named, while still open, is completed in the same transaction with its queue token, as `VisitService` completes a visit at the desk, so it no longer shows as in consultation nor stops a check-in the same day; an emergency visit is left to the ER, whose disposition closes it |
-| PUT | `/{id}` | `inpatient.admissions.admit` | `UpdateAdmissionRequest` (+`version`; consultant, department, diagnosis, expected discharge, policy number, MLC, attendant, notes) → 204. The payer is fixed at admission (changed in Billing). |
-| POST | `/{id}/transfer` | `inpatient.admissions.transfer` | `TransferPatientRequest` (toBedId, reason, consultant/department change, transferredAt ≤ 24 h back) → 204 |
+| POST | `/` | `inpatient.admissions.admit` | `AdmitPatientRequest` (patientId, bedId, type, source, sourceVisitId, departmentId, admitting/consultant practitioner, provisionalDiagnosis, payerType/payerId, policyNumber, isMlc/mlcNumber, expectedDischargeDate, attendant*, admittedAt ≤ 3 days back, notifyPatient) → 201 `AdmissionCreated` (id, admissionNumber, visitId, visitNumber, bedId, bedLabel). The visit named as `sourceVisitId` must be the patient's own (400) and one the Admit screen offers (staff app `modules/inpatient/sourceVisit.ts`), else 422 naming it: of the source's kind, an OPD visit for `OutPatient` and a casualty visit for `Emergency`, none for `Referral` or `Direct` (`admission.source_visit_type`); not cancelled (`admission.source_visit_cancelled`); checked in no later than the admission time (`admission.source_visit_after_admission`: a late entry cannot come from a later visit) and no more than 3 days before it (`admission.source_visit_too_old`). An admission entered as earlier counts back from its own `admittedAt`. An OPD visit so named, while still open, is completed in the same transaction with its queue token, as `VisitService` completes a visit at the desk, so it no longer shows as in consultation nor stops a check-in the same day; an emergency visit is left to the ER, whose disposition closes it. An insurer, company or government scheme as payer must be named, in use and of that kind (400 `payerId`/`payerType`), and stand behind the patient through a policy in date and verified by someone other than whoever recorded it (422 `payer.no_cover`, `payer.cover_not_verified`; billing.md, A third party pays only on a second person's word): until then the patient is admitted as paying |
+| PUT | `/{id}` | `inpatient.admissions.admit` | `UpdateAdmissionRequest` (+`version`; consultant, department, diagnosis, expected discharge, policy number, MLC, attendant, notes, `changeReason?`) → 204. The payer is fixed at admission (changed in Billing). Marking the stay medico-legal, or giving an MLC its number, is saved at once. Clearing the flag, or changing or removing the MLC number it is linked by, unlinks the stay from the MLC register (and ends a victim's free treatment under BNSS s.397): the rest is saved and the answer is 202 `ApprovalRequestDto` (`inpatient.mlc_clear`, `changeReason` required), approved by someone else who keeps the register (`mrd.mlc.register`); until then the stay, its visit and the free treatment stay as they are (maker-checker slice 7; audited `admission.mlc_cleared`). `GET /{id}` shows it as `pendingMlc`. |
+| POST | `/{id}/transfer` | `inpatient.admissions.transfer` | `TransferPatientRequest` (toBedId, reason, consultant/department change, transferredAt ≤ 24 h back) → 204. A bed of the same ward only: a bed of another ward → 422 `transfer.request_required` (ask the receiving ward, *Transfer requests* below) |
 | POST | `/{id}/cancel` | `inpatient.admissions.admit` | `CancelAdmissionRequest` → 204; reverses this module's charges in the same transaction (422 `admission.charges_billed` if Billing refuses) |
 | GET | `/{id}/wristband` | `inpatient.admissions.read` | → `WristbandDto` (admissionId, uhid, patientName, gender, age, admissionNumber, wardName, bedLabel, `allergies`: `Recorded` \| `NoKnownAllergies` \| `NotRecorded`). Patients still in a bed only (422 `admission.not_in_bed`); restricted-record guard; audited "Printed a wristband". See *Wristband* below |
 | GET | `/{id}/bed-history` | `inpatient.admissions.read` | → `BedAssignmentDto[]` |
@@ -116,11 +121,23 @@ section of the doctor's worklist (EMR-01, see the Clinical module).
 * **What needs attention**: `lastVisitAt` and `seenToday` (a consultant visit recorded today, IST); `lastNoteAt` (the
   latest clinical note or encounter during the stay); `resultsToReview` and `hasCriticalResults` (results of the stay
   not yet reviewed, whoever ordered them); the latest vital signs of the stay with their worst flag (`vitalsSeverity`)
-  and up to three flags in words (`VitalSignsAssessor`). On a doctor's round, visits and notes are the doctor's own; on
-  a department's, anyone's.
+  and up to three flags in words (`VitalSignsAssessor`); the latest NEWS2 (`news2Score`, `news2Response`,
+  `news2Complete`) and whether an escalation waits (`hasOpenEscalation`): the staff app's "most urgent first" order puts an
+  emergency score or an open escalation first. On a doctor's round, visits and notes are the doctor's own; on a
+  department's, anyone's.
 * **Restricted (VIP) patients**, as on the bed board: unless the user may open restricted records, the name reads
   "Restricted patient" and the diagnosis and vital-sign details are left out (`isRestricted: true`). The bed, UHID,
   flags and what needs attention stay, and opening the chart asks for break-the-glass.
+* **Confidential records** (a sensitive category, R-4: HIV, mental health, MTP, sexual violence) the user does not hold
+  every category of: the name stays, as on the bed board, and the diagnosis and vital-sign details are left out
+  (`isConfidential: true`). The chart's own rule decides (`PatientAccessGuard.WithheldChartsAsync`), so break-the-glass
+  still running opens the record on the round too.
+
+### The care team of a stay (for Clinical's sign-off rules)
+`StayCareTeams` gives Clinical (`IStayCareTeams`) the doctors who answer for a stay: its consultant, the admitting doctor
+and every doctor who recorded a consultant visit during it. Clinical uses it for who signs the discharge summary and who
+acknowledges another doctor's critical result (maker-checker, slice 15; see clinical.md, *Who signs off another doctor's
+work*). Recording a consultant visit (a cross-consultation) is what puts a doctor on the care team.
 
 ### Discharge — `/api/v1/inpatient/admissions/{id}/discharge`
 | Method | Path | Permission | Request → response |
@@ -128,18 +145,118 @@ section of the doctor's worklist (EMR-01, see the Clinical module).
 | POST | `/initiate` | `inpatient.admissions.discharge` | `InitiateDischargeRequest` (expectedDischargeDate, notes) → `DischargeResult` (all due bed days are posted first) |
 | POST | `/revoke` | `inpatient.admissions.discharge` | `RevokeDischargeRequest` → `DischargeResult` |
 | GET | `/clearance` | discharge or admissions.read | → `DischargeClearanceDto` (from `IBillingStatusProvider`) |
-| POST | `/complete` | `inpatient.admissions.discharge` | `CompleteDischargeRequest` (dischargeType Normal/Referred/Lama/Dama/Absconded/Expired, dischargedAt ≤ 48 h back, notes — required for LAMA/DAMA/absconded, notifyPatient) → `DischargeResult`; 422 `discharge.in_theatre` while the stay has a surgery in pre-op or in progress (the detail names each case), then 422 `discharge.billing_pending` (`data.outstanding`) until Billing clears |
+| POST | `/complete` | `inpatient.admissions.discharge` | `CompleteDischargeRequest` (dischargeType Normal/Referred/Lama/Dama/Absconded/Expired, dischargedAt ≤ 48 h back, notes — required for LAMA/DAMA/absconded, notifyPatient; `againstAdvice` for LAMA/DAMA, `absconded` for Absconded, `certificatePendingPostMortem` for a medico-legal death) → 200 `DischargeResult`, or 202 `ApprovalRequestDto` for Absconded (`inpatient.absconded`) and a death pending post-mortem (`inpatient.expired_pending_postmortem`); 422 `discharge.in_theatre` while the stay has a surgery in pre-op or in progress (the detail names each case), then 422 `discharge.billing_pending` (`data.outstanding`) until Billing clears. Expired: 422 `discharge.death_certificate_required`, `discharge.death_certificate_unconfirmed`, `discharge.death_certificate_other_stay`, `discharge.postmortem_not_mlc`. Absconded: 422 `discharge.police_intimation_required` for a medico-legal stay. LAMA/DAMA: 422 `against_advice.doctor_required`, `against_advice.witness_is_doctor`, `witness.confirmation_unusable`. 409 `approval.already_requested` while a closing waits |
+| GET | `/death-certificate` | discharge or admissions.read | → `DischargeDeathCertificateDto` (the patient's certificate: number, `settled`, `forThisStay`, `confirmedBy`, `confirmationWaitingSince`, `medicoLegalStay`, `status` in words) |
 | GET | `/api/v1/inpatient/discharges/pending?wardId` | `inpatient.admissions.read` | → `PendingDischargeItem[]` |
 
 Rules: routine discharges (Normal, Referred, LAMA, DAMA) must be initiated and cleared by Billing; death and abscondence
-are recorded immediately without clearance and without the "discharged" SMS. Whatever the type, a discharge is not
+skip billing clearance and the "discharged" SMS (a body is not held for dues), the dues left recorded on the stay's
+declaration. Maker-checker (slice 8): Expired closes only with the patient's death certificate (MCCD) a second doctor
+confirmed (or reported, or at a facility that asks for no confirmation); a medico-legal death whose certificate waits
+for the post-mortem waits for a second doctor who confirms certificates (`mrd.deaths.confirm`). Absconded waits for the
+nurse in charge (`nursing.in_charge`), with the report (last seen, who searched, police and relatives told; for a
+medico-legal stay the police station and reference). LAMA and DAMA record who signed the form (patient, a relative named
+with the relationship, or "refused to sign"), the doctor who explained the risks (the user signed in when a doctor, or
+their confirmation at the screen, witness purpose `against_advice.doctor`) and a witness confirming with their own
+credentials (purpose `discharge.against_advice`, `nursing.chart`), never the doctor, and optionally the scanned form (a
+file id). The patient stays admitted while a closing waits (`GET /{id}` shows `pendingDischarge`); once closed, `GET
+/{id}` shows the `declaration` (form, witness, report, certificate, dues, who recorded and who approved). An approved
+closing bills the remaining bed days in its own transaction. Audited `discharge.expired`, `discharge.against_advice`,
+`discharge.absconded`, `discharge.expired_pending_postmortem`. Whatever the type, a discharge is not
 completed while another department still has the patient: before anything is charged or changed, `DischargeService`
 asks every `IDischargeHoldSource` (Platform contract; today SpecialtyCare's theatre: a surgery of the stay received in
-pre-op or under way), and refuses with the first hold's code and every hold's message. It asks again in its transaction,
+pre-op or under way; SpecialtyCare's blood bank: a unit being transfused; and Clinical's discharge summary, below), and
+refuses with the first hold's code and every hold's message. A hold marked `PlannedDischargeOnly` holds only a planned
+discharge (Normal or Referred, `DischargeRules.IsPlanned`): a death, LAMA, DAMA or an absconded patient keeps its own
+rules and is not held by it. **A planned discharge waits for the signed discharge summary** (Clinical's
+`DischargeSummaryDischargeHold`, NABH COP/MOM): 422 `discharge.summary_unsigned` while the stay's summary is unwritten or
+a draft; signed or amended, the stay closes. On by default; `clinical.discharge.signedSummaryRequired` set to false for
+the hospital or a facility turns it off, which a second administrator approves (SettingGuard). It asks again in its transaction,
 under the stay's lock (`EncounterLocks`, held to the commit), which the theatre also takes to receive the patient in
 pre-op or start the operation: a case taken into the theatre at the same moment is either seen, or finds the stay
 ended. Completion closes the visit,
 closes the bed assignment and sends the bed to housekeeping.
+
+### NEWS2 escalation — `/api/v1/nursing`
+Vital signs are Clinical's (clinical.md, *NEWS2*): the nursing station's *Observations (NEWS2)* tab records them with
+ACVPU and the SpO₂ scale, and shows each entry's score. When a set taken during a stay (admitted or discharge in
+progress) scores 5 or more, or 3 in a single parameter, `VitalSignsRecordedHandler` raises an `EarlyWarningEscalation`
+in the vital signs' own transaction: `Urgent` (5–6, or a single 3) or `Emergency` (7+). The stay's consultant (their user
+accounts) and the facility's holders of `nursing.in_charge` are told at once, by UHID, ward and bed, never the name
+(severity `warning` / `critical`), audited `inpatient.news2_escalated` (Warning / Critical). One open escalation per stay
+and level: a later score at the same or a lower level raises nothing more; a rise from urgent to emergency raises another.
+
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/escalations?wardId&openOnly=true` | `nursing.chart` or `nursing.in_charge` | → `EscalationDto[]` (ward's or facility's, newest first; audited) |
+| GET | `/admissions/{admissionId}/escalations` | `nursing.chart` or `nursing.in_charge` | → `EscalationDto[]` (restricted-record guard, PHI audit) |
+| POST | `/escalations/{id}/respond` | `nursing.chart` or `nursing.in_charge` | `RespondToEscalationRequest{outcome (ReviewedContinueObservation, TreatmentChanged, RapidResponseCalled, TransferToCriticalCare), response, version}` → `EscalationDto`. Who responded is the signed-in user (`respondedByDoctor` when the account is a practitioner's), when is now; `minutesToRespond` from the observations. 422 `escalation.self` for whoever took the observations (the escalation brings in a second clinician), `escalation.responded` when already answered; 409 `escalation.stale` |
+
+`EscalationDto{id, admissionId, patientId, uhid, ward, bed, vitalSignsId, vitalsRecordedAt, score, anySingleParameterThree,
+isScoreComplete, summary, level, status (Open, Responded), raisedAt, openMinutes, respondedAt, respondedByName,
+respondedByDoctor, outcome, response, minutesToRespond, version, reminderSentAt}`.
+
+**Reminder.** An escalation nobody has answered is told again, once, to the same people, titled "Reminder: NEWS2 …
+unanswered for N min": 30 minutes after it was raised, for an urgent review and an emergency alike. The time counts from when the escalation was raised, so vital signs entered late do not set
+one off at once; one answered first is never reminded. `EarlyWarningReminderJob` checks every 5 minutes on nodes that run
+jobs, so a reminder is at most 5 minutes late; it records `reminderSentAt` on the escalation (shown on the ward's list)
+and audits `inpatient.news2_reminder` (Warning). It does not widen the circle (a duty doctor or the rapid response team)
+or repeat; the time-to-response stays on the record for the quality team's audit.
+
+Not covered: children are not scored (PEWS); the ward's doctor is the
+stay's consultant, not a duty doctor (HC360 has no duty rota for wards).
+
+### Transfer requests — `/api/v1/inpatient`
+A move to a bed of **another ward** is a hand-off between wards. The sending ward asks with the reason and a clinical
+summary; the bed asked for is **held** (reserved for the patient for 12 hours, as the bed board shows) while the request
+waits; the receiving ward's nurse in charge (`nursing.in_charge`) or a doctor who may transfer patients
+(`inpatient.admissions.transfer` and an account linked to a practitioner) accepts it, never whoever asked, and the move
+is then made by the existing transfer (`AdmissionService.TransferAsync`: bed history, cleaning, the IP account's bed
+class, `PatientTransferred`; its rules, back-dating within 24 hours included, unchanged), in one transaction with the
+acceptance. Declining or cancelling releases the held bed. One waiting request per stay (partial unique index).
+
+A **step-up or step-down to or from critical care** (ICU, NICU, PICU, HDU at either end) may be asked as urgent: the
+patient moves at once and the request is `MovedAwaitingAcceptance` until the receiving ward records its acceptance,
+within the hour (`acceptanceDueAt`). Past the hour the request is flagged (`isAcceptanceOverdue`), and
+`CountersignOverdueJob` (every 15 minutes) tells the nurses in charge once (`inpatient.transfer_acceptance_overdue`,
+Warning); an acceptance after the hour is kept as late (`wasAcceptedLate`). An urgent move cannot be declined (the patient
+has moved: raise it with the sending team). A bed of the same ward needs nobody's acceptance and stays a direct transfer.
+
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| POST | `/admissions/{id}/transfer-requests` | `inpatient.admissions.transfer` | `RequestTransferRequest{toBedId, reason (≤ 300), clinicalSummary (≤ 2000), consultantPractitionerId?, departmentId?, isUrgent}` → 201 `TransferRequestDto`. 422 `transfer.same_ward`, `transfer.urgent_not_critical_care`, `admission.not_transferable`, ward eligibility (`ward.gender`…); 409 `transfer.pending`, `bed.unavailable` |
+| GET | `/admissions/{id}/transfer-requests` | `inpatient.admissions.read` | → `TransferRequestDto[]` |
+| GET | `/transfer-requests?wardId&openOnly=true` | admissions.read or `nursing.in_charge` | → `TransferRequestDto[]` (either end of the ward) |
+| POST | `/transfer-requests/{id}/accept` | transfer or `nursing.in_charge` | `AcceptTransferRequest{note?, transferredAt? (≤ 24 h back), version}` → `TransferRequestDto`. 422 `transfer.self_accept`, `transfer.decided`; 403 `transfer.not_receiving_ward` (neither a nurse in charge nor a doctor); 409 `transfer.stale` |
+| POST | `/transfer-requests/{id}/decline` | transfer or `nursing.in_charge` | `DecideTransferRequest{reason, version}` → the held bed released, the requester told; 422 `transfer.not_pending` |
+| POST | `/transfer-requests/{id}/cancel` | `inpatient.admissions.transfer` | `DecideTransferRequest` → the held bed released |
+
+Audited: `inpatient.transfer_requested`, `inpatient.transfer_urgent` (Warning), `inpatient.transfer_accepted` (Warning
+when late), `inpatient.transfer_declined`, `inpatient.transfer_cancelled`. The staff app asks for a request from the
+Transfer dialog when the bed chosen is in another ward, and lists requests under *In-patients → Transfer requests* and on
+the nursing station's ward view.
+
+### Downtime print — `GET /api/v1/inpatient/downtime-print?wardId` (`nursing.chart`)
+One ward's sheet, or every ward's as a pack: census, and per patient allergies, active orders with the doses due in the
+next 8 hours, pending tasks, NEWS2 and the care plan. See downtime.md, *The downtime ward sheet*.
+
+### Nursing care plan — `/api/v1/nursing` (all `nursing.chart`)
+Per stay, problems from a short list (`CarePlanProblems`: risk of falls, risk of pressure injury, acute pain, risk of
+infection, impaired mobility, poor nutrition, fluid imbalance, impaired breathing, anxiety) or `OTHER` with its own name,
+goal and interventions. The list's goal and interventions (each with its frequency) are the starting point; each problem
+is evaluated once a shift (progress Improving, Unchanged, Worsening, GoalMet; 409 `care_plan.evaluated` for a second
+evaluation in the same shift, by a unique index) and resolved when done. The ward handover sheet
+(`GET /wards/{wardId}/handovers`) carries each stay's active problems (`WardHandoverItem.carePlan`).
+
+| Method | Path | Request → response |
+|---|---|---|
+| GET | `/care-plan/problems` | → `CarePlanProblemTemplate[]` |
+| GET | `/admissions/{admissionId}/care-plan?activeOnly` | → `CarePlanProblemDto[]` (`lastEvaluation`, `evaluatedThisShift`) |
+| POST | `/admissions/{admissionId}/care-plan` | `AddCarePlanProblemRequest{problemCode, title?, goal?, interventions?[{text, frequency}]}` → 201; 409 `care_plan.duplicate` for a listed problem already active |
+| POST | `/care-plan/{id}/evaluate` | `EvaluateCarePlanProblemRequest{progress, note?}` → `CarePlanProblemDto` |
+| POST | `/care-plan/{id}/resolve` | `ResolveCarePlanProblemRequest{note, version}` → `CarePlanProblemDto` |
+
+Kept small on purpose: no care-plan templates per ward, no NANDA codes, no outcome scoring.
 
 ### Census — `GET /api/v1/inpatient/census?from&to&wardId` (`inpatient.admissions.read`)
 → `CensusReport`: hospital and per-ward `CensusSummary` (admissions, discharges, deaths, daily midnight census,
@@ -160,21 +277,87 @@ dates, default last 7 days, at most 93 days.
 | POST | `/intake-output/{id}/void` | `VoidEntryRequest` → 204 (soft delete with reason) |
 | GET | `/admissions/{admissionId}/assessments?type` | → `AssessmentDto[]` |
 | POST | `/admissions/{admissionId}/assessments/morse` · `/braden` · `/pain` | `MorseAssessmentRequest` · `BradenAssessmentRequest` · `PainAssessmentRequest` → 201 `AssessmentDto` (score, risk, interpretation, responses) |
+| GET | `/admissions/{admissionId}/safety-events` | → `NursingSafetyEventDto[]` (falls and pressure injuries) |
+| POST | `/admissions/{admissionId}/safety-events` | `RecordSafetyEventRequest` (kind Fall or PressureInjury, occurredAt, location, description, immediateAction; a fall: injury None/Minor/Moderate/Major/Death on the NDNQI levels and witnessed; a pressure injury: NPIAP stage, body site, presentOnAdmission) → 201 `NursingSafetyEventDto` with the incident number it raised |
+
+**Falls and pressure injuries** (`NursingSafetyEvent`, table `inpatient.nursing_safety_events`) are never edited (a
+mistake is corrected with a nursing note). Every fall, and a pressure injury that developed in hospital, raises an incident
+in the Quality register in the same save (`IIncidentRegister.ReportAsync`), graded by its harm: a fall by its injury, a
+pressure injury stage 1–2 mild, stage 3 moderate, stage 4, unstageable or deep tissue severe. A pressure injury present on
+admission is documented and raises none, and the pressure ulcer incidence indicator leaves it out. Both count in the
+computed NABH indicators (falls and pressure ulcers per 1,000 patient days, [quality.md](quality.md)).
 
 Reads are PHI-audited and honour restricted records; writes need the chart open (admitted, in discharge, or ≤ 24 h
 after discharge). Vitals are owned by Clinical and are not duplicated here.
+
+### Restraint — `/api/v1/nursing` (MHCA 2017 s.97, NABH COP)
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/admissions/{admissionId}/restraints` | `nursing.chart` | → `RestraintEpisodeDto[]` (newest first, each with its checks, renewals, next check due, `checkOverdue`, `orderLapsed`) |
+| POST | `/admissions/{admissionId}/restraints` | `nursing.restraint.order` | `OrderRestraintRequest` (type Physical or Chemical, method, reason, alternativesTried, hours 1–4, checkIntervalMinutes 15–60) → 200 `RestraintEpisodeDto`; 403 `restraint.doctor_required` from an account not linked to a doctor; 409 `restraint.already_active`; 422 `restraint.stay_closed` once the stay has ended |
+| POST | `/restraints/{id}/checks` | `nursing.chart` | `RecordRestraintCheckRequest` (checkedAt, circulationOk, skinIntact, fluidsOffered, toiletingOffered, notes — required when circulation is poor or the skin broken) → `RestraintEpisodeDto`; 422 `restraint.released` |
+| POST | `/restraints/{id}/renew` | `nursing.restraint.order` | `RenewRestraintRequest` (hours 1–4 from now, reason having seen the patient) → `RestraintEpisodeDto`; 422 `restraint.released` |
+| POST | `/restraints/{id}/release` | `nursing.restraint.order` | `ReleaseRestraintRequest` (reason) → `RestraintEpisodeDto`; 422 `restraint.released` |
+| POST | `/restraints/{id}/debrief` | `nursing.chart` | `RestraintDebriefRequest` (debrief) → `RestraintEpisodeDto`; 422 `restraint.active` before the release, `restraint.debriefed` once recorded |
+| GET | `/wards/{wardId}/restraints` | `nursing.chart` | → `WardRestraintItem[]`: the ward's restrained patients, an overdue check or a lapsed order first (PHI-audited `ward.restraints.viewed`) |
+
+**Restraints** (`RestraintEpisode`, `RestraintCheck`; tables `inpatient.restraint_episodes`, `inpatient.restraint_checks`)
+are never edited. A doctor orders one, signed in as themselves, as the last resort: what is used (for a chemical
+restraint the medicine, dose and route), why, and the less restrictive measures tried first; for at most four hours
+(`RestraintEpisode.MaxOrderHours`) and with the nurses' checks every 15 to 60 minutes. One restraint is active per stay
+at a time. The next check is due an interval after the last (or after the order); past it the check is overdue, and past
+the order's time with the patient still restrained the order has lapsed: both show on the patient's chart and at the top
+of the ward's list on the nursing station. Only a doctor renews (having seen the patient again, up to four hours from
+then, each renewal kept with its reason) or ends it; after the release the debrief (what led to it, what may prevent the
+next) is recorded once. Ordering, renewing and ending are audited (`restraint.ordered`, `restraint.renewed`,
+`restraint.released`, Clinical, Warning). The staff app shows it on the nursing station's *Restraint* tab and the ward
+view's *Restrained patients* list ([Restraints.tsx](../../src/web/apps/staff/src/modules/inpatient/nursing/Restraints.tsx)).
 
 ### Medication chart and MAR — `/api/v1/nursing`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/admissions/{admissionId}/medication-orders?activeOnly` | `nursing.mar` or `nursing.chart` | → `MedicationOrderDto[]` (incl. `roundTimes`) |
-| POST | `/admissions/{admissionId}/medication-orders` | `nursing.mar` | `AddMedicationOrderRequest` (transcribed order; next 24 h scheduled) → 201; after the discharge, 422 `medication.discharged` |
-| POST | `/medication-orders/{id}/stop` | `nursing.mar` | `StopMedicationOrderRequest` → `MedicationOrderDto` (future doses cancelled) |
-| POST | `/medication-orders/{id}/schedule` | `nursing.mar` | → `ScheduleResult` (extend 24 h) |
+| POST | `/admissions/{admissionId}/medication-orders` | `nursing.mar` | `AddMedicationOrderRequest` (a prescriber's own order, signed at once, or a doctor's verbal or telephone order: `orderedByPractitionerId`, `mode`, `readBack`, `emergency`; next 24 h scheduled unless the doses are held) → 201; 422 `medication.verbal_order_required`, `medication.read_back_required`; 400 on `orderedByPractitionerId` (no doctor) or `drugItemId` (not in the master); after the discharge, 422 `medication.discharged` |
+| POST | `/medication-orders/{id}/stop` | `nursing.mar` | `StopMedicationOrderRequest` → `MedicationOrderDto`: a prescriber's stop cancels the future doses at once; anyone else's is asked for (`stopPending`, doses held) |
+| POST | `/medication-orders/{id}/countersign` | `clinical.prescriptions.sign` | `CountersignMedicationOrderRequest` (`version`) → `MedicationOrderDto`; only the doctor named, from their own account (403 `medication.countersign_not_prescriber`); held doses are scheduled |
+| POST | `/medication-orders/{id}/stop/countersign` | `clinical.prescriptions.sign` | `ConfirmStopRequest` (`version`) → the order stopped, the doses held since the stop was asked for cancelled |
+| POST | `/medication-orders/{id}/stop/decline` | `clinical.prescriptions.sign` | `DeclineStopRequest` (reason, `version`) → the order goes on; the nurse who asked is told |
+| GET | `/medication-orders/awaiting-countersignature?wardId&mine&overdueOnly` | `nursing.mar` or `nursing.in_charge` | → `AwaitingCountersignatureItem[]` (what waits for a doctor: for a ward, for the signed-in doctor, past its time) |
+| GET | `/drugs?search` | `nursing.mar` | → `WardDrugDto[]` (the drug master for the ward's order form, with its controlled and high-alert flags) |
+| POST | `/medication-orders/{id}/schedule` | `nursing.mar` | → `ScheduleResult` (extend 24 h); 422 while the doses are held |
 | GET | `/admissions/{admissionId}/mar?date` | `nursing.mar` or `nursing.chart` | → `MarEntryDto[]` (day + older undocumented doses, `isOverdue`) |
-| POST | `/admissions/{admissionId}/mar` | `nursing.mar` | `AddAdHocDoseRequest` (SOS/STAT; `givenNow`) → 201 `MarEntryDto`; after the discharge (late entries, 24 h) only a dose given before it, with its time, else 422 `medication.discharged` |
-| POST | `/mar/{id}/record` | `nursing.mar` | `RecordAdministrationRequest` (outcome Given/Held/Refused/Missed, administeredAt, reason — required unless given, batch, witness — required for controlled drugs, notes, `version`) → `MarEntryDto` |
+| POST | `/admissions/{admissionId}/mar` | `nursing.mar` | `AddAdHocDoseRequest` (SOS/STAT; `givenNow`; `witnessConfirmationId` as below) → 201 `MarEntryDto`; after the discharge (late entries, 24 h) only a dose given before it, with its time, else 422 `medication.discharged` |
+| POST | `/mar/{id}/record` | `nursing.mar` | `RecordAdministrationRequest` (outcome Given/Held/Refused/Missed, administeredAt, reason — required unless given, batch, `witnessConfirmationId` — required for a controlled drug or high-alert medicine given, or a dose with no order, notes, `version`) → `MarEntryDto` (`witnessName`, `needsWitness`, `heldBecause`); a held dose is not given (422 `medication.awaiting_countersignature`, `medication.stop_pending`) |
 | GET | `/wards/{wardId}/mar/due?withinMinutes` | `nursing.mar` | → `WardMarItem[]` (ward due/overdue worklist) |
+
+A controlled drug given (an order marked controlled: Schedule H1 or X, or NDPS) or a high-alert medicine given is
+witnessed by a second nurse, who proves who they are at the recording nurse's screen (ADR-014). An order that names an
+item of the drug master takes both flags from it when it is made, whatever the order form or the prescription line
+sent; so does the order made for a medicine the pharmacy issues without a prescription line. A ward order typed in
+without an item of the master is always high-alert (its flags cannot be cleared by typing a name), and a dose with no
+order behind it is always witnessed. The witnesses type their own user name and password there, and
+their authenticator code when their account has one (`POST /api/v1/auth/witness`, purpose `mar.dose`, with the
+patient). Whoever keeps the MAR may witness (`nursing.mar`: nurses and doctors), never the nurse recording. The answer is
+a confirmation the recording nurse sends with the dose as `witnessConfirmationId`. It is good once, for that nurse, that
+patient and five minutes. It is spent in the dose's own save (422 `witness.confirmation_unusable` otherwise). The dose
+then names the witness's account (`WitnessUserId`) and name: not a name typed, as before (doses recorded before keep
+theirs). Without one, 422 `mar.witness_required`. The witness's password never reaches this module.
+
+**Verbal and telephone orders (maker-checker slice 5).** A ward order is signed at once only by a prescriber
+(`clinical.prescriptions.sign`) writing in their own name: the practitioner named is the one linked to their account.
+Anyone else, a nurse or a doctor writing another doctor's order, writes that doctor's verbal or telephone order: the
+doctor, the mode and the read-back are required, the order is audited at Warning (`medication.verbal_order`), the doctor
+is told, and it stays awaiting countersignature until the doctor named countersigns it from their own account. A
+high-alert, controlled or chemotherapy medicine (the drug master's high-alert flag covers chemotherapy) gives no dose
+until then: nothing goes on the round, and no extra dose is recorded against it, unless the nurse wrote it as an
+emergency verbal order, read back, when its doses are given, each witnessed, and it stays flagged. The doctor has
+`inpatient.verbalOrderCountersignHours` (default 24, 1 to 72; fixed on the order when it is written) to countersign. A
+nurse's stop is asked for: the order stays on the chart with every dose held until the doctor named (or the patient's
+consultant, for an order that names none) confirms it, when the doses held since it was asked for are cancelled, or
+declines it, when they are given again. `CountersignOverdueJob` (every 15 minutes, nodes that run jobs) tells the doctor
+and the facility's holders of `nursing.in_charge` once of each order or stop past its time, audited at Warning
+(`medication.countersign_overdue`, `medication.stop_countersign_overdue`); the staff app lists them under In-patients ›
+Orders to countersign.
 
 Frequencies understood: OD/QD/Daily, BD/BID, TDS/TID, QID/QDS, HS/Nocte, `1-0-1`-style patterns (3 or 4 parts,
 fractions allowed), `Q4H`/`6 hourly`…, STAT (one dose), SOS/PRN/"As directed" (never auto-scheduled).
@@ -193,6 +376,7 @@ fractions allowed), `Q4H`/`6 hourly`…, STAT (one dose), SOS/PRN/"As directed" 
 | `PrescriptionCancelled` | handled | chart lines stopped, future doses cancelled |
 | `MedicationDispensed` | handled | next 24 h of doses scheduled; unlinked lines charted as one dose to confirm |
 | `PatientsMerged` (Patients) | handled | re-points patient ids across facilities |
+| `VitalSignsRecorded` (Clinical) | handled | an early-warning escalation for a patient in a bed when NEWS2 calls for a doctor (*NEWS2 escalation*) |
 
 Real-time (ids/status only): `beds.changed` → `Topics.Beds(facilityId)` and `Topics.Ward(wardId)`
 `{ bedId, wardId, status }`; `admissions.changed` → facility `{ admissionId, status }`;
@@ -212,13 +396,16 @@ day) or `CalendarDay` (every calendar day touched). Due days are posted at disch
 clearance check, so the final bill is complete.
 
 ## Settings, numbers, notifications, jobs, seed
-* Settings: `inpatient.bedDayPolicy` (`MidnightCensus` | `CalendarDay`), `inpatient.marGraceMinutes` (5–240, default 30).
+* Settings: `inpatient.bedDayPolicy` (`MidnightCensus` | `CalendarDay`), `inpatient.marGraceMinutes` (5–240, default 30), `inpatient.verbalOrderCountersignHours` (1–72, default 24; lengthening either waits for a second administrator, SettingGuard).
 * Number series: `admission` → `{FAC}IP{YY}{SEQ:6}`, yearly reset.
 * Notifications (platform templates, SMS): `admission.admitted` {name, ward, bed, doctor}; `discharge.completed` {name}.
-* Job: `BedDayChargeJob` — runs at start-up and hourly when `PlatformOptions.RunsJobs`; posts missing bed/nursing days of active and recently discharged admissions and retries unaccepted consultant-visit charges. Each bed day tells Billing whether the bed was in a critical-care ward (`Ward.IsCriticalCareType`: ICU, NICU, PICU, HDU) or a room, which decides its GST (room rent above ₹5,000 a day, see `docs/modules/billing.md`).
+* Job: `CountersignOverdueJob` — every 15 minutes when `PlatformOptions.RunsJobs`: tells the doctor and the nurses in charge of each verbal or telephone order, and each nurse's stop, past its countersign time (once each); and the nurses in charge of each urgent transfer not accepted within the hour (once each).
+* Job: `EarlyWarningReminderJob` — every 5 minutes when `PlatformOptions.RunsJobs`: reminds the consultant and the nurses in charge, once, of each NEWS2 escalation unanswered after 30 minutes, urgent or emergency.
+* Job: `BedDayChargeJob` — runs at start-up and hourly when `PlatformOptions.RunsJobs`; posts missing bed/nursing days of active and recently discharged admissions (`InpatientChargeService.StaysDueAsync`) and retries unaccepted consultant-visit charges. A day or visit billing refuses is kept by billing until it is charged: System health warns of it, the stay's final bill and discharge wait for it, and the stay's days are posted again however long ago it ended (`docs/modules/billing.md`, automatic charges); a ward's bed charge, and the one a stay in progress took with its bed, can't be taken out of use meanwhile (`docs/modules/masters.md`). Each bed day tells Billing whether the bed was in a critical-care ward (`Ward.IsCriticalCareType`: ICU, NICU, PICU, HDU) or a room, which decides its GST (room rent above ₹5,000 a day, see `docs/modules/billing.md`).
 * Seed `InpatientSeeder` (Order 160, only with `SeedDemoData`): GWM General Ward — Male (12, BED-GEN), GWF General Ward — Female (12, BED-GEN), SPW Semi-Private (8 in 4 rooms, BED-SEMI), PVT Private (8 rooms, BED-PVT), DLX Deluxe (4 rooms, BED-DLX), ICU (8, BED-ICU, monitors, 4 ventilators), NICU (6, BED-NICU).
 
 ## Tables (schema `inpatient`)
 `wards`, `rooms`, `beds`, `housekeeping_tasks`, `admissions`, `bed_assignments`, `bed_day_charges`,
 `consultant_visits`, `nursing_notes`, `shift_handovers`, `intake_output_entries`, `nursing_assessments`,
-`medication_orders`, `medication_administrations`. The policy number is AES-GCM encrypted (`IFieldProtector`).
+`medication_orders`, `medication_administrations`, `early_warning_escalations`, `transfer_requests`, `care_plan_problems`,
+`care_plan_evaluations`, `restraint_episodes`, `restraint_checks`. The policy number is AES-GCM encrypted (`IFieldProtector`).

@@ -78,18 +78,19 @@ public sealed class IssueCompatibilityTests
     {
         var request = new BloodRequest { UnitsRequested = 2, Status = BloodRequestStatus.Pending };
 
-        request.RecordGrouping(BloodGroup.BPositive, "Tech 1", TestData.Now).IsSuccess.ShouldBeTrue();
+        request.RecordGrouping(BloodGroup.BPositive, TestData.Staff(name: "Tech 1"), earlierGroup: null).IsSuccess.ShouldBeTrue();
         request.Status.ShouldBe(BloodRequestStatus.InProcess);
 
-        request.RecordGrouping(BloodGroup.BPositive, "Tech 2", TestData.Now).IsSuccess.ShouldBeTrue();
-        request.RecordGrouping(BloodGroup.OPositive, "Tech 2", TestData.Now).Error!.Code.ShouldBe("bloodbank.grouping_discrepancy");
+        request.RecordGrouping(BloodGroup.BPositive, TestData.Staff(name: "Tech 2"), earlierGroup: null).IsSuccess.ShouldBeTrue();
+        request.RecordGrouping(BloodGroup.OPositive, TestData.Staff(name: "Tech 2"), earlierGroup: null).Error!.Code.ShouldBe("bloodbank.grouping_discrepancy");
+        request.GroupedByName.ShouldBe("Tech 1", "the request goes on the first sample's grouping");
     }
 
     [Fact]
     public void Request_status_follows_reservations_and_issues()
     {
         var request = new BloodRequest { UnitsRequested = 2, Status = BloodRequestStatus.Pending };
-        request.RecordGrouping(BloodGroup.APositive, "Tech", TestData.Now).IsSuccess.ShouldBeTrue();
+        request.RecordGrouping(BloodGroup.APositive, TestData.Staff(name: "Tech"), earlierGroup: null).IsSuccess.ShouldBeTrue();
 
         request.OnUnitReserved();
         request.OnUnitReserved();
@@ -109,12 +110,21 @@ public sealed class IssueCompatibilityTests
     [Fact]
     public void Emergency_release_can_only_be_authorised_for_emergency_requests()
     {
-        new BloodRequest { Urgency = BloodRequestUrgency.Urgent }.AuthoriseEmergencyRelease("Dr. Rao", "Massive haemorrhage", TestData.Now)
+        var doctor = TestData.Staff(name: "Dr. Rao");
+        var practitioner = Guid.CreateVersion7();
+        new BloodRequest { Urgency = BloodRequestUrgency.Urgent }.AuthoriseEmergencyRelease(doctor, practitioner, "Massive haemorrhage")
             .Error!.Code.ShouldBe("bloodbank.not_emergency");
 
         var emergency = new BloodRequest { Urgency = BloodRequestUrgency.Emergency };
-        emergency.AuthoriseEmergencyRelease("Dr. Rao", "Massive haemorrhage", TestData.Now).IsSuccess.ShouldBeTrue();
+        emergency.AuthoriseEmergencyRelease(doctor, practitioner, "Massive haemorrhage").IsSuccess.ShouldBeTrue();
         emergency.EmergencyReleaseAuthorised.ShouldBeTrue();
+        (emergency.EmergencyReleaseByUserId, emergency.EmergencyReleaseByPractitionerId, emergency.EmergencyReleaseAuthorisedBy)
+            .ShouldBe((doctor.UserId, (Guid?)practitioner, "Dr. Rao"));
+
+        // A second authorisation does not write over the doctor who gave the first.
+        emergency.AuthoriseEmergencyRelease(TestData.Staff(name: "Dr. Other"), Guid.CreateVersion7(), "Haemorrhagic shock")
+            .Error!.Code.ShouldBe("bloodbank.release_already_authorised");
+        emergency.EmergencyReleaseAuthorisedBy.ShouldBe("Dr. Rao");
     }
 
     [Fact]
@@ -132,9 +142,9 @@ public sealed class IssueCompatibilityTests
         var reaction = new TransfusionReaction { Severity = ReactionSeverity.Severe, Status = ReactionStatus.Reported };
         reaction.IsSerious.ShouldBeTrue();
 
-        reaction.Close(ReactionType.Unclassified, ReactionSeverity.Severe, "DAT positive", true, "Dr. BB", TestData.Now).IsFailure.ShouldBeTrue();
-        reaction.Close(ReactionType.AcuteHaemolytic, ReactionSeverity.Severe, " ", true, "Dr. BB", TestData.Now).IsFailure.ShouldBeTrue();
-        reaction.Close(ReactionType.AcuteHaemolytic, ReactionSeverity.Severe, "DAT positive; clerical error at bedside", true, "Dr. BB", TestData.Now)
+        reaction.Close(ReactionType.Unclassified, ReactionSeverity.Severe, ReactionImputability.Definite, "DAT positive", true, "Dr. BB", TestData.Now).IsFailure.ShouldBeTrue();
+        reaction.Close(ReactionType.AcuteHaemolytic, ReactionSeverity.Severe, ReactionImputability.Definite, " ", true, "Dr. BB", TestData.Now).IsFailure.ShouldBeTrue();
+        reaction.Close(ReactionType.AcuteHaemolytic, ReactionSeverity.Severe, ReactionImputability.Definite, "DAT positive; clerical error at bedside", true, "Dr. BB", TestData.Now)
             .IsSuccess.ShouldBeTrue();
 
         reaction.Status.ShouldBe(ReactionStatus.Closed);

@@ -1,3 +1,4 @@
+using System.Globalization;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Payments;
@@ -211,8 +212,8 @@ public sealed class RefundService(
             }
 
             // Paid out in HC360 now; the reconciliation job follows it until the bank confirms it (or it fails).
-            reference = reversal.Value;
-            refund.StartGatewayRefund(reversal.Value, time.GetUtcNow());
+            reference = reversal.Value.RefundId;
+            refund.StartGatewayRefund(reversal.Value.RefundId, reversal.Value.Payment, time.GetUtcNow());
         }
 
         var paid = refund.MarkPaid(request.Mode, reference, currentUser.UserId, shift.Value?.Id, shift.Value?.Counter, time.GetUtcNow());
@@ -254,37 +255,77 @@ public sealed class RefundService(
     /// <summary>
     /// Asks for a credit note or write-off on a finalized bill. Nothing changes until an approver, someone other than the
     /// person asking, approves it; it is then issued on the bill as it is now, or not at all
-    /// (<see cref="IssueApprovedCreditNoteAsync"/>).
+    /// (<see cref="IssueApprovedCreditNoteAsync"/>). A credit note names the services it corrects, and must when the bill
+    /// carries GST (<see cref="CreditedLinesAsync"/>); the approver sees the GST it takes off each.
     /// </summary>
     public async Task<Result<ApprovalRequestDto>> RequestCreditNoteAsync(Guid billId, IssueCreditNoteRequest request, CancellationToken ct)
     {
-        var bill = await db.Set<Bill>().AsNoTracking().FirstOrDefaultAsync(b => b.Id == billId, ct);
+        var bill = await db.Set<Bill>().AsNoTracking().Include(b => b.Lines).FirstOrDefaultAsync(b => b.Id == billId, ct);
         if (bill is null)
         {
             return Error.NotFound(nameof(Bill), billId);
         }
 
         var amount = Money.Round(request.Amount);
-        var creditable = bill.CanCredit(amount);
+        var creditable = request.Kind == CreditNoteKind.PayerShare ? await PayerCreditableAsync(bill, amount, ct) : bill.CanCredit(amount);
         if (creditable.IsFailure)
         {
             return creditable.Error!;
         }
 
+        var lines = request.Lines?.Select(l => new CreditNoteLinePayload(l.BillLineId, Money.Round(l.Amount))).ToList();
+        var credited = await CreditedLinesAsync(bill, request.Kind, lines, ct);
+        if (credited.IsFailure)
+        {
+            return credited.Error!;
+        }
+
         var what = CreditNoteApproval.Words(request.Kind);
-        return await approvals.RequestAsync(
-            CreditNoteApproval.KindOf(request.Kind),
-            new ApprovalSubject(nameof(Bill), bill.Id, bill.Version, bill.FacilityId, bill.PatientId),
-            new CreditNotePayload(bill.Id, request.Kind, amount, request.Reason.Trim()),
-            $"{what} of ₹{Money.FormatInr(amount)} on bill {bill.BillNumber}",
-            [
+        var timeBarred = GstTimeBarred(bill);
+        var details = request.Kind == CreditNoteKind.PayerShare
+            ? new List<ApprovalDetail>
+            {
+                new("Bill", bill.BillNumber ?? bill.Id.ToString()),
+                new("Payer's share", $"₹{Money.FormatInr(bill.PayerAmount + bill.PayerDebitAmount)}"),
+                new("Settled by the payer", $"₹{Money.FormatInr(bill.PayerSettledAmount)}"),
+                new("Disallowed by the payer", $"₹{Money.FormatInr(bill.PayerDisallowedAmount)}"),
+                new("Already credited to the payer", $"₹{Money.FormatInr(await PayerCreditedAsync(bill.Id, ct))}"),
+                new(what, $"₹{Money.FormatInr(amount)}"),
+            }
+            : new List<ApprovalDetail>
+            {
                 new("Bill", bill.BillNumber ?? bill.Id.ToString()),
                 new("Patient's share", $"₹{Money.FormatInr(bill.PatientAmount)}"),
                 new("Paid", $"₹{Money.FormatInr(bill.PaidAmount)}"),
                 new("Already credited", $"₹{Money.FormatInr(bill.CreditAmount)}"),
                 new("Balance due", $"₹{Money.FormatInr(bill.DueAmount)}"),
                 new(what, $"₹{Money.FormatInr(amount)}"),
-            ],
+            };
+        var gst = 0m;
+        foreach (var (line, before, lineAmount) in credited.Value)
+        {
+            var share = timeBarred
+                ? new GstShare(lineAmount, 0m, 0m, 0m)
+                : GstCreditNotes.Share(line.NetAmount, line.TaxableAmount, before, lineAmount, bill.IsInterState);
+            gst += share.Gst;
+            details.Add(new(Shorten(line.Description), share.Gst == 0m
+                ? $"₹{Money.FormatInr(lineAmount)}"
+                : $"₹{Money.FormatInr(lineAmount)}, of it GST ₹{Money.FormatInr(share.Gst)} at {line.TaxRate.ToString("0.##", CultureInfo.InvariantCulture)}%"));
+        }
+
+        if (credited.Value.Count > 0)
+        {
+            details.Add(new("GST credited", timeBarred
+                ? $"None: the bill's GST could be reduced until {LastDayText(bill)} (CGST Act s.34(2))"
+                : $"₹{Money.FormatInr(gst)}"));
+        }
+
+        return await approvals.RequestAsync(
+            CreditNoteApproval.KindOf(request.Kind),
+            new ApprovalSubject(nameof(Bill), bill.Id, bill.Version, bill.FacilityId, bill.PatientId),
+            new CreditNotePayload(bill.Id, request.Kind, amount, request.Reason.Trim(), lines is { Count: > 0 } ? lines : null),
+            $"{what} of ₹{Money.FormatInr(amount)} on bill {bill.BillNumber}",
+            details,
             request.Reason,
             ct);
     }
@@ -292,12 +333,13 @@ public sealed class RefundService(
     /// <summary>
     /// Issues an approved credit note or write-off, in the approval's transaction (the approval saves and commits). It is
     /// issued only on the bill as it was asked for: a bill paid, refunded or credited since was approved for a balance it
-    /// no longer has. The person who asked and the approver are both kept on the note.
+    /// no longer has. The person who asked and the approver are both kept on the note. A credit note takes the taxable value
+    /// and the GST off each line it names at the line's rate, unless the time to reduce the bill's GST has passed.
     /// </summary>
     internal async Task<Result<string>> IssueApprovedCreditNoteAsync(ApprovalRequest approval, CancellationToken ct)
     {
         var asked = ApprovalPayload.Read<CreditNotePayload>(approval.Payload);
-        var bill = await db.Set<Bill>().FirstOrDefaultAsync(b => b.Id == asked.BillId, ct);
+        var bill = await db.Set<Bill>().Include(b => b.Lines).FirstOrDefaultAsync(b => b.Id == asked.BillId, ct);
         if (bill is null)
         {
             return Error.NotFound(nameof(Bill), asked.BillId);
@@ -309,7 +351,15 @@ public sealed class RefundService(
                 $"Bill {bill.BillNumber} changed after this was asked for (a payment, a refund or another credit). Ask again, against the bill as it is now.");
         }
 
-        var credited = bill.ApplyCredit(asked.Amount);
+        var lines = await CreditedLinesAsync(bill, asked.Kind, asked.Lines, ct);
+        if (lines.IsFailure)
+        {
+            return lines.Error!;
+        }
+
+        // A payer credit note lowers the payer's invoice for what it already did not pay (the settlement's deduction): the
+        // patient owes the same. Anything else lowers what the patient owes.
+        var credited = asked.Kind == CreditNoteKind.PayerShare ? await PayerCreditableAsync(bill, asked.Amount, ct) : bill.ApplyCredit(asked.Amount);
         if (credited.IsFailure)
         {
             return credited.Error!;
@@ -330,9 +380,30 @@ public sealed class RefundService(
             IssuedByName = currentUser.DisplayName ?? currentUser.UserName,
             IssuedAt = time.GetUtcNow(),
         };
+        var timeBarred = GstTimeBarred(bill);
+        foreach (var (line, before, amount) in lines.Value)
+        {
+            note.Credit(line, before, amount, bill.IsInterState, timeBarred);
+        }
+
         db.Add(note);
-        audit.Add(new AuditEntry(AuditCategories.Data, asked.Kind == CreditNoteKind.WriteOff ? "billing.bill.written_off" : "billing.credit_note.issued",
-            $"{note.Number}: ₹{Money.FormatInr(note.Amount)} on bill {bill.BillNumber} — {note.Reason} (asked for by {note.RequestedByName}, approved by {note.IssuedByName})")
+        var gst = note.Lines.Count == 0 ? string.Empty
+            : timeBarred ? $"; GST not reduced: the time for it ended on {LastDayText(bill)} (CGST Act s.34(2))"
+            : $"; GST ₹{Money.FormatInr(note.GstAmount)} on {note.Lines.Count} service{(note.Lines.Count == 1 ? string.Empty : "s")}";
+        if (asked.Kind == CreditNoteKind.PayerShare)
+        {
+            // The bill's version moves with the note, so a second payer credit asked against the bill as it was is stale.
+            db.Entry(bill).State = EntityState.Modified;
+        }
+
+        var issuedAction = asked.Kind switch
+        {
+            CreditNoteKind.WriteOff => "billing.bill.written_off",
+            CreditNoteKind.PayerShare => "billing.payer_credit_note.issued",
+            _ => "billing.credit_note.issued",
+        };
+        audit.Add(new AuditEntry(AuditCategories.Data, issuedAction,
+            $"{note.Number}: ₹{Money.FormatInr(note.Amount)} on bill {bill.BillNumber}{gst} — {note.Reason} (asked for by {note.RequestedByName}, approved by {note.IssuedByName})")
         {
             PatientId = bill.PatientId,
             EntityType = nameof(Bill),
@@ -341,6 +412,106 @@ public sealed class RefundService(
         });
         return note.Number;
     }
+
+    /// <summary>
+    /// The bill lines a credit note corrects, each with what earlier credit notes took off it and what this one takes:
+    /// lines of this bill, charged (not a return), and not credited beyond their value. A credit note on a bill with GST
+    /// must name them, since the GST it takes off is each line's own; a write-off names none.
+    /// </summary>
+    private async Task<Result<IReadOnlyList<(BillLine Line, decimal Before, decimal Amount)>>> CreditedLinesAsync(
+        Bill bill, CreditNoteKind kind, IReadOnlyList<CreditNoteLinePayload>? asked, CancellationToken ct)
+    {
+        if (asked is not { Count: > 0 })
+        {
+            if (kind is CreditNoteKind.CreditNote or CreditNoteKind.PayerShare && bill.TaxAmount != 0m)
+            {
+                return Error.Field("lines",
+                    "Name the services this credit note corrects, with the amount on each: the bill carries GST, and the GST credited is each service's own.");
+            }
+
+            return Result<IReadOnlyList<(BillLine, decimal, decimal)>>.Ok([]);
+        }
+
+        if (kind == CreditNoteKind.WriteOff)
+        {
+            return Error.Field("lines", "A write-off is of the balance due, not of services: leave out the lines.");
+        }
+
+        var ids = asked.Select(l => l.BillLineId).ToList();
+        var before = await db.Set<CreditNoteLine>().AsNoTracking()
+            .Where(l => ids.Contains(l.BillLineId))
+            .GroupBy(l => l.BillLineId)
+            .Select(g => new { g.Key, Amount = g.Sum(l => l.Amount) })
+            .ToDictionaryAsync(g => g.Key, g => g.Amount, ct);
+        var lines = new List<(BillLine, decimal, decimal)>();
+        foreach (var (item, index) in asked.Select((item, index) => (item, index)))
+        {
+            var line = bill.Lines.FirstOrDefault(l => l.Id == item.BillLineId);
+            if (line is null)
+            {
+                return Error.Field($"lines[{index}].billLineId", "This service is not on the bill.");
+            }
+
+            if (kind == CreditNoteKind.PayerShare && !line.IsPayerPayable)
+            {
+                return Error.Rule("billing.credit_not_payer_payable", $"The payer does not pay for {line.Description}, so its credit note is not the payer's.");
+            }
+
+            if (line.Quantity < 0 || line.NetAmount <= 0m)
+            {
+                return Error.Rule("billing.credit_exceeds_line", $"{line.Description} comes to nothing on this bill, so it cannot be credited.");
+            }
+
+            var credited = before.GetValueOrDefault(line.Id);
+            var left = line.NetAmount - credited;
+            if (item.Amount > left)
+            {
+                return Error.Rule("billing.credit_exceeds_line", left <= 0m
+                    ? $"{line.Description} is already credited in full."
+                    : $"At most ₹{Money.FormatInr(left)} can be credited on {line.Description}.");
+            }
+
+            lines.Add((line, credited, item.Amount));
+        }
+
+        return lines;
+    }
+
+    /// <summary>
+    /// A payer credit note: on a finalized bill with a payer, of at most what the payer's settlements disallowed less what
+    /// earlier payer credit notes credited.
+    /// </summary>
+    private async Task<Result> PayerCreditableAsync(Bill bill, decimal amount, CancellationToken ct)
+    {
+        if (amount <= 0)
+        {
+            return Error.Rule("billing.amount_invalid", "Enter an amount greater than zero.");
+        }
+
+        if (bill.Status is not (BillStatus.Finalized or BillStatus.PartiallyPaid or BillStatus.Paid) || !bill.HasPayer)
+        {
+            return Error.Rule("billing.bill_not_creditable", "A payer credit note applies to a finalized bill with a payer.");
+        }
+
+        var left = bill.PayerDisallowedAmount - await PayerCreditedAsync(bill.Id, ct);
+        return amount > left
+            ? Error.Rule("billing.payer_credit_exceeds", left <= 0m
+                ? "The payer has not settled this bill for less than billed, or its shortfall is already credited: record the settlement and its deductions first."
+                : $"At most ₹{Money.FormatInr(left)} can be credited to the payer: what its settlements disallowed, less earlier payer credit notes.")
+            : Result.Success();
+    }
+
+    private Task<decimal> PayerCreditedAsync(Guid billId, CancellationToken ct) =>
+        db.Set<CreditNote>().Where(c => c.BillId == billId && c.Kind == CreditNoteKind.PayerShare).SumAsync(c => c.Amount, ct);
+
+    /// <summary>The date the bill was invoiced, from which the time to reduce its GST runs.</summary>
+    private static DateOnly BillDate(Bill bill) => BillingTime.LocalDate(bill.FinalizedAt ?? bill.CreatedAt);
+
+    private bool GstTimeBarred(Bill bill) => BillingTime.Today(time) > GstCreditNotes.LastDay(BillDate(bill));
+
+    private static string LastDayText(Bill bill) => GstCreditNotes.LastDay(BillDate(bill)).ToString("d MMM yyyy", CultureInfo.InvariantCulture);
+
+    private static string Shorten(string text) => text.Length <= 60 ? text : text[..59] + "…";
 
     /// <summary>
     /// Creates a refund request inside the caller's transaction (number allocated there). Without a signed-in user (a
@@ -390,7 +561,7 @@ public sealed class RefundService(
             .Where(r => r.IpAccountId == ipAccountId && r.Purpose == RefundPurpose.Deposit && (r.Status == RefundStatus.Requested || r.Status == RefundStatus.Approved))
             .SumAsync(r => r.Amount, ct);
 
-    private async Task<Result<string>> RefundThroughGatewayAsync(Refund refund, CancellationToken ct)
+    private async Task<Result<(string RefundId, GatewayPaymentRef Payment)>> RefundThroughGatewayAsync(Refund refund, CancellationToken ct)
     {
         var gateway = services.GetService<IPaymentGateway>();
         if (gateway is null)
@@ -398,21 +569,22 @@ public sealed class RefundService(
             return Error.Rule("billing.gateway_not_configured", "No payment gateway is configured. Refund by another mode.");
         }
 
-        var paymentId = await GatewayPaymentForAsync(refund, ct);
-        if (paymentId is null)
+        var payment = await GatewayPaymentForAsync(refund, ct);
+        if (payment is null)
         {
             return Error.Rule("billing.gateway_payment_missing", "No online payment large enough to reverse was found. Refund by another mode.");
         }
 
-        // Keyed by the refund: a second click while the first request is still out gets the same gateway refund.
+        // Keyed by the refund: a second click while the first request is still out gets the same gateway refund. It goes
+        // to the gateway that took the payment, even after the facility has switched gateways.
         var result = await gateway.RefundAsync(
-            paymentId, refund.Amount, refund.Reason, refund.GatewayIdempotencyKey, refund.FacilityId, ct);
+            payment, refund.Amount, refund.Reason, refund.GatewayIdempotencyKey, refund.FacilityId, ct);
         if (!result.Success || string.IsNullOrWhiteSpace(result.RefundId))
         {
             return Error.Rule("billing.gateway_refund_failed", result.Error ?? "The payment gateway declined the refund.");
         }
 
-        return result.RefundId;
+        return (result.RefundId, payment);
     }
 
     /// <summary>
@@ -421,18 +593,18 @@ public sealed class RefundService(
     /// <paramref name="alreadyPaidOut"/> is set when the refund is sent again after the gateway failed it, so its amount
     /// already counts against the advance.
     /// </summary>
-    internal async Task<string?> GatewayPaymentForAsync(Refund refund, CancellationToken ct, bool alreadyPaidOut = false) =>
+    internal async Task<GatewayPaymentRef?> GatewayPaymentForAsync(Refund refund, CancellationToken ct, bool alreadyPaidOut = false) =>
         refund.Purpose == RefundPurpose.Advance
             ? await db.Set<PatientAdvance>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
                 .Where(a => a.Id == refund.AdvanceId && a.Amount - a.RefundedAmount + (alreadyPaidOut ? refund.Amount : 0m) >= refund.Amount)
-                .Select(a => a.GatewayPaymentId)
+                .Select(a => new GatewayPaymentRef(a.Provider, a.GatewayPaymentId, a.GatewayOrderId))
                 .FirstOrDefaultAsync(ct)
             : await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
                 .Where(o => o.FacilityId == refund.FacilityId)
                 .Where(o => (refund.BillId != null && o.BillId == refund.BillId) || (refund.IpAccountId != null && o.IpAccountId == refund.IpAccountId))
                 .Where(o => o.Status == GatewayOrderStatus.Paid && o.GatewayPaymentId != null && o.PaidAmount >= refund.Amount)
                 .OrderByDescending(o => o.PaidAt)
-                .Select(o => o.GatewayPaymentId)
+                .Select(o => new GatewayPaymentRef(o.Provider, o.GatewayPaymentId!, o.OrderId))
                 .FirstOrDefaultAsync(ct);
 
     internal Task NotifyApproversAsync(Refund refund, CancellationToken ct) =>

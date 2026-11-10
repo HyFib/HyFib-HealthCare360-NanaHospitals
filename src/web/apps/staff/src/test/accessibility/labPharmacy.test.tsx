@@ -16,7 +16,7 @@ import type {
   WorklistItem,
 } from '@/modules/lab/api';
 import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, stubBrowserApis, type FakeRequest } from '../appScreen';
-import { ASHA, ENTRY_ID, PHARMACY_ANSWERS, RAVI } from './fixtures/pharmacy';
+import { ASHA, ENTRY_ID, OVERRIDE_ENTRY, OVERRIDE_ENTRY_ID, PHARMACY_ANSWERS, RAVI } from './fixtures/pharmacy';
 
 // The lab bench's result entry and the pharmacy's dispensing screens, whole (shell included) with canned data, checked
 // with axe-core for WCAG 2.2 A and AA problems (SRS UX-10). Colour contrast and target sizes are checked in a browser
@@ -339,6 +339,24 @@ const RESULTS: ResultSheetLine[] = [
     value: 'Microcytic hypochromic red cells with anisopoikilocytosis; platelets markedly reduced.',
     instrumentCode: null,
   }),
+  // A strip reader's "NEG", read as the test's own answer, Nil: the sheet says what the reader sent.
+  result({
+    resultId: '0192a000-0000-7000-8000-000000000b29',
+    labOrderItemId: '0192a000-0000-7000-8000-000000000b3a',
+    orderedTest: 'Urine routine and microscopy',
+    labTestId: '0192a000-0000-7000-8000-000000000b4a',
+    testCode: 'UR-PROT',
+    testName: 'Urine protein',
+    displayOrder: 1,
+    resultType: 'Options',
+    options: ['Nil', 'Trace', '1+', '2+', '3+', '4+'],
+    value: 'Nil',
+    flag: 'Normal',
+    referenceText: 'Nil',
+    instrumentCode: 'U120',
+    instrumentValue: 'NEG',
+    heldReasons: ['Only numeric results are auto-validated.'],
+  }),
 ];
 
 const SHEET: ResultSheet = {
@@ -378,6 +396,7 @@ const RANGES: Record<string, ReferenceRangeDto[]> = {
   LYMPH: [range({ low: 20, high: 40 })],
   ESR: [range({ gender: 'Female', low: 0, high: 20 })],
   MP: [range({ normalValues: ['Not seen'], criticalValues: ['P. falciparum seen', 'Mixed infection'] })],
+  'UR-PROT': [range({ normalValues: ['Nil'] })],
 };
 
 /** Each analyte's master, which the sheet loads for its reference intervals. */
@@ -491,6 +510,7 @@ describe('lab and pharmacy screens', SCREEN_TESTS, () => {
     expect(await screen.findByText('Allergies: Penicillin (anaphylaxis)', {}, SLOW)).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'ESR result in mm/hr' })).toHaveValue('');
     expect(screen.getByRole('textbox', { name: 'Haemoglobin result in g/dL' })).toHaveValue('9.1');
+    expect(screen.getByText('Analyser sent “NEG”')).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
@@ -511,5 +531,25 @@ describe('lab and pharmacy screens', SCREEN_TESTS, () => {
     expect(await screen.findByText('CGST (included)', {}, SLOW)).toBeInTheDocument();
     expect(await screen.findByText('Fall risk: Walks with a stick', {}, SLOW)).toBeInTheDocument();
     await expectNoAxeViolations();
+  });
+
+  it('pharmacy dispensing of a prescription signed over a safety alert: acknowledged before it is dispensed', async () => {
+    openScreen(`/pharmacy/queue/${OVERRIDE_ENTRY_ID}`);
+    expect(await screen.findByText('Prescribed over a safety alert', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText(OVERRIDE_ENTRY.safetyOverrideReason!)).toBeInTheDocument();
+    expect(screen.getByText(OVERRIDE_ENTRY.lines[0]!.safetyOverride!)).toBeInTheDocument();
+    await expectNoAxeViolations();
+
+    await userEvent.type(screen.getByRole('textbox', { name: /What you did about/ }), 'Spoke to the doctor');
+    await userEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
+    const acknowledged = await vi.waitFor(() => {
+      const request = server.requests.find((r) => r.method === 'POST' && r.path.endsWith('/acknowledge-override'));
+      expect(request).toBeDefined();
+      return request!;
+    }, SLOW);
+    expect(acknowledged.path).toBe(
+      `/api/v1/pharmacy/queue/${OVERRIDE_ENTRY_ID}/lines/${OVERRIDE_ENTRY.lines[0]!.id}/acknowledge-override`,
+    );
+    expect(acknowledged.body).toEqual({ note: 'Spoke to the doctor' });
   });
 });

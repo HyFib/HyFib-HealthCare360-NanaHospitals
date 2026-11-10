@@ -15,13 +15,14 @@ import {
   Text,
   Textarea,
 } from '@fluentui/react-components';
-import { formatInr, useDebouncedValue, type PagedResult } from '@hc360/core';
+import { formatInr, useDebouncedValue, useSession, type PagedResult } from '@hc360/core';
 import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
 import { billingApi, billingKeys, type DiscountApprovalDto, type DiscountLimitDto } from './api';
+import { limitRaises } from './billTotals';
 import { useRefreshBilling } from './hooks';
 import { formatPercent, parsePercent, parseRupees } from './money';
 import { ActionError, AmountField, ReasonDialog } from './ui';
@@ -103,6 +104,7 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canPickUsers = usePermission('admin.users.read');
+  const myId = useSession((session) => session.user?.id);
   const [user, setUser] = useState<UserOption | null>(
     limit ? { id: limit.userId, displayName: limit.userName ?? 'User', userName: '' } : null,
   );
@@ -127,6 +129,17 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
   const parsedPercent = parsePercent(percent, { allowZero: true });
   const parsedCap = cap.trim() ? parseRupees(cap, { allowZero: true }) : null;
   const valid = user !== null && parsedPercent.ok && (parsedCap === null || parsedCap.ok);
+  // Raising a limit waits for another approver (never the user whose limit it is); lowering it is saved at once. A new
+  // limit is judged against the hospital default, which only the server knows.
+  const raises =
+    limit !== null &&
+    parsedPercent.ok &&
+    (parsedCap === null || parsedCap.ok) &&
+    limitRaises(
+      { maxPercent: limit.maxPercent, maxAmount: limit.maxAmount },
+      { maxPercent: parsedPercent.percent, maxAmount: parsedCap?.ok ? parsedCap.rupees : null },
+    );
+  const own = user !== null && user.id === myId;
 
   const save = useMutation({
     mutationFn: () =>
@@ -137,8 +150,15 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
         notes: notes.trim() || null,
         version: limit?.version,
       }),
-    onSuccess: () => {
-      notify.success('Discount limit saved', user?.displayName);
+    onSuccess: (asked) => {
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Another approver decides it, never you and never ${user?.displayName ?? 'the user'}; the limit in force applies until then.`,
+        );
+      } else {
+        notify.success('Discount limit saved', user?.displayName);
+      }
       void queryClient.invalidateQueries({ queryKey: billingKeys.discounts() });
       onClose();
     },
@@ -212,9 +232,14 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
                 onChange={setCap}
                 error={parsedCap && !parsedCap.ok ? parsedCap.error : null}
               />
-              <Field label="Notes">
+              <Field label="Notes" hint="The approver reads them as the reason for a higher limit.">
                 <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} maxLength={300} rows={2} />
               </Field>
+              <Text size={200}>
+                {own
+                  ? 'This is your own limit: you may lower it, but only another approver may ask for it to be raised.'
+                  : 'Lowering a limit is saved at once. Raising it (a higher percentage, or a rupee cap raised or taken away) waits for another approver, never you and never the user whose limit it is.'}
+              </Text>
               <ActionError error={save.error} />
             </DialogContent>
             <DialogActions>
@@ -229,7 +254,7 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
                 disabledFocusable={save.isPending}
                 icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
-                Save limit
+                {raises ? 'Ask for approval' : 'Save limit'}
               </Button>
             </DialogActions>
           </DialogBody>

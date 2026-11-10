@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Billing.Documents;
@@ -6,6 +7,8 @@ using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Modules.Scheduling.Domain;
+using HyFib.HealthCare360.Modules.Scheduling.Features.Portal;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.SharedKernel;
@@ -127,6 +130,68 @@ public sealed class PatientLanguageTests(HospitalServer server)
         (await ProblemOf(response)).GetProperty("detail").GetString()
             .ShouldBe("The patient is registered with this mobile number, so its portal account sees the record already.");
     }
+
+    [Fact]
+    public async Task A_refused_portal_request_reaches_the_patient_wholly_in_their_language()
+    {
+        // FluentValidation's own rules and the waitlist's business rules, through the real portal: every message in the
+        // patient's script, with no field named in English and no English sentence left over.
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var (patient, phone) = await RegisterPatientAsync(frontOffice, null);
+        var portal = await server.SignInToPortalAsync(phone);
+        var today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(5.5)).DateTime);
+
+        var rules = await RefusedAsync(portal, "ta", new PortalJoinWaitlistRequest(
+            Guid.Empty, Guid.NewGuid(), today.AddDays(1), today.AddDays(2), (PreferredSession)99, false, new string('x', 501)));
+        rules.GetProperty("title").GetString().ShouldBe("தயவுசெய்து குறிக்கப்பட்ட விவரங்களைச் சரிசெய்யுங்கள்.");
+        FieldMessage(rules, "patientId").ShouldBe("இந்தத் தகவல் தேவை.");
+        FieldMessage(rules, "preferredSession").ShouldBe("கொடுக்கப்பட்ட விருப்பங்களில் ஒன்றைத் தேர்ந்தெடுங்கள்.");
+        FieldMessage(rules, "notes").ShouldBe("500 எழுத்துகளுக்கு மிகாமல் எழுதுங்கள். நீங்கள் 501 எழுத்துகள் எழுதியுள்ளீர்கள்.");
+
+        var hindi = await RefusedAsync(portal, "hi", new PortalJoinWaitlistRequest(
+            Guid.Empty, Guid.NewGuid(), today.AddDays(1), today.AddDays(2), PreferredSession.Any, false, null));
+        FieldMessage(hindi, "patientId").ShouldBe("यह जानकारी ज़रूरी है।");
+
+        var past = await RefusedAsync(portal, "hi", new PortalJoinWaitlistRequest(
+            patient.Id, Guid.NewGuid(), today.AddDays(-1), today, PreferredSession.Any, false, null));
+        FieldMessage(past, "preferredFrom").ShouldBe("आज की या उसके बाद की कोई तारीख चुनें।");
+
+        var tooLong = await RefusedAsync(portal, "ta", new PortalJoinWaitlistRequest(
+            patient.Id, Guid.NewGuid(), today.AddDays(1), today.AddDays(1 + WaitlistEntry.MaxPreferredDays), PreferredSession.Any, false, null));
+        FieldMessage(tooLong, "preferredTo").ShouldBe($"காத்திருப்புப் பட்டியல் கோரிக்கை அதிகபட்சம் {WaitlistEntry.MaxPreferredDays} நாட்களுக்கு மட்டுமே இருக்க முடியும்.");
+
+        // The same refusal for a reader of English keeps FluentValidation's own wording.
+        var english = await RefusedAsync(portal, "en", new PortalJoinWaitlistRequest(
+            Guid.Empty, Guid.NewGuid(), today.AddDays(1), today.AddDays(2), PreferredSession.Any, false, null));
+        FieldMessage(english, "patientId").ShouldBe("'Patient Id' must not be empty.");
+    }
+
+    // A portal waitlist request refused in the language chosen: 400, said to be in that language and, for Hindi and
+    // Tamil, no Latin letter in its title, detail or any field message (the machine code aside).
+    private static async Task<JsonElement> RefusedAsync(ApiClient portal, string language, PortalJoinWaitlistRequest body)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/portal/waitlist") { Content = JsonContent.Create(body, options: ApiClient.Json) };
+        request.Headers.Add(LanguageHeader, language);
+        using var response = await portal.Http.SendAsync(request, Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync(Ct));
+        var problem = await ProblemOf(response);
+        if (language != "en")
+        {
+            response.Content.Headers.ContentLanguage.ShouldBe([language]);
+            string?[] messages =
+            [
+                problem.GetProperty("title").GetString(),
+                problem.TryGetProperty("detail", out var detail) ? detail.GetString() : null,
+                .. problem.GetProperty("errors").EnumerateObject().SelectMany(field => field.Value.EnumerateArray().Select(message => message.GetString())),
+            ];
+            messages.OfType<string>().Where(message => message.Any(char.IsAsciiLetter)).ShouldBeEmpty("English in a refusal sent in " + language);
+        }
+
+        return problem;
+    }
+
+    private static string? FieldMessage(JsonElement problem, string field) => problem.GetProperty("errors").GetProperty(field)[0].GetString();
 
     private static RequestFamilyCodeRequest OwnNumber(PatientCreated patient, string phone) => new(patient.Uhid, phone, FamilyRelation.Parent);
 

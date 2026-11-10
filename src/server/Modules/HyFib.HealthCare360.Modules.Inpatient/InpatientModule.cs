@@ -1,12 +1,17 @@
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Beds;
+using HyFib.HealthCare360.Modules.Inpatient.Features.CarePlan;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Census;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
+using HyFib.HealthCare360.Modules.Inpatient.Features.DowntimePrint;
+using HyFib.HealthCare360.Modules.Inpatient.Features.EarlyWarning;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Mar;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Nursing;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Rounds;
+using HyFib.HealthCare360.Modules.Inpatient.Features.Transfers;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Numbering;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -23,6 +28,19 @@ public static class InpatientPermissions
     public const string BedsHousekeeping = "beds.housekeeping";
     public const string NursingChart = "nursing.chart";
     public const string NursingMar = "nursing.mar";
+
+    /// <summary>
+    /// The ward's nurse in charge: lists the verbal and telephone orders, and the nurses' stops, not countersigned in time on
+    /// the facility's wards, and is told of each. The hospital administrator holds it by default (no built-in role is a
+    /// ward sister, and every nurse being told would bury it); a hospital gives it to its ward sisters' role.
+    /// </summary>
+    public const string NursingInCharge = "nursing.in_charge";
+
+    /// <summary>
+    /// Order a patient's restraint, renew it after seeing them again, and end it (Mental Healthcare Act 2017 s.97): doctors.
+    /// The nurses' checks and the debrief are charting (<see cref="NursingChart"/>).
+    /// </summary>
+    public const string RestraintOrder = "nursing.restraint.order";
 
     private static readonly string[] WardTeam = [SystemRoles.Nurse, SystemRoles.Doctor];
 
@@ -42,6 +60,9 @@ public static class InpatientPermissions
         new(BedsHousekeeping, "Beds", "Work the housekeeping queue and release cleaned beds", [SystemRoles.Nurse, SystemRoles.HospitalAdmin]),
         new(NursingChart, "Nursing", "Nursing notes, handovers, intake/output, risk assessments and consultant visits", WardTeam),
         new(NursingMar, "Nursing", "Medication chart and medication administration record (MAR)", WardTeam),
+        new(RestraintOrder, "Nursing", "Order, renew and end a patient's restraint (a doctor's order, for at most four hours at a time)", [SystemRoles.Doctor]),
+        new(NursingInCharge, "Nursing", "Ward nurse in charge: see the verbal and telephone medication orders and nurses' stops not countersigned in time, and be told of each",
+            [SystemRoles.HospitalAdmin]),
     ];
 }
 
@@ -62,17 +83,29 @@ public sealed class InpatientModule : IModule
     {
         InpatientRealtimeTopics.Register(services);
         services.AddScoped<AdmissionService>();
+        services.AddScoped<MlcApprovals>();
         services.AddScoped<DischargeService>();
         services.AddScoped<BedService>();
         services.AddScoped<BedBoardService>();
         services.AddScoped<CensusService>();
         services.AddScoped<InpatientChargeService>();
+        services.AddScoped<IServiceChargeSource, InpatientServiceCharges>();
+        services.AddScoped<IPractitionerWorkSource, InpatientPractitionerWork>();
+        services.AddScoped<HyFib.HealthCare360.Modules.Clinical.Services.IStayCareTeams, StayCareTeams>();
         services.Replace(ServiceDescriptor.Scoped<IRoomClassDirectory, RoomClassDirectory>());
         services.Replace(ServiceDescriptor.Scoped<IAdmissionDirectory, AdmissionDirectory>());
         services.AddScoped<MarService>();
+        services.AddScoped<HyFib.HealthCare360.Modules.Patients.Domain.IDowntimePackSource, Features.DowntimePack.DowntimePackInpatient>();
+        services.AddWitnessPurpose(MarService.DoseWitness);
+        services.AddWitnessPurpose(DischargeService.AgainstAdviceWitness);
         services.AddScoped<AdmissionAccess>();
         services.AddScoped<WardRoundQueries>();
+        services.AddScoped<EarlyWarningService>();
+        services.AddScoped<TransferService>();
+        services.AddScoped<DowntimePrintService>();
         services.AddHostedService<BedDayChargeJob>();
+        services.AddHostedService<CountersignOverdueJob>();
+        services.AddHostedService<EarlyWarningReminderJob>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -83,7 +116,13 @@ public sealed class InpatientModule : IModule
         DischargeEndpoints.Map(endpoints);
         CensusEndpoints.Map(endpoints);
         NursingEndpoints.Map(endpoints);
+        SafetyEventEndpoints.Map(endpoints);
+        RestraintEndpoints.Map(endpoints);
         MarEndpoints.Map(endpoints);
         RoundEndpoints.Map(endpoints);
+        EarlyWarningEndpoints.Map(endpoints);
+        TransferEndpoints.Map(endpoints);
+        CarePlanEndpoints.Map(endpoints);
+        DowntimePrintEndpoints.Map(endpoints);
     }
 }

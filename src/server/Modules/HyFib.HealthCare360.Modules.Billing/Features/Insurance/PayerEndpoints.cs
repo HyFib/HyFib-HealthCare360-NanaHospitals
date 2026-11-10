@@ -14,6 +14,8 @@ internal static class PayerEndpoints
 
     private static readonly string[] PolicyReaders = PayerDirectory.PolicyReaders;
 
+    private const string WaitingCode = "approval.already_requested";
+
     public static void Map(IEndpointRouteBuilder app)
     {
         var payers = app.MapGroup("/api/v1/insurance/payers").WithTags("Insurance - Payers");
@@ -25,7 +27,7 @@ internal static class PayerEndpoints
         var nonPayables = app.MapGroup("/api/v1/insurance/non-payable-items").WithTags("Insurance - Payers");
         nonPayables.MapGet("/", ListNonPayables).RequireAnyPermission(BillingPermissions.PayersManage, BillingPermissions.ClaimsManage, BillingPermissions.IpManage);
         nonPayables.MapPost("/", AddNonPayable).RequirePermission(BillingPermissions.PayersManage).WithValidation<SaveNonPayableItemRequest>();
-        nonPayables.MapDelete("/{id:guid}", DeleteNonPayable).RequirePermission(BillingPermissions.PayersManage);
+        nonPayables.MapPost("/{id:guid}/remove", RemoveNonPayable).RequirePermission(BillingPermissions.PayersManage).WithValidation<RemoveNonPayableItemRequest>();
 
         var policies = app.MapGroup("/api/v1/insurance/policies").WithTags("Insurance - Policies");
         policies.MapGet("/", ListPolicies).RequireAnyPermission(PolicyReaders);
@@ -64,13 +66,15 @@ internal static class PayerEndpoints
         return TypedResults.Ok(rows);
     }
 
-    private static async Task<IResult> GetPayer(Guid id, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> GetPayer(Guid id, HospitalDbContext db, PayerApprovals approvals, CancellationToken ct)
     {
         var payer = await db.Set<Payer>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, ct);
-        return payer is null ? Error.NotFound(nameof(Payer), id).ToProblem() : TypedResults.Ok(ToDetail(payer));
+        return payer is null
+            ? Error.NotFound(nameof(Payer), id).ToProblem()
+            : TypedResults.Ok(ToDetail(payer) with { PendingTerms = await approvals.PendingAsync(payer.Id, ct) });
     }
 
-    private static async Task<IResult> CreatePayer(SavePayerRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> CreatePayer(SavePayerRequest request, HospitalDbContext db, PayerApprovals approvals, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         if (await db.Set<Payer>().IgnoreQueryFilters().AnyAsync(p => p.Code == code, ct))
@@ -83,14 +87,33 @@ internal static class PayerEndpoints
             return Error.Field("tariffPlanId", "Choose a tariff plan.").ToProblem();
         }
 
+        // What a payer's patients pay changes only when two people agree (maker-checker): a new payer is made out of use,
+        // and goes live with the terms a second person approves.
         var payer = new Payer { Code = code };
         Apply(payer, request);
+        var asked = Terms(request);
+        var now = asked.OutOfUse();
+        now.ApplyTo(payer);
         db.Add(payer);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return TypedResults.Created($"/api/v1/insurance/payers/{payer.Id}", ToDetail(payer));
+        PendingPayerTerms? pending = null;
+        if (asked != now)
+        {
+            var approval = await approvals.AskAsync(payer, now, asked, request.Reason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            pending = new PendingPayerTerms(approval.Value.Id, asked, approval.Value.RequestedByName, approval.Value.RequestedAt);
+        }
+
+        await transaction.CommitAsync(ct);
+        return TypedResults.Created($"/api/v1/insurance/payers/{payer.Id}", ToDetail(payer) with { PendingTerms = pending });
     }
 
-    private static async Task<IResult> UpdatePayer(Guid id, SavePayerRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> UpdatePayer(Guid id, SavePayerRequest request, HospitalDbContext db, PayerApprovals approvals, CancellationToken ct)
     {
         var payer = await db.Set<Payer>().FirstOrDefaultAsync(p => p.Id == id, ct);
         if (payer is null)
@@ -104,12 +127,42 @@ internal static class PayerEndpoints
         }
 
         db.SetExpectedVersion(payer, request.Version ?? 0);
+
+        // The terms wait for a second person, except taking the payer out of use, which only stops its new use. While a
+        // change waits, a save must ask for the same terms.
+        var before = PayerTerms.Of(payer);
+        var asked = Terms(request);
+        var waiting = await approvals.PendingAsync(payer.Id, ct);
+        if (waiting is not null && waiting.Asked != asked)
+        {
+            return Error.Conflict(WaitingCode,
+                    $"A change to payer {payer.Code}'s terms, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.")
+                .ToProblem();
+        }
+
         Apply(payer, request);
+        var now = before.Narrowed(asked);
+        now.ApplyTo(payer);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return TypedResults.Ok(ToDetail(payer));
+        if (waiting is null && asked != now)
+        {
+            var approval = await approvals.AskAsync(payer, now, asked, request.Reason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            await transaction.CommitAsync(ct);
+            return TypedResults.Accepted($"/api/v1/approvals/{approval.Value.Id}", approval.Value);
+        }
+
+        await transaction.CommitAsync(ct);
+        return TypedResults.Ok(ToDetail(payer) with { PendingTerms = waiting });
     }
 
-    private static async Task<IResult> ListNonPayables(Guid? payerId, HospitalDbContext db, CancellationToken ct)
+    /// <summary>The non-payable list, with the changes waiting for approval: an item asked to be added is listed, waiting.</summary>
+    private static async Task<IResult> ListNonPayables(Guid? payerId, HospitalDbContext db, NonPayableApprovals approvals, CancellationToken ct)
     {
         var rows = db.Set<NonPayableItem>().AsNoTracking();
         if (payerId is not null)
@@ -125,44 +178,69 @@ internal static class PayerEndpoints
                 from p in payers.DefaultIfEmpty()
                 orderby n.CreatedAt
                 select new NonPayableItemDto(
-                    n.Id, n.PayerId, p == null ? null : p.Name, n.ServiceItemId, s == null ? null : s.Code, s == null ? null : s.Name, n.Category, n.Notes))
+                    n.Id, n.PayerId, p == null ? null : p.Name, n.ServiceItemId, s == null ? null : s.Code, s == null ? null : s.Name, n.Category, n.Notes, null))
             .ToListAsync(ct);
-        return TypedResults.Ok(items);
+
+        var pending = (await approvals.PendingAsync(ct)).Where(w => payerId is null || w.Asked.Rule.PayerId is null || w.Asked.Rule.PayerId == payerId).ToList();
+        var removals = pending.Where(w => w.Asked.Change == NonPayableChange.Remove).ToDictionary(w => w.Asked.ItemId, w => w.Pending);
+        var additions = pending.Where(w => w.Asked.Change == NonPayableChange.Add).ToList();
+        var serviceIds = additions.Select(w => w.Asked.Rule.ServiceItemId).OfType<Guid>().Distinct().ToList();
+        var payerIds = additions.Select(w => w.Asked.Rule.PayerId).OfType<Guid>().Distinct().ToList();
+        var askedServices = await db.Set<ServiceItem>().AsNoTracking().Where(s => serviceIds.Contains(s.Id)).ToDictionaryAsync(s => s.Id, s => new { s.Code, s.Name }, ct);
+        var payerNames = await db.Set<Payer>().AsNoTracking().Where(p => payerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+        List<NonPayableItemDto> listed =
+        [
+            .. items.Select(i => removals.TryGetValue(i.Id, out var waits) ? i with { Waiting = waits } : i),
+            .. additions.Select(w => new NonPayableItemDto(
+                w.Asked.ItemId, w.Asked.Rule.PayerId, w.Asked.Rule.PayerId is { } id ? payerNames.GetValueOrDefault(id) : null,
+                w.Asked.Rule.ServiceItemId, w.Asked.Rule.ServiceItemId is { } code ? askedServices.GetValueOrDefault(code)?.Code : null,
+                w.Asked.Rule.ServiceItemId is { } name ? askedServices.GetValueOrDefault(name)?.Name : null, w.Asked.Rule.Category, w.Asked.Rule.Notes, w.Pending)),
+        ];
+        return TypedResults.Ok(listed);
     }
 
-    private static async Task<IResult> AddNonPayable(SaveNonPayableItemRequest request, HospitalDbContext db, CancellationToken ct)
+    /// <summary>
+    /// 202 with the approval an item's addition waits for (nothing is added yet); 409 when the list already has it, or when
+    /// it already waits to be added (the same rule asks under the same item id).
+    /// </summary>
+    private static async Task<IResult> AddNonPayable(SaveNonPayableItemRequest request, HospitalDbContext db, NonPayableApprovals approvals, CancellationToken ct)
     {
         if (request.ServiceItemId is { } serviceItemId && !await db.Set<ServiceItem>().AnyAsync(s => s.Id == serviceItemId, ct))
         {
             return Error.Field("serviceItemId", "Choose a service.").ToProblem();
         }
 
-        var item = new NonPayableItem
+        if (request.PayerId is { } payerId && !await db.Set<Payer>().AnyAsync(p => p.Id == payerId, ct))
         {
-            PayerId = request.PayerId,
-            ServiceItemId = request.ServiceItemId,
-            Category = request.ServiceItemId is null ? request.Category : null,
-            Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
-        };
-        db.Add(item);
-        await db.SaveChangesAsync(ct);
-        return TypedResults.Created($"/api/v1/insurance/non-payable-items/{item.Id}", new { id = item.Id });
+            return Error.Field("payerId", "Choose a payer.").ToProblem();
+        }
+
+        var rule = new NonPayableRule(request.PayerId, request.ServiceItemId, request.ServiceItemId is null ? request.Category : null,
+            string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim());
+        var listed = await db.Set<NonPayableItem>().AsNoTracking().Where(n => n.PayerId == rule.PayerId).ToListAsync(ct);
+        if (listed.Any(n => NonPayableRule.Of(n).SameRule(rule)))
+        {
+            return Error.Conflict(NonPayableApprovals.ExistsCode, "The non-payable list already has this item for this payer.").ToProblem();
+        }
+
+        var asked = await approvals.AskAsync(rule.ItemId(), NonPayableChange.Add, rule, null, request.Reason, ct);
+        return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
     }
 
-    private static async Task<IResult> DeleteNonPayable(Guid id, HospitalDbContext db, CancellationToken ct)
+    /// <summary>202 with the approval an item's removal waits for (it stays in force until then).</summary>
+    private static async Task<IResult> RemoveNonPayable(Guid id, RemoveNonPayableItemRequest request, HospitalDbContext db, NonPayableApprovals approvals, CancellationToken ct)
     {
-        var item = await db.Set<NonPayableItem>().FirstOrDefaultAsync(n => n.Id == id, ct);
+        var item = await db.Set<NonPayableItem>().AsNoTracking().FirstOrDefaultAsync(n => n.Id == id, ct);
         if (item is null)
         {
             return Error.NotFound(nameof(NonPayableItem), id).ToProblem();
         }
 
-        db.Remove(item);
-        await db.SaveChangesAsync(ct);
-        return TypedResults.NoContent();
+        var asked = await approvals.AskAsync(item.Id, NonPayableChange.Remove, NonPayableRule.Of(item), item.Version, request.Reason, ct);
+        return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
     }
 
-    private static async Task<IResult> ListPolicies(Guid patientId, bool? includeInactive, HospitalDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> ListPolicies(Guid patientId, bool? includeInactive, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         var policies = db.Set<PatientPolicy>().AsNoTracking().Where(p => p.PatientId == patientId);
         if (includeInactive != true)
@@ -170,17 +248,17 @@ internal static class PayerEndpoints
             policies = policies.Where(p => p.IsActive);
         }
 
-        return TypedResults.Ok(await ToDtosAsync(db, await policies.OrderByDescending(p => p.ValidTo).ToListAsync(ct), time, ct));
+        return TypedResults.Ok(await ToDtosAsync(db, await policies.OrderByDescending(p => p.ValidTo).ToListAsync(ct), user, time, ct));
     }
 
-    private static async Task<IResult> GetPolicy(Guid id, HospitalDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> GetPolicy(Guid id, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         var policy = await db.Set<PatientPolicy>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, ct);
-        return policy is null ? Error.NotFound(nameof(PatientPolicy), id).ToProblem() : TypedResults.Ok((await ToDtosAsync(db, [policy], time, ct))[0]);
+        return policy is null ? Error.NotFound(nameof(PatientPolicy), id).ToProblem() : TypedResults.Ok((await ToDtosAsync(db, [policy], user, time, ct))[0]);
     }
 
     /// <summary>Exact search by policy/card number through the blind index (the number itself is never queried in clear).</summary>
-    private static async Task<IResult> SearchPolicies(string policyNumber, HospitalDbContext db, PolicyService policies, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> SearchPolicies(string policyNumber, HospitalDbContext db, PolicyService policies, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(policyNumber) || policyNumber.Length > 64)
         {
@@ -189,12 +267,12 @@ internal static class PayerEndpoints
 
         var indexes = policies.IndexesFor(policyNumber);
         var found = await db.Set<PatientPolicy>().AsNoTracking().Where(p => indexes.Contains(p.PolicyNumberIndex)).ToListAsync(ct);
-        return TypedResults.Ok(await ToDtosAsync(db, found, time, ct));
+        return TypedResults.Ok(await ToDtosAsync(db, found, user, time, ct));
     }
 
     private static async Task<IResult> RevealPolicyNumber(Guid id, PolicyService policies, CancellationToken ct) => (await policies.RevealAsync(id, ct)).ToOk();
 
-    private static async Task<IResult> CreatePolicy(SavePolicyRequest request, PolicyService policies, HospitalDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> CreatePolicy(SavePolicyRequest request, PolicyService policies, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         var created = await policies.CreateAsync(request, ct);
         if (created.IsFailure)
@@ -203,7 +281,7 @@ internal static class PayerEndpoints
         }
 
         var policy = await db.Set<PatientPolicy>().AsNoTracking().FirstAsync(p => p.Id == created.Value, ct);
-        return TypedResults.Created($"/api/v1/insurance/policies/{policy.Id}", (await ToDtosAsync(db, [policy], time, ct))[0]);
+        return TypedResults.Created($"/api/v1/insurance/policies/{policy.Id}", (await ToDtosAsync(db, [policy], user, time, ct))[0]);
     }
 
     private static async Task<IResult> UpdatePolicy(Guid id, SavePolicyRequest request, PolicyService policies, CancellationToken ct) =>
@@ -212,28 +290,30 @@ internal static class PayerEndpoints
     private static async Task<IResult> VerifyPolicy(Guid id, VerifyPolicyRequest request, PolicyService policies, CancellationToken ct) =>
         (await policies.VerifyAsync(id, request.Notes, ct)).ToNoContent();
 
+    /// <summary>The details a save makes at once: everything but the terms.</summary>
     private static void Apply(Payer payer, SavePayerRequest request)
     {
         payer.Name = request.Name.Trim();
-        payer.Category = request.Category;
         payer.ContactPerson = Clean(request.ContactPerson);
         payer.Phone = Phone.Normalize(request.Phone);
         payer.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant();
         payer.Address = Clean(request.Address);
         payer.Gstin = string.IsNullOrWhiteSpace(request.Gstin) ? null : request.Gstin.Trim().ToUpperInvariant();
-        payer.TariffPlanId = request.TariffPlanId;
         payer.CreditDays = request.CreditDays;
-        payer.DefaultCoPayPercent = request.DefaultCoPayPercent;
         payer.PortalUrl = Clean(request.PortalUrl);
-        payer.IsActive = request.IsActive;
         payer.Notes = Clean(request.Notes);
     }
+
+    /// <summary>The terms a save asks for: what decides what the payer's patients pay.</summary>
+    private static PayerTerms Terms(SavePayerRequest request) =>
+        new(request.Category, request.TariffPlanId, request.DefaultCoPayPercent, request.IsActive);
 
     private static PayerDetail ToDetail(Payer p) => new(
         p.Id, p.Code, p.Name, p.Category, p.ContactPerson, p.Phone, p.Email, p.Address, p.Gstin, p.TariffPlanId, p.CreditDays, p.DefaultCoPayPercent,
         p.PortalUrl, p.IsActive, p.Notes, p.Version);
 
-    private static async Task<List<PolicyDto>> ToDtosAsync(HospitalDbContext db, IReadOnlyList<PatientPolicy> policies, TimeProvider time, CancellationToken ct)
+    private static async Task<List<PolicyDto>> ToDtosAsync(
+        HospitalDbContext db, IReadOnlyList<PatientPolicy> policies, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         var payerIds = policies.Select(p => p.PayerId).Concat(policies.Where(p => p.TpaId is not null).Select(p => p.TpaId!.Value)).Distinct().ToList();
         var names = await db.Set<Payer>().Where(p => payerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name, ct);
@@ -241,7 +321,10 @@ internal static class PayerEndpoints
         return policies.Select(p => new PolicyDto(
             p.Id, p.PatientId, p.PayerId, names.GetValueOrDefault(p.PayerId), p.TpaId, p.TpaId is { } tpa ? names.GetValueOrDefault(tpa) : null,
             p.PolicyNumberMasked, p.MemberId, p.PolicyHolderName, p.RelationToHolder, p.ValidFrom, p.ValidTo, p.SumInsured, p.CoPayPercent, p.IsActive,
-            p.IsValidOn(today), p.VerifiedAt, p.VerificationNotes, p.CardFileId, p.Notes, p.Version)).ToList();
+            p.IsValidOn(today), p.VerifiedAt, p.VerificationNotes, p.CardFileId, p.Notes, p.Version)
+        {
+            RecordedByYou = p.RecordedBy(user.UserId),
+        }).ToList();
     }
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

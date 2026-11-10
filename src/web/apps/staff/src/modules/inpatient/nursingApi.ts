@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import type { FluidDirection, FluidRoute } from './fluidBalance';
 import type { AmbulatoryAid, GaitType, PainScaleKind, RiskLevel } from './riskScales';
 import type { NursingShift } from './time';
+import type { CarePlanProblemDto } from './wardCareApi';
 
 // ------------------------------------------------------------------ nursing notes and handovers
 
@@ -51,6 +52,8 @@ export interface WardHandoverItem {
   uhid: string;
   patientName: string;
   bedLabel: string | null;
+  /** The stay's active care-plan problems, with their last evaluation. */
+  carePlan?: CarePlanProblemDto[] | null;
 }
 
 export interface AddHandoverRequest {
@@ -151,6 +154,10 @@ export interface PainAssessmentRequest {
 
 export type MedicationOrderSource = 'Prescription' | 'Pharmacy' | 'Manual';
 export type MedicationOrderStatus = 'Active' | 'Stopped' | 'Completed';
+/** Signed by the doctor who wrote it, or a verbal or telephone order someone else wrote in the doctor's name. */
+export type MedicationOrderMode = 'Written' | 'Verbal' | 'Telephone';
+/** Why a dose is held (the server's refusal code): a high-alert verbal order not yet countersigned, or a stop waiting. */
+export type DoseHold = 'medication.awaiting_countersignature' | 'medication.stop_pending';
 export type MarStatus = 'Due' | 'Given' | 'Held' | 'Refused' | 'Missed' | 'Cancelled';
 export type MarOutcome = 'Given' | 'Held' | 'Refused' | 'Missed';
 
@@ -167,6 +174,17 @@ export const ORDER_SOURCE_LABEL: Record<MedicationOrderSource, string> = {
   Prescription: 'E-prescription',
   Pharmacy: 'Issued by pharmacy',
   Manual: 'Transcribed on ward',
+};
+
+export const ORDER_MODE_LABEL: Record<MedicationOrderMode, string> = {
+  Written: 'Written by the doctor',
+  Verbal: 'Verbal order',
+  Telephone: 'Telephone order',
+};
+
+export const DOSE_HOLD_LABEL: Record<DoseHold, string> = {
+  'medication.awaiting_countersignature': 'Held: awaiting countersignature',
+  'medication.stop_pending': 'Held: stop pending',
 };
 
 /** Frequencies the server schedules (OD, BD, TDS, QID, HS, 1-0-1, Q6H…) plus as-needed ones that never auto-schedule. */
@@ -213,6 +231,8 @@ export interface MedicationOrderDto {
   endAt: string | null;
   instructions: string | null;
   isControlledDrug: boolean;
+  /** A high-alert medicine (from the drug master): its doses are witnessed, as a controlled drug's are. */
+  isHighAlert: boolean;
   isAsNeeded: boolean;
   source: MedicationOrderSource;
   status: MedicationOrderStatus;
@@ -221,6 +241,30 @@ export interface MedicationOrderDto {
   stopReason: string | null;
   /** Medication round times, "HH:mm:ss" (IST). */
   roundTimes: string[];
+  mode: MedicationOrderMode;
+  /** A verbal order of a high-alert or controlled medicine given before the doctor countersigns it (witnessed). */
+  isEmergency: boolean;
+  /** The doctor in whose name the order is given, who countersigns it when someone else wrote it. */
+  orderedByPractitionerId: string | null;
+  orderedByName: string | null;
+  enteredByName: string | null;
+  /** A verbal or telephone order the doctor has not yet countersigned. */
+  awaitingCountersignature: boolean;
+  countersignDueAt: string | null;
+  countersignOverdue: boolean;
+  countersignedAt: string | null;
+  countersignedByName: string | null;
+  /** A nurse asked to stop it: its doses are held until the doctor confirms or declines the stop. */
+  stopPending: boolean;
+  stopRequestedAt: string | null;
+  stopRequestedByName: string | null;
+  stopRequestReason: string | null;
+  stopCountersignOverdue: boolean;
+  /** No dose is given now (a high-alert verbal order not yet countersigned, or a stop waiting). */
+  dosesHeld: boolean;
+  /** The signed-in user is the doctor who countersigns what waits (the order, or a nurse's stop of it). */
+  canCountersign: boolean;
+  version: number;
 }
 
 export interface AddMedicationOrderRequest {
@@ -236,6 +280,46 @@ export interface AddMedicationOrderRequest {
   instructions: string | null;
   isControlledDrug: boolean;
   orderedByPractitionerId: string | null;
+  /** A high-alert medicine typed by name; one picked from the drug master takes the master's flag whatever this says. */
+  isHighAlert?: boolean;
+  /** Required when writing another doctor's order: how the doctor gave it. */
+  mode?: MedicationOrderMode | null;
+  /** The order was read back to the doctor, who confirmed it. Required with a verbal or telephone order. */
+  readBack?: boolean;
+  /** A verbal order of a high-alert or controlled medicine to be given before the doctor countersigns it. */
+  emergency?: boolean;
+}
+
+/** A medicine of the drug master for the ward's order form (`GET /api/v1/nursing/drugs`). */
+export interface WardDrugDto {
+  id: string;
+  code: string;
+  name: string;
+  genericName: string | null;
+  strength: string | null;
+  dosageForm: string | null;
+  /** Schedule H1 or X, or NDPS: its doses are witnessed. */
+  isControlled: boolean;
+  isHighAlert: boolean;
+}
+
+/** A verbal or telephone order, or a nurse's stop, waiting for the doctor's countersignature, with its patient and bed. */
+export interface AwaitingCountersignatureItem {
+  order: MedicationOrderDto;
+  admissionId: string;
+  patientId: string;
+  uhid: string;
+  patientName: string;
+  wardId: string | null;
+  wardName: string | null;
+  bedLabel: string | null;
+}
+
+export interface AwaitingCountersignatureFilters {
+  wardId?: string | null;
+  /** The signed-in doctor's own: those they countersign. */
+  mine?: boolean;
+  overdueOnly?: boolean;
 }
 
 export interface MarEntryDto {
@@ -255,6 +339,10 @@ export interface MarEntryDto {
   witnessName: string | null;
   notes: string | null;
   version: number;
+  /** A dose given is witnessed: a controlled drug, a high-alert medicine, or a dose with no order behind it. */
+  needsWitness: boolean;
+  /** Why the dose is held, while it is; null when it may be given. */
+  heldBecause: DoseHold | null;
 }
 
 export interface AddAdHocDoseRequest {
@@ -266,7 +354,8 @@ export interface AddAdHocDoseRequest {
   givenNow: boolean;
   reason: string | null;
   batchNumber: string | null;
-  witnessName: string | null;
+  /** A second nurse's confirmation at this screen (WitnessPanel), for a controlled drug given. */
+  witnessConfirmationId: string | null;
   notes: string | null;
 }
 
@@ -275,7 +364,8 @@ export interface RecordAdministrationRequest {
   administeredAt: string | null;
   reason: string | null;
   batchNumber: string | null;
-  witnessName: string | null;
+  /** A second nurse's confirmation at this screen (WitnessPanel), for a controlled drug given. */
+  witnessConfirmationId: string | null;
   notes: string | null;
   version: number;
 }
@@ -294,6 +384,10 @@ export interface WardMarItem {
   isOverdue: boolean;
   minutesLate: number;
   version: number;
+  /** The order is a controlled drug or a high-alert medicine: a dose given is witnessed by a second nurse. */
+  needsWitness: boolean;
+  /** Why the dose is held, while it is; null when it may be given. */
+  heldBecause?: DoseHold | null;
 }
 
 // ------------------------------------------------------------------ queries
@@ -314,6 +408,8 @@ export const nursingKeys = {
   wardHandovers: (wardId: string, dutyDate: string, shift: NursingShift | null) =>
     ['nursing', 'ward', wardId, 'handovers', dutyDate, shift ?? 'all'] as const,
   wardMarDue: (wardId: string, withinMinutes: number) => ['nursing', 'ward', wardId, 'mar-due', withinMinutes] as const,
+  awaiting: (filters: AwaitingCountersignatureFilters) => ['nursing', 'awaiting-countersignature', filters] as const,
+  drugs: (search: string) => ['nursing', 'drugs', search] as const,
 };
 
 export const nursingQueries = {
@@ -376,7 +472,27 @@ export const nursingQueries = {
         api.get<WardMarItem[]>(`/api/v1/nursing/wards/${wardId}/mar/due`, { query: { withinMinutes }, signal }),
       refetchInterval: 60_000,
     }),
+  /** What waits for a doctor's countersignature: for a ward, for the signed-in doctor, or only what is past its time. */
+  awaiting: (filters: AwaitingCountersignatureFilters) =>
+    queryOptions({
+      queryKey: nursingKeys.awaiting(filters),
+      queryFn: ({ signal }) =>
+        api.get<AwaitingCountersignatureItem[]>('/api/v1/nursing/medication-orders/awaiting-countersignature', {
+          query: {
+            wardId: filters.wardId ?? undefined,
+            mine: filters.mine || undefined,
+            overdueOnly: filters.overdueOnly || undefined,
+          },
+          signal,
+        }),
+      refetchInterval: 60_000,
+    }),
 };
+
+/** Drugs of the master for the ward's order form, by name, generic, brand or code. */
+export function searchWardDrugs(search: string, signal?: AbortSignal): Promise<WardDrugDto[]> {
+  return api.get<WardDrugDto[]>('/api/v1/nursing/drugs', { query: { search }, signal });
+}
 
 // ------------------------------------------------------------------ commands
 
@@ -399,8 +515,16 @@ export const nursingApi = {
     api.post<AssessmentDto>(`/api/v1/nursing/admissions/${admissionId}/assessments/pain`, body),
   addOrder: (admissionId: string, body: AddMedicationOrderRequest) =>
     api.post<MedicationOrderDto>(`/api/v1/nursing/admissions/${admissionId}/medication-orders`, body),
+  /** A prescriber's stop is made at once; anyone else's waits for the doctor (`stopPending` on the answer). */
   stopOrder: (orderId: string, reason: string) =>
     api.post<MedicationOrderDto>(`/api/v1/nursing/medication-orders/${orderId}/stop`, { reason }),
+  /** The doctor named countersigns a verbal or telephone order (`medication.countersign_not_prescriber`, 403, for anyone else). */
+  countersign: (orderId: string, version: number) =>
+    api.post<MedicationOrderDto>(`/api/v1/nursing/medication-orders/${orderId}/countersign`, { version }),
+  confirmStop: (orderId: string, version: number) =>
+    api.post<MedicationOrderDto>(`/api/v1/nursing/medication-orders/${orderId}/stop/countersign`, { version }),
+  declineStop: (orderId: string, reason: string, version: number) =>
+    api.post<MedicationOrderDto>(`/api/v1/nursing/medication-orders/${orderId}/stop/decline`, { reason, version }),
   extendSchedule: (orderId: string) =>
     api.post<{ medicationOrderId: string; dosesAdded: number }>(
       `/api/v1/nursing/medication-orders/${orderId}/schedule`,

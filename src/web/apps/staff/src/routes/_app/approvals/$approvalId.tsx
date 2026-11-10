@@ -6,20 +6,117 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { ApprovalDecisionDialog, ApprovalStatusBadge, type Decision } from '@/modules/approvals/ApprovalDecision';
+import { usePermission } from '@/lib/permissions';
 import { approvalQueries, type ApprovalRequestDto } from '@/modules/approvals/api';
 import { Detail, DetailGrid } from '@/modules/billing/ui';
+import { MASTERS_MANAGE } from '@/modules/masters/api';
+import { PHARMACY_PERMISSIONS } from '@/modules/pharmacy/permissions';
 
 export const Route = createFileRoute('/_app/approvals/$approvalId')({
   component: ApprovalPage,
 });
 
-/** Where the record a request is about opens, so the approver can look at it before deciding. */
-function subjectLink(request: ApprovalRequestDto): { label: string; to: string } | null {
+/**
+ * Where the record a request is about opens, so the approver can look at it before deciding: only where the approver may
+ * open it (`canManageMasters` for a service's form).
+ */
+function subjectLink(
+  request: ApprovalRequestDto,
+  canManageMasters: boolean,
+  can: { pharmacySales: boolean; wardIssues: boolean; devices: boolean; drugSafety: boolean },
+): { label: string; to: string; search?: Record<string, string> } | null {
   switch (request.subjectType) {
     case 'Bill':
       return { label: 'Open the bill', to: `/billing/bills/${request.subjectId}` };
     case 'Patient':
-      return { label: 'Open the duplicate record', to: `/patients/${request.subjectId}` };
+      return request.kind === 'patients.merge'
+        ? { label: 'Open the duplicate record', to: `/patients/${request.subjectId}` }
+        : // An identity change, a restriction lifted or the deceased status: the record, with the change waiting.
+          { label: "Open the patient's record", to: `/patients/${request.subjectId}` };
+    // A sensitive category taken out: the record, whose confidential-record card shows it waiting.
+    case 'PatientSensitiveCategories':
+      return { label: "Open the patient's record", to: `/patients/${request.subjectId}` };
+    // An allergy or DNR: the request names the patient and what changes; the chart's flags show it waiting.
+    case 'Allergy':
+    case 'PatientAlert':
+      return request.patientId ? { label: "Open the patient's chart", to: `/emr/patients/${request.patientId}` } : null;
+    // A stay's MLC flag cleared or unlinked, or the stay closed as absconded or as a death pending post-mortem: the
+    // admission, with the change waiting.
+    case 'Admission':
+      return { label: 'Open the admission', to: `/inpatient/admissions/${request.subjectId}` };
+    // An implant or consumable corrected after the operation started: the OT list, found by the surgery's booking number
+    // (the request's first detail names it); its implants tab shows the correction waiting.
+    case 'SurgeryMaterial': {
+      const booking = request.details.find((d) => d.label === 'Surgery')?.value.split(' · ')[0];
+      return booking ? { label: 'Find the surgery', to: '/ot/bookings', search: { search: booking } } : null;
+    }
+    case 'Refund':
+      return { label: 'Open the refund', to: `/billing/refunds/${request.subjectId}` };
+    case 'IpAccount':
+      return { label: 'Open the in-patient account', to: `/billing/ip/${request.subjectId}` };
+    case 'PatientAdvance':
+      return request.patientId ? { label: "Open the patient's record", to: `/patients/${request.patientId}` } : null;
+    // Access given, and changes to an account (a temporary password to hand over, a two-step verification reset,
+    // contact details, a practitioner link): the request names the user and what changes; the list shows the account.
+    case 'User':
+      return { label: 'Open the users', to: '/admin/users' };
+    // A linked doctor's registration number, HPR ID or signature, or a doctor's consultation fee: the record with what
+    // waits. An accountant, who approves fees but does not edit doctors, decides from what the request says changes.
+    case 'Practitioner':
+      return canManageMasters
+        ? { label: 'Open the doctor', to: '/setup/practitioners', search: { edit: request.subjectId } }
+        : null;
+    // Another administration desktop: the devices enrolled now.
+    case 'DeviceEnrollment':
+      return can.devices ? { label: 'Open the devices', to: '/admin/devices' } : null;
+    case 'Role':
+      return { label: 'Open the roles', to: '/admin/roles' };
+    // A price asked for: the service's form shows the price charged now and the one that waits. An accountant, who
+    // approves prices but does not edit services, decides from what the request says changes.
+    case 'ServiceItem':
+      return canManageMasters
+        ? { label: 'Open the service', to: '/setup/services', search: { edit: request.subjectId } }
+        : null;
+    // A death certificate to confirm, or a confirmed one to void: the certificate itself, opened (and audited) as the
+    // patient's record.
+    case 'DeathRecord':
+      return { label: 'Open the death certificate', to: `/mrd/deaths/${request.subjectId}` };
+    // A goods receipt to post: its lines, batches and totals, to check against the supplier's invoice.
+    case 'GoodsReceiptNote':
+      return { label: 'Open the goods receipt', to: `/purchase/grns/${request.subjectId}` };
+    // A setting changed: the request names it, what it controls, the value in force and the one asked; the settings
+    // list shows the change waiting. Only those who may change settings decide it, and they may open the list.
+    case 'SystemSetting':
+      return { label: 'Open the settings', to: '/admin/settings' };
+    // A pharmacy cancellation or return: the invoice with its items, payments and returns, for whoever may read it. An
+    // accountant, who approves refunds but does not open pharmacy invoices, decides from what the request says.
+    case 'PharmacySale':
+      return can.pharmacySales
+        ? { label: 'Open the invoice', to: '/pharmacy/sales', search: { id: request.subjectId } }
+        : null;
+    // A ward return not restocked: the issue to the ward with its returns.
+    case 'IpIssue':
+      return can.wardIssues
+        ? { label: 'Open the issue', to: '/pharmacy/ip-issues', search: { id: request.subjectId } }
+        : null;
+    // A discount limit raised: the limits, with what waits.
+    case 'DiscountLimit':
+      return { label: 'Open the discount limits', to: '/billing/discount-approvals', search: { view: 'limits' } };
+    // A charge cancelled at the billing desk: the request names the service, the patient and the amount; the patient's
+    // record shows their visits and stays.
+    case 'Charge':
+      return request.patientId ? { label: "Open the patient's record", to: `/patients/${request.patientId}` } : null;
+    // A shift closed short: the day's shifts, with the shortage awaiting a supervisor.
+    case 'CashierShift':
+      return { label: 'Open the shifts', to: '/billing/shifts' };
+    // A drug interaction or a maximum dose loosened: the table, which shows the change waiting. The request says what the
+    // row is now and what it becomes.
+    case 'DrugInteraction':
+      return can.drugSafety ? { label: 'Open the drug safety tables', to: '/emr/drug-safety' } : null;
+    case 'DrugDoseLimit':
+      return can.drugSafety
+        ? { label: 'Open the dose limits', to: '/emr/drug-safety', search: { tab: 'dose-limits' } }
+        : null;
     default:
       return null;
   }
@@ -31,6 +128,11 @@ function ApprovalPage() {
   const navigate = useNavigate();
   const request = useQuery(approvalQueries.detail(approvalId));
   const [decision, setDecision] = useState<Decision | null>(null);
+  const canManageMasters = usePermission(MASTERS_MANAGE);
+  const canReadPharmacySales = usePermission([PHARMACY_PERMISSIONS.sales, PHARMACY_PERMISSIONS.returns]);
+  const canReadWardIssues = usePermission([PHARMACY_PERMISSIONS.ipIssue, PHARMACY_PERMISSIONS.ipIndent]);
+  const canManageDevices = usePermission('admin.devices.manage');
+  const canReadDrugSafety = usePermission(['clinical.templates.manage', 'clinical.drug_safety.approve']);
   const back = () => void navigate({ to: '/approvals' });
 
   if (request.isLoading) {
@@ -46,7 +148,12 @@ function ApprovalPage() {
   }
 
   const r = request.data;
-  const subject = subjectLink(r);
+  const subject = subjectLink(r, canManageMasters, {
+    pharmacySales: canReadPharmacySales,
+    wardIssues: canReadWardIssues,
+    devices: canManageDevices,
+    drugSafety: canReadDrugSafety,
+  });
   return (
     <Page maxWidth={900}>
       <PageHeader
@@ -57,7 +164,7 @@ function ApprovalPage() {
         actions={
           <>
             {subject && (
-              <Button icon={<OpenRegular />} onClick={() => void navigate({ to: subject.to })}>
+              <Button icon={<OpenRegular />} onClick={() => void navigate({ to: subject.to, search: subject.search })}>
                 {subject.label}
               </Button>
             )}

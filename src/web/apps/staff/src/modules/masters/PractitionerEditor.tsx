@@ -1,7 +1,9 @@
-import { Checkbox, makeStyles } from '@fluentui/react-components';
+import { Checkbox, makeStyles, MessageBar, MessageBarBody } from '@fluentui/react-components';
+import { formatInr } from '@hc360/core';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   CheckboxGroup,
+  ConfirmDialog,
   FormGrid,
   FullRow,
   NumberField,
@@ -16,12 +18,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
 import { useDepartments } from '@/lib/lookups';
+import { askedForApproval } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import {
   mastersApi,
   mastersQueries,
   refreshAfterMasterChange,
   type FacilityDto,
+  type PractitionerCreated,
   type PractitionerDto,
+  type PractitionerWork,
   type SpecialtyDto,
 } from './api';
 import {
@@ -33,15 +39,17 @@ import {
   toPractitionerRequest,
   type PractitionerForm,
 } from './forms';
+import { HprCheckPanel } from './HprCheckPanel';
 import { ImageField } from './ImageField';
 import { GENDER_LABELS, GENDERS, isDoctor, PRACTITIONER_KIND_LABELS, PRACTITIONER_KINDS, TITLES } from './labels';
 import { LoadingDrawer, MasterDrawer } from './MasterDrawer';
 import { EditorForm, EditorSection } from './parts';
-import { showSaveError } from './saveErrors';
+import { showSaveError, workAheadOf } from './saveErrors';
 import { useEditorGuard } from './useEditorGuard';
 
 const useStyles = makeStyles({
   facilities: { display: 'flex', flexDirection: 'column', gap: '2px' },
+  work: { margin: 0, paddingLeft: '20px' },
 });
 
 /** Add a doctor or other clinician (`practitionerId` null), or change one. */
@@ -73,18 +81,55 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
   });
   // The version the form was filled from, not a newer one read since (REL-04).
   const [loadedVersion] = useState(practitioner?.version ?? null);
+  // What the doctor still has ahead, when the server asked first before taking them out of use.
+  const [workAhead, setWorkAhead] = useState<{ values: PractitionerForm; work: PractitionerWork[] } | null>(null);
   const save = useMutation({
-    mutationFn: (values: PractitionerForm) =>
-      mastersApi.savePractitioner(practitioner?.id ?? null, toPractitionerRequest(values, practitioner, loadedVersion)),
-    onSuccess: () => {
-      notify.success(
-        practitioner ? 'Saved' : 'Added',
-        'Booking, billing and documents use the new details from now on.',
-      );
+    mutationFn: ({ values, anyway }: { values: PractitionerForm; anyway: boolean }) =>
+      mastersApi.savePractitioner(practitioner?.id ?? null, {
+        ...toPractitionerRequest(values, practitioner, loadedVersion),
+        ...(anyway ? { takeOutOfUseAnyway: true } : {}),
+      }),
+    onSuccess: (result, { anyway }) => {
+      setWorkAhead(null);
+      const asked = askedForApproval(result);
+      const created = practitioner ? null : (result as PractitionerCreated | null);
+      if (asked) {
+        // A doctor someone signs in as: the registration number, HPR ID or signature waits; a fee changed waits for
+        // someone who approves prices. Either way the rest is saved.
+        notify.success(
+          'Asked for approval',
+          asked.kind === 'masters.practitioner_fee'
+            ? `${asked.summary}. Someone else who approves prices decides it; the fee in force is charged until then, and the rest of the record is saved.`
+            : `${asked.summary}. Another administrator who may approve grants decides it; the rest of the record is saved.`,
+        );
+      } else if (created?.feeApprovalId) {
+        notify.success(
+          'Added, fee asked for approval',
+          'Their consultation fee waits for someone else who approves prices; until then a visit is charged the consultation service’s price.',
+        );
+      } else if (anyway) {
+        notify.warning(
+          'Taken out of use',
+          'Nobody can book or assign this doctor now. Move or cancel what was still booked with them: their appointments, ' +
+            'the patients admitted under them and their surgeries.',
+        );
+      } else {
+        notify.success(
+          practitioner ? 'Saved' : 'Added',
+          'Booking, billing and documents use the new details from now on.',
+        );
+      }
       refreshAfterMasterChange(queryClient);
     },
-    onError: (error) =>
-      showSaveError(error, { form, notify, what: 'record', onConflict: () => refreshAfterMasterChange(queryClient) }),
+    onError: (error, { values }) => {
+      const work = workAheadOf(error);
+      if (work) {
+        setWorkAhead({ values, work });
+        return;
+      }
+      setWorkAhead(null);
+      showSaveError(error, { form, notify, what: 'record', onConflict: () => refreshAfterMasterChange(queryClient) });
+    },
   });
   const guard = useEditorGuard({ dirty: form.formState.isDirty, busy: save.isPending, onClose });
 
@@ -103,8 +148,44 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
       guard={guard}
       busy={save.isPending}
       submitLabel={practitioner ? 'Save' : 'Add'}
-      onSubmit={form.handleSubmit((values) => save.mutate(values, { onSuccess: guard.close }))}
+      onSubmit={form.handleSubmit((values) => save.mutate({ values, anyway: false }, { onSuccess: guard.close }))}
     >
+      <WorkAheadDialog
+        work={workAhead?.work ?? null}
+        busy={save.isPending}
+        onCancel={() => setWorkAhead(null)}
+        onConfirm={() =>
+          workAhead && save.mutate({ values: workAhead.values, anyway: true }, { onSuccess: guard.close })
+        }
+      />
+      {practitioner?.pendingIdentity ? (
+        <PendingGrantNotice
+          approvalId={practitioner.pendingIdentity.approvalId}
+          what={`A new registration number, HPR ID or signature for ${practitioner.displayName}`}
+          requestedBy={practitioner.pendingIdentity.requestedBy}
+          requestedAt={practitioner.pendingIdentity.requestedAt}
+          decides="Another administrator who may approve grants decides it; until then their documents carry the ones shown here."
+        />
+      ) : (
+        (practitioner?.linkedAccounts?.length ?? 0) > 0 && (
+          <MessageBar intent="info" layout="multiline">
+            <MessageBarBody>
+              {practitioner?.linkedAccounts?.join(', ')} signs in as {practitioner?.displayName}. A new registration
+              number, HPR ID or signature waits for another administrator who may approve grants; the rest is saved at
+              once.
+            </MessageBarBody>
+          </MessageBar>
+        )
+      )}
+      {practitioner?.pendingFee && (
+        <PendingGrantNotice
+          approvalId={practitioner.pendingFee.approvalId}
+          what={`A consultation fee of ${feeWords(practitioner.pendingFee.asked.newVisit)} for a new visit and ${feeWords(practitioner.pendingFee.asked.followUp)} for a follow-up`}
+          requestedBy={practitioner.pendingFee.requestedBy}
+          requestedAt={practitioner.pendingFee.requestedAt}
+          decides="Someone else who approves prices decides it; until then the fees shown here are charged."
+        />
+      )}
       <PractitionerFields
         control={form.control}
         editing={practitioner !== null}
@@ -112,8 +193,55 @@ function PractitionerEditor({ practitioner, onClose }: { practitioner: Practitio
         currentSpecialtyId={practitioner?.specialtyId ?? null}
         departmentOptions={departmentOptions}
         facilities={facilities.data ?? []}
+        practitioner={practitioner}
+        dirty={form.formState.isDirty}
       />
     </MasterDrawer>
+  );
+}
+
+/** A fee in words: none means the consultation service's approved price applies. */
+function feeWords(fee: number): string {
+  return fee > 0 ? formatInr(fee) : 'none (the service price)';
+}
+
+/**
+ * Asks before taking a doctor out of use while work is still ahead, as the server named it: each kind of work with the
+ * first few by number. Going ahead saves again, saying so.
+ */
+export function WorkAheadDialog({
+  work,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  work: PractitionerWork[] | null;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const styles = useStyles();
+  return (
+    <ConfirmDialog
+      open={work !== null}
+      title="This doctor still has work ahead"
+      confirmLabel="Take out of use anyway"
+      destructive
+      busy={busy}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    >
+      <p>Out of use, nobody can book or assign them again. Still ahead:</p>
+      <ul className={styles.work}>
+        {work?.map((w) => (
+          <li key={w.kind}>
+            {w.words}
+            {w.numbers.length > 0 && ` (${w.numbers.join(', ')}${w.count > w.numbers.length ? ', …' : ''})`}
+          </li>
+        ))}
+      </ul>
+      <p>These have to be moved to another doctor or cancelled.</p>
+    </ConfirmDialog>
   );
 }
 
@@ -125,6 +253,8 @@ export function PractitionerFields({
   currentSpecialtyId,
   departmentOptions,
   facilities,
+  practitioner = null,
+  dirty = false,
 }: {
   control: Control<PractitionerForm>;
   editing: boolean;
@@ -132,6 +262,9 @@ export function PractitionerFields({
   currentSpecialtyId: string | null;
   departmentOptions: OptionItem[];
   facilities: readonly FacilityDto[];
+  /** The saved practitioner, whose HPR ID can be checked with the registry (none while adding one). */
+  practitioner?: PractitionerDto | null;
+  dirty?: boolean;
 }) {
   const [title, firstName, lastName, kind] = useWatch({ control, name: ['title', 'firstName', 'lastName', 'kind'] });
   const doctor = isDoctor(kind);
@@ -219,6 +352,11 @@ export function PractitionerFields({
             maxLength={17}
             hint="14 digits, from ABDM's Healthcare Professionals Registry. It identifies the doctor in ABDM health records and insurance claims."
           />
+          {practitioner && (
+            <FullRow>
+              <HprCheckPanel practitioner={practitioner} dirty={dirty} />
+            </FullRow>
+          )}
         </FormGrid>
       </EditorSection>
 
@@ -242,7 +380,10 @@ export function PractitionerFields({
         {facilities.length > 1 && <FacilitiesPicker control={control} facilities={facilities} />}
       </EditorSection>
 
-      <EditorSection title="Consultation" description="What the front office charges, and how patients can book.">
+      <EditorSection
+        title="Consultation"
+        description="What the front office charges, and how patients can book. A fee changed waits for someone else who approves prices; until then the fee in force is charged (0: the consultation service's price)."
+      >
         <FormGrid columns={3} minColumnWidth={180}>
           <NumberField
             control={control}

@@ -1,5 +1,7 @@
 using HyFib.HealthCare360.Modules.HR.Domain;
 using HyFib.HealthCare360.Modules.HR.Features.Employees;
+using HyFib.HealthCare360.Platform.Approvals;
+using ApprovalStatus = HyFib.HealthCare360.Modules.HR.Domain.ApprovalStatus;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -8,7 +10,8 @@ namespace HyFib.HealthCare360.Modules.HR.Services;
 
 /// <summary>
 /// Employee master (HR-01/02): code allocation, link validation (department, designation, manager without loops,
-/// user account, practitioner, terminal PIN), encryption of bank/PAN details and separation.
+/// user account, practitioner, terminal PIN), encryption of bank/PAN details and separation. Salary payment details (the
+/// bank account and the payment mode) are asked for and wait for a second person (<see cref="PaymentDetailsApprovals"/>).
 /// </summary>
 public sealed class EmployeeService(
     HospitalDbContext db,
@@ -16,7 +19,7 @@ public sealed class EmployeeService(
     IFieldProtector protector,
     ICurrentUser currentUser,
     INotificationService notifications,
-    IAuditLogger audit,
+    PaymentDetailsApprovals paymentDetails,
     TimeProvider time)
 {
     public async Task<Result<EmployeeCreated>> CreateAsync(SaveEmployeeRequest request, CancellationToken ct)
@@ -34,11 +37,10 @@ public sealed class EmployeeService(
             return problem;
         }
 
+        // A new employee starts with the payment mode asked for; a bank account given waits for a second person like any
+        // later change, so the first salary is not sent anywhere on one person's word.
         Apply(employee, request);
-        if (request.Bank is { } bank)
-        {
-            ApplyBank(employee, bank.BankName, bank.AccountNumber, bank.Ifsc);
-        }
+        employee.PaymentMode = request.PaymentMode;
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         employee.EmployeeCode = await numbers.NextAsync(HRNumberSeries.Employee, facilityId, ct);
@@ -46,12 +48,29 @@ public sealed class EmployeeService(
         db.Add(employee);
         await db.SaveChangesAsync(ct);
         await LinkUnmatchedPunchesAsync(employee, ct);
-        await transaction.CommitAsync(ct);
+        Guid? bankApproval = null;
+        if (request.Bank is { } bank)
+        {
+            var asked = Asked(employee, request.PaymentMode, bank.BankName, bank.AccountNumber, bank.Ifsc);
+            var requested = await paymentDetails.AskAsync(employee, asked.Details, asked.Index, confirmSharedAccount: false,
+                "Bank account given when the employee was added.", ct);
+            if (requested.IsFailure)
+            {
+                return requested.Error!;
+            }
 
-        return new EmployeeCreated(employee.Id, employee.EmployeeCode);
+            bankApproval = requested.Value.Id;
+        }
+
+        await transaction.CommitAsync(ct);
+        return new EmployeeCreated(employee.Id, employee.EmployeeCode, bankApproval);
     }
 
-    public async Task<Result> UpdateAsync(Guid id, SaveEmployeeRequest request, CancellationToken ct)
+    /// <summary>
+    /// Saves the employee at once, except a payment mode different from the one in force, which is asked for a second
+    /// person's approval in the same save: then the request it waits in is returned (202), else none.
+    /// </summary>
+    public async Task<Result<ApprovalRequestDto?>> UpdateAsync(Guid id, SaveEmployeeRequest request, CancellationToken ct)
     {
         var employee = await db.Set<Employee>().FirstOrDefaultAsync(e => e.Id == id, ct);
         if (employee is null)
@@ -87,43 +106,73 @@ public sealed class EmployeeService(
             await LinkUnmatchedPunchesAsync(employee, ct);
         }
 
+        ApprovalRequestDto? asked = null;
+        if (request.PaymentMode != employee.PaymentMode)
+        {
+            var details = PaymentDetails.Of(employee) with { Mode = request.PaymentMode };
+            if (details.Mode == SalaryPaymentMode.BankTransfer && details.AccountCipher is null)
+            {
+                return Error.Field("paymentMode", "No bank account is on record: give one through the bank details, which are approved with the payment mode.");
+            }
+
+            var requested = await paymentDetails.AskAsync(employee, details, null, confirmSharedAccount: false, "Payment mode changed on the employee's record.", ct);
+            if (requested.IsFailure)
+            {
+                return requested.Error!;
+            }
+
+            asked = requested.Value;
+        }
+
         await transaction.CommitAsync(ct);
-        return Result.Success();
+        return asked;
     }
 
-    public async Task<Result> UpdateBankDetailsAsync(Guid id, UpdateBankDetailsRequest request, CancellationToken ct)
+    /// <summary>
+    /// Asks a second person to change the employee's salary payment details (maker-checker slice 11): nothing changes until
+    /// someone else who approves payroll approves it, never the employee themself.
+    /// </summary>
+    public async Task<Result<ApprovalRequestDto>> RequestPaymentDetailsAsync(Guid id, UpdateBankDetailsRequest request, CancellationToken ct)
     {
-        var employee = await db.Set<Employee>().FirstOrDefaultAsync(e => e.Id == id, ct);
+        var employee = await db.Set<Employee>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == id, ct);
         if (employee is null)
         {
             return Error.NotFound(nameof(Employee), id);
         }
 
-        var problem = await CheckIdentifierConflictsAsync(id, null, request.AccountNumber, request.ConfirmSharedAccount, ct);
-        if (problem is not null)
+        if (employee.IsSeparated)
         {
-            return problem;
+            return Error.Rule("employee.separated", "Separated employees are kept for records and cannot be edited.");
         }
 
-        db.SetExpectedVersion(employee, request.Version);
-        ApplyBank(employee, request.BankName, request.AccountNumber, request.Ifsc);
-        audit.Add(new AuditEntry(AuditCategories.Security, "employee.bank_changed", $"Salary bank account of {employee.EmployeeCode} changed to {employee.BankAccountMasked}")
+        if (employee.Version != request.Version)
         {
-            EntityType = nameof(Employee),
-            EntityId = employee.Id.ToString(),
-            Severity = AuditSeverity.Warning,
-        });
-        await db.SaveChangesAsync(ct);
-
-        // Payroll-diversion fraud usually starts with a quiet bank change, so the employee is always told.
-        if (employee.UserId is { } userId && userId != currentUser.UserId)
-        {
-            await notifications.NotifyUsersAsync([userId], "Your salary bank account was changed",
-                $"Salary will now be paid to account {employee.BankAccountMasked}. Contact HR immediately if you did not ask for this.",
-                "/hr/me", "security", "warning", ct);
+            return Error.ConcurrencyConflict;
         }
 
-        return Result.Success();
+        var asked = string.IsNullOrWhiteSpace(request.AccountNumber)
+            ? (Details: PaymentDetails.Of(employee) with { Mode = request.PaymentMode, BankName = Clean(request.BankName) ?? employee.BankName }, Index: (string?)null)
+            : Asked(employee, request.PaymentMode, request.BankName, request.AccountNumber, request.Ifsc ?? string.Empty);
+        if (asked.Details.Mode == SalaryPaymentMode.BankTransfer && asked.Details.AccountCipher is null)
+        {
+            return Error.Field("accountNumber", "Give the account number and IFSC the salary is to be paid into.");
+        }
+
+        if (PaymentDetailsChange.Same(PaymentDetails.Of(employee), asked.Details, protector.Unprotect))
+        {
+            return Error.Field("accountNumber", "Nothing changes: these are the payment details in force.");
+        }
+
+        if (asked.Index is not null)
+        {
+            var problem = await CheckIdentifierConflictsAsync(id, null, request.AccountNumber, request.ConfirmSharedAccount, ct);
+            if (problem is not null)
+            {
+                return problem;
+            }
+        }
+
+        return await paymentDetails.AskAsync(employee, asked.Details, asked.Index, request.ConfirmSharedAccount, request.Reason, ct);
     }
 
     public async Task<Result> SeparateAsync(Guid id, SeparateEmployeeRequest request, CancellationToken ct)
@@ -304,7 +353,6 @@ public sealed class EmployeeService(
         employee.DefaultShiftId = request.DefaultShiftId;
         employee.WeeklyOff = request.WeeklyOff;
         employee.IsAttendanceExempt = request.IsAttendanceExempt;
-        employee.PaymentMode = request.PaymentMode;
         employee.Uan = string.IsNullOrWhiteSpace(request.Uan) ? null : HrIdentifiers.Normalize(request.Uan);
         employee.PfNumber = Clean(request.PfNumber)?.ToUpperInvariant();
         employee.EsiNumber = string.IsNullOrWhiteSpace(request.EsiNumber) ? null : HrIdentifiers.Normalize(request.EsiNumber);
@@ -328,16 +376,24 @@ public sealed class EmployeeService(
         }
     }
 
-    private void ApplyBank(Employee employee, string? bankName, string accountNumber, string ifsc)
+    /// <summary>
+    /// The payment details asked for, with <paramref name="accountNumber"/> encrypted, and its blind index when it is a new
+    /// account; the account already on record keeps its encrypted value, so asking for it again is no change.
+    /// </summary>
+    private (PaymentDetails Details, string? Index) Asked(Employee employee, SalaryPaymentMode mode, string? bankName, string accountNumber, string ifsc)
     {
         var account = HrIdentifiers.Normalize(accountNumber);
         var code = HrIdentifiers.Normalize(ifsc);
-        employee.BankName = Clean(bankName);
-        employee.BankAccountCipher = protector.Protect(account);
-        employee.BankAccountIndex = protector.BlindIndex(account);
-        employee.BankAccountMasked = HrIdentifiers.MaskAccount(account);
-        employee.BankIfscCipher = protector.Protect(code);
-        employee.BankIfscMasked = HrIdentifiers.MaskIfsc(code);
+        var sameAccount = string.Equals(protector.Unprotect(employee.BankAccountCipher), account, StringComparison.Ordinal);
+        var sameIfsc = string.Equals(protector.Unprotect(employee.BankIfscCipher), code, StringComparison.Ordinal);
+        return (new PaymentDetails(
+                mode,
+                Clean(bankName),
+                sameAccount ? employee.BankAccountCipher : protector.Protect(account),
+                HrIdentifiers.MaskAccount(account),
+                sameIfsc ? employee.BankIfscCipher : protector.Protect(code),
+                HrIdentifiers.MaskIfsc(code)),
+            sameAccount ? null : protector.BlindIndex(account));
     }
 
     /// <summary>Punches received before HR assigned this PIN are attached to the employee now.</summary>

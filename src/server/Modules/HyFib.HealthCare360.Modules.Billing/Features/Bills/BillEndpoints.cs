@@ -34,6 +34,8 @@ internal static class BillEndpoints
         group.MapGet("/{id:guid}", Get).RequireAnyPermission(Readers);
         group.MapGet("/{id:guid}/document", Document).RequireAnyPermission(Readers);
         group.MapGet("/{id:guid}/pdf", Pdf).RequireAnyPermission(Readers);
+        group.MapGet("/{id:guid}/credit-notes/{noteId:guid}/document", CreditNoteDocumentAsync).RequireAnyPermission(Readers);
+        group.MapGet("/{id:guid}/credit-notes/{noteId:guid}/pdf", CreditNotePdf).RequireAnyPermission(Readers);
         group.MapPost("/", Create).RequirePermission(BillingPermissions.OpCreate).WithValidation<CreateBillRequest>();
         group.MapPost("/{id:guid}/lines", AddLine).RequirePermission(BillingPermissions.OpCreate).WithValidation<AddBillLineRequest>();
         group.MapDelete("/{id:guid}/lines/{lineId:guid}", RemoveLine).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage);
@@ -41,7 +43,7 @@ internal static class BillEndpoints
         group.MapPost("/{id:guid}/refresh", Refresh).RequirePermission(BillingPermissions.OpCreate).WithValidation<BillVersionRequest>();
         group.MapPost("/{id:guid}/discount", ApplyDiscount).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage)
             .WithValidation<ApplyDiscountRequest>();
-        group.MapPost("/{id:guid}/finalize", FinalizeBill).RequirePermission(BillingPermissions.BillsFinalize).WithValidation<BillVersionRequest>();
+        group.MapPost("/{id:guid}/finalize", FinalizeBill).RequirePermission(BillingPermissions.BillsFinalize).WithValidation<FinalizeBillRequest>();
         group.MapPost("/{id:guid}/cancel", Cancel).RequirePermission(BillingPermissions.BillsCancel).WithValidation<CancelBillRequest>();
         group.MapDelete("/{id:guid}", Discard).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage);
         group.MapPost("/{id:guid}/send-whatsapp", SendOnWhatsApp)
@@ -49,6 +51,9 @@ internal static class BillEndpoints
         // Asks for a credit note or write-off; an approver, someone else, issues it from the approvals inbox (202).
         group.MapPost("/{id:guid}/credit-notes", RequestCreditNote).RequireAnyPermission(BillingPermissions.RefundsRequest, BillingPermissions.RefundsApprove)
             .WithValidation<IssueCreditNoteRequest>();
+        // Asks for a debit note (supplementary invoice); an approver, someone else, issues it (202).
+        group.MapPost("/{id:guid}/debit-notes", RequestDebitNote).RequireAnyPermission(BillingPermissions.RefundsRequest, BillingPermissions.RefundsApprove)
+            .WithValidation<IssueDebitNoteRequest>();
     }
 
     private static async Task<IResult> List(
@@ -143,6 +148,53 @@ internal static class BillEndpoints
         return problem ?? await (await BillDocument.BuildAsync(detail!, assets, DocumentText.English, ct)).ToPdfAsync(renderer, ct);
     }
 
+    /// <summary>A credit note of the bill as the staff app prints it (rule 53(1A) particulars, its IRN once registered).</summary>
+    private static async Task<IResult> CreditNoteDocumentAsync(
+        Guid id, Guid noteId, HospitalDbContext db, DocumentAssets assets, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    {
+        var (document, problem) = await CreditNoteAsync(id, noteId, "Printed", db, assets, guard, audit, time, ct);
+        return problem ?? TypedResults.Ok(document!.ToDto());
+    }
+
+    private static async Task<IResult> CreditNotePdf(
+        Guid id, Guid noteId, HospitalDbContext db, DocumentAssets assets, IPdfRenderer renderer, PatientAccessGuard guard, IAuditLogger audit,
+        TimeProvider time, CancellationToken ct)
+    {
+        var (document, problem) = await CreditNoteAsync(id, noteId, "Downloaded", db, assets, guard, audit, time, ct);
+        return problem ?? await document!.ToPdfAsync(renderer, ct);
+    }
+
+    /// <summary>
+    /// The credit note <paramref name="noteId"/> of bill <paramref name="id"/>, issued to the buyer the bill's tax invoice
+    /// named: a payer registered for GST, with its GSTIN and address, or else the patient. Opened as the bill is.
+    /// </summary>
+    private static async Task<(PrintableDocument? Document, IResult? Problem)> CreditNoteAsync(
+        Guid id, Guid noteId, string verb, HospitalDbContext db, DocumentAssets assets, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time,
+        CancellationToken ct)
+    {
+        var number = await db.Set<CreditNote>().Where(c => c.Id == noteId && c.BillId == id).Select(c => c.Number).FirstOrDefaultAsync(ct);
+        if (number is null)
+        {
+            return (null, Error.NotFound(nameof(CreditNote), noteId).ToProblem());
+        }
+
+        var (detail, problem) = await OpenAsync(id, bill => $"{verb} credit note {number} of bill {bill}", db, guard, audit, time, ct);
+        if (problem is not null)
+        {
+            return (null, problem);
+        }
+
+        var note = detail!.CreditNotes.Single(c => c.Id == noteId);
+        var payer = detail.PayerId is { } payerId
+            ? await db.Set<Payer>().AsNoTracking().Where(p => p.Id == payerId).Select(p => new { p.Name, p.Gstin, p.Address }).FirstOrDefaultAsync(ct)
+            : null;
+        // A payer credit note goes to the payer, registered for GST or not.
+        var recipient = payer?.Gstin is not null || (payer is not null && note.Kind == CreditNoteKind.PayerShare)
+            ? new CreditNoteRecipient(payer.Name, payer.Gstin, payer.Address)
+            : new CreditNoteRecipient(detail.PatientName ?? DocumentFormat.Missing, null, null);
+        return (await CreditNoteDocument.BuildAsync(detail, note, recipient, assets, ct), null);
+    }
+
     // Viewing, printing and downloading a bill apply the same rules: the restricted record guard, and an entry in the PHI
     // access audit saying what was done with it.
     private static async Task<(BillDetail? Detail, IResult? Problem)> OpenAsync(
@@ -190,8 +242,8 @@ internal static class BillEndpoints
     private static async Task<IResult> ApplyDiscount(Guid id, ApplyDiscountRequest request, DiscountService discounts, CancellationToken ct) =>
         (await discounts.ApplyAsync(id, request, ct)).ToOk();
 
-    private static async Task<IResult> FinalizeBill(Guid id, BillVersionRequest request, BillService bills, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
-        await DetailAfterAsync(await bills.FinalizeAsync(id, request.Version, ct), db, id, time, ct);
+    private static async Task<IResult> FinalizeBill(Guid id, FinalizeBillRequest request, BillService bills, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
+        await DetailAfterAsync(await bills.FinalizeAsync(id, request.Version, request.Paper, ct), db, id, time, ct);
 
     private static async Task<IResult> Cancel(Guid id, CancelBillRequest request, BillService bills, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
         await DetailAfterAsync(await bills.CancelAsync(id, request, ct), db, id, time, ct);
@@ -225,6 +277,9 @@ internal static class BillEndpoints
 
     private static async Task<IResult> RequestCreditNote(Guid id, IssueCreditNoteRequest request, RefundService refunds, CancellationToken ct) =>
         (await refunds.RequestCreditNoteAsync(id, request, ct)).ToHttpResult(approval => TypedResults.Accepted($"/api/v1/approvals/{approval.Id}", approval));
+
+    private static async Task<IResult> RequestDebitNote(Guid id, IssueDebitNoteRequest request, DebitNoteService notes, CancellationToken ct) =>
+        (await notes.RequestAsync(id, request, ct)).ToHttpResult(approval => TypedResults.Accepted($"/api/v1/approvals/{approval.Id}", approval));
 
     private static async Task<IResult> DetailAfterAsync(Result result, HospitalDbContext db, Guid id, TimeProvider time, CancellationToken ct)
     {

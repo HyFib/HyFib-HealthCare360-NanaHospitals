@@ -1,10 +1,18 @@
 using HyFib.HealthCare360.Modules.Privacy.Domain;
 using HyFib.HealthCare360.Modules.Privacy.Services;
+using HyFib.HealthCare360.Platform.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Modules.Privacy.Features.Settings;
 
-/// <summary>What the public privacy notice shows: whom to contact, and how soon requests are answered.</summary>
-public sealed record PublicPrivacyInfo(string Hospital, PrivacyContact Contact, int ResponseDays);
+/// <summary>
+/// What the public privacy notice shows: whom to contact, how soon requests are answered, and how long the record access
+/// log (the audit trail) is kept: <paramref name="AccessLogYears"/> years, or permanently while null (ADR-015).
+/// <paramref name="Dpo"/>: the Data Protection Officer, once named (DPDP Act s.10(2)(a)); null otherwise.
+/// <paramref name="BackupWindowDays"/>: the longest erased data stays in the hospital's backups before they are deleted
+/// (the backup period and a day; a restore in that time applies the erasure again).
+/// </summary>
+public sealed record PublicPrivacyInfo(string Hospital, PrivacyContact Contact, int ResponseDays, int? AccessLogYears = null, DpoContact? Dpo = null, int? BackupWindowDays = null);
 
 /// <summary>The settings as saved, and the contact as published (with the hospital's own details filling any gap).</summary>
 public sealed record PrivacySettingsView(PrivacySettingsDto Settings, PrivacyContact Published);
@@ -70,10 +78,13 @@ internal static class PrivacySettingsEndpoints
             .WithValidation<CertInContact>().FirstSaveCreates();
 
         // Public: the privacy notice names the grievance officer for everyone, signed in or not.
-        app.MapGet("/api/v1/public/privacy", async (PrivacySettings privacy, HospitalDbContext db, CancellationToken ct) =>
+        app.MapGet("/api/v1/public/privacy", async (PrivacySettings privacy, RetentionService retention, SdfService sdf, IOptions<PlatformOptions> platform, HospitalDbContext db,
+                CancellationToken ct) =>
             {
                 var hospital = await db.Set<Facility>().AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.CreatedAt).Select(f => f.Name).FirstOrDefaultAsync(ct);
-                return TypedResults.Ok(new PublicPrivacyInfo(hospital ?? "Hospital", await privacy.PublishedContactAsync(ct), await privacy.ResponseDaysAsync(ct)));
+                return TypedResults.Ok(new PublicPrivacyInfo(hospital ?? "Hospital", await privacy.PublishedContactAsync(ct), await privacy.ResponseDaysAsync(ct),
+                    await retention.ValueAsync(RetentionSchedule.Get(RetentionSchedule.Audit), ct), await sdf.PublishedDpoAsync(ct),
+                    ErasureService.BackupWindowDays(platform.Value.Backup.RetentionDays)));
             })
             .WithTags("Privacy")
             .AllowAnonymous()

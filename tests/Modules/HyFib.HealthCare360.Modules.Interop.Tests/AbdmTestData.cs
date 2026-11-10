@@ -6,7 +6,12 @@ using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.SharedKernel;
+using Bill = HyFib.HealthCare360.Modules.Billing.Domain.Bill;
+using BillLine = HyFib.HealthCare360.Modules.Billing.Domain.BillLine;
+using BillStatus = HyFib.HealthCare360.Modules.Billing.Domain.BillStatus;
+using BillType = HyFib.HealthCare360.Modules.Billing.Domain.BillType;
 using Modality = HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging.Modality;
 
 namespace HyFib.HealthCare360.Modules.Interop.Tests;
@@ -51,6 +56,24 @@ internal static class AbdmTestData
     public static readonly Guid CardiologyReportId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab013");
     public static readonly Guid CardiologyStudyId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab014");
     public static readonly Guid CardiologistUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab015");
+
+    /// <summary>A Td dose given in the consultation (<see cref="EncounterId"/>).</summary>
+    public static readonly Guid DoseId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab016");
+
+    /// <summary>
+    /// A progress note Dr. Asha Rao wrote in the consultation, the cardiologist's addendum to it, and Dr. Rao's user
+    /// account.
+    /// </summary>
+    public static readonly Guid NoteId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab017");
+    public static readonly Guid AddendumId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab018");
+    public static readonly Guid DoctorUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab019");
+
+    /// <summary>The patient's enrolment in hypertension home monitoring, and the account of the nurse who enters readings by phone.</summary>
+    public static readonly Guid EnrollmentId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab01a");
+    public static readonly Guid NurseUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab01b");
+
+    /// <summary>The name of the programme the patient is enrolled in, as the hospital wrote it.</summary>
+    public const string Programme = "Hypertension home monitoring";
 
     private static readonly DateTimeOffset Seen = TestData.Now.AddHours(-2);
     private static readonly DateTimeOffset Admitted = TestData.Now.AddDays(-20);
@@ -309,7 +332,45 @@ internal static class AbdmTestData
         "Drink plenty of fluids and rest.", Seen.AddMinutes(20), Seen.AddMinutes(22), PrescriptionLines());
 
     public static ConsultationData ConsultationRecord() => new(
-        Context(encounter: Consultation()), Note(), ConsultationDiagnoses(), Vitals(), PrescriptionLines(), Allergies());
+        Context(encounter: Consultation()), Note(), ConsultationDiagnoses(), Vitals(), PrescriptionLines(), Allergies(), [ConsultationProcedure()]);
+
+    /// <summary>An abscess drained in the consultation, described in words by the doctor who did it.</summary>
+    public static ProcedureRow ConsultationProcedure() => new()
+    {
+        Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac0a0"),
+        PatientId = TestData.PatientId,
+        EncounterId = EncounterId,
+        VisitId = OpVisitId,
+        PerformedAt = Seen.AddMinutes(15),
+        Display = "Incision and drainage of abscess",
+        PerformerPractitionerId = TestData.DoctorId,
+        Side = Platform.Contracts.ProcedureSide.Right,
+        BodySite = "Axilla",
+        Outcome = "Pus drained; wound packed",
+        Source = ProcedureSource.Recorded,
+        Status = ProcedureStatus.Completed,
+        CreatedAt = Seen.AddMinutes(18),
+    };
+
+    /// <summary>A stent placed in the cath lab during the stay, by the cardiologist, as the theatre recorded it.</summary>
+    public static ProcedureRow StayProcedure() => new()
+    {
+        Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac0a1"),
+        PatientId = TestData.PatientId,
+        AdmissionId = AdmissionId,
+        VisitId = StayVisitId,
+        PerformedAt = Admitted.AddHours(20),
+        Code = "027034Z",
+        CodeSystem = CodeReleases.Icd10Pcs,
+        Display = "Coronary angioplasty with a drug-eluting stent to one artery",
+        PerformerPractitionerId = CardiologistId,
+        Side = Platform.Contracts.ProcedureSide.NotApplicable,
+        BodySite = "Left anterior descending artery",
+        Outcome = "TIMI 3 flow restored",
+        Source = ProcedureSource.OperationTheatre,
+        Status = ProcedureStatus.Completed,
+        CreatedAt = Admitted.AddHours(22),
+    };
 
     public static LabReportRow LabReport() => new()
     {
@@ -413,6 +474,202 @@ internal static class AbdmTestData
     public static CardiologyReportData CardiologyReportRecord(AbdmPdf? pdf) =>
         new(Context(visit: OpVisit(), pdf: pdf), EcgReport(), CardiologyDoctors);
 
+    /// <summary>
+    /// The first dose of Td (tetanus and adult diphtheria), given by the OPD nurse in the consultation, with the second
+    /// dose due four weeks later, as the adult schedule has it.
+    /// </summary>
+    public static ImmunizationRow TdDose() => new()
+    {
+        Id = DoseId,
+        PatientId = TestData.PatientId,
+        EncounterId = EncounterId,
+        VaccineName = "Td",
+        VaccineCode = "TD",
+        DoseNumber = 1,
+        AdministeredOn = new DateOnly(2026, 9, 25),
+        Route = "IM",
+        Site = "Left deltoid",
+        BatchNumber = "TD2608-114",
+        Manufacturer = "Biological E. Limited",
+        ExpiryDate = new DateOnly(2027, 8, 31),
+        AdministeredByUserName = "Sr. Meena Pillai",
+        IsExternal = false,
+        NextDueOn = new DateOnly(2026, 10, 23),
+        CreatedAt = Seen.AddMinutes(30),
+    };
+
+    public static ImmunizationData ImmunizationRecord(ImmunizationRow? dose = null) =>
+        new(Context(encounter: Consultation()), dose ?? TdDose());
+
+    /// <summary>
+    /// The progress note Dr. Asha Rao wrote in the consultation and signed at 9:20 IST, in two paragraphs, as the FHIR API
+    /// serves it (who wrote and signed it named from their accounts).
+    /// </summary>
+    public static ClinicalNoteRow ProgressNote() => new()
+    {
+        Id = NoteId,
+        PatientId = TestData.PatientId,
+        FacilityId = TestData.FacilityId,
+        EncounterId = EncounterId,
+        Type = ClinicalNoteType.ProgressNote,
+        Title = "Fever review",
+        Body = "Fever settled since last evening; tolerating oral fluids.\r\n\r\nPlan: paracetamol only when needed. Review with the CBC report.",
+        AuthorPractitionerId = TestData.DoctorId,
+        AuthorUserId = DoctorUserId,
+        AuthorUserName = "Asha Rao",
+        SignedByUserId = DoctorUserId,
+        SignedByPractitionerId = TestData.DoctorId,
+        SignedByUserName = "Asha Rao",
+        SignedAt = Seen.AddMinutes(50),
+        CreatedAt = Seen.AddMinutes(40),
+        UpdatedAt = Seen.AddMinutes(50),
+    };
+
+    /// <summary>The cardiologist's addendum to the progress note, signed the next morning at 8:30 IST.</summary>
+    public static ClinicalNoteRow Addendum() => ProgressNote() with
+    {
+        Id = AddendumId,
+        Title = "Addendum to Fever review",
+        Body = "ECG reviewed: sinus rhythm, no ischaemic change. No cardiology follow-up needed.",
+        AuthorPractitionerId = CardiologistId,
+        AuthorUserId = CardiologistUserId,
+        AuthorUserName = "Vikram Shah",
+        SignedByUserId = CardiologistUserId,
+        SignedByPractitionerId = CardiologistId,
+        SignedByUserName = "Vikram Shah",
+        AmendsNoteId = NoteId,
+        SignedAt = Seen.AddDays(1),
+        CreatedAt = Seen.AddDays(1).AddMinutes(-10),
+        UpdatedAt = Seen.AddDays(1),
+    };
+
+    public static ClinicalNoteData ClinicalNoteRecord(params ClinicalNoteRow[] addenda) =>
+        new(Context(encounter: Consultation()), ProgressNote(), addenda);
+
+    /// <summary>The out-patient bill of the consultation, and its three lines.</summary>
+    public static readonly Guid BillId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab01c");
+
+    public const string BillNumber = "NHOB260000123";
+    public static readonly Guid CashierUserId = Guid.Parse("01923a4b-0000-7000-8000-0000000ab01d");
+
+    /// <summary>When the bill was finalised: an hour and ten minutes after the consultation.</summary>
+    public static DateTimeOffset BillFinalized => Seen.AddMinutes(70);
+
+    /// <summary>
+    /// The consultation's bill as a draft: Dr. Asha Rao's consultation (₹800, a 10% tariff concession, exempt), a complete
+    /// blood count (₹450, ₹50 off it, exempt) and two dressing kits (₹157.50 each, 12% GST), with 5% off the bill. Change it
+    /// (a payer, the place of supply, free treatment), then <see cref="Finalized"/> it as the counter does.
+    /// </summary>
+    public static Bill DraftBill() => new()
+    {
+        Id = BillId,
+        FacilityId = TestData.FacilityId,
+        Type = BillType.OutPatient,
+        PatientId = TestData.PatientId,
+        VisitId = OpVisitId,
+        PayerType = PayerType.Self,
+        BillDiscountPercent = 5m,
+        Status = BillStatus.Draft,
+        CreatedAt = Seen.AddMinutes(60),
+        Lines =
+        [
+            ChargedLine(0xb1, 1, "CONS-GM", "Consultation, General Medicine", "999312", 1m, 800m, 0m, TestData.DoctorId, tariffPercent: 10m),
+            ChargedLine(0xb2, 2, "LAB-CBC", "Complete blood count", "999316", 1m, 450m, 0m, null, staffDiscount: 50m),
+            ChargedLine(0xb3, 3, "CSM-DRK", "Dressing kit", "999319", 2m, 157.50m, 12m, null),
+        ],
+    };
+
+    /// <summary>The bill finalised under its number by the cashier (its totals worked out as finalising does).</summary>
+    public static Bill Finalized(Bill bill)
+    {
+        bill.Finalize(BillNumber, CashierUserId, BillFinalized).IsSuccess.ShouldBeTrue();
+        bill.UpdatedAt = BillFinalized;
+        bill.ClearDomainEvents();
+        return bill;
+    }
+
+    public static Bill OpBill() => Finalized(DraftBill());
+
+    public static InvoiceData InvoiceRecord(Bill? bill = null, AbdmPdf? pdf = null) => new(Context(visit: OpVisit(), pdf: pdf), bill ?? OpBill());
+
+    private static BillLine ChargedLine(
+        int n, int order, string code, string description, string? sac, decimal quantity, decimal unitPrice, decimal taxRate, Guid? doctor,
+        decimal tariffPercent = 0m, decimal staffDiscount = 0m) => new()
+        {
+            TariffDiscountPercent = tariffPercent,
+            LineDiscountAmount = staffDiscount,
+            Id = Guid.Parse($"01923a4b-0000-7000-8000-000000{n:x6}"),
+            BillId = BillId,
+            ServiceCode = code,
+            Description = description,
+            SacCode = sac,
+            Quantity = quantity,
+            UnitPrice = unitPrice,
+            GrossAmount = quantity * unitPrice,
+            TaxRate = taxRate,
+            IsDiscountAllowed = true,
+            PractitionerId = doctor,
+            DepartmentId = TestData.DepartmentId,
+            ServiceDate = Seen,
+            SortOrder = order,
+        };
+
+    /// <summary>An instant in India in 2026 (IST, UTC+05:30).</summary>
+    public static DateTimeOffset Ist(int month, int day, int hour, int minute, int second = 0) =>
+        new(2026, month, day, hour, minute, second, TimeSpan.FromMinutes(330));
+
+    /// <summary>
+    /// The patient's September readings at home, each received two minutes after it was measured: a blood pressure (high)
+    /// and pulse the monitor took together; an SpO2; a temperature the patient read out on a call, which a nurse entered;
+    /// a weight; a fasting glucose beyond the critical limit; and an ECG patch's rhythm (atrial fibrillation suspected).
+    /// </summary>
+    public static IReadOnlyList<DeviceReadingRow> HomeReadings() =>
+    [
+        Reading(0x101, RpmReadingType.SystolicBp, 150m, Ist(9, 2, 7, 30), ReadingSeverity.Warning, BpMonitor),
+        Reading(0x102, RpmReadingType.DiastolicBp, 95m, Ist(9, 2, 7, 30), ReadingSeverity.Warning, BpMonitor),
+        Reading(0x103, RpmReadingType.HeartRate, 78m, Ist(9, 2, 7, 30), ReadingSeverity.Normal, BpMonitor),
+        Reading(0x104, RpmReadingType.SpO2, 97m, Ist(9, 3, 8, 0), ReadingSeverity.Normal, Oximeter),
+        Reading(0x105, RpmReadingType.Temperature, 37.9m, Ist(9, 5, 21, 15), ReadingSeverity.Normal, null) with
+        {
+            Source = ReadingSource.Manual,
+            RecordedByUserId = NurseUserId,
+            RecordedByUserName = "Priya Nair",
+        },
+        Reading(0x106, RpmReadingType.Weight, 72.4m, Ist(9, 10, 7, 0), ReadingSeverity.Normal, Scale),
+        Reading(0x107, RpmReadingType.Glucose, 182m, Ist(9, 12, 7, 5), ReadingSeverity.Critical, Glucometer),
+        Reading(0x108, RpmReadingType.EcgRhythm, 2m, Ist(9, 20, 23, 50), ReadingSeverity.Critical, Patch) with { TextValue = "Atrial fibrillation suspected" },
+    ];
+
+    /// <summary>The September readings as one document: the whole month, or <paramref name="span"/>.</summary>
+    public static HomeReadingsData HomeReadingsRecord(IReadOnlyList<DeviceReadingRow>? readings = null, ReadingsSpan? span = null) =>
+        new(Context(), EnrollmentId, Programme, span ?? ReadingsSpan.Of(new DateOnly(2026, 9, 1)), readings ?? HomeReadings());
+
+    /// <summary>A reading from the patient's devices, numbered for its id.</summary>
+    public static DeviceReadingRow Reading(
+        int number, RpmReadingType type, decimal value, DateTimeOffset measuredAt, ReadingSeverity severity, (RpmDeviceType Type, string Maker, string Model, string Serial)? device) => new()
+        {
+            Id = Guid.Parse($"01923a4b-0000-7000-8000-0000000bd{number:x3}"),
+            PatientId = TestData.PatientId,
+            EnrollmentId = EnrollmentId,
+            Type = type,
+            Value = value,
+            MeasuredAt = measuredAt.ToUniversalTime(),
+            ReceivedAt = measuredAt.ToUniversalTime().AddMinutes(2),
+            Severity = severity,
+            Source = ReadingSource.Device,
+            DeviceId = device is null ? null : Guid.Parse($"01923a4b-0000-7000-8000-0000000be{(int)device.Value.Type:x3}"),
+            DeviceType = device?.Type,
+            DeviceManufacturer = device?.Maker,
+            DeviceModel = device?.Model,
+            DeviceSerial = device?.Serial,
+        };
+
+    private static readonly (RpmDeviceType, string, string, string) BpMonitor = (RpmDeviceType.BpMonitor, "Omron", "HEM-7156", "OM2609-0041");
+    private static readonly (RpmDeviceType, string, string, string) Oximeter = (RpmDeviceType.PulseOximeter, "BPL", "Smart Oxy", "BPL-55120");
+    private static readonly (RpmDeviceType, string, string, string) Scale = (RpmDeviceType.WeightScale, "Omron", "HN-289", "OM2607-7781");
+    private static readonly (RpmDeviceType, string, string, string) Glucometer = (RpmDeviceType.Glucometer, "Accu-Chek", "Instant", "AC-30981");
+    private static readonly (RpmDeviceType, string, string, string) Patch = (RpmDeviceType.EcgPatch, "Cardiotrack", "Patch 2", "CT-00412");
+
     public static VisitRow StayVisit() => new()
     {
         Id = StayVisitId,
@@ -457,8 +714,8 @@ internal static class AbdmTestData
         Diagnoses = "Non-ST elevation myocardial infarction",
         DiagnosisCodes = ["I21.4"],
         PresentingComplaints = "Central chest pain for two hours, sweating.",
-        CourseInHospital = "Managed medically in the CCU. Pain settled; no arrhythmia. Coronary angiography advised as an out-patient.",
-        Procedures = "None",
+        CourseInHospital = "Admitted to the CCU. Coronary angiography showed a tight LAD stenosis, treated with one drug-eluting stent. Pain settled; no arrhythmia.",
+        Procedures = "Coronary angiography; PCI to the LAD with one drug-eluting stent.",
         InvestigationsSummary = "Troponin I raised; ECG with ST depression in V4 to V6.",
         ConditionAtDischarge = "Stable, pain free.",
         Medications = "Aspirin 75 mg once daily; Atorvastatin 40 mg at night.",
@@ -532,7 +789,8 @@ internal static class AbdmTestData
                 ReleasedAt = Admitted.AddHours(2),
                 CreatedAt = Admitted.AddHours(1),
             },
-        ]);
+        ],
+        Procedures: [StayProcedure()]);
 
     private static PrescriptionItemRow Line(
         int sequence, Guid id, string drug, string generic, string strength, string form, string dose, DoseFrequency frequency, int days, decimal quantity,

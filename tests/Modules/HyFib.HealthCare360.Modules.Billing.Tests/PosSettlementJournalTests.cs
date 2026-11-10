@@ -131,6 +131,20 @@ public sealed class PosSettlementJournalTests
     }
 
     [Fact]
+    public void A_chargeback_the_acquirer_reversed_puts_the_money_back_into_the_payout()
+    {
+        var row = new PosSettlementRow(1, PosSettlementLineType.Adjustment, PaymentMode.Card, "72001234", null, null, 1_200m, 0m, 0m, 1_200m, "627910123456", null, null, Day, "AXISN1");
+        var reversal = PosSettlementLine.From(Guid.CreateVersion7(), Guid.CreateVersion7(), "HDFC Bank", row);
+
+        reversal.ShouldSatisfyAllConditions(l => l.GivesBack.ShouldBeTrue(), l => l.Gross.ShouldBe(1_200m), l => l.NeedsAttention.ShouldBeTrue());
+        var journal = PosSettlementJournal.Journals([reversal], Day, "NH").ShouldHaveSingleItem();
+        journal.ShouldSatisfyAllConditions(
+            j => j.Net.ShouldBe(1_200m, "the bank receives it"),
+            j => j.Clears.ShouldHaveSingleItem().ShouldBe(new TallyPosClearing(PaymentMode.Card, 1_200m)));
+        Line(PosSettlementLineType.Adjustment, PaymentMode.Card, 1_200m, 0m, 0m).GivesBack.ShouldBeFalse();
+    }
+
+    [Fact]
     public void Other_counters_are_named_by_the_acquirers_terminal_id_in_any_case()
     {
         var settings = new PosSettlementSettings { OtherTerminals = ["ph000001", " 72009999 "] };
@@ -140,6 +154,77 @@ public sealed class PosSettlementJournalTests
         settings.IsOtherTerminal("72001234").ShouldBeFalse();
         settings.IsOtherTerminal(null).ShouldBeFalse();
         new PosSettlementSettings { SettlementDays = 0 }.EffectiveSettlementDays.ShouldBe(1);
+    }
+
+    [Fact]
+    public void A_report_withdrawn_as_imported_in_error_is_reversed_in_the_books_of_its_day_and_its_payouts_journals_stay()
+    {
+        // The report imported in error brought two transactions of payout AXISN1 two days ago, one of them matched to a
+        // receipt, and one of payout AXISN2 the day before. Another report brought a third transaction of AXISN1.
+        var wrong = new PosSettlementImport { Acquirer = "HDFC Bank", FileName = "provisional.csv" };
+        var settled = Day.AddDays(-2);
+        var card = Line(PosSettlementLineType.Sale, PaymentMode.Card, 1_500m, 27m, 4.86m, "AXISN1", settled);
+        var upi = Line(PosSettlementLineType.Sale, PaymentMode.Upi, 800m, 0m, 0m, "axisn1", settled);
+        var later = Line(PosSettlementLineType.Sale, PaymentMode.Card, 300m, 4.5m, 0.81m, "AXISN2", Day.AddDays(-1));
+        foreach (var own in new[] { card, upi, later })
+        {
+            own.ImportId = wrong.Id;
+        }
+
+        card.MatchReceipt(Guid.CreateVersion7(), Guid.CreateVersion7(), 1_500m, PosMatchBasis.Rrn, Now);
+        var other = Line(PosSettlementLineType.Sale, PaymentMode.Card, 400m, 6m, 1.08m, "AXISN1", settled);
+        other.MatchReceipt(Guid.CreateVersion7(), Guid.CreateVersion7(), 400m, PosMatchBasis.Rrn, Now);
+        PosSettlementLine[] lines = [card, upi, later, other];
+        var payout = PosSettlementJournal.Journals(lines, settled, "NH").ShouldHaveSingleItem();
+
+        wrong.Withdraw(lines, Day, Now, "Accounts", "The acquirer's provisional report");
+
+        // Its own transactions match nothing more and free their receipt; the other report's transaction stays matched.
+        foreach (var own in new[] { card, upi, later })
+        {
+            own.ShouldSatisfyAllConditions(
+                l => l.Match.ShouldBe(PosSettlementMatch.Withdrawn),
+                l => l.WithdrawnOn.ShouldBe(Day),
+                l => l.ReceiptId.ShouldBeNull(),
+                l => l.ReceiptPaymentId.ShouldBeNull(),
+                l => l.IsOpen.ShouldBeFalse(),
+                l => l.NeedsAttention.ShouldBeFalse());
+        }
+
+        other.ShouldSatisfyAllConditions(l => l.Match.ShouldBe(PosSettlementMatch.Matched), l => l.WithdrawnOn.ShouldBeNull());
+        wrong.ShouldSatisfyAllConditions(
+            i => i.WithdrawnOn.ShouldBe(Day),
+            i => i.WithdrawnAt.ShouldBe(Now),
+            i => i.WithdrawnByName.ShouldBe("Accounts"),
+            i => i.WithdrawReason.ShouldBe("The acquirer's provisional report"));
+
+        // The payout's journal stays in its day as it was, which may be in Tally already; nothing is reversed there.
+        PosSettlementJournal.Journals(lines, settled, "NH").ShouldHaveSingleItem().ShouldBeEquivalentTo(payout);
+        PosSettlementJournal.Withdrawals(lines, settled, "NH").ShouldBeEmpty();
+
+        // In the books of the day of the withdrawal: each payout's part from the report, turned round, numbered after it.
+        var reversals = PosSettlementJournal.Withdrawals(lines, Day, "NH");
+        var suffix = "-W" + wrong.Id.ToString("N")[..6].ToUpperInvariant();
+        reversals.Select(r => r.Number).ShouldBe(["POS-NH-AXISN1" + suffix, "POS-NH-AXISN2" + suffix]);
+        reversals.ShouldAllBe(r => r.Date == Day);
+        reversals[0].ShouldSatisfyAllConditions(
+            r => r.Net.ShouldBe(-(card.Net + upi.Net)),
+            r => r.Charges.ShouldBe(-27m),
+            r => r.Tax.ShouldBe(-4.86m),
+            r => r.Clears.ShouldBe([new TallyPosClearing(PaymentMode.Card, -1_500m), new TallyPosClearing(PaymentMode.Upi, -800m)]),
+            r => r.Correction.ShouldBe("Reverses card and UPI settlement journal POS-NH-AXISN1 of 05-10-2026: its report was withdrawn as imported in error"));
+
+        // Its voucher is the report's own part of the payout journal turned round: the same ledgers and amounts, sides swapped.
+        var vouchers = TallyVoucherBuilder.Build(Book(reversals), new TallyLedgerMap());
+        var reversal = vouchers.Single(v => v.Number == "POS-NH-AXISN2" + suffix);
+        reversal.ShouldSatisfyAllConditions(
+            v => v.Date.ShouldBe(Day),
+            v => v.Reference.ShouldBe("POS-NH-AXISN2" + suffix),
+            v => v.Narration.ShouldBe("Reverses card and UPI settlement journal POS-NH-AXISN2 of 06-10-2026: its report was withdrawn as imported in error"));
+        var journal = TallyVoucherBuilder.Build(Book(PosSettlementJournal.Journals([later], Day.AddDays(-1), "NH")), new TallyLedgerMap()).Single();
+        reversal.Entries.Select(e => (e.LedgerName, !e.IsDebit, e.Amount))
+            .ShouldBe(journal.Entries.Select(e => (e.LedgerName, e.IsDebit, e.Amount)), ignoreOrder: true);
+        Entry(reversal, "Bank").ShouldSatisfyAllConditions(e => e.IsDebit.ShouldBeFalse(), e => e.Amount.ShouldBe(294.69m));
     }
 
     private static AccountingEntry Entry(AccountingVoucher voucher, string ledger) => voucher.Entries.Single(e => e.LedgerName == ledger);

@@ -26,6 +26,12 @@ public sealed class ResultReview : AuditableEntity, IFacilityScoped
     public Guid? ReviewedByUserId { get; private set; }
     public string? ReviewNote { get; private set; }
 
+    /// <summary>
+    /// Why a doctor other than the ordering doctor acknowledged a critical result as covering the patient (on call, the
+    /// unit's doctor on duty); null when the ordering doctor did, or none was asked.
+    /// </summary>
+    public string? CoveringReason { get; private set; }
+
     public bool IsReviewed => ReviewedAt is not null;
 
     /// <summary>
@@ -41,9 +47,10 @@ public sealed class ResultReview : AuditableEntity, IFacilityScoped
         ReviewedAt = null;
         ReviewedByUserId = null;
         ReviewNote = null;
+        CoveringReason = null;
     }
 
-    public Result Acknowledge(Guid? userId, string? note, DateTimeOffset now)
+    public Result Acknowledge(Guid? userId, string? note, DateTimeOffset now, string? coveringReason = null)
     {
         if (IsReviewed)
         {
@@ -53,6 +60,33 @@ public sealed class ResultReview : AuditableEntity, IFacilityScoped
         ReviewedAt = now;
         ReviewedByUserId = userId;
         ReviewNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        CoveringReason = string.IsNullOrWhiteSpace(coveringReason) ? null : coveringReason.Trim();
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Who may acknowledge a critical lab result where the lab asks for a second pathologist (pure; unit-tested): the doctor
+    /// who ordered it, or another doctor who records that they cover the patient, with a reason. Anyone else (a nurse, a
+    /// clerk, an account linked to no doctor) is refused: a critical value acknowledged by someone who cannot act on it is
+    /// a call that never reached a doctor.
+    /// </summary>
+    /// <param name="actingPractitionerId">The signed-in user's practitioner record, when it is a doctor's; null otherwise.</param>
+    public Result CanAcknowledgeCritical(Guid? actingPractitionerId, string? coveringReason)
+    {
+        if (actingPractitionerId is not { } doctor)
+        {
+            return Error.Forbidden("result.critical_doctor_only",
+                "Only the ordering doctor, or a doctor covering the patient, acknowledges a critical result. Sign in with a doctor's account linked to their practitioner record.");
+        }
+
+        if (doctor == PractitionerId)
+        {
+            return Result.Success();
+        }
+
+        return string.IsNullOrWhiteSpace(coveringReason) || coveringReason.Trim().Length < 10
+            ? Error.Field("coveringReason",
+                "You did not order this test. To acknowledge the critical result, record that you cover the patient and why (at least 10 characters: on call, the unit's doctor on duty).")
+            : Result.Success();
     }
 }

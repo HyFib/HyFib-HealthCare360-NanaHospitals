@@ -34,14 +34,27 @@ internal static class PayrollEndpoints
         group.MapGet("/runs/{id:guid}/bank-transfer.csv", BankFile).RequirePermission(HRPermissions.PayrollApprove);
 
         group.MapGet("/runs/{id:guid}/inputs", ListInputs).RequireAnyPermission(viewers);
+        // Maker-checker slice 11: a deduction is added at once (201, its id); an earning or an override is asked for (202,
+        // the request), as a file with earnings in it and a deduction another module posted or another person entered,
+        // taken off. Someone else who approves payroll decides; nobody changes their own pay.
         group.MapPost("/runs/{id:guid}/inputs", async (Guid id, SavePayrollInputRequest r, PayrollInputService inputs, CancellationToken ct) =>
-                (await inputs.AddAsync(id, r, ct)).ToCreated(inputId => $"/api/v1/hr/payroll/inputs/{inputId}"))
+                (await inputs.AddAsync(id, r, ct)).ToHttpResult(added => added.Approval is { } asked
+                    ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)
+                    : TypedResults.Created($"/api/v1/hr/payroll/inputs/{added.Id}", added.Id)))
             .RequirePermission(HRPermissions.PayrollProcess).WithValidation<SavePayrollInputRequest>();
         group.MapPost("/runs/{id:guid}/inputs/import", async (Guid id, ImportPayrollInputsRequest r, PayrollInputService inputs, CancellationToken ct) =>
-                (await inputs.ImportAsync(id, r.Csv, ct)).ToOk())
+                (await inputs.ImportAsync(id, r.Csv, ct)).ToHttpResult(imported => imported.Approval is { } asked
+                    ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", imported)
+                    : TypedResults.Ok(imported)))
             .RequirePermission(HRPermissions.PayrollProcess).WithValidation<ImportPayrollInputsRequest>();
-        group.MapDelete("/inputs/{inputId:guid}", async (Guid inputId, PayrollInputService inputs, CancellationToken ct) => (await inputs.RemoveAsync(inputId, ct)).ToNoContent())
+        group.MapDelete("/inputs/{inputId:guid}", async (Guid inputId, PayrollInputService inputs, CancellationToken ct) =>
+                (await inputs.RemoveAsync(inputId, ct)).ToHttpResult(asked => asked is null
+                    ? TypedResults.NoContent()
+                    : TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)))
             .RequirePermission(HRPermissions.PayrollProcess);
+        group.MapGet("/pending-changes", async (Guid? runId, Guid? employeeId, PayApprovals pay, CancellationToken ct) =>
+                TypedResults.Ok(await pay.PendingAsync(runId, employeeId, ct)))
+            .RequireAnyPermission(viewers);
 
         group.MapGet("/runs/{id:guid}/payslips", ListPayslips).RequireAnyPermission(viewers);
         group.MapGet("/payslips/{id:guid}", GetPayslip).RequireAnyPermission(viewers);
@@ -113,24 +126,43 @@ internal static class PayrollEndpoints
         bool visibleToEmployeeOnly,
         CancellationToken ct)
     {
-        var payslips = visibleToEmployeeOnly
-            ? db.Set<Payslip>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
-            : db.Set<Payslip>();
+        // Self-service reads the employee's own payslips from every facility that paid them; the payroll screens read their
+        // own facility's. Every source of the query is read the same way: EF Core ignores a query filter for the whole query,
+        // so a run or an employee read from every facility read the payslip from every facility too, and a payroll processor
+        // opened another facility's payslip by its id.
+        IQueryable<Payslip> payslips = db.Set<Payslip>();
+        IQueryable<PayrollRun> runs = db.Set<PayrollRun>();
+        if (visibleToEmployeeOnly)
+        {
+            payslips = payslips.IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
+            runs = runs.IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
+        }
+
         var row = await (
                 from p in payslips.AsNoTracking().Where(filter)
-                join r in db.Set<PayrollRun>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on p.PayrollRunId equals r.Id
-                join e in db.Set<Employee>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on p.EmployeeId equals e.Id
+                join r in runs on p.PayrollRunId equals r.Id
                 join f in db.Set<Facility>() on p.FacilityId equals f.Id into facilities
                 from f in facilities.DefaultIfEmpty()
                 where !visibleToEmployeeOnly || r.Status == PayrollRunStatus.Approved || r.Status == PayrollRunStatus.Paid || r.Status == PayrollRunStatus.Locked
-                select new { Payslip = p, r.Status, e.PanMasked, e.Uan, FacilityName = f != null ? f.Name : null })
+                select new { Payslip = p, r.Status, FacilityName = f != null ? f.Name : null })
             .FirstOrDefaultAsync(ct);
         if (row is null)
         {
             return null;
         }
 
+        // PAN and UAN from the employee's record wherever they work now, read apart: one who moved keeps the payslips of the
+        // facility that paid them. A removed employee record shows no payslip, as before.
         var slip = row.Payslip;
+        var employee = await db.Set<Employee>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(e => e.Id == slip.EmployeeId)
+            .Select(e => new { e.PanMasked, e.Uan })
+            .FirstOrDefaultAsync(ct);
+        if (employee is null)
+        {
+            return null;
+        }
+
         var lines = await db.Set<PayslipLine>().AsNoTracking()
             .Where(l => l.PayslipId == slip.Id)
             .OrderBy(l => l.SortOrder).ThenBy(l => l.Code)
@@ -138,7 +170,7 @@ internal static class PayrollEndpoints
         PayslipLineDto ToLine(PayslipLine l) => new(l.Code, l.Name, l.FullAmount, l.Amount, l.IsStatutory);
         return new PayslipDto(
             slip.Id, slip.PayrollRunId, row.Status, slip.Year, slip.Month, row.FacilityName, slip.EmployeeId, slip.EmployeeCode, slip.EmployeeName,
-            slip.DesignationName, slip.DepartmentName, row.PanMasked, row.Uan, slip.DaysInMonth, slip.PayableDays, slip.LopDays, slip.MissingAttendanceDays,
+            slip.DesignationName, slip.DepartmentName, employee.PanMasked, employee.Uan, slip.DaysInMonth, slip.PayableDays, slip.LopDays, slip.MissingAttendanceDays,
             lines.Where(l => l.Kind == SalaryComponentKind.Earning).Select(ToLine).ToList(),
             lines.Where(l => l.Kind == SalaryComponentKind.Deduction).Select(ToLine).ToList(),
             slip.GrossEarnings, slip.TotalDeductions, slip.NetPay, slip.PfWage, slip.EmployerPf, slip.EsiWage, slip.EmployerEsi, slip.PaymentMode,

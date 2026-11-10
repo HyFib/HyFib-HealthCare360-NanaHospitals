@@ -45,6 +45,8 @@ public sealed class FeatureSwitchTests
     [Theory]
     [InlineData("POST /api/v1/auth/otp/request")]
     [InlineData("POST /api/v1/auth/otp/verify")]
+    [InlineData("GET /api/v1/public/portal-links/{token}")]
+    [InlineData("POST /api/v1/public/portal-links/{token}/otp")]
     public void Signing_in_and_registering_on_the_portal_stop_with_it(string key) =>
         Endpoints.Value.Single(e => e.Key == key).AlwaysNeeds(FeatureKeys.PatientPortal).ShouldBeTrue();
 
@@ -106,6 +108,7 @@ public sealed class FeatureSwitchTests
     [InlineData("GET /api/v1/public/prescriptions/verify/{token}")]
     [InlineData("GET /api/v1/public/prescriptions/verify/{token}/signature.p7s")]
     [InlineData("POST /api/v1/billing/webhooks/payment-gateway")]
+    [InlineData("POST /api/v1/billing/webhooks/cashfree")]
     [InlineData("POST /api/v1/integrations/webhooks/whatsapp/")]
     [InlineData("GET /api/v1/public/unsubscribe/{token}")]
     [InlineData("POST /api/v1/public/unsubscribe/{token}")]

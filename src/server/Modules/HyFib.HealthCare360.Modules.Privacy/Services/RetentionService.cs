@@ -28,6 +28,7 @@ public sealed record RetentionRuleDto(
     int? MinimumValue,
     int MaximumValue,
     bool Editable,
+    bool SystemManaged,
     int? LastRemoved,
     DateTimeOffset? LastRunAt,
     uint? Version);
@@ -90,7 +91,7 @@ public sealed class RetentionService(
         {
             var removed = lastRun?.Results.FirstOrDefault(r => r.Key == rule.Key)?.Removed;
             rules.Add(new RetentionRuleDto(rule.Key, rule.Title, rule.Description, rule.Basis, rule.Action, rule.Unit, await ValueAsync(rule, ct),
-                rule.DefaultValue, rule.MinimumValue, rule.MaximumValue, rule.Editable, removed, removed is null ? null : lastRun!.FinishedAt,
+                rule.DefaultValue, rule.MinimumValue, rule.MaximumValue, rule.Editable, rule.SystemManaged, removed, removed is null ? null : lastRun!.FinishedAt,
                 await SettingVersions.OfAsync(db, rule.SettingKey, null, ct)));
         }
 
@@ -111,6 +112,12 @@ public sealed class RetentionService(
         if (RetentionSchedule.Find(key) is not { } rule)
         {
             return Error.NotFound("Retention rule", key);
+        }
+
+        if (rule.SystemManaged)
+        {
+            return Error.Rule("privacy.retention_fixed",
+                $"Super administrators set how long the {rule.Title.ToLowerInvariant()} is kept, one asking and another approving, under Audit trail.");
         }
 
         if (!rule.Editable || rule.DefaultValue is null)
@@ -273,7 +280,7 @@ public sealed class RetentionService(
         await ValueAsync(RetentionSchedule.Get(RetentionSchedule.InpatientRecords), ct) ?? RecordRetention.MinimumInpatientYears,
         await ValueAsync(RetentionSchedule.Get(RetentionSchedule.Finance), ct) ?? 8,
         await ValueAsync(RetentionSchedule.Get(RetentionSchedule.MessageLog), ct) ?? RetentionSchedule.LogDays,
-        await ValueAsync(RetentionSchedule.Get(RetentionSchedule.Audit), ct) ?? 10);
+        await ValueAsync(RetentionSchedule.Get(RetentionSchedule.Audit), ct));
 
     /// <summary>
     /// "How long we keep it" for each group of the data summary, in words, with the periods in force.
@@ -288,7 +295,9 @@ public sealed class RetentionService(
             [PersonalDataRetention.Finance] = string.Create(CultureInfo.InvariantCulture, $"{finance} years from the bill date, as tax law requires."),
             [PersonalDataRetention.MessageLog] = string.Create(CultureInfo.InvariantCulture,
                 $"The message log for {messages} days; feedback, complaints and follow-up calls with your medical records."),
-            [PersonalDataRetention.Audit] = string.Create(CultureInfo.InvariantCulture, $"{auditYears} years."),
+            [PersonalDataRetention.Audit] = auditYears is { } years
+                ? string.Create(CultureInfo.InvariantCulture, $"For {years} years, and never edited.")
+                : "Permanently, and never edited.",
             [PersonalDataRetention.WhileInUse] = "While the account is open.",
             [PersonalDataRetention.WithRecords] = "As long as the records they relate to.",
         };

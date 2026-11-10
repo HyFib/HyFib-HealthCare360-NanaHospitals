@@ -1,8 +1,12 @@
 using System.Linq.Expressions;
 using FluentValidation;
+using HyFib.HealthCare360.Platform.Approvals;
+using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
@@ -41,29 +45,36 @@ public sealed record SpecialtyDto(Guid Id, string Code, string Name, string? Des
 
 public sealed record SaveSpecialtyRequest(string Code, string Name, string? Description, bool IsActive, uint? Version);
 
+/// <param name="LinkedAccounts">On a single practitioner's read: the staff accounts that sign as them.</param>
+/// <param name="PendingIdentity">On a single practitioner's read: a registration number, HPR ID or signature waiting for a second administrator.</param>
+/// <param name="PendingFee">On a single practitioner's read: consultation fees waiting for someone who approves prices.</param>
 public sealed record PractitionerDto(
     Guid Id, string Code, string Title, string FirstName, string? LastName, string DisplayName, Gender Gender, string? Qualification,
     string? RegistrationCouncil, string? RegistrationNumber, string? HprId, Guid? SpecialtyId, string? SpecialtyName, Guid? DepartmentId, string? DepartmentName,
     PractitionerKind Kind, string? Phone, string? Email, decimal ConsultationFeeNew, decimal ConsultationFeeFollowUp, int FollowUpValidityDays,
     IReadOnlyList<string> Languages, string? Bio, Guid? PhotoFileId, Guid? SignatureFileId, bool AvailableForOnlineBooking,
-    bool AvailableForTelehealth, IReadOnlyList<Guid> FacilityIds, bool IsActive, uint Version);
+    bool AvailableForTelehealth, IReadOnlyList<Guid> FacilityIds, bool IsActive, uint Version,
+    IReadOnlyList<string>? LinkedAccounts = null, PendingPractitionerIdentity? PendingIdentity = null, PendingPractitionerFee? PendingFee = null,
+    PractitionerHprCheckDto? HprCheck = null);
 
 public sealed record SavePractitionerRequest(
     string Code, string Title, string FirstName, string? LastName, Gender Gender, string? Qualification, string? RegistrationCouncil,
     string? RegistrationNumber, string? HprId, Guid? SpecialtyId, Guid? DepartmentId, PractitionerKind Kind, string? Phone, string? Email,
     decimal ConsultationFeeNew, decimal ConsultationFeeFollowUp, int FollowUpValidityDays, IReadOnlyList<string>? Languages, string? Bio,
     Guid? PhotoFileId, Guid? SignatureFileId, bool AvailableForOnlineBooking, bool AvailableForTelehealth, IReadOnlyList<Guid>? FacilityIds,
-    bool IsActive, uint? Version);
+    bool IsActive, uint? Version, bool TakeOutOfUseAnyway = false);
 
+/// <param name="PendingPrice">The price terms waiting for a second person (maker-checker), on a single service's read.</param>
 public sealed record ServiceItemDto(
     Guid Id, string Code, string Name, string? ShortName, ServiceCategory Category, Guid? DepartmentId, decimal BasePrice, decimal TaxRate,
     string? SacCode, bool IsDiscountAllowed, bool IsPriceEditable, string? Description, bool IsActive, uint Version,
-    IReadOnlyDictionary<string, string> LocalNames);
+    IReadOnlyDictionary<string, string> LocalNames, PendingServicePrice? PendingPrice = null);
 
+/// <param name="Reason">Why the price changes, for the person who approves it.</param>
 public sealed record SaveServiceItemRequest(
     string Code, string Name, string? ShortName, ServiceCategory Category, Guid? DepartmentId, decimal BasePrice, decimal TaxRate,
     string? SacCode, bool IsDiscountAllowed, bool IsPriceEditable, string? Description, bool IsActive, uint? Version,
-    IReadOnlyDictionary<string, string>? LocalNames = null);
+    IReadOnlyDictionary<string, string>? LocalNames = null, string? Reason = null);
 
 /// <summary>A language a service may be named in, and whether it is the local language of an active facility.</summary>
 public sealed record LocalLanguageItem(string Code, string Name, bool AtFacility);
@@ -198,6 +209,7 @@ public sealed class SaveServiceItemRequestValidator : AbstractValidator<SaveServ
         RuleFor(x => x.TaxRate).InclusiveBetween(0, 28).PrecisionScale(5, 2, ignoreTrailingZeros: true);
         RuleFor(x => x.SacCode).Matches("^[0-9]{4,8}$").When(x => !string.IsNullOrWhiteSpace(x.SacCode)).WithMessage("Enter the 4–8 digit SAC or HSN code.");
         RuleFor(x => x.Description).SafeText(1000);
+        RuleFor(x => x.Reason).SafeText(500);
     }
 }
 
@@ -292,25 +304,41 @@ internal static class OrganizationEndpoints
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveSpecialtyRequest>().RequireVersion();
 
         masters.MapGet("/practitioners", ListPractitioners).RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapGet("/practitioners/{id:guid}", async (Guid id, HospitalDbContext db, CancellationToken ct) =>
+        PractitionerHprEndpoints.Map(masters);
+        masters.MapGet("/practitioners/{id:guid}", async (Guid id, HospitalDbContext db, PractitionerIdentityApprovals identities, PractitionerFeeApprovals fees,
+                    PractitionerHprChecks hpr, CancellationToken ct) =>
                 await PractitionerQuery(db, db.Set<Practitioner>().Where(p => p.Id == id)).FirstOrDefaultAsync(ct) is { } dto
-                    ? TypedResults.Ok(dto)
+                    ? TypedResults.Ok(dto with
+                    {
+                        LinkedAccounts = await identities.LinkedAccountsAsync(id, ct),
+                        PendingIdentity = await identities.PendingAsync(id, ct),
+                        PendingFee = await fees.PendingAsync(id, ct),
+                        HprCheck = await hpr.LatestAsync(await db.Set<Practitioner>().AsNoTracking().FirstAsync(p => p.Id == id, ct), ct),
+                    })
                     : Error.NotFound(nameof(Practitioner), id).ToProblem())
             .RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapPost("/practitioners", (SavePractitionerRequest r, HospitalDbContext db, CancellationToken ct) => SavePractitioner(null, r, db, ct))
+        // A practitioner's consultation fees wait for someone who approves prices (masters.practitioner_fee): a new one is
+        // created (201) with the request's id, a save that changes them answers 202, as a linked doctor's identity does.
+        masters.MapPost("/practitioners", (SavePractitionerRequest r, HospitalDbContext db, PractitionerWorkSources work, PractitionerIdentityApprovals identities,
+                    PractitionerFeeApprovals fees, IAuditLogger audit, CancellationToken ct) =>
+                SavePractitioner(null, r, db, work, identities, fees, audit, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SavePractitionerRequest>();
-        masters.MapPut("/practitioners/{id:guid}", (Guid id, SavePractitionerRequest r, HospitalDbContext db, CancellationToken ct) => SavePractitioner(id, r, db, ct))
+        masters.MapPut("/practitioners/{id:guid}", (Guid id, SavePractitionerRequest r, HospitalDbContext db, PractitionerWorkSources work, PractitionerIdentityApprovals identities,
+                    PractitionerFeeApprovals fees, IAuditLogger audit, CancellationToken ct) =>
+                SavePractitioner(id, r, db, work, identities, fees, audit, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SavePractitionerRequest>().RequireVersion();
 
         masters.MapGet("/services", ListServices).RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapGet("/services/{id:guid}", async (Guid id, HospitalDbContext db, CancellationToken ct) =>
+        masters.MapGet("/services/{id:guid}", async (Guid id, HospitalDbContext db, ServicePrices prices, CancellationToken ct) =>
                 await db.Set<ServiceItem>().Where(s => s.Id == id).Select(ToServiceDto).FirstOrDefaultAsync(ct) is { } dto
-                    ? TypedResults.Ok(dto)
+                    ? TypedResults.Ok(dto with { PendingPrice = await prices.PendingAsync(id, ct) })
                     : Error.NotFound(nameof(ServiceItem), id).ToProblem())
             .RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapPost("/services", (SaveServiceItemRequest r, HospitalDbContext db, CancellationToken ct) => SaveService(null, r, db, ct))
+        masters.MapPost("/services", (SaveServiceItemRequest r, HospitalDbContext db, ServicePrices prices, ServiceChargeSources sources, CancellationToken ct) =>
+                SaveService(null, r, db, prices, sources, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveServiceItemRequest>();
-        masters.MapPut("/services/{id:guid}", (Guid id, SaveServiceItemRequest r, HospitalDbContext db, CancellationToken ct) => SaveService(id, r, db, ct))
+        masters.MapPut("/services/{id:guid}", (Guid id, SaveServiceItemRequest r, HospitalDbContext db, ServicePrices prices, ServiceChargeSources sources, CancellationToken ct) =>
+                SaveService(id, r, db, prices, sources, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveServiceItemRequest>().RequireVersion();
 
         var lookups = masters.MapGroup("/lookups");
@@ -325,9 +353,16 @@ internal static class OrganizationEndpoints
                     .Select(s => new LookupItem(s.Id, s.Code, s.Name)).ToListAsync(ct)))
             .RequirePermission(PlatformPermissions.MastersRead);
         lookups.MapGet("/local-languages", LocalLanguagesAtFacilities).RequirePermission(PlatformPermissions.MastersRead);
-        lookups.MapGet("/practitioners", async (Guid? departmentId, string? search, HospitalDbContext db, ICurrentUser user, CancellationToken ct) =>
+        // kind narrows the list to those kinds (the OT's nurse picker asks for nurses and OT technicians); none gives every kind.
+        lookups.MapGet("/practitioners", async (
+                Guid? departmentId, string? search, PractitionerKind[]? kind, HospitalDbContext db, ICurrentUser user, CancellationToken ct) =>
             {
                 var query = db.Set<Practitioner>().Where(p => p.IsActive && (departmentId == null || p.DepartmentId == departmentId));
+                if (kind is { Length: > 0 })
+                {
+                    query = query.Where(p => kind.Contains(p.Kind));
+                }
+
                 if (user.FacilityId is { } facilityId)
                 {
                     query = query.Where(p => p.FacilityIds.Count == 0 || p.FacilityIds.Contains(facilityId));
@@ -663,7 +698,7 @@ internal static class OrganizationEndpoints
             p.Id, p.Code, p.Title, p.FirstName, p.LastName, p.DisplayName, p.Gender, p.Qualification, p.RegistrationCouncil, p.RegistrationNumber,
             p.HprId, p.SpecialtyId, s != null ? s.Name : null, p.DepartmentId, d != null ? d.Name : null, p.Kind, p.Phone, p.Email,
             p.ConsultationFeeNew, p.ConsultationFeeFollowUp, p.FollowUpValidityDays, p.Languages, p.Bio, p.PhotoFileId, p.SignatureFileId,
-            p.AvailableForOnlineBooking, p.AvailableForTelehealth, p.FacilityIds, p.IsActive, p.Version);
+            p.AvailableForOnlineBooking, p.AvailableForTelehealth, p.FacilityIds, p.IsActive, p.Version, null, null);
 
     private static async Task<IResult> ListPractitioners(
         [AsParameters] PageQuery query, Guid? departmentId, Guid? specialtyId, PractitionerKind? kind, bool? active, HospitalDbContext db, CancellationToken ct)
@@ -705,10 +740,13 @@ internal static class OrganizationEndpoints
         return q;
     }
 
-    private static async Task<IResult> SavePractitioner(Guid? id, SavePractitionerRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> SavePractitioner(
+        Guid? id, SavePractitionerRequest request, HospitalDbContext db, PractitionerWorkSources workSources, PractitionerIdentityApprovals identities,
+        PractitionerFeeApprovals fees, IAuditLogger audit, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         Practitioner practitioner;
+        PractitionerIdentity? before = null;
         if (id is { } existingId)
         {
             var found = await db.Set<Practitioner>().FirstOrDefaultAsync(p => p.Id == existingId, ct);
@@ -723,6 +761,7 @@ internal static class OrganizationEndpoints
             }
 
             practitioner = found;
+            before = PractitionerIdentityApprovals.Of(found);
             if (request.Version is { } v)
             {
                 db.SetExpectedVersion(practitioner, v);
@@ -750,9 +789,32 @@ internal static class OrganizationEndpoints
             return invalid.ToProblem();
         }
 
+        // A doctor with appointments, patients admitted under them or surgeries ahead is taken out of use only once the
+        // person has seen what is ahead: nobody can book or assign the doctor again, and it all has to be moved.
+        IReadOnlyList<PractitionerWork> workAhead = [];
+        if (id is not null && practitioner.IsActive && !request.IsActive)
+        {
+            workAhead = await workSources.WorkAheadAsync(practitioner.Id, ct);
+            if (workAhead.Count > 0 && !request.TakeOutOfUseAnyway)
+            {
+                return PractitionerWorkSources.WorkAhead(practitioner.DisplayName, workAhead).ToProblem();
+            }
+        }
+
         if (id is null)
         {
             db.Add(practitioner);
+        }
+
+        if (workAhead.Count > 0)
+        {
+            audit.Add(new AuditEntry(AuditCategories.Admin, "practitioner.out_of_use_with_work_ahead",
+                $"{practitioner.DisplayName} taken out of use with {string.Join("; ", workAhead.Select(w => w.Words))} ahead")
+            {
+                EntityType = nameof(Practitioner),
+                EntityId = practitioner.Id.ToString(),
+                Details = new { workAhead },
+            });
         }
 
         practitioner.Title = Clean(request.Title) ?? string.Empty;
@@ -769,8 +831,6 @@ internal static class OrganizationEndpoints
         practitioner.Kind = request.Kind;
         practitioner.Phone = Phone.Normalize(request.Phone);
         practitioner.Email = Clean(request.Email);
-        practitioner.ConsultationFeeNew = Money.Round(request.ConsultationFeeNew);
-        practitioner.ConsultationFeeFollowUp = Money.Round(request.ConsultationFeeFollowUp);
         practitioner.FollowUpValidityDays = request.FollowUpValidityDays;
         practitioner.Languages = request.Languages?.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? [];
         practitioner.Bio = Clean(request.Bio);
@@ -781,15 +841,108 @@ internal static class OrganizationEndpoints
         practitioner.FacilityIds = facilityIds;
         practitioner.IsActive = request.IsActive;
 
+        // The registration number, HPR ID and signature of a practitioner someone signs in as print on what that account
+        // signs: they change only when a second administrator agrees, and stay as they are meanwhile. The rest is saved at
+        // once; a practitioner with no account is edited at once. What already waits is not asked for again.
+        PractitionerIdentity? identityBefore = null;
+        PractitionerIdentity? identityAsked = null;
+        List<string> linked = [];
+        if (before is not null && PractitionerIdentityApprovals.Of(practitioner) != before)
+        {
+            linked = await identities.LinkedAccountsAsync(practitioner.Id, ct);
+            if (linked.Count > 0)
+            {
+                var asked = PractitionerIdentityApprovals.Of(practitioner);
+                var waiting = await identities.PendingAsync(practitioner.Id, ct);
+                var decision = GrantDecision.Ask;
+                if (waiting?.Asked != asked)
+                {
+                    var decided = await identities.DecideAsync(practitioner.Id, ct);
+                    if (decided.IsFailure)
+                    {
+                        return decided.Error!.ToProblem();
+                    }
+
+                    decision = decided.Value;
+                }
+
+                if (decision == GrantDecision.Ask)
+                {
+                    practitioner.RegistrationNumber = before.RegistrationNumber;
+                    practitioner.HprId = before.HprId;
+                    practitioner.SignatureFileId = before.SignatureFileId;
+                    (identityBefore, identityAsked) = waiting?.Asked == asked ? (null, null) : (before, asked);
+                }
+                else
+                {
+                    identities.AuditMadeAlone(decision, practitioner);
+                }
+            }
+        }
+
+        // The consultation fees are what a self-pay patient is charged instead of the service's approved price: they change
+        // only when someone who approves prices agrees, and stay as they are (a new doctor's: none, so the service price
+        // applies) meanwhile. Fees already asked for are not asked again; other fees while a change waits are refused.
+        var feesNow = id is null ? PractitionerFees.None : PractitionerFees.Of(practitioner);
+        var feesAsked = new PractitionerFees(Money.Round(request.ConsultationFeeNew), Money.Round(request.ConsultationFeeFollowUp));
+        var askFees = false;
+        if (feesAsked != feesNow)
+        {
+            var waiting = id is null ? null : await fees.PendingAsync(practitioner.Id, ct);
+            if (waiting is not null && waiting.Asked != feesAsked)
+            {
+                return Error.Conflict(PractitionerFeeApprovals.WaitingCode,
+                        $"A change to {practitioner.DisplayName}'s consultation fee, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.")
+                    .ToProblem();
+            }
+
+            askFees = waiting is null;
+        }
+
+        feesNow.ApplyTo(practitioner);
+
+        // The record, and the requests for its identity and its fees, are kept together or not at all.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return id is null ? TypedResults.Created($"/api/v1/masters/practitioners/{practitioner.Id}", new { practitioner.Id }) : TypedResults.NoContent();
+        ApprovalRequestDto? identityRequest = null;
+        if (identityBefore is not null && identityAsked is not null)
+        {
+            var approval = await identities.AskAsync(practitioner, identityBefore, identityAsked, linked, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            identityRequest = approval.Value;
+        }
+
+        ApprovalRequestDto? feeRequest = null;
+        if (askFees)
+        {
+            var approval = await fees.AskAsync(practitioner, feesNow, feesAsked, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            feeRequest = approval.Value;
+        }
+
+        await transaction.CommitAsync(ct);
+        if (id is null)
+        {
+            return TypedResults.Created($"/api/v1/masters/practitioners/{practitioner.Id}", new { practitioner.Id, FeeApprovalId = feeRequest?.Id });
+        }
+
+        // Both asked in one save: the identity's request answers, and the record's read shows both waiting.
+        return (identityRequest ?? feeRequest) is { } waits ? TypedResults.Accepted($"/api/v1/approvals/{waits.Id}", waits) : TypedResults.NoContent();
     }
 
     // ---------------------------------------------------------------- services
 
     private static readonly Expression<Func<ServiceItem, ServiceItemDto>> ToServiceDto = s => new ServiceItemDto(
         s.Id, s.Code, s.Name, s.ShortName, s.Category, s.DepartmentId, s.BasePrice, s.TaxRate, s.SacCode, s.IsDiscountAllowed,
-        s.IsPriceEditable, s.Description, s.IsActive, s.Version, s.LocalNames);
+        s.IsPriceEditable, s.Description, s.IsActive, s.Version, s.LocalNames, null);
 
     private static async Task<IResult> ListServices(
         [AsParameters] PageQuery query, ServiceCategory? category, Guid? departmentId, bool? active, HospitalDbContext db, CancellationToken ct)
@@ -828,7 +981,8 @@ internal static class OrganizationEndpoints
         return TypedResults.Ok(await q.OrderByKey(page, sorts, s => s.Name).Select(ToServiceDto).ToPagedResultAsync(page, ct));
     }
 
-    private static async Task<IResult> SaveService(Guid? id, SaveServiceItemRequest request, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> SaveService(
+        Guid? id, SaveServiceItemRequest request, HospitalDbContext db, ServicePrices prices, ServiceChargeSources sources, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         ServiceItem service;
@@ -878,16 +1032,56 @@ internal static class OrganizationEndpoints
         service.LocalNames = CleanNames(request.LocalNames);
         service.Category = request.Category;
         service.DepartmentId = request.DepartmentId;
-        service.BasePrice = Money.Round(request.BasePrice);
-        service.TaxRate = request.TaxRate;
         service.SacCode = Clean(request.SacCode);
-        service.IsDiscountAllowed = request.IsDiscountAllowed;
-        service.IsPriceEditable = request.IsPriceEditable;
         service.Description = Clean(request.Description);
-        service.IsActive = request.IsActive;
 
+        // What a patient pays changes only when two people agree (maker-checker): what only narrows the terms applies now,
+        // the rest is asked for. A new service starts out of use at no price, and goes live at the price approved. While a
+        // change waits, a save must fit it (ServicePriceTerms.Covers): nothing is asked for twice, and anything else, the
+        // price in use put back included, is refused rather than saved while the other change still waits.
+        var before = id is null ? ServicePriceTerms.None : ServicePriceTerms.Of(service);
+        var asked = new ServicePriceTerms(
+            Money.Round(request.BasePrice), request.TaxRate, request.IsPriceEditable, request.IsDiscountAllowed, request.IsActive);
+        var now = before.Narrowed(asked);
+        var waiting = id is null ? null : await prices.PendingAsync(service.Id, ct);
+        if (waiting is not null && !ServicePriceTerms.Covers(waiting.Asked, now, asked))
+        {
+            return Error.Conflict(ServicePrices.WaitingCode,
+                    $"A change to {service.Code}'s price, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.")
+                .ToProblem();
+        }
+
+        // A ward's beds, a stay in progress in one of them or a diet charges some services by itself, day after day:
+        // taken out of use, billing would refuse each of those charges and the days would go unbilled.
+        if (before.IsActive && !now.IsActive
+            && await sources.UsesAsync(service.Id, ct) is { Count: > 0 } uses)
+        {
+            return ServiceChargeSources.InUse(service.Code, uses).ToProblem();
+        }
+
+        now.ApplyTo(service);
+        var asking = waiting is null && asked != now;
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return id is null ? TypedResults.Created($"/api/v1/masters/services/{service.Id}", new { service.Id }) : TypedResults.NoContent();
+        ApprovalRequestDto? requested = null;
+        if (asking)
+        {
+            var approval = await prices.AskAsync(service, now, asked, request.Reason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            requested = approval.Value;
+        }
+
+        await transaction.CommitAsync(ct);
+        return id is null
+            ? TypedResults.Created($"/api/v1/masters/services/{service.Id}", new { service.Id, ApprovalId = requested?.Id })
+            : requested is null
+                ? TypedResults.NoContent()
+                : TypedResults.Accepted($"/api/v1/approvals/{requested.Id}", requested);
     }
 
     // ---------------------------------------------------------------- references

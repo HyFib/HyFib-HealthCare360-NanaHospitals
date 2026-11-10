@@ -1,3 +1,4 @@
+using System.Globalization;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Patients.Services;
@@ -36,6 +37,32 @@ internal static class BillQueries
         }).ToList();
     }
 
+    /// <summary>
+    /// For a bill entered from paper after its month's GSTR-1 was recorded as filed: that it is not in the filed return and
+    /// is to be reported as an amendment in the next one. Null otherwise, and for a month whose filing is not recorded.
+    /// </summary>
+    internal static async Task<string?> LateForFiledReturnAsync(HospitalDbContext db, Bill bill, CancellationToken ct)
+    {
+        if (bill.EnteredFromPaperAt is not { } entered || bill.FinalizedAt is not { } finalized)
+        {
+            return null;
+        }
+
+        var own = await db.Set<Facility>().AsNoTracking().IgnoreQueryFilters().Where(f => f.Id == bill.FacilityId).Select(f => f.Gstin).FirstOrDefaultAsync(ct);
+        if (Gstin.Normalize(own) is not { } gstin)
+        {
+            return null;
+        }
+
+        var date = BillingTime.LocalDate(finalized);
+        var filing = await db.Set<GstReturnFiling>().AsNoTracking()
+            .FirstOrDefaultAsync(f => f.Gstin == gstin && f.ReturnType == GstReturnFiling.Gstr1 && f.Year == date.Year && f.Month == date.Month && f.RecordedAt <= entered, ct);
+        return filing is null
+            ? null
+            : string.Create(CultureInfo.InvariantCulture,
+                $"This bill is dated {date:d MMM yyyy}, but GSTR-1 for {GstFilingService.Words((date.Year, date.Month))} was already filed (ARN {filing.Arn}, {filing.FiledOn:d MMM yyyy}). It is not in that return: report it as an amendment (B2BA or B2CSA) in the next GSTR-1.");
+    }
+
     public static async Task<BillDetail?> DetailAsync(HospitalDbContext db, Guid billId, TimeProvider time, CancellationToken ct)
     {
         var bill = await db.Set<Bill>().AsNoTracking().Include(b => b.Lines).FirstOrDefaultAsync(b => b.Id == billId, ct);
@@ -51,8 +78,20 @@ internal static class BillQueries
         var practitioners = await db.Set<Practitioner>().Where(p => practitionerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.DisplayName, ct);
 
         var receipts = await db.Set<Receipt>().AsNoTracking().Include(r => r.Payments).Where(r => r.BillId == billId).OrderBy(r => r.ReceivedAt).ToListAsync(ct);
+        var reversed = await ReversedAsync(db, receipts.Select(r => r.Id).ToList(), ct);
         var refunds = await db.Set<Refund>().AsNoTracking().Where(r => r.BillId == billId).OrderBy(r => r.RequestedAt).ToListAsync(ct);
-        var credits = await db.Set<CreditNote>().AsNoTracking().Where(c => c.BillId == billId).OrderBy(c => c.IssuedAt).ToListAsync(ct);
+        var credits = await db.Set<CreditNote>().AsNoTracking().Include(c => c.Lines).Where(c => c.BillId == billId).OrderBy(c => c.IssuedAt).ToListAsync(ct);
+        var creditIds = credits.Select(c => c.Id).ToList();
+        var creditIrns = (await db.Set<EInvoice>().AsNoTracking()
+                .Where(e => e.Source == CreditNoteEInvoiceSource.Key && creditIds.Contains(e.SourceId) && e.Status == EInvoiceStatus.Registered)
+                .ToListAsync(ct))
+            .ToDictionary(e => e.SourceId);
+        var debits = await db.Set<DebitNote>().AsNoTracking().Include(n => n.Lines).Where(n => n.BillId == billId).OrderBy(n => n.IssuedAt).ToListAsync(ct);
+        var debitIds = debits.Select(n => n.Id).ToList();
+        var debitIrns = (await db.Set<EInvoice>().AsNoTracking()
+                .Where(e => e.Source == DebitNoteEInvoiceSource.Key && debitIds.Contains(e.SourceId) && e.Status == EInvoiceStatus.Registered)
+                .ToListAsync(ct))
+            .ToDictionary(e => e.SourceId);
         var pending = await db.Set<DiscountApproval>().AsNoTracking()
             .Where(a => a.BillId == billId && a.Status == DiscountApprovalStatus.Pending)
             .OrderByDescending(a => a.RequestedAt)
@@ -67,7 +106,7 @@ internal static class BillQueries
             l.Device)).ToList();
 
         var einvoice = await db.Set<EInvoice>().AsNoTracking()
-            .FirstOrDefaultAsync(e => e.Source == "bill" && e.SourceId == bill.Id && e.Status == EInvoiceStatus.Registered, ct);
+            .FirstOrDefaultAsync(e => e.Source == BillEInvoiceSource.Key && e.SourceId == bill.Id && e.Status == EInvoiceStatus.Registered, ct);
         return new BillDetail(
             bill.Id, bill.BillNumber, bill.Type, bill.IsFinalBill, bill.Status, bill.FacilityId, bill.PatientId, patient?.Uhid, patient?.FullName,
             bill.VisitId, bill.AdmissionId, bill.IpAccountId, bill.PayerType, bill.PayerId, payerName, bill.TariffPlanId, planName, bill.PolicyId,
@@ -78,16 +117,34 @@ internal static class BillQueries
             bill.NetAmount, bill.PayerAmount, bill.PatientAmount, bill.CoPayAmount, bill.NonPayableAmount, bill.PaidAmount, bill.RefundedAmount,
             bill.CreditAmount, bill.DueAmount, bill.RefundableAmount, bill.PayerSettledAmount, bill.PayerDisallowedAmount,
             IsTaxInvoice: bill.Lines.Any(l => l.TaxAmount > 0), bill.CreatedAt, bill.FinalizedAt, bill.CancelledAt, bill.CancelReason, bill.Notes, lines,
-            receipts.Select(ToSummary).ToList(),
+            receipts.Select(r => ToSummary(r, reversed.GetValueOrDefault(r.Id))).ToList(),
             refunds.Select(r => new RefundSummary(r.Id, r.RefundNumber, r.Amount, r.Status, r.Mode, r.RequestedAt, r.PaidAt)).ToList(),
-            credits.Select(c => new CreditNoteDto(c.Id, c.Number, c.Kind, c.Amount, c.Reason, c.IssuedAt, c.IssuedByName, c.RequestedByName)).ToList(),
+            credits.Select(c => ToDto(c, creditIrns.GetValueOrDefault(c.Id))).ToList(),
             pending is null ? null : ToDto(pending, bill.BillNumber, patient?.Uhid, patient?.FullName),
             package,
             bill.Version,
             einvoice is null ? null : EInvoiceService.Stamp(einvoice),
             bill.FreeTreatmentReason,
-            bill.FreeTreatmentAmount);
+            bill.FreeTreatmentAmount,
+            debits.Select(n => new DebitNoteDto(
+                n.Id, n.Number, n.Party, n.Amount, n.TaxableAmount, n.GstAmount, n.Reason, n.IssuedAt, n.IssuedByName, n.RequestedByName,
+                n.Lines.OrderBy(l => l.SortOrder)
+                    .Select(l => new DebitNoteLineDto(l.BillLineId, l.Description, l.SacCode, l.GstRate, l.Amount, l.TaxableAmount, l.CgstAmount, l.SgstAmount, l.IgstAmount))
+                    .ToList(),
+                debitIrns.TryGetValue(n.Id, out var irn) ? EInvoiceService.Stamp(irn) : null)).ToList(),
+            bill.DebitAmount,
+            bill.PayerDebitAmount,
+            await LateForFiledReturnAsync(db, bill, ct));
     }
+
+    /// <summary>A credit note with the lines it corrects, their GST, and its IRN when it is a registered e-invoice.</summary>
+    internal static CreditNoteDto ToDto(CreditNote note, EInvoice? irn) => new(
+        note.Id, note.Number, note.Kind, note.Amount, note.Reason, note.IssuedAt, note.IssuedByName, note.RequestedByName,
+        note.TaxableAmount, note.GstAmount, note.GstTimeBarred,
+        note.Lines.OrderBy(l => l.SortOrder)
+            .Select(l => new CreditNoteLineDto(l.BillLineId, l.Description, l.SacCode, l.GstRate, l.Amount, l.TaxableAmount, l.CgstAmount, l.SgstAmount, l.IgstAmount))
+            .ToList(),
+        irn is null ? null : EInvoiceService.Stamp(irn));
 
     /// <summary>The package pricing a bill: the OP bill's own, or the IP account's on a final bill.</summary>
     private static async Task<BillPackageSummary?> PackageSummaryAsync(HospitalDbContext db, Bill bill, CancellationToken ct)
@@ -116,7 +173,16 @@ internal static class BillQueries
         return new BillPackageSummary(id, package.Code, package.Name, price, actuals, covered, actuals - covered);
     }
 
-    public static ReceiptSummary ToSummary(Receipt r) => new(r.Id, r.ReceiptNumber, r.Purpose, r.Amount, r.ModeSummary, r.ReceivedAt);
+    public static ReceiptSummary ToSummary(Receipt r, decimal reversed) => new(r.Id, r.ReceiptNumber, r.Purpose, r.Amount, r.ModeSummary, r.ReceivedAt, reversed);
+
+    /// <summary>What reversals took back from each of these receipts as money not received (receipts with none are left out).</summary>
+    public static async Task<Dictionary<Guid, decimal>> ReversedAsync(HospitalDbContext db, IReadOnlyCollection<Guid> receiptIds, CancellationToken ct) =>
+        receiptIds.Count == 0
+            ? []
+            : await db.Set<ReceiptReversal>().AsNoTracking().Where(x => receiptIds.Contains(x.ReceiptId))
+                .GroupBy(x => x.ReceiptId)
+                .Select(g => new { g.Key, Amount = g.Sum(x => x.Amount) })
+                .ToDictionaryAsync(x => x.Key, x => x.Amount, ct);
 
     public static DiscountApprovalDto ToDto(DiscountApproval a, string? billNumber, string? uhid, string? patientName) => new(
         a.Id, a.BillId, billNumber, a.PatientId, uhid, patientName, a.RequestedAmount, a.DiscountBase, a.BillDiscountPercent, a.BillDiscountAmount,

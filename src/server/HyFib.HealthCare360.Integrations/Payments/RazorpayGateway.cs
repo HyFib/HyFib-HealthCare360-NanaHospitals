@@ -12,6 +12,11 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
 {
     public string Key => ProviderKeys.Razorpay;
 
+    public string Name => "Razorpay";
+
+    public bool IsSetUp(PaymentSettings settings, PaymentSecrets secrets) =>
+        !string.IsNullOrWhiteSpace(settings.KeyId) && !string.IsNullOrWhiteSpace(secrets.KeySecret);
+
     public async Task<PaymentOrder> CreateOrderAsync(CreatePaymentOrder request, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
     {
         var (baseUri, keyId, keySecret) = Credentials(settings, secrets);
@@ -87,9 +92,10 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
     /// answers a repeated request with the refund it already made, and in the refund's <c>receipt</c>.
     /// </summary>
     public async Task<RefundResult> RefundAsync(
-        string paymentId, decimal amount, string reason, string? idempotencyKey, PaymentSettings settings,
+        GatewayPaymentRef payment, decimal amount, string reason, string? idempotencyKey, PaymentSettings settings,
         PaymentSecrets secrets, CancellationToken cancellationToken)
     {
+        var paymentId = payment.PaymentId;
         if (!PaymentIdPattern().IsMatch(paymentId))
         {
             return new RefundResult(false, null, "Not a Razorpay payment id.");
@@ -125,6 +131,10 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
     }
 
     public bool VerifySignature(string payload, string signature, PaymentSecrets secrets) =>
+        RazorpaySignatures.Verify(payload, signature, secrets.KeySecret, secrets.WebhookSecret);
+
+    /// <summary>Razorpay signs the raw body with the webhook secret and no timestamp (redeliveries carry the same event id).</summary>
+    public bool VerifyWebhook(string payload, string signature, string? timestamp, PaymentSecrets secrets, DateTimeOffset now) =>
         RazorpaySignatures.Verify(payload, signature, secrets.KeySecret, secrets.WebhookSecret);
 
     /// <summary>
@@ -168,7 +178,8 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
     }
 
     /// <summary><c>GET v1/refunds/{id}</c>: pending, processed or failed, with the bank's reference (ARN, RRN or UTR) once known.</summary>
-    public async Task<RefundStatusResult> GetRefundStatusAsync(string refundId, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    public async Task<RefundStatusResult> GetRefundStatusAsync(
+        string refundId, GatewayPaymentRef payment, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
     {
         if (!RefundIdPattern().IsMatch(refundId))
         {
@@ -196,6 +207,51 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
             bankReference is { Length: > 0 and <= 64 } && bankReference.All(char.IsAsciiLetterOrDigit) ? bankReference : null,
             RazorpayStatus.ReadTime(root, "created_at"),
             status == PaymentRefundStatus.Failed ? "Razorpay could not return the money to the patient's account." : null);
+    }
+
+    /// <summary><c>GET v1/disputes/{id}</c>: the dispute as Razorpay holds it now.</summary>
+    public async Task<GatewayDispute> GetDisputeAsync(string disputeId, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    {
+        if (!RazorpayDisputes.IsDisputeId(disputeId))
+        {
+            throw new IntegrationException("Not a Razorpay dispute id.");
+        }
+
+        var (baseUri, keyId, keySecret) = Credentials(settings, secrets);
+        using var document = await SendAsync(HttpMethod.Get, IntegrationHttp.Combine(baseUri, $"v1/disputes/{disputeId}"), null, keyId, keySecret,
+            "dispute.fetch", disputeId, null, cancellationToken);
+        return RazorpayDisputes.Read(document.RootElement) ?? throw new IntegrationException($"Razorpay's dispute {disputeId} could not be read.");
+    }
+
+    /// <summary>
+    /// Every page of <c>GET v1/disputes?from&amp;count&amp;skip</c>: the disputes raised since <paramref name="since"/>. All or
+    /// nothing, like a day's settlements: a failed page fails the whole read.
+    /// </summary>
+    public async Task<IReadOnlyList<GatewayDispute>> GetDisputesAsync(
+        DateTimeOffset since, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    {
+        var (baseUri, keyId, keySecret) = Credentials(settings, secrets);
+        var from = Math.Max(since.ToUnixTimeSeconds(), 1);
+        var disputes = new List<GatewayDispute>();
+        for (var page = 0; ; page++)
+        {
+            if (page >= RazorpayDisputes.MaxPages)
+            {
+                throw new IntegrationException($"Razorpay listed more than {RazorpayDisputes.MaxPages * RazorpayDisputes.PageSize} disputes since {since:dd MMM yyyy}.");
+            }
+
+            var query = string.Create(CultureInfo.InvariantCulture,
+                $"v1/disputes?from={from}&count={RazorpayDisputes.PageSize}&skip={page * RazorpayDisputes.PageSize}");
+            using var document = await SendAsync(HttpMethod.Get, IntegrationHttp.Combine(baseUri, query), null, keyId, keySecret,
+                "dispute.list", null, $"{{\"from\":{from},\"page\":{page + 1}}}", cancellationToken);
+            disputes.AddRange(RazorpayDisputes.ReadPage(document.RootElement));
+            if (RazorpayDisputes.CountItems(document.RootElement) < RazorpayDisputes.PageSize)
+            {
+                break;
+            }
+        }
+
+        return disputes;
     }
 
     /// <summary>Razorpay errors: <c>{"error":{"code":"BAD_REQUEST_ERROR","description":"…","field":"amount"}}</c>.</summary>

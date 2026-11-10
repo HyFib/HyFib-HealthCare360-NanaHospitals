@@ -1,3 +1,4 @@
+import { formatDateOnly } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
 import type { PharmacySaleDetail } from './api';
 import { buildLabelsHtml, buildReceiptHtml, directionsText, dispensingLabelData, gstSummaryByRate } from './print';
@@ -130,6 +131,21 @@ describe('pharmacy prints', () => {
     expect(html).toContain('Paid by UPI (UTR99)');
     expect(html).toContain('Substituted with the prescriber');
     expect(html).toContain('Mox 500');
+  });
+
+  it('prints the outside prescription with the date it was written, so the invoice matches the paper', () => {
+    const dated = buildReceiptHtml({ ...sale, prescriptionDate: '2026-09-23' }, { name: 'Nana Hospitals' });
+    expect(dated).toContain(`<td>Prescription</td><td class="right">RX-9 dated ${formatDateOnly('2026-09-23')}</td>`);
+
+    const dateOnly = buildReceiptHtml(
+      { ...sale, prescriptionNumber: null, prescriptionDate: '2026-09-23' },
+      { name: 'Nana Hospitals' },
+    );
+    expect(dateOnly).toContain(`<td>Prescription</td><td class="right">dated ${formatDateOnly('2026-09-23')}</td>`);
+
+    expect(buildReceiptHtml(sale, { name: 'Nana Hospitals' })).toContain(
+      '<td>Prescription</td><td class="right">RX-9</td>',
+    );
   });
 
   it('prints the invoice as the pharmacy and canteen bills template says', () => {

@@ -38,7 +38,7 @@ public sealed class InterStateSupplyTests(HospitalServer server)
     {
         await using var _ = await HospitalGstinAsync(Hospital);
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        var service = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var service = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", "Executive lounge access", null, ServiceCategory.Miscellaneous, null, 1000m, 18m, "999799", true, false, null, true, null));
 
         var kerala = await BillAsync(await CompanyAsync(admin, KeralaClinic), service);
@@ -99,6 +99,7 @@ public sealed class InterStateSupplyTests(HospitalServer server)
             BloodGroup: null, MaritalStatus: null, GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
             EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null, Category: null,
             AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null, ConfirmedNotDuplicate: false));
+        await server.VerifiedPolicyAsync(patient.Id, company.Id);
         var visit = await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", new CreateVisitRequest(
             patient.Id, VisitType.HealthCheckup, null, null, null, PayerType.Corporate, company.Id, ReferralSource.Corporate, null, null, false, null, null,
             TokenPriority.Normal, IssueToken: false, NotifyPatient: false));
@@ -110,8 +111,8 @@ public sealed class InterStateSupplyTests(HospitalServer server)
         return await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
     }
 
-    private static Task<PayerDetail> CompanyAsync(ApiClient admin, string? gstin) =>
-        admin.PostAsync<PayerDetail>("/api/v1/insurance/payers", new SavePayerRequest(
+    private Task<PayerDetail> CompanyAsync(ApiClient admin, string? gstin) =>
+        server.CreatePayerAsync(admin, new SavePayerRequest(
             $"CO{Letters(8).ToUpperInvariant()}", $"Malabar Traders {Letters(6).ToUpperInvariant()} Ltd", PayerCategory.Corporate, "Anil Menon", "9876543210",
             null, null, gstin, null, CreditDays: 30, DefaultCoPayPercent: 0m, PortalUrl: null, IsActive: true, Notes: null, Version: null));
 

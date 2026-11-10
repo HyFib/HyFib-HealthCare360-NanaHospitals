@@ -10,6 +10,7 @@ using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Localization;
+using HyFib.HealthCare360.Platform.Logging;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Modules;
 using HyFib.HealthCare360.Platform.Networking;
@@ -93,6 +94,14 @@ public static class PlatformServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Hospital")
             ?? throw new InvalidOperationException("Connection string 'Hospital' is not configured.");
 
+        // A PostgreSQL on another machine only over TLS that checks its certificate, unless a lab says otherwise.
+        if (DatabaseTls.Problems(configuration, options.Database) is { Count: > 0 } unencrypted)
+        {
+            throw new InvalidOperationException("HC360 cannot start: " + string.Join(" ", unencrypted));
+        }
+
+        services.AddScoped<IHealthWarningSource, DatabaseTlsWarnings>();
+
         // The password is supplied as each connection opens, so Administration can change it while the server runs.
         var credentials = new DatabaseCredentials(connectionString);
         services.AddSingleton(credentials);
@@ -116,6 +125,26 @@ public static class PlatformServiceCollectionExtensions
             }
         }, ServiceLifetime.Scoped);
         services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<HospitalDbContext>>().CreateDbContext());
+
+        // The account that owns the schema, where it is not the one the server works as: migrations and the jobs that add
+        // partitions sign in as it, every request as the working account (DatabaseOwner).
+        DbContextOptions<HospitalDbContext>? ownerOptions = null;
+        if (configuration.GetConnectionString(DatabaseOwner.ConnectionName) is { Length: > 0 } ownerString)
+        {
+            var (ownerConnection, supplyOwnerPassword) = credentials.For(ownerString);
+            ownerOptions = new DbContextOptionsBuilder<HospitalDbContext>()
+                .UseNpgsql(ownerConnection, npgsql =>
+                {
+                    npgsql.MigrationsAssembly(migrationsAssembly);
+                    npgsql.MigrationsHistoryTable(MigrationBaseline.HistoryTable, MigrationBaseline.HistorySchema);
+                    npgsql.CommandTimeout(60);
+                    npgsql.ConfigureDataSource(supplyOwnerPassword);
+                })
+                .UseSnakeCaseNamingConvention()
+                .Options;
+        }
+
+        services.AddSingleton(sp => new DatabaseOwner(ownerOptions, sp.GetRequiredService<ModuleCatalog>()));
         services.TryAddSingleton(new SettingsFileProtection(ProtectedSettings.ForThisMachine()));
         services.AddSingleton<IDatabaseRolePassword, PostgresRolePassword>();
         services.AddScoped<DatabasePasswordService>();
@@ -148,6 +177,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddSingleton<ISessionValidator>(sp => sp.GetRequiredService<SessionValidator>());
         services.AddSingleton<IClusterCache>(sp => sp.GetRequiredService<SessionValidator>());
         services.AddScoped<AuthService>();
+        services.AddScoped<IWitnessConfirmations, WitnessConfirmations>();
         services.AddScoped<WebAuthnUnlockService>();
         services.AddScoped<LoadTestAccounts>();
 
@@ -231,12 +261,29 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<AuditChainService>();
         services.AddSingleton<AuditSealKey>();
         services.AddSingleton<AuditAnchors>();
+
+        // Off the server (CERT-In, SRS SEC-09): log events to the syslog collector, and each anchor to a second anchor file
+        // on another machine or to the collector, on every node; System health says when either fails.
+        services.AddSingleton(sp => new SyslogClient(options.Syslog, sp.GetRequiredService<TimeProvider>()));
+        services.AddScoped<IHealthWarningSource, SyslogHealthWarnings>();
+        services.AddSingleton<AuditAnchorMirror>();
+        services.AddHostedService<AuditAnchorMirrorService>();
+        services.AddScoped<IHealthWarningSource, AuditAnchorMirrorWarnings>();
+
+        // How long the audit trail is kept, and the purge of the months it no longer keeps: two super administrators.
+        services.AddScoped<AuditRetentionService>();
+        services.AddScoped<IApprovalAction, AuditRetentionApproval>();
+        services.AddScoped<IApprovalAction, AuditPurgeApproval>();
+
         services.AddServerClock();
         services.AddScoped<INumberSeries, NumberSeriesService>();
         services.AddScoped<IOutbox, Outbox>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<IApprovals>(sp => sp.GetRequiredService<ApprovalService>());
+        services.AddScoped<ApprovalHandover>();
+        services.AddScoped<RecordHistoryService>();
+        services.AddScoped<AuditEntityIndex>();
         services.AddScoped<NotificationTemplateRenderer>();
         services.AddScoped<WhatsAppConsent>();
         services.AddSingleton<IRealtimePublisher, SignalRRealtimePublisher>();
@@ -248,6 +295,10 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IPrintTemplates, PrintTemplates>();
         services.AddScoped<DocumentAssets>();
         services.AddScoped<ISettingsService, SettingsService>();
+
+        // A change that loosens a control, or changes where money, patients' data or alerts go, waits for a second administrator.
+        services.AddScoped<SettingChanges>();
+        services.AddScoped<IApprovalAction, SettingChangeApproval>();
         services.AddScoped<IFeatureFlags, FeatureFlags>();
         services.AddScoped<IIntegrationLogger, IntegrationLogger>();
 
@@ -257,6 +308,40 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<SystemHealthService>();
         services.AddScoped<SimulatorRecordSweep>();
         services.AddScoped<AlertDrills>();
+        services.AddScoped<AlertIncidents>();
+
+        // Access is given by two people: the decision, its approval actions, and whether the hospital has had two.
+        services.AddSingleton<GrantLatch>();
+        services.AddScoped<GrantApprovals>();
+        services.AddScoped<IApprovalAction, UserGrantApproval>();
+        services.AddScoped<IApprovalAction, RoleGrantApproval>();
+
+        // Nobody takes over a colleague's account alone: a password reset goes to the user; a two-step verification reset,
+        // another user's contact details, an account linked to a practitioner, a linked practitioner's registration and
+        // signature, and another administration desktop wait for a second administrator.
+        services.AddScoped<AccountApprovals>();
+        services.AddScoped<IApprovalAction, PasswordResetApproval>();
+        services.AddScoped<IApprovalAction, MfaResetApproval>();
+        services.AddScoped<IApprovalAction, ContactChangeApproval>();
+        services.AddScoped<IApprovalAction, PractitionerLinkApproval>();
+        services.AddScoped<PractitionerIdentityApprovals>();
+
+        // HPR verification: the simulator until the hospital is connected to ABDM's HPR service (every check names its source).
+        services.TryAddSingleton<IHprRegistry, SimulatedHprRegistry>();
+        services.AddScoped<PractitionerHprChecks>();
+        services.AddScoped<IApprovalAction, PractitionerIdentityApproval>();
+        services.AddScoped<PractitionerFeeApprovals>();
+        services.AddScoped<IApprovalAction, PractitionerFeeApproval>();
+        services.AddScoped<DeviceEnrollmentApprovals>();
+        services.AddScoped<IApprovalAction, DeviceEnrollmentApproval>();
+
+        // A service's price changes only when two people agree.
+        services.AddScoped<ServicePrices>();
+        services.AddScoped<ServiceChargeSources>();
+
+        // A doctor with work ahead (appointments, admissions, surgeries) is taken out of use only once it is named.
+        services.AddScoped<PractitionerWorkSources>();
+        services.AddScoped<IApprovalAction, ServicePriceApproval>();
         services.AddHttpClient(AlertHeartbeat.HttpClientName, client => client.DefaultRequestHeaders.UserAgent.ParseAdd("HyFib-HC360-Heartbeat"))
             .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
 
@@ -279,14 +364,17 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddSingleton(ReleaseTrust.BuiltIn);
         services.AddSingleton<DesktopPackageStore>();
 
-        // Fallbacks replaced by the Billing, Patients, Clinical and Inpatient modules / Integrations project when present.
+        // Fallbacks replaced by the Billing, Patients, Clinical, Inpatient and Quality modules / Integrations project when present.
         services.TryAddScoped<IChargePoster, NullChargePoster>();
         services.TryAddScoped<IRoomClassDirectory, NullRoomClassDirectory>();
         services.TryAddScoped<IAdmissionDirectory, NullAdmissionDirectory>();
+        services.TryAddScoped<IIncidentRegister, NullIncidentRegister>();
+        services.TryAddScoped<ISurgeryAndTransfusionFacts, NullSurgeryAndTransfusionFacts>();
         services.TryAddScoped<IBillingStatusProvider, NullBillingStatusProvider>();
         services.TryAddScoped<IPayerDirectory, NullPayerDirectory>();
         services.TryAddScoped<IPortalAccountResolver, NullPortalAccountResolver>();
         services.TryAddScoped<IVerifiedCodingSource, NullVerifiedCodingSource>();
+        services.TryAddScoped<IProcedureCatalogue, NullProcedureCatalogue>();
         services.TryAddScoped<IPatientLanguageSource, NullPatientLanguageSource>();
 
         services.AddSignalR(hub =>
@@ -330,12 +418,15 @@ public static class PlatformServiceCollectionExtensions
             services.AddScoped<IHealthWarningSource, AlertHeartbeatWarnings>();
             services.AddHostedService<IdempotencyCleanupService>();
             services.AddHostedService<PartitionMaintenanceJob>();
+            services.AddHostedService<AuditEntityIndexJob>();
             services.AddHostedService<ClusterStoreCleanup>();
             services.AddHostedService<WifiMonitor>();
             services.AddHostedService<FieldKeyMoverService>();
 
             services.AddQuartz(quartz =>
             {
+                // Each due time runs once for the hospital, whichever server holds the job lease (SCAL-05).
+                quartz.AddTriggerListener<JobSlotClaim>([GroupMatcher<TriggerKey>.AnyGroup()]);
                 if (options.Backup.Enabled)
                 {
                     quartz.ScheduleJob<BackupJob>(trigger => trigger
@@ -400,10 +491,12 @@ public static class PlatformServiceCollectionExtensions
         DeviceEndpoints.Map(endpoints);
         OrganizationEndpoints.Map(endpoints);
         AuditEndpoints.Map(endpoints);
+        AuditRetentionEndpoints.Map(endpoints);
         NumberSeriesEndpoints.Map(endpoints);
         PrintTemplateEndpoints.Map(endpoints);
         NotificationEndpoints.Map(endpoints);
         ApprovalEndpoints.Map(endpoints);
+        RecordHistoryEndpoints.Map(endpoints);
         FileEndpoints.Map(endpoints);
         SettingsEndpoints.Map(endpoints);
         FeatureEndpoints.Map(endpoints);

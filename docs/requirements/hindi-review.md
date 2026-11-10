@@ -23,8 +23,8 @@ and `patient-texts-hi.json` (Hindi). A server message is matched on its English 
 made in the Hindi file only. The tests check that every English text has a Hindi one with the same `{placeholders}`
 (a server message may leave one out, as `message.problem.not_found_detail` does with an English record name).
 
-Not in this list: the validators' built-in messages for an empty or too-long field ("'Reason' must not be empty"),
-which come in Hindi from the FluentValidation library's own translation, with the field's English name in them.
+The validators' own messages for an empty, too long or out-of-range field are in this list too (see *The validators' own
+messages* below), worded without the field's English name.
 
 Points we would most like checked:
 
@@ -348,6 +348,69 @@ Points we would most like checked:
 | 100 | `doc.bill.ack_no` | Ack no. | पावती सं. | |
 | 101 | `doc.bill.ack_date` | Ack date | पावती दिनांक | |
 | 102 | `doc.bill.einvoice_qr` | Signed QR code of the e-invoice | ई-इनवॉइस का हस्ताक्षरित QR कोड | |
+| 103 | `message.appointment.slot_unavailable_choose` | This time is not available for booking. Choose another slot. | यह समय बुकिंग के लिए उपलब्ध नहीं है। कृपया कोई दूसरा समय चुनें। | |
+| 104 | `message.appointment.overlap` | The patient already has appointment {number} at this time. | इस समय रोगी का अपॉइंटमेंट {number} पहले से है। | |
+| 105 | `message.appointment.online_window` | Online booking opens {days} days ahead. Choose an earlier date. | ऑनलाइन बुकिंग केवल {days} दिन पहले से खुलती है। कृपया पहले की कोई तारीख चुनें। | |
+| 106 | `message.appointment.online_cutoff` | Online booking and changes close {minutes} minutes before the appointment. Please call the hospital. | अपॉइंटमेंट से {minutes} मिनट पहले ऑनलाइन बुकिंग और बदलाव बंद हो जाते हैं। कृपया अस्पताल को फ़ोन करें। | |
+| 107 | `message.appointment.cancel_reason` | Describe why the appointment is cancelled. | बताएँ कि अपॉइंटमेंट क्यों रद्द किया जा रहा है। | |
+| 108 | `message.appointment.already_cancelled` | This appointment is already cancelled. | यह अपॉइंटमेंट पहले ही रद्द हो चुका है। | |
+| 109 | `message.appointment.checked_in` | The patient has already checked in. Cancel the visit instead. | रोगी अस्पताल में पहले ही चेक-इन कर चुके हैं। कृपया अस्पताल के काउंटर पर बताएँ। | |
+| 110 | `message.appointment.closed` | This appointment cannot be {action}. | इस अपॉइंटमेंट में यह बदलाव नहीं किया जा सकता। | |
+| 111 | `message.appointment.closed_cancelled` | A cancelled appointment cannot be {action}. | रद्द किए गए अपॉइंटमेंट में यह बदलाव नहीं किया जा सकता। | |
+| 112 | `message.appointment.closed_completed` | A completed appointment cannot be {action}. | पूरे हो चुके अपॉइंटमेंट में यह बदलाव नहीं किया जा सकता। | |
+| 113 | `message.appointment.closed_no_show` | A no-show appointment cannot be {action}. | जिस अपॉइंटमेंट पर रोगी नहीं आए, उसमें यह बदलाव नहीं किया जा सकता। | |
+| 114 | `message.appointment.closed_arrived` | The patient has already arrived; the appointment cannot be {action}. | रोगी अस्पताल पहुँच चुके हैं, इसलिए इस अपॉइंटमेंट में यह बदलाव नहीं किया जा सकता। | |
+| 115 | `message.appointment.closed_rescheduled` | This appointment was rescheduled; the new appointment must be {action} instead. | इस अपॉइंटमेंट का समय बदला जा चुका है; यह बदलाव नए अपॉइंटमेंट में करें। | |
+| 116 | `message.telehealth.too_early` | You can join from {minutes} minutes before the appointment time. | आप अपॉइंटमेंट के समय से {minutes} मिनट पहले से जुड़ सकते हैं। | |
+| 117 | `message.telehealth.ended` | This consultation has ended. | यह परामर्श समाप्त हो चुका है। | |
+| 118 | `message.telehealth.cancelled` | This consultation was cancelled. | यह परामर्श रद्द कर दिया गया था। | |
+| 119 | `message.telehealth.missed` | This consultation was missed. Please book a new appointment. | यह परामर्श छूट गया। कृपया नया अपॉइंटमेंट बुक करें। | |
+| 120 | `message.waitlist.from_today` | Choose today or a later date. | आज की या उसके बाद की कोई तारीख चुनें। | |
+| 121 | `message.waitlist.max_days` | A waitlist request can cover at most {days} days. | प्रतीक्षा सूची का अनुरोध ज़्यादा से ज़्यादा {days} दिनों का हो सकता है। | |
+| 122 | `message.waitlist.already_closed` | This waitlist request is already closed. | प्रतीक्षा सूची का यह अनुरोध पहले ही बंद हो चुका है। | |
+| 123 | `message.payment.gateway_not_configured_counter` | No payment gateway is configured. Collect the payment at the counter. | ऑनलाइन भुगतान की व्यवस्था अभी उपलब्ध नहीं है। कृपया अस्पताल के काउंटर पर भुगतान करें। | |
+| 124 | `message.payment.gateway_unavailable_counter` | The payment gateway could not be reached. Try again or collect the payment at the counter. | भुगतान गेटवे से संपर्क नहीं हो सका। फिर से कोशिश करें या अस्पताल के काउंटर पर भुगतान करें। | |
+| 125 | `message.payment.no_balance` | This bill has no balance to pay. | इस बिल पर कोई राशि बाकी नहीं है। | |
+| 126 | `message.portal.family_ended` | This family member can no longer see the records. | परिवार का यह सदस्य अब ये रिकॉर्ड नहीं देख सकता। | |
+| 127 | `message.refill.not_refillable` | This prescription cannot be refilled. | इस पर्चे की दवा दोबारा नहीं ली जा सकती। | |
+| 128 | `message.refill.not_dispensed` | The prescription must be dispensed before it can be refilled. | दवा दोबारा लेने से पहले इस पर्चे की दवा एक बार फ़ार्मेसी से मिल चुकी होनी चाहिए। | |
+| 129 | `message.refill.none_left` | No refills are left on this prescription. Ask the doctor for a new prescription. | इस पर्चे पर दवा दोबारा लेने की कोई बारी बाकी नहीं है। कृपया डॉक्टर से नया पर्चा लें। | |
+| 130 | `message.refill.expired` | The refill authorisation has expired. Ask the doctor for a new prescription. | दवा दोबारा लेने की अनुमति की अवधि खत्म हो चुकी है। कृपया डॉक्टर से नया पर्चा लें। | |
+| 131 | `message.records.facility` | Select a facility first. | पहले अस्पताल की शाखा चुनें। | |
+| 132 | `message.privacy.changes_limit` | List at most {count} changes. | ज़्यादा से ज़्यादा {count} बदलाव लिखें। | |
+| 133 | `message.privacy.changes_once` | List each detail once. | हर जानकारी केवल एक बार लिखें। | |
+| 134 | `message.privacy.nominee_name` | Enter the nominee's name. | नामांकित व्यक्ति का नाम दर्ज करें। | |
+| 135 | `message.privacy.nominee_relationship` | Say how the nominee is related to the patient. | बताएँ कि नामांकित व्यक्ति का रोगी से क्या संबंध है। | |
+| 136 | `message.privacy.nominee_contact` | Enter the nominee's mobile number or e-mail address, so the hospital can reach them. | नामांकित व्यक्ति का मोबाइल नंबर या ई-मेल पता दर्ज करें, ताकि अस्पताल उनसे संपर्क कर सके। | |
+| 137 | `message.auth.otp_code` | Enter the 6-digit code sent to your mobile. | आपके मोबाइल पर भेजा गया 6 अंकों का कोड दर्ज करें। | |
+| 138 | `message.public.unknown_request` | Unknown request. | यह अनुरोध पहचाना नहीं जा सका। | |
+| 139 | `message.feature.portal_off_title` | The patient portal is turned off | रोगी पोर्टल बंद है | |
+| 140 | `message.feature.portal_off` | The patient portal is not available right now. Please contact the hospital. | रोगी पोर्टल अभी उपलब्ध नहीं है। कृपया अस्पताल से संपर्क करें। | |
+| 141 | `message.feature.telehealth_off_title` | Video consultations are turned off | वीडियो परामर्श बंद है | |
+| 142 | `message.feature.telehealth_off` | Video consultations are not available right now. Please contact the hospital to see the doctor in person. | वीडियो परामर्श अभी उपलब्ध नहीं है। डॉक्टर से अस्पताल में मिलने के लिए कृपया अस्पताल से संपर्क करें। | |
+| 143 | `message.feature.abdm_off_title` | ABDM health records are turned off | ABDM स्वास्थ्य रिकॉर्ड की सुविधा बंद है | |
+| 144 | `message.feature.off` | This is not available right now. Please contact the hospital. | यह सुविधा अभी उपलब्ध नहीं है। कृपया अस्पताल से संपर्क करें। | |
+| 145 | `message.appointment.payment_cancel_staff_only` | Only hospital staff can cancel an appointment because the payment was not received. | भुगतान न मिलने के कारण अपॉइंटमेंट केवल अस्पताल का स्टाफ़ ही रद्द कर सकता है। | |
+| 146 | `message.portal.link_not_usable` | This link no longer works. | यह लिंक अब काम नहीं करता। | |
+| 147 | `message.appointment.video_consent` | Agree to be seen by video to book a video consultation. | वीडियो परामर्श बुक करने के लिए वीडियो पर परामर्श की सहमति दें। | |
+| 148 | `message.privacy.child_guardian_unverified` | The patient is under 18: a parent's or lawful guardian's consent must be verified first, by a code sent to their mobile number or by their identity document. | रोगी की आयु 18 वर्ष से कम है: पहले माता-पिता या वैध अभिभावक की सहमति की जाँच ज़रूरी है, उनके मोबाइल नंबर पर भेजे गए कोड से या उनके पहचान दस्तावेज़ से। | |
+| 149 | `message.privacy.child_marketing` | The patient is under 18: the DPDP Act (s.9(3)) does not allow marketing or targeted messages to children, even with a parent's consent. | रोगी की आयु 18 वर्ष से कम है: DPDP अधिनियम (धारा 9(3)) बच्चों को विपणन या लक्षित संदेश भेजने की अनुमति नहीं देता, माता-पिता की सहमति होने पर भी नहीं। | |
+| 150 | `message.privacy.consent_ended` | This consent has already ended. | यह सहमति पहले ही समाप्त हो चुकी है। | |
+
+## The validators' own messages (shown next to a field)
+
+When a field is left empty, is too long or holds a value not offered, the server's own check words the message. In Hindi
+it is worded without the field's name, because the portal shows it next to the field (`validator.*`, keyed by the
+check's name in the FluentValidation library). Words in `{braces}` are numbers HC360 fills in. Staff and English readers
+keep the library's own English.
+
+| # | Key | English | Hindi | OK? |
+|---|---|---|---|---|
+| 1 | `validator.NotEmptyValidator` | This is required. | यह जानकारी ज़रूरी है। | |
+| 2 | `validator.MaximumLengthValidator` | Keep it to {MaxLength} characters or fewer. You entered {TotalLength}. | {MaxLength} अक्षरों से ज़्यादा न लिखें। आपने {TotalLength} अक्षर लिखे हैं। | |
+| 3 | `validator.EnumValidator` | Choose one of the options given. | दिए गए विकल्पों में से एक चुनें। | |
+| 4 | `validator.InclusiveBetweenValidator` | Choose a number from {From} to {To}. | {From} से {To} तक की कोई संख्या चुनें। | |
+| 5 | `validator.EmailValidator` | Enter a valid e-mail address. | सही ई-मेल पता दर्ज करें। | |
 
 ## The rate list (displayed at the counter and in the wards)
 

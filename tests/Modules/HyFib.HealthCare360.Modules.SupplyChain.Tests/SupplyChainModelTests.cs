@@ -73,11 +73,33 @@ public sealed class SupplyChainModelTests
     {
         var permissions = new SupplyChainModule().Permissions.ToList();
 
-        permissions.Count.ShouldBe(13);
+        permissions.Count.ShouldBe(18);
         permissions.Select(p => p.Name).Distinct().Count().ShouldBe(permissions.Count);
         permissions.ShouldAllBe(p => p.DefaultRoles != null && p.DefaultRoles.Length > 0);
         permissions.Single(p => p.Name == SupplyChainPermissions.StockRead).DefaultRoles!.ShouldContain("Pharmacist");
         permissions.Single(p => p.Name == SupplyChainPermissions.IndentsRaise).DefaultRoles!.ShouldContain("Nurse");
         permissions.Single(p => p.Name == SupplyChainPermissions.AssetsMaintenance).DefaultRoles!.ShouldContain("BiomedicalEngineer");
+
+        // A pharmacist decides whether a drug may be handled less strictly; the store and purchase officers who keep the
+        // item master ask, and do not decide.
+        var drugClass = permissions.Single(p => p.Name == SupplyChainPermissions.DrugClassApprove).DefaultRoles!;
+        drugClass.ShouldContain("Pharmacist");
+        drugClass.ShouldNotContain("StoreKeeper");
+        drugClass.ShouldNotContain("PurchaseOfficer");
+
+        // A purchase officer checks goods receipts against the supplier's invoice and posts them; the store keeper who
+        // receives the goods does not post them.
+        var grnApprove = permissions.Single(p => p.Name == SupplyChainPermissions.GrnApprove).DefaultRoles!;
+        grnApprove.ShouldContain("PurchaseOfficer");
+        grnApprove.ShouldNotContain("StoreKeeper");
+
+        // A pharmacist decides when a recalled batch may be used again; the store keeper who asks does not.
+        var recall = permissions.Single(p => p.Name == SupplyChainPermissions.RecallRelease).DefaultRoles!;
+        recall.ShouldContain("Pharmacist");
+        recall.ShouldNotContain("StoreKeeper");
+
+        // Whoever keeps a refrigerator reads it twice a day: the ward's nurses too (insulin, vaccines on the ward).
+        permissions.Single(p => p.Name == SupplyChainPermissions.ColdChainRecord).DefaultRoles!.ShouldContain("Nurse");
+        permissions.Single(p => p.Name == SupplyChainPermissions.ColdChainManage).DefaultRoles!.ShouldNotContain("Nurse");
     }
 }

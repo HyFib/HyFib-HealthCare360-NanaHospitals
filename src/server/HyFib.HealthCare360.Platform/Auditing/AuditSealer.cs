@@ -10,10 +10,12 @@ namespace HyFib.HealthCare360.Platform.Auditing;
 
 /// <param name="AnchorsChecked">How many anchors outside the database (<see cref="AuditAnchors"/>) the chain was checked against.</param>
 /// <param name="LastAnchor">The latest of them, if any.</param>
+/// <param name="PurgedThrough">The last chain position a purge removed: the chain is checked from the one after it.</param>
 public sealed record AuditVerification(bool Valid, long CheckedCount, long? FirstInvalidChainIndex, long UnsealedCount, string? Message)
 {
     public int AnchorsChecked { get; init; }
     public AuditAnchor? LastAnchor { get; init; }
+    public long? PurgedThrough { get; init; }
 }
 
 /// <summary>
@@ -105,6 +107,12 @@ public sealed class AuditChainService(HospitalDbContext db, AuditSealKey key, Au
     /// seal of its hash, and once events carry seals every later one must (none may be dropped). The chain must then hold
     /// every anchor written outside the database, with the same hash: a chain cut short, or made again from an earlier
     /// point, does not.
+    /// <para>
+    /// After a purge (<see cref="AuditPurge"/>) the chain starts at the position after the latest purge's boundary, linked
+    /// to its hash. Every purge record must carry this server's seal, and the anchor file must hold an anchor of its
+    /// boundary with that hash, written as the purge was made: a purge record made up to account for rows someone removed
+    /// does neither. Anchors at positions a purge removed are not checked against rows: the rows are gone.
+    /// </para>
     /// </summary>
     public async Task<AuditVerification> VerifyAsync(CancellationToken cancellationToken)
     {
@@ -115,8 +123,33 @@ public sealed class AuditChainService(HospitalDbContext db, AuditSealKey key, Au
         var (anchorList, unreadableAnchors) = anchors.Read();
         var anchored = anchorList.GroupBy(a => a.ChainIndex).ToDictionary(g => g.Key, g => g.Select(a => a.Hash).ToHashSet(StringComparer.Ordinal));
         var lastAnchor = anchorList.LastOrDefault();
+        AuditPurge? purged = null;
         AuditVerification Broken(long? at, string message) =>
-            new(false, checkedCount, at, 0, message) { AnchorsChecked = anchorList.Count, LastAnchor = lastAnchor };
+            new(false, checkedCount, at, 0, message) { AnchorsChecked = anchorList.Count, LastAnchor = lastAnchor, PurgedThrough = purged?.BoundaryChainIndex };
+
+        foreach (var purge in await PurgesAsync(cancellationToken))
+        {
+            var what = $"The record of the purge of audit positions {purge.FirstChainIndex:N0} to {purge.BoundaryChainIndex:N0}";
+            if (!key.Sealed(purge.ContentHash(), purge.Mac))
+            {
+                return Broken(purge.FirstChainIndex,
+                    $"{what} does not carry this server's seal. Records may have been removed and the purge record made up.");
+            }
+
+            if (!anchored.TryGetValue(purge.BoundaryChainIndex, out var boundary) || !boundary.Contains(purge.BoundaryHash))
+            {
+                return Broken(purge.FirstChainIndex,
+                    $"{what} has no anchor of position {purge.BoundaryChainIndex:N0} with its hash outside the database. Records may have been removed and the purge record made up.");
+            }
+
+            purged = purge;
+        }
+
+        if (purged is not null)
+        {
+            expectedIndex = purged.BoundaryChainIndex + 1;
+            previous = purged.BoundaryHash;
+        }
 
         while (true)
         {
@@ -179,22 +212,34 @@ public sealed class AuditChainService(HospitalDbContext db, AuditSealKey key, Au
         }
 
         // An anchor past the end: records anchored once are gone.
-        if (anchorList.Count > 0 && anchorList.Max(a => a.ChainIndex) > checkedCount)
+        var end = expectedIndex - 1;
+        if (anchorList.Count > 0 && anchorList.Max(a => a.ChainIndex) > end)
         {
-            return Broken(checkedCount + 1,
-                $"The audit chain ends at position {checkedCount:N0}, but position {anchorList.Max(a => a.ChainIndex):N0} was anchored outside the database. Records have been removed, or the database was restored from a backup older than that anchor.");
+            return Broken(end + 1,
+                $"The audit chain ends at position {end:N0}, but position {anchorList.Max(a => a.ChainIndex):N0} was anchored outside the database. Records have been removed, or the database was restored from a backup older than that anchor.");
         }
 
         var unsealed = await db.Set<AuditEvent>().LongCountAsync(e => e.Hash == null, cancellationToken);
         var anchorsNote = anchorList.Count == 0
             ? " No anchors outside the database yet."
             : $" It matches the {anchorList.Count:N0} anchor(s) outside the database." + (unreadableAnchors > 0 ? $" {unreadableAnchors} anchor line(s) could not be read." : "");
-        return new AuditVerification(true, checkedCount, null, unsealed, $"Verified {checkedCount:N0} audit records.{anchorsNote}")
+        var purgeNote = purged is null
+            ? ""
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $" The chain starts at position {purged.BoundaryChainIndex + 1:N0}: positions up to {purged.BoundaryChainIndex:N0} were purged on {purged.PurgedAt:dd MMM yyyy} and exported ({purged.ExportFile}).");
+        return new AuditVerification(true, checkedCount, null, unsealed, $"Verified {checkedCount:N0} audit records.{purgeNote}{anchorsNote}")
         {
             AnchorsChecked = anchorList.Count,
             LastAnchor = lastAnchor,
+            PurgedThrough = purged?.BoundaryChainIndex,
         };
     }
+
+    /// <summary>The purges of the audit trail, oldest first; none on a database migrated only part of the way, without their table.</summary>
+    private async Task<List<AuditPurge>> PurgesAsync(CancellationToken cancellationToken) =>
+        await db.Database.SqlQuery<bool>($"SELECT to_regclass('audit.audit_purges') IS NOT NULL AS \"Value\"").SingleAsync(cancellationToken)
+            ? await db.Set<AuditPurge>().AsNoTracking().OrderBy(p => p.BoundaryChainIndex).ToListAsync(cancellationToken)
+            : [];
 }
 
 /// <summary>Seals new audit events every few seconds, and anchors the chain's end outside the database every so often.</summary>

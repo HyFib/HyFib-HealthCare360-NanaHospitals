@@ -86,7 +86,7 @@ internal sealed class ReportRunner(
             return cached;
         }
 
-        var (data, source) = await ExecuteAsync(definition, arguments, scope.Value.FacilityId, now, rowCap, ct);
+        var (data, source) = await ExecuteAsync(definition, arguments, scope.Value.FacilityId, now, rowCap, actor, ct);
         var execution = new ReportExecution(report, arguments, scope.Value, data, data.Columns ?? report.Columns, now, source);
 
         // A run the primary database answered for an unreachable replica is not kept: the next one tries the replica again.
@@ -99,7 +99,8 @@ internal sealed class ReportRunner(
     }
 
     private async Task<ReportingResult<ReportData>> ExecuteAsync(
-        ReportDefinition definition, ReportArguments arguments, Guid? facilityId, DateTimeOffset now, int? rowCap, CancellationToken ct)
+        ReportDefinition definition, ReportArguments arguments, Guid? facilityId, DateTimeOffset now, int? rowCap, ReportActor viewer,
+        CancellationToken ct)
     {
         var cap = definition.Descriptor.ContainsPatientIdentifiers ? PatientRowCap : rowCap ?? RowCap;
         var stopwatch = Stopwatch.StartNew();
@@ -107,7 +108,7 @@ internal sealed class ReportRunner(
         {
             return await contexts.RunAsync(facilityId, $"report {definition.Descriptor.Id}", async db =>
             {
-                var context = new ReportContext(db, arguments, now, EfReportQueryExecutor.Instance, cap);
+                var context = new ReportContext(db, arguments, now, EfReportQueryExecutor.Instance, cap, viewer);
                 var data = await definition.RunAsync(context, ct);
                 data.Truncated |= context.Truncated;
                 return data;

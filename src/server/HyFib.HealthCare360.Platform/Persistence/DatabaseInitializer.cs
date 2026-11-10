@@ -54,6 +54,17 @@ public sealed class DatabaseInitializer(
         "Something still uses the audit trail, such as a long transaction writing to it, or a report or backup reading it " +
         "with a transaction open. Let it finish or stop it, then start HC360 again.";
 
+    /// <summary>
+    /// Why start-up stops when the schema belongs to another account than the one the server works as, and no
+    /// <c>ConnectionStrings:HospitalOwner</c> says how to sign in as it ({0}): the audit trail's triggers, which start-up
+    /// checks and puts back, and any migration, are the owner's to change.
+    /// </summary>
+    public const string OwnerMissingMessage =
+        "The database's tables belong to the account {0}, not to the account the server works as, so start-up cannot check the " +
+        "audit trail's triggers or apply a database update. Set ConnectionStrings:HospitalOwner to a connection string that signs " +
+        "in as {0} (Install-HC360Server.ps1 -CreateDatabase writes it; on a promoted standby, copy it from the primary's settings), " +
+        "then start HC360 again (docs/deployment/DEPLOYMENT.md, \"Two database accounts\").";
+
     /// <summary>No limit (0) on a migration's statements: see where the migrations are applied.</summary>
     internal const int MigrationCommandTimeout = 0;
 
@@ -86,12 +97,26 @@ public sealed class DatabaseInitializer(
             throw new DatabaseUpgradeException(StandbyMessage);
         }
 
-        if (options.Value.AutoMigrate)
+        // The schema is changed as its owner where that is an account of its own (DatabaseOwner): the account the server
+        // works as cannot. The seeders write rows, as the server does.
+        await using var owner = scope.ServiceProvider.GetService<DatabaseOwner>()?.CreateContext();
+        var schema = owner ?? db;
+        if (owner is null && await SchemaOwnerAsync(db, cancellationToken) is { } schemaOwner)
         {
-            await MigrateAsync(scope.ServiceProvider, db, cancellationToken);
+            throw new DatabaseUpgradeException(string.Format(CultureInfo.InvariantCulture, OwnerMissingMessage, schemaOwner));
         }
 
-        await ApplyPlatformSqlAsync(db, cancellationToken);
+        if (owner is not null)
+        {
+            logger.LogInformation("The database schema is brought up to date as its owner, {Owner}", Username(owner));
+        }
+
+        if (options.Value.AutoMigrate)
+        {
+            await MigrateAsync(scope.ServiceProvider, schema, cancellationToken);
+        }
+
+        await ApplyPlatformSqlAsync(schema, cancellationToken);
         await TrainingDatabase.CheckAsync(db, options.Value.SeedDemoData, cancellationToken);
 
         foreach (var seeder in scope.ServiceProvider.GetServices<ISeeder>().OrderBy(s => s.Order))
@@ -101,6 +126,15 @@ public sealed class DatabaseInitializer(
             db.ChangeTracker.Clear();
         }
     }
+
+    /// <summary>The account that owns the audit trail's schema when it is not the one <paramref name="db"/> signs in as (nor one it is a member of); null otherwise, and on a new database.</summary>
+    private static async Task<string?> SchemaOwnerAsync(HospitalDbContext db, CancellationToken ct) =>
+        await db.Database.SqlQuery<string?>(
+                $"SELECT (SELECT pg_get_userbyid(n.nspowner) FROM pg_namespace n WHERE n.nspname = 'audit' AND NOT pg_has_role(current_user, n.nspowner, 'MEMBER')) AS \"Value\"")
+            .SingleAsync(ct);
+
+    private static string? Username(HospitalDbContext db) =>
+        new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString()).Username;
 
     /// <summary>
     /// <see cref="PlatformSql.PostMigrationScript"/> in a transaction of its own, one node at a time (several may start at
@@ -239,7 +273,10 @@ internal static class PlatformSql
     /// <summary>The advisory lock that has nodes starting at the same time put the triggers right one at a time.</summary>
     internal const long AdvisoryLockKey = 4_247_364;
 
-    /// <summary>How long making a trigger again waits for its lock, and audit writes behind it; then start-up stops.</summary>
+    /// <summary>
+    /// How long putting a trigger back waits for the audit trail's locks in all (the table's, then each month's), and audit
+    /// writes behind it; then start-up stops.
+    /// </summary>
     public static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(2);
 
     public const string PostMigrationScript = """
@@ -307,6 +344,10 @@ internal static class PlatformSql
             wanted record;
             found record;
             target regclass;
+            locked boolean := false;
+            part record;
+            allowed text;
+            deadline timestamptz;
         BEGIN
             -- pg_get_triggerdef names a function in full only when it is not on the search path.
             PERFORM set_config('search_path', 'pg_catalog', true);
@@ -338,6 +379,35 @@ internal static class PlatformSql
                   INTO found
                   FROM pg_trigger g
                  WHERE g.tgrelid = wanted.relation AND g.tgname = wanted.trigger_name;
+                IF NOT locked AND (found.definition IS DISTINCT FROM format(wanted.definition, wanted.name) OR found.enabled <> 'O') THEN
+                    -- Before the first change, the audit trail and then every month, in the order an audit write takes
+                    -- them. Alone, DROP TRIGGER locks each month and only then the table, and ALTER or CREATE a month's
+                    -- trigger locks that month: a write that holds the table and waits for its month would then wait for
+                    -- this, as this waits for it, and PostgreSQL would end one of them (40P01, deadlock detected).
+                    -- From the table's lock on, every audit write waits behind this, so the months share what is left of
+                    -- lock_timeout: PostgreSQL would give each lock all of it, and a write could wait for every month.
+                    allowed := current_setting('lock_timeout');
+                    deadline := clock_timestamp() + allowed::interval;
+                    LOCK TABLE ONLY audit.audit_events IN ACCESS EXCLUSIVE MODE;
+                    FOR part IN
+                        WITH RECURSIVE parts (relid, depth) AS (
+                            SELECT i.inhrelid, 1 FROM pg_inherits i WHERE i.inhparent = 'audit.audit_events'::regclass
+                            UNION ALL
+                            SELECT i.inhrelid, parts.depth + 1 FROM pg_inherits i JOIN parts ON i.inhparent = parts.relid)
+                        SELECT parts.relid::regclass AS relation FROM parts ORDER BY parts.depth, parts.relid
+                    LOOP
+                        IF allowed::interval > interval '0' THEN
+                            IF clock_timestamp() >= deadline THEN
+                                RAISE EXCEPTION 'canceling statement due to lock timeout' USING ERRCODE = 'lock_not_available';
+                            END IF;
+                            PERFORM set_config('lock_timeout',
+                                ceil(extract(epoch FROM deadline - clock_timestamp()) * 1000)::bigint || 'ms', true);
+                        END IF;
+                        EXECUTE format('LOCK TABLE ONLY %s IN ACCESS EXCLUSIVE MODE', part.relation);
+                    END LOOP;
+                    PERFORM set_config('lock_timeout', allowed, true);
+                    locked := true;
+                END IF;
                 IF found.definition IS DISTINCT FROM format(wanted.definition, wanted.name) THEN
                     -- A partition's copy of a row trigger cannot be made alone: the table's is made again, with its copies.
                     target := CASE WHEN wanted.inherited THEN 'audit.audit_events'::regclass ELSE wanted.relation END;
@@ -356,5 +426,62 @@ internal static class PlatformSql
             END LOOP;
         END
         $triggers$;
+
+        -- The records of purges of the audit trail (audit.audit_purges) are append-only too: a purge writes one, sealed, and
+        -- nothing changes or removes it. Its triggers are made only where missing or turned off.
+        CREATE OR REPLACE FUNCTION audit.protect_audit_purges() RETURNS trigger AS $$
+        BEGIN
+            RAISE EXCEPTION 'audit purge records are append-only';
+        END;
+        $$ LANGUAGE plpgsql;
+
+        -- A purge of the audit trail (AuditRetentionService) removes its oldest months. Only the schema's owner may drop a
+        -- table, and the account the server works as is not it where the two are apart (DatabaseOwner): it drops a month
+        -- through this function, which drops nothing else. The month must be one of the audit trail's, every event in it
+        -- sealed, and no sealed event may come before it in the chain: the chain then starts after it, where a purge record
+        -- says, and one made up without the server's seal fails verification (critical on System health).
+        CREATE OR REPLACE FUNCTION audit.drop_purged_month(target regclass) RETURNS void
+        LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+        DECLARE
+            first_index bigint;
+            unsealed boolean;
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
+                           WHERE i.inhrelid = target AND i.inhparent = 'audit.audit_events'::regclass AND c.relkind = 'r') THEN
+                RAISE EXCEPTION '% is not a month of the audit trail', target;
+            END IF;
+            EXECUTE format('SELECT min(chain_index), bool_or(chain_index IS NULL) FROM %s', target) INTO first_index, unsealed;
+            IF unsealed THEN
+                RAISE EXCEPTION '% holds audit events not sealed yet', target;
+            END IF;
+            IF first_index IS NOT NULL AND EXISTS (
+                SELECT 1 FROM audit.audit_events e WHERE e.chain_index < first_index AND e.tableoid <> target) THEN
+                RAISE EXCEPTION 'audit events before % in the chain are kept: a purge removes the oldest months only', target;
+            END IF;
+            EXECUTE format('ALTER TABLE audit.audit_events DETACH PARTITION %s', target);
+            EXECUTE format('DROP TABLE %s', target);
+        END;
+        $$;
+        REVOKE ALL ON FUNCTION audit.drop_purged_month(regclass) FROM PUBLIC;
+
+        DO $purges$
+        BEGIN
+            IF to_regclass('audit.audit_purges') IS NULL THEN
+                RETURN;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'audit.audit_purges'::regclass
+                           AND tgname = 'trg_protect_audit_purges' AND tgenabled = 'O') THEN
+                CREATE OR REPLACE TRIGGER trg_protect_audit_purges BEFORE DELETE OR UPDATE ON audit.audit_purges
+                    FOR EACH ROW EXECUTE FUNCTION audit.protect_audit_purges();
+                ALTER TABLE audit.audit_purges ENABLE TRIGGER trg_protect_audit_purges;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'audit.audit_purges'::regclass
+                           AND tgname = 'trg_protect_audit_purges_truncate' AND tgenabled = 'O') THEN
+                CREATE OR REPLACE TRIGGER trg_protect_audit_purges_truncate BEFORE TRUNCATE ON audit.audit_purges
+                    FOR EACH STATEMENT EXECUTE FUNCTION audit.protect_audit_purges();
+                ALTER TABLE audit.audit_purges ENABLE TRIGGER trg_protect_audit_purges_truncate;
+            END IF;
+        END
+        $purges$;
         """;
 }

@@ -43,7 +43,7 @@ internal sealed class PharmacySalesMarginReport : ReportDefinition
         var groupBy = ctx.Args.Text(ReportKeys.GroupBy) ?? ByDay;
         var lines =
             from si in ctx.Db.Set<PharmacySaleItem>().AsNoTracking()
-            join s in ctx.Db.Set<PharmacySale>() on si.PharmacySaleId equals s.Id
+            join s in ctx.Db.Set<PharmacySale>().NotRemoved() on si.PharmacySaleId equals s.Id
             join b in ctx.Db.Set<StockBatch>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]) on si.BatchId equals b.Id
             where s.SoldAt >= start && s.SoldAt < end && s.Status != SaleStatus.Cancelled && (storeId == null || s.StoreId == storeId)
             select new

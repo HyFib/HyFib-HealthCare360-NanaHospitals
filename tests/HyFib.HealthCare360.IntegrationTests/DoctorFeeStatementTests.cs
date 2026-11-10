@@ -26,16 +26,16 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
 
         // The doctor and his sharing rules: 40 % of what procedures are billed at, except suturing, which earns him a fixed
         // ₹150 for each one. These are his own rules, so they win over the hospital's default for procedures.
         var doctor = await DoctorAsync(admin);
-        var debridement = await ServiceAsync(admin, "Wound debridement", 2000m);
-        var suturing = await ServiceAsync(admin, "Suturing of a laceration", 1000m);
+        var debridement = await ServiceAsync(server, admin, "Wound debridement", 2000m);
+        var suturing = await ServiceAsync(server, admin, "Suturing of a laceration", 1000m);
         var dressing = (await admin.GetAsync<List<ServiceItemDto>>("/api/v1/masters/lookups/services?search=PROC-DRESS")).Single(s => s.Code == "PROC-DRESS");
-        await RuleAsync(accountant, doctor.Id, null, ServiceCategory.Procedure, ShareMethod.Percentage, 40m, today);
-        await RuleAsync(accountant, doctor.Id, suturing.Id, null, ShareMethod.FixedPerUnit, 150m, today);
+        await RuleAsync(server, accountant, doctor.Id, null, ServiceCategory.Procedure, ShareMethod.Percentage, 40m, today);
+        await RuleAsync(server, accountant, doctor.Id, suturing.Id, null, ShareMethod.FixedPerUnit, 150m, today);
 
         // Two bills finalized today with his services, and a dressing that names no doctor.
         var first = await BillAsync(billing, (debridement, 1m, doctor.Id), (suturing, 2m, doctor.Id), (dressing, 1m, null));
@@ -43,8 +43,9 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
 
         // ------------------------------------------------------------------ the period's fees, paid out
 
-        // The accountant closes the period: his unpaid fees, less an advance already paid to him and TDS at the hospital's
-        // 10 % (section 194J) on the gross. The hospital administrator approves the payout and it is paid by bank transfer.
+        // The accountant closes the period: his unpaid fees, less an advance already paid to him. His fees this year are within
+        // the s.194J threshold (₹50,000), so no TDS (DoctorFeeTdsTests has the tax). The hospital administrator approves the
+        // payout and it is paid by bank transfer.
         var created = await accountant.PostAsync<JsonElement>($"{Fees}/payouts", new CreatePayoutRequest(
             doctor.Id, today, today, [new PayoutDeductionInput("Advance paid on the 1st", 200m)], null, "Fees for today"));
         var payoutId = created.GetProperty("id").GetGuid();
@@ -66,7 +67,7 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
 
         var paid = statement.Payouts.ShouldHaveSingleItem();
         (paid.Id, paid.Status, paid.PeriodFrom, paid.PeriodTo, paid.AccrualCount).ShouldBe((payoutId, PayoutStatus.Paid, today, today, 3));
-        Amounts(paid).ShouldBe((1900m, 200m, 10m, 190m, 1510m), "net = gross − TDS on the gross − deductions");
+        Amounts(paid).ShouldBe((1900m, 200m, 0m, 0m, 1700m), "net = gross − TDS (none within the threshold) − deductions");
         paid.Deductions.Select(d => (d.Description, d.Amount)).ShouldBe([("Advance paid on the 1st", 200m)]);
 
         // ------------------------------------------------------------------ a cancelled bill, and the next payout
@@ -94,7 +95,7 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
         statement.Payouts.Select(p => p.Id).ShouldBe([payoutId, nextId], ignoreOrder: true);
         var next = statement.Payouts.Single(p => p.Id == nextId);
         (next.Status, next.AccrualCount).ShouldBe((PayoutStatus.Draft, 3));
-        Amounts(next).ShouldBe((150m, 0m, 10m, 15m, 135m));
+        Amounts(next).ShouldBe((150m, 0m, 0m, 0m, 150m));
         next.Deductions.ShouldBeEmpty();
 
         // ------------------------------------------------------------------ the period
@@ -113,7 +114,7 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
     // ---------------------------------------------------------------------- steps
 
     /// <summary>The admin: adds a consultant to the practitioner master, with a code no other test uses.</summary>
-    private static async Task<(Guid Id, string Name)> DoctorAsync(ApiClient admin)
+    internal static async Task<(Guid Id, string Name)> DoctorAsync(ApiClient admin)
     {
         var surname = Letters(8);
         var lastName = surname[0] + surname[1..].ToLowerInvariant();
@@ -127,20 +128,28 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
     }
 
     /// <summary>The admin: adds a procedure to the service catalogue at a price, without GST.</summary>
-    private static Task<ServiceItemDto> ServiceAsync(ApiClient admin, string name, decimal price) =>
-        admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+    internal static Task<ServiceItemDto> ServiceAsync(HospitalServer hospital, ApiClient admin, string name, decimal price) =>
+        hospital.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", name, null, ServiceCategory.Procedure, null, price, 0m, null, true, false, null, true, null));
 
-    /// <summary>The accountant: a sharing rule for the doctor, in force from today.</summary>
-    private static Task RuleAsync(
-        ApiClient accountant, Guid doctorId, Guid? serviceItemId, ServiceCategory? category, ShareMethod method, decimal value, DateOnly from) =>
-        accountant.PostAsync($"{Fees}/rules", new SaveShareRuleRequest(doctorId, serviceItemId, category, null, method, value, from, null, true, null, null));
+    /// <summary>
+    /// The accountant: a sharing rule for the doctor, in force from <paramref name="from"/>, put in use by the other
+    /// administrator who approves prices (a rule's terms wait for a second person). Its id.
+    /// </summary>
+    internal static async Task<Guid> RuleAsync(
+        HospitalServer hospital, ApiClient accountant, Guid doctorId, Guid? serviceItemId, ServiceCategory? category, ShareMethod method, decimal value, DateOnly from)
+    {
+        var saved = await accountant.PostAsync<SavedShareRule>($"{Fees}/rules",
+            new SaveShareRuleRequest(doctorId, serviceItemId, category, null, method, value, from, null, true, null, null));
+        await hospital.ApprovePriceAsync(saved.Asked.ShouldNotBeNull().Id);
+        return saved.Id;
+    }
 
     /// <summary>
     /// Billing desk: bills a new patient's services, each with its doctor (or none), and finalizes the bill, which
     /// accrues the doctors' fees.
     /// </summary>
-    private async Task<BillDetail> BillAsync(ApiClient billing, params (ServiceItemDto Service, decimal Quantity, Guid? DoctorId)[] lines)
+    internal async Task<BillDetail> BillAsync(ApiClient billing, params (ServiceItemDto Service, decimal Quantity, Guid? DoctorId)[] lines)
     {
         var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(null, await PatientAsync(), null));
         foreach (var (service, quantity, doctorId) in lines)
@@ -172,23 +181,7 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
 
     // ---------------------------------------------------------------------- look-ups
 
-    /// <summary>
-    /// Today in the hospital's calendar (IST). Fees are dated the day they are earned, so the test must not straddle
-    /// midnight: started in the last two minutes of a day, it waits for the next.
-    /// </summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var untilMidnight = BillingTime.StartOfDay(BillingTime.Today(clock).AddDays(1)) - clock.GetUtcNow();
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, TestContext.Current.CancellationToken);
-        }
-
-        return BillingTime.Today(clock);
-    }
-
-    private static string StatementPath(Guid doctorId, DateOnly from, DateOnly to) =>
+    internal static string StatementPath(Guid doctorId, DateOnly from, DateOnly to) =>
         $"{Fees}/statements?practitionerId={doctorId}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}";
 
     /// <summary>Each fee line of a statement (bill, service, billed value, rule, share, status, reversal), in a fixed order.</summary>

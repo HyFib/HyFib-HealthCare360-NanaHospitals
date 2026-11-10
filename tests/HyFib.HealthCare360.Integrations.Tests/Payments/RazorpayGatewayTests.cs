@@ -131,7 +131,7 @@ public sealed class RazorpayGatewayTests
     public async Task Never_puts_untrusted_ids_into_razorpay_urls(string id)
     {
         (await Gateway.GetStatusAsync(id, Settings, Secrets, Ct)).Status.ShouldBe(GatewayPaymentStatus.Failed);
-        (await Gateway.RefundAsync(id, 100m, "duplicate", null, Settings, Secrets, Ct)).Success.ShouldBeFalse();
+        (await Gateway.RefundAsync(new GatewayPaymentRef("razorpay", id, null), 100m, "duplicate", null, Settings, Secrets, Ct)).Success.ShouldBeFalse();
 
         _http.Requests.ShouldBeEmpty();
     }
@@ -142,8 +142,8 @@ public sealed class RazorpayGatewayTests
         _http.Respond(HttpStatusCode.OK, """{"id":"rfnd_FP8QHiV938haTz","entity":"refund","amount":50000,"status":"processed"}""")
             .Respond(HttpStatusCode.BadRequest, """{"error":{"code":"BAD_REQUEST_ERROR","description":"The refund amount provided is greater than amount captured"}}""");
 
-        var refund = await Gateway.RefundAsync("pay_CapturedUpi001", 500m, "Duplicate payment", null, Settings, Secrets, Ct);
-        var rejected = await Gateway.RefundAsync("pay_CapturedUpi001", 5000m, "Duplicate payment", null, Settings, Secrets, Ct);
+        var refund = await Gateway.RefundAsync(new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), 500m, "Duplicate payment", null, Settings, Secrets, Ct);
+        var rejected = await Gateway.RefundAsync(new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), 5000m, "Duplicate payment", null, Settings, Secrets, Ct);
 
         refund.ShouldBe(new RefundResult(true, "rfnd_FP8QHiV938haTz", null));
         _http.Requests[0].Uri.ShouldBe(new Uri("https://api.razorpay.com/v1/payments/pay_CapturedUpi001/refund"));
@@ -158,8 +158,8 @@ public sealed class RazorpayGatewayTests
     {
         _http.Respond(HttpStatusCode.OK, """{"id":"rfnd_FP8QHiV938haTz","entity":"refund","amount":50000,"status":"pending"}""");
 
-        var refund = await Gateway.RefundAsync("pay_CapturedUpi001", 500m, "Duplicate payment", "a1b2c3d4e5f60718293a4b5c6d7e8f90", Settings, Secrets, Ct);
-        var refused = await Gateway.RefundAsync("pay_CapturedUpi001", 500m, "Duplicate payment", "not a key!", Settings, Secrets, Ct);
+        var refund = await Gateway.RefundAsync(new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), 500m, "Duplicate payment", "a1b2c3d4e5f60718293a4b5c6d7e8f90", Settings, Secrets, Ct);
+        var refused = await Gateway.RefundAsync(new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), 500m, "Duplicate payment", "not a key!", Settings, Secrets, Ct);
 
         refund.Success.ShouldBeTrue();
         var request = _http.Requests.ShouldHaveSingleItem();
@@ -247,9 +247,9 @@ public sealed class RazorpayGatewayTests
             .Respond(HttpStatusCode.OK, """{"id":"rfnd_FP8QHiV938haTz","amount":50000,"payment_id":"pay_CapturedUpi001","acquirer_data":{"arn":null},"status":"pending"}""")
             .Respond(HttpStatusCode.OK, """{"id":"rfnd_FP8QHiV938haTz","amount":50000,"payment_id":"pay_CapturedUpi001","status":"failed"}""");
 
-        var processed = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", Settings, Secrets, Ct);
-        var pending = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", Settings, Secrets, Ct);
-        var failed = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", Settings, Secrets, Ct);
+        var processed = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), Settings, Secrets, Ct);
+        var pending = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), Settings, Secrets, Ct);
+        var failed = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), Settings, Secrets, Ct);
 
         _http.Requests[0].Uri.ShouldBe(new Uri("https://api.razorpay.com/v1/refunds/rfnd_FP8QHiV938haTz"));
         processed.ShouldBe(new RefundStatusResult(
@@ -265,12 +265,137 @@ public sealed class RazorpayGatewayTests
     [InlineData("pay_CapturedUpi001")]
     public async Task Never_puts_untrusted_refund_ids_into_razorpay_urls(string id)
     {
-        var status = await Gateway.GetRefundStatusAsync(id, Settings, Secrets, Ct);
+        var status = await Gateway.GetRefundStatusAsync(id, new GatewayPaymentRef("razorpay", "pay_CapturedUpi001", null), Settings, Secrets, Ct);
 
         status.Status.ShouldBe(PaymentRefundStatus.Pending);
         status.Error.ShouldNotBeNull();
         _http.Requests.ShouldBeEmpty();
     }
+
+    [Fact]
+    public async Task Reads_a_dispute_as_razorpay_documents_it()
+    {
+        _http.Respond(HttpStatusCode.OK, DisputeSample);
+
+        var dispute = await Gateway.GetDisputeAsync("disp_AHfqOvkldwsbqt", Settings, Secrets, Ct);
+
+        _http.Requests.ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            r => r.Uri.ShouldBe(new Uri("https://api.razorpay.com/v1/disputes/disp_AHfqOvkldwsbqt")),
+            r => r.Method.ShouldBe(HttpMethod.Get),
+            r => r.Header("Authorization").ShouldStartWith("Basic "));
+        dispute.ShouldBe(new GatewayDispute(
+            "disp_AHfqOvkldwsbqt", "pay_EsyWjHrfzb59eR", 100m, "pre_arbitration", "pre_arbitration", GatewayDisputeStatus.Open, "open",
+            DateTimeOffset.FromUnixTimeSeconds(1590604200), DateTimeOffset.FromUnixTimeSeconds(1590059211), null));
+        _tracing.AllText.ShouldNotContain("goods delivered");
+    }
+
+    [Theory]
+    [InlineData("under_review", GatewayDisputeStatus.UnderReview)]
+    [InlineData("won", GatewayDisputeStatus.Won)]
+    [InlineData("lost", GatewayDisputeStatus.Lost)]
+    [InlineData("closed", GatewayDisputeStatus.Other)]
+    public async Task Reads_where_a_dispute_stands(string status, GatewayDisputeStatus expected)
+    {
+        _http.Respond(HttpStatusCode.OK, DisputeSample.Replace("\"status\": \"open\"", $"\"status\": \"{status}\"", StringComparison.Ordinal)
+            .Replace("\"submitted_at\": null", "\"submitted_at\": 1590603200", StringComparison.Ordinal));
+
+        var dispute = await Gateway.GetDisputeAsync("disp_AHfqOvkldwsbqt", Settings, Secrets, Ct);
+
+        dispute.Status.ShouldBe(expected);
+        dispute.StatusText.ShouldBe(status);
+        dispute.EvidenceSubmittedAt.ShouldBe(DateTimeOffset.FromUnixTimeSeconds(1590603200));
+    }
+
+    [Fact]
+    public async Task Reads_every_dispute_raised_since_a_day()
+    {
+        var fullPage = "{\"entity\":\"collection\",\"count\":100,\"items\":[" + string.Join(",", Enumerable.Range(0, 100).Select(i =>
+            $$"""{"id":"disp_Page1Item{{i:D6}}","entity":"dispute","payment_id":"pay_Page1Item{{i:D6}}","amount":10000,"status":"open","phase":"chargeback"}""")) + "]}";
+        _http.Respond(HttpStatusCode.OK, fullPage)
+            .Respond(HttpStatusCode.OK, "{\"entity\":\"collection\",\"count\":2,\"items\":[" + DisputeSample
+                + ",{\"id\":\"disp_x/../../payments\",\"payment_id\":\"pay_EsyWjHrfzb59eR\",\"status\":\"open\"}]}");
+
+        var disputes = await Gateway.GetDisputesAsync(DateTimeOffset.FromUnixTimeSeconds(1590000000), Settings, Secrets, Ct);
+
+        _http.Requests[0].Uri.ShouldBe(new Uri("https://api.razorpay.com/v1/disputes?from=1590000000&count=100&skip=0"));
+        _http.Requests[1].Uri.Query.ShouldContain("skip=100");
+        disputes.Count.ShouldBe(101, "a dispute whose id is not Razorpay's is left out");
+        disputes[^1].DisputeId.ShouldBe("disp_AHfqOvkldwsbqt");
+    }
+
+    [Fact]
+    public async Task A_failed_page_fails_the_whole_list_of_disputes()
+    {
+        _http.Respond(HttpStatusCode.Unauthorized, """{"error":{"description":"The api key provided is invalid"}}""");
+
+        var failure = await Should.ThrowAsync<IntegrationException>(() => Gateway.GetDisputesAsync(Now.AddDays(-30), Settings, Secrets, Ct));
+
+        failure.Message.ShouldBe("Razorpay: The api key provided is invalid");
+    }
+
+    [Theory]
+    [InlineData("disp_x/../../payments")]
+    [InlineData("pay_EsyWjHrfzb59eR")]
+    public async Task Never_puts_untrusted_dispute_ids_into_razorpay_urls(string id)
+    {
+        await Should.ThrowAsync<IntegrationException>(() => Gateway.GetDisputeAsync(id, Settings, Secrets, Ct));
+
+        _http.Requests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_settlements_adjustment_names_the_dispute_it_was_made_for()
+    {
+        _http.Respond(HttpStatusCode.OK, """
+                {"entity":"collection","count":2,"items":[
+                  {"entity_id":"adj_EsyX8tTzzJ6zHn","type":"adjustment","debit":10000,"credit":0,"amount":10000,"fee":0,"tax":0,"settled":true,
+                   "created_at":1590059300,"settled_at":1590100000,"settlement_id":"setl_DGlQ1Rj8os78Ec","payment_id":"pay_EsyWjHrfzb59eR","dispute_id":"disp_AHfqOvkldwsbqt"},
+                  {"entity_id":"adj_EsyX8tTzzJ6zHo","type":"adjustment","debit":500,"credit":0,"amount":500,"fee":0,"tax":0,"settled":true,
+                   "created_at":1590059300,"settled_at":1590100000,"settlement_id":"setl_DGlQ1Rj8os78Ec","payment_id":null,"dispute_id":"disp_'; DROP"}]}
+                """)
+            .Respond(HttpStatusCode.OK, """{"id":"setl_DGlQ1Rj8os78Ec","amount":-10500,"status":"processed","utr":"UTR0001","created_at":1590100000}""");
+
+        var settlement = (await Gateway.GetSettlementsAsync(new DateOnly(2020, 5, 22), Settings, Secrets, Ct)).ShouldHaveSingleItem();
+
+        settlement.Items.Select(i => (i.Type, i.PaymentId, i.DisputeId)).ShouldBe(
+        [
+            (PaymentTransactionType.Adjustment, "pay_EsyWjHrfzb59eR", "disp_AHfqOvkldwsbqt"),
+            (PaymentTransactionType.Adjustment, null, null),
+        ]);
+    }
+
+    /// <summary>Razorpay's documented dispute (the SDKs' "Fetch a Dispute" response), as it is sent.</summary>
+    private const string DisputeSample = """
+        {
+          "id": "disp_AHfqOvkldwsbqt",
+          "entity": "dispute",
+          "payment_id": "pay_EsyWjHrfzb59eR",
+          "amount": 10000,
+          "currency": "INR",
+          "amount_deducted": 0,
+          "reason_code": "pre_arbitration",
+          "respond_by": 1590604200,
+          "status": "open",
+          "phase": "pre_arbitration",
+          "created_at": 1590059211,
+          "evidence": {
+            "amount": 10000,
+            "summary": "goods delivered",
+            "shipping_proof": null,
+            "billing_proof": null,
+            "cancellation_proof": null,
+            "customer_communication": null,
+            "proof_of_service": null,
+            "explanation_letter": null,
+            "refund_confirmation": null,
+            "access_activity_log": null,
+            "refund_cancellation_policy": null,
+            "term_and_conditions": null,
+            "others": null,
+            "submitted_at": null
+          }
+        }
+        """;
 
     /// <summary>Razorpay's documented sample (a payment and a refund in one settlement), with an unsettled item added.</summary>
     private const string ReconPage = """

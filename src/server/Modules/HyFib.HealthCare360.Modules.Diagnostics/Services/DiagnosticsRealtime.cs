@@ -12,6 +12,9 @@ internal sealed record DeferredRealtime(string Topic, string Name, JsonElement P
 /// <summary>In-app staff alert deferred until after commit.</summary>
 internal sealed record DeferredStaffAlert(string Permission, Guid FacilityId, string Title, string Body, string Link, string Severity);
 
+/// <summary>In-app alert to named staff accounts (the ordering doctor's), deferred until after commit.</summary>
+internal sealed record DeferredUserAlert(IReadOnlyList<Guid> UserIds, Guid FacilityId, string Title, string Body, string Link, string Severity);
+
 /// <summary>
 /// Pushes lab, radiology and cardiology changes to <c>Topics.Lab(facility)</c> so worklists refresh within seconds
 /// (PERF-04). Payloads carry ids and status only; clients refetch the details with their own permissions. Changes
@@ -37,6 +40,15 @@ internal sealed class DiagnosticsRealtime(IRealtimePublisher realtime, IOutbox o
     /// <summary>In-app alert to permission holders, sent only if the surrounding transaction commits.</summary>
     public void AlertStaffAfterCommit(DeferredStaffAlert alert) =>
         outbox.Enqueue(DiagnosticsOutboxTypes.StaffAlert, alert, alert.FacilityId, expiresIn: TimeSpan.FromDays(1));
+
+    /// <summary>In-app alert to these staff accounts, sent only if the surrounding transaction commits.</summary>
+    public void AlertUsersAfterCommit(DeferredUserAlert alert)
+    {
+        if (alert.UserIds.Count > 0)
+        {
+            outbox.Enqueue(DiagnosticsOutboxTypes.UserAlert, alert, alert.FacilityId, expiresIn: TimeSpan.FromDays(1));
+        }
+    }
 }
 
 /// <summary>
@@ -63,6 +75,7 @@ internal static class DiagnosticsOutboxTypes
 {
     public const string Realtime = "diagnostics.realtime";
     public const string StaffAlert = "diagnostics.staff-alert";
+    public const string UserAlert = "diagnostics.user-alert";
 }
 
 /// <summary>Delivers realtime pushes deferred by <see cref="DiagnosticsRealtime.PublishAfterCommit"/>.</summary>
@@ -87,5 +100,17 @@ internal sealed class DiagnosticsStaffAlertOutboxHandler(INotificationService no
         var alert = message.Read<DeferredStaffAlert>();
         return notifications.NotifyPermissionHoldersAsync(
             alert.Permission, alert.FacilityId, alert.Title, alert.Body, alert.Link, "diagnostics", alert.Severity, cancellationToken);
+    }
+}
+
+/// <summary>Delivers alerts to named staff deferred by <see cref="DiagnosticsRealtime.AlertUsersAfterCommit"/>.</summary>
+internal sealed class DiagnosticsUserAlertOutboxHandler(INotificationService notifications) : IOutboxHandler
+{
+    public string Type => DiagnosticsOutboxTypes.UserAlert;
+
+    public Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
+    {
+        var alert = message.Read<DeferredUserAlert>();
+        return notifications.NotifyUsersAsync(alert.UserIds, alert.Title, alert.Body, alert.Link, "diagnostics", alert.Severity, cancellationToken);
     }
 }

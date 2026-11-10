@@ -1,9 +1,12 @@
-using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Mtp;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.BloodBank;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Dialysis;
+using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Mtp;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Physio;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
+using HyFib.HealthCare360.Platform.Approvals;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare;
@@ -26,17 +29,34 @@ public sealed class SpecialtyCareModule : IModule
         SpecialtyCareRealtimeTopics.Register(services);
         services.AddScoped<SpecialtyChargeService>();
         services.AddScoped<SurgeryService>();
+        services.AddScoped<HyFib.HealthCare360.Modules.Patients.Domain.IDowntimePackSource, Features.DowntimePack.DowntimePackOtList>();
+        services.AddScoped<IPractitionerWorkSource, SurgeryPractitionerWork>();
         services.AddScoped<OtClinicalService>();
+        services.AddScoped<IRecallTraceSource, OtRecallTrace>();
+        services.AddWitnessPurpose(OtClinicalService.CountWitness);
+        services.AddScoped<RecoveryService>();
+        services.AddWitnessPurpose(RecoveryService.HandoverWitness);
         services.AddScoped<OtReportingService>();
         services.AddScoped<DialysisService>();
         services.AddScoped<PhysioService>();
         services.AddScoped<DonorService>();
         services.AddScoped<TransfusionService>();
+        services.AddScoped<ReactionClassificationService>();
+        services.AddScoped<InfectionStatusService>();
+        services.AddScoped<IApprovalAction, InfectionStatusApproval>();
+        services.AddScoped<IApprovalAction, ReactionLowerApproval>();
+
+        // Quality's indicators (return to OT, SSI and transfusion reaction rates) and infection surveillance read these facts.
+        services.Replace(ServiceDescriptor.Scoped<ISurgeryAndTransfusionFacts, SurgeryAndTransfusionFacts>());
+        services.AddScoped<BedsideTransfusionService>();
+        services.AddWitnessPurpose(BedsideTransfusionService.BedsideWitness);
+        services.AddWitnessPurpose(MtpService.SecondOpinionWitness);
         services.AddScoped<BloodInventoryService>();
         services.AddScoped<MtpService>();
 
-        // A patient in pre-op or on the table holds the discharge (Inpatient asks every source).
+        // A patient in pre-op, on the table or in recovery holds the discharge (Inpatient asks every source).
         services.AddScoped<IDischargeHoldSource, TheatreDischargeHolds>();
+        services.AddScoped<IDischargeHoldSource, TransfusionDischargeHolds>();
 
         // Daily expiry housekeeping; it checks PlatformOptions.RunsJobs itself so API-only nodes stay idle.
         services.AddHostedService<BloodUnitExpiryJob>();
@@ -47,6 +67,7 @@ public sealed class SpecialtyCareModule : IModule
         TheatreEndpoints.Map(endpoints);
         SurgeryEndpoints.Map(endpoints);
         OtClinicalEndpoints.Map(endpoints);
+        RecoveryEndpoints.Map(endpoints);
         OtStoreEndpoints.Map(endpoints);
         DialysisSetupEndpoints.Map(endpoints);
         DialysisSessionEndpoints.Map(endpoints);
@@ -54,6 +75,7 @@ public sealed class SpecialtyCareModule : IModule
         DonorEndpoints.Map(endpoints);
         InventoryEndpoints.Map(endpoints);
         TransfusionEndpoints.Map(endpoints);
+        BedsideEndpoints.Map(endpoints);
         MtpEndpoints.Map(endpoints);
     }
 }

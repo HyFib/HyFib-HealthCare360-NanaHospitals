@@ -75,7 +75,7 @@ public sealed class VitalRegistrationTests
 
         death.MarkEnteredInError(" Certified on the wrong patient ", Certifier).IsSuccess.ShouldBeTrue();
         (death.Status, death.ErrorReason).ShouldBe((VitalReportStatus.EnteredInError, "Certified on the wrong patient"));
-        death.Report(new RegistrarReport(Today, "D-1"), Today).Error!.Code.ShouldBe("vital.entered_in_error");
+        death.Report(new RegistrarReport(Today, "D-1"), Today, confirmationRequired: true).Error!.Code.ShouldBe("vital.entered_in_error");
         VitalRegistration.DueBy(Today).ShouldBe(Today.AddDays(21));
     }
 
@@ -96,8 +96,50 @@ public sealed class VitalRegistrationTests
         death.MarkEnteredInError("Wrong patient", Certifier).IsSuccess.ShouldBeTrue();
     }
 
+    [Fact]
+    public void A_second_doctor_confirms_the_certificate_as_it_stands_and_a_correction_takes_the_confirmation_away()
+    {
+        var death = new DeathRecord();
+        death.Certify(Death(), false, null, Now, Certifier).IsSuccess.ShouldBeTrue();
+
+        // Never the doctor who certified it, and only with a registration number to be named with.
+        death.Confirm(Certifier, "Dr. Meera", "TNMC 45120", Now).Error!.Code.ShouldBe("death.own_certificate");
+        death.Confirm(Confirmer, "Dr. Rao", " ", Now).Error!.Code.ShouldBe("death.registration_missing");
+        death.IsConfirmed.ShouldBeFalse();
+
+        death.Confirm(Confirmer, " Dr. Rao ", " KMC 2011/06/2231 ", Now.AddHours(1)).IsSuccess.ShouldBeTrue();
+        (death.ConfirmedByUserId, death.ConfirmedBy, death.ConfirmerRegistrationNumber, death.ConfirmedAt)
+            .ShouldBe((Confirmer, "Dr. Rao", "KMC 2011/06/2231", Now.AddHours(1)));
+        death.Confirm(Recorder, "Dr. Iyer", "KMC 1", Now).Error!.Code.ShouldBe("death.confirmed");
+
+        // A correction is no longer what was confirmed.
+        death.Certify(Death() with { OtherConditions = "Hypertension" }, false, null, Now.AddHours(2), Certifier).IsSuccess.ShouldBeTrue();
+        (death.IsConfirmed, death.ConfirmedBy, death.ConfirmedByUserId, death.ConfirmerRegistrationNumber).ShouldBe((false, null, null, null));
+    }
+
+    [Fact]
+    public void Where_the_facility_asks_for_it_only_a_confirmed_certificate_is_reported()
+    {
+        var death = new DeathRecord();
+        death.Certify(Death(), false, null, Now, Certifier).IsSuccess.ShouldBeTrue();
+
+        death.Report(new RegistrarReport(Today, "D-1"), Today, confirmationRequired: true).Error!.Code.ShouldBe("death.not_confirmed");
+        death.Status.ShouldBe(VitalReportStatus.Recorded);
+
+        death.Confirm(Confirmer, "Dr. Rao", "KMC 2011/06/2231", Now).IsSuccess.ShouldBeTrue();
+        death.Report(new RegistrarReport(Today, "D-1"), Today, confirmationRequired: true).IsSuccess.ShouldBeTrue();
+        death.Status.ShouldBe(VitalReportStatus.Reported);
+        death.Confirm(Recorder, "Dr. Iyer", "KMC 1", Now).Error!.Code.ShouldBe("vital.reported");
+
+        var oneDoctor = new DeathRecord();
+        oneDoctor.Certify(Death(), false, null, Now, Certifier).IsSuccess.ShouldBeTrue();
+        oneDoctor.Report(new RegistrarReport(Today, "D-2"), Today, confirmationRequired: false).IsSuccess
+            .ShouldBeTrue("a facility that does not ask for a confirmation reports the certificate as certified");
+    }
+
     private static readonly Guid Recorder = Guid.Parse("01923a4b-0000-7000-8000-00000000b001");
     private static readonly Guid Certifier = Guid.Parse("01923a4b-0000-7000-8000-00000000b002");
+    private static readonly Guid Confirmer = Guid.Parse("01923a4b-0000-7000-8000-00000000b003");
 
     private static BirthDetails Birth() => new(
         Now.AddHours(-3), BirthOutcome.LiveBirth, BirthSex.Female, 3100, 39, DeliveryMethod.Natural, BirthAttendant.Doctor, null, "Ravi Kumar", 27, 2,

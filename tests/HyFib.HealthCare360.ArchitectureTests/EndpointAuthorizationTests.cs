@@ -41,8 +41,11 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/auth/refresh",
 
         // Workstation set-up, the sign-in page and the portal: the server's public CA certificate, name and version, and
-        // whether the patient portal and video consultations are switched on (hospital-wide, nothing per person).
+        // whether the patient portal and video consultations are switched on (hospital-wide, nothing per person). While the
+        // hospital CA is rolled over, the next CA and the one it replaced: public certificates too (CA-ROLLOVER.md).
         "GET /api/v1/system/ca-certificate",
+        "GET /api/v1/system/ca-certificate/next",
+        "GET /api/v1/system/ca-certificate/previous",
         "GET /api/v1/system/info",
         "POST /api/v1/devices/enroll",
         "POST /api/v1/devices/heartbeat",
@@ -60,6 +63,12 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/public/feedback/invitations/{token}",
         "GET /api/v1/public/unsubscribe/{token}",
         "POST /api/v1/public/unsubscribe/{token}",
+
+        // A link to the portal sent to the patient's registered number: shows the hospital and the number masked, and asks
+        // for a sign-in code to that number only (with a proof of work and the sign-in's limit per address). It signs no one in.
+        "GET /api/v1/public/portal-links/{token}",
+        "POST /api/v1/public/portal-links/{token}/otp",
+
         "GET /api/v1/public/prescriptions/verify/{token}",
         "GET /api/v1/public/prescriptions/verify/{token}/signature.p7s",
         "GET /api/v1/lab/reports/verify/{code}",
@@ -91,6 +100,11 @@ public sealed class EndpointAuthorizationTests
 
         // Provider callbacks, each verified by the provider's signature or shared secret.
         "POST /api/v1/billing/webhooks/payment-gateway",
+        "POST /api/v1/billing/webhooks/cashfree",
+
+        // Consent managers' events (DPDP Act s.6(7)): acted on only once their HMAC signature over the timestamp and body
+        // verifies with the secret shared with that consent manager, within five minutes; each event id once.
+        "POST /api/v1/consent-managers/{code}/events",
         "GET /api/v1/integrations/webhooks/sms/generic",
         "POST /api/v1/integrations/webhooks/sms/generic",
         "POST /api/v1/integrations/webhooks/sms/msg91",
@@ -124,6 +138,9 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/hr/attendance/device-punches",
         "POST /api/v1/rpm/ingest",
 
+        // Cold-chain data loggers: the unit's own key (hash compared in constant time), rate-limited per key.
+        "POST /api/v1/inventory/cold-chain/logger/readings",
+
         // HC360 lab agents: an enrolled, unrevoked lab agent's device id and secret (hash compared in constant time); the
         // relay serves only the analysers assigned to that agent.
         "POST /api/v1/integrations/lab/agent/heartbeat",
@@ -131,6 +148,15 @@ public sealed class EndpointAuthorizationTests
 
         // FHIR requires a public capability statement; the catch-all only answers "not found" in FHIR's format.
         "GET /fhir/r4/metadata",
+
+        // SMART on FHIR (rate-limited): discovery, and the OAuth endpoints a partner calls before it has a token. The token,
+        // introspection and revocation endpoints authenticate the client themselves (a signed assertion, or a public app's
+        // PKCE verifier); authorize only checks the request and hands it to the staff app's signed-in screen.
+        "GET /fhir/r4/.well-known/smart-configuration",
+        "GET /oauth2/authorize",
+        "POST /oauth2/token",
+        "POST /oauth2/introspect",
+        "POST /oauth2/revoke",
         "ANY /fhir/{**rest}",
 
         // Health checks for the service manager and monitoring: they say only whether the server and database are up.
@@ -167,6 +193,11 @@ public sealed class EndpointAuthorizationTests
         "DELETE /api/v1/auth/webauthn/credentials/{id:guid}",
         "POST /api/v1/auth/switch-facility",
 
+        // A second member of staff witnesses at the caller's screen (staff only; patients are refused): their own password
+        // is checked as at sign-in, with the same lockout and rate limit, and the purpose's permission and facility are
+        // checked against the witness. The confirmation it returns is good only for the caller, that patient and minutes.
+        "POST /api/v1/auth/witness",
+
         // The caller's own notifications.
         "GET /api/v1/notifications/",
         "GET /api/v1/notifications/unread-count",
@@ -181,6 +212,10 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/approvals/{id:guid}/approve",
         "POST /api/v1/approvals/{id:guid}/reject",
         "POST /api/v1/approvals/{id:guid}/withdraw",
+
+        // A record's history (the audit trail of it), staff only: patients are refused. The module that owns the record
+        // names the permissions that read it and opens it by the rules its own screen does (facility, restricted record).
+        "GET /api/v1/history/{entityType}/{entityId:guid}",
 
         // Branding and feature switches (non-secret "ui.*" and "features.*" settings only; every switch as the server
         // enforces it for the caller's facility).

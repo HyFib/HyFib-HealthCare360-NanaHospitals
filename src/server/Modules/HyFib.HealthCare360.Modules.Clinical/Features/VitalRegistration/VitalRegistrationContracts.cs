@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.VitalRegistration;
 
@@ -61,7 +62,33 @@ public sealed record DeathRecordDto(
 
     // Whether the user may mark the entry entered in error: it is still only recorded, and they recorded or certified it.
     bool CanMarkInError,
-    uint Version);
+    uint Version)
+{
+    /// <summary>Whether the facility asks a second doctor to confirm a certificate before it is reported.</summary>
+    public bool ConfirmationRequired { get; init; }
+
+    /// <summary>When the certifying doctor asked for the confirmation still waiting; null when none waits.</summary>
+    public DateTimeOffset? ConfirmationWaitingSince { get; init; }
+
+    /// <summary>The second doctor who confirmed the certificate as it stands, with their registration number; null until then.</summary>
+    public string? ConfirmedBy { get; init; }
+
+    public string? ConfirmerRegistrationNumber { get; init; }
+
+    public DateTimeOffset? ConfirmedAt { get; init; }
+
+    /// <summary>
+    /// When the certifier asked a second doctor to let them void this confirmed certificate; null when none waits. Until it
+    /// is approved the certificate and the deceased status stand (maker-checker, slice 8).
+    /// </summary>
+    public DateTimeOffset? VoidWaitingSince { get; init; }
+}
+
+/// <summary>
+/// A death certificate marked entered in error: at once when no second doctor has confirmed it (<paramref name="Death"/>),
+/// or, when one has, the request for a second doctor to agree (<paramref name="Asked"/>, answered 202).
+/// </summary>
+public sealed record DeathInErrorOutcome(DeathRecordDto Death, ApprovalRequestDto? Asked);
 
 /// <summary>A birth in the hospital. <paramref name="Version"/>: when correcting it.</summary>
 public sealed record SaveBirthRequest(
@@ -101,6 +128,9 @@ public sealed record ReportToRegistrarRequest(DateOnly ReportedOn, string Regist
 
 public sealed record VitalEntryErrorRequest(string Reason, uint Version);
 
+/// <summary>The certifying doctor asks a second doctor to confirm the certificate as it stands.</summary>
+public sealed record AskDeathConfirmationRequest(uint Version);
+
 public sealed record BirthRegisterRow(
     Guid Id, string SerialNumber, DateTimeOffset BornAt, BirthOutcome Outcome, BirthSex Sex, int? WeightGrams, string MotherName, string MotherUhid,
     string? FatherName, string? ChildName, VitalReportStatus Status, DateOnly DueBy, bool Overdue, DateOnly? ReportedOn, string? RegistrationNumber);
@@ -108,7 +138,7 @@ public sealed record BirthRegisterRow(
 public sealed record DeathRegisterRow(
     Guid Id, string SerialNumber, DateTimeOffset DiedAt, string PatientName, string Uhid, string? Gender, int? AgeYears, string UnderlyingCause,
     DeathManner Manner, bool MedicoLegal, string CertifiedBy, VitalReportStatus Status, DateOnly DueBy, bool Overdue, DateOnly? ReportedOn,
-    string? RegistrationNumber);
+    string? RegistrationNumber, bool AwaitingConfirmation);
 
 /// <summary>The month's births, live and still; <paramref name="Overdue"/>: those past the 21 days and still not reported.</summary>
 public sealed record BirthRegister(int Year, int Month, IReadOnlyList<BirthRegisterRow> Rows, int LiveBirths, int StillBirths, int Overdue);
@@ -167,4 +197,9 @@ public sealed class VitalEntryErrorRequestValidator : AbstractValidator<VitalEnt
     {
         RuleFor(x => x.Reason).NotEmpty().WithMessage("Enter why the entry was made in error.").MaximumLength(500);
     }
+}
+
+public sealed class AskDeathConfirmationRequestValidator : AbstractValidator<AskDeathConfirmationRequest>
+{
+    public AskDeathConfirmationRequestValidator() => RuleFor(x => x.Version).SeenVersion();
 }

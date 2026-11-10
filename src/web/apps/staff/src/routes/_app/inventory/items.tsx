@@ -21,7 +21,7 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { isApiError, useDebouncedValue } from '@hc360/core';
+import { formatDateTime, isApiError, useDebouncedValue } from '@hc360/core';
 import {
   applyServerErrors,
   DataTable,
@@ -33,6 +33,7 @@ import {
   Section,
   SelectField,
   SwitchField,
+  TextAreaField,
   TextField,
   useNotify,
   useUnsavedChanges,
@@ -61,10 +62,17 @@ import {
   requiresRegister,
   scheduleHint,
   scheduleLabel,
+  prohibitedByLaw,
+  TELEMEDICINE_LISTS,
+  telemedicineListHint,
+  telemedicineListLabel,
   VED_CLASSES,
   vedLabel,
+  weakensClass,
+  loosensPricing,
   type DrugSchedule,
   type ItemType,
+  type TelemedicineList,
 } from '@/modules/inventory/labels';
 import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { ItemFlags } from '@/modules/inventory/StockBits';
@@ -219,7 +227,12 @@ function ItemsPage() {
               render: (i) => (
                 <span>
                   <Text weight="semibold">{i.name}</Text>{' '}
-                  <ItemFlags schedule={i.schedule} isControlled={i.isControlled} isColdChain={i.isColdChain} />
+                  <ItemFlags
+                    schedule={i.schedule}
+                    isControlled={i.isControlled}
+                    isColdChain={i.isColdChain}
+                    isHighAlert={i.isHighAlert}
+                  />
                   {!i.isActive && (
                     <Badge size="small" appearance="tint" style={{ marginLeft: 6 }}>
                       Inactive
@@ -306,6 +319,9 @@ const itemSchema = z
     gstRate: z.string().refine((v) => isStandardGstRate(Number(v)), 'Use a notified GST rate.'),
     schedule: z.enum(DRUG_SCHEDULES),
     isControlled: z.boolean(),
+    isHighAlert: z.boolean(),
+    telemedicineList: z.enum(TELEMEDICINE_LISTS),
+    classChangeReason: z.string().trim().max(500),
     isColdChain: z.boolean(),
     vedClass: z.enum(VED_CLASSES),
     reorderLevel: z.number({ error: 'Enter a number (0 if none).' }).min(0),
@@ -315,14 +331,28 @@ const itemSchema = z
     manufacturer: z.string().trim().max(120),
     specification: z.string().trim().max(200),
     ceilingPrice: z.number().nullable(),
+    ceilingNotification: z.string().trim().max(100),
+    priceChangeReason: z.string().trim().max(500),
     barcode: z.string().trim().max(64),
     isActive: z.boolean(),
   })
   .superRefine((v, ctx) => {
+    if (
+      v.type === 'Drug' &&
+      prohibitedByLaw(v.schedule, v.isControlled) &&
+      !['Unlisted', 'Prohibited'].includes(v.telemedicineList)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['telemedicineList'],
+        message:
+          'A Schedule X or NDPS medicine is on the Prohibited List: it is never prescribed in a teleconsultation.',
+      });
+    }
     if (v.maximumStock > 0 && v.minimumStock > v.maximumStock) {
       ctx.addIssue({ code: 'custom', path: ['minimumStock'], message: 'The minimum cannot be above the maximum.' });
     }
-    if (v.type === 'Implant' && v.ceilingPrice !== null && (v.ceilingPrice <= 0 || v.ceilingPrice > 10_000_000)) {
+    if (hasCeiling(v.type) && v.ceilingPrice !== null && (v.ceilingPrice <= 0 || v.ceilingPrice > 10_000_000)) {
       ctx.addIssue({
         code: 'custom',
         path: ['ceilingPrice'],
@@ -332,6 +362,30 @@ const itemSchema = z
   });
 
 type ItemValues = z.infer<typeof itemSchema>;
+
+/**
+ * The list saved: none for anything but a medicine; the Prohibited List for a Schedule X or NDPS medicine left on none,
+ * as the server puts it there.
+ */
+function toTelemedicineList(
+  type: ItemType,
+  schedule: DrugSchedule,
+  isControlled: boolean,
+  choice: (typeof TELEMEDICINE_LISTS)[number],
+): TelemedicineList | null {
+  if (type !== 'Drug') {
+    return null;
+  }
+  if (choice === 'Unlisted') {
+    return prohibitedByLaw(schedule, isControlled) ? 'Prohibited' : null;
+  }
+  return choice;
+}
+
+/** NPPA fixes ceilings for scheduled medicines (DPCO 2013) and for implants (coronary stents, knee implants). */
+function hasCeiling(type: ItemType): boolean {
+  return type === 'Drug' || type === 'Implant';
+}
 
 function toForm(item: ItemDetail | null): ItemValues {
   return {
@@ -351,6 +405,9 @@ function toForm(item: ItemDetail | null): ItemValues {
     gstRate: String(item?.gstRate ?? 5),
     schedule: item?.schedule ?? 'None',
     isControlled: item?.isControlled ?? false,
+    isHighAlert: item?.isHighAlert ?? false,
+    telemedicineList: item?.telemedicineList ?? 'Unlisted',
+    classChangeReason: '',
     isColdChain: item?.isColdChain ?? false,
     vedClass: item?.vedClass ?? 'Essential',
     reorderLevel: item?.reorderLevel ?? 0,
@@ -360,6 +417,8 @@ function toForm(item: ItemDetail | null): ItemValues {
     manufacturer: item?.manufacturer ?? '',
     specification: item?.specification ?? '',
     ceilingPrice: item?.ceilingPrice ?? null,
+    ceilingNotification: item?.ceilingNotification ?? '',
+    priceChangeReason: '',
     barcode: item?.barcode ?? '',
     isActive: item?.isActive ?? true,
   };
@@ -415,10 +474,28 @@ function ItemEditor({
   });
   // The version the form was filled from, not a newer one read since (REL-04).
   const [loadedVersion] = useState(item?.version ?? null);
-  const [schedule, isControlled, type, baseUnit, purchaseUnit] = useWatch({
-    control: form.control,
-    name: ['schedule', 'isControlled', 'type', 'baseUnit', 'purchaseUnit'],
-  });
+  const [schedule, isControlled, isHighAlert, type, baseUnit, purchaseUnit, ceilingPrice, gstRate, telemedicineChoice] =
+    useWatch({
+      control: form.control,
+      name: [
+        'schedule',
+        'isControlled',
+        'isHighAlert',
+        'type',
+        'baseUnit',
+        'purchaseUnit',
+        'ceilingPrice',
+        'gstRate',
+        'telemedicineList',
+      ],
+    });
+  const telemedicineList = toTelemedicineList(type, schedule, isControlled, telemedicineChoice);
+  // An existing drug handled less strictly keeps its class until a pharmacist approves the change (maker-checker).
+  const weakened = item !== null && weakensClass(item, { schedule, isControlled, isHighAlert, telemedicineList });
+  // A ceiling raised or removed, or another GST rate, waits for someone who approves prices (maker-checker).
+  const loosened =
+    item !== null &&
+    loosensPricing(item, { ceilingPrice: hasCeiling(type) ? ceilingPrice : null, gstRate: Number(gstRate) });
   const readOnly = !canManage;
 
   const save = useMutation({
@@ -440,6 +517,14 @@ function ItemEditor({
         gstRate: Number(values.gstRate),
         schedule: values.schedule,
         isControlled: values.isControlled,
+        isHighAlert: values.type === 'Drug' && values.isHighAlert,
+        telemedicineList: toTelemedicineList(
+          values.type,
+          values.schedule,
+          values.isControlled,
+          values.telemedicineList,
+        ),
+        classChangeReason: values.classChangeReason || null,
         isColdChain: values.isColdChain,
         vedClass: values.vedClass,
         reorderLevel: values.reorderLevel,
@@ -448,16 +533,27 @@ function ItemEditor({
         maximumStock: values.maximumStock,
         manufacturer: values.manufacturer || null,
         specification: values.specification || null,
-        // NPPA fixes ceilings for implants (coronary stents, knee implants) only.
-        ceilingPrice: values.type === 'Implant' ? values.ceilingPrice : null,
+        ceilingPrice: hasCeiling(values.type) ? values.ceilingPrice : null,
+        ceilingNotification:
+          hasCeiling(values.type) && values.ceilingPrice !== null ? values.ceilingNotification || null : null,
+        priceChangeReason: values.priceChangeReason || null,
         barcode: values.barcode || null,
         isActive: values.isActive,
         version: loadedVersion,
       };
       return inventoryApi.saveItem(item?.id ?? null, body);
     },
-    onSuccess: () => {
-      notify.success(item ? 'Item saved' : 'Item added');
+    onSuccess: (saved) => {
+      if (saved.approval) {
+        notify.info(
+          'Item saved',
+          saved.approval.kind === 'inventory.item_price'
+            ? 'Its ceiling price and GST rate stay as they were until someone who approves prices approves the change in Approvals.'
+            : 'Its classification stays as it was until a pharmacist approves the change in Approvals.',
+        );
+      } else {
+        notify.success(item ? 'Item saved' : 'Item added');
+      }
       void queryClient.invalidateQueries({ queryKey: inventoryKeys.items });
       onClose();
     },
@@ -628,7 +724,58 @@ function ItemEditor({
                 hint="Always recorded in the controlled-drug register"
               />
               <SwitchField control={form.control} name="isColdChain" label="Cold chain (2–8 °C)" disabled={readOnly} />
+              {type === 'Drug' && (
+                <SwitchField
+                  control={form.control}
+                  name="isHighAlert"
+                  label="High-alert medicine"
+                  disabled={readOnly}
+                  hint="Insulin, heparin, concentrated potassium chloride, opioids, chemotherapy… Each dose given on a ward is witnessed by a second nurse."
+                />
+              )}
             </FormGrid>
+            {type === 'Drug' && (
+              <FormGrid columns={2}>
+                <SelectField
+                  control={form.control}
+                  name="telemedicineList"
+                  label="Telemedicine list (TPG 2020)"
+                  required
+                  disabled={readOnly}
+                  hint={
+                    prohibitedByLaw(schedule, isControlled)
+                      ? telemedicineListHint.Prohibited
+                      : `${telemedicineListHint[telemedicineChoice]}. The pharmacy and therapeutics committee decides.`
+                  }
+                  options={TELEMEDICINE_LISTS.map((l) => ({ value: l, label: telemedicineListLabel[l] }))}
+                />
+              </FormGrid>
+            )}
+            {item?.pendingClass && (
+              <MessageBar intent="info" layout="multiline">
+                <MessageBarBody>
+                  {`${item.pendingClass.requestedBy} asked on ${formatDateTime(item.pendingClass.requestedAt)} for this drug to be handled less strictly; it stays as it is until a pharmacist approves it in Approvals.`}
+                </MessageBarBody>
+              </MessageBar>
+            )}
+            {weakened && !readOnly && (
+              <>
+                <MessageBar intent="warning" layout="multiline">
+                  <MessageBarBody>
+                    This drug would be handled less strictly. The rest of the item is saved at once; its classification
+                    waits for a pharmacist to approve it.
+                  </MessageBarBody>
+                </MessageBar>
+                <TextAreaField
+                  control={form.control}
+                  name="classChangeReason"
+                  label="Why the change"
+                  rows={2}
+                  maxLength={500}
+                  hint="The pharmacist who approves it reads this."
+                />
+              </>
+            )}
             {type === 'Drug' && (
               <div className={styles.rules}>
                 <Badge appearance="tint" color={rx ? 'warning' : 'success'}>
@@ -710,18 +857,57 @@ function ItemEditor({
                   hint="What the device is, as its bill says. For a stent: bare-metal or drug-eluting first, then material and size."
                 />
               )}
-              {type === 'Implant' && (
+              {hasCeiling(type) && (
                 <NumberField
                   control={form.control}
                   name="ceilingPrice"
-                  label="NPPA ceiling price (₹ a unit, with GST)"
+                  label={`NPPA ceiling price (₹ a ${baseUnit || 'unit'}, with GST)`}
                   disabled={readOnly}
                   min={0}
-                  step={0.01}
-                  hint="Coronary stents and knee implants. No patient is charged more, whatever an older pack's MRP. Update it when NPPA revises it."
+                  step={0.0001}
+                  hint={
+                    type === 'Implant'
+                      ? "Coronary stents and knee implants. No patient is charged more, whatever an older pack's MRP. Update it when NPPA revises it."
+                      : 'A scheduled medicine (DPCO 2013): no pack is received with an MRP above it, and none is sold above it. Leave empty if not price-controlled.'
+                  }
+                />
+              )}
+              {hasCeiling(type) && ceilingPrice !== null && (
+                <TextField
+                  control={form.control}
+                  name="ceilingNotification"
+                  label="NPPA notification"
+                  disabled={readOnly}
+                  maxLength={100}
+                  hint="Its S.O. number and date, e.g. S.O. 1234(E) of 30-Mar-2026"
                 />
               )}
             </FormGrid>
+            {item?.pendingPricing && (
+              <MessageBar intent="info" layout="multiline">
+                <MessageBarBody>
+                  {`${item.pendingPricing.requestedBy} asked on ${formatDateTime(item.pendingPricing.requestedAt)} for a higher or no ceiling price, or another GST rate; the item keeps its own until someone who approves prices approves it in Approvals.`}
+                </MessageBarBody>
+              </MessageBar>
+            )}
+            {loosened && !readOnly && (
+              <>
+                <MessageBar intent="warning" layout="multiline">
+                  <MessageBarBody>
+                    A higher or no ceiling price, or another GST rate, waits for someone who approves prices. The rest
+                    of the item is saved at once. A ceiling set or lowered applies at once.
+                  </MessageBarBody>
+                </MessageBar>
+                <TextAreaField
+                  control={form.control}
+                  name="priceChangeReason"
+                  label="Why the price change"
+                  rows={2}
+                  maxLength={500}
+                  hint="Name the NPPA notification or the GST notification; whoever approves it reads this."
+                />
+              </>
+            )}
             <SwitchField
               control={form.control}
               name="isActive"

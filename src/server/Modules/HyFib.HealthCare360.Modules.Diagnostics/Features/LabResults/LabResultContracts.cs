@@ -29,8 +29,8 @@ public sealed record SusceptibilityDto(string Antibiotic, SusceptibilityInterpre
 /// <summary>
 /// One analyte line on the result-entry / verification sheet, with the reference interval for this patient. An
 /// analyser's result carries what the analyser said (<see cref="InstrumentUnit"/>, <see cref="InstrumentFlags"/>,
-/// <see cref="InstrumentStatus"/>, <see cref="InstrumentComment"/>) and, when it was not auto-validated, why
-/// (<see cref="HeldReasons"/>).
+/// <see cref="InstrumentStatus"/>, <see cref="InstrumentComment"/>, and its own word for an answer read as one of the
+/// test's, <see cref="InstrumentValue"/>) and, when it was not auto-validated, why (<see cref="HeldReasons"/>).
 /// </summary>
 public sealed record ResultSheetLine(
     Guid ResultId,
@@ -69,7 +69,8 @@ public sealed record ResultSheetLine(
     DateTimeOffset? EnteredAt,
     DateTimeOffset? VerifiedAt,
     bool HasCriticalCall,
-    uint Version);
+    uint Version,
+    string? InstrumentValue = null);
 
 public sealed record ResultSheet(
     Guid SampleId,

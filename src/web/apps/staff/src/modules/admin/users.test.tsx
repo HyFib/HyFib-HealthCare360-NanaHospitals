@@ -94,3 +94,178 @@ describe('adding a user', SCREEN_TESTS, () => {
     });
   });
 });
+
+// Access is given by two people: what an edit adds waits for another administrator who may approve grants.
+describe('access that waits for a second administrator', SCREEN_TESTS, () => {
+  const userId = id('200');
+  const waiting = {
+    approvalId: id('901'),
+    roleIds: [id('004')],
+    facilityIds: [],
+    activate: false,
+    requestedBy: 'Hospital Admin',
+    requestedAt: '2026-11-02T05:00:00Z',
+  };
+
+  it("says when a new user's roles wait for approval", async () => {
+    server = fakeServer({
+      'GET /api/v1/admin/users': paged([]),
+      'GET /api/v1/admin/roles': ROLES,
+      'GET /api/v1/masters/lookups/practitioners': [],
+      'POST /api/v1/admin/users': {
+        userId: id('100'),
+        temporaryPassword: 'Kite-Lamp-42',
+        expiresAt: '2026-11-01T06:30:00Z',
+        approvalId: id('900'),
+      },
+    });
+    const user = userEvent.setup();
+    openScreen('/admin/users');
+    await user.click(await screen.findByRole('button', { name: 'Add user' }, SLOW));
+    const drawer = await screen.findByRole('dialog', { name: /Add user/ });
+    await user.type(within(drawer).getByRole('textbox', { name: /User name/ }), 'priya.s');
+    await user.type(within(drawer).getByRole('textbox', { name: /Full name/ }), 'Priya Sharma');
+    await user.click(await within(drawer).findByRole('checkbox', { name: 'Nurse' }, SLOW));
+    await user.type(within(drawer).getByRole('textbox', { name: /Reason, for the approver/ }), 'Joins ward 3.');
+    await user.click(within(drawer).getByRole('button', { name: 'Create user' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Temporary password for Priya Sharma' }, SLOW);
+    expect(
+      within(dialog).getByText(/Their roles wait for another administrator who may approve grants/),
+    ).toBeInTheDocument();
+    expect(created()[0]).toMatchObject({ body: { roleIds: [id('004')], reason: 'Joins ward 3.' } });
+  });
+
+  it('shows the roles waiting on an account as given, and says an edit that adds one was asked for', async () => {
+    server = fakeServer({
+      'GET /api/v1/admin/users': paged([
+        {
+          id: userId,
+          userName: 'priya.s',
+          displayName: 'Priya Sharma',
+          email: null,
+          phone: null,
+          isActive: true,
+          isLocked: false,
+          mfaEnabled: false,
+          lastLoginAt: null,
+          roles: [],
+        },
+      ]),
+      [`GET /api/v1/admin/users/${userId}`]: {
+        id: userId,
+        userName: 'priya.s',
+        displayName: 'Priya Sharma',
+        email: null,
+        phone: null,
+        isActive: true,
+        mfaEnabled: false,
+        mustChangePassword: true,
+        lastLoginAt: null,
+        lockoutEndsAt: null,
+        practitionerId: null,
+        defaultFacilityId: null,
+        roleIds: [],
+        facilityIds: [],
+        version: 3,
+        pendingGrant: waiting,
+      },
+      'GET /api/v1/admin/roles': ROLES,
+      'GET /api/v1/masters/lookups/practitioners': [],
+      [`PUT /api/v1/admin/users/${userId}`]: {
+        id: id('902'),
+        kind: 'identity.user_grant',
+        summary: 'Access for Priya Sharma: roles Billing',
+      },
+    });
+    const user = userEvent.setup();
+    openScreen('/admin/users');
+    await user.click(await screen.findByText('Priya Sharma', {}, SLOW));
+    const drawer = await screen.findByRole('dialog', { name: /Priya Sharma/ }, SLOW);
+
+    // The nurse role waits: the notice says so, with the request, and its box stays ticked so nothing is asked twice.
+    expect(await within(drawer).findByText('Waiting for approval')).toBeInTheDocument();
+    expect(within(drawer).getByText(/Roles Nurse, asked for by Hospital Admin/)).toBeInTheDocument();
+    expect(within(drawer).getByRole('checkbox', { name: 'Nurse' })).toBeChecked();
+    await expectNoAxeViolations();
+
+    await user.click(within(drawer).getByRole('checkbox', { name: 'Billing' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('Asked for approval', {}, SLOW)).toBeInTheDocument();
+    const put = server.requests.find((request) => request.method === 'PUT');
+    expect(put?.body).toMatchObject({ roleIds: [id('004'), id('002')], version: 3 });
+  });
+});
+
+// Nobody takes over a colleague's account alone: a reset's temporary password goes to the account's own mobile number
+// and e-mail address, and the screen says where, never what; a two-step verification reset waits for another
+// administrator, and the screen says it was asked for.
+describe("resetting a colleague's sign-in", SCREEN_TESTS, () => {
+  const nurseId = id('300');
+  const NURSE = {
+    id: nurseId,
+    userName: 'kavitha.r',
+    displayName: 'Kavitha Raman',
+    email: null,
+    phone: '+919840012345',
+    isActive: true,
+    isLocked: false,
+    mfaEnabled: true,
+    lastLoginAt: null,
+    roles: ['Nurse'],
+  };
+
+  const serve = (action: 'reset-password' | 'reset-mfa', answer: unknown) => {
+    server = fakeServer({
+      'GET /api/v1/admin/users': paged([NURSE]),
+      'GET /api/v1/admin/roles': ROLES,
+      [`POST /api/v1/admin/users/${nurseId}/${action}`]: answer,
+    });
+  };
+
+  const choose = async (user: ReturnType<typeof userEvent.setup>, item: string) => {
+    openScreen('/admin/users');
+    await user.click(await screen.findByRole('button', { name: 'Actions for Kavitha Raman' }, SLOW));
+    await user.click(await screen.findByRole('menuitem', { name: item }));
+    const confirm = await screen.findByRole('alertdialog');
+    await user.click(within(confirm).getByRole('button', { name: 'Continue' }));
+  };
+
+  it('says where the temporary password was sent, and never shows it to the administrator', async () => {
+    serve('reset-password', {
+      userId: nurseId,
+      sentTo: ['mobile +91******2345'],
+      expiresAt: '2026-11-11T06:30:00Z',
+      temporaryPassword: null,
+    });
+    const user = userEvent.setup();
+    await choose(user, 'Reset password');
+
+    const sent = await screen.findByRole('dialog', { name: 'Password reset for Kavitha Raman' }, SLOW);
+    expect(within(sent).getByText(/A temporary password was sent to their mobile \+91\*{6}2345/)).toBeInTheDocument();
+    expect(within(sent).getByText('Not shown to you')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Temporary password for/ })).not.toBeInTheDocument();
+    expect(within(sent).queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
+    await expectNoAxeViolations();
+    expect(server.requests.filter((r) => r.method === 'POST')).toHaveLength(1);
+  });
+
+  it('says a two-step verification reset was asked for, and that nothing changes until it is approved', async () => {
+    serve('reset-mfa', {
+      id: id('903'),
+      kind: 'identity.mfa_reset',
+      summary: 'Two-step verification reset for Kavitha Raman (kavitha.r)',
+    });
+    const user = userEvent.setup();
+    await choose(user, 'Reset two-step verification');
+
+    expect(await screen.findByText('Asked for approval', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getAllByText(/nothing changes until then/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Two-step verification reset')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    // The closed confirmation's portal can keep the rest of the page aria-hidden for a moment after the dialog is
+    // gone; axe run then would see a hidden page that is being torn down (aria-hidden-focus, "axe encountered an error").
+    await waitFor(() => expect(document.querySelector('body > div[aria-hidden="true"]')).toBeNull());
+    await expectNoAxeViolations();
+  });
+});

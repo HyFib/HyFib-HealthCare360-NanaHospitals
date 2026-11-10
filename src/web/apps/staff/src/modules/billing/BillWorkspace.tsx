@@ -28,6 +28,7 @@ import {
   DocumentCheckmarkRegular,
   LinkRegular,
   MoneyHandRegular,
+  MoneyOffRegular,
   MoreHorizontalRegular,
   PrintRegular,
   ReceiptRegular,
@@ -42,19 +43,22 @@ import { useState } from 'react';
 import { useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
 import { PendingApprovals } from '@/modules/approvals/PendingApprovals';
-import { billDocument, billingApi, billingQueries, type BillDetail, type BillLineDto } from './api';
+import { billDocument, billingApi, billingQueries, creditNoteDocument, type BillDetail, type BillLineDto } from './api';
 import { BillLinesTable } from './BillLinesTable';
 import { BillPackagePanel } from './BillPackagePanel';
 import { BillTotalsCard } from './BillTotalsCard';
-import { creditableAmount } from './billTotals';
+import { creditableAmount, payerCreditableAmount } from './billTotals';
 import { CollectPaymentDialog } from './CollectPaymentDialog';
 import { CreditNoteDialog } from './CreditNoteDialog';
+import { DebitNoteDialog } from './DebitNoteDialog';
 import { DiscountDialog } from './DiscountDialog';
 import { useBillingPrint, useRefreshBilling } from './hooks';
 import { CREDIT_NOTE_KIND_LABEL, RECEIPT_PURPOSE_LABEL, REFUND_STATUS_LABEL, modeSummaryLabel } from './labels';
 import { fromPaise, maxBig, toPaise } from './money';
 import { PaymentLinkDialog } from './PaymentLinkDialog';
 import { RequestRefundDialog } from './RefundDialogs';
+import { ReceiptReversalDialog } from './ReversalDialogs';
+import { mayHaveReversibleMoney } from './reversals';
 import { ServicePicker } from './ServicePicker';
 import { ActionError, Amount, KeyHint, ReasonDialog } from './ui';
 
@@ -75,7 +79,8 @@ const useStyles = makeStyles({
   toolbar: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '8px' },
 });
 
-type DialogKind = 'discount' | 'finalize' | 'collect' | 'discard' | 'cancel' | 'refund' | 'credit' | 'link' | null;
+type DialogKind =
+  'discount' | 'finalize' | 'collect' | 'discard' | 'cancel' | 'refund' | 'credit' | 'debit' | 'link' | null;
 
 /** Refundable balance less refunds already requested or approved (they count against it until paid). */
 function refundableNow(bill: BillDetail): number {
@@ -124,9 +129,10 @@ export function BillWorkspace({
   const queryClient = useQueryClient();
   const refresh = useRefreshBilling();
   const { printBill, printReceiptById, prefs } = useBillingPrint();
-  const { downloadPdf } = useServerDocuments();
+  const { print, downloadPdf } = useServerDocuments();
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [reversing, setReversing] = useState<string | null>(null);
 
   const canEditOp = usePermission('billing.op.create');
   const canDiscount = usePermission(['billing.op.create', 'billing.ip.manage']);
@@ -282,6 +288,14 @@ export function BillWorkspace({
             </MessageBarBody>
           </MessageBar>
         )}
+        {bill.gstFilingWarning && (
+          <MessageBar intent="warning" layout="multiline">
+            <MessageBarBody>
+              <MessageBarTitle>Entered after its month's GSTR-1 was filed</MessageBarTitle>
+              {bill.gstFilingWarning}
+            </MessageBarBody>
+          </MessageBar>
+        )}
         {bill.pendingDiscount && !isFree && (
           <MessageBar intent="warning" layout="multiline">
             <MessageBarBody>
@@ -359,16 +373,39 @@ export function BillWorkspace({
                   { key: 'at', header: 'Received', render: (r) => formatDateTime(r.receivedAt) },
                   { key: 'purpose', header: 'For', priority: 'low', render: (r) => RECEIPT_PURPOSE_LABEL[r.purpose] },
                   { key: 'mode', header: 'Mode', render: (r) => modeSummaryLabel(r.modes) },
-                  { key: 'amount', header: 'Amount', align: 'end', render: (r) => <Amount value={r.amount} strong /> },
+                  {
+                    key: 'amount',
+                    header: 'Amount',
+                    align: 'end',
+                    render: (r) =>
+                      r.reversedAmount ? (
+                        <span>
+                          <Amount value={r.amount} strong /> · <Amount value={r.reversedAmount} /> not received
+                        </span>
+                      ) : (
+                        <Amount value={r.amount} strong />
+                      ),
+                  },
                 ]}
                 rowActions={(r) => (
-                  <Button
-                    size="small"
-                    appearance="subtle"
-                    icon={<PrintRegular />}
-                    aria-label={`Print receipt ${r.receiptNumber}`}
-                    onClick={() => void printReceiptById(r.id)}
-                  />
+                  <>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<PrintRegular />}
+                      aria-label={`Print receipt ${r.receiptNumber}`}
+                      onClick={() => void printReceiptById(r.id)}
+                    />
+                    {canRequestRefund && mayHaveReversibleMoney(r) && (
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<MoneyOffRegular />}
+                        aria-label={`Money of receipt ${r.receiptNumber} not received`}
+                        onClick={() => setReversing(r.id)}
+                      />
+                    )}
+                  </>
                 )}
               />
             )}
@@ -407,7 +444,48 @@ export function BillWorkspace({
                     render: (c) =>
                       `${c.reason}${c.requestedByName ? ` · asked for by ${c.requestedByName}, approved by ${c.issuedByName ?? '—'}` : c.issuedByName ? ` · ${c.issuedByName}` : ''}`,
                   },
+                  {
+                    key: 'gst',
+                    header: 'GST taken back',
+                    align: 'end',
+                    priority: 'low',
+                    render: (c) =>
+                      c.gstTimeBarred ? (
+                        <Tooltip
+                          content="Issued after the bill's GST could be reduced (CGST Act s.34(2))"
+                          relationship="description"
+                        >
+                          <Text>Not reduced</Text>
+                        </Tooltip>
+                      ) : c.gstAmount ? (
+                        <Amount value={c.gstAmount} />
+                      ) : (
+                        '—'
+                      ),
+                  },
                   { key: 'amount', header: 'Amount', align: 'end', render: (c) => <Amount value={c.amount} strong /> },
+                  {
+                    key: 'print',
+                    header: 'Print',
+                    render: (c) => (
+                      <div className={styles.row}>
+                        <Button
+                          size="small"
+                          icon={<PrintRegular />}
+                          aria-label={`Print ${CREDIT_NOTE_KIND_LABEL[c.kind].toLowerCase()} ${c.number}`}
+                          disabled={print.isPending}
+                          onClick={() => print.mutate(creditNoteDocument(bill.id, c.id))}
+                        />
+                        <Button
+                          size="small"
+                          icon={<ArrowDownloadRegular />}
+                          aria-label={`Download ${CREDIT_NOTE_KIND_LABEL[c.kind].toLowerCase()} ${c.number} as a PDF`}
+                          disabled={downloadPdf.isPending}
+                          onClick={() => downloadPdf.mutate(creditNoteDocument(bill.id, c.id))}
+                        />
+                      </div>
+                    ),
+                  },
                 ]}
               />
             )}
@@ -483,9 +561,14 @@ export function BillWorkspace({
                       Request refund of {formatInr(refundable)}
                     </MenuItem>
                   )}
-                  {canCredit && creditable > 0 && (
+                  {canCredit && (creditable > 0 || payerCreditableAmount(bill) > 0) && (
                     <MenuItem icon={<ReceiptRegular />} onClick={openDialog('credit')}>
                       Credit note or write-off
+                    </MenuItem>
+                  )}
+                  {canCredit && !isDraft && !isCancelled && (
+                    <MenuItem icon={<ReceiptRegular />} onClick={openDialog('debit')}>
+                      Debit note
                     </MenuItem>
                   )}
                   {(isDraft || (!isCancelled && canCancel)) && <MenuDivider />}
@@ -590,6 +673,8 @@ export function BillWorkspace({
         />
       )}
       {dialog === 'credit' && <CreditNoteDialog bill={bill} open onClose={() => setDialog(null)} />}
+      {dialog === 'debit' && <DebitNoteDialog bill={bill} open onClose={() => setDialog(null)} />}
+      {reversing && <ReceiptReversalDialog receiptId={reversing} open onClose={() => setReversing(null)} />}
     </div>
   );
 }

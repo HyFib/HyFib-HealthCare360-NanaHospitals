@@ -1,13 +1,17 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Procedures;
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Services;
 
 /// <summary>
 /// Structured procedure records (EHR-01): recorded and corrected on the chart, and recorded from operations the theatre
-/// completes. Codes come from the procedure catalogue so a record never carries a code nobody can look up.
+/// completes. Codes come from the procedure catalogue so a record never carries a code nobody can look up. A procedure
+/// that reveals a sensitive category (a termination of pregnancy, electroconvulsive therapy) puts the patient's record
+/// in it, in the same save, as the matching diagnosis would.
 /// </summary>
-public sealed class ProcedureService(HospitalDbContext db, ICurrentUser user, TimeProvider time)
+public sealed class ProcedureService(HospitalDbContext db, ICurrentUser user, TimeProvider time, PatientAccessGuard guard)
 {
     /// <summary>The patient's procedures from every facility, newest first; those entered in error only when asked for.</summary>
     public async Task<List<ProcedureDto>> ListAsync(Guid patientId, bool includeEnteredInError, CancellationToken ct)
@@ -47,6 +51,7 @@ public sealed class ProcedureService(HospitalDbContext db, ICurrentUser user, Ti
         record.AdmissionId = encounter?.AdmissionId;
         record.VisitId = encounter?.VisitId;
         db.Add(record);
+        await FlagSensitiveAsync(patientId, details.Value!, ct);
         await db.SaveChangesAsync(ct);
         return await DtoAsync(record, ct);
     }
@@ -66,6 +71,7 @@ public sealed class ProcedureService(HospitalDbContext db, ICurrentUser user, Ti
             return corrected.Error!;
         }
 
+        await FlagSensitiveAsync(record.PatientId, details.Value!, ct);
         await db.SaveChangesAsync(ct);
         return await DtoAsync(record, ct);
     }
@@ -106,15 +112,27 @@ public sealed class ProcedureService(HospitalDbContext db, ICurrentUser user, Ti
                 ? await encounters.Where(e => e.VisitId == visitId).OrderByDescending(e => e.StartedAt).FirstOrDefaultAsync(ct)
                 : null;
 
-        var record = ProcedureRecord.FromSurgery(surgery.PatientId, surgery.SurgeryBookingId, new ProcedureDetails(
+        var details = new ProcedureDetails(
             surgery.StartedAt ?? surgery.CompletedAt, catalogued?.Code, catalogued?.System, surgery.ProcedureName, surgery.SurgeonId, null, surgery.Side,
-            null, null, $"Operation completed in theatre (booking {surgery.BookingNumber})."));
+            null, null, $"Operation completed in theatre (booking {surgery.BookingNumber}).");
+        var record = ProcedureRecord.FromSurgery(surgery.PatientId, surgery.SurgeryBookingId, details);
         record.FacilityId = surgery.FacilityId;
         record.EncounterId = encounter?.Id;
         record.AdmissionId = surgery.AdmissionId;
         record.VisitId = surgery.VisitId;
         db.Add(record);
+        await FlagSensitiveAsync(surgery.PatientId, details, ct);
     }
+
+    /// <summary>
+    /// Puts the record in the sensitive category an ICD-10-PCS code reveals (<see cref="SensitiveCategories.FromIcd10Pcs"/>),
+    /// saved with the procedure, so the procedure is never read anywhere, nor shared with another provider, before the
+    /// record is closed to those without the category's permission. A record is never taken out of a category here.
+    /// </summary>
+    private Task FlagSensitiveAsync(Guid patientId, ProcedureDetails details, CancellationToken ct) =>
+        details.CodeSystem == CodeReleases.Icd10Pcs && SensitiveCategories.FromIcd10Pcs(details.Code) is var category and not SensitiveCategory.None
+            ? guard.FlagAsync(patientId, category, $"a procedure ({details.Code})", ct)
+            : Task.CompletedTask;
 
     private IQueryable<ProcedureRecord> Records() =>
         db.Set<ProcedureRecord>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);

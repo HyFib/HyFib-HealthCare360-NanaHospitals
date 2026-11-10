@@ -39,8 +39,19 @@ export function resendCooldownSeconds(sent: number): number {
   return sent <= 0 ? 0 : (steps[sent - 1] ?? 300);
 }
 
-/** Seconds to wait after the server said "too many codes". */
+/** Seconds to wait after the server said "too many codes" without saying until when. */
 export const THROTTLED_COOLDOWN_SECONDS = 300;
+
+/**
+ * Seconds to wait after the server said "too many codes": until the time it gives (`data.retryAfterSeconds`, when the
+ * number's third latest code leaves its 15 minutes), else the fixed wait. Relative seconds, so a phone whose clock is
+ * wrong still counts down to the right moment.
+ */
+export function throttledWaitSeconds(data: unknown): number {
+  const seconds =
+    data !== null && typeof data === 'object' && 'retryAfterSeconds' in data ? Number(data.retryAfterSeconds) : NaN;
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(Math.ceil(seconds), 15 * 60) : THROTTLED_COOLDOWN_SECONDS;
+}
 
 const DEFAULT_LIFETIME_MS = 5 * 60_000;
 const MAX_LIFETIME_MS = 15 * 60_000;

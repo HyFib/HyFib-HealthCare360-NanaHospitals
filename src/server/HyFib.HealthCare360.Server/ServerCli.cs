@@ -11,6 +11,7 @@ using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql;
 
 namespace HyFib.HealthCare360.Server;
 
@@ -94,13 +95,28 @@ internal static class ServerCli
               issues itself a new certificate from the imported CA when it starts. Prints the CA's fingerprint: it is the
               one HC360 Desktop pinned. The password is read as for export-ca.
 
+          certificates prepare-ca [--confirm] [--data-dir <folder>]
+              Prepares the next hospital CA in this one's last year, the first of a rollover's two steps: this CA's name, a
+              new key, and a certificate this CA signs for the new key. The server keeps serving with this CA and hands both
+              out: HC360 Desktop and the lab agents take the next CA by themselves, tablets and browsers are given it, and
+              System health names every device that does not hold it yet (docs/deployment/CA-ROLLOVER.md). Not for a key that
+              may have been seen by someone it should not have been: use new-ca then. Without --confirm it says what it would
+              do, and changes nothing. Run it with the HC360 service stopped, then start the service.
+
+          certificates switch-ca [--confirm] [--data-dir <folder>]
+              Switches the server to the prepared next CA, the second step. Refused while any workstation or lab agent seen in
+              the last 30 days, and not revoked, does not hold it: after the switch it would no longer trust the server. The
+              CA it replaces is kept under a new name, and handed out until it expires. Without --confirm it says what it
+              would do, and changes nothing. Run it with the HC360 service stopped, then start the service.
+
           certificates new-ca [--confirm] [--data-dir <folder>]
-              Makes a new hospital CA in place of this server's: for a CA in its last year, or one whose key may have been
-              seen by someone it should not have been. Every workstation, tablet, HC360 Desktop and lab agent trusts the CA
-              it replaces, so each must be set up again (docs/deployment/CA-ROLLOVER.md): without --confirm it says which
-              CA it would replace, and changes nothing. The CA it replaces is kept under a new name, so it can be put back.
-              Run it with the HC360 service stopped, then start the service: the server issues itself a certificate from
-              the new CA. Prints the new CA's fingerprint, which the devices pin when they are set up again.
+              Makes a new hospital CA in place of this server's: for a CA whose key may have been seen by someone it should
+              not have been, or one that has already expired (a CA in its last year rolls over with prepare-ca instead). Every
+              workstation, tablet, HC360 Desktop and lab agent trusts the CA it replaces, so each must be set up again
+              (docs/deployment/CA-ROLLOVER.md): without --confirm it says which CA it would replace, and changes nothing.
+              The CA it replaces is kept under a new name, so it can be put back. Run it with the HC360 service stopped,
+              then start the service: the server issues itself a certificate from the new CA. Prints the new CA's
+              fingerprint, which the devices pin when they are set up again.
 
           certificates probe <https://address>... [--ca-fingerprint <fingerprint> | --ca-file <ca.crt>] [--event-log]
               Checks each address from this machine as a device does: the certificate served is for that name, was issued
@@ -175,6 +191,8 @@ internal static class ServerCli
                 ["certificates", "export-ca", ..] when options.ContainsKey("out") => ExportCa(options),
                 ["certificates", "import-ca", ..] when options.ContainsKey("in") => ImportCa(options),
                 ["certificates", "new-ca", ..] => NewCa(options, confirmed),
+                ["certificates", "prepare-ca", ..] => PrepareCa(options, confirmed),
+                ["certificates", "switch-ca", ..] => await SwitchCaAsync(options, confirmed, ReadDeviceReadinessAsync),
                 ["certificates", "probe", ..] when Positional(args[2..]).Length > 0 => await ProbeAsync(Positional(args[2..]), options, eventLog),
                 ["desktop", "publish", ..] when options.ContainsKey("package") => DesktopCli.Publish(options["package"], options.GetValueOrDefault("data-dir")),
                 ["desktop", "verify", ..] when options.ContainsKey("package") => DesktopCli.Verify(options["package"]),
@@ -580,6 +598,16 @@ internal static class ServerCli
 
         Console.WriteLine($"Wrote the hospital CA, with its private key, to {output}, encrypted with the password.");
         Console.WriteLine($"Fingerprint: {GroupFingerprint(exported.Fingerprint)} (valid until {exported.ExpiresAt:dd MMM yyyy}).");
+        if (exported.PreviousCaExpiresAt is { } previousEnds)
+        {
+            Console.WriteLine($"It carries the CA this one replaced too, which the standby hands out until {previousEnds:dd MMM yyyy}, as this server does.");
+        }
+
+        if (exported.NextCaLeftHere)
+        {
+            Console.WriteLine("The next CA prepared here is not in it: the standby serves with this CA, which the devices hold. Export again after the switch.");
+        }
+
         Console.WriteLine("Import it on the standby with 'certificates import-ca'. Keep the file as safely as the backup recovery key, apart from");
         Console.WriteLine("its password, and delete copies you no longer need: with both, anyone can make certificates the workstations trust.");
         return 0;
@@ -626,6 +654,11 @@ internal static class ServerCli
             ? $"Installed the hospital CA in {directories.Certificates}, protected for this machine."
             : "This server already has this hospital CA: nothing changed.");
         Console.WriteLine($"Fingerprint: {GroupFingerprint(imported.Fingerprint)} (valid until {imported.ExpiresAt:dd MMM yyyy}). HC360 Desktop shows the one it pinned.");
+        if (imported.PreviousCaExpiresAt is { } previousEnds)
+        {
+            Console.WriteLine($"With the CA it replaced, which this server hands out until {previousEnds:dd MMM yyyy}, as the one it came from does.");
+        }
+
         if (imported.PreviousKeptAs is { } keptAs)
         {
             Console.WriteLine($"The different CA that was here is kept as {keptAs}.");
@@ -686,6 +719,157 @@ internal static class ServerCli
         Console.WriteLine("     the lab agents, and each tablet and browser (install the CA from https://<server>:7360/api/v1/system/ca-certificate).");
         Console.WriteLine("  4. Give the certificate probe the new fingerprint.");
         return 0;
+    }
+
+    /// <summary>
+    /// Prepares the next hospital CA, once the administrator has confirmed it: the first of a rollover's two steps
+    /// (docs/deployment/CA-ROLLOVER.md). Needs administrator rights.
+    /// </summary>
+    private static int PrepareCa(Dictionary<string, string> options, bool confirmed)
+    {
+        var directories = SiteDirectories(options);
+        if (!confirmed)
+        {
+            using var current = LanCertificateManager.PublicCa(directories);
+            Console.WriteLine(current is null
+                ? "This server has no hospital CA yet: HC360 makes one when it first starts."
+                : $"This server's hospital CA is {GroupFingerprint(CertificateProbe.Fingerprint(current))}, valid until {current.NotAfter.ToUniversalTime():dd MMM yyyy}.");
+            Console.WriteLine("'certificates prepare-ca' makes the next CA: this CA's name, a new key, valid for ten years, and a certificate this CA signs");
+            Console.WriteLine("for it. The server keeps serving with this CA and hands both out: HC360 Desktop and the lab agents take the next CA by");
+            Console.WriteLine("themselves, and tablets and browsers are given it. Once every device holds it, 'certificates switch-ca' switches the server");
+            Console.WriteLine("to it. Not for a key that may have been seen by someone else: use 'certificates new-ca' then.");
+            Console.WriteLine("Nothing has changed. Run it again with --confirm, with the HC360 service stopped, to prepare the next CA.");
+            return 1;
+        }
+
+        PreparedHospitalCa prepared;
+        try
+        {
+            prepared = LanCertificateManager.PrepareCa(directories, HospitalDataProtection.CreateNodeProvider(directories), DateTimeOffset.UtcNow);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.Error.WriteLine($"{ex.Message} Nothing has changed.");
+            return 1;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or UnauthorizedAccessException or IOException or CryptographicException)
+        {
+            Console.Error.WriteLine($"The next hospital CA could not be prepared: {ex.Message} Run it on the Server Node from an elevated prompt; nothing has changed.");
+            return 2;
+        }
+
+        Console.WriteLine($"Prepared the next hospital CA in {directories.Certificates}, protected for this machine.");
+        Console.WriteLine($"Next CA: {GroupFingerprint(prepared.Fingerprint)} (valid until {prepared.ExpiresAt:dd MMM yyyy}).");
+        Console.WriteLine($"The server keeps serving with {GroupFingerprint(prepared.CurrentFingerprint)}, which vouches for it, until the switch.");
+        Console.WriteLine("Next, as CA-ROLLOVER.md says:");
+        Console.WriteLine("  1. Start the HC360Server service (or restart it): it hands the next CA out. HC360 Desktop and the lab agents take it within");
+        Console.WriteLine("     six hours of reaching the server.");
+        Console.WriteLine("  2. Give the next CA to tablets and browsers (MDM), the certificate probe and other systems that call HC360, beside the current one.");
+        Console.WriteLine($"  3. Once System health names no device without it, and before {prepared.CurrentExpiresAt:dd MMM yyyy}: 'certificates switch-ca --confirm',");
+        Console.WriteLine("     with the service stopped.");
+        return 0;
+    }
+
+    /// <summary>
+    /// Switches the server to the prepared next CA, once the administrator has confirmed it and every device seen holds it: the
+    /// second of a rollover's two steps (docs/deployment/CA-ROLLOVER.md). <paramref name="readDevices"/> reads which devices do
+    /// not hold the next CA, from the database. Needs administrator rights.
+    /// </summary>
+    internal static async Task<int> SwitchCaAsync(
+        Dictionary<string, string> options, bool confirmed, Func<string, DateTimeOffset, Task<CaRolloverReadiness>> readDevices)
+    {
+        var directories = SiteDirectories(options);
+        var keys = HospitalDataProtection.CreateNodeProvider(directories);
+        var now = DateTimeOffset.UtcNow;
+        string? next;
+        try
+        {
+            next = LanCertificateManager.PreparedNextCaFingerprint(directories, keys, now);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or CryptographicException)
+        {
+            Console.Error.WriteLine($"The hospital CA could not be read: {ex.Message} Run it on the Server Node from an elevated prompt; nothing has changed.");
+            return 2;
+        }
+
+        if (next is null)
+        {
+            Console.Error.WriteLine("No next CA is prepared: prepare one with 'certificates prepare-ca', and switch once every device holds it. Nothing has changed.");
+            return 1;
+        }
+
+        // After the switch a device without the next CA no longer trusts the server: every one seen lately must hold it.
+        CaRolloverReadiness readiness;
+        try
+        {
+            readiness = await readDevices(next, now);
+        }
+        catch (Exception ex) when (ex is NpgsqlException or System.TimeoutException or InvalidOperationException)
+        {
+            Console.Error.WriteLine($"The HC360 database could not be reached to check which devices hold the next CA: {ex.Message} Switch once it can be; nothing has changed.");
+            return 3;
+        }
+
+        if (readiness.NotReady > 0)
+        {
+            Console.Error.WriteLine($"{readiness.NotReady} of the {readiness.Seen} devices seen in the last 30 days do not hold the next CA, and would no longer trust the server:");
+            foreach (var name in readiness.WithoutNextCa)
+            {
+                Console.Error.WriteLine($"  {name}: holds other CAs");
+            }
+
+            foreach (var name in readiness.NotReporting)
+            {
+                Console.Error.WriteLine($"  {name}: does not say (an HC360 Desktop or lab agent older than this server)");
+            }
+
+            Console.Error.WriteLine("Each takes it within six hours of reaching the server. Update or look into these, or revoke one that is gone");
+            Console.Error.WriteLine("(Administration › Devices), then switch. Nothing has changed.");
+            return 1;
+        }
+
+        if (!confirmed)
+        {
+            Console.WriteLine($"Every one of the {readiness.Seen} devices seen in the last 30 days holds the next CA, {GroupFingerprint(next)}.");
+            Console.WriteLine("'certificates switch-ca' makes it this server's CA. Tablets, browsers and other systems that call HC360 cannot say which");
+            Console.WriteLine("CAs they hold: give it to them first (MDM), or they no longer trust the server after the switch.");
+            Console.WriteLine("Nothing has changed. Run it again with --confirm, with the HC360 service stopped, to switch.");
+            return 1;
+        }
+
+        SwitchedHospitalCa switched;
+        try
+        {
+            switched = LanCertificateManager.SwitchCa(directories, keys, now);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.Error.WriteLine($"{ex.Message} Nothing has changed.");
+            return 1;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or UnauthorizedAccessException or IOException or CryptographicException)
+        {
+            Console.Error.WriteLine($"The server could not be switched to the next CA: {ex.Message} Run it on the Server Node from an elevated prompt; nothing has changed.");
+            return 2;
+        }
+
+        Console.WriteLine($"Switched the hospital CA in {directories.Certificates}: it is now {GroupFingerprint(switched.Fingerprint)} (valid until {switched.ExpiresAt:dd MMM yyyy}).");
+        Console.WriteLine($"The CA it replaced, {GroupFingerprint(switched.PreviousFingerprint)}, is handed out until it expires on {switched.PreviousExpiresAt:dd MMM yyyy}"
+            + $"{(switched.PreviousKeptAs is { } keptAs ? $", and kept as {keptAs}" : "")}.");
+        Console.WriteLine("Next, as CA-ROLLOVER.md says:");
+        Console.WriteLine("  1. Start the HC360Server service: it issues itself a certificate from the new CA.");
+        Console.WriteLine("  2. On a warm standby and every other server node, import the CA again: 'certificates export-ca' here, 'certificates import-ca' there.");
+        Console.WriteLine("  3. Give the certificate probe's tasks the new fingerprint.");
+        return 0;
+    }
+
+    /// <summary>The devices that do not hold <paramref name="nextCaFingerprint"/>, from the database the server uses.</summary>
+    private static async Task<CaRolloverReadiness> ReadDeviceReadinessAsync(string nextCaFingerprint, DateTimeOffset now)
+    {
+        await using var app = CatalogueCli.BuildApplication();
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        return await CaRolloverDevices.ReadAsync(db, nextCaFingerprint, now, CancellationToken.None);
     }
 
     /// <summary>

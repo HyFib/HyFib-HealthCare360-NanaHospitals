@@ -198,6 +198,8 @@ public sealed class AuditSealTests(HospitalServer server)
         var chain = await ChainFromAsync(first);
         try
         {
+            // With the chain whole, any alert of a break another test made is closed: alerts are kept in the database.
+            await alerts.CheckAsync(Ct);
             await RewriteAsync(chain, "Looked up the allergy history", keepSeals: true);
             var broken = (await VerifyAsync()).Message!;
             await alerts.CheckAsync(Ct);
@@ -238,6 +240,8 @@ public sealed class AuditSealTests(HospitalServer server)
         var chain = await ChainFromAsync(first);
         try
         {
+            // With the chain whole, any alert of a break another test made is closed: alerts are kept in the database.
+            await alerts.CheckAsync(Ct);
             await RewriteAsync(chain, "Looked up the allergy history", keepSeals: true);
             var broken = (await VerifyAsync()).Message!;
             await alerts.CheckAsync(Ct);

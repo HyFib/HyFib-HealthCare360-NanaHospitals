@@ -1,7 +1,13 @@
 import type { PagedResult } from '@hc360/core';
 import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { PortalBillDetail, PortalBillListItem, PortalPaymentOrder, PortalPaymentStatus } from '@/lib/types';
+import type {
+  PortalBillDetail,
+  PortalBillListItem,
+  PortalPaymentOrder,
+  PortalPaymentStatus,
+  PortalRefund,
+} from '@/lib/types';
 
 const PAGE_SIZE = 50;
 const id = (value: string) => encodeURIComponent(value);
@@ -24,6 +30,13 @@ export const billQueries = {
         }),
       initialPageParam: 1,
       getNextPageParam: (last) => (last.page * last.pageSize < last.totalCount ? last.page + 1 : undefined),
+    }),
+
+  /** The patient's refunds, newest first: where each stands and the reference to trace it by. */
+  refunds: (patientId: string) =>
+    queryOptions({
+      queryKey: ['portal', patientId, 'bills', 'refunds'],
+      queryFn: ({ signal }) => api.get<PortalRefund[]>('/api/v1/portal/refunds', { query: { patientId }, signal }),
     }),
 
   detail: (patientId: string, billId: string) =>

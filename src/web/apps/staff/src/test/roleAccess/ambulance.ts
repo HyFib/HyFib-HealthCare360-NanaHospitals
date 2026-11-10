@@ -1,7 +1,8 @@
 import type { AmbulanceTrip, AmbulanceVehicle, TripLog } from '@/modules/ambulance/api';
 import type { FakeAnswers } from '../fakeApi';
 
-// Ambulance: a BLS ambulance out on an emergency, a hearse with a lapsed pollution certificate, and today's log.
+// Ambulance: a BLS ambulance out on an emergency, a hearse with a lapsed pollution certificate, and today's log with a
+// completed transfer charged to the patient (so waiving the charge is offered).
 
 const id = (suffix: string) => `0192a000-0000-7000-8000-${suffix.padStart(12, '0')}`;
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
@@ -67,13 +68,40 @@ const TRIP: AmbulanceTrip = {
   version: 3,
 };
 
+const CHARGED: AmbulanceTrip = {
+  ...TRIP,
+  id: id('t2'),
+  number: 'NHAT26000039',
+  purpose: 'InterFacilityTransfer',
+  patientId: id('p1'),
+  uhid: 'NH26000118',
+  patientName: 'Murugan S',
+  callerName: 'Dr. Ramesh (casualty)',
+  callerPhone: '9840011122',
+  pickupAddress: 'Nana Hospitals',
+  dropAddress: 'Government hospital, Thanjavur',
+  complaint: 'Referred for cath lab',
+  requestedAt: minutesAgo(300),
+  status: 'Completed',
+  dispatchedAt: minutesAgo(295),
+  atSceneAt: minutesAgo(290),
+  leftSceneAt: minutesAgo(285),
+  completedAt: minutesAgo(200),
+  startOdometerKm: 45132,
+  endOdometerKm: 45200,
+  kilometres: 68,
+  responseMinutes: 5,
+  waiverPending: null,
+  version: 6,
+};
+
 const LOG: TripLog = {
   from: '2026-10-25',
   to: '2026-10-25',
-  trips: [TRIP],
-  completed: 0,
+  trips: [TRIP, CHARGED],
+  completed: 1,
   cancelled: 0,
-  kilometres: 0,
+  kilometres: 68,
   medianDispatchMinutes: 2,
   medianResponseMinutes: 17,
 };

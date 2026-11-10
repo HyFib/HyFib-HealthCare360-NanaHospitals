@@ -57,6 +57,26 @@ internal sealed class HbpProcedureConfiguration : IEntityTypeConfiguration<HbpPr
     }
 }
 
+internal sealed class HbpMasterImportConfiguration : IEntityTypeConfiguration<HbpMasterImport>
+{
+    public void Configure(EntityTypeBuilder<HbpMasterImport> b)
+    {
+        b.ToTable("hbp_master_imports", BillingSchema.Name);
+        b.Property(x => x.MasterVersion).HasMaxLength(64);
+        b.Property(x => x.FileName).HasMaxLength(260);
+        b.Property(x => x.FileSha256).HasMaxLength(64);
+
+        // Text, not jsonb: the rows must read back as the exact text their hash was taken of.
+        b.Property(x => x.Rows).HasColumnType("text");
+        b.Property(x => x.RowsSha256).HasMaxLength(64);
+        b.Property(x => x.MasterStamp).HasMaxLength(64);
+        b.Property(x => x.AskedByName).HasMaxLength(200);
+        b.Property(x => x.ApprovedByName).HasMaxLength(200);
+        b.HasIndex(x => x.AskedAt);
+        b.HasIndex(x => x.ApprovalId);
+    }
+}
+
 internal sealed class PackageInclusionConfiguration : IEntityTypeConfiguration<PackageInclusion>
 {
     public void Configure(EntityTypeBuilder<PackageInclusion> b)

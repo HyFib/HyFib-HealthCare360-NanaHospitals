@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Engagement.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Services;
@@ -30,6 +31,7 @@ public static class CampaignAudienceQuery
         var audience = patients
             .Where(p => p.IsActive && !p.IsDeceased && p.MergedIntoPatientId == null && p.Phone != null)
             .Where(HasActiveMarketingConsent(consents))
+            .Where(IsKnownAdult(today))
             .Where(p => p.RegisteredFacilityId == facilityId || visits.Any(v => v.PatientId == p.Id && v.FacilityId == facilityId));
 
         if (segment.MinAge is { } minAge)
@@ -79,6 +81,16 @@ public static class CampaignAudienceQuery
     /// </summary>
     public static IQueryable<Patient> ReachableOnWhatsApp(IQueryable<Patient> patients, IQueryable<WhatsAppOptIn> optIns, IQueryable<WhatsAppOptOut> optOuts) =>
         patients.Where(p => optIns.Any(o => o.Phone == p.Phone) && !optOuts.Any(o => o.Phone == p.Phone && o.OptedOut));
+
+    /// <summary>
+    /// Adults only (DPDP Act 2023 s.9(3): no targeted advertising at children, and no behavioural monitoring of them). A
+    /// patient whose date of birth is not recorded is left out too: they cannot be known to be 18.
+    /// </summary>
+    public static Expression<Func<Patient, bool>> IsKnownAdult(DateOnly today)
+    {
+        var bornOnOrBefore = ChildData.AdultBornOnOrBefore(today);
+        return p => p.DateOfBirth != null && p.DateOfBirth <= bornOnOrBefore;
+    }
 
     /// <summary>Granted, not revoked, and not superseded by a later recorded refusal.</summary>
     public static Expression<Func<Patient, bool>> HasActiveMarketingConsent(IQueryable<PatientConsent> consents) =>

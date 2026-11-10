@@ -20,10 +20,13 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Templates;
 using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Clinical.Services.Catalogue;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace HyFib.HealthCare360.Modules.Clinical;
 
@@ -42,10 +45,12 @@ public sealed class ClinicalModule : IModule
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<ClinicalAccess>();
+        services.Replace(ServiceDescriptor.Scoped<IVisitClinicalWork, VisitClinicalWorkQuery>());
         services.AddScoped<EncounterService>();
         services.AddScoped<ClinicalOrderService>();
         services.AddScoped<PrescriptionSafetyService>();
         services.AddScoped<PrescriptionService>();
+        services.AddScoped<DrugSafetyApprovals>();
         services.AddScoped<PrescriptionPrintBuilder>();
         services.AddScoped<PrescriptionSignatureSettings>();
         services.AddScoped<PrescriptionFinalCopies>();
@@ -53,21 +58,34 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<PrescriptionNoticeRelease>();
         services.AddHostedService<PrescriptionNoticeReleaseJob>();
         services.AddSingleton<DscTrustStore>();
+        services.AddSingleton<DscCrlCache>();
+        services.AddSingleton<IDscOnlineRevocation, DscOnlineRevocation>();
+        services.AddScoped<DscRevocationCheck>();
+        services.AddHostedService<DscCrlRefreshJob>();
         services.AddScoped<IHealthWarningSource, DscTrustHealthWarnings>();
         services.AddScoped<PatientRecordQueries>();
         services.AddScoped<TimelineQueries>();
         services.AddScoped<WorklistQueries>();
+        services.AddScoped<DoctorHandovers>();
         services.AddScoped<DischargeSummaryService>();
+        services.AddScoped<IDischargeHoldSource, DischargeSummaryDischargeHold>();
         services.AddScoped<CodingService>();
         services.AddScoped<IVerifiedCodingSource, VerifiedCodingSource>();
+        services.AddScoped<IProcedureCatalogue, ProcedureCatalogue>();
         services.AddScoped<MedicalRecordService>();
         services.AddScoped<RecordCopyService>();
         services.AddScoped<HealthCheckupService>();
         services.AddScoped<ProcedureService>();
         services.AddScoped<VitalRegistrationService>();
+        services.AddScoped<DeathCertificateStandings>();
+        services.AddScoped<PatientFlagApprovals>();
+        services.AddScoped<HyFib.HealthCare360.Modules.Patients.Services.IDeathCertificateLookup, DeathCertificateLookup>();
         services.AddScoped<NotifiableDiseases>();
         services.AddScoped<IdspService>();
         services.AddScoped<EmergencyService>();
+        services.AddScoped<AgainstAdviceDeclarations>();
+        services.AddWitnessPurpose(AgainstAdviceDeclarations.DoctorPurpose);
+        services.AddWitnessPurpose(AgainstAdviceDeclarations.ErWitness);
         services.AddScoped<StewardshipService>();
         services.AddScoped<AntimicrobialCultureReview>();
         services.AddScoped<IAntimicrobialStewardship, AntimicrobialStewardship>();
@@ -87,6 +105,7 @@ public sealed class ClinicalModule : IModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         WorklistEndpoints.Map(endpoints);
+        HandoverEndpoints.Map(endpoints);
         PatientRecordEndpoints.Map(endpoints);
         EncounterEndpoints.Map(endpoints);
         VitalEndpoints.Map(endpoints);

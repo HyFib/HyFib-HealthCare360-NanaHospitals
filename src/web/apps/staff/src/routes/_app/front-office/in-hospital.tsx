@@ -22,7 +22,7 @@ import {
 } from '@/modules/front-office/journeys';
 import { inpatientQueries } from '@/modules/inpatient/api';
 
-const KINDS = ['Outpatient', 'Inpatient'] as const;
+const KINDS = ['Outpatient', 'Emergency', 'Inpatient'] as const;
 
 /** Whoever may read the ward list (the server's rule for it) gets the ward filter. */
 const WARD_READERS = [
@@ -44,10 +44,10 @@ export const Route = createFileRoute('/_app/front-office/in-hospital')({
 });
 
 /**
- * Everyone in the hospital now: today's out-patient visits still open and the patients in a bed, each with the pipeline
- * of their visit or stay and the time spent in the stage they are in. Every stage comes from the records (the token,
- * the doctor's note, the lab, the pharmacy, the bill, the ward); nobody sets one. Live: refreshed every minute and when
- * a visit changes.
+ * Everyone in the hospital now: today's out-patient visits still open, the patients in casualty (ER) and the patients
+ * in a bed, each with the pipeline of their visit or stay and the time spent in the stage they are in. Every stage comes
+ * from the records (the token, the triage, the doctor's note, the lab, the pharmacy, the bill, the ward); nobody sets
+ * one. Live: refreshed every minute and when a visit or a casualty case changes.
  */
 function InHospitalPage() {
   const filters = Route.useSearch();
@@ -62,6 +62,9 @@ function InHospitalPage() {
   useRealtimeEvent(facilityId ? `facility:${facilityId}` : null, 'visits.changed', () => {
     void queryClient.invalidateQueries({ queryKey: journeyKeys.all });
   });
+  useRealtimeEvent(facilityId ? `facility:${facilityId}` : null, 'er.changed', () => {
+    void queryClient.invalidateQueries({ queryKey: journeyKeys.all });
+  });
 
   const set = (patch: Partial<InHospitalFilters>) =>
     void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
@@ -70,7 +73,7 @@ function InHospitalPage() {
     <Page>
       <PageHeader
         title="Patients in hospital"
-        subtitle="Today's open out-patient visits and the patients in a bed, with where each is in their journey"
+        subtitle="Today's open out-patient visits, casualty and the patients in a bed, with where each is in their journey"
       />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
@@ -81,12 +84,13 @@ function InHospitalPage() {
                 onChange={(_, d) =>
                   set({
                     kind: (d.value || undefined) as InHospitalFilters['kind'],
-                    wardId: d.value === 'Outpatient' ? undefined : filters.wardId,
+                    wardId: d.value === 'Outpatient' || d.value === 'Emergency' ? undefined : filters.wardId,
                   })
                 }
               >
-                <option value="">Out-patients and in-patients</option>
+                <option value="">Everyone</option>
                 <option value="Outpatient">Out-patients</option>
+                <option value="Emergency">Casualty (ER)</option>
                 <option value="Inpatient">In-patients</option>
               </Select>
             </Field>
@@ -103,7 +107,7 @@ function InHospitalPage() {
                 ))}
               </Select>
             </Field>
-            {canFilterWards && filters.kind !== 'Outpatient' && (
+            {canFilterWards && filters.kind !== 'Outpatient' && filters.kind !== 'Emergency' && (
               <Field label="Ward">
                 <Select value={filters.wardId ?? ''} onChange={(_, d) => set({ wardId: d.value || undefined })}>
                   <option value="">All</option>
@@ -200,7 +204,7 @@ function InHospitalPage() {
             },
           ]}
           emptyTitle="Nobody in the hospital matches"
-          emptyDescription="Patients appear here as soon as they are checked in or admitted."
+          emptyDescription="Patients appear here as soon as they are checked in, arrive in casualty or are admitted."
           page={filters.page ?? 1}
           pageSize={25}
           totalCount={board.data?.totalCount}

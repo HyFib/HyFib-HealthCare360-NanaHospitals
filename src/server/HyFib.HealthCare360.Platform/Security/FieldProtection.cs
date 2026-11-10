@@ -827,4 +827,16 @@ public static class Masking
 
     /// <summary>Upper-case alphanumerics only — the canonical form for blind-index lookups.</summary>
     public static string Normalize(string value) => new string(value.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+
+    /// <summary>Shows the first letter and the domain: "p***@nanahospitals.in" (the notification log keeps addresses so).</summary>
+    public static string? MaskEmail(string? email)
+    {
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@', StringComparison.Ordinal))
+        {
+            return email;
+        }
+
+        var at = email.IndexOf('@', StringComparison.Ordinal);
+        return email[0] + "***" + email[at..];
+    }
 }

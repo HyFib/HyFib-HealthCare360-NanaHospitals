@@ -1,4 +1,5 @@
 import {
+  Badge,
   Button,
   Caption1,
   Dialog,
@@ -16,7 +17,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { AddRegular } from '@fluentui/react-icons';
-import { formatInr, todayIso } from '@hc360/core';
+import { formatDateTime, formatInr, todayIso } from '@hc360/core';
 import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -295,25 +296,54 @@ export interface CancellableCharge {
   sourceModule?: string | null;
   /** Reserved by a draft bill: cancelling takes it off that draft. */
   onDraft?: boolean;
+  /**
+   * Cancelling it waits for someone else who approves discounts (an OT, procedure, implant or bed-day charge, or one
+   * above the hospital's amount), as the server says; null when the screen does not know, and the answer tells.
+   */
+  needsApproval?: boolean | null;
+}
+
+/** A charge whose cancellation was asked for and waits for someone who approves discounts. */
+export function CancellationAsked({ at }: { at: string }) {
+  return (
+    <Badge
+      size="small"
+      appearance="tint"
+      color="warning"
+      title={`Cancellation asked for approval on ${formatDateTime(at)}`}
+    >
+      Asked for approval
+    </Badge>
+  );
 }
 
 /**
  * Cancels an unbilled charge (billing.charges.manage) after asking why. The server takes it off a draft bill first and
- * refuses one already on a finalized bill. The order, dispense or admission it came from is not changed.
+ * refuses one already on a finalized bill. The order, dispense or admission it came from is not changed. An OT,
+ * procedure, implant or bed-day charge, or one above the hospital's amount, is not cancelled at once: it is asked for, and
+ * someone else who approves discounts decides (maker-checker, slice 6); the charge stays billable until then.
  */
 export function CancelChargeDialog({ charge, onClose }: { charge: CancellableCharge | null; onClose: () => void }) {
   const notify = useNotify();
   const refresh = useRefreshBilling();
   const cancel = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => billingApi.cancelCharge(id, reason),
-    onSuccess: () => {
-      notify.success('Charge cancelled', charge ? `${charge.description} will not be billed.` : undefined);
+    onSuccess: (asked) => {
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Someone else who approves discounts decides it; it stays on the patient's account until then.`,
+        );
+      } else {
+        notify.success('Charge cancelled', charge ? `${charge.description} will not be billed.` : undefined);
+      }
       void refresh();
       onClose();
     },
     onError: (error) => notify.error(error, 'The charge was not cancelled'),
   });
   const manual = charge?.sourceModule === 'billing.manual';
+  const waits = charge?.needsApproval === true;
 
   return (
     <ReasonDialog
@@ -322,17 +352,22 @@ export function CancelChargeDialog({ charge, onClose }: { charge: CancellableCha
       description={
         charge && (
           <>
-            {formatInr(charge.netAmount)} is no longer billed to the patient.
+            {waits
+              ? `Cancelling it waits for someone else who approves discounts: until then ${formatInr(charge.netAmount)} stays billed to the patient.`
+              : `${formatInr(charge.netAmount)} is no longer billed to the patient.`}
             {charge.onDraft ? ' It is also taken off the draft bill, which is worked out again.' : ''}
             {manual
               ? ''
               : ' If it came from an order or a dispense, that is not cancelled here; do it in its own module if the service was not given.'}
+            {charge.needsApproval === null || charge.needsApproval === undefined
+              ? ' An OT, procedure, implant or bed-day charge, or a large one, waits for approval.'
+              : ''}
           </>
         )
       }
       label="Why is it cancelled?"
       placeholder="e.g. Charged twice, service not given"
-      confirmLabel="Cancel charge"
+      confirmLabel={waits ? 'Ask for approval' : 'Cancel charge'}
       destructive
       busy={cancel.isPending}
       onConfirm={(reason) => charge && cancel.mutate({ id: charge.id, reason })}

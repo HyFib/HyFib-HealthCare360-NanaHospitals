@@ -1,9 +1,10 @@
-import { ApiError } from '@hc360/core';
+import { ApiError, todayIso } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
 import {
   consentFormDefaults,
   consentFormSchema,
   consentServerErrors,
+  needsWitness,
   toCaptureRequest,
   type ConsentFormValues,
 } from './consentForm';
@@ -36,7 +37,18 @@ describe('record consent form', () => {
       signedByName: null,
       documentFileId: null,
       notes: 'Explained in Tamil.',
+      sharingScope: null,
+      witnessConfirmationId: null,
     });
+    // The whole record shared is witnessed (MAKER-CHECKER.md, slice 14): the confirmation names the witness, not a typed name.
+    expect(needsWitness(v)).toBe(true);
+    expect(toCaptureRequest(consentFormSchema.parse({ ...v, witnessName: 'Sister Mary' }), 'w1')).toMatchObject({
+      witnessName: null,
+      witnessConfirmationId: 'w1',
+    });
+    expect(needsWitness({ ...v, sharing: 'limited' })).toBe(false);
+    expect(needsWitness({ ...v, decision: 'refused' })).toBe(false);
+    expect(needsWitness({ ...v, type: 'Research' })).toBe(false);
   });
 
   it('needs the name and relation of someone signing on the patient’s behalf', () => {
@@ -76,6 +88,70 @@ describe('record consent form', () => {
 
   it('refuses to build a request without a consent type', () => {
     expect(() => toCaptureRequest(consentFormDefaults())).toThrow();
+  });
+});
+
+describe('what a record-sharing consent covers (gap #28)', () => {
+  const sharing = (patch: Partial<ConsentFormValues>) =>
+    values({ type: 'DataSharing', decision: 'given', sharing: 'limited', ...patch });
+
+  it('asks what a limited consent covers, and refuses one limited to nothing', () => {
+    expect(errors(sharing({}))).toEqual({
+      sharing: 'Choose what the patient agreed to share, or share the whole record.',
+    });
+  });
+
+  it('sends the partners, purposes, kinds and dates the patient chose, and leaves the rest open', () => {
+    const v = sharing({
+      shareWith: ['0192a1b2-0000-7000-8000-00000000a001'],
+      purposes: ['Treatment', 'EmergencyTreatment'],
+      recordsFrom: '2026-01-01',
+      until: todayIso(30),
+    });
+    expect(errors(v)).toEqual({});
+    expect(toCaptureRequest(consentFormSchema.parse(v)).sharingScope).toEqual({
+      shareWith: ['0192a1b2-0000-7000-8000-00000000a001'],
+      purposes: ['Treatment', 'EmergencyTreatment'],
+      kinds: null,
+      recordsFrom: '2026-01-01',
+      recordsTo: null,
+      until: todayIso(30),
+    });
+    // Only the kinds chosen: every account and any purpose stay open.
+    expect(toCaptureRequest(consentFormSchema.parse(sharing({ kinds: ['Allergies'] }))).sharingScope).toEqual({
+      shareWith: null,
+      purposes: null,
+      kinds: ['Allergies'],
+      recordsFrom: null,
+      recordsTo: null,
+      until: null,
+    });
+  });
+
+  it('sends no scope for the whole record, a refusal, or another consent', () => {
+    const chosen = { kinds: ['LabResults' as const], sharing: 'limited' as const };
+    expect(toCaptureRequest(values({ type: 'DataSharing', ...chosen, sharing: 'everything' })).sharingScope).toBeNull();
+    expect(toCaptureRequest(values({ type: 'DataSharing', decision: 'refused', ...chosen })).sharingScope).toBeNull();
+    expect(toCaptureRequest(values({ type: 'Research', ...chosen })).sharingScope).toBeNull();
+    expect(errors(values({ type: 'DataSharing', decision: 'refused', sharing: 'limited' }))).toEqual({});
+  });
+
+  it('refuses records ending before they start, and a last day that has passed', () => {
+    const e = errors(sharing({ recordsFrom: '2026-06-01', recordsTo: '2026-05-31', until: todayIso(-1) }));
+    expect(e.recordsTo).toBe('Choose a day on or after the first day.');
+    expect(e.until).toBe('Choose today or a later day.');
+    expect(errors(sharing({ until: todayIso() }))).toEqual({});
+  });
+
+  it('puts the server’s messages about the scope on their fields', () => {
+    const error = new ApiError({
+      status: 400,
+      title: 'Please correct the highlighted fields.',
+      errors: { 'sharingScope.recordsTo': ['The records’ last day must be on or after their first day.'] },
+    });
+    expect(consentServerErrors(error).fields).toEqual([
+      ['recordsTo', 'The records’ last day must be on or after their first day.'],
+    ]);
   });
 });
 

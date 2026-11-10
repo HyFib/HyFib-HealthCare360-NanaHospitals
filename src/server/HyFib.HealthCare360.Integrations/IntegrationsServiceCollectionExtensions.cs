@@ -5,9 +5,11 @@ using HyFib.HealthCare360.Integrations.Features.Admin;
 using HyFib.HealthCare360.Integrations.Features.Labels;
 using HyFib.HealthCare360.Integrations.Features.Webhooks;
 using HyFib.HealthCare360.Integrations.Icd;
+using HyFib.HealthCare360.Integrations.Irp;
 using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Orders;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Integrations.Laboratory.Relay;
 using HyFib.HealthCare360.Integrations.Features.LabConnections;
 using HyFib.HealthCare360.Integrations.Pacs;
@@ -93,6 +95,8 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddSingleton<SimulatorSigningKey>();
         services.AddIntegrationHttpClient<RazorpayGateway>(CloudAttempt, CloudTotal);
         services.AddScoped<IPaymentProvider>(sp => sp.GetRequiredService<RazorpayGateway>());
+        services.AddIntegrationHttpClient<CashfreeGateway>(CloudAttempt, CloudTotal);
+        services.AddScoped<IPaymentProvider>(sp => sp.GetRequiredService<CashfreeGateway>());
         services.AddScoped<IPaymentProvider, SimulatorPaymentGateway>();
         services.AddScoped<IPaymentGateway, PaymentGatewayRouter>();
 
@@ -130,6 +134,12 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddSingleton<IcdTokenCache>();
         services.AddIntegrationHttpClient<WhoIcdApiClient>(CloudAttempt, CloudTotal);
         services.AddScoped<IIcdLookup, IcdLookupRouter>();
+
+        services.AddSingleton<SimulatorIrpLedger>();
+        services.AddIntegrationHttpClient<NicIrpClient>(CloudAttempt, CloudTotal);
+        services.AddScoped<IIrpProvider>(sp => sp.GetRequiredService<NicIrpClient>());
+        services.AddScoped<IIrpProvider, SimulatorIrp>();
+        services.AddScoped<IInvoiceRegistrationPortal, IrpRouter>();
     }
 
     private static void AddLaboratory(IServiceCollection services)
@@ -137,6 +147,13 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddScoped<LabTrainingAnalyser>();
         services.AddSingleton<LabGatewayState>();
         services.AddSingleton<ILabMessageProcessor, LabMessageProcessor>();
+        // Analyser connections authenticate the device before a message is read (mutual TLS uses the LAN certificate).
+        services.AddSingleton(sp => new Laboratory.Devices.LabDeviceGate(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            () => sp.GetService<HyFib.HealthCare360.Platform.Networking.LanCertificateManager>()?.ServerCertificate,
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<Laboratory.Devices.LabDeviceGate>>()));
+        services.AddScoped<Laboratory.Devices.LabDeviceService>();
         services.AddHostedService<LabGatewayHostedService>();
 
         // Orders sent to analysers unasked, serial analysers relayed by lab agents, and their set-up in Lab setup.
@@ -148,5 +165,8 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddHostedService<LabStatusSharing>();
         services.AddScoped<LabAgentAuthenticator>();
         services.AddScoped<LabConnectionService>();
+
+        // Network analysers with no IP pinned, and devices refused on their ports, on System health (ASVS V13.2.1).
+        services.AddScoped<IHealthWarningSource, LabConnectionHealthWarnings>();
     }
 }

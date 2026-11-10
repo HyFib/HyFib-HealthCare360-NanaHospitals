@@ -146,6 +146,12 @@ public sealed class DispensingService(
                 return Error.NotFound(nameof(PharmacyQueueLine), input.QueueLineId);
             }
 
+            // A line signed over a blocking safety alert is dispensed only once a pharmacist has acknowledged it.
+            if (line.NeedsOverrideAcknowledgement)
+            {
+                return line.OverrideRefusal();
+            }
+
             if (!items.TryGetValue(input.ItemId, out var item))
             {
                 return Error.Field("lines", "One of the items is unknown.");
@@ -231,6 +237,12 @@ public sealed class DispensingService(
         {
             foreach (var moved in issued.Value.Movements.Where(m => m.LineId == p.Key))
             {
+                // A scheduled medicine is never sold above its NPPA ceiling (DPCO 2013), whatever the batch says.
+                if (p.Item.CeilingRefusal(moved.BatchNumber, moved.Mrp) is { } aboveCeiling)
+                {
+                    return aboveCeiling;
+                }
+
                 var saleItem = PharmacyLookups.SaleItem(sale.Id, p.Item, moved, discountPercent);
                 saleItem.QueueLineId = p.Line.Id;
                 saleItem.PrescriptionLineId = p.Line.PrescriptionLineId;
@@ -288,6 +300,12 @@ public sealed class DispensingService(
             return discount.Error!;
         }
 
+        // A prescription is presented after it is written: a date after today is a slip in the entry, not a prescription.
+        if (request.Prescription?.PrescriptionDate is { } written && written > HospitalClock.Today(time))
+        {
+            return Error.Field("prescription.prescriptionDate", "The prescription's date can't be after today.");
+        }
+
         PatientSnapshot? patient = null;
         if (request.PatientId is { } patientId)
         {
@@ -343,6 +361,7 @@ public sealed class DispensingService(
             PrescriptionNumber = request.Prescription?.Reference?.Trim(),
             PrescriberName = request.Prescription?.PrescriberName.Trim(),
             PrescriberRegistrationNumber = request.Prescription?.PrescriberRegistrationNumber?.Trim(),
+            PrescriptionDate = request.Prescription?.PrescriptionDate,
             SoldAt = now,
             SoldByUserId = currentUser.UserId,
             DiscountPercent = request.DiscountPercent,
@@ -372,6 +391,11 @@ public sealed class DispensingService(
 
         foreach (var moved in issued.Value.Movements)
         {
+            if (items[moved.ItemId].CeilingRefusal(moved.BatchNumber, moved.Mrp) is { } aboveCeiling)
+            {
+                return aboveCeiling;
+            }
+
             sale.Items.Add(PharmacyLookups.SaleItem(sale.Id, items[moved.ItemId], moved, request.DiscountPercent, sale.IsInterState));
         }
 

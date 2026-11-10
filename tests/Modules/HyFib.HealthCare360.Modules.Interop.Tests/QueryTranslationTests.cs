@@ -2,8 +2,11 @@ using HyFib.HealthCare360.Modules.Clinical;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics;
 using HyFib.HealthCare360.Modules.Inpatient;
+using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Modules.Patients;
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.VirtualCare;
 using HyFib.HealthCare360.Platform.Modules;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
@@ -28,7 +31,7 @@ public sealed class QueryTranslationTests : IDisposable
             .UseSnakeCaseNamingConvention()
             .Options;
         _db = new HospitalDbContext(options, new ModuleCatalog(
-            [new PatientsModule(), new ClinicalModule(), new DiagnosticsModule(), new InpatientModule(), new InteropModule()]));
+            [new PatientsModule(), new ClinicalModule(), new DiagnosticsModule(), new InpatientModule(), new VirtualCareModule(), new InteropModule()]));
     }
 
     public void Dispose() => _db.Dispose();
@@ -57,6 +60,35 @@ public sealed class QueryTranslationTests : IDisposable
         results.ShouldContain("'Verified'");
         results.ShouldContain("'Released'");
         results.ShouldContain("LEFT JOIN");
+        KeepsFilters(results, "l", facility: true);
+        results.ShouldNotContain("lab_tests", Case.Insensitive, "the test master is read apart, with the soft-delete filter off for it alone");
+    }
+
+    /// <summary>
+    /// A search's home-monitoring readings: its types and measurement window and the consents' kinds and days are all in
+    /// the SQL, with instants as UTC parameters (Npgsql refuses any other offset for timestamptz), so readings outside them
+    /// are never loaded; the readings are read with the facility filter on, the device apart.
+    /// </summary>
+    [Fact]
+    public void Device_reading_queries_put_the_search_and_the_consent_in_sql()
+    {
+        var provider = new ObservationProvider(_db);
+        var request = TestData.Search(FhirResourceTypes.Observation, $"patient={TestData.PatientId}&category=vital-signs&date=ge2026-10-01&date=lt2026-11-01");
+        var access = new PatientAccess(SharingDecision.Allowed, null,
+            [new SharingScope([], [], [SharedRecordKind.VitalSigns], new DateOnly(2026, 10, 10), new DateOnly(2026, 12, 31), null)]);
+
+        var (covered, uncovered) = provider.Readings(TestData.PatientId, request, access).ShouldNotBeNull();
+
+        var sql = ObservationProvider.DeviceReadings(covered).ToQueryString();
+        sql.ShouldContain("virtualcare.rpm_readings");
+        sql.ShouldContain("measured_at >=");
+        sql.ShouldContain("measured_at <");
+        sql.ShouldContain("'2026-10-09T18:30:00.0000000+00:00'", Case.Sensitive, "the consent's first day starts at IST midnight, sent in UTC");
+        sql.ShouldContain("'2026-09-30T18:29:59.0000000+00:00'", Case.Sensitive, "the search's window, a second wider, sent in UTC");
+        sql.ShouldContain("@ef_filter__", Case.Sensitive, "the readings keep the facility filter");
+        sql.ShouldNotContain("rpm_devices", Case.Insensitive, "the device is read apart, with the filters off for it alone");
+        uncovered.ToQueryString().ShouldContain("NOT (");
+        provider.Readings(TestData.PatientId, TestData.Search(FhirResourceTypes.Observation, $"patient={TestData.PatientId}&category=survey"), access).ShouldBeNull();
     }
 
     [Fact]
@@ -64,6 +96,49 @@ public sealed class QueryTranslationTests : IDisposable
     {
         new ConditionProvider(_db).Diagnoses(d => d.PatientId == TestData.PatientId).ToQueryString().ShouldContain("icd_code");
         new AllergyIntoleranceProvider(_db).Allergies(a => a.PatientId == TestData.PatientId).ToQueryString().ShouldContain("allergen");
+    }
+
+    /// <summary>
+    /// A FHIR reader reads its own facility's records only (#251), and each limit is in the SQL. Vital signs must have
+    /// been taken there, or in one of its encounters; diagnoses made in its encounters; doses recorded there; and patients
+    /// registered or seen there. The lookups that tell a removed record (410) from a missing one read the record past its
+    /// soft-delete filter and keep the encounter's facility filter.
+    /// </summary>
+    [Fact]
+    public void A_readers_records_and_patients_are_its_facilitys_in_sql()
+    {
+        var observations = new ObservationProvider(_db);
+        var vitals = observations.ReadersVitals().ToQueryString();
+        vitals.ShouldContain("v.facility_id = @");
+        vitals.ShouldContain("v.facility_id IS NULL");
+        vitals.ShouldContain("clinical.encounters");
+        KeepsFilters(vitals, "e", facility: true);
+        var vitalsState = observations.VitalsStateOf(TestData.PatientId).ToQueryString();
+        vitalsState.ShouldContain("clinical.encounters");
+        vitalsState.ShouldContain("@ef_filter__", Case.Sensitive, "the encounter keeps its facility filter");
+        vitalsState.ShouldNotContain("NOT (v.is_deleted)", Case.Sensitive, "a removed set is read, to answer 410");
+
+        var conditions = new ConditionProvider(_db);
+        var diagnoses = conditions.ReadersDiagnoses().ToQueryString();
+        diagnoses.ShouldContain("clinical.encounters");
+        diagnoses.ShouldContain("e.facility_id = @");
+        KeepsFilters(diagnoses, "e", facility: true);
+        var diagnosisState = conditions.StateOf(TestData.PatientId).ToQueryString();
+        diagnosisState.ShouldContain("@ef_filter__", Case.Sensitive, "the encounter keeps its facility filter");
+        diagnosisState.ShouldNotContain("NOT (d.is_deleted)", Case.Sensitive, "a removed diagnosis is read, to answer 410");
+
+        var doses = new ImmunizationProvider(_db);
+        doses.ReadersImmunizations(i => i.PatientId == TestData.PatientId).ToQueryString().ShouldContain("i.facility_id = @");
+        doses.StateOf(TestData.PatientId).ToQueryString().ShouldContain("i.facility_id = @");
+
+        var protector = Substitute.For<IFieldProtector>();
+        protector.BlindIndexes(Arg.Any<string>()).Returns(["index"]);
+        var records = new PatientRecords(_db, protector, Substitute.For<IPermissionService>(), Substitute.For<ICurrentUser>(), References, NullLogger<PatientRecords>.Instance);
+        var patients = records.SearchQuery(TestData.Search("Patient", "name=meera"), includeRestricted: false, RecordSharingConsentTests.Reader).ToQueryString();
+        patients.ShouldContain("registered_facility_id = @");
+        patients.ShouldContain("patients.visits");
+        patients.ShouldContain("clinical.encounters");
+        patients.ShouldContain("inpatient.admissions");
     }
 
     [Fact]
@@ -102,7 +177,45 @@ public sealed class QueryTranslationTests : IDisposable
         var documents = provider.PatientDocuments(d => d.PatientId == TestData.PatientId).ToQueryString();
         documents.ShouldContain("'IdProof'");
         documents.ShouldContain("'InsuranceCard'");
+        KeepsFilters(documents, "p", facility: false);
+        documents.ShouldNotContain("stored_files", Case.Insensitive, "the file is read apart, with the soft-delete filter off for it alone");
         provider.SignedSummaries(s => s.PatientId == TestData.PatientId).ToQueryString().ShouldContain("'Draft'");
+    }
+
+    [Fact]
+    public void The_note_query_shares_signed_notes_only_and_leaves_out_removed_notes_and_other_facilities_notes()
+    {
+        var sql = new DocumentReferenceProvider(_db, References).SignedNotes(n => n.PatientId == TestData.PatientId).ToQueryString();
+
+        sql.ShouldContain("is_signed");
+        sql.ShouldContain("signed_at");
+        KeepsFilters(sql, "c", facility: true);
+        sql.ShouldNotContain("identity.users", Case.Insensitive, "the accounts are read apart, with the soft-delete filter off for them alone");
+        sql.ShouldNotContain("clinical.encounters", Case.Insensitive, "the encounter is read apart, with the facility filter off for it alone");
+    }
+
+    [Fact]
+    public void The_procedure_query_leaves_out_removed_procedures_and_other_facilities_procedures()
+    {
+        // Staff see a patient's procedures from every facility; a partner sees its own facility's, as for clinical notes.
+        var sql = new ProcedureProvider(_db, References).Procedures(p => p.PatientId == TestData.PatientId).ToQueryString();
+
+        sql.ShouldContain("clinical.procedure_records");
+        KeepsFilters(sql, "p", facility: true);
+    }
+
+    /// <summary>
+    /// The query reads its own table with the platform's filters on: removed rows left out, and other facilities' rows
+    /// when the table is a facility's. A query that ignores a filter for a table it joins (to name a removed account, say)
+    /// ignores it for every table it reads, so such lookups are made apart.
+    /// </summary>
+    private static void KeepsFilters(string sql, string alias, bool facility)
+    {
+        sql.ShouldContain($"NOT ({alias}.is_deleted)", Case.Sensitive, "removed rows are left out");
+        if (facility)
+        {
+            sql.ShouldContain("@ef_filter__", Case.Sensitive, "other facilities' rows are left out");
+        }
     }
 
     [Fact]
@@ -117,8 +230,16 @@ public sealed class QueryTranslationTests : IDisposable
     }
 
     [Fact]
-    public void The_consent_history_query_reads_data_sharing_consents() =>
-        new PatientSharingService(_db, null!).Consents(TestData.PatientId).ToQueryString().ShouldContain("'DataSharing'");
+    public void The_consent_history_query_reads_data_sharing_consents_with_their_scopes()
+    {
+        var sql = new PatientSharingService(_db, null!).Consents(TestData.PatientId).ToQueryString();
+
+        sql.ShouldContain("'DataSharing'");
+        sql.ShouldContain("share_with");
+        sql.ShouldContain("share_purposes");
+        sql.ShouldContain("share_kinds");
+        sql.ShouldContain("share_until");
+    }
 
     [Fact]
     public void The_patient_search_filters_consent_and_restriction_in_sql()
@@ -127,14 +248,42 @@ public sealed class QueryTranslationTests : IDisposable
         protector.BlindIndexes(Arg.Any<string>()).Returns(["index"]);
         var records = new PatientRecords(_db, protector, Substitute.For<IPermissionService>(), Substitute.For<ICurrentUser>(), References, NullLogger<PatientRecords>.Instance);
 
-        var sql = Where(records.SearchQuery(TestData.Search("Patient", "name=meera kul&identifier=91-1234-5678-9012&birthdate=ge1980"), includeRestricted: false));
+        var sql = Where(records.SearchQuery(
+            TestData.Search("Patient", "name=meera kul&identifier=91-1234-5678-9012&birthdate=ge1980"), includeRestricted: false, RecordSharingConsentTests.Reader));
 
         sql.ShouldContain("'DataSharing'");
+        sql.ShouldContain("cardinality(p0.share_with) = 0", Case.Insensitive);
+        sql.ShouldContain("= ANY (p0.share_with)", Case.Insensitive);
+        sql.ShouldContain("= ANY (p0.share_purposes)", Case.Insensitive);
+        sql.ShouldContain("share_until IS NULL", Case.Insensitive);
         sql.ShouldContain("is_vip");
         sql.ShouldContain("merged_into_patient_id IS NULL");
         sql.ShouldContain("ILIKE @", Case.Sensitive);
         sql.ShouldNotContain("meera", Case.Insensitive);
-        Where(records.SearchQuery(TestData.Search("Patient", "name=meera"), includeRestricted: true)).ShouldNotContain("is_vip");
+        Where(records.SearchQuery(TestData.Search("Patient", "name=meera"), includeRestricted: true, RecordSharingConsentTests.Reader)).ShouldNotContain("is_vip");
+    }
+
+    [Fact]
+    public void A_patient_search_is_ordered_in_sql_by_the_values_it_is_served_with()
+    {
+        string Order(string sort)
+        {
+            var sql = PatientSearchQuery.Ordered(_db.Set<Patients.Domain.Patient>(), TestData.Search("Patient", $"name=meera&_sort={sort}").Sort).ToQueryString();
+            return sql[sql.IndexOf("ORDER BY", StringComparison.Ordinal)..];
+        }
+
+        var order = Order("name,-birthdate,gender,_lastUpdated,_id");
+        order.ShouldContain("lower(", Case.Insensitive);
+        order.ShouldContain("COLLATE \"C\"");
+        order.ShouldContain("make_date(", Case.Insensitive);
+        order.ShouldContain("date_of_birth IS NULL", Case.Insensitive);
+
+        // The name is served with every given name, the middle one too: two patients who differ only in it are ordered by
+        // it, not by when they registered.
+        Order("name").ShouldContain("p.middle_name", Case.Sensitive, "the middle name is one of the given names the name orders by");
+        Order("birthdate").ShouldContain("make_date(", Case.Insensitive);
+        Order("-_lastUpdated").ShouldContain("date_trunc('milliseconds',", Case.Sensitive, "to the millisecond it is served with");
+        Order("gender").ShouldEndWith("END, p.registered_at DESC, p.id", Case.Sensitive, "then newest registrations first, then by id");
     }
 
     /// <summary>The filter part of the SQL (the select list names every column; parameter values are comments above it).</summary>

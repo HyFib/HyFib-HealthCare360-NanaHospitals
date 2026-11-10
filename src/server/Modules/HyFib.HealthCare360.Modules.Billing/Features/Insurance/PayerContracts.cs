@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Services;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Insurance;
 
@@ -30,8 +31,13 @@ public sealed record PayerDetail(
     string? PortalUrl,
     bool IsActive,
     string? Notes,
-    uint Version);
+    uint Version,
+    PendingPayerTerms? PendingTerms = null);
 
+/// <summary>
+/// A payer saved. Its category, tariff plan, co-pay and putting it in use change only when a second person approves them
+/// (<paramref name="Reason"/> is for the approver); its other details, and taking it out of use, are saved at once.
+/// </summary>
 public sealed record SavePayerRequest(
     string Code,
     string Name,
@@ -47,8 +53,13 @@ public sealed record SavePayerRequest(
     string? PortalUrl,
     bool IsActive,
     string? Notes,
-    uint? Version);
+    uint? Version,
+    string? Reason = null);
 
+/// <summary>
+/// An item of the non-payable list, or one asked to be added (<see cref="Waiting"/> says so, and it is not in force); an
+/// item asked to be taken off is in force until approved.
+/// </summary>
 public sealed record NonPayableItemDto(
     Guid Id,
     Guid? PayerId,
@@ -57,9 +68,14 @@ public sealed record NonPayableItemDto(
     string? ServiceCode,
     string? ServiceName,
     ServiceCategory? Category,
-    string? Notes);
+    string? Notes,
+    PendingNonPayable? Waiting = null);
 
-public sealed record SaveNonPayableItemRequest(Guid? PayerId, Guid? ServiceItemId, ServiceCategory? Category, string? Notes);
+/// <summary>An item to add to the non-payable list, with <paramref name="Reason"/> for the second person who approves it.</summary>
+public sealed record SaveNonPayableItemRequest(Guid? PayerId, Guid? ServiceItemId, ServiceCategory? Category, string? Notes, string? Reason = null);
+
+/// <summary>Why an item should be taken off the non-payable list, for the second person who approves it.</summary>
+public sealed record RemoveNonPayableItemRequest(string? Reason);
 
 /// <summary>A policy as shown in lists and forms: the policy number is always masked.</summary>
 public sealed record PolicyDto(
@@ -83,7 +99,14 @@ public sealed record PolicyDto(
     string? VerificationNotes,
     Guid? CardFileId,
     string? Notes,
-    uint Version);
+    uint Version)
+{
+    /// <summary>
+    /// Whether the signed-in user recorded the terms a verification vouches for (or last changed them), and so may not
+    /// verify it: someone else does.
+    /// </summary>
+    public bool RecordedByYou { get; init; }
+}
 
 /// <summary>Create (policy number required) or update (policy number <c>null</c> = unchanged) a patient policy.</summary>
 public sealed record SavePolicyRequest(
@@ -125,6 +148,7 @@ public sealed class SavePayerRequestValidator : AbstractValidator<SavePayerReque
             .Must(url => string.IsNullOrWhiteSpace(url) || (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps))
             .WithMessage("Enter the portal's https:// address.");
         RuleFor(x => x.Notes).SafeText(1000);
+        RuleFor(x => x.Reason).SafeText(500);
     }
 }
 
@@ -135,7 +159,13 @@ public sealed class SaveNonPayableItemRequestValidator : AbstractValidator<SaveN
         RuleFor(x => x).Must(x => (x.ServiceItemId is null) != (x.Category is null))
             .WithName("serviceItemId").WithMessage("Name either a service or a category.");
         RuleFor(x => x.Notes).SafeText(300);
+        RuleFor(x => x.Reason).SafeText(500);
     }
+}
+
+public sealed class RemoveNonPayableItemRequestValidator : AbstractValidator<RemoveNonPayableItemRequest>
+{
+    public RemoveNonPayableItemRequestValidator() => RuleFor(x => x.Reason).SafeText(500);
 }
 
 public sealed class SavePolicyRequestValidator : AbstractValidator<SavePolicyRequest>

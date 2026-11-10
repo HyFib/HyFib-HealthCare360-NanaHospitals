@@ -45,12 +45,12 @@ internal static class NoteEndpoints
         return TypedResults.Ok(page.Map(n => ToDto(n, n.AuthorPractitionerId is { } a ? authors.GetValueOrDefault(a) : null)));
     }
 
-    private static Task<IResult> Write(Guid patientId, WriteNoteRequest request, ClinicalAccess access, HospitalDbContext db, ICurrentUser user,
-        CancellationToken ct) =>
-        CreateAsync(patientId, request, null, access, db, user, ct);
+    private static Task<IResult> Write(Guid patientId, WriteNoteRequest request, ClinicalAccess access, HospitalDbContext db, IAdmissionDirectory admissions,
+        ICurrentUser user, CancellationToken ct) =>
+        CreateAsync(patientId, request, null, access, db, admissions, user, ct);
 
     private static async Task<IResult> CreateAsync(Guid patientId, WriteNoteRequest request, Guid? amendsNoteId, ClinicalAccess access, HospitalDbContext db,
-        ICurrentUser user, CancellationToken ct)
+        IAdmissionDirectory admissions, ICurrentUser user, CancellationToken ct)
     {
         var allowed = await access.EnsureCanRecordAsync(patientId, ct);
         if (allowed.IsFailure)
@@ -67,6 +67,12 @@ internal static class NoteEndpoints
             && !await db.Set<Encounter>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AnyAsync(e => e.Id == encounterId && e.PatientId == patientId, ct))
         {
             return Error.Field("encounterId", "This encounter does not belong to the patient.").ToProblem();
+        }
+
+        // A note shared with another provider names its stay: it must be this patient's.
+        if (request.AdmissionId is { } admissionId && (await admissions.FindAsync(admissionId, ct))?.PatientId != patientId)
+        {
+            return Error.Field("admissionId", "This admission does not belong to the patient.").ToProblem();
         }
 
         var note = ClinicalNote.Draft(patientId, request.Type, request.Title, request.Body);
@@ -88,8 +94,8 @@ internal static class NoteEndpoints
         CancellationToken ct) =>
         ChangeAsync(id, request.Version, note => note.Sign(user.UserId, time.GetUtcNow()), access, db, user, ct);
 
-    private static async Task<IResult> Addendum(Guid id, AddendumRequest request, ClinicalAccess access, HospitalDbContext db, ICurrentUser user,
-        CancellationToken ct)
+    private static async Task<IResult> Addendum(Guid id, AddendumRequest request, ClinicalAccess access, HospitalDbContext db, IAdmissionDirectory admissions,
+        ICurrentUser user, CancellationToken ct)
     {
         var original = await db.Set<ClinicalNote>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstOrDefaultAsync(n => n.Id == id, ct);
         if (original is null)
@@ -104,7 +110,7 @@ internal static class NoteEndpoints
 
         var addendum = new WriteNoteRequest(original.EncounterId, original.AdmissionId, original.Type,
             $"Addendum to {original.Title ?? original.Type.ToString()}", request.Body);
-        return await CreateAsync(original.PatientId, addendum, original.Id, access, db, user, ct);
+        return await CreateAsync(original.PatientId, addendum, original.Id, access, db, admissions, user, ct);
     }
 
     private static async Task<IResult> ChangeAsync(Guid id, uint version, Func<ClinicalNote, Result> change, ClinicalAccess access, HospitalDbContext db,

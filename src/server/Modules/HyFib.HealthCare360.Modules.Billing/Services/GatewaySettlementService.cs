@@ -13,7 +13,9 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// <see cref="IPaymentGateway.GetSettlementsAsync"/> (hourly by the reconciliation job for today and yesterday, and on
 /// demand), stored once each, and every transaction is matched by its gateway id: payments to receipts, refunds to
 /// refunds, prepaid bookings included. What does not match becomes an exception, worst first. A processed settlement
-/// becomes the settlement journal of its day in the Tally day book.
+/// becomes the settlement journal of its day in the Tally day book. One that fails after it was paid out (the bank
+/// refused or returned the transfer) has that journal reversed in the books of the day it is learnt, and is raised as an
+/// exception and told to the accountants; paid out after all, its journal is restored the same way.
 /// </summary>
 public sealed class GatewaySettlementService(
     HospitalDbContext db,
@@ -22,6 +24,7 @@ public sealed class GatewaySettlementService(
     TallyCorrections tally,
     INotificationService notifications,
     ISettingsService settings,
+    IAuditLogger audit,
     TimeProvider time,
     ILogger<GatewaySettlementService> logger)
 {
@@ -29,8 +32,10 @@ public sealed class GatewaySettlementService(
     public const int MaxListDays = 92;
 
     /// <summary>
-    /// Reads one day's settlements for the facility's merchant account, stores the new ones with their transactions
-    /// matched, updates the status of known ones, and lists what does not match. Safe to repeat.
+    /// Reads one day's settlements for each of the facility's merchant accounts (its gateway, and a gateway it used before
+    /// whose account is still set up), stores the new ones with their transactions matched, updates the status of known
+    /// ones, and lists what does not match. A gateway that cannot be read is said so; the others are still applied. Safe
+    /// to repeat.
     /// </summary>
     public async Task<Result<SettlementFetchResult>> FetchAsync(Guid facilityId, DateOnly day, CancellationToken ct)
     {
@@ -50,37 +55,89 @@ public sealed class GatewaySettlementService(
             return Error.Rule("billing.gateway_not_configured", "No payment gateway is configured.");
         }
 
-        PaymentSettlementReport report;
-        try
+        var providers = await gateway.ProvidersAsync(facilityId, ct);
+        var applied = new List<SettlementFetchResult>();
+        var problems = new List<string>();
+        foreach (var provider in providers.Count == 0 ? [null] : providers.Cast<string?>())
         {
-            report = await gateway.GetSettlementsAsync(day, facilityId, ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogWarning(ex, "Could not read the gateway's settlements of {Day}", day);
-            return Error.Rule("billing.gateway_unavailable", "The payment gateway could not be reached. Try again shortly.");
+            PaymentSettlementReport report;
+            try
+            {
+                report = await gateway.GetSettlementsAsync(day, provider, facilityId, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Could not read the {Provider} settlements of {Day}", provider ?? "gateway", day);
+                problems.Add("The payment gateway could not be reached. Try again shortly.");
+                continue;
+            }
+
+            if (!report.Available)
+            {
+                problems.Add(report.Problem ?? "The payment gateway's settlements could not be read.");
+                continue;
+            }
+
+            var result = await ApplyAsync(facilityId, day, report, ct);
+            if (result.IsFailure)
+            {
+                return result;
+            }
+
+            applied.Add(result.Value);
         }
 
-        if (!report.Available)
+        if (applied.Count == 0)
         {
-            return Error.Rule("billing.gateway_unavailable", report.Problem ?? "The payment gateway's settlements could not be read.");
+            return Error.Rule("billing.gateway_unavailable", problems.FirstOrDefault() ?? "The payment gateway's settlements could not be read.");
         }
 
+        return applied.Count == 1 && problems.Count == 0
+            ? applied[0]
+            : new SettlementFetchResult(
+                day, applied.Sum(r => r.Settlements), applied.Sum(r => r.Added), applied.Sum(r => r.Updated),
+                string.Join(" ", applied.Select(r => r.Message).Concat(problems)));
+    }
+
+    /// <summary>
+    /// Stores one day's settlements as the gateway reported them (<see cref="FetchAsync"/>): new ones with their
+    /// transactions matched, known ones' status brought up to date. A settlement paid out that failed afterwards has its
+    /// journal reversed in the books of today, is raised as an exception and told to the accountants; one paid out after
+    /// all has its journal restored.
+    /// </summary>
+    internal async Task<Result<SettlementFetchResult>> ApplyAsync(Guid facilityId, DateOnly day, PaymentSettlementReport report, CancellationToken ct)
+    {
         var ids = report.Settlements.Select(s => s.SettlementId).ToList();
         var stored = ids.Count == 0
             ? []
             : await db.Set<GatewaySettlement>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .Include(s => s.Corrections)
                 .Where(s => s.Provider == report.Provider && ids.Contains(s.SettlementId))
                 .ToDictionaryAsync(s => s.SettlementId, ct);
         var now = time.GetUtcNow();
         var added = new List<GatewaySettlement>();
         var nowProcessed = new List<GatewaySettlement>();
+        var failed = new List<GatewaySettlement>();
         foreach (var reported in report.Settlements)
         {
             if (stored.TryGetValue(reported.SettlementId, out var known))
             {
                 var wasProcessed = known.Status == PaymentSettlementStatus.Processed;
-                if (known.UpdateStatus(reported.Status, reported.Utr, now) && !wasProcessed && known.Status == PaymentSettlementStatus.Processed)
+                if (!known.UpdateStatus(reported.Status, reported.Utr, now))
+                {
+                    continue;
+                }
+
+                if (wasProcessed && known.Status == PaymentSettlementStatus.Failed)
+                {
+                    await ReverseAsync(known, now, ct);
+                    failed.Add(known);
+                }
+                else if (!wasProcessed && known.Status == PaymentSettlementStatus.Processed && known.IsReversed)
+                {
+                    await RestoreAsync(known, now, ct);
+                }
+                else if (!wasProcessed && known.Status == PaymentSettlementStatus.Processed)
                 {
                     nowProcessed.Add(known);
                 }
@@ -119,6 +176,7 @@ public sealed class GatewaySettlementService(
         }
 
         await RepostAsync(moved, ct);
+        await TellFailedAsync(failed, ct);
         foreach (var (facility, count) in opened)
         {
             // Each facility hears about its own exceptions (a shared merchant account's settlement holds several).
@@ -129,10 +187,84 @@ public sealed class GatewaySettlementService(
                 "/billing/reconciliation", "billing", "warning", ct);
         }
 
+        var message = Describe(report.Settlements.Count, added.Count, opened.Values.Sum());
         return new SettlementFetchResult(
             day, report.Settlements.Count, added.Count, nowProcessed.Count,
-            Describe(report.Settlements.Count, added.Count, opened.Values.Sum()));
+            failed.Count == 0 ? message : $"{message} {Plural(failed.Count, "settlement")} paid out earlier failed: their journals are reversed today.");
     }
+
+    /// <summary>
+    /// A settlement paid out that failed afterwards (staged): its journal reversed in today's books, the exception raised
+    /// (keyed by the reversal's voucher number, so a settlement failing again is raised again), and the failure audited.
+    /// </summary>
+    private async Task ReverseAsync(GatewaySettlement settlement, DateTimeOffset now, CancellationToken ct)
+    {
+        var reversal = settlement.Correct(SettlementCorrectionKind.Reversed, BillingTime.LocalDate(now), now);
+        var utr = settlement.Utr is null ? string.Empty : $", UTR {settlement.Utr}";
+        await discrepancies.RaiseAsync(
+            DiscrepancyKind.FailedSettlement, ExceptionKey(settlement, reversal), settlement.FacilityId,
+            $"Settlement {settlement.SettlementId} of {settlement.SettledOn:dd MMM yyyy} (₹{Money.FormatInr(settlement.Amount)}{utr}) failed after it was "
+            + $"paid out: the bank refused or returned the transfer. Its journal is reversed on {reversal.On:dd MMM yyyy}, and the gateway owes the money "
+            + "until it pays it out again.",
+            d =>
+            {
+                d.GatewayAmount = settlement.Amount;
+                d.GatewayAt = settlement.SettledAt;
+            },
+            ct);
+        audit.Add(new AuditEntry(AuditCategories.Data, "billing.gateway.settlement_failed",
+            $"Settlement {settlement.SettlementId} of {settlement.SettledOn:dd MMM yyyy} failed after it was paid out; its journal is reversed on {reversal.On:dd MMM yyyy}")
+        {
+            EntityType = nameof(GatewaySettlement),
+            EntityId = settlement.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { settlement = settlement.SettlementId, amount = settlement.Amount, settledOn = settlement.SettledOn, reversedOn = reversal.On, correction = reversal.Seq },
+        });
+    }
+
+    /// <summary>A settlement whose failed payout the gateway made after all (staged): its journal restored today, its exception cleared.</summary>
+    private async Task RestoreAsync(GatewaySettlement settlement, DateTimeOffset now, CancellationToken ct)
+    {
+        var reversal = settlement.Corrections.Where(c => c.Kind == SettlementCorrectionKind.Reversed).MaxBy(c => c.Seq)!;
+        var restored = settlement.Correct(SettlementCorrectionKind.Restored, BillingTime.LocalDate(now), now);
+        await discrepancies.ClearAsync(
+            DiscrepancyKind.FailedSettlement, ExceptionKey(settlement, reversal),
+            $"The gateway paid the settlement out after all; its journal is restored on {restored.On:dd MMM yyyy}.", ct);
+        audit.Add(new AuditEntry(AuditCategories.Data, "billing.gateway.settlement_restored",
+            $"Settlement {settlement.SettlementId} of {settlement.SettledOn:dd MMM yyyy} was paid out after all; its journal is restored on {restored.On:dd MMM yyyy}")
+        {
+            EntityType = nameof(GatewaySettlement),
+            EntityId = settlement.Id.ToString(),
+            Details = new { settlement = settlement.SettlementId, amount = settlement.Amount, settledOn = settlement.SettledOn, restoredOn = restored.On, correction = restored.Seq },
+        });
+    }
+
+    /// <summary>The exception of a failed payout: its reversal's voucher number (setl_N8a1Bc2d3E4f5G-R1).</summary>
+    private static string ExceptionKey(GatewaySettlement settlement, GatewaySettlementCorrection reversal) =>
+        $"{settlement.SettlementId}-R{reversal.Seq.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    /// <summary>Each facility with a part of a failed settlement hears of it: money it counted as in the bank is not.</summary>
+    private async Task TellFailedAsync(IReadOnlyList<GatewaySettlement> failed, CancellationToken ct)
+    {
+        foreach (var settlement in failed)
+        {
+            var facilities = await db.Set<GatewaySettlementLine>().AsNoTracking()
+                .Where(l => l.GatewaySettlementId == settlement.Id)
+                .Select(l => l.FacilityId)
+                .Distinct()
+                .ToListAsync(ct);
+            foreach (var facility in facilities.Append(settlement.FacilityId).Distinct())
+            {
+                await notifications.NotifyPermissionHoldersAsync(
+                    BillingPermissions.GatewayReconcile, facility, "A gateway settlement failed after it was paid out",
+                    $"Settlement {settlement.SettlementId} of {settlement.SettledOn:dd MMM yyyy} (₹{Money.FormatInr(settlement.Amount)}) did not stay in the bank: "
+                    + "its journal is reversed today, and the gateway owes the money until it pays it out again.",
+                    "/billing/reconciliation", "billing", "warning", ct);
+            }
+        }
+    }
+
+    private static string Plural(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count.ToString(System.Globalization.CultureInfo.InvariantCulture)} {noun}s";
 
     /// <summary>Of these settlements, those whose exceptions were never raised or that still do not match.</summary>
     private async Task<List<GatewaySettlement>> UnfinishedAsync(IReadOnlyList<Guid> ids, CancellationToken ct) =>
@@ -300,6 +432,8 @@ public sealed class GatewaySettlementService(
                 where r.FacilityId == facilityId && r.ReceivedAt >= since && r.ReceivedAt < before
                       && p.Mode == PaymentMode.PaymentGateway && p.ExternalId != null
                       && !db.Set<GatewaySettlementLine>().Any(l => l.EntityId == p.ExternalId)
+                      // A payment reversed as never received is not waiting for a settlement.
+                      && !db.Set<ReceiptReversalLine>().Any(x => x.ReceiptPaymentId == p.Id)
                 orderby r.ReceivedAt
                 select new { r.Id, r.ReceiptNumber, r.BillId, r.IpAccountId, r.ReceivedAt, PaymentId = p.ExternalId!, p.Amount })
             .Take(500)
@@ -333,17 +467,43 @@ public sealed class GatewaySettlementService(
     /// </summary>
     internal static async Task<IReadOnlyList<TallyGatewaySettlement>> ForDayBookAsync(HospitalDbContext db, Guid facilityId, DateOnly date, CancellationToken ct)
     {
+        // A settlement's journal stays in its day once it was paid out, even when the payout failed afterwards: the
+        // failure is a reversal in the day it was learnt (a restoration likewise), never a change to a day in Tally.
         var settlements = await db.Set<GatewaySettlement>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .Include(s => s.Lines)
-            .Where(s => s.SettledOn == date && s.Status == PaymentSettlementStatus.Processed
+            .Include(s => s.Corrections)
+            .Where(s => ((s.SettledOn == date && (s.Status == PaymentSettlementStatus.Processed || s.Corrections.Any())) || s.Corrections.Any(c => c.On == date))
                         && (s.FacilityId == facilityId || s.Lines.Any(l => l.FacilityId == facilityId)))
             .OrderBy(s => s.SettledAt)
             .ToListAsync(ct);
-        return settlements
-            .SelectMany(s => SettlementJournal.Portions(s)
-                .Where(p => p.FacilityId == facilityId && (p.Net != 0 || p.Charges != 0 || p.Tax != 0))
-                .Select(p => new TallyGatewaySettlement(SettlementJournal.VoucherNumber(s, p), date, s.SettlementId, s.Utr, p.Net, p.Charges, p.Tax)))
-            .ToList();
+        var journals = settlements
+            .Where(s => s.SettledOn == date && (s.Status == PaymentSettlementStatus.Processed || s.Corrections.Count > 0))
+            .SelectMany(s => PortionsOf(s, facilityId)
+                .Select(p => new TallyGatewaySettlement(SettlementJournal.VoucherNumber(s, p), date, s.SettlementId, s.Utr, p.Net, p.Charges, p.Tax)));
+        var corrections = settlements
+            .SelectMany(s => s.Corrections.Where(c => c.On == date).OrderBy(c => c.Seq)
+                .SelectMany(c => PortionsOf(s, facilityId).Select(p => CorrectionOf(s, p, c, date))));
+        return [.. journals, .. corrections];
+    }
+
+    /// <summary>The facility's parts of a settlement's journal that move money.</summary>
+    private static IEnumerable<SettlementPortion> PortionsOf(GatewaySettlement settlement, Guid facilityId) =>
+        SettlementJournal.Portions(settlement).Where(p => p.FacilityId == facilityId && (p.Net != 0 || p.Charges != 0 || p.Tax != 0));
+
+    /// <summary>A correction's journal: the settlement journal's amounts, turned round for a reversal.</summary>
+    internal static TallyGatewaySettlement CorrectionOf(GatewaySettlement settlement, SettlementPortion portion, GatewaySettlementCorrection correction, DateOnly date)
+    {
+        var sign = correction.Kind == SettlementCorrectionKind.Reversed ? -1 : 1;
+        var journal = SettlementJournal.VoucherNumber(settlement, portion);
+        var settledOn = settlement.SettledOn.ToString("dd-MM-yyyy", System.Globalization.CultureInfo.InvariantCulture);
+        return new TallyGatewaySettlement(
+            SettlementJournal.CorrectionNumber(settlement, portion, correction), date, settlement.SettlementId, settlement.Utr,
+            sign * portion.Net, sign * portion.Charges, sign * portion.Tax)
+        {
+            Correction = correction.Kind == SettlementCorrectionKind.Reversed
+                ? $"Reverses journal {journal} of {settledOn}: payment gateway settlement {settlement.SettlementId} failed after it was paid out (the bank refused or returned the transfer)"
+                : $"Restores journal {journal} of {settledOn}: payment gateway settlement {settlement.SettlementId} was paid out after all",
+        };
     }
 
     /// <summary>
@@ -632,6 +792,13 @@ public sealed class GatewaySettlementService(
                 break;
 
             default:
+                // Money taken back (or returned) on a payment HC360 recorded is a chargeback: its case is what to follow.
+                if (await services.GetRequiredService<PaymentDisputeService>().TakeGatewayAdjustmentAsync(line, settlement.SettlementId, ct) is { } followed)
+                {
+                    await discrepancies.ClearAsync(DiscrepancyKind.AmountMismatch, line.EntityId, followed, ct);
+                    break;
+                }
+
                 exception = await discrepancies.RaiseAsync(
                     DiscrepancyKind.AmountMismatch, line.EntityId, line.FacilityId,
                     $"The gateway {(line.Gross < 0 ? "took back" : "added")} ₹{Money.FormatInr(Math.Abs(line.Gross))} in settlement {settlement.SettlementId} ({line.Type.ToString().ToLowerInvariant()} {line.EntityId}).",
@@ -662,8 +829,11 @@ public sealed class GatewaySettlementService(
         catch (DbUpdateException ex)
         {
             logger.LogInformation(ex, "Gateway exceptions were changed by a concurrent run; they are read again");
-            var staged = db.ChangeTracker.Entries<GatewayDiscrepancy>()
-                .Where(e => e.State != EntityState.Unchanged)
+
+            // The chargeback cases staged with them, their reminders and their audit are read again as well, never saved
+            // twice. The reminders are let go by name, not left to EF's handling of orphans once their case is let go.
+            var staged = db.ChangeTracker.Entries()
+                .Where(e => e.Entity is GatewayDiscrepancy or PaymentDispute or PaymentDisputeReminder or AuditEvent && e.State != EntityState.Unchanged)
                 .ToList();
             foreach (var entry in staged)
             {
@@ -707,7 +877,10 @@ public sealed class GatewaySettlementService(
             lines.Where(l => l.OrderId is not null).Select(l => l.OrderId!).Distinct().ToList(),
             ct);
 
-    /// <summary>Where unmatched money was meant to go: the payment link or checkout, or the prepaid booking, that took it.</summary>
+    /// <summary>
+    /// Where unmatched money was meant to go: the payment link or checkout, or the prepaid booking, that took it, also by
+    /// an order the booking had before its current one.
+    /// </summary>
     private async Task<SettlementTargets> FindTargetsAsync(IReadOnlyList<string> paymentIds, IReadOnlyList<string> orderIds, CancellationToken ct)
     {
         if (paymentIds.Count == 0 && orderIds.Count == 0)
@@ -723,7 +896,11 @@ public sealed class GatewaySettlementService(
             .Where(a => (a.GatewayOrderId != null && orderIds.Contains(a.GatewayOrderId)) || (a.GatewayPaymentId != null && paymentIds.Contains(a.GatewayPaymentId)))
             .Select(a => new SettlementTarget(a.FacilityId, a.GatewayOrderId, a.GatewayPaymentId, null, a.Id, null, null))
             .ToListAsync(ct);
-        return new SettlementTargets(orders, bookings);
+        var earlier = await db.Set<ReplacedPaymentOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(o => orderIds.Contains(o.OrderId) || (o.GatewayPaymentId != null && paymentIds.Contains(o.GatewayPaymentId)))
+            .Select(o => new SettlementTarget(o.FacilityId, o.OrderId, o.GatewayPaymentId, null, o.AppointmentId, null, null))
+            .ToListAsync(ct);
+        return new SettlementTargets(orders, [.. bookings, .. earlier]);
     }
 
     private static string Describe(int settlements, int added, int opened) => settlements switch

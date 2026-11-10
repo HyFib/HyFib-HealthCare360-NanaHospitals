@@ -16,6 +16,9 @@ internal static class DiscountEndpoints
 
         var limits = app.MapGroup("/api/v1/billing/discount-limits").WithTags("Billing - Discounts");
         limits.MapGet("/", ListLimits).RequirePermission(BillingPermissions.DiscountsApprove);
+        limits.MapGet("/pending", PendingLimits).RequirePermission(BillingPermissions.DiscountsApprove);
+
+        // Lowering a limit is made at once (204); raising it waits for another approver (202, billing.discount_limit).
         limits.MapPut("/", SaveLimit).RequirePermission(BillingPermissions.DiscountsApprove).WithValidation<SaveDiscountLimitRequest>().FirstSaveCreates();
         limits.MapDelete("/{id:guid}", DeleteLimit).RequirePermission(BillingPermissions.DiscountsApprove);
         limits.MapGet("/me", MyAuthority).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage);
@@ -46,11 +49,16 @@ internal static class DiscountEndpoints
 
     private static async Task<IResult> ListLimits(DiscountService discounts, CancellationToken ct) => TypedResults.Ok(await discounts.ListLimitsAsync(ct));
 
+    private static async Task<IResult> PendingLimits(DiscountService discounts, CancellationToken ct) => TypedResults.Ok(await discounts.PendingLimitsAsync(ct));
+
     private static async Task<IResult> SaveLimit(SaveDiscountLimitRequest request, DiscountService discounts, CancellationToken ct) =>
-        (await discounts.SaveLimitAsync(request, ct)).ToNoContent();
+        (await discounts.SaveLimitAsync(request, ct)).ToHttpResult(Saved);
 
     private static async Task<IResult> DeleteLimit(Guid id, DiscountService discounts, CancellationToken ct) =>
-        (await discounts.DeleteLimitAsync(id, ct)).ToNoContent();
+        (await discounts.DeleteLimitAsync(id, ct)).ToHttpResult(Saved);
+
+    private static IResult Saved(DiscountLimitOutcome outcome) =>
+        outcome.Asked is { } asked ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked) : TypedResults.NoContent();
 
     /// <summary>The signed-in user's own discount authority (lets the bill screen warn before a request needs approval).</summary>
     private static async Task<IResult> MyAuthority(DiscountService discounts, CancellationToken ct) => TypedResults.Ok(await discounts.AuthorityAsync(ct));

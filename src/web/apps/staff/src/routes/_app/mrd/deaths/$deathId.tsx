@@ -15,13 +15,14 @@ import {
   tokens,
   useRestoreFocusTarget,
 } from '@fluentui/react-components';
-import { DismissCircleRegular, EditRegular, SendRegular } from '@fluentui/react-icons';
+import { CheckmarkCircleRegular, DismissCircleRegular, EditRegular, SendRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, isApiError, todayIso } from '@hc360/core';
 import { ErrorState, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PendingApprovals } from '@/modules/approvals/PendingApprovals';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 import { ReasonDialog } from '@/modules/ot/shared/feedback';
 import {
@@ -108,15 +109,41 @@ function DeathView({ death }: { death: DeathRecordDto }) {
   const [dialog, setDialog] = useState<Dialog>(null);
   const recorded = death.status === 'Recorded';
   const overdue = recorded && todayIso() > death.dueBy;
+  // Where the facility asks for it, a second doctor confirms the certificate before it is reported; while the request
+  // waits, the certificate is not changed under them.
+  const waiting = recorded && death.confirmationWaitingSince !== null;
+  const unconfirmed = recorded && death.confirmationRequired && death.confirmedAt === null;
+  // A confirmed certificate took two doctors to make: voiding it waits for a second doctor (maker-checker, slice 8), and
+  // the certificate and the deceased status stand until then.
+  const confirmed = recorded && death.confirmedAt !== null;
+  const voidWaiting = recorded && !!death.voidWaitingSince;
 
   const markError = useMutation({
     mutationFn: (reason: string) => vitalApi.deathInError(death.id, reason, death.version),
     onSuccess: (saved) => {
+      setDialog(null);
+      if ('kind' in saved) {
+        void queryClient.invalidateQueries({ queryKey: vitalKeys.death(death.id) });
+        notify.success(
+          'Asked for approval',
+          'Another doctor who confirms certificates decides it. Until then the certificate stands.',
+        );
+        return;
+      }
       queryClient.setQueryData(vitalKeys.death(death.id), saved);
       void queryClient.invalidateQueries({ queryKey: vitalKeys.registers('death') });
-      setDialog(null);
       notify.success('Marked as entered in error', `${saved.serialNumber} is kept, but out of the register.`);
     },
+  });
+
+  const askConfirmation = useMutation({
+    mutationFn: () => vitalApi.askDeathConfirmation(death.id, death.version),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(vitalKeys.death(death.id), saved);
+      void queryClient.invalidateQueries({ queryKey: vitalKeys.registers('death') });
+      notify.success('Confirmation asked for', 'Another doctor confirms the certificate in Approvals.');
+    },
+    onError: (error) => notify.error(error, 'Could not ask for the confirmation'),
   });
 
   return (
@@ -146,6 +173,17 @@ function DeathView({ death }: { death: DeathRecordDto }) {
           </MessageBarBody>
         </MessageBar>
       )}
+      {(waiting || voidWaiting) && <PendingApprovals subjectType="DeathRecord" subjectId={death.id} />}
+      {unconfirmed && !waiting && (
+        <MessageBar intent="warning">
+          <MessageBarBody>
+            <MessageBarTitle>Not yet confirmed</MessageBarTitle>
+            {canMarkError
+              ? 'A second doctor confirms the certificate before the death is reported to the Registrar. Ask for the confirmation; another doctor gives it in Approvals.'
+              : 'A second doctor confirms the certificate before the death is reported to the Registrar. The doctor who certified it asks for the confirmation.'}
+          </MessageBarBody>
+        </MessageBar>
+      )}
       {recorded && (
         <MessageBar intent={overdue ? 'warning' : 'info'}>
           <MessageBarBody>
@@ -160,7 +198,7 @@ function DeathView({ death }: { death: DeathRecordDto }) {
         title="Medical certificate of cause of death (Form 4)"
         actions={
           <div className={styles.actions}>
-            {canRegister && recorded && (
+            {canRegister && recorded && !unconfirmed && !voidWaiting && (
               <Button
                 appearance="primary"
                 icon={<SendRegular />}
@@ -170,14 +208,24 @@ function DeathView({ death }: { death: DeathRecordDto }) {
                 Report to Registrar
               </Button>
             )}
-            {canCertify && recorded && (
+            {canMarkError && unconfirmed && !waiting && (
+              <Button
+                appearance="primary"
+                icon={<CheckmarkCircleRegular />}
+                disabled={askConfirmation.isPending}
+                onClick={() => askConfirmation.mutate()}
+              >
+                Ask for confirmation
+              </Button>
+            )}
+            {canCertify && recorded && !waiting && !voidWaiting && (
               <Button icon={<EditRegular />} onClick={() => setDialog('correct')} {...restoreFocusTarget}>
                 Correct
               </Button>
             )}
-            {canMarkError && recorded && (
+            {canMarkError && recorded && !waiting && !voidWaiting && (
               <Button icon={<DismissCircleRegular />} onClick={() => setDialog('error')} {...restoreFocusTarget}>
-                Entered in error
+                {confirmed ? 'Ask to void' : 'Entered in error'}
               </Button>
             )}
             <PrintVitalButton path={deathDocument(death.id)} label="Print certificate" />
@@ -219,6 +267,13 @@ function DeathView({ death }: { death: DeathRecordDto }) {
             <Fact label="Certified by">
               {`${death.certifiedBy} (registration ${death.certifierRegistrationNumber}), ${formatDateTime(death.certifiedAt)}`}
             </Fact>
+            <Fact label="Confirmed by">
+              {death.confirmedBy !== null && death.confirmedAt !== null
+                ? `${death.confirmedBy} (registration ${death.confirmerRegistrationNumber ?? ''}), ${formatDateTime(death.confirmedAt)}`
+                : unconfirmed
+                  ? 'Not yet confirmed by a second doctor'
+                  : null}
+            </Fact>
           </div>
         </div>
       </Section>
@@ -233,10 +288,18 @@ function DeathView({ death }: { death: DeathRecordDto }) {
       {dialog === 'report' && <ReportDialog kind="death" id={death.id} onClose={() => setDialog(null)} />}
       <ReasonDialog
         open={dialog === 'error'}
-        title={`Mark certificate ${death.serialNumber} as entered in error?`}
-        description="For a certificate made for the wrong patient, or twice. It is kept, but leaves the death register and is not reported."
+        title={
+          confirmed
+            ? `Ask to void certificate ${death.serialNumber}?`
+            : `Mark certificate ${death.serialNumber} as entered in error?`
+        }
+        description={
+          confirmed
+            ? `A second doctor confirmed this certificate, so another doctor who confirms certificates must agree. Until then the certificate stands and the patient stays recorded as deceased. Once reported to the Registrar, a correction goes through the Registrar.`
+            : 'For a certificate made for the wrong patient, or twice. It is kept, but leaves the death register and is not reported.'
+        }
         label="Reason"
-        confirmLabel="Entered in error"
+        confirmLabel={confirmed ? 'Ask for approval' : 'Entered in error'}
         destructive
         busy={markError.isPending}
         error={markError.error}

@@ -1,6 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 
 export interface UserListItem {
   id: string;
@@ -31,6 +32,67 @@ export interface UserDetail {
   roleIds: string[];
   facilityIds: string[];
   version: number;
+  /** Roles and facilities asked for the user, or their reactivation, waiting for a second administrator. */
+  pendingGrant?: PendingUserGrant | null;
+  /**
+   * Changes to the account waiting for a second administrator: a temporary password to be handed over, a two-step
+   * verification reset, new contact details, a practitioner link.
+   */
+  pendingChanges?: PendingAccountChange[] | null;
+}
+
+/** A change to an account waiting for a second administrator who may approve grants: what it changes, in words. */
+export interface PendingAccountChange {
+  approvalId: string;
+  kind: string;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/**
+ * A password reset made (200): where the temporary password went, masked, never the password itself. Only an account
+ * with nowhere to send it, reset while the hospital has one administrator who may approve, gets it back to hand over;
+ * otherwise that reset waits for a second administrator (202, an approval request), who is shown it.
+ */
+export interface PasswordResetResponse {
+  userId: string;
+  sentTo: string[];
+  expiresAt: string;
+  temporaryPassword?: string | null;
+}
+
+/** Access asked for a user, waiting for a second administrator who may approve grants. */
+export interface PendingUserGrant {
+  approvalId: string;
+  roleIds: string[];
+  facilityIds: string[];
+  activate: boolean;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** Permissions asked for a role, waiting for a second administrator who may approve grants. */
+export interface PendingRoleGrant {
+  approvalId: string;
+  permissions: string[];
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** The approval request a save that adds access makes (202): the access waits for a second administrator. */
+export interface AskedForApproval {
+  id: string;
+  /** The approval kind, such as `masters.practitioner_identity` or `masters.practitioner_fee`. */
+  kind: string;
+  summary: string;
+}
+
+/** The request a save made, when what it added waits for approval; null when it was saved as it is. */
+export function askedForApproval(result: unknown): AskedForApproval | null {
+  return result !== null && typeof result === 'object' && 'kind' in result && 'summary' in result && 'id' in result
+    ? (result as AskedForApproval)
+    : null;
 }
 
 export interface SaveUserRequest {
@@ -45,6 +107,8 @@ export interface SaveUserRequest {
   temporaryPassword?: string | null;
   isActive?: boolean;
   version?: number;
+  /** Why the user needs the roles added, for the administrator who approves them. */
+  reason?: string | null;
 }
 
 export interface RoleListItem {
@@ -63,6 +127,8 @@ export interface RoleDetail {
   isSystem: boolean;
   permissions: string[];
   version: number;
+  /** Permissions asked for the role, waiting for a second administrator. */
+  pendingGrant?: PendingRoleGrant | null;
 }
 
 export interface PermissionGroup {
@@ -89,6 +155,26 @@ export interface DeviceDto {
   departmentId: string | null;
   location: string | null;
   version: number;
+}
+
+/** A one-time enrolment code, shown once: formatted for reading aloud (ABCD-EFGH), and when it expires. */
+export interface EnrollmentCode {
+  code: string;
+  expiresAt: string;
+}
+
+/**
+ * An enrolment code for a workstation or tablet the signed-in administrator asked for, from which the hospital can be
+ * administered: waiting for a second administrator (`ready` false), or approved and not yet shown, until `expiresAt`.
+ */
+export interface EnrollmentCodeRequest {
+  approvalId: string;
+  kind: DeviceKind;
+  note: string | null;
+  validMinutes: number;
+  ready: boolean;
+  requestedAt: string;
+  expiresAt: string | null;
 }
 
 /** The HC360 Desktop version the server offers to enrolled workstations, or why it offers none (SRS DED-18). */
@@ -239,7 +325,10 @@ export interface ServerInfo {
   osDescription: string;
   version: string;
   environment: string;
-  /** `all` on a single Server Node; with several, `api` for an API node and `worker` for the node that runs the jobs. */
+  /**
+   * `all` on a single Server Node; with several, `api` for an API node, and `worker` or `all` for one that may run the
+   * jobs (with the job lease, only the one holding it does).
+   */
   role: string;
   startedAt: string;
   uptimeHours: number;
@@ -248,6 +337,19 @@ export interface ServerInfo {
   framework: string;
   /** The last check of this server's clock against the national time servers (CERT-In 2022); null before the first. */
   clock?: ClockCheck | null;
+  /** With several servers, the server's id; null on a single Server Node. */
+  node?: string | null;
+  /**
+   * With several servers taking turns at the background jobs (the job lease), whether this one runs them now, and since
+   * when; null where its role alone decides.
+   */
+  jobs?: JobNodeState | null;
+}
+
+/** Whether a server that takes turns at the background jobs holds the job lease now. */
+export interface JobNodeState {
+  active: boolean;
+  since: string | null;
 }
 
 /** How far this server's clock was from a national time server (positive: behind), or why none answered. */
@@ -316,6 +418,12 @@ export interface SystemHealthReport {
     subjectAlternativeNames: string[];
     /** Null with an administrator-supplied certificate, whose issuer HC360 does not hold. */
     caExpiresAt: string | null;
+    /** While a next CA is prepared ('certificates prepare-ca'): that CA, which devices take before the switch. */
+    nextCaFingerprint?: string | null;
+    /** After 'certificates switch-ca': the CA the current one replaced, until it expires. */
+    previousCaFingerprint?: string | null;
+    /** When the previous CA expires: devices keep it as a second CA until then. */
+    previousCaExpiresAt?: string | null;
   };
   power: { available: boolean; onBattery: boolean | null; chargePercent: number | null; source: string | null };
   /** Empty when the integrations are not loaded (never on a real server). */
@@ -397,7 +505,53 @@ export interface SettingDto {
   updatedAt: string | null;
   /** Sent back with a change, so a save over someone else's newer one is refused (409) rather than lost (REL-04). */
   version: number;
+  /** A change to it waiting for a second administrator, if any. */
+  pending?: PendingSettingChange | null;
 }
+
+/** A change to a guarded setting waiting for a second administrator (maker-checker). */
+export interface PendingSettingChange {
+  approvalId: string;
+  /** "Second pathologist for lab corrections: on → off". */
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/**
+ * What saving a setting would do, before it is saved (`POST /api/v1/admin/settings/{key}/check`). A change that loosens
+ * a control (switched off, a limit raised, a value cleared), or changes where money, patients' data or alerts go, waits
+ * for a second administrator; the screens ask for a reason only then.
+ */
+export interface SettingChangeCheck {
+  waits: boolean;
+  /** The setting's name, as the approver reads it. */
+  setting: string;
+  /** What it controls; null for a setting that is not guarded. */
+  controls: string | null;
+  from: string;
+  to: string;
+}
+
+/** A setting saved as the settings API takes it (`PUT /api/v1/admin/settings/{key}`). */
+export interface SaveSettingBody {
+  value: unknown;
+  facilityId: string | null;
+  secret: boolean;
+  description: string | null;
+  /** The version the value was shown at; none for a value not set (REL-04). */
+  version?: number;
+  /** Why, for the administrator who decides a change that waits: required then, not kept otherwise. */
+  reason?: string | null;
+}
+
+export const settingsApi = {
+  check: (key: string, body: SaveSettingBody) =>
+    api.post<SettingChangeCheck>(`/api/v1/admin/settings/${encodeURIComponent(key)}/check`, body),
+  /** Saved at once (nothing back), or asked for (202: the request a second administrator decides). */
+  save: (key: string, body: SaveSettingBody) =>
+    api.put<ApprovalRequestDto | undefined>(`/api/v1/admin/settings/${encodeURIComponent(key)}`, body),
+};
 
 export interface BackupRunDto {
   id: string;
@@ -499,6 +653,14 @@ export const adminQueries = {
     queryOptions({
       queryKey: ['admin', 'devices'],
       queryFn: ({ signal }) => api.get<DeviceDto[]>('/api/v1/admin/devices', { signal }),
+    }),
+  /** My enrolment codes for administration desktops, waiting for approval or ready to be shown. */
+  enrollmentRequests: (poll = false) =>
+    queryOptions({
+      queryKey: ['admin', 'devices', 'enrollment-requests'],
+      queryFn: ({ signal }) =>
+        api.get<EnrollmentCodeRequest[]>('/api/v1/admin/devices/enrollment-codes/requests', { signal }),
+      refetchInterval: poll ? 10_000 : false,
     }),
   desktopUpdate: () =>
     queryOptions({

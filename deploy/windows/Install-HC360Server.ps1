@@ -6,7 +6,10 @@
 
 .DESCRIPTION
     - Copies the published server to Program Files (the data folder is kept across upgrades).
-    - Creates the PostgreSQL database and a least-privilege application role (optional, -CreateDatabase).
+    - Creates the PostgreSQL database and its two accounts (optional, -CreateDatabase): hc360_owner, which owns the schema and
+      applies the database updates, and hc360_app, the least-privilege account the server works as, which reads and writes
+      rows but cannot change a table or the audit trail's triggers (hc360-database-roles.sql). On a database installed
+      before the split, which hc360_app owns, -CreateDatabase hands it to hc360_owner as it is.
     - Has the service sign in to PostgreSQL with its Windows account (SSPI), so the settings file holds no database
       password (-DatabaseSignIn Windows, the default). The switch is made once the server has started as it was, and is
       undone if the server then cannot reach the database. Needs PostgreSQL on this machine; -DatabaseSignIn Password
@@ -39,6 +42,10 @@
       server (SRS DED-18): HC360-Desktop-<version>-win-x64.zip, with its .manifest.json and .manifest.sig, from beside
       the server package (the folder it was extracted to, or the one above), or from -DesktopPackage. The server takes
       it in only when HyFib signed it (desktop publish); otherwise workstations are upgraded with Install-HC360Desktop.ps1.
+    - Registers the "HC360 certificate probe" scheduled task, which checks every day, as SYSTEM, the certificate the
+      staff address serves, as HC360 Desktop and the lab agents check it, against the CA fingerprint printed at the end,
+      and writes what needs attention to the Application event log (SRS DED-04). It runs it once and shows what it found.
+      A standby has none until a failover.
     - Starts the service, waits until it is healthy and prints the CA fingerprint staff will verify on workstations.
       With -NoStart the service is left stopped, and does not start with Windows, for a node of several servers whose
       settings (its role, the shared folder, the database) must be in place before it first starts: running the installer
@@ -185,6 +192,71 @@ function Set-RestartOnFailure([string] $Name) {
 # The triggers of the database watchdog task: every minute from now for as long as Windows runs, and at each start-up.
 function New-EveryMinuteTriggers {
     return @((New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1)), (New-ScheduledTaskTrigger -AtStartup))
+}
+
+# SHA-256 of a certificate file in upper-case hex: for the hospital CA, the fingerprint staff compare on HC360 Desktop.
+function Get-CertificateFingerprint([string] $Path) {
+    $certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $Path
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return -join ($sha.ComputeHash($certificate.RawData) | ForEach-Object { $_.ToString('X2') }) }
+    finally { $sha.Dispose(); $certificate.Dispose() }
+}
+
+# The daily certificate probe (SRS DED-04, docs/deployment/CA-ROLLOVER.md): HC360's own program, run as SYSTEM, checks
+# $Address as HC360 Desktop and the lab agents check it, against the hospital CA fingerprint they pinned, and writes what
+# needs attention to the Application event log. It needs no database, so it tells while HC360 is down too. Returns the
+# fingerprint the task checked for before, or $null when there was no such task.
+function Register-CertificateProbe([string] $Exe, [string] $Address, [string] $Fingerprint, [string] $At,
+    [string] $TaskName = 'HC360 certificate probe', [string] $TaskPath = '\HyFib\') {
+    $before = Get-CertificateProbePin $TaskName $TaskPath
+    $action = New-ScheduledTaskAction -Execute $Exe -Argument "certificates probe $Address --ca-fingerprint $Fingerprint --event-log"
+    $principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    # -StartWhenAvailable: on a day the server was off at that time, it checks once the server starts. The first run is
+    # the next $At to come: one already past today would count as missed, and run at once beside the run this installer
+    # starts itself.
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+    $first = [datetime]::Today.Add([timespan]::Parse($At))
+    if ($first -le (Get-Date)) { $first = $first.AddDays(1) }
+    Register-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Action $action -Trigger (New-ScheduledTaskTrigger -Daily -At $first) `
+        -Principal $principal -Settings $settings -Force `
+        -Description 'Checks the certificate HyFib HealthCare360 serves as its workstations and lab agents check it, and writes what needs attention to the Application event log (SRS DED-04).' | Out-Null
+    return $before
+}
+
+# The hospital CA fingerprint the certificate probe task checks for, or $null when there is no such task.
+function Get-CertificateProbePin([string] $TaskName = 'HC360 certificate probe', [string] $TaskPath = '\HyFib\') {
+    $task = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction SilentlyContinue
+    if (-not $task) { return $null }
+    foreach ($action in @($task.Actions)) {
+        if ("$($action.Arguments)" -match "--ca-fingerprint\s+['""]?([0-9A-Fa-f]{64})\b") { return $Matches[1].ToUpperInvariant() }
+    }
+    return $null
+}
+
+# Runs the certificate probe task now, as Task Scheduler runs it every day, and returns its result once it has ended: the
+# probe's exit code (0 nothing to do, 1 a certificate to plan for, 2 act now), another code when the task could not run the
+# probe, or $null when it did not end within $Seconds.
+function Invoke-CertificateProbeTask([string] $TaskName = 'HC360 certificate probe', [string] $TaskPath = '\HyFib\', [int] $Seconds = 120) {
+    $now = Get-Date
+    # A run already under way (the day's, or one Task Scheduler caught up) ends first: Task Scheduler starts no second one
+    # beside it (-MultipleInstances IgnoreNew), so this run would never come.
+    while ("$((Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath).State)" -eq 'Running' -and (Get-Date) -lt $now.AddSeconds($Seconds)) {
+        Start-Sleep -Seconds 2
+    }
+    # The run is told by what Task Scheduler reports changing, not by comparing its clock with this one: Windows
+    # PowerShell and PowerShell 7 read its times differently.
+    $before = Get-ScheduledTaskInfo -TaskName $TaskName -TaskPath $TaskPath
+    Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
+    do {
+        Start-Sleep -Seconds 2
+        $info = Get-ScheduledTaskInfo -TaskName $TaskName -TaskPath $TaskPath
+        $state = "$((Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath).State)"
+        $ran = "$($info.LastRunTime)" -ne "$($before.LastRunTime)" -or $info.LastTaskResult -ne $before.LastTaskResult
+        # 267009 (0x41301): Task Scheduler's "still running".
+        if ($ran -and $state -ne 'Running' -and $info.LastTaskResult -ne 267009) { return $info.LastTaskResult }
+    } while ((Get-Date) -lt $now.AddSeconds($Seconds))
+    return $null
 }
 
 # The newest HC360 Desktop package of a release beside the server package (SRS DED-18): in the folder the server package
@@ -589,6 +661,40 @@ function Get-StandbyProblem([bool] $Standby, [bool] $CreateDatabase, [bool] $Dat
 }
 
 # Runs one statement as the PostgreSQL superuser.
+# ---------------------------------------------------------------- the two database accounts
+# hc360_owner owns the schema (start-up's migrations and the audit trail's triggers run as it); hc360_app is the account the
+# server works as, with rows to read and write and nothing else (docs/deployment/DEPLOYMENT.md, "Two database accounts").
+$OwnerRole = 'hc360_owner'
+$AppRole = 'hc360_app'
+$RolesSqlFile = 'hc360-database-roles.sql'
+
+# The statement that makes the account $Role, able to sign in with $Password, or gives it that password if it exists.
+function Get-RoleSql([string] $Role, [string] $Password) {
+    if ($Role -notmatch '^[a-z_][a-z0-9_]*$') { throw "The database account '$Role' must be named with lower-case letters, digits and underscores." }
+    if ($Password -notmatch '^[A-Za-z0-9_-]+$') { throw "The password for '$Role' must be letters, digits, '-' and '_' only." }
+    return "DO `$`$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$Role') THEN CREATE ROLE $Role LOGIN PASSWORD '$Password'; ELSE ALTER ROLE $Role LOGIN PASSWORD '$Password'; END IF; END `$`$;"
+}
+
+# psql's arguments that run hc360-database-roles.sql in $Database: the two accounts named first, in the session's settings
+# the file reads, then the file itself, which stops at its first error.
+function Get-RolesSqlArguments([string] $Server, [int] $Port, [string] $Superuser, [string] $Database, [string] $SqlFile) {
+    foreach ($role in @($OwnerRole, $AppRole)) {
+        if ($role -notmatch '^[a-z_][a-z0-9_]*$') { throw "The database account '$role' must be named with lower-case letters, digits and underscores." }
+    }
+    if (-not (Test-Path -LiteralPath $SqlFile)) { throw "$SqlFile was not found beside the installer." }
+    return @('-h', $Server, '-p', $Port, '-U', $Superuser, '-d', $Database, '-v', 'ON_ERROR_STOP=1', '-q',
+        '-c', "SELECT set_config('hc360.owner_role', '$OwnerRole', false), set_config('hc360.app_role', '$AppRole', false)",
+        '-f', $SqlFile)
+}
+
+# The connection string the server signs in with as $Role.
+function New-HospitalConnectionString([string] $Server, [int] $Port, [string] $Database, [string] $Role, [string] $Password) {
+    $value = "Host=$Server;Port=$Port;Database=$Database;Username=$Role"
+    if ($Password) { $value += ";Password=$Password" }
+    if ($Role -eq $OwnerRole) { return "$value;Maximum Pool Size=5;Timeout=15;Command Timeout=60" }
+    return "$value;Maximum Pool Size=200;Timeout=15;Command Timeout=60"
+}
+
 function Invoke-SuperuserSql([string] $Server, [int] $Port, [string] $Sql) {
     if (-not $PostgresSuperuserPassword) { $script:PostgresSuperuserPassword = Read-Host -AsSecureString "Password for PostgreSQL user '$PostgresSuperuser'" }
     $env:PGPASSWORD = [System.Net.NetworkCredential]::new('', $PostgresSuperuserPassword).Password
@@ -693,30 +799,38 @@ $settings = Read-SettingsFile $settingsPath
 $settingsBefore = ConvertTo-SettingTable $settings
 
 $connectionString = $null
+$ownerConnectionString = $null
 if ($CreateDatabase) {
     if (-not $pgBin) { throw 'PostgreSQL client tools (psql.exe) were not found.' }
     if (-not $PostgresSuperuserPassword) { $PostgresSuperuserPassword = Read-Host -AsSecureString "Password for PostgreSQL user '$PostgresSuperuser'" }
-    Write-Step "Creating database '$DatabaseName' and application role 'hc360_app'"
+    Write-Step "Creating database '$DatabaseName', its owner '$OwnerRole' and the account the server works as, '$AppRole'"
     $appPassword = New-RandomSecret
+    $ownerPassword = New-RandomSecret
     $env:PGPASSWORD = [System.Net.NetworkCredential]::new('', $PostgresSuperuserPassword).Password
     try {
         $psql = Join-Path $pgBin 'psql.exe'
-        $roleSql = "DO `$`$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'hc360_app') THEN CREATE ROLE hc360_app LOGIN PASSWORD '$appPassword'; ELSE ALTER ROLE hc360_app LOGIN PASSWORD '$appPassword'; END IF; END `$`$;"
-        & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d postgres -v ON_ERROR_STOP=1 -q -c $roleSql
-        if ($LASTEXITCODE -ne 0) { throw 'Creating the application role failed.' }
+        foreach ($account in @(@($OwnerRole, $ownerPassword), @($AppRole, $appPassword))) {
+            & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d postgres -v ON_ERROR_STOP=1 -q -c (Get-RoleSql $account[0] $account[1])
+            if ($LASTEXITCODE -ne 0) { throw "Creating the database account $($account[0]) failed." }
+        }
         $exists = & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$DatabaseName'"
         if ($exists -ne '1') {
-            & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE $DatabaseName OWNER hc360_app ENCODING 'UTF8'"
+            & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE $DatabaseName OWNER $OwnerRole ENCODING 'UTF8'"
             if ($LASTEXITCODE -ne 0) { throw 'Creating the database failed.' }
         }
-        # Extensions need superuser; the application role only owns its own schemas.
+        # Extensions need superuser. Then the accounts' rights: the owner owns everything (a database hc360_app owned before
+        # the split included), hc360_app reads and writes rows (hc360-database-roles.sql).
         & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d $DatabaseName -v ON_ERROR_STOP=1 -q -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm; REVOKE ALL ON SCHEMA public FROM PUBLIC;'
         if ($LASTEXITCODE -ne 0) { throw 'Preparing the database failed.' }
+        $rolesArguments = Get-RolesSqlArguments $PostgresHost $PostgresPort $PostgresSuperuser $DatabaseName (Join-Path $PSScriptRoot $RolesSqlFile)
+        & $psql @rolesArguments
+        if ($LASTEXITCODE -ne 0) { throw "Setting up the database accounts ($RolesSqlFile) failed." }
     }
     finally {
         Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
     }
-    $connectionString = "Host=$PostgresHost;Port=$PostgresPort;Database=$DatabaseName;Username=hc360_app;Password=$appPassword;Maximum Pool Size=200;Timeout=15;Command Timeout=60"
+    $connectionString = New-HospitalConnectionString $PostgresHost $PostgresPort $DatabaseName $AppRole $appPassword
+    $ownerConnectionString = New-HospitalConnectionString $PostgresHost $PostgresPort $DatabaseName $OwnerRole $ownerPassword
 }
 elseif ($Standby -and -not $settingsBefore['ConnectionStrings:Hospital']) {
     # The standby's database is a copy of the primary's, with its accounts and its pg_hba.conf and pg_ident.conf: once
@@ -733,6 +847,7 @@ elseif (-not $settingsBefore['ConnectionStrings:Hospital']) {
 Write-Step "Configuring $settingsPath"
 $changed = @(
     if ($CreateDatabase) { Set-Setting $settings 'ConnectionStrings:Hospital' $connectionString -Replace }
+    if ($CreateDatabase) { Set-Setting $settings 'ConnectionStrings:HospitalOwner' $ownerConnectionString -Replace }
     elseif ($connectionString) { Set-Setting $settings 'ConnectionStrings:Hospital' $connectionString }
     Set-Setting $settings 'HealthCare360:HttpsPort' $HttpsPort -Replace:$PSBoundParameters.ContainsKey('HttpsPort')
     Set-Setting $settings 'HealthCare360:PortalHttpsPort' $PortalHttpsPort -Replace:$PSBoundParameters.ContainsKey('PortalHttpsPort')
@@ -1041,12 +1156,61 @@ if ($postgres) {
     }
 }
 
+# ---------------------------------------------------------------- the certificate probe (SRS DED-04)
+# Every day HC360's own program checks, as SYSTEM, the staff address as the workstations and lab agents do: against the
+# hospital CA whose fingerprint is printed below, which they pin. Run apart from the server, it still tells when HC360 is
+# down or cannot send its own alerts, and when what the devices are served is not what the server holds; what needs
+# attention goes to the Application event log, where monitoring tools read it. An hour after Windows Update may last
+# restart the server, or once it starts when it was off then. A standby serves nothing until a failover, when this
+# installer runs there again without -Standby.
 $caPath = Join-Path $DataDir 'certs\hc360-hospital-ca.crt'
-if (Test-Path $caPath) {
-    $ca = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $caPath
-    $sha = [System.Security.Cryptography.SHA256]::Create().ComputeHash($ca.RawData)
-    $fingerprint = -join ($sha | ForEach-Object { $_.ToString('X2') })
-    $grouped = ($fingerprint -split '(.{4})' | Where-Object { $_ }) -join ' '
+$caFingerprint = if (Test-Path -LiteralPath $caPath) { Get-CertificateFingerprint $caPath } else { $null }
+if ($Standby) {
+    $probeTask = Get-ScheduledTask -TaskName 'HC360 certificate probe' -TaskPath '\HyFib\' -ErrorAction SilentlyContinue
+    if ($probeTask) {
+        $probeTask | Unregister-ScheduledTask -Confirm:$false
+        Write-Host '    The daily certificate probe is removed: a standby serves nothing until a failover.'
+    }
+}
+elseif ($caFingerprint -and -not $NoStart) {
+    Write-Step 'Registering the daily certificate probe'
+    $probeAddress = "https://$($env:COMPUTERNAME.ToLowerInvariant()):$HttpsPort/"
+    $probeAt = '{0:00}:10' -f (($UpdateActiveHoursStart + 1) % 24)
+    $pinnedBefore = Register-CertificateProbe $exe $probeAddress $caFingerprint $probeAt
+    if ($pinnedBefore -and $pinnedBefore -ne $caFingerprint) {
+        $previousCaPath = Join-Path $DataDir 'certs\hc360-hospital-ca-previous.crt'
+        if ((Test-Path -LiteralPath $previousCaPath) -and (Get-CertificateFingerprint $previousCaPath) -eq $pinnedBefore) {
+            Write-Host '    The hospital CA was switched to the next one (certificates switch-ca): the probe now checks for the new CA.'
+        }
+        else {
+            $wasPinned = ($pinnedBefore -split '(.{4})' | Where-Object { $_ }) -join ' '
+            $isNow = ($caFingerprint -split '(.{4})' | Where-Object { $_ }) -join ' '
+            Write-Warning "The certificate probe checked for the hospital CA ${wasPinned}, but the server's CA is ${isNow}: devices that pinned the first do not connect. If the CA was replaced (certificates new-ca), or made again because its files were lost, set every device up again (docs/deployment/CA-ROLLOVER.md). The probe now checks for the server's CA."
+        }
+    }
+    if (-not $ready) {
+        Write-Host "    It checks $probeAddress every day at $probeAt."
+    }
+    else {
+        $probed = Invoke-CertificateProbeTask
+        if ($null -eq $probed) {
+            Write-Warning "The 'HC360 certificate probe' scheduled task did not end within two minutes. Check it in Task Scheduler (HyFib folder)."
+        }
+        elseif ($probed -eq 0) {
+            Write-Host "    It found the certificate devices are served good, and checks $probeAddress again every day at $probeAt."
+        }
+        elseif ($probed -eq 1 -or $probed -eq 2) {
+            Write-Warning "The certificate probe found what needs attention in what $probeAddress serves, and wrote it to the Application event log:"
+            & $exe certificates probe $probeAddress --ca-fingerprint $caFingerprint | ForEach-Object { Write-Host "    $_" }
+        }
+        else {
+            Write-Warning ("The 'HC360 certificate probe' scheduled task did not run the probe (result 0x{0:X8}). Check it in Task Scheduler (HyFib folder)." -f $probed)
+        }
+    }
+}
+
+if ($caFingerprint) {
+    $grouped = ($caFingerprint -split '(.{4})' | Where-Object { $_ }) -join ' '
     Write-Host ''
     Write-Host 'Hospital CA fingerprint (staff compare this when setting up HC360 Desktop):' -ForegroundColor Green
     Write-Host "    $grouped"

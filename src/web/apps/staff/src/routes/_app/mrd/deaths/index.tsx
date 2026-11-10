@@ -232,6 +232,11 @@ function DeathRegisterPage({ onCertify }: { onCertify?: () => void }) {
                       Overdue
                     </Badge>
                   )}
+                  {r.awaitingConfirmation && (
+                    <Badge size="small" appearance="tint" color="warning" style={{ marginLeft: 6 }}>
+                      Not yet confirmed
+                    </Badge>
+                  )}
                 </span>
               ),
             },
@@ -252,7 +257,9 @@ function DeathRegisterPage({ onCertify }: { onCertify?: () => void }) {
             { key: 'registration', header: 'Registration no.', render: (r) => r.registrationNumber ?? '' },
           ]}
           rowActions={(r) =>
-            r.status === 'Recorded' && (
+            // A certificate a second doctor has yet to confirm is not reported (the server refuses it too).
+            r.status === 'Recorded' &&
+            !r.awaitingConfirmation && (
               <Button size="small" appearance="primary" icon={<SendRegular />} onClick={() => setReporting(r.id)}>
                 Report to Registrar
               </Button>

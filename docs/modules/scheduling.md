@@ -24,6 +24,9 @@ Doctor OPD schedules, appointments, front-desk check-in and Online Doctor Appoin
   `WalkIn | Phone | Online | Portal | Kiosk | WhatsApp`; visit type `New | FollowUp`; `IsTelehealth`; fee quoted at
   booking (doctor's new/follow-up fee); payment `Unpaid | PaidOnline | PayAtHospital` with gateway order/payment ids;
   cancellation code + text + who; reschedule history (`RescheduledFromId`/`RescheduledToId`); reminder flags; `VisitId`.
+* **ReplacedPaymentOrder** – a gateway order the booking had before its current one (table
+  `scheduling.appointment_replaced_orders`, audited with the appointment): the provider, the order id (unique), when it
+  was replaced, and a second payment taken on it once found (payment id, amount, when the gateway took it).
 * **WaitlistEntry** – a patient waiting for a doctor within a date window and part of day
   (`Any | Morning | Afternoon | Evening`). Freed slots are offered (SMS/WhatsApp), never booked automatically.
 
@@ -44,6 +47,13 @@ Doctor OPD schedules, appointments, front-desk check-in and Online Doctor Appoin
   `isTelehealth: false` moves it to an in-person visit, and cancelling works as always.
 * Rescheduling books the new slot and marks the old row `Rescheduled` in the same transaction; online prepayment moves
   to the new booking; the freed slot is offered to the waitlist.
+* **An unpaid booking is never cancelled for non-payment by HC360** (gap #35, decided by the hospital on
+  2026-11-06). A portal booking whose online payment was started and never made stays booked and keeps its slot:
+  a payment that failed, expired or was abandoned changes nothing, reminders go out as for any booking, and the
+  patient can pay again online until the slot (`canPay`, while a gateway is set up) or pay at the hospital. Only a
+  member of staff who is signed in can cancel with `PaymentNotReceived`; the domain refuses that reason from the
+  patient or from anything that runs on its own (422 `appointment.payment_cancel_staff_only`), so no job, event
+  handler or gateway answer can give it.
 * Check-in is allowed on the appointment day only. It calls `VisitService.CreateAsync` (visit + queue token; no token
   for telehealth). If the patient already has an open OP visit today in that department, the appointment is linked to
   it (`linkedExistingVisit: true`).
@@ -66,6 +76,8 @@ conflicts (slot full, overlap, duplicates, concurrency) 409.
 | POST | `/exceptions` | `scheduling.schedules.manage` | `SaveScheduleExceptionRequest` (practitionerId, type, fromDate, toDate, startTime?, endTime?, reason, allFacilities, extra-session fields) → 201 `ScheduleSaved` (bookings inside new leave/blocks) |
 | PUT | `/exceptions/{id}` | `scheduling.schedules.manage` | `SaveScheduleExceptionRequest` (+ version) → `ScheduleSaved` |
 | DELETE | `/exceptions/{id}` | `scheduling.schedules.manage` | → 204 |
+| GET | `/exceptions/{id}/stranded` | `scheduling.appointments.manage` | → `StrandedPatients { exceptionId, smsReady, smsNote, patients[] { appointmentId, number, patientName, phoneMasked, startsAt, status, toldAt, notices[] { channel, status, error }, notToldReason } }` |
+| POST | `/exceptions/{id}/notify-patients` | `scheduling.appointments.manage` | → `StrandedPatients`: every patient the leave or block strands, not told yet about it, is told by SMS and WhatsApp (`appointment.doctor_unavailable`) with a link to choose another time; nothing is rebooked |
 
 ### Slots — `/api/v1/scheduling/slots`
 
@@ -122,7 +134,7 @@ the scope answers 404.
 |---|---|---|
 | GET | `/api/v1/portal/appointments?scope=upcoming|past|all` | → `PortalAppointment[]` (doctor, specialty, department, branch, status, payment, fee, `canCancel`, `canReschedule`, `canPay`) |
 | GET | `/api/v1/portal/appointments/{id}` | → `PortalAppointment` |
-| POST | `/api/v1/portal/appointments` | `PortalBookAppointmentRequest` (patientId, practitionerId, startsAt, visitType, isTelehealth, reason, payOnline) → 201 `PortalBookingResult { appointment, payment?: PaymentCheckout, message? }` |
+| POST | `/api/v1/portal/appointments` | `PortalBookAppointmentRequest` (patientId, practitionerId, startsAt, visitType, isTelehealth, reason, payOnline, telehealthConsent: required true for a video consultation, recorded as the patient's `Telehealth` consent unless one is in force) → 201 `PortalBookingResult { appointment, payment?: PaymentCheckout, message? }` |
 | POST | `/api/v1/portal/appointments/{id}/cancel` | `PortalCancelAppointmentRequest` (reason) → 204 |
 | POST | `/api/v1/portal/appointments/{id}/reschedule` | `PortalRescheduleAppointmentRequest` (startsAt, reason) → `PortalAppointment` (new booking) |
 | POST | `/api/v1/portal/appointments/{id}/payment` | → `PaymentCheckout { provider, orderId, amount, currency, checkoutKey, paymentLinkUrl }` (422 when the gateway is unavailable) |
@@ -141,6 +153,23 @@ instead. When the patient closes the page after paying, Billing's gateway webhoo
 `VerifyWithGatewayAsync` for the booking (found by its gateway order, indexed), so the booking is still confirmed; see
 [billing.md](billing.md#gateway-reconciliation-int-pg).
 
+**A payment started again.** Before a new order replaces the booking's order, the gateway is asked what became of it:
+one paid after all is recorded (the portal says "already paid"), and while one is still being paid, or the gateway
+cannot say, no new order is made. The order replaced is remembered (`ReplacedPaymentOrder`), because the gateway can still
+take money on it: the first checkout left open on another tab or phone, or a UPI request approved late. A payment on it
+is found by the gateway's webhook, Billing's re-check and the settlement match, which ask the gateway
+(`CheckReplacedOrderAsync`, server to server) and record it with `Appointment.TakeReplacedOrderPayment`:
+
+* **The booking was not paid online yet:** it is the booking's own payment. The order it was made on becomes the
+  booking's order again, the one that had replaced it is remembered in its place (money taken on that later is a second
+  payment), and `AppointmentPaymentCaptured` is raised as for any payment.
+* **Another payment had paid the booking:** it is a second payment. It is recorded on the replaced order and
+  `AppointmentPaidTwice` is raised; Billing keeps it as the patient's advance, linked to the booking, and asks for its
+  refund, which a second person approves. The booking keeps the payment that paid it.
+
+Recording the same payment again changes nothing; another payment on an order that already has one is refused
+(`payment.order_paid`).
+
 ## Events
 
 | Direction | Event | Notes |
@@ -148,6 +177,7 @@ instead. When the patient closes the page after paying, Billing's gateway webhoo
 | Raised | `AppointmentBooked` (Platform.Contracts) | every booking, including the new row of a reschedule; `Channel` is the enum name |
 | Raised | `AppointmentCancelled` (Platform.Contracts) | cancellation (reason text or code description) and the old row of a reschedule (`"Rescheduled to {number}"`) |
 | Raised | `AppointmentPaymentCaptured` (`Modules.Scheduling.Domain`) | verified online prepayment — for Billing to issue an advance receipt / refund after cancellation |
+| Raised | `AppointmentPaidTwice` (`Modules.Scheduling.Domain`) | a second payment, on an order the booking had before its current one, after another payment had paid it — for Billing to keep as an advance and ask for its refund |
 | Handled | `VisitCreated` (Patients) | visit with `AppointmentId` → appointment `CheckedIn` + `VisitId` (same transaction) |
 | Handled | `VisitStarted` (Patients) | the linked appointment moves to `InConsultation` (queue token started or encounter opened) |
 | Handled | `VisitCompleted` (Patients) | appointment `Completed` |
@@ -164,8 +194,20 @@ startsAt }` after every change. Check-ins through the Patients visit screen also
 | `appointment.reminder` | SMS, WhatsApp | 24 h and 2 h before (job) | same |
 | `appointment.cancelled` | SMS, WhatsApp (WhatsApp template seeded here) | cancelled | same |
 | `appointment.waitlist` | SMS, WhatsApp (seeded here) | a matching slot was freed | name, doctor, date, time, link, hospital |
+| `appointment.doctor_unavailable` | SMS, WhatsApp (seeded here) | staff tell the patients a leave or block strands (`POST /exceptions/{id}/notify-patients`) | name, doctor, date, time, reference, mode, hospital, link (`{portal}/portal/doctors/{doctorId}?reschedule={appointmentId}`) |
 
 Messages expire at the appointment time (outbox TTL).
+
+**Telling the patients a doctor's leave strands.** Saving a leave or block lists the bookings it strands; the staff
+then tell those patients in one action (the schedules screen's *Tell the patients by SMS/WhatsApp*). A patient is told
+once per leave: a message of this template queued for them after the leave was last saved counts, so asking again
+tells only those not told yet. The list says who was told, when, on which channel and how each message fared (queued,
+sent, failed, skipped, suppressed by a WhatsApp STOP), and who cannot be told by message (no mobile number) for the
+desk to call. SMS in India goes only on a template registered on the DLT portal (TRAI TCCCPR 2018): where the SMS
+provider needs the DLT template id (anything but the simulator and Twilio) and the template has none, the SMS is not
+queued, the patients are told on WhatsApp alone and the list says why (`smsReady`, `smsNote`). Nothing is rebooked or
+cancelled: the patient chooses another time from the link, or the desk moves the booking. The action is audited
+(`scheduling.leave.patients_notified`). A patient whose booking was moved off the leave no longer shows in the list.
 
 ## Background job
 
@@ -205,8 +247,5 @@ No billable service codes are seeded (consultation charges come from Billing's c
 
 ## Not covered yet
 
-* **A payment on an older order of a booking.** When a patient restarts the online payment, the booking keeps only
-  the newest gateway order. A payment made on the older one is not linked to the booking: Billing's gateway
-  reconciliation lists it and keeps it as a patient advance for staff to refund.
-* **Cancelling unpaid online bookings.** A portal booking whose online payment was started but never made stays
-  booked; nothing cancels it for non-payment (`PaymentNotReceived` exists for staff to choose).
+* **Orders replaced before the replaced orders were kept** (migration `AppointmentReplacedOrders`) are not known: a
+  payment on one shows only in the settlement, as a payment without a receipt, as before.

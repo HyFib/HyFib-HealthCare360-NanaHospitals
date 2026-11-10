@@ -170,6 +170,84 @@ export function cancelGate(detail: Pick<SurgeryDetail, 'status'>): Gate {
     : ALLOWED;
 }
 
+// ---------------------------------------------------------------- maker-checker slice 10 (the theatre)
+
+/** A side or level is booked, so the site is marked on the patient: never "not applicable" (server `SurgicalSite.NeedsMarking`). */
+export function siteNeedsMarking(
+  laterality: SurgeryDetail['laterality'] | null,
+  level: string | null | undefined,
+): boolean {
+  return (laterality !== null && laterality !== 'NotApplicable') || Boolean(level?.trim());
+}
+
+/** What the WHO checklist confirms: the procedure and where (server `SurgicalSite`). */
+export interface SitePlan {
+  procedureServiceItemId: string | null;
+  procedureName: string;
+  laterality: SurgeryDetail['laterality'] | null;
+  siteLevel: string | null;
+}
+
+/** The plan names another procedure, side or level than the booking (server `SurgicalSite.Differs`). */
+export function siteDiffers(
+  booking: Pick<SurgeryDetail, 'procedureServiceItemId' | 'procedureName' | 'laterality' | 'siteLevel'>,
+  plan: SitePlan,
+): boolean {
+  const same = (a: string | null | undefined, b: string | null | undefined) =>
+    (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
+  return (
+    booking.procedureServiceItemId !== plan.procedureServiceItemId ||
+    !same(booking.procedureName, plan.procedureName) ||
+    booking.laterality !== (plan.laterality ?? 'NotApplicable') ||
+    !same(booking.siteLevel, plan.siteLevel)
+  );
+}
+
+/**
+ * Saving this plan voids the WHO Sign-in (and the Time-out, if done): the side, level or procedure changes after the
+ * Sign-in. Only the operating surgeon or the anaesthetist may then save it, with a reason (server `SiteChangeRule`).
+ */
+export function siteChangeVoidsChecklist(
+  booking: Pick<
+    SurgeryDetail,
+    'procedureServiceItemId' | 'procedureName' | 'laterality' | 'siteLevel' | 'safetyChecklist'
+  >,
+  plan: SitePlan,
+): boolean {
+  return isPhaseComplete(booking, 'SignIn') && siteDiffers(booking, plan);
+}
+
+/** The signed-in user is the case's operating surgeon or anaesthetist, who alone change the site after the Sign-in. */
+export function onCaseTeam(
+  booking: Pick<SurgeryDetail, 'surgeonId' | 'anaesthetistId'>,
+  practitionerId: string | null | undefined,
+): boolean {
+  return Boolean(practitionerId) && (practitionerId === booking.surgeonId || practitionerId === booking.anaesthetistId);
+}
+
+/**
+ * Implants and consumables are corrected, not removed, once the operation has started (server
+ * `SurgeryBooking.MaterialsLocked`).
+ */
+export function materialsLocked(detail: Pick<SurgeryDetail, 'status' | 'startedAt' | 'safetyChecklist'>): boolean {
+  return (
+    Boolean(detail.startedAt) ||
+    detail.status === 'InProgress' ||
+    detail.status === 'Completed' ||
+    isPhaseComplete(detail, 'SignOut')
+  );
+}
+
+/** Counts are recorded on the day of surgery until the Sign-out (server `SurgicalCounts.CanRecord`). */
+export function countsGate(detail: Pick<SurgeryDetail, 'status' | 'safetyChecklist'>): Gate {
+  if (isPhaseComplete(detail, 'SignOut')) {
+    return refuse('The counts closed with the WHO Sign-out.');
+  }
+  return (['Scheduled', 'InPreOp', 'InProgress'] as SurgeryStatus[]).includes(detail.status)
+    ? ALLOWED
+    : refuse('Counts are recorded on the day of surgery, until the WHO Sign-out.');
+}
+
 export function materialsGate(detail: Pick<SurgeryDetail, 'status'>): Gate {
   return (['InPreOp', 'InProgress', 'Completed'] as SurgeryStatus[]).includes(detail.status)
     ? ALLOWED
@@ -557,4 +635,9 @@ export function utilisationTotals(
       sum((m) => m.firstCases),
     ),
   };
+}
+
+/** True once the WHO Sign-out is complete: the patient then belongs to the recovery room. */
+export function isSignedOut(booking: SurgeryDetail): boolean {
+  return booking.safetyChecklist.some((p) => p.phase === 'SignOut' && p.isComplete);
 }

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Settings;
 
@@ -20,6 +21,9 @@ public sealed class PosSettlementService(
     ICurrentUser currentUser,
     ISettingsService settings,
     TallyCorrections corrections,
+    IApprovals approvals,
+    IEnumerable<ICounterSalesSource> counters,
+    PaymentDisputeService disputes,
     TimeProvider time)
 {
     public const int MaxListDays = 92;
@@ -65,16 +69,6 @@ public sealed class PosSettlementService(
 
         var name = Clip(string.IsNullOrWhiteSpace(acquirer) ? "Acquirer" : acquirer.Trim(), 64);
         var sha = Convert.ToHexStringLower(SHA256.HashData(content));
-        var earlier = await db.Set<PosSettlementImport>().AsNoTracking()
-            .Where(i => i.FacilityId == facilityId && i.FileSha256 == sha)
-            .Select(i => new { i.ImportedAt, i.ImportedByName })
-            .FirstOrDefaultAsync(ct);
-        if (earlier is not null)
-        {
-            return Error.Conflict("billing.pos_settlement_imported",
-                $"This report was already imported on {BillingTime.ToLocal(earlier.ImportedAt):dd-MM-yyyy HH:mm}{(earlier.ImportedByName is { } by ? " by " + by : string.Empty)}.");
-        }
-
         var setup = await SettingsAsync(facilityId, ct);
         var read = PosSettlementFile.Read(content, setup, settledOn);
         if (read.IsFailure)
@@ -82,14 +76,31 @@ public sealed class PosSettlementService(
             return read.Error!;
         }
 
+        // A transaction a withdrawn report brought is not counted as imported, so a correct report brings it again.
         var file = read.Value;
         var existing = new HashSet<string>(StringComparer.Ordinal);
         foreach (var chunk in file.Rows.Select(r => r.Key).Chunk(1000))
         {
             existing.UnionWith(await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
-                .Where(l => l.FacilityId == facilityId && chunk.Contains(l.LineKey))
+                .Where(l => l.FacilityId == facilityId && chunk.Contains(l.LineKey) && l.WithdrawnOn == null)
                 .Select(l => l.LineKey)
                 .ToListAsync(ct));
+        }
+
+        // The same report again is refused while it would bring nothing. One imported while a report withdrawn since had
+        // brought its transactions first (the acquirer's final report after its provisional one) is imported again for them.
+        if (file.Rows.All(r => existing.Contains(r.Key)))
+        {
+            var earlier = await db.Set<PosSettlementImport>().AsNoTracking()
+                .Where(i => i.FacilityId == facilityId && i.FileSha256 == sha && i.WithdrawnAt == null)
+                .OrderByDescending(i => i.ImportedAt)
+                .Select(i => new { i.ImportedAt, i.ImportedByName })
+                .FirstOrDefaultAsync(ct);
+            if (earlier is not null)
+            {
+                return Error.Conflict("billing.pos_settlement_imported",
+                    $"This report was already imported on {BillingTime.ToLocal(earlier.ImportedAt):dd-MM-yyyy HH:mm}{(earlier.ImportedByName is { } by ? " by " + by : string.Empty)}.");
+            }
         }
 
         var now = time.GetUtcNow();
@@ -140,7 +151,7 @@ public sealed class PosSettlementService(
 
         var matched = added.Count(l => l.Match == PosSettlementMatch.Matched);
         var toLookAt = added.Count(l => l.NeedsAttention);
-        return new PosSettlementImportResult(ToDto(import), file.Columns, file.Problems, matched, toLookAt, ImportMessage(import, matched, toLookAt));
+        return new PosSettlementImportResult(ToDto(import, null), file.Columns, file.Problems, matched, toLookAt, ImportMessage(import, matched, toLookAt));
     }
 
     /// <summary>Matches again the transactions that did not match, for example after a missing receipt was recorded.</summary>
@@ -182,6 +193,11 @@ public sealed class PosSettlementService(
             return Error.NotFound(nameof(PosSettlementLine), id);
         }
 
+        if (line.WithdrawnOn is not null)
+        {
+            return Error.Rule("billing.pos_settlement_withdrawn", "This transaction's report was withdrawn as imported in error.");
+        }
+
         db.SetExpectedVersion(line, request.Version);
         var reviewed = line.Review(userId, currentUser.DisplayName ?? currentUser.UserName, request.Note, time.GetUtcNow());
         if (reviewed.IsFailure)
@@ -203,16 +219,16 @@ public sealed class PosSettlementService(
     {
         var setup = await SettingsAsync(facilityId, ct);
         var counts = await db.Set<PosSettlementLine>().AsNoTracking()
-            .Where(l => l.FacilityId == facilityId && l.ReviewedAt == null && AttentionMatches.Contains(l.Match))
+            .Where(l => l.FacilityId == facilityId && l.ReviewedAt == null && l.DisputeId == null && AttentionMatches.Contains(l.Match))
             .GroupBy(l => l.Match)
             .Select(g => new PosSettlementCountDto(g.Key, g.Count(), g.Sum(l => l.Amount)))
             .ToListAsync(ct);
         var unsettled = await UnsettledAsync(facilityId, ct);
         var lastSettledOn = await db.Set<PosSettlementLine>().AsNoTracking()
-            .Where(l => l.FacilityId == facilityId)
+            .Where(l => l.FacilityId == facilityId && l.WithdrawnOn == null)
             .MaxAsync(l => (DateOnly?)l.SettledOn, ct);
         var lastImport = await db.Set<PosSettlementImport>().AsNoTracking()
-            .Where(i => i.FacilityId == facilityId)
+            .Where(i => i.FacilityId == facilityId && i.WithdrawnAt == null)
             .OrderByDescending(i => i.ImportedAt)
             .FirstOrDefaultAsync(ct);
         return new PosSettlementSummaryDto(
@@ -221,7 +237,7 @@ public sealed class PosSettlementService(
             unsettled.Count,
             unsettled.Sum(u => u.Amount),
             lastSettledOn,
-            lastImport is null ? null : ToDto(lastImport),
+            lastImport is null ? null : ToDto(lastImport, null),
             setup.OtherTerminals.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).ToList());
     }
 
@@ -231,7 +247,9 @@ public sealed class PosSettlementService(
             .Where(i => i.FacilityId == facilityId)
             .OrderByDescending(i => i.ImportedAt)
             .ToPagedResultAsync(page, ct);
-        return new PagedResult<PosSettlementImportDto>(result.Items.Select(ToDto).ToList(), result.Page, result.PageSize, result.TotalCount);
+        var asked = await approvals.WaitingSinceAsync(PosImportWithdrawalApproval.Key, nameof(PosSettlementImport), [.. result.Items.Select(i => i.Id)], ct);
+        return new PagedResult<PosSettlementImportDto>(
+            result.Items.Select(i => ToDto(i, asked.TryGetValue(i.Id, out var since) ? since : null)).ToList(), result.Page, result.PageSize, result.TotalCount);
     }
 
     /// <summary>The payouts of a period by day: what each UTR brought to the bank and what made it up.</summary>
@@ -239,7 +257,7 @@ public sealed class PosSettlementService(
     {
         var facilityCode = await db.Set<Facility>().Where(f => f.Id == facilityId).Select(f => f.Code).FirstOrDefaultAsync(ct);
         var payouts = await db.Set<PosSettlementLine>().AsNoTracking()
-            .Where(l => l.FacilityId == facilityId && l.SettledOn >= from && l.SettledOn <= to)
+            .Where(l => l.FacilityId == facilityId && l.SettledOn >= from && l.SettledOn <= to && l.WithdrawnOn == null)
             .GroupBy(l => new { l.SettledOn, l.Utr })
             .Select(g => new
             {
@@ -253,7 +271,7 @@ public sealed class PosSettlementService(
                 Charges = g.Sum(l => l.Charges),
                 Tax = g.Sum(l => l.Tax),
                 Net = g.Sum(l => l.Net),
-                ToLookAt = g.Count(l => l.ReviewedAt == null && AttentionMatches.Contains(l.Match)),
+                ToLookAt = g.Count(l => l.ReviewedAt == null && l.DisputeId == null && AttentionMatches.Contains(l.Match)),
             })
             .ToListAsync(ct);
         return payouts
@@ -291,10 +309,10 @@ public sealed class PosSettlementService(
     public async Task<PagedResult<PosSettlementLineDto>> LinesAsync(
         Guid facilityId, PageRequest page, bool attention, DateOnly? settledOn, string? utr, bool noUtr, CancellationToken ct)
     {
-        var lines = db.Set<PosSettlementLine>().AsNoTracking().Where(l => l.FacilityId == facilityId);
+        var lines = db.Set<PosSettlementLine>().AsNoTracking().Where(l => l.FacilityId == facilityId && l.WithdrawnOn == null);
         if (attention)
         {
-            lines = lines.Where(l => l.ReviewedAt == null && AttentionMatches.Contains(l.Match));
+            lines = lines.Where(l => l.ReviewedAt == null && l.DisputeId == null && AttentionMatches.Contains(l.Match));
         }
 
         if (settledOn is { } day)
@@ -323,13 +341,14 @@ public sealed class PosSettlementService(
     /// <summary>
     /// Card and UPI receipts that no settled transaction carries although the acquirer's reports already go
     /// <see cref="PosSettlementSettings.SettlementDays"/> days past them (per mode, from the first day a report covers,
-    /// for the last <see cref="UnsettledWindowDays"/> days), oldest first.
+    /// for the last <see cref="UnsettledWindowDays"/> days), oldest first; the pharmacy's and the canteen's card and UPI
+    /// payments with them.
     /// </summary>
     public async Task<IReadOnlyList<UnsettledPosReceiptDto>> UnsettledAsync(Guid facilityId, CancellationToken ct)
     {
         var days = (await SettingsAsync(facilityId, ct)).EffectiveSettlementDays;
         var coverage = await db.Set<PosSettlementLine>().AsNoTracking()
-            .Where(l => l.FacilityId == facilityId && l.Match != PosSettlementMatch.OtherCounter)
+            .Where(l => l.FacilityId == facilityId && l.Match != PosSettlementMatch.OtherCounter && l.Counter == null && l.WithdrawnOn == null)
             .GroupBy(l => l.Mode)
             .Select(g => new { Mode = g.Key, First = g.Min(l => l.TransactionOn ?? l.SettledOn), Last = g.Max(l => l.SettledOn) })
             .ToListAsync(ct);
@@ -350,6 +369,8 @@ public sealed class PosSettlementService(
                     join r in db.Set<Receipt>() on p.ReceiptId equals r.Id
                     where r.FacilityId == facilityId && p.Mode == mode.Mode && r.ReceivedAt >= start && r.ReceivedAt < end
                           && !db.Set<PosSettlementLine>().Any(l => l.ReceiptPaymentId == p.Id)
+                          // A payment reversed as never received is not waiting for a settlement.
+                          && !db.Set<ReceiptReversalLine>().Any(x => x.ReceiptPaymentId == p.Id)
                     orderby r.ReceivedAt
                     select new { PaymentId = p.Id, ReceiptId = r.Id, r.ReceiptNumber, r.BillId, r.ReceivedAt, p.Mode, p.Amount, p.Reference, p.CardLast4, p.ExternalId })
                 .Take(MaxUnsettled)
@@ -367,7 +388,59 @@ public sealed class PosSettlementService(
                 today.DayNumber - BillingTime.LocalDate(f.ReceivedAt).DayNumber)));
         }
 
+        rows.AddRange(await UnsettledAtCountersAsync(facilityId, days, today, ct));
+
         return rows.OrderBy(r => r.ReceivedAt).Take(MaxUnsettled).ToList();
+    }
+
+    /// <summary>
+    /// The pharmacy's and the canteen's card and UPI payments that no settled transaction carries, counted like Billing's
+    /// receipts but from the reports that carry each counter's own transactions: a counter whose terminal's settlements
+    /// are not imported (another bank's) has nothing listed, rather than everything.
+    /// </summary>
+    private async Task<IEnumerable<UnsettledPosReceiptDto>> UnsettledAtCountersAsync(Guid facilityId, int days, DateOnly today, CancellationToken ct)
+    {
+        var coverage = await db.Set<PosSettlementLine>().AsNoTracking()
+            .Where(l => l.FacilityId == facilityId && l.Counter != null && l.WithdrawnOn == null)
+            .GroupBy(l => new { l.Counter, l.Mode })
+            .Select(g => new { g.Key.Counter, g.Key.Mode, First = g.Min(l => l.TransactionOn ?? l.SettledOn), Last = g.Max(l => l.SettledOn) })
+            .ToListAsync(ct);
+        var payments = new List<CounterCandidate>();
+        DateOnly? since = null;
+        foreach (var counter in counters)
+        {
+            foreach (var covered in coverage.Where(c => c.Counter == counter.Counter))
+            {
+                var first = covered.First > today.AddDays(-UnsettledWindowDays) ? covered.First : today.AddDays(-UnsettledWindowDays);
+                var last = covered.Last.AddDays(-days);
+                if (last < first)
+                {
+                    continue;
+                }
+
+                since = since is { } earlier && earlier < first ? earlier : first;
+                var (start, end) = BillingTime.Range(first, last);
+                payments.AddRange((await counter.GetCardPaymentsAsync(facilityId, start, end, ct))
+                    .Select(p => new CounterCandidate(counter.Counter, p))
+                    .Where(c => !c.Payment.IsRefund && c.Mode == covered.Mode));
+            }
+        }
+
+        if (since is not { } from || payments.Count == 0)
+        {
+            return [];
+        }
+
+        // A payment is settled no earlier than it was taken, so the transactions that carry these were settled since then.
+        var settled = (await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(l => l.FacilityId == facilityId && l.CounterPaymentId != null && l.SettledOn >= from)
+                .Select(l => l.CounterPaymentId!.Value)
+                .ToListAsync(ct))
+            .ToHashSet();
+
+        return payments.Where(p => !settled.Contains(p.Payment.PaymentId)).Select(p => new UnsettledPosReceiptDto(
+            null, p.Payment.Document, p.Payment.PaymentId, null, p.Payment.At, p.Mode, p.Payment.Amount, p.Payment.Reference, null, null,
+            today.DayNumber - BillingTime.LocalDate(p.Payment.At).DayNumber, p.Counter, p.Payment.Cancelled));
     }
 
     /// <summary>
@@ -406,11 +479,103 @@ public sealed class PosSettlementService(
     internal static async Task<IReadOnlyList<TallyPosSettlement>> ForDayBookAsync(
         HospitalDbContext db, Guid facilityId, DateOnly date, string? facilityCode, CancellationToken ct)
     {
+        // A payout's journal stays in its day, which may be in Tally already, whatever is withdrawn later: a report
+        // withdrawn as imported in error is reversed in the books of the day it is withdrawn.
         var lines = await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
-            .Where(l => l.FacilityId == facilityId && l.SettledOn == date)
+            .Where(l => l.FacilityId == facilityId && (l.SettledOn == date || l.WithdrawnOn == date))
             .ToListAsync(ct);
-        return PosSettlementJournal.Journals(lines, date, facilityCode);
+        return [.. PosSettlementJournal.Journals(lines, date, facilityCode), .. PosSettlementJournal.Withdrawals(lines, date, facilityCode)];
     }
+
+    // ---------------------------------------------------------------------------------------------------- withdrawal
+
+    /// <summary>
+    /// Asks to withdraw a report imported in error (the wrong file, facility or settlement day). Its own transactions
+    /// (those it brought first) will stop matching receipts and refunds, and their journals will be reversed in the books
+    /// of the day it is approved, by someone else who approves reversals. The approver is shown what it takes out.
+    /// </summary>
+    public async Task<Result<ApprovalRequestDto>> RequestWithdrawalAsync(Guid importId, WithdrawPosImportRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var import = await db.Set<PosSettlementImport>().AsNoTracking().FirstOrDefaultAsync(i => i.Id == importId, ct);
+        if (import is null)
+        {
+            return Error.NotFound(nameof(PosSettlementImport), importId);
+        }
+
+        if (import.WithdrawnAt is not null)
+        {
+            return AlreadyWithdrawn(import);
+        }
+
+        var lines = await db.Set<PosSettlementLine>().AsNoTracking().Where(l => l.ImportId == import.Id).ToListAsync(ct);
+        var matched = lines.Count(l => l.ReceiptId is not null || l.RefundId is not null);
+        var reviewed = lines.Count(l => l.ReviewedAt is not null);
+        var days = lines.Select(l => l.SettledOn).Distinct().Order().ToList();
+        var reason = request.Reason.Trim();
+        return await approvals.RequestAsync(
+            PosImportWithdrawalApproval.Key,
+            new ApprovalSubject(nameof(PosSettlementImport), import.Id, 0, import.FacilityId, null),
+            new PosImportWithdrawalPayload(import.Id, reason),
+            $"Withdraw {import.Acquirer}'s card and UPI report {import.FileName}",
+            [
+                new("Report", $"{import.FileName} ({import.Acquirer}), imported {BillingTime.ToLocal(import.ImportedAt):dd-MM-yyyy HH:mm}{(import.ImportedByName is { } by ? " by " + by : string.Empty)}"),
+                new("Its transactions", lines.Count == 0
+                    ? "none: every transaction in it was already brought by another report"
+                    : $"{lines.Count} (₹{Money.FormatInr(lines.Sum(l => l.Net))} paid out), settled {DaysWords(days)}"),
+                new("Matched", matched == 0 ? "none" : $"{matched} receipt(s) or refund(s), freed for a correct report"),
+                new("Reviewed", reviewed == 0 ? "none" : $"{reviewed} transaction(s) an accountant reviewed"),
+                new("In the books", "each payout's journal stays in its day; its reversal is in the books of the day this is approved"),
+            ],
+            reason,
+            ct);
+    }
+
+    /// <summary>
+    /// Withdraws an approved report, in the approval's transaction: its own transactions stop matching and are reversed
+    /// in today's books, the receipts and refunds they matched are free for a correct report (or "Match again"), and the
+    /// same file may be imported again. A report already withdrawn is refused.
+    /// </summary>
+    internal async Task<Result<string>> ApplyWithdrawalAsync(ApprovalRequest approval, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<PosImportWithdrawalPayload>(approval.Payload);
+        var import = await db.Set<PosSettlementImport>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstOrDefaultAsync(i => i.Id == asked.ImportId, ct);
+        if (import is null)
+        {
+            return Error.NotFound(nameof(PosSettlementImport), asked.ImportId);
+        }
+
+        if (import.WithdrawnAt is not null)
+        {
+            return AlreadyWithdrawn(import);
+        }
+
+        var lines = await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Where(l => l.ImportId == import.Id).ToListAsync(ct);
+        var freed = lines.Count(l => l.ReceiptId is not null || l.RefundId is not null);
+        var today = BillingTime.Today(time);
+        import.Withdraw(lines, today, time.GetUtcNow(), currentUser.DisplayName ?? currentUser.UserName, asked.Reason);
+        audit.Add(new AuditEntry(AuditCategories.Data, "billing.pos.settlement_import_withdrawn",
+            $"Withdrew {import.Acquirer}'s card and UPI settlement report {import.FileName} as imported in error: {lines.Count} transaction(s) reversed on "
+            + $"{today:dd-MM-yyyy}, {freed} receipt(s) or refund(s) freed. {asked.Reason}")
+        {
+            EntityType = nameof(PosSettlementImport),
+            EntityId = import.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { import.FileSha256, transactions = lines.Count, freed, withdrawnOn = today, reason = asked.Reason },
+        });
+        return $"Withdrew {import.FileName}: its {lines.Count} transaction(s) are reversed in the books of {today:dd MMM yyyy}, and {freed} receipt(s) or "
+               + "refund(s) are free for a correct report.";
+    }
+
+    private static Error AlreadyWithdrawn(PosSettlementImport import) => Error.Conflict("billing.pos_settlement_import_withdrawn",
+        $"The report {import.FileName} was already withdrawn on {import.WithdrawnOn:dd-MM-yyyy}.");
+
+    private static string DaysWords(IReadOnlyList<DateOnly> days) => days.Count switch
+    {
+        0 => "on no day",
+        1 => $"on {days[0]:dd-MM-yyyy}",
+        _ => $"from {days[0]:dd-MM-yyyy} to {days[^1]:dd-MM-yyyy}",
+    };
 
     // ---------------------------------------------------------------------------------------------------- matching
 
@@ -426,7 +591,8 @@ public sealed class PosSettlementService(
         var since = BillingTime.Today(time).AddDays(-RematchDays);
         return await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(l => l.FacilityId == facilityId && l.SettledOn >= since
-                        && (l.Match == PosSettlementMatch.NoReceipt || l.Match == PosSettlementMatch.NoRefund || l.Match == PosSettlementMatch.OtherCounter))
+                        && (l.Match == PosSettlementMatch.NoReceipt || l.Match == PosSettlementMatch.NoRefund || l.Match == PosSettlementMatch.OtherCounter
+                            || (l.Type == PosSettlementLineType.Adjustment && l.DisputeId == null && l.ReviewedAt == null)))
             .ToListAsync(ct);
     }
 
@@ -436,6 +602,13 @@ public sealed class PosSettlementService(
     }
 
     private sealed record PosApproval(string TransactionId, string ApprovalCode, decimal Amount, DateTimeOffset At);
+
+    private sealed record CounterCandidate(string Counter, CounterCardPayment Payment)
+    {
+        public string? Key { get; } = PosSettlementFile.Reference(Payment.Reference, 32);
+
+        public PaymentMode Mode => Payment.Mode == CounterPaymentMode.Upi ? PaymentMode.Upi : PaymentMode.Card;
+    }
 
     private sealed record RefundCandidate(Guid Id, decimal Amount, string? Reference, DateTimeOffset? PaidAt)
     {
@@ -447,36 +620,107 @@ public sealed class PosSettlementService(
     /// terminal's, or the one the cashier typed), else by its approval code and amount within two days (a connected
     /// terminal's sale, or the code typed as the reference), else a card payment by its last four digits and amount
     /// within a day. A refund matches the refund paid by card or UPI with its RRN or approval code. Each receipt payment
-    /// and refund is matched once. Lines of other counters' terminals are set aside.
+    /// and refund is matched once. What is left, at any terminal, is matched with the pharmacy's and the canteen's card
+    /// and UPI payments (<see cref="MatchCountersAsync"/>); a line of another counter's terminal that matches none of
+    /// them is set aside.
     /// </summary>
     private async Task MatchAsync(Guid facilityId, IReadOnlyList<PosSettlementLine> lines, PosSettlementSettings setup, DateTimeOffset now, CancellationToken ct)
     {
-        foreach (var line in lines)
+        // A line set aside as another counter's is looked at again: its sale may have been recorded since, or its
+        // terminal be another counter's no more.
+        foreach (var line in lines.Where(l => l.Match == PosSettlementMatch.OtherCounter))
         {
-            if (setup.IsOtherTerminal(line.TerminalId))
-            {
-                if (line.Match != PosSettlementMatch.OtherCounter)
-                {
-                    line.MarkOtherCounter();
-                }
-            }
-            else if (line.Match == PosSettlementMatch.OtherCounter)
-            {
-                line.Unmatch();
-            }
+            line.Unmatch();
         }
 
-        var sales = lines.Where(l => l.Type == PosSettlementLineType.Sale && l.Match == PosSettlementMatch.NoReceipt)
+        // Billing's receipts and refunds are taken at Billing's terminals.
+        var own = lines.Where(l => !setup.IsOtherTerminal(l.TerminalId)).ToList();
+        var sales = own.Where(l => l.Type == PosSettlementLineType.Sale && l.Match == PosSettlementMatch.NoReceipt)
             .OrderBy(l => l.TransactionAt ?? BillingTime.StartOfDay(l.SettledOn)).ThenBy(l => l.LineKey, StringComparer.Ordinal).ToList();
         if (sales.Count > 0)
         {
             await MatchSalesAsync(facilityId, sales, now, ct);
         }
 
-        var refunds = lines.Where(l => l.Type == PosSettlementLineType.Refund && l.Match == PosSettlementMatch.NoRefund).ToList();
+        var refunds = own.Where(l => l.Type == PosSettlementLineType.Refund && l.Match == PosSettlementMatch.NoRefund).ToList();
         if (refunds.Count > 0)
         {
             await MatchRefundsAsync(facilityId, refunds, now, ct);
+        }
+
+        var left = lines.Where(l => (l.Type == PosSettlementLineType.Sale && l.Match == PosSettlementMatch.NoReceipt)
+                                    || (l.Type == PosSettlementLineType.Refund && l.Match == PosSettlementMatch.NoRefund))
+            .OrderBy(l => l.TransactionAt ?? BillingTime.StartOfDay(l.SettledOn)).ThenBy(l => l.LineKey, StringComparer.Ordinal).ToList();
+        if (left.Count > 0)
+        {
+            await MatchCountersAsync(facilityId, left, now, ct);
+        }
+
+        foreach (var line in lines.Where(l => setup.IsOtherTerminal(l.TerminalId) && l.Match is not (PosSettlementMatch.Matched or PosSettlementMatch.AmountDiffers)))
+        {
+            line.MarkOtherCounter();
+        }
+
+        // A chargeback on a payment a receipt recorded is followed as a case (once the sale's transaction has matched it).
+        await disputes.TakeTerminalChargebacksAsync(lines, ct);
+    }
+
+    /// <summary>
+    /// Matches settled transactions with the card and UPI payments, and refunds, of the counters that bill their own sales
+    /// (the pharmacy, the canteen): by the RRN (UPI: the UTR) the cashier typed as the reference, else by the approval
+    /// code typed as the reference with the same amount within two days. A sale takes a payment and a refund a refund,
+    /// each once, of the same mode first. The counters record no card digits, so a payment typed without its reference is
+    /// not matched: it is listed as not settled.
+    /// </summary>
+    private async Task MatchCountersAsync(Guid facilityId, IReadOnlyList<PosSettlementLine> lines, DateTimeOffset now, CancellationToken ct)
+    {
+        // Only a payment whose reference is one of the lines' RRNs or approval codes can match: the window's others are left
+        // out before anything else is read about them.
+        var keys = lines.SelectMany(l => new[] { l.Rrn, l.ApprovalCode }).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        var (start, end) = Window(lines);
+        var candidates = new List<CounterCandidate>();
+        foreach (var counter in counters)
+        {
+            candidates.AddRange((await counter.GetCardPaymentsAsync(facilityId, start, end, ct))
+                .Select(p => new CounterCandidate(counter.Counter, p))
+                .Where(c => c.Key is not null && keys.Contains(c.Key)));
+        }
+
+        if (candidates.Count == 0)
+        {
+            return;
+        }
+
+        var taken = new HashSet<Guid>();
+        foreach (var chunk in candidates.Select(c => c.Payment.PaymentId).Distinct().Chunk(1000))
+        {
+            taken.UnionWith(await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(l => l.CounterPaymentId != null && chunk.Contains(l.CounterPaymentId.Value))
+                .Select(l => l.CounterPaymentId!.Value)
+                .ToListAsync(ct));
+        }
+
+        var byReference = candidates.Where(c => c.Key is not null)
+            .OrderBy(c => c.Payment.At).ThenBy(c => c.Payment.PaymentId)
+            .ToLookup(c => c.Key!, StringComparer.Ordinal);
+        foreach (var line in lines)
+        {
+            var refund = line.Type == PosSettlementLineType.Refund;
+            bool Free(CounterCandidate c) => !taken.Contains(c.Payment.PaymentId) && c.Payment.IsRefund == refund;
+            var byRrn = line.Rrn is { } rrn
+                ? byReference[rrn].Where(Free).OrderBy(c => c.Mode == line.Mode ? 0 : 1).FirstOrDefault()
+                : null;
+            var byCode = byRrn is null && line.ApprovalCode is { } code
+                ? byReference[code].Where(c => Free(c) && c.Payment.Amount == line.Amount && Near(line, c.Payment.At, 2)).OrderBy(c => c.Mode == line.Mode ? 0 : 1).FirstOrDefault()
+                : null;
+            if ((byRrn ?? byCode) is not { } found)
+            {
+                continue;
+            }
+
+            line.MatchCounter(found.Counter, found.Payment.PaymentId, found.Payment.Document, found.Payment.Amount,
+                byRrn is not null ? PosMatchBasis.Rrn : PosMatchBasis.ApprovalCode, now);
+            taken.Add(found.Payment.PaymentId);
         }
     }
 
@@ -720,13 +964,23 @@ public sealed class PosSettlementService(
                 l.Id, l.Acquirer, l.Type, l.Mode, l.TerminalId, l.TransactionAt, l.TransactionOn, l.Amount, l.Charges, l.Tax, l.Net, l.Rrn,
                 l.ApprovalCode, l.CardLast4, l.SettledOn, l.Utr, l.Match, l.MatchBasis, l.RecordedAmount, l.ReceiptId, receipt?.Number,
                 receipt?.BillId, l.RefundId, l.RefundId is { } refundId ? refunds.GetValueOrDefault(refundId) : null, l.NeedsAttention, l.ReviewedAt,
-                l.ReviewedByName, l.ReviewNote, l.Version);
+                l.ReviewedByName, l.ReviewNote, l.Version)
+            {
+                Counter = l.Counter,
+                CounterDocument = l.CounterDocument,
+            };
         }).ToList();
     }
 
-    private static PosSettlementImportDto ToDto(PosSettlementImport i) => new(
+    private static PosSettlementImportDto ToDto(PosSettlementImport i, DateTimeOffset? withdrawalAsked) => new(
         i.Id, i.Acquirer, i.FileName, i.FileSizeBytes, i.Rows, i.Added, i.AlreadyImported, i.Ignored, i.FirstSettledOn, i.LastSettledOn, i.ImportedAt,
-        i.ImportedByName);
+        i.ImportedByName)
+    {
+        WithdrawnOn = i.WithdrawnOn,
+        WithdrawnByName = i.WithdrawnByName,
+        WithdrawReason = i.WithdrawReason,
+        WithdrawalAskedAt = i.WithdrawnAt is null ? withdrawalAsked : null,
+    };
 
     private static string ImportMessage(PosSettlementImport import, int matched, int toLookAt)
     {
@@ -757,4 +1011,21 @@ public sealed class PosSettlementService(
     private static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count.ToString(CultureInfo.InvariantCulture)} {noun}s";
 
     private static string Clip(string value, int max) => value.Length <= max ? value : value[..max];
+}
+
+/// <summary>The report asked to be withdrawn as imported in error, and why.</summary>
+public sealed record PosImportWithdrawalPayload(Guid ImportId, string Reason);
+
+/// <summary>A card and UPI settlement report imported in error, withdrawn: asked for by one person, made when another approves it.</summary>
+internal sealed class PosImportWithdrawalApproval(PosSettlementService settlements) : IApprovalAction
+{
+    public const string Key = "billing.pos_import_withdrawal";
+
+    public string Kind => Key;
+
+    public string Title => "Card and UPI report withdrawn";
+
+    public string ApprovePermission => BillingPermissions.RefundsApprove;
+
+    public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => settlements.ApplyWithdrawalAsync(request, ct);
 }

@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
+using HyFib.HealthCare360.Modules.Billing.Features.Payments;
 using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
@@ -78,6 +79,29 @@ public sealed class PosRecheckTests(HospitalServer server)
         await RecheckAsync();
         (await SaleAsync(started.Id)).Version.ShouldBe(sale.Version);
         (await billing.GetAsync<PosSaleDto>($"/api/v1/billing/pos/sales/{started.Id}")).Status.ShouldBe(PosTransactionStatus.TimedOut);
+        (await billing.GetAsync<BillDetail>($"/api/v1/billing/bills/{bill.Id}")).DueAmount.ShouldBe(bill.DueAmount);
+    }
+
+    [Fact]
+    public async Task A_sale_the_training_terminal_approved_is_open_until_its_money_is_recorded_as_not_received()
+    {
+        await using var terminal = await TerminalSimulatorAsync(approveAfterSeconds: 0);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        await OpenCounterShiftAsync(billing);
+        var bill = await FinalizedBillAsync(billing);
+        var started = await billing.PostAsync<PosSaleDto>("/api/v1/billing/pos/sales", new StartPosSaleRequest(bill.Id, null, bill.DueAmount, "OPD-7", PaymentMode.Card));
+        await AgeAsync(started, TimeSpan.FromMinutes(2), terminalToo: true);
+        await RecheckAsync();
+        var sale = await SaleAsync(started.Id);
+        sale.Status.ShouldBe(PosTransactionStatus.Approved);
+        var receipt = await billing.GetAsync<ReceiptDto>($"/api/v1/billing/receipts/{sale.ReceiptId.ShouldNotBeNull()}");
+
+        // No card was charged: the receipt the approved sale made is open until its money is recorded as not received.
+        (await SimulatorRecords.OpenAsync(admin, "card-sales")).Single(r => r.EntityId == receipt.Id).Amount.ShouldBe(bill.DueAmount);
+        await SimulatorRecords.ReverseAsync(billing, accountant, receipt);
+        (await SimulatorRecords.OpenAsync(admin, "card-sales")).ShouldNotContain(r => r.EntityId == receipt.Id);
         (await billing.GetAsync<BillDetail>($"/api/v1/billing/bills/{bill.Id}")).DueAmount.ShouldBe(bill.DueAmount);
     }
 
@@ -155,9 +179,9 @@ public sealed class PosRecheckTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
             .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
-        await admin.SaveSettingAsync(key, new SaveSettingRequest(
+        await server.SaveSettingAsync(admin, key, new SaveSettingRequest(
             new JsonObject { ["enabled"] = true, ["provider"] = "simulator", ["simulatorApproveAfterSeconds"] = approveAfterSeconds }, null, false, null));
-        return new Restore(() => admin.SaveSettingAsync(key,
+        return new Restore(() => server.SaveSettingAsync(admin, key,
             new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
     }
 

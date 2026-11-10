@@ -1,7 +1,7 @@
 import type { EInvoiceRegister } from '@/modules/billing/einvoiceApi';
 import type { FakeAnswers } from '../fakeApi';
 
-// GST e-invoices: a bill waiting for its IRN and a pharmacy B2B sale with one recorded.
+// GST e-invoices: a bill waiting for its IRN, a pharmacy B2B sale with one recorded, and a credit note against the bill.
 
 const id = (suffix: string) => `0192a000-0000-7000-8000-${suffix.padStart(12, '0')}`;
 const today = new Date().toISOString().slice(0, 10);
@@ -26,6 +26,8 @@ const REGISTER: EInvoiceRegister = {
       irn: null,
       ackNo: null,
       ackDate: null,
+      type: 'INV',
+      against: null,
     },
     {
       source: 'pharmacy',
@@ -41,6 +43,25 @@ const REGISTER: EInvoiceRegister = {
       irn: 'a'.repeat(64),
       ackNo: '112610012345678',
       ackDate: new Date().toISOString(),
+      type: 'INV',
+      against: null,
+    },
+    {
+      source: 'creditnote',
+      id: id('e3'),
+      number: 'NHCN26000007',
+      date: today,
+      buyerGstin: '32AAACH7409R1ZA',
+      buyerName: 'Malabar Traders Ltd',
+      total: 118,
+      state: 'Pending',
+      reportBy: today,
+      isOverdue: false,
+      irn: null,
+      ackNo: null,
+      ackDate: null,
+      type: 'CRN',
+      against: 'NHOB260000123',
     },
   ],
 };

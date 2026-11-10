@@ -33,7 +33,7 @@ public sealed class GatewayRefundTracker(
         RefundStatusResult status;
         try
         {
-            status = await gateway.GetRefundStatusAsync(gatewayRefundId, refund.FacilityId, ct);
+            status = await gateway.GetRefundStatusAsync(gatewayRefundId, refund.GatewayPayment, refund.FacilityId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -105,8 +105,8 @@ public sealed class GatewayRefundTracker(
             return Error.Rule("billing.gateway_not_configured", "No payment gateway is configured. Pay the refund another way and resolve the exception.");
         }
 
-        var paymentId = await refunds.GatewayPaymentForAsync(refund, ct, alreadyPaidOut: true);
-        if (paymentId is null)
+        var payment = await refunds.GatewayPaymentForAsync(refund, ct, alreadyPaidOut: true);
+        if (payment is null)
         {
             return Error.Rule("billing.gateway_payment_missing", "The online payment this refund reverses was not found. Pay it another way and resolve the exception.");
         }
@@ -127,7 +127,7 @@ public sealed class GatewayRefundTracker(
         try
         {
             result = await gateway.RefundAsync(
-                paymentId, refund.Amount, refund.Reason, refund.GatewayIdempotencyKey, refund.FacilityId, ct);
+                payment, refund.Amount, refund.Reason, refund.GatewayIdempotencyKey, refund.FacilityId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -146,7 +146,7 @@ public sealed class GatewayRefundTracker(
             return Error.Rule("billing.gateway_refund_failed", result.Error ?? "The payment gateway declined the refund.");
         }
 
-        refund.StartGatewayRefund(result.RefundId, time.GetUtcNow());
+        refund.StartGatewayRefund(result.RefundId, payment, time.GetUtcNow());
         refund.Reference = result.RefundId.Length <= 64 ? result.RefundId : refund.Reference;
         if (await FindDiscrepancyAsync(failedId, ct) is { } open)
         {

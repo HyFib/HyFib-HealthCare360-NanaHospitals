@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using HyFib.HealthCare360.Modules.Analytics.Features.Journeys;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
@@ -8,23 +9,38 @@ using HyFib.HealthCare360.Modules.Billing.Features.Payments;
 using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 using HyFib.HealthCare360.Modules.Clinical.Features.DischargeSummaries;
+using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Features.MedicalRecords;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Beds;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
+using HyFib.HealthCare360.Modules.Inpatient.Features.EarlyWarning;
+using HyFib.HealthCare360.Modules.Inpatient.Features.Mar;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Rounds;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Platform.Contracts;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Organization;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.Extensions.DependencyInjection;
 using CodingEntryKind = HyFib.HealthCare360.Modules.Clinical.Domain.CodingEntryKind;
 using CodingStatus = HyFib.HealthCare360.Modules.Clinical.Domain.CodingStatus;
+using Consciousness = HyFib.HealthCare360.Modules.Clinical.Domain.Consciousness;
 using DischargeSummaryStatus = HyFib.HealthCare360.Modules.Clinical.Domain.DischargeSummaryStatus;
+using GlucoseTiming = HyFib.HealthCare360.Modules.Clinical.Domain.GlucoseTiming;
+using News2Response = HyFib.HealthCare360.Modules.Clinical.Domain.News2Response;
+using ReferralSource = HyFib.HealthCare360.Modules.Patients.Domain.ReferralSource;
+using SpO2Scale = HyFib.HealthCare360.Modules.Clinical.Domain.SpO2Scale;
+using StageState = HyFib.HealthCare360.Modules.Analytics.Domain.Journeys.StageState;
+using TemperatureUnit = HyFib.HealthCare360.Modules.Clinical.Domain.TemperatureUnit;
+using TokenPriority = HyFib.HealthCare360.Modules.Patients.Domain.TokenPriority;
+using VisitStatus = HyFib.HealthCare360.Modules.Patients.Domain.VisitStatus;
+using VisitType = HyFib.HealthCare360.Modules.Patients.Domain.VisitType;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -60,7 +76,7 @@ public sealed class InpatientJourneyTests(HospitalServer server)
 
         // The stay began at 10:00 (IST) the day before yesterday and ends today. The admission is recorded as a late entry,
         // which the API allows up to three days back, so the stay really crosses two midnights.
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var admittedAt = IndiaClock.AtLocal(today.AddDays(-2), new TimeOnly(10, 0));
         DateOnly[] nights = [today.AddDays(-2), today.AddDays(-1)];
 
@@ -75,13 +91,13 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         var insurer = payers.Single(p => p.Code == "STAR");
         var tpa = payers.Single(p => p.Code == "MEDIASSIST");
         var policyNumber = "SH/" + UniqueDigits(10);
-        var policy = await RecordPolicyAsync(billing, patient, insurer, tpa, policyNumber, today);
+        var policy = await RecordPolicyAsync(billing, tpaDesk, patient, insurer, tpa, policyNumber, today);
 
         // Front office: admits him as a cashless patient under the doctor, in a free bed of the male general ward.
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var wards = await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards");
         var generalWard = wards.Single(w => w.Code == "GWM");
-        var firstBedId = await FreeBedAsync(frontOffice, patient.Id, generalWard.Id);
+        var firstBedId = await FreeBedAsync(generalWard.Id);
         var admission = await AdmitAsync(frontOffice, patient.Id, firstBedId, consultantId, insurer.Id, policyNumber, admittedAt, today);
 
         // Bed: the bed board shows the bed occupied by him.
@@ -126,11 +142,10 @@ public sealed class InpatientJourneyTests(HospitalServer server)
 
         // ------------------------------------------------------------------ the stay (today, day 3)
 
-        // Nurse: at the family's request, moves him to a semi-private bed.
+        // Nurse: at the family's request, asks the semi-private ward to take him; its nurse in charge accepts and he moves.
         var semiPrivateWard = wards.Single(w => w.Code == "SPW");
-        var secondBedId = await FreeBedAsync(nurse, patient.Id, semiPrivateWard.Id);
-        await nurse.PostAsync($"/api/v1/inpatient/admissions/{admission.Id}/transfer",
-            new TransferPatientRequest(secondBedId, "Moved to a semi-private room at the family's request", null, null, null));
+        var secondBedId = await FreeBedAsync(semiPrivateWard.Id);
+        await TestTransfers.MoveAsync(server, nurse, admission.Id, secondBedId, "Moved to a semi-private room at the family's request");
 
         var secondBed = await BedOnBoardAsync(nurse, semiPrivateWard.Id, secondBedId);
         secondBed.Status.ShouldBe(BedStatus.Occupied);
@@ -338,8 +353,9 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         (await tpaDesk.GetAsync<ClaimDetail>($"/api/v1/insurance/claims/{claimId}")).Status.ShouldBe(ClaimStatus.Approved);
 
         var utr = "UTR" + UniqueDigits(12);
+        var approvedClaim = await tpaDesk.GetAsync<ClaimDetail>($"/api/v1/insurance/claims/{claimId}");
         await tpaDesk.PostAsync($"/api/v1/insurance/claims/{claimId}/settle",
-            new SettleClaimRequest(insurerShare, null, utr, "Medi Assist settlement", today));
+            new SettleClaimRequest(insurerShare, null, utr, "Medi Assist settlement", today, approvedClaim.Version));
         claim = await tpaDesk.GetAsync<ClaimDetail>($"/api/v1/insurance/claims/{claimId}");
         claim.Status.ShouldBe(ClaimStatus.Settled);
         claim.SettledAmount.ShouldBe(insurerShare);
@@ -360,6 +376,125 @@ public sealed class InpatientJourneyTests(HospitalServer server)
             .ShouldBe([(ReceiptPurpose.BillPayment, patientShare), (ReceiptPurpose.PayerSettlement, insurerShare)]);
     }
 
+    /// <summary>
+    /// The stay from the ward's side, through every hand-off the release depends on: the OPD doctor advises admission and the
+    /// front office admits from that visit to a bed; the doctor orders on the ward and the nurse gives a controlled drug with
+    /// a second nurse witnessing at her screen; the observations score NEWS2 and the escalation reaches the doctor, who
+    /// responds; the patient moves ward on a request the receiving ward accepts; and the charges so far follow the stay.
+    /// </summary>
+    [Fact]
+    public async Task A_patient_admitted_from_the_opd_is_charted_escalated_on_news2_moved_on_an_accepted_request_and_charged_so_far()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        await server.SignInAsync(HospitalServer.Users.SecondNurse);
+        var nurse = server.FromOwnAddress(await server.SignInAsync(HospitalServer.Users.Nurse));
+        var me = await doctor.GetAsync<JsonElement>("/api/v1/auth/me");
+        var consultantId = me.GetProperty("practitionerId").GetGuid();
+        var departmentId = (await frontOffice.GetAsync<JsonElement>($"/api/v1/masters/practitioners/{consultantId}")).GetProperty("departmentId").GetGuid();
+
+        // ------------------------------------------------------------------ OPD → admission → bed
+
+        var patient = await RegisterPatientAsync(frontOffice);
+        var opd = await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", new CreateVisitRequest(
+            patient.Id, VisitType.OutPatient, departmentId, consultantId, null, PayerType.Self, null, ReferralSource.Self, null,
+            "Fever and breathlessness for 3 days", false, null, null, TokenPriority.Normal, IssueToken: false, NotifyPatient: false));
+
+        var wards = await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards");
+        var generalWard = wards.Single(w => w.Code == "GWM");
+        var firstBedId = await FreeBedAsync(generalWard.Id);
+        var admission = await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
+            PatientId: patient.Id, BedId: firstBedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: opd.Id,
+            DepartmentId: departmentId, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,
+            ProvisionalDiagnosis: "Community-acquired pneumonia", ReferredBy: null, PayerType: PayerType.Self, PayerId: null, PolicyNumber: null,
+            IsMlc: false, MlcNumber: null, ExpectedDischargeDate: null, AttendantName: null, AttendantRelation: null, AttendantPhone: null,
+            AdmittedAt: null, Notes: null));
+        (await frontOffice.GetAsync<VisitDetail>($"/api/v1/visits/{opd.Id}")).Status
+            .ShouldBe(VisitStatus.Completed, "the OPD visit he was admitted from closes at admission");
+        var bedded = await BedOnBoardAsync(nurse, generalWard.Id, firstBedId);
+        (bedded.Status, bedded.Occupant!.AdmissionId).ShouldBe((BedStatus.Occupied, admission.Id));
+        var account = await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/by-admission/{admission.Id}");
+        account.BedServiceCode.ShouldBe("BED-GEN");
+
+        // ------------------------------------------------------------------ orders and MAR
+
+        // Doctor: an antibiotic on the ward chart, in his own name, signed at once and scheduled.
+        var antibiotic = await doctor.PostAsync<MedicationOrderDto>($"/api/v1/nursing/admissions/{admission.Id}/medication-orders", new AddMedicationOrderRequest(
+            DrugItemId: null, DrugName: "Ceftriaxone 1 g IV", GenericName: "Ceftriaxone", Strength: "1 g", Dose: "1 g", Route: "IV", Frequency: "BD",
+            DurationDays: 5, StartAt: null, Instructions: null, IsControlledDrug: false, OrderedByPractitionerId: null));
+        antibiotic.Status.ShouldBe(MedicationOrderStatus.Active);
+
+        // Nurse: the doctor's telephone order for morphine, read back, as an emergency: its dose is due now, and witnessed.
+        var morphine = await nurse.PostAsync<MedicationOrderDto>($"/api/v1/nursing/admissions/{admission.Id}/medication-orders", new AddMedicationOrderRequest(
+            DrugItemId: null, DrugName: "Morphine 10 mg/ml Injection", GenericName: "Morphine", Strength: "10 mg/ml", Dose: "2 mg", Route: "IV",
+            Frequency: "STAT", DurationDays: 1, StartAt: null, Instructions: null, IsControlledDrug: true, OrderedByPractitionerId: consultantId,
+            Mode: MedicationOrderMode.Telephone, ReadBack: true, Emergency: true));
+        var dose = (await nurse.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admission.Id}/mar"))
+            .Single(e => e.MedicationOrderId == morphine.Id && e.Status == MarStatus.Due);
+        var record = $"/api/v1/nursing/mar/{dose.Id}/record";
+        using (var alone = await nurse.SendRawAsync(HttpMethod.Post, record, Given(dose, null)))
+        {
+            alone.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, "a controlled drug is not given without a witness");
+        }
+
+        var witness = await nurse.PostAsync<WitnessConfirmed>("/api/v1/auth/witness",
+            new { userName = HospitalServer.Users.SecondNurse, password = server.Password, code = (string?)null, purpose = "mar.dose", patientId = patient.Id });
+        var given = await nurse.PostAsync<MarEntryDto>(record, Given(dose, witness.ConfirmationId));
+        (given.Status, given.WitnessName).ShouldBe((MarStatus.Given, witness.Name));
+
+        // ------------------------------------------------------------------ NEWS2 and escalation
+
+        // Nurse: respiration 24, SpO₂ 93 on oxygen, systolic 104, pulse 112, alert, 38.4 °C: NEWS2 2+2+2+1+2+0+1 = 10.
+        var observations = await nurse.PostAsync<VitalsDto>($"/api/v1/emr/patients/{patient.Id}/vitals", new RecordVitalsRequest(
+            null, null, 38.4m, TemperatureUnit.Celsius, 112, 24, 104, 64, 93, true, null, null, null, null, GlucoseTiming.Random, null, null,
+            Consciousness.Alert, SpO2Scale.Scale1));
+        var score = observations.News2.ShouldNotBeNull();
+        (score.Total, score.Response, score.IsComplete).ShouldBe((10, News2Response.Emergency, true));
+        var escalation = (await nurse.GetAsync<List<EscalationDto>>($"/api/v1/nursing/admissions/{admission.Id}/escalations")).ShouldHaveSingleItem();
+        escalation.Level.ShouldBe(EscalationLevel.Emergency);
+        (await BedOnBoardAsync(nurse, generalWard.Id, firstBedId)).Alerts.ShouldContain(BedAlert.EscalationOpen);
+        var round = (await doctor.GetAsync<WardRound>("/api/v1/inpatient/rounds")).Patients.Single(p => p.AdmissionId == admission.Id);
+        (round.News2Score, round.HasOpenEscalation).ShouldBe((10, true));
+
+        // Doctor: sees him (a charged ward-round visit) and records the response to the escalation.
+        var visit = await doctor.PostAsync<ConsultantVisitDto>($"/api/v1/inpatient/admissions/{admission.Id}/consultant-visits",
+            new RecordConsultantVisitRequest(null, null, "Reviewed for NEWS2 10: fluids, blood cultures, step up to the semi-private HDU bed."));
+        visit.IsCharged.ShouldBeTrue(visit.ChargeError);
+        var answered = await doctor.PostAsync<EscalationDto>($"/api/v1/nursing/escalations/{escalation.Id}/respond",
+            new RespondToEscalationRequest(EscalationOutcome.TreatmentChanged, "Fluids and antibiotics; observations hourly", escalation.Version));
+        (answered.Status, answered.RespondedByDoctor).ShouldBe((EscalationStatus.Responded, true));
+
+        // ------------------------------------------------------------------ transfer on an accepted request
+
+        var semiPrivateWard = wards.Single(w => w.Code == "SPW");
+        var secondBedId = await FreeBedAsync(semiPrivateWard.Id);
+        var moved = await TestTransfers.MoveAsync(server, nurse, admission.Id, secondBedId, "Closer observation after NEWS2 escalation");
+        moved.TransferredAt.ShouldNotBeNull();
+        (await BedOnBoardAsync(nurse, semiPrivateWard.Id, secondBedId)).Occupant.ShouldNotBeNull().AdmissionId.ShouldBe(admission.Id);
+        (await BedOnBoardAsync(nurse, generalWard.Id, firstBedId)).Status.ShouldBe(BedStatus.Cleaning);
+
+        // ------------------------------------------------------------------ interim charges and the journey
+
+        // Billing: the account follows the move to the semi-private bed class, and the doctor's visit is on the running bill.
+        (await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/{account.Id}")).BedServiceCode.ShouldBe("BED-SEMI");
+        var running = await billing.GetAsync<RunningBill>($"/api/v1/billing/ip-accounts/{account.Id}/running-bill");
+        running.Lines.ShouldContain(l => l.ServiceCode == "VISIT-DR" && l.Status == ChargeStatus.Unbilled);
+
+        // The patient's journey: the OPD visit finished, the stay admitted from it, bedded, and seen on the round.
+        var journeys = await frontOffice.GetAsync<PatientJourneys>($"/api/v1/patients/{patient.Id}/journey");
+        var stay = journeys.Inpatient.ShouldNotBeNull();
+        stay.Id.ShouldBe(admission.Id);
+        var stages = stay.Stages.ToDictionary(s => s.Key);
+        stages["admitted"].State.ShouldBe(StageState.Done);
+        stages["admitted"].Detail.ShouldBe($"From OPD visit {opd.VisitNumber}");
+        stages["bedded"].State.ShouldBe(StageState.Done);
+        stages["discharged"].State.ShouldNotBe(StageState.Done);
+    }
+
+    private static RecordAdministrationRequest Given(MarEntryDto dose, Guid? witness) =>
+        new(MarStatus.Given, AdministeredAt: null, Reason: null, BatchNumber: "B-NDPS-7", WitnessConfirmationId: witness, Notes: null, dose.Version);
+
     // ---------------------------------------------------------------------- steps
 
     /// <summary>Front office: registers a new patient with a name and phone number no other test uses.</summary>
@@ -376,15 +511,23 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         return patient;
     }
 
-    /// <summary>Records the patient's policy with its member id and co-pay, and marks it verified with the TPA.</summary>
+    /// <summary>
+    /// The billing desk records the patient's policy with its member id and co-pay; the TPA desk, another person, verifies
+    /// it with the TPA (whoever recorded it may not).
+    /// </summary>
     private static async Task<PolicyDto> RecordPolicyAsync(
-        ApiClient desk, PatientCreated patient, PayerListItem insurer, PayerListItem tpa, string policyNumber, DateOnly today)
+        ApiClient desk, ApiClient verifier, PatientCreated patient, PayerListItem insurer, PayerListItem tpa, string policyNumber, DateOnly today)
     {
         var created = await desk.PostAsync<PolicyDto>("/api/v1/insurance/policies", new SavePolicyRequest(
             PatientId: patient.Id, PayerId: insurer.Id, TpaId: tpa.Id, PolicyNumber: policyNumber, MemberId: "MA" + UniqueDigits(8),
             PolicyHolderName: null, RelationToHolder: "Self", ValidFrom: today.AddMonths(-6), ValidTo: today.AddMonths(6), SumInsured: 500_000m,
             CoPayPercent: CoPayPercent, IsActive: true, CardFileId: null, Notes: null, Version: null));
-        await desk.PostAsync($"/api/v1/insurance/policies/{created.Id}/verify", new VerifyPolicyRequest("Eligibility confirmed on the TPA portal"));
+        using (var own = await desk.SendRawAsync(HttpMethod.Post, $"/api/v1/insurance/policies/{created.Id}/verify", new VerifyPolicyRequest("Checked")))
+        {
+            own.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        await verifier.PostAsync($"/api/v1/insurance/policies/{created.Id}/verify", new VerifyPolicyRequest("Eligibility confirmed on the TPA portal"));
 
         var policy = await desk.GetAsync<PolicyDto>($"/api/v1/insurance/policies/{created.Id}");
         policy.PayerId.ShouldBe(insurer.Id);
@@ -427,15 +570,21 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         return coding;
     }
 
-    /// <summary>TPA desk: raises the cashless request, submits it, and records the insurer's approval.</summary>
-    private static async Task<PreAuthDetail> ObtainPreAuthorisationAsync(ApiClient tpaDesk, Guid policyId, Guid admissionId)
+    /// <summary>
+    /// TPA desk: raises the cashless request, submits it, and records the insurer's approval, which an insurance desk user
+    /// checks before it moves the bill to the insurer (MAKER-CHECKER.md, slice 12).
+    /// </summary>
+    private async Task<PreAuthDetail> ObtainPreAuthorisationAsync(ApiClient tpaDesk, Guid policyId, Guid admissionId)
     {
         var request = new SavePreAuthRequest(
             policyId, admissionId, null, PreAuthRequested, Diagnosis, null,
             "Cellulitis of the left leg with fever; IV antibiotics, limb elevation and daily dressings.", 3, null, null);
         var id = (await tpaDesk.PostAsync<JsonElement>("/api/v1/insurance/preauths", request)).GetProperty("id").GetGuid();
         await tpaDesk.PostAsync($"/api/v1/insurance/preauths/{id}/submit");
-        await tpaDesk.PostAsync($"/api/v1/insurance/preauths/{id}/approve", new ApprovePreAuthRequest(PreAuthApproved, "MA-PA-" + UniqueDigits(6)));
+        var submitted = await tpaDesk.GetAsync<PreAuthDetail>($"/api/v1/insurance/preauths/{id}");
+        var asked = await tpaDesk.PostAsync<ApprovalRequestDto>(
+            $"/api/v1/insurance/preauths/{id}/approve", new ApprovePreAuthRequest(PreAuthApproved, "MA-PA-" + UniqueDigits(6), submitted.Version));
+        await MakerChecker.ApproveAsync(await server.SignInAsync(HospitalServer.Users.InsuranceDesk), asked);
         return await tpaDesk.GetAsync<PreAuthDetail>($"/api/v1/insurance/preauths/{id}");
     }
 
@@ -504,29 +653,8 @@ public sealed class InpatientJourneyTests(HospitalServer server)
 
     // ---------------------------------------------------------------------- look-ups and checks
 
-    /// <summary>
-    /// Today in the hospital's calendar (IST). The bed-day rule counts midnights, so the journey must not straddle one:
-    /// started in the last two minutes of a day, it waits for the next.
-    /// </summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var now = clock.GetUtcNow();
-        var untilMidnight = IndiaClock.StartOfDayUtc(IndiaClock.LocalDate(now).AddDays(1)) - now;
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, TestContext.Current.CancellationToken);
-        }
-
-        return IndiaClock.LocalDate(clock.GetUtcNow());
-    }
-
-    /// <summary>A bed of the ward that the patient may be put in (free, and his sex and age fit the ward).</summary>
-    private static async Task<Guid> FreeBedAsync(ApiClient api, Guid patientId, Guid wardId)
-    {
-        var beds = await api.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={wardId}");
-        return beds.First(b => b.IsEligible && b.Status == BedStatus.Vacant).BedId;
-    }
+    /// <summary>A bed of the ward added for this admission or transfer (<see cref="TestBeds"/>), so it is free.</summary>
+    private async Task<Guid> FreeBedAsync(Guid wardId) => (await TestBeds.AddAsync(server, wardId)).BedId;
 
     private static async Task<BedBoardItem> BedOnBoardAsync(ApiClient api, Guid wardId, Guid bedId)
     {

@@ -91,12 +91,20 @@ public sealed class Patient360Service(HospitalDbContext db, CommunicationConsent
 
     internal sealed record SpendRow(SpendKind Kind, Guid SourceId, decimal Amount, DateTimeOffset OccurredAt);
 
-    /// <summary>Net spend: cancelled bills drop out entirely and refunds paid out reduce what the patient has paid.</summary>
+    /// <summary>
+    /// Net spend: cancelled bills drop out entirely, and refunds paid out and money that never arrived reduce what the
+    /// patient has paid (a refund that never reached the patient counts again).
+    /// </summary>
     internal static SpendSummary Summarize(IReadOnlyCollection<SpendRow> entries, DateTimeOffset yearAgo)
     {
         var cancelled = entries.Where(e => e.Kind == SpendKind.BillCancelled).Select(e => e.SourceId).ToHashSet();
         var bills = entries.Where(e => e.Kind == SpendKind.Billed && !cancelled.Contains(e.SourceId)).ToList();
-        var paid = entries.Where(e => e.Kind == SpendKind.Paid).Sum(e => e.Amount) - entries.Where(e => e.Kind == SpendKind.Refunded).Sum(e => e.Amount);
+        var paid = entries.Sum(e => e.Kind switch
+        {
+            SpendKind.Paid or SpendKind.RefundReversed => e.Amount,
+            SpendKind.Refunded or SpendKind.PaymentReversed => -e.Amount,
+            _ => 0m,
+        });
         return new SpendSummary(
             bills.Sum(e => e.Amount),
             paid,

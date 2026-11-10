@@ -166,16 +166,16 @@ public sealed class OpBillPackageTests(HospitalServer server)
     private static async Task<List<ChargeDto>> ChargesAsync(ApiClient billing, Guid patientId) =>
         (await billing.GetAsync<PagedResult<ChargeDto>>($"/api/v1/billing/charges?patientId={patientId}&pageSize=200")).Items.ToList();
 
-    private static Task<ServiceItemDto> ServiceAsync(ApiClient admin, string name, ServiceCategory category, decimal price) =>
-        admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+    private Task<ServiceItemDto> ServiceAsync(ApiClient admin, string name, ServiceCategory category, decimal price) =>
+        server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", name, null, category, null, price, 0m, null, true, false, null, true, null));
 
-    private static async Task<PackageDetail> PackageAsync(
+    private async Task<PackageDetail> PackageAsync(
         ApiClient admin, string name, PackageUse usedFor, decimal price, Guid? tariffPlanId, params PackageInclusionInput[] inclusions)
     {
         // The package itself is billed under a catalogue service of category Package.
         var item = await ServiceAsync(admin, name, ServiceCategory.Package, price);
-        return await admin.PostAsync<PackageDetail>("/api/v1/billing/packages", new SavePackageRequest(
+        return await server.SavePackageAsync(admin, new SavePackageRequest(
             $"PKG-{Letters(8)}", name, item.Id, price, null, tariffPlanId, usedFor, null, true, inclusions, null));
     }
 

@@ -20,6 +20,7 @@ import type {
   ReceiptSource,
   RefundPurpose,
   RefundStatus,
+  ReversalReason,
   ServiceCategory,
   ShiftStatus,
 } from './labels';
@@ -110,6 +111,8 @@ export interface ReceiptSummary {
   amount: number;
   modes: string;
   receivedAt: string;
+  /** What reversals took back as money not received. */
+  reversedAmount?: number;
 }
 
 export interface RefundSummary {
@@ -122,6 +125,37 @@ export interface RefundSummary {
   paidAt: string | null;
 }
 
+/** Mirrors `DebitNoteParty`: who a debit note charges. */
+export type DebitNoteParty = 'Patient' | 'Payer';
+
+export interface DebitNoteLineDto {
+  billLineId: string;
+  description: string;
+  sacCode: string | null;
+  gstRate: number;
+  amount: number;
+  taxableAmount: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+}
+
+/** A debit note (supplementary invoice) on a bill: the value and GST it added to each service. */
+export interface DebitNoteDto {
+  id: string;
+  number: string;
+  party: DebitNoteParty;
+  amount: number;
+  taxableAmount: number;
+  gstAmount: number;
+  reason: string;
+  issuedAt: string;
+  issuedByName: string | null;
+  requestedByName: string | null;
+  lines: DebitNoteLineDto[];
+  eInvoice?: EInvoiceStamp | null;
+}
+
 export interface CreditNoteDto {
   id: string;
   number: string;
@@ -132,6 +166,35 @@ export interface CreditNoteDto {
   issuedByName: string | null;
   /** Who asked for it; `issuedByName` approved and issued it. Empty on notes issued before the approval step. */
   requestedByName: string | null;
+  /** The credited value less the GST it takes back; the amount itself when it takes back none. */
+  taxableAmount: number;
+  /** The GST it takes back from the services it corrects (CGST Act s.34); 0 on a write-off. */
+  gstAmount: number;
+  /** Issued after the bill's GST could be reduced (s.34(2)): it lowers the amount, not the GST. */
+  gstTimeBarred: boolean;
+  /** The services it corrects; empty on a write-off and on notes issued before services were named. */
+  lines: CreditNoteLineDto[] | null;
+  /** The IRN the e-invoice portal gave it (a `CRN`), when it has one. */
+  eInvoice: EInvoiceStamp | null;
+}
+
+export interface CreditNoteLineDto {
+  billLineId: string;
+  description: string;
+  sacCode: string | null;
+  gstRate: number;
+  /** What it takes off the service, GST included. */
+  amount: number;
+  taxableAmount: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+}
+
+/** What a credit note takes off one service of the bill, GST included. */
+export interface CreditNoteLineRequest {
+  billLineId: string;
+  amount: number;
 }
 
 export interface DiscountApprovalDto {
@@ -245,6 +308,12 @@ export interface BillDetail {
   freeTreatmentReason?: string | null;
   /** What the services would have cost, had the treatment not been free. */
   freeTreatmentAmount?: number;
+  debitNotes?: DebitNoteDto[] | null;
+  /** What debit notes added to the patient's share and to the payer's, GST included. */
+  debitAmount?: number;
+  payerDebitAmount?: number;
+  /** A paper bill entered after its month's GSTR-1 was filed: it is not in that return; amend it in the next one. */
+  gstFilingWarning?: string | null;
 }
 
 export interface CreateBillRequest {
@@ -292,6 +361,21 @@ export interface DiscountLimitDto {
   maxAmount: number | null;
   notes: string | null;
   version: number;
+}
+
+/**
+ * A user's discount limit raised (or removed, so a higher default applies) that waits for another approver
+ * (billing.discount_limit): never the one who asked, nor the user whose limit it is. `askedByYou`: the reader's own.
+ */
+export interface PendingDiscountLimitDto {
+  approvalId: string;
+  userId: string;
+  userName: string | null;
+  before: string;
+  asked: string;
+  requestedBy: string;
+  requestedAt: string;
+  askedByYou: boolean;
 }
 
 export interface SaveDiscountLimitRequest {
@@ -347,6 +431,13 @@ export interface ChargeDto {
   status: ChargeStatus;
   billId: string | null;
   cancelReason: string | null;
+  /**
+   * Cancelling it at the desk waits for someone else who approves discounts: an OT, procedure, implant or bed-day charge,
+   * or one above the hospital's amount (`billing.chargeCancel.approvalAbove`).
+   */
+  cancelNeedsApproval?: boolean;
+  /** When its cancellation was asked for, while that waits for approval. */
+  cancellationAskedAt?: string | null;
 }
 
 /**
@@ -370,6 +461,8 @@ export interface PostChargeRequest {
 // ------------------------------------------------------------------ receipts, dues, advances, refunds
 
 export interface ReceiptPaymentDto {
+  /** The payment line, to name in a reversal. */
+  id?: string;
   mode: PaymentMode;
   amount: number;
   reference: string | null;
@@ -378,6 +471,36 @@ export interface ReceiptPaymentDto {
   chequeNumber: string | null;
   chequeBank: string | null;
   chequeDate: string | null;
+  /** What reversals took back from it as money not received. */
+  reversed?: number;
+}
+
+/**
+ * Money a receipt recorded that did not arrive. `causedById`: an advance adjustment undone because the advance's money
+ * did not arrive, by that reversal.
+ */
+export interface ReceiptReversalDto {
+  id: string;
+  number: string;
+  amount: number;
+  reason: ReversalReason;
+  note: string;
+  requestedByName: string | null;
+  approvedByName: string | null;
+  reversedAt: string;
+  causedById: string | null;
+}
+
+/** A refund recorded as paid out that did not reach the patient. */
+export interface RefundReversalDto {
+  id: string;
+  number: string;
+  amount: number;
+  reason: ReversalReason;
+  note: string;
+  requestedByName: string | null;
+  approvedByName: string | null;
+  reversedAt: string;
 }
 
 export interface ReceiptDto {
@@ -397,6 +520,8 @@ export interface ReceiptDto {
   receivedAt: string;
   notes: string | null;
   payments: ReceiptPaymentDto[];
+  reversals?: ReceiptReversalDto[] | null;
+  reversedAmount?: number;
 }
 
 export interface ReceiptListItem {
@@ -412,6 +537,7 @@ export interface ReceiptListItem {
   counter: string | null;
   receivedByName: string | null;
   receivedAt: string;
+  reversedAmount?: number;
 }
 
 export interface ReceiptFilters {
@@ -487,6 +613,8 @@ export interface RefundDto {
   /** The bank's reference for it (ARN, RRN or UTR), which the patient's bank can trace. */
   gatewayReference?: string | null;
   gatewayError?: string | null;
+  /** Recorded as not paid out: the money is back where it came from, and a new refund pays the patient. */
+  notPaidOut?: RefundReversalDto | null;
 }
 
 export type GatewayRefundStatus = 'Pending' | 'Processed' | 'Failed';
@@ -550,6 +678,15 @@ export interface ShiftDto {
   receiptCount: number;
   notes: string | null;
   version: number;
+  /** Closed short beyond the hospital's tolerance, the shortage not yet accepted by a supervisor (never the cashier). */
+  shortageAwaiting?: boolean;
+  /** The supervisor who accepted the shortage, and when. */
+  shortageAcceptedBy?: string | null;
+  shortageAcceptedAt?: string | null;
+  /** The request waiting for a supervisor to accept the shortage, if one waits. */
+  shortageApprovalId?: string | null;
+  /** On an open shift: how much the drawer may be short and still close on the cashier's word (₹). */
+  shortageTolerance?: number | null;
 }
 
 export interface DayEndCashierRow {
@@ -565,6 +702,10 @@ export interface DayEndCashierRow {
   expectedCash: number;
   declaredCash: number | null;
   variance: number | null;
+  /** Closed short, the shortage awaiting a supervisor. */
+  shortageAwaiting?: boolean;
+  /** The supervisor who accepted the shortage. */
+  shortageAcceptedBy?: string | null;
 }
 
 export interface DayEndReport {
@@ -582,6 +723,20 @@ export interface DayEndReport {
   billsCancelled: number;
   cancelledAmount: number;
   openShifts: number;
+  /** Receipts reversed on the day as money not received, by the mode they were recorded in (the whole day's report only). */
+  notReceived?: DayEndReversalTotal[] | null;
+  /** Refunds recorded on the day as not paid out, by the mode they were paid in. */
+  notPaidOut?: DayEndReversalTotal[] | null;
+  /** The net collection with the day's reversals. */
+  netAfterReversals?: number;
+  /** Shifts closed short whose shortage no supervisor has accepted yet. */
+  shortagesAwaiting?: number;
+}
+
+export interface DayEndReversalTotal {
+  mode: PaymentMode;
+  amount: number;
+  count: number;
 }
 
 export interface ShiftFilters {
@@ -787,6 +942,12 @@ export const billingQueries = {
       queryKey: [...billingKeys.discounts(), 'limits'],
       queryFn: ({ signal }) => api.get<DiscountLimitDto[]>('/api/v1/billing/discount-limits', { signal }),
     }),
+  pendingDiscountLimits: () =>
+    queryOptions({
+      queryKey: [...billingKeys.discounts(), 'limits', 'pending'],
+      queryFn: ({ signal }) =>
+        api.get<PendingDiscountLimitDto[]>('/api/v1/billing/discount-limits/pending', { signal }),
+    }),
   myDiscountAuthority: () =>
     queryOptions({
       queryKey: [...billingKeys.discounts(), 'me'],
@@ -851,7 +1012,8 @@ export const billingApi = {
    * 422 `billing.charge_billed` once it is on a finalized bill (cancel the bill or issue a credit note instead). The
    * order, dispense or admission the charge came from is not changed.
    */
-  cancelCharge: (id: string, reason: string) => api.post<void>(`/api/v1/billing/charges/${id}/cancel`, { reason }),
+  cancelCharge: (id: string, reason: string) =>
+    api.post<ApprovalRequestDto | undefined>(`/api/v1/billing/charges/${id}/cancel`, { reason }),
   createBill: (request: CreateBillRequest) => api.post<BillDetail>('/api/v1/billing/bills', request),
   addLine: (billId: string, request: AddBillLineRequest) =>
     api.post<BillDetail>(`/api/v1/billing/bills/${billId}/lines`, request),
@@ -877,10 +1039,29 @@ export const billingApi = {
   sendOnWhatsApp: (billId: string) => api.post<void>(`/api/v1/billing/bills/${billId}/send-whatsapp`),
   /**
    * Asks for a credit note or write-off (202): an approver, someone other than the person asking, issues it from the
-   * approvals inbox, on the bill as it is now.
+   * approvals inbox, on the bill as it is now. A credit note on a bill with GST names the services it corrects
+   * (`lines`, their sum the amount): 400 `lines` without them; 422 `billing.credit_exceeds_line` past a service's value.
    */
-  requestCreditNote: (billId: string, kind: CreditNoteKind, amount: number, reason: string) =>
-    api.post<ApprovalRequestDto>(`/api/v1/billing/bills/${billId}/credit-notes`, { kind, amount, reason }),
+  /** Asks for a debit note: 202 with the approval request; an approver, someone else, issues it. */
+  requestDebitNote: (
+    billId: string,
+    party: DebitNoteParty,
+    reason: string,
+    lines: { billLineId: string; taxableAmount: number }[],
+  ) => api.post<ApprovalRequestDto>(`/api/v1/billing/bills/${billId}/debit-notes`, { party, reason, lines }),
+  requestCreditNote: (
+    billId: string,
+    kind: CreditNoteKind,
+    amount: number,
+    reason: string,
+    lines: CreditNoteLineRequest[] | null = null,
+  ) =>
+    api.post<ApprovalRequestDto>(`/api/v1/billing/bills/${billId}/credit-notes`, {
+      kind,
+      amount,
+      reason,
+      ...(lines && lines.length > 0 ? { lines } : {}),
+    }),
   adjustAdvance: (
     billId: string,
     advanceId: string,
@@ -898,16 +1079,37 @@ export const billingApi = {
   rejectRefund: (id: string, reason: string) => api.post<void>(`/api/v1/billing/refunds/${id}/reject`, { reason }),
   payRefund: (id: string, mode: PaymentMode, reference: string | null, options: WriteOptions = {}) =>
     api.post<void>(`/api/v1/billing/refunds/${id}/pay`, { mode, reference }, options),
+  /**
+   * Asks for payment lines of a receipt to be reversed as money not received (202): an approver, someone other than
+   * the person asking, makes it from the approvals inbox. The bill owes again, or the advance holds less; bills an
+   * advance paid owe again too.
+   */
+  requestReceiptReversal: (receiptId: string, paymentIds: string[], reason: ReversalReason, note: string) =>
+    api.post<ApprovalRequestDto>(`/api/v1/billing/receipts/${receiptId}/reversal`, { paymentIds, reason, note }),
+  /** Asks for a paid refund to be recorded as not paid out (202), approved by someone else; a new refund then pays the patient. */
+  requestRefundNotPaid: (refundId: string, reason: ReversalReason, note: string) =>
+    api.post<ApprovalRequestDto>(`/api/v1/billing/refunds/${refundId}/not-paid`, { reason, note }),
   approveDiscount: (id: string, remarks: string | null) =>
     api.post<void>(`/api/v1/billing/discount-approvals/${id}/approve`, { remarks }),
   rejectDiscount: (id: string, remarks: string | null) =>
     api.post<void>(`/api/v1/billing/discount-approvals/${id}/reject`, { remarks }),
-  saveDiscountLimit: (request: SaveDiscountLimitRequest) => api.put<void>('/api/v1/billing/discount-limits', request),
-  deleteDiscountLimit: (id: string) => api.delete<void>(`/api/v1/billing/discount-limits/${id}`),
+  /** Lowered: saved at once (204). Raised (a higher percentage, a cap raised or taken away): asked for (202, the request). */
+  saveDiscountLimit: (request: SaveDiscountLimitRequest) =>
+    api.put<ApprovalRequestDto | undefined>('/api/v1/billing/discount-limits', request),
+  /** Removed at once, unless the hospital default lets the user give more: then asked for (202). */
+  deleteDiscountLimit: (id: string) =>
+    api.delete<ApprovalRequestDto | undefined>(`/api/v1/billing/discount-limits/${id}`),
   openShift: (counter: string, openingFloat: number) =>
     api.post<ShiftDto>('/api/v1/billing/shifts/open', { counter, openingFloat }),
+  /**
+   * Closes the shift (200). Short beyond the hospital's tolerance, it closes with the shortage asked of a supervisor (202,
+   * the shift with `shortageApprovalId`); the reason (`notes`) is then required.
+   */
   closeShift: (id: string, declaredCash: number, notes: string | null, version: number) =>
     api.post<ShiftDto>(`/api/v1/billing/shifts/${id}/close`, { declaredCash, notes, version }),
+  /** Asks again for a supervisor to accept a shift's shortage (after a rejection, withdrawal or expiry). */
+  askShortage: (id: string, reason: string) =>
+    api.post<ApprovalRequestDto>(`/api/v1/billing/shifts/${id}/shortage`, { reason }),
   startPosSale: (request: StartPosSaleRequest, options: WriteOptions = {}) =>
     api.post<PosSaleDto>('/api/v1/billing/pos/sales', request, options),
   cancelPosSale: (id: string) => api.post<PosSaleDto>(`/api/v1/billing/pos/sales/${id}/cancel`),
@@ -921,6 +1123,10 @@ export const billingApi = {
  * and makes its PDF (see `@/lib/documents`).
  */
 export const billDocument = (billId: string) => `/api/v1/billing/bills/${billId}`;
+
+/** The printed credit note (or write-off note) of a bill: `…/document` to print, `…/pdf` to download. */
+export const creditNoteDocument = (billId: string, creditNoteId: string) =>
+  `/api/v1/billing/bills/${billId}/credit-notes/${creditNoteId}`;
 
 /** Catalogue search for the "add service" box (active services, at most 50). */
 export function searchServices(search: string, category?: ServiceCategory): Promise<ServiceItemDto[]> {

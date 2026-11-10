@@ -21,6 +21,7 @@ import type { PortalBillDetail } from '@/lib/types';
 import { billApi, billPdfPath, billQueries } from '@/modules/bills/api';
 import { BILL_STATUS, BILL_TYPE, isDue, RECEIPT_PURPOSE } from '@/modules/bills/labels';
 import { billDocument, receiptDocument } from '@/modules/bills/print';
+import { RefundList } from '@/modules/bills/RefundList';
 import { ReportCard } from '@/modules/reports/ReportParts';
 import { useHospitalName } from '@/shell/hooks';
 import { useActiveProfile } from '@/shell/profileContext';
@@ -314,6 +315,12 @@ function BillDetail({ bill, back }: { bill: PortalBillDetail; back: ReactNode })
               </RowCard>
             ))}
           </div>
+        </ReportCard>
+      )}
+
+      {bill.refunds.length > 0 && (
+        <ReportCard title={t('refunds.title')}>
+          <RefundList refunds={bill.refunds} showBill={false} />
         </ReportCard>
       )}
 

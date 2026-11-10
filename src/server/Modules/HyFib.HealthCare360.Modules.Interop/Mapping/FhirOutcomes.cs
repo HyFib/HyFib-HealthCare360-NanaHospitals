@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Interop.Domain;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Mapping;
@@ -28,8 +29,12 @@ internal static class FhirOutcomes
     public const string NotAcceptable = "not-acceptable";
     public const string AuthenticationRequired = "authentication-required";
     public const string PermissionRequired = "permission-required";
+    public const string FacilityRequired = "facility-required";
+    public const string SmartRequired = "smart-required";
+    public const string ScopeInsufficient = "scope-insufficient";
     public const string ReadOnly = "read-only";
     public const string RecordsWithheld = "records-withheld";
+    public const string TooManyRecords = "too-many-records";
     public const string ServerError = "server-error";
 
     public static R4.OperationOutcome Create(R4.OperationOutcome.IssueSeverity severity, R4.OperationOutcome.IssueType type, string message, string reason)
@@ -77,6 +82,39 @@ internal static class FhirOutcomes
         Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
             "The fhir.read permission is required to use the FHIR API.", PermissionRequired);
 
+    /// <summary>
+    /// A reader whose session is not at a facility its account is assigned to (#251): a partner reads one facility's
+    /// records, and an account the hospital assigned to none may sign in anywhere, so it is not that partner.
+    /// </summary>
+    /// <summary>A password session of an integration account the hospital moved to a SMART backend service.</summary>
+    public static FhirError MigratedToSmart() =>
+        Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
+            "This integration account now reads with its SMART backend service's access tokens (POST /oauth2/token), not by signing in.",
+            SmartRequired);
+
+    /// <summary>A SMART token whose scopes do not reach the type, the interaction, or this patient's record.</summary>
+    public static FhirError OutsideScope(string what) =>
+        Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
+            $"The access token's scopes do not allow {what}.", ScopeInsufficient);
+
+    public static FhirError NoFacility() =>
+        Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
+            "This account is not linked to a facility, so it cannot read records. The hospital links each partner's account to the facility whose records it reads; ask the hospital to assign one, then sign in again.",
+            FacilityRequired);
+
+    /// <summary>
+    /// A record of a patient who shares something with the reader, but not this: its kind or its date is outside every
+    /// consent that admits them. The same reason as no consent at all, so a client handles both alike.
+    /// </summary>
+    public static FhirError OutsideConsent(string resourceType, string id) =>
+        Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
+            $"{resourceType}/{Printable(id)} is not covered by the patient's record-sharing consent for you: the patient has not agreed to share this kind of record, or records of this date, with you for the purpose you stated.",
+            ConsentRequired);
+
+    /// <summary>An <c>X-Purpose-Of-Use</c> header that is not one of the v3 purposes of use a consent can name.</summary>
+    public static FhirError UnknownPurpose(string value) =>
+        BadRequest($"X-Purpose-Of-Use '{Printable(value)}' is not a purpose of use this server knows. Use one of: {string.Join(", ", SharingPurposeCodes.All)} (HL7 v3 ActReason).");
+
     public static FhirError Unexpected(string referenceId) =>
         Error(StatusCodes.Status500InternalServerError, R4.OperationOutcome.IssueType.Exception,
             $"The server could not complete the request. Quote reference {referenceId} if you contact support.", ServerError);
@@ -92,19 +130,32 @@ internal static class FhirOutcomes
                 : "This patient record was merged into another record. Search by ABHA number to find the current record.",
             PatientMerged),
         SharingDecision.NoConsent => Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
-            "The patient has not consented to sharing their health record (no active record-sharing consent is on file).", ConsentRequired),
+            "The patient has not consented to sharing their health record with you (no record-sharing consent on file admits you today for the purpose you stated).", ConsentRequired),
         SharingDecision.Restricted => Error(StatusCodes.Status403Forbidden, R4.OperationOutcome.IssueType.Forbidden,
             "This is a restricted record. Access needs the patients.restricted.read permission or an emergency (break-the-glass) grant.", RestrictedRecord),
         _ => ResourceNotFound(resourceType, id),
     };
 
     /// <summary>
-    /// Added to a patient-scoped search that returned nothing because the patient's records may not be shared. The same
-    /// wording is used whatever the reason (no consent, restricted, unknown patient), so it reveals nothing further.
+    /// Added to a patient-scoped search that left records out: all of them, because the patient's records may not be
+    /// shared with the reader, or some, because the consents admitting the reader do not cover them. The same wording is
+    /// used whatever the reason (no consent, restricted, unknown patient, a kind or a date not covered), so it reveals
+    /// nothing further.
     /// </summary>
     public static R4.OperationOutcome Withheld() => Create(R4.OperationOutcome.IssueSeverity.Information, R4.OperationOutcome.IssueType.Suppressed,
-        "No records were returned for this patient. Records are shared only for patients with an active record-sharing consent, and restricted records need additional authorisation.",
+        "Records of this patient may have been left out. Records are shared only under an active record-sharing consent that covers them, and restricted records need additional authorisation.",
         RecordsWithheld);
+
+    /// <summary>
+    /// A search inside a patient's record that would reach more records than one answer holds (years of home-monitoring
+    /// readings, a few every day). It is refused rather than cut short, so a client never takes part of the record for
+    /// all of it, and it gives no count. Only records the reader may see count toward the limit, so a refusal says
+    /// nothing of the others.
+    /// </summary>
+    public static FhirError TooCostly(string resourceType) =>
+        Error(StatusCodes.Status400BadRequest, R4.OperationOutcome.IssueType.TooCostly,
+            $"This {resourceType} search reaches more of the patient's records than one answer can hold. Narrow it: search a shorter 'date' range (for example date=ge2026-01-01&date=lt2026-04-01), or a 'category' or 'code'.",
+            TooManyRecords);
 
     /// <summary>Echoes a client-supplied value safely (bounded and printable).</summary>
     public static string Printable(string value)

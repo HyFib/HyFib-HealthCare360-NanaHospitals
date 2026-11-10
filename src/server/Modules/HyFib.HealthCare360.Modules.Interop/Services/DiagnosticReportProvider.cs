@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Modules.Interop.Search;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
@@ -49,12 +50,12 @@ internal sealed class DiagnosticReportProvider(HospitalDbContext db) : IFhirReso
         return ResourceLookup.Missing;
     }
 
-    public async Task<IReadOnlyList<R4.Resource>> ListForPatientAsync(Guid patientId, CancellationToken ct) =>
+    public async Task<SearchCandidates> ListForPatientAsync(Guid patientId, SearchRequest request, PatientAccess access, CancellationToken ct) => new(
     [
         .. await LabAsync(r => r.PatientId == patientId, ct),
         .. await RadiologyAsync(r => r.PatientId == patientId, ct),
         .. await CardiologyAsync(r => r.PatientId == patientId, ct),
-    ];
+    ]);
 
     /// <summary>Released (or amended) laboratory reports.</summary>
     internal IQueryable<LabReportRow> LabReports(Expression<Func<LabReport, bool>> filter) =>

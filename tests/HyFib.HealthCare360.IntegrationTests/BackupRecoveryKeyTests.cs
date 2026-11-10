@@ -102,10 +102,12 @@ public sealed class BackupRecoveryKeyTests(HospitalServer server)
 
         try
         {
-            (await alerts.CheckAsync(Ct)).Select(w => w.Code).ShouldContain("backup.recovery_key_missing");
-            clock.Now += TimeSpan.FromHours(23);
+            // The warning is an alert, told now or already by the server's own alerts, which keep it in the database.
+            await alerts.CheckAsync(Ct);
+            var told = await LastToldAsync("backup.recovery_key_missing");
+            clock.Now = told + TimeSpan.FromHours(23);
             (await alerts.CheckAsync(Ct)).Select(w => w.Code).ShouldNotContain("backup.recovery_key_missing", "told once a day");
-            clock.Now += TimeSpan.FromHours(1);
+            clock.Now = told + TimeSpan.FromHours(24);
             (await alerts.CheckAsync(Ct)).Select(w => w.Code).ShouldContain("backup.recovery_key_missing", "told again the next day");
         }
         finally
@@ -127,5 +129,14 @@ public sealed class BackupRecoveryKeyTests(HospitalServer server)
         public DateTimeOffset Now { get; set; } = now;
 
         public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    /// <summary>When the open alert of <paramref name="code"/> was last told, first or as a reminder.</summary>
+    private async Task<DateTimeOffset> LastToldAsync(string code)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var incident = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AlertIncident>()
+            .SingleAsync(i => i.Code == code && i.ClearedAt == null, Ct);
+        return incident.RemindedAt ?? incident.ToldAt ?? throw new InvalidOperationException($"The alert {code} was never told.");
     }
 }

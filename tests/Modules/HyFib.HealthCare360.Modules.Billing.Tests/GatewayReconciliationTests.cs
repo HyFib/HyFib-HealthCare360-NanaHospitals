@@ -147,6 +147,47 @@ public sealed class GatewayReconciliationTests
     }
 
     [Fact]
+    public void A_failed_payout_reverses_the_settlement_journal_in_the_day_it_is_learnt_and_a_later_payout_restores_it()
+    {
+        var settlement = Settlement(976.40m + 488.20m, Payment("pay_A1B2C3D4E5", 1_000m, 23.60m, 3.60m), Payment("pay_F6G7H8I9J0", 500m, 11.80m, 1.80m));
+        settlement.Lines[1].MatchTo(Guid.CreateVersion7(), null, 500m, Branch);
+        var learnt = Day.AddDays(3);
+
+        var reversal = settlement.Correct(SettlementCorrectionKind.Reversed, learnt, SettledAt.AddDays(3));
+        settlement.IsReversed.ShouldBeTrue();
+        var restored = settlement.Correct(SettlementCorrectionKind.Restored, learnt.AddDays(1), SettledAt.AddDays(4));
+        settlement.IsReversed.ShouldBeFalse();
+        (reversal.Seq, restored.Seq, reversal.On).ShouldBe((1, 2, learnt));
+
+        // Each facility's part is corrected in its own books, numbered after its journal.
+        var portions = SettlementJournal.Portions(settlement);
+        var main = portions.Single(p => p.IsOwner);
+        var branch = portions.Single(p => p.FacilityId == Branch);
+        SettlementJournal.CorrectionNumber(settlement, main, reversal).ShouldBe("setl_A1B2C3D4E5-R1");
+        SettlementJournal.CorrectionNumber(settlement, branch, restored).ShouldBe($"{SettlementJournal.VoucherNumber(settlement, branch)}-S2");
+
+        // The reversal is the settlement journal turned round, dated the day the failure was learnt; the restoration is
+        // the journal again.
+        var journal = TallyVoucherBuilder.Build(
+            new TallyDayBook(Day, [], [], [], [], [], [], [], [new TallyGatewaySettlement(settlement.SettlementId, Day, settlement.SettlementId, settlement.Utr, main.Net, main.Charges, main.Tax)]),
+            new TallyLedgerMap()).ShouldHaveSingleItem();
+        var reversed = TallyVoucherBuilder.Build(
+            new TallyDayBook(learnt, [], [], [], [], [], [], [], [GatewaySettlementService.CorrectionOf(settlement, main, reversal, learnt)]),
+            new TallyLedgerMap()).ShouldHaveSingleItem();
+        reversed.ShouldSatisfyAllConditions(
+            v => v.Date.ShouldBe(learnt),
+            v => v.Number.ShouldBe("setl_A1B2C3D4E5-R1"),
+            v => v.Narration.ShouldBe("Reverses journal setl_A1B2C3D4E5 of 25-09-2026: payment gateway settlement setl_A1B2C3D4E5 failed after it was paid out "
+                                      + "(the bank refused or returned the transfer)"),
+            v => v.Entries.ShouldBe(journal.Entries.Select(e => e with { IsDebit = !e.IsDebit })));
+        var again = TallyVoucherBuilder.Build(
+            new TallyDayBook(learnt, [], [], [], [], [], [], [], [GatewaySettlementService.CorrectionOf(settlement, main, restored, learnt)]),
+            new TallyLedgerMap()).ShouldHaveSingleItem();
+        again.Entries.ShouldBe(journal.Entries);
+        again.Narration.ShouldStartWith("Restores journal setl_A1B2C3D4E5 of 25-09-2026");
+    }
+
+    [Fact]
     public void A_day_book_without_settlements_builds_as_before() =>
         TallyVoucherBuilder.Build(new TallyDayBook(Day, [], [], [], [], [], [], []), new TallyLedgerMap()).ShouldBeEmpty();
 
@@ -154,7 +195,7 @@ public sealed class GatewayReconciliationTests
     public void Exceptions_rank_worst_first_in_the_order_the_hospital_set()
     {
         Enum.GetValues<DiscrepancyKind>().OrderBy(GatewayDiscrepancy.RankOf).ShouldBe(
-            [DiscrepancyKind.UnrecordedPayment, DiscrepancyKind.UnsettledReceipt, DiscrepancyKind.AmountMismatch, DiscrepancyKind.RefundMismatch]);
+            [DiscrepancyKind.UnrecordedPayment, DiscrepancyKind.UnsettledReceipt, DiscrepancyKind.FailedSettlement, DiscrepancyKind.AmountMismatch, DiscrepancyKind.RefundMismatch]);
     }
 
     [Fact]
@@ -275,7 +316,7 @@ public sealed class GatewayReconciliationTests
     public void A_gateway_refund_is_followed_until_the_bank_confirms_it()
     {
         var refund = PaidRefund();
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", Paid, TestData.Now);
 
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Pending, error: "Could not reach Razorpay."), TestData.Now).ShouldBeFalse();
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Pending, reference: "74836287462837"), TestData.Now).ShouldBeTrue();
@@ -293,13 +334,13 @@ public sealed class GatewayReconciliationTests
     public void A_failed_gateway_refund_keeps_the_reason_and_starts_again_when_sent_again()
     {
         var refund = PaidRefund();
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", Paid, TestData.Now);
 
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Failed, error: "The bank account is closed."), TestData.Now).ShouldBeTrue();
         refund.ShouldSatisfyAllConditions(r => r.GatewayStatus.ShouldBe(PaymentRefundStatus.Failed), r => r.GatewayError.ShouldBe("The bank account is closed."));
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Processed) with { RefundId = "rfnd_Other00001" }, TestData.Now).ShouldBeFalse();
 
-        refund.StartGatewayRefund("rfnd_Again00001", TestData.Now.AddDays(40));
+        refund.StartGatewayRefund("rfnd_Again00001", Paid, TestData.Now.AddDays(40));
         refund.ShouldSatisfyAllConditions(
             r => r.GatewayRefundId.ShouldBe("rfnd_Again00001"),
             r => r.GatewayStatus.ShouldBe(PaymentRefundStatus.Pending),
@@ -312,7 +353,7 @@ public sealed class GatewayReconciliationTests
     public void A_failed_gateway_refund_is_sent_again_by_one_request_only()
     {
         var refund = PaidRefund();
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", Paid, TestData.Now);
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Failed, error: "The bank account is closed."), TestData.Now).ShouldBeTrue();
 
         refund.ClaimGatewayRetry(TestData.Now.AddHours(1)).IsSuccess.ShouldBeTrue();
@@ -339,15 +380,15 @@ public sealed class GatewayReconciliationTests
         var refund = PaidRefund();
         refund.GatewayRefundId = null;
         var first = refund.GatewayIdempotencyKey;
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", Paid, TestData.Now);
         var retry = refund.GatewayIdempotencyKey;
-        refund.StartGatewayRefund("rfnd_Again00001", TestData.Now);
+        refund.StartGatewayRefund("rfnd_Again00001", Paid, TestData.Now);
 
         first.ShouldBe(refund.Id.ToString("N"));
         retry.ShouldNotBe(first);
         retry.ShouldMatch("^[0-9a-f]{32}$");
         refund.GatewayIdempotencyKey.ShouldNotBe(retry);
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", Paid, TestData.Now);
         refund.GatewayIdempotencyKey.ShouldBe(retry, "The same attempt asked again gets the same key.");
     }
 
@@ -355,7 +396,7 @@ public sealed class GatewayReconciliationTests
     public void Only_a_failed_gateway_refund_can_be_sent_again()
     {
         var refund = PaidRefund();
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", Paid, TestData.Now);
 
         refund.CanSendGatewayRefundAgain(TestData.Now).ShouldBeFalse();
         refund.ClaimGatewayRetry(TestData.Now).Error!.Code.ShouldBe("billing.refund_not_failed");
@@ -425,6 +466,60 @@ public sealed class GatewayReconciliationTests
     }
 
     [Fact]
+    public void A_disputes_webhook_names_the_dispute_and_its_payment()
+    {
+        const string created = """
+            {"entity":"event","event":"payment.dispute.created","contains":["payment","dispute"],"payload":{
+             "payment":{"entity":{"id":"pay_EsyWjHrfzb59eR","order_id":"order_EsyWbwr9y7FfUd","amount":10000}},
+             "dispute":{"entity":{"id":"disp_AHfqOvkldwsbqt","entity":"dispute","payment_id":"pay_EsyWjHrfzb59eR","amount":10000,"status":"open"}}}}
+            """;
+
+        GatewayWebhookInfo.Read(created).ShouldBe(
+            new GatewayWebhookInfo("payment.dispute.created", "order_EsyWbwr9y7FfUd", "pay_EsyWjHrfzb59eR", null, null, "disp_AHfqOvkldwsbqt"));
+        GatewayWebhookInfo.Read("""{"event":"payment.dispute.lost","payload":{"dispute":{"entity":{"id":"disp_AHfqOvkldwsbqt","payment_id":"pay_EsyWjHrfzb59eR"}}}}""")
+            .ShouldBe(new GatewayWebhookInfo("payment.dispute.lost", null, "pay_EsyWjHrfzb59eR", null, null, "disp_AHfqOvkldwsbqt"));
+        GatewayWebhookInfo.Read("""{"event":"payment.dispute.won","payload":{"dispute":{"entity":{"id":"disp_../../x"}}}}""").DisputeId.ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_cashfree_webhook_names_its_order_payment_refund_settlement_and_dispute()
+    {
+        // Cashfree's envelope (its SDKs' payment, refund and settlement webhooks): ids as numbers or strings.
+        GatewayWebhookInfo.ReadCashfree("""
+            {"type":"PAYMENT_SUCCESS_WEBHOOK","event_time":"2026-09-25T09:41:40+05:30","data":{
+             "order":{"order_id":"CFPay_z64lc99v754g_1","order_amount":1500.5,"order_tags":{"hc360_reference":"BILL-2026-00042"}},
+             "payment":{"cf_payment_id":12376123,"payment_status":"SUCCESS","payment_amount":1500.5},
+             "customer_details":{"customer_name":"Ravi Kumar","customer_phone":"9876543210"}}}
+            """).ShouldBe(new GatewayWebhookInfo("PAYMENT_SUCCESS_WEBHOOK", "CFPay_z64lc99v754g_1", "12376123", null, null));
+        GatewayWebhookInfo.ReadCashfree("""
+            {"type":"REFUND_SUCCESS_WEBHOOK","data":{"refund":{"cf_refund_id":"refund_1553338","refund_id":"a1b2c3d4e5f60718293a4b5c6d7e8f90",
+             "order_id":"CFPay_z64lc99v754g_1","cf_payment_id":918812,"refund_status":"SUCCESS"}}}
+            """).ShouldBe(new GatewayWebhookInfo("REFUND_SUCCESS_WEBHOOK", null, "918812", "a1b2c3d4e5f60718293a4b5c6d7e8f90", null));
+        GatewayWebhookInfo.ReadCashfree("""{"type":"SETTLEMENT_WEBHOOK","data":{"settlement":{"cf_settlement_id":6121238,"transfer_utr":"N87912312"}}}""")
+            .SettlementId.ShouldBe("6121238");
+
+        // Its dispute and link events are not in the SDKs: a dispute id or link id is taken wherever it sits, and only if it is one.
+        GatewayWebhookInfo.ReadCashfree("""{"type":"DISPUTE_CREATED","data":{"dispute":{"dispute_id":433475257,"dispute_status":"CHARGEBACK_CREATED"}}}""")
+            .DisputeId.ShouldBe("433475257");
+        GatewayWebhookInfo.ReadCashfree("""{"type":"DISPUTE_CREATED","data":{"dispute":{"dispute_id":"../../x"}}}""").DisputeId.ShouldBeNull();
+        GatewayWebhookInfo.ReadCashfree("""{"type":"PAYMENT_LINK_EVENT","data":{"link_id":"hcl_0199f0a1b2c3d4e5f60718293a","link_status":"PAID"}}""")
+            .OrderId.ShouldBe("hcl_0199f0a1b2c3d4e5f60718293a");
+        GatewayWebhookInfo.ReadCashfree("""{"type":"payment.captured","data":{}}""").EventType.ShouldBeNull();
+        GatewayWebhookInfo.ReadCashfree("not json").ShouldBe(new GatewayWebhookInfo(null, null, null, null, null));
+    }
+
+    [Fact]
+    public void Ids_a_gateway_sends_as_numbers_are_candidates_too()
+    {
+        var candidates = PaymentGatewayService.ExtractCandidates("""{"data":{"payment":{"cf_payment_id":12376123,"payment_amount":150050,"dispute_id":433},"count":7}}""");
+
+        candidates.ShouldContain("12376123");
+        candidates.ShouldContain("433");
+        candidates.ShouldNotContain("150050");
+        candidates.ShouldNotContain("7");
+    }
+
+    [Fact]
     public void A_webhook_is_known_by_its_event_id_else_by_its_body()
     {
         GatewayWebhookInfo.EventIdOf("KE2cmXtQi5JDdj", "{}").ShouldBe("KE2cmXtQi5JDdj");
@@ -474,4 +569,7 @@ public sealed class GatewayReconciliationTests
             .UseSnakeCaseNamingConvention()
             .Options,
         new ModuleCatalog([new PatientsModule(), new SchedulingModule(), new BillingModule()]));
+
+    /// <summary>The Razorpay payment the refunds of these tests return money from.</summary>
+    private static readonly GatewayPaymentRef Paid = new("razorpay", "pay_A1B2C3D4E5", "order_A1B2C3D4E5");
 }

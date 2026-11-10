@@ -6,7 +6,9 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Domain.Safety;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Realtime;
@@ -25,11 +27,13 @@ public sealed class PrescriptionService(
     ClinicalAccess access,
     PrescriptionSafetyService safety,
     ICurrentUser currentUser,
+    IPermissionService permissions,
     IAuditLogger audit,
     IRealtimePublisher realtime,
     INotificationService notifications,
     PrescriptionSignatureSettings signatureSettings,
     PrescriptionFinalCopies finalCopies,
+    IEnumerable<ITeleconsultModes> teleconsultModes,
     TimeProvider time)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
@@ -201,7 +205,11 @@ public sealed class PrescriptionService(
 
     /// <summary>
     /// Authorised refill (ERX-05): consumes one refill of a signed prescription and issues it as a new signed
-    /// prescription for the pharmacy. Safety checks run again because allergies or other medicines may have changed.
+    /// prescription for the pharmacy, in the original doctor's name and registration, recording who refilled it. Safety
+    /// checks run again because allergies or other medicines may have changed. A prescription with a controlled drug
+    /// (Schedule H1 or X, or NDPS, as the drug master says now) is not refilled: the doctor writes a new one. A blocking
+    /// alert found at refill is overridden only by the doctor who wrote the prescription, signed in as themselves; anyone
+    /// else's refill is refused and the doctor is told (another doctor repeats it as their own prescription instead).
     /// </summary>
     public async Task<Result<SignPrescriptionResult>> RefillAsync(Guid id, RefillPrescriptionRequest request, CancellationToken ct)
     {
@@ -212,15 +220,23 @@ public sealed class PrescriptionService(
         }
 
         var source = loaded.Value;
+
+        // A refill is issued as it stands, so a medicine typed in without its generic name, before a prescription had to
+        // name it, can't be named here: the doctor repeats the prescription as a draft and names it there.
+        var items = await FromDrugMasterAsync(source.Items.OrderBy(i => i.Sequence).Select(i => ToItem(ToRequest(i))), ct);
+        if (items.Where(i => i.IsControlledDrug).Select(i => i.DrugName).ToList() is { Count: > 0 } controlled)
+        {
+            return Error.Rule("prescription.refill_controlled",
+                $"Prescription {source.PrescriptionNumber} has a controlled drug ({string.Join(", ", controlled)}: Schedule H1 or X, or NDPS), "
+                + "which is not repeated on a refill. The doctor writes a new prescription for it.");
+        }
+
         var used = source.UseRefill();
         if (used.IsFailure)
         {
             return used.Error!;
         }
 
-        // A refill is issued as it stands, so a medicine typed in without its generic name, before a prescription had to
-        // name it, can't be named here: the doctor repeats the prescription as a draft and names it there.
-        var items = await FromDrugMasterAsync(source.Items.OrderBy(i => i.Sequence).Select(i => ToItem(ToRequest(i))), ct);
         if (Prescription.WithoutGenericName(items) is { } unnamed)
         {
             return Error.Rule("prescription.generic_missing",
@@ -239,22 +255,65 @@ public sealed class PrescriptionService(
             Notes = source.Notes,
             Advice = source.Advice,
             RefillOfPrescriptionId = source.Id,
+            RefilledByName = Fit(currentUser.DisplayName ?? currentUser.UserName, 200),
         };
         refill.PrescriptionNumber = await numbers.NextAsync(ClinicalNumberSeries.Prescription, refill.FacilityId, ct);
         refill.ReplaceItems(items);
 
-        var signed = await SignCoreAsync(refill, request.OverrideReason, request.AcknowledgeWarnings, request.ConfirmControlledDrugs, ct);
+        // The doctor who wrote it may override a hard stop at refill, as at signing; nobody else does so in their name.
+        var byPrescriber = currentUser.PractitionerId == source.PractitionerId && currentUser.UserId is { } userId
+                           && await permissions.HasPermissionAsync(userId, ClinicalPermissions.PrescriptionsSign, ct);
+        var signed = await SignCoreAsync(refill, request.OverrideReason, request.AcknowledgeWarnings, request.ConfirmControlledDrugs, ct, overrideAllowed: byPrescriber);
         if (signed.IsFailure)
         {
+            if (signed.Error!.Code == RefillNeedsPrescriberCode)
+            {
+                await SendBackToPrescriberAsync(source, signed.Error.Data as IReadOnlyList<SafetyAlert>, ct);
+            }
+
             return signed.Error!;
         }
 
         db.Add(refill);
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "prescription.refilled",
+            $"{refill.PrescriptionNumber} issued as a refill of {source.PrescriptionNumber} by {refill.RefilledByName}, in the name of the doctor who wrote it")
+        {
+            PatientId = refill.PatientId,
+            EntityType = nameof(Prescription),
+            EntityId = refill.Id.ToString(),
+            Details = new { refillOf = source.Id, refilledBy = currentUser.UserId, prescriber = source.PractitionerId, byPrescriber },
+        });
         await QueueSignedNoticeAsync(refill, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         await PublishSignedAsync(refill, ct);
         return new SignPrescriptionResult(await ToDtoAsync(refill, ct), signed.Value);
+    }
+
+    /// <summary>A refill refused because its safety check blocks it and only the doctor who wrote the prescription may override that.</summary>
+    public const string RefillNeedsPrescriberCode = "prescription.refill_needs_prescriber";
+
+    /// <summary>Tells the doctor who wrote the prescription that a refill of it waits for their decision on a blocking alert.</summary>
+    private async Task SendBackToPrescriberAsync(Prescription source, IReadOnlyList<SafetyAlert>? alerts, CancellationToken ct)
+    {
+        var doctors = await db.Set<User>().AsNoTracking()
+            .Where(u => u.PractitionerId == source.PractitionerId && u.IsActive && u.Type == UserType.Staff)
+            .Select(u => u.Id)
+            .ToListAsync(ct);
+        var found = alerts is null ? "" : " " + string.Join(" ", alerts.Where(a => a.IsBlocking).Select(a => a.Message).Take(3));
+        await notifications.NotifyUsersAsync(doctors, "Refill held for your decision",
+            $"{currentUser.DisplayName ?? currentUser.UserName} could not refill {source.PrescriptionNumber}: its safety check blocks it, and only you may override that.{found}",
+            $"/emr/prescriptions/{source.Id}", "prescriptions", "warning", ct);
+        // Written in its own transaction: the refill's is rolled back.
+        await audit.WriteAsync(new AuditEntry(AuditCategories.Clinical, "prescription.refill_blocked",
+            $"Refill of {source.PrescriptionNumber} by {currentUser.DisplayName ?? currentUser.UserName} refused: a blocking safety alert, sent back to the prescriber")
+        {
+            PatientId = source.PatientId,
+            EntityType = nameof(Prescription),
+            EntityId = source.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = alerts?.Where(a => a.IsBlocking).ToList(),
+        }, ct);
     }
 
     public async Task<Result<Prescription>> LoadAsync(Guid id, CancellationToken ct)
@@ -289,10 +348,16 @@ public sealed class PrescriptionService(
         p.IsDigitallySigned,
         p.DigitallySignedAt,
         p.SignerName,
-        finalCopyAvailable);
+        finalCopyAvailable,
+        p.SignedByUserId,
+        p.RefilledByName);
 
-    /// <summary>The medicines a teleconsultation may not prescribe, for a prescription written in one (TPG 2020).</summary>
-    private async Task<IReadOnlyList<string>> TelemedicineProhibitedAsync(Prescription prescription, CancellationToken ct)
+    /// <summary>
+    /// The refusal of a prescription written in a teleconsultation that prescribes a medicine its list keeps out of it
+    /// (Telemedicine Practice Guidelines 2020, <see cref="TelemedicinePrescribing"/>); null when it is not written in one, or
+    /// all its medicines may be.
+    /// </summary>
+    private async Task<Error?> TelemedicineRefusalAsync(Prescription prescription, CancellationToken ct)
     {
         // A teleconsultation is a telehealth encounter, or anything written on a telehealth visit: the prescription's own
         // visit, or its encounter's.
@@ -300,26 +365,99 @@ public sealed class PrescriptionService(
             ? await db.Set<Encounter>().AsNoTracking().Where(e => e.Id == encounterId).Select(e => new { e.Type, e.VisitId }).FirstOrDefaultAsync(ct)
             : null;
         Guid?[] visitIds = [prescription.VisitId, encounter?.VisitId];
-        var teleconsult = encounter?.Type == EncounterType.Telehealth
-                          || await db.Set<Visit>().AnyAsync(v => visitIds.Contains(v.Id) && v.Type == VisitType.Telehealth, ct);
-        if (!teleconsult)
+        var teleVisitId = await db.Set<Visit>().AsNoTracking()
+            .Where(v => visitIds.Contains(v.Id) && v.Type == VisitType.Telehealth)
+            .Select(v => (Guid?)v.Id)
+            .FirstOrDefaultAsync(ct);
+        if (encounter?.Type != EncounterType.Telehealth && teleVisitId is null)
         {
-            return [];
+            return null;
         }
 
         var drugIds = prescription.Items.Where(i => i.DrugItemId is not null).Select(i => i.DrugItemId!.Value).Distinct().ToList();
         var master = await db.Set<Item>().AsNoTracking().Where(i => drugIds.Contains(i.Id))
-            .Select(i => new { i.Id, i.Schedule, i.IsControlled }).ToDictionaryAsync(i => i.Id, ct);
-        return TelemedicinePrescribing.Prohibited(prescription.Items.Select(i =>
-            i.DrugItemId is { } id && master.TryGetValue(id, out var drug)
-                ? new TelemedicinePrescribing.Medicine(i.DrugName, drug.Schedule, drug.IsControlled)
-                // A medicine typed in, not from the drug master: what the line itself says. A controlled line may be an NDPS
-                // drug, which the line cannot tell from Schedule H1, so it counts as one.
-                : new TelemedicinePrescribing.Medicine(i.DrugName, i.ControlledSchedule == "X" ? DrugSchedule.X : DrugSchedule.None, i.IsControlledDrug)));
+            .Select(i => new { i.Id, i.Schedule, i.IsControlled, i.TelemedicineList }).ToDictionaryAsync(i => i.Id, ct);
+        // In the order the lines were written, as the doctor reads the refusal.
+        var medicines = prescription.Items.OrderBy(i => i.Sequence).Select(i =>
+                i.DrugItemId is { } id && master.TryGetValue(id, out var drug)
+                    ? new TelemedicinePrescribing.Medicine(i.DrugName, drug.Schedule, drug.IsControlled, drug.TelemedicineList)
+                    // A medicine typed in, not from the drug master: what the line itself says, on no list. A controlled line may
+                    // be an NDPS drug, which the line cannot tell from Schedule H1, so it counts as one.
+                    : new TelemedicinePrescribing.Medicine(i.DrugName, i.ControlledSchedule == "X" ? DrugSchedule.X : DrugSchedule.None, i.IsControlledDrug))
+            .ToList();
+
+        // Only what List O leaves out needs the consultation's facts.
+        if (medicines.All(m => m.Effective == TelemedicineList.O))
+        {
+            return null;
+        }
+
+        var consult = new TelemedicinePrescribing.Consult(
+            teleVisitId is { } visitId && await HeldByVideoAsync(visitId, ct),
+            await IsFollowUpAsync(prescription, ct));
+        var refused = TelemedicinePrescribing.Refused(medicines, consult);
+        return refused.Count == 0 ? null : TelemedicinePrescribing.Refusal(refused, consult);
+    }
+
+    /// <summary>Whether the doctor saw the patient by video on the telehealth visit, as the module holding the calls says.</summary>
+    private async Task<bool> HeldByVideoAsync(Guid visitId, CancellationToken ct)
+    {
+        foreach (var modes in teleconsultModes)
+        {
+            if (await modes.HeldByVideoAsync(visitId, ct))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the teleconsultation is a follow-up (TPG 2020, section 3.4): the prescribing doctor saw the patient in person
+    /// in the last six months, and a diagnosis recorded then is of the same ICD-10 category (the condition) as one recorded
+    /// in this teleconsultation. A differential is not the condition, and a diagnosis with no ICD-10 code cannot be compared.
+    /// </summary>
+    private async Task<bool> IsFollowUpAsync(Prescription prescription, CancellationToken ct)
+    {
+        var teleEncounters = db.Set<Encounter>().AsNoTracking()
+            .Where(e => e.Id == prescription.EncounterId || (prescription.VisitId != null && e.VisitId == prescription.VisitId))
+            .Select(e => e.Id);
+        var codes = await db.Set<Diagnosis>().AsNoTracking()
+            .Where(d => d.PatientId == prescription.PatientId && d.EncounterId != null && teleEncounters.Contains(d.EncounterId.Value)
+                        && d.Type != DiagnosisType.Differential && d.IcdCode != null)
+            .Select(d => d.IcdCode!)
+            .ToListAsync(ct);
+        var conditions = codes.Select(IcdCategory).Where(c => c.Length > 0).Distinct().ToList();
+        if (conditions.Count == 0)
+        {
+            return false;
+        }
+
+        var now = time.GetUtcNow();
+        var since = now.AddMonths(-TelemedicinePrescribing.FollowUpMonths);
+        var seenInPerson = db.Set<Encounter>().AsNoTracking()
+            .Where(e => e.PatientId == prescription.PatientId && e.PractitionerId == prescription.PractitionerId
+                        && e.Type != EncounterType.Telehealth && e.Type != EncounterType.HealthCheckup
+                        && e.StartedAt >= since && e.StartedAt <= now)
+            .Select(e => e.Id);
+        var earlier = await db.Set<Diagnosis>().AsNoTracking()
+            .Where(d => d.PatientId == prescription.PatientId && d.EncounterId != null && seenInPerson.Contains(d.EncounterId.Value)
+                        && d.Type != DiagnosisType.Differential && d.IcdCode != null)
+            .Select(d => d.IcdCode!)
+            .ToListAsync(ct);
+        return earlier.Select(IcdCategory).Any(conditions.Contains);
+    }
+
+    /// <summary>An ICD-10 code's category, its first three characters ("E11.9" is E11), which names the condition.</summary>
+    private static string IcdCategory(string code)
+    {
+        var trimmed = code.Trim().ToUpperInvariant();
+        return trimmed.Length < 3 ? string.Empty : trimmed[..3];
     }
 
     private async Task<Result<IReadOnlyList<SafetyAlert>>> SignCoreAsync(Prescription prescription, string? overrideReason, bool acknowledgeWarnings,
-        bool confirmControlledDrugs, CancellationToken ct)
+        bool confirmControlledDrugs, CancellationToken ct, bool overrideAllowed = true)
     {
         // A prescription carries the prescriber's registration number (Indian Medical Council (Professional Conduct,
         // Etiquette and Ethics) Regulations 2002, 1.4.1): one whose record has none is not signed.
@@ -337,12 +475,23 @@ public sealed class PrescriptionService(
 
         // Again at signing: a draft saved before the master decided, or whose drug the master has since reclassified.
         await FromDrugMasterAsync(prescription.Items, ct);
-        if (await TelemedicineProhibitedAsync(prescription, ct) is { Count: > 0 } prohibited)
+        if (await TelemedicineRefusalAsync(prescription, ct) is { } telemedicine)
         {
-            return TelemedicinePrescribing.Refusal(prohibited);
+            return telemedicine;
         }
 
         var check = await safety.CheckAsync(prescription, ct);
+        if (check.IsBlocked && !overrideAllowed)
+        {
+            var doctor = (await PrintQueries.PractitionerNamesAsync(db, [prescription.PractitionerId], ct)).GetValueOrDefault(prescription.PractitionerId) ?? "the doctor who wrote it";
+            return new Error(RefillNeedsPrescriberCode,
+                $"The safety check blocks this refill, and only {doctor}, who wrote the prescription, may override that. It has been sent back to them; "
+                + "another doctor may repeat the prescription as their own and sign it.")
+            {
+                Data = check.Alerts,
+            };
+        }
+
         if (check.IsBlocked && string.IsNullOrWhiteSpace(overrideReason))
         {
             return new Error("prescription.safety_block",
@@ -359,7 +508,8 @@ public sealed class PrescriptionService(
 
         var signature = new PrescriptionSignature(currentUser.UserId, NewVerificationToken(), check.IsBlocked ? overrideReason : null,
             JsonSerializer.Serialize(check.Alerts, JsonOptions), confirmControlledDrugs, registration.Number.Trim(),
-            string.IsNullOrWhiteSpace(registration.Council) ? null : registration.Council.Trim());
+            string.IsNullOrWhiteSpace(registration.Council) ? null : registration.Council.Trim(),
+            check.IsBlocked ? OverriddenAlerts(check.BlockingAlerts) : null);
         var signed = prescription.Sign(signature, time.GetUtcNow());
         if (signed.IsFailure)
         {
@@ -412,6 +562,32 @@ public sealed class PrescriptionService(
         return Result<IReadOnlyList<SafetyAlert>>.Ok(check.Alerts);
     }
 
+    /// <summary>
+    /// The blocking alerts each prescribed line was signed over, in words ("ALLERGY: …; Maximum dose …"), keyed by the line:
+    /// the pharmacy shows them on the line and holds it until a pharmacist acknowledges them.
+    /// </summary>
+    internal static Dictionary<Guid, string> OverriddenAlerts(IEnumerable<SafetyAlert> blocking)
+    {
+        var lines = new Dictionary<Guid, List<string>>();
+        foreach (var alert in blocking)
+        {
+            foreach (var itemId in alert.ItemIds.Distinct())
+            {
+                if (!lines.TryGetValue(itemId, out var messages))
+                {
+                    lines[itemId] = messages = [];
+                }
+
+                if (!messages.Contains(alert.Message))
+                {
+                    messages.Add(alert.Message);
+                }
+            }
+        }
+
+        return lines.ToDictionary(l => l.Key, l => Fit(string.Join(" ", l.Value), 1000)!);
+    }
+
     /// <summary>Refreshes pharmacy queue screens (ids only; the pharmacy reloads with its own permissions).</summary>
     private Task PublishSignedAsync(Prescription prescription, CancellationToken ct) =>
         realtime.PublishAsync(Topics.Pharmacy(prescription.FacilityId), "pharmacy.prescription.signed", new { prescription.Id, prescription.IsInpatient }, ct);
@@ -449,7 +625,9 @@ public sealed class PrescriptionService(
 
         var patient = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == prescription.PatientId)
             .Select(p => new { p.Phone, p.Email, p.FullName, p.PreferredLanguage }).FirstOrDefaultAsync(ct);
-        if (patient?.Phone is null)
+        // A record in a protected category is not sent to a number another patient shares (SharedNumbers): the
+        // prescription's PDF would tell whoever holds the phone. The patient takes the printed copy.
+        if (patient?.Phone is null || await SharedNumbers.HiddenFromNumberAsync(db, prescription.PatientId, ct))
         {
             prescription.ReleasePatientNotice();
             return;
@@ -551,4 +729,6 @@ public sealed class PrescriptionService(
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(18)).Replace('+', '-').Replace('/', '_');
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? Fit(string? value, int max) => value is null || value.Length <= max ? value : value[..max];
 }

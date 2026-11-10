@@ -27,7 +27,7 @@ public sealed class InteropModuleTests
     [Fact]
     public void Declares_fhir_read_abdm_export_and_abdm_records_request()
     {
-        new InteropModule().Permissions.Select(p => p.Name).ShouldBe([InteropPermissions.FhirRead, InteropPermissions.AbdmExport, InteropPermissions.AbdmRecordsRequest]);
+        new InteropModule().Permissions.Select(p => p.Name).ShouldBe([InteropPermissions.FhirRead, InteropPermissions.AbdmExport, InteropPermissions.AbdmRecordsRequest, InteropPermissions.SmartClientsManage]);
     }
 
     [Fact]
@@ -95,9 +95,14 @@ public sealed class InteropModuleTests
     {
         var providers = Services().Where(d => d.ServiceType == typeof(IFhirResourceProvider)).Select(d => d.ImplementationType!.Name).ToList();
 
-        providers.Count.ShouldBe(7);
-        providers.Distinct().Count().ShouldBe(7);
+        providers.Count.ShouldBe(9);
+        providers.Distinct().Count().ShouldBe(9);
     }
+
+    [Fact]
+    public void Registers_one_provider_per_directory_resource_type() =>
+        Services().Where(d => d.ServiceType == typeof(IFhirDirectoryProvider)).Select(d => d.ImplementationType!.Name)
+            .ShouldBe([nameof(PractitionerDirectory), nameof(OrganizationDirectory), nameof(LocationDirectory)], ignoreOrder: true);
 
     [Fact]
     public void Decorates_the_authorization_result_handler_already_registered()

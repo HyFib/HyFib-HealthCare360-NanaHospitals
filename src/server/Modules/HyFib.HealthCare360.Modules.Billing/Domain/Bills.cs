@@ -127,8 +127,20 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     public decimal RefundableAmount { get; set; }
     public decimal PayerSettledAmount { get; set; }
     public decimal PayerDisallowedAmount { get; set; }
+
+    /// <summary>What debit notes (supplementary invoices, CGST Act s.34(3)) added to the patient's share, GST included.</summary>
+    public decimal DebitAmount { get; set; }
+
+    /// <summary>What debit notes added to the payer's share, GST included.</summary>
+    public decimal PayerDebitAmount { get; set; }
     public BillStatus Status { get; set; }
     public DateTimeOffset? FinalizedAt { get; set; }
+
+    /// <summary>
+    /// When a bill written on paper during a downtime was entered: <see cref="FinalizedAt"/> is the time on the paper, so
+    /// this is what tells whether it came in after its month's GSTR-1 was filed.
+    /// </summary>
+    public DateTimeOffset? EnteredFromPaperAt { get; set; }
     public Guid? FinalizedBy { get; set; }
     public DateTimeOffset? CancelledAt { get; set; }
     public Guid? CancelledBy { get; set; }
@@ -136,7 +148,7 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     public string? Notes { get; set; }
     public List<BillLine> Lines { get; set; } = [];
 
-    public decimal PayerOutstanding => Math.Max(PayerAmount - PayerSettledAmount - PayerDisallowedAmount, 0m);
+    public decimal PayerOutstanding => Math.Max(PayerAmount + PayerDebitAmount - PayerSettledAmount - PayerDisallowedAmount, 0m);
 
     public bool IsOpenForPayment => (Status is BillStatus.Finalized or BillStatus.PartiallyPaid) && DueAmount > 0;
 
@@ -437,7 +449,7 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
             return Error.Rule("billing.bill_not_creditable", "Credit notes and write-offs apply to finalized bills only.");
         }
 
-        var creditable = PatientAmount - CreditAmount;
+        var creditable = PatientAmount + DebitAmount - CreditAmount;
         return amount > creditable
             ? Error.Rule("billing.credit_exceeds", $"At most ₹{Money.FormatInr(Math.Max(creditable, 0m))} can be credited on this bill.")
             : Result.Success();
@@ -456,6 +468,40 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
+    /// <summary>
+    /// Adds a debit note's amount (GST included) to what the patient or the payer owes on a finalized bill: a paid bill
+    /// owes again.
+    /// </summary>
+    public Result ApplyDebit(decimal amount, bool toPayer)
+    {
+        if (amount <= 0)
+        {
+            return Error.Rule("billing.amount_invalid", "Enter an amount greater than zero.");
+        }
+
+        if (Status is not (BillStatus.Finalized or BillStatus.PartiallyPaid or BillStatus.Paid))
+        {
+            return Error.Rule("billing.bill_not_debitable", "Debit notes apply to finalized bills that are not cancelled.");
+        }
+
+        if (toPayer && !HasPayer)
+        {
+            return Error.Rule("billing.no_payer", "This bill has no payer to raise a debit note to.");
+        }
+
+        if (toPayer)
+        {
+            PayerDebitAmount += amount;
+        }
+        else
+        {
+            DebitAmount += amount;
+            UpdateBalances();
+        }
+
+        return Result.Success();
+    }
+
     public Result ApplyRefund(decimal amount)
     {
         if (amount <= 0)
@@ -469,6 +515,63 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         }
 
         RefundedAmount += amount;
+        UpdateBalances();
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Money recorded on the bill that never arrived (a receipt reversal): the bill owes it again, or a cancelled bill
+    /// has that much less to refund. Only money the bill still holds can be taken back: a refund paid out of it must be
+    /// recorded as not paid out first, if it was not paid. Leaving Paid raises <see cref="BillPaymentReversed"/>.
+    /// </summary>
+    public Result ReversePayment(decimal amount)
+    {
+        var reversible = CanReversePayment(amount);
+        if (reversible.IsFailure)
+        {
+            return reversible;
+        }
+
+        var wasPaid = Status == BillStatus.Paid;
+        PaidAmount -= amount;
+        UpdateBalances();
+        if (wasPaid && Status != BillStatus.Paid)
+        {
+            Raise(new BillPaymentReversed(Id, FacilityId));
+        }
+
+        return Result.Success();
+    }
+
+    /// <summary>Whether <paramref name="amount"/> recorded as paid on the bill can be reversed (<see cref="ReversePayment"/>).</summary>
+    public Result CanReversePayment(decimal amount)
+    {
+        if (amount <= 0)
+        {
+            return Error.Rule("billing.amount_invalid", "Enter an amount greater than zero.");
+        }
+
+        var held = PaidAmount - RefundedAmount;
+        return amount > held
+            ? Error.Rule(
+                "billing.reversal_exceeds_held",
+                $"Bill {BillNumber} holds ₹{Money.FormatInr(Math.Max(held, 0m))} of what was paid on it: ₹{Money.FormatInr(RefundedAmount)} was refunded. " +
+                "If a refund was not paid out, record that first.")
+            : Result.Success();
+    }
+
+    /// <summary>What the bill would owe, and have to refund, once <paramref name="amount"/> paid on it is reversed.</summary>
+    public (decimal Due, decimal Refundable) BalancesAfterReversal(decimal amount) => Balances(PaidAmount - amount);
+
+    /// <summary>A refund recorded as paid out from the bill was not paid: the bill holds that money again.</summary>
+    public Result ReverseRefund(decimal amount)
+    {
+        if (amount <= 0 || amount > RefundedAmount)
+        {
+            return Error.Rule("billing.refund_reversal_exceeds", $"Bill {BillNumber} has ₹{Money.FormatInr(RefundedAmount)} of refunds recorded.");
+        }
+
+        RefundedAmount -= amount;
         UpdateBalances();
         return Result.Success();
     }
@@ -530,14 +633,18 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         }
     }
 
-    private void UpdateBalances()
+    private (decimal Due, decimal Refundable) Balances(decimal paid)
     {
         var cancelled = Status is BillStatus.Cancelled or BillStatus.Refunded;
-        var owed = cancelled ? 0m : PatientAmount - CreditAmount;
+        var owed = cancelled ? 0m : PatientAmount + DebitAmount - CreditAmount;
+        var balance = owed - (paid - RefundedAmount);
+        return (Math.Max(balance, 0m), Math.Max(-balance, 0m));
+    }
+
+    private void UpdateBalances()
+    {
         var netPaid = PaidAmount - RefundedAmount;
-        var balance = owed - netPaid;
-        DueAmount = Math.Max(balance, 0m);
-        RefundableAmount = Math.Max(-balance, 0m);
+        (DueAmount, RefundableAmount) = Balances(PaidAmount);
 
         Status = Status switch
         {

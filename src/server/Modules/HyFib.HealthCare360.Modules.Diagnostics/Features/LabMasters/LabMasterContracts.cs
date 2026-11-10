@@ -99,13 +99,17 @@ public sealed record SaveLabTestRequest(
     Guid? DefaultReferralLabId,
     int DisplayOrder,
     bool IsActive,
-    uint? Version);
+    uint? Version,
+    string? Reason = null);
 
 public sealed record ComponentEntry(Guid TestId, string? GroupName);
 
 public sealed record SetComponentsRequest(IReadOnlyList<ComponentEntry> Components, uint Version);
 
-public sealed record SetRangesRequest(IReadOnlyList<ReferenceRangeDto> Ranges, uint Version);
+/// <param name="Reason">
+/// Why: required when the change loosens a critical limit and the lab asks for a second pathologist (it then waits for one).
+/// </param>
+public sealed record SetRangesRequest(IReadOnlyList<ReferenceRangeDto> Ranges, uint Version, string? Reason = null);
 
 public sealed record LabInstrumentDto(
     Guid Id,
@@ -132,7 +136,30 @@ public sealed record SaveLabInstrumentRequest(
     bool AutoValidationEnabled,
     string? Location,
     bool IsActive,
-    uint? Version);
+    uint? Version,
+    string? Reason = null);
+
+/// <summary>
+/// A channel an analyser sends that no active test maps. <c>Mapping</c> is how to write it in a test's channel codes,
+/// the analyser's own code first (<c>H500:RDW-CV</c>), or null when its characters cannot be written as a mapping.
+/// <c>Ignored</c> is the lab's decision not to map it, while it stands.
+/// </summary>
+public sealed record AnalyserChannelDto(
+    Guid Id,
+    Guid InstrumentId,
+    string InstrumentCode,
+    string ChannelCode,
+    DateTimeOffset FirstSeenAt,
+    DateTimeOffset LastSeenAt,
+    int TimesSeen,
+    string? LastValue,
+    string? LastUnit,
+    string? Mapping,
+    IgnoredAnalyserChannelDto? Ignored);
+
+public sealed record IgnoredAnalyserChannelDto(string Reason, string? IgnoredBy, DateTimeOffset IgnoredAt);
+
+public sealed record IgnoreAnalyserChannelRequest(string Reason);
 
 public sealed record ReferralLabDto(
     Guid Id,
@@ -183,6 +210,7 @@ public sealed class SaveLabTestRequestValidator : AbstractValidator<SaveLabTestR
         RuleFor(x => x.Container).IsInEnum();
         RuleFor(x => x.ResultType).IsInEnum();
         RuleFor(x => x.Method).SafeText(200);
+        RuleFor(x => x.Reason).SafeText(500);
         RuleFor(x => x.TatHours).InclusiveBetween(0, 24 * 60);
         RuleFor(x => x.Loinc).Matches("^[0-9]{1,7}-[0-9]$").When(x => !string.IsNullOrWhiteSpace(x.Loinc)).WithMessage("Enter a LOINC code such as 718-7.");
         RuleFor(x => x.LoincName).SafeText(255);
@@ -219,6 +247,7 @@ public sealed class SetRangesRequestValidator : AbstractValidator<SetRangesReque
     public SetRangesRequestValidator()
     {
         RuleFor(x => x.Ranges).Must(r => r.Count <= 50).WithMessage("At most 50 reference intervals per test.");
+        RuleFor(x => x.Reason).SafeText(500);
         RuleForEach(x => x.Ranges).ChildRules(r =>
         {
             r.RuleFor(e => e.AgeFromDays).InclusiveBetween(0, 365 * 130);
@@ -241,7 +270,15 @@ public sealed class SaveLabInstrumentRequestValidator : AbstractValidator<SaveLa
         RuleFor(x => x.Location).MaximumLength(100);
         RuleFor(x => x.Section).IsInEnum();
         RuleFor(x => x.Protocol).IsInEnum();
+        RuleFor(x => x.Reason).SafeText(500);
     }
+}
+
+public sealed class IgnoreAnalyserChannelRequestValidator : AbstractValidator<IgnoreAnalyserChannelRequest>
+{
+    public IgnoreAnalyserChannelRequestValidator() =>
+        RuleFor(x => x.Reason).NotEmpty().MinimumLength(5).WithMessage("Say why the channel goes on no report (at least 5 characters).")
+            .SafeText(IgnoredAnalyserChannel.ReasonLength);
 }
 
 public sealed class SaveReferralLabRequestValidator : AbstractValidator<SaveReferralLabRequest>

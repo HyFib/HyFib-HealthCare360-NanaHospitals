@@ -7,8 +7,28 @@ import type { ImagingStudyStatus } from './api';
 
 export type StudyAction = 'schedule' | 'arrive' | 'start' | 'acquire' | 'repeat' | 'cancel' | 'reconcile' | 'report';
 
-/** Technologist actions allowed in a study status, in the order they are usually done. */
-export function studyActions(status: ImagingStudyStatus): StudyAction[] {
+/**
+ * An ultrasound in pregnancy whose scan has begun: it is not cancelled, and its Form F is completed (PCPNDT;
+ * maker-checker slice 9, server `form_f.scan_performed`).
+ */
+export function pregnancyScanPerformed(study: {
+  requiresFormF: boolean;
+  startedAt: string | null;
+  acquiredAt: string | null;
+}): boolean {
+  return study.requiresFormF && (study.startedAt !== null || study.acquiredAt !== null);
+}
+
+/**
+ * Technologist actions allowed in a study status, in the order they are usually done. `scanLocked`: an ultrasound in
+ * pregnancy already scanned (`pregnancyScanPerformed`), which is not cancelled.
+ */
+export function studyActions(status: ImagingStudyStatus, scanLocked = false): StudyAction[] {
+  const actions = actionsFor(status);
+  return scanLocked ? actions.filter((a) => a !== 'cancel') : actions;
+}
+
+function actionsFor(status: ImagingStudyStatus): StudyAction[] {
   switch (status) {
     case 'Ordered':
       return ['schedule', 'arrive', 'start', 'cancel', 'reconcile'];

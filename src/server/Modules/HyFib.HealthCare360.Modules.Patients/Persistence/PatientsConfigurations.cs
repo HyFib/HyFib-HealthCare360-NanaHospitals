@@ -169,6 +169,43 @@ internal sealed class PortalFamilyLinkConfiguration : IEntityTypeConfiguration<P
     }
 }
 
+internal sealed class PortalLinkConfiguration : IEntityTypeConfiguration<PortalLink>
+{
+    public void Configure(EntityTypeBuilder<PortalLink> b)
+    {
+        b.ToTable("portal_links", PatientsSchema.Name);
+        b.Property(x => x.Phone).HasMaxLength(20);
+        b.Property(x => x.TokenHash).HasMaxLength(64);
+        b.Property(x => x.RevokedReason).HasMaxLength(32);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+
+        // Every opening of a link looks it up by its token's hash.
+        b.HasIndex(x => x.TokenHash).IsUnique();
+
+        // The patient's links, newest first: the list on the record, the 24-hour count and the links a new one replaces.
+        b.HasIndex(x => new { x.PatientId, x.CreatedAt });
+    }
+}
+
+internal sealed class PatientPhoneChangeConfiguration : IEntityTypeConfiguration<PatientPhoneChange>
+{
+    public void Configure(EntityTypeBuilder<PatientPhoneChange> b)
+    {
+        b.ToTable("patient_phone_changes", PatientsSchema.Name);
+        b.Property(x => x.Phone).HasMaxLength(20);
+        b.Property(x => x.PreviousPhone).HasMaxLength(20);
+        b.Property(x => x.CodeHash).HasMaxLength(64);
+        b.Ignore(x => x.AttemptsLeft);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+
+        // The patient's latest change (the one a new code supersedes, the dialog's pending one), and the data summary's count.
+        b.HasIndex(x => new { x.PatientId, x.CreatedAt });
+
+        // The codes a number was sent in the last 15 minutes, whichever patient they were for.
+        b.HasIndex(x => new { x.Phone, x.CreatedAt });
+    }
+}
+
 internal sealed class BreakGlassAccessConfiguration : IEntityTypeConfiguration<BreakGlassAccess>
 {
     public void Configure(EntityTypeBuilder<BreakGlassAccess> b)
@@ -208,6 +245,12 @@ internal sealed class PatientConsentConfiguration : IEntityTypeConfiguration<Pat
         b.Property(x => x.RevokedReason).HasMaxLength(300);
         b.Property(x => x.Notes).HasMaxLength(1000);
         b.Ignore(x => x.IsActive);
+        b.Ignore(x => x.IsScopedSharing);
+
+        // A record-sharing consent's scope: arrays the FHIR checks read in SQL (any element, none at all); the purposes and
+        // kinds as their names, like every enum.
+        b.PrimitiveCollection(x => x.SharePurposes).ElementType(e => e.HasConversion<string>().HasMaxLength(32));
+        b.PrimitiveCollection(x => x.ShareKinds).ElementType(e => e.HasConversion<string>().HasMaxLength(32));
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.PatientId, x.Type });
     }

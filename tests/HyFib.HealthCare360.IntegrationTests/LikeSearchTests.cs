@@ -20,8 +20,8 @@ public sealed class LikeSearchTests(HospitalServer server)
         var suffix = Letters(6);
         var withUnderscore = $"fo_{suffix}";
         var withLetter = $"fox{suffix}";
-        await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", NewUser(withUnderscore, frontOffice));
-        await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", NewUser(withLetter, frontOffice));
+        await server.CreateUserAsync(admin, NewUser(withUnderscore, frontOffice));
+        await server.CreateUserAsync(admin, NewUser(withLetter, frontOffice));
 
         var found = await SearchUsersAsync(admin, withUnderscore);
 

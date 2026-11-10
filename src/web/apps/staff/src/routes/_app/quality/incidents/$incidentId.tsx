@@ -41,6 +41,7 @@ import { CapaStatusBadge, IncidentStatusBadge, SentinelBadge, SeverityBadge } fr
 import { CapaDialog } from '@/modules/quality/CapaDialog';
 import { IncidentEditDialog } from '@/modules/quality/IncidentEditDialog';
 import { InvestigationEditor } from '@/modules/quality/InvestigationEditor';
+import { IncidentMvpiPanel } from '@/modules/quality/MvpiReports';
 import {
   incidentStatusLabel,
   incidentTypeLabel,
@@ -107,13 +108,22 @@ function IncidentView({ incident: i }: { incident: IncidentDetail }) {
     openCapaCount: i.capas.filter((c) => c.status === 'Open' || c.status === 'InProgress').length,
   };
 
+  const closingWaits = Boolean(i.closureAskedAt);
   const move = async (to: IncidentStatus, note: string | null) => {
     setBusy(true);
     try {
-      await qualityApi.transition(i.id, to, note);
-      notify.success(
-        `Incident ${to === 'Closed' ? 'closed' : i.status === 'Closed' ? 'reopened' : `moved to "${incidentStatusLabel[to]}"`}`,
-      );
+      const asked = await qualityApi.transition(i.id, to, note);
+      if (asked) {
+        // A sentinel event: nothing changes until the quality manager approves (MAKER-CHECKER.md, slice 14).
+        notify.success(
+          'Asked for approval',
+          `${i.incidentNumber} closes when the quality manager approves: not you, nor whoever reported it.`,
+        );
+      } else {
+        notify.success(
+          `Incident ${to === 'Closed' ? 'closed' : i.status === 'Closed' ? 'reopened' : `moved to "${incidentStatusLabel[to]}"`}`,
+        );
+      }
       setMoving(null);
       void queryClient.invalidateQueries({ queryKey: qualityKeys.all });
     } catch (error) {
@@ -161,6 +171,12 @@ function IncidentView({ incident: i }: { incident: IncidentDetail }) {
         <Caption1 className={styles.muted}>{i.assignedTo ? `With ${i.assignedTo.name}` : 'Not assigned yet'}</Caption1>
       </div>
 
+      <IncidentMvpiPanel
+        incident={i}
+        onReport={() => void navigate({ to: '/quality/mvpi', search: { incidentId: i.id } })}
+        onOpen={(id) => void navigate({ to: '/quality/mvpi', search: { report: id } })}
+      />
+
       {i.isSentinel && !progress.rcaCompleted && !closed && (
         <MessageBar intent="error" layout="multiline">
           <MessageBarBody>
@@ -171,13 +187,30 @@ function IncidentView({ incident: i }: { incident: IncidentDetail }) {
         </MessageBar>
       )}
 
+      {(i.closureAskedAt || i.downgradeAskedAt) && (
+        <MessageBar intent="info" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Waiting for the quality manager</MessageBarTitle>
+            {i.closureAskedAt && <>Closing this sentinel event was asked for {formatDateTime(i.closureAskedAt)}. </>}
+            {i.downgradeAskedAt && (
+              <>Re-grading it so it is no longer sentinel was asked for {formatDateTime(i.downgradeAskedAt)}. </>
+            )}
+            Nothing changes until someone who approves sentinel events agrees, never the one who asked nor whoever
+            reported it. It is in their approvals inbox.
+          </MessageBarBody>
+        </MessageBar>
+      )}
+
       <Section
         title="Next step"
         description="Moves allowed from the current stage. Closing needs an outcome summary; reopening needs a reason."
       >
         <div className={styles.moves}>
           {i.nextStatuses.map((to) => {
-            const blocker = transitionBlocker(i.status, to, progress);
+            const blocker =
+              to === 'Closed' && closingWaits
+                ? 'Closing is waiting for the quality manager.'
+                : transitionBlocker(i.status, to, progress);
             const button = (
               <Button
                 key={to}
@@ -277,7 +310,9 @@ function IncidentView({ incident: i }: { incident: IncidentDetail }) {
           title={transitionLabel(i.status, moving)}
           description={
             moving === 'Closed'
-              ? 'Summarise the outcome: what was found and what changed.'
+              ? i.isSentinel
+                ? 'Summarise the outcome: what was found and what changed. A sentinel event closes when the quality manager approves, not you nor whoever reported it: until then it stays open.'
+                : 'Summarise the outcome: what was found and what changed.'
               : i.status === 'Closed'
                 ? 'Say why the incident is being reopened.'
                 : `Move to "${incidentStatusLabel[moving]}".`
@@ -324,6 +359,7 @@ function Overview({ incident: i }: { incident: IncidentDetail }) {
       </Detail>
       <Detail label="Staff involved">{i.involvedStaff.map((p) => p.name).join(', ')}</Detail>
       <Detail label="Never event">{i.sentinelKind ? sentinelKindLabel[i.sentinelKind] : null}</Detail>
+      <Detail label="Medical device involved">{i.isDeviceRelated ? 'Yes' : 'No'}</Detail>
       {i.lastStatusNote && (
         <Detail label="Latest note" wide>
           {i.lastStatusNote}

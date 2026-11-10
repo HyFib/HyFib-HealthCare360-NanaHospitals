@@ -239,8 +239,8 @@ test.describe('tablet, 768 px wide', () => {
 });
 
 // A phone held upright (WCAG 2.2 reflow): the patient pipelines wrap onto more lines instead of running off the side
-// or making the page scroll sideways. Axe checks the screen's content here; the top bar is checked at desktop width
-// above.
+// or making the page scroll sideways. Axe checks those screens' content, and the frame on its own: below 640 px the top
+// bar shows the search button's icon alone, so its name cannot come from the words hidden there.
 test.describe('phone, 360 px wide', () => {
   test.use({ viewport: { width: 360, height: 780 } });
 
@@ -262,4 +262,18 @@ test.describe('phone, 360 px wide', () => {
       await expectAccessibleScreen(page, testInfo, { include: '#main', focus: { from: 'skip-link' } });
     });
   }
+
+  test('the frame: top bar and navigation', async ({ page }, testInfo) => {
+    await open(page, 'light', FRAME);
+    await expectAccessibleScreen(page, testInfo, { focus: { from: 'top', maxStops: 60 } });
+  });
+
+  test('command palette opened from the search icon', async ({ page }, testInfo) => {
+    await open(page, 'light', FRAME);
+    await page.getByRole('button', { name: 'Search patients or screens' }).click();
+    const palette = page.getByRole('dialog', { name: 'Search' });
+    await palette.getByRole('combobox').fill('asha');
+    await expect(palette.getByText('Asha Devi')).toBeVisible();
+    await expectAccessibleScreen(page, testInfo, { focus: { from: 'here' } });
+  });
 });

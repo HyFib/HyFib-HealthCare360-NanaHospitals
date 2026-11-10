@@ -1,3 +1,5 @@
+using System.Text.Json.Nodes;
+
 namespace HyFib.HealthCare360.Platform.Contracts;
 
 /// <summary>The buyer of a B2B invoice, as the e-invoice (INV-01) names them. <paramref name="Address"/> is free text with the PIN code in it.</summary>
@@ -23,10 +25,30 @@ public sealed record EInvoiceItem(
     decimal Sgst,
     decimal TotalItemValue);
 
+/// <summary>The e-invoice's document type, the portal's <c>DocDtls.Typ</c>.</summary>
+public static class EInvoiceDocumentTypes
+{
+    /// <summary>A tax invoice.</summary>
+    public const string Invoice = "INV";
+
+    /// <summary>A credit note against a tax invoice (GST rule 48(4) makes it an e-invoice too).</summary>
+    public const string CreditNote = "CRN";
+
+    /// <summary>A debit note (supplementary invoice) against a tax invoice, raising what it charged (CGST Act s.34(3)).</summary>
+    public const string DebitNote = "DBN";
+}
+
 /// <summary>
-/// A B2B tax invoice ready for the Invoice Registration Portal, as its module priced it.
+/// The tax invoice a credit note reduces, as the portal's <c>PrecDocDtls</c> names it (number and date), and where HC360
+/// keeps it (<paramref name="Source"/> and <paramref name="Id"/>), so its own IRN can be looked up.
+/// </summary>
+public sealed record EInvoicePreceding(string Source, Guid Id, string Number, DateOnly Date);
+
+/// <summary>
+/// A B2B tax invoice or credit note ready for the Invoice Registration Portal, as its module priced it.
 /// <paramref name="Problem"/>: why it cannot be an e-invoice as it stands (a return line, for instance), checked before
-/// the payload; null when it can.
+/// the payload; null when it can. <paramref name="Type"/>: <see cref="EInvoiceDocumentTypes"/>; a credit note names the
+/// invoice it reduces in <paramref name="Preceding"/>.
 /// </summary>
 public sealed record EInvoiceDocument(
     string Source,
@@ -40,25 +62,44 @@ public sealed record EInvoiceDocument(
     decimal RoundOff,
     decimal Total,
     bool IsCancelled,
-    string? Problem = null);
-
-/// <summary>A B2B tax invoice in a register of invoices that need an IRN.</summary>
-public sealed record EInvoiceCandidate(string Source, Guid Id, string Number, DateOnly Date, string BuyerGstin, string BuyerName, decimal Total, bool IsCancelled);
+    string? Problem = null,
+    string Type = EInvoiceDocumentTypes.Invoice,
+    EInvoicePreceding? Preceding = null);
 
 /// <summary>
-/// A module whose B2B tax invoices are e-invoices (GST rule 48(4)): bills to payers registered for GST, and the pharmacy's
-/// B2B sales. Billing keeps the e-invoice register and reads every registered source, so it never references the others.
-/// Implementations filter by the facility given and use the hospital's (IST) calendar day.
+/// A B2B tax invoice or credit note in a register of documents that need an IRN; a credit note names the invoice it
+/// reduces (<paramref name="PrecedingNumber"/>).
+/// </summary>
+public sealed record EInvoiceCandidate(
+    string Source,
+    Guid Id,
+    string Number,
+    DateOnly Date,
+    string BuyerGstin,
+    string BuyerName,
+    decimal Total,
+    bool IsCancelled,
+    string Type = EInvoiceDocumentTypes.Invoice,
+    string? PrecedingNumber = null);
+
+/// <summary>
+/// A module whose B2B tax invoices or credit notes are e-invoices (GST rule 48(4)): bills to payers registered for GST
+/// and the credit notes on them, and the pharmacy's B2B sales and their returns. Billing keeps the e-invoice register and
+/// reads every registered source, so it never references the others. Implementations filter by the facility given and use
+/// the hospital's (IST) calendar day.
 /// </summary>
 public interface IEInvoiceSource
 {
-    /// <summary>Stable key: <c>bill</c> or <c>pharmacy</c>. It names the invoice in the register and in its address.</summary>
+    /// <summary>
+    /// Stable key: <c>bill</c>, <c>creditnote</c>, <c>pharmacy</c> or <c>pharmacyreturn</c>. It names the document in the
+    /// register and in its address.
+    /// </summary>
     string Source { get; }
 
-    /// <summary>The B2B tax invoices of <paramref name="from"/> to <paramref name="to"/>, cancelled ones included.</summary>
+    /// <summary>The B2B documents of <paramref name="from"/> to <paramref name="to"/>, cancelled ones included.</summary>
     Task<IReadOnlyList<EInvoiceCandidate>> ListAsync(Guid facilityId, DateOnly from, DateOnly to, CancellationToken cancellationToken);
 
-    /// <summary>The invoice, or null when there is none or it is not a B2B tax invoice.</summary>
+    /// <summary>The document, or null when there is none or it is not a B2B e-invoice.</summary>
     Task<EInvoiceDocument?> FindAsync(Guid id, CancellationToken cancellationToken);
 }
 
@@ -73,4 +114,78 @@ public interface IEInvoiceRegister
 {
     /// <summary>The live (not cancelled) IRN of the invoice, if it has one.</summary>
     Task<EInvoiceStamp?> FindAsync(string source, Guid id, CancellationToken cancellationToken);
+}
+
+/// <summary>Whether the facility is connected to the Invoice Registration Portal, through which provider, or why not.</summary>
+/// <param name="IsSimulator">The training simulator, which only a training or test server can use: its IRNs are made up.</param>
+public sealed record IrpConnection(bool Connected, string? Provider, bool IsSimulator, string? Problem);
+
+/// <summary>
+/// The IRN the portal gave a document (NIC e-invoice API v1.03, <c>Invoice</c> and <c>Invoice/irn</c>): the acknowledgement,
+/// the signed invoice and the signed QR code (both JWTs signed by the portal), and the e-way bill generated with it, if any.
+/// </summary>
+public sealed record IrpIrn(
+    string Irn,
+    string AckNo,
+    DateTimeOffset AckDate,
+    string SignedInvoice,
+    string SignedQrCode,
+    long? EwbNo = null,
+    DateTimeOffset? EwbDate = null,
+    DateTimeOffset? EwbValidTill = null);
+
+/// <summary>The portal's answer to a cancellation: the IRN and when it was cancelled.</summary>
+public sealed record IrpCancellation(string Irn, DateTimeOffset CancelledAt);
+
+/// <summary>An e-way bill generated from an IRN (NIC API <c>ewaybill</c>): its number, date and the last moment it is valid.</summary>
+public sealed record IrpEwayBill(long EwbNo, DateTimeOffset EwbDate, DateTimeOffset? ValidTill);
+
+/// <summary>
+/// The portal refused the call: its error code (2150 duplicate IRN, 2270 past the cancellation window, and so on) and
+/// message. <paramref name="ExistingIrn"/>: for a duplicate, the IRN the portal already holds for the document.
+/// </summary>
+public sealed record IrpError(string Code, string Message, string? ExistingIrn = null)
+{
+    /// <summary>The portal's code for a document it already gave an IRN.</summary>
+    public const string DuplicateIrn = "2150";
+
+    /// <summary>Not a code of the portal's: the call did not reach it or got no answer.</summary>
+    public const string Unreachable = "unreachable";
+
+    /// <summary>Not a code of the portal's: the connection is not set up or not allowed.</summary>
+    public const string NotConnected = "not_connected";
+}
+
+/// <summary>A portal call's answer: the value, or the portal's error.</summary>
+public sealed record IrpResult<T>(T? Value, IrpError? Error) where T : class
+{
+    public bool IsSuccess => Error is null && Value is not null;
+
+    public static IrpResult<T> Ok(T value) => new(value, null);
+
+    public static IrpResult<T> Fail(string code, string message, string? existingIrn = null) => new(null, new IrpError(code, message, existingIrn));
+}
+
+/// <summary>
+/// The Invoice Registration Portal (GST rule 48(4)), reached directly (NIC) or through a GST suvidha provider, configured
+/// per facility under Administration → Integrations (<c>integrations.irp</c>). It takes the e-invoice JSON Billing builds
+/// (INV-01) and answers with the IRN and the signed QR code; it cancels an IRN within 24 hours; it gives an IRN's details
+/// back; and it generates an e-way bill for goods from an IRN. The authentication token is the provider's business.
+/// <paramref name="sellerGstin"/> on every call is the GSTIN the facility registers under, which the portal's credentials
+/// are for.
+/// </summary>
+public interface IInvoiceRegistrationPortal
+{
+    Task<IrpConnection> ConnectionAsync(Guid facilityId, CancellationToken cancellationToken);
+
+    /// <summary>Asks for the IRN of the document in <paramref name="payload"/> (one INV-01 object, not a list).</summary>
+    Task<IrpResult<IrpIrn>> GenerateAsync(Guid facilityId, string sellerGstin, JsonObject payload, CancellationToken cancellationToken);
+
+    /// <summary>Cancels an IRN, with the portal's reason code (1 duplicate, 2 data entry mistake, 3 order cancelled, 4 other).</summary>
+    Task<IrpResult<IrpCancellation>> CancelAsync(Guid facilityId, string sellerGstin, string irn, int reason, string remark, CancellationToken cancellationToken);
+
+    Task<IrpResult<IrpIrn>> GetByIrnAsync(Guid facilityId, string sellerGstin, string irn, CancellationToken cancellationToken);
+
+    /// <summary>Generates the e-way bill of a registered IRN; <paramref name="request"/> is the API's <c>ewaybill</c> body.</summary>
+    Task<IrpResult<IrpEwayBill>> GenerateEwayBillAsync(Guid facilityId, string sellerGstin, JsonObject request, CancellationToken cancellationToken);
 }

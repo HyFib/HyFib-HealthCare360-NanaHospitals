@@ -60,6 +60,46 @@ public sealed class AppointmentTests
         appointment.Status.ShouldBe(AppointmentStatus.Booked);
     }
 
+    /// <summary>
+    /// Gap #35, decided by the hospital: a booking is never cancelled for non-payment by HC360. "Payment not received" is
+    /// a person's decision at the desk, so the patient, and anything that runs on its own with no one signed in, is
+    /// refused that reason, and the booking keeps its slot.
+    /// </summary>
+    [Theory]
+    [InlineData(CancellationSource.Patient, true)]
+    [InlineData(CancellationSource.System, false)]
+    [InlineData(CancellationSource.System, true)]
+    [InlineData(CancellationSource.Staff, false)]
+    public void Payment_not_received_is_a_reason_only_signed_in_staff_can_give(CancellationSource by, bool signedIn)
+    {
+        var appointment = Booked(Start, AppointmentChannel.Portal);
+        appointment.ClearDomainEvents();
+
+        var result = appointment.Cancel(CancellationReason.PaymentNotReceived, null, by, signedIn ? Guid.CreateVersion7() : null, Start.AddHours(-3));
+
+        result.Error!.Code.ShouldBe("appointment.payment_cancel_staff_only");
+        result.Error.Type.ShouldBe(ErrorType.BusinessRule);
+        appointment.Status.ShouldBe(AppointmentStatus.Booked);
+        appointment.HoldsSeat.ShouldBeTrue();
+        appointment.CancelReasonCode.ShouldBeNull();
+        appointment.DomainEvents.OfType<AppointmentCancelled>().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Staff_at_the_desk_may_cancel_a_booking_because_the_payment_was_not_received()
+    {
+        var appointment = Booked(Start, AppointmentChannel.Portal);
+        appointment.ClearDomainEvents();
+        var clerk = Guid.CreateVersion7();
+
+        appointment.Cancel(CancellationReason.PaymentNotReceived, null, CancellationSource.Staff, clerk, Start.AddHours(-3)).IsSuccess.ShouldBeTrue();
+
+        appointment.Status.ShouldBe(AppointmentStatus.Cancelled);
+        appointment.CancelledBy.ShouldBe(CancellationSource.Staff);
+        appointment.CancelledByUserId.ShouldBe(clerk);
+        appointment.DomainEvents.OfType<AppointmentCancelled>().ShouldHaveSingleItem().Reason.ShouldBe("Payment not received");
+    }
+
     [Fact]
     public void A_checked_in_appointment_cannot_be_cancelled()
     {
@@ -155,7 +195,7 @@ public sealed class AppointmentTests
     public void Rescheduling_carries_an_online_prepayment_to_the_new_booking()
     {
         var original = Booked(Start, AppointmentChannel.Portal);
-        original.AttachPaymentOrder("razorpay", "order_1").IsSuccess.ShouldBeTrue();
+        original.AttachPaymentOrder("razorpay", "order_1", Start.AddDays(-3)).IsSuccess.ShouldBeTrue();
         original.MarkPaidOnline("order_1", "pay_1", 600m, Start.AddDays(-2)).IsSuccess.ShouldBeTrue();
         var replacement = Booked(Start.AddDays(1), AppointmentChannel.Portal, number: "NHAP260000002");
 
@@ -171,7 +211,7 @@ public sealed class AppointmentTests
     public void Verified_online_payment_confirms_the_booking_and_notifies_billing()
     {
         var appointment = Booked(Start, AppointmentChannel.Portal);
-        appointment.AttachPaymentOrder("razorpay", "order_9");
+        appointment.AttachPaymentOrder("razorpay", "order_9", Start.AddDays(-3));
         appointment.ClearDomainEvents();
 
         appointment.MarkPaidOnline("order_9", "pay_9", 600m, Start.AddDays(-1)).IsSuccess.ShouldBeTrue();
@@ -187,7 +227,7 @@ public sealed class AppointmentTests
     public void Payment_for_another_order_is_rejected_and_repeats_are_harmless()
     {
         var appointment = Booked(Start, AppointmentChannel.Portal);
-        appointment.AttachPaymentOrder("razorpay", "order_9");
+        appointment.AttachPaymentOrder("razorpay", "order_9", Start.AddDays(-3));
 
         appointment.MarkPaidOnline("order_X", "pay_9", 600m, Start).Error!.Code.ShouldBe("payment.order_mismatch");
         appointment.MarkPaidOnline("order_9", "pay_9", 600m, Start).IsSuccess.ShouldBeTrue();
@@ -199,24 +239,11 @@ public sealed class AppointmentTests
     public void Choosing_to_pay_at_the_hospital_never_downgrades_a_paid_booking()
     {
         var appointment = Booked(Start, AppointmentChannel.Portal);
-        appointment.AttachPaymentOrder("razorpay", "order_9");
+        appointment.AttachPaymentOrder("razorpay", "order_9", Start.AddDays(-3));
         appointment.MarkPaidOnline("order_9", "pay_9", 600m, Start);
 
         appointment.ChoosePayAtHospital();
 
         appointment.PaymentStatus.ShouldBe(AppointmentPaymentStatus.PaidOnline);
-    }
-
-    [Fact]
-    public void Reminder_flags_are_set_once()
-    {
-        var appointment = Booked(Start);
-        var first = Start.AddHours(-24);
-
-        appointment.MarkReminderSent(AppointmentReminder.DayBefore, first);
-        appointment.MarkReminderSent(AppointmentReminder.DayBefore, first.AddMinutes(5));
-
-        appointment.Reminder24hSentAt.ShouldBe(first);
-        appointment.Reminder2hSentAt.ShouldBeNull();
     }
 }

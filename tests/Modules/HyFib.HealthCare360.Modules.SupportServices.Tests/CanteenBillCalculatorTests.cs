@@ -102,9 +102,44 @@ public sealed class CanteenBillCalculatorTests
         var yesterdays = new CanteenSale { BusinessDate = today.AddDays(-1) };
         var todays = new CanteenSale { BusinessDate = today };
 
-        yesterdays.Cancel("Wrong item", null, today, now).Error!.Code.ShouldBe("canteen.day_closed");
-        todays.Cancel("Wrong item", null, today, now).IsSuccess.ShouldBeTrue();
+        yesterdays.Cancel("Wrong item", null, null, null, null, today, now).Error!.Code.ShouldBe("canteen.day_closed");
+        todays.Cancel("Wrong item", null, null, null, null, today, now).IsSuccess.ShouldBeTrue();
         todays.Status.ShouldBe(CanteenSaleStatus.Cancelled);
-        todays.Cancel("again", null, today, now).Error!.Code.ShouldBe("canteen.sale_cancelled");
+        todays.Cancel("again", null, null, null, null, today, now).Error!.Code.ShouldBe("canteen.sale_cancelled");
+    }
+
+    [Theory]
+    [InlineData(CanteenPaymentMode.Cash, "₹120.00 back in cash from the till")]
+    [InlineData(CanteenPaymentMode.Card, "₹120.00 back to the card (reference RRN123), not from the till")]
+    [InlineData(CanteenPaymentMode.Upi, "₹120.00 back by UPI (reference RRN123), not from the till")]
+    [InlineData(CanteenPaymentMode.StaffCredit, "₹120.00 taken off Ravi Kumar's staff credit")]
+    public void A_cancelled_bill_pays_back_the_whole_amount_the_way_it_was_paid(CanteenPaymentMode mode, string words)
+    {
+        var today = new DateOnly(2026, 9, 25);
+        var sale = new CanteenSale
+        {
+            BusinessDate = today,
+            NetAmount = 120m,
+            PaymentMode = mode,
+            PaymentReference = mode == CanteenPaymentMode.Cash ? null : "RRN123",
+            EmployeeName = "Ravi Kumar",
+            EmployeeCode = "E100",
+        };
+
+        sale.RefundWords().ShouldBe(words);
+        var asker = Guid.CreateVersion7();
+        var approver = Guid.CreateVersion7();
+        sale.Cancel("Wrong item", asker, "Meena", approver, "Suresh", today, DateTimeOffset.UtcNow).IsSuccess.ShouldBeTrue();
+        (sale.RefundMode, sale.RefundAmount, sale.CancelRequestedBy, sale.CancelledBy, sale.CancelledByName).ShouldBe((mode, 120m, asker, approver, "Suresh"));
+    }
+
+    [Fact]
+    public void The_cashier_who_sold_a_bill_is_the_one_who_opened_it()
+    {
+        var cashier = Guid.CreateVersion7();
+        var sale = new CanteenSale { CreatedBy = cashier };
+        sale.SoldBy(cashier).ShouldBeTrue();
+        sale.SoldBy(Guid.CreateVersion7()).ShouldBeFalse();
+        sale.SoldBy(null).ShouldBeFalse();
     }
 }

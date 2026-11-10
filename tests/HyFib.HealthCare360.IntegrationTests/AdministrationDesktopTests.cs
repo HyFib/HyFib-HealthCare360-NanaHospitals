@@ -153,13 +153,13 @@ public sealed class AdministrationDesktopTests(HospitalServer server)
 
         try
         {
-            await it.SaveSettingAsync(AdministrationOnDesktop.SettingKey, new SaveSettingRequest(JsonValue.Create(false), null, false, null));
+            await server.SaveSettingAsync(it, AdministrationOnDesktop.SettingKey, new SaveSettingRequest(JsonValue.Create(false), null, false, null));
             (await browser.GetAsync<PagedResult<UserListItem>>("/api/v1/admin/users?pageSize=1")).Items.ShouldNotBeEmpty();
             var me = await browser.GetAsync<AuthUser>("/api/v1/auth/me");
             me.Permissions.ShouldContain(PlatformPermissions.UsersManage);
             me.AdministrationNeedsDesktop.ShouldBeFalse();
 
-            await it.SaveSettingAsync(AdministrationOnDesktop.SettingKey, new SaveSettingRequest(JsonValue.Create("true"), null, false, null));
+            await server.SaveSettingAsync(it, AdministrationOnDesktop.SettingKey, new SaveSettingRequest(JsonValue.Create("true"), null, false, null));
             await RefusedAsync(browser, HttpMethod.Get, "/api/v1/admin/users");
         }
         finally
@@ -235,8 +235,7 @@ public sealed class AdministrationDesktopTests(HospitalServer server)
 
     private async Task<(Guid DeviceId, string Secret)> EnrolAsync(ApiClient admin, DeviceKind kind)
     {
-        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
-            new CreateEnrollmentCodeRequest(kind, null, "SEC-08 test", 30));
+        var code = await server.EnrollmentCodeAsync(admin, new CreateEnrollmentCodeRequest(kind, null, "SEC-08 test", 30));
         var enrolled = await server.Anonymous(ownAddress: true).PostAsync<EnrollDeviceResponse>("/api/v1/devices/enroll",
             new EnrollDeviceRequest(code.Code, $"SEC-08 {kind} {Guid.NewGuid().ToString("N")[..6]}", "ADMIN-PC", "Windows 11", "1.0.0"));
         return (enrolled.DeviceId, enrolled.DeviceSecret);

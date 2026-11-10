@@ -9,6 +9,7 @@ using HyFib.HealthCare360.Modules.Quality.Features.Indicators;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Adjustments;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Purchase;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.SharedKernel;
 
@@ -84,19 +85,22 @@ public sealed class AdminEditVersionTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var plan = await admin.PostAsync<TariffPlanDetail>("/api/v1/billing/tariffs", new SaveTariffPlanRequest(
             "RV" + Letters(6).ToUpperInvariant(), "Version test plan", TariffType.Corporate, null, null, 0m, false, false, null, null, null));
-        var service = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var service = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             "SV-" + Letters(8).ToUpperInvariant(), "Dressing (version test)", null, ServiceCategory.Procedure, null, 400m, 0m, null, true, false, null, true, null));
         var from = new DateOnly(2031, 1, 1);
         var path = $"/api/v1/billing/tariffs/{plan.Id}/prices";
 
-        await admin.PutAsync<BulkTariffPricesResult>(path, new SaveTariffPriceRequest(service.Id, 500m, from, null));
+        // A price changes only when two people agree: each is asked for and approved by the other administrator. The
+        // version is checked when it is asked for.
+        await server.SaveTariffPricesAsync(admin, plan.Id, new SaveTariffPriceRequest(service.Id, 500m, from, null));
         using (var unseen = await admin.SendRawAsync(HttpMethod.Put, path, new SaveTariffPriceRequest(service.Id, 550m, from, null)))
         {
             unseen.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         }
 
         var loaded = await PriceAsync(admin, plan.Id, service.Id);
-        await admin.PutAsync<BulkTariffPricesResult>(path, new SaveTariffPriceRequest(service.Id, 600m, from, null, loaded.Version));
+        var asked = await admin.PutAsync<ApprovalRequestDto>(path, new SaveTariffPriceRequest(service.Id, 600m, from, null, loaded.Version));
+        await server.ApprovePriceAsync(asked.Id);
         using (var stale = await admin.SendRawAsync(HttpMethod.Put, path, new SaveTariffPriceRequest(service.Id, 650m, from, null, loaded.Version)))
         {
             stale.StatusCode.ShouldBe(HttpStatusCode.Conflict);
@@ -105,8 +109,7 @@ public sealed class AdminEditVersionTests(HospitalServer server)
         (await PriceAsync(admin, plan.Id, service.Id)).Price.ShouldBe(600m);
 
         // A price list imported from a spreadsheet sets the prices it lists, on purpose.
-        (await admin.PostAsync<BulkTariffPricesResult>($"{path}/bulk", new BulkTariffPricesRequest([new SaveTariffPriceRequest(service.Id, 700m, from, null)])))
-            .Updated.ShouldBe(1);
+        await server.SaveTariffPricesAsync(admin, plan.Id, new SaveTariffPriceRequest(service.Id, 700m, from, null));
         (await PriceAsync(admin, plan.Id, service.Id)).Price.ShouldBe(700m);
     }
 

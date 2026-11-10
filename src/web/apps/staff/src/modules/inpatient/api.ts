@@ -1,6 +1,8 @@
 import type { Gender, PagedResult, PayerType, WristbandAllergies } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
+import type { AgainstAdviceRequest } from '@/modules/witness/againstAdvice';
 import type { BedAlert, BedStatus } from './bedState';
 
 // ------------------------------------------------------------------ enums (strings, as the server sends them)
@@ -108,6 +110,89 @@ export function dischargeNeedsClearance(type: DischargeType): boolean {
 /** LAMA, DAMA and abscondence are medico-legal events: notes are required. */
 export function dischargeNeedsNotes(type: DischargeType): boolean {
   return type === 'Lama' || type === 'Dama' || type === 'Absconded';
+}
+
+/**
+ * LAMA and DAMA go with who signed the form (or that nobody would), the doctor who explained the risks and a witness
+ * (maker-checker, slice 8).
+ */
+export function dischargeIsAgainstAdvice(type: DischargeType): boolean {
+  return type === 'Lama' || type === 'Dama';
+}
+
+/**
+ * The stays one person does not close (maker-checker, slice 8): an absconded patient (the nurse in charge approves), and
+ * a medico-legal death whose certificate waits for the post-mortem (a second doctor approves). The server answers 202.
+ */
+export function dischargeWaitsForApproval(type: DischargeType, certificatePendingPostMortem: boolean): boolean {
+  return type === 'Absconded' || (type === 'Expired' && certificatePendingPostMortem);
+}
+
+/** An absconded patient as the ward reports it: when last seen, who searched, and whether the police and relatives were told. */
+export interface AbscondedReport {
+  lastSeenAt: string;
+  searchedBy: string;
+  policeInformed: boolean;
+  policeStation: string | null;
+  policeReference: string | null;
+  relativesInformed: boolean;
+  relativeInformed: string | null;
+}
+
+export interface CompleteDischargeRequest {
+  dischargeType: DischargeType;
+  dischargedAt: string | null;
+  notes: string | null;
+  notifyPatient: boolean;
+  /** LAMA and DAMA: who signed, the doctor's and the witness's confirmations, the scanned form. */
+  againstAdvice?: AgainstAdviceRequest | null;
+  /** Absconded: the report; the stay waits for the nurse in charge. */
+  absconded?: AbscondedReport | null;
+  /** Expired, medico-legal, the certificate waiting for the post-mortem: a second doctor approves closing the stay. */
+  certificatePendingPostMortem?: boolean;
+}
+
+/** The patient's death certificate as the ward sees it before closing the stay as expired, and why it waits. */
+export interface DischargeDeathCertificateDto {
+  admissionId: string;
+  deathId: string | null;
+  serialNumber: string | null;
+  settled: boolean;
+  forThisStay: boolean;
+  confirmedBy: string | null;
+  confirmationWaitingSince: string | null;
+  medicoLegalStay: boolean;
+  status: string;
+}
+
+/** Closing the stay waiting for a second person (Absconded, or Expired pending post-mortem). */
+export interface PendingDischarge {
+  approvalId: string;
+  type: DischargeType;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** How a closed stay ended, as declared (LAMA, DAMA, Absconded, Expired). */
+export interface DischargeDeclarationDto {
+  type: DischargeType;
+  signedBy: string | null;
+  risksExplainedBy: string | null;
+  witnessName: string | null;
+  signedFormFileId: string | null;
+  lastSeenAt: string | null;
+  searchedBy: string | null;
+  policeInformed: boolean;
+  policeStation: string | null;
+  policeReference: string | null;
+  relativesInformed: boolean;
+  relativeInformed: string | null;
+  deathCertificateNumber: string | null;
+  certificatePendingPostMortem: boolean;
+  duesOutstanding: number | null;
+  recordedBy: string;
+  approvedBy: string | null;
 }
 
 export const PAYER_TYPES: readonly PayerType[] = [
@@ -274,6 +359,11 @@ export interface BedOccupant {
   expectedDischargeDate: string | null;
   status: AdmissionStatus;
   payerType: PayerType;
+  /** The latest NEWS2 of the stay (null for a child, or with no observations yet). */
+  news2Score?: number | null;
+  news2Response?: 'Routine' | 'Urgent' | 'Emergency' | null;
+  news2Complete?: boolean;
+  news2At?: string | null;
 }
 
 export interface BedBoardItem {
@@ -405,6 +495,20 @@ export interface UpdateAdmissionRequest {
   attendantPhone: string | null;
   notes: string | null;
   version: number;
+  /**
+   * Why the stay is no longer medico-legal (or its MLC number changes): clearing or unlinking the flag waits for someone
+   * who keeps the MLC register, and the server answers 400 on `changeReason` without one.
+   */
+  changeReason?: string | null;
+}
+
+/** A change to a stay's medico-legal flag waiting for someone who keeps the MLC register (maker-checker, slice 7). */
+export interface PendingMlcChange {
+  approvalId: string;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
+  asked: { isMlc: boolean; mlcNumber: string | null };
 }
 
 export interface TransferPatientRequest {
@@ -499,6 +603,12 @@ export interface AdmissionDetail {
   cancelledAt: string | null;
   cancelReason: string | null;
   version: number;
+  /** Clearing or unlinking the medico-legal flag, asked for: the stay stays medico-legal (and free by law) until then. */
+  pendingMlc?: PendingMlcChange | null;
+  /** Closing the stay, asked for (Absconded, Expired pending post-mortem): the patient stays admitted until then. */
+  pendingDischarge?: PendingDischarge | null;
+  /** How the closed stay ended, as declared; null for a routine discharge. */
+  declaration?: DischargeDeclarationDto | null;
 }
 
 export interface PatientAdmissionItem {
@@ -567,6 +677,8 @@ export interface WardRoundPatient {
   isMlc: boolean;
   /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", no diagnosis or vital-sign details. */
   isRestricted: boolean;
+  /** A record in a sensitive category the user does not hold: named, without the diagnosis and vital-sign details. */
+  isConfidential?: boolean;
   consultantId: string | null;
   consultantName: string | null;
   /** False when the doctor follows the patient for another consultant (visited during this stay). */
@@ -583,6 +695,11 @@ export interface WardRoundPatient {
   vitalsSeverity: VitalsSeverity | null;
   /** Up to three plain-language flags, most serious first. */
   vitalsFlags: string[];
+  /** The latest NEWS2 of the stay, the response it calls for, and whether an escalation waits for a response. */
+  news2Score?: number | null;
+  news2Response?: 'Routine' | 'Urgent' | 'Emergency' | null;
+  news2Complete?: boolean;
+  hasOpenEscalation?: boolean;
 }
 
 /** The doctor's (or the department's) in-patients, in the bed board's order. */
@@ -614,6 +731,11 @@ export interface DischargeClearanceDto {
   cleared: boolean;
   outstanding: number;
   reason: string | null;
+}
+
+/** The answer to a write that was asked for (202) rather than made: the approval request. */
+export function isApprovalRequest(result: unknown): result is ApprovalRequestDto {
+  return typeof result === 'object' && result !== null && 'kind' in result && 'canDecide' in result;
 }
 
 export interface DischargeResult {
@@ -821,6 +943,16 @@ export const inpatientQueries = {
         api.get<DischargeClearanceDto>(`/api/v1/inpatient/admissions/${id}/discharge/clearance`, { signal }),
       staleTime: 0,
     }),
+  /** The patient's death certificate, for closing the stay as expired: why it waits, while it does. */
+  deathCertificate: (id: string) =>
+    queryOptions({
+      queryKey: [...inpatientKeys.admission(id), 'death-certificate'],
+      queryFn: ({ signal }) =>
+        api.get<DischargeDeathCertificateDto>(`/api/v1/inpatient/admissions/${id}/discharge/death-certificate`, {
+          signal,
+        }),
+      staleTime: 0,
+    }),
   /** The ward round; it follows visits recorded elsewhere within a minute. */
   rounds: (params: WardRoundParams) =>
     queryOptions({
@@ -887,7 +1019,9 @@ export const wardApi = {
 
 export const admissionApi = {
   admit: (body: AdmitPatientRequest) => api.post<AdmissionCreated>('/api/v1/inpatient/admissions', body),
-  update: (id: string, body: UpdateAdmissionRequest) => api.put<void>(`/api/v1/inpatient/admissions/${id}`, body),
+  /** 204 when all is saved; 202 with the request when clearing or unlinking the medico-legal flag waits (the rest is saved). */
+  update: (id: string, body: UpdateAdmissionRequest) =>
+    api.put<ApprovalRequestDto | null | undefined>(`/api/v1/inpatient/admissions/${id}`, body),
   transfer: (id: string, body: TransferPatientRequest) =>
     api.post<void>(`/api/v1/inpatient/admissions/${id}/transfer`, body),
   cancel: (id: string, reason: string) => api.post<void>(`/api/v1/inpatient/admissions/${id}/cancel`, { reason }),
@@ -895,10 +1029,12 @@ export const admissionApi = {
     api.post<DischargeResult>(`/api/v1/inpatient/admissions/${id}/discharge/initiate`, body),
   revokeDischarge: (id: string, reason: string) =>
     api.post<DischargeResult>(`/api/v1/inpatient/admissions/${id}/discharge/revoke`, { reason }),
-  completeDischarge: (
-    id: string,
-    body: { dischargeType: DischargeType; dischargedAt: string | null; notes: string | null; notifyPatient: boolean },
-  ) => api.post<DischargeResult>(`/api/v1/inpatient/admissions/${id}/discharge/complete`, body),
+  /**
+   * 200 with the stay closed; 202 with the request when a second person decides (Absconded, a death pending post-mortem):
+   * tell them apart with `isApprovalRequest`.
+   */
+  completeDischarge: (id: string, body: CompleteDischargeRequest) =>
+    api.post<DischargeResult | ApprovalRequestDto>(`/api/v1/inpatient/admissions/${id}/discharge/complete`, body),
   recordVisit: (id: string, body: { practitionerId: string | null; visitedAt: string | null; notes: string | null }) =>
     api.post<ConsultantVisitDto>(`/api/v1/inpatient/admissions/${id}/consultant-visits`, body),
   cancelVisit: (visitId: string, reason: string) =>

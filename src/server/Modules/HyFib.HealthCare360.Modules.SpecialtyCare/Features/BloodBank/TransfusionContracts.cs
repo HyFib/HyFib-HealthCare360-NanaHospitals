@@ -4,10 +4,11 @@ using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Common;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare.Features.BloodBank;
 
+/// <param name="AwaitingVerification">In quarantine with results that clear it, until a second officer verifies them.</param>
 public sealed record BloodUnitDto(
     Guid Id, string UnitNumber, Guid DonationId, BloodComponentType ComponentType, BloodGroup BloodGroup, int VolumeMl, DateTimeOffset CollectedAt,
     DateTimeOffset ExpiresAt, BloodUnitStatus Status, TtiPanel Tti, string? StorageLocation, Guid? ReservedForRequestId, DateTimeOffset? IssuedAt,
-    string? DiscardReason, bool IsExpired);
+    string? DiscardReason, bool IsExpired, bool AwaitingVerification);
 
 public sealed record DiscardUnitRequest(string Reason);
 
@@ -30,27 +31,35 @@ public sealed record BloodRequestListItem(
     DateTimeOffset? RequiredBy);
 
 public sealed record CrossMatchDto(
-    Guid Id, Guid ComponentId, string UnitNumber, CrossmatchMethod Method, CrossmatchResult Result, DateTimeOffset PerformedAt, string? PerformedByName,
-    string? Remarks, bool IsValid, ChargeStatus ChargeStatus);
+    Guid Id, Guid ComponentId, string UnitNumber, CrossmatchMethod Method, CrossmatchResult Result, DateTimeOffset PerformedAt,
+    Guid? PerformedByUserId, string? PerformedByName, string? Remarks, bool IsValid, ChargeStatus ChargeStatus);
 
+/// <param name="IssuedOnOwnChecks">Issued on checks the issuer alone made (no second officer at the facility), for the medical officer's review.</param>
 public sealed record BloodIssueDto(
     Guid Id, Guid RequestId, Guid ComponentId, string UnitNumber, BloodComponentType ComponentType, BloodGroup UnitBloodGroup, bool IsEmergencyRelease,
     DateTimeOffset IssuedAt, string? IssuedByName, string IssuedToName, DateTimeOffset? ReturnedAt, bool? Restocked, string? ReturnNotes,
-    ChargeStatus ChargeStatus, string? ChargeError);
+    ChargeStatus ChargeStatus, string? ChargeError, bool IssuedOnOwnChecks);
 
+/// <param name="EarlierGroup">The group of the patient's earlier requests, when this request's sample grouped otherwise.</param>
+/// <param name="GroupingHeld">Nothing is cross-matched or issued on the grouping until another officer groups a new sample.</param>
+/// <param name="SeparateVerifier">The facility asks for a second officer (<c>bloodbank.separateVerifier</c>).</param>
 public sealed record BloodRequestDetail(
     Guid Id, string RequestNumber, Guid PatientId, string Uhid, string PatientName, Guid? AdmissionId, Guid? VisitId, Guid? OrderItemId,
     BloodComponentType ComponentType, int UnitsRequested, int UnitsReserved, int UnitsIssued, BloodRequestUrgency Urgency, string Indication,
     DateTimeOffset? RequiredBy, string? RequestedByName, decimal? HaemoglobinGdl, int? PlateletCount, BloodGroup PatientBloodGroup,
-    DateTimeOffset? GroupedAt, string? GroupedByName, string? EmergencyReleaseAuthorisedBy, string? EmergencyReleaseReason, BloodRequestStatus Status,
-    string? CancelReason, IReadOnlyList<CrossMatchDto> CrossMatches, IReadOnlyList<BloodIssueDto> Issues, uint Version);
+    DateTimeOffset? GroupedAt, Guid? GroupedByUserId, string? GroupedByName, BloodGroup? EarlierGroup, BloodGroup? FirstSampleGroup,
+    DateTimeOffset? RegroupedAt, bool GroupingHeld, string? EmergencyReleaseAuthorisedBy, Guid? EmergencyReleaseByUserId,
+    DateTimeOffset? EmergencyReleaseAt, string? EmergencyReleaseReason, bool SeparateVerifier, BloodRequestStatus Status, string? CancelReason,
+    IReadOnlyList<CrossMatchDto> CrossMatches, IReadOnlyList<BloodIssueDto> Issues, uint Version);
 
 /// <summary>A unit the blood bank can offer for a request (ABO/Rh compatible, in date, first-expiry-first-out order).</summary>
 public sealed record CompatibleUnitDto(Guid Id, string UnitNumber, BloodGroup BloodGroup, int VolumeMl, DateTimeOffset ExpiresAt, bool ReservedForThisRequest);
 
-public sealed record GroupPatientRequest(BloodGroup BloodGroup);
+/// <param name="NewSample">A new sample, grouped by another officer, for a request held because its grouping disagreed with the patient's earlier ones.</param>
+public sealed record GroupPatientRequest(BloodGroup BloodGroup, bool NewSample = false);
 
-public sealed record EmergencyReleaseRequest(string AuthorisedBy, string Reason);
+/// <summary>The treating doctor authorises uncross-matched release from their own sign-in, with the clinical reason.</summary>
+public sealed record EmergencyReleaseRequest(string Reason);
 
 public sealed record BloodReasonRequest(string Reason);
 
@@ -64,13 +73,31 @@ public sealed record ReportReactionRequest(
     DateTimeOffset OnsetAt, IReadOnlyList<ReactionSymptom> Symptoms, string? Vitals, bool TransfusionStopped, int? VolumeTransfusedMl, string? ActionsTaken,
     ReactionSeverity Severity);
 
-public sealed record CloseReactionRequest(ReactionType Type, ReactionSeverity Severity, string Findings, bool ReportedToHaemovigilance);
+public sealed record CloseReactionRequest(
+    ReactionType Type, ReactionSeverity Severity, string Findings, bool ReportedToHaemovigilance, ReactionImputability Imputability = ReactionImputability.NotAssessed);
+
+/// <summary>The blood bank's classification while the reaction is investigated; lowering severity or imputability needs a reason and waits.</summary>
+public sealed record ClassifyReactionRequest(ReactionType Type, ReactionSeverity Severity, ReactionImputability Imputability, string? Reason, uint Version);
 
 public sealed record TransfusionReactionDto(
     Guid Id, Guid IssueId, Guid RequestId, Guid PatientId, string Uhid, string PatientName, string UnitNumber, DateTimeOffset ReportedAt,
     string? ReportedByName, DateTimeOffset OnsetAt, IReadOnlyList<ReactionSymptom> Symptoms, string? Vitals, bool TransfusionStopped,
     int? VolumeTransfusedMl, string? ActionsTaken, ReactionSeverity Severity, ReactionType Type, ReactionStatus Status, string? InvestigationFindings,
-    bool ReportedToHaemovigilance, DateTimeOffset? ClosedAt, string? ClosedByName);
+    bool ReportedToHaemovigilance, DateTimeOffset? ClosedAt, string? ClosedByName)
+{
+    public ReactionImputability Imputability { get; init; }
+
+    /// <summary>Who lowered the classification, who asked, and why, when it was lowered.</summary>
+    public string? LoweredByName { get; init; }
+
+    public string? LowerRequestedByName { get; init; }
+    public string? LowerReason { get; init; }
+
+    /// <summary>A lowering asked for and waiting for the medical officer, if any.</summary>
+    public Guid? LowerPendingApprovalId { get; init; }
+
+    public uint Version { get; init; }
+}
 
 public sealed class DiscardUnitRequestValidator : AbstractValidator<DiscardUnitRequest>
 {
@@ -97,11 +124,7 @@ public sealed class GroupPatientRequestValidator : AbstractValidator<GroupPatien
 
 public sealed class EmergencyReleaseRequestValidator : AbstractValidator<EmergencyReleaseRequest>
 {
-    public EmergencyReleaseRequestValidator()
-    {
-        RuleFor(x => x.AuthorisedBy).NotEmpty().MaximumLength(200).WithMessage("Name the doctor authorising uncross-matched release.");
-        RuleFor(x => x.Reason).NotEmpty().MinimumLength(10).SafeText(500);
-    }
+    public EmergencyReleaseRequestValidator() => RuleFor(x => x.Reason).NotEmpty().MinimumLength(10).SafeText(500);
 }
 
 public sealed class BloodReasonRequestValidator : AbstractValidator<BloodReasonRequest>
@@ -149,6 +172,19 @@ public sealed class CloseReactionRequestValidator : AbstractValidator<CloseReact
     public CloseReactionRequestValidator()
     {
         RuleFor(x => x.Type).NotEqual(ReactionType.Unclassified).WithMessage("Classify the reaction.");
+        RuleFor(x => x.Imputability).IsInEnum().NotEqual(ReactionImputability.NotAssessed).WithMessage("Assess the imputability.");
         RuleFor(x => x.Findings).NotEmpty().SafeText(4000);
+    }
+}
+
+public sealed class ClassifyReactionRequestValidator : AbstractValidator<ClassifyReactionRequest>
+{
+    public ClassifyReactionRequestValidator()
+    {
+        RuleFor(x => x.Type).IsInEnum();
+        RuleFor(x => x.Severity).IsInEnum();
+        RuleFor(x => x.Imputability).IsInEnum();
+        RuleFor(x => x.Reason).SafeText(1000);
+        RuleFor(x => x.Version).SeenVersion();
     }
 }

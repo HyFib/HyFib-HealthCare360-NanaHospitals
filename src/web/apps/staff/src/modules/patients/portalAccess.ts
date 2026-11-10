@@ -11,6 +11,10 @@ import {
   type LinkFamilyMemberRequest,
   type PatientPortalAccessDto,
   type PortalFamilyLinkDto,
+  type PortalLinkChannel,
+  type PortalLinkDto,
+  type PortalLinkSent,
+  type PortalLinkState,
 } from './api';
 
 /** The server keeps 200 characters for who agreed, and 300 for why a link ended. */
@@ -139,4 +143,51 @@ export function shareServerErrors(error: unknown): { fields: [ShareFormField, st
     }
   }
   return { fields, other };
+}
+
+// ------------------------------------------------------------------ links to the portal sent to the patient's number
+
+/** "SMS", "WhatsApp" or "SMS and WhatsApp". */
+export function channelsText(channels: readonly PortalLinkChannel[]): string {
+  const names = channels.map((c) => (c === 'Sms' ? 'SMS' : 'WhatsApp'));
+  return names.length > 1 ? names.join(' and ') : (names[0] ?? '—');
+}
+
+/** The badge of a link: whether the patient can still use it. */
+export const linkStateLabel: Record<PortalLinkState, string> = {
+  Active: 'Not opened yet',
+  Opened: 'Opened',
+  Expired: 'Expired',
+  Revoked: 'Stopped',
+};
+
+export const linkStateTone: Record<PortalLinkState, 'success' | 'informative' | 'subtle'> = {
+  Active: 'informative',
+  Opened: 'success',
+  Expired: 'subtle',
+  Revoked: 'subtle',
+};
+
+/** The line under a link's badge: when it was opened, until when it works, or why it stopped. */
+export function linkStateDetail(link: PortalLinkDto): string {
+  switch (link.state) {
+    case 'Revoked':
+      return link.revokedReason === 'replaced'
+        ? 'A newer link replaced it'
+        : link.revokedReason === 'number_changed'
+          ? 'The patient’s mobile number changed'
+          : `Stopped ${formatDateTime(link.revokedAt)}`;
+    case 'Expired':
+      return `Expired ${formatDateTime(link.expiresAt)}`;
+    case 'Opened':
+      return `Opened ${formatDateTime(link.openedAt)}; works until ${formatDateTime(link.expiresAt)}`;
+    default:
+      return `Works until ${formatDateTime(link.expiresAt)}`;
+  }
+}
+
+/** What staff are told once a link went: how, to which number, until when, and why it went by SMS only. */
+export function linkSentText(sent: PortalLinkSent): string {
+  const text = `Sent by ${channelsText(sent.channels)} to ${sent.maskedPhone}. It works until ${formatDateTime(sent.expiresAt)}.`;
+  return sent.notice ? `${text} ${sent.notice}` : text;
 }

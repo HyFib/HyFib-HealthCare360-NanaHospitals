@@ -12,7 +12,9 @@ public sealed record PaymentCheckout(string Provider, string OrderId, decimal Am
 /// Optional online prepayment for portal bookings (OA-03, PP-03). The gateway is a Platform abstraction that may not
 /// be configured (or may be unreachable while the hospital's internet is down): in that case the booking simply
 /// becomes "pay at hospital" — a payment problem must never cost the patient their slot. A payment is accepted only
-/// after the gateway signature ("order_id|payment_id", Razorpay convention) verifies. Nothing is posted to billing
+/// after the gateway signature ("order_id|payment_id", Razorpay convention) verifies, or the gateway that took it says
+/// so server to server (a hosted page such as Cashfree's returns no signature). The gateway of the booking's order is
+/// asked, even after the facility has switched gateways. Nothing is posted to billing
 /// here; <see cref="AppointmentPaymentCaptured"/> is raised for Billing to act on.
 /// </summary>
 public sealed class AppointmentPaymentService(
@@ -63,7 +65,7 @@ public sealed class AppointmentPaymentService(
                 ? await Gateway.CreatePaymentLinkAsync(request, appointment.FacilityId, ct)
                 : await Gateway.CreateOrderAsync(request, appointment.FacilityId, ct);
 
-            var attached = appointment.AttachPaymentOrder(order.Provider, order.OrderId);
+            var attached = appointment.AttachPaymentOrder(order.Provider, order.OrderId, time.GetUtcNow());
             if (attached.IsFailure)
             {
                 return null;
@@ -81,10 +83,10 @@ public sealed class AppointmentPaymentService(
     }
 
     /// <summary>
-    /// What became of the order the appointment already has, asked before a new one replaces it: an appointment keeps one
-    /// order, so a replaced order that was paid after all would be found by neither the webhook nor the re-check, and the
-    /// patient could pay twice. A captured order is recorded (the caller saves); one still being paid, or a gateway that
-    /// cannot say, stops a new order. An order that was never paid may be replaced.
+    /// What became of the order the appointment already has, asked before a new one replaces it, so the patient is not
+    /// asked to pay for a booking already paid. A captured order is recorded (the caller saves); one still being paid, or
+    /// a gateway that cannot say, stops a new order. An order that was never paid may be replaced: it is remembered, and
+    /// money taken on it later is found by <see cref="CheckReplacedOrderAsync"/>.
     /// </summary>
     public async Task<Result> SettleOutstandingOrderAsync(Appointment appointment, CancellationToken ct)
     {
@@ -96,7 +98,7 @@ public sealed class AppointmentPaymentService(
         PaymentStatusResult status;
         try
         {
-            status = await Gateway.GetStatusAsync(orderId, appointment.FacilityId, ct);
+            status = await Gateway.GetStatusAsync(orderId, appointment.PaymentProvider, appointment.FacilityId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -130,7 +132,7 @@ public sealed class AppointmentPaymentService(
             return Error.Rule("payment.order_mismatch", "This payment does not belong to this appointment.");
         }
 
-        if (!Gateway.VerifySignature($"{orderId}|{paymentId}", signature, appointment.FacilityId))
+        if (!Gateway.VerifySignature($"{orderId}|{paymentId}", signature, appointment.PaymentProvider, appointment.FacilityId))
         {
             logger.LogWarning("Rejected payment confirmation with an invalid signature for appointment {AppointmentId}", appointment.Id);
             return Error.Forbidden("payment.invalid_signature", "The payment could not be verified. If money was deducted, it will be refunded automatically.");
@@ -140,7 +142,7 @@ public sealed class AppointmentPaymentService(
         var paidAt = time.GetUtcNow();
         try
         {
-            var status = await Gateway.GetStatusAsync(orderId, appointment.FacilityId, ct);
+            var status = await Gateway.GetStatusAsync(orderId, appointment.PaymentProvider, appointment.FacilityId, ct);
             if (status.Status is not (GatewayPaymentStatus.Captured or GatewayPaymentStatus.Pending))
             {
                 return Error.Rule("payment.not_captured", "The payment has not been completed. Please try again or pay at the hospital.");
@@ -183,7 +185,7 @@ public sealed class AppointmentPaymentService(
         PaymentStatusResult status;
         try
         {
-            status = await Gateway.GetStatusAsync(orderId, appointment.FacilityId, ct);
+            status = await Gateway.GetStatusAsync(orderId, appointment.PaymentProvider, appointment.FacilityId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -194,6 +196,40 @@ public sealed class AppointmentPaymentService(
         return status is { Status: GatewayPaymentStatus.Captured, PaymentId: { } paymentId }
             ? appointment.MarkPaidOnline(orderId, paymentId, status.AmountPaid ?? appointment.FeeAmount, PaidAt(status, time.GetUtcNow()))
             : Error.Rule("payment.not_captured", "The payment has not been completed. Please try again or pay at the hospital.");
+    }
+
+    /// <summary>
+    /// Asks the gateway, server to server, whether money was taken on <paramref name="order"/>, an order the appointment had
+    /// before its current one, and records it if so (see <see cref="Appointment.TakeReplacedOrderPayment"/>): the booking's
+    /// own payment when nothing else paid it, a second payment otherwise. Safe to repeat. The caller saves.
+    /// </summary>
+    public async Task<Result<ReplacedOrderPayment>> CheckReplacedOrderAsync(Appointment appointment, ReplacedPaymentOrder order, CancellationToken ct)
+    {
+        if (order.GatewayPaymentId is not null)
+        {
+            return ReplacedOrderPayment.AlreadyRecorded;
+        }
+
+        if (Gateway is null)
+        {
+            return Error.Rule("payment.unavailable", "Online payment is not available right now.");
+        }
+
+        PaymentStatusResult status;
+        try
+        {
+            status = await Gateway.GetStatusAsync(order.OrderId, order.Provider ?? appointment.PaymentProvider, appointment.FacilityId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not read the status of replaced gateway order {OrderId} of appointment {AppointmentId}", order.OrderId, appointment.Id);
+            return Error.Rule("payment.gateway_unavailable", "The payment gateway could not be reached. Try again shortly.");
+        }
+
+        var now = time.GetUtcNow();
+        return status is { Status: GatewayPaymentStatus.Captured, PaymentId: { } paymentId }
+            ? appointment.TakeReplacedOrderPayment(order, paymentId, status.AmountPaid ?? appointment.FeeAmount, PaidAt(status, now), now)
+            : Error.Rule("payment.not_captured", "No payment was taken on this order.");
     }
 
     /// <summary>When the gateway took the money (the advance receipt's time), never later than now.</summary>

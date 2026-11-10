@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Billing.Domain;
@@ -16,11 +15,7 @@ using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Organization;
-using HyFib.HealthCare360.Platform.Persistence;
-using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using PharmacyPaymentMode = HyFib.HealthCare360.Modules.Pharmacy.Domain.PaymentMode;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -34,8 +29,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 public sealed class EInvoiceRegisterTests(HospitalServer server)
 {
     private const string Register = "/api/v1/billing/einvoices";
-    private const string Hospital = "33AABCN1234F1Z3";
-    private const string KeralaCompany = "32AAACH7409R1ZA";
+    private const string Hospital = EInvoicing.Hospital;
+    private const string KeralaCompany = EInvoicing.KeralaCompany;
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -43,9 +38,9 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
     public async Task A_bill_to_a_registered_company_gets_its_irn_recorded_printed_and_cancelled_within_the_day()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        var service = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var service = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", "Executive lounge access", null, ServiceCategory.Miscellaneous, null, 1000m, 18m, "999799", true, false, null, true, null));
-        var company = await admin.PostAsync<PayerDetail>("/api/v1/insurance/payers", new SavePayerRequest(
+        var company = await server.CreatePayerAsync(admin, new SavePayerRequest(
             $"CO{Letters(8).ToUpperInvariant()}", $"Malabar Traders {Letters(6).ToUpperInvariant()} Ltd", PayerCategory.Corporate, "Anil Menon", "9876543210",
             null, "4/12 MG Road, Ernakulam, Kochi, Kerala 682016", KeralaCompany, null, CreditDays: 30, DefaultCoPayPercent: 0m, PortalUrl: null,
             IsActive: true, Notes: null, Version: null));
@@ -154,7 +149,9 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         var sale = await pharmacist.GetAsync<PharmacySaleDetail>($"/api/v1/pharmacy/sales/{sold.Id}");
         sale.EInvoice.ShouldNotBeNull().Irn.ShouldBe(irn);
         sale.BuyerAddress.ShouldBe("Sree Clinic, 22 Beach Road, Kozhikode 673001");
-        using var cancel = await pharmacist.SendRawAsync(HttpMethod.Post, $"/api/v1/pharmacy/sales/{sold.Id}/cancel", new { Reason = "Wrong buyer" });
+        // Asked for by another pharmacist (whoever sold it may not ask), the cancellation is refused while the IRN stands.
+        var secondPharmacist = await server.SignInAsync(HospitalServer.Users.SecondPharmacist);
+        using var cancel = await secondPharmacist.SendRawAsync(HttpMethod.Post, $"/api/v1/pharmacy/sales/{sold.Id}/cancel", new { Reason = "Wrong buyer" });
         (await ProblemCodeAsync(cancel)).ShouldBe("einvoice.active");
     }
 
@@ -169,6 +166,7 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
             BloodGroup: null, MaritalStatus: null, GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
             EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null, Category: null,
             AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null, ConfirmedNotDuplicate: false));
+        await server.VerifiedPolicyAsync(patient.Id, company.Id);
         var visit = await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", new CreateVisitRequest(
             patient.Id, VisitType.HealthCheckup, null, null, null, PayerType.Corporate, company.Id, ReferralSource.Corporate, null, null, false, null, null,
             TokenPriority.Normal, IssueToken: false, NotifyPatient: false));
@@ -180,45 +178,7 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         return await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
     }
 
-    /// <summary>
-    /// The hospital registered in Chennai, with e-invoicing <paramref name="from"/> a date (or off), for the rest of the
-    /// test; then put back, because the server is shared by every test of the run.
-    /// </summary>
-    private async Task<IAsyncDisposable> EInvoicingAsync(DateOnly? from)
-    {
-        var before = new Dictionary<Guid, (string? Gstin, Address Address, string? Setting)>();
-        await using (var scope = server.Services.CreateAsyncScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
-            var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-            foreach (var facility in await db.Set<Facility>().ToListAsync(Ct))
-            {
-                before[facility.Id] = (facility.Gstin, facility.Address, await settings.GetAsync<string?>("gst.einvoice.from", facility.Id, Ct));
-                facility.Gstin = Hospital;
-                facility.Address = new Address { Line1 = "12 Anna Salai", City = "Chennai", State = "Tamil Nadu", PinCode = "600018" };
-                await settings.SetAsync<string?>("gst.einvoice.from", from?.ToString("yyyy-MM-dd"), facility.Id, cancellationToken: Ct);
-            }
-
-            await db.SaveChangesAsync(Ct);
-        }
-
-        return new Restore(async () =>
-        {
-            await using var scope = server.Services.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
-            var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-            foreach (var facility in await db.Set<Facility>().ToListAsync(CancellationToken.None))
-            {
-                if (before.TryGetValue(facility.Id, out var was))
-                {
-                    (facility.Gstin, facility.Address) = (was.Gstin, was.Address);
-                    await settings.SetAsync("gst.einvoice.from", was.Setting, facility.Id, cancellationToken: CancellationToken.None);
-                }
-            }
-
-            await db.SaveChangesAsync(CancellationToken.None);
-        });
-    }
+    private Task<IAsyncDisposable> EInvoicingAsync(DateOnly? from) => server.EInvoicingAsync(from, Ct);
 
     private static async Task<JsonNode> JsonAsync(ApiClient client, string path)
     {
@@ -228,29 +188,11 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         return JsonNode.Parse(await response.Content.ReadAsStringAsync(Ct))!;
     }
 
-    /// <summary>A signed QR code as the portal makes it, generated a minute ago: the invoice's details in the payload's <c>data</c>.</summary>
-    private static string Qr(string number, decimal total, string buyer, string irn, int items)
-    {
-        var generated = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(5.5)).AddMinutes(-1);
-        var data = new JsonObject
-        {
-            ["SellerGstin"] = Hospital,
-            ["BuyerGstin"] = buyer,
-            ["DocNo"] = number,
-            ["DocTyp"] = "INV",
-            ["DocDt"] = generated.ToString("dd'/'MM'/'yyyy", System.Globalization.CultureInfo.InvariantCulture),
-            ["TotInvVal"] = total,
-            ["ItemCnt"] = items,
-            ["Irn"] = irn,
-            ["IrnDt"] = generated.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture),
-        };
-        static string Part(string json) => Convert.ToBase64String(Encoding.UTF8.GetBytes(json)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        return $"{Part("{\"alg\":\"RS256\"}")}.{Part(JsonSerializer.Serialize(new { data = data.ToJsonString(), iss = "NIC" }))}.c2lnbmF0dXJl";
-    }
+    private static string Qr(string number, decimal total, string buyer, string irn, int items) => EInvoicing.Qr(number, total, buyer, irn, items);
 
-    private static string Irn() => Convert.ToHexStringLower(Guid.NewGuid().ToByteArray()) + Convert.ToHexStringLower(Guid.NewGuid().ToByteArray());
+    private static string Irn() => EInvoicing.Irn();
 
-    private static DateOnly Today() => DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(5.5)).DateTime);
+    private static DateOnly Today() => EInvoicing.Today();
 
     private static async Task<string?> ProblemCodeAsync(HttpResponseMessage response)
     {
@@ -259,9 +201,4 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
     }
 
     private static string Letters(int count) => new(Enumerable.Range(0, count).Select(_ => (char)('a' + Random.Shared.Next(26))).ToArray());
-
-    private sealed class Restore(Func<Task> restore) : IAsyncDisposable
-    {
-        public async ValueTask DisposeAsync() => await restore();
-    }
 }

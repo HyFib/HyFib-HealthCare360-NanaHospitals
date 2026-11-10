@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Billing.Documents;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
@@ -13,7 +14,9 @@ using HyFib.HealthCare360.Modules.Billing.Features.Portal;
 using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Billing.Features.Tally;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
+using HyFib.HealthCare360.Modules.Billing.Features.VisitPayer;
 using HyFib.HealthCare360.Modules.Billing.Services;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -37,14 +40,27 @@ public sealed class BillingModule : IModule
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<TariffService>();
+        services.AddScoped<TariffApprovals>();
+        services.AddScoped<PayerApprovals>();
+        services.AddScoped<StayPlanApprovals>();
+        services.AddScoped<VisitPayerChanges>();
+        services.AddScoped<PackageApprovals>();
+        services.AddScoped<ShareRuleApprovals>();
+        services.AddScoped<NonPayableApprovals>();
         services.AddScoped<RateListService>();
         services.AddSingleton<PublicRateListPdf>();
         services.AddScoped<ChargeService>();
+        services.AddScoped<ChargeRefusals>();
+        services.AddScoped<IHealthWarningSource, ChargeRefusalWarnings>();
         services.AddScoped<PayerCoverageService>();
         services.AddScoped<BillService>();
         services.AddScoped<DiscountService>();
         services.AddScoped<ReceiptService>();
+        services.AddSingleton(new DowntimeNumberSeries(DowntimeNumberKind.OpBill, BillingNumberSeries.OpBill, BackEntryRecord.Bill, "OP bill"));
+        services.AddSingleton(new DowntimeNumberSeries(DowntimeNumberKind.IpBill, BillingNumberSeries.IpBill, BackEntryRecord.Bill, "IP bill"));
+        services.AddSingleton(new DowntimeNumberSeries(DowntimeNumberKind.Receipt, BillingNumberSeries.Receipt, BackEntryRecord.Receipt, "receipt"));
         services.AddScoped<RefundService>();
+        services.AddScoped<ReversalService>();
         services.AddScoped<AdvanceService>();
         services.AddScoped<ShiftService>();
         services.AddScoped<PosService>();
@@ -54,9 +70,16 @@ public sealed class BillingModule : IModule
         services.AddScoped<PreAuthService>();
         services.AddScoped<ClaimService>();
         services.AddScoped<DoctorFeeService>();
+        services.AddScoped<DoctorTaxService>();
         services.AddScoped<TallyService>();
         services.AddScoped<EInvoiceService>();
         services.AddScoped<IEInvoiceSource, BillEInvoiceSource>();
+        services.AddScoped<IEInvoiceSource, CreditNoteEInvoiceSource>();
+        services.AddScoped<IEInvoiceSource, DebitNoteEInvoiceSource>();
+        services.AddScoped<DebitNoteService>();
+        services.AddScoped<GstReturnService>();
+        services.AddScoped<GstFilingService>();
+        services.AddScoped<IGstReturnSource, BillingGstReturnSource>();
         services.AddScoped<IEInvoiceRegister, EInvoiceRegisterLookup>();
         services.AddScoped<ICashReceiptSource, BillingCashReceipts>();
         services.AddScoped<TallyReconciliationService>();
@@ -72,6 +95,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<PosRecheckRunner>();
         services.AddScoped<GatewayWebhookLog>();
         services.AddScoped<PosSettlementService>();
+        services.AddScoped<PaymentDisputeService>();
         services.AddScoped<HbpService>();
         services.AddScoped<BillSharing>();
         services.AddScoped<INotificationDocumentSource, BillDocumentSource>();
@@ -100,14 +124,17 @@ public sealed class BillingModule : IModule
         GatewayEndpoints.Map(endpoints);
         ReconciliationEndpoints.Map(endpoints);
         PosSettlementEndpoints.Map(endpoints);
+        PaymentDisputeEndpoints.Map(endpoints);
         ShiftEndpoints.Map(endpoints);
         IpEndpoints.Map(endpoints);
         PayerEndpoints.Map(endpoints);
         PreAuthEndpoints.Map(endpoints);
+        VisitPayerEndpoints.Map(endpoints);
         ClaimEndpoints.Map(endpoints);
         DoctorFeeEndpoints.Map(endpoints);
         TallyEndpoints.Map(endpoints);
         EInvoiceEndpoints.Map(endpoints);
+        GstReturnEndpoints.Map(endpoints);
         PortalBillEndpoints.Map(endpoints);
     }
 }

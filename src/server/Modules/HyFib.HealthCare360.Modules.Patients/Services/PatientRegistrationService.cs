@@ -46,6 +46,7 @@ public sealed class PatientRegistrationService(
     ISettingsService settings,
     PatientAccessGuard access,
     IApprovals approvals,
+    PatientRecordApprovals records,
     TimeProvider time)
 {
     /// <summary>Audit action of a change to the patient's ABHA number or address.</summary>
@@ -206,7 +207,13 @@ public sealed class PatientRegistrationService(
         return new PatientCreated(patient.Id, patient.Uhid);
     }
 
-    public async Task<Result> UpdateAsync(Guid id, UpdatePatientRequest request, CancellationToken ct)
+    /// <summary>
+    /// Saves a patient's details. Most are saved at once. What needs a second person (maker-checker, slice 7) is kept as
+    /// it is and asked for, in the same transaction: the identity of a patient past the correction window
+    /// (<see cref="IdentityCorrection"/>), a VIP restriction lifted, and the deceased status set or taken back here. The
+    /// answer names the request (the first, when several are asked in one save; the record's read shows them all).
+    /// </summary>
+    public async Task<Result<PatientSaved>> UpdateAsync(Guid id, UpdatePatientRequest request, CancellationToken ct)
     {
         var patient = await db.Set<Patient>().FirstOrDefaultAsync(p => p.Id == id, ct);
         if (patient is null)
@@ -217,6 +224,17 @@ public sealed class PatientRegistrationService(
         if (patient.MergedIntoPatientId is not null)
         {
             return Error.Rule("patient.merged", "This record was merged into another patient and can no longer be edited.");
+        }
+
+        // The portal signs in with the registered number, so a new one is made only with a code sent to it
+        // (PatientPhoneChangeService). Sending the number on file back, or no number to remove it, is still an edit. A form
+        // loaded before the number changed is out of date as a whole: a conflict, so it reloads, not a refusal of its number.
+        if (Phone.Normalize(request.Phone) is { } phone && phone != patient.Phone)
+        {
+            return request.Version != patient.Version
+                ? Error.ConcurrencyConflict
+                : Error.Validation("patient.phone_needs_code", PatientPhoneChangeService.NeedsCodeMessage,
+                    new Dictionary<string, string[]> { ["phone"] = [PatientPhoneChangeService.NeedsCodeMessage] });
         }
 
         // A new or changed ABHA address must be in ABDM's format; one already on file (an old @ndhm handle, say) is kept.
@@ -241,22 +259,168 @@ public sealed class PatientRegistrationService(
             return photoProblem;
         }
 
+        var today = time.Today();
+        var asks = await DecideAsksAsync(patient, request, input, today, ct);
+        if (asks.IsFailure)
+        {
+            return asks.Error!;
+        }
+
+        var (keepIdentity, identity, liftRestriction, deceased) = asks.Value;
         db.SetExpectedVersion(patient, request.Version);
-        Apply(patient, input, time.Today(), isNew: false);
-        patient.IsDeceased = request.IsDeceased;
-        patient.DeceasedAt = request.IsDeceased ? request.DeceasedAt ?? patient.DeceasedAt ?? time.GetUtcNow() : null;
+        if (identity is not null || liftRestriction || deceased is not null)
+        {
+            // Asked for over the record as the form saw it, even when nothing else on it changes.
+            db.GuardVersion(patient, request.Version);
+        }
+
+        var previousPhone = patient.Phone;
+        ApplyDetails(patient, input);
+        if (!keepIdentity)
+        {
+            ApplyIdentity(patient, input, today, isNew: false);
+        }
+
+        // A restriction is added at once; lifted, it waits, and the record stays restricted meanwhile. The deceased status is
+        // never set here: it waits (or comes from the death certificate or an expired discharge).
+        patient.IsVip = input.IsVip || patient.IsVip;
         patient.IsActive = request.IsActive;
 
+        // Portal links sent to the number stop when it is removed, and the record's list of links says why. (Opening a link
+        // checks that the record still has the number it went to, so one is never used after that either way.)
+        if (patient.Phone != previousPhone)
+        {
+            await PortalLinkService.RevokeLiveLinksAsync(db, patient.Id, PortalLink.NumberChangedReason, time.GetUtcNow(), ct);
+        }
+
+        var reason = request.ChangeReason?.Trim() ?? string.Empty;
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         try
         {
             await db.SaveChangesAsync(ct);
         }
         catch (DbUpdateException ex) when (PatientConfiguration.AadhaarNumberTaken(ex))
         {
+            await transaction.RollbackAsync(ct);
             return await AadhaarNumberTakenAsync(input, id, ct);
         }
 
-        return Result.Success();
+        ApprovalRequestDto? first = null;
+        if (identity is not null)
+        {
+            var asked = await records.AskIdentityAsync(patient, identity, reason, ct);
+            if (asked.IsFailure)
+            {
+                return asked.Error!;
+            }
+
+            first ??= asked.Value;
+        }
+
+        if (liftRestriction)
+        {
+            var asked = await records.AskRestrictionLiftAsync(patient, reason, ct);
+            if (asked.IsFailure)
+            {
+                return asked.Error!;
+            }
+
+            first ??= asked.Value;
+        }
+
+        if (deceased is not null)
+        {
+            var asked = await records.AskDeceasedAsync(patient, deceased, reason, ct);
+            if (asked.IsFailure)
+            {
+                return asked.Error!;
+            }
+
+            first ??= asked.Value;
+        }
+
+        await transaction.CommitAsync(ct);
+        return new PatientSaved(first);
+    }
+
+    /// <summary>
+    /// What this save asks a second person for: the identity (unless it may still be corrected at once), the restriction
+    /// lifted, the deceased status. What already waits as asked is not asked again; something else of a kind that waits
+    /// is refused until that is decided. A request needs a reason.
+    /// </summary>
+    private async Task<Result<(bool KeepIdentity, PatientIdentityPayload? Identity, bool LiftRestriction, PatientDeceasedPayload? Deceased)>> DecideAsksAsync(
+        Patient patient, UpdatePatientRequest request, PatientInput input, DateOnly today, CancellationToken ct)
+    {
+        PatientIdentityPayload? identity = null;
+        var keepIdentity = false;
+        var before = PatientIdentity.Of(patient);
+        var scratch = new Patient
+        {
+            AbhaNumberCipher = patient.AbhaNumberCipher,
+            AbhaNumberIndex = patient.AbhaNumberIndex,
+            AbhaNumberMasked = patient.AbhaNumberMasked,
+            AbhaAddress = patient.AbhaAddress,
+            AadhaarLast4 = patient.AadhaarLast4,
+            AadhaarIndex = patient.AadhaarIndex,
+            DateOfBirth = patient.DateOfBirth,
+            IsDateOfBirthEstimated = patient.IsDateOfBirthEstimated,
+        };
+        ApplyIdentity(scratch, input, today, isNew: false, auditAbha: false);
+        var asked = PatientIdentity.Of(scratch);
+
+        // A number is the same only when its index is (the same ABHA number entered again keeps its stored form): another
+        // number ending in the same four digits is a change too.
+        var abhaNumberChanged = scratch.AbhaNumberIndex != patient.AbhaNumberIndex;
+        var aadhaarChanged = scratch.AadhaarIndex != patient.AadhaarIndex;
+        if ((asked != before || abhaNumberChanged || aadhaarChanged) && await records.CorrectableUntilAsync(patient, ct) is null)
+        {
+            // Past the correction window the record keeps its identity: asked for now, or already asked for as it is.
+            keepIdentity = true;
+            var waiting = await records.WaitingAsync<PatientIdentityPayload>(PatientRecordApprovals.IdentityKind, patient.Id, ct);
+            if (waiting is { } w && (w.Payload.Asked != asked || w.Payload.Identifiers.AbhaNumberIndex != scratch.AbhaNumberIndex || w.Payload.Identifiers.AadhaarIndex != scratch.AadhaarIndex))
+            {
+                return Error.Conflict(PatientRecordApprovals.WaitingCode,
+                    $"A change to this patient's identity, asked for by {w.Request.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.");
+            }
+
+            identity = waiting is not null
+                ? null
+                : new PatientIdentityPayload(patient.Id, before, asked,
+                    new PatientIdentifiers(scratch.AbhaNumberCipher, scratch.AbhaNumberIndex, scratch.AadhaarIndex),
+                    abhaNumberChanged, aadhaarChanged);
+        }
+
+        var liftRestriction = false;
+        if (patient.IsVip && !input.IsVip)
+        {
+            liftRestriction = await records.WaitingAsync<PatientRestrictionPayload>(PatientRecordApprovals.RestrictionKind, patient.Id, ct) is null;
+        }
+
+        PatientDeceasedPayload? deceased = null;
+        var deceasedAt = request.IsDeceased ? request.DeceasedAt ?? patient.DeceasedAt ?? time.GetUtcNow() : (DateTimeOffset?)null;
+        if (request.IsDeceased != patient.IsDeceased || (request.IsDeceased && request.DeceasedAt is not null && request.DeceasedAt != patient.DeceasedAt))
+        {
+            if (!request.IsDeceased && await records.CertifiedDeathAsync(patient.Id, ct) is { } serial)
+            {
+                return PatientRecordApprovals.DeathCertified(serial);
+            }
+
+            var waiting = await records.WaitingAsync<PatientDeceasedPayload>(PatientRecordApprovals.DeceasedKind, patient.Id, ct);
+            if (waiting is { } w && (w.Payload.Deceased != request.IsDeceased || (request.DeceasedAt is not null && w.Payload.DeceasedAt != deceasedAt)))
+            {
+                return Error.Conflict(PatientRecordApprovals.WaitingCode,
+                    $"A change to this patient's deceased status, asked for by {w.Request.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.");
+            }
+
+            deceased = waiting is null ? new PatientDeceasedPayload(patient.Id, patient.IsDeceased, patient.DeceasedAt, request.IsDeceased, deceasedAt) : null;
+        }
+
+        if ((identity is not null || liftRestriction || deceased is not null) && string.IsNullOrWhiteSpace(request.ChangeReason))
+        {
+            return PatientRecordApprovals.ReasonNeeded("changeReason");
+        }
+
+        return (keepIdentity, identity, liftRestriction, deceased);
     }
 
     /// <summary>
@@ -366,6 +530,13 @@ public sealed class PatientRegistrationService(
         foreach (var check in await db.Set<PatientIdentityCheck>().Where(c => c.PatientId == sourceId).ToListAsync(ct))
         {
             check.PatientId = target.Id;
+        }
+
+        // The duplicate's number changes go with its record; one still waiting for its code ends (it was for the duplicate's number).
+        foreach (var change in await db.Set<PatientPhoneChange>().Where(c => c.PatientId == sourceId).ToListAsync(ct))
+        {
+            change.Supersede();
+            change.PatientId = target.Id;
         }
 
         await MovePortalFamilyLinksAsync(source, target, ct);
@@ -495,6 +666,14 @@ public sealed class PatientRegistrationService(
 
     private void Apply(Patient patient, PatientInput input, DateOnly today, bool isNew)
     {
+        ApplyIdentity(patient, input, today, isNew);
+        ApplyDetails(patient, input);
+        patient.IsVip = input.IsVip;
+    }
+
+    /// <summary>Who the patient is: name, sex, date of birth, ABHA number and address, Aadhaar (<see cref="PatientIdentity"/>).</summary>
+    private void ApplyIdentity(Patient patient, PatientInput input, DateOnly today, bool isNew, bool auditAbha = true)
+    {
         patient.SetName(input.Title, input.FirstName, input.MiddleName, input.LastName);
         patient.Gender = input.Gender;
         var dob = PatientRules.ResolveDateOfBirth(input.DateOfBirth, input.AgeYears, input.AgeMonths, today, out var estimated);
@@ -504,27 +683,12 @@ public sealed class PatientRegistrationService(
             patient.IsDateOfBirthEstimated = estimated;
         }
 
-        patient.Phone = Phone.Normalize(input.Phone);
-        patient.AlternatePhone = Phone.Normalize(input.AlternatePhone);
-        patient.Email = string.IsNullOrWhiteSpace(input.Email) ? null : input.Email.Trim().ToLowerInvariant();
-        patient.Address = input.Address ?? new Address();
-        patient.BloodGroup = input.BloodGroup ?? patient.BloodGroup;
-        patient.MaritalStatus = input.MaritalStatus ?? patient.MaritalStatus;
-        patient.GuardianName = Clean(input.GuardianName);
-        patient.GuardianRelation = input.GuardianRelation;
-        patient.EmergencyContactName = Clean(input.EmergencyContactName);
-        patient.EmergencyContactPhone = Phone.Normalize(input.EmergencyContactPhone);
-        patient.EmergencyContactRelation = Clean(input.EmergencyContactRelation);
-        patient.Occupation = Clean(input.Occupation);
-        patient.Religion = Clean(input.Religion);
-        patient.Nationality = Clean(input.Nationality) ?? "Indian";
-        patient.PreferredLanguage = Clean(input.PreferredLanguage);
-        patient.Category = input.Category ?? patient.Category;
-        AuditAbhaChange(patient, input, isNew);
+        if (auditAbha)
+        {
+            AuditAbhaChange(patient, input, isNew);
+        }
+
         patient.AbhaAddress = Abha.NormalizeAddress(input.AbhaAddress);
-        patient.PhotoFileId = PatientPhoto.Resolve(patient.PhotoFileId, input.PhotoFileId, input.RemovePhoto);
-        patient.IsVip = input.IsVip;
-        patient.Notes = Clean(input.Notes);
 
         // null = leave unchanged, "" = remove, value = replace.
         if (input.AbhaNumber is not null)
@@ -536,9 +700,14 @@ public sealed class PatientRegistrationService(
             else
             {
                 var abha = Abha.Digits(input.AbhaNumber);
-                patient.AbhaNumberCipher = protector.Protect(abha);
-                patient.AbhaNumberIndex = protector.BlindIndex(abha);
-                patient.AbhaNumberMasked = Abha.Mask(abha);
+
+                // The same number entered again is no change: it keeps its stored form (and its key).
+                if (patient.AbhaNumberIndex is not { } index || !protector.BlindIndexes(abha).Contains(index))
+                {
+                    patient.AbhaNumberCipher = protector.Protect(abha);
+                    patient.AbhaNumberIndex = protector.BlindIndex(abha);
+                    patient.AbhaNumberMasked = Abha.Mask(abha);
+                }
             }
         }
 
@@ -556,6 +725,29 @@ public sealed class PatientRegistrationService(
                 patient.AadhaarIndex = protector.FixedBlindIndex(aadhaar);
             }
         }
+    }
+
+    /// <summary>Everything else on the record: contacts, address, emergency contact, social details, photo and notes.</summary>
+    private void ApplyDetails(Patient patient, PatientInput input)
+    {
+        patient.Phone = Phone.Normalize(input.Phone);
+        patient.AlternatePhone = Phone.Normalize(input.AlternatePhone);
+        patient.Email = string.IsNullOrWhiteSpace(input.Email) ? null : input.Email.Trim().ToLowerInvariant();
+        patient.Address = input.Address ?? new Address();
+        patient.BloodGroup = input.BloodGroup ?? patient.BloodGroup;
+        patient.MaritalStatus = input.MaritalStatus ?? patient.MaritalStatus;
+        patient.GuardianName = Clean(input.GuardianName);
+        patient.GuardianRelation = input.GuardianRelation;
+        patient.EmergencyContactName = Clean(input.EmergencyContactName);
+        patient.EmergencyContactPhone = Phone.Normalize(input.EmergencyContactPhone);
+        patient.EmergencyContactRelation = Clean(input.EmergencyContactRelation);
+        patient.Occupation = Clean(input.Occupation);
+        patient.Religion = Clean(input.Religion);
+        patient.Nationality = Clean(input.Nationality) ?? "Indian";
+        patient.PreferredLanguage = Clean(input.PreferredLanguage);
+        patient.Category = input.Category ?? patient.Category;
+        patient.PhotoFileId = PatientPhoto.Resolve(patient.PhotoFileId, input.PhotoFileId, input.RemovePhoto);
+        patient.Notes = Clean(input.Notes);
     }
 
     /// <summary>

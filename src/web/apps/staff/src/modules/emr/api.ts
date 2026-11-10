@@ -1,6 +1,7 @@
 import { isApiError, type Gender, type PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { DeficiencyType } from '@/modules/mrd/api';
 import type { PatientSummary, TokenPriority, TokenStatus } from '@/modules/patients/api';
 import type { AppointmentStatus, AppointmentVisitType } from '@/modules/scheduling/api';
@@ -108,6 +109,8 @@ export interface WorklistQueueEntry {
   hasCriticalAlerts: boolean;
   /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", without the complaint. */
   isRestricted: boolean;
+  /** A record in a sensitive category the user does not hold: named, without the clinical text. */
+  isConfidential?: boolean;
 }
 
 /** A booking on the doctor's day; once the patient has checked in it carries the visit, token and note. */
@@ -136,6 +139,8 @@ export interface WorklistAppointment {
   hasCriticalAlerts: boolean;
   /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", without the reason. */
   isRestricted: boolean;
+  /** A record in a sensitive category the user does not hold: named, without the clinical text. */
+  isConfidential?: boolean;
 }
 
 export interface WorklistEncounter {
@@ -455,6 +460,16 @@ export interface AllergyDto {
   recordedByUserId: string | null;
   notes: string | null;
   version: number;
+  /** A change waiting for a prescriber (taken out of the checks, or a lower severity): the allergy stands as it is until then. */
+  pendingChange?: PendingFlagChange | null;
+}
+
+/** A change to a patient flag waiting for a second clinician (maker-checker, slice 7). */
+export interface PendingFlagChange {
+  approvalId: string;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface RecordAllergyRequest {
@@ -473,6 +488,8 @@ export interface UpdateAllergyRequest {
   statusReason: string | null;
   notes: string | null;
   version: number;
+  /** Why a lower severity is asked for (it waits for a prescriber); a status change gives its reason in `statusReason`. */
+  changeReason?: string | null;
 }
 
 /**
@@ -499,6 +516,8 @@ export interface PatientAlertDto {
   isCurrent: boolean;
   deactivatedAt: string | null;
   deactivationReason: string | null;
+  /** DNR asked to be taken off: it stays on the banner until a second doctor agrees. */
+  pendingChange?: PendingFlagChange | null;
 }
 
 export interface RaiseAlertRequest {
@@ -589,6 +608,16 @@ export interface ImmunizationDto {
   notes: string | null;
   isEnteredInError: boolean;
   enteredInErrorReason: string | null;
+}
+
+/** How a vaccine is usually given, as the immunisation form fills the route in. */
+export type VaccineRoute = 'Intradermal' | 'Intramuscular' | 'Subcutaneous' | 'Oral';
+
+/** A vaccine the form offers by its card code; the server sends other providers its SNOMED CT code. */
+export interface VaccineChoice {
+  code: string;
+  name: string;
+  route: VaccineRoute | null;
 }
 
 export type RecordImmunizationRequest = Omit<
@@ -840,6 +869,7 @@ export const emrKeys = {
     ['emr', 'patient', patientId, 'notes', encounterId, page] as const,
   immunizations: (patientId: string, includeErrors: boolean) =>
     ['emr', 'patient', patientId, 'immunizations', includeErrors] as const,
+  vaccines: ['emr', 'vaccines'] as const,
   admissions: (patientId: string) => ['emr', 'patient', patientId, 'admissions'] as const,
   /** Under the patient key, so a change to the patient's record refreshes it. */
   previousVisit: (patientId: string, encounterId: string) =>
@@ -956,6 +986,13 @@ export const emrQueries = {
         }),
       placeholderData: keepPreviousData,
     }),
+  /** The vaccines a dose can be recorded as by card code (a fixed list: kept for the session). */
+  vaccines: () =>
+    queryOptions({
+      queryKey: emrKeys.vaccines,
+      queryFn: ({ signal }) => api.get<VaccineChoice[]>('/api/v1/emr/vaccines', { signal }),
+      staleTime: Infinity,
+    }),
   immunizations: (patientId: string, includeErrors = false) =>
     queryOptions({
       queryKey: emrKeys.immunizations(patientId, includeErrors),
@@ -1054,16 +1091,28 @@ export const emrQueries = {
 // ---------------------------------------------------------------------------------------------------- commands
 
 export const emrApi = {
-  acknowledgeResult: (id: string, note: string | null) =>
-    api.post<void>(`/api/v1/emr/results/${id}/acknowledge`, { note }),
+  /**
+   * Where the lab asks for a second pathologist, a critical lab result is acknowledged by its ordering doctor, or by a
+   * doctor who records that they cover the patient (`coveringReason`; 400 on that field without it).
+   */
+  acknowledgeResult: (id: string, note: string | null, coveringReason?: string | null) =>
+    api.post<void>(`/api/v1/emr/results/${id}/acknowledge`, { note, coveringReason: coveringReason ?? null }),
 
   startEncounter: (request: StartEncounterRequest) => api.post<EncounterDetail>('/api/v1/emr/encounters', request),
   updateEncounter: (id: string, content: EncounterContent, version: number) =>
     api.put<EncounterDetail>(`/api/v1/emr/encounters/${id}`, { ...content, version }),
   signEncounter: (id: string, version: number) =>
     api.post<EncounterDetail>(`/api/v1/emr/encounters/${id}/sign`, { version }),
+  /**
+   * The author amends at once (the encounter); another doctor's amendment waits for the author or the head of the
+   * department (an approval request, 202: maker-checker, slice 15).
+   */
   amendEncounter: (id: string, reason: string, content: EncounterContent, version: number) =>
-    api.post<EncounterDetail>(`/api/v1/emr/encounters/${id}/amend`, { reason, ...content, version }),
+    api.post<EncounterDetail | ApprovalRequestDto>(`/api/v1/emr/encounters/${id}/amend`, {
+      reason,
+      ...content,
+      version,
+    }),
 
   recordVitals: (patientId: string, request: RecordVitalsPayload) =>
     api.post<VitalsDto>(`/api/v1/emr/patients/${patientId}/vitals`, request),
@@ -1074,15 +1123,21 @@ export const emrApi = {
 
   recordAllergy: (patientId: string, request: RecordAllergyRequest) =>
     api.post<AllergyDto>(`/api/v1/emr/patients/${patientId}/allergies`, request),
+  /**
+   * Stricter changes, the reaction and notes are saved at once (the allergy back); taking an active allergy out of the
+   * checks or lowering its severity waits for a prescriber who did not ask (202, the request back).
+   */
   updateAllergy: (id: string, request: UpdateAllergyRequest) =>
-    api.put<AllergyDto>(`/api/v1/emr/allergies/${id}`, request),
+    api.put<AllergyDto | ApprovalRequestDto>(`/api/v1/emr/allergies/${id}`, request),
   /** Idempotent; 409 `allergy.active_exist` (with `data.activeAllergies`) while the patient has active allergies. */
   recordNoKnownAllergies: (patientId: string) =>
     api.post<AllergyStatusDto>(`/api/v1/emr/patients/${patientId}/allergies/none`),
+  /** DNR only by a doctor (403 `alert.dnr_doctor_only`), and with no end date. */
   raiseAlert: (patientId: string, request: RaiseAlertRequest) =>
     api.post<PatientAlertDto>(`/api/v1/emr/patients/${patientId}/alerts`, request),
+  /** Other alerts are cleared at once; DNR is asked for by a doctor and taken off when a second doctor agrees (202). */
   deactivateAlert: (id: string, reason: string) =>
-    api.post<PatientAlertDto>(`/api/v1/emr/alerts/${id}/deactivate`, { reason }),
+    api.post<PatientAlertDto | ApprovalRequestDto>(`/api/v1/emr/alerts/${id}/deactivate`, { reason }),
 
   addDiagnosis: (encounterId: string, request: AddDiagnosisRequest) =>
     api.post<DiagnosisDto>(`/api/v1/emr/encounters/${encounterId}/diagnoses`, request),
@@ -1131,3 +1186,18 @@ export const dischargeSummaryDocument = (id: string) => `/api/v1/clinical/discha
  * patient's record-sharing consent; a restricted record needs the right to open it.
  */
 export const abdmDischargeSummaryBundle = (id: string) => `/api/v1/abdm/bundles/discharge-summaries/${id}`;
+
+/**
+ * A vaccine dose given here as an ABDM immunisation record (ImmunizationRecord, with the next dose when one is due),
+ * under the same rules. A dose copied from the patient's card, or marked as entered in error, is not exported.
+ */
+export const abdmImmunizationBundle = (id: string) => `/api/v1/abdm/bundles/immunizations/${id}`;
+
+/**
+ * A signed clinical note as an ABDM health document (HealthDocumentRecord), carrying every addendum signed to it, under
+ * the same rules. A counselling note is not exported, and an addendum goes with the note it adds to.
+ */
+export const abdmClinicalNoteBundle = (id: string) => `/api/v1/abdm/bundles/clinical-notes/${id}`;
+/** A remote monitoring enrolment's home readings measured in a month (yyyy-MM). */
+export const abdmHomeReadingsBundle = (id: string, month: string) =>
+  `/api/v1/abdm/bundles/home-readings/${id}?month=${month}`;

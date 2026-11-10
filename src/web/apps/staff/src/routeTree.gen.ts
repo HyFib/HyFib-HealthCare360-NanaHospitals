@@ -29,6 +29,7 @@ import { Route as AppAmbulanceIndexRouteImport } from './routes/_app/ambulance/i
 import { Route as AppAmsIndexRouteImport } from './routes/_app/ams/index'
 import { Route as AppAnalyticsIndexRouteImport } from './routes/_app/analytics/index'
 import { Route as AppAnalyticsExtractsRouteImport } from './routes/_app/analytics/extracts'
+import { Route as AppAnalyticsKpiTargetsRouteImport } from './routes/_app/analytics/kpi-targets'
 import { Route as AppAnalyticsKpisRouteImport } from './routes/_app/analytics/kpis'
 import { Route as AppAnalyticsSchedulesRouteImport } from './routes/_app/analytics/schedules'
 import { Route as AppApprovalsIndexRouteImport } from './routes/_app/approvals/index'
@@ -44,6 +45,7 @@ import { Route as AppBillingCardSettlementsRouteImport } from './routes/_app/bil
 import { Route as AppBillingDayEndRouteImport } from './routes/_app/billing/day-end'
 import { Route as AppBillingDepositsRouteImport } from './routes/_app/billing/deposits'
 import { Route as AppBillingEinvoicesRouteImport } from './routes/_app/billing/einvoices'
+import { Route as AppBillingGstReturnsRouteImport } from './routes/_app/billing/gst-returns'
 import { Route as AppBillingHbpRouteImport } from './routes/_app/billing/hbp'
 import { Route as AppBillingOpRouteImport } from './routes/_app/billing/op'
 import { Route as AppBillingPackagesRouteImport } from './routes/_app/billing/packages'
@@ -104,6 +106,7 @@ import { Route as AppFrontOfficeVisitorsRouteImport } from './routes/_app/front-
 import { Route as AppFrontOfficeVisitsRouteImport } from './routes/_app/front-office/visits'
 import { Route as AppHealthCheckupsIndexRouteImport } from './routes/_app/health-checkups/index'
 import { Route as AppHealthCheckupsBookRouteImport } from './routes/_app/health-checkups/book'
+import { Route as AppHousekeepingIndexRouteImport } from './routes/_app/housekeeping/index'
 import { Route as AppHrIndexRouteImport } from './routes/_app/hr/index'
 import { Route as AppHrCredentialsRouteImport } from './routes/_app/hr/credentials'
 import { Route as AppHrDesignationsRouteImport } from './routes/_app/hr/designations'
@@ -115,6 +118,7 @@ import { Route as AppInpatientAdmitRouteImport } from './routes/_app/inpatient/a
 import { Route as AppInpatientBedsRouteImport } from './routes/_app/inpatient/beds'
 import { Route as AppInpatientHousekeepingRouteImport } from './routes/_app/inpatient/housekeeping'
 import { Route as AppInpatientSetupRouteImport } from './routes/_app/inpatient/setup'
+import { Route as AppInpatientTransfersRouteImport } from './routes/_app/inpatient/transfers'
 import { Route as AppInsuranceIndexRouteImport } from './routes/_app/insurance/index'
 import { Route as AppInsuranceAgeingRouteImport } from './routes/_app/insurance/ageing'
 import { Route as AppInsurancePayersRouteImport } from './routes/_app/insurance/payers'
@@ -122,6 +126,7 @@ import { Route as AppInsurancePoliciesRouteImport } from './routes/_app/insuranc
 import { Route as AppInventoryIndexRouteImport } from './routes/_app/inventory/index'
 import { Route as AppInventoryAdjustmentsRouteImport } from './routes/_app/inventory/adjustments'
 import { Route as AppInventoryCategoriesRouteImport } from './routes/_app/inventory/categories'
+import { Route as AppInventoryColdChainRouteImport } from './routes/_app/inventory/cold-chain'
 import { Route as AppInventoryItemsRouteImport } from './routes/_app/inventory/items'
 import { Route as AppInventoryLedgerRouteImport } from './routes/_app/inventory/ledger'
 import { Route as AppInventoryReportsRouteImport } from './routes/_app/inventory/reports'
@@ -131,6 +136,7 @@ import { Route as AppInventoryTransfersRouteImport } from './routes/_app/invento
 import { Route as AppLabIndexRouteImport } from './routes/_app/lab/index'
 import { Route as AppLabCollectionRouteImport } from './routes/_app/lab/collection'
 import { Route as AppLabCriticalCallsRouteImport } from './routes/_app/lab/critical-calls'
+import { Route as AppLabEqasRouteImport } from './routes/_app/lab/eqas'
 import { Route as AppLabOutsourcingRouteImport } from './routes/_app/lab/outsourcing'
 import { Route as AppLabReceiveRouteImport } from './routes/_app/lab/receive'
 import { Route as AppLabSetupRouteImport } from './routes/_app/lab/setup'
@@ -149,29 +155,37 @@ import { Route as AppMtpIndexRouteImport } from './routes/_app/mtp/index'
 import { Route as AppMtpCaseIdRouteImport } from './routes/_app/mtp/$caseId'
 import { Route as AppMtpRegisterRouteImport } from './routes/_app/mtp/register'
 import { Route as AppNursingIndexRouteImport } from './routes/_app/nursing/index'
+import { Route as AppNursingCountersignaturesRouteImport } from './routes/_app/nursing/countersignatures'
 import { Route as AppOtIndexRouteImport } from './routes/_app/ot/index'
 import { Route as AppOtBookRouteImport } from './routes/_app/ot/book'
 import { Route as AppOtImplantsRouteImport } from './routes/_app/ot/implants'
 import { Route as AppOtTheatresRouteImport } from './routes/_app/ot/theatres'
 import { Route as AppPatientsIndexRouteImport } from './routes/_app/patients/index'
+import { Route as AppPatientsContinuityRouteImport } from './routes/_app/patients/continuity'
 import { Route as AppPatientsDowntimeRouteImport } from './routes/_app/patients/downtime'
 import { Route as AppPatientsRegisterRouteImport } from './routes/_app/patients/register'
 import { Route as AppPharmacyIndexRouteImport } from './routes/_app/pharmacy/index'
 import { Route as AppPharmacyAdrRouteImport } from './routes/_app/pharmacy/adr'
 import { Route as AppPharmacyIpIssuesRouteImport } from './routes/_app/pharmacy/ip-issues'
 import { Route as AppPharmacyNdpsRouteImport } from './routes/_app/pharmacy/ndps'
+import { Route as AppPharmacyRecallTraceRouteImport } from './routes/_app/pharmacy/recall-trace'
 import { Route as AppPharmacyRefillsRouteImport } from './routes/_app/pharmacy/refills'
 import { Route as AppPharmacyRegistersRouteImport } from './routes/_app/pharmacy/registers'
 import { Route as AppPharmacySaleRouteImport } from './routes/_app/pharmacy/sale'
 import { Route as AppPharmacySalesRouteImport } from './routes/_app/pharmacy/sales'
 import { Route as AppPhysioIndexRouteImport } from './routes/_app/physio/index'
 import { Route as AppPrivacyIndexRouteImport } from './routes/_app/privacy/index'
+import { Route as AppPrivacyConsentManagersRouteImport } from './routes/_app/privacy/consent-managers'
 import { Route as AppPrivacyRetentionRouteImport } from './routes/_app/privacy/retention'
+import { Route as AppPrivacySdfRouteImport } from './routes/_app/privacy/sdf'
 import { Route as AppPrivacySettingsRouteImport } from './routes/_app/privacy/settings'
 import { Route as AppPurchaseIndexRouteImport } from './routes/_app/purchase/index'
 import { Route as AppPurchaseVendorsRouteImport } from './routes/_app/purchase/vendors'
 import { Route as AppQualityIndexRouteImport } from './routes/_app/quality/index'
+import { Route as AppQualityAuditsRouteImport } from './routes/_app/quality/audits'
 import { Route as AppQualityDowntimeRouteImport } from './routes/_app/quality/downtime'
+import { Route as AppQualityHaiRouteImport } from './routes/_app/quality/hai'
+import { Route as AppQualityMvpiRouteImport } from './routes/_app/quality/mvpi'
 import { Route as AppQualityMyReportsRouteImport } from './routes/_app/quality/my-reports'
 import { Route as AppQualityReportRouteImport } from './routes/_app/quality/report'
 import { Route as AppQualityRisksRouteImport } from './routes/_app/quality/risks'
@@ -197,6 +211,7 @@ import { Route as AppSetupPractitionersRouteImport } from './routes/_app/setup/p
 import { Route as AppSetupPrintTemplatesRouteImport } from './routes/_app/setup/print-templates'
 import { Route as AppSetupServicesRouteImport } from './routes/_app/setup/services'
 import { Route as AppSetupSpecialtiesRouteImport } from './routes/_app/setup/specialties'
+import { Route as AppSmartAuthorizeRouteImport } from './routes/_app/smart/authorize'
 import { Route as AppTelehealthIndexRouteImport } from './routes/_app/telehealth/index'
 import { Route as AppTelehealthSessionIdRouteImport } from './routes/_app/telehealth/$sessionId'
 import { Route as AppWorkstationPrintersRouteImport } from './routes/_app/workstation/printers'
@@ -444,6 +459,11 @@ const AppAnalyticsExtractsRoute = AppAnalyticsExtractsRouteImport.update({
   path: '/analytics/extracts',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAnalyticsKpiTargetsRoute = AppAnalyticsKpiTargetsRouteImport.update({
+  id: '/analytics/kpi-targets',
+  path: '/analytics/kpi-targets',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAnalyticsKpisRoute = AppAnalyticsKpisRouteImport.update({
   id: '/analytics/kpis',
   path: '/analytics/kpis',
@@ -518,6 +538,11 @@ const AppBillingDepositsRoute = AppBillingDepositsRouteImport.update({
 const AppBillingEinvoicesRoute = AppBillingEinvoicesRouteImport.update({
   id: '/billing/einvoices',
   path: '/billing/einvoices',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBillingGstReturnsRoute = AppBillingGstReturnsRouteImport.update({
+  id: '/billing/gst-returns',
+  path: '/billing/gst-returns',
   getParentRoute: () => AppRoute,
 } as any)
 const AppBillingHbpRoute = AppBillingHbpRouteImport.update({
@@ -823,6 +848,11 @@ const AppHealthCheckupsBookRoute = AppHealthCheckupsBookRouteImport.update({
   path: '/health-checkups/book',
   getParentRoute: () => AppRoute,
 } as any)
+const AppHousekeepingIndexRoute = AppHousekeepingIndexRouteImport.update({
+  id: '/housekeeping/',
+  path: '/housekeeping/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppHrIndexRoute = AppHrIndexRouteImport.update({
   id: '/hr/',
   path: '/hr/',
@@ -879,6 +909,11 @@ const AppInpatientSetupRoute = AppInpatientSetupRouteImport.update({
   path: '/inpatient/setup',
   getParentRoute: () => AppRoute,
 } as any)
+const AppInpatientTransfersRoute = AppInpatientTransfersRouteImport.update({
+  id: '/inpatient/transfers',
+  path: '/inpatient/transfers',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppInsuranceIndexRoute = AppInsuranceIndexRouteImport.update({
   id: '/insurance/',
   path: '/insurance/',
@@ -912,6 +947,11 @@ const AppInventoryAdjustmentsRoute = AppInventoryAdjustmentsRouteImport.update({
 const AppInventoryCategoriesRoute = AppInventoryCategoriesRouteImport.update({
   id: '/inventory/categories',
   path: '/inventory/categories',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppInventoryColdChainRoute = AppInventoryColdChainRouteImport.update({
+  id: '/inventory/cold-chain',
+  path: '/inventory/cold-chain',
   getParentRoute: () => AppRoute,
 } as any)
 const AppInventoryItemsRoute = AppInventoryItemsRouteImport.update({
@@ -957,6 +997,11 @@ const AppLabCollectionRoute = AppLabCollectionRouteImport.update({
 const AppLabCriticalCallsRoute = AppLabCriticalCallsRouteImport.update({
   id: '/lab/critical-calls',
   path: '/lab/critical-calls',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLabEqasRoute = AppLabEqasRouteImport.update({
+  id: '/lab/eqas',
+  path: '/lab/eqas',
   getParentRoute: () => AppRoute,
 } as any)
 const AppLabOutsourcingRoute = AppLabOutsourcingRouteImport.update({
@@ -1049,6 +1094,12 @@ const AppNursingIndexRoute = AppNursingIndexRouteImport.update({
   path: '/nursing/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppNursingCountersignaturesRoute =
+  AppNursingCountersignaturesRouteImport.update({
+    id: '/nursing/countersignatures',
+    path: '/nursing/countersignatures',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppOtIndexRoute = AppOtIndexRouteImport.update({
   id: '/ot/',
   path: '/ot/',
@@ -1072,6 +1123,11 @@ const AppOtTheatresRoute = AppOtTheatresRouteImport.update({
 const AppPatientsIndexRoute = AppPatientsIndexRouteImport.update({
   id: '/patients/',
   path: '/patients/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPatientsContinuityRoute = AppPatientsContinuityRouteImport.update({
+  id: '/patients/continuity',
+  path: '/patients/continuity',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPatientsDowntimeRoute = AppPatientsDowntimeRouteImport.update({
@@ -1104,6 +1160,11 @@ const AppPharmacyNdpsRoute = AppPharmacyNdpsRouteImport.update({
   path: '/pharmacy/ndps',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPharmacyRecallTraceRoute = AppPharmacyRecallTraceRouteImport.update({
+  id: '/pharmacy/recall-trace',
+  path: '/pharmacy/recall-trace',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPharmacyRefillsRoute = AppPharmacyRefillsRouteImport.update({
   id: '/pharmacy/refills',
   path: '/pharmacy/refills',
@@ -1134,9 +1195,20 @@ const AppPrivacyIndexRoute = AppPrivacyIndexRouteImport.update({
   path: '/privacy/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPrivacyConsentManagersRoute =
+  AppPrivacyConsentManagersRouteImport.update({
+    id: '/privacy/consent-managers',
+    path: '/privacy/consent-managers',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppPrivacyRetentionRoute = AppPrivacyRetentionRouteImport.update({
   id: '/privacy/retention',
   path: '/privacy/retention',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPrivacySdfRoute = AppPrivacySdfRouteImport.update({
+  id: '/privacy/sdf',
+  path: '/privacy/sdf',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPrivacySettingsRoute = AppPrivacySettingsRouteImport.update({
@@ -1159,9 +1231,24 @@ const AppQualityIndexRoute = AppQualityIndexRouteImport.update({
   path: '/quality/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppQualityAuditsRoute = AppQualityAuditsRouteImport.update({
+  id: '/quality/audits',
+  path: '/quality/audits',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppQualityDowntimeRoute = AppQualityDowntimeRouteImport.update({
   id: '/quality/downtime',
   path: '/quality/downtime',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppQualityHaiRoute = AppQualityHaiRouteImport.update({
+  id: '/quality/hai',
+  path: '/quality/hai',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppQualityMvpiRoute = AppQualityMvpiRouteImport.update({
+  id: '/quality/mvpi',
+  path: '/quality/mvpi',
   getParentRoute: () => AppRoute,
 } as any)
 const AppQualityMyReportsRoute = AppQualityMyReportsRouteImport.update({
@@ -1287,6 +1374,11 @@ const AppSetupServicesRoute = AppSetupServicesRouteImport.update({
 const AppSetupSpecialtiesRoute = AppSetupSpecialtiesRouteImport.update({
   id: '/setup/specialties',
   path: '/setup/specialties',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSmartAuthorizeRoute = AppSmartAuthorizeRouteImport.update({
+  id: '/smart/authorize',
+  path: '/smart/authorize',
   getParentRoute: () => AppRoute,
 } as any)
 const AppTelehealthIndexRoute = AppTelehealthIndexRouteImport.update({
@@ -2089,6 +2181,7 @@ export interface FileRoutesByFullPath {
   '/admin/system': typeof AppAdminSystemRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/analytics/extracts': typeof AppAnalyticsExtractsRoute
+  '/analytics/kpi-targets': typeof AppAnalyticsKpiTargetsRoute
   '/analytics/kpis': typeof AppAnalyticsKpisRoute
   '/analytics/schedules': typeof AppAnalyticsSchedulesRoute
   '/approvals/$approvalId': typeof AppApprovalsApprovalIdRoute
@@ -2101,6 +2194,7 @@ export interface FileRoutesByFullPath {
   '/billing/day-end': typeof AppBillingDayEndRoute
   '/billing/deposits': typeof AppBillingDepositsRoute
   '/billing/einvoices': typeof AppBillingEinvoicesRoute
+  '/billing/gst-returns': typeof AppBillingGstReturnsRoute
   '/billing/hbp': typeof AppBillingHbpRoute
   '/billing/op': typeof AppBillingOpRoute
   '/billing/packages': typeof AppBillingPackagesRoute
@@ -2156,11 +2250,13 @@ export interface FileRoutesByFullPath {
   '/inpatient/beds': typeof AppInpatientBedsRoute
   '/inpatient/housekeeping': typeof AppInpatientHousekeepingRoute
   '/inpatient/setup': typeof AppInpatientSetupRoute
+  '/inpatient/transfers': typeof AppInpatientTransfersRoute
   '/insurance/ageing': typeof AppInsuranceAgeingRoute
   '/insurance/payers': typeof AppInsurancePayersRoute
   '/insurance/policies': typeof AppInsurancePoliciesRoute
   '/inventory/adjustments': typeof AppInventoryAdjustmentsRoute
   '/inventory/categories': typeof AppInventoryCategoriesRoute
+  '/inventory/cold-chain': typeof AppInventoryColdChainRoute
   '/inventory/items': typeof AppInventoryItemsRoute
   '/inventory/ledger': typeof AppInventoryLedgerRoute
   '/inventory/reports': typeof AppInventoryReportsRoute
@@ -2169,6 +2265,7 @@ export interface FileRoutesByFullPath {
   '/inventory/transfers': typeof AppInventoryTransfersRoute
   '/lab/collection': typeof AppLabCollectionRoute
   '/lab/critical-calls': typeof AppLabCriticalCallsRoute
+  '/lab/eqas': typeof AppLabEqasRoute
   '/lab/outsourcing': typeof AppLabOutsourcingRoute
   '/lab/receive': typeof AppLabReceiveRoute
   '/lab/setup': typeof AppLabSetupRoute
@@ -2182,22 +2279,30 @@ export interface FileRoutesByFullPath {
   '/mrd/requests': typeof AppMrdRequestsRoute
   '/mtp/$caseId': typeof AppMtpCaseIdRoute
   '/mtp/register': typeof AppMtpRegisterRoute
+  '/nursing/countersignatures': typeof AppNursingCountersignaturesRoute
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
+  '/patients/continuity': typeof AppPatientsContinuityRoute
   '/patients/downtime': typeof AppPatientsDowntimeRoute
   '/patients/register': typeof AppPatientsRegisterRoute
   '/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
   '/pharmacy/ndps': typeof AppPharmacyNdpsRoute
+  '/pharmacy/recall-trace': typeof AppPharmacyRecallTraceRoute
   '/pharmacy/refills': typeof AppPharmacyRefillsRoute
   '/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/pharmacy/sale': typeof AppPharmacySaleRoute
   '/pharmacy/sales': typeof AppPharmacySalesRoute
+  '/privacy/consent-managers': typeof AppPrivacyConsentManagersRoute
   '/privacy/retention': typeof AppPrivacyRetentionRoute
+  '/privacy/sdf': typeof AppPrivacySdfRoute
   '/privacy/settings': typeof AppPrivacySettingsRoute
   '/purchase/vendors': typeof AppPurchaseVendorsRoute
+  '/quality/audits': typeof AppQualityAuditsRoute
   '/quality/downtime': typeof AppQualityDowntimeRoute
+  '/quality/hai': typeof AppQualityHaiRoute
+  '/quality/mvpi': typeof AppQualityMvpiRoute
   '/quality/my-reports': typeof AppQualityMyReportsRoute
   '/quality/report': typeof AppQualityReportRoute
   '/quality/risks': typeof AppQualityRisksRoute
@@ -2220,6 +2325,7 @@ export interface FileRoutesByFullPath {
   '/setup/print-templates': typeof AppSetupPrintTemplatesRoute
   '/setup/services': typeof AppSetupServicesRoute
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
+  '/smart/authorize': typeof AppSmartAuthorizeRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/workstation/printers': typeof AppWorkstationPrintersRoute
   '/ambulance/': typeof AppAmbulanceIndexRoute
@@ -2242,6 +2348,7 @@ export interface FileRoutesByFullPath {
   '/feedback/': typeof AppFeedbackIndexRoute
   '/front-office/': typeof AppFrontOfficeIndexRoute
   '/health-checkups/': typeof AppHealthCheckupsIndexRoute
+  '/housekeeping/': typeof AppHousekeepingIndexRoute
   '/hr/': typeof AppHrIndexRoute
   '/inpatient/': typeof AppInpatientIndexRoute
   '/insurance/': typeof AppInsuranceIndexRoute
@@ -2422,6 +2529,7 @@ export interface FileRoutesByTo {
   '/admin/system': typeof AppAdminSystemRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/analytics/extracts': typeof AppAnalyticsExtractsRoute
+  '/analytics/kpi-targets': typeof AppAnalyticsKpiTargetsRoute
   '/analytics/kpis': typeof AppAnalyticsKpisRoute
   '/analytics/schedules': typeof AppAnalyticsSchedulesRoute
   '/approvals/$approvalId': typeof AppApprovalsApprovalIdRoute
@@ -2434,6 +2542,7 @@ export interface FileRoutesByTo {
   '/billing/day-end': typeof AppBillingDayEndRoute
   '/billing/deposits': typeof AppBillingDepositsRoute
   '/billing/einvoices': typeof AppBillingEinvoicesRoute
+  '/billing/gst-returns': typeof AppBillingGstReturnsRoute
   '/billing/hbp': typeof AppBillingHbpRoute
   '/billing/op': typeof AppBillingOpRoute
   '/billing/packages': typeof AppBillingPackagesRoute
@@ -2489,11 +2598,13 @@ export interface FileRoutesByTo {
   '/inpatient/beds': typeof AppInpatientBedsRoute
   '/inpatient/housekeeping': typeof AppInpatientHousekeepingRoute
   '/inpatient/setup': typeof AppInpatientSetupRoute
+  '/inpatient/transfers': typeof AppInpatientTransfersRoute
   '/insurance/ageing': typeof AppInsuranceAgeingRoute
   '/insurance/payers': typeof AppInsurancePayersRoute
   '/insurance/policies': typeof AppInsurancePoliciesRoute
   '/inventory/adjustments': typeof AppInventoryAdjustmentsRoute
   '/inventory/categories': typeof AppInventoryCategoriesRoute
+  '/inventory/cold-chain': typeof AppInventoryColdChainRoute
   '/inventory/items': typeof AppInventoryItemsRoute
   '/inventory/ledger': typeof AppInventoryLedgerRoute
   '/inventory/reports': typeof AppInventoryReportsRoute
@@ -2502,6 +2613,7 @@ export interface FileRoutesByTo {
   '/inventory/transfers': typeof AppInventoryTransfersRoute
   '/lab/collection': typeof AppLabCollectionRoute
   '/lab/critical-calls': typeof AppLabCriticalCallsRoute
+  '/lab/eqas': typeof AppLabEqasRoute
   '/lab/outsourcing': typeof AppLabOutsourcingRoute
   '/lab/receive': typeof AppLabReceiveRoute
   '/lab/setup': typeof AppLabSetupRoute
@@ -2515,22 +2627,30 @@ export interface FileRoutesByTo {
   '/mrd/requests': typeof AppMrdRequestsRoute
   '/mtp/$caseId': typeof AppMtpCaseIdRoute
   '/mtp/register': typeof AppMtpRegisterRoute
+  '/nursing/countersignatures': typeof AppNursingCountersignaturesRoute
   '/ot/book': typeof AppOtBookRoute
   '/ot/implants': typeof AppOtImplantsRoute
   '/ot/theatres': typeof AppOtTheatresRoute
+  '/patients/continuity': typeof AppPatientsContinuityRoute
   '/patients/downtime': typeof AppPatientsDowntimeRoute
   '/patients/register': typeof AppPatientsRegisterRoute
   '/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
   '/pharmacy/ndps': typeof AppPharmacyNdpsRoute
+  '/pharmacy/recall-trace': typeof AppPharmacyRecallTraceRoute
   '/pharmacy/refills': typeof AppPharmacyRefillsRoute
   '/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/pharmacy/sale': typeof AppPharmacySaleRoute
   '/pharmacy/sales': typeof AppPharmacySalesRoute
+  '/privacy/consent-managers': typeof AppPrivacyConsentManagersRoute
   '/privacy/retention': typeof AppPrivacyRetentionRoute
+  '/privacy/sdf': typeof AppPrivacySdfRoute
   '/privacy/settings': typeof AppPrivacySettingsRoute
   '/purchase/vendors': typeof AppPurchaseVendorsRoute
+  '/quality/audits': typeof AppQualityAuditsRoute
   '/quality/downtime': typeof AppQualityDowntimeRoute
+  '/quality/hai': typeof AppQualityHaiRoute
+  '/quality/mvpi': typeof AppQualityMvpiRoute
   '/quality/my-reports': typeof AppQualityMyReportsRoute
   '/quality/report': typeof AppQualityReportRoute
   '/quality/risks': typeof AppQualityRisksRoute
@@ -2553,6 +2673,7 @@ export interface FileRoutesByTo {
   '/setup/print-templates': typeof AppSetupPrintTemplatesRoute
   '/setup/services': typeof AppSetupServicesRoute
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
+  '/smart/authorize': typeof AppSmartAuthorizeRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/workstation/printers': typeof AppWorkstationPrintersRoute
   '/ambulance': typeof AppAmbulanceIndexRoute
@@ -2575,6 +2696,7 @@ export interface FileRoutesByTo {
   '/feedback': typeof AppFeedbackIndexRoute
   '/front-office': typeof AppFrontOfficeIndexRoute
   '/health-checkups': typeof AppHealthCheckupsIndexRoute
+  '/housekeeping': typeof AppHousekeepingIndexRoute
   '/hr': typeof AppHrIndexRoute
   '/inpatient': typeof AppInpatientIndexRoute
   '/insurance': typeof AppInsuranceIndexRoute
@@ -2757,6 +2879,7 @@ export interface FileRoutesById {
   '/_app/admin/system': typeof AppAdminSystemRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/analytics/extracts': typeof AppAnalyticsExtractsRoute
+  '/_app/analytics/kpi-targets': typeof AppAnalyticsKpiTargetsRoute
   '/_app/analytics/kpis': typeof AppAnalyticsKpisRoute
   '/_app/analytics/schedules': typeof AppAnalyticsSchedulesRoute
   '/_app/approvals/$approvalId': typeof AppApprovalsApprovalIdRoute
@@ -2769,6 +2892,7 @@ export interface FileRoutesById {
   '/_app/billing/day-end': typeof AppBillingDayEndRoute
   '/_app/billing/deposits': typeof AppBillingDepositsRoute
   '/_app/billing/einvoices': typeof AppBillingEinvoicesRoute
+  '/_app/billing/gst-returns': typeof AppBillingGstReturnsRoute
   '/_app/billing/hbp': typeof AppBillingHbpRoute
   '/_app/billing/op': typeof AppBillingOpRoute
   '/_app/billing/packages': typeof AppBillingPackagesRoute
@@ -2824,11 +2948,13 @@ export interface FileRoutesById {
   '/_app/inpatient/beds': typeof AppInpatientBedsRoute
   '/_app/inpatient/housekeeping': typeof AppInpatientHousekeepingRoute
   '/_app/inpatient/setup': typeof AppInpatientSetupRoute
+  '/_app/inpatient/transfers': typeof AppInpatientTransfersRoute
   '/_app/insurance/ageing': typeof AppInsuranceAgeingRoute
   '/_app/insurance/payers': typeof AppInsurancePayersRoute
   '/_app/insurance/policies': typeof AppInsurancePoliciesRoute
   '/_app/inventory/adjustments': typeof AppInventoryAdjustmentsRoute
   '/_app/inventory/categories': typeof AppInventoryCategoriesRoute
+  '/_app/inventory/cold-chain': typeof AppInventoryColdChainRoute
   '/_app/inventory/items': typeof AppInventoryItemsRoute
   '/_app/inventory/ledger': typeof AppInventoryLedgerRoute
   '/_app/inventory/reports': typeof AppInventoryReportsRoute
@@ -2837,6 +2963,7 @@ export interface FileRoutesById {
   '/_app/inventory/transfers': typeof AppInventoryTransfersRoute
   '/_app/lab/collection': typeof AppLabCollectionRoute
   '/_app/lab/critical-calls': typeof AppLabCriticalCallsRoute
+  '/_app/lab/eqas': typeof AppLabEqasRoute
   '/_app/lab/outsourcing': typeof AppLabOutsourcingRoute
   '/_app/lab/receive': typeof AppLabReceiveRoute
   '/_app/lab/setup': typeof AppLabSetupRoute
@@ -2850,22 +2977,30 @@ export interface FileRoutesById {
   '/_app/mrd/requests': typeof AppMrdRequestsRoute
   '/_app/mtp/$caseId': typeof AppMtpCaseIdRoute
   '/_app/mtp/register': typeof AppMtpRegisterRoute
+  '/_app/nursing/countersignatures': typeof AppNursingCountersignaturesRoute
   '/_app/ot/book': typeof AppOtBookRoute
   '/_app/ot/implants': typeof AppOtImplantsRoute
   '/_app/ot/theatres': typeof AppOtTheatresRoute
+  '/_app/patients/continuity': typeof AppPatientsContinuityRoute
   '/_app/patients/downtime': typeof AppPatientsDowntimeRoute
   '/_app/patients/register': typeof AppPatientsRegisterRoute
   '/_app/pharmacy/adr': typeof AppPharmacyAdrRoute
   '/_app/pharmacy/ip-issues': typeof AppPharmacyIpIssuesRoute
   '/_app/pharmacy/ndps': typeof AppPharmacyNdpsRoute
+  '/_app/pharmacy/recall-trace': typeof AppPharmacyRecallTraceRoute
   '/_app/pharmacy/refills': typeof AppPharmacyRefillsRoute
   '/_app/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/_app/pharmacy/sale': typeof AppPharmacySaleRoute
   '/_app/pharmacy/sales': typeof AppPharmacySalesRoute
+  '/_app/privacy/consent-managers': typeof AppPrivacyConsentManagersRoute
   '/_app/privacy/retention': typeof AppPrivacyRetentionRoute
+  '/_app/privacy/sdf': typeof AppPrivacySdfRoute
   '/_app/privacy/settings': typeof AppPrivacySettingsRoute
   '/_app/purchase/vendors': typeof AppPurchaseVendorsRoute
+  '/_app/quality/audits': typeof AppQualityAuditsRoute
   '/_app/quality/downtime': typeof AppQualityDowntimeRoute
+  '/_app/quality/hai': typeof AppQualityHaiRoute
+  '/_app/quality/mvpi': typeof AppQualityMvpiRoute
   '/_app/quality/my-reports': typeof AppQualityMyReportsRoute
   '/_app/quality/report': typeof AppQualityReportRoute
   '/_app/quality/risks': typeof AppQualityRisksRoute
@@ -2888,6 +3023,7 @@ export interface FileRoutesById {
   '/_app/setup/print-templates': typeof AppSetupPrintTemplatesRoute
   '/_app/setup/services': typeof AppSetupServicesRoute
   '/_app/setup/specialties': typeof AppSetupSpecialtiesRoute
+  '/_app/smart/authorize': typeof AppSmartAuthorizeRoute
   '/_app/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/_app/workstation/printers': typeof AppWorkstationPrintersRoute
   '/_app/ambulance/': typeof AppAmbulanceIndexRoute
@@ -2910,6 +3046,7 @@ export interface FileRoutesById {
   '/_app/feedback/': typeof AppFeedbackIndexRoute
   '/_app/front-office/': typeof AppFrontOfficeIndexRoute
   '/_app/health-checkups/': typeof AppHealthCheckupsIndexRoute
+  '/_app/housekeeping/': typeof AppHousekeepingIndexRoute
   '/_app/hr/': typeof AppHrIndexRoute
   '/_app/inpatient/': typeof AppInpatientIndexRoute
   '/_app/insurance/': typeof AppInsuranceIndexRoute
@@ -3092,6 +3229,7 @@ export interface FileRouteTypes {
     | '/admin/system'
     | '/admin/users'
     | '/analytics/extracts'
+    | '/analytics/kpi-targets'
     | '/analytics/kpis'
     | '/analytics/schedules'
     | '/approvals/$approvalId'
@@ -3104,6 +3242,7 @@ export interface FileRouteTypes {
     | '/billing/day-end'
     | '/billing/deposits'
     | '/billing/einvoices'
+    | '/billing/gst-returns'
     | '/billing/hbp'
     | '/billing/op'
     | '/billing/packages'
@@ -3159,11 +3298,13 @@ export interface FileRouteTypes {
     | '/inpatient/beds'
     | '/inpatient/housekeeping'
     | '/inpatient/setup'
+    | '/inpatient/transfers'
     | '/insurance/ageing'
     | '/insurance/payers'
     | '/insurance/policies'
     | '/inventory/adjustments'
     | '/inventory/categories'
+    | '/inventory/cold-chain'
     | '/inventory/items'
     | '/inventory/ledger'
     | '/inventory/reports'
@@ -3172,6 +3313,7 @@ export interface FileRouteTypes {
     | '/inventory/transfers'
     | '/lab/collection'
     | '/lab/critical-calls'
+    | '/lab/eqas'
     | '/lab/outsourcing'
     | '/lab/receive'
     | '/lab/setup'
@@ -3185,22 +3327,30 @@ export interface FileRouteTypes {
     | '/mrd/requests'
     | '/mtp/$caseId'
     | '/mtp/register'
+    | '/nursing/countersignatures'
     | '/ot/book'
     | '/ot/implants'
     | '/ot/theatres'
+    | '/patients/continuity'
     | '/patients/downtime'
     | '/patients/register'
     | '/pharmacy/adr'
     | '/pharmacy/ip-issues'
     | '/pharmacy/ndps'
+    | '/pharmacy/recall-trace'
     | '/pharmacy/refills'
     | '/pharmacy/registers'
     | '/pharmacy/sale'
     | '/pharmacy/sales'
+    | '/privacy/consent-managers'
     | '/privacy/retention'
+    | '/privacy/sdf'
     | '/privacy/settings'
     | '/purchase/vendors'
+    | '/quality/audits'
     | '/quality/downtime'
+    | '/quality/hai'
+    | '/quality/mvpi'
     | '/quality/my-reports'
     | '/quality/report'
     | '/quality/risks'
@@ -3223,6 +3373,7 @@ export interface FileRouteTypes {
     | '/setup/print-templates'
     | '/setup/services'
     | '/setup/specialties'
+    | '/smart/authorize'
     | '/telehealth/$sessionId'
     | '/workstation/printers'
     | '/ambulance/'
@@ -3245,6 +3396,7 @@ export interface FileRouteTypes {
     | '/feedback/'
     | '/front-office/'
     | '/health-checkups/'
+    | '/housekeeping/'
     | '/hr/'
     | '/inpatient/'
     | '/insurance/'
@@ -3425,6 +3577,7 @@ export interface FileRouteTypes {
     | '/admin/system'
     | '/admin/users'
     | '/analytics/extracts'
+    | '/analytics/kpi-targets'
     | '/analytics/kpis'
     | '/analytics/schedules'
     | '/approvals/$approvalId'
@@ -3437,6 +3590,7 @@ export interface FileRouteTypes {
     | '/billing/day-end'
     | '/billing/deposits'
     | '/billing/einvoices'
+    | '/billing/gst-returns'
     | '/billing/hbp'
     | '/billing/op'
     | '/billing/packages'
@@ -3492,11 +3646,13 @@ export interface FileRouteTypes {
     | '/inpatient/beds'
     | '/inpatient/housekeeping'
     | '/inpatient/setup'
+    | '/inpatient/transfers'
     | '/insurance/ageing'
     | '/insurance/payers'
     | '/insurance/policies'
     | '/inventory/adjustments'
     | '/inventory/categories'
+    | '/inventory/cold-chain'
     | '/inventory/items'
     | '/inventory/ledger'
     | '/inventory/reports'
@@ -3505,6 +3661,7 @@ export interface FileRouteTypes {
     | '/inventory/transfers'
     | '/lab/collection'
     | '/lab/critical-calls'
+    | '/lab/eqas'
     | '/lab/outsourcing'
     | '/lab/receive'
     | '/lab/setup'
@@ -3518,22 +3675,30 @@ export interface FileRouteTypes {
     | '/mrd/requests'
     | '/mtp/$caseId'
     | '/mtp/register'
+    | '/nursing/countersignatures'
     | '/ot/book'
     | '/ot/implants'
     | '/ot/theatres'
+    | '/patients/continuity'
     | '/patients/downtime'
     | '/patients/register'
     | '/pharmacy/adr'
     | '/pharmacy/ip-issues'
     | '/pharmacy/ndps'
+    | '/pharmacy/recall-trace'
     | '/pharmacy/refills'
     | '/pharmacy/registers'
     | '/pharmacy/sale'
     | '/pharmacy/sales'
+    | '/privacy/consent-managers'
     | '/privacy/retention'
+    | '/privacy/sdf'
     | '/privacy/settings'
     | '/purchase/vendors'
+    | '/quality/audits'
     | '/quality/downtime'
+    | '/quality/hai'
+    | '/quality/mvpi'
     | '/quality/my-reports'
     | '/quality/report'
     | '/quality/risks'
@@ -3556,6 +3721,7 @@ export interface FileRouteTypes {
     | '/setup/print-templates'
     | '/setup/services'
     | '/setup/specialties'
+    | '/smart/authorize'
     | '/telehealth/$sessionId'
     | '/workstation/printers'
     | '/ambulance'
@@ -3578,6 +3744,7 @@ export interface FileRouteTypes {
     | '/feedback'
     | '/front-office'
     | '/health-checkups'
+    | '/housekeeping'
     | '/hr'
     | '/inpatient'
     | '/insurance'
@@ -3759,6 +3926,7 @@ export interface FileRouteTypes {
     | '/_app/admin/system'
     | '/_app/admin/users'
     | '/_app/analytics/extracts'
+    | '/_app/analytics/kpi-targets'
     | '/_app/analytics/kpis'
     | '/_app/analytics/schedules'
     | '/_app/approvals/$approvalId'
@@ -3771,6 +3939,7 @@ export interface FileRouteTypes {
     | '/_app/billing/day-end'
     | '/_app/billing/deposits'
     | '/_app/billing/einvoices'
+    | '/_app/billing/gst-returns'
     | '/_app/billing/hbp'
     | '/_app/billing/op'
     | '/_app/billing/packages'
@@ -3826,11 +3995,13 @@ export interface FileRouteTypes {
     | '/_app/inpatient/beds'
     | '/_app/inpatient/housekeeping'
     | '/_app/inpatient/setup'
+    | '/_app/inpatient/transfers'
     | '/_app/insurance/ageing'
     | '/_app/insurance/payers'
     | '/_app/insurance/policies'
     | '/_app/inventory/adjustments'
     | '/_app/inventory/categories'
+    | '/_app/inventory/cold-chain'
     | '/_app/inventory/items'
     | '/_app/inventory/ledger'
     | '/_app/inventory/reports'
@@ -3839,6 +4010,7 @@ export interface FileRouteTypes {
     | '/_app/inventory/transfers'
     | '/_app/lab/collection'
     | '/_app/lab/critical-calls'
+    | '/_app/lab/eqas'
     | '/_app/lab/outsourcing'
     | '/_app/lab/receive'
     | '/_app/lab/setup'
@@ -3852,22 +4024,30 @@ export interface FileRouteTypes {
     | '/_app/mrd/requests'
     | '/_app/mtp/$caseId'
     | '/_app/mtp/register'
+    | '/_app/nursing/countersignatures'
     | '/_app/ot/book'
     | '/_app/ot/implants'
     | '/_app/ot/theatres'
+    | '/_app/patients/continuity'
     | '/_app/patients/downtime'
     | '/_app/patients/register'
     | '/_app/pharmacy/adr'
     | '/_app/pharmacy/ip-issues'
     | '/_app/pharmacy/ndps'
+    | '/_app/pharmacy/recall-trace'
     | '/_app/pharmacy/refills'
     | '/_app/pharmacy/registers'
     | '/_app/pharmacy/sale'
     | '/_app/pharmacy/sales'
+    | '/_app/privacy/consent-managers'
     | '/_app/privacy/retention'
+    | '/_app/privacy/sdf'
     | '/_app/privacy/settings'
     | '/_app/purchase/vendors'
+    | '/_app/quality/audits'
     | '/_app/quality/downtime'
+    | '/_app/quality/hai'
+    | '/_app/quality/mvpi'
     | '/_app/quality/my-reports'
     | '/_app/quality/report'
     | '/_app/quality/risks'
@@ -3890,6 +4070,7 @@ export interface FileRouteTypes {
     | '/_app/setup/print-templates'
     | '/_app/setup/services'
     | '/_app/setup/specialties'
+    | '/_app/smart/authorize'
     | '/_app/telehealth/$sessionId'
     | '/_app/workstation/printers'
     | '/_app/ambulance/'
@@ -3912,6 +4093,7 @@ export interface FileRouteTypes {
     | '/_app/feedback/'
     | '/_app/front-office/'
     | '/_app/health-checkups/'
+    | '/_app/housekeeping/'
     | '/_app/hr/'
     | '/_app/inpatient/'
     | '/_app/insurance/'
@@ -4224,6 +4406,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAnalyticsExtractsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/analytics/kpi-targets': {
+      id: '/_app/analytics/kpi-targets'
+      path: '/analytics/kpi-targets'
+      fullPath: '/analytics/kpi-targets'
+      preLoaderRoute: typeof AppAnalyticsKpiTargetsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/analytics/kpis': {
       id: '/_app/analytics/kpis'
       path: '/analytics/kpis'
@@ -4327,6 +4516,13 @@ declare module '@tanstack/react-router' {
       path: '/billing/einvoices'
       fullPath: '/billing/einvoices'
       preLoaderRoute: typeof AppBillingEinvoicesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/billing/gst-returns': {
+      id: '/_app/billing/gst-returns'
+      path: '/billing/gst-returns'
+      fullPath: '/billing/gst-returns'
+      preLoaderRoute: typeof AppBillingGstReturnsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/billing/hbp': {
@@ -4749,6 +4945,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppHealthCheckupsBookRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/housekeeping/': {
+      id: '/_app/housekeeping/'
+      path: '/housekeeping'
+      fullPath: '/housekeeping/'
+      preLoaderRoute: typeof AppHousekeepingIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/hr/': {
       id: '/_app/hr/'
       path: '/hr'
@@ -4826,6 +5029,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppInpatientSetupRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/inpatient/transfers': {
+      id: '/_app/inpatient/transfers'
+      path: '/inpatient/transfers'
+      fullPath: '/inpatient/transfers'
+      preLoaderRoute: typeof AppInpatientTransfersRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/insurance/': {
       id: '/_app/insurance/'
       path: '/insurance'
@@ -4873,6 +5083,13 @@ declare module '@tanstack/react-router' {
       path: '/inventory/categories'
       fullPath: '/inventory/categories'
       preLoaderRoute: typeof AppInventoryCategoriesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/inventory/cold-chain': {
+      id: '/_app/inventory/cold-chain'
+      path: '/inventory/cold-chain'
+      fullPath: '/inventory/cold-chain'
+      preLoaderRoute: typeof AppInventoryColdChainRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/inventory/items': {
@@ -4936,6 +5153,13 @@ declare module '@tanstack/react-router' {
       path: '/lab/critical-calls'
       fullPath: '/lab/critical-calls'
       preLoaderRoute: typeof AppLabCriticalCallsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/lab/eqas': {
+      id: '/_app/lab/eqas'
+      path: '/lab/eqas'
+      fullPath: '/lab/eqas'
+      preLoaderRoute: typeof AppLabEqasRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/lab/outsourcing': {
@@ -5064,6 +5288,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppNursingIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/nursing/countersignatures': {
+      id: '/_app/nursing/countersignatures'
+      path: '/nursing/countersignatures'
+      fullPath: '/nursing/countersignatures'
+      preLoaderRoute: typeof AppNursingCountersignaturesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/ot/': {
       id: '/_app/ot/'
       path: '/ot'
@@ -5097,6 +5328,13 @@ declare module '@tanstack/react-router' {
       path: '/patients'
       fullPath: '/patients/'
       preLoaderRoute: typeof AppPatientsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/patients/continuity': {
+      id: '/_app/patients/continuity'
+      path: '/patients/continuity'
+      fullPath: '/patients/continuity'
+      preLoaderRoute: typeof AppPatientsContinuityRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/patients/downtime': {
@@ -5141,6 +5379,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPharmacyNdpsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/pharmacy/recall-trace': {
+      id: '/_app/pharmacy/recall-trace'
+      path: '/pharmacy/recall-trace'
+      fullPath: '/pharmacy/recall-trace'
+      preLoaderRoute: typeof AppPharmacyRecallTraceRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/pharmacy/refills': {
       id: '/_app/pharmacy/refills'
       path: '/pharmacy/refills'
@@ -5183,11 +5428,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPrivacyIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/privacy/consent-managers': {
+      id: '/_app/privacy/consent-managers'
+      path: '/privacy/consent-managers'
+      fullPath: '/privacy/consent-managers'
+      preLoaderRoute: typeof AppPrivacyConsentManagersRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/privacy/retention': {
       id: '/_app/privacy/retention'
       path: '/privacy/retention'
       fullPath: '/privacy/retention'
       preLoaderRoute: typeof AppPrivacyRetentionRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/privacy/sdf': {
+      id: '/_app/privacy/sdf'
+      path: '/privacy/sdf'
+      fullPath: '/privacy/sdf'
+      preLoaderRoute: typeof AppPrivacySdfRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/privacy/settings': {
@@ -5218,11 +5477,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppQualityIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/quality/audits': {
+      id: '/_app/quality/audits'
+      path: '/quality/audits'
+      fullPath: '/quality/audits'
+      preLoaderRoute: typeof AppQualityAuditsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/quality/downtime': {
       id: '/_app/quality/downtime'
       path: '/quality/downtime'
       fullPath: '/quality/downtime'
       preLoaderRoute: typeof AppQualityDowntimeRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/quality/hai': {
+      id: '/_app/quality/hai'
+      path: '/quality/hai'
+      fullPath: '/quality/hai'
+      preLoaderRoute: typeof AppQualityHaiRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/quality/mvpi': {
+      id: '/_app/quality/mvpi'
+      path: '/quality/mvpi'
+      fullPath: '/quality/mvpi'
+      preLoaderRoute: typeof AppQualityMvpiRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/quality/my-reports': {
@@ -5398,6 +5678,13 @@ declare module '@tanstack/react-router' {
       path: '/setup/specialties'
       fullPath: '/setup/specialties'
       preLoaderRoute: typeof AppSetupSpecialtiesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/smart/authorize': {
+      id: '/_app/smart/authorize'
+      path: '/smart/authorize'
+      fullPath: '/smart/authorize'
+      preLoaderRoute: typeof AppSmartAuthorizeRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/telehealth/': {
@@ -6426,6 +6713,7 @@ interface AppRouteChildren {
   AppAdminSystemRoute: typeof AppAdminSystemRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppAnalyticsExtractsRoute: typeof AppAnalyticsExtractsRoute
+  AppAnalyticsKpiTargetsRoute: typeof AppAnalyticsKpiTargetsRoute
   AppAnalyticsKpisRoute: typeof AppAnalyticsKpisRoute
   AppAnalyticsSchedulesRoute: typeof AppAnalyticsSchedulesRoute
   AppApprovalsApprovalIdRoute: typeof AppApprovalsApprovalIdRoute
@@ -6438,6 +6726,7 @@ interface AppRouteChildren {
   AppBillingDayEndRoute: typeof AppBillingDayEndRoute
   AppBillingDepositsRoute: typeof AppBillingDepositsRoute
   AppBillingEinvoicesRoute: typeof AppBillingEinvoicesRoute
+  AppBillingGstReturnsRoute: typeof AppBillingGstReturnsRoute
   AppBillingHbpRoute: typeof AppBillingHbpRoute
   AppBillingOpRoute: typeof AppBillingOpRoute
   AppBillingPackagesRoute: typeof AppBillingPackagesRoute
@@ -6493,11 +6782,13 @@ interface AppRouteChildren {
   AppInpatientBedsRoute: typeof AppInpatientBedsRoute
   AppInpatientHousekeepingRoute: typeof AppInpatientHousekeepingRoute
   AppInpatientSetupRoute: typeof AppInpatientSetupRoute
+  AppInpatientTransfersRoute: typeof AppInpatientTransfersRoute
   AppInsuranceAgeingRoute: typeof AppInsuranceAgeingRoute
   AppInsurancePayersRoute: typeof AppInsurancePayersRoute
   AppInsurancePoliciesRoute: typeof AppInsurancePoliciesRoute
   AppInventoryAdjustmentsRoute: typeof AppInventoryAdjustmentsRoute
   AppInventoryCategoriesRoute: typeof AppInventoryCategoriesRoute
+  AppInventoryColdChainRoute: typeof AppInventoryColdChainRoute
   AppInventoryItemsRoute: typeof AppInventoryItemsRoute
   AppInventoryLedgerRoute: typeof AppInventoryLedgerRoute
   AppInventoryReportsRoute: typeof AppInventoryReportsRoute
@@ -6506,6 +6797,7 @@ interface AppRouteChildren {
   AppInventoryTransfersRoute: typeof AppInventoryTransfersRoute
   AppLabCollectionRoute: typeof AppLabCollectionRoute
   AppLabCriticalCallsRoute: typeof AppLabCriticalCallsRoute
+  AppLabEqasRoute: typeof AppLabEqasRoute
   AppLabOutsourcingRoute: typeof AppLabOutsourcingRoute
   AppLabReceiveRoute: typeof AppLabReceiveRoute
   AppLabSetupRoute: typeof AppLabSetupRoute
@@ -6519,22 +6811,30 @@ interface AppRouteChildren {
   AppMrdRequestsRoute: typeof AppMrdRequestsRoute
   AppMtpCaseIdRoute: typeof AppMtpCaseIdRoute
   AppMtpRegisterRoute: typeof AppMtpRegisterRoute
+  AppNursingCountersignaturesRoute: typeof AppNursingCountersignaturesRoute
   AppOtBookRoute: typeof AppOtBookRoute
   AppOtImplantsRoute: typeof AppOtImplantsRoute
   AppOtTheatresRoute: typeof AppOtTheatresRoute
+  AppPatientsContinuityRoute: typeof AppPatientsContinuityRoute
   AppPatientsDowntimeRoute: typeof AppPatientsDowntimeRoute
   AppPatientsRegisterRoute: typeof AppPatientsRegisterRoute
   AppPharmacyAdrRoute: typeof AppPharmacyAdrRoute
   AppPharmacyIpIssuesRoute: typeof AppPharmacyIpIssuesRoute
   AppPharmacyNdpsRoute: typeof AppPharmacyNdpsRoute
+  AppPharmacyRecallTraceRoute: typeof AppPharmacyRecallTraceRoute
   AppPharmacyRefillsRoute: typeof AppPharmacyRefillsRoute
   AppPharmacyRegistersRoute: typeof AppPharmacyRegistersRoute
   AppPharmacySaleRoute: typeof AppPharmacySaleRoute
   AppPharmacySalesRoute: typeof AppPharmacySalesRoute
+  AppPrivacyConsentManagersRoute: typeof AppPrivacyConsentManagersRoute
   AppPrivacyRetentionRoute: typeof AppPrivacyRetentionRoute
+  AppPrivacySdfRoute: typeof AppPrivacySdfRoute
   AppPrivacySettingsRoute: typeof AppPrivacySettingsRoute
   AppPurchaseVendorsRoute: typeof AppPurchaseVendorsRoute
+  AppQualityAuditsRoute: typeof AppQualityAuditsRoute
   AppQualityDowntimeRoute: typeof AppQualityDowntimeRoute
+  AppQualityHaiRoute: typeof AppQualityHaiRoute
+  AppQualityMvpiRoute: typeof AppQualityMvpiRoute
   AppQualityMyReportsRoute: typeof AppQualityMyReportsRoute
   AppQualityReportRoute: typeof AppQualityReportRoute
   AppQualityRisksRoute: typeof AppQualityRisksRoute
@@ -6557,6 +6857,7 @@ interface AppRouteChildren {
   AppSetupPrintTemplatesRoute: typeof AppSetupPrintTemplatesRoute
   AppSetupServicesRoute: typeof AppSetupServicesRoute
   AppSetupSpecialtiesRoute: typeof AppSetupSpecialtiesRoute
+  AppSmartAuthorizeRoute: typeof AppSmartAuthorizeRoute
   AppTelehealthSessionIdRoute: typeof AppTelehealthSessionIdRoute
   AppWorkstationPrintersRoute: typeof AppWorkstationPrintersRoute
   AppAmbulanceIndexRoute: typeof AppAmbulanceIndexRoute
@@ -6579,6 +6880,7 @@ interface AppRouteChildren {
   AppFeedbackIndexRoute: typeof AppFeedbackIndexRoute
   AppFrontOfficeIndexRoute: typeof AppFrontOfficeIndexRoute
   AppHealthCheckupsIndexRoute: typeof AppHealthCheckupsIndexRoute
+  AppHousekeepingIndexRoute: typeof AppHousekeepingIndexRoute
   AppHrIndexRoute: typeof AppHrIndexRoute
   AppInpatientIndexRoute: typeof AppInpatientIndexRoute
   AppInsuranceIndexRoute: typeof AppInsuranceIndexRoute
@@ -6758,6 +7060,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminSystemRoute: AppAdminSystemRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppAnalyticsExtractsRoute: AppAnalyticsExtractsRoute,
+  AppAnalyticsKpiTargetsRoute: AppAnalyticsKpiTargetsRoute,
   AppAnalyticsKpisRoute: AppAnalyticsKpisRoute,
   AppAnalyticsSchedulesRoute: AppAnalyticsSchedulesRoute,
   AppApprovalsApprovalIdRoute: AppApprovalsApprovalIdRoute,
@@ -6770,6 +7073,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppBillingDayEndRoute: AppBillingDayEndRoute,
   AppBillingDepositsRoute: AppBillingDepositsRoute,
   AppBillingEinvoicesRoute: AppBillingEinvoicesRoute,
+  AppBillingGstReturnsRoute: AppBillingGstReturnsRoute,
   AppBillingHbpRoute: AppBillingHbpRoute,
   AppBillingOpRoute: AppBillingOpRoute,
   AppBillingPackagesRoute: AppBillingPackagesRoute,
@@ -6825,11 +7129,13 @@ const AppRouteChildren: AppRouteChildren = {
   AppInpatientBedsRoute: AppInpatientBedsRoute,
   AppInpatientHousekeepingRoute: AppInpatientHousekeepingRoute,
   AppInpatientSetupRoute: AppInpatientSetupRoute,
+  AppInpatientTransfersRoute: AppInpatientTransfersRoute,
   AppInsuranceAgeingRoute: AppInsuranceAgeingRoute,
   AppInsurancePayersRoute: AppInsurancePayersRoute,
   AppInsurancePoliciesRoute: AppInsurancePoliciesRoute,
   AppInventoryAdjustmentsRoute: AppInventoryAdjustmentsRoute,
   AppInventoryCategoriesRoute: AppInventoryCategoriesRoute,
+  AppInventoryColdChainRoute: AppInventoryColdChainRoute,
   AppInventoryItemsRoute: AppInventoryItemsRoute,
   AppInventoryLedgerRoute: AppInventoryLedgerRoute,
   AppInventoryReportsRoute: AppInventoryReportsRoute,
@@ -6838,6 +7144,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppInventoryTransfersRoute: AppInventoryTransfersRoute,
   AppLabCollectionRoute: AppLabCollectionRoute,
   AppLabCriticalCallsRoute: AppLabCriticalCallsRoute,
+  AppLabEqasRoute: AppLabEqasRoute,
   AppLabOutsourcingRoute: AppLabOutsourcingRoute,
   AppLabReceiveRoute: AppLabReceiveRoute,
   AppLabSetupRoute: AppLabSetupRoute,
@@ -6851,22 +7158,30 @@ const AppRouteChildren: AppRouteChildren = {
   AppMrdRequestsRoute: AppMrdRequestsRoute,
   AppMtpCaseIdRoute: AppMtpCaseIdRoute,
   AppMtpRegisterRoute: AppMtpRegisterRoute,
+  AppNursingCountersignaturesRoute: AppNursingCountersignaturesRoute,
   AppOtBookRoute: AppOtBookRoute,
   AppOtImplantsRoute: AppOtImplantsRoute,
   AppOtTheatresRoute: AppOtTheatresRoute,
+  AppPatientsContinuityRoute: AppPatientsContinuityRoute,
   AppPatientsDowntimeRoute: AppPatientsDowntimeRoute,
   AppPatientsRegisterRoute: AppPatientsRegisterRoute,
   AppPharmacyAdrRoute: AppPharmacyAdrRoute,
   AppPharmacyIpIssuesRoute: AppPharmacyIpIssuesRoute,
   AppPharmacyNdpsRoute: AppPharmacyNdpsRoute,
+  AppPharmacyRecallTraceRoute: AppPharmacyRecallTraceRoute,
   AppPharmacyRefillsRoute: AppPharmacyRefillsRoute,
   AppPharmacyRegistersRoute: AppPharmacyRegistersRoute,
   AppPharmacySaleRoute: AppPharmacySaleRoute,
   AppPharmacySalesRoute: AppPharmacySalesRoute,
+  AppPrivacyConsentManagersRoute: AppPrivacyConsentManagersRoute,
   AppPrivacyRetentionRoute: AppPrivacyRetentionRoute,
+  AppPrivacySdfRoute: AppPrivacySdfRoute,
   AppPrivacySettingsRoute: AppPrivacySettingsRoute,
   AppPurchaseVendorsRoute: AppPurchaseVendorsRoute,
+  AppQualityAuditsRoute: AppQualityAuditsRoute,
   AppQualityDowntimeRoute: AppQualityDowntimeRoute,
+  AppQualityHaiRoute: AppQualityHaiRoute,
+  AppQualityMvpiRoute: AppQualityMvpiRoute,
   AppQualityMyReportsRoute: AppQualityMyReportsRoute,
   AppQualityReportRoute: AppQualityReportRoute,
   AppQualityRisksRoute: AppQualityRisksRoute,
@@ -6889,6 +7204,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSetupPrintTemplatesRoute: AppSetupPrintTemplatesRoute,
   AppSetupServicesRoute: AppSetupServicesRoute,
   AppSetupSpecialtiesRoute: AppSetupSpecialtiesRoute,
+  AppSmartAuthorizeRoute: AppSmartAuthorizeRoute,
   AppTelehealthSessionIdRoute: AppTelehealthSessionIdRoute,
   AppWorkstationPrintersRoute: AppWorkstationPrintersRoute,
   AppAmbulanceIndexRoute: AppAmbulanceIndexRoute,
@@ -6911,6 +7227,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppFeedbackIndexRoute: AppFeedbackIndexRoute,
   AppFrontOfficeIndexRoute: AppFrontOfficeIndexRoute,
   AppHealthCheckupsIndexRoute: AppHealthCheckupsIndexRoute,
+  AppHousekeepingIndexRoute: AppHousekeepingIndexRoute,
   AppHrIndexRoute: AppHrIndexRoute,
   AppInpatientIndexRoute: AppInpatientIndexRoute,
   AppInsuranceIndexRoute: AppInsuranceIndexRoute,

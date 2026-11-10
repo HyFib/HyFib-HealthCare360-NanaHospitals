@@ -15,6 +15,10 @@ import type {
   ScorecardRow,
 } from '@/modules/quality/api';
 import type { DowntimeEvent, DowntimeSummary } from '@/modules/quality/downtimeApi';
+import type { AuditListItem, AuditTemplate } from '@/modules/quality/auditApi';
+import type { IndicatorDrilldown } from '@/modules/quality/computedApi';
+import type { DeviceEpisode, HaiCaseListItem, HaiRateRow } from '@/modules/quality/haiApi';
+import { blankDevice, type MvpiReport, type MvpiReportListItem } from '@/modules/quality/mvpi';
 import { riskRating } from '@/modules/quality/rules';
 import { paged, STAFF_USER, type FakeAnswers } from '../fakeApi';
 import { RECORD_ID } from '../roleAccessIds';
@@ -76,6 +80,9 @@ const INCIDENT: IncidentDetail = {
       isOverdue: false,
     },
   ],
+  involvesDevice: false,
+  isDeviceRelated: false,
+  mvpiReports: [],
   version: 4,
 };
 
@@ -381,6 +388,7 @@ const INDICATORS: IndicatorDto[] = [
     isActive: true,
     latest: { periodStart: monthStart(0), periodLabel: monthLabel(0), value: 2.4, meetsTarget: false },
     version: 2,
+    isComputed: true,
   },
   {
     id: id('1d02'),
@@ -399,6 +407,7 @@ const INDICATORS: IndicatorDto[] = [
     isActive: true,
     latest: { periodStart: monthStart(0), periodLabel: monthLabel(0), value: 93.5, meetsTarget: true },
     version: 1,
+    isComputed: false,
   },
   {
     id: id('1d03'),
@@ -417,6 +426,7 @@ const INDICATORS: IndicatorDto[] = [
     isActive: true,
     latest: null,
     version: 1,
+    isComputed: true,
   },
 ];
 
@@ -430,6 +440,8 @@ const VALUES: IndicatorValueDto[] = [0, 1, 2].map((back) => ({
   meetsTarget: back !== 0,
   notes: back === 0 ? 'Two insulin errors in ICU.' : null,
   version: 1,
+  isComputed: true,
+  computedAt: daysAgo(back * 30 + 2),
 }));
 
 /** No points: the chart draws on a canvas, which the test browser (jsdom) has not got, and the page would fail. */
@@ -578,7 +590,233 @@ const DOWNTIME_SUMMARY: DowntimeSummary = {
   lastDrillAt: '2026-07-14T05:00:00Z',
 };
 
+// ---------------------------------------------------------------------------------------------------- MvPI
+
+/** A failed knee implant reported from an equipment failure: a draft with all MvPI asks for (it can be sent), and one sent. */
+const MVPI_DRAFT: MvpiReport = {
+  id: RECORD_ID,
+  number: 'NHMDAE2600004',
+  status: 'Draft',
+  reportedOn: dateAgo(1),
+  incidentId: id('1c15'),
+  incidentNumber: 'INC-26-00061',
+  followUpOfId: null,
+  followUpOfNumber: null,
+  followUpOfReference: null,
+  followUps: [],
+  patientId: id('1'),
+  noPatient: false,
+  patientInitials: 'L. N.',
+  uhid: 'NH26000611',
+  ageYears: 67,
+  sex: 'Female',
+  weightKg: 64,
+  eventOn: dateAgo(2),
+  awareOn: dateAgo(2),
+  location: 'Ward 3, bed 12',
+  description: 'The tibial component of the knee implant loosened six weeks after surgery; revision planned.',
+  seriousness: 'Hospitalisation, RequiredIntervention',
+  deathOn: null,
+  outcome: 'NotRecovered',
+  device: {
+    ...blankDevice(),
+    name: 'Attune',
+    genericName: 'Knee implant system',
+    riskClass: 'C',
+    manufacturer: 'DePuy Synthes',
+    lotNumber: 'KN2407',
+    serialNumber: 'SN-A1',
+    implantable: true,
+    implantedOn: dateAgo(44),
+    use: 'SingleUse',
+    keptAt: 'Biomedical quarantine shelf 2',
+  },
+  reporterName: STAFF_USER.displayName,
+  reporterDesignation: 'Quality manager',
+  reporterDepartment: 'Quality',
+  submittedOn: null,
+  submittedByName: null,
+  reference: null,
+  referenceCorrectionReason: null,
+  referenceCorrectedByName: null,
+  referenceCorrectedAt: null,
+  missing: {},
+  version: 3,
+};
+
+const MVPI_REPORTS: MvpiReportListItem[] = [
+  {
+    id: RECORD_ID,
+    number: MVPI_DRAFT.number,
+    status: 'Draft',
+    reportedOn: MVPI_DRAFT.reportedOn,
+    eventOn: MVPI_DRAFT.eventOn,
+    patientInitials: 'L. N.',
+    uhid: 'NH26000611',
+    noPatient: false,
+    deviceName: 'Attune',
+    manufacturer: 'DePuy Synthes',
+    serious: true,
+    outcome: 'NotRecovered',
+    incidentNumber: 'INC-26-00061',
+    followUpOfNumber: null,
+    submittedOn: null,
+    reference: null,
+    reporterName: STAFF_USER.displayName,
+  },
+  {
+    id: id('3d02'),
+    number: 'NHMDAE2600002',
+    status: 'Submitted',
+    reportedOn: dateAgo(30),
+    eventOn: dateAgo(31),
+    patientInitials: null,
+    uhid: null,
+    noPatient: true,
+    deviceName: 'IntelliVue MX450',
+    manufacturer: 'Philips',
+    serious: false,
+    outcome: 'Unknown',
+    incidentNumber: null,
+    followUpOfNumber: null,
+    submittedOn: dateAgo(29),
+    reference: 'MDAE-TN-2026-0042',
+    reporterName: STAFF_USER.displayName,
+  },
+];
+
+// ---------------------------------------------------------------------------------------------------- computed, HAI, audits
+
+const DRILLDOWN: IndicatorDrilldown = {
+  indicatorId: RECORD_ID,
+  code: 'NABH-PSQ-3a',
+  name: 'Medication errors per 1,000 patient days',
+  numeratorDefinition: 'Medication errors reported',
+  denominatorDefinition: 'In-patient days',
+  unit: 'PerThousand',
+  periodStart: monthStart(0),
+  periodEnd: monthStart(0),
+  periodLabel: monthLabel(0),
+  numerator: 12,
+  denominator: 5000,
+  value: 2.4,
+  meetsTarget: false,
+  stored: VALUES[0]!,
+  note: 'Denominator: 5000 in-patient days (midnight census) from 410 stays.',
+  unavailable: false,
+  recordCount: 1,
+  records: [
+    {
+      role: 'Numerator',
+      kind: 'Incident',
+      reference: 'INC-26-00118',
+      uhid: 'NH26000611',
+      at: daysAgo(2.4),
+      minutes: null,
+      detail: 'Mild, raised from Inpatient',
+    },
+  ],
+};
+
+const DEVICE: DeviceEpisode = {
+  id: id('de71'),
+  patientId: id('1'),
+  uhid: 'NH26000611',
+  admissionId: id('ad01'),
+  admissionNumber: 'NHIP2600214',
+  wardName: ICU.name,
+  device: 'CentralLine',
+  detail: 'Right internal jugular, triple lumen',
+  insertedAt: daysAgo(4),
+  insertedByName: 'Sr. Mary Thomas',
+  removedAt: null,
+  removalReason: null,
+  removedByName: null,
+  deviceDays: 5,
+  notes: null,
+  version: 2,
+};
+
+const HAI_CASES: HaiCaseListItem[] = [
+  {
+    id: RECORD_ID,
+    caseNumber: 'NHHAI260007',
+    type: 'Clabsi',
+    origin: 'CultureAlert',
+    status: 'Suspected',
+    uhid: 'NH26000611',
+    eventOn: dateAgo(1),
+    organism: 'Klebsiella pneumoniae',
+    specimen: 'Blood culture',
+    meetsDefinition: false,
+    createdAt: daysAgo(0.5),
+  },
+];
+
+const HAI_RATES: HaiRateRow[] = [0, 1].map((back) => ({
+  month: monthStart(back),
+  label: monthLabel(back),
+  patientDays: 900,
+  centralLineDays: 120,
+  urinaryCatheterDays: 210,
+  ventilatorDays: 60,
+  clabsi: back,
+  cauti: 0,
+  vap: 0,
+  ssi: 1,
+  operations: 140,
+  clabsiRate: back === 0 ? 0 : 8.33,
+  cautiRate: 0,
+  vapRate: 0,
+  ssiRate: 0.71,
+  centralLineUtilisation: 0.13,
+  urinaryCatheterUtilisation: 0.23,
+  ventilatorUtilisation: 0.07,
+  suspected: back === 0 ? 1 : 0,
+}));
+
+const AUDIT_TEMPLATES: AuditTemplate[] = [
+  {
+    id: id('a7e1'),
+    code: 'HIC-BASIC',
+    title: 'Hospital infection control',
+    chapter: 'Hic',
+    description: null,
+    items: [{ key: 'I01', text: 'Hand hygiene facilities are available at the point of care', reference: 'HIC' }],
+    isActive: true,
+    version: 1,
+  },
+];
+
+const AUDITS: AuditListItem[] = [
+  {
+    id: RECORD_ID,
+    auditNumber: 'NHAUD260003',
+    title: 'Hospital infection control',
+    chapter: 'Hic',
+    area: ICU.name,
+    scheduledOn: dateAgo(2),
+    leadAuditorUserId: ME,
+    leadAuditorName: STAFF_USER.displayName,
+    recurrence: 'Monthly',
+    status: 'InProgress',
+    isOverdue: true,
+    compliancePercent: 85.7,
+    nonCompliances: 1,
+    openCapas: 0,
+  },
+];
+
 export const ANSWERS: FakeAnswers = {
+  [`GET /api/v1/quality/indicators/${RECORD_ID}/drilldown`]: DRILLDOWN,
+  'GET /api/v1/quality/hai/cases': HAI_CASES,
+  'GET /api/v1/quality/hai/devices': [DEVICE],
+  'GET /api/v1/quality/hai/rates': HAI_RATES,
+  'GET /api/v1/quality/audits': AUDITS,
+  'GET /api/v1/quality/audits/mine': AUDITS,
+  'GET /api/v1/quality/audits/templates': AUDIT_TEMPLATES,
+  'GET /api/v1/quality/mvpi': MVPI_REPORTS,
+  [`GET /api/v1/quality/mvpi/${RECORD_ID}`]: MVPI_DRAFT,
   'GET /api/v1/quality/downtime': DOWNTIME,
   'GET /api/v1/quality/downtime/summary': DOWNTIME_SUMMARY,
   'GET /api/v1/quality/dashboard': DASHBOARD,

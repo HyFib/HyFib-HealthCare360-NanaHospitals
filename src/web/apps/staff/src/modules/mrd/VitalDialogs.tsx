@@ -500,7 +500,9 @@ export function DeathDialog({ existing, onClose }: { existing: DeathRecordDto | 
       void queryClient.invalidateQueries({ queryKey: ['patients', 'detail', saved.patientId] });
       notify.success(
         existing ? 'Certificate corrected' : 'Death certified',
-        `${saved.serialNumber}: report it to the Registrar within ${REPORT_WITHIN_DAYS} days.`,
+        saved.confirmationWaitingSince !== null
+          ? `${saved.serialNumber}: a second doctor confirms it in Approvals before it is reported to the Registrar, within ${REPORT_WITHIN_DAYS} days.`
+          : `${saved.serialNumber}: report it to the Registrar within ${REPORT_WITHIN_DAYS} days.`,
       );
       onClose();
       if (!existing) {

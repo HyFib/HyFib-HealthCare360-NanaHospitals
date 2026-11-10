@@ -34,10 +34,17 @@ public enum PosSettlementMatch
     Review,
 
     /// <summary>
-    /// Taken at a terminal of a counter that HC360's billing does not record, such as the pharmacy's or the canteen's
-    /// (setting <c>otherTerminals</c>). Nothing to match; the money still clears through the settlement journal.
+    /// Taken at a terminal of another counter (setting <c>otherTerminals</c>) that no payment of HC360's pharmacy or
+    /// canteen names: a counter HC360 does not record, or a sale typed without its reference. Nothing to match; the money
+    /// still clears through the settlement journal.
     /// </summary>
     OtherCounter,
+
+    /// <summary>
+    /// Its report was withdrawn as imported in error: it matches nothing, its journal is reversed on the day of the
+    /// withdrawal, and a correct report may bring the transaction again.
+    /// </summary>
+    Withdrawn,
 }
 
 /// <summary>What a matched line was found by, from the surest to the weakest.</summary>
@@ -114,6 +121,30 @@ public sealed class PosSettlementImport : Entity, IFacilityScoped
     public DateTimeOffset ImportedAt { get; set; }
     public Guid? ImportedBy { get; set; }
     public string? ImportedByName { get; set; }
+
+    /// <summary>
+    /// The Indian calendar day the report was withdrawn as imported in error (asked for by one person, approved by
+    /// another): its transactions' journals are reversed in that day's books. Null while it stands.
+    /// </summary>
+    public DateOnly? WithdrawnOn { get; set; }
+
+    public DateTimeOffset? WithdrawnAt { get; set; }
+
+    /// <summary>Who approved the withdrawal; who asked for it is in its approval.</summary>
+    public string? WithdrawnByName { get; set; }
+
+    public string? WithdrawReason { get; set; }
+
+    /// <summary>Withdraws the report and its own transactions (those it brought first), in the books of <paramref name="on"/>.</summary>
+    public void Withdraw(IEnumerable<PosSettlementLine> lines, DateOnly on, DateTimeOffset at, string? approvedBy, string reason)
+    {
+        foreach (var line in lines.Where(l => l.ImportId == Id))
+        {
+            line.Withdraw(on);
+        }
+
+        (WithdrawnOn, WithdrawnAt, WithdrawnByName, WithdrawReason) = (on, at, approvedBy, reason);
+    }
 }
 
 /// <summary>
@@ -176,6 +207,15 @@ public sealed class PosSettlementLine : Entity, IFacilityScoped, IVersioned
 
     public Guid? RefundId { get; set; }
 
+    /// <summary>
+    /// The counter that took the payment or refund it matched when that was not Billing's (<c>pharmacy</c>, <c>canteen</c>),
+    /// with the counter's own id of it (matched by one line at most) and its invoice or bill number.
+    /// </summary>
+    public string? Counter { get; set; }
+
+    public Guid? CounterPaymentId { get; set; }
+    public string? CounterDocument { get; set; }
+
     /// <summary>What HC360 recorded for the matched payment or refund.</summary>
     public decimal? RecordedAmount { get; set; }
 
@@ -185,19 +225,40 @@ public sealed class PosSettlementLine : Entity, IFacilityScoped, IVersioned
     public string? ReviewedByName { get; set; }
     public string? ReviewNote { get; set; }
 
+    /// <summary>
+    /// The day its report was withdrawn as imported in error: its journal is reversed in that day's books, it matches
+    /// nothing, and a correct report may bring the transaction again. Null while it stands.
+    /// </summary>
+    public DateOnly? WithdrawnOn { get; set; }
+
     public uint Version { get; set; }
 
-    /// <summary>The transaction before charges: positive for money in, negative for money returned or taken back.</summary>
-    public decimal Gross => Type == PosSettlementLineType.Sale ? Amount : -Amount;
+    /// <summary>
+    /// The transaction before charges: positive for money in (a sale, or a chargeback the acquirer reversed), negative
+    /// for money returned or taken back.
+    /// </summary>
+    public decimal Gross => Type == PosSettlementLineType.Sale || GivesBack ? Amount : -Amount;
+
+    /// <summary>
+    /// An adjustment that gives money back to the hospital: the acquirer reversed a chargeback (representment won, or the
+    /// cardholder withdrew it). It adds to the payout, and wins the case on its sale.
+    /// </summary>
+    public bool GivesBack => Type == PosSettlementLineType.Adjustment && Net > 0;
 
     /// <summary>Still to be looked at: it does not match, or it is a chargeback, and nobody has reviewed it.</summary>
-    public bool NeedsAttention => ReviewedAt is null && NeedsAttentionWhenUnreviewed(Match);
+    public bool NeedsAttention => ReviewedAt is null && DisputeId is null && NeedsAttentionWhenUnreviewed(Match);
+
+    /// <summary>
+    /// The chargeback case that follows this chargeback, or that this reversal won (<see cref="PaymentDispute"/>); the case
+    /// is what to look at then.
+    /// </summary>
+    public Guid? DisputeId { get; set; }
 
     public static bool NeedsAttentionWhenUnreviewed(PosSettlementMatch match) =>
         match is PosSettlementMatch.AmountDiffers or PosSettlementMatch.NoReceipt or PosSettlementMatch.NoRefund or PosSettlementMatch.Review;
 
     /// <summary>Whether matching may still change the line: one that matched, or belongs to another counter, stays as it is.</summary>
-    public bool IsOpen => Match is not (PosSettlementMatch.Matched or PosSettlementMatch.OtherCounter);
+    public bool IsOpen => Match is not (PosSettlementMatch.Matched or PosSettlementMatch.OtherCounter or PosSettlementMatch.Withdrawn);
 
     public static PosSettlementLine From(Guid facilityId, Guid importId, string acquirer, PosSettlementRow row) => new()
     {
@@ -249,10 +310,31 @@ public sealed class PosSettlementLine : Entity, IFacilityScoped, IVersioned
         MatchedAt = now;
     }
 
+    /// <summary>A payment (for a refund line, a refund) the pharmacy or the canteen took by card or UPI.</summary>
+    public void MatchCounter(string counter, Guid paymentId, string document, decimal recorded, PosMatchBasis basis, DateTimeOffset now)
+    {
+        Unmatch();
+        Counter = counter;
+        CounterPaymentId = paymentId;
+        CounterDocument = document;
+        RecordedAmount = recorded;
+        MatchBasis = basis;
+        Match = recorded == Amount ? PosSettlementMatch.Matched : PosSettlementMatch.AmountDiffers;
+        MatchedAt = now;
+    }
+
     public void MarkOtherCounter()
     {
         Unmatch();
         Match = PosSettlementMatch.OtherCounter;
+    }
+
+    /// <summary>Its report withdrawn: the receipt or refund it matched is free again, and it matches nothing more.</summary>
+    public void Withdraw(DateOnly on)
+    {
+        Unmatch();
+        Match = PosSettlementMatch.Withdrawn;
+        WithdrawnOn = on;
     }
 
     /// <summary>Back to what nothing matched: no receipt, no refund, or (a chargeback) to review.</summary>
@@ -261,6 +343,9 @@ public sealed class PosSettlementLine : Entity, IFacilityScoped, IVersioned
         ReceiptId = null;
         ReceiptPaymentId = null;
         RefundId = null;
+        Counter = null;
+        CounterPaymentId = null;
+        CounterDocument = null;
         RecordedAmount = null;
         MatchBasis = null;
         MatchedAt = null;
@@ -298,6 +383,12 @@ public sealed record TallyPosSettlement(
     string Number, DateOnly Date, string? Utr, decimal Net, decimal Charges, decimal Tax, IReadOnlyList<TallyPosClearing> Clears)
 {
     public decimal Gross => Clears.Sum(c => c.Gross);
+
+    /// <summary>
+    /// The narration of a reversal (the transactions of a report withdrawn as imported in error), whose amounts are
+    /// negative, so its entries are the payout journal's turned round. Null for a payout's own journal.
+    /// </summary>
+    public string? Correction { get; init; }
 }
 
 public sealed record TallyPosClearing(PaymentMode Mode, decimal Gross);
@@ -321,6 +412,34 @@ public static class PosSettlementJournal
                 g.Sum(l => l.Charges),
                 g.Sum(l => l.Tax),
                 g.GroupBy(l => l.Mode).OrderBy(m => m.Key).Select(m => new TallyPosClearing(m.Key, m.Sum(l => l.Gross))).ToList()))
+            .Where(j => j.Net != 0 || j.Charges != 0 || j.Tax != 0 || j.Gross != 0)
+            .ToList();
+
+    /// <summary>
+    /// The reversals in the books of <paramref name="date"/>: the transactions of each report withdrawn that day, per
+    /// payout (its day and UTR), turned round. A payout's own journal stays in its day, which may be in Tally already;
+    /// the reversal is numbered after it and the report (<c>POS-NH-&lt;UTR&gt;-W1A2B3C</c>).
+    /// </summary>
+    public static IReadOnlyList<TallyPosSettlement> Withdrawals(IEnumerable<PosSettlementLine> lines, DateOnly date, string? facilityCode) =>
+        lines.Where(l => l.WithdrawnOn == date)
+            .GroupBy(l => (l.ImportId, l.SettledOn, Utr: (l.Utr ?? string.Empty).ToUpperInvariant()))
+            .OrderBy(g => g.Key.SettledOn).ThenBy(g => g.Key.Utr, StringComparer.Ordinal).ThenBy(g => g.Key.ImportId)
+            .Select(g =>
+            {
+                var journal = VoucherNumber(facilityCode, g.Key.SettledOn, g.Key.Utr.Length == 0 ? null : g.Key.Utr);
+                var settledOn = g.Key.SettledOn.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture);
+                return new TallyPosSettlement(
+                    $"{journal}-W{g.Key.ImportId.ToString("N")[..6].ToUpperInvariant()}",
+                    date,
+                    g.Key.Utr.Length == 0 ? null : g.First().Utr,
+                    -g.Sum(l => l.Net),
+                    -g.Sum(l => l.Charges),
+                    -g.Sum(l => l.Tax),
+                    g.GroupBy(l => l.Mode).OrderBy(m => m.Key).Select(m => new TallyPosClearing(m.Key, -m.Sum(l => l.Gross))).ToList())
+                {
+                    Correction = $"Reverses card and UPI settlement journal {journal} of {settledOn}: its report was withdrawn as imported in error",
+                };
+            })
             .Where(j => j.Net != 0 || j.Charges != 0 || j.Tax != 0 || j.Gross != 0)
             .ToList();
 

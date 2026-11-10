@@ -46,7 +46,7 @@ internal static class JourneyEndpoints
     {
         if (kind is JourneyKind.Surgery or JourneyKind.Lab)
         {
-            return Error.Field("kind", "Show out-patients or in-patients.").ToProblem();
+            return Error.Field("kind", "Show out-patients, casualty or in-patients.").ToProblem();
         }
 
         return TypedResults.Ok(await journeys.InHospitalAsync(new InHospitalFilter(kind, departmentId, wardId), query.ToRequest(), ct));

@@ -38,10 +38,38 @@ public sealed record ApprovalSubject(string Type, Guid Id, uint? Version, Guid F
 /// <summary>One thing the checker needs to see, for example ("Balance due", "₹4,500.00").</summary>
 public sealed record ApprovalDetail(string Label, string Value);
 
+/// <param name="Handover">
+/// What the approval hands the person who approved it, in the answer to their approval and never again (a temporary
+/// password they give in person: <see cref="ApprovalHandover"/>); null in every other answer.
+/// </param>
 public sealed record ApprovalRequestDto(
     Guid Id, string Kind, string Title, string Summary, IReadOnlyList<ApprovalDetail> Details, string Reason, ApprovalStatus Status, bool IsExpired,
     string SubjectType, Guid SubjectId, Guid? PatientId, Guid RequestedBy, string RequestedByName, DateTimeOffset RequestedAt, DateTimeOffset ExpiresAt,
-    Guid? DecidedBy, string? DecidedByName, DateTimeOffset? DecidedAt, string? DecisionNote, string? Outcome, bool CanDecide, bool CanWithdraw, uint Version);
+    Guid? DecidedBy, string? DecidedByName, DateTimeOffset? DecidedAt, string? DecisionNote, string? Outcome, bool CanDecide, bool CanWithdraw, uint Version,
+    ApprovalHandoverDto? Handover = null);
+
+/// <summary>A secret handed to the person who approved a change, once: what it is for, the secret, and when it stops working.</summary>
+public sealed record ApprovalHandoverDto(string Label, string Secret, DateTimeOffset? ExpiresAt);
+
+/// <summary>
+/// A secret an approval makes for the person who approves it to hand over in person, such as the temporary password of an
+/// account with no mobile number or e-mail address to send it to. The action gives it while it makes the change; the
+/// approvals service puts it in the answer to that approval once the change is committed, and it is kept nowhere else:
+/// not in the request, its outcome, the audit trail or the notification to the person who asked.
+/// </summary>
+public sealed class ApprovalHandover
+{
+    private ApprovalHandoverDto? _handover;
+
+    public void Give(string label, string secret, DateTimeOffset? expiresAt) => _handover = new ApprovalHandoverDto(label, secret, expiresAt);
+
+    internal ApprovalHandoverDto? Take()
+    {
+        var handover = _handover;
+        _handover = null;
+        return handover;
+    }
+}
 
 /// <summary>What a module calls to ask for a second person's approval instead of making a change at once.</summary>
 public interface IApprovals
@@ -52,6 +80,12 @@ public interface IApprovals
     /// </summary>
     Task<Result<ApprovalRequestDto>> RequestAsync<TPayload>(
         string kind, ApprovalSubject subject, TPayload payload, string summary, IReadOnlyList<ApprovalDetail> details, string reason, CancellationToken ct);
+
+    /// <summary>
+    /// The records among these with a change of this kind still waiting for a decision (not yet decided, withdrawn or
+    /// expired), and when it was asked for, so the module can show the record as waiting. Records with none are left out.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, DateTimeOffset>> WaitingSinceAsync(string kind, string subjectType, IReadOnlyCollection<Guid> subjectIds, CancellationToken ct);
 }
 
 public enum ApprovalView
@@ -78,6 +112,7 @@ internal sealed class ApprovalService(
     ICurrentUser currentUser,
     IAuditLogger audit,
     INotificationService notifications,
+    ApprovalHandover handover,
     TimeProvider time) : IApprovals
 {
     private const string Category = "approvals";
@@ -149,6 +184,22 @@ internal sealed class ApprovalService(
         return await ToDtoAsync(request, ct);
     }
 
+    public async Task<IReadOnlyDictionary<Guid, DateTimeOffset>> WaitingSinceAsync(
+        string kind, string subjectType, IReadOnlyCollection<Guid> subjectIds, CancellationToken ct)
+    {
+        if (subjectIds.Count == 0)
+        {
+            return new Dictionary<Guid, DateTimeOffset>();
+        }
+
+        var now = time.GetUtcNow();
+        var waiting = await db.Set<ApprovalRequest>().AsNoTracking()
+            .Where(r => r.SubjectType == subjectType && subjectIds.Contains(r.SubjectId) && r.Kind == kind && r.Status == ApprovalStatus.Pending && r.ExpiresAt > now)
+            .Select(r => new { r.SubjectId, r.RequestedAt })
+            .ToListAsync(ct);
+        return waiting.GroupBy(r => r.SubjectId).ToDictionary(g => g.Key, g => g.Min(r => r.RequestedAt));
+    }
+
     public async Task<Result<ApprovalRequestDto>> ApproveAsync(Guid id, string? note, uint version, CancellationToken ct)
     {
         var loaded = await DecisionAsync(id, version, ct);
@@ -160,6 +211,7 @@ internal sealed class ApprovalService(
         var (request, action, checker) = loaded.Value;
         var now = time.GetUtcNow();
         Error? failure;
+        handover.Take();
         await using (var transaction = await db.Database.BeginTransactionAsync(ct))
         {
             try
@@ -174,7 +226,7 @@ internal sealed class ApprovalService(
                     await transaction.CommitAsync(ct);
                     await notifications.NotifyUsersAsync([request.RequestedBy], $"{request.Title} approved", $"{request.Summary}: {applied.Value}.", Link(request.Id), Category,
                         cancellationToken: ct);
-                    return await ToDtoAsync(request, ct);
+                    return await ToDtoAsync(request, ct) with { Handover = handover.Take() };
                 }
 
                 failure = applied.Error!;
@@ -185,10 +237,11 @@ internal sealed class ApprovalService(
             }
         }
 
-        // Nothing the action staged is kept. A refusal that is about the checker (a record they may not open), or a save
-        // that lost a race with another change, leaves the request waiting; any other means the change can no longer be
-        // made as asked.
+        // Nothing the action staged is kept, nor anything it would have handed over. A refusal that is about the checker (a
+        // record they may not open), or a save that lost a race with another change, leaves the request waiting; any other
+        // means the change can no longer be made as asked.
         db.ChangeTracker.Clear();
+        handover.Take();
         if (failure.Type is ErrorType.Forbidden or ErrorType.Unauthorized || failure.Code == Concurrent.Code)
         {
             return failure;

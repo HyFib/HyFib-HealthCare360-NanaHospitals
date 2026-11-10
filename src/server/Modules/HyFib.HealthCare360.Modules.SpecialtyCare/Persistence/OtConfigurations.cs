@@ -17,6 +17,8 @@ internal sealed class OperationTheatreConfiguration : IEntityTypeConfiguration<O
 
 internal sealed class SurgeryBookingConfiguration : IEntityTypeConfiguration<SurgeryBooking>
 {
+    internal const int SiteLevelLength = 60;
+
     public void Configure(EntityTypeBuilder<SurgeryBooking> b)
     {
         b.ToTable("surgery_bookings", SpecialtyCareSchema.Name);
@@ -30,9 +32,16 @@ internal sealed class SurgeryBookingConfiguration : IEntityTypeConfiguration<Sur
         b.Property(x => x.ChargeError).HasMaxLength(SpecialtyCareSchema.Reason);
         b.Property(x => x.PreOpChecks).HasJsonRows();
         b.Property(x => x.SafetyChecks).HasJsonRows();
+        b.Property(x => x.SiteLevel).HasMaxLength(SiteLevelLength);
+        b.Property(x => x.Counts).HasJsonRows();
+        b.Property(x => x.CountDiscrepancies).HasJsonRows();
+        b.Property(x => x.ChecklistVoids).HasJsonRows();
         b.Ignore(x => x.RequiresAnaesthetist);
         b.Ignore(x => x.IsClosed);
+        b.Ignore(x => x.Site);
+        b.Ignore(x => x.MaterialsLocked);
         b.Ignore(x => x.MinutesInTheatre);
+        b.Ignore(x => x.InRecovery);
 
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<OperationTheatre>().WithMany().HasForeignKey(x => x.TheatreId).OnDelete(DeleteBehavior.Restrict);
@@ -60,6 +69,27 @@ internal sealed class AnaesthesiaRecordConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.Drugs).HasJsonRows();
         b.Property(x => x.Fluids).HasJsonRows();
         b.Ignore(x => x.IsSigned);
+        b.HasOne<SurgeryBooking>().WithMany().HasForeignKey(x => x.SurgeryBookingId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => x.SurgeryBookingId).IsUnique();
+    }
+}
+
+internal sealed class RecoveryRecordConfiguration : IEntityTypeConfiguration<RecoveryRecord>
+{
+    public void Configure(EntityTypeBuilder<RecoveryRecord> b)
+    {
+        b.ToTable("recovery_records", SpecialtyCareSchema.Name);
+        b.Property(x => x.ReceivedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.HandedOverByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.DischargedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.OverrideByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.Notes).HasMaxLength(SpecialtyCareSchema.Note);
+        b.Property(x => x.HandoverNotes).HasMaxLength(SpecialtyCareSchema.Note);
+        b.Property(x => x.OverrideReason).HasMaxLength(SpecialtyCareSchema.Reason);
+        b.Property(x => x.OxygenLitresPerMinute).HasPrecision(4, 1);
+        b.Property(x => x.Observations).HasJsonRows();
+        b.Ignore(x => x.IsDischarged);
+        b.Ignore(x => x.Latest);
         b.HasOne<SurgeryBooking>().WithMany().HasForeignKey(x => x.SurgeryBookingId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.SurgeryBookingId).IsUnique();
     }
@@ -99,11 +129,15 @@ internal sealed class SurgeryMaterialConfiguration : IEntityTypeConfiguration<Su
         b.Property(x => x.SerialNumber).HasMaxLength(64);
         b.Property(x => x.RecordedByName).HasMaxLength(SpecialtyCareSchema.Name200);
         b.Property(x => x.ChargeError).HasMaxLength(SpecialtyCareSchema.Reason);
+        b.Property(x => x.CorrectionReason).HasMaxLength(SpecialtyCareSchema.Reason);
+        b.Property(x => x.CorrectionRequestedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.CorrectionApprovedByName).HasMaxLength(SpecialtyCareSchema.Name200);
         b.Property(x => x.Quantity).HasPrecision(18, 3);
         b.Property(x => x.Mrp).HasPrecision(18, 4);
         b.Property(x => x.CeilingPrice).HasPrecision(18, 4);
         b.Ignore(x => x.Amount);
         b.Ignore(x => x.Device);
+        b.Ignore(x => x.IsSuperseded);
         b.HasOne<SurgeryBooking>().WithMany().HasForeignKey(x => x.SurgeryBookingId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.SurgeryBookingId);
         b.HasIndex(x => x.LotNumber);

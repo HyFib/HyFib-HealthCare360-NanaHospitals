@@ -40,12 +40,16 @@ public static class PrintQueries
                 f.NabhNumber, f.HfrId, f.LogoFileId, f.LetterheadNote);
     }
 
+    /// <summary>
+    /// The doctor who signed, removed or not, with their department and specialty as they are, removed or not: a print shows
+    /// who signed it. Every source says so itself, as EF Core ignores a query filter for the whole query.
+    /// </summary>
     public static async Task<PrescriberInfo?> PrescriberAsync(HospitalDbContext db, Guid practitionerId, CancellationToken ct) =>
         await (
-                from p in db.Set<Practitioner>().AsNoTracking()
+                from p in db.Set<Practitioner>().IgnoreQueryFilters().AsNoTracking()
                 join d in db.Set<Department>().IgnoreQueryFilters() on p.DepartmentId equals d.Id into departments
                 from d in departments.DefaultIfEmpty()
-                join s in db.Set<Specialty>() on p.SpecialtyId equals s.Id into specialties
+                join s in db.Set<Specialty>().IgnoreQueryFilters() on p.SpecialtyId equals s.Id into specialties
                 from s in specialties.DefaultIfEmpty()
                 where p.Id == practitionerId
                 select new PrescriberInfo(p.Id, p.DisplayName, p.Qualification, p.RegistrationCouncil, p.RegistrationNumber,

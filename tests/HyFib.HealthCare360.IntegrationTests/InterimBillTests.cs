@@ -48,7 +48,7 @@ public sealed class InterimBillTests(HospitalServer server)
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
 
         // Admitted at 10:00 (IST) the day before yesterday, recorded as a late entry, so the stay crosses two midnights.
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var dayBefore = today.AddDays(-2);
         var yesterday = today.AddDays(-1);
         var patientId = await RegisterPatientAsync(frontOffice);
@@ -102,7 +102,7 @@ public sealed class InterimBillTests(HospitalServer server)
         // Finalized, it takes an in-patient bill number and its services are billed; today's visit is still to be billed.
         interim = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{interim.Id}/finalize", new BillVersionRequest(interim.Version));
         interim.Status.ShouldBe(BillStatus.Finalized);
-        interim.BillNumber.ShouldNotBeNull().ShouldMatch(@"IB\d{9}$", "in-patient bills are numbered {FAC}IB{YY}{SEQ:7}");
+        interim.BillNumber.ShouldNotBeNull().ShouldMatch(@"IB\d{8}$", "in-patient bills are numbered {FAC}IB{YY}{SEQ:6}, within the 16 characters of GST rule 46");
         interim.DueAmount.ShouldBe(interim.PatientAmount);
         var running = await billing.GetAsync<RunningBill>(Path(account, "running-bill"));
         running.Lines.Where(l => l.BillId == interim.Id).Select(l => (l.ChargeId, l.Status)).Order().ToArray()
@@ -194,7 +194,7 @@ public sealed class InterimBillTests(HospitalServer server)
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
 
         // Admitted at 10:00 (IST) yesterday, recorded as a late entry, so the stay crosses one midnight.
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var admission = await AdmitAsync(
             frontOffice, doctor, await RegisterPatientAsync(frontOffice), PayerType.Self, null, IndiaClock.AtLocal(today.AddDays(-1), new TimeOnly(10, 0)));
         var account = await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/by-admission/{admission.Id}");
@@ -345,13 +345,12 @@ public sealed class InterimBillTests(HospitalServer server)
     }
 
     /// <summary>Front office: admits the patient under the doctor to a free bed of the male general ward.</summary>
-    private static async Task<AdmissionCreated> AdmitAsync(
+    private async Task<AdmissionCreated> AdmitAsync(
         ApiClient frontOffice, ApiClient doctor, Guid patientId, PayerType payerType, Guid? payerId, DateTimeOffset? admittedAt)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWM");
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(server, ward.Id);
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,
@@ -361,10 +360,17 @@ public sealed class InterimBillTests(HospitalServer server)
     }
 
     /// <summary>A patient admitted now and seen once by the consultant, with his IP account.</summary>
-    private static async Task<(AdmissionCreated Admission, IpAccountDetail Account)> AdmitWithAVisitAsync(
+    private async Task<(AdmissionCreated Admission, IpAccountDetail Account)> AdmitWithAVisitAsync(
         ApiClient frontOffice, ApiClient doctor, ApiClient billing, PayerType payerType, Guid? payerId)
     {
-        var admission = await AdmitAsync(frontOffice, doctor, await RegisterPatientAsync(frontOffice), payerType, payerId, null);
+        var patient = await RegisterPatientAsync(frontOffice);
+        if (payerId is { } coveredBy)
+        {
+            // A stay goes on a payer only on the patient's policy with it, verified by someone other than whoever recorded it.
+            await server.VerifiedPolicyAsync(patient, coveredBy);
+        }
+
+        var admission = await AdmitAsync(frontOffice, doctor, patient, payerType, payerId, null);
         await RecordVisitAsync(doctor, admission.Id, null);
         var account = await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/by-admission/{admission.Id}");
         account.PayerType.ShouldBe(payerType);
@@ -400,12 +406,12 @@ public sealed class InterimBillTests(HospitalServer server)
     }
 
     /// <summary>The admin: a package for admissions with the bed days and the consultant's visits of a short stay.</summary>
-    private static async Task<PackageDetail> PackageAsync(ApiClient admin)
+    private async Task<PackageDetail> PackageAsync(ApiClient admin)
     {
         const string name = "Cellulitis care (3 days)";
-        var item = await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        var item = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8)}", name, null, ServiceCategory.Package, null, 9000m, 0m, null, true, false, null, true, null));
-        return await admin.PostAsync<PackageDetail>("/api/v1/billing/packages", new SavePackageRequest(
+        return await server.SavePackageAsync(admin, new SavePackageRequest(
             $"PKG-{Letters(8)}", name, item.Id, 9000m, 3, null, PackageUse.InPatient, null, true,
             [
                 new PackageInclusionInput(null, ServiceCategory.BedCharge, 3m, null, "Three bed days"),
@@ -454,23 +460,6 @@ public sealed class InterimBillTests(HospitalServer server)
     }
 
     // ---------------------------------------------------------------------- look-ups
-
-    /// <summary>
-    /// Today in the hospital's calendar (IST). Bed days are charged at midnight, so the test must not straddle one:
-    /// started in the last two minutes of a day, it waits for the next.
-    /// </summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var now = clock.GetUtcNow();
-        var untilMidnight = IndiaClock.StartOfDayUtc(IndiaClock.LocalDate(now).AddDays(1)) - now;
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, Ct);
-        }
-
-        return IndiaClock.LocalDate(clock.GetUtcNow());
-    }
 
     private static async Task<List<ChargeDto>> ChargesAsync(ApiClient billing, Guid admissionId) =>
         (await billing.GetAsync<PagedResult<ChargeDto>>($"/api/v1/billing/charges?admissionId={admissionId}&pageSize=200"))

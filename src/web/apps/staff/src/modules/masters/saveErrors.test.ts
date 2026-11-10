@@ -1,7 +1,7 @@
 import { ApiError } from '@hc360/core';
 import type { UseFormReturn } from 'react-hook-form';
 import { describe, expect, it, vi } from 'vitest';
-import { facilityField, showSaveError } from './saveErrors';
+import { facilityField, showSaveError, workAheadOf } from './saveErrors';
 
 function setup(values: Record<string, unknown>) {
   const setError = vi.fn();
@@ -88,5 +88,46 @@ describe('a failed save of a master', () => {
 
     expect(notify.error).toHaveBeenCalledTimes(2);
     expect(notify.error).toHaveBeenCalledWith(unknownField, 'Could not save the facility');
+  });
+});
+
+describe('a doctor with work ahead', () => {
+  const work = [
+    {
+      kind: 'appointments',
+      count: 7,
+      first: '2026-11-10T04:30:00Z',
+      numbers: ['APT-1', 'APT-2'],
+      words: '7 OPD appointment(s) booked from 10 Nov 2026',
+    },
+    {
+      kind: 'admissions',
+      count: 1,
+      first: '2026-11-01T06:00:00Z',
+      numbers: ['IP-9'],
+      words: '1 patient(s) admitted under them',
+    },
+  ];
+
+  it('is read from the server’s refusal to take them out of use', () => {
+    const refusal = new ApiError({
+      status: 409,
+      code: 'practitioner.work_ahead',
+      title: 'Cannot complete this action',
+      data: { workAhead: work },
+    });
+
+    expect(workAheadOf(refusal)).toEqual(work);
+  });
+
+  it('is nothing for any other failure, or a refusal that names no work', () => {
+    expect(
+      workAheadOf(new ApiError({ status: 409, code: 'concurrency', title: 'Changed', data: { workAhead: work } })),
+    ).toBeNull();
+    expect(
+      workAheadOf(new ApiError({ status: 409, code: 'practitioner.work_ahead', title: 'x', data: { workAhead: [] } })),
+    ).toBeNull();
+    expect(workAheadOf(new ApiError({ status: 409, code: 'practitioner.work_ahead', title: 'x' }))).toBeNull();
+    expect(workAheadOf(new Error('offline'))).toBeNull();
   });
 });

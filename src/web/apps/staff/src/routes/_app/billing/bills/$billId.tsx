@@ -12,6 +12,7 @@ import { useBillingLive } from '@/modules/billing/hooks';
 import { billTitle } from '@/modules/billing/print';
 import { ShiftBar } from '@/modules/billing/ShiftControls';
 import { BillStatusBadge, NoAccess } from '@/modules/billing/ui';
+import { HistoryButton } from '@/modules/history/RecordHistory';
 
 export const Route = createFileRoute('/_app/billing/bills/$billId')({
   component: BillDetailPage,
@@ -78,6 +79,7 @@ function BillDetailPage() {
           </>
         }
         breadcrumbs={[{ label: 'Bills', onClick: () => void navigate({ to: '/billing/bills' }) }, { label: title }]}
+        actions={<HistoryButton type="Bill" id={b.id} />}
       />
       <ShiftBar />
       <BillingPatientBanner patientId={b.patientId} />

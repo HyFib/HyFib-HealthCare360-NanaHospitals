@@ -32,6 +32,55 @@ public sealed class FhirObservationParserTests
         result.Errors.ShouldBeEmpty();
     }
 
+    /// <summary>
+    /// ABDM's own example (NRCeS FHIR implementation guide, Observation-example-30): the unit is labelled "beats/minute"
+    /// for a person to read, and coded as UCUM <c>/min</c> for a machine. The UCUM code is what is read; the label once
+    /// made the reading rejected as an unsupported unit.
+    /// </summary>
+    [Fact]
+    public void A_quantity_is_read_by_its_ucum_code_not_by_its_label()
+    {
+        var result = FhirObservationParser.Parse(Json("""
+            {
+              "resourceType": "Observation",
+              "id": "example-30",
+              "meta": { "profile": [ "https://nrces.in/ndhm/fhir/r4/StructureDefinition/ObservationVitalSigns" ] },
+              "status": "final",
+              "code": { "coding": [ { "system": "http://loinc.org", "code": "8867-4", "display": "Heart rate" } ], "text": "Heart rate" },
+              "subject": { "reference": "Patient/example-01" },
+              "effectiveDateTime": "2020-09-29",
+              "performer": [ { "reference": "Organization/example-01" } ],
+              "valueQuantity": { "value": 44, "unit": "beats/minute", "system": "http://unitsofmeasure.org", "code": "/min" }
+            }
+            """));
+
+        var reading = result.Readings.ShouldHaveSingleItem();
+        (reading.Type, reading.Value, reading.Unit).ShouldBe((RpmReadingType.HeartRate, 44m, "/min"));
+        ReadingUnits.Normalize(reading.Type, reading.Value, reading.Unit).Value.ShouldBe(44m);
+        result.Errors.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("beats/minute", "http://example.org/units", "/min", "beats/minute")]
+    [InlineData("beats/minute", null, "/min", "beats/minute")]
+    [InlineData(null, "http://unitsofmeasure.org", "Cel", "Cel")]
+    [InlineData("°F", "http://unitsofmeasure.org", "[degF]", "[degF]")]
+    [InlineData("mmHg", "http://unitsofmeasure.org", null, "mmHg")]
+    [InlineData(null, null, "kg", "kg")]
+    public void The_unit_is_the_ucum_code_when_there_is_one_and_else_the_label(string? unit, string? system, string? code, string expected)
+    {
+        var quantity = new Dictionary<string, object?> { ["value"] = 70, ["unit"] = unit, ["system"] = system, ["code"] = code }
+            .Where(p => p.Value is not null).ToDictionary(p => p.Key, p => p.Value);
+        var observation = JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            ["resourceType"] = "Observation",
+            ["code"] = new { coding = new[] { new { code = "8867-4" } } },
+            ["valueQuantity"] = quantity,
+        });
+
+        FhirObservationParser.Parse(Json(observation)).Readings.ShouldHaveSingleItem().Unit.ShouldBe(expected);
+    }
+
     [Fact]
     public void A_blood_pressure_panel_yields_systolic_and_diastolic()
     {

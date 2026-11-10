@@ -1,3 +1,4 @@
+using System.Globalization;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Modules.Patients;
@@ -38,6 +39,24 @@ internal static class AbdmEndpoints
         // The cardiology report's own id, as the FHIR API's DiagnosticReport names it.
         bundles.MapGet("/cardiology-reports/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
             ExportAsync(AbdmRecordType.CardiologyReport, id, pretty, service, ct));
+
+        // A vaccine dose given here, by its own id, as the FHIR API's Immunization and the patient's Immunisations tab name it.
+        bundles.MapGet("/immunizations/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
+            ExportAsync(AbdmRecordType.Immunization, id, pretty, service, ct));
+
+        // A signed clinical note by its own id, as the FHIR API's DocumentReference and the patient's Notes tab name it; it
+        // carries the addenda signed to it.
+        bundles.MapGet("/clinical-notes/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
+            ExportAsync(AbdmRecordType.ClinicalNote, id, pretty, service, ct));
+
+        // A finalised bill by its own id, as Billing's bill screen names it.
+        bundles.MapGet("/invoices/{id:guid}", (Guid id, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
+            ExportAsync(AbdmRecordType.Invoice, id, pretty, service, ct));
+
+        // A remote monitoring enrolment's home readings measured in a month (yyyy-MM; the month of the latest reading
+        // when none is given).
+        bundles.MapGet("/home-readings/{id:guid}", (Guid id, string? month, bool? pretty, AbdmBundleService service, CancellationToken ct) =>
+            ExportReadingsAsync(id, month, pretty, service, ct));
 
         abdm.MapGet("/gateway", async (AbdmGatewayConfiguration gateway, CancellationToken ct) => TypedResults.Ok(await gateway.StatusAsync(ct)))
             .RequirePermission(PlatformPermissions.IntegrationsManage);
@@ -108,5 +127,24 @@ internal static class AbdmEndpoints
         {
             return DocumentResults.PdfUnavailable($"{ex.Message} The ABDM record holds the printed copy: try again in a moment.");
         }
+    }
+
+    private static async Task<IResult> ExportReadingsAsync(Guid id, string? month, bool? pretty, AbdmBundleService service, CancellationToken ct)
+    {
+        DateOnly? day = null;
+        if (!string.IsNullOrWhiteSpace(month))
+        {
+            if (!DateOnly.TryParseExact(month.Trim(), "yyyy-MM", CultureInfo.InvariantCulture, DateTimeStyles.None, out var first))
+            {
+                return Error.Field("month", "Give the month as year and month, for example 2026-09.").ToProblem();
+            }
+
+            day = first;
+        }
+
+        var export = await service.ExportReadingsAsync(id, day, ct);
+        return export.IsSuccess
+            ? new FhirResult(export.Value.Bundle, StatusCodes.Status200OK, pretty == true, fileName: export.Value.FileName)
+            : export.Error!.ToProblem();
     }
 }

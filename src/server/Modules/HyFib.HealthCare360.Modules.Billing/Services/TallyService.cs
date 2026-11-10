@@ -88,6 +88,14 @@ public sealed class TallyService(
             .Where(p => p.FacilityId == facilityId && p.Status == PayoutStatus.Paid && p.PaidAt >= start && p.PaidAt < end)
             .ToListAsync(ct);
         var gatewaySettlements = await GatewaySettlementService.ForDayBookAsync(db, facilityId, date, ct);
+        var receiptReversals = await db.Set<ReceiptReversal>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().Include(r => r.Lines)
+            .Where(r => r.FacilityId == facilityId && r.ReversedAt >= start && r.ReversedAt < end)
+            .OrderBy(r => r.ReversedAt)
+            .ToListAsync(ct);
+        var refundReversals = await db.Set<RefundReversal>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(r => r.FacilityId == facilityId && r.ReversedAt >= start && r.ReversedAt < end)
+            .OrderBy(r => r.ReversedAt)
+            .ToListAsync(ct);
 
         var payerIds = bills.Where(b => b.PayerId is not null).Select(b => b.PayerId!.Value)
             .Concat(receipts.Where(r => r.PayerId is not null).Select(r => r.PayerId!.Value))
@@ -143,7 +151,7 @@ public sealed class TallyService(
             disallowances.Select(d => new TallyDisallowance(
                 TallyVoucherBuilder.ClaimDeductionReference(d.ClaimNumber, d.Id, settlementsByClaim[d.ClaimId]), date, payers.GetValueOrDefault(d.PayerId), d.DeductionAmount)).ToList(),
             refunds.Select(r => new TallyRefund(r.RefundNumber, date, r.Purpose, r.Mode!.Value, r.Amount)).ToList(),
-            creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount)).ToList(),
+            creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount, c.CgstAmount, c.SgstAmount, c.IgstAmount)).ToList(),
             fees.Where(f => f.Amount != 0).Select(f => new TallyDoctorFee(
                 doctors.GetValueOrDefault(f.PractitionerId)?.DisplayName ?? "Doctor",
                 f.Amount,
@@ -157,6 +165,12 @@ public sealed class TallyService(
             Counters = await CountersAsync(facilityId, date, ct),
             LegacyDoctorFeeNumbers = legacy,
             PosSettlements = await PosSettlementService.ForDayBookAsync(db, facilityId, date, facilityCode, ct),
+            // An insurer's settlement is never reversed (ReversalRules), so no reversal posts to a payer's ledger.
+            ReceiptReversals = receiptReversals.Select(r => new TallyReceiptReversal(
+                r.Number, date, r.ReceiptNumber, r.Purpose, null, r.Lines.Select(l => new TallyPayment(l.Mode, l.Amount)).ToList(),
+                r.Reason == ReversalReason.Chargeback)).ToList(),
+            RefundReversals = refundReversals.Select(r => new TallyRefundReversal(r.Number, date, r.RefundNumber, r.Purpose, r.Mode, r.Amount)).ToList(),
+            Vendors = await VendorsAsync(facilityId, date, ct),
         };
     }
 
@@ -654,6 +668,21 @@ public sealed class TallyService(
         }
 
         return days;
+    }
+
+    /// <summary>The day's purchase returns and supplier payable adjustments, from Supply chain (<see cref="IVendorAccountsSource"/>).</summary>
+    private async Task<VendorAccountsDay> VendorsAsync(Guid facilityId, DateOnly date, CancellationToken ct)
+    {
+        List<VendorDebitNoteEntry> notes = [];
+        List<VendorPayableAdjustmentEntry> adjustments = [];
+        foreach (var source in services.GetServices<IVendorAccountsSource>())
+        {
+            var day = await source.GetDayAsync(facilityId, date, ct);
+            notes.AddRange(day.DebitNotes);
+            adjustments.AddRange(day.Adjustments);
+        }
+
+        return new VendorAccountsDay(notes, adjustments);
     }
 
     private void Finish(TallyExport export, IReadOnlyList<TallyVoucherRecord> all, string message)

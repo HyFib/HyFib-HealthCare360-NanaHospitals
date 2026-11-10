@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 
 namespace HyFib.HealthCare360.Modules.Interop.Mapping;
 
@@ -65,6 +66,9 @@ internal sealed record AdmissionRow
     public DateTimeOffset? CancelledAt { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
+
+    /// <summary>The beds of the stay, in order: loaded for the read API's Encounter only (ABDM documents carry no location).</summary>
+    public IReadOnlyList<BedStayRow> Beds { get; init; } = [];
 }
 
 /// <summary>Patients module <see cref="Visit"/>, with its admission when it is an in-patient stay.</summary>
@@ -141,6 +145,9 @@ internal sealed record LabResultRow
     public Guid? VisitId { get; init; }
     public string TestCode { get; init; } = string.Empty;
     public string TestName { get; init; } = string.Empty;
+    /// <summary>The test in the test master, whose LOINC code and name are looked up apart.</summary>
+    public Guid LabTestId { get; init; }
+
     public string? Loinc { get; init; }
 
     /// <summary>The LOINC name of <see cref="Loinc"/> in the test master (the code's display), when the laboratory gave it.</summary>
@@ -220,6 +227,40 @@ internal sealed record AllergyRow
     public DateTimeOffset RecordedAt { get; init; }
     public string? Notes { get; init; }
     public string? StatusReason { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
+}
+
+/// <summary>
+/// Clinical module <see cref="Immunization"/>: a vaccine dose given here or copied from the patient's card, with the
+/// name of the account that recorded a dose given here.
+/// </summary>
+internal sealed record ImmunizationRow
+{
+    public required Guid Id { get; init; }
+    public required Guid PatientId { get; init; }
+    public Guid? EncounterId { get; init; }
+    public string VaccineName { get; init; } = string.Empty;
+    public string? VaccineCode { get; init; }
+    public int? DoseNumber { get; init; }
+    public DateOnly AdministeredOn { get; init; }
+    public string? Route { get; init; }
+    public string? Site { get; init; }
+    public string? BatchNumber { get; init; }
+    public string? Manufacturer { get; init; }
+    public DateOnly? ExpiryDate { get; init; }
+
+    /// <summary>The account that gave a dose given here (its display name).</summary>
+    public string? AdministeredByUserName { get; init; }
+
+    /// <summary>Who gave a dose given elsewhere, as written on the card (or noted for a dose given here).</summary>
+    public string? AdministeredBy { get; init; }
+
+    public bool IsExternal { get; init; }
+    public DateOnly? NextDueOn { get; init; }
+    public string? Notes { get; init; }
+    public bool IsEnteredInError { get; init; }
+    public string? EnteredInErrorReason { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }
@@ -376,6 +417,10 @@ internal sealed record PatientDocumentRow
     public string Title { get; init; } = string.Empty;
     public DateOnly? DocumentDate { get; init; }
     public string? Source { get; init; }
+
+    /// <summary>The stored file, whose type and size are looked up apart (<see cref="ContentType"/>, <see cref="SizeBytes"/>).</summary>
+    public Guid FileId { get; init; }
+
     public string? ContentType { get; init; }
     public long? SizeBytes { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
@@ -412,3 +457,108 @@ internal sealed record DischargeSummaryRow
     public DateTimeOffset? UpdatedAt { get; init; }
 }
 
+/// <summary>
+/// A signed clinical note (Clinical <c>ClinicalNote</c>): progress, procedure, referral, counselling or other. Its
+/// encounter and admission are kept only when they are the patient's own.
+/// </summary>
+internal sealed record ClinicalNoteRow
+{
+    public required Guid Id { get; init; }
+    public required Guid PatientId { get; init; }
+    public Guid FacilityId { get; init; }
+    public Guid? EncounterId { get; init; }
+    public Guid? AdmissionId { get; init; }
+    public ClinicalNoteType Type { get; init; }
+    public string? Title { get; init; }
+    public string Body { get; init; } = string.Empty;
+    public Guid? AuthorPractitionerId { get; init; }
+
+    /// <summary>The accounts that wrote and signed the note, whose names are looked up apart.</summary>
+    public Guid? AuthorUserId { get; init; }
+
+    public Guid? SignedByUserId { get; init; }
+
+    /// <summary>The account that wrote the note, by name (for a note written by staff who are not practitioners).</summary>
+    public string? AuthorUserName { get; init; }
+
+    /// <summary>The practitioner of the account that signed the note, when it is one.</summary>
+    public Guid? SignedByPractitionerId { get; init; }
+
+    public string? SignedByUserName { get; init; }
+
+    /// <summary>The note this one is an addendum to.</summary>
+    public Guid? AmendsNoteId { get; init; }
+
+    public DateTimeOffset SignedAt { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
+}
+
+/// <summary>
+/// A reading from remote patient monitoring (VirtualCare <c>RpmReading</c>): a device at the patient's home, or a nurse who
+/// entered what the patient read out. The value is in its canonical unit (mmHg, beats/min, %, mg/dL, kg, °C; an ECG
+/// rhythm's class 0, 1 or 2).
+/// </summary>
+internal sealed record DeviceReadingRow
+{
+    public required Guid Id { get; init; }
+    public required Guid PatientId { get; init; }
+    public Guid EnrollmentId { get; init; }
+    public RpmReadingType Type { get; init; }
+    public decimal Value { get; init; }
+
+    /// <summary>What the device made of it (an ECG patch: "Atrial fibrillation suspected").</summary>
+    public string? TextValue { get; init; }
+
+    public DateTimeOffset MeasuredAt { get; init; }
+    public DateTimeOffset ReceivedAt { get; init; }
+    public ReadingSeverity Severity { get; init; }
+    public ReadingSource Source { get; init; }
+
+    /// <summary>The device that sent it and the account that entered it by hand, looked up apart.</summary>
+    public Guid? DeviceId { get; init; }
+
+    public Guid? RecordedByUserId { get; init; }
+
+    public RpmDeviceType? DeviceType { get; init; }
+    public string? DeviceManufacturer { get; init; }
+    public string? DeviceModel { get; init; }
+    public string? DeviceSerial { get; init; }
+
+    /// <summary>The account that entered a reading by hand.</summary>
+    public string? RecordedByUserName { get; init; }
+}
+
+/// <summary>
+/// Clinical module <see cref="ProcedureRecord"/>: a procedure recorded on the chart, or an operation recorded when the
+/// theatre completed it. The code is the procedure catalogue's (ICD-10-PCS) when one was chosen; the name is always set.
+/// </summary>
+internal sealed record ProcedureRow
+{
+    public required Guid Id { get; init; }
+    public required Guid PatientId { get; init; }
+    public Guid? EncounterId { get; init; }
+    public Guid? VisitId { get; init; }
+    public Guid? AdmissionId { get; init; }
+    public DateTimeOffset PerformedAt { get; init; }
+    public string? Code { get; init; }
+    public string? CodeSystem { get; init; }
+    public string Display { get; init; } = string.Empty;
+    public Guid? PerformerPractitionerId { get; init; }
+
+    /// <summary>A performer from elsewhere, who has no practitioner record here.</summary>
+    public string? PerformerName { get; init; }
+
+    public Platform.Contracts.ProcedureSide Side { get; init; }
+    public string? BodySite { get; init; }
+    public string? Outcome { get; init; }
+    public string? Notes { get; init; }
+    public ProcedureSource Source { get; init; }
+    public ProcedureStatus Status { get; init; }
+
+    /// <summary>Why the record was last corrected, or why it was marked as entered in error.</summary>
+    public string? StatusReason { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? UpdatedAt { get; init; }
+}

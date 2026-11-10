@@ -58,9 +58,16 @@ public sealed record PrescriptionLine(
     int DurationDays,
     decimal Quantity,
     string? Instructions,
-    bool IsControlledDrug);
+    bool IsControlledDrug,
+    string? SafetyOverride = null);
 
-/// <summary>A doctor signed an e-prescription (ERX-03). Pharmacy queues it for dispensing.</summary>
+/// <summary>
+/// A doctor signed an e-prescription (ERX-03). Pharmacy queues it for dispensing. A line signed over a blocking safety
+/// alert (an allergy, a contraindicated interaction, a dose above the maximum) carries the alerts it was signed over
+/// (<see cref="PrescriptionLine.SafetyOverride"/>), and <paramref name="SafetyOverrideReason"/> is the prescriber's reason:
+/// the pharmacy does not dispense such a line until a pharmacist has acknowledged it. <paramref name="SignedByUserId"/> is
+/// the account that signed it, which may not acknowledge its own override.
+/// </summary>
 public sealed record PrescriptionSigned(
     Guid PrescriptionId,
     string PrescriptionNumber,
@@ -71,7 +78,9 @@ public sealed record PrescriptionSigned(
     Guid PractitionerId,
     bool IsInpatient,
     IReadOnlyList<PrescriptionLine> Lines,
-    DateTimeOffset SignedAt) : DomainEvent;
+    DateTimeOffset SignedAt,
+    string? SafetyOverrideReason = null,
+    Guid? SignedByUserId = null) : DomainEvent;
 
 public sealed record PrescriptionCancelled(Guid PrescriptionId, Guid PatientId, string Reason) : DomainEvent;
 
@@ -111,6 +120,22 @@ public sealed record PatientTransferred(
     Guid? ToBedServiceItemId,
     DateTimeOffset TransferredAt,
     Guid? ToWardId = null) : DomainEvent;
+
+/// <summary>
+/// A set of vital signs was recorded (Clinical). Carries its National Early Warning Score 2 (null for a child, or when
+/// nothing NEWS2 reads was measured): Inpatient raises an early-warning escalation for a patient in a bed when the score
+/// calls for a doctor (aggregate 5 or more, or any single parameter scoring 3).
+/// </summary>
+public sealed record VitalSignsRecorded(
+    Guid VitalSignsId,
+    Guid PatientId,
+    Guid? FacilityId,
+    DateTimeOffset RecordedAt,
+    Guid? RecordedByUserId,
+    int? News2Total,
+    bool News2AnySingleParameterThree,
+    bool News2Complete,
+    string? News2Summary) : DomainEvent;
 
 public sealed record DischargeInitiated(Guid AdmissionId, Guid PatientId, DateTimeOffset InitiatedAt) : DomainEvent;
 
@@ -240,6 +265,35 @@ public sealed record RefundPaid(
     Guid? BillId,
     decimal Amount,
     DateTimeOffset PaidAt) : DomainEvent;
+
+/// <summary>
+/// Money a receipt recorded from the patient never arrived (a cheque returned unpaid, a payment the bank never settled,
+/// or one a training simulator made up): <paramref name="Amount"/> of receipt <paramref name="ReceiptId"/> no longer
+/// counts as paid. Engagement takes it off the patient's spend.
+/// </summary>
+public sealed record PaymentReversed(
+    Guid ReversalId,
+    string ReversalNumber,
+    Guid ReceiptId,
+    Guid FacilityId,
+    Guid PatientId,
+    Guid? BillId,
+    decimal Amount,
+    DateTimeOffset ReversedAt) : DomainEvent;
+
+/// <summary>
+/// A refund recorded as paid out never reached the patient: <paramref name="Amount"/> of refund
+/// <paramref name="RefundId"/> counts as the patient's again. Engagement adds it back to the patient's spend.
+/// </summary>
+public sealed record RefundPayoutReversed(
+    Guid ReversalId,
+    string ReversalNumber,
+    Guid RefundId,
+    Guid FacilityId,
+    Guid PatientId,
+    Guid? BillId,
+    decimal Amount,
+    DateTimeOffset ReversedAt) : DomainEvent;
 
 /// <summary>
 /// Someone replied STOP (<paramref name="OptedOut"/>) or START to the hospital's WhatsApp number. Raised by Integrations

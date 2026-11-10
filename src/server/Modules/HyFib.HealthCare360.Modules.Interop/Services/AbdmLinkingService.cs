@@ -112,7 +112,7 @@ internal sealed class AbdmLinkingService(
 
             patientId = source.PatientId;
             facilityId = source.FacilityId;
-            linked.Add(AbdmCareContexts.Describe(record.Type, record.Id, source.RecordedAt));
+            linked.Add(AbdmCareContexts.Describe(record.Type, record.Id, source.RecordedAt, source.Label));
         }
 
         var patient = await db.Set<Patient>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == patientId, ct);
@@ -278,7 +278,12 @@ internal sealed class AbdmLinkingService(
         AbdmRecordType.RadiologyReport => "radiology-report",
         AbdmRecordType.CardiologyReport => "cardiology-report",
         AbdmRecordType.OpConsultation => "op-consultation",
-        _ => "prescription",
+        AbdmRecordType.Prescription => "prescription",
+        AbdmRecordType.Immunization => "immunization",
+        AbdmRecordType.ClinicalNote => "clinical-note",
+        AbdmRecordType.HomeReadings => "home-readings",
+        AbdmRecordType.Invoice => "invoice",
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
     } + "/" + id.ToString("D");
 
     /// <summary>

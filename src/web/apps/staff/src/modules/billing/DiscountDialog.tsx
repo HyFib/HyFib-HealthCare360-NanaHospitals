@@ -163,7 +163,8 @@ function parseDraft(state: DraftState): Parsed {
 /**
  * Staff discount on a draft bill (MB-05, OPB-04): per service and/or on the whole bill, with a live preview of the new
  * amount payable (the server's own arithmetic) and the user's limit. Above the limit the discount is sent for
- * approval and the bill waits; within it, it applies at once.
+ * approval and the bill waits; within it, it applies at once. An approver is held to their own limit too, and another
+ * approver decides their discount (maker-checker, slice 6).
  */
 export function DiscountDialog({
   bill,
@@ -221,8 +222,8 @@ export function DiscountDialog({
         );
       } else {
         notify.warning(
-          'Sent for approval',
-          `A discount of ${formatInr(outcome.requestedDiscount)} is above your limit of ${formatInr(outcome.allowedWithoutApproval)}. The bill can be finalised once it is approved.`,
+          'Asked for approval',
+          `A discount of ${formatInr(outcome.requestedDiscount)} is above your limit of ${formatInr(outcome.allowedWithoutApproval)}. Someone else who approves discounts decides it, never you; the bill can be finalised once it is approved.`,
         );
       }
       void refresh();
@@ -378,10 +379,8 @@ export function DiscountDialog({
                     >
                       <Amount value={totals.discountBase} />
                     </SummaryRow>
-                    <SummaryRow
-                      label={authority.canApprove ? 'You can approve any discount' : 'You can give without approval'}
-                    >
-                      {authority.canApprove ? '—' : <Amount value={allowed} />}
+                    <SummaryRow label="You can give without approval">
+                      <Amount value={allowed} />
                     </SummaryRow>
                     <div>
                       {totals.userDiscount === 0 ? (
@@ -453,7 +452,7 @@ export function DiscountDialog({
                 }
                 icon={apply.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
-                {needsApproval ? 'Request approval' : 'Apply discount'}
+                {needsApproval ? 'Ask for approval' : 'Apply discount'}
               </Button>
             </DialogActions>
           </DialogBody>

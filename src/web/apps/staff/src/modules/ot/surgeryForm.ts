@@ -3,6 +3,7 @@ import {
   ANAESTHESIA_TYPES,
   LATERALITIES,
   SURGERY_PRIORITIES,
+  givenBySurgeon,
   type CreateSurgeryBookingRequest,
   type SurgeryDetail,
   type UpdateSurgeryPlanRequest,
@@ -22,14 +23,18 @@ const baseSchema = z.object({
   procedureServiceItemId: z.string().nullable(),
   procedureName: z.string().trim().max(300, 'Use at most 300 characters.'),
   laterality: z.enum(LATERALITIES).nullable(),
+  siteLevel: z.string().trim().max(60, 'Use at most 60 characters.'),
   diagnosis: z.string().trim().max(500, 'Use at most 500 characters.'),
   surgeonId: z.string().nullable(),
   anaesthetistId: z.string().nullable(),
   assistantIds: z.array(z.string()).max(10, 'Add at most 10 assistants.'),
+  nurseId: z.string().nullable(),
   anaesthesiaType: z.enum(ANAESTHESIA_TYPES),
   priority: z.enum(SURGERY_PRIORITIES),
   preferredDate: z.string().nullable(),
   notes: z.string().trim().max(2000, 'Use at most 2000 characters.'),
+  /** Why the side, level or procedure changes after the WHO Sign-in (required then; the plan dialog asks for it). */
+  changeReason: z.string().trim().max(500, 'Use at most 500 characters.'),
   scheduleNow: z.boolean(),
   theatreId: z.string().nullable(),
   date: z.string().nullable(),
@@ -62,8 +67,11 @@ export function surgeryFormSchema(mode: SurgeryFormMode, options: { requireTeam?
       if (needsTeam && !v.surgeonId) {
         issue('surgeonId', 'Choose the operating surgeon.');
       }
-      if (needsTeam && v.anaesthesiaType !== 'Local' && !v.anaesthetistId) {
-        issue('anaesthetistId', 'Choose the anaesthetist (required for every technique except local anaesthesia).');
+      if (needsTeam && !givenBySurgeon(v.anaesthesiaType) && !v.anaesthetistId) {
+        issue(
+          'anaesthetistId',
+          'Choose the anaesthetist (required for every technique except local and topical anaesthesia).',
+        );
       }
     }
 
@@ -89,14 +97,17 @@ export const emptySurgeryForm: SurgeryFormValues = {
   procedureServiceItemId: null,
   procedureName: '',
   laterality: null,
+  siteLevel: '',
   diagnosis: '',
   surgeonId: null,
   anaesthetistId: null,
   assistantIds: [],
+  nurseId: null,
   anaesthesiaType: 'GA',
   priority: 'Elective',
   preferredDate: null,
   notes: '',
+  changeReason: '',
   scheduleNow: true,
   theatreId: null,
   date: null,
@@ -111,14 +122,17 @@ export function surgeryFormFromDetail(d: SurgeryDetail): SurgeryFormValues {
     procedureServiceItemId: d.procedureServiceItemId,
     procedureName: d.procedureName,
     laterality: d.laterality,
+    siteLevel: d.siteLevel ?? '',
     diagnosis: d.diagnosis ?? '',
     surgeonId: d.surgeonId,
     anaesthetistId: d.anaesthetistId,
     assistantIds: d.assistantIds,
+    nurseId: d.nurseId,
     anaesthesiaType: d.anaesthesiaType,
     priority: d.priority,
     preferredDate: d.preferredDate,
     notes: d.notes ?? '',
+    changeReason: '',
     scheduleNow: true,
     theatreId: d.theatreId,
     date: d.scheduledStart ? istDate(d.scheduledStart) : d.preferredDate,
@@ -161,6 +175,8 @@ export function toCreateRequest(v: SurgeryFormValues): CreateSurgeryBookingReque
     scheduledStart: slot?.start ?? null,
     scheduledEnd: slot?.end ?? null,
     notes: orNull(v.notes),
+    nurseId: v.nurseId,
+    siteLevel: orNull(v.siteLevel),
   };
 }
 
@@ -189,5 +205,8 @@ export function toUpdateRequest(v: SurgeryFormValues, version: number): UpdateSu
     preferredDate: v.preferredDate,
     notes: orNull(v.notes),
     version,
+    nurseId: v.nurseId,
+    siteLevel: orNull(v.siteLevel),
+    changeReason: orNull(v.changeReason),
   };
 }

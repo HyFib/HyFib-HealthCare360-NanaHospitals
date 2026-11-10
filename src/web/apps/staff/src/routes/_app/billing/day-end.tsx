@@ -20,7 +20,6 @@ import {
   Page,
   PageHeader,
   Section,
-  StatusBadge,
   useNotify,
 } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -32,6 +31,7 @@ import { billingQueries } from '@/modules/billing/api';
 import { useBillingLive } from '@/modules/billing/hooks';
 import { PAYMENT_MODE_LABEL } from '@/modules/billing/labels';
 import { buildDayEndHtml, sendToPrinter } from '@/modules/billing/print';
+import { ShiftStatusBadge } from '@/modules/billing/ShiftControls';
 import { dateParam, textParam } from '@/modules/billing/searchParams';
 import { Amount, NoAccess } from '@/modules/billing/ui';
 
@@ -134,6 +134,18 @@ function DayEndPage() {
         <ErrorState error={report.error} onRetry={() => void report.refetch()} />
       ) : (
         <>
+          {(r.shortagesAwaiting ?? 0) > 0 && (
+            <MessageBar intent="warning">
+              <MessageBarBody>
+                <MessageBarTitle>
+                  {r.shortagesAwaiting} shift{r.shortagesAwaiting === 1 ? '' : 's'} closed short, the shortage awaiting
+                  a supervisor
+                </MessageBarTitle>
+                A cash shortage is not settled on the cashier&rsquo;s word: a supervisor other than the cashier accepts
+                it in Approvals. An excess is recorded and needs no one.
+              </MessageBarBody>
+            </MessageBar>
+          )}
           {r.openShifts > 0 && (
             <MessageBar intent="warning">
               <MessageBarBody>
@@ -150,6 +162,13 @@ function DayEndPage() {
               value={<Amount value={r.netCollection} />}
               hint={`Collected ${formatInr(r.totalCollected)} · refunded ${formatInr(r.totalRefunded)}`}
             />
+            {(r.notReceived?.length ?? 0) + (r.notPaidOut?.length ?? 0) > 0 && (
+              <KpiCard
+                label="Net, with the day's reversals"
+                value={<Amount value={r.netAfterReversals ?? r.netCollection} />}
+                hint={`Not received ${formatInr((r.notReceived ?? []).reduce((sum, t) => sum + t.amount, 0))} · not paid out ${formatInr((r.notPaidOut ?? []).reduce((sum, t) => sum + t.amount, 0))}`}
+              />
+            )}
             <KpiCard label="IP advances collected" value={<Amount value={r.depositsCollected} />} />
             <KpiCard
               label="Bills finalised"
@@ -184,6 +203,30 @@ function DayEndPage() {
                 emptyTitle="Nothing collected"
               />
             </Section>
+            {(r.notReceived?.length ?? 0) + (r.notPaidOut?.length ?? 0) > 0 && (
+              <Section title="Reversed today" flush>
+                <DataTable
+                  ariaLabel="Money reversed today as not received or not paid out"
+                  rows={[
+                    ...(r.notReceived ?? []).map((t) => ({ ...t, kind: 'Not received' as const })),
+                    ...(r.notPaidOut ?? []).map((t) => ({ ...t, kind: 'Refund not paid out' as const })),
+                  ]}
+                  getRowId={(t) => `${t.kind}-${t.mode}`}
+                  size="small"
+                  columns={[
+                    { key: 'kind', header: 'What', render: (t) => t.kind },
+                    { key: 'mode', header: 'Mode', render: (t) => PAYMENT_MODE_LABEL[t.mode] },
+                    { key: 'count', header: 'Records', align: 'end', render: (t) => t.count.toLocaleString('en-IN') },
+                    {
+                      key: 'amount',
+                      header: 'Amount',
+                      align: 'end',
+                      render: (t) => <Amount value={t.amount} strong />,
+                    },
+                  ]}
+                />
+              </Section>
+            )}
             <Section title="By cashier" flush>
               <DataTable
                 ariaLabel="Collections by cashier"
@@ -243,7 +286,7 @@ function DayEndPage() {
                         />
                       ),
                   },
-                  { key: 'status', header: 'Shift', priority: 'low', render: (s) => <StatusBadge status={s.status} /> },
+                  { key: 'status', header: 'Shift', priority: 'low', render: (s) => <ShiftStatusBadge shift={s} /> },
                 ]}
                 emptyTitle="No shifts on this day"
               />

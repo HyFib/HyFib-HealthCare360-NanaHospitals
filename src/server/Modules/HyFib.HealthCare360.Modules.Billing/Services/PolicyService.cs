@@ -24,7 +24,7 @@ public sealed class PolicyService(HospitalDbContext db, IFieldProtector protecto
             return Error.Conflict("insurance.policy_exists", "This policy is already recorded for the patient.");
         }
 
-        var policy = new PatientPolicy { PatientId = request.PatientId };
+        var policy = new PatientPolicy { PatientId = request.PatientId, TermsRecordedBy = currentUser.UserId };
         SetPolicyNumber(policy, request.PolicyNumber!);
         Apply(policy, request);
         db.Add(policy);
@@ -52,14 +52,22 @@ public sealed class PolicyService(HospitalDbContext db, IFieldProtector protecto
         }
 
         db.SetExpectedVersion(policy, request.Version ?? 0);
+
+        // A verification vouches for the policy as it was verified: changing what it vouched for withdraws it, and whoever
+        // changed it may not verify it again. A number typed again unchanged, the card's scan and the notes do not count.
+        var before = VouchedTerms(policy);
+        var numberChanged = !string.IsNullOrWhiteSpace(request.PolicyNumber) && !IndexesFor(request.PolicyNumber).Contains(policy.PolicyNumberIndex);
         if (!string.IsNullOrWhiteSpace(request.PolicyNumber))
         {
             SetPolicyNumber(policy, request.PolicyNumber);
-            policy.VerifiedAt = null;
-            policy.VerifiedBy = null;
         }
 
         Apply(policy, request);
+        if (numberChanged || VouchedTerms(policy) != before)
+        {
+            policy.TermsChanged(currentUser.UserId);
+        }
+
         await db.SaveChangesAsync(ct);
         return Result.Success();
     }
@@ -71,6 +79,13 @@ public sealed class PolicyService(HospitalDbContext db, IFieldProtector protecto
         if (policy is null)
         {
             return Error.NotFound(nameof(PatientPolicy), id);
+        }
+
+        // Two people: whoever recorded the policy's terms (or last changed them) does not also vouch for them.
+        if (policy.RecordedBy(currentUser.UserId))
+        {
+            return Error.Forbidden("insurance.policy_self_verify",
+                "You recorded this policy's terms, so someone else verifies them with the payer.");
         }
 
         policy.MarkVerified(currentUser.UserId, notes, time.GetUtcNow());
@@ -103,6 +118,10 @@ public sealed class PolicyService(HospitalDbContext db, IFieldProtector protecto
         policy.PolicyNumberIndex = IndexFor(trimmed);
         policy.PolicyNumberMasked = Masking.MaskIdentifier(trimmed);
     }
+
+    /// <summary>What a verification vouches for, but the number (compared by its blind index).</summary>
+    private static (Guid, Guid?, string?, string?, string?, DateOnly, DateOnly, decimal, decimal, bool) VouchedTerms(PatientPolicy p) =>
+        (p.PayerId, p.TpaId, p.MemberId, p.PolicyHolderName, p.RelationToHolder, p.ValidFrom, p.ValidTo, p.SumInsured, p.CoPayPercent, p.IsActive);
 
     private static void Apply(PatientPolicy policy, SavePolicyRequest request)
     {

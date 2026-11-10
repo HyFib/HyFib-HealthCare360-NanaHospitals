@@ -261,6 +261,11 @@ public sealed class TallyReconciliationService(HospitalDbContext db, TallyServic
             .Select(p => p.NetAmount)
             .ToListAsync(ct);
         var dayEnd = await shifts.DayEndAsync(facilityId, date, null, ct);
+        var undone = await db.Set<ReceiptReversal>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(r => r.FacilityId == facilityId && r.ReversedAt >= start && r.ReversedAt < end)
+            .SelectMany(r => r.Lines)
+            .Where(l => l.Mode == PaymentMode.Advance)
+            .SumAsync(l => l.Amount, ct);
 
         return new TallyRecordFigures
         {
@@ -272,8 +277,8 @@ public sealed class TallyReconciliationService(HospitalDbContext db, TallyServic
             AdvancesCollected = dayEnd.DepositsCollected,
             AdvancesAdjusted = payments.Where(p => p.Mode == PaymentMode.Advance).Sum(p => p.Amount),
             PayerSettlements = payments.Where(p => p.Purpose == ReceiptPurpose.PayerSettlement).Sum(p => p.Amount),
-            CreditNotes = credits.Count(c => c.Kind == CreditNoteKind.CreditNote),
-            CreditNotesAmount = credits.Where(c => c.Kind == CreditNoteKind.CreditNote).Sum(c => c.Amount),
+            CreditNotes = credits.Count(c => c.Kind != CreditNoteKind.WriteOff),
+            CreditNotesAmount = credits.Where(c => c.Kind != CreditNoteKind.WriteOff).Sum(c => c.Amount),
             WriteOffs = credits.Count(c => c.Kind == CreditNoteKind.WriteOff),
             WriteOffsAmount = credits.Where(c => c.Kind == CreditNoteKind.WriteOff).Sum(c => c.Amount),
             ClaimDeductions = deductions.Where(d => d > 0).Sum(),
@@ -281,7 +286,10 @@ public sealed class TallyReconciliationService(HospitalDbContext db, TallyServic
             Payouts = paidOut.Count,
             PayoutsNet = paidOut.Sum(),
             OpenShifts = dayEnd.OpenShifts,
-            CashVariances = dayEnd.Shifts.Where(s => s.Variance is not (null or 0)).Select(s => new TallyCashVariance(s.Counter, s.UserName, s.Variance!.Value)).ToList(),
+            CashVariances = dayEnd.Shifts.Where(s => s.Variance is not (null or 0)).Select(s => new TallyCashVariance(s.Counter, s.UserName, s.Variance!.Value, s.ShortageAwaiting)).ToList(),
+            NotReceived = (dayEnd.NotReceived ?? []).Select(t => new TallyModeAmount(t.Mode, t.Amount)).ToList(),
+            NotPaidOut = (dayEnd.NotPaidOut ?? []).Select(t => new TallyModeAmount(t.Mode, t.Amount)).ToList(),
+            AdjustmentsUndone = undone,
         };
     }
 }

@@ -11,6 +11,7 @@ import {
   Field,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Spinner,
 } from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
@@ -22,6 +23,7 @@ import {
   FormGrid,
   SelectField,
   SwitchField,
+  TextAreaField,
   TextField,
   useCloseRequests,
   useNotify,
@@ -57,6 +59,8 @@ const schema = z.object({
   keepPatient: z.boolean(),
   patient: z.object({ id: z.string(), uhid: z.string(), fullName: z.string() }).nullable(),
   staff: z.array(z.object({ id: z.string(), name: z.string() })).max(20),
+  involvesDevice: z.boolean(),
+  reason: z.string().max(500),
 });
 
 type Values = z.infer<typeof schema>;
@@ -108,6 +112,8 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
       keepPatient: Boolean(incident.patientId),
       patient: null,
       staff: incident.involvedStaff,
+      involvesDevice: incident.involvesDevice,
+      reason: '',
     },
   });
   const [severity, sentinelKind, flag, keepPatient] = useWatch({
@@ -115,11 +121,17 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
     name: ['severity', 'sentinelKind', 'flagAsSentinel', 'keepPatient'],
   });
   const becomesSentinel = !incident.isSentinel && isSentinel(severity, sentinelKind, flag);
+  // Taking a sentinel event out of sentinel waits for the quality manager (MAKER-CHECKER.md, slice 14).
+  const leavesSentinel = incident.isSentinel && !isSentinel(severity, sentinelKind, flag);
 
   const submit = async (v: Values) => {
+    if (leavesSentinel && !v.reason.trim()) {
+      form.setError('reason', { message: 'Say why this is no longer a sentinel event.' });
+      return;
+    }
     setBusy(true);
     try {
-      await qualityApi.updateIncident(incident.id, {
+      const asked = await qualityApi.updateIncident(incident.id, {
         type: v.type,
         severity: v.severity,
         sentinelKind: v.sentinelKind,
@@ -129,11 +141,20 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
         patientId: v.patient?.id ?? (v.keepPatient ? incident.patientId : null),
         involvedStaffUserIds: v.staff.map((s) => s.id),
         version: incident.version,
+        involvesDevice: v.involvesDevice,
+        reason: leavesSentinel ? v.reason.trim() : null,
       });
-      notify.success(
-        'Incident updated',
-        becomesSentinel ? 'It is now a sentinel event: the quality team has been alerted.' : undefined,
-      );
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${incident.incidentNumber} stays a sentinel event until the quality manager agrees: not you, nor whoever reported it. Nothing else you changed is saved until then.`,
+        );
+      } else {
+        notify.success(
+          'Incident updated',
+          becomesSentinel ? 'It is now a sentinel event: the quality team has been alerted.' : undefined,
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: qualityKeys.all });
       onClose();
     } catch (error) {
@@ -181,6 +202,12 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
               options={SENTINEL_KINDS.map((k) => ({ value: k, label: sentinelKindLabel[k] }))}
             />
             <SwitchField control={form.control} name="flagAsSentinel" label="Treat as sentinel event" />
+            <SwitchField
+              control={form.control}
+              name="involvesDevice"
+              label="A medical device was involved"
+              hint="An implant, instrument, monitor or consumable: it may be reported to MvPI."
+            />
             <TextField control={form.control} name="location" label="Where" required maxLength={150} />
             <SelectField
               control={form.control}
@@ -197,6 +224,24 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
                 required before closing.
               </MessageBarBody>
             </MessageBar>
+          )}
+          {leavesSentinel && (
+            <>
+              <MessageBar intent="warning" layout="multiline">
+                <MessageBarBody>
+                  <MessageBarTitle>Waits for the quality manager</MessageBarTitle>
+                  This takes it out of sentinel, so no root-cause analysis is due. It waits for the quality manager to
+                  agree, not you nor whoever reported it, and nothing you change here is saved until then.
+                </MessageBarBody>
+              </MessageBar>
+              <TextAreaField
+                control={form.control}
+                name="reason"
+                label="Why it is no longer a sentinel event"
+                required
+                maxLength={500}
+              />
+            </>
           )}
           {incident.patientId && (
             <SwitchField control={form.control} name="keepPatient" label="Keep the linked patient" />
@@ -260,7 +305,7 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
             disabled={busy}
             icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
-            Save
+            {leavesSentinel ? 'Ask for approval' : 'Save'}
           </Button>
         </DialogActions>
       </DialogBody>

@@ -37,6 +37,12 @@ public static class CertificateProbe
     /// <summary>Where HC360 hands out its hospital CA, as HC360 Desktop and the lab agent read it at enrolment.</summary>
     public const string CaCertificatePath = "api/v1/system/ca-certificate";
 
+    /// <summary>After a switch, where the server hands out the CA its current one replaced, until it expires (404 otherwise).</summary>
+    public const string PreviousCaCertificatePath = "api/v1/system/ca-certificate/previous";
+
+    /// <summary>While a next CA is prepared, where the server hands it out, then the current CA's word for it (404 otherwise).</summary>
+    public const string NextCaCertificatePath = "api/v1/system/ca-certificate/next";
+
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
     /// <summary>
@@ -53,9 +59,10 @@ public static class CertificateProbe
         }
 
         X509Certificate2 served;
+        X509Certificate2Collection sent;
         try
         {
-            served = await HandshakeAsync(address, ct);
+            (served, sent) = await HandshakeAsync(address, ct);
         }
         catch (Exception ex) when (IsConnectionFailure(ex, ct))
         {
@@ -67,6 +74,8 @@ public static class CertificateProbe
             var findings = new List<(CertificateProbeOutcome Outcome, string Text)>();
             var ca = trustedCa;
             X509Certificate2? handedOut = null;
+            X509Certificate2? previous = null;
+            string? next = null;
             try
             {
                 if (pinnedFingerprint is not null)
@@ -84,15 +93,35 @@ public static class CertificateProbe
                     var handedOutFingerprint = Fingerprint(handedOut);
                     if (!string.Equals(handedOutFingerprint, Normalise(pinnedFingerprint), StringComparison.Ordinal))
                     {
-                        return Failed(address,
-                            $"The server hands out the CA {Group(handedOutFingerprint)}, not {Group(Normalise(pinnedFingerprint))}, which the devices "
-                            + "pinned: none of them connects. If the CA was replaced on purpose, set every device up again (CA-ROLLOVER.md).");
-                    }
+                        // A switch: the pinned CA is the one the server's replaced. Devices that held the next CA as well trust the
+                        // server; one that holds only the pinned CA, as this probe, no longer does. Anything else is a CA the
+                        // devices do not trust.
+                        previous = await TryFetchAsync(new Uri(address, PreviousCaCertificatePath), ct);
+                        if (previous is null || !string.Equals(Fingerprint(previous), Normalise(pinnedFingerprint), StringComparison.Ordinal))
+                        {
+                            return Failed(address,
+                                $"The server hands out the CA {Group(handedOutFingerprint)}, not {Group(Normalise(pinnedFingerprint))}, which the devices "
+                                + "pinned: none of them connects. If the CA was replaced on purpose, set every device up again (CA-ROLLOVER.md).");
+                        }
 
-                    ca = handedOut;
+                        findings.Add((CertificateProbeOutcome.Critical,
+                            $"The hospital CA was switched: the server's CA is now {Group(handedOutFingerprint)}, which replaced "
+                            + $"{Group(Normalise(pinnedFingerprint))}. Devices that hold only the CA this probe pins no longer trust the server. "
+                            + "Give this probe the new fingerprint (--ca-fingerprint), as every other device that pins the CA (CA-ROLLOVER.md)."));
+
+                        // The certificate served is judged against the CA the server switched to.
+                        ca = handedOut;
+                    }
+                    else
+                    {
+                        ca = handedOut;
+
+                        // While the next CA is prepared, System health's rule says to switch to it rather than to prepare one.
+                        next = await TryFetchFingerprintAsync(new Uri(address, NextCaCertificatePath), ct);
+                    }
                 }
 
-                if (!IssuedBy(served, ca, now))
+                if (!IssuedBy(served, ca, now, sent))
                 {
                     findings.Add((CertificateProbeOutcome.Critical, ca is null
                         ? $"This machine does not trust the certificate served ({served.Subject}, issued by {served.Issuer})."
@@ -111,7 +140,7 @@ public static class CertificateProbe
                 // certificate an administrator supplied, checked against this machine's roots) only the certificate is judged.
                 var serverExpires = new DateTimeOffset(served.NotAfter.ToUniversalTime(), TimeSpan.Zero);
                 DateTimeOffset? caExpires = ca is null ? null : new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero);
-                foreach (var warning in SystemHealthService.CertificateWarnings(new CertificateInfo(null, serverExpires, [], caExpires), now))
+                foreach (var warning in SystemHealthService.CertificateWarnings(new CertificateInfo(null, serverExpires, [], caExpires, NextCaFingerprint: next), now))
                 {
                     findings.Add((warning.Severity == "critical" ? CertificateProbeOutcome.Critical : CertificateProbeOutcome.Warning, warning.Message));
                 }
@@ -120,20 +149,26 @@ public static class CertificateProbe
                 IReadOnlyList<string> said = findings.Count == 0
                     ? [$"The server certificate is valid until {serverExpires:dd MMM yyyy}" + (caExpires is { } until
                         ? $", and the hospital CA {Group(Fingerprint(ca!))} until {until:dd MMM yyyy}."
-                        : ".")]
+                        : ".")
+                        + (next is null ? "" : $" The next CA, {Group(next)}, is prepared: give this probe its fingerprint once the server switched to it.")]
                     : [.. findings.OrderByDescending(f => f.Outcome).Select(f => f.Text)];
                 return new CertificateProbeResult(address, outcome, said, serverExpires, caExpires, ca is null ? null : Fingerprint(ca));
             }
             finally
             {
                 handedOut?.Dispose();
+                previous?.Dispose();
+                foreach (var certificate in sent)
+                {
+                    certificate.Dispose();
+                }
             }
         }
     }
 
     /// <summary>The certificate the address serves, whatever it is: it is judged after the handshake, against the time given.</summary>
     [SuppressMessage("Security", "CA5359:Do not disable certificate validation", Justification = "Nothing is sent over the connection: the certificate is checked after the handshake, against the CA the devices pinned.")]
-    private static async Task<X509Certificate2> HandshakeAsync(Uri address, CancellationToken ct)
+    private static async Task<(X509Certificate2 Served, X509Certificate2Collection Sent)> HandshakeAsync(Uri address, CancellationToken ct)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(Timeout);
@@ -141,18 +176,65 @@ public static class CertificateProbe
         using var client = new TcpClient();
         await client.ConnectAsync(Host(address), address.Port, timeout.Token);
         X509Certificate2? served = null;
+        var sent = new X509Certificate2Collection();
         await using var tls = new SslStream(client.GetStream(), leaveInnerStreamOpen: false);
         await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
         {
             TargetHost = Host(address),
             CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
-            RemoteCertificateValidationCallback = (_, certificate, _, _) =>
+            RemoteCertificateValidationCallback = (_, certificate, chain, _) =>
             {
                 served = certificate is null ? null : X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
+
+                // The other certificates the server sent (an administrator-supplied certificate's issuers, say),
+                // as the devices take them: from the handshake's extra store, not the chain the platform built, which may hold
+                // certificates from this computer's own stores.
+                if (chain is not null && served is not null)
+                {
+                    foreach (var other in chain.ChainPolicy.ExtraStore)
+                    {
+                        if (!other.RawData.AsSpan().SequenceEqual(served.RawData) && !sent.Any(s => s.RawData.AsSpan().SequenceEqual(other.RawData)))
+                        {
+                            sent.Add(X509CertificateLoader.LoadCertificate(other.RawData));
+                        }
+                    }
+                }
+
                 return true;
             },
         }, timeout.Token);
-        return served ?? throw new AuthenticationException("The server sent no certificate.");
+        return (served ?? throw new AuthenticationException("The server sent no certificate."), sent);
+    }
+
+    /// <summary>A certificate the server hands out at <paramref name="url"/>, or null when it has none there (404).</summary>
+    [SuppressMessage("Security", "CA5359:Do not disable certificate validation", Justification = "The CA is trusted only once its fingerprint matches the one the devices pinned.")]
+    private static async Task<X509Certificate2?> TryFetchAsync(Uri url, CancellationToken ct)
+    {
+        using var handler = new SocketsHttpHandler
+        {
+            ConnectTimeout = Timeout,
+            SslOptions = { RemoteCertificateValidationCallback = (_, _, _, _) => true },
+        };
+        using var http = new HttpClient(handler) { Timeout = Timeout };
+        using var response = await http.GetAsync(url, ct);
+        return response.IsSuccessStatusCode ? X509Certificate2.CreateFromPem(await response.Content.ReadAsStringAsync(ct)) : null;
+    }
+
+    /// <summary>
+    /// The fingerprint of the certificate the server hands out at <paramref name="url"/> (the first, when there are several);
+    /// null when it has none there, or it could not be read: what it says only adds to the probe's findings.
+    /// </summary>
+    private static async Task<string?> TryFetchFingerprintAsync(Uri url, CancellationToken ct)
+    {
+        try
+        {
+            using var certificate = await TryFetchAsync(url, ct);
+            return certificate is null ? null : Fingerprint(certificate);
+        }
+        catch (Exception ex) when (IsConnectionFailure(ex, ct) || ex is HttpRequestException or CryptographicException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The CA the server hands out, read as HC360 Desktop reads it at enrolment: not trusted until its fingerprint is checked.</summary>
@@ -173,9 +255,10 @@ public static class CertificateProbe
     /// Whether <paramref name="served"/> chains to <paramref name="ca"/> (or, without one, to a root this machine trusts),
     /// its signatures checked. Expiry is left to the warnings, so an expired certificate is said to have expired.
     /// </summary>
-    private static bool IssuedBy(X509Certificate2 served, X509Certificate2? ca, DateTimeOffset now)
+    private static bool IssuedBy(X509Certificate2 served, X509Certificate2? ca, DateTimeOffset now, X509Certificate2Collection sent)
     {
         using var chain = new X509Chain();
+        chain.ChainPolicy.ExtraStore.AddRange(sent);
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         chain.ChainPolicy.VerificationTime = now.UtcDateTime;
         chain.ChainPolicy.VerificationFlags = X509VerificationFlags.IgnoreNotTimeValid;
@@ -185,7 +268,23 @@ public static class CertificateProbe
             chain.ChainPolicy.CustomTrustStore.Add(ca);
         }
 
-        return chain.Build(served) && (ca is null || chain.ChainElements[^1].Certificate.RawData.AsSpan().SequenceEqual(ca.RawData));
+        if (!chain.Build(served) || (ca is not null && !chain.ChainElements[^1].Certificate.RawData.AsSpan().SequenceEqual(ca.RawData)))
+        {
+            return false;
+        }
+
+        // As a device checks it: through what the server sent only. Windows also builds chains from this computer's stores,
+        // and the probe on the Server Node itself would otherwise find there what the server does not send.
+        for (var link = 1; link < chain.ChainElements.Count - 1; link++)
+        {
+            var linked = chain.ChainElements[link].Certificate.RawData;
+            if (!sent.Any(certificate => certificate.RawData.AsSpan().SequenceEqual(linked)))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>The address's host as a name or an IP address, without the brackets an IPv6 address has in a URL.</summary>

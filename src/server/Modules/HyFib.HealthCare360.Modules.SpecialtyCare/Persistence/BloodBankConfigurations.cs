@@ -55,9 +55,13 @@ internal sealed class DonationConfiguration : IEntityTypeConfiguration<Donation>
         b.ToTable("donations", SpecialtyCareSchema.Name);
         b.Property(x => x.BagNumber).HasMaxLength(24);
         b.Property(x => x.CollectedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.LabResultsByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.VerifiedByName).HasMaxLength(SpecialtyCareSchema.Name200);
         b.Property(x => x.DonorReaction).HasMaxLength(SpecialtyCareSchema.Reason);
         b.Property(x => x.Notes).HasMaxLength(1000);
         b.ComplexProperty(x => x.Tti);
+        b.Ignore(x => x.IsVerified);
+        b.Ignore(x => x.AwaitingVerification);
         b.HasOne<Donor>().WithMany().HasForeignKey(x => x.DonorId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<DonorScreening>().WithMany().HasForeignKey(x => x.ScreeningId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.ReplacementForPatientId).OnDelete(DeleteBehavior.Restrict);
@@ -78,6 +82,7 @@ internal sealed class BloodComponentConfiguration : IEntityTypeConfiguration<Blo
         b.Property(x => x.DiscardReason).HasMaxLength(SpecialtyCareSchema.Reason);
         b.ComplexProperty(x => x.Tti);
         b.Ignore(x => x.IsInStock);
+        b.Ignore(x => x.AwaitingVerification);
         b.HasOne<Donation>().WithMany().HasForeignKey(x => x.DonationId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.UnitNumber).IsUnique();
         b.HasIndex(x => new { x.Status, x.ComponentType, x.BloodGroup, x.ExpiresAt });
@@ -102,6 +107,7 @@ internal sealed class BloodRequestConfiguration : IEntityTypeConfiguration<Blood
         b.Ignore(x => x.IsOpen);
         b.Ignore(x => x.IsGrouped);
         b.Ignore(x => x.EmergencyReleaseAuthorised);
+        b.Ignore(x => x.GroupingHeld);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.RequestNumber).IsUnique();
         b.HasIndex(x => x.OrderItemId).IsUnique().HasFilter("order_item_id IS NOT NULL");
@@ -158,11 +164,48 @@ internal sealed class TransfusionReactionConfiguration : IEntityTypeConfiguratio
         b.Property(x => x.ActionsTaken).HasMaxLength(SpecialtyCareSchema.Note);
         b.Property(x => x.InvestigationFindings).HasMaxLength(4000);
         b.Property(x => x.ClosedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.LoweredByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.LowerRequestedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.LowerReason).HasMaxLength(1000);
         b.Property(x => x.Symptoms).HasJsonRows();
         b.Ignore(x => x.IsSerious);
         b.HasOne<BloodIssue>().WithMany().HasForeignKey(x => x.IssueId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.Status, x.ReportedAt });
         b.HasIndex(x => x.PatientId);
+    }
+}
+
+internal sealed class TransfusionConfiguration : IEntityTypeConfiguration<Transfusion>
+{
+    public void Configure(EntityTypeBuilder<Transfusion> b)
+    {
+        b.ToTable("transfusions", SpecialtyCareSchema.Name);
+        b.Property(x => x.UnitNumber).HasMaxLength(32);
+        b.Property(x => x.StartedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.WitnessName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.ConsentDeferredReason).HasMaxLength(SpecialtyCareSchema.Reason);
+        b.Property(x => x.EndedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.StopReason).HasMaxLength(SpecialtyCareSchema.Reason);
+        b.HasOne<BloodIssue>().WithMany().HasForeignKey(x => x.IssueId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<BloodRequest>().WithMany().HasForeignKey(x => x.RequestId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasMany(x => x.Observations).WithOne().HasForeignKey(o => o.TransfusionId).OnDelete(DeleteBehavior.Restrict);
+
+        // One transfusion a unit: two starts of the same unit at once do not both succeed.
+        b.HasIndex(x => x.IssueId).IsUnique();
+        b.HasIndex(x => new { x.PatientId, x.StartedAt });
+        b.HasIndex(x => new { x.Status, x.RequestId });
+    }
+}
+
+internal sealed class TransfusionObservationConfiguration : IEntityTypeConfiguration<TransfusionObservation>
+{
+    public void Configure(EntityTypeBuilder<TransfusionObservation> b)
+    {
+        b.ToTable("transfusion_observations", SpecialtyCareSchema.Name);
+        b.Property(x => x.RecordedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.TemperatureC).HasPrecision(4, 1);
+        b.HasIndex(x => new { x.TransfusionId, x.RecordedAt });
     }
 }

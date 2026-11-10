@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Encounters;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
@@ -99,12 +100,20 @@ public sealed class TeleconsultationJourneyTests(HospitalServer server)
         session.Status.ShouldBe(TelehealthStatus.Scheduled);
         session.LinkSent.ShouldBeTrue("The join link goes out with the booking.");
 
+        // The patient agrees on the phone to be seen by video, which the front office records: no call starts without it.
+        await frontOffice.PostAsync<JsonElement>($"/api/v1/patients/{patient.Id}/consents",
+            new CaptureConsentRequest(ConsentType.Telehealth, null, true, null, null, null, null, "Agreed on the phone when booking"));
+
         // Doctor: starting the call opens the telehealth visit and puts the appointment in consultation.
         var started = await doctor.PostAsync<TelehealthSessionDetail>($"/api/v1/telehealth/sessions/{session.Id}/start");
         started.Status.ShouldBe(TelehealthStatus.InProgress);
         var visitId = started.VisitId.ShouldNotBeNull("Starting the call creates the visit the doctor documents and prescribes against.");
         (await doctor.GetAsync<VisitDetail>($"/api/v1/visits/{visitId}")).Type.ShouldBe(VisitType.Telehealth);
         (await doctor.GetAsync<AppointmentDetail>($"/api/v1/scheduling/appointments/{appointment.Id}")).Status.ShouldBe(AppointmentStatus.InConsultation);
+
+        // The pharmacy and therapeutics committee has put paracetamol on List O of the Telemedicine Practice Guidelines, which any
+        // teleconsultation prescribes; a medicine on no list is not prescribed in a first one (TelemedicineListTests).
+        await PutOnListOAsync(ParacetamolCode);
 
         // During the call: opens the encounter from the visit, prescribes paracetamol and signs the e-prescription.
         var encounter = await doctor.PostAsync<EncounterDetail>("/api/v1/emr/encounters", new StartEncounterRequest(
@@ -188,6 +197,15 @@ public sealed class TeleconsultationJourneyTests(HospitalServer server)
         var earliest = DateTimeOffset.UtcNow.AddMinutes(2);
         return availability.SelectMany(a => a.Slots).Where(s => s.Available > 0 && s.StartsAt > earliest).MinBy(s => s.StartsAt)
                ?? throw new InvalidOperationException("The doctor has no free video slot in the coming week.");
+    }
+
+    /// <summary>Puts a seeded medicine on List O, as the committee would through the item master and a pharmacist's approval.</summary>
+    private async Task PutOnListOAsync(string code)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Modules.SupplyChain.Domain.Item>()
+            .Where(i => i.Code == code)
+            .ExecuteUpdateAsync(s => s.SetProperty(i => i.TelemedicineList, Modules.SupplyChain.Domain.TelemedicineList.O), TestContext.Current.CancellationToken);
     }
 
     /// <summary>The channel of each <c>prescription.shared</c> message queued for the patient.</summary>

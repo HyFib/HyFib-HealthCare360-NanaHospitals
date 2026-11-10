@@ -323,7 +323,7 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
     ]);
 
   const create = useMutation({
-    mutationFn: (post: boolean) =>
+    mutationFn: (sendForApproval: boolean) =>
       purchaseApi.createGrn({
         vendorId: vendor!.id,
         storeId: effectiveStore!,
@@ -332,7 +332,8 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
         vendorInvoiceDate: invoiceDate || null,
         receivedOn: receivedOn || null,
         remarks: remarks.trim() || null,
-        post,
+        sendForApproval,
+        vendorInvoiceAmount: printedTotal,
         lines: planned.map((p) => ({
           itemId: p.line.itemId,
           purchaseOrderLineId: p.line.poLineId,
@@ -354,10 +355,10 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
       void queryClient.invalidateQueries({ queryKey: purchaseKeys.all });
       void queryClient.invalidateQueries({ queryKey: ['inventory'] });
       notify.success(
-        result.status === 'Posted' ? `GRN ${result.number} posted` : `GRN ${result.number} saved as draft`,
-        result.status === 'Posted'
-          ? `${formatInr(result.netAmount)} of goods added to stock.`
-          : 'Post it after checking the goods to add them to stock.',
+        result.approvalId ? `GRN ${result.number} sent for approval` : `GRN ${result.number} saved as draft`,
+        result.approvalId
+          ? `${formatInr(result.netAmount)} of goods go into stock when someone else approves it.`
+          : 'Send it for approval once the goods are checked; nothing goes into stock until then.',
       );
       void navigate({ to: '/purchase/grns/$grnId', params: { grnId: result.id }, replace: true });
     },
@@ -779,7 +780,7 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                 disabled={blockers.length > 0 || Boolean(licenceProblem) || create.isPending}
                 onClick={() => setConfirmPost(true)}
               >
-                Receive into stock
+                Send for approval
               </Button>
               <Button
                 icon={<SaveRegular />}
@@ -789,7 +790,8 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                 Save as draft
               </Button>
               <Caption1 className={styles.muted}>
-                A draft keeps the entry for checking; stock changes only when it is posted.
+                Nothing goes into stock until someone other than you checks the receipt against the invoice and approves
+                it.
               </Caption1>
             </div>
           </Section>
@@ -797,15 +799,17 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
       </div>
       <ConfirmDialog
         open={confirmPost}
-        title="Receive these goods into stock?"
-        confirmLabel="Receive and post"
+        title="Send this receipt for approval?"
+        confirmLabel="Send for approval"
         busy={create.isPending}
         onConfirm={() => create.mutate(true)}
         onCancel={() => setConfirmPost(false)}
       >
-        {lines.length} line{lines.length === 1 ? '' : 's'} worth {formatInr(totals.net)} are added to{' '}
-        {order?.storeName ?? working.stores.find((s) => s.id === effectiveStore)?.name ?? 'the store'} with their batch,
-        expiry and MRP. A posted receipt cannot be edited; mistakes are corrected with a stock adjustment.
+        {lines.length} line{lines.length === 1 ? '' : 's'} worth {formatInr(totals.net)} go into{' '}
+        {order?.storeName ?? working.stores.find((s) => s.id === effectiveStore)?.name ?? 'the store'}, with their
+        batch, expiry and MRP, when someone other than you checks the receipt against the supplier&apos;s invoice and
+        approves it. The receipt cannot be edited once sent; a mistake is corrected by cancelling it and entering it
+        again.
       </ConfirmDialog>
     </Page>
   );

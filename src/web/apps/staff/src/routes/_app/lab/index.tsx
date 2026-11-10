@@ -17,6 +17,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { Can, usePermission } from '@/lib/permissions';
 import { LAB_PERMISSIONS, labQueries } from '@/modules/lab/api';
+import { eqasQueries } from '@/modules/lab/eqas';
 import { QcOutcomeBadge } from '@/modules/lab/badges';
 import { summarizeQc } from '@/modules/lab/qc';
 import { formatMinutes, withinTargetPercent } from '@/modules/lab/tat';
@@ -67,6 +68,8 @@ function LabDashboard() {
   const unmatched = useQuery({ ...labQueries.unmatchedResults({}, 1), enabled: canBench });
   const qc = useQuery({ ...labQueries.qcStatus(), enabled: canQc });
   const tat = useQuery({ ...labQueries.tat(), enabled: canRead });
+  const canEqas = usePermission([LAB_PERMISSIONS.qc, LAB_PERMISSIONS.verify]);
+  const eqas = useQuery({ ...eqasQueries.summary(), enabled: canEqas });
 
   const counts = worklist.data ? worklistCounts(worklist.data.items, worklist.data.totalCount) : null;
   const qcSummary = qc.data ? summarizeQc(qc.data) : null;
@@ -188,6 +191,27 @@ function LabDashboard() {
             }
             icon={qcSummary && qcSummary.lockedTests.length > 0 ? <LockClosedRegular /> : <ShieldCheckmarkRegular />}
             onClick={() => void navigate({ to: '/lab/qc' })}
+          />
+        )}
+        {canEqas && (
+          <KpiCard
+            label="EQAS rounds"
+            value={
+              eqas.data ? (
+                eqas.data.overdue + eqas.data.needCapa > 0 ? (
+                  <span className={styles.red}>
+                    {eqas.data.overdue} overdue · {eqas.data.needCapa} need CAPA
+                  </span>
+                ) : (
+                  <span className={styles.green}>Up to date</span>
+                )
+              ) : (
+                '…'
+              )
+            }
+            hint={eqas.data ? `${eqas.data.dueThisWeek} due this week` : undefined}
+            icon={<ClipboardTaskListLtrRegular />}
+            onClick={() => void navigate({ to: '/lab/eqas' })}
           />
         )}
       </div>

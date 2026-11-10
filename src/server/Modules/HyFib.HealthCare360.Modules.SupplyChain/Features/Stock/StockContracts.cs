@@ -16,7 +16,9 @@ public sealed record StockSummaryRow(
     DateOnly? NearestExpiry,
     decimal ValueAtCost,
     decimal ReorderLevel,
-    bool BelowReorder);
+    bool BelowReorder,
+    decimal BlockedQuantity = 0,
+    decimal OnOrder = 0);
 
 /// <summary>One stock-card line: movement in/out with the store balance after it.</summary>
 public sealed record LedgerRow(
@@ -53,10 +55,19 @@ public sealed record ReservationRow(
     string? ReferenceNumber,
     DateTimeOffset CreatedAt);
 
-public sealed record BlockBatchRequest(string Reason);
+/// <param name="Recall">A manufacturer's or regulator's recall (not a local quality hold): released only with a second person's approval.</param>
+public sealed record BlockBatchRequest(string Reason, bool Recall = false);
 
 public sealed class BlockBatchRequestValidator : AbstractValidator<BlockBatchRequest>
 {
     public BlockBatchRequestValidator() =>
         RuleFor(x => x.Reason).NotEmpty().SafeText(300).WithMessage("Give a reason (recall notice, quality hold…).");
+}
+
+/// <param name="Reason">Why the batch may be used again (the recall withdrawn, the batch cleared); needed to release a recall.</param>
+public sealed record UnblockBatchRequest(string? Reason);
+
+public sealed class UnblockBatchRequestValidator : AbstractValidator<UnblockBatchRequest>
+{
+    public UnblockBatchRequestValidator() => RuleFor(x => x.Reason).SafeText(300);
 }

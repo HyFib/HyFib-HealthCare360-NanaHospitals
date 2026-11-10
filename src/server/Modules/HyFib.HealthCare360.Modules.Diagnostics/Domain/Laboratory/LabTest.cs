@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
+
 namespace HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 
 /// <summary>
@@ -95,28 +97,8 @@ public sealed class LabTest : AuditableEntity
     public string QcKey => string.IsNullOrWhiteSpace(QcGroup) ? Code : QcGroup;
 
     /// <summary>0 = no match, 1 = generic channel match, 2 = instrument-specific match (preferred).</summary>
-    public int ChannelMatchScore(string instrumentCode, string channelCode)
-    {
-        var best = 0;
-        foreach (var mapping in InstrumentChannelCodes)
-        {
-            var separator = mapping.IndexOf(':', StringComparison.Ordinal);
-            if (separator < 0)
-            {
-                if (string.Equals(mapping, channelCode, StringComparison.OrdinalIgnoreCase))
-                {
-                    best = 1;
-                }
-            }
-            else if (string.Equals(mapping[..separator], instrumentCode, StringComparison.OrdinalIgnoreCase)
-                     && string.Equals(mapping[(separator + 1)..], channelCode, StringComparison.OrdinalIgnoreCase))
-            {
-                return 2;
-            }
-        }
-
-        return best;
-    }
+    public int ChannelMatchScore(string instrumentCode, string channelCode) =>
+        ChannelMappings.Score(InstrumentChannelCodes, instrumentCode, channelCode);
 
     /// <summary>The channel the given analyser uses for this analyte (host query), or null when it is not mapped.</summary>
     public string? ChannelFor(string instrumentCode) => ChannelFor(instrumentCode, allowPlain: true);

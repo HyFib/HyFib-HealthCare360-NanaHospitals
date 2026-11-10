@@ -27,8 +27,13 @@ using Microsoft.Extensions.Options;
 namespace HyFib.HealthCare360.Platform.Networking;
 
 /// <param name="Clock">The last check of this server's clock against the national time servers (<see cref="ServerClock"/>); null before the first.</param>
+/// <param name="Node">With several servers, the server's id (<see cref="ServerNodeBoard.Node"/>); null on a single Server Node.</param>
+/// <param name="Jobs">
+/// With several servers taking turns at the background jobs (<see cref="JobLeadership"/>), whether this one runs them now;
+/// null where its role alone decides.
+/// </param>
 public sealed record ServerInfo(string MachineName, string OsDescription, string Version, string Environment, string Role, DateTimeOffset StartedAt,
-    double UptimeHours, int ProcessorCount, long WorkingSetBytes, string Framework, ClockCheck? Clock = null);
+    double UptimeHours, int ProcessorCount, long WorkingSetBytes, string Framework, ClockCheck? Clock = null, string? Node = null, JobNodeState? Jobs = null);
 
 public sealed record NetworkInfo(bool WifiSupported, WifiConnectionInfo? Wifi, DateTimeOffset? ConnectedSince, DateTimeOffset? LastDisconnectAt,
     IReadOnlyList<WifiEvent> RecentEvents, IReadOnlyList<string> IpAddresses, int HttpsPort, int PortalHttpsPort, bool MdnsEnabled);
@@ -47,10 +52,12 @@ public sealed record OutboxInfo(int Pending, int FailedLast24Hours, DateTimeOffs
 
 /// <summary>
 /// The hospital CA and the server certificate it issued. <see cref="CaExpiresAt"/> is null with an administrator-supplied
-/// certificate, whose issuer HC360 does not hold.
+/// certificate, whose issuer HC360 does not hold. While a next CA is prepared, <see cref="NextCaFingerprint"/> is that CA,
+/// which devices take before the switch. After the switch, <see cref="PreviousCaFingerprint"/> is the CA it replaced, which
+/// devices keep as a second pin until <see cref="PreviousCaExpiresAt"/>.
 /// </summary>
 public sealed record CertificateInfo(string? CaFingerprint, DateTimeOffset? ServerExpiresAt, IReadOnlyList<string> SubjectAlternativeNames,
-    DateTimeOffset? CaExpiresAt = null);
+    DateTimeOffset? CaExpiresAt = null, string? PreviousCaFingerprint = null, DateTimeOffset? PreviousCaExpiresAt = null, string? NextCaFingerprint = null);
 
 public sealed record PowerInfo(bool Available, bool? OnBattery, int? ChargePercent, string? Source);
 
@@ -106,9 +113,14 @@ public sealed record SystemHealthReport(
     DateTimeOffset GeneratedAt,
     IReadOnlyList<ServerNodeHealth>? Servers = null);
 
+/// <summary>
+/// What the server says of itself before anyone signs in. While a next CA is prepared, <see cref="NextCaFingerprint"/> is that
+/// CA (handed out with the current CA's word for it at <c>ca-certificate/next</c>). After a switch,
+/// <see cref="PreviousCaFingerprint"/> is the CA the current one replaced, until it expires.
+/// </summary>
 public sealed record SystemInfoDto(
     string Product, string Version, string ServerName, string? FacilityName, string? FacilityCode, string? CaFingerprint, DateTimeOffset ServerTime, int ApiVersion,
-    SystemFeatures Features);
+    SystemFeatures Features, string? PreviousCaFingerprint = null, string? NextCaFingerprint = null);
 
 /// <summary>The hospital-wide feature switches (Platform/Features), for the portal and the sign-in page before anyone signs in.</summary>
 public sealed record SystemFeatures(bool PatientPortal, bool Telehealth);
@@ -137,7 +149,8 @@ public sealed class SystemHealthService(
     ServerClock clock,
     IAdministrationDesktops administrationDesktops,
     ISettingsService settings,
-    TimeProvider time)
+    TimeProvider time,
+    JobLeadership? jobs = null)
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
 
@@ -220,6 +233,11 @@ public sealed class SystemHealthService(
             messageWarnings.Add(alertsNotReady);
         }
 
+        if (await AlertEscalation.WarningAsync(settings, options.Value, ct) is { } noEscalation)
+        {
+            messageWarnings.Add(noEscalation);
+        }
+
         if (await AlertHeartbeat.OffWarningAsync(settings, options.Value, ct) is { } heartbeatOff)
         {
             messageWarnings.Add(heartbeatOff);
@@ -239,6 +257,15 @@ public sealed class SystemHealthService(
         if (await SimulatorRecordSweep.WarningAsync(db, options.Value, ct) is { } simulatorRecords)
         {
             keyWarnings.Add(simulatorRecords);
+        }
+
+        // Who approves the access administrators give: a break-glass grant, and a hospital left with one approver.
+        keyWarnings.AddRange(await GrantApprovals.WarningsAsync(db, options.Value, now, ct));
+
+        // While a next CA is prepared, the workstations and lab agents that do not hold it yet, by name.
+        if (await CaRolloverDevices.WarningAsync(db, certificates, now, ct) is { } devicesNotReady)
+        {
+            keyWarnings.Add(devicesNotReady);
         }
 
         if (signingKey.KeyCreatedAt is { } signedSince && now - signedSince > SigningKeyPeriod)
@@ -312,11 +339,13 @@ public sealed class SystemHealthService(
 
     /// <summary>
     /// The warnings about every server, each naming it: its own while it reports, and that it has stopped when it has not;
-    /// when none of them runs the jobs, that nothing runs them; and when more than one that reports does, that one should.
+    /// when none of them runs the jobs, that nothing runs them, or, while servers stand by for the job lease, that one of
+    /// them is about to; and when more than one that reports does, that one should.
     /// </summary>
     internal static IReadOnlyList<HealthWarning> ServerWarnings(IReadOnlyList<ServerNodeHealth> servers)
     {
         var warnings = new List<HealthWarning>();
+        var standingBy = servers.Where(s => s.Reporting && s.Server.Jobs is { Active: false }).Select(s => s.Server.MachineName).ToArray();
         foreach (var server in servers)
         {
             var name = server.Server.MachineName;
@@ -324,46 +353,80 @@ public sealed class SystemHealthService(
             {
                 warnings.AddRange(server.Warnings.Select(w => w with { Server = name }));
             }
+            else if (!RunsJobs(server))
+            {
+                warnings.Add(new("server.not_reporting", "warning",
+                    $"{name} has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. The reverse proxy sends requests to the other servers meanwhile.",
+                    name));
+            }
             else
             {
-                warnings.Add(RunsJobs(server)
-                    ? new("server.not_reporting", "critical",
-                        $"{name}, which runs the background jobs, has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. Until it is back, nothing makes the backups, sends messages or listens for analysers and modalities.",
-                        name)
-                    : new("server.not_reporting", "warning",
-                        $"{name} has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. The reverse proxy sends requests to the other servers meanwhile.",
-                        name));
+                warnings.Add(new("server.not_reporting", "critical",
+                    $"{name}, which ran the background jobs, has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. " +
+                    (standingBy.Length > 0
+                        ? $"{string.Join(", ", standingBy)} stand{(standingBy.Length == 1 ? "s" : string.Empty)} by to take the jobs over within a minute."
+                        : "Until it is back, nothing makes the backups, sends messages or listens for analysers and modalities."),
+                    name));
             }
         }
 
-        if (!servers.Any(RunsJobs))
+        if (!servers.Any(s => s.Reporting && RunsJobs(s)))
         {
-            warnings.Add(new("server.no_jobs", "critical",
-                "No server that runs the background jobs is reporting: nothing makes the backups, sends messages or listens for analysers and modalities. Start HC360 on the server that runs them."));
+            warnings.Add(standingBy.Length > 0
+                ? new("server.jobs_taking_over", "warning",
+                    $"No server holds the job lease at this moment: {string.Join(", ", standingBy)} stand{(standingBy.Length == 1 ? "s" : string.Empty)} by, and one takes the background jobs over within a minute. If this lasts, the servers that stand by cannot reach the database; their log says why.")
+                : new("server.no_jobs", "critical",
+                    "No server that runs the background jobs is reporting: nothing makes the backups, sends messages or listens for analysers and modalities. Start HC360 on a server that runs them."));
         }
 
-        // Exactly one should (DEPLOYMENT.md section 10); an API node whose settings miss "Role": "api" runs them as "all".
-        // Nothing shares the nightly backup out between them, so each makes it: a warning, as nothing is lost meanwhile.
-        var running = servers.Where(s => s.Reporting && RunsJobs(s)).Select(s => s.Server.MachineName).ToArray();
+        // Exactly one should. With the job lease that is the database's to say, so two of them means something is badly
+        // wrong; without it, an API node whose settings miss "Role": "api" runs them as "all", and nothing shares the
+        // nightly backup out between them, so each makes it: a warning, as nothing is lost meanwhile.
+        var running = servers.Where(s => s.Reporting && RunsJobs(s)).ToArray();
         if (running.Length > 1)
         {
-            warnings.Add(new("server.several_jobs", "warning",
-                $"{string.Join(", ", running[..^1])} and {running[^1]} {(running.Length == 2 ? "both" : "all")} run the background jobs, and only one server should: each makes the nightly backup, and listens for analysers and modalities. Give all but one of them \"Role\": \"api\" in hc360.settings.json, and restart their HC360Server service."));
+            var names = running.Select(s => s.Server.MachineName).ToArray();
+            var both = $"{string.Join(", ", names[..^1])} and {names[^1]} {(names.Length == 2 ? "both" : "all")}";
+            warnings.Add(running.All(s => s.Server.Jobs is not null)
+                ? new("server.several_jobs", "critical",
+                    $"{both} hold the job lease, which only one server can: restart the HC360Server service on each of them but one, and send their logs to HyFib support.")
+                : new("server.several_jobs", "warning",
+                    $"{both} run the background jobs, and only one server should: each makes the nightly backup, and listens for analysers and modalities. Give all but one of them \"Role\": \"api\" in hc360.settings.json, or let them take turns through the job lease (HealthCare360:JobLeadership), and restart their HC360Server service."));
         }
 
         return warnings;
     }
 
-    /// <summary>This server and every other one that reports or stopped reporting less than a day ago, the nodes that run the jobs first.</summary>
-    private async Task<IReadOnlyList<ServerNodeHealth>> EveryServerAsync(ServerNodeHealth self, CancellationToken ct) =>
-    [
-        .. (await servers.ReadOthersAsync(ct)).Prepend(self)
-            .OrderBy(s => RunsJobs(s) ? 0 : 1)
-            .ThenBy(s => s.Server.MachineName, StringComparer.OrdinalIgnoreCase),
-    ];
+    /// <summary>
+    /// This server and every other one that reports or stopped reporting less than a day ago, the nodes that run the jobs
+    /// first. Which one holds the job lease is read from the database at once (<see cref="JobLeadership.ReadHolderAsync"/>),
+    /// not from what each wrote up to a minute ago, so the page is right the moment the lease changes hands.
+    /// </summary>
+    private async Task<IReadOnlyList<ServerNodeHealth>> EveryServerAsync(ServerNodeHealth self, CancellationToken ct)
+    {
+        var everyServer = (await servers.ReadOthersAsync(ct)).Prepend(self).ToList();
+        if (everyServer.Any(s => s.Server.Jobs is not null))
+        {
+            var holder = await JobLeadership.ReadHolderAsync(db, ct);
+            everyServer = [.. everyServer.Select(s => s.Server.Jobs is { } state && s.Server.Node is { } node
+                ? s with { Server = s.Server with { Jobs = state with { Active = node == holder, Since = node == holder ? state.Since : null } } }
+                : s)];
+        }
 
-    /// <summary>Whether a server runs the background jobs: a <c>worker</c>, or a whole Server Node (<c>all</c>).</summary>
-    internal static bool RunsJobs(ServerNodeHealth server) => !string.Equals(server.Server.Role, "api", StringComparison.OrdinalIgnoreCase);
+        return
+        [
+            .. everyServer
+                .OrderBy(s => RunsJobs(s) ? 0 : 1)
+                .ThenBy(s => s.Server.MachineName, StringComparer.OrdinalIgnoreCase),
+        ];
+    }
+
+    /// <summary>
+    /// Whether a server runs the background jobs: the one holding the job lease, where the servers take turns at them
+    /// (<see cref="ServerInfo.Jobs"/>); else a <c>worker</c>, or a whole Server Node (<c>all</c>).
+    /// </summary>
+    internal static bool RunsJobs(ServerNodeHealth server) =>
+        server.Server.Jobs is { } jobs ? jobs.Active : !string.Equals(server.Server.Role, "api", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// This server's own part of the report: its machine and the warnings about it, in the three places System health has
@@ -383,7 +446,9 @@ public sealed class SystemHealthService(
             Environment.ProcessorCount,
             process.WorkingSet64,
             RuntimeInformation.FrameworkDescription,
-            clock.Last);
+            clock.Last,
+            directories.IsShared ? servers.Node : null,
+            jobs?.State);
 
         var network = new NetworkInfo(
             wifi.Supported, wifi.Current, wifi.ConnectedSince, wifi.LastDisconnectAt, wifi.RecentEvents,
@@ -393,7 +458,7 @@ public sealed class SystemHealthService(
         var encryption = OperatingSystem.IsWindows() ? DiskEncryption.Load(DiskEncryption.PathIn(directories)) : null;
         var storage = ReadStorage() with { Encryption = encryption };
         var certificate = new CertificateInfo(certificates.CaFingerprint, certificates.ServerExpiresAt, certificates.SubjectAlternativeNames,
-            certificates.CaExpiresAt);
+            certificates.CaExpiresAt, certificates.PreviousCaFingerprint, certificates.PreviousCaExpiresAt, certificates.NextCaFingerprint);
         var power = ReadPower();
 
         // The machine: its data drive, and BitLocker, the settings file's secrets and the database watchdog, which exist only
@@ -470,16 +535,21 @@ public sealed class SystemHealthService(
 
         if (caExpires is { } caExpired && caExpired <= now)
         {
-            warnings.Add(new("cert.ca_expired", "critical",
-                $"The hospital CA expired on {caExpired:dd MMM yyyy}: workstations, tablets and HC360 Desktop no longer trust this server, and HC360 does not start again until it has a new CA. Make one now with HyFib support, as the CA rollover procedure says (CA-ROLLOVER.md)."));
+            warnings.Add(new("cert.ca_expired", "critical", certificate.NextCaFingerprint is null
+                ? $"The hospital CA expired on {caExpired:dd MMM yyyy}: workstations, tablets and HC360 Desktop no longer trust this server, and HC360 does not start again until it has a new CA. Make one now with HyFib support, as the CA rollover procedure says (CA-ROLLOVER.md)."
+                : $"The hospital CA expired on {caExpired:dd MMM yyyy}: workstations, tablets and HC360 Desktop no longer trust this server, and HC360 does not start again until it switches CA. The next CA is prepared: switch to it now with 'certificates switch-ca', and every device that holds it trusts the server again (CA-ROLLOVER.md)."));
         }
         else if (caExpires is { } caExpiring && caExpiring - now < CaPlanningPeriod)
         {
+            // Before the CA expires the server switches to the next one; with none prepared yet, that is the first step.
+            var step = certificate.NextCaFingerprint is null
+                ? "Prepare the next CA with 'certificates prepare-ca': devices take it while they still trust this one, and the server switches to it once every device holds it"
+                : "The next CA is prepared: switch to it with 'certificates switch-ca' once every device holds it (the warning about the devices names those that do not)";
             warnings.Add(caExpiring - now < CaUrgentPeriod
                 ? new("cert.ca_expiring", "critical",
-                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}: then no workstation, tablet or HC360 Desktop trusts this server. Replace it now with HyFib support, as the CA rollover procedure says (CA-ROLLOVER.md).")
+                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}: then no workstation, tablet or HC360 Desktop trusts this server. {step}, now, as the CA rollover procedure says (CA-ROLLOVER.md).")
                 : new("cert.ca_expiring", "warning",
-                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}. Every workstation, tablet, HC360 Desktop and lab agent trusts it, so replacing it means setting each up again: plan it with HyFib support now (CA-ROLLOVER.md)."));
+                    $"The hospital CA expires on {caExpiring:dd MMM yyyy}. {step}, in the coming months, as the CA rollover procedure says (CA-ROLLOVER.md): no device is cut off, and nothing stops."));
         }
 
         return warnings;
@@ -676,18 +746,13 @@ internal static class SystemEndpoints
                     await features.IsEnabledAsync(FeatureKeys.PatientPortal, null, ct),
                     await features.IsEnabledAsync(FeatureKeys.Telehealth, null, ct));
                 return TypedResults.Ok(new SystemInfoDto("HyFib HealthCare360", SystemHealthService.ProductVersion, Environment.MachineName,
-                    facility?.Name, facility?.Code, certificates.CaFingerprint, time.GetUtcNow(), 1, switches));
+                    facility?.Name, facility?.Code, certificates.CaFingerprint, time.GetUtcNow(), 1, switches, certificates.PreviousCaFingerprint,
+                    certificates.NextCaFingerprint));
             })
             .AllowAnonymous()
             .RequireRateLimiting(RateLimitPolicies.Public);
 
-        // Public CA certificate for tablets/browsers on the hospital WiFi (contains no secrets).
-        system.MapGet("/ca-certificate", (LanCertificateManager certificates) =>
-                certificates.CaPem is { } pem
-                    ? TypedResults.File(System.Text.Encoding.ASCII.GetBytes(pem), "application/x-x509-ca-cert", "hc360-hospital-ca.crt")
-                    : Results.NotFound())
-            .AllowAnonymous()
-            .RequireRateLimiting(RateLimitPolicies.Public);
+        HospitalCaEndpoints.Map(system);
 
         var admin = app.MapGroup("/api/v1/admin/system").WithTags("Administration").RequirePermission(PlatformPermissions.SystemRead);
 
@@ -711,8 +776,12 @@ internal static class SystemEndpoints
         admin.MapPost("/keys/signing/rotate", async (KeyRotationService keys, CancellationToken ct) => (await keys.RotateSigningKeyAsync(ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage);
 
-        // Records the integrations' simulators made (audit P6): the latest sweep, a sweep now, and the IT officer's sign-off.
+        // Records the integrations' simulators made (audit P6): the latest sweep, the open ones, a sweep now, and the IT officer's
+        // sign-off.
         admin.MapGet("/simulator-records", async (SimulatorRecordSweep sweep, CancellationToken ct) => TypedResults.Ok(await sweep.ViewAsync(ct)));
+        // The records of a kind still open now, each with the record to correct it on: the IT officer's worklist.
+        admin.MapGet("/simulator-records/{code}/open", async (string code, SimulatorRecordSweep sweep, CancellationToken ct) =>
+            (await sweep.OpenRecordsAsync(code, ct)).ToOk());
         admin.MapPost("/simulator-records/sweep", async (SimulatorRecordSweep sweep, CancellationToken ct) => TypedResults.Ok(await sweep.SweepAsync(ct)))
             .RequirePermission(PlatformPermissions.SystemManage);
         admin.MapPost("/simulator-records/sign-off", async (SignOffSimulatorRecordsRequest request, SimulatorRecordSweep sweep, CancellationToken ct) =>
@@ -728,6 +797,12 @@ internal static class SystemEndpoints
         admin.MapPost("/alert-drills/{id:guid}/acknowledge", async (Guid id, AlertDrills drills, CancellationToken ct) =>
             (await drills.AcknowledgeAsync(id, ct)).ToOk());
 
+        // Alerts (audit P2): each critical warning until someone acknowledges it, who was paged while nobody did, and how long
+        // it took. Whoever may see System health acknowledges one: they are those it goes to in the app.
+        admin.MapGet("/alerts", async (int? days, AlertIncidents alerts, CancellationToken ct) => TypedResults.Ok(await alerts.ReportAsync(days ?? 30, ct)));
+        admin.MapPost("/alerts/{id:guid}/acknowledge", async (Guid id, AlertIncidents alerts, CancellationToken ct) =>
+            (await alerts.AcknowledgeAsync(id, ct)).ToOk());
+
         admin.MapGet("/wifi-samples", async (int? hours, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
         {
             var since = time.GetUtcNow().AddHours(-Math.Clamp(hours ?? 24, 1, 24 * 30));
@@ -737,5 +812,45 @@ internal static class SystemEndpoints
                 .Select(s => new WifiSampleDto(s.At, s.Connected, s.SignalQuality, s.RssiDbm, s.ReceiveRateMbps, s.Ssid))
                 .ToListAsync(ct));
         });
+    }
+}
+
+/// <summary>
+/// Where the server hands out its hospital CA certificates (<c>/api/v1/system</c>), as the devices and the certificate probe
+/// read them: public, so a test of HC360 Desktop or the lab agent serves exactly these.
+/// </summary>
+public static class HospitalCaEndpoints
+{
+    /// <summary>
+    /// The hospital CA certificates the server hands out under <paramref name="system"/> (<c>/api/v1/system</c>), public and
+    /// without a secret: its CA, for tablets and browsers on the hospital WiFi and for devices being set up; while a next CA
+    /// is prepared, that CA and the current CA's word for it, which HC360 Desktop and the lab agent take as a second pin
+    /// (<see cref="WindowsInterop.Trust.HospitalCaFollow"/>); after a switch, the CA the current one replaced, until it
+    /// expires, by which the certificate probe that pins it finds the switch.
+    /// </summary>
+    public static void Map(IEndpointRouteBuilder system)
+    {
+        system.MapGet("/ca-certificate", (LanCertificateManager certificates) =>
+                certificates.CaPem is { } pem
+                    ? TypedResults.File(System.Text.Encoding.ASCII.GetBytes(pem), "application/x-x509-ca-cert", "hc360-hospital-ca.crt")
+                    : Results.NotFound())
+            .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicies.Public);
+
+        // The next CA first, then the certificate the current CA signed for its key, each PEM on lines of its own: a device
+        // checks that word against the CA it pins before it holds the next one.
+        system.MapGet("/ca-certificate/next", (LanCertificateManager certificates) =>
+                certificates.NextCaPem is { } pem && certificates.NextCaCrossPem is { } cross
+                    ? TypedResults.File(System.Text.Encoding.ASCII.GetBytes($"{pem.TrimEnd()}\n{cross.TrimEnd()}\n"), "application/x-pem-file", "hc360-hospital-ca-next.pem")
+                    : Results.NotFound())
+            .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicies.Public);
+
+        system.MapGet("/ca-certificate/previous", (LanCertificateManager certificates) =>
+                certificates.PreviousCaPem is { } pem
+                    ? TypedResults.File(System.Text.Encoding.ASCII.GetBytes(pem), "application/x-x509-ca-cert", "hc360-hospital-ca-previous.crt")
+                    : Results.NotFound())
+            .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicies.Public);
     }
 }

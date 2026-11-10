@@ -28,7 +28,7 @@ import {
 } from './api';
 import { erasureDoneLabel, type ErasureItem } from './labels';
 import { PlainTable } from './PlainTable';
-import { isOpenStatus, keptUntilText } from './rules';
+import { auditTrailKeptText, isOpenStatus, keptUntilText } from './rules';
 import type { RequestCommand } from './useRequestCommand';
 
 const useStyles = makeStyles({
@@ -47,7 +47,16 @@ function keptSummary(a: { keepUntil: string | null; keepPermanently: boolean }):
   }
   return a.keepUntil
     ? `The rest is kept until ${formatDateOnly(a.keepUntil)}, as the law requires.`
-    : 'Nothing else has to be kept.';
+    : 'Nothing else has to be kept as the law requires.';
+}
+
+/**
+ * The hospital's own decision, said apart from what the law keeps (which is all the request's dates describe): how long
+ * the audit trail is kept, as the hospital keeps it now (permanently, or the years two super administrators set).
+ */
+function useAuditTrailKept(): string {
+  const notice = useQuery(privacyQueries.notice());
+  return auditTrailKeptText(notice.data?.accessLogYears);
 }
 
 /**
@@ -71,6 +80,7 @@ export function ErasurePanel({
   onAnswer: () => void;
 }) {
   const styles = useStyles();
+  const auditTrailKept = useAuditTrailKept();
   const open = isOpenStatus(request.status);
 
   if (!request.patientId) {
@@ -106,8 +116,9 @@ export function ErasurePanel({
             <Text>
               {request.retainedPermanently || request.retainedUntil
                 ? `${keptUntilText(request.retainedUntil, request.retainedPermanently)}, as the law requires. The retention review lists it until then.`
-                : 'Nothing had to be kept.'}
+                : 'Nothing had to be kept as the law requires.'}
             </Text>
+            <Text>{auditTrailKept}</Text>
           </div>
         </div>
       </Section>
@@ -142,6 +153,7 @@ function OpenErasure({
   onAnswer: () => void;
 }) {
   const styles = useStyles();
+  const auditTrailKept = useAuditTrailKept();
   const queryClient = useQueryClient();
   const assessment = useQuery(privacyQueries.erasure(request.id));
   const [selected, setSelected] = useState<ErasureItem[]>([]);
@@ -310,7 +322,8 @@ function OpenErasure({
         <Text as="p" weight="semibold">
           This cannot be undone.
         </Text>
-        <Text as="p">Medical records, bills and the audit trail are kept as the law requires.</Text>
+        <Text as="p">Medical records and bills are kept as the law requires.</Text>
+        <Text as="p">{auditTrailKept}</Text>
       </ConfirmDialog>
     </Section>
   );

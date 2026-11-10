@@ -1,6 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { DoseFrequency } from './dosing';
 import type { SafetyAlert, SafetyCheckResponse, SignPrescriptionRequest } from './safety';
 
@@ -64,6 +65,10 @@ export interface PrescriptionDto {
    * downloaded or shared (the pharmacy queue is not held back). Older servers leave it out: read that as true.
    */
   finalCopyAvailable?: boolean;
+  /** The account that signed it: on a refill, whoever refilled it (a pharmacist, or a doctor). */
+  signedByUserId?: string | null;
+  /** On a refill, who issued it, by name: it carries the original doctor's name and registration, never as their signature again. */
+  refilledByName?: string | null;
 }
 
 /** Whether the hospital's doctors sign prescriptions with their DSC (setting `clinical.prescriptions.signature`). */
@@ -93,6 +98,11 @@ export interface PrescriptionDigitalSignatureDto {
   chainStatus: string | null;
   /** Older servers leave it out. */
   chainTrusted?: boolean;
+  /**
+   * How the certificate's revocation was checked when it signed: online, or against the CA's cached CRL with its date and
+   * age, or not checked (no route to the CA and no CRL cached). A revoked or expired DSC is refused, so never "revoked".
+   */
+  revocationStatus?: string | null;
   message: string | null;
   /** The DSC rules let it be printed, downloaded and shared (see `PrescriptionDto.finalCopyAvailable`). */
   finalCopyAvailable?: boolean;
@@ -162,6 +172,8 @@ export interface DrugInteractionDto {
   management: string | null;
   isActive: boolean;
   version: number;
+  /** When a change loosening it was asked for, while it waits for the pharmacy and therapeutics committee. */
+  approvalWaitingSince?: string | null;
 }
 
 export interface SaveDrugInteractionRequest {
@@ -172,6 +184,8 @@ export interface SaveDrugInteractionRequest {
   management: string | null;
   isActive: boolean;
   version: number | null;
+  /** Required when the change loosens the interaction (it then waits for approval). */
+  reason?: string | null;
 }
 
 export interface DoseLimitDto {
@@ -182,6 +196,8 @@ export interface DoseLimitDto {
   notes: string | null;
   isActive: boolean;
   version: number;
+  /** When a change loosening it was asked for, while it waits for the pharmacy and therapeutics committee. */
+  approvalWaitingSince?: string | null;
 }
 
 export interface SaveDoseLimitRequest {
@@ -191,6 +207,8 @@ export interface SaveDoseLimitRequest {
   notes: string | null;
   isActive: boolean;
   version: number | null;
+  /** Required when the change loosens the limit (it then waits for approval). */
+  reason?: string | null;
 }
 
 export interface ControlledDrugRegisterDto {
@@ -350,13 +368,22 @@ export const prescriptionDocument = (id: string) => `/api/v1/clinical/prescripti
  */
 export const abdmPrescriptionBundle = (id: string) => `/api/v1/abdm/bundles/prescriptions/${id}`;
 
+/**
+ * Saves a row of the drug-safety tables. Tightening is saved at once (the row comes back); loosening answers 202 with
+ * the approval request the pharmacy and therapeutics committee decides (`kind` is then set).
+ */
 export const safetyTablesApi = {
   saveInteraction: (id: string | null, request: SaveDrugInteractionRequest) =>
     id
-      ? api.put<DrugInteractionDto>(`/api/v1/clinical/drug-interactions/${id}`, request)
+      ? api.put<DrugInteractionDto | ApprovalRequestDto>(`/api/v1/clinical/drug-interactions/${id}`, request)
       : api.post<DrugInteractionDto>('/api/v1/clinical/drug-interactions', request),
   saveDoseLimit: (id: string | null, request: SaveDoseLimitRequest) =>
     id
-      ? api.put<DoseLimitDto>(`/api/v1/clinical/dose-limits/${id}`, request)
+      ? api.put<DoseLimitDto | ApprovalRequestDto>(`/api/v1/clinical/dose-limits/${id}`, request)
       : api.post<DoseLimitDto>('/api/v1/clinical/dose-limits', request),
 };
+
+/** Whether a save of a safety table was asked for approval rather than made. */
+export function askedForApproval(saved: object): saved is ApprovalRequestDto {
+  return 'kind' in saved && 'summary' in saved;
+}

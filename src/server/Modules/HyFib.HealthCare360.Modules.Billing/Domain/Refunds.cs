@@ -57,6 +57,25 @@ public sealed class Refund : AuditableEntity, IFacilityScoped
     public string? Counter { get; set; }
     public string? GatewayRefundId { get; set; }
 
+    /// <summary>The gateway that took the payment this refund returns: the refund is followed there, after a switch too.</summary>
+    public string? GatewayProvider { get; set; }
+
+    /// <summary>The gateway's payment this refund returns money from.</summary>
+    public string? GatewayPaymentId { get; set; }
+
+    /// <summary>HC360's gateway order (or payment link) the payment paid; some gateways (Cashfree) refund by order.</summary>
+    public string? GatewayOrderId { get; set; }
+
+    /// <summary>The payment as the gateway that took it knows it (empty for a refund sent before the payment was kept).</summary>
+    public GatewayPaymentRef GatewayPayment => new(GatewayProvider, GatewayPaymentId ?? string.Empty, GatewayOrderId);
+
+    /// <summary>
+    /// When the refund, recorded as paid out, was recorded as never having reached the patient (a
+    /// <see cref="RefundReversal"/>): its money is back where it came from, and a new refund pays the patient. Such a refund
+    /// is never paid, or sent through the gateway, again.
+    /// </summary>
+    public DateTimeOffset? PayoutReversedAt { get; set; }
+
     /// <summary>
     /// For a refund through the payment gateway: whether the bank has returned the money yet. The refund is paid out in
     /// HC360 when the gateway accepts it; this follows it until the gateway reports it processed or failed.
@@ -103,9 +122,12 @@ public sealed class Refund : AuditableEntity, IFacilityScoped
         : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{Id:N}:{GatewayRefundId}")))[..32];
 
     /// <summary>The gateway accepted the refund (first try or a retry after a failure): it is pending until the bank confirms it.</summary>
-    public void StartGatewayRefund(string gatewayRefundId, DateTimeOffset now)
+    public void StartGatewayRefund(string gatewayRefundId, GatewayPaymentRef payment, DateTimeOffset now)
     {
         GatewayRefundId = gatewayRefundId;
+        GatewayProvider = payment.Provider;
+        GatewayPaymentId = payment.PaymentId;
+        GatewayOrderId = payment.OrderId;
         GatewayStatus = PaymentRefundStatus.Pending;
         GatewayReference = null;
         GatewaySettledAt = null;
@@ -116,7 +138,7 @@ public sealed class Refund : AuditableEntity, IFacilityScoped
 
     /// <summary>A refund the gateway failed can be sent again, as can one whose retry stopped part way.</summary>
     public bool CanSendGatewayRefundAgain(DateTimeOffset now) =>
-        Status == RefundStatus.Paid && GatewayRefundId is not null
+        Status == RefundStatus.Paid && GatewayRefundId is not null && PayoutReversedAt is null
         && (GatewayRetryStartedAt is { } since
             ? now - since >= GatewayRetryTimeout
             : GatewayStatus == PaymentRefundStatus.Failed);
@@ -276,6 +298,23 @@ public sealed class Refund : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
+    /// <summary>
+    /// Closes a refund not yet paid out whose money is gone: the money it would return never arrived (a receipt
+    /// reversal). It is rejected, with the reason, by the approver of that reversal.
+    /// </summary>
+    public void CloseUnpaid(Guid? approverId, string remarks, DateTimeOffset now)
+    {
+        if (!IsOutstanding)
+        {
+            return;
+        }
+
+        Status = RefundStatus.Rejected;
+        DecidedBy = approverId;
+        DecidedAt = now;
+        DecisionRemarks = remarks.Length <= 300 ? remarks : remarks[..299] + "…";
+    }
+
     private Result CheckDecision(Guid approverId)
     {
         if (Status != RefundStatus.Requested)
@@ -293,17 +332,35 @@ public sealed class Refund : AuditableEntity, IFacilityScoped
 
 public enum CreditNoteKind
 {
-    /// <summary>Commercial adjustment after billing (wrong rate, service not rendered).</summary>
+    /// <summary>
+    /// A correction of what was charged (a wrong rate, a service not given): a GST credit note (CGST Act s.34), which
+    /// names the services it corrects when the bill carries GST and lowers their GST with their value.
+    /// </summary>
     CreditNote = 0,
 
-    /// <summary>Unrecoverable due written off (bad debt), with approval.</summary>
+    /// <summary>Unrecoverable due written off (bad debt), with approval. It reduces no GST.</summary>
     WriteOff,
+
+    /// <summary>
+    /// A GST credit note to the payer (insurer, TPA or corporate) for part of its share it settled less than billed: up to
+    /// the bill's disallowed amount not already credited, naming the services. It lowers the GST of the payer's invoice and
+    /// is an e-invoice (<c>CRN</c>) to a payer registered for GST; it does not change what the patient owes, since the
+    /// settlement already took the deduction off what the payer owes.
+    /// </summary>
+    PayerShare,
 }
 
 /// <summary>
 /// Reduces what the patient owes on a finalized bill (MB-05); always audited. One person asks for it and another, an
 /// approver, issues it by approving the request (maker-checker): <see cref="RequestedBy"/> is the first, <see cref="IssuedBy"/>
 /// the second. Notes issued before the approval step have no <see cref="RequestedBy"/>.
+/// <para>
+/// A credit note names the bill lines it corrects (<see cref="Lines"/>), each with the taxable value and the GST taken off
+/// it at the line's own rate (<see cref="GstCreditNotes.Share"/>), so the books and the Invoice Registration Portal lower
+/// the GST the bill charged on those services. One issued after the last day the GST of the bill can be reduced
+/// (<see cref="GstCreditNotes.LastDay"/>) lowers what is owed and not the GST (<see cref="GstTimeBarred"/>). Notes issued
+/// before lines were kept, and write-offs, have none and reduce no GST.
+/// </para>
 /// </summary>
 public sealed class CreditNote : AuditableEntity, IFacilityScoped
 {
@@ -312,11 +369,87 @@ public sealed class CreditNote : AuditableEntity, IFacilityScoped
     public CreditNoteKind Kind { get; set; }
     public Guid BillId { get; set; }
     public Guid PatientId { get; set; }
+
+    /// <summary>What the note takes off the bill, GST included.</summary>
     public decimal Amount { get; set; }
+
     public string Reason { get; set; } = string.Empty;
     public Guid? RequestedBy { get; set; }
     public string? RequestedByName { get; set; }
     public Guid? IssuedBy { get; set; }
     public string? IssuedByName { get; set; }
     public DateTimeOffset IssuedAt { get; set; }
+
+    /// <summary>The GST the note credits, from its lines; nothing for a write-off or a note that names no lines.</summary>
+    public decimal CgstAmount { get; private set; }
+
+    public decimal SgstAmount { get; private set; }
+    public decimal IgstAmount { get; private set; }
+
+    /// <summary>Issued after the last day the bill's GST could be reduced (CGST Act s.34(2)): its lines carry no GST.</summary>
+    public bool GstTimeBarred { get; private set; }
+
+    public List<CreditNoteLine> Lines { get; set; } = [];
+
+    public decimal GstAmount => CgstAmount + SgstAmount + IgstAmount;
+
+    /// <summary>The value the note takes off the bill's taxable supplies: its amount less the GST it credits.</summary>
+    public decimal TaxableAmount => Amount - GstAmount;
+
+    /// <summary>
+    /// Credits <paramref name="amount"/> (GST included) on <paramref name="line"/>, which earlier credit notes already
+    /// credited <paramref name="creditedBefore"/>: the line's taxable value and GST fall in proportion, or, when
+    /// <paramref name="timeBarred"/>, its value alone.
+    /// </summary>
+    public CreditNoteLine Credit(BillLine line, decimal creditedBefore, decimal amount, bool interState, bool timeBarred)
+    {
+        var share = timeBarred
+            ? new GstShare(amount, 0m, 0m, 0m)
+            : GstCreditNotes.Share(line.NetAmount, line.TaxableAmount, creditedBefore, amount, interState);
+        var credited = new CreditNoteLine
+        {
+            CreditNoteId = Id,
+            BillLineId = line.Id,
+            Description = line.Description,
+            SacCode = line.SacCode,
+            GstRate = timeBarred ? 0m : line.TaxRate,
+            Amount = amount,
+            TaxableAmount = share.Taxable,
+            CgstAmount = share.Cgst,
+            SgstAmount = share.Sgst,
+            IgstAmount = share.Igst,
+            SortOrder = Lines.Count,
+        };
+        Lines.Add(credited);
+        CgstAmount += share.Cgst;
+        SgstAmount += share.Sgst;
+        IgstAmount += share.Igst;
+        GstTimeBarred = timeBarred;
+        return credited;
+    }
+}
+
+/// <summary>
+/// A bill line a credit note corrects: what it takes off the line (<see cref="Amount"/>, GST included), and of that the
+/// taxable value and the GST at the line's rate, as the line was taxed (IGST to another state, CGST and SGST within it).
+/// </summary>
+[AuditedWithParent]
+public sealed class CreditNoteLine : Entity
+{
+    public Guid CreditNoteId { get; set; }
+    public Guid BillLineId { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public string? SacCode { get; set; }
+
+    /// <summary>The line's GST rate; 0 on a note issued after its GST could be reduced.</summary>
+    public decimal GstRate { get; set; }
+
+    public decimal Amount { get; set; }
+    public decimal TaxableAmount { get; set; }
+    public decimal CgstAmount { get; set; }
+    public decimal SgstAmount { get; set; }
+    public decimal IgstAmount { get; set; }
+    public int SortOrder { get; set; }
+
+    public decimal GstAmount => CgstAmount + SgstAmount + IgstAmount;
 }

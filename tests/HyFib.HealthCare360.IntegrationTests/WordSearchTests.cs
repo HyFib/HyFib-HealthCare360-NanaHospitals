@@ -20,7 +20,7 @@ public sealed class WordSearchTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var tag = Letters(8);
         var name = $"X-ray wrist PA view {tag}";
-        await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+        await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"XR-{tag.ToUpperInvariant()}", name, null, ServiceCategory.Radiology, null, 450m, 0m, "999312", true, false, null, true, null));
 
         (await ServicesAsync(doctor, $"wrist X-ray {tag}")).ShouldBe([name], "the words of the name, in another order");

@@ -110,14 +110,27 @@ public static class WhatsAppOptOutPolicy
         // Asked for by someone else, and sent only by SMS.
         "portal.family_code",
 
+        // Asked for at the desk before a patient's records are shared with a family member's portal account, sent only by SMS.
+        "portal.family_code_desk",
+
+        // Sent by staff when the patient asks at the desk; the portal's own sign-in needs no link.
+        "portal.link",
+
         // Asked for from the patient's ABHA app, and sent only by SMS.
         "abdm.link_code",
+
+        // Asked for at the desk to confirm a patient's new mobile number, and sent only by SMS.
+        "patients.phone_code",
 
         // Alerts to staff numbers: they also go by SMS and in-app.
         "rpm.alert", "lab.critical", "system.alert",
 
         // Sent to staff by e-mail and in the app, never on WhatsApp.
         "auth.credentials_changed",
+
+        // Sent to staff by SMS and e-mail when an administrator resets their password or changes their contact details,
+        // never on WhatsApp.
+        "auth.temporary_password", "auth.contact_changed",
     };
 
     /// <summary>

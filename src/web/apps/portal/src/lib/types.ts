@@ -212,6 +212,8 @@ export interface PortalBookAppointmentRequest {
   isTelehealth: boolean;
   reason: string | null;
   payOnline: boolean;
+  /** For a video consultation: the patient agrees to be seen by video (recorded on their consents). */
+  telehealthConsent?: boolean;
 }
 
 /** What the portal needs to open the payment gateway's checkout (Razorpay-style order). */
@@ -684,7 +686,8 @@ export interface PrescriptionVerification {
 /**
  * What anyone may see of a prescription's DSC signature: the signer, the certificate and the hash, no patient data.
  * `Untrusted`: the prescription is as signed, but the certificate does not chain to a CCA India root installed on the
- * server, so it is not presented as a DSC. `chainTrusted` is whether it does; revocation is not checked.
+ * server, so it is not presented as a DSC. `chainTrusted` is whether it does; `revocationStatus` how the certificate's
+ * revocation was checked when it signed (in the server's words; absent for a signature made before HC360 checked it).
  */
 export type DigitalSignatureState = 'NotSigned' | 'Valid' | 'Invalid' | 'Untrusted';
 
@@ -696,6 +699,7 @@ export interface PublicDigitalSignature {
   signedAt: string;
   contentHash: string;
   chainTrusted: boolean;
+  revocationStatus?: string | null;
   message: string;
 }
 
@@ -882,6 +886,40 @@ export interface ReceiptSummary {
   receivedAt: string;
 }
 
+export type RefundPurpose = 'Bill' | 'Deposit' | 'Advance';
+export type RefundMode =
+  'Cash' | 'Card' | 'Upi' | 'NetBanking' | 'Cheque' | 'PaymentGateway' | 'Insurance' | 'Wallet' | 'Advance';
+export type PortalRefundStage =
+  | 'Requested'
+  | 'Approved'
+  | 'NotApproved'
+  | 'PaidOut'
+  | 'KeptAsAdvance'
+  | 'WithTheBank'
+  | 'Credited'
+  | 'BankReturned'
+  | 'Replaced';
+
+/** A refund as the patient sees it: where it stands and the reference to trace it by (never staff notes or names). */
+export interface PortalRefund {
+  id: string;
+  refundNumber: string;
+  patientId: string;
+  patientName: string | null;
+  billId: string | null;
+  billNumber: string | null;
+  purpose: RefundPurpose;
+  amount: number;
+  stage: PortalRefundStage;
+  requestedAt: string;
+  /** When the money left the hospital: paid at the counter, or last sent through the payment gateway. */
+  sentAt: string | null;
+  mode: RefundMode | null;
+  /** The bank's reference (ARN, RRN or UTR) for a gateway refund, or the counter's transfer or cheque reference. */
+  reference: string | null;
+  creditedAt: string | null;
+}
+
 export interface PortalBillDetail {
   id: string;
   billNumber: string | null;
@@ -901,6 +939,7 @@ export interface PortalBillDetail {
   dueAmount: number;
   lines: PortalBillLine[];
   receipts: ReceiptSummary[];
+  refunds: PortalRefund[];
 }
 
 /** POST /api/v1/portal/bills/{id}/pay: `id` is the gateway order row, `orderId` the gateway's own order id. */
@@ -1176,6 +1215,37 @@ export interface PublicPrivacyInfo {
   hospital: string;
   contact: PrivacyContact;
   responseDays: number;
+  /** How long the record access log is kept, in years; null (or missing) while the hospital keeps it permanently (ADR-015). */
+  accessLogYears?: number | null;
+  /** The Data Protection Officer, once the hospital names one (DPDP Act s.10). */
+  dpo?: PortalDpoContact | null;
+  /** The longest erased data stays in the hospital's backups, in days. */
+  backupWindowDays?: number | null;
+}
+
+export interface PortalDpoContact {
+  name: string | null;
+  designation: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  basedInIndia: boolean;
+}
+
+/** A consent the patient gave through a consent manager (DPDP Act s.6(7)). */
+export interface PortalConsentArtefact {
+  id: string;
+  consentManagerName: string;
+  artefactId: string;
+  patientId: string;
+  purpose: string;
+  dataItems: string[];
+  validFrom: string;
+  validUntil: string;
+  status: 'Active' | 'Withdrawn' | 'Expired';
+  inForce: boolean;
+  receivedAt: string;
+  withdrawnAt: string | null;
 }
 
 /** The registration details as held. ABHA and Aadhaar arrive masked, exactly as the hospital stores them. */
@@ -1232,7 +1302,8 @@ export interface RetentionPeriods {
   inpatientYears: number;
   financeYears: number;
   messageLogDays: number;
-  auditYears: number;
+  /** Null while the audit trail is kept permanently. */
+  auditYears: number | null;
 }
 
 export interface SummaryConsent {

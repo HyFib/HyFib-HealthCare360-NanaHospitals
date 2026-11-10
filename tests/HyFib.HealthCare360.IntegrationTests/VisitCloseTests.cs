@@ -224,7 +224,7 @@ public sealed class VisitCloseTests(HospitalServer server)
     /// Front office: admits the patient under the doctor to a free deluxe suite, a ward no other test admits to, from the
     /// visit the admission was advised at when there is one (an OPD visit, unless <paramref name="source"/> says otherwise).
     /// </summary>
-    private static async Task<AdmissionCreated> AdmitAsync(
+    private async Task<AdmissionCreated> AdmitAsync(
         ApiClient frontOffice, ApiClient doctor, Guid patientId, Guid? sourceVisitId = null, AdmissionSource source = AdmissionSource.OutPatient) =>
         await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions",
             await AdmissionAsync(frontOffice, doctor, patientId, source, sourceVisitId, null));
@@ -233,13 +233,12 @@ public sealed class VisitCloseTests(HospitalServer server)
     /// The admission of the patient to a free deluxe suite, from the source and the visit named, at the time given (now when
     /// none). One from the casualty is an emergency admission; any other is elective.
     /// </summary>
-    private static async Task<AdmitPatientRequest> AdmissionAsync(
+    private async Task<AdmitPatientRequest> AdmissionAsync(
         ApiClient frontOffice, ApiClient doctor, Guid patientId, AdmissionSource source, Guid? sourceVisitId, DateTimeOffset? admittedAt)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "DLX");
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(server, ward.Id);
         return new AdmitPatientRequest(
             PatientId: patientId, BedId: bed.BedId, Type: source == AdmissionSource.Emergency ? AdmissionType.Emergency : AdmissionType.Elective,
             Source: source, SourceVisitId: sourceVisitId,

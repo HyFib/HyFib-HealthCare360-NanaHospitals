@@ -243,7 +243,7 @@ internal sealed class NotificationService(
                 CreatedAt = now,
                 Channel = channel,
                 TemplateKey = templateKey,
-                Recipient = channel == NotificationChannel.Email ? MaskEmail(target) : Phone.Mask(target),
+                Recipient = channel == NotificationChannel.Email ? Masking.MaskEmail(target) : Phone.Mask(target),
                 PatientId = recipient.PatientId,
                 FacilityId = facility,
                 Status = string.IsNullOrWhiteSpace(target) ? NotificationStatus.Skipped : NotificationStatus.Queued,
@@ -314,17 +314,6 @@ internal sealed class NotificationService(
         await NotifyUsersAsync(ids, title, body, link, category, severity, cancellationToken);
     }
 
-    private static string? MaskEmail(string? email)
-    {
-        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@', StringComparison.Ordinal))
-        {
-            return email;
-        }
-
-        var at = email.IndexOf('@', StringComparison.Ordinal);
-        return email[0] + "***" + email[at..];
-    }
-
     private static string? Truncate(string? value, int max) => value is null || value.Length <= max ? value : value[..max];
 }
 
@@ -339,6 +328,10 @@ public static class DefaultNotificationTemplates
         ("auth.otp", NotificationChannel.Sms, null, "{{code}} is your {{hospital}} verification code. It expires in {{minutes}} minutes. Do not share it with anyone.", "Patient portal sign-in OTP"),
         ("abdm.link_code", NotificationChannel.Sms, null, "{{code}} is your code to link your {{hospital}} records to your ABHA. It expires in {{minutes}} minutes. Do not share it with anyone.", "Code to link hospital records to the patient's ABHA from their PHR app"),
         ("portal.family_code", NotificationChannel.Sms, null, "{{requester}} wants to see your {{hospital}} records in the patient portal. Give them code {{code}} only if you agree. It expires in {{minutes}} minutes.", "Code for a family member to see a patient's records in the portal"),
+        ("portal.family_code_desk", NotificationChannel.Sms, null, "{{hospital}}: you are sharing your records with the patient portal account of {{number}}. Give code {{code}} to the hospital staff only if you agree. It expires in {{minutes}} minutes.", "Code the front desk asks the patient for before sharing their records with a family member's portal account, sent to the patient's own number"),
+        ("patients.phone_code", NotificationChannel.Sms, null, "{{code}} is your code to register this number with {{hospital}}. Give it to the hospital staff only if you asked to change your mobile number. It expires in {{minutes}} minutes.", "Code to confirm a patient's new mobile number, sent to the new number"),
+        ("portal.link", NotificationChannel.Sms, null, "{{hospital}}: open your patient portal here: {{link}} . We will send a sign-in code to this number. The link works for 7 days.", "Link to the patient portal, sent by staff to the patient's registered number"),
+        ("portal.link", NotificationChannel.WhatsApp, null, "{{hospital}}: open your patient portal here: {{link}} . We will send a sign-in code to this number. The link works for 7 days.", "Link to the patient portal, sent by staff to the patient's registered number (WhatsApp)"),
         ("appointment.confirmed", NotificationChannel.Sms, null, "Dear {{name}}, your appointment with {{doctor}} is confirmed for {{date}} at {{time}}. Ref {{reference}}. - {{hospital}}", "Appointment booked"),
         ("appointment.confirmed", NotificationChannel.WhatsApp, null, "Dear {{name}}, your appointment with {{doctor}} is confirmed for {{date}} at {{time}}. Reference: {{reference}}.", "Appointment booked (WhatsApp)"),
         ("appointment.reminder", NotificationChannel.Sms, null, "Reminder: {{name}}, your appointment with {{doctor}} is on {{date}} at {{time}}. - {{hospital}}", "Appointment reminder"),
@@ -364,6 +357,18 @@ public static class DefaultNotificationTemplates
         ("auth.credentials_changed", NotificationChannel.Email, "{{hospital}} HC360: your sign-in details changed",
             "{{change}} This happened to your account {{user}} on {{time}}. If you did not do this, tell your IT administrator at once.",
             "Tells staff that their password or two-step verification changed"),
+        ("auth.temporary_password", NotificationChannel.Sms, null,
+            "{{hospital}} HC360: an administrator reset the password of your account {{user}}. Temporary password: {{password}} . Change it when you sign in; it stops working on {{expires}}. If you did not ask for this, tell IT at once.",
+            "A temporary password an administrator made, sent to the member of staff's own mobile number"),
+        ("auth.temporary_password", NotificationChannel.Email, "{{hospital}} HC360: your temporary password",
+            "An administrator reset the password of your account {{user}}. Your temporary password is {{password}} . You will choose your own password when you sign in with it, and it stops working on {{expires}}. If you did not ask for this, tell your IT administrator at once.",
+            "A temporary password an administrator made, sent to the member of staff's own e-mail address"),
+        ("auth.contact_changed", NotificationChannel.Sms, null,
+            "{{hospital}} HC360: {{change}} This happened to your account {{user}} on {{time}}. If you did not ask for this, tell IT at once.",
+            "Tells staff at their old mobile number that the number or e-mail address on their account changed"),
+        ("auth.contact_changed", NotificationChannel.Email, "{{hospital}} HC360: your contact details changed",
+            "{{change}} This happened to your account {{user}} on {{time}}. If you did not ask for this, tell your IT administrator at once.",
+            "Tells staff at their old e-mail address that the address or mobile number on their account changed"),
     ];
 }
 

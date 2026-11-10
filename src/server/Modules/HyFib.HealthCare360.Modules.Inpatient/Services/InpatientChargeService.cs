@@ -14,6 +14,7 @@ namespace HyFib.HealthCare360.Modules.Inpatient.Services;
 public sealed class InpatientChargeService(
     HospitalDbContext db,
     IChargePoster chargePoster,
+    IBillingStatusProvider billing,
     ISettingsService settings,
     ICurrentUser currentUser,
     TimeProvider time,
@@ -24,6 +25,28 @@ public sealed class InpatientChargeService(
 
     public const string NursingServiceCode = "NURS-DAY";
 
+    /// <summary>Discharged stays are revisited for a few days in case Billing was unreachable at discharge.</summary>
+    public static readonly TimeSpan RecentDischargeWindow = TimeSpan.FromDays(3);
+
+    /// <summary>The charges this module posts by itself and posts again until billing takes them (<see cref="ChargeRequest.Automatic"/>).</summary>
+    private static readonly string[] AutomaticSources = [DailyChargeKeys.BedSource, DailyChargeKeys.NursingSource, DailyChargeKeys.ConsultantVisitSource];
+
+    /// <summary>
+    /// The stays whose days the hourly job posts: those in progress, those discharged in the last few days, and any with a
+    /// day or visit billing refused, however long ago it ended (a stay ended by absconding or death has its days posted
+    /// after it ended): posted again until it is charged, as its final bill waits for it.
+    /// </summary>
+    public async Task<IReadOnlyList<Guid>> StaysDueAsync(CancellationToken ct)
+    {
+        var since = time.GetUtcNow() - RecentDischargeWindow;
+        var refused = await billing.GetStaysWithRefusedChargesAsync(AutomaticSources, ct);
+        return await db.Set<Admission>().AsNoTracking()
+            .Where(a => a.Status == AdmissionStatus.Admitted || a.Status == AdmissionStatus.DischargeInitiated
+                        || (a.DischargedAt != null && a.DischargedAt >= since) || refused.Contains(a.Id))
+            .Select(a => a.Id)
+            .ToListAsync(ct);
+    }
+
     /// <summary>
     /// Posts bed and nursing charges for every due day not yet in the ledger. <paramref name="closingAt"/> treats the stay
     /// as ending at that instant (discharge being processed) so the final bill includes the last day. Safe to call any
@@ -32,7 +55,9 @@ public sealed class InpatientChargeService(
     public async Task<int> PostDueBedDaysAsync(Guid admissionId, DateTimeOffset? closingAt, CancellationToken ct)
     {
         var count = await StageDueBedDaysAsync(admissionId, closingAt, ct);
-        if (count > 0)
+
+        // A day billing refused is kept on record by billing, to warn of it and hold the stay's final bill: saved too.
+        if (count > 0 || db.ChangeTracker.HasChanges())
         {
             await db.SaveChangesAsync(ct);
         }
@@ -173,13 +198,12 @@ public sealed class InpatientChargeService(
             return Error.NotFound("Consultant visit", visitId);
         }
 
-        if (visit.ChargeId is not null)
+        // Billing is told even when the visit was never charged: a charge it refused is then no longer owed, and no
+        // longer holds the stay's final bill.
+        var reversed = await chargePoster.CancelAsync(DailyChargeKeys.ConsultantVisitSource, visit.Id.ToString(), reason.Trim(), ct);
+        if (reversed.IsFailure)
         {
-            var reversed = await chargePoster.CancelAsync(DailyChargeKeys.ConsultantVisitSource, visit.Id.ToString(), reason.Trim(), ct);
-            if (reversed.IsFailure)
-            {
-                return reversed;
-            }
+            return reversed;
         }
 
         visit.ChargeError = Truncate($"Cancelled: {reason.Trim()}", 300);
@@ -188,12 +212,18 @@ public sealed class InpatientChargeService(
         return Result.Success();
     }
 
-    /// <summary>Retries consultant-visit charges Billing did not accept earlier (for example while it was unreachable).</summary>
+    /// <summary>
+    /// Retries consultant-visit charges Billing did not accept earlier (while it was unreachable, or refused one): those of
+    /// the last 7 days, every one of a stay in progress, and every one of a stay with a visit billing refused, whose final
+    /// bill waits for them.
+    /// </summary>
     public async Task<int> RetryVisitChargesAsync(CancellationToken ct)
     {
         var since = time.GetUtcNow().AddDays(-7);
+        var refused = await billing.GetStaysWithRefusedChargesAsync([DailyChargeKeys.ConsultantVisitSource], ct);
+        var inProgress = db.Set<Admission>().Where(a => a.Status == AdmissionStatus.Admitted || a.Status == AdmissionStatus.DischargeInitiated).Select(a => a.Id);
         var pending = await db.Set<ConsultantVisit>()
-            .Where(v => v.ChargeId == null && v.VisitedAt >= since)
+            .Where(v => v.ChargeId == null && (v.VisitedAt >= since || inProgress.Contains(v.AdmissionId) || refused.Contains(v.AdmissionId)))
             .OrderBy(v => v.VisitedAt)
             .Take(200)
             .ToListAsync(ct);
@@ -290,6 +320,7 @@ public sealed class InpatientChargeService(
             DepartmentId = admission.DepartmentId,
             ServiceDate = IndiaClock.StartOfDayUtc(date),
             Room = room,
+            Automatic = true,
         }, ct);
 
         if (result.IsFailure)
@@ -333,6 +364,7 @@ public sealed class InpatientChargeService(
             SourceReference = visit.Id.ToString(),
             PractitionerId = visit.PractitionerId,
             ServiceDate = visit.VisitedAt,
+            Automatic = true,
         }, ct);
 
         if (result.IsSuccess)

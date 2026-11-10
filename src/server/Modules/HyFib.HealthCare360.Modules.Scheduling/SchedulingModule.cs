@@ -52,7 +52,9 @@ public sealed class SchedulingModule : IModule
         services.AddScoped<AvailabilityService>();
         services.AddScoped<ScheduleService>();
         services.AddScoped<AppointmentNotifier>();
+        services.AddScoped<StrandedPatientNotifier>();
         services.AddScoped<WaitlistService>();
+        services.AddScoped<IPractitionerWorkSource, SchedulingPractitionerWork>();
         services.AddScoped<AppointmentBookingService>();
         services.AddScoped<AppointmentPaymentService>();
         services.AddScoped<AppointmentReminderRunner>();

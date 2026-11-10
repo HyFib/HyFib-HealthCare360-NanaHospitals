@@ -84,7 +84,10 @@ internal sealed class UnmatchedResultService(
             return editable;
         }
 
-        var reading = new AnalyserReading(unmatched.InstrumentUnit, unmatched.InstrumentFlags, unmatched.InstrumentStatus, unmatched.InstrumentComment);
+        var reading = new AnalyserReading(unmatched.InstrumentUnit, unmatched.InstrumentFlags, unmatched.InstrumentStatus, unmatched.InstrumentComment)
+        {
+            Value = unmatched.Value,
+        };
         var capture = context.Capture(target, unmatched.Value, remarks: null, organism: null, colonyCount: null, unmatched.InstrumentCode, reading);
         if (capture.IsFailure)
         {

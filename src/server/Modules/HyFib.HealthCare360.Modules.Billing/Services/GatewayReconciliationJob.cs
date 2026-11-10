@@ -19,10 +19,17 @@ public sealed class GatewayReconciliationRunner(
     PrepaymentChecker prepayments,
     GatewayRefundTracker refunds,
     GatewaySettlementService settlements,
+    PaymentDisputeService disputes,
     ISettingsService settings,
     TimeProvider time,
     ILogger<GatewayReconciliationRunner> logger)
 {
+    /// <summary>
+    /// Chargebacks: tells accountants of each case HC360 opened from a settlement, and reminds them daily of the cases
+    /// whose deadline is near or past (<see cref="PaymentDisputeService.RemindAsync"/>).
+    /// </summary>
+    public Task<int> FollowChargebacksAsync(CancellationToken ct) => disputes.RemindAsync(ct);
+
     /// <summary>At most this many records are looked at per step and run; the rest wait for the next run.</summary>
     private const int Batch = 200;
 
@@ -138,6 +145,52 @@ public sealed class GatewayReconciliationRunner(
         return checkedCount;
     }
 
+    /// <summary>
+    /// Orders bookings had before their current one, which the patient may still pay (a checkout left open on another
+    /// tab or phone): asked about like an unpaid booking's, every run for two hours after they were replaced and then
+    /// hourly for three days, so money taken on one is recorded even if its webhook never comes, as the booking's
+    /// payment or as a second payment kept as an advance with its refund asked for. The settlement match finds any
+    /// paid later.
+    /// </summary>
+    public async Task<int> RecheckReplacedOrdersAsync(CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        var since = now.AddDays(-3);
+        var open = await db.Set<ReplacedPaymentOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(o => o.GatewayPaymentId == null && o.ReplacedAt >= since)
+            .OrderByDescending(o => o.ReplacedAt)
+            .Select(o => new { o.Id, o.ReplacedAt })
+            .Take(Batch * 4)
+            .ToListAsync(ct);
+        var checkedCount = 0;
+        foreach (var due in open.Where(o => IsBookingDue(o.ReplacedAt, now)).Take(Batch))
+        {
+            // Loaded one at a time, with its booking: a step that fails clears the unit of work.
+            var order = await db.Set<ReplacedPaymentOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .FirstOrDefaultAsync(o => o.Id == due.Id && o.GatewayPaymentId == null, ct);
+            var booking = order is null
+                ? null
+                : await db.Set<Appointment>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstOrDefaultAsync(a => a.Id == order.AppointmentId, ct);
+            if (order is null || booking is null)
+            {
+                continue;
+            }
+
+            checkedCount++;
+            try
+            {
+                await prepayments.ConfirmReplacedOrderAsync(booking, order, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Could not re-check earlier gateway order {OrderId} of appointment {AppointmentId}", order.OrderId, booking.Id);
+                db.ChangeTracker.Clear();
+            }
+        }
+
+        return checkedCount;
+    }
+
     /// <summary>Gateway refunds sent in the last month (paid out or sent again) the bank has not confirmed.</summary>
     public async Task<int> FollowRefundsAsync(CancellationToken ct)
     {
@@ -245,6 +298,36 @@ public sealed class GatewayReconciliationRunner(
         return added;
     }
 
+    /// <summary>
+    /// The gateway's own records of disputes, for every active facility with reconciliation on
+    /// (<see cref="PaymentDisputeService.FollowGatewayDisputesAsync"/>): a dispute whose webhook never came, or could not
+    /// be handled, still has its case, with the gateway's deadline and status.
+    /// </summary>
+    public async Task<int> FollowGatewayDisputesAsync(CancellationToken ct)
+    {
+        var facilities = await db.Set<Facility>().AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => f.Id).ToListAsync(ct);
+        var read = 0;
+        foreach (var facilityId in facilities)
+        {
+            if (!(await GatewayReconciliationSettings.ReadAsync(settings, facilityId, ct)).Enabled)
+            {
+                continue;
+            }
+
+            try
+            {
+                read += await disputes.FollowGatewayDisputesAsync(facilityId, ct) ?? 0;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Could not follow the gateway's disputes for facility {FacilityId}", facilityId);
+                db.ChangeTracker.Clear();
+            }
+        }
+
+        return read;
+    }
+
     /// <summary>Every run while the payment is fresh (two hours from when it was started), then about hourly.</summary>
     internal static bool IsBookingDue(DateTimeOffset startedAt, DateTimeOffset now)
     {
@@ -255,9 +338,10 @@ public sealed class GatewayReconciliationRunner(
 
 /// <summary>
 /// The gateway reconciliation job (INT-PG): every 5 minutes it asks the gateway about payments still open (links,
-/// portal checkouts, prepaid bookings); hourly, and once at start, it follows gateway refunds, reads the settlements of
-/// today and yesterday, and lists receipts still unsettled. Runs only on nodes that run jobs
-/// (<see cref="PlatformOptions.RunsJobs"/>); every step is idempotent, so a second worker does no harm.
+/// portal checkouts, prepaid bookings and the orders they had before) and tells of chargebacks; hourly, and once at
+/// start, it follows gateway refunds, reads the settlements of today and yesterday, lists receipts still unsettled, and
+/// reads the gateway's disputes. Runs only on nodes that
+/// run jobs (<see cref="PlatformOptions.RunsJobs"/>); every step is idempotent, so a second worker does no harm.
 /// </summary>
 internal sealed class GatewayReconciliationJob(
     IServiceScopeFactory scopeFactory,
@@ -280,10 +364,13 @@ internal sealed class GatewayReconciliationJob(
             first = false;
             await StepAsync("re-check open online payments", (runner, ct) => runner.RecheckOrdersAsync(ct), stoppingToken);
             await StepAsync("re-check prepaid bookings", (runner, ct) => runner.RecheckBookingsAsync(ct), stoppingToken);
+            await StepAsync("re-check bookings' earlier orders", (runner, ct) => runner.RecheckReplacedOrdersAsync(ct), stoppingToken);
+            await StepAsync("follow chargebacks", (runner, ct) => runner.FollowChargebacksAsync(ct), stoppingToken);
             if (hourly)
             {
                 await StepAsync("follow gateway refunds", (runner, ct) => runner.FollowRefundsAsync(ct), stoppingToken);
                 await StepAsync("read gateway settlements", (runner, ct) => runner.FetchSettlementsAsync(ct), stoppingToken);
+                await StepAsync("read the gateway's disputes", (runner, ct) => runner.FollowGatewayDisputesAsync(ct), stoppingToken);
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));

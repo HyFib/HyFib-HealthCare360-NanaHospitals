@@ -31,6 +31,8 @@ internal static class TelehealthEndpoints
         video.MapPost("/sessions/{id:guid}/start", Start).RequirePermission(VirtualCarePermissions.TelehealthConsult);
         video.MapPost("/sessions/{id:guid}/resend-link", ResendLink).RequirePermission(VirtualCarePermissions.TelehealthManage);
         video.MapPost("/sessions/{id:guid}/recording-consent", RecordConsent).RequirePermission(VirtualCarePermissions.TelehealthConsult);
+        video.MapPost("/sessions/{id:guid}/telehealth-consent", RecordTelehealthConsent).RequirePermission(VirtualCarePermissions.TelehealthConsult)
+            .WithValidation<TelehealthConsentRequest>();
         video.MapGet("/sessions/{id:guid}/messages", Messages).RequirePermission(VirtualCarePermissions.TelehealthRead);
         video.MapPost("/sessions/{id:guid}/messages", PostMessage).RequirePermission(VirtualCarePermissions.TelehealthConsult).WithValidation<PostTelehealthMessageRequest>();
     }
@@ -117,6 +119,26 @@ internal static class TelehealthEndpoints
 
     private static async Task<IResult> RecordConsent(Guid id, RecordingConsentRequest request, TelehealthSessionService sessions, CancellationToken ct) =>
         (await sessions.RecordConsentAsync(id, request.Granted, ct)).ToNoContent();
+
+    /// <summary>The patient's consent to be seen by video, given by voice at the start of the call; the session comes back with it.</summary>
+    private static async Task<IResult> RecordTelehealthConsent(
+        Guid id, TelehealthConsentRequest request, TelehealthSessionService sessions, HospitalDbContext db, PatientAccessGuard guard, TimeProvider time,
+        CancellationToken ct)
+    {
+        var patientId = await db.Set<TelehealthSession>().Where(s => s.Id == id).Select(s => (Guid?)s.PatientId).FirstOrDefaultAsync(ct);
+        if (patientId is null)
+        {
+            return Error.NotFound(nameof(TelehealthSession), id).ToProblem();
+        }
+
+        var access = await guard.EnsureCanOpenChartAsync(patientId.Value, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
+        }
+
+        return await DetailResultAsync(await sessions.RecordTelehealthConsentAsync(id, request.Notes, ct), db, time, ct);
+    }
 
     private static async Task<IResult> Messages(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)
     {

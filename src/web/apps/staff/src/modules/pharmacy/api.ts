@@ -1,6 +1,7 @@
 import type { Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { EInvoiceStamp } from '@/modules/billing/einvoiceApi';
 import type { BatchStock, ExpiringBatch } from '@/modules/inventory/api';
 import type { DrugSchedule, StockMovementType } from '@/modules/inventory/labels';
@@ -54,6 +55,8 @@ export interface QueueListItem {
   signedAt: string;
   receivedAt: string;
   waitingMinutes: number;
+  /** A line was signed over a blocking safety alert and no pharmacist has acknowledged it yet. */
+  hasUnacknowledgedOverride?: boolean;
 }
 
 export interface QueueLineDto {
@@ -84,6 +87,11 @@ export interface QueueLineDto {
    */
   schedule: DrugSchedule | null;
   isNdps: boolean;
+  /** The blocking safety alerts the prescriber signed this line over; it is not dispensed until acknowledged. */
+  safetyOverride?: string | null;
+  overrideAcknowledgedBy?: string | null;
+  overrideAcknowledgedAt?: string | null;
+  overrideAcknowledgementNote?: string | null;
 }
 
 export interface QueueEntryDetail {
@@ -109,6 +117,8 @@ export interface QueueEntryDetail {
   version: number;
   /** Why the visit's medicines are free of cost by law (BNSS 2023 s.397, with the MLC entry): they are given, not sold. */
   freeTreatmentReason?: string | null;
+  /** The prescriber's reason for signing over a blocking safety alert. */
+  safetyOverrideReason?: string | null;
 }
 
 export interface SalePayment {
@@ -261,6 +271,8 @@ export interface PharmacyPaymentDto {
   reference: string | null;
   receivedAt: string;
   isRefund: boolean;
+  /** A refund: the payment it paid back, in that payment's mode (none on refunds made before refunds named it). */
+  refundOfPaymentId?: string | null;
 }
 
 export interface PharmacySaleDetail {
@@ -308,13 +320,39 @@ export interface PharmacySaleDetail {
   eInvoice?: EInvoiceStamp | null;
   /** Why the medicines were given free of cost by law (BNSS 2023 s.397, with the MLC entry); no payment was taken. */
   freeTreatmentReason?: string | null;
+  /** The date written on the outside prescription sold against at the counter. */
+  prescriptionDate?: string | null;
+  /** A cancellation or a return of the invoice waiting for someone who approves refunds: nothing has moved yet. */
+  pending?: PendingApproval[] | null;
+  /** The signed-in user sold the invoice or took its payment: someone else asks to cancel it or takes its returns. */
+  ownSale?: boolean;
 }
 
+/**
+ * A return of some of an invoice's lines. It names no refund mode: the refund first comes off any balance due, and the
+ * rest goes back the way the sale was paid (cash as cash, a card payment to the card, UPI by UPI).
+ */
 export interface SaleReturnRequest {
   lines: { saleItemId: string; quantity: number; restock: boolean }[];
   reason: string;
-  refundMode: PaymentMode;
-  refundReference: string | null;
+}
+
+/**
+ * A cancellation, a return or a ward return waiting for a second person, as every reader of the invoice or issue sees it.
+ * `askedByYou`: the reader's own request, which they may open and withdraw.
+ */
+export interface PendingApproval {
+  approvalId: string;
+  kind: 'pharmacy.sale_cancel' | 'pharmacy.sale_return' | 'pharmacy.ward_return';
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
+  askedByYou: boolean;
+}
+
+/** The request a return or a cancellation made (202), rather than the return itself (201). */
+export function isApprovalRequest(result: unknown): result is ApprovalRequestDto {
+  return result !== null && typeof result === 'object' && 'kind' in result && 'summary' in result && 'id' in result;
 }
 
 export interface SaleReturnCreated {
@@ -501,6 +539,8 @@ export interface IpIssueDetail {
   totalAmount: number;
   lines: IpIssueLineDto[];
   returns: WardReturnDto[];
+  /** A ward return with a line not restocked waiting for a second pharmacist: nothing is credited or written off yet. */
+  pending?: PendingApproval[] | null;
 }
 
 export interface WardReturnRequest {
@@ -773,19 +813,28 @@ export const pharmacyApi = {
   dispense: (entryId: string, body: DispenseRequest) =>
     api.post<PharmacySaleCreated>(`${BASE}/queue/${entryId}/dispense`, body),
   closeEntry: (entryId: string, reason: string) => api.post<void>(`${BASE}/queue/${entryId}/close`, { reason }),
+  acknowledgeOverride: (entryId: string, lineId: string, note: string | null) =>
+    api.post<void>(`${BASE}/queue/${entryId}/lines/${lineId}/acknowledge-override`, { note }),
   authorizeRefills: (entryId: string, body: { refills: number; validUntil: string; note: string }) =>
     api.post<void>(`${BASE}/queue/${entryId}/refills`, body),
   counterSale: (body: CounterSaleRequest) => api.post<PharmacySaleCreated>(`${BASE}/sales/counter`, body),
   collectPayment: (saleId: string, body: SalePayment) => api.post<void>(`${BASE}/sales/${saleId}/payments`, body),
+  /**
+   * A return: made at once (201, the return) when it is restocked and set against the balance due; asked for (202, the
+   * approval request) when it pays money out or writes stock off. 403 `pharmacy.return_own_sale` for whoever sold it.
+   */
   returnSale: (saleId: string, body: SaleReturnRequest) =>
-    api.post<SaleReturnCreated>(`${BASE}/sales/${saleId}/returns`, body),
-  cancelSale: (saleId: string, reason: string) => api.post<void>(`${BASE}/sales/${saleId}/cancel`, { reason }),
+    api.post<SaleReturnCreated | ApprovalRequestDto>(`${BASE}/sales/${saleId}/returns`, body),
+  /** Asks for a same-day cancellation (202): someone who approves refunds decides. 403 `pharmacy.cancel_own_sale` for whoever sold it. */
+  cancelSale: (saleId: string, reason: string) =>
+    api.post<ApprovalRequestDto>(`${BASE}/sales/${saleId}/cancel`, { reason }),
   raiseWardIndent: (body: RaiseWardIndentRequest) =>
     api.post<{ id: string; number: string }>(`${BASE}/ward-indents`, body),
   cancelWardIndent: (id: string, reason: string) => api.post<void>(`${BASE}/ward-indents/${id}/cancel`, { reason }),
   issueToWard: (body: IpIssueRequest) => api.post<IpIssueCreated>(`${BASE}/ip-issues`, body),
+  /** A ward return: made at once (201) when restocked; asked for (202) when a line is not restocked, for a second pharmacist. */
   wardReturn: (issueId: string, body: WardReturnRequest) =>
-    api.post<WardReturnCreated>(`${BASE}/ip-issues/${issueId}/returns`, body),
+    api.post<WardReturnCreated | ApprovalRequestDto>(`${BASE}/ip-issues/${issueId}/returns`, body),
   requestRefill: (body: { queueEntryId: string; preferredPickupDate: string | null; notes: string | null }) =>
     api.post<{ id: string; number: string }>(`${BASE}/refills`, body),
   approveRefill: (id: string) => api.post<{ queueEntryId: string }>(`${BASE}/refills/${id}/approve`),

@@ -35,6 +35,16 @@ internal sealed class ScheduleExceptionConfiguration : IEntityTypeConfiguration<
     }
 }
 
+internal sealed class AppointmentReminderSentConfiguration : IEntityTypeConfiguration<AppointmentReminderSent>
+{
+    public void Configure(EntityTypeBuilder<AppointmentReminderSent> b)
+    {
+        b.ToTable(AppointmentReminderSent.Table, SchedulingSchema.Name);
+        b.HasKey(x => new { x.AppointmentId, x.Kind });
+        b.HasOne<Appointment>().WithMany().HasForeignKey(x => x.AppointmentId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 internal sealed class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
 {
     /// <summary>Seat uniqueness applies only to bookings that still hold their seat.</summary>
@@ -54,6 +64,7 @@ internal sealed class AppointmentConfiguration : IEntityTypeConfiguration<Appoin
         b.Ignore(x => x.HoldsSeat);
         b.Ignore(x => x.IsOpen);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasMany(x => x.ReplacedOrders).WithOne().HasForeignKey(o => o.AppointmentId).OnDelete(DeleteBehavior.Cascade);
 
         b.HasIndex(x => x.Number).IsUnique();
         b.HasIndex(x => new { x.PractitionerId, x.StartsAt });
@@ -71,6 +82,24 @@ internal sealed class AppointmentConfiguration : IEntityTypeConfiguration<Appoin
             .IsUnique()
             .HasFilter(ActiveSeatFilter)
             .HasDatabaseName("ux_appointments_practitioner_slot_seat");
+    }
+}
+
+internal sealed class ReplacedPaymentOrderConfiguration : IEntityTypeConfiguration<ReplacedPaymentOrder>
+{
+    public void Configure(EntityTypeBuilder<ReplacedPaymentOrder> b)
+    {
+        b.ToTable("appointment_replaced_orders", SchedulingSchema.Name);
+        b.Property(x => x.Provider).HasMaxLength(32);
+        b.Property(x => x.OrderId).HasMaxLength(64);
+        b.Property(x => x.GatewayPaymentId).HasMaxLength(64);
+
+        // Webhooks and the settlement match find a booking by any order it had; an order is one booking's.
+        b.HasIndex(x => x.OrderId).IsUnique();
+        b.HasIndex(x => x.GatewayPaymentId).HasFilter("gateway_payment_id IS NOT NULL");
+
+        // Billing's re-check asks about the recent ones nobody has paid yet.
+        b.HasIndex(x => x.ReplacedAt).HasFilter("gateway_payment_id IS NULL");
     }
 }
 

@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Modules.Interop.Mapping;
+using HyFib.HealthCare360.Modules.Interop.Search;
 using R4 = Hl7.Fhir.Model;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
@@ -25,6 +27,16 @@ internal sealed record ResourceLookup(R4.Resource? Resource, Guid? PatientId, bo
 internal sealed record RowState(Guid PatientId, bool IsDeleted);
 
 /// <summary>
+/// What a provider puts forward for a search inside one patient's record: the resources the search is then run on, how
+/// many records it left out itself because the consents admitting the reader do not cover them (they count as withheld,
+/// as those the caller filters out do), or a refusal when the search would reach more records than one answer holds.
+/// </summary>
+internal sealed record SearchCandidates(IReadOnlyList<R4.Resource> Resources, int Withheld = 0, FhirError? Refusal = null)
+{
+    public static SearchCandidates Refused(FhirError refusal) => new([], 0, refusal);
+}
+
+/// <summary>
 /// Loads one FHIR resource type from the modules that own the data. Queries run through <see cref="HospitalDbContext"/>
 /// with the platform's facility and soft-delete filters, and only records that are complete for sharing are returned
 /// (released results and reports, signed prescriptions and discharge summaries). Patients have their own service.
@@ -35,6 +47,11 @@ internal interface IFhirResourceProvider
 
     Task<ResourceLookup> FindAsync(string id, CancellationToken ct);
 
-    /// <summary>Every shareable resource of this type in one patient's record (searched in memory afterwards).</summary>
-    Task<IReadOnlyList<R4.Resource>> ListForPatientAsync(Guid patientId, CancellationToken ct);
+    /// <summary>
+    /// The shareable resources of this type in one patient's record that the search could match; the search is run on
+    /// them in memory afterwards, and the consents are applied to each. A provider may leave out records the search
+    /// cannot match, never one it could; it may leave out records the consents do not cover, counting them as withheld;
+    /// and it may refuse a search that would reach more records than one answer holds.
+    /// </summary>
+    Task<SearchCandidates> ListForPatientAsync(Guid patientId, SearchRequest request, PatientAccess access, CancellationToken ct);
 }

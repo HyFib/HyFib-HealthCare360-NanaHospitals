@@ -27,6 +27,7 @@ import { BrandMark } from './BrandMark';
 import { CommandPalette } from './CommandPalette';
 import { ConnectionIndicator, DegradedBanner, OfflineBanner } from './ConnectionIndicator';
 import { NotificationsButton } from './NotificationsButton';
+import { OfflineCopyBanner, OfflineCopyKeeper } from './OfflineCopy';
 import { idleLockMinutes } from './lockSync';
 import { UserMenu } from './UserMenu';
 
@@ -154,6 +155,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           appearance="outline"
           icon={<SearchRegular />}
           onClick={() => setPaletteOpen(true)}
+          // Named in words at every width: below 640 px it shows its icon alone, the words hidden. The shortcut is said
+          // by aria-keyshortcuts, so it is not read out again as part of the name.
+          aria-label="Search patients or screens"
           aria-keyshortcuts="Control+K"
         >
           <span className={styles.searchText}>Search patients or screens</span>
@@ -235,6 +239,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <div id="main" className={styles.main} tabIndex={-1}>
           <OfflineBanner />
+          <OfflineCopyBanner />
+          <OfflineCopyKeeper />
           <DegradedBanner />
           {children}
         </div>

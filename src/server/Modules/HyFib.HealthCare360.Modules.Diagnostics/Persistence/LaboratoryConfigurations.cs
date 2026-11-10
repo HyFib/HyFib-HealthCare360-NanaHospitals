@@ -186,6 +186,7 @@ internal sealed class LabResultConfiguration : IEntityTypeConfiguration<LabResul
         b.Property(x => x.InstrumentFlags).HasMaxLength(64);
         b.Property(x => x.InstrumentStatus).HasMaxLength(16);
         b.Property(x => x.InstrumentComment).HasMaxLength(500);
+        b.Property(x => x.InstrumentValue).HasMaxLength(LabResult.InstrumentValueLength);
         b.Property(x => x.Remarks).HasMaxLength(1000);
         b.Property(x => x.Organism).HasMaxLength(200);
         b.Property(x => x.ColonyCount).HasMaxLength(100);
@@ -227,6 +228,34 @@ internal sealed class UnmatchedLabResultConfiguration : IEntityTypeConfiguration
     }
 }
 
+internal sealed class AnalyserChannelConfiguration : IEntityTypeConfiguration<AnalyserChannel>
+{
+    public void Configure(EntityTypeBuilder<AnalyserChannel> b)
+    {
+        // Written by AnalyserChannelSightings with INSERT … ON CONFLICT (instrument_id, channel_code): keep the names.
+        b.ToTable("lab_analyser_channels", DiagnosticsSchema.Name);
+        b.Property(x => x.ChannelCode).HasMaxLength(AnalyserChannel.ChannelCodeLength);
+        b.Property(x => x.LastValue).HasMaxLength(AnalyserChannel.ValueLength);
+        b.Property(x => x.LastUnit).HasMaxLength(AnalyserChannel.UnitLength);
+        b.HasOne<LabInstrument>().WithMany().HasForeignKey(x => x.InstrumentId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => new { x.InstrumentId, x.ChannelCode }).IsUnique();
+    }
+}
+
+internal sealed class IgnoredAnalyserChannelConfiguration : IEntityTypeConfiguration<IgnoredAnalyserChannel>
+{
+    public void Configure(EntityTypeBuilder<IgnoredAnalyserChannel> b)
+    {
+        b.ToTable("lab_ignored_analyser_channels", DiagnosticsSchema.Name);
+        b.Property(x => x.ChannelCode).HasMaxLength(AnalyserChannel.ChannelCodeLength);
+        b.Property(x => x.Reason).HasMaxLength(IgnoredAnalyserChannel.ReasonLength);
+        b.HasOne<LabInstrument>().WithMany().HasForeignKey(x => x.InstrumentId).OnDelete(DeleteBehavior.Restrict);
+
+        // One decision stands for a channel of an analyser; one taken back is kept, removed, in the trail.
+        b.HasIndex(x => new { x.InstrumentId, x.ChannelCode }).IsUnique().HasFilter("is_deleted = false");
+    }
+}
+
 internal sealed class LabSusceptibilityConfiguration : IEntityTypeConfiguration<LabSusceptibility>
 {
     public void Configure(EntityTypeBuilder<LabSusceptibility> b)
@@ -260,6 +289,7 @@ internal sealed class LabReportAmendmentConfiguration : IEntityTypeConfiguration
         b.ToTable("lab_report_amendments", DiagnosticsSchema.Name);
         b.Property(x => x.Reason).HasMaxLength(500);
         b.Property(x => x.Changes).HasMaxLength(2000);
+        b.Property(x => x.RequestedByName).HasMaxLength(200);
     }
 }
 

@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
+using HyFib.HealthCare360.Modules.Pharmacy.Services;
 
 namespace HyFib.HealthCare360.Modules.Pharmacy.Features.Inpatient;
 
@@ -116,6 +117,7 @@ public sealed record WardReturnLineDto(Guid IpIssueLineId, string ItemName, stri
 
 public sealed record WardReturnDto(Guid Id, string Number, DateTimeOffset ReturnedAt, string Reason, decimal CreditAmount, IReadOnlyList<WardReturnLineDto> Lines);
 
+/// <param name="Pending">A ward return with a line not restocked waiting for a second pharmacist: nothing is credited or written off yet.</param>
 public sealed record IpIssueDetail(
     Guid Id,
     string Number,
@@ -128,11 +130,13 @@ public sealed record IpIssueDetail(
     string? IssuedBy,
     decimal TotalAmount,
     IReadOnlyList<IpIssueLineDto> Lines,
-    IReadOnlyList<WardReturnDto> Returns);
+    IReadOnlyList<WardReturnDto> Returns,
+    IReadOnlyList<PendingApproval>? Pending = null);
 
 /// <param name="Restock">Sealed, in-date returns go back on the shelf; opened or damaged ones are only credited.</param>
 public sealed record WardReturnLineInput(Guid IpIssueLineId, decimal Quantity, bool Restock);
 
+/// <summary>A return from the ward; one with a line not restocked is a write-off, and waits for a second pharmacist.</summary>
 public sealed record WardReturnRequest(IReadOnlyList<WardReturnLineInput> Lines, string Reason);
 
 public sealed record WardReturnCreated(Guid Id, string Number, decimal CreditAmount);
@@ -180,7 +184,8 @@ public sealed class WardReturnRequestValidator : AbstractValidator<WardReturnReq
 {
     public WardReturnRequestValidator()
     {
-        RuleFor(x => x.Lines).NotEmpty().WithMessage("Choose what is being returned.");
+        RuleFor(x => x.Lines).NotEmpty().WithMessage("Choose what is being returned.")
+            .Must(l => l.Select(x => x.IpIssueLineId).Distinct().Count() == l.Count).WithMessage("Enter each medicine once.");
         RuleForEach(x => x.Lines).ChildRules(line =>
         {
             line.RuleFor(l => l.IpIssueLineId).NotEmpty();

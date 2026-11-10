@@ -70,8 +70,6 @@ public static class AppointmentQueries
                 join p in db.Set<Patient>() on a.PatientId equals p.Id
                 join pr in db.Set<Practitioner>() on a.PractitionerId equals pr.Id into practitioners
                 from pr in practitioners.DefaultIfEmpty()
-                join d in db.Set<Department>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on a.DepartmentId equals d.Id into departments
-                from d in departments.DefaultIfEmpty()
                 where a.Id == id
                 select new
                 {
@@ -82,7 +80,6 @@ public static class AppointmentQueries
                     p.DateOfBirth,
                     p.Phone,
                     PractitionerName = pr != null ? pr.DisplayName : null,
-                    DepartmentName = d != null ? d.Name : null,
                 })
             .FirstOrDefaultAsync(ct);
         if (row is null)
@@ -91,14 +88,19 @@ public static class AppointmentQueries
         }
 
         var x = row.Appointment;
+        var departments = await DepartmentNamesAsync(db, [x.DepartmentId], ct);
         var history = await HistoryAsync(db, x, ct);
+        var reminders = await db.Set<AppointmentReminderSent>().AsNoTracking().Where(r => r.AppointmentId == x.Id)
+            .ToDictionaryAsync(r => r.Kind, r => r.SentAt, ct);
         return new AppointmentDetail(
             x.Id, x.Number, x.FacilityId, x.PatientId, row.Uhid, row.FullName, row.Gender, row.DateOfBirth is { } dob ? Age.Format(dob, today) : null,
-            PatientContacts.Phone(row.Phone, fullContacts), x.PractitionerId, row.PractitionerName ?? "Doctor", x.DepartmentId, row.DepartmentName, x.ScheduleId, x.StartsAt, x.EndsAt,
+            PatientContacts.Phone(row.Phone, fullContacts), x.PractitionerId, row.PractitionerName ?? "Doctor", x.DepartmentId,
+            departments.GetValueOrDefault(x.DepartmentId), x.ScheduleId, x.StartsAt, x.EndsAt,
             x.SeatNumber, x.Status, x.Channel, x.VisitType, x.IsTelehealth, x.Room, x.Reason, x.Notes, x.BookedAt, x.ConfirmedAt, x.FeeAmount,
             x.PaymentStatus, x.PaymentProvider, x.GatewayOrderId, x.GatewayPaymentId, x.AmountPaid, x.PaidAt, x.VisitId, x.CheckedInAt,
             x.CompletedAt, x.NoShowAt, x.CancelReasonCode, x.CancelReason, x.CancelledBy, x.CancelledAt, x.RescheduledFromId, x.RescheduledToId,
-            x.WaitlistEntryId, x.Reminder24hSentAt, x.Reminder2hSentAt, history, x.Version);
+            x.WaitlistEntryId, reminders.TryGetValue(AppointmentReminder.DayBefore, out var dayBefore) ? dayBefore : null,
+            reminders.TryGetValue(AppointmentReminder.TwoHoursBefore, out var twoHours) ? twoHours : null, history, x.Version);
     }
 
     /// <summary>Earlier bookings this appointment replaced (reschedule chain), newest first.</summary>
@@ -142,8 +144,6 @@ public static class AppointmentQueries
                    join p in db.Set<Patient>() on a.PatientId equals p.Id
                    join pr in db.Set<Practitioner>() on a.PractitionerId equals pr.Id into practitioners
                    from pr in practitioners.DefaultIfEmpty()
-                   join d in db.Set<Department>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on a.DepartmentId equals d.Id into departments
-                   from d in departments.DefaultIfEmpty()
                    select new AppointmentRow
                    {
                        Id = a.Id,
@@ -157,7 +157,6 @@ public static class AppointmentQueries
                        PractitionerId = a.PractitionerId,
                        PractitionerName = pr != null ? pr.DisplayName : null,
                        DepartmentId = a.DepartmentId,
-                       DepartmentName = d != null ? d.Name : null,
                        StartsAt = a.StartsAt,
                        EndsAt = a.EndsAt,
                        SeatNumber = a.SeatNumber,
@@ -174,10 +173,26 @@ public static class AppointmentQueries
                    };
 
         var result = await rows.OrderByKey(page, SortKeys, r => r.StartsAt).ToPagedResultAsync(page, ct);
+        var departments = await DepartmentNamesAsync(db, result.Items.Select(r => r.DepartmentId), ct);
         return result.Map(r => new AppointmentListItem(
             r.Id, r.Number, r.PatientId, r.Uhid, r.PatientName, r.Gender, r.DateOfBirth is { } dob ? Age.Format(dob, today) : null, Phone.Mask(r.Phone),
-            r.PractitionerId, r.PractitionerName ?? "Doctor", r.DepartmentId, r.DepartmentName, r.StartsAt, r.EndsAt, r.SeatNumber, r.Status,
-            r.Channel, r.VisitType, r.IsTelehealth, r.PaymentStatus, r.FeeAmount, r.Reason, r.Room, r.VisitId, r.BookedAt));
+            r.PractitionerId, r.PractitionerName ?? "Doctor", r.DepartmentId, departments.GetValueOrDefault(r.DepartmentId), r.StartsAt, r.EndsAt,
+            r.SeatNumber, r.Status, r.Channel, r.VisitType, r.IsTelehealth, r.PaymentStatus, r.FeeAmount, r.Reason, r.Room, r.VisitId, r.BookedAt));
+    }
+
+    /// <summary>
+    /// Department names by id, from any facility, read in a query of their own. EF Core ignores a query filter for the whole
+    /// query: read in the appointments' query, the departments of every facility took the facility filter off the
+    /// appointments too, and the desk listed every facility's.
+    /// </summary>
+    private static async Task<Dictionary<Guid, string>> DepartmentNamesAsync(HospitalDbContext db, IEnumerable<Guid> departmentIds, CancellationToken ct)
+    {
+        var ids = departmentIds.Distinct().ToList();
+        return ids.Count == 0
+            ? []
+            : await db.Set<Department>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(d => ids.Contains(d.Id))
+                .ToDictionaryAsync(d => d.Id, d => d.Name, ct);
     }
 
     public static Task<List<CalendarAppointment>> CalendarAsync(HospitalDbContext db, IQueryable<Appointment> appointments, int limit, CancellationToken ct) =>
@@ -204,7 +219,6 @@ public static class AppointmentQueries
         public Guid PractitionerId { get; init; }
         public string? PractitionerName { get; init; }
         public Guid DepartmentId { get; init; }
-        public string? DepartmentName { get; init; }
         public DateTimeOffset StartsAt { get; init; }
         public DateTimeOffset EndsAt { get; init; }
         public int SeatNumber { get; init; }

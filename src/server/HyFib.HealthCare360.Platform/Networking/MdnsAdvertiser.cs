@@ -20,6 +20,7 @@ namespace HyFib.HealthCare360.Platform.Networking;
 /// code, CA fingerprint, host name and path. Re-announces periodically and whenever the network address changes (WiFi
 /// reconnect / DHCP renewal).
 /// </summary>
+[NodeLocal]
 internal sealed class MdnsAdvertiser(
     IOptions<PlatformOptions> options,
     LanCertificateManager certificates,

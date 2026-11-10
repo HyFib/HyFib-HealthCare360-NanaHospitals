@@ -34,15 +34,19 @@ internal static class IncidentEndpoints
         group.MapGet("/", List).RequirePermission(QualityPermissions.IncidentsManage);
         group.MapGet("/{id:guid}", Get).RequirePermission(QualityPermissions.IncidentsManage);
         group.MapPut("/{id:guid}", async (Guid id, UpdateIncidentRequest r, IncidentService incidents, CancellationToken ct) =>
-                (await incidents.UpdateAsync(id, r, ct)).ToNoContent())
+                (await incidents.UpdateAsync(id, r, ct)).ToHttpResult(Answer))
             .RequirePermission(QualityPermissions.IncidentsManage).WithValidation<UpdateIncidentRequest>();
         group.MapPost("/{id:guid}/transition", async (Guid id, TransitionIncidentRequest r, IncidentService incidents, CancellationToken ct) =>
-                (await incidents.TransitionAsync(id, r, ct)).ToNoContent())
+                (await incidents.TransitionAsync(id, r, ct)).ToHttpResult(Answer))
             .RequirePermission(QualityPermissions.IncidentsManage).WithValidation<TransitionIncidentRequest>();
         group.MapPost("/{id:guid}/assign", async (Guid id, AssignIncidentRequest r, IncidentService incidents, CancellationToken ct) =>
                 (await incidents.AssignAsync(id, r, ct)).ToNoContent())
             .RequirePermission(QualityPermissions.IncidentsManage).WithValidation<AssignIncidentRequest>();
     }
+
+    /// <summary>204 once made; 202 with the approval it waits for (a sentinel event closed or re-graded out of sentinel).</summary>
+    private static IResult Answer(Platform.Approvals.ApprovalRequestDto? asked) =>
+        asked is null ? TypedResults.NoContent() : TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked);
 
     /// <summary>The caller's own named reports (anonymous reports are, by design, not traceable to anyone).</summary>
     private static async Task<IResult> Mine(HospitalDbContext db, ICurrentUser user, CancellationToken ct) =>
@@ -141,7 +145,7 @@ internal static class IncidentEndpoints
             i.DepartmentName, i.IsAnonymous, i.AssignedToUserId, i.OpenCapas)));
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Get(Guid id, HospitalDbContext db, IAuditLogger audit, IncidentService incidents, TimeProvider time, CancellationToken ct)
     {
         var incident = await db.Set<Incident>().AsNoTracking().FirstOrDefaultAsync(i => i.Id == id, ct);
         if (incident is null)
@@ -160,10 +164,16 @@ internal static class IncidentEndpoints
             .Select(c => new IncidentCapaItem(c.Id, c.CapaNumber, c.Type, c.Action, c.Status, c.DueDate, c.IsOverdue(today)))
             .ToList();
 
+        var mvpi = await db.Set<MvpiReport>().AsNoTracking().Where(r => r.IncidentId == id).OrderBy(r => r.CreatedAt)
+            .Select(r => new IncidentMvpiItem(r.Id, r.Number, r.Status, r.FollowUpOfId != null, r.Reference))
+            .ToListAsync(ct);
+
         if (incident.PatientId is { } patientId)
         {
             await audit.PatientRecordAccessedAsync(patientId, $"Viewed incident report {incident.IncidentNumber}", ct);
         }
+
+        var waiting = await incidents.WaitingAsync(id, ct);
 
         return TypedResults.Ok(new IncidentDetail(
             incident.Id, incident.IncidentNumber, incident.Type, incident.Severity, incident.IsSentinel, incident.SentinelKind, incident.SentinelReason,
@@ -172,6 +182,7 @@ internal static class IncidentEndpoints
             incident.InvolvedStaffUserIds.Select(u => new PersonRef(u, names.GetValueOrDefault(u) ?? "Unknown user")).ToList(),
             incident.Description, incident.ImmediateAction, incident.Witnesses, incident.IsAnonymous, incident.ReporterName,
             incident.AssignedToUserId is { } assignee ? new PersonRef(assignee, names.GetValueOrDefault(assignee) ?? "Unknown user") : null,
-            incident.ClosedAt, incident.ClosureNote, incident.LastStatusNote, incident.ReopenCount, investigation, capas, incident.Version));
+            incident.ClosedAt, incident.ClosureNote, incident.LastStatusNote, incident.ReopenCount, investigation, capas, incident.InvolvesDevice,
+            incident.IsDeviceRelated, mvpi, incident.Version, waiting.Closure, waiting.Downgrade));
     }
 }

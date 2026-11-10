@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { CONSENT_TYPES, type ConsentDto } from './api';
+import {
+  CONSENT_TYPES,
+  SHARED_RECORD_KINDS,
+  SHARING_PURPOSES,
+  type ConsentDto,
+  type RecordSharingScopeDto,
+} from './api';
 import {
   CONSENT_GROUPS,
   consentStatus,
@@ -11,6 +17,9 @@ import {
   otherGivenConsents,
   otherGivenNote,
   recordedNotice,
+  SHARED_RECORD_KIND_LABELS,
+  SHARING_PURPOSE_LABELS,
+  sharingScopeSummary,
   signedByText,
   withdrawalEffect,
   withdrawnNotice,
@@ -163,6 +172,76 @@ describe('withdrawing a consent', () => {
       title: 'Consent withdrawn',
       body: 'This patient’s records are no longer shared with other care providers.',
     });
+  });
+});
+
+describe('what a record-sharing consent covers (gap #28)', () => {
+  const open: RecordSharingScopeDto = {
+    shareWith: [],
+    purposes: [],
+    kinds: [],
+    recordsFrom: null,
+    recordsTo: null,
+    until: null,
+  };
+  const day = (iso: string) => `<${iso}>`;
+
+  it('says who may read, what for, which records, which dates and until when', () => {
+    expect(
+      sharingScopeSummary(
+        {
+          shareWith: [{ id: 'p1', name: 'Apollo Clinic' }],
+          purposes: ['Treatment'],
+          kinds: ['Allergies', 'LabResults'],
+          recordsFrom: '2026-01-01',
+          recordsTo: null,
+          until: '2026-12-31',
+        },
+        day,
+      ),
+    ).toBe(
+      'Shared with Apollo Clinic, for treating the patient: allergies, lab results and reports (with home glucose readings) dated from <2026-01-01>. Until <2026-12-31>.',
+    );
+  });
+
+  it('says what is left open', () => {
+    expect(sharingScopeSummary({ ...open, kinds: ['Medicines'] }, day)).toBe(
+      'Shared with every partner account, for any purpose: prescribed medicines.',
+    );
+    expect(sharingScopeSummary({ ...open, recordsFrom: '2026-01-01', recordsTo: '2026-06-30' }, day)).toBe(
+      'Shared with every partner account, for any purpose: all records but counselling notes dated <2026-01-01> to <2026-06-30>.',
+    );
+  });
+
+  it('says counselling notes are shared only when the consent names them', () => {
+    expect(sharingScopeSummary(open, day)).toBe(
+      'Shared with every partner account, for any purpose: all records but counselling notes.',
+    );
+    expect(sharingScopeSummary({ ...open, kinds: ['ClinicalNotes', 'CounsellingNotes'] }, day)).toBe(
+      'Shared with every partner account, for any purpose: progress, procedure and referral notes, counselling notes.',
+    );
+  });
+
+  it('names every purpose and kind of record the server knows', () => {
+    SHARING_PURPOSES.forEach((p) => expect(SHARING_PURPOSE_LABELS[p]).toMatch(/\([A-Z]+\)$/));
+    SHARED_RECORD_KINDS.forEach((k) => expect(SHARED_RECORD_KIND_LABELS[k]).toBeTruthy());
+  });
+
+  it('tells the patient the procedures done apart from the notes written about them (gap #26)', () => {
+    // The consent form offers the kinds in this list: without procedures in it, no consent could name them.
+    expect(SHARED_RECORD_KINDS).toContain('Procedures');
+    expect(sharingScopeSummary({ ...open, kinds: ['Procedures'] }, day)).toBe(
+      'Shared with every partner account, for any purpose: procedures and operations.',
+    );
+    expect(sharingScopeSummary({ ...open, kinds: ['ClinicalNotes', 'Procedures'] }, day)).toBe(
+      'Shared with every partner account, for any purpose: progress, procedure and referral notes, procedures and operations.',
+    );
+  });
+
+  it('tells the patient which kinds carry the readings of their home-monitoring devices', () => {
+    expect(SHARED_RECORD_KIND_LABELS.VitalSigns).toMatch(/at home/);
+    expect(SHARED_RECORD_KIND_LABELS.LabResults).toMatch(/home glucose/);
+    expect(SHARED_RECORD_KIND_LABELS.ScansAndHeartTests).toMatch(/ECG patch/);
   });
 });
 

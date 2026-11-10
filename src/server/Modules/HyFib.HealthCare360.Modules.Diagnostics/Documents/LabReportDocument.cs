@@ -76,17 +76,22 @@ internal static class LabReportDocument
             : Html.Of($"""
                 <h2>{text["doc.lab.amendments"]}</h2>
                 <table><thead><tr><th>{text["doc.lab.revision"]}</th><th>{text["doc.lab.when"]}</th><th>{text["doc.lab.by"]}</th><th>{text["doc.lab.reason_changes"]}</th></tr></thead><tbody>
-                {view.Amendments.Select(a => Html.Of($"<tr><td>{a.Revision}</td><td>{DocumentFormat.DateTime(a.AmendedAt)}</td><td>{a.AmendedBy}</td><td>{a.Reason}<div class=\"small\">{a.Changes}</div></td></tr>"))}
+                {view.Amendments.Select(a => Html.Of($"<tr><td>{a.Revision}</td><td>{DocumentFormat.DateTime(a.AmendedAt)}</td><td>{a.AmendedBy}{AskedBy(a, text)}</td><td>{a.Reason}<div class=\"small\">{a.Changes}</div></td></tr>"))}
                 </tbody></table>
                 """);
         return Html.Join(sections) + amendments;
     }
 
-    /// <summary>Partial report, auto-validation and amendment notices.</summary>
+    /// <summary>A correction waiting for approval, partial report, auto-validation and amendment notices.</summary>
     public static IReadOnlyList<string> Notes(LabReportView view, DocumentText? text = null)
     {
         text ??= DocumentText.English;
         var notes = new List<string>();
+        if (view.AmendmentWaitingSince is not null)
+        {
+            notes.Add(text["doc.lab.note.amendment_waiting"]);
+        }
+
         if (view.IsPartial)
         {
             notes.Add(text["doc.lab.note.partial"]);
@@ -104,6 +109,10 @@ internal static class LabReportDocument
 
         return notes;
     }
+
+    /// <summary>Who asked for a correction a second pathologist released, under the name of the one who released it.</summary>
+    private static Html AskedBy(LabAmendmentView amendment, DocumentText text) =>
+        amendment.RequestedBy is { } name ? Html.Of($"<div class=\"small\">{text.Format("doc.lab.asked_by", ("name", name))}</div>") : Html.Empty;
 
     public static string SectionLabel(LabSection section) => section switch
     {

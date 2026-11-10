@@ -23,6 +23,13 @@ public sealed class GoodsReceiptNote : AuditableEntity, IFacilityScoped
     public Guid? PurchaseOrderId { get; set; }
     public string VendorInvoiceNumber { get; set; } = string.Empty;
     public DateOnly? VendorInvoiceDate { get; set; }
+
+    /// <summary>
+    /// The invoice's total as the supplier printed it, as the store entered it: what the person who posts the receipt
+    /// compares with <see cref="NetAmount"/>, worked out from the lines. <c>null</c> when it was not entered.
+    /// </summary>
+    public decimal? VendorInvoiceAmount { get; set; }
+
     public DateOnly ReceivedOn { get; set; }
     public bool IsInterState { get; set; }
     public string? Remarks { get; set; }
@@ -81,6 +88,13 @@ public sealed class GoodsReceiptNote : AuditableEntity, IFacilityScoped
         if (Status != GoodsReceiptStatus.Draft)
         {
             return Error.Rule("grn.not_draft", $"GRN {Number} is already {Status}.");
+        }
+
+        // Maker-checker: whoever entered the goods received is not also the one who puts them into stock.
+        if (userId is not null && userId == CreatedBy)
+        {
+            return Error.Forbidden("grn.post_own",
+                $"You entered GRN {Number}, so someone else must check it against the supplier's invoice and post it into stock.");
         }
 
         var valid = Validate();
@@ -147,6 +161,13 @@ public sealed class GoodsReceiptLine : Entity
     public bool RequiresMrp { get; set; }
 
     public bool AcceptShortExpiry { get; set; }
+
+    /// <summary>
+    /// Snapshot: the NPPA ceiling price of a base unit with GST, for a scheduled medicine (DPCO 2013); null for anything
+    /// else. A pack whose printed MRP is above the ceiling of its units is not received (<see cref="PriceCeiling"/>).
+    /// </summary>
+    public decimal? CeilingPrice { get; set; }
+
     public decimal GrossAmount { get; private set; }
     public decimal DiscountAmount { get; private set; }
     public decimal TaxableAmount { get; private set; }
@@ -227,7 +248,27 @@ public sealed class GoodsReceiptLine : Entity
             return Error.Rule("grn.rate_above_mrp", $"{ItemName}: purchase rate {StockErrors.Format(Rate)} is above the MRP {StockErrors.Format(Mrp)}.");
         }
 
-        return Result.Success();
+        return CheckCeiling(CeilingPrice);
+    }
+
+    /// <summary>
+    /// A scheduled medicine is not received with a printed MRP above its NPPA ceiling (DPCO 2013, para 14 and 20): the
+    /// counter could not sell it. Checked when the receipt is entered, and again when it is posted, against the ceiling then.
+    /// </summary>
+    public Result CheckCeiling(decimal? ceilingPerUnit)
+    {
+        if (ceilingPerUnit is not { } ceiling || ceiling <= 0 || Mrp <= 0 || !PriceCeiling.PackExceeds(Mrp, ceiling, UnitsPerPurchaseUnit))
+        {
+            return Result.Success();
+        }
+
+        var packCeiling = PriceCeiling.PerPack(ceiling, UnitsPerPurchaseUnit);
+        return new Error(PriceCeiling.ReceiptCode,
+            $"{ItemName} batch {BatchNumber}: the MRP printed on the pack, {PriceCeiling.Money(Mrp)}, is above its NPPA ceiling price of {PriceCeiling.Money(packCeiling)} "
+            + $"({PriceCeiling.Money(ceiling)} a unit, with GST). A scheduled medicine is not received above its ceiling (DPCO 2013): return it to the supplier.")
+        {
+            Data = new { ItemId, BatchNumber, mrp = Mrp, ceilingPrice = packCeiling },
+        };
     }
 
     private static string Format(DateOnly date) => date.ToString("dd-MMM-yyyy", CultureInfo.InvariantCulture);

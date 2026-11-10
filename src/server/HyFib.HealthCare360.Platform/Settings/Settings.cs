@@ -57,6 +57,26 @@ public static class SecretSettingKeys
     public static bool IsSecret(string key) => key.EndsWith(".secret", StringComparison.OrdinalIgnoreCase);
 }
 
+/// <summary>
+/// How a secret setting's value is kept: its JSON encrypted with <see cref="IFieldProtector"/>, stored as a JSON string.
+/// The settings store keeps credentials so, and a change to one waiting for a second administrator holds its value the
+/// same way (<see cref="SettingChanges"/>).
+/// </summary>
+public static class SecretSettingValues
+{
+    public static string Protect(IFieldProtector protector, string json)
+    {
+        ArgumentNullException.ThrowIfNull(protector);
+        return JsonSerializer.Serialize(protector.Protect(json));
+    }
+
+    public static string? Unprotect(IFieldProtector protector, string stored)
+    {
+        ArgumentNullException.ThrowIfNull(protector);
+        return protector.Unprotect(JsonSerializer.Deserialize<string>(stored));
+    }
+}
+
 public interface ISettingsService
 {
     /// <summary>Facility value if present, else the global value, else <c>default</c>.</summary>
@@ -186,7 +206,7 @@ internal sealed class SettingsService(
             return null;
         }
 
-        return row.IsSecret ? protector.Unprotect(JsonSerializer.Deserialize<string>(row.Value)) : row.Value;
+        return row.IsSecret ? SecretSettingValues.Unprotect(protector, row.Value) : row.Value;
     }
 
     public Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default) =>
@@ -202,7 +222,7 @@ internal sealed class SettingsService(
         // credentials in clear text in the database and in every backup.
         secret |= SecretSettingKeys.IsSecret(key);
         var json = JsonSerializer.Serialize(value, JsonOptions);
-        var stored = secret ? JsonSerializer.Serialize(protector.Protect(json)) : json;
+        var stored = secret ? SecretSettingValues.Protect(protector, json) : json;
 
         var row = await db.Set<SystemSetting>().FirstOrDefaultAsync(s => s.Key == key && s.FacilityId == facilityId, cancellationToken);
         if (checkVersion)
@@ -299,14 +319,20 @@ internal sealed class SettingsService(
 }
 
 /// <param name="Version">The row's version, to send back with a change (<see cref="SaveSettingRequest.Version"/>).</param>
+/// <param name="Pending">A change to it waiting for a second administrator (<see cref="SettingGuard"/>), if any.</param>
 public sealed record SettingDto(
-    Guid Id, string Key, Guid? FacilityId, JsonNode? Value, bool IsSecret, bool HasValue, string? Description, DateTimeOffset? UpdatedAt, uint Version);
+    Guid Id, string Key, Guid? FacilityId, JsonNode? Value, bool IsSecret, bool HasValue, string? Description, DateTimeOffset? UpdatedAt, uint Version,
+    PendingSettingChange? Pending = null);
 
 /// <param name="Version">
 /// The version of the value the change was made to (<see cref="SettingDto.Version"/>): 409 when it has changed since.
 /// Omit it for a value that was not set when it was read.
 /// </param>
-public sealed record SaveSettingRequest(JsonNode? Value, Guid? FacilityId, bool Secret, string? Description, uint? Version = null);
+/// <param name="Reason">
+/// Why, for the administrator who decides a change that waits (<see cref="SettingGuard"/>): required then (400 on
+/// <c>reason</c> without it), not kept for a change made at once.
+/// </param>
+public sealed record SaveSettingRequest(JsonNode? Value, Guid? FacilityId, bool Secret, string? Description, uint? Version = null, string? Reason = null);
 
 /// <summary>
 /// What any setting may hold: a value of at most <see cref="MaxValueLength"/> characters of JSON (every server reads the
@@ -323,6 +349,7 @@ public sealed class SaveSettingRequestValidator : AbstractValidator<SaveSettingR
             .WithMessage($"A setting holds at most {MaxValueLength / 1024} KB.");
         RuleFor(r => r.FacilityId).OptionalId();
         RuleFor(r => r.Description).SafeText(300);
+        RuleFor(r => r.Reason).SafeText(500);
     }
 }
 
@@ -354,7 +381,7 @@ internal static class SettingsEndpoints
 
         var admin = app.MapGroup("/api/v1/admin/settings").WithTags("Administration").RequirePermission(PlatformPermissions.SettingsManage);
 
-        admin.MapGet("/", async (string? prefix, HospitalDbContext db, CancellationToken ct) =>
+        admin.MapGet("/", async (string? prefix, HospitalDbContext db, SettingChanges changes, CancellationToken ct) =>
         {
             var query = db.Set<SystemSetting>().AsNoTracking();
             if (!string.IsNullOrWhiteSpace(prefix))
@@ -363,32 +390,48 @@ internal static class SettingsEndpoints
             }
 
             var rows = await query.OrderBy(s => s.Key).ToListAsync(ct);
+            var pending = await changes.PendingAsync(ct);
+
             // A secret key saved in clear text before encryption was enforced is still never shown.
             return TypedResults.Ok(rows.Select(s => (Row: s, Secret: s.IsSecret || SecretSettingKeys.IsSecret(s.Key))).Select(x => new SettingDto(
                 x.Row.Id, x.Row.Key, x.Row.FacilityId, x.Secret ? null : JsonNode.Parse(x.Row.Value), x.Secret, x.Row.Value != "null", x.Row.Description,
-                x.Row.UpdatedAt ?? x.Row.CreatedAt, x.Row.Version)));
+                x.Row.UpdatedAt ?? x.Row.CreatedAt, x.Row.Version, pending.GetValueOrDefault(SettingGuard.SubjectId(x.Row.Key, x.Row.FacilityId)))));
         });
 
-        admin.MapPut("/{key}", async (
-            string key, SaveSettingRequest request, ISettingsService settings, IAuditLogger audit, HospitalDbContext db, IOptions<PlatformOptions> platform,
-            CancellationToken ct) =>
+        // What a save would do, before it is made: the settings screens ask for a reason only when the change will wait.
+        admin.MapPost("/{key}/check", async (
+            string key, SaveSettingRequest request, SettingChanges changes, IOptions<PlatformOptions> platform, CancellationToken ct) =>
         {
-            if (key.Length is 0 or > 128 || !key.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-'))
+            if (Refusal(key, request, platform.Value) is { } refused)
             {
-                return Error.Field("key", "Use letters, digits, dots, dashes or underscores.").ToProblem();
+                return refused;
             }
 
-            if (TrainingDatabase.Problem(key) is { } serverSet)
+            var change = await changes.JudgeAsync(key, request, ct);
+            return TypedResults.Ok(new SettingChangeCheck(change.Waits, change.Name, change.Rule?.Controls, change.From, change.To));
+        }).WithValidation<SaveSettingRequest>();
+
+        admin.MapPut("/{key}", async (
+            string key, SaveSettingRequest request, ISettingsService settings, SettingChanges changes, IAuditLogger audit, HospitalDbContext db,
+            IOptions<PlatformOptions> platform, CancellationToken ct) =>
+        {
+            if (Refusal(key, request, platform.Value) is { } refused)
             {
-                return Error.Field("key", serverSet).ToProblem();
+                return refused;
             }
 
-            // A setting with rules of its own is refused here, not read leniently later (a default, or the nearest value allowed).
-            if ((AntiAutomationSettings.Problem(key, request.Value)
-                 ?? AdministrationOnDesktop.Problem(key, request.Value, request.FacilityId)
-                 ?? TrainingSimulators.Problem(key, request.Value, platform.Value)) is { } problem)
+            // A change that loosens a guarded setting, or changes where money, patients' data or alerts go, waits for a
+            // second administrator (SettingGuard); the stricter direction, and any other setting, is saved at once.
+            var change = await changes.JudgeAsync(key, request, ct);
+            if (change.Waits)
             {
-                return Error.Field("value", problem).ToProblem();
+                if (string.IsNullOrWhiteSpace(request.Reason))
+                {
+                    return Error.Field("reason", $"{change.Summary} waits for a second administrator. Say why, for the one who decides it.").ToProblem();
+                }
+
+                return (await changes.AskAsync(key, request, change, ct))
+                    .ToHttpResult(asked => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked));
             }
 
             // SetAsync encrypts *.secret keys even when the request leaves "secret" unset.
@@ -400,14 +443,35 @@ internal static class SettingsEndpoints
                     .ExecuteUpdateAsync(s => s.SetProperty(x => x.Description, request.Description), ct);
             }
 
-            await audit.WriteAsync(new AuditEntry(AuditCategories.Admin, "setting.changed", $"Changed setting {key}")
+            await audit.WriteAsync(new AuditEntry(AuditCategories.Admin, SettingChanges.ChangedAction, change.Guarded ? change.Summary : $"Changed setting {key}")
             {
                 EntityType = nameof(SystemSetting),
                 EntityId = key,
                 Details = secret ? new { secret = true } : request.Value,
-                Severity = key.StartsWith("integrations.", StringComparison.Ordinal) || secret ? AuditSeverity.Warning : AuditSeverity.Info,
+                Severity = change.Guarded || key.StartsWith("integrations.", StringComparison.Ordinal) || secret ? AuditSeverity.Warning : AuditSeverity.Info,
             }, ct);
             return TypedResults.NoContent();
         }).WithValidation<SaveSettingRequest>().FirstSaveCreates();
+    }
+
+    /// <summary>Why <paramref name="request"/> cannot be saved as <paramref name="key"/> at all, or null.</summary>
+    private static IResult? Refusal(string key, SaveSettingRequest request, PlatformOptions platform)
+    {
+        if (key.Length is 0 or > 128 || !key.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-'))
+        {
+            return Error.Field("key", "Use letters, digits, dots, dashes or underscores.").ToProblem();
+        }
+
+        if ((TrainingDatabase.Problem(key) ?? AuditRetention.SettingProblem(key)) is { } serverSet)
+        {
+            return Error.Field("key", serverSet).ToProblem();
+        }
+
+        // A setting with rules of its own is refused here, not read leniently later (a default, or the nearest value allowed).
+        return (AntiAutomationSettings.Problem(key, request.Value)
+                ?? AdministrationOnDesktop.Problem(key, request.Value, request.FacilityId)
+                ?? TrainingSimulators.Problem(key, request.Value, platform)) is { } problem
+            ? Error.Field("value", problem).ToProblem()
+            : null;
     }
 }

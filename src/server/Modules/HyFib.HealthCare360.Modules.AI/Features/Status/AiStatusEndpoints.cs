@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.AI.Domain;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Modules.AI.Services;
 using HyFib.HealthCare360.Modules.AI.Services.Speech;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.AI.Features.Status;
 
@@ -15,11 +16,15 @@ internal static class AiStatusEndpoints
         group.MapGet("/usage", Usage).RequirePermission(AIPermissions.SettingsManage);
     }
 
-    private static async Task<IResult> Status(IAiGateway ai, SpeechToTextRouter speech, CancellationToken ct)
+    private static async Task<IResult> Status(IAiGateway ai, SpeechToTextRouter speech, ISettingsService settings, ICurrentUser user, CancellationToken ct)
     {
         var text = await ai.GetAvailabilityAsync(ct);
         var stt = await speech.GetConfigAsync(ct);
-        return TypedResults.Ok(new AiStatusDto(text.Enabled, text.Provider, text.Model, text.Reason, stt.IsUsable, stt.Settings.Provider, stt.Reason,
+
+        // Without the facility's AI processing agreement no dictation is sent, so the screens do not offer it.
+        var agreed = await settings.GetAsync<bool?>(AiSettingKeys.ProcessingAgreement, user.FacilityId, ct) == true;
+        var speechReason = stt.IsUsable && !agreed ? "This facility has no AI processing agreement recorded for dictation." : stt.Reason;
+        return TypedResults.Ok(new AiStatusDto(text.Enabled, text.Provider, text.Model, text.Reason, stt.IsUsable && agreed, stt.Settings.Provider, speechReason,
             (int)text.Timeout.TotalSeconds));
     }
 

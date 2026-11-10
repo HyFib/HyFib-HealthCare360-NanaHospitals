@@ -30,7 +30,7 @@ public sealed class PharmacyStockReportTests(HospitalServer server)
         // purchase approver's permissions and plays both parts; the pharmacist reads the reports.
         var storeKeeper = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var suffix = Letters(6);
 
         var store = await StoreAsync(storeKeeper, $"PH{suffix}", $"Ward pharmacy {suffix}");
@@ -136,6 +136,26 @@ public sealed class PharmacyStockReportTests(HospitalServer server)
         await approver.PostAsync($"/api/v1/purchase/orders/{order.Id}/approve");
         (await ReorderAsync(pharmacist, store, ours)).Select(r => r.ItemId).ShouldBe([adrenaline, vitamin]);
 
+        // The stock screen's flag follows the same rule: ceftriaxone, now on order, is no longer below its level there either,
+        // and the screen filtered to items below reorder lists what the report lists.
+        var onOrder = await StockAsync(pharmacist, store, ours);
+        (onOrder[ceftriaxone].BelowReorder, onOrder[ceftriaxone].OnOrder).ShouldBe((false, 10m));
+        (await BelowReorderAsync(pharmacist, store, ours)).ShouldBe([adrenaline, vitamin], ignoreOrder: true);
+
+        // A recalled batch is blocked: its stock is on hand but not usable, so amoxicillin falls under its level on the
+        // screen and in the report alike.
+        var recalled = (await storeKeeper.GetAsync<List<BatchStock>>($"/api/v1/inventory/stock/batches?storeId={store}&itemId={amoxicillin}")).Single();
+        await storeKeeper.PostAsync($"/api/v1/inventory/stock/batches/{recalled.BatchId}/block", new BlockBatchRequest("Manufacturer's recall of the batch"));
+        var blocked = await StockAsync(pharmacist, store, ours);
+        (blocked[amoxicillin].OnHand, blocked[amoxicillin].Available, blocked[amoxicillin].BlockedQuantity, blocked[amoxicillin].BelowReorder)
+            .ShouldBe((100m, 0m, 100m, true));
+        (await ReorderAsync(pharmacist, store, ours)).Select(r => r.ItemId).ShouldBe([adrenaline, amoxicillin, vitamin]);
+        (await BelowReorderAsync(pharmacist, store, ours)).ShouldBe([adrenaline, amoxicillin, vitamin], ignoreOrder: true);
+        await storeKeeper.PostAsync($"/api/v1/inventory/stock/batches/{recalled.BatchId}/unblock", new UnblockBatchRequest(null));
+
+        // A store holding none of them lists all four below reorder, as its report does, though it has no stock rows.
+        (await BelowReorderAsync(pharmacist, otherStore, ours)).ShouldBe([adrenaline, amoxicillin, ceftriaxone, vitamin], ignoreOrder: true);
+
         // In the other store, which holds none of them, all four are due at their full top-up; the order is for the first
         // store, so it does not count there.
         (await ReorderAsync(pharmacist, otherStore, ours)).Select(r => (r.ItemId, r.Available, r.OnOrder, r.SuggestedQuantity)).ToArray().ShouldBe([
@@ -172,37 +192,32 @@ public sealed class PharmacyStockReportTests(HospitalServer server)
     private static GoodsReceiptLineInput Line(Guid itemId, string batch, DateOnly expiry, decimal packs, decimal rate, decimal mrp) =>
         new(itemId, null, batch, null, expiry, packs, 0m, rate, mrp, 0m, null, AcceptShortExpiry: true);
 
-    /// <summary>Store keeper: receives a vendor invoice into the store on a day, and posts it to stock.</summary>
-    private static async Task ReceiveAsync(ApiClient storeKeeper, Guid vendorId, Guid storeId, DateOnly receivedOn, params GoodsReceiptLineInput[] lines)
-    {
-        var receipt = await storeKeeper.PostAsync<GoodsReceiptCreated>("/api/v1/purchase/grns", new CreateGoodsReceiptRequest(
-            vendorId, storeId, null, $"INV-{Letters(10)}", receivedOn, receivedOn, null, lines, Post: true));
-        receipt.Status.ShouldBe(GoodsReceiptStatus.Posted);
-    }
+    /// <summary>Store keeper: receives a vendor invoice into the store on a day; someone else approves it into stock.</summary>
+    private async Task ReceiveAsync(ApiClient storeKeeper, Guid vendorId, Guid storeId, DateOnly receivedOn, params GoodsReceiptLineInput[] lines) =>
+        await GoodsReceipts.IntoStockAsync(server, storeKeeper, new CreateGoodsReceiptRequest(
+            vendorId, storeId, null, $"INV-{Letters(10)}", receivedOn, receivedOn, null, lines, SendForApproval: true));
 
     /// <summary>On hand, reserved, available, expired, nearest expiry, value at cost and the below-reorder flag of a stock row.</summary>
     private static (decimal, decimal, decimal, decimal, DateOnly, decimal, bool) Position(StockSummaryRow row) =>
         (row.OnHand, row.Reserved, row.Available, row.ExpiredQuantity, row.NearestExpiry.ShouldNotBeNull(), row.ValueAtCost, row.BelowReorder);
 
+    /// <summary>The store's stock rows of the test's own medicines.</summary>
+    private static async Task<Dictionary<Guid, StockSummaryRow>> StockAsync(ApiClient pharmacist, Guid storeId, Guid[] ours) =>
+        (await pharmacist.GetAsync<PagedResult<StockSummaryRow>>($"/api/v1/inventory/stock?storeId={storeId}&pageSize=200"))
+        .Items.Where(r => ours.Contains(r.ItemId)).ToDictionary(r => r.ItemId);
+
+    /// <summary>The stock screen filtered to items below reorder, cut down to the test's own medicines.</summary>
+    private static async Task<List<Guid>> BelowReorderAsync(ApiClient pharmacist, Guid storeId, Guid[] ours)
+    {
+        var rows = (await pharmacist.GetAsync<PagedResult<StockSummaryRow>>($"/api/v1/inventory/stock?storeId={storeId}&belowReorder=true&pageSize=200"))
+            .Items.Where(r => ours.Contains(r.ItemId)).ToList();
+        rows.ShouldAllBe(r => r.BelowReorder);
+        return rows.Select(r => r.ItemId).ToList();
+    }
+
     /// <summary>The store's reorder report, cut down to the test's own medicines (every active item has a row in a store without it).</summary>
     private static async Task<List<ReorderRow>> ReorderAsync(ApiClient pharmacist, Guid storeId, Guid[] ours) =>
         (await pharmacist.GetAsync<List<ReorderRow>>($"{Reports}/reorder?storeId={storeId}")).Where(r => ours.Contains(r.ItemId)).ToList();
-
-    /// <summary>
-    /// Today in the hospital's calendar (IST). Expiry is counted in days, so the test must not straddle midnight: started
-    /// in the last two minutes of a day, it waits for the next.
-    /// </summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var untilMidnight = HospitalClock.StartOfDayUtc(HospitalClock.Today(clock).AddDays(1)) - clock.GetUtcNow();
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, TestContext.Current.CancellationToken);
-        }
-
-        return HospitalClock.Today(clock);
-    }
 
     private static string Letters(int length) => new([.. Enumerable.Range(0, length).Select(_ => (char)('A' + Random.Shared.Next(26)))]);
 }

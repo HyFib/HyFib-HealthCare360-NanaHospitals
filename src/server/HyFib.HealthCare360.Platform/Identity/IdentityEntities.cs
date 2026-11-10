@@ -293,6 +293,13 @@ public sealed class Device : AuditableEntity
     public Guid? FacilityId { get; set; }
     public Guid? DepartmentId { get; set; }
     public string? Location { get; set; }
+
+    /// <summary>
+    /// The hospital CAs the device trusts the server through, as it last reported them (upper-case SHA-256 fingerprints,
+    /// comma-separated, the one it pins first): after a rollover, whether it has taken the new CA. Null for a device that
+    /// does not report them (versions before HC360 Desktop and the lab agent followed a rollover).
+    /// </summary>
+    public string? TrustedCaFingerprints { get; set; }
 }
 
 public sealed class DeviceEnrollmentCode : Entity

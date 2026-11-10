@@ -107,15 +107,8 @@ internal static class AutoValidationPolicy
         string.IsNullOrWhiteSpace(status) || string.Equals(status.Trim(), FinalStatus, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The analyser's unit is the test's, read alike whatever the case, the spaces and the spelling of the micro sign
-    /// (µ, μ or u): "mg/dl" is "mg/dL", "µIU/mL" is "uIU/mL". An analyser that sent no unit has nothing to compare.
+    /// The analyser's unit is the test's, however it is spelt (<see cref="AnalyserUnits"/>): "mg/dl" is "mg/dL",
+    /// "10^3/uL" and "K/uL" are 10³/µL, "s" is "seconds". An analyser that sent no unit has nothing to compare.
     /// </summary>
-    internal static bool IsSameUnit(string? instrumentUnit, string? testUnit) =>
-        string.IsNullOrWhiteSpace(instrumentUnit) || string.Equals(UnitKey(instrumentUnit), UnitKey(testUnit), StringComparison.Ordinal);
-
-    private static string UnitKey(string? unit) =>
-        string.Concat((unit ?? string.Empty).Where(c => !char.IsWhiteSpace(c)))
-            .Replace('µ', 'u')
-            .Replace('μ', 'u')
-            .ToUpperInvariant();
+    internal static bool IsSameUnit(string? instrumentUnit, string? testUnit) => AnalyserUnits.AreSame(instrumentUnit, testUnit);
 }

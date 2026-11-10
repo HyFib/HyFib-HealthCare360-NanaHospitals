@@ -117,8 +117,55 @@ public sealed class IpAccount : AuditableEntity, IFacilityScoped
 
     public Result RefundDeposit(decimal amount) => Consume(amount, adjust: false);
 
-    /// <summary>Puts an adjustment back into the advance (the bill it paid was cancelled).</summary>
+    /// <summary>Puts an adjustment back into the advance (the bill it paid was cancelled, or the payment is undone).</summary>
     public void ReverseAdjustment(decimal amount) => DepositAdjusted = Math.Max(DepositAdjusted - Math.Max(amount, 0m), 0m);
+
+    /// <summary>
+    /// An advance received never arrived (a receipt reversal): the account holds that much less. Only an unused balance
+    /// can go: the bills it paid are undone first, and a refund paid from it is recorded as not paid out first.
+    /// </summary>
+    public Result ReverseDeposit(decimal amount)
+    {
+        if (amount <= 0)
+        {
+            return Error.Rule("billing.amount_invalid", "Enter an amount greater than zero.");
+        }
+
+        if (amount > DepositBalance)
+        {
+            return Error.Rule(
+                "billing.reversal_exceeds_held",
+                $"The advance of admission {AdmissionNumber} holds ₹{Money.FormatInr(Math.Max(DepositBalance, 0m))}: ₹{Money.FormatInr(DepositRefunded)} of it was refunded. " +
+                "If a refund was not paid out, record that first.");
+        }
+
+        DepositReceived -= amount;
+        return Result.Success();
+    }
+
+    /// <summary>A refund recorded as paid out of the advance was not paid: the account holds that money again.</summary>
+    public Result ReverseDepositRefund(decimal amount)
+    {
+        if (amount <= 0 || amount > DepositRefunded)
+        {
+            return Error.Rule("billing.refund_reversal_exceeds", $"The advance of admission {AdmissionNumber} has ₹{Money.FormatInr(DepositRefunded)} of refunds recorded.");
+        }
+
+        DepositRefunded -= amount;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// A settled account owes again, or holds money to refund again (a reversal): it is discharged, not closed, until it
+    /// is settled again.
+    /// </summary>
+    public void ReopenSettlement()
+    {
+        if (Status == IpAccountStatus.Closed)
+        {
+            Status = IpAccountStatus.Discharged;
+        }
+    }
 
     public void MoveToBed(Guid? bedId, Guid? bedServiceItemId)
     {

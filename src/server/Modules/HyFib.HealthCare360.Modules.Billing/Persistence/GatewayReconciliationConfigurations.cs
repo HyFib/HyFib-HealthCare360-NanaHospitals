@@ -13,6 +13,8 @@ internal sealed class GatewaySettlementConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.Utr).HasMaxLength(64);
         b.Ignore(x => x.Difference);
         b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.GatewaySettlementId).OnDelete(DeleteBehavior.Cascade);
+        b.HasMany(x => x.Corrections).WithOne().HasForeignKey(x => x.GatewaySettlementId).OnDelete(DeleteBehavior.Restrict);
+        b.Ignore(x => x.IsReversed);
 
         // Stored once however often a day is fetched, by the job or by hand.
         b.HasIndex(x => new { x.Provider, x.SettlementId }).IsUnique();
@@ -31,6 +33,7 @@ internal sealed class GatewaySettlementLineConfiguration : IEntityTypeConfigurat
         b.Property(x => x.PaymentId).HasMaxLength(64);
         b.Property(x => x.OrderId).HasMaxLength(64);
         b.Property(x => x.Method).HasMaxLength(32);
+        b.Property(x => x.DisputeId).HasMaxLength(64);
         b.Ignore(x => x.Net);
         b.Ignore(x => x.Gross);
         b.HasIndex(x => x.GatewaySettlementId);
@@ -73,10 +76,21 @@ internal sealed class GatewayWebhookEventConfiguration : IEntityTypeConfiguratio
         b.Property(x => x.PaymentId).HasMaxLength(64);
         b.Property(x => x.RefundId).HasMaxLength(64);
         b.Property(x => x.SettlementId).HasMaxLength(64);
+        b.Property(x => x.DisputeId).HasMaxLength(64);
         b.Property(x => x.Note).HasMaxLength(300);
 
         // A redelivered event finds its first delivery; a concurrent one runs into this index.
         b.HasIndex(x => new { x.Provider, x.EventId }).IsUnique();
         b.HasIndex(x => x.ReceivedAt);
+    }
+}
+
+internal sealed class GatewaySettlementCorrectionConfiguration : IEntityTypeConfiguration<GatewaySettlementCorrection>
+{
+    public void Configure(EntityTypeBuilder<GatewaySettlementCorrection> b)
+    {
+        b.ToTable("gateway_settlement_corrections", BillingSchema.Name);
+        b.HasIndex(x => new { x.GatewaySettlementId, x.Seq }).IsUnique();
+        b.HasIndex(x => x.On);
     }
 }

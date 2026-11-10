@@ -369,6 +369,7 @@ export function BedTile({
             {occupant.age ?? '—'} / {genderShort[occupant.gender] ?? occupant.gender.charAt(0)} · Day{' '}
             {occupant.lengthOfStayDays}
             {occupant.consultantName ? ` · ${occupant.consultantName}` : ''}
+            {typeof occupant.news2Score === 'number' ? ` · NEWS2 ${occupant.news2Score}` : ''}
           </Caption1>
         </>
       ) : (

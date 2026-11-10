@@ -78,12 +78,13 @@ public sealed class SensitiveRecordTests(HospitalServer server)
             doctorClosed.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         }
 
-        // The doctor may not open the MTP chart, but can still correct a category recorded in error.
+        // The doctor may not open the MTP chart, but can still correct a category recorded in error, with another doctor's
+        // agreement (slice 7).
         var current = await doctor.GetAsync<SensitiveCategoriesDto>(categories);
         current.Categories.ShouldBe([SensitiveCategory.Hiv, SensitiveCategory.Mtp], ignoreOrder: true);
-        (await doctor.PutAsync<SensitiveCategoriesDto>(categories,
-            new SetSensitiveCategoriesRequest([SensitiveCategory.Hiv], "MTP category recorded on the wrong patient", current.Version))).Categories
-            .ShouldBe([SensitiveCategory.Hiv]);
+        await server.SaveRecordAsync(doctor, HttpMethod.Put, categories,
+            new SetSensitiveCategoriesRequest([SensitiveCategory.Hiv], "MTP category recorded on the wrong patient", current.Version));
+        (await doctor.GetAsync<SensitiveCategoriesDto>(categories)).Categories.ShouldBe([SensitiveCategory.Hiv]);
         (await doctor.GetAsync<List<DiagnosisDto>>(chart)).Count.ShouldBe(2);
     }
 

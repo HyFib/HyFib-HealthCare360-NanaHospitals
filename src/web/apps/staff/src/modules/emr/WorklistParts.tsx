@@ -25,6 +25,7 @@ export function WorklistPatient({
   hasActiveAllergies,
   hasCriticalAlerts,
   isRestricted = false,
+  isConfidential = false,
   children,
 }: {
   name: string;
@@ -34,11 +35,14 @@ export function WorklistPatient({
   hasActiveAllergies: boolean;
   hasCriticalAlerts: boolean;
   isRestricted?: boolean;
+  /** A record in a sensitive category the user does not hold (HIV, mental health, MTP, sexual violence). */
+  isConfidential?: boolean;
   children?: ReactNode;
 }) {
   const styles = useStyles();
   const details = `(${age ?? '—'} / ${gender.charAt(0)}) · ${uhid}`;
-  const hasBadges = hasActiveAllergies || hasCriticalAlerts || isRestricted || Children.toArray(children).length > 0;
+  const hasBadges =
+    hasActiveAllergies || hasCriticalAlerts || isRestricted || isConfidential || Children.toArray(children).length > 0;
   return (
     <span className={styles.root}>
       <Text weight="semibold" wrap={false} truncate title={name} className={styles.line}>
@@ -71,6 +75,16 @@ export function WorklistPatient({
             >
               <Badge size="small" appearance="tint" color="subtle" icon={<LockClosedRegular />}>
                 Restricted
+              </Badge>
+            </Tooltip>
+          )}
+          {isConfidential && (
+            <Tooltip
+              content="Confidential record (a sensitive category you do not hold): its clinical details are hidden. Opening the chart asks for emergency access."
+              relationship="description"
+            >
+              <Badge size="small" appearance="tint" color="subtle" icon={<LockClosedRegular />}>
+                Confidential
               </Badge>
             </Tooltip>
           )}

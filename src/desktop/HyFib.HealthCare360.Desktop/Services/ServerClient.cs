@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using HyFib.HealthCare360.WindowsInterop.Trust;
 
 namespace HyFib.HealthCare360.Desktop.Services;
 
@@ -69,7 +70,7 @@ internal sealed class ServerClient(Uri baseUri, ServerTrust trust) : IDisposable
         {
             using var response = await _http.PostAsJsonAsync(
                 "api/v1/devices/heartbeat",
-                new { deviceId, deviceSecret, appVersion = DesktopSettings.AppVersion, wifiSsid, wifiSignal },
+                new { deviceId, deviceSecret, appVersion = DesktopSettings.AppVersion, wifiSsid, wifiSignal, caFingerprints = trust.Pins.Fingerprints(DateTimeOffset.UtcNow) },
                 Json,
                 cancellationToken);
             return response.StatusCode == HttpStatusCode.Unauthorized ? HeartbeatOutcome.Revoked
@@ -81,6 +82,14 @@ internal sealed class ServerClient(Uri baseUri, ServerTrust trust) : IDisposable
             return HeartbeatOutcome.Unreachable;
         }
     }
+
+    /// <summary>
+    /// The hospital CA rollover's next step for this workstation (<see cref="HospitalCaFollow.CheckAsync"/>): hold the next CA
+    /// the server prepared, on the word of the CA it pins, or switch to it once the server did. Asked over the pinned
+    /// connection; null when there is nothing to do.
+    /// </summary>
+    public Task<HospitalCaStep?> CheckCaAsync(CancellationToken cancellationToken) =>
+        HospitalCaFollow.CheckAsync(_http, trust.Pins, DateTimeOffset.UtcNow, cancellationToken);
 
     /// <summary>
     /// First contact with a server that is not yet trusted: download its public CA certificate. The TLS certificate

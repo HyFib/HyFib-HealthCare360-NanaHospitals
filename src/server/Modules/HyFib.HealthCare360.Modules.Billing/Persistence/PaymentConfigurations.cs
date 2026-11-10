@@ -81,6 +81,9 @@ internal sealed class RefundConfiguration : IEntityTypeConfiguration<Refund>
         b.Property(x => x.Reference).HasMaxLength(64);
         b.Property(x => x.Counter).HasMaxLength(64);
         b.Property(x => x.GatewayRefundId).HasMaxLength(128);
+        b.Property(x => x.GatewayProvider).HasMaxLength(32);
+        b.Property(x => x.GatewayPaymentId).HasMaxLength(128);
+        b.Property(x => x.GatewayOrderId).HasMaxLength(128);
         b.Property(x => x.GatewayReference).HasMaxLength(64);
         b.Property(x => x.GatewayError).HasMaxLength(300);
         b.Ignore(x => x.IsOutstanding);
@@ -99,6 +102,67 @@ internal sealed class RefundConfiguration : IEntityTypeConfiguration<Refund>
     }
 }
 
+internal sealed class ReceiptReversalConfiguration : IEntityTypeConfiguration<ReceiptReversal>
+{
+    public void Configure(EntityTypeBuilder<ReceiptReversal> b)
+    {
+        b.ToTable("receipt_reversals", BillingSchema.Name);
+        b.Property(x => x.Number).HasMaxLength(24);
+        b.Property(x => x.ReceiptNumber).HasMaxLength(24);
+        b.Property(x => x.Note).HasMaxLength(ReversalRules.NoteMaxLength);
+        b.Property(x => x.RequestedByName).HasMaxLength(200);
+        b.Property(x => x.ApprovedByName).HasMaxLength(200);
+        b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.ReversalId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Receipt>().WithMany().HasForeignKey(x => x.ReceiptId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ReceiptReversal>().WithMany().HasForeignKey(x => x.CausedById).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.Number).IsUnique();
+        b.HasIndex(x => x.ReceiptId);
+        b.HasIndex(x => x.BillId);
+        b.HasIndex(x => x.IpAccountId);
+        b.HasIndex(x => x.AdvanceId);
+        b.HasIndex(x => x.CausedById);
+        b.HasIndex(x => new { x.FacilityId, x.ReversedAt });
+    }
+}
+
+internal sealed class ReceiptReversalLineConfiguration : IEntityTypeConfiguration<ReceiptReversalLine>
+{
+    public void Configure(EntityTypeBuilder<ReceiptReversalLine> b)
+    {
+        b.ToTable("receipt_reversal_lines", BillingSchema.Name);
+        b.HasKey(x => x.Id);
+        b.HasOne<ReceiptPayment>().WithMany().HasForeignKey(x => x.ReceiptPaymentId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.ReversalId);
+        b.HasIndex(x => x.ReceiptPaymentId);
+    }
+}
+
+internal sealed class RefundReversalConfiguration : IEntityTypeConfiguration<RefundReversal>
+{
+    public void Configure(EntityTypeBuilder<RefundReversal> b)
+    {
+        b.ToTable("refund_reversals", BillingSchema.Name);
+        b.Property(x => x.Number).HasMaxLength(24);
+        b.Property(x => x.RefundNumber).HasMaxLength(24);
+        b.Property(x => x.Reference).HasMaxLength(64);
+        b.Property(x => x.GatewayRefundId).HasMaxLength(128);
+        b.Property(x => x.Note).HasMaxLength(ReversalRules.NoteMaxLength);
+        b.Property(x => x.RequestedByName).HasMaxLength(200);
+        b.Property(x => x.ApprovedByName).HasMaxLength(200);
+        b.HasOne<Refund>().WithMany().HasForeignKey(x => x.RefundId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.Number).IsUnique();
+
+        // A refund's payout is undone at most once: the refund stays as recorded, and a new refund pays the patient.
+        b.HasIndex(x => x.RefundId).IsUnique();
+        b.HasIndex(x => x.BillId);
+        b.HasIndex(x => x.IpAccountId);
+        b.HasIndex(x => x.AdvanceId);
+        b.HasIndex(x => new { x.FacilityId, x.ReversedAt });
+    }
+}
+
 internal sealed class CreditNoteConfiguration : IEntityTypeConfiguration<CreditNote>
 {
     public void Configure(EntityTypeBuilder<CreditNote> b)
@@ -109,9 +173,65 @@ internal sealed class CreditNoteConfiguration : IEntityTypeConfiguration<CreditN
         b.Property(x => x.RequestedByName).HasMaxLength(200);
         b.Property(x => x.IssuedByName).HasMaxLength(200);
         b.HasOne<Bill>().WithMany().HasForeignKey(x => x.BillId).OnDelete(DeleteBehavior.Restrict);
+        b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.CreditNoteId).OnDelete(DeleteBehavior.Cascade);
+        b.Ignore(x => x.GstAmount);
+        b.Ignore(x => x.TaxableAmount);
         b.HasIndex(x => x.Number).IsUnique();
         b.HasIndex(x => x.BillId);
         b.HasIndex(x => new { x.FacilityId, x.IssuedAt });
+    }
+}
+
+internal sealed class CreditNoteLineConfiguration : IEntityTypeConfiguration<CreditNoteLine>
+{
+    public void Configure(EntityTypeBuilder<CreditNoteLine> b)
+    {
+        b.ToTable("credit_note_lines", BillingSchema.Name);
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Description).HasMaxLength(300);
+        b.Property(x => x.SacCode).HasMaxLength(16);
+        b.Property(x => x.GstRate).HasPrecision(5, 2);
+        b.Ignore(x => x.GstAmount);
+
+        // What earlier credit notes took off a bill line, so a line is never credited beyond its value.
+        b.HasOne<BillLine>().WithMany().HasForeignKey(x => x.BillLineId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.BillLineId);
+        b.HasIndex(x => x.CreditNoteId);
+    }
+}
+
+internal sealed class DebitNoteConfiguration : IEntityTypeConfiguration<DebitNote>
+{
+    public void Configure(EntityTypeBuilder<DebitNote> b)
+    {
+        b.ToTable("debit_notes", BillingSchema.Name);
+        b.Property(x => x.Number).HasMaxLength(24);
+        b.Property(x => x.Party).HasMaxLength(16);
+        b.Property(x => x.Reason).HasMaxLength(300);
+        b.Property(x => x.RequestedByName).HasMaxLength(200);
+        b.Property(x => x.IssuedByName).HasMaxLength(200);
+        b.HasOne<Bill>().WithMany().HasForeignKey(x => x.BillId).OnDelete(DeleteBehavior.Restrict);
+        b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.DebitNoteId).OnDelete(DeleteBehavior.Cascade);
+        b.Ignore(x => x.GstAmount);
+        b.HasIndex(x => x.Number).IsUnique();
+        b.HasIndex(x => x.BillId);
+        b.HasIndex(x => new { x.FacilityId, x.IssuedAt });
+    }
+}
+
+internal sealed class DebitNoteLineConfiguration : IEntityTypeConfiguration<DebitNoteLine>
+{
+    public void Configure(EntityTypeBuilder<DebitNoteLine> b)
+    {
+        b.ToTable("debit_note_lines", BillingSchema.Name);
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Description).HasMaxLength(300);
+        b.Property(x => x.SacCode).HasMaxLength(16);
+        b.Property(x => x.GstRate).HasPrecision(5, 2);
+        b.Ignore(x => x.GstAmount);
+        b.HasOne<BillLine>().WithMany().HasForeignKey(x => x.BillLineId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.BillLineId);
+        b.HasIndex(x => x.DebitNoteId);
     }
 }
 
@@ -123,6 +243,8 @@ internal sealed class CashierShiftConfiguration : IEntityTypeConfiguration<Cashi
         b.Property(x => x.UserName).HasMaxLength(200);
         b.Property(x => x.Counter).HasMaxLength(64);
         b.Property(x => x.Notes).HasMaxLength(500);
+        b.Property(x => x.ShortageAcceptedByName).HasMaxLength(200);
+        b.Ignore(x => x.Shortage);
         b.HasMany(x => x.Totals).WithOne().HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Cascade);
 
         // One open shift per cashier: every counter receipt belongs to exactly one drawer.

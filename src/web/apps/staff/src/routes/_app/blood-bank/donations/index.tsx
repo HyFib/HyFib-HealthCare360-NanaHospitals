@@ -20,6 +20,8 @@ export const Route = createFileRoute('/_app/blood-bank/donations/')({
   validateSearch: (s: Record<string, unknown>): DonationFilters => ({
     status: DONATION_STATUSES.includes(s.status as DonationStatus) ? (s.status as DonationStatus) : undefined,
     pendingResults: s.pendingResults === true ? true : undefined,
+    awaitingVerification: s.awaitingVerification === true ? true : undefined,
+    oneOfficer: s.oneOfficer === true ? true : undefined,
     search: typeof s.search === 'string' && s.search ? s.search : undefined,
     page: typeof s.page === 'number' && s.page > 1 ? s.page : undefined,
   }),
@@ -65,7 +67,7 @@ function DonationsPage() {
     <Page>
       <PageHeader
         title="Donations"
-        subtitle="Separate components within 8 hours and record grouping and TTI results to release units from quarantine."
+        subtitle="Separate components within 8 hours, record grouping and TTI results, and verify another officer’s results to release units from quarantine."
         breadcrumbs={[
           { label: 'Blood stock', onClick: () => void navigate({ to: '/blood-bank' }) },
           { label: 'Donations' },
@@ -99,6 +101,21 @@ function DonationsPage() {
               onChange={(_, d) => set({ pendingResults: d.checked || undefined })}
               label="Only those awaiting results"
             />
+            <Field label="Verification">
+              <Select
+                value={filters.awaitingVerification ? 'awaiting' : filters.oneOfficer ? 'oneOfficer' : ''}
+                onChange={(_, d) =>
+                  set({
+                    awaitingVerification: d.value === 'awaiting' || undefined,
+                    oneOfficer: d.value === 'oneOfficer' || undefined,
+                  })
+                }
+              >
+                <option value="">All</option>
+                <option value="awaiting">Awaiting verification</option>
+                <option value="oneOfficer">Released by one officer (for review)</option>
+              </Select>
+            </Field>
           </FilterBar>
         </div>
         <DataTable
@@ -130,6 +147,10 @@ function DonationsPage() {
               render: (d) =>
                 d.ttiReactive ? (
                   <StatusBadge status="Reactive" tone="danger" label="Reactive" />
+                ) : d.awaitingVerification ? (
+                  <StatusBadge status="AwaitingVerification" tone="warning" label="Awaiting verification" />
+                ) : d.verifiedByEnterer ? (
+                  <StatusBadge status="OneOfficer" tone="warning" label="Released by one officer" />
                 ) : d.ttiComplete ? (
                   <StatusBadge status="Cleared" tone="success" label="Cleared" />
                 ) : (

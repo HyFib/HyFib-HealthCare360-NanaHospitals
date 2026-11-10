@@ -33,7 +33,7 @@ public sealed class RoomRentGstTests(HospitalServer server)
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
-        var today = await HospitalDayAsync();
+        var today = server.Today;
         var dayBefore = today.AddDays(-2);
 
         // Three patients admitted the day before yesterday, recorded as late entries: one to a deluxe suite, one to the
@@ -113,12 +113,11 @@ public sealed class RoomRentGstTests(HospitalServer server)
     }
 
     /// <summary>Front office: admits the patient, paying for herself, to a free bed of <paramref name="wardCode"/>.</summary>
-    private static async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId, string wardCode, DateTimeOffset admittedAt)
+    private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId, string wardCode, DateTimeOffset admittedAt)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == wardCode);
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(server, ward.Id);
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,
@@ -155,20 +154,6 @@ public sealed class RoomRentGstTests(HospitalServer server)
     private sealed class Restore(Func<Task> restore) : IAsyncDisposable
     {
         public async ValueTask DisposeAsync() => await restore();
-    }
-
-    /// <summary>Today in the hospital's calendar (IST); started in the last two minutes of a day, it waits for the next.</summary>
-    private async Task<DateOnly> HospitalDayAsync()
-    {
-        var clock = server.Services.GetRequiredService<TimeProvider>();
-        var now = clock.GetUtcNow();
-        var untilMidnight = IndiaClock.StartOfDayUtc(IndiaClock.LocalDate(now).AddDays(1)) - now;
-        if (untilMidnight < TimeSpan.FromMinutes(2))
-        {
-            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), clock, Ct);
-        }
-
-        return IndiaClock.LocalDate(clock.GetUtcNow());
     }
 
     private static string Letters(int length) => new([.. Enumerable.Range(0, length).Select(_ => (char)('A' + Random.Shared.Next(26)))]);

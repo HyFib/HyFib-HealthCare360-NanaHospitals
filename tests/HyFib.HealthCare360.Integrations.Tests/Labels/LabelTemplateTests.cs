@@ -231,6 +231,31 @@ public sealed class LabelTemplateTests
 
     [Theory]
     [MemberData(nameof(Printers))]
+    public void A_waste_bag_label_carries_the_category_colour_the_hospital_the_bar_code_the_source_the_weight_and_the_date(LabelLanguage language, int dpi)
+    {
+        var bag = Draw(LabelSamples.Label(language, dpi, 75, 50), LabelSamples.WasteBag(), WasteBagTemplate.Draw);
+
+        BarcodesScan(bag);
+        bag.Elements.OfType<BarcodeElement>().ShouldHaveSingleItem().Plan.Value.ShouldBe("NHBW260000123");
+        var lines = bag.Elements.OfType<TextElement>().Select(t => t.Text).ToList();
+        lines.Take(5).ShouldBe(["YELLOW", "Biohazard / Cytotoxic", "HCF TN-BMW-1234", "NHBW260000123", "2.45 kg - 08 Nov 2026"]);
+
+        // Where it was filled, and the hospital's name after it, as far as the label allows.
+        lines.Last().ShouldStartWith("Ward 3 dressing room - Nana");
+
+        // The category is printed white on black, so the colour code is read first.
+        bag.Elements.OfType<ReverseElement>().ShouldHaveSingleItem();
+
+        // The weight and the date are never cut short, on the smallest label too (one too small for them is refused).
+        var small = Draw(LabelSamples.Label(language, dpi), LabelSamples.WasteBag(), WasteBagTemplate.Draw);
+        BarcodesScan(small);
+        small.Elements.OfType<TextElement>().Select(t => t.Text).ShouldContain("2.45 kg - 08 Nov 2026");
+        small.Elements.OfType<TextElement>().Select(t => t.Text).ShouldContain("HCF TN-BMW-1234");
+        Should.Throw<LabelLayoutException>(() => Draw(LabelSamples.Label(language, dpi, 25, 15), LabelSamples.WasteBag(), WasteBagTemplate.Draw));
+    }
+
+    [Theory]
+    [MemberData(nameof(Printers))]
     public void An_asset_tag_carries_the_hospital_the_asset_and_its_tag(LabelLanguage language, int dpi)
     {
         var tag = Draw(LabelSamples.Label(language, dpi), LabelSamples.Asset(), AssetTagTemplate.Draw);

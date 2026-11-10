@@ -7,7 +7,8 @@ namespace HyFib.HealthCare360.Modules.SupplyChain.Features.Receipts;
 /// <summary>/api/v1/purchase/grns — goods receipt notes against vendor invoices (INV-03).</summary>
 internal static class GoodsReceiptEndpoints
 {
-    private static readonly string[] Readers = [SupplyChainPermissions.GrnReceive, SupplyChainPermissions.PurchaseManage, SupplyChainPermissions.PurchaseApprove];
+    private static readonly string[] Readers =
+        [SupplyChainPermissions.GrnReceive, SupplyChainPermissions.GrnApprove, SupplyChainPermissions.PurchaseManage, SupplyChainPermissions.PurchaseApprove];
 
     public static void Map(IEndpointRouteBuilder app)
     {
@@ -18,7 +19,8 @@ internal static class GoodsReceiptEndpoints
         group.MapPost("/", async (CreateGoodsReceiptRequest r, GoodsReceiptService grns, CancellationToken ct) =>
                 (await grns.CreateAsync(r, ct)).ToCreated(g => $"/api/v1/purchase/grns/{g.Id}"))
             .RequirePermission(SupplyChainPermissions.GrnReceive).WithValidation<CreateGoodsReceiptRequest>();
-        group.MapPost("/{id:guid}/post", async (Guid id, GoodsReceiptService grns, CancellationToken ct) => (await grns.PostAsync(id, ct)).ToNoContent())
+        // A receipt goes into stock when a second person approves the request this asks for (/api/v1/approvals).
+        group.MapPost("/{id:guid}/approval", async (Guid id, GoodsReceiptService grns, CancellationToken ct) => (await grns.AskApprovalAsync(id, ct)).ToOk())
             .RequirePermission(SupplyChainPermissions.GrnReceive);
         group.MapPost("/{id:guid}/cancel", async (Guid id, InventoryReasonRequest r, GoodsReceiptService grns, CancellationToken ct) =>
                 (await grns.CancelAsync(id, r.Reason, ct)).ToNoContent())
@@ -72,7 +74,7 @@ internal static class GoodsReceiptEndpoints
         return TypedResults.Ok(result);
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> Get(Guid id, HospitalDbContext db, GoodsReceiptService grns, CancellationToken ct)
     {
         var g = await db.Set<GoodsReceiptNote>().AsNoTracking().Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (g is null)
@@ -86,6 +88,7 @@ internal static class GoodsReceiptEndpoints
         var items = await db.Set<Item>().AsNoTracking().Where(i => itemIds.Contains(i.Id))
             .Select(i => new { i.Id, i.Code, i.BaseUnit })
             .ToDictionaryAsync(i => i.Id, ct);
+        var waiting = g.Status == GoodsReceiptStatus.Draft ? await grns.ApprovalWaitingSinceAsync([g.Id], ct) : new Dictionary<Guid, DateTimeOffset>();
         return TypedResults.Ok(new GoodsReceiptDetail(
             g.Id, g.Number, g.VendorId, vendor?.Name ?? string.Empty, vendor?.Gstin, g.StoreId, storeName, g.PurchaseOrderId, g.VendorInvoiceNumber,
             g.VendorInvoiceDate, g.ReceivedOn, g.IsInterState, g.Status, g.Remarks, g.PostedAt, g.GrossAmount, g.DiscountAmount, g.TaxableAmount,
@@ -94,6 +97,8 @@ internal static class GoodsReceiptEndpoints
                 l.Id, l.ItemId, l.ItemName, l.PurchaseOrderLineId, l.BatchNumber, l.ManufactureDate, l.ExpiryDate, l.Quantity, l.FreeQuantity, l.Rate,
                 l.Mrp, l.DiscountPercent, l.GstRate, l.TaxableAmount, l.CgstAmount, l.SgstAmount, l.IgstAmount, l.LineTotal, l.BaseQuantity, l.UnitCost,
                 l.UnitMrp, l.StockBatchId, items.GetValueOrDefault(l.ItemId)?.Code, items.GetValueOrDefault(l.ItemId)?.BaseUnit)).ToList(),
-            g.Version));
+            g.Version,
+            g.VendorInvoiceAmount,
+            waiting.TryGetValue(g.Id, out var since) ? since : null));
     }
 }

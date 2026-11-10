@@ -40,6 +40,7 @@ import { printUhidCard } from '@/lib/print';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
 import { PatientJourneyCard } from '@/modules/front-office/JourneyCard';
 import { useVisitActions } from '@/modules/front-office/VisitActions';
+import { HistoryButton } from '@/modules/history/RecordHistory';
 import { guardianRelationLabel, patientApi, patientQueries, type PatientDetail } from '@/modules/patients/api';
 import { AbdmConsentRequestsPanel } from '@/modules/patients/AbdmConsentRequestsPanel';
 import { AbhaChecksPanel } from '@/modules/patients/AbhaChecksPanel';
@@ -47,7 +48,9 @@ import { ConsentsPanel } from '@/modules/patients/ConsentsPanel';
 import { DocumentsPanel } from '@/modules/patients/DocumentsPanel';
 import { IdentityChecksPanel } from '@/modules/patients/IdentityChecksPanel';
 import { MergePatientDialog } from '@/modules/patients/MergePatientDialog';
+import { PatientChangesWaiting } from '@/modules/patients/PatientChangesWaiting';
 import { PortalAccessPanel } from '@/modules/patients/PortalAccessPanel';
+import { GuardianConsentCard } from '@/modules/privacy/GuardianConsentCard';
 import { PatientPrivacyCard } from '@/modules/privacy/PatientPrivacyCard';
 import { SensitiveCategoriesCard } from '@/modules/patients/SensitiveCategoriesCard';
 
@@ -156,6 +159,7 @@ function PatientProfilePage() {
                 Edit
               </Button>
             )}
+            <HistoryButton type="Patient" id={patientId} />
             <Menu>
               <MenuTrigger disableButtonEnhancement>
                 <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />
@@ -233,7 +237,10 @@ function PatientProfilePage() {
         </MessageBar>
       )}
 
-      {canMerge && !p.mergedIntoPatientId && <PendingApprovals subjectType="Patient" subjectId={p.id} />}
+      <PatientChangesWaiting changes={p.pendingChanges} />
+      {canMerge && !p.mergedIntoPatientId && (
+        <PendingApprovals subjectType="Patient" subjectId={p.id} kinds={['patients.merge']} />
+      )}
       <PatientJourneyCard patientId={p.id} />
 
       <Section flush>
@@ -270,6 +277,7 @@ function PatientProfilePage() {
       </Section>
 
       <PatientPrivacyCard patient={p} />
+      <GuardianConsentCard patientId={p.id} dateOfBirth={p.dateOfBirth ?? null} />
       <SensitiveCategoriesCard patientId={p.id} />
 
       <CheckInDialog

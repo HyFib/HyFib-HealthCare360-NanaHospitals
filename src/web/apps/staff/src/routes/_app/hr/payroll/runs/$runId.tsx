@@ -34,7 +34,7 @@ import {
   MoneyRegular,
   PaymentRegular,
 } from '@fluentui/react-icons';
-import { formatDateOnly, formatDateTime, formatInr, todayIso, useDebouncedValue } from '@hc360/core';
+import { formatDateOnly, formatDateTime, formatInr, isApiError, todayIso, useDebouncedValue } from '@hc360/core';
 import {
   ConfirmDialog,
   DataTable,
@@ -56,6 +56,7 @@ import { usePermission } from '@/lib/permissions';
 import { hrApi, hrKeys, hrQueries, type PayrollProcessResult, type PayrollRunDto } from '@/modules/hr/api';
 import { HR_PERMISSIONS as P, PAYROLL_VIEWERS } from '@/modules/hr/labels';
 import { runActions, runStepIndex, runStepLabel, RUN_STEPS, type RunAction } from '@/modules/hr/payroll';
+import { payRefusal } from '@/modules/hr/makerChecker';
 import { PayrollInputsPanel } from '@/modules/hr/PayrollInputs';
 import { PayslipDialog } from '@/modules/hr/PayslipView';
 import { monthLabel } from '@/modules/hr/shared/dates';
@@ -177,7 +178,13 @@ function RunView({ run }: { run: PayrollRunDto }) {
       notify.success('Bank file downloaded', 'Upload it to the bank portal, then delete it from this computer.');
       setPending(null);
     } catch (error) {
-      notify.error(error, 'Could not create the bank file');
+      // The file pays the accounts fixed when the payroll was approved (maker-checker slice 11).
+      const words = isApiError(error) ? payRefusal(error.code) : null;
+      if (words) {
+        notify.warning('No bank file', words);
+      } else {
+        notify.error(error, 'Could not create the bank file');
+      }
     } finally {
       setBusy(false);
     }

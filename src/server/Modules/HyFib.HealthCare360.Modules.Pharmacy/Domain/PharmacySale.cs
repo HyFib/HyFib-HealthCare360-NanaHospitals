@@ -31,6 +31,10 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
     public Guid? PractitionerId { get; set; }
     public string? PrescriberName { get; set; }
     public string? PrescriberRegistrationNumber { get; set; }
+
+    /// <summary>The date written on an outside prescription sold against at the counter: the paper the sale is matched to.</summary>
+    public DateOnly? PrescriptionDate { get; set; }
+
     public DateTimeOffset SoldAt { get; set; }
     public Guid? SoldByUserId { get; set; }
     public string? CounsellingNotes { get; set; }
@@ -157,10 +161,54 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
     }
 
     /// <summary>
-    /// Books a sales return worth <paramref name="refund"/>: it first reduces any balance still due (a credit note),
-    /// the rest is paid back. Returns (adjusted against due, paid back).
+    /// Whether <paramref name="userId"/> sold this invoice or took money on it. No one cancels it or pays it back on their
+    /// own word (separation of duties): whoever sold it, or took its payment, neither asks nor approves.
     /// </summary>
-    public Result<(decimal AdjustedAgainstDue, decimal CashRefund)> ApplyReturn(decimal refund, PaymentMode refundMode, string? reference, DateTimeOffset now, Guid? userId)
+    public bool HandledBy(Guid? userId) =>
+        userId is { } user && (SoldByUserId == user || Payments.Any(p => !p.IsRefund && p.Mode != PaymentMode.Credit && p.ReceivedByUserId == user));
+
+    /// <summary>
+    /// Works out a return before anything changes: each line's refund, whether it goes back on the shelf (only unexpired
+    /// stock is restocked), what is set against the balance due and how the rest is paid back (<see cref="SaleRefunds"/>).
+    /// </summary>
+    public Result<SaleReturnPlan> PlanReturn(IReadOnlyList<ReturnInput> lines, DateOnly today)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        if (Status == SaleStatus.Cancelled)
+        {
+            return Error.Rule("sale.cancelled", $"Invoice {InvoiceNumber} is cancelled.");
+        }
+
+        var planned = new List<SaleReturnPlanLine>();
+        foreach (var input in lines)
+        {
+            var item = Items.FirstOrDefault(i => i.Id == input.LineId);
+            if (item is null)
+            {
+                return Error.NotFound(nameof(PharmacySaleItem), input.LineId);
+            }
+
+            var refund = item.RefundFor(input.Quantity);
+            if (refund.IsFailure)
+            {
+                return refund.Error!;
+            }
+
+            var expired = item.ExpiryDate is { } expiry && expiry < today;
+            planned.Add(new SaleReturnPlanLine(item, input.Quantity, refund.Value, input.Restock && !expired, expired));
+        }
+
+        var total = planned.Sum(l => l.Refund);
+        var againstDue = Math.Min(total, DueAmount);
+        return new SaleReturnPlan(planned, total, againstDue, SaleRefunds.Plan(Payments, total - againstDue));
+    }
+
+    /// <summary>
+    /// Books a sales return worth <paramref name="refund"/>: it first reduces any balance still due (a credit note), the rest
+    /// is paid back the way it was paid (<see cref="SaleRefunds"/>), each part a refund against its payment. Returns what
+    /// was set against the due and the parts paid back.
+    /// </summary>
+    public Result<(decimal AdjustedAgainstDue, IReadOnlyList<RefundPart> PaidBack)> ApplyReturn(decimal refund, DateTimeOffset now, Guid? userId)
     {
         if (Status == SaleStatus.Cancelled)
         {
@@ -168,30 +216,21 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
         }
 
         var adjusted = Math.Min(refund, DueAmount);
-        var cash = refund - adjusted;
-        DueAmount -= adjusted;
-        ReturnedAmount += refund;
-        RefundedAmount += cash;
-        if (cash > 0)
+        var parts = SaleRefunds.Plan(Payments, refund - adjusted);
+        if (parts.Sum(p => p.Amount) != refund - adjusted)
         {
-            Payments.Add(new PharmacyPayment
-            {
-                PharmacySaleId = Id,
-                Mode = refundMode == PaymentMode.Credit ? PaymentMode.Cash : refundMode,
-                Amount = cash,
-                Reference = reference?.Trim(),
-                ReceivedAt = now,
-                ReceivedByUserId = userId,
-                IsRefund = true,
-            });
+            return Error.Rule("return.exceeds_paid", $"Only ₹{Money.FormatInr(PaidAmount - RefundedAmount)} paid on {InvoiceNumber} is left to pay back.");
         }
 
+        DueAmount -= adjusted;
+        ReturnedAmount += refund;
+        PayBack(parts, now, userId);
         Status = SalePricing.StatusFor(PaidAmount, DueAmount);
-        return (adjusted, cash);
+        return (adjusted, parts);
     }
 
-    /// <summary>Same-day void of an invoice with no returns; the money taken is refunded and stock goes back.</summary>
-    public Result Cancel(string reason, DateOnly today, DateOnly soldOn, DateTimeOffset now, Guid? userId)
+    /// <summary>Whether the invoice may still be voided: today's, not cancelled, and with nothing returned against it.</summary>
+    public Result CanCancel(DateOnly today, DateOnly soldOn)
     {
         if (Status == SaleStatus.Cancelled)
         {
@@ -203,22 +242,53 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
             return Error.Rule("sale.cancel_window", "Only today's invoices can be cancelled; use a sales return for older invoices.");
         }
 
-        if (ReturnedAmount > 0 || Items.Any(i => i.ReturnedQuantity > 0))
+        return ReturnedAmount > 0 || Items.Any(i => i.ReturnedQuantity > 0)
+            ? Error.Rule("sale.has_returns", "Invoices with returns cannot be cancelled.")
+            : Result.Success();
+    }
+
+    /// <summary>
+    /// Same-day void of an invoice with no returns: every payment taken is paid back whole, the way it was paid (a card
+    /// payment to the card, never in cash), and stock goes back. Returns the parts paid back.
+    /// </summary>
+    public Result<IReadOnlyList<RefundPart>> Cancel(string reason, DateOnly today, DateOnly soldOn, DateTimeOffset now, Guid? userId)
+    {
+        var allowed = CanCancel(today, soldOn);
+        if (allowed.IsFailure)
         {
-            return Error.Rule("sale.has_returns", "Invoices with returns cannot be cancelled.");
+            return allowed.Error!;
         }
 
-        if (PaidAmount > 0)
-        {
-            Payments.Add(new PharmacyPayment { PharmacySaleId = Id, Mode = PaymentMode.Cash, Amount = PaidAmount, ReceivedAt = now, ReceivedByUserId = userId, IsRefund = true, Reference = "Invoice cancelled" });
-        }
-
-        RefundedAmount = PaidAmount;
+        var parts = SaleRefunds.Plan(Payments, PaidAmount - RefundedAmount);
+        PayBack(parts, now, userId);
         DueAmount = 0;
         Status = SaleStatus.Cancelled;
         CancelledAt = now;
         CancelReason = reason;
-        return Result.Success();
+        return Result<IReadOnlyList<RefundPart>>.Ok(parts);
+    }
+
+    /// <summary>
+    /// A refund against each payment, in its mode and with its reference (the sale's RRN or UTR, under which the acquirer
+    /// reports the refund, so the card and UPI settlement finds it).
+    /// </summary>
+    private void PayBack(IReadOnlyList<RefundPart> parts, DateTimeOffset now, Guid? userId)
+    {
+        foreach (var part in parts)
+        {
+            Payments.Add(new PharmacyPayment
+            {
+                PharmacySaleId = Id,
+                Mode = part.Mode,
+                Amount = part.Amount,
+                Reference = part.Reference,
+                ReceivedAt = now,
+                ReceivedByUserId = userId,
+                IsRefund = true,
+                RefundOfPaymentId = part.PaymentId,
+            });
+            RefundedAmount += part.Amount;
+        }
     }
 
     /// <summary>Feeds the medication history / MAR (<see cref="MedicationDispensed"/>) for registered patients.</summary>
@@ -284,17 +354,23 @@ public sealed class PharmacySaleItem : Entity
         NetAmount = price.Net;
     }
 
+    /// <summary>The refund due for returning <paramref name="quantity"/> of the line, without returning it.</summary>
+    public Result<decimal> RefundFor(decimal quantity) =>
+        quantity <= 0 || quantity > ReturnableQuantity
+            ? Error.Rule("return.exceeds_sold", $"{ItemName}: at most {StockErrors.Format(ReturnableQuantity)} can be returned.")
+            : SalePricing.RefundFor(NetAmount, Quantity, ReturnedQuantity, RefundedAmount, quantity);
+
     /// <summary>Returns part of the line and gives the refund due for it.</summary>
     public Result<decimal> Return(decimal quantity)
     {
-        if (quantity <= 0 || quantity > ReturnableQuantity)
+        var refund = RefundFor(quantity);
+        if (refund.IsFailure)
         {
-            return Error.Rule("return.exceeds_sold", $"{ItemName}: at most {StockErrors.Format(ReturnableQuantity)} can be returned.");
+            return refund;
         }
 
-        var refund = SalePricing.RefundFor(NetAmount, Quantity, ReturnedQuantity, RefundedAmount, quantity);
         ReturnedQuantity += quantity;
-        RefundedAmount += refund;
+        RefundedAmount += refund.Value;
         return refund;
     }
 }
@@ -309,4 +385,10 @@ public sealed class PharmacyPayment : Entity
     public DateTimeOffset ReceivedAt { get; set; }
     public Guid? ReceivedByUserId { get; set; }
     public bool IsRefund { get; set; }
+
+    /// <summary>
+    /// A refund: the payment it pays back (cash from the till, a card payment to the card, a UPI payment by UPI). Refunds
+    /// made before refunds went back the way they were paid do not name it.
+    /// </summary>
+    public Guid? RefundOfPaymentId { get; set; }
 }

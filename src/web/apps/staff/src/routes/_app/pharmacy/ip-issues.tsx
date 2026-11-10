@@ -17,6 +17,7 @@ import {
   makeStyles,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   OverlayDrawer,
   SearchBox,
   Spinner,
@@ -47,7 +48,9 @@ import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatQty, parseNumber } from '@/modules/inventory/format';
 import { Detail, DetailGrid, ExpiryText } from '@/modules/inventory/StockBits';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
+import { approvalKeys } from '@/modules/approvals/api';
 import {
+  isApprovalRequest,
   pharmacyApi,
   pharmacyKeys,
   pharmacyQueries,
@@ -57,6 +60,7 @@ import {
 import { PHARMACY_PERMISSIONS as P } from '@/modules/pharmacy/permissions';
 import { ipIssueAmount } from '@/modules/pharmacy/pricing';
 import { printIpIssueSlip } from '@/modules/pharmacy/print';
+import { WaitingForApproval } from '@/modules/pharmacy/WaitingForApproval';
 
 interface IssueSearch {
   q?: string;
@@ -200,6 +204,7 @@ function IssueDrawer({ issueId, onClose }: { issueId: string; onClose: () => voi
   const [returning, setReturning] = useState(false);
   const i = issue.data;
   const returnable = i ? i.lines.filter((l) => l.quantity - l.returnedQuantity > 0) : [];
+  const returnWaits = (i?.pending?.length ?? 0) > 0;
 
   return (
     <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
@@ -215,6 +220,7 @@ function IssueDrawer({ issueId, onClose }: { issueId: string; onClose: () => voi
         {issue.error && <ErrorState error={issue.error} onRetry={() => void issue.refetch()} />}
         {i && (
           <div className={styles.stack}>
+            <WaitingForApproval pending={i.pending} decidedBy="another pharmacist" canDecide={canReturn} />
             <DetailGrid>
               <Detail label="Patient">
                 {i.patient.fullName} ({i.patient.uhid})
@@ -296,7 +302,13 @@ function IssueDrawer({ issueId, onClose }: { issueId: string; onClose: () => voi
               Print slip
             </Button>
             {canReturn && returnable.length > 0 && (
-              <Button appearance="primary" icon={<ArrowUndoRegular />} onClick={() => setReturning(true)}>
+              <Button
+                appearance="primary"
+                icon={<ArrowUndoRegular />}
+                disabled={returnWaits}
+                title={returnWaits ? 'A return from the ward is waiting for another pharmacist.' : undefined}
+                onClick={() => setReturning(true)}
+              >
                 Take back from the ward
               </Button>
             )}
@@ -339,6 +351,8 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
   });
   const chosen = planned.filter((p) => p.quantity > 0 && !p.invalid);
   const credit = toNumber(sum(chosen.map((p) => dec(p.credit))));
+  // A line not restocked (opened, damaged, expired) is a write-off: the return waits for another pharmacist.
+  const writesOff = chosen.some((p) => !p.restock);
   const valid = chosen.length > 0 && !planned.some((p) => p.invalid) && reason.trim().length >= 3;
 
   const submit = useMutation({
@@ -348,12 +362,20 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
         reason: reason.trim(),
       }),
     onSuccess: (result) => {
-      notify.success(
-        `Ward return ${result.number} recorded`,
-        `${formatInr(result.creditAmount)} credited to the patient's IP account.`,
-      );
+      if (isApprovalRequest(result)) {
+        notify.success(
+          'Asked for approval',
+          `Another pharmacist must approve a return not restocked. When approved, ${formatInr(credit)} is credited to the patient's IP account and what is not restocked is written off (a controlled drug in the register).`,
+        );
+      } else {
+        notify.success(
+          `Ward return ${result.number} recorded`,
+          `${formatInr(result.creditAmount)} credited to the patient's IP account.`,
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: pharmacyKeys.ward });
       void queryClient.invalidateQueries({ queryKey: pharmacyKeys.stock });
+      void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
       onClose();
     },
   });
@@ -372,9 +394,9 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
           <DialogTitle>Take back from the ward</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Caption1>
-              Sealed, in-date packs go back on the shelf. Opened or damaged ones are credited to the patient but not
-              restocked. A whole line returned before billing cancels its charge; otherwise a credit line is added to
-              the IP bill.
+              Sealed, in-date packs go back on the shelf at once. Opened, damaged or expired ones are credited to the
+              patient and written off, which another pharmacist approves first. A whole line returned before billing
+              cancels its charge; otherwise a credit line is added to the IP bill.
             </Caption1>
             <div>
               <div className={styles.returnRow}>
@@ -426,8 +448,19 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
               />
             </Field>
             {chosen.length > 0 && (
-              <MessageBar intent="info">
-                <MessageBarBody>{formatInr(credit)} will be credited to the in-patient account.</MessageBarBody>
+              <MessageBar intent={writesOff ? 'warning' : 'info'} layout="multiline">
+                <MessageBarBody>
+                  {writesOff ? (
+                    <>
+                      <MessageBarTitle>Waits for another pharmacist</MessageBarTitle>
+                      Not everything goes back on the shelf: what is not restocked is written off, and a controlled drug
+                      is entered in the register. Nothing is credited or written off until another pharmacist approves;
+                      then {formatInr(credit)} is credited to the in-patient account.
+                    </>
+                  ) : (
+                    `${formatInr(credit)} will be credited to the in-patient account.`
+                  )}
+                </MessageBarBody>
               </MessageBar>
             )}
             {submit.error && (
@@ -448,7 +481,7 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
               icon={submit.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => submit.mutate()}
             >
-              Record return
+              {writesOff ? 'Ask for approval' : 'Record return'}
             </Button>
           </DialogActions>
         </DialogBody>

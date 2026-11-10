@@ -29,7 +29,11 @@ public sealed class PortalPatientScope(HospitalDbContext db, ICurrentUser curren
         return string.IsNullOrEmpty(_phone) ? null : _phone;
     }
 
-    /// <summary>The account's patients: those on its own number first, then linked family members, each oldest first.</summary>
+    /// <summary>
+    /// The account's patients: those on its own number first, then linked family members, each oldest first. A record in a
+    /// protected category is left out when another patient shares the number, or when it is reached only through a family
+    /// link (<see cref="SharedNumbers"/>).
+    /// </summary>
     public async Task<IReadOnlyList<Guid>> AccessiblePatientIdsAsync(CancellationToken ct)
     {
         if (_cached is not null)
@@ -42,24 +46,45 @@ public sealed class PortalPatientScope(HospitalDbContext db, ICurrentUser curren
             return _cached = [];
         }
 
-        var linked = db.Set<PortalFamilyLink>().Where(l => l.AccountPhone == phone && l.RevokedAt == null).Select(l => l.PatientId);
-        _cached = await db.Set<Patient>()
-            .Where(p => (p.Phone == phone || linked.Contains(p.Id)) && p.IsActive && p.MergedIntoPatientId == null)
+        var reached = await ReachedBy(db, phone)
             .OrderBy(p => p.Phone == phone ? 0 : 1)
             .ThenBy(p => p.RegisteredAt)
-            .Select(p => p.Id)
+            .Select(p => new Reached(p.Id, p.Phone == phone, p.SensitiveCategories))
             .ToListAsync(ct);
-        return _cached;
+        return _cached = Shown(reached);
     }
 
-    /// <summary>The patients registered with the account's own number, without those it sees through a family link.</summary>
+    /// <summary>
+    /// The patients the portal account of <paramref name="phone"/> reaches: the active records registered with the number,
+    /// and those a family link in force gives it, before any is hidden (<see cref="SharedNumbers"/>). None means the number
+    /// reaches nobody's records any more (a change of a patient's number, for one, ends the old number's sessions then:
+    /// <see cref="PatientPhoneChangeService"/>).
+    /// </summary>
+    internal static IQueryable<Patient> ReachedBy(HospitalDbContext db, string phone)
+    {
+        var linked = db.Set<PortalFamilyLink>().Where(l => l.AccountPhone == phone && l.RevokedAt == null).Select(l => l.PatientId);
+        return db.Set<Patient>().Where(p => (p.Phone == phone || linked.Contains(p.Id)) && p.IsActive && p.MergedIntoPatientId == null);
+    }
+
+    /// <summary>
+    /// The patients registered with the account's own number, without those it sees through a family link, and without a
+    /// record in a protected category while the number is shared.
+    /// </summary>
     public async Task<IReadOnlyList<Guid>> OwnNumberPatientIdsAsync(CancellationToken ct) =>
         await AccountPhoneAsync(ct) is { } phone
-            ? await db.Set<Patient>()
+            ? Shown(await db.Set<Patient>()
                 .Where(p => p.Phone == phone && p.IsActive && p.MergedIntoPatientId == null)
-                .Select(p => p.Id)
-                .ToListAsync(ct)
+                .Select(p => new Reached(p.Id, true, p.SensitiveCategories))
+                .ToListAsync(ct))
             : [];
+
+    private static List<Guid> Shown(List<Reached> reached)
+    {
+        var numberShared = reached.Count(r => r.OwnNumber) > 1;
+        return [.. reached.Where(r => SharedNumbers.ShownToAccount(r.OwnNumber, numberShared, r.Categories)).Select(r => r.Id)];
+    }
+
+    private sealed record Reached(Guid Id, bool OwnNumber, SensitiveCategory Categories);
 
     public async Task<bool> CanAccessAsync(Guid patientId, CancellationToken ct) =>
         (await AccessiblePatientIdsAsync(ct)).Contains(patientId);

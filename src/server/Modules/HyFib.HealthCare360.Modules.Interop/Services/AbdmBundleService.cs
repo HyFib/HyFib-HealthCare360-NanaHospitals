@@ -47,17 +47,103 @@ internal sealed class AbdmBundleService(
         RestrictedDuplicateCode,
         "Part of this record is kept under a restricted record that was merged into this patient. Someone who may open restricted records can export it.");
 
-    /// <summary>A staff download: the caller must be able to open the record, and the export is audited.</summary>
-    public Task<Result<AbdmExport>> ExportAsync(AbdmRecordType type, Guid id, CancellationToken ct) => BuildAsync(type, id, staff: true, ct);
+    /// <summary>
+    /// A staff download: the caller must be able to open the record, and the export is audited. Home readings are a
+    /// month's: the month of the latest reading (<see cref="ExportReadingsAsync"/> for another).
+    /// </summary>
+    public Task<Result<AbdmExport>> ExportAsync(AbdmRecordType type, Guid id, CancellationToken ct) =>
+        type == AbdmRecordType.HomeReadings ? ExportReadingsAsync(id, null, ct) : BuildAsync(type, id, staff: true, ct);
 
     /// <summary>
-    /// The document sent to another provider under the patient's ABDM consent (<see cref="AbdmDataFlowService"/>): no
-    /// staff member asks for it, so no one's access is checked; the patient's consent authorises it, and the transfer
-    /// audits it. The other rules hold: a complete record, of a patient not deleted, through the merges of duplicates.
+    /// A staff download of the home readings of an enrolment measured in a month (<paramref name="month"/>, any day of
+    /// it; the month of the latest reading when none), as one document. A month of more readings than one document holds
+    /// is refused: ABDM sends it in parts, which a download would have to choose between.
     /// </summary>
-    public Task<Result<AbdmExport>> ShareAsync(AbdmRecordType type, Guid id, CancellationToken ct) => BuildAsync(type, id, staff: false, ct);
+    public async Task<Result<AbdmExport>> ExportReadingsAsync(Guid id, DateOnly? month, CancellationToken ct)
+    {
+        const AbdmRecordType type = AbdmRecordType.HomeReadings;
+        var checkedSource = await CheckAsync(type, id, staff: true, ct);
+        if (checkedSource.IsFailure)
+        {
+            return checkedSource.Error!;
+        }
+
+        var source = checkedSource.Value;
+        if ((month ?? await records.LatestReadingDayAsync(id, ct)) is not { } day)
+        {
+            return Error.Rule("abdm.not_exportable", NoReadingsYet);
+        }
+
+        var span = ReadingsSpan.Of(day);
+        var documents = await records.HomeReadingsAsync(id, source, span, ct);
+        var named = span.Month.ToString("MMMM yyyy", System.Globalization.CultureInfo.InvariantCulture);
+        return documents.Count switch
+        {
+            0 => Error.Rule("abdm.not_exportable", $"No readings were measured in {named}."),
+            > 1 => Error.Rule("abdm.not_exportable",
+                $"{named} has more readings than one document holds ({AbdmRecords.MaxReadingsPerDocument}): ABDM sends its readings in parts, and they are not downloaded here."),
+            _ => await ExportedAsync(type, id, source, documents[0], ct),
+        };
+    }
+
+    /// <summary>
+    /// The documents sent to another provider under the patient's ABDM consent (<see cref="AbdmDataFlowService"/>): no
+    /// staff member asks for them, so no one's access is checked; the patient's consent authorises them, and the transfer
+    /// audits them. The other rules hold: a complete record, of a patient not deleted, through the merges of duplicates.
+    /// A record is one document. Home readings are those measured from <paramref name="from"/> to <paramref name="to"/>
+    /// (the dates asked for, either open), a document for each month of them (<see cref="ReadingsSpan"/>), in parts where
+    /// a month holds more than one document does; none in the dates is a failure, as there is nothing to send.
+    /// </summary>
+    public async Task<Result<IReadOnlyList<AbdmExport>>> ShareAsync(
+        AbdmRecordType type, Guid id, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct)
+    {
+        if (type != AbdmRecordType.HomeReadings)
+        {
+            var one = await BuildAsync(type, id, staff: false, ct);
+            return one.IsFailure ? Result<IReadOnlyList<AbdmExport>>.Fail(one.Error!) : Result<IReadOnlyList<AbdmExport>>.Ok([one.Value]);
+        }
+
+        var checkedSource = await CheckAsync(type, id, staff: false, ct);
+        if (checkedSource.IsFailure)
+        {
+            return Result<IReadOnlyList<AbdmExport>>.Fail(checkedSource.Error!);
+        }
+
+        var documents = new List<AbdmDocument>();
+        foreach (var month in await records.ReadingMonthsAsync(id, from, to, ct))
+        {
+            documents.AddRange(await records.HomeReadingsAsync(id, checkedSource.Value, ReadingsSpan.Of(month, from, to), ct));
+        }
+
+        return documents.Count == 0
+            ? Result<IReadOnlyList<AbdmExport>>.Fail(Error.Rule("abdm.not_exportable", NoReadingsInDates))
+            : Result<IReadOnlyList<AbdmExport>>.Ok([.. documents.Select(d => new AbdmExport(AbdmDocumentBuilder.Build(d), d.FileName))]);
+    }
+
+    /// <summary>Why a programme no reading has reached yet is not exported.</summary>
+    public const string NoReadingsYet = "No readings have been received in this programme yet.";
+
+    /// <summary>What a consented transfer says of home readings none of which were measured in the dates it asks for.</summary>
+    public const string NoReadingsInDates = "No readings were measured in the dates asked for.";
 
     private async Task<Result<AbdmExport>> BuildAsync(AbdmRecordType type, Guid id, bool staff, CancellationToken ct)
+    {
+        var checkedSource = await CheckAsync(type, id, staff, ct);
+        if (checkedSource.IsFailure)
+        {
+            return checkedSource.Error!;
+        }
+
+        var source = checkedSource.Value;
+        var document = await records.LoadAsync(type, id, source, ct);
+        return staff ? await ExportedAsync(type, id, source, document, ct) : new AbdmExport(AbdmDocumentBuilder.Build(document), document.FileName);
+    }
+
+    /// <summary>
+    /// Whether the record may be exported, and whose it is: through the merges of duplicate UHIDs to the surviving
+    /// patient, each of whom a staff member must be able to open, with the duplicates whose records the document may hold.
+    /// </summary>
+    private async Task<Result<AbdmSource>> CheckAsync(AbdmRecordType type, Guid id, bool staff, CancellationToken ct)
     {
         var located = await records.LocateAsync(type, id, ct);
         if (located.IsFailure)
@@ -121,14 +207,13 @@ internal sealed class AbdmBundleService(
             return notIssued;
         }
 
-        source = source with { PatientId = survivor, Duplicates = duplicates };
-        var document = await records.LoadAsync(type, id, source, ct);
-        var bundle = AbdmDocumentBuilder.Build(document);
-        if (!staff)
-        {
-            return new AbdmExport(bundle, document.FileName);
-        }
+        return source with { PatientId = survivor, Duplicates = duplicates };
+    }
 
+    /// <summary>A staff download, audited as an access to the patient's record.</summary>
+    private async Task<Result<AbdmExport>> ExportedAsync(AbdmRecordType type, Guid id, AbdmSource source, AbdmDocument document, CancellationToken ct)
+    {
+        var bundle = AbdmDocumentBuilder.Build(document);
         await audit.WriteAsync(new AuditEntry(AuditCategories.PhiAccess, Exported, $"ABDM health record exported: {Describe(type)}")
         {
             PatientId = source.PatientId,
@@ -146,7 +231,12 @@ internal sealed class AbdmBundleService(
         AbdmRecordType.RadiologyReport => "radiology report",
         AbdmRecordType.CardiologyReport => "cardiology report",
         AbdmRecordType.OpConsultation => "consultation note",
-        _ => "prescription",
+        AbdmRecordType.Prescription => "prescription",
+        AbdmRecordType.Immunization => "immunisation record",
+        AbdmRecordType.ClinicalNote => "clinical note",
+        AbdmRecordType.HomeReadings => "home readings",
+        AbdmRecordType.Invoice => "bill",
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of record HC360 exports."),
     };
 
     /// <summary>

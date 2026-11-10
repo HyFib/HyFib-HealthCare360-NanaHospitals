@@ -159,6 +159,21 @@ public sealed record TallyLedgerMap
     public string DoctorRecoveries { get; init; } = "Doctor Recoveries";
     public string PayoutBank { get; init; } = "Bank";
 
+    /// <summary>Goods handed back to suppliers on debit notes, at cost without GST.</summary>
+    public string PurchaseReturns { get; init; } = "Purchase Returns";
+
+    /// <summary>Input GST a debit note takes back (the credit claimed when the goods were bought).</summary>
+    public string InputCgst { get; init; } = "Input CGST";
+    public string InputSgst { get; init; } = "Input SGST";
+    public string InputIgst { get; init; } = "Input IGST";
+
+    /// <summary>What a supplier payable adjustment is set against: a rate difference, a scheme credit, freight billed later.</summary>
+    public string VendorAdjustments { get; init; } = "Purchase Rate Differences";
+
+    /// <summary>Post to a ledger named after each supplier (sundry creditor), else to <see cref="SundryCreditors"/>.</summary>
+    public bool LedgerPerVendor { get; init; } = true;
+    public string SundryCreditors { get; init; } = "Sundry Creditors";
+
     /// <summary>Pharmacy counter sales and returns (their own income ledger; GST on the output GST ledgers).</summary>
     public TallyCounterLedgers Pharmacy { get; init; } = new();
 
@@ -197,6 +212,8 @@ public sealed record TallyLedgerMap
 
     public string DoctorPayable(string doctorName) => DoctorPayablePrefix + doctorName;
 
+    public string VendorLedger(string? vendorName) => LedgerPerVendor && !string.IsNullOrWhiteSpace(vendorName) ? vendorName.Trim() : SundryCreditors;
+
     private static string? Find(Dictionary<string, string>? map, string key) =>
         map?.FirstOrDefault(kv => string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(kv.Value)).Value;
 }
@@ -215,7 +232,23 @@ public sealed record TallyDisallowance(string Reference, DateOnly Date, string? 
 
 public sealed record TallyRefund(string Number, DateOnly Date, RefundPurpose Purpose, PaymentMode Mode, decimal Amount);
 
-public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKind Kind, decimal Amount);
+/// <summary>
+/// Money receipt <paramref name="ReceiptNumber"/> recorded that never arrived, reversed on <paramref name="Date"/>
+/// (<see cref="ReceiptReversal"/>): the payments taken back, by mode. An advance adjustment undone with the advance's
+/// money has only mode Advance. <paramref name="Chargeback"/>: the money did arrive, and the patient's bank took it back.
+/// </summary>
+public sealed record TallyReceiptReversal(
+    string Number, DateOnly Date, string ReceiptNumber, ReceiptPurpose Purpose, string? PayerName, IReadOnlyList<TallyPayment> Payments,
+    bool Chargeback = false);
+
+/// <summary>Refund <paramref name="RefundNumber"/>, recorded as paid out by <paramref name="Mode"/>, never reached the patient (<see cref="RefundReversal"/>).</summary>
+public sealed record TallyRefundReversal(string Number, DateOnly Date, string RefundNumber, RefundPurpose Purpose, PaymentMode Mode, decimal Amount);
+
+/// <summary>
+/// A credit note or write-off of the day. <paramref name="Cgst"/>, <paramref name="Sgst"/> and <paramref name="Igst"/>: the
+/// output GST a credit note takes back (CGST Act s.34), from the lines it corrects; none on a write-off.
+/// </summary>
+public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKind Kind, decimal Amount, decimal Cgst = 0m, decimal Sgst = 0m, decimal Igst = 0m);
 
 /// <param name="PractitionerCode">The doctor's master code; it makes the accrual journal's number stable across re-posts.</param>
 /// <param name="PractitionerId">Tells apart two doctors who share a code (or, without codes, a name).</param>
@@ -232,6 +265,13 @@ public sealed record TallyGatewaySettlement(string Number, DateOnly Date, string
 {
     /// <summary>What the settlement clears from the payment-gateway clearing ledger.</summary>
     public decimal Gross => Net + Charges + Tax;
+
+    /// <summary>
+    /// The narration of a correction of the settlement's journal (its reversal when the payout failed, or its
+    /// restoration), whose amounts carry the correction's sign: a reversal's are negative, so its entries are the
+    /// journal's turned round. Null for the settlement's own journal.
+    /// </summary>
+    public string? Correction { get; init; }
 }
 
 /// <summary>Everything that happened in the books of one facility on one day.</summary>
@@ -260,8 +300,18 @@ public sealed record TallyDayBook(
     /// <summary>The card and UPI acquirer's payouts of the day, from the settlement reports imported (INT-POS).</summary>
     public IReadOnlyList<TallyPosSettlement> PosSettlements { get; init; } = [];
 
+    /// <summary>Money receipts recorded that never arrived, reversed on the day.</summary>
+    public IReadOnlyList<TallyReceiptReversal> ReceiptReversals { get; init; } = [];
+
+    /// <summary>Refunds recorded as paid out that never reached the patient, reversed on the day.</summary>
+    public IReadOnlyList<TallyRefundReversal> RefundReversals { get; init; } = [];
+
+    /// <summary>Purchase returns (debit notes) and supplier payable adjustments posted on the day, each approved by a second person.</summary>
+    public VendorAccountsDay Vendors { get; init; } = VendorAccountsDay.None;
+
     public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DoctorFees.Count + Payouts.Count
-                           + (GatewaySettlements?.Count ?? 0) + PosSettlements.Count == 0
+                           + (GatewaySettlements?.Count ?? 0) + PosSettlements.Count + ReceiptReversals.Count + RefundReversals.Count
+                           + Vendors.DebitNotes.Count + Vendors.Adjustments.Count == 0
                            && Counters.All(c => c.IsEmpty);
 }
 
@@ -269,7 +319,8 @@ public sealed record TallyDayBook(
 /// Builds balanced Tally vouchers from a day book (INT-TALLY): a Sales voucher per bill (income by department ledger,
 /// discount, CGST/SGST, round-off, patient and payer receivables), Credit Notes for cancellations, credit notes and
 /// write-offs, Receipts by payment mode, Payments for refunds and doctor payouts (with TDS) and Journals for advance
-/// adjustments, insurance disallowances and doctor-fee accruals. Narrations carry document numbers, never patient names.
+/// adjustments, insurance disallowances, doctor-fee accruals and reversals of money that did not move (each the entries of
+/// its receipt or refund turned round, on the day of the reversal). Narrations carry document numbers, never patient names.
 /// </summary>
 public static class TallyVoucherBuilder
 {
@@ -278,6 +329,7 @@ public static class TallyVoucherBuilder
     public const string ReceiptType = "Receipt";
     public const string PaymentType = "Payment";
     public const string JournalType = "Journal";
+    public const string DebitNoteType = "Debit Note";
 
     public static IReadOnlyList<AccountingVoucher> Build(TallyDayBook day, TallyLedgerMap map)
     {
@@ -286,13 +338,51 @@ public static class TallyVoucherBuilder
         vouchers.AddRange(day.Receipts.Select(r => Receipt(r, map)));
         vouchers.AddRange(day.Disallowances.Select(d => Disallowance(d, map)));
         vouchers.AddRange(day.Refunds.Select(r => Refund(r, map)));
+        vouchers.AddRange(day.ReceiptReversals.Select(r => ReceiptReversal(r, map)));
+        vouchers.AddRange(day.RefundReversals.Select(r => RefundReversal(r, map)));
         vouchers.AddRange(day.CreditNotes.Select(c => CreditNote(c, map)));
         vouchers.AddRange(DoctorFees(day, map));
         vouchers.AddRange(day.Payouts.Select(p => Payout(p, map)));
         vouchers.AddRange(TallyCounters.Vouchers(day, map));
         vouchers.AddRange((day.GatewaySettlements ?? []).Select(s => SettlementVoucher(s, map)));
         vouchers.AddRange(day.PosSettlements.Select(s => PosSettlementVoucher(s, map)));
+        vouchers.AddRange(day.Vendors.DebitNotes.Select(n => VendorDebitNote(n, day.Date, map)));
+        vouchers.AddRange(day.Vendors.Adjustments.Select(a => VendorAdjustment(a, day.Date, map)));
         return vouchers.OfType<AccountingVoucher>().ToList();
+    }
+
+    /// <summary>
+    /// A purchase return: the supplier is owed the whole note less, the goods leave purchases at cost and the input GST
+    /// claimed on them is taken back.
+    /// </summary>
+    private static AccountingVoucher? VendorDebitNote(VendorDebitNoteEntry note, DateOnly date, TallyLedgerMap map)
+    {
+        var entries = new EntryList();
+        entries.Debit(map.VendorLedger(note.VendorName), note.Total);
+        entries.Credit(map.PurchaseReturns, note.Taxable);
+        entries.Credit(map.InputCgst, note.Cgst);
+        entries.Credit(map.InputSgst, note.Sgst);
+        entries.Credit(map.InputIgst, note.Igst);
+        var narration = note.VendorReference is { Length: > 0 } reference ? $"Purchase return {note.Number} (supplier's ref. {reference})" : $"Purchase return {note.Number}";
+        return entries.ToVoucher(DebitNoteType, date, note.Number, narration, note.Number);
+    }
+
+    /// <summary>A supplier payable adjustment: the supplier's ledger against the adjustments ledger, whichever way it goes.</summary>
+    private static AccountingVoucher? VendorAdjustment(VendorPayableAdjustmentEntry adjustment, DateOnly date, TallyLedgerMap map)
+    {
+        var entries = new EntryList();
+        if (adjustment.Reduce)
+        {
+            entries.Debit(map.VendorLedger(adjustment.VendorName), adjustment.Amount);
+            entries.Credit(map.VendorAdjustments, adjustment.Amount);
+        }
+        else
+        {
+            entries.Debit(map.VendorAdjustments, adjustment.Amount);
+            entries.Credit(map.VendorLedger(adjustment.VendorName), adjustment.Amount);
+        }
+
+        return entries.ToVoucher(JournalType, date, adjustment.Number, $"Supplier payable adjustment {adjustment.Number}", adjustment.Number);
     }
 
     /// <summary>
@@ -318,9 +408,9 @@ public static class TallyVoucherBuilder
         entries.Debit(map.GatewayCharges, settlement.Charges);
         entries.Debit(map.GatewayInputGst, settlement.Tax);
         entries.Credit(map.ModeLedger(PaymentMode.PaymentGateway), settlement.Gross);
-        var narration = settlement.Utr is null
+        var narration = settlement.Correction ?? (settlement.Utr is null
             ? $"Payment gateway settlement {settlement.SettlementId}"
-            : $"Payment gateway settlement {settlement.SettlementId}, UTR {settlement.Utr}";
+            : $"Payment gateway settlement {settlement.SettlementId}, UTR {settlement.Utr}");
         return entries.ToVoucher(JournalType, settlement.Date, settlement.Number, narration, settlement.Number);
     }
 
@@ -340,9 +430,9 @@ public static class TallyVoucherBuilder
             entries.Credit(map.ModeLedger(clearing.Mode), clearing.Gross);
         }
 
-        var narration = settlement.Utr is null
+        var narration = settlement.Correction ?? (settlement.Utr is null
             ? $"Card and UPI settlement of {settlement.Date.ToString("dd-MM-yyyy", System.Globalization.CultureInfo.InvariantCulture)}"
-            : $"Card and UPI settlement, UTR {settlement.Utr}";
+            : $"Card and UPI settlement, UTR {settlement.Utr}");
         return entries.ToVoucher(JournalType, settlement.Date, settlement.Number, narration, settlement.Number);
     }
 
@@ -386,25 +476,43 @@ public static class TallyVoucherBuilder
 
     private static AccountingVoucher? Receipt(TallyReceipt receipt, TallyLedgerMap map)
     {
+        var entries = ReceiptEntries(receipt.Purpose, receipt.PayerName, receipt.Payments, map);
+        return IsAdjustment(receipt.Payments)
+            ? entries.ToVoucher(JournalType, receipt.Date, receipt.Number, $"Advance adjusted, receipt {receipt.Number}", receipt.Number)
+            : entries.ToVoucher(ReceiptType, receipt.Date, receipt.Number, $"Receipt {receipt.Number}", receipt.Number);
+    }
+
+    /// <summary>The receipt's entries for the payments reversed, turned round: the money is owed again, or the advance holds less.</summary>
+    private static AccountingVoucher? ReceiptReversal(TallyReceiptReversal reversal, TallyLedgerMap map)
+    {
+        var entries = ReceiptEntries(reversal.Purpose, reversal.PayerName, reversal.Payments, map).Reversed();
+        var narration = IsAdjustment(reversal.Payments)
+            ? $"Advance adjustment of receipt {reversal.ReceiptNumber} undone, {reversal.Number}: the advance was not received"
+            : reversal.Chargeback
+                ? $"Receipt {reversal.ReceiptNumber} reversed, {reversal.Number}: taken back by a chargeback"
+                : $"Receipt {reversal.ReceiptNumber} reversed, {reversal.Number}: money not received";
+        return entries.ToVoucher(JournalType, reversal.Date, reversal.Number, narration, reversal.Number);
+    }
+
+    private static EntryList ReceiptEntries(ReceiptPurpose purpose, string? payerName, IReadOnlyList<TallyPayment> payments, TallyLedgerMap map)
+    {
         var entries = new EntryList();
-        foreach (var mode in receipt.Payments.GroupBy(p => p.Mode))
+        foreach (var mode in payments.GroupBy(p => p.Mode))
         {
             entries.Debit(map.ModeLedger(mode.Key), mode.Sum(p => p.Amount));
         }
 
-        var counterLedger = receipt.Purpose switch
+        var counterLedger = purpose switch
         {
             ReceiptPurpose.Deposit or ReceiptPurpose.Advance => map.PatientAdvances,
-            ReceiptPurpose.PayerSettlement => map.PayerLedger(receipt.PayerName),
+            ReceiptPurpose.PayerSettlement => map.PayerLedger(payerName),
             _ => map.PatientDebtors,
         };
-        entries.Credit(counterLedger, receipt.Payments.Sum(p => p.Amount));
-
-        var isAdjustment = receipt.Payments.Count > 0 && receipt.Payments.All(p => p.Mode == PaymentMode.Advance);
-        return isAdjustment
-            ? entries.ToVoucher(JournalType, receipt.Date, receipt.Number, $"Advance adjusted, receipt {receipt.Number}", receipt.Number)
-            : entries.ToVoucher(ReceiptType, receipt.Date, receipt.Number, $"Receipt {receipt.Number}", receipt.Number);
+        entries.Credit(counterLedger, payments.Sum(p => p.Amount));
+        return entries;
     }
+
+    private static bool IsAdjustment(IReadOnlyList<TallyPayment> payments) => payments.Count > 0 && payments.All(p => p.Mode == PaymentMode.Advance);
 
     private static AccountingVoucher? Disallowance(TallyDisallowance disallowance, TallyLedgerMap map)
     {
@@ -424,17 +532,45 @@ public static class TallyVoucherBuilder
             return entries.ToVoucher(JournalType, refund.Date, refund.Number, $"Advance restored, refund {refund.Number}", refund.Number);
         }
 
-        entries.Debit(refund.Purpose is RefundPurpose.Deposit or RefundPurpose.Advance ? map.PatientAdvances : map.PatientDebtors, refund.Amount);
-        entries.Credit(map.ModeLedger(refund.Mode), refund.Amount);
-        return entries.ToVoucher(PaymentType, refund.Date, refund.Number, $"Refund {refund.Number}", refund.Number);
+        return RefundEntries(refund.Purpose, refund.Mode, refund.Amount, map).ToVoucher(PaymentType, refund.Date, refund.Number, $"Refund {refund.Number}", refund.Number);
     }
 
+    /// <summary>The refund's payment turned round: the money is back with the hospital, owed to the patient again.</summary>
+    private static AccountingVoucher? RefundReversal(TallyRefundReversal reversal, TallyLedgerMap map) =>
+        RefundEntries(reversal.Purpose, reversal.Mode, reversal.Amount, map).Reversed()
+            .ToVoucher(JournalType, reversal.Date, reversal.Number, $"Refund {reversal.RefundNumber} not paid out, {reversal.Number}", reversal.Number);
+
+    private static EntryList RefundEntries(RefundPurpose purpose, PaymentMode mode, decimal amount, TallyLedgerMap map)
+    {
+        var entries = new EntryList();
+        entries.Debit(purpose is RefundPurpose.Deposit or RefundPurpose.Advance ? map.PatientAdvances : map.PatientDebtors, amount);
+        entries.Credit(map.ModeLedger(mode), amount);
+        return entries;
+    }
+
+    /// <summary>
+    /// A credit note takes back what it credits: the taxable part from sales returns and the GST from the output GST
+    /// ledgers it was credited to on the bill, so the GST in the books falls with the GST the portal is told of. A
+    /// write-off reduces no GST.
+    /// </summary>
     private static AccountingVoucher? CreditNote(TallyCreditNote note, TallyLedgerMap map)
     {
         var entries = new EntryList();
-        entries.Debit(note.Kind == CreditNoteKind.WriteOff ? map.WriteOffs : map.CreditNotes, note.Amount);
-        entries.Credit(map.PatientDebtors, note.Amount);
-        return entries.ToVoucher(CreditNoteType, note.Date, note.Number, $"{(note.Kind == CreditNoteKind.WriteOff ? "Write-off" : "Credit note")} {note.Number}", note.Number);
+        var gst = note.Cgst + note.Sgst + note.Igst;
+        entries.Debit(note.Kind == CreditNoteKind.WriteOff ? map.WriteOffs : map.CreditNotes, note.Amount - gst);
+        entries.Debit(map.OutputCgst, note.Cgst);
+        entries.Debit(map.OutputSgst, note.Sgst);
+        entries.Debit(map.OutputIgst, note.Igst);
+        // A payer credit note turns the settlement's deduction (already debited to insurance disallowances, the payer
+        // credited) into a GST credit note: the disallowance comes back out, and sales returns and output GST take it.
+        entries.Credit(note.Kind == CreditNoteKind.PayerShare ? map.InsuranceDisallowances : map.PatientDebtors, note.Amount);
+        var words = note.Kind switch
+        {
+            CreditNoteKind.WriteOff => "Write-off",
+            CreditNoteKind.PayerShare => "Payer credit note",
+            _ => "Credit note",
+        };
+        return entries.ToVoucher(CreditNoteType, note.Date, note.Number, $"{words} {note.Number}", note.Number);
     }
 
     /// <summary>

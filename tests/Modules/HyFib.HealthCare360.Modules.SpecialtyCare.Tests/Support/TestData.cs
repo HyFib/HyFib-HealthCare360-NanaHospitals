@@ -20,7 +20,7 @@ internal static class TestData
     {
         PatientId = Guid.CreateVersion7(),
         SurgeonId = Guid.CreateVersion7(),
-        AnaesthetistId = anaesthesia == AnaesthesiaType.Local ? null : Guid.CreateVersion7(),
+        AnaesthetistId = anaesthesia is AnaesthesiaType.Local or AnaesthesiaType.Topical ? null : Guid.CreateVersion7(),
         AnaesthesiaType = anaesthesia,
         ProcedureName = "Laparoscopic cholecystectomy",
         Status = SurgeryStatus.Requested,
@@ -39,6 +39,18 @@ internal static class TestData
         var booking = Scheduled();
         booking.ReceiveInPreOp(Now).IsSuccess.ShouldBeTrue();
         booking.RecordPreOp(AllDone(PreOpChecklist.Items), Staff()).IsSuccess.ShouldBeTrue();
+        return booking;
+    }
+
+    /// <summary>A count of <paramref name="category"/>, counted by one nurse and witnessed by another.</summary>
+    public static SurgicalCount Count(CountCategory category, CountStage stage, int number, DateTimeOffset? at = null) =>
+        new(Guid.CreateVersion7(), category, stage, number, Guid.CreateVersion7(), "Sr. Anita Joseph", Guid.CreateVersion7(), "Sr. Leela Thomas", at ?? Now, null);
+
+    /// <summary>Swabs counted at the start and at the end of an operation in progress, and tallying.</summary>
+    public static SurgeryBooking CountsTallied(SurgeryBooking booking)
+    {
+        booking.RecordCount(Count(CountCategory.Swabs, CountStage.Initial, 10)).IsSuccess.ShouldBeTrue();
+        booking.RecordCount(Count(CountCategory.Swabs, CountStage.Final, 10)).Value.ShouldBeNull();
         return booking;
     }
 

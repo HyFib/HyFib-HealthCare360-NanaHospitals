@@ -1,5 +1,6 @@
 import type * as Core from '@hc360/core';
 import type * as Ui from '@hc360/ui';
+import { expectNoAxeViolations } from '@hc360/ui/testing';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
@@ -9,8 +10,9 @@ import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, STAFF_USER, stubBrow
 import type { FakeRequest } from '@/test/fakeApi';
 
 // Maker-checker in the staff app: the accountant approves a credit note the billing desk asked for, sending the version
-// of the request they saw; the person who asked may only withdraw it; and a refusal (the bill changed after it was asked
-// for) stays in the dialog. The server is a fake; the toasts are outside the test.
+// of the request they saw; the purchase officer checks a goods receipt against its invoice and opens the receipt; the
+// person who asked may only withdraw it; and a refusal (the bill changed after it was asked for) stays in the dialog.
+// The server is a fake; the toasts are outside the test.
 
 vi.mock('@hc360/core', async (importOriginal) => ({
   ...(await importOriginal<typeof Core>()),
@@ -51,8 +53,108 @@ const CREDIT_NOTE: ApprovalRequestDto = {
   version: 7,
 };
 
+const GRN_ID = '0192a000-0000-7000-8000-00000000c201';
+
+/** A goods receipt the store keeper sent: the checker compares the invoice as printed with what the lines come to. */
+const GOODS_RECEIPT: ApprovalRequestDto = {
+  ...CREDIT_NOTE,
+  kind: 'purchase.grn',
+  title: 'Goods receipt into stock',
+  summary: 'GRN GRN2600098: Shree Ganesh Pharma Distributors, invoice SGP/26-27/1873, ₹525.00',
+  details: [
+    { label: 'Total worked out from the lines', value: '₹525.00' },
+    { label: 'Invoice total as printed', value: '₹525.40' },
+    { label: 'Difference', value: '-₹0.40' },
+  ],
+  reason:
+    "Goods go into stock only when someone other than whoever entered them has checked them against the supplier's invoice.",
+  subjectType: 'GoodsReceiptNote',
+  subjectId: GRN_ID,
+  patientId: null,
+  requestedByName: 'Suresh Iyer',
+};
+
+/** A guarded setting another administrator asked to change: the setting, what it controls, the value now and asked. */
+const SETTING_CHANGE: ApprovalRequestDto = {
+  ...CREDIT_NOTE,
+  kind: 'settings.change',
+  title: 'Change to a setting',
+  summary: 'Second pathologist for lab corrections: on → off (Nana Hospitals, Pune)',
+  details: [
+    { label: 'Setting', value: 'Second pathologist for lab corrections (lab.separateVerifier)' },
+    {
+      label: 'What it controls',
+      value:
+        'Whether a second pathologist verifies what one entered, and releases the correction of a report already released. Off, one pathologist does both alone.',
+    },
+    { label: 'Applies to', value: 'Nana Hospitals, Pune' },
+    { label: 'In force now', value: 'on' },
+    { label: 'Asked for', value: 'off' },
+  ],
+  reason: 'Dr Rao is on leave this month; Dr Menon reports alone.',
+  subjectType: 'SystemSetting',
+  subjectId: '0192a000-0000-7000-8000-00000000d301',
+  patientId: null,
+  requestedByName: 'Hospital Admin',
+};
+
+/**
+ * A temporary password for a nurse with no mobile number or e-mail address: the approving administrator is shown it once,
+ * to give her in person.
+ */
+const PASSWORD_HANDOVER: ApprovalRequestDto = {
+  ...CREDIT_NOTE,
+  kind: 'identity.password_reset',
+  title: 'Temporary password given in person',
+  summary: 'Temporary password for Kavitha Raman (kavitha.r), to be given in person',
+  details: [
+    { label: 'User', value: 'Kavitha Raman (kavitha.r)' },
+    { label: 'Mobile number and e-mail address', value: 'None: the password cannot be sent to them' },
+  ],
+  reason: 'No reason given.',
+  subjectType: 'User',
+  subjectId: '0192a000-0000-7000-8000-00000000e401',
+  patientId: null,
+  requestedByName: 'Hospital Admin',
+};
+
+/** A drug interaction made less severe: the committee reads it now and as asked, and what it switches off. */
+const INTERACTION_LOOSENED: ApprovalRequestDto = {
+  ...CREDIT_NOTE,
+  kind: 'clinical.drug_interaction',
+  title: 'Drug interaction loosened',
+  summary: 'aspirin + warfarin: Major, blocks signing → Moderate, a warning',
+  details: [
+    { label: 'Interaction', value: 'aspirin + warfarin' },
+    { label: 'Now', value: 'aspirin + warfarin: Major, blocks signing' },
+    { label: 'Asked for', value: 'aspirin + warfarin: Moderate, a warning' },
+    {
+      label: 'What it changes',
+      value:
+        'Prescribing aspirin with warfarin no longer blocks signing: the doctor acknowledges a warning instead, for every prescriber in the hospital.',
+    },
+  ],
+  reason: 'Regraded moderate in the March review',
+  subjectType: 'DrugInteraction',
+  subjectId: '0192a000-0000-7000-8000-00000000f101',
+  patientId: null,
+  requestedByName: 'Dr. Meera Iyer',
+};
+
+/** The pharmacy and therapeutics committee: approves the drug-safety tables loosened. */
+const COMMITTEE = { ...STAFF_USER, roles: ['Pharmacist'], permissions: ['clinical.drug_safety.approve'] };
+
+/** Approves access, and changes to accounts, another administrator asked for. */
+const GRANTS_ADMIN = { ...STAFF_USER, roles: ['HospitalAdmin'], permissions: ['admin.grants.approve'] };
+
+/** Changes system settings: approves a change to a guarded setting that another administrator asked for. */
+const SETTINGS_ADMIN = { ...STAFF_USER, roles: ['HospitalAdmin'], permissions: ['admin.settings.manage'] };
+
 /** Approves refunds, credit notes and write-offs that someone else asked for. */
 const ACCOUNTANT = { ...STAFF_USER, roles: ['Accountant'], permissions: ['billing.refunds.approve'] };
+
+/** Checks goods receipts against the supplier's invoice and posts them into stock: that permission alone opens approvals. */
+const PURCHASE_OFFICER = { ...STAFF_USER, roles: ['PurchaseOfficer'], permissions: ['purchase.grn.approve'] };
 
 /** Asks for credit notes; may not approve them. */
 const CASHIER = { ...STAFF_USER, roles: ['Cashier'], permissions: ['billing.refunds.request'] };
@@ -118,6 +220,54 @@ describe('the approvals inbox', SCREEN_TESTS, () => {
     ]);
   });
 
+  it('shows the purchase officer the invoice as printed beside the lines, and opens the goods receipt itself', async () => {
+    serve(GOODS_RECEIPT, () => ({ ...GOODS_RECEIPT, status: 'Approved', canDecide: false }));
+    const { router } = openScreen(`/approvals/${REQUEST_ID}`, PURCHASE_OFFICER);
+    const user = userEvent.setup();
+
+    expect(await screen.findByText('₹525.40', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText('Invoice total as printed')).toBeInTheDocument();
+    expect(screen.getByText('-₹0.40')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Open the goods receipt' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/purchase/grns/${GRN_ID}`));
+    expect(posts()).toHaveLength(0);
+  });
+
+  it('shows another administrator a setting asked to change, in words, and opens the settings', async () => {
+    serve(SETTING_CHANGE, () => ({ ...SETTING_CHANGE, status: 'Approved', canDecide: false }));
+    const { router } = openScreen(`/approvals/${REQUEST_ID}`, SETTINGS_ADMIN);
+    const user = userEvent.setup();
+
+    expect(
+      await screen.findByText('Second pathologist for lab corrections (lab.separateVerifier)', {}, SLOW),
+    ).toBeInTheDocument();
+    expect(screen.getByText('In force now')).toBeInTheDocument();
+    expect(screen.getByText('Asked for')).toBeInTheDocument();
+    expect(screen.getByText(/Dr Rao is on leave this month/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Approve/ })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Open the settings' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/admin/settings'));
+    expect(posts()).toHaveLength(0);
+  });
+
+  it('shows the committee an interaction loosened, before and after in words, and opens the drug safety tables', async () => {
+    serve(INTERACTION_LOOSENED, () => ({ ...INTERACTION_LOOSENED, status: 'Approved', canDecide: false }));
+    const { router } = openScreen(`/approvals/${REQUEST_ID}`, COMMITTEE);
+    const user = userEvent.setup();
+
+    expect(await screen.findByText('aspirin + warfarin: Major, blocks signing', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText('aspirin + warfarin: Moderate, a warning')).toBeInTheDocument();
+    expect(screen.getByText(/no longer blocks signing: the doctor acknowledges a warning instead/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Approve/ })).toBeEnabled();
+    await expectNoAxeViolations();
+    await user.click(screen.getByRole('button', { name: 'Open the drug safety tables' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/emr/drug-safety'));
+    expect(posts()).toHaveLength(0);
+  });
+
   it('offers the person who asked only to withdraw it', async () => {
     const mine = { ...CREDIT_NOTE, canDecide: false, canWithdraw: true };
     serve(mine, () => ({ ...mine, status: 'Withdrawn', canWithdraw: false }));
@@ -170,5 +320,47 @@ describe('the approvals inbox', SCREEN_TESTS, () => {
     expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
     expect(posts()).toHaveLength(1);
     expect(notify.success).not.toHaveBeenCalled();
+  });
+
+  it('shows the approver the temporary password once, to give in person, and nothing of it afterwards', async () => {
+    // Made for the test: never a password anyone uses.
+    const secret = ['QXRT', 'MNPB', String(Date.now() % 10_000).padStart(4, '7')].join('-');
+    serve(
+      PASSWORD_HANDOVER,
+      () => ({
+        ...PASSWORD_HANDOVER,
+        status: 'Approved',
+        outcome: 'temporary password made for kavitha.r, shown once to Super Admin to give in person',
+        canDecide: false,
+        handover: {
+          label: 'Temporary password for Kavitha Raman (kavitha.r)',
+          secret,
+          expiresAt: '2026-11-11T06:30:00Z',
+        },
+      }),
+      { ...PASSWORD_HANDOVER, status: 'Approved', canDecide: false },
+    );
+    openScreen(`/approvals/${REQUEST_ID}`, GRANTS_ADMIN);
+    const user = userEvent.setup();
+
+    expect(await screen.findByText('None: the password cannot be sent to them', {}, SLOW)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Approve' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Approve: temporary password given in person' });
+    await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
+
+    const handover = await screen.findByRole(
+      'alertdialog',
+      { name: 'Temporary password for Kavitha Raman (kavitha.r)' },
+      SLOW,
+    );
+    expect(within(handover).getByText(secret)).toBeInTheDocument();
+    expect(within(handover).getByText('Shown only now')).toBeInTheDocument();
+    expect(within(handover).getByText(/It is kept nowhere/)).toBeInTheDocument();
+    await expectNoAxeViolations();
+    await user.click(within(handover).getByRole('button', { name: 'Done' }));
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(screen.queryByText(secret)).not.toBeInTheDocument();
+    expect(posts()).toHaveLength(1);
   });
 });

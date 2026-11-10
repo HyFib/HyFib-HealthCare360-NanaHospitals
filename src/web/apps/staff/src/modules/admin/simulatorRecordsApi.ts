@@ -16,6 +16,23 @@ export interface SimulatorRecordFinding {
   examples: string[];
   /** What to do about them. */
   guidance: string;
+  /**
+   * How many of them their current state does not show corrected yet, for the kinds a sign-off needs corrected (the
+   * critical ones); null for the kinds the IT officer acknowledges.
+   */
+  open: number | null;
+  /** The money still recorded as moved by the open ones (₹). */
+  openAmount: number | null;
+}
+
+/** A record a simulator made, not corrected yet, and the record it is corrected on. */
+export interface SimulatorOpenRecord {
+  reference: string;
+  at: string | null;
+  amount: number | null;
+  entity: 'Receipt' | 'Refund' | 'Patient' | 'ImagingStudy' | 'LabOrder' | 'UnmatchedLabResult';
+  entityId: string;
+  patientId: string | null;
 }
 
 export interface SimulatorSweep {
@@ -24,6 +41,8 @@ export interface SimulatorSweep {
   findings: SimulatorRecordFinding[];
   total: number;
   newest: string | null;
+  /** The critical records not corrected yet: no sign-off is taken while any stands. */
+  criticalOpen: number;
 }
 
 export interface SimulatorSignOff {
@@ -52,7 +71,55 @@ export const simulatorRecordsQueries = {
       queryKey: ['admin', 'simulator-records'],
       queryFn: ({ signal }) => api.get<SimulatorRecordsView>(RECORDS, { signal }),
     }),
+  /** The records of a kind still open now, newest first: the IT officer's worklist. */
+  open: (code: string) =>
+    queryOptions({
+      queryKey: ['admin', 'simulator-records', 'open', code],
+      queryFn: ({ signal }) =>
+        api.get<SimulatorOpenRecord[]>(`${RECORDS}/${encodeURIComponent(code)}/open`, { signal }),
+    }),
 };
+
+/** The hospital's day (YYYY-MM-DD, India time) a record was made on, as the lists filter by. */
+const hospitalDay = (at: string) => new Date(at).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+/** Where an open record is corrected, and what the link says. */
+export function openRecordLink(record: SimulatorOpenRecord): {
+  label: string;
+  to: string;
+  search?: Record<string, string>;
+} {
+  switch (record.entity) {
+    case 'Receipt': {
+      // The receipts list shows one day at a time: the receipt's own.
+      const day = record.at ? hospitalDay(record.at) : undefined;
+      return {
+        label: 'Open the receipt',
+        to: '/billing/receipts',
+        search: day ? { q: record.reference, from: day, to: day } : { q: record.reference },
+      };
+    }
+    case 'Refund':
+      return { label: 'Open the refund', to: `/billing/refunds/${record.entityId}` };
+    case 'Patient':
+      return { label: "Open the patient's record", to: `/patients/${record.entityId}` };
+    case 'ImagingStudy':
+      return { label: 'Open the study', to: `/radiology/studies/${record.entityId}` };
+    case 'LabOrder':
+      return { label: 'Open the lab order', to: `/lab/orders/${record.entityId}` };
+    case 'UnmatchedLabResult':
+      return { label: 'Open the unmatched results', to: '/lab/unmatched', search: { search: record.reference } };
+  }
+}
+
+/** How many of a kind are still open: "—" for the kinds the IT officer acknowledges. */
+export function openText(finding: SimulatorRecordFinding): string {
+  if (finding.open == null) {
+    return '—';
+  }
+  const open = finding.open.toLocaleString('en-IN');
+  return finding.openAmount ? `${open}, ${formatInr(finding.openAmount)}` : open;
+}
 
 export const sweepSimulatorRecords = () => api.post<SimulatorSweep>(`${RECORDS}/sweep`);
 
@@ -79,6 +146,14 @@ export function sweepStatus(view: SimulatorRecordsView): {
   const swept = `Swept ${formatDateTime(latest.sweptAt)}${latest.sweptBy ? ` by ${latest.sweptBy}` : ''}.`;
   if (latest.total === 0) {
     return { intent: 'success', title: 'No records made by simulators', text: swept };
+  }
+
+  if (latest.criticalOpen > 0) {
+    return {
+      intent: view.liveServer ? 'warning' : 'info',
+      title: `${latest.criticalOpen.toLocaleString('en-IN')} ${latest.criticalOpen === 1 ? 'record' : 'records'} made by simulators not corrected yet`,
+      text: `${swept} Correct each as its kind says (the records are listed under "To correct"), sweep again, and sign off that sweep. No sign-off is taken before.`,
+    };
   }
 
   if (!view.outstanding && signedOff) {

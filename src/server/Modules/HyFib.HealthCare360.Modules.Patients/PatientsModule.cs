@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.Patients.Features.Identity;
@@ -5,8 +6,10 @@ using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Queue;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Numbering;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace HyFib.HealthCare360.Modules.Patients;
 
@@ -15,6 +18,13 @@ public static class PatientsPermissions
     public const string Read = "patients.read";
     public const string Register = "patients.register";
     public const string Merge = "patients.merge";
+
+    /// <summary>
+    /// Approve a change someone else asked for to an existing patient's identity (name, sex, date of birth, ABHA, Aadhaar)
+    /// or deceased status (maker-checker, slice 7). The medical records officer and the hospital administrator hold it by
+    /// default; grant it to a front-office supervisor's role.
+    /// </summary>
+    public const string IdentityApprove = "patients.identity.approve";
     public const string ReadRestricted = "patients.restricted.read";
 
     /// <summary>
@@ -44,8 +54,27 @@ public static class PatientsPermissions
 
     /// <summary>Issue blocks of UHIDs for the desks' downtime kits, see which were entered from paper, and void the unusable.</summary>
     public const string Downtime = "patients.downtime";
+
+    /// <summary>
+    /// Enter records from paper older than their back-entry window: ask a second person to approve a late batch, and see
+    /// the windows in force.
+    /// </summary>
+    public const string BackEntry = "patients.back_entry";
+
+    /// <summary>Approve someone else's late back-entry of paper records.</summary>
+    public const string BackEntryApprove = "patients.back_entry.approve";
+
+    /// <summary>Print or read the pre-downtime pack (census, medication sheets, pending orders, OT list), on demand or the nightly one.</summary>
+    public const string DowntimePack = "patients.downtime_pack";
     public const string VisitsRead = "visits.read";
     public const string VisitsManage = "visits.manage";
+
+    /// <summary>
+    /// Approve the cancellation someone else asked for of a visit the doctor has started (a consultation under way, or
+    /// with notes, orders or a prescription). Held by the hospital administrator and doctors by default; a doctor's account
+    /// approves only the visits it treats. Grant it to a front-office supervisor's role.
+    /// </summary>
+    public const string VisitsCancelApprove = "visits.cancel.approve";
     public const string QueueManage = "queue.manage";
     public const string QueueDisplay = "queue.display";
     public const string Enquiries = "frontoffice.enquiries";
@@ -63,6 +92,8 @@ public static class PatientsPermissions
         new(Read, "Patients", "Search and view patient demographics", PlatformPermissions.PatientFacingStaff),
         new(Register, "Patients", "Register patients and edit demographics", [.. Desk, SystemRoles.Nurse, SystemRoles.Billing, SystemRoles.InsuranceDesk]),
         new(Merge, "Patients", "Merge duplicate patient records", [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
+        new(IdentityApprove, "Patients", "Approve a change someone else asked for to a patient's name, sex, date of birth, ABHA, Aadhaar or deceased status",
+            [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
         new(ReadRestricted, "Patients", "Open restricted (VIP/confidential) records without break-the-glass", [SystemRoles.HospitalAdmin]),
         new(ContactRead, "Patients", "See patients' phone numbers, email and address in full (others see them masked); needed to edit a patient",
         [
@@ -79,9 +110,17 @@ public static class PatientsPermissions
         new(Consents, "Patients", "Capture and revoke patient consents", [.. Desk, .. Clinical]),
         new(Documents, "Patients", "Attach and view patient documents", [.. Desk, .. Clinical, SystemRoles.MrdOfficer, SystemRoles.InsuranceDesk]),
         new(IdentityVerify, "Patients", "Check a patient's identity with their Aadhaar fingerprint (UIDAI) or their ABHA (a code from ABDM)", Desk),
-        new(Downtime, "Patients", "Issue downtime UHID blocks for paper registration and follow their entry", [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
+        new(Downtime, "Patients", "Issue downtime UHID, visit, bill and receipt blocks for paper work, follow their entry and return them", [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
+        new(BackEntry, "Downtime", "Ask for a late back-entry of paper records older than their window",
+            [.. Desk, .. Clinical, SystemRoles.Billing, SystemRoles.Cashier, SystemRoles.MrdOfficer]),
+        new(BackEntryApprove, "Downtime", "Approve someone else's late back-entry of paper records", [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer]),
+        new(DowntimePack, "Downtime", "Print the pre-downtime pack and read the nightly one (census, medication sheets, pending orders, OT list)",
+            [SystemRoles.HospitalAdmin, SystemRoles.MrdOfficer, SystemRoles.Nurse, SystemRoles.Doctor]),
         new(VisitsRead, "Visits", "View visits and queues", PlatformPermissions.PatientFacingStaff),
         new(VisitsManage, "Visits", "Create, cancel and complete visits", [.. Desk, .. Clinical]),
+        new(VisitsCancelApprove, "Visits",
+            "Approve cancelling a visit the doctor has started, asked for by someone else (a doctor approves only the visits they treat)",
+            [SystemRoles.HospitalAdmin, SystemRoles.Doctor]),
         new(QueueManage, "Visits", "Call, start and complete queue tokens", [.. Desk, .. Clinical]),
         new(QueueDisplay, "Visits", "Show the queue display board (kiosk/TV)", Desk),
         new(Enquiries, "Front Office", "Record and resolve enquiries", [.. Desk, SystemRoles.CrmExecutive]),
@@ -106,16 +145,28 @@ public sealed class PatientsModule : IModule
         services.AddScoped<PatientRegistrationService>();
         services.AddScoped<Seed.LoadTestPatients>();
         services.AddScoped<PatientAccessGuard>();
+        services.TryAddScoped<IVisitClinicalWork, NoVisitClinicalWork>();
         services.AddScoped<PatientDeaths>();
+        services.AddScoped<PatientRecordApprovals>();
         services.AddScoped<PatientContactAccess>();
         services.AddScoped<IPatientRecordAccess>(sp => sp.GetRequiredService<PatientAccessGuard>());
         services.AddScoped<VisitService>();
         services.AddScoped<PortalPatientScope>();
         services.AddScoped<PortalFamilyService>();
+        services.AddWitnessPurpose(FrontOfficeEndpoints.RecordSharingWitness);
+        services.AddScoped<PortalLinkService>();
+        services.AddScoped<PatientPhoneChangeService>();
         services.AddScoped<IPortalAccountResolver, PortalAccountResolver>();
         services.AddScoped<IPatientLanguageSource, PatientLanguageSource>();
         services.AddScoped<IdentityCheckService>();
         services.AddScoped<DowntimeUhidService>();
+        services.AddScoped<BackEntryService>();
+        services.AddScoped<DowntimeNumberService>();
+        services.AddScoped<IVoidedDocumentNumbers, DowntimeVoidedNumbers>();
+        services.AddScoped<DowntimePackService>();
+        services.AddScoped<IDowntimePackSource, DowntimePackNumbers>();
+        services.AddHostedService<DowntimePackJob>();
+        services.AddSingleton(new DowntimeNumberSeries(DowntimeNumberKind.Visit, PatientsNumberSeries.Visit, BackEntryRecord.Visit, "visit"));
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -125,7 +176,10 @@ public sealed class PatientsModule : IModule
         QueueEndpoints.Map(endpoints);
         FrontOfficeEndpoints.Map(endpoints);
         PortalFamilyEndpoints.Map(endpoints);
+        PortalLinkEndpoints.Map(endpoints);
+        PatientPhoneChangeEndpoints.Map(endpoints);
         IdentityCheckEndpoints.Map(endpoints);
         DowntimeUhidEndpoints.Map(endpoints);
+        DowntimeNumberEndpoints.Map(endpoints);
     }
 }

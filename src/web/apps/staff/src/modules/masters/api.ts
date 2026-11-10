@@ -144,12 +144,95 @@ export interface PractitionerDto {
   facilityIds: string[];
   isActive: boolean;
   version: number;
+  /** On a single practitioner's read: the staff accounts that sign as them. */
+  linkedAccounts?: string[] | null;
+  /** On a single practitioner's read: a registration number, HPR ID or signature waiting for a second administrator. */
+  pendingIdentity?: PendingPractitionerIdentity | null;
+  /** On a single practitioner's read: consultation fees waiting for someone who approves prices. */
+  pendingFee?: PendingPractitionerFee | null;
+  /** On a single practitioner's read: the latest check of the HPR ID with ABDM's registry. */
+  hprCheck?: PractitionerHprCheck | null;
+}
+
+/** PractitionerHprCheckDto: the latest check of a practitioner's HPR ID with ABDM's Healthcare Professionals Registry. */
+export interface PractitionerHprCheck {
+  result: 'Verified' | 'Mismatch' | 'NotFound';
+  /** What differs: name, council, registrationNumber, status. */
+  mismatches: string[];
+  checkedAt: string;
+  checkedByName: string;
+  /** Where the answer came from: "simulator" until the hospital is connected to ABDM's HPR service. */
+  source: string;
+  registryName: string | null;
+  registryCouncil: string | null;
+  registryNumber: string | null;
+  /** False when the HPR ID, council, registration number or name changed since the check. */
+  current: boolean;
+}
+
+/** A doctor's own consultation fees (0: the consultation service's approved price applies). */
+export interface PractitionerFees {
+  newVisit: number;
+  followUp: number;
+}
+
+/**
+ * A doctor's consultation fees asked for, waiting for someone who approves prices (masters.practitioner_fee): until
+ * then the fees in force are charged, and a new doctor's are none (the service price).
+ */
+export interface PendingPractitionerFee {
+  approvalId: string;
+  asked: PractitionerFees;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** A practitioner added (201): their id, and the request for their consultation fees when they set any. */
+export interface PractitionerCreated {
+  id: string;
+  feeApprovalId: string | null;
+}
+
+/** What identifies a practitioner on what they sign. */
+export interface PractitionerIdentity {
+  registrationNumber: string | null;
+  hprId: string | null;
+  signatureFileId: string | null;
+}
+
+/** A linked doctor's identity asked for, waiting for a second administrator who may approve grants. */
+export interface PendingPractitionerIdentity {
+  approvalId: string;
+  asked: PractitionerIdentity;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export type SavePractitionerRequest = Omit<
   PractitionerDto,
-  'id' | 'displayName' | 'specialtyName' | 'departmentName' | 'version'
-> & { version: number | null };
+  | 'id'
+  | 'displayName'
+  | 'specialtyName'
+  | 'departmentName'
+  | 'version'
+  | 'linkedAccounts'
+  | 'pendingIdentity'
+  | 'pendingFee'
+  | 'hprCheck'
+> & {
+  version: number | null;
+  /** Take the doctor out of use although work is still ahead (the person saw the list the server named). */
+  takeOutOfUseAnyway?: boolean;
+};
+
+/** One kind of work a doctor still has ahead, as the server names it when they are taken out of use. */
+export interface PractitionerWork {
+  kind: string;
+  count: number;
+  first: string | null;
+  numbers: string[];
+  words: string;
+}
 
 export interface ServiceItemDto {
   id: string;
@@ -174,6 +257,28 @@ export interface ServiceItemDto {
    * language under the English name.
    */
   localNames: Record<string, string>;
+  /** The price terms waiting for someone who may approve prices (maker-checker), on a single service's read. */
+  pendingPrice?: PendingServicePrice | null;
+}
+
+/**
+ * What a service charges a patient without a tariff plan: its price and GST rate, counter pricing, discounts, and whether
+ * it is in use.
+ */
+export interface ServicePriceTerms {
+  basePrice: number;
+  taxRate: number;
+  isPriceEditable: boolean;
+  isDiscountAllowed: boolean;
+  isActive: boolean;
+}
+
+/** A service's price terms asked for and waiting for someone who may approve prices. */
+export interface PendingServicePrice {
+  approvalId: string;
+  asked: ServicePriceTerms;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 /** A language a service may be named in, by its code (such as ta), and whether it is an active facility's local language. */
@@ -183,7 +288,11 @@ export interface LocalLanguageItem {
   atFacility: boolean;
 }
 
-export type SaveServiceItemRequest = Omit<ServiceItemDto, 'id' | 'version'> & { version: number | null };
+export type SaveServiceItemRequest = Omit<ServiceItemDto, 'id' | 'version' | 'pendingPrice'> & {
+  version: number | null;
+  /** Why the price changes, for the person who approves it. */
+  reason?: string | null;
+};
 
 export interface PractitionerFilters {
   search?: string;
@@ -326,6 +435,8 @@ export const mastersApi = {
   saveDepartment: (id: string | null, body: SaveDepartmentRequest) => save('departments', id, body),
   saveSpecialty: (id: string | null, body: SaveSpecialtyRequest) => save('specialties', id, body),
   savePractitioner: (id: string | null, body: SavePractitionerRequest) => save('practitioners', id, body),
+  checkHpr: (id: string, version: number) =>
+    api.post<PractitionerHprCheck>(`${BASE}/practitioners/${id}/hpr-check`, { version }),
   saveService: (id: string | null, body: SaveServiceItemRequest) => save('services', id, body),
   previewLetterhead: (body: LetterheadPreviewRequest) =>
     api.post<PrintableDocumentDto>(`${BASE}/facilities/letterhead-preview`, body),

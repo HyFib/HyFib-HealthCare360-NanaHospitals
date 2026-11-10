@@ -25,6 +25,10 @@ public enum RetentionUnit
 /// One line of the retention schedule. A null <see cref="DefaultValue"/> means "kept permanently". The minimum comes
 /// from the law or the SRS: the period can be lengthened, never shortened below it.
 /// </summary>
+/// <param name="SystemManaged">
+/// Kept permanently until super administrators set a period, two people agreeing, outside this schedule's own editing
+/// (the audit trail: <see cref="AuditRetention"/>). The period stored is then in force, within its range.
+/// </param>
 public sealed record RetentionRule(
     string Key,
     string Title,
@@ -35,14 +39,19 @@ public sealed record RetentionRule(
     int? DefaultValue,
     int? MinimumValue,
     int MaximumValue,
-    bool Editable)
+    bool Editable,
+    bool SystemManaged = false)
 {
     /// <summary>The setting that holds a changed period.</summary>
     public string SettingKey => "privacy.retention." + Key;
 
-    /// <summary>The period in force: the stored value within the allowed range, else the default.</summary>
-    public int? Effective(int? stored) =>
-        DefaultValue is null ? null : Math.Clamp(stored ?? DefaultValue.Value, MinimumValue ?? 1, MaximumValue);
+    /// <summary>
+    /// The period in force: the stored value within the allowed range, else the default. A rule kept permanently by
+    /// default stays so, whatever is stored, unless super administrators set its period (<see cref="SystemManaged"/>).
+    /// </summary>
+    public int? Effective(int? stored) => DefaultValue is { } fallback
+        ? Math.Clamp(stored ?? fallback, MinimumValue ?? 1, MaximumValue)
+        : SystemManaged && stored is { } set ? Math.Clamp(set, MinimumValue ?? 1, MaximumValue) : null;
 
     public DateTimeOffset Cutoff(DateTimeOffset now, int value) =>
         Unit == RetentionUnit.Years ? now.AddYears(-value) : now.AddDays(-value);
@@ -109,7 +118,10 @@ public static class RetentionSchedule
             RetentionAction.Keep, RetentionUnit.Years, 8, 8, RecordRetention.MaximumYears, Editable: true),
         new(Audit, "Audit trail",
             "Who opened, changed, printed or exported each record, and when.",
-            "Tamper-evident and never edited; kept 10 years (SRS SEC-04).", RetentionAction.Keep, RetentionUnit.Years, 10, 10, 10, Editable: false),
+            "Tamper-evident and never edited; kept permanently, as the hospital decided (ADR-015), unless two super administrators set a period of at least 8 years: "
+            + "it also records changes to bills and payments, whose books of account and audit trail are kept 8 years (Companies Act 2013 s.128(5)). "
+            + "Old months are removed only by a purge a second super administrator approves, exported first.",
+            RetentionAction.Keep, RetentionUnit.Years, null, AuditRetention.MinimumYears, AuditRetention.MaximumYears, Editable: false, SystemManaged: true),
         new(Backups, "Database backups",
             "Encrypted copies of the whole database. Data erased from HC360 leaves the backups as they expire.",
             "Set in the server's backup settings (HealthCare360:Backup:RetentionDays).", RetentionAction.Delete, RetentionUnit.Days, 30, 1, 3650,

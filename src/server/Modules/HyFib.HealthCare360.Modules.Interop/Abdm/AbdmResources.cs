@@ -18,6 +18,8 @@ internal sealed record PractitionerRow
     public string? RegistrationCouncil { get; init; }
     public string? RegistrationNumber { get; init; }
     public string? HprId { get; init; }
+    public bool IsActive { get; init; } = true;
+    public bool IsDeleted { get; init; }
     public required DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }
@@ -32,6 +34,8 @@ internal sealed record FacilityRow
     public string? Phone { get; init; }
     public string? Email { get; init; }
     public Address Address { get; init; } = new();
+    public bool IsActive { get; init; } = true;
+    public bool IsDeleted { get; init; }
     public required DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? UpdatedAt { get; init; }
 }
@@ -232,6 +236,18 @@ internal static class AbdmProfiler
         return condition;
     }
 
+    /// <summary>
+    /// A procedure: the IG's Procedure profile, which fixes the system of every coding to SNOMED CT. The mapper sends the
+    /// procedure by name (its code is ICD-10-PCS) and only an operation's category as a coding.
+    /// </summary>
+    public static R4.Procedure Procedure(R4.Procedure procedure)
+    {
+        procedure.Meta = Profile(procedure.Meta, AbdmProfiles.Procedure);
+        Codings(procedure.Code, [FhirSystems.Snomed]);
+        Codings(procedure.Category, [FhirSystems.Snomed]);
+        return procedure;
+    }
+
     public static R4.AllergyIntolerance Allergy(R4.AllergyIntolerance allergy)
     {
         allergy.Meta = Profile(allergy.Meta, AbdmProfiles.AllergyIntolerance);
@@ -257,6 +273,17 @@ internal static class AbdmProfiler
         var profile = codes.Any(c => c is not null && VitalSignCodes.Contains(c)) ? AbdmProfiles.ObservationVitalSigns
             : codes.Any(c => c is not null && BodyMeasurementCodes.Contains(c)) ? AbdmProfiles.ObservationBodyMeasurement
             : AbdmProfiles.Observation;
+        observation.Meta = Profile(observation.Meta, profile);
+        return observation;
+    }
+
+    /// <summary>
+    /// An observation with the profile the document's section asks of its entries (a home glucometer reading in a
+    /// wellness record's general assessment), its codings limited as <see cref="Observation(R4.Observation)"/> limits them.
+    /// </summary>
+    public static R4.Observation Observation(R4.Observation observation, string profile)
+    {
+        Codings(observation.Code, [FhirSystems.Loinc, FhirSystems.Snomed]);
         observation.Meta = Profile(observation.Meta, profile);
         return observation;
     }
@@ -310,6 +337,19 @@ internal static class AbdmProfiler
     {
         document.Meta = Profile(document.Meta, AbdmProfiles.DocumentReference);
         return document;
+    }
+
+    /// <summary>
+    /// A vaccine dose: the IG's Immunization profile, which fixes the route's code system to SNOMED CT and wants a display
+    /// on every coding. The mapper codes the vaccine and the route in SNOMED CT only, with the guide's displays; anything
+    /// else would be left out here, and the concept's text still says what it is.
+    /// </summary>
+    public static R4.Immunization Immunization(R4.Immunization immunization)
+    {
+        immunization.Meta = Profile(immunization.Meta, AbdmProfiles.Immunization);
+        Codings(immunization.VaccineCode, [FhirSystems.Snomed]);
+        Codings(immunization.Route, [FhirSystems.Snomed]);
+        return immunization;
     }
 
     /// <summary>"Flagged by the laboratory: Haemoglobin (Low), CRP (High).", or <see cref="SeeTheResults"/>.</summary>

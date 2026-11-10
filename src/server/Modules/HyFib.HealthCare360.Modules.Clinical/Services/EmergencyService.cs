@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Realtime;
+using Npgsql;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Services;
 
@@ -21,6 +22,7 @@ internal sealed class EmergencyService(
     INumberSeries numbers,
     PatientAccessGuard guard,
     IRealtimePublisher realtime,
+    AgainstAdviceDeclarations againstAdvice,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -42,6 +44,8 @@ internal sealed class EmergencyService(
             .ToDictionaryAsync(v => v.Id, v => new { v.ChiefComplaint, v.IsMlc, v.MlcNumber }, ct);
         var mlcs = await db.Set<MlcRecord>().AsNoTracking().Where(m => visitIds.Contains(m.VisitId)).ToDictionaryAsync(m => m.VisitId, ct);
         var people = await PeopleAsync(cases.Select(c => c.PatientId), ct);
+        var bayIds = cases.Where(c => c.BayId != null).Select(c => c.BayId!.Value).ToList();
+        var bays = await db.Set<ErBay>().AsNoTracking().Where(b => bayIds.Contains(b.Id)).ToDictionaryAsync(b => b.Id, b => b.Code, ct);
         var now = time.GetUtcNow();
         var rows = cases
             .Select(c =>
@@ -53,7 +57,7 @@ internal sealed class EmergencyService(
                     c.Id, c.VisitId, c.PatientId, person.Name, person.Uhid, person.Gender?.ToString(), person.AgeYears, c.ArrivedAt, c.ArrivalMode, c.Level,
                     complaints.GetValueOrDefault(c.Id) ?? visit?.ChiefComplaint, Minutes(c.ArrivedAt, now), c.TriagedAt is { } t ? Minutes(c.ArrivedAt, t) : null,
                     c.DoctorSeenAt is { } d ? Minutes(c.ArrivedAt, d) : null, c.DoctorName, visit?.IsMlc ?? false, mlc?.Number ?? visit?.MlcNumber,
-                    mlc?.IntimationOverdue(now) ?? false, c.Version);
+                    mlc?.IntimationOverdue(now) ?? false, c.Version, c.BayId, c.BayId is { } bay ? bays.GetValueOrDefault(bay) : null);
             })
             .OrderBy(r => r.Level ?? 0)
             .ThenBy(r => r.ArrivedAt)
@@ -66,11 +70,252 @@ internal sealed class EmergencyService(
         var person = (await PeopleAsync([c.PatientId], ct))[c.PatientId];
         var triages = await db.Set<EsiTriage>().AsNoTracking().Where(t => t.CaseId == c.Id).OrderByDescending(t => t.AssessedAt).ToListAsync(ct);
         var mlc = await db.Set<MlcRecord>().AsNoTracking().FirstOrDefaultAsync(m => m.VisitId == c.VisitId, ct);
+        var bayCode = c.BayId is { } bayId ? await db.Set<ErBay>().AsNoTracking().Where(b => b.Id == bayId).Select(b => b.Code).FirstOrDefaultAsync(ct) : null;
+        var wound = mlc is null ? null : await db.Set<WoundCertificate>().AsNoTracking().FirstOrDefaultAsync(w => w.MlcRecordId == mlc.Id, ct);
         return new EmergencyCaseDetail(
             c.Id, c.VisitId, c.PatientId, person.Name, person.Uhid, person.Gender?.ToString(), person.AgeYears, c.ArrivedAt, c.ArrivalMode, c.Level, c.TriagedAt,
             c.DoctorSeenAt, c.DoctorName, c.Disposition, c.DisposedAt, c.DisposedByName, c.DispositionNotes, c.ReferredTo,
-            triages.Select(Dto).ToList(), mlc is null ? null : Dto(mlc, person.Gender), c.Version);
+            triages.Select(Dto).ToList(), mlc is null ? null : Dto(mlc, person.Gender), c.Version,
+            c.LamaSignedBy is { } signedBy
+                ? new AgainstAdviceDto(signedBy, c.LamaSignatoryName, c.LamaRelationship, c.LamaDoctorName ?? string.Empty, c.LamaWitnessName ?? string.Empty, c.LamaSignedFormFileId)
+                : null,
+            c.BayId, bayCode, c.BayAssignedAt, wound is null ? null : Dto(wound));
     }
+
+    /// <summary>The department's bays in board order, with who is in each now.</summary>
+    public async Task<ErBays> BaysAsync(CancellationToken ct)
+    {
+        var bays = await db.Set<ErBay>().AsNoTracking().OrderBy(b => b.DisplayOrder).ThenBy(b => b.Code).ToListAsync(ct);
+        var bayIds = bays.Select(b => b.Id).ToList();
+        var occupants = await db.Set<EmergencyCase>().AsNoTracking().Where(c => c.Disposition == null && c.BayId != null && bayIds.Contains(c.BayId.Value))
+            .ToDictionaryAsync(c => c.BayId!.Value, ct);
+        var people = await PeopleAsync(occupants.Values.Select(c => c.PatientId), ct);
+        var rows = bays.Select(b =>
+        {
+            var c = occupants.GetValueOrDefault(b.Id);
+            var person = c is null ? null : people[c.PatientId];
+            return new ErBayDto(b.Id, b.Code, b.Area, b.DisplayOrder, b.IsActive, c?.Id, person?.Name, person?.Uhid, c?.Level, c?.BayAssignedAt, b.Version);
+        }).ToList();
+        return new ErBays(rows, rows.Count(r => r.IsActive && r.CaseId is null), rows.Count(r => r.CaseId is not null));
+    }
+
+    /// <summary>Adds a bay to the department (<paramref name="id"/> null) or changes one.</summary>
+    public async Task<Result<ErBayDto>> SaveBayAsync(Guid? id, SaveErBayRequest request, CancellationToken ct)
+    {
+        var code = request.Code.Trim().ToUpperInvariant();
+        ErBay? bay;
+        if (id is null)
+        {
+            if (currentUser.FacilityId is not { } facilityId)
+            {
+                return Error.Rule("facility.required", "Select a facility first.");
+            }
+
+            bay = new ErBay { FacilityId = facilityId };
+            db.Add(bay);
+        }
+        else
+        {
+            bay = await db.Set<ErBay>().FirstOrDefaultAsync(b => b.Id == id, ct);
+            if (bay is null)
+            {
+                return Error.NotFound("ER bay", id.Value);
+            }
+
+            if (request.Version is not { } version)
+            {
+                return Error.Field("version", "Send the version of the bay you edited.");
+            }
+
+            db.SetExpectedVersion(bay, version);
+        }
+
+        if (await db.Set<ErBay>().AnyAsync(b => b.Code == code && b.Id != bay.Id, ct))
+        {
+            return Error.Conflict("er.bay_code_taken", $"There is already a bay {code}.");
+        }
+
+        (bay.Code, bay.Area, bay.DisplayOrder, bay.IsActive) = (code, request.Area, request.DisplayOrder, request.IsActive);
+        await db.SaveChangesAsync(ct);
+        await realtime.ToFacilityAsync(bay.FacilityId, ChangedEvent, new { BayId = bay.Id }, ct);
+        return new ErBayDto(bay.Id, bay.Code, bay.Area, bay.DisplayOrder, bay.IsActive, null, null, null, null, null, bay.Version);
+    }
+
+    /// <summary>
+    /// Puts the patient in a bay, or moves them from theirs to another: a bay holds one patient, so a taken bay is refused
+    /// (409 <c>er.bay_taken</c>, naming the case in it), as is one out of use.
+    /// </summary>
+    public async Task<Result<EmergencyCaseDetail>> AssignBayAsync(Guid id, AssignBayRequest request, CancellationToken ct)
+    {
+        var c = await db.Set<EmergencyCase>().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null)
+        {
+            return Error.NotFound("Emergency case", id);
+        }
+
+        db.SetExpectedVersion(c, request.Version);
+        var bay = await db.Set<ErBay>().AsNoTracking().FirstOrDefaultAsync(b => b.Id == request.BayId, ct);
+        if (bay is null)
+        {
+            return Error.Field("bayId", "Choose a bay of this emergency department.");
+        }
+
+        if (await db.Set<EmergencyCase>().AsNoTracking().Where(o => o.BayId == bay.Id && o.Id != c.Id && o.Disposition == null)
+                .Select(o => (Guid?)o.Id).FirstOrDefaultAsync(ct) is { } taken)
+        {
+            return BayTaken(bay.Code, taken);
+        }
+
+        var put = c.PutInBay(bay, time.GetUtcNow());
+        if (put.IsFailure)
+        {
+            return put.Error!;
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            // Another nurse put a patient in the bay a moment ago.
+            return BayTaken(bay.Code, null);
+        }
+
+        await PublishAsync(c, ct);
+        return await DetailAsync(c, ct);
+    }
+
+    /// <summary>Frees the patient's bay while they stay in the department (gone for a scan, moved to a chair).</summary>
+    public async Task<Result<EmergencyCaseDetail>> ReleaseBayAsync(Guid id, uint version, CancellationToken ct)
+    {
+        var c = await db.Set<EmergencyCase>().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null)
+        {
+            return Error.NotFound("Emergency case", id);
+        }
+
+        db.SetExpectedVersion(c, version);
+        var released = c.ReleaseBay();
+        if (released.IsFailure)
+        {
+            return released.Error!;
+        }
+
+        await db.SaveChangesAsync(ct);
+        await PublishAsync(c, ct);
+        return await DetailAsync(c, ct);
+    }
+
+    /// <summary>
+    /// Writes the case's wound certificate while it is a draft: the MLC entry must exist, as the certificate is its
+    /// examination. Signed, it is fixed (422 <c>wound_certificate.signed</c>).
+    /// </summary>
+    public async Task<Result<EmergencyCaseDetail>> SaveWoundCertificateAsync(Guid id, SaveWoundCertificateRequest request, CancellationToken ct)
+    {
+        var c = await db.Set<EmergencyCase>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null)
+        {
+            return Error.NotFound("Emergency case", id);
+        }
+
+        var mlc = await db.Set<MlcRecord>().AsNoTracking().FirstOrDefaultAsync(m => m.VisitId == c.VisitId, ct);
+        if (mlc is null)
+        {
+            return Error.Rule("mlc.missing", "Enter the case in the MLC register first.");
+        }
+
+        var certificate = await db.Set<WoundCertificate>().FirstOrDefaultAsync(w => w.MlcRecordId == mlc.Id, ct);
+        if (certificate is null)
+        {
+            if (request.Version is not null)
+            {
+                return Error.NotFound("Wound certificate", id);
+            }
+
+            certificate = new WoundCertificate { FacilityId = mlc.FacilityId, PatientId = mlc.PatientId, VisitId = mlc.VisitId, MlcRecordId = mlc.Id };
+            db.Add(certificate);
+        }
+        else
+        {
+            if (request.Version is not { } version)
+            {
+                return Error.Conflict("wound_certificate.exists", "This case already has a wound certificate; correct it instead.");
+            }
+
+            db.SetExpectedVersion(certificate, version);
+        }
+
+        var written = certificate.Write(request.ExaminedAt, request.IdentificationMarks, request.History, request.Injuries, request.Remarks, time.GetUtcNow());
+        if (written.IsFailure)
+        {
+            return written.Error!;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return await DetailAsync(c, ct);
+    }
+
+    /// <summary>
+    /// The examining doctor signs the wound certificate from their own sign-in: an account linked to a doctor in the
+    /// practitioner master, whose name and registration are printed on it (403 <c>wound_certificate.doctor_only</c>).
+    /// </summary>
+    public async Task<Result<EmergencyCaseDetail>> SignWoundCertificateAsync(Guid id, uint version, CancellationToken ct)
+    {
+        var c = await db.Set<EmergencyCase>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null)
+        {
+            return Error.NotFound("Emergency case", id);
+        }
+
+        var certificate = await (from w in db.Set<WoundCertificate>()
+                                 join m in db.Set<MlcRecord>() on w.MlcRecordId equals m.Id
+                                 where m.VisitId == c.VisitId
+                                 select w).FirstOrDefaultAsync(ct);
+        if (certificate is null)
+        {
+            return Error.Rule("wound_certificate.missing", "Write the wound certificate first.");
+        }
+
+        var doctor = currentUser.PractitionerId is { } practitionerId
+            ? await db.Set<Practitioner>().AsNoTracking().Where(p => p.Id == practitionerId && p.IsActive && Doctors.Contains(p.Kind))
+                .Select(p => new { p.Id, p.DisplayName, p.RegistrationCouncil, p.RegistrationNumber }).FirstOrDefaultAsync(ct)
+            : null;
+        if (doctor is null || currentUser.UserId is not { } userId)
+        {
+            return Error.Forbidden("wound_certificate.doctor_only",
+                "The examining doctor signs the wound certificate from their own sign-in: your account is not linked to a doctor in the practitioner list.");
+        }
+
+        db.SetExpectedVersion(certificate, version);
+        var registration = string.Join(" ", new[] { doctor.RegistrationCouncil, doctor.RegistrationNumber }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        var signed = certificate.Sign(userId, doctor.Id, doctor.DisplayName, registration.Length == 0 ? null : registration, time.GetUtcNow());
+        if (signed.IsFailure)
+        {
+            return signed.Error!;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return await DetailAsync(c, ct);
+    }
+
+    /// <summary>The case's MLC entry, its signed wound certificate (a draft is not evidence) and the patient, for the printed documents.</summary>
+    public async Task<MedicoLegalRecord?> MedicoLegalAsync(EmergencyCase c, CancellationToken ct)
+    {
+        var mlc = await db.Set<MlcRecord>().AsNoTracking().FirstOrDefaultAsync(m => m.VisitId == c.VisitId, ct);
+        if (mlc is null)
+        {
+            return null;
+        }
+
+        var wound = await db.Set<WoundCertificate>().AsNoTracking().FirstOrDefaultAsync(w => w.MlcRecordId == mlc.Id, ct);
+        var patient = await db.Set<Patient>().AsNoTracking().FirstAsync(p => p.Id == c.PatientId, ct);
+        var doctor = wound?.SignedByPractitionerId is { } signer ? await PrintQueries.PrescriberAsync(db, signer, ct) : null;
+        return new MedicoLegalRecord(c, mlc, wound, patient, doctor);
+    }
+
+    private static Error BayTaken(string code, Guid? caseId) =>
+        Error.Conflict("er.bay_taken", $"Bay {code} has a patient in it. Move them first, or choose another bay.", new { caseId });
 
     public async Task<TriagePreview> PreviewAsync(EmergencyCase c, TriagePreviewRequest r, CancellationToken ct)
     {
@@ -179,7 +424,22 @@ internal sealed class EmergencyService(
 
         db.SetExpectedVersion(c, request.Version);
         var now = time.GetUtcNow();
-        var disposed = c.Dispose(request.Disposition, request.Notes, request.ReferredTo, Me, now);
+
+        // LAMA (maker-checker, slice 8): who signed, the doctor who explained the risks, and a witness who confirms with their
+        // own credentials at this screen; the confirmations are spent with this save.
+        AgainstAdviceRecord? declaration = null;
+        if (request.Disposition == EmergencyDisposition.Lama && request.AgainstAdvice is { } asked && c.IsOpen)
+        {
+            var recorded = await againstAdvice.RecordAsync(asked, AgainstAdviceDeclarations.ErWitness.Key, c.PatientId, nameof(EmergencyCase), c.Id, ct);
+            if (recorded.IsFailure)
+            {
+                return recorded.Error!;
+            }
+
+            declaration = recorded.Value;
+        }
+
+        var disposed = c.Dispose(request.Disposition, request.Notes, request.ReferredTo, Me, now, declaration);
         if (disposed.IsFailure)
         {
             return disposed.Error!;
@@ -455,6 +715,9 @@ internal sealed class EmergencyService(
     private static TriageVitals Vitals(TriageRequest r) =>
         new(r.Pulse, r.RespiratoryRate, r.SpO2, r.SystolicBp, r.DiastolicBp, r.TemperatureCelsius, r.Gcs, r.PainScore);
 
+    private static WoundCertificateDto Dto(WoundCertificate w) => new(
+        w.Id, w.ExaminedAt, w.IdentificationMarks, w.History, w.Injuries, w.Remarks, w.IsSigned, w.SignedAt, w.DoctorName, w.DoctorRegistration, w.Version);
+
     private static EsiTriageDto Dto(EsiTriage t) => new(
         t.Id, t.AssessedAt, t.AssessedByName, t.ChiefComplaint, t.ComputedLevel, t.Level, t.Reasons.Split('\n', StringSplitOptions.RemoveEmptyEntries),
         t.OverrideReason, t.Pulse, t.RespiratoryRate, t.SpO2, t.SystolicBp, t.DiastolicBp, t.TemperatureCelsius, t.Gcs, t.PainScore);
@@ -473,6 +736,9 @@ internal sealed class EmergencyService(
             m.ReportOverdue(now));
     }
 }
+
+/// <summary>What the medico-legal documents print: the case, its MLC entry, its wound certificate (if any), the patient and the doctor who signed it.</summary>
+public sealed record MedicoLegalRecord(EmergencyCase Case, MlcRecord Entry, WoundCertificate? Wound, Patient Patient, PrescriberInfo? Doctor);
 
 /// <summary>An emergency visit opens its case in the ER, in the visit's own transaction, so the board never misses an arrival.</summary>
 internal sealed class EmergencyCaseOpener(HospitalDbContext db, TimeProvider time) : IDomainEventHandler<VisitCreated>

@@ -42,7 +42,12 @@ import {
   type ChargeDto,
 } from '@/modules/billing/api';
 import { BillingPatientBanner } from '@/modules/billing/BillingPatientBanner';
-import { AddChargeButton, CancelChargeDialog, type CancellableCharge } from '@/modules/billing/ChargeDialogs';
+import {
+  AddChargeButton,
+  CancelChargeDialog,
+  CancellationAsked,
+  type CancellableCharge,
+} from '@/modules/billing/ChargeDialogs';
 import { BillWorkspace } from '@/modules/billing/BillWorkspace';
 import { CounterSettingsDialog } from '@/modules/billing/CounterSettingsDialog';
 import { useBillingLive, useCanManageCharges } from '@/modules/billing/hooks';
@@ -51,6 +56,7 @@ import { sumRupees } from '@/modules/billing/money';
 import { idParam } from '@/modules/billing/searchParams';
 import { ShiftBar } from '@/modules/billing/ShiftControls';
 import { ActionError, Amount, BillStatusBadge, KeyHint, NoAccess } from '@/modules/billing/ui';
+import { VisitPayerDialog } from '@/modules/billing/VisitPayerDialog';
 import { patientQueries, type VisitListItem } from '@/modules/patients/api';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 
@@ -497,6 +503,8 @@ function VisitCard({
   const styles = useStyles();
   const start = useStartBill(onOpenBill);
   const canManageCharges = useCanManageCharges();
+  const canChangePayer = usePermission('billing.op.create');
+  const [changingPayer, setChangingPayer] = useState(false);
   const [cancelling, setCancelling] = useState<CancellableCharge | null>(null);
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
   const selected = group.charges.filter((c) => !excluded.has(c.id));
@@ -570,7 +578,8 @@ function VisitCard({
                 }
               />
               <Amount value={charge.netAmount} />
-              {canManageCharges && (
+              {canManageCharges && charge.cancellationAskedAt && <CancellationAsked at={charge.cancellationAskedAt} />}
+              {canManageCharges && !charge.cancellationAskedAt && (
                 <Button
                   size="small"
                   appearance="subtle"
@@ -584,6 +593,7 @@ function VisitCard({
                       netAmount: charge.netAmount,
                       sourceModule: charge.sourceModule,
                       onDraft: charge.billId !== null,
+                      needsApproval: charge.cancelNeedsApproval ?? null,
                     })
                   }
                 />
@@ -608,6 +618,11 @@ function VisitCard({
           )}
         </Text>
         <span className={styles.back}>
+          {!group.draft && visit && canChangePayer && visit.status !== 'Cancelled' && (
+            <Button appearance="secondary" onClick={() => setChangingPayer(true)}>
+              Change payer
+            </Button>
+          )}
           {!group.draft && (
             <AddChargeButton target={{ patientId, visitId: group.visitId, admissionId: null, label: title }} />
           )}
@@ -630,6 +645,7 @@ function VisitCard({
       </div>
       <ActionError error={existingDraftId(start.error) ? null : start.error} />
       <CancelChargeDialog charge={cancelling} onClose={() => setCancelling(null)} />
+      {changingPayer && visit && <VisitPayerDialog visitId={visit.id} onClose={() => setChangingPayer(false)} />}
     </div>
   );
 }

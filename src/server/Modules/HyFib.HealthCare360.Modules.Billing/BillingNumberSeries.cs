@@ -7,10 +7,10 @@ public static class BillingNumberSeries
 {
     /// <summary>OP and IP bills share one table, so their formats must differ.</summary>
     public static NumberSeriesDefinition OpBill { get; } =
-        new("billing.bill.op", "OP bill", "Billing", "{FAC}OB{YY}{SEQ:7}", NumberResetPolicy.Yearly, MaxLength: 24);
+        new("billing.bill.op", "OP bill", "Billing", "{FAC}OB{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24) { GstDocument = true };
 
     public static NumberSeriesDefinition IpBill { get; } =
-        new("billing.bill.ip", "IP bill", "Billing", "{FAC}IB{YY}{SEQ:7}", NumberResetPolicy.Yearly, MaxLength: 24);
+        new("billing.bill.ip", "IP bill", "Billing", "{FAC}IB{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24) { GstDocument = true };
 
     public static NumberSeriesDefinition Receipt { get; } =
         new("billing.receipt", "Receipt", "Billing", "{FAC}RC{YY}{SEQ:7}", NumberResetPolicy.Yearly, MaxLength: 24);
@@ -19,7 +19,23 @@ public static class BillingNumberSeries
         new("billing.refund", "Refund", "Billing", "{FAC}RF{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
 
     public static NumberSeriesDefinition CreditNote { get; } =
-        new("billing.creditnote", "Credit note", "Billing", "{FAC}CN{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
+        new("billing.creditnote", "Credit note", "Billing", "{FAC}CN{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24) { GstDocument = true };
+
+    /// <summary>A supplementary invoice raising what a bill charged (CGST Act s.34(3)), a GST debit note.</summary>
+    public static NumberSeriesDefinition DebitNote { get; } =
+        new("billing.debitnote", "Debit note", "Billing", "{FAC}DB{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24) { GstDocument = true };
+
+    /// <summary>Money a receipt recorded that never arrived.</summary>
+    public static NumberSeriesDefinition ReceiptReversal { get; } =
+        new("billing.receiptreversal", "Receipt reversal", "Billing", "{FAC}RR{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    /// <summary>A refund recorded as paid out that never reached the patient.</summary>
+    public static NumberSeriesDefinition RefundReversal { get; } =
+        new("billing.refundreversal", "Refund not paid out", "Billing", "{FAC}RX{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
+
+    /// <summary>A chargeback on a card, UPI or gateway payment (the case quoted to the bank and the gateway).</summary>
+    public static NumberSeriesDefinition PaymentDispute { get; } =
+        new("billing.paymentdispute", "Chargeback", "Billing", "{FAC}CB{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
 
     public static NumberSeriesDefinition InsuranceClaim { get; } =
         new("insurance.claim", "Insurance claim", "Insurance", "{FAC}CL{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24);
@@ -31,5 +47,5 @@ public static class BillingNumberSeries
         new("doctorfees.payout", "Doctor payout", "Doctor fees", "{FAC}DP{YY}{SEQ:5}", NumberResetPolicy.Yearly, MaxLength: 24);
 
     internal static IEnumerable<NumberSeriesDefinition> All { get; } =
-        [OpBill, IpBill, Receipt, Refund, CreditNote, InsuranceClaim, PreAuthorisation, DoctorPayout];
+        [OpBill, IpBill, Receipt, Refund, CreditNote, DebitNote, ReceiptReversal, RefundReversal, PaymentDispute, InsuranceClaim, PreAuthorisation, DoctorPayout];
 }

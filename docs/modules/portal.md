@@ -49,6 +49,28 @@ and `npx eslint apps/portal`.
   `POST /api/v1/auth/otp/verify`. The page never says whether a number is registered. The resend button backs off
   (30 s, 60 s, 2 min, then 5 min), so patients do not hit the server limit. A code that seems to expire implausibly (a
   wrong phone clock) falls back to a five-minute countdown.
+* **A link sent to the patient's number (PP-01).** Staff send a link to the portal from the patient's record (the staff
+  console's "Portal access" tab, "Send portal link") by SMS, WhatsApp or both, to the mobile number registered for the
+  patient: `{portal.baseUrl}/portal/link/{token}`. The page (`/link/{token}`) shows the hospital and the number masked
+  and changes nothing when it opens. "Send code" asks for a code through the link (`POST
+  /api/v1/public/portal-links/{token}/otp`, with the same proof of work as the sign-in page's request and its limit of
+  three codes per number in 15 minutes); the code goes to the same registered number, and the patient enters it in the
+  sign-in page's own code step (`modules/signIn/CodeStep`, shared with `/sign-in`), checked by
+  `POST /api/v1/auth/otp/verify`. Once signed in, the patient is where the sign-in goes (home) and the page forgets the
+  token. The link itself signs nobody in: whoever holds it can only send a code to the patient's own number. A link
+  works for 7 days, until a newer one is sent, and only while the record still has the number it went to and is in no
+  protected category; anything else shows "This link no longer works" with a button to the normal sign-in. Someone
+  already signed in on the phone goes straight to home.
+* **A change of the registered number (PP-01).** The portal signs in with the mobile number on the patient's record, so
+  staff cannot change it alone: the edit (`PUT /api/v1/patients/{id}`) refuses a new number (400 on `phone`,
+  `patient.phone_needs_code`). The staff console's edit screen shows the number read-only with "Change number", which
+  sends a 6-digit code by SMS to the new number (`POST /api/v1/patients/{id}/phone-change`, template
+  `patients.phone_code`); nothing goes to the old number. The number changes when staff enter the code the patient reads
+  out (`POST …/phone-change/{changeId}/confirm`). In the same transaction the links sent to the old number stop; the
+  family members the old number's account saw move to the new number's account when no other patient in use keeps the
+  old number (a relative the new number sees already, or the patient themself, ends instead); and when the old number
+  then reaches no patient at all, its portal account is signed out everywhere and forgets the patient's name, so whoever
+  gets the number next (a recycled SIM) sees nothing of the patient.
 * **Tokens.** The access token stays in memory (core session). The refresh token is the server's HttpOnly cookie. The
   portal and the staff console have addresses of their own, but browsers send a host's cookies to all its ports, so each
   keeps its own refresh cookie and each address reads only its own app's: signing in to one never signs the other out,
@@ -59,12 +81,18 @@ and `npx eslint apps/portal`.
   see, and the switcher is always in the header. Every query key starts `['portal', patientId, …]`, and family-wide
   lists are filtered to the person being viewed. A record that belongs to another family member shows "This belongs
   to …" with a switch button.
+* **Protected records on a shared number.** A record in a protected category (HIV, mental health, MTP, sexual violence)
+  is left out of the profiles, and of every portal endpoint (they all go through `PortalPatientScope`), when another
+  patient is registered with the same number, and always for a family member on another number. The patient sees it
+  when signed in with a number that is theirs alone; otherwise the hospital gives it in person (`SharedNumberTests`).
 * **Family on other numbers (PP-01).** A family member with their own mobile number joins the account in one of two
   ways. In the portal (`/profile/family`), the account holder enters the relative's UHID, mobile number and relation;
   the server sends a 6-digit code to that number when the UHID and the number belong to the same active patient, and
   the relative agrees by passing the code on. At the front desk, staff check both people's identity documents, record
-  who agreed (the patient or their guardian), and share the records with the family member's number (the staff
-  console's "Portal access" tab on the patient's profile). Either side can end a link: the account holder removes the
+  who agreed (the patient or their guardian), and ask to share the records with the family member's number (the staff
+  console's "Portal access" tab on the patient's profile): a 6-digit code goes by SMS to the patient's own registered
+  number (`portal.family_code_desk`), and the link is made only when staff enter it as the patient reads it out
+  (MAKER-CHECKER.md, slice 14). A patient with no mobile number of their own cannot share this way. Either side can end a link: the account holder removes the
   relative, and anyone signed in with the patient's own number sees "Who else sees your records" and stops sharing.
   Staff end links at the front desk too. A link in force gives the account the same access as a patient on its own
   number, and ending it takes effect on the next request.
@@ -82,6 +110,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | Path | Sign-in | Purpose |
 |---|---|---|
 | `/sign-in` | no | Phone number, then OTP. `?redirect=` accepts same-app paths only |
+| `/link/{token}` | no | A link to the portal sent to the patient's registered number: the hospital and the number masked, "Send code", then the sign-in page's code step |
 | `/home` | yes | Greeting; video consultation ready to join; quick actions; next appointment; amount due; recent reports and prescriptions |
 | `/doctors`, `/doctors/{practitionerId}` | no | Find a doctor and book. The list takes `?q=`, `?specialtyId=`, `?facilityId=`, `?language=` and `?video=true`. The doctor page takes `?mode=video`, `?branch=`, `?reschedule={appointmentId}` and `?slot=`. Choosing a time while signed out goes to sign-in and returns to the same time |
 | `/appointments`, `/appointments/{id}` | yes | Upcoming and past, waiting list, pay, reschedule, cancel, join video |
@@ -89,7 +118,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `/telehealth/{sessionId}?t={joinToken}` | no | The SMS or WhatsApp join link (guest join) |
 | `/reports`, `/reports/{lab\|radiology\|cardiology}/{id}` | yes | Lab values with ranges and flags in plain words, and radiology and cardiology text. Download PDF (the hospital's official copy) or print |
 | `/prescriptions`, `/prescriptions/{id}` | yes | Prescriptions with verification QR code; Download PDF or print; refill requests. Where the hospital requires the doctor's DSC (ERX-04) and the prescription has no valid one yet, it shows no print, PDF or QR code and says, in English and Hindi, that the doctor has not digitally signed it yet; a PDF the server refuses for that reason is worded by its code in the patient's language |
-| `/bills`, `/bills/{id}` | yes | Bills, amount due, online payment; Download PDF or print a bill; receipts (print) |
+| `/bills`, `/bills/{id}` | yes | Bills, amount due, online payment; Download PDF or print a bill; receipts (print); refunds, where each stands and the reference to trace it by |
 | `/records`, `/records/discharge/{id}`, `/records/request` | yes | Health summary, discharge summaries (Download PDF or print), request a copy of records |
 | `/my-feedback`, `/my-feedback/{formId}` | yes | Feedback forms and the patient's feedback with complaint status |
 | `/profile`, `/profile/preferences` | yes | Details, family, language, SMS and WhatsApp choices, sign out. "Messages on WhatsApp" records the number's WhatsApp opt-in (or opt-out, as a STOP would), and lifts a STOP the number sent; it can be changed only when signed in with the patient's own number, and is shown read-only, with the reason, to a family member on another number |
@@ -113,6 +142,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `{portal.baseUrl}/portal/feedback/{token}` | `/feedback/{token}` | Kept in this tab's session storage and replaced by `_` in the address bar before the page renders |
 | `{portal.baseUrl}/portal/feedback/form/{token}` | `/feedback/form/{token}` | Stays in the address bar. It names a form, not a person, and kiosks bookmark and reload it |
 | `{portal.baseUrl}/portal/unsubscribe/{token}` | `/unsubscribe/{token}` | Same as the personal feedback link |
+| `{portal.baseUrl}/portal/link/{token}` | `/link/{token}` | Same as the personal feedback link, and forgotten once the patient has signed in |
 | `{portal.baseUrl}/portal/doctors/{practitionerId}` | `/doctors/{practitionerId}` | No token |
 | `{portal.baseUrl}/portal/telehealth/{sessionId}?t={token}` | `/telehealth/{sessionId}` | Moved from `?t=` to this tab's session storage. The address bar keeps the session id only |
 | `{portal.baseUrl}/portal/verify/prescription/{token}` | `/verify/prescription/{token}` | Stays: a printed QR code is meant to be shared, and the answer holds no personal data |
@@ -124,6 +154,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 |---|---|
 | System | `GET /api/v1/system/info` (hospital name, and whether the portal and video consultations are switched on), `GET /health/live` (connection check) |
 | Anti-automation | `POST /api/v1/public/challenge {action: otp\|feedback, subject?}` → `{required, challenge, bits, expiresAt, algorithm}`; the proof goes in `X-HC360-Proof: {challenge}:{nonce}` |
+| Link to the portal (public) | `GET /api/v1/public/portal-links/{token}` → `{hospital, maskedPhone, expiresAt}`; `POST …/{token}/otp` (proof of work, action `otp`, no subject) → `{challengeId, expiresAt, maskedPhone}` as the sign-in's code request answers (422 `auth.otp_throttled` after three codes to the number in 15 minutes); 404 "This link no longer works." for any token that does not work now. Then `POST /api/v1/auth/otp/verify` |
 | Profiles | `GET /api/v1/portal/profiles` |
 | Family on other numbers | `GET /api/v1/portal/family/` → `{linked[{linkId, patientId, fullName, uhid, relation, source, linkedAt}], sharedWith[{linkId, patientId, patientName, accountPhoneMasked, relation, linkedAt}]}`; `POST /api/v1/portal/family/codes {uhid, phone, relation}` → `{codeId, expiresAt}` (the same answer whether or not they match; 422 `portal.family_code_throttled`, `portal.family_own_number`; 409 `portal.family_already_linked`); `POST …/codes/{codeId}/verify {code}` → the relative (400 on a wrong code, 422 `portal.family_code_expired` once it is used up); `POST …/links/{linkId}/end` → 204 |
 | Doctors (public) | `GET /api/v1/public/doctors/filters`, `GET /api/v1/public/doctors`, `GET /api/v1/public/doctors/{id}`, `GET /api/v1/public/doctors/{id}/slots` |
@@ -133,7 +164,8 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | Video | `GET /api/v1/portal/telehealth/sessions`, `GET …/sessions/{id}/join`, and hub `/hubs/telehealth` |
 | Reports | `GET /api/v1/portal/reports?patientId=`, `GET /api/v1/portal/reports/{lab\|radiology\|cardiology}/{id}`, `GET …/{id}/pdf` (the id is the lab report id, or the scan or heart test's study id) |
 | Prescriptions | `GET /api/v1/portal/prescriptions?patientId=`, `GET …/{id}`, `GET …/{id}/pdf`, `GET /api/v1/portal/refills`, `POST /api/v1/portal/refills` |
-| Bills | `GET /api/v1/portal/bills?patientId=`, `GET …/{id}`, `GET …/{id}/pdf`, `POST …/{id}/pay`, `POST …/{id}/payments/{orderRowId}/verify` |
+| Bills | `GET /api/v1/portal/bills?patientId=`, `GET …/{id}` (with the bill's own `refunds`), `GET …/{id}/pdf`, `POST …/{id}/pay`, `POST …/{id}/payments/{orderRowId}/verify` |
+| Refunds | `GET /api/v1/portal/refunds?patientId=` → `PortalRefund[]`, newest first: `refundNumber`, `billNumber`, `purpose` (`Bill`, `Deposit`, `Advance`), `amount`, `stage`, `requestedAt`, `sentAt`, `mode`, `reference`, `creditedAt`; without `patientId`, every patient the account sees; 403 `portal.patient_denied` for anyone else |
 | Records | `GET /api/v1/portal/health-records?patientId=`, `GET /api/v1/portal/discharge-summaries/{id}`, `GET …/{id}/pdf`, `POST /api/v1/portal/record-requests` |
 | Feedback | `GET /api/v1/portal/feedback/forms`, `GET /api/v1/portal/feedback?patientId=`, `POST /api/v1/portal/feedback` |
 | Preferences | `GET` and `PUT /api/v1/portal/communication-preferences` |
@@ -198,8 +230,10 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
 
   Before the server replaces an appointment's order with a new one, it asks the gateway what became of the old one:
   a payment taken after all is recorded (the portal is told "already paid"), and while one is still being processed,
-  or the gateway cannot say, no new order is made. An appointment keeps one order, so a replaced order that was paid
-  would otherwise be found by neither the webhook nor the re-check. A payment problem never loses the booked slot.
+  or the gateway cannot say, no new order is made. The order replaced is remembered, so a patient who pays it after all
+  (the first checkout left open on another tab) is credited: the booking's own payment when nothing else paid it,
+  otherwise a second payment that the hospital refunds once a second person approves. A payment problem never loses the
+  booked slot.
 * **Return page.** `/portal/payment-return` is where the gateway sends patients back from its own page: set
   `integrations.payment.paymentLinkCallbackUrl` to `https://<portal address>/portal/payment-return`. It opens the
   bill or appointment this tab was paying for; anyone else (for example a patient who paid a link the hospital sent
@@ -208,8 +242,23 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
   re-check every few minutes, records the bill's receipt or confirms the booking and receipts its advance; the bill
   or appointment shows it the next time the patient looks. Receipts are dated when the gateway took the money, not
   when HC360 heard of it.
-* **Refunds** of online payments go back to the card or UPI account the patient paid from. The hospital follows each
-  one until the bank confirms it (usually 5 to 7 working days) and can give the patient the bank's reference.
+* **Refunds.** The Bills page lists the patient's refunds, newest first, and a bill's page lists that bill's own. Each
+  shows the amount, what it is for (a bill, an IP deposit or an unused advance), its number, where it stands in words,
+  and the reference to trace it by. The stages are:
+
+  | Stage | What the patient reads | Reference shown |
+  |---|---|---|
+  | Asked for | the date, and that a second person checks every refund before it is paid | none |
+  | Approved | that the hospital will pay it soon | none |
+  | Not approved | to ask at the billing counter (the reason is a staff note and is not sent) | none |
+  | Paid | paid in cash at the counter, or by bank transfer, card reversal, UPI, cheque or wallet, with the date | the counter's (transfer, card-reversal, UPI or cheque reference); none for cash |
+  | Kept as advance | kept as an advance on the account, with the date | none |
+  | With your bank | sent back through the payment gateway to the card or account that paid, with the date; banks usually take 5 to 7 working days | the bank's (ARN, RRN or UTR) once the gateway gives it |
+  | Credited | the date the bank credited it | the bank's, "your bank can trace the refund with it" |
+  | Bank could not credit | that the hospital will send it again or pay it another way (also when sending it again stopped part way); a refund sent again shows as *With your bank* | none |
+  | Paid again | that the payment did not reach the patient and a new refund pays it; the new refund is listed on its own | none |
+
+  Staff names, the approver's remarks, the gateway's own refund id and its error text are never sent to the portal.
 
 ## Printing and downloads
 
@@ -232,15 +281,15 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
 ## The server's text in the patient's language (PP-06)
 
 The portal sends the language the patient chose in it with every call, the OTP sign-in included, as
-`X-HC360-Language: en|hi` (`getLanguage` of `createApiClient`, the `language` argument of `auth.requestOtp` and
+`X-HC360-Language: en|hi|ta` (`getLanguage` of `createApiClient`, the `language` argument of `auth.requestOtp` and
 `auth.verifyOtp`). For portal, public and OTP requests, and any request with a patient's sign-in, the server writes
 its own text in this order:
 
 1. the language chosen in the portal (`X-HC360-Language`): what the patient sees on screen wins, so a patient whose
    record says Hindi but who reads the portal in English gets English refusals and PDFs;
 2. without a choice in the request (a call with a patient's token from elsewhere), the preferred language on the
-   signed-in patient's record when it is English or Hindi ("Hindi", "hi", "हिन्दी"), read once per patient every five
-   minutes;
+   signed-in patient's record when it is English, Hindi or Tamil ("Hindi", "hi", "हिन्दी", "Tamil", "தமிழ்"), read once
+   per patient every five minutes;
 3. Accept-Language;
 4. English.
 
@@ -249,14 +298,35 @@ the record's preferred language, else English.
 
 * **Refusals.** The Problem Details `title`, `detail` and field messages of a refusal (400, 409, 422 and the others)
   are in that language, and the answer says so (`Content-Language: hi`). The `code` and the field names never change,
-  so the portal's own handling of codes is unaffected. A message without a translation is sent in English, as before.
-  The portal shows business-rule messages as sent, so a Hindi reader now sees the server's reason in Hindi; transport
-  and status problems (no connection, 401, 403, 404, 429, 5xx) are still worded by the portal itself.
+  so the portal's own handling of codes is unaffected. A message without a translation would be sent in English; a
+  test keeps that from happening (below). The portal shows business-rule messages as sent, so a Hindi or Tamil reader
+  sees the server's reason in their language; transport and status problems (no connection, 401, 403, 404, 429, 5xx)
+  are still worded by the portal itself.
+* **Field checks.** A field left empty, too long or holding a value not offered gets the validators' own message,
+  worded in Hindi and Tamil without the field's name, because the portal shows it next to the field: "यह जानकारी
+  ज़रूरी है।", where the library's own Hindi would name the field in English ('Patient Id'). These are the
+  `validator.*` texts, which `PatientValidatorMessages` gives the FluentValidation library for those languages. Staff,
+  and English readers, keep the library's own English.
 * **PDFs.** `…/pdf` answers in the same language as the request, so in the portal's (see print-templates.md, *The
   patient's language*).
 * **Texts.** One catalogue per language in `src/server/HyFib.HealthCare360.Platform/Localization/Resources`
-  (`patient-texts-en.json`, `patient-texts-hi.json`); a server message is matched on its English text. The Hindi is
-  listed for review by a native speaker in [../requirements/hindi-review.md](../requirements/hindi-review.md).
+  (`patient-texts-en.json`, `patient-texts-hi.json`, `patient-texts-ta.json`); a server message is matched on its
+  English text. The Hindi and Tamil are listed for review by native speakers in
+  [../requirements/hindi-review.md](../requirements/hindi-review.md) and
+  [../requirements/tamil-review.md](../requirements/tamil-review.md).
+* **Kept complete by a test.** `PortalMessageTests` (architecture tests) finds the portal's endpoints from the server
+  itself (every route under `/api/v1/portal`, `/api/v1/public` and `/api/v1/auth/otp`, and every endpoint the patients'
+  portal permission opens) and fails when anything they can answer with has no Hindi or Tamil entry:
+  * every rule of the requests they check, in each patient language;
+  * every message their code can return: it follows the compiled code from each endpoint through every call that can
+    carry a refusal back (an `Error`, a `Result` or an HTTP result), and reads each message at its source line, every
+    branch of it included;
+  * the title of each kind of refusal, "not found", "changed by someone else", and the answers of a switched-off
+    feature.
+
+  A message the code reaches but that is never sent to a patient (the portal pays a bill by its id, so the
+  IP-advance branches of the same method never run for it) is on a short reviewed list in the test, with its reason.
+  The test's output lists the few messages built at run time that it cannot read.
 
 ## Security and privacy
 
@@ -268,6 +338,19 @@ the record's preferred language, else English.
 * **Payment pages.** Only `https` payment pages are opened.
 * **After sign-out.** The query cache is cleared on sign-out and on a family switch. After 20 minutes without activity
   the patient is signed out.
+* **Links to the portal.** A link is not a credential: it only lets whoever opens it send a sign-in code to the
+  number registered for the patient, which signs them in only if they hold that phone. The server keeps only the
+  SHA-256 of the token (128 random bits), and its answers carry the hospital and the masked number only. Unknown,
+  expired, replaced and changed-record links all get the same 404. Asking for a code through a link spends a proof of
+  work and counts against the sign-in's limits per address and per number, and a failed request (an unknown token)
+  raises the work asked of the address. The token is taken out of the address bar at once and forgotten after sign-in.
+* **Changing the registered number.** A new number becomes the patient's only with a code sent to it and entered at the
+  desk. Codes are stored hashed (salted with the change), work for 10 minutes and 5 tries, are judged one at a time
+  under the change's row lock and used once; a number gets 3 in 15 minutes, counted under a lock on it (422
+  `patient.phone_code_throttled` with `retryAfterSeconds`); a newer code supersedes a waiting one; and the change is
+  made only while the record still has the number it had when the code was sent (409 `patient.phone_changed_meanwhile`
+  otherwise). Both steps are on the record's history (`patient.phone_code_sent`, `patient.phone_changed`), the numbers
+  masked and never the code.
 * **Family codes.** The code goes only to the relative's own registered number, and the first answer is the same
   whether or not the UHID and the number match, so the page cannot be used to find out whose number is whose. The code
   field has no one-time-code autofill, because the code arrives on the relative's phone. The server stores codes
@@ -298,20 +381,24 @@ the record's preferred language, else English.
 * **The privacy centre:** request-form checks and the body it sends, server errors mapped to fields, retention in the
   patient's language from the server's periods, and the pages end to end in jsdom (hub, data summary, a new request,
   a request's detail and withdrawal, the nominee, a breach notice).
+* **Refunds:** each stage in words with its date, the bank's reference for a gateway refund and the counter's for a
+  transfer (none for cash), the list with its bill on the Bills page and without it on the bill's own page, and Hindi.
 * **WebRTC codecs and quality.**
 * **The feedback form in jsdom:** stars, the 0–10 score, the comment, and the call-back number check.
 * **Unsaved changes:** the add-family sheet asks before *Not now* or Esc throw typed details away, and the leave
   question stays or leaves.
+* **A link to the portal end to end in jsdom** (`modules/signIn/linkPage.test.tsx`): the page shows the hospital and the
+  masked number and asks for nothing more on opening, the token leaves the address bar, "Send code" sends a proof with
+  the request, the code step signs the patient in and the token is forgotten, Hindi, and a link that no longer works
+  (unknown, malformed, or stopped after the page opened) offers the normal sign-in.
 * **Public pages end to end in jsdom** (router, layouts and queries against a fake server). Feedback and unsubscribe
   links open without sign-in and their tokens leave the address bar. The prescription and report checks, the privacy
   notice, and the redirect of signed-out visitors to sign-in are covered too.
 
 ## Known gaps (server follow-ups)
 
-* **Refund status in the portal.** Patients do not see where a refund stands; the hospital tells them.
-* **Server text not yet translated.** Server messages of features added later, and the validators' built-in messages
-  ("'Reason' must not be empty"), which FluentValidation words in Hindi with the field's English name, are not in the
-  catalogue; they arrive in English (or in that mixed form) until their entries are added. Receipts and the privacy
-  data summary have no server PDF; they are printed from the page.
-* **Hindi review.** The server's Hindi was written by the development team and awaits a native speaker's review
-  ([../requirements/hindi-review.md](../requirements/hindi-review.md)).
+* **No server PDF for receipts or the privacy data summary.** They are printed from the page (*Documents without a
+  server PDF*, above).
+* **Hindi and Tamil review.** The server's Hindi and Tamil were written by the development team and await native
+  speakers' review ([../requirements/hindi-review.md](../requirements/hindi-review.md),
+  [../requirements/tamil-review.md](../requirements/tamil-review.md)).

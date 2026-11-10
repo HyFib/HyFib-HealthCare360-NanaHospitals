@@ -93,6 +93,16 @@ public sealed record PaymentStatusResult(
 
 public sealed record RefundResult(bool Success, string? RefundId, string? Error);
 
+/// <summary>
+/// A payment at the gateway that took it. Refunds, refund checks and disputes go to that gateway, with that gateway's
+/// account, even after the facility has switched its new payments to another one.
+/// </summary>
+/// <param name="Provider">The gateway that took the payment (<c>razorpay</c>, <c>cashfree</c>, <c>simulator</c>); null for a
+/// record from before the gateway was kept with it, which goes to the facility's gateway.</param>
+/// <param name="PaymentId">The gateway's id of the payment.</param>
+/// <param name="OrderId">HC360's gateway order (or payment link) the payment paid, which some gateways refund by.</param>
+public sealed record GatewayPaymentRef(string? Provider, string PaymentId, string? OrderId);
+
 public interface IPaymentGateway
 {
     string Provider { get; }
@@ -100,31 +110,56 @@ public interface IPaymentGateway
     // Every call names the facility whose merchant account applies (null: the signed-in user's facility, then the
     // all-facility settings). Webhooks, patient checkouts and background re-checks have no signed-in facility, and a
     // facility may have its own account and webhook secret, so callers pass the facility of the order.
+    //
+    // New orders and links go to the facility's gateway. A call about something a gateway already holds (an order, a
+    // payment, a refund, a dispute) names that gateway (`provider`), so a facility that switches gateways still checks,
+    // refunds and follows what the old one took, with the old one's account (null: the facility's gateway).
 
     Task<PaymentOrder> CreateOrderAsync(CreatePaymentOrder request, Guid? facilityId, CancellationToken cancellationToken);
 
     /// <summary>A shareable link (SMS/WhatsApp) for remote payment of dues.</summary>
     Task<PaymentOrder> CreatePaymentLinkAsync(CreatePaymentOrder request, Guid? facilityId, CancellationToken cancellationToken);
 
-    Task<PaymentStatusResult> GetStatusAsync(string orderId, Guid? facilityId, CancellationToken cancellationToken);
+    Task<PaymentStatusResult> GetStatusAsync(string orderId, string? provider, Guid? facilityId, CancellationToken cancellationToken);
 
-    /// <summary>Verifies a webhook or checkout signature with the provider secret of the facility's account (constant-time).</summary>
-    bool VerifySignature(string payload, string signature, Guid? facilityId);
+    /// <summary>Verifies a checkout signature (Razorpay: <c>order_id|payment_id</c>) with the named gateway's account (constant-time).</summary>
+    bool VerifySignature(string payload, string signature, string? provider, Guid? facilityId);
 
     /// <summary>
-    /// Returns money to the payment's source. <paramref name="idempotencyKey"/> (at most 40 letters and digits) names
-    /// the attempt: the gateway answers a repeated request with the same key with the refund it already made, so a
-    /// request sent twice (a retry after a timeout, a second click) never refunds twice.
+    /// The gateway whose account signed a webhook (constant-time), or null when none did. A named gateway (a route of its
+    /// own, such as Cashfree's) is the only one tried; a delivery to the shared route, whose format the training gateway
+    /// signs the same way as Razorpay, is tried with the facility's gateway, then each other gateway still set up (a late
+    /// delivery from the one it used before a switch). <paramref name="timestamp"/> is the delivery's signed time, for
+    /// gateways that sign one (Cashfree); a delivery signed too long ago is refused.
+    /// </summary>
+    string? VerifyWebhook(string? provider, string payload, string signature, string? timestamp, Guid? facilityId);
+
+    /// <summary>
+    /// Returns money to the payment's source, through the gateway that took it. <paramref name="idempotencyKey"/> (at
+    /// most 40 letters and digits) names the attempt: a repeated request with the same key gets the refund already
+    /// made, so a request sent twice (a retry after a timeout, a second click) never refunds twice.
     /// </summary>
     Task<RefundResult> RefundAsync(
-        string paymentId, decimal amount, string reason, string? idempotencyKey, Guid? facilityId,
+        GatewayPaymentRef payment, decimal amount, string reason, string? idempotencyKey, Guid? facilityId,
         CancellationToken cancellationToken);
 
-    /// <summary>Settlements paid to the bank on <paramref name="settledOn"/> (an Indian calendar day), with their transactions.</summary>
-    Task<PaymentSettlementReport> GetSettlementsAsync(DateOnly settledOn, Guid? facilityId, CancellationToken cancellationToken);
+    /// <summary>The gateways this facility has an account set up for, its gateway for new payments first.</summary>
+    Task<IReadOnlyList<string>> ProvidersAsync(Guid? facilityId, CancellationToken cancellationToken);
 
-    /// <summary>Where a refund stands at the gateway: pending until the bank confirms it, then processed or failed.</summary>
-    Task<RefundStatusResult> GetRefundStatusAsync(string refundId, Guid? facilityId, CancellationToken cancellationToken);
+    /// <summary>
+    /// Settlements one gateway paid to the bank on <paramref name="settledOn"/> (an Indian calendar day), with their
+    /// transactions (null <paramref name="provider"/>: the facility's gateway).
+    /// </summary>
+    Task<PaymentSettlementReport> GetSettlementsAsync(DateOnly settledOn, string? provider, Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>Where a refund stands at the gateway that made it: pending until the bank confirms it, then processed or failed.</summary>
+    Task<RefundStatusResult> GetRefundStatusAsync(string refundId, GatewayPaymentRef payment, Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>One dispute (chargeback) as the named gateway holds it now, or why it could not be read.</summary>
+    Task<GatewayDisputeReport> GetDisputeAsync(string disputeId, string? provider, Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>Every dispute raised at the named gateway since <paramref name="since"/>, or why they could not all be read.</summary>
+    Task<GatewayDisputeReport> GetDisputesAsync(DateTimeOffset since, string? provider, Guid? facilityId, CancellationToken cancellationToken);
 }
 
 // ---------- Card/UPI POS terminal ----------

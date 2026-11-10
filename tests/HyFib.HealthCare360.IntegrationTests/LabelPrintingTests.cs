@@ -43,8 +43,7 @@ public sealed class LabelPrintingTests(HospitalServer server)
             Nationality: null, PreferredLanguage: null, Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null,
             PhotoFileId: null, IsVip: false, Notes: null, ConfirmedNotDuplicate: false));
         var ward = (await admin.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).First(w => w.Code == "GWM");
-        var bed = (await admin.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patient.Id}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(admin, ward.Id);
         var admission = await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patient.Id, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,

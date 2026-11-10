@@ -244,6 +244,7 @@ public sealed class AuthService(
     IPortalAccountResolver portalAccounts,
     ICurrentUser currentUser,
     ISettingsService settings,
+    IEnumerable<WitnessPurpose> witnessPurposes,
     IOptions<PlatformOptions> options,
     TimeProvider time)
 {
@@ -488,6 +489,154 @@ public sealed class AuthService(
         return await IssueSessionAsync(user, roles, facility, challenge.DeviceId, challenge.ClientType, RestrictionFor(user, roles), http, ct);
     }
 
+    // ---------------------------------------------------------------- a witness at another user's screen
+
+    // The same answer for an unknown, inactive or locked account and a wrong password or code, as at sign-in. It is a rule
+    // error, not 401: the signed-in user's own session is fine.
+    private static readonly Error WitnessInvalid = Error.Rule("witness.invalid",
+        "The witness's user name, password or authenticator code is not right. After repeated failures their account is locked for a while.");
+
+    /// <summary>
+    /// A second member of staff proves who they are at the signed-in user's screen, to witness what that user does
+    /// (<see cref="WitnessPurpose"/>): their user name and password, and their authenticator code when their account has
+    /// one, checked as sign-in checks them. A wrong one counts towards their lockout, judged one at a time under the
+    /// account's row lock; nothing is accepted while the account is locked; an unknown account gets the same answer, after
+    /// the same work. Nothing is signed in: no session, no cookie, no token. What comes back is a confirmation the
+    /// signed-in user uses once, within <see cref="WitnessConfirmation.Lifetime"/>, for one record of that purpose and
+    /// patient (<see cref="IWitnessConfirmations"/>). The witness is never the signed-in user, holds the purpose's
+    /// permission, may work in this facility, and has finished setting up their own account.
+    /// </summary>
+    public async Task<Result<WitnessConfirmed>> ConfirmWitnessAsync(ConfirmWitnessRequest request, CancellationToken ct)
+    {
+        if (currentUser.UserId is not { } forUserId || currentUser.IsPatient)
+        {
+            return Error.Forbidden("witness.staff_only", "Only a signed-in member of staff asks for a witness.");
+        }
+
+        if (witnessPurposes.FirstOrDefault(p => p.Key == request.Purpose) is not { } purpose)
+        {
+            return Error.Field("purpose", "This is not something a witness confirms.");
+        }
+
+        var now = time.GetUtcNow();
+        var normalized = User.Normalize(request.UserName);
+        var user = await LoadUserAsync(u => u.NormalizedUserName == normalized && u.Type == UserType.Staff, ct);
+
+        // Typing one's own user name proves nothing about anyone else: answered before the password is looked at.
+        if (user is not null && user.Id == forUserId)
+        {
+            return Error.Rule("witness.self", "A witness is someone else: you do not witness what you do yourself.");
+        }
+
+        if (user?.PasswordHash is null || !user.IsActive || user.LockoutEndsAt > now)
+        {
+            hashing.Verify(_dummyHash ??= hashing.Hash("hc360-timing-equaliser"), request.Password);
+            await audit.WriteAsync(WitnessFailed(user, normalized, purpose,
+                user is null ? "Unknown user" : !user.IsActive ? "Inactive user" : "Account locked", locked: false), ct);
+            return WitnessInvalid;
+        }
+
+        var check = hashing.Verify(user.PasswordHash, request.Password);
+
+        // As at sign-in: attempts sent at once are judged one at a time against the account read under its row lock, so each
+        // wrong password or code counts and none is accepted once the others have locked the account (ASVS V6.3.1).
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await LockAndReloadAsync(user, ct);
+        if (user.LockoutEndsAt > now)
+        {
+            await audit.WriteAsync(WitnessFailed(user, normalized, purpose, "Account locked", locked: false), ct);
+            return WitnessInvalid;
+        }
+
+        if (!check.Succeeded)
+        {
+            return await WitnessFailureAsync(user, normalized, purpose, "Wrong password", transaction, ct);
+        }
+
+        if (user.MfaEnabled)
+        {
+            // The password was right: ask for the code, as sign-in does, without counting anything.
+            if (string.IsNullOrWhiteSpace(request.Code))
+            {
+                return Error.Rule("witness.code_required", "Enter the 6-digit code from the witness's authenticator app.");
+            }
+
+            if (!VerifyTotp(user, request.Code, out var timeStep))
+            {
+                return await WitnessFailureAsync(user, normalized, purpose, "Wrong authenticator code", transaction, ct);
+            }
+
+            user.MfaLastTimeStep = timeStep;
+        }
+
+        var roles = RoleNames(user);
+        if (RestrictionFor(user, roles) is not null)
+        {
+            return Error.Rule("witness.restricted",
+                $"{user.DisplayName} must first sign in themselves and finish setting up their account (a new password or two-step sign-in).");
+        }
+
+        var facilities = await AllowedFacilitiesAsync(user, roles, ct);
+        if (!await permissions.HasPermissionAsync(user.Id, purpose.Permission, ct)
+            || (currentUser.FacilityId is { } facilityId && facilities.All(f => f.Id != facilityId)))
+        {
+            return Error.Rule("witness.not_allowed", $"{user.DisplayName} may not witness {purpose.Description} here.");
+        }
+
+        // The id is what the screen holds until the record is saved: random, not the time-ordered kind, though it is good only
+        // for this user, here, once and briefly.
+        var confirmation = new WitnessConfirmation
+        {
+            Id = Guid.NewGuid(),
+            WitnessUserId = user.Id,
+            WitnessName = user.DisplayName,
+            ForUserId = forUserId,
+            FacilityId = currentUser.FacilityId,
+            Purpose = purpose.Key,
+            PatientId = request.PatientId,
+            ConfirmedAt = now,
+            ExpiresAt = now + WitnessConfirmation.Lifetime,
+        };
+        db.Add(confirmation);
+        (user.FailedLoginCount, user.LastFailedLoginAt) = (0, null);
+        if (check.NeedsRehash)
+        {
+            user.PasswordHash = hashing.Hash(request.Password);
+        }
+
+        audit.Add(new AuditEntry(AuditCategories.Auth, "auth.witness_confirmed", $"Witnessing {purpose.Description} for {currentUser.DisplayName ?? currentUser.UserName}")
+        {
+            UserId = user.Id,
+            UserName = user.UserName,
+            PatientId = request.PatientId,
+            Details = new { purpose = purpose.Key, forUserId, forUserName = currentUser.UserName },
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return new WitnessConfirmed(confirmation.Id, user.Id, user.DisplayName, confirmation.ExpiresAt);
+    }
+
+    private async Task<Result<WitnessConfirmed>> WitnessFailureAsync(
+        User user, string normalized, WitnessPurpose purpose, string what, Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
+        CancellationToken ct)
+    {
+        var locked = SignInPolicy.RecordFailure(Security, user, time.GetUtcNow());
+        audit.Add(WitnessFailed(user, normalized, purpose, what, locked));
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return WitnessInvalid;
+    }
+
+    /// <summary>A failed witness, recorded against the account named (as a failed sign-in is) and the user who asked.</summary>
+    private AuditEntry WitnessFailed(User? user, string normalized, WitnessPurpose purpose, string what, bool locked) =>
+        new(AuditCategories.Auth, "auth.witness_failed", locked ? $"{what} given to witness; the account is locked" : $"{what} given to witness")
+        {
+            UserId = user?.Id,
+            UserName = user?.UserName ?? Truncate(normalized, 64),
+            Severity = locked ? AuditSeverity.Critical : AuditSeverity.Warning,
+            Details = new { purpose = purpose.Key, forUserId = currentUser.UserId, forUserName = currentUser.UserName },
+        };
+
     // ---------------------------------------------------------------- patient portal OTP
 
     public async Task<Result<OtpChallengeResponse>> RequestOtpAsync(OtpRequest request, CancellationToken ct)
@@ -504,10 +653,15 @@ public sealed class AuthService(
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"auth.otp:" + phone}, 0))", ct);
         var windowStart = now.AddMinutes(-15);
-        var recent = await db.Set<AuthChallenge>().CountAsync(c => c.Kind == AuthChallengeKind.Otp && c.Phone == phone && c.CreatedAt > windowStart, ct);
-        if (recent >= 3)
+        var recent = await db.Set<AuthChallenge>()
+            .Where(c => c.Kind == AuthChallengeKind.Otp && c.Phone == phone && c.CreatedAt > windowStart)
+            .OrderByDescending(c => c.CreatedAt).Select(c => c.CreatedAt).Take(3).ToListAsync(ct);
+        if (recent.Count >= 3)
         {
-            return Error.Rule("auth.otp_throttled", "Too many codes requested for this number. Please wait a few minutes.");
+            // Another code is allowed once the third latest leaves the 15 minutes: the portal counts down to then.
+            var wait = recent[2].AddMinutes(15) - now;
+            var throttled = Error.Rule("auth.otp_throttled", "Too many codes requested for this number. Please wait a few minutes.");
+            return throttled with { Data = new { retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds)) } };
         }
 
         var code = SecretTokens.NewNumericCode(6);

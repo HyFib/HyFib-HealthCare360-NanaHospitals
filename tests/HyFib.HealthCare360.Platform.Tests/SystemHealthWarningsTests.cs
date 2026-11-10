@@ -51,6 +51,26 @@ public sealed class SystemHealthWarningsTests
         warning.Message.ShouldContain("CA-ROLLOVER.md");
     }
 
+    /// <summary>
+    /// In the CA's last year the first step is to prepare the next CA; once it is prepared, to switch to it. Once the CA has
+    /// expired with the next one prepared, the switch is still the way back: no device that holds it is set up again.
+    /// </summary>
+    [Fact]
+    public void A_CA_in_its_last_year_says_to_prepare_the_next_CA_then_to_switch_to_it()
+    {
+        var expiring = Certificate(server: Now.AddDays(200), ca: Now.AddDays(200));
+
+        SystemHealthService.CertificateWarnings(expiring, Now).ShouldHaveSingleItem().Message
+            .ShouldContain("Prepare the next CA with 'certificates prepare-ca'");
+        SystemHealthService.CertificateWarnings(expiring with { NextCaFingerprint = "CD34" }, Now).ShouldHaveSingleItem().Message
+            .ShouldContain("The next CA is prepared: switch to it with 'certificates switch-ca' once every device holds it");
+
+        var expired = Certificate(server: Now.AddDays(-1), ca: Now.AddDays(-1));
+        SystemHealthService.CertificateWarnings(expired, Now).Single(w => w.Code == "cert.ca_expired").Message.ShouldContain("Make one now with HyFib support");
+        SystemHealthService.CertificateWarnings(expired with { NextCaFingerprint = "CD34" }, Now).Single(w => w.Code == "cert.ca_expired").Message
+            .ShouldContain("The next CA is prepared: switch to it now with 'certificates switch-ca', and every device that holds it trusts the server again");
+    }
+
     [Fact]
     public void An_expired_hospital_CA_is_critical()
     {

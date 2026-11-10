@@ -116,6 +116,34 @@ public sealed class PatientConsent : AuditableEntity
 
     public string? Notes { get; set; }
 
+    /// <summary>
+    /// Record sharing (<see cref="ConsentType.DataSharing"/>) only: the accounts that may read the record through the FHIR
+    /// API, each another care provider's integration account. Empty: every account the hospital gave FHIR access.
+    /// </summary>
+    public List<Guid> ShareWith { get; set; } = [];
+
+    /// <summary>Record sharing only: what the record may be read for (<see cref="SharingPurpose"/>). Empty: any purpose.</summary>
+    public List<SharingPurpose> SharePurposes { get; set; } = [];
+
+    /// <summary>
+    /// Record sharing only: the kinds of records shared (<see cref="SharedRecordKind"/>). Empty: all of them but those a
+    /// consent must name (<see cref="SharedRecordKinds.NamedOnly"/>).
+    /// </summary>
+    public List<SharedRecordKind> ShareKinds { get; set; } = [];
+
+    /// <summary>Record sharing only: the first day (hospital time) of the records shared; earlier ones are not.</summary>
+    public DateOnly? ShareRecordsFrom { get; set; }
+
+    /// <summary>Record sharing only: the last day (hospital time) of the records shared; later ones are not.</summary>
+    public DateOnly? ShareRecordsTo { get; set; }
+
+    /// <summary>Record sharing only: the last day (hospital time) the consent lets anyone read; it ends by itself after it.</summary>
+    public DateOnly? ShareUntil { get; set; }
+
+    /// <summary>A record-sharing consent limited in any way (who, what for, which records, which dates, until when).</summary>
+    public bool IsScopedSharing => ShareWith.Count > 0 || SharePurposes.Count > 0 || ShareKinds.Count > 0
+        || ShareRecordsFrom is not null || ShareRecordsTo is not null || ShareUntil is not null;
+
     public bool IsActive => Granted && RevokedAt is null;
 
     /// <summary>

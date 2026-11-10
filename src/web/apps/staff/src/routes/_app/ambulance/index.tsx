@@ -33,6 +33,7 @@ import {
   ambulanceKeys,
   ambulanceQueries,
   availableFor,
+  canAskWaiver,
   chargedKm,
   INCLUDED_KM,
   KIND_LABELS,
@@ -43,6 +44,7 @@ import {
   type AmbulanceVehicle,
   type TripPurpose,
 } from '@/modules/ambulance/api';
+import { WaiveDialog } from '@/modules/ambulance/WaiveDialog';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 import { errorMessage } from '@/modules/lab/common/errors';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
@@ -459,7 +461,12 @@ function CompleteDialog({ trip, onClose }: { trip: AmbulanceTrip; onClose: () =>
     mutationFn: () => ambulanceApi.complete(trip.id, Number(odometer), waive ? reason.trim() : null, trip.version),
     onSuccess: (done) => {
       void queryClient.invalidateQueries({ queryKey: ambulanceKeys.all });
-      notify.success('Trip completed', `${done.number}: ${done.kilometres} km.`);
+      notify.success(
+        'Trip completed',
+        done.waiverPending
+          ? `${done.number}: ${done.kilometres} km, charged; the waiver waits for someone who approves waivers.`
+          : `${done.number}: ${done.kilometres} km.`,
+      );
       onClose();
     },
   });
@@ -491,9 +498,13 @@ function CompleteDialog({ trip, onClose }: { trip: AmbulanceTrip; onClose: () =>
       </Field>
       {trip.patientId && (
         <>
-          <Switch checked={waive} onChange={(_, d) => setWaive(d.checked)} label="Do not charge this trip" />
+          <Switch checked={waive} onChange={(_, d) => setWaive(d.checked)} label="Ask to waive the charge" />
           {waive ? (
-            <Field label="Why" required hint="For example a free scheme transfer.">
+            <Field
+              label="Why"
+              required
+              hint="For example a free scheme transfer. The trip is charged now; the waiver waits for someone who approves waivers."
+            >
               <Input value={reason} maxLength={300} onChange={(_, d) => setReason(d.value)} />
             </Field>
           ) : (
@@ -544,6 +555,8 @@ function LogTab() {
   const [to, setTo] = useState(todayIso());
   const log = useQuery(ambulanceQueries.log(from, to));
   const data = log.data;
+  const canDispatch = usePermission(AMBULANCE_PERMISSIONS.dispatch);
+  const [waiving, setWaiving] = useState<AmbulanceTrip | null>(null);
 
   return (
     <Section flush>
@@ -603,14 +616,35 @@ function LogTab() {
                   {STATUS_LABELS[t.status]}
                 </Badge>
                 {(t.cancelReason ?? t.chargeWaivedReason) && (
-                  <Caption1 block>{t.cancelReason ?? `Not charged: ${t.chargeWaivedReason}`}</Caption1>
+                  <Caption1 block>
+                    {t.cancelReason ??
+                      `Not charged: ${t.chargeWaivedReason}${t.chargeWaivedByName ? ` (waived by ${t.chargeWaivedByName}${t.waiverRequestedByName ? `, asked for by ${t.waiverRequestedByName}` : ''})` : ''}`}
+                  </Caption1>
+                )}
+                {t.waiverPending && (
+                  <Caption1 block>
+                    Waiver waiting for approval: {t.waiverPending.reason} (asked for by{' '}
+                    {t.waiverPending.askedByYou ? 'you' : t.waiverPending.requestedByName})
+                  </Caption1>
                 )}
               </span>
             ),
           },
+          {
+            key: 'waive',
+            header: '',
+            width: 130,
+            render: (t) =>
+              canDispatch && canAskWaiver(t) ? (
+                <Button size="small" onClick={() => setWaiving(t)}>
+                  Waive charge
+                </Button>
+              ) : null,
+          },
         ]}
         emptyTitle="No trips in this period"
       />
+      {waiving && <WaiveDialog trip={waiving} onClose={() => setWaiving(null)} />}
     </Section>
   );
 }

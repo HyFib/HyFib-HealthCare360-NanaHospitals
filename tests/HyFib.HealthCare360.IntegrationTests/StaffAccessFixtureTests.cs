@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -61,7 +62,8 @@ public sealed class StaffAccessFixtureTests(HospitalServer server)
     /// <summary>
     /// The built-in roles' permissions (as seeded), and every route under /api with its permission rules: each GET as
     /// "path rules", each write (POST, PUT, PATCH, DELETE) as "METHOD path rules", and "-" for a route that asks for no
-    /// permission, so that a call to a route the server does not have is told apart from one that needs none.
+    /// permission, so that a call to a route the server does not have is told apart from one that needs none. Then each
+    /// kind of change a second person approves, with the permission that approves it.
     /// </summary>
     private string Describe()
     {
@@ -102,7 +104,17 @@ public sealed class StaffAccessFixtureTests(HospitalServer server)
             }
         }
 
-        return JsonSerializer.Serialize(new { roles, reads, writes }, new JsonSerializerOptions { WriteIndented = true }).ReplaceLineEndings("\n") + "\n";
+        // Every kind of change a second person approves, with the permission its approver holds: the staff app's
+        // Approvals menu must show to every one of them, or a checker could not find what waits for them.
+        using var scope = server.Services.CreateScope();
+        var approvals = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var action in scope.ServiceProvider.GetServices<IApprovalAction>())
+        {
+            approvals[action.Kind] = action.ApprovePermission;
+        }
+
+        return JsonSerializer.Serialize(new { roles, reads, writes, approvals }, new JsonSerializerOptions { WriteIndented = true })
+            .ReplaceLineEndings("\n") + "\n";
     }
 
     private static string RepositoryRoot()

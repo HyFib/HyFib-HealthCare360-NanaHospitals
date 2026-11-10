@@ -67,9 +67,12 @@ export default manifest;
   a confirmation whose last button acts), then, for each built-in role whose permissions do not cover all of that, opens
   the screen as the role: it fails for a read the role may not make, and for a button the role is shown that sends what
   the role may not do (pressed as the role, so a dialog that leaves out an action for it passes). Fix the link's or the
-  button's `permission`, the role's default permissions or the endpoint's rule, whichever is wrong. Not covered: forms
-  that need input before they send, and what a record screen reads after its record (the fake server does not have
-  one). It reads the roles and the server's read and write rules from `src/test/serverAccess.json`, which
+  button's `permission`, the role's default permissions or the endpoint's rule, whichever is wrong. Each screen is
+  closed before the next opens, and the fake server refuses a request whose signal is already aborted, as `fetch`
+  does: the API client tries a 502, 503 or 504 again after a pause, and the late try of a screen closed meanwhile must
+  not count as the next screen's read. Not covered: forms that need input before they send, and what a record screen
+  reads after its record (the fake server does not have one). It reads the roles and the server's read and write
+  rules from `src/test/serverAccess.json`, which
   `StaffAccessFixtureTests` checks against the server: after changing an endpoint's permission or a role's default
   permissions, run that test with `HC360_WRITE_ACCESS_FIXTURE=1` and commit the file it writes.
 

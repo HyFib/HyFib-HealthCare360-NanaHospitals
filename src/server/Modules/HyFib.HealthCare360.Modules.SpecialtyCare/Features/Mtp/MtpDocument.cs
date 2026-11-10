@@ -59,7 +59,7 @@ internal static class MtpDocument
                 {(mtp.MedicalBoardReference is { } board ? Html.Of($"<div>Opinion of the Medical Board: {board}</div>") : Html.Empty)}
               </div>
               {DocumentParts.Fields(mtp.Opinions.Select((o, i) => (
-                  $"Doctor {i + 1}", (string?)$"{o.DoctorName}, registration no. {o.RegistrationNumber}, opinion on {DocumentFormat.Date(o.OpinionOn)}")))}
+                  $"Doctor {i + 1}", (string?)$"{o.DoctorName}, registration no. {o.RegistrationNumber}, opinion on {DocumentFormat.Date(o.OpinionOn)}{(o.Confirmed ? " (recorded by the doctor in HC360)" : string.Empty)}")))}
             </section>
             <section class="section">
               <h2>Form III — Admission register</h2>

@@ -2,8 +2,8 @@ namespace HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank;
 
 /// <summary>
 /// A labelled blood component unit in inventory (BB-03..05). The status machine keeps unsafe units out of stock:
-/// a unit leaves quarantine only when it is grouped and every TTI marker is non-reactive, and it can never be
-/// reserved or issued once expired.
+/// a unit leaves quarantine only when it is grouped, every TTI marker is non-reactive and a second officer has verified
+/// those results, and it can never be reserved or issued once expired.
 /// </summary>
 public sealed class BloodComponent : AuditableEntity, IFacilityScoped
 {
@@ -48,7 +48,13 @@ public sealed class BloodComponent : AuditableEntity, IFacilityScoped
         StorageLocation = storageLocation,
     };
 
-    /// <summary>Copies the donation's lab results; releases the unit to stock only if grouped and all markers are non-reactive.</summary>
+    /// <summary>Grouped with every marker non-reactive, and still in quarantine until the results are verified.</summary>
+    public bool AwaitingVerification => Status == BloodUnitStatus.Quarantine && Tti.AllNonReactive && BloodCompatibility.IsKnown(BloodGroup);
+
+    /// <summary>
+    /// Copies the donation's lab results. Any reactive marker discards the unit at once; results that clear it leave it in
+    /// quarantine, awaiting verification (<see cref="Release"/>).
+    /// </summary>
     public void ApplyLabResults(BloodGroup group, TtiPanel tti, DateTimeOffset now)
     {
         if (Status != BloodUnitStatus.Quarantine)
@@ -62,7 +68,15 @@ public sealed class BloodComponent : AuditableEntity, IFacilityScoped
         {
             MarkDiscarded($"Reactive TTI screen: {string.Join(", ", tti.ReactiveMarkers)}", now);
         }
-        else if (tti.AllNonReactive && BloodCompatibility.IsKnown(group))
+    }
+
+    /// <summary>
+    /// Releases the unit to stock once the donation's results are verified: only a unit grouped with every marker
+    /// non-reactive leaves quarantine (an expired one goes to expired).
+    /// </summary>
+    public void Release(DateTimeOffset now)
+    {
+        if (AwaitingVerification)
         {
             Status = IsExpiredAt(now) ? BloodUnitStatus.Expired : BloodUnitStatus.Available;
         }

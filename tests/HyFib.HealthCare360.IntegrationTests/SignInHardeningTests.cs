@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Identity;
@@ -164,10 +165,35 @@ public sealed class SignInHardeningTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_number_refused_another_code_is_told_when_it_may_have_one()
+    {
+        // In the production-style run the portal said "ask again in 05:06" whatever the server's 15 minutes said.
+        var phone = NewMobile();
+        for (var i = 0; i < 3; i++)
+        {
+            using var sent = await OnPortal().SendRawAsync(HttpMethod.Post, "/api/v1/auth/otp/request", new OtpRequest(phone));
+            sent.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+
+        using var refused = await OnPortal().SendRawAsync(HttpMethod.Post, "/api/v1/auth/otp/request", new OtpRequest(phone));
+        refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var problem = await refused.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
+        problem.GetProperty("code").GetString().ShouldBe("auth.otp_throttled");
+
+        // Until the first of the three leaves the 15 minutes.
+        await using var scope = server.Services.CreateAsyncScope();
+        var normalized = Phone.Normalize(phone);
+        var first = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuthChallenge>()
+            .Where(c => c.Phone == normalized).MinAsync(c => c.CreatedAt, Ct);
+        var expected = (first.AddMinutes(15) - DateTimeOffset.UtcNow).TotalSeconds;
+        problem.GetProperty("data").GetProperty("retryAfterSeconds").GetInt32().ShouldBeInRange((int)expected - 5, (int)expected + 5);
+    }
+
+    [Fact]
     public async Task An_enrolment_code_sent_twice_at_once_enrols_one_device()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
-        var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
+        var code = await server.EnrollmentCodeAsync(admin,
             new CreateEnrollmentCodeRequest(DeviceKind.Workstation, null, "Enrolment race", 30));
 
         var name = "Race PC " + Guid.NewGuid().ToString("N")[..8];
@@ -198,7 +224,7 @@ public sealed class SignInHardeningTests(HospitalServer server)
         (await UserAsync(name)).PinHash.ShouldNotBeNull();
 
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
-        await admin.PostAsync<TemporaryPasswordResponse>($"/api/v1/admin/users/{(await UserAsync(name)).Id}/reset-password");
+        await server.ResetPasswordAsync(admin, (await UserAsync(name)).Id);
 
         // Whoever may know the old password may know the PIN: until the holder sets a new one, the password unlocks.
         (await UserAsync(name)).PinHash.ShouldBeNull();
@@ -314,8 +340,8 @@ public sealed class SignInHardeningTests(HospitalServer server)
         }
 
         // An administrator gives out a new one, which works.
-        var reset = await admin.PostAsync<TemporaryPasswordResponse>($"/api/v1/admin/users/{created.UserId}/reset-password");
-        using var signedIn = await LogInAsync(name, reset.TemporaryPassword);
+        var reset = await server.ResetPasswordAsync(admin, created.UserId);
+        using var signedIn = await LogInAsync(name, reset);
         signedIn.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await signedIn.Content.ReadFromJsonAsync<AuthResult>(ApiClient.Json, Ct))!.Restriction.ShouldBe(AuthService.RestrictionPasswordChange);
     }
@@ -335,7 +361,7 @@ public sealed class SignInHardeningTests(HospitalServer server)
             change.StatusCode.ShouldBe(HttpStatusCode.OK);
         }
 
-        await admin.PostAsync<TemporaryPasswordResponse>($"/api/v1/admin/users/{created.UserId}/reset-password");
+        await server.ResetPasswordAsync(admin, created.UserId);
 
         await using var scope = server.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
@@ -358,7 +384,7 @@ public sealed class SignInHardeningTests(HospitalServer server)
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
         var before = await db.Set<NotificationLog>().CountAsync(l => l.TemplateKey == CredentialNotices.TemplateKey, Ct);
 
-        await admin.PostAsync<TemporaryPasswordResponse>($"/api/v1/admin/users/{created.UserId}/reset-password");
+        await server.ResetPasswordAsync(admin, created.UserId);
 
         (await db.Set<UserNotification>().CountAsync(n => n.UserId == created.UserId, Ct)).ShouldBe(1);
         (await db.Set<NotificationLog>().CountAsync(l => l.TemplateKey == CredentialNotices.TemplateKey, Ct)).ShouldBe(before);
@@ -369,7 +395,7 @@ public sealed class SignInHardeningTests(HospitalServer server)
     {
         // Made while the test server asks nobody for two-step verification.
         var superAdmin = await server.SignInAsync(HospitalServer.Users.Admin);
-        await superAdmin.PostAsync<RoleDetail>("/api/v1/admin/roles", new SaveRoleRequest(
+        await server.CreateRoleAsync(superAdmin, new SaveRoleRequest(
             "IT audit reviewers", "Reads the audit trail", [PlatformPermissions.AuditRead], Version: null));
         await server.CreateStaffAccountAsync("it-auditor", "IT audit reviewers");
         await server.CreateStaffAccountAsync("it-accountant", SystemRoles.Accountant);
@@ -403,7 +429,7 @@ public sealed class SignInHardeningTests(HospitalServer server)
     {
         var roleId = (await admin.GetAsync<List<RoleListItem>>("/api/v1/admin/roles")).Single(r => r.Name == role).Id;
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId;
-        return await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", new CreateUserRequest(
+        return await server.CreateUserAsync(admin, new CreateUserRequest(
             name, $"Test {name}", email, Phone: null, [roleId], facilityId is { } f ? [f] : [], facilityId, PractitionerId: null, TemporaryPassword: null));
     }
 

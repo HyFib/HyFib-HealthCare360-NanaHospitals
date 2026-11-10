@@ -45,7 +45,8 @@ public sealed record PrescriptionSignature(
     string? SafetyAlertsJson,
     bool ControlledDrugsConfirmed,
     string? RegistrationNumber = null,
-    string? RegistrationCouncil = null);
+    string? RegistrationCouncil = null,
+    IReadOnlyDictionary<Guid, string>? OverriddenAlerts = null);
 
 /// <summary>
 /// The doctor's Digital Signature Certificate signature over the prescription's canonical bytes (ERX-04), as checked
@@ -63,7 +64,8 @@ public sealed record PrescriptionDigitalSignature(
     string SignerSerialNumber,
     string SignerIssuer,
     string SignerThumbprint,
-    string ChainStatus);
+    string ChainStatus,
+    string? RevocationStatus = null);
 
 /// <summary>
 /// An e-prescription (ERX-01..06). Drafts are freely editable; signing runs the safety checks (in the service),
@@ -114,6 +116,13 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
     /// <summary>Set on prescriptions issued as a refill of an earlier signed prescription.</summary>
     public Guid? RefillOfPrescriptionId { get; set; }
 
+    /// <summary>
+    /// On a refill, who issued it (a pharmacist, or a doctor), by name as their account had it then: a refill carries the
+    /// original prescriber's name and registration (<see cref="PractitionerId"/>), and <see cref="SignedByUserId"/> is the
+    /// account of whoever refilled it, so the record never reads as the doctor having signed it again.
+    /// </summary>
+    public string? RefilledByName { get; set; }
+
     /// <summary>Unguessable token printed as a QR code; the public verification page shows only non-PHI facts.</summary>
     public string? VerificationToken { get; private set; }
 
@@ -158,6 +167,15 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
     /// check builds the chain again against the folder as it is then.
     /// </summary>
     public string? SignerChainStatus { get; private set; }
+
+    /// <summary>
+    /// How the certificate's revocation was checked when the signature was attached, in words: online (OCSP, or the CA's
+    /// CRL fetched then), or against the cached CRL with its date and age, or not at all when no CRL of the CA was cached
+    /// and the CA could not be reached. A revoked or expired certificate is refused, so it never reads "revoked".
+    /// </summary>
+    public string? SignerRevocationStatus { get; private set; }
+
+    public const int SignerRevocationStatusMaxLength = 300;
 
     public bool IsDigitallySigned => DigitalSignature is not null;
 
@@ -247,8 +265,12 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
         ControlledDrugsConfirmed = HasControlledDrugs;
         RefillsRemaining = RefillsAllowed;
 
+        // Each line signed over a blocking alert carries what it was signed over, so the pharmacist sees it before dispensing.
         Raise(new PrescriptionSigned(Id, PrescriptionNumber, PatientId, VisitId, AdmissionId, FacilityId, PractitionerId, IsInpatient,
-            Items.OrderBy(i => i.Sequence).Select(ToLine).ToList(), now));
+            Items.OrderBy(i => i.Sequence)
+                .Select(i => ToLine(i) with { SafetyOverride = SafetyOverrideReason is null ? null : signature.OverriddenAlerts?.GetValueOrDefault(i.Id) })
+                .ToList(),
+            now, SafetyOverrideReason, signature.UserId));
         return Result.Success();
     }
 
@@ -284,6 +306,9 @@ public sealed class Prescription : AuditableEntity, IFacilityScoped
         SignerIssuer = signature.SignerIssuer;
         SignerThumbprint = signature.SignerThumbprint;
         SignerChainStatus = signature.ChainStatus;
+        SignerRevocationStatus = signature.RevocationStatus is { } revocation && revocation.Length > SignerRevocationStatusMaxLength
+            ? revocation[..(SignerRevocationStatusMaxLength - 1)] + "…"
+            : signature.RevocationStatus;
         return Result.Success();
     }
 

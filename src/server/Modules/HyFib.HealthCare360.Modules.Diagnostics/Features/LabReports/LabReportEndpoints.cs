@@ -111,6 +111,12 @@ internal static class LabReportEndpoints
     private static async Task<IResult> Release(Guid id, LabReportService reports, CancellationToken ct) =>
         (await reports.ReleaseAsync(id, ct)).ToOk();
 
+    /// <summary>
+    /// 204 when the correction is made; 202 with the request when it waits for another pathologist's approval (the lab
+    /// requires a separate verifier).
+    /// </summary>
     private static async Task<IResult> Amend(Guid id, AmendReportRequest request, LabReportService reports, CancellationToken ct) =>
-        (await reports.AmendAsync(id, request, ct)).ToNoContent();
+        (await reports.AmendAsync(id, request, ct)).ToHttpResult(outcome => outcome.Approval is { } approval
+            ? TypedResults.Accepted($"/api/v1/approvals/{approval.Id}", approval)
+            : TypedResults.NoContent());
 }

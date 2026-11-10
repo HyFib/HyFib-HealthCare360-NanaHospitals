@@ -14,6 +14,10 @@ public enum IncidentType
     AdverseDrugReaction,
     HospitalAcquiredInfection,
     Other,
+
+    /// <summary>A pressure injury that developed in hospital.</summary>
+    PressureInjury,
+    TransfusionReaction,
 }
 
 /// <summary>Harm grading used by NABH incident reporting, from no harm reached the patient to death.</summary>
@@ -83,6 +87,16 @@ public sealed class Incident : AuditableEntity, IFacilityScoped
     public List<Guid> InvolvedStaffUserIds { get; set; } = [];
 
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>
+    /// A medical device was involved (an implant, an instrument, a monitor, a consumable), whatever the incident's type: it
+    /// may be reportable to the Materiovigilance Programme of India (<see cref="MvpiReport"/>), as an equipment failure is.
+    /// </summary>
+    public bool InvolvesDevice { get; set; }
+
+    /// <summary>Whether the incident may be reported to MvPI: an equipment failure, or one marked as involving a device.</summary>
+    public bool IsDeviceRelated => Type == IncidentType.EquipmentFailure || InvolvesDevice;
+
     public string? ImmediateAction { get; set; }
     public string? Witnesses { get; set; }
 
@@ -101,6 +115,21 @@ public sealed class Incident : AuditableEntity, IFacilityScoped
     public string? ClosureNote { get; set; }
     public string? LastStatusNote { get; set; }
     public int ReopenCount { get; set; }
+
+    /// <summary>
+    /// The module whose record raised the incident (Inpatient, Pharmacy, SpecialtyCare), for an incident another module
+    /// reported through <see cref="IIncidentRegister.ReportAsync"/>; null for one a person reported.
+    /// </summary>
+    public string? SourceModule { get; set; }
+
+    /// <summary>The kind of record that raised it ("TransfusionReaction", "AdrReport", "MedicationAdministration", "NursingSafetyEvent").</summary>
+    public string? SourceRecordType { get; set; }
+
+    /// <summary>The record that raised it: one record raises one incident.</summary>
+    public Guid? SourceRecordId { get; set; }
+
+    /// <summary>How staff know the record (the unit number, the ADR report number, the drug and dose).</summary>
+    public string? SourceReference { get; set; }
 
     /// <summary>(Re)applies the sentinel rules; a person's explicit flag is kept even when the grade is lowered.</summary>
     public void Classify(IncidentType type, IncidentSeverity severity, SentinelEventKind? sentinelKind, bool flaggedSentinel)

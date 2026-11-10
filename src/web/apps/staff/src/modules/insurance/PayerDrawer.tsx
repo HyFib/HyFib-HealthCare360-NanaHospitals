@@ -27,10 +27,12 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { askedForApproval } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import { mastersQueries } from '@/modules/billing/mastersApi';
 import { hasAtMostTwoDecimals } from '@/modules/billing/money';
 import { ActionError } from '@/modules/billing/ui';
-import { insuranceApi, insuranceKeys, type PayerDetail } from './api';
+import { insuranceApi, insuranceKeys, type PayerDetail, type PayerTerms } from './api';
 import { PAYER_CATEGORIES, PAYER_CATEGORY_LABEL } from './labels';
 
 const useStyles = makeStyles({
@@ -81,35 +83,42 @@ const schema = z.object({
     .refine((v) => !v || /^https:\/\/\S+$/i.test(v), "Enter the portal's https:// address."),
   isActive: z.boolean(),
   notes: z.string().max(1000),
+  reason: z.string().max(500),
 });
 
 type PayerForm = z.infer<typeof schema>;
 
 const blank = (value: string) => (value.trim() ? value.trim() : null);
 
-/** Insurer, TPA, corporate or government scheme: contact, tariff, credit period and default co-pay (INS-01/02). */
+/**
+ * Insurer, TPA, corporate or government scheme: contact, tariff, credit period and default co-pay (INS-01/02). What its
+ * patients pay (its kind, tariff plan and co-pay, and putting it in use) changes only when a second person who may approve
+ * prices agrees; the form holds the terms that wait, so saving again asks for nothing twice.
+ */
 export function PayerDrawer({ payer, onClose }: { payer: PayerDetail | null; onClose: () => void }) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const plans = useQuery(mastersQueries.tariffPlans());
+  const terms = payer?.pendingTerms?.asked ?? payer;
   const form = useForm<PayerForm>({
     resolver: zodResolver(schema),
     defaultValues: {
       code: payer?.code ?? '',
       name: payer?.name ?? '',
-      category: payer?.category ?? 'Insurer',
+      category: terms?.category ?? 'Insurer',
       contactPerson: payer?.contactPerson ?? '',
       phone: payer?.phone ?? '',
       email: payer?.email ?? '',
       address: payer?.address ?? '',
       gstin: payer?.gstin ?? '',
-      tariffPlanId: payer?.tariffPlanId ?? null,
+      tariffPlanId: terms?.tariffPlanId ?? null,
       creditDays: payer?.creditDays ?? 30,
-      defaultCoPayPercent: payer?.defaultCoPayPercent ?? 0,
+      defaultCoPayPercent: terms?.defaultCoPayPercent ?? 0,
       portalUrl: payer?.portalUrl ?? '',
-      isActive: payer?.isActive ?? true,
+      isActive: terms?.isActive ?? true,
       notes: payer?.notes ?? '',
+      reason: '',
     },
   });
 
@@ -131,11 +140,27 @@ export function PayerDrawer({ payer, onClose }: { payer: PayerDetail | null; onC
         isActive: values.isActive,
         notes: blank(values.notes),
         version: payer?.version ?? null,
+        reason: blank(values.reason),
       };
       return payer ? insuranceApi.updatePayer(payer.id, request) : insuranceApi.createPayer(request);
     },
-    onSuccess: (saved) => {
-      notify.success(payer ? 'Payer saved' : 'Payer added', saved.name);
+    onSuccess: (result, values) => {
+      // What a payer's patients pay changes only when two people agree: a save that changes it says it was asked for.
+      const asked = askedForApproval(result);
+      const created = payer ? null : (result as PayerDetail);
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Someone who may approve prices decides it; until then the payer's terms in use apply.`,
+        );
+      } else if (created?.pendingTerms) {
+        notify.success(
+          'Asked for approval',
+          `${values.name.trim()} is added out of use (listed under Show inactive); its terms wait for someone who may approve prices.`,
+        );
+      } else {
+        notify.success(payer ? 'Payer saved' : 'Payer added', values.name.trim());
+      }
       void queryClient.invalidateQueries({ queryKey: insuranceKeys.payers });
       onClose();
     },
@@ -160,6 +185,19 @@ export function PayerDrawer({ payer, onClose }: { payer: PayerDetail | null; onC
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
+            {payer?.pendingTerms && (
+              <PendingGrantNotice
+                approvalId={payer.pendingTerms.approvalId}
+                what={pendingTermsWhat(
+                  payer,
+                  payer.pendingTerms.asked,
+                  (id) => plans.data?.find((p) => p.id === id)?.name,
+                )}
+                requestedBy={payer.pendingTerms.requestedBy}
+                requestedAt={payer.pendingTerms.requestedAt}
+                decides="Someone who may approve prices decides it; until then the payer's terms in use apply. The form shows them as asked."
+              />
+            )}
             <FormGrid columns={2} minColumnWidth={180}>
               <TextField
                 control={form.control}
@@ -221,6 +259,18 @@ export function PayerDrawer({ payer, onClose }: { payer: PayerDetail | null; onC
             />
             <SwitchField control={form.control} name="isActive" label="Active" />
             <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={1000} />
+            <TextAreaField
+              control={form.control}
+              name="reason"
+              label="Reason for a change to the terms, for the approver"
+              rows={2}
+              maxLength={500}
+              hint={
+                payer
+                  ? 'The kind, tariff, co-pay and putting it in use wait for someone who may approve prices.'
+                  : 'A new payer is added out of use; its terms wait for someone who may approve prices.'
+              }
+            />
             {form.formState.errors.root && (
               <MessageBar intent="error">
                 <MessageBarBody>{form.formState.errors.root.message}</MessageBarBody>
@@ -246,4 +296,23 @@ export function PayerDrawer({ payer, onClose }: { payer: PayerDetail | null; onC
       {guard.dialogs}
     </OverlayDrawer>
   );
+}
+
+/** What waits for approval in a payer's terms, against what applies now. */
+function pendingTermsWhat(payer: PayerDetail, asked: PayerTerms, planName: (id: string) => string | undefined): string {
+  const plan = (id: string | null) => (id ? (planName(id) ?? 'a tariff plan') : 'none');
+  const parts: string[] = [];
+  if (asked.isActive !== payer.isActive) {
+    parts.push(asked.isActive ? 'put in use' : 'taken out of use');
+  }
+  if (asked.category !== payer.category) {
+    parts.push(`${PAYER_CATEGORY_LABEL[asked.category]} (now ${PAYER_CATEGORY_LABEL[payer.category]})`);
+  }
+  if (asked.tariffPlanId !== payer.tariffPlanId) {
+    parts.push(`tariff ${plan(asked.tariffPlanId)} (now ${plan(payer.tariffPlanId)})`);
+  }
+  if (asked.defaultCoPayPercent !== payer.defaultCoPayPercent) {
+    parts.push(`co-pay ${asked.defaultCoPayPercent}% (now ${payer.defaultCoPayPercent}%)`);
+  }
+  return parts.length > 0 ? `Terms: ${parts.join('; ')}` : 'Terms';
 }

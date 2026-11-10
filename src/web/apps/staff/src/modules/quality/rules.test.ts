@@ -46,7 +46,11 @@ describe('incident rules', () => {
     expect(transitionBlocker('UnderReview', 'Closed', { ...base, isSentinel: true })).toBe(
       'A sentinel event can be closed only after a completed root-cause analysis.',
     );
-    expect(transitionBlocker('Reported', 'Closed', { ...base, isSentinel: true })).toBeNull();
+    // MAKER-CHECKER.md, slice 14: not straight from Reported either, as a duplicate once could be.
+    expect(transitionBlocker('Reported', 'Closed', { ...base, isSentinel: true })).toBe(
+      'A sentinel event can be closed only after a completed root-cause analysis.',
+    );
+    expect(transitionBlocker('Reported', 'Closed', base)).toBeNull();
     expect(transitionBlocker('UnderReview', 'CapaInProgress', base)).toBe(
       'Add at least one corrective or preventive action first.',
     );

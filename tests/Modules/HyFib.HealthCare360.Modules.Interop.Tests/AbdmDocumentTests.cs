@@ -27,7 +27,21 @@ public sealed class AbdmDocumentTests
 {
     private static R4.Bundle Build(AbdmDocument document) => AbdmDocumentBuilder.Build(document);
 
-    private static readonly string[] Samples = ["prescription", "op-consultation", "lab-report", "radiology-report", "cardiology-report", "discharge-summary"];
+    private static readonly string[] Samples =
+    [
+        "prescription", "op-consultation", "lab-report", "radiology-report", "cardiology-report", "discharge-summary", "immunization",
+        "clinical-note", "home-readings", "invoice",
+    ];
+
+    /// <summary>
+    /// The kinds whose Composition profile, or a profile of an entry, is not in the package the validator has: the guide's
+    /// InvoiceRecord and Invoice (<see cref="AbdmInvoiceRecordTests"/>). The validator reports them unchecked, as errors
+    /// naming them, which is all it may report for these kinds.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string[]> ProfilesNotInThePackage = new Dictionary<string, string[]>
+    {
+        ["invoice"] = [AbdmProfiles.InvoiceRecord, AbdmProfiles.Invoice],
+    };
 
     public static TheoryData<string> RecordTypes => new(Samples);
 
@@ -38,6 +52,10 @@ public sealed class AbdmDocumentTests
         "lab-report" => Build(AbdmRecords.LabReport(AbdmTestData.LabReportRecord(AbdmTestData.Pdf))),
         "radiology-report" => Build(AbdmRecords.RadiologyReport(AbdmTestData.RadiologyReportRecord(AbdmTestData.Pdf))),
         "cardiology-report" => Build(AbdmRecords.CardiologyReport(AbdmTestData.CardiologyReportRecord(AbdmTestData.Pdf))),
+        "immunization" => Build(AbdmRecords.Immunization(AbdmTestData.ImmunizationRecord())),
+        "clinical-note" => Build(AbdmRecords.ClinicalNote(AbdmTestData.ClinicalNoteRecord())),
+        "home-readings" => Build(AbdmRecords.HomeReadings(AbdmTestData.HomeReadingsRecord())),
+        "invoice" => Build(AbdmRecords.Invoice(AbdmTestData.InvoiceRecord(pdf: AbdmTestData.Pdf))),
         _ => Build(AbdmRecords.DischargeSummary(AbdmTestData.DischargeSummaryRecord(pdf: null))),
     };
 
@@ -60,7 +78,10 @@ public sealed class AbdmDocumentTests
         composition.Author.ShouldHaveSingleItem().Reference.ShouldNotBeNull();
         composition.Custodian.Reference.ShouldBe(FullUrl<R4.Organization>(bundle, o => o.Name == "Nana Hospitals, Pune"));
         composition.Text.Div.ShouldStartWith("<div xmlns=\"http://www.w3.org/1999/xhtml\">");
-        composition.Section.ShouldAllBe(s => s.Code.Coding.Count == 1 && s.Text != null && (s.Entry.Count > 0 || s.Text.Div.Contains("<p>")));
+        composition.Section.ShouldAllBe(s => s.Text != null && (s.Entry.Count > 0 || s.Text.Div.Contains("<p>")));
+
+        // Coded as the guide codes its sections; a wellness record's it tells apart by title alone.
+        composition.Section.ShouldAllBe(s => name == "home-readings" ? s.Code == null : s.Code.Coding.Count == 1);
     }
 
     [Theory]
@@ -108,6 +129,8 @@ public sealed class AbdmDocumentTests
     [InlineData("radiology-report", AbdmProfiles.DiagnosticReportRecord, "721981007", "Diagnostic studies report")]
     [InlineData("cardiology-report", AbdmProfiles.DiagnosticReportRecord, "721981007", "Diagnostic studies report")]
     [InlineData("discharge-summary", AbdmProfiles.DischargeSummaryRecord, "373942005", "Discharge summary")]
+    [InlineData("immunization", AbdmProfiles.ImmunizationRecord, "41000179103", "Immunization record")]
+    [InlineData("clinical-note", AbdmProfiles.HealthDocumentRecord, "419891008", "Record artifact")]
     public void The_composition_is_typed_with_the_snomed_code_the_ig_fixes(string name, string profile, string code, string display)
     {
         var composition = (R4.Composition)Sample(name).Entry[0].Resource;
@@ -117,6 +140,21 @@ public sealed class AbdmDocumentTests
         coding.System.ShouldBe("http://snomed.info/sct");
         coding.Code.ShouldBe(code);
         coding.Display.ShouldBe(display);
+        composition.Status.ShouldBe(R4.CompositionStatus.Final);
+    }
+
+    /// <summary>
+    /// SNOMED CT has no concept for an invoice: the InvoiceRecord is typed with the guide's own billing code, as best known
+    /// (not in the package, so not checked against the profile: a sandbox run must confirm it).
+    /// </summary>
+    [Fact]
+    public void The_invoice_record_is_typed_with_the_guides_billing_code()
+    {
+        var composition = (R4.Composition)Sample("invoice").Entry[0].Resource;
+
+        composition.Meta.Profile.ShouldBe([AbdmProfiles.InvoiceRecord]);
+        var coding = composition.Type.Coding.ShouldHaveSingleItem();
+        (coding.System, coding.Code, coding.Display).ShouldBe(("https://nrces.in/ndhm/fhir/r4/CodeSystem/ndhm-billing-codes", "INVOICE", "Invoice"));
         composition.Status.ShouldBe(R4.CompositionStatus.Final);
     }
 
@@ -226,11 +264,27 @@ public sealed class AbdmDocumentTests
         var composition = (R4.Composition)bundle.Entry[0].Resource;
 
         composition.Section.Select(s => s.Code.Coding[0].Code).ShouldBe(
-            ["422843007", "371529009", "425044008", "722446000", "721912009", "390906007", "306206005", "51847-2"]);
+            ["422843007", "371529009", "425044008", "722446000", "721912009", "390906007", "371525003", "306206005", "51847-2"]);
         composition.Encounter.Reference.ShouldBe(FullUrl<R4.Encounter>(bundle));
         composition.Section[0].Text.Div.ShouldContain("Chief complaint: Fever for three days");
-        composition.Section[6].Text.Div.ShouldContain("Referred to Dr. Vikram Shah: Palpitations on exertion");
-        composition.Section[7].Text.Div.ShouldContain("Assessment: Acute febrile illness, probably viral.");
+        composition.Section[7].Text.Div.ShouldContain("Referred to Dr. Vikram Shah: Palpitations on exertion");
+        composition.Section[8].Text.Div.ShouldContain("Assessment: Acute febrile illness, probably viral.");
+
+        // The abscess drained in the consultation, by name, under the IG's Procedure section; done by the doctor of the note.
+        var procedure = bundle.Entry.Select(e => e.Resource).OfType<R4.Procedure>().ShouldHaveSingleItem();
+        composition.Section[6].Entry.ShouldHaveSingleItem().Reference.ShouldBe(FullUrl<R4.Procedure>(bundle));
+        procedure.Meta.Profile.ShouldBe([AbdmProfiles.Procedure]);
+        (procedure.Code.Text, procedure.Code.Coding.Count).ShouldBe(("Incision and drainage of abscess", 0));
+        procedure.BodySite.ShouldHaveSingleItem().Text.ShouldBe("Axilla, right");
+        procedure.Performer.ShouldHaveSingleItem().Actor.Reference.ShouldBe(FullUrl<R4.Practitioner>(bundle));
+        procedure.Encounter.Reference.ShouldBe(composition.Encounter.Reference);
+        procedure.Meta.LastUpdated.ShouldBeNull("an entry carries no change time: its latest change may be after the document");
+
+        // It reads whole on its own, and in the section, which has no text of its own: what, when, where, by whom, how it went.
+        var line = $"Incision and drainage of abscess: performed {((R4.FhirDateTime)procedure.Performed).Value}, Axilla, right, by Dr. Asha Rao. "
+            + "Outcome: Pus drained; wound packed";
+        procedure.Text.Div.ShouldContain($"<p>{line}</p>");
+        composition.Section[6].Text.Div.ShouldContain($"<p>{line}</p>");
 
         var conditions = bundle.Entry.Select(e => e.Resource).OfType<R4.Condition>().ToList();
         conditions.Count.ShouldBe(2);
@@ -582,12 +636,53 @@ public sealed class AbdmDocumentTests
         report.Conclusion.ShouldBe("Flagged by the laboratory: Troponin I (Critical high).");
         bundle.Entry.Select(e => e.Resource).OfType<R4.MedicationRequest>().ShouldHaveSingleItem().Category[0].Coding[0].Code.ShouldBe("inpatient");
 
+        // The stent the cardiologist placed in the cath lab: a surgical procedure, by name (its code is ICD-10-PCS), under the
+        // doctor's own words in the Procedures section.
+        var stent = bundle.Entry.Select(e => e.Resource).OfType<R4.Procedure>().ShouldHaveSingleItem();
+        composition.Section[4].Entry.ShouldHaveSingleItem().Reference.ShouldBe(FullUrl<R4.Procedure>(bundle));
+        composition.Section[4].Text.Div.ShouldContain(
+            "<p>Recorded during the stay:</p><p>Coronary angioplasty with a drug-eluting stent to one artery: performed "
+            + $"{((R4.FhirDateTime)stent.Performed).Value}, Left anterior descending artery, by Dr. Vikram Shah. Outcome: TIMI 3 flow restored</p>");
+        (stent.Code.Text, stent.Code.Coding.Count).ShouldBe(("Coronary angioplasty with a drug-eluting stent to one artery", 0));
+        stent.Category.Coding.ShouldHaveSingleItem().Code.ShouldBe("387713003");
+        stent.Performer.ShouldHaveSingleItem().Actor.Reference.ShouldBe(FullUrl<R4.Practitioner>(bundle, p => p.Name[0].Text == "Dr. Vikram Shah"));
+        stent.Encounter.Reference.ShouldBe(composition.Encounter.Reference);
+
         // Without a PDF the summary travels as its text, so the document still carries it whole.
         var summary = bundle.Entry.Select(e => e.Resource).OfType<R4.DocumentReference>().ShouldHaveSingleItem();
         var attachment = summary.Content.ShouldHaveSingleItem().Attachment;
         attachment.ContentType.ShouldBe("text/plain; charset=utf-8");
-        System.Text.Encoding.UTF8.GetString(attachment.Data).ShouldContain("Course in hospital: Managed medically in the CCU.");
+        System.Text.Encoding.UTF8.GetString(attachment.Data).ShouldContain("Course in hospital: Admitted to the CCU.");
         composition.Section[7].Text.Div.ShouldContain("Condition at discharge: Stable, pain free.");
+    }
+
+    [Fact]
+    public void A_document_holds_the_procedures_recorded_by_its_date_in_the_order_done_and_never_one_recorded_in_error()
+    {
+        var sample = AbdmTestData.DischargeSummaryRecord(pdf: null);
+        var signed = sample.Summary.SignedAt!.Value;
+        var stent = AbdmTestData.StayProcedure();
+        var bundle = Build(AbdmRecords.DischargeSummary(sample with
+        {
+            Procedures =
+            [
+                stent,
+                stent with { Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac0a2"), Display = "Recorded for the wrong patient", Status = ProcedureStatus.EnteredInError },
+                stent with { Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac0a3"), Display = "Recorded after the summary was signed", CreatedAt = signed.AddMinutes(1) },
+                stent with
+                {
+                    Id = Guid.Parse("01923a4b-0000-7000-8000-0000000ac0a4"), Code = null, CodeSystem = null, Display = "Temporary transvenous pacing",
+                    PerformedAt = stent.PerformedAt.AddHours(-1),
+                },
+            ],
+        }));
+
+        // The pacing wire went in an hour before the stent, so the section lists it first, whatever order they came in.
+        var composition = (R4.Composition)bundle.Entry[0].Resource;
+        composition.Section[4].Entry.Select(r => ((R4.Procedure)bundle.Entry.Single(e => e.FullUrl == r.Reference).Resource).Code.Text)
+            .ShouldBe(["Temporary transvenous pacing", stent.Display]);
+        var validation = AbdmProfileValidator.Validate(bundle, AbdmProfileValidator.DocumentBundle);
+        validation.Errors.ShouldBeEmpty(validation.Describe());
     }
 
     [Fact]
@@ -982,6 +1077,8 @@ public sealed class AbdmDocumentTests
     /// <summary>
     /// Each sample document validates against the NRCeS ndhm.in 6.5.0 profiles with Firely's validator, as CI runs it
     /// (<see cref="AbdmProfileValidator"/>; <c>ValidatorSetupTests</c> shows it fails documents that break the profiles).
+    /// A kind whose profiles the package lacks (<see cref="ProfilesNotInThePackage"/>) has an error for each of them, that
+    /// it could not be checked against it, and no other.
     /// </summary>
     [Theory]
     [MemberData(nameof(RecordTypes))]
@@ -989,9 +1086,21 @@ public sealed class AbdmDocumentTests
     {
         var validation = AbdmProfileValidator.Validate(Sample(name), AbdmProfileValidator.DocumentBundle);
 
-        validation.Errors.ShouldBeEmpty(validation.Describe());
+        if (ProfilesNotInThePackage.TryGetValue(name, out var missing))
+        {
+            missing.ShouldAllBe(profile => validation.Errors.Any(e => Says(e, profile)), validation.Describe());
+            validation.Errors.ShouldAllBe(e => missing.Any(profile => Says(e, profile)), validation.Describe());
+        }
+        else
+        {
+            validation.Errors.ShouldBeEmpty(validation.Describe());
+        }
+
         validation.Warnings.ShouldBeEmpty(validation.Describe());
     }
+
+    private static bool Says(R4.OperationOutcome.IssueComponent issue, string profile) =>
+        (issue.Details?.Text ?? issue.Diagnostics ?? string.Empty).Contains(profile, StringComparison.Ordinal);
 
     /// <summary>
     /// The radiology sample validates because it meets DiagnosticReportImaging and ImagingStudy, not because they go

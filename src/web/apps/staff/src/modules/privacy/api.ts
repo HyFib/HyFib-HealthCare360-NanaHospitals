@@ -1,6 +1,7 @@
 import type { Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type {
   BreachDataCategory,
   BreachNature,
@@ -230,7 +231,8 @@ export interface DataSummary {
     inpatientYears: number;
     financeYears: number;
     messageLogDays: number;
-    auditYears: number;
+    /** Null while the audit trail is kept permanently. */
+    auditYears: number | null;
   };
 }
 
@@ -359,6 +361,10 @@ export interface BreachDetail {
   certInReportedAt: string | null;
   certInReference: string | null;
   certInReportOverdue: boolean;
+  /** The breach's closing, asked for and waiting for the Data Protection Officer (MAKER-CHECKER.md, slice 14). */
+  closureAskedAt?: string | null;
+  /** Patients asked to be taken off the notification list, waiting for the Data Protection Officer. */
+  removalAskedAt?: string | null;
 }
 
 export interface SaveBreachRequest {
@@ -440,6 +446,11 @@ export interface RetentionRuleDto {
   minimumValue: number | null;
   maximumValue: number;
   editable: boolean;
+  /**
+   * Set only by super administrators (`admin.system.manage`), two people agreeing, under Audit trail below: the audit
+   * trail's period, permanent until set.
+   */
+  systemManaged: boolean;
   lastRemoved: number | null;
   lastRunAt: string | null;
   /** The saved period's version; null while the default applies. */
@@ -479,6 +490,73 @@ export interface RetentionReview {
   outpatientChartsDue: number;
   inpatientChartsDue: number;
   erasureHolds: ErasureHold[];
+}
+
+// ------------------------------------------------------------------ audit trail retention and purge
+
+/** A whole month of the audit trail a purge would remove (AuditPurgeMonth). */
+export interface AuditPurgeMonth {
+  /** The first day of the month, "yyyy-MM-dd". */
+  month: string;
+  rows: number;
+  firstChainIndex: number | null;
+  lastChainIndex: number | null;
+}
+
+/** What a purge would remove now, or why none can be asked for (AuditPurgePlan). */
+export interface AuditPurgePlan {
+  years: number | null;
+  /** Months before this one ("yyyy-MM-dd", its first day) may be removed; null while the trail is kept permanently. */
+  cutoffMonth: string | null;
+  months: AuditPurgeMonth[];
+  rows: number;
+  firstChainIndex: number | null;
+  boundaryChainIndex: number | null;
+  boundaryHash: string | null;
+  /** Why no purge can be asked for now; null when one can. */
+  problem: string | null;
+}
+
+/** A change or a purge waiting for a second super administrator. */
+export interface AuditPendingRequest {
+  approvalId: string;
+  summary: string;
+  requestedByName: string;
+  requestedAt: string;
+}
+
+/** A purge done: what it removed, where its export is, who asked and who approved (AuditPurgeSummary). */
+export interface AuditPurgeSummary {
+  purgedAt: string;
+  months: string[];
+  rows: number;
+  firstChainIndex: number;
+  boundaryChainIndex: number;
+  exportFile: string;
+  exportSha256: string;
+  requestedByName: string;
+  approvedByName: string;
+}
+
+/** How long the audit trail is kept, and what a purge would remove (GET /api/v1/admin/audit/retention). */
+export interface AuditRetentionStatus {
+  /** The period in force, in years; null while the audit trail is kept permanently. */
+  years: number | null;
+  minimumYears: number;
+  maximumYears: number;
+  basis: string;
+  purge: AuditPurgePlan;
+  pendingChange: AuditPendingRequest | null;
+  pendingPurge: AuditPendingRequest | null;
+  lastPurge: AuditPurgeSummary | null;
+}
+
+/** What the public privacy notice says (GET /api/v1/public/privacy), as far as staff screens repeat it. */
+export interface PublicPrivacyInfo {
+  hospital: string;
+  responseDays: number;
+  /** How long the record access log is kept, in years; null while the hospital keeps it permanently (ADR-015). */
+  accessLogYears: number | null;
 }
 
 // ------------------------------------------------------------------ settings
@@ -523,6 +601,9 @@ export interface SavePrivacySettingsRequest {
 // ------------------------------------------------------------------ queries
 
 const BASE = '/api/v1/privacy';
+
+/** The audit trail's period and purge, under Administration (`admin.system.manage`). */
+const AUDIT_RETENTION = '/api/v1/admin/audit/retention';
 export const REQUEST_PAGE_SIZE = 25;
 export const BREACH_PAGE_SIZE = 25;
 export const AFFECTED_PAGE_SIZE = 25;
@@ -685,6 +766,19 @@ export const privacyQueries = {
       queryKey: ['privacy', 'retention', 'review'],
       queryFn: ({ signal }) => api.get<RetentionReview>(`${BASE}/retention/review`, { signal }),
     }),
+  /** The public privacy notice: open to everyone, so any screen may say what it says. */
+  notice: () =>
+    queryOptions({
+      queryKey: ['privacy', 'notice'],
+      queryFn: ({ signal }) => api.get<PublicPrivacyInfo>('/api/v1/public/privacy', { signal }),
+      staleTime: 10 * 60_000,
+    }),
+  /** The audit trail's period and what a purge would remove; for super administrators (`admin.system.manage`). */
+  auditRetention: () =>
+    queryOptions({
+      queryKey: ['privacy', 'retention', 'audit'],
+      queryFn: ({ signal }) => api.get<AuditRetentionStatus>(AUDIT_RETENTION, { signal }),
+    }),
   settings: () =>
     queryOptions({
       queryKey: privacyKeys.settings,
@@ -723,7 +817,12 @@ export const privacyApi = {
   /** CERT-In was told of the incident (within 6 hours of the hospital noticing it). */
   certInReported: (id: string, at: string, reference: string | null) =>
     api.post<void>(`${BASE}/breaches/${id}/cert-in-reported`, { at, reference }),
-  closeBreach: (id: string, note: string | null) => api.post<void>(`${BASE}/breaches/${id}/close`, { note }),
+  /**
+   * Asks for the breach to be closed: refused (422 `privacy.breach_board_report_required`) until the detailed report to the
+   * Board is recorded with its reference; then 202 with the approval it waits for (the Data Protection Officer decides).
+   */
+  closeBreach: (id: string, note: string | null) =>
+    api.post<ApprovalRequestDto>(`${BASE}/breaches/${id}/close`, { note }),
   /** The detailed report for printing (audited). */
   breachReport: (id: string) => api.get<BreachReport>(`${BASE}/breaches/${id}/report`),
   addAffected: (id: string, patientIds: string[], uhids: string[]) =>
@@ -731,13 +830,26 @@ export const privacyApi = {
       patientIds: patientIds.length > 0 ? patientIds : null,
       uhids: uhids.length > 0 ? uhids : null,
     }),
-  removeAffected: (id: string, patientId: string) => api.delete<void>(`${BASE}/breaches/${id}/affected/${patientId}`),
+  /**
+   * Asks for patients to be taken off the notification list, with why: 202 with the approval it waits for (the Data
+   * Protection Officer decides, never the one who asked); they stay on the list until then.
+   */
+  removeAffected: (id: string, patientIds: string[], reason: string) =>
+    api.post<ApprovalRequestDto>(`${BASE}/breaches/${id}/affected/remove`, { patientIds, reason }),
   notify: (id: string) => api.post<NotifyAffectedResult>(`${BASE}/breaches/${id}/notify`),
 
   /** `version`: the period as shown (null while the default applies); one changed meanwhile is not overwritten. */
   updateRetention: (key: string, value: number, version: number | null) =>
     api.put<void>(`${BASE}/retention/${encodeURIComponent(key)}`, { value, version }),
   runRetention: () => api.post<void>(`${BASE}/retention/run`),
+  /**
+   * Asks a second super administrator to set how long the audit trail is kept: `years` (8 at the least), or null for
+   * permanently. 202 with the approval request; 422 below the minimum.
+   */
+  askAuditRetention: (years: number | null, reason: string) =>
+    api.post<ApprovalRequestDto>(`${AUDIT_RETENTION}/change`, { years, reason }),
+  /** Asks a second super administrator to purge the months the period no longer keeps (exported first). 202, or 422. */
+  askAuditPurge: (reason: string) => api.post<ApprovalRequestDto>(`${AUDIT_RETENTION}/purge`, { reason }),
 
   saveSettings: (request: SavePrivacySettingsRequest) => api.put<void>(`${BASE}/settings`, request),
 

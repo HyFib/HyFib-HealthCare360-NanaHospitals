@@ -28,6 +28,7 @@ import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import {
   COMMON_ROUTES,
+  DOSE_HOLD_LABEL,
   MAR_STATUS_LABEL,
   nursingApi,
   nursingKeys,
@@ -37,6 +38,8 @@ import {
   type MedicationOrderDto,
 } from '../nursingApi';
 import { addDays, fromIstInput, istDate, toIstInput } from '../time';
+import type { WitnessConfirmed } from '@/modules/witness/api';
+import { WitnessPanel } from '@/modules/witness/WitnessPanel';
 import { RecordDoseDialog, type DoseToRecord } from './RecordDoseDialog';
 
 const useStyles = makeStyles({
@@ -67,7 +70,15 @@ function statusTone(entry: MarEntryDto): 'success' | 'danger' | 'warning' | 'inf
 }
 
 /** One patient's Medication Administration Record for a day (plus older doses still waiting to be recorded). */
-export function PatientMar({ admissionId, patientName }: { admissionId: string; patientName: string }) {
+export function PatientMar({
+  admissionId,
+  patientId,
+  patientName,
+}: {
+  admissionId: string;
+  patientId: string;
+  patientName: string;
+}) {
   const styles = useStyles();
   const canRecord = usePermission('nursing.mar');
   const today = todayIso();
@@ -76,7 +87,6 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
   const orders = useQuery(nursingQueries.orders(admissionId, false));
   const [recording, setRecording] = useState<{ dose: DoseToRecord; outcome: MarOutcome } | null>(null);
   const [adHoc, setAdHoc] = useState(false);
-  const controlled = new Set((orders.data ?? []).filter((o) => o.isControlledDrug).map((o) => o.id));
 
   const open = (entry: MarEntryDto, outcome: MarOutcome) =>
     setRecording({
@@ -89,9 +99,11 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
         scheduledAt: entry.scheduledAt,
         version: entry.version,
         admissionId,
+        patientId,
         patientName,
         isOverdue: entry.isOverdue,
-        isControlledDrug: entry.medicationOrderId ? controlled.has(entry.medicationOrderId) : undefined,
+        // A controlled drug, a high-alert medicine, or a dose with no order behind it: witnessed by a second nurse.
+        needsWitness: entry.needsWitness,
         batchNumber: entry.batchNumber,
       },
     });
@@ -173,11 +185,14 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
             header: 'Status',
             width: 130,
             render: (e) => (
-              <StatusBadge
-                status={e.status}
-                label={e.status === 'Due' && e.isOverdue ? 'Overdue' : MAR_STATUS_LABEL[e.status]}
-                tone={statusTone(e)}
-              />
+              <span>
+                <StatusBadge
+                  status={e.status}
+                  label={e.status === 'Due' && e.isOverdue ? 'Overdue' : MAR_STATUS_LABEL[e.status]}
+                  tone={statusTone(e)}
+                />
+                {e.heldBecause && <Caption1 block>{DOSE_HOLD_LABEL[e.heldBecause]}</Caption1>}
+              </span>
             ),
           },
           {
@@ -201,9 +216,12 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
             ? (e) =>
                 e.status === 'Due' ? (
                   <span style={{ display: 'inline-flex', gap: 6 }}>
-                    <Button size="small" appearance="primary" onClick={() => open(e, 'Given')}>
-                      Given
-                    </Button>
+                    {/* A held dose (a stop waiting, or a high-alert verbal order not yet countersigned) is not given. */}
+                    {!e.heldBecause && (
+                      <Button size="small" appearance="primary" onClick={() => open(e, 'Given')}>
+                        Given
+                      </Button>
+                    )}
                     <Button size="small" onClick={() => open(e, 'Held')}>
                       Not given
                     </Button>
@@ -220,7 +238,8 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
       {adHoc && (
         <AdHocDoseDialog
           admissionId={admissionId}
-          orders={(orders.data ?? []).filter((o) => o.status === 'Active')}
+          patientId={patientId}
+          orders={(orders.data ?? []).filter((o) => o.status === 'Active' && !o.dosesHeld)}
           onClose={() => setAdHoc(false)}
         />
       )}
@@ -228,13 +247,19 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
   );
 }
 
-/** An SOS/STAT or otherwise unscheduled dose; "given now" records it as given in the same step. */
-function AdHocDoseDialog({
+/**
+ * An SOS/STAT or otherwise unscheduled dose; "given now" records it as given in the same step, with a second nurse's
+ * confirmation at this screen when the drug is controlled or high-alert, or when no order is behind it (WitnessPanel).
+ * Orders whose doses are held are not offered.
+ */
+export function AdHocDoseDialog({
   admissionId,
+  patientId,
   orders,
   onClose,
 }: {
   admissionId: string;
+  patientId: string;
   orders: MedicationOrderDto[];
   onClose: () => void;
 }) {
@@ -252,7 +277,7 @@ function AdHocDoseDialog({
   const [scheduledAt, setScheduledAt] = useState(limits.now);
   const [reason, setReason] = useState('');
   const [batch, setBatch] = useState('');
-  const [witness, setWitness] = useState('');
+  const [witness, setWitness] = useState<WitnessConfirmed | null>(null);
   const [notes, setNotes] = useState('');
 
   const pickOrder = (id: string) => {
@@ -273,7 +298,7 @@ function AdHocDoseDialog({
         givenNow,
         reason: reason.trim() || null,
         batchNumber: batch.trim() || null,
-        witnessName: witness.trim() || null,
+        witnessConfirmationId: witness?.confirmationId ?? null,
         notes: notes.trim() || null,
       }),
     onSuccess: () => {
@@ -281,17 +306,35 @@ function AdHocDoseDialog({
       void queryClient.invalidateQueries({ queryKey: nursingKeys.admission(admissionId) });
       onClose();
     },
+    onError: (error) => {
+      // Run out, or used meanwhile: the witness confirms again.
+      if (isApiError(error) && error.code === 'witness.confirmation_unusable') {
+        setWitness(null);
+      }
+    },
   });
 
-  const needsWitness = givenNow && Boolean(order?.isControlledDrug);
+  // Nobody prescribed a dose with no order: the second nurse is the only other check, so it is always witnessed.
+  const needsWitness = givenNow && (order === null || order.isControlledDrug || order.isHighAlert);
   const valid =
     (order !== null || drugName.trim().length > 0) &&
     dose.trim().length > 0 &&
-    (!needsWitness || witness.trim().length > 0) &&
+    (!needsWitness || witness !== null) &&
     (givenNow || fromIstInput(scheduledAt) !== null);
 
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ orderId, drugName, dose, route, givenNow, scheduledAt, reason, batch, witness, notes }),
+    dirty: useValuesChanged({
+      orderId,
+      drugName,
+      dose,
+      route,
+      givenNow,
+      scheduledAt,
+      reason,
+      batch,
+      witness: witness?.confirmationId ?? '',
+      notes,
+    }),
     busy: add.isPending,
     onClose,
   });
@@ -319,14 +362,14 @@ function AdHocDoseDialog({
                       {o.isAsNeeded ? ' (SOS)' : ''}
                     </option>
                   ))}
-                  <option value="">Another medicine (verbal order)</option>
+                  <option value="">A dose with no order (witnessed)</option>
                 </Select>
               </Field>
               {!order && (
                 <Field
                   label="Medicine name"
                   required
-                  hint="Record the doctor's verbal order in a nursing note as well."
+                  hint="A second nurse witnesses it. To chart a doctor's verbal order, add it on the Medicines tab."
                 >
                   <Input value={drugName} onChange={(_, d) => setDrugName(d.value)} maxLength={200} autoFocus />
                 </Field>
@@ -360,18 +403,12 @@ function AdHocDoseDialog({
                 </Field>
               )}
               {givenNow && (
-                <div className={styles.two}>
-                  <Field label="Batch number">
-                    <Input value={batch} onChange={(_, d) => setBatch(d.value)} maxLength={64} />
-                  </Field>
-                  <Field
-                    label="Witness (second nurse)"
-                    required={needsWitness}
-                    hint={needsWitness ? 'Required: controlled drug' : undefined}
-                  >
-                    <Input value={witness} onChange={(_, d) => setWitness(d.value)} maxLength={200} />
-                  </Field>
-                </div>
+                <Field label="Batch number">
+                  <Input value={batch} onChange={(_, d) => setBatch(d.value)} maxLength={64} />
+                </Field>
+              )}
+              {needsWitness && (
+                <WitnessPanel purpose="mar.dose" patientId={patientId} witness={witness} onChange={setWitness} />
               )}
               <Field label="Notes">
                 <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} maxLength={500} rows={2} />

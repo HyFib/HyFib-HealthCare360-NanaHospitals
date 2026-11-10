@@ -51,13 +51,26 @@ function EditForm({ employee }: { employee: EmployeeDetail }) {
         ...formToRequest(values, employee.version),
         photoFileId: employee.photoFileId,
       }),
-    onSuccess: () => {
-      notify.success('Employee saved', employee.fullName);
+    onSuccess: (asked) => {
+      if (asked) {
+        // A different payment mode waits for someone else who approves payroll (maker-checker slice 11).
+        notify.success(
+          'Employee saved; payment mode asked for approval',
+          `${asked.summary}. Paid as before until it is approved.`,
+        );
+      } else {
+        notify.success('Employee saved', employee.fullName);
+      }
       void queryClient.invalidateQueries({ queryKey: hrKeys.employees });
       back();
     },
     onError: (error) => {
-      if (isApiError(error) && error.code === 'concurrency') {
+      if (isApiError(error) && error.code === 'approval.already_requested') {
+        notify.warning(
+          'Nothing was saved',
+          'A change to the payment details is already waiting for approval. Keep the payment mode as it is, or withdraw that request from Approvals first.',
+        );
+      } else if (isApiError(error) && error.code === 'concurrency') {
         notify.error(error, 'Someone else changed this employee');
         void queryClient.invalidateQueries({ queryKey: hrKeys.employees });
       } else if (!(form && applyServerErrors(error, form.setError))) {

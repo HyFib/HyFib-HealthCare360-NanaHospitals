@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Patients.Features.Patients;
 
@@ -17,6 +18,14 @@ public sealed record PatientListItem(
     DateTimeOffset RegisteredAt,
     DateTimeOffset? LastVisitAt);
 
+/// <param name="PendingChanges">
+/// Changes to the record waiting for a second person (identity, restriction lifted, deceased status), in force only once
+/// approved; null when nothing waits.
+/// </param>
+/// <param name="IdentityCorrectableUntil">
+/// Until when the signed-in user may still correct the identity at once (they registered the patient, within a day, before
+/// the patient was seen); null when a change to it waits for approval.
+/// </param>
 public sealed record PatientDetail(
     Guid Id,
     string Uhid,
@@ -58,7 +67,10 @@ public sealed record PatientDetail(
     string? Notes,
     bool IsActive,
     uint Version,
-    bool ContactsMasked = false);
+    bool ContactsMasked = false,
+    IReadOnlyList<PendingPatientChange>? PendingChanges = null,
+
+    DateTimeOffset? IdentityCorrectableUntil = null);
 
 /// <summary>Compact identity used by banners, pickers and other modules.</summary>
 /// <param name="IsDateOfBirthEstimated">The date of birth was worked out from the age given at registration.</param>
@@ -165,7 +177,11 @@ public sealed record UpdatePatientRequest(
     string? Notes,
     bool IsActive,
     uint Version,
-    bool RemovePhoto = false);
+    bool RemovePhoto = false,
+    string? ChangeReason = null);
+
+/// <summary>A patient's details saved; <paramref name="Asked"/> is the request for what waits for a second person, if anything does.</summary>
+public sealed record PatientSaved(ApprovalRequestDto? Asked);
 
 public sealed record PatientCreated(Guid Id, string Uhid);
 
@@ -273,8 +289,6 @@ public sealed class RegisterPatientRequestValidator : AbstractValidator<Register
             .OverridePropertyName("paper.uhid").When(x => x.Paper is not null);
         RuleFor(x => x.Paper!.RegisteredAt)
             .Must(at => at <= time.GetUtcNow().AddMinutes(5)).WithMessage("The registration time cannot be in the future.")
-            .Must(at => at >= time.GetUtcNow() - Services.DowntimeUhidService.LongestBackEntry)
-            .WithMessage("Paper registrations older than 90 days cannot be entered this way.")
             .OverridePropertyName("paper.registeredAt").When(x => x.Paper is not null);
     }
 }
@@ -308,6 +322,7 @@ public sealed class UpdatePatientRequestValidator : AbstractValidator<UpdatePati
         RuleFor(x => x).Must(x => !(x.RemovePhoto && x.PhotoFileId is not null))
             .WithName("photoFileId").WithMessage("Choose a new photo or remove the current one, not both.");
         RuleFor(x => x.Notes).SafeText(2000);
+        RuleFor(x => x.ChangeReason).SafeText(500);
     }
 }
 
@@ -329,7 +344,10 @@ public sealed class BreakGlassRequestValidator : AbstractValidator<BreakGlassReq
 }
 
 /// <summary>The sensitive categories a patient's record is in (R-4), with the patient's version for the next change.</summary>
-public sealed record SensitiveCategoriesDto(IReadOnlyList<SensitiveCategory> Categories, uint Version);
+/// <param name="WaitingRemoval">Categories asked to be taken out, still in force until another doctor approves (slice 7).</param>
+/// <param name="Waiting">That request: who asked and when.</param>
+public sealed record SensitiveCategoriesDto(
+    IReadOnlyList<SensitiveCategory> Categories, uint Version, IReadOnlyList<SensitiveCategory>? WaitingRemoval = null, PendingPatientChange? Waiting = null);
 
 /// <param name="Categories">Every category the record is in after the change; empty takes it out of all of them.</param>
 /// <param name="Reason">Why: the diagnosis, or the patient's request; kept in the audit trail.</param>

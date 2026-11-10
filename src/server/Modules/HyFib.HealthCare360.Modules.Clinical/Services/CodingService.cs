@@ -169,8 +169,10 @@ public sealed class CodingService(
                     select new MorbidityFact(e.Code, e.Title, c.PatientId, c.Id, p.Gender, p.DateOfBirth, c.EpisodeDate!.Value))
                 .ToListAsync(ct)
             : (await (
-                    from d in db.Set<Diagnosis>()
-                    join p in db.Set<Patient>().IgnoreQueryFilters() on d.PatientId equals p.Id
+                    // A merged patient's record is removed and its diagnoses still count; a removed diagnosis does not, said
+                    // in so many words because EF Core ignores a query filter for the whole query.
+                    from d in db.Set<Diagnosis>().NotRemoved()
+                    join p in db.Set<Patient>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]) on d.PatientId equals p.Id
                     where d.IcdCode != null && d.Type != DiagnosisType.Differential && d.RecordedAt >= fromUtc && d.RecordedAt < toUtc
                     select new { d.IcdCode, d.Title, d.PatientId, EpisodeId = d.EncounterId ?? d.Id, p.Gender, p.DateOfBirth, d.RecordedAt })
                 .ToListAsync(ct))

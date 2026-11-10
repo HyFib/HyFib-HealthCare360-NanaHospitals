@@ -27,7 +27,7 @@ public sealed class PatientDocumentTests(HospitalServer server)
     private static readonly TimeSpan IndiaOffset = TimeSpan.FromMinutes(330);
 
     // The file store takes a file by what it is, and "%PDF-" is what a PDF starts with.
-    private static readonly byte[] OutsideReport = "%PDF-1.7\n% MRI brain, outside report\n%%EOF\n"u8.ToArray();
+    internal static readonly byte[] OutsideReport = "%PDF-1.7\n% MRI brain, outside report\n%%EOF\n"u8.ToArray();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -174,7 +174,7 @@ public sealed class PatientDocumentTests(HospitalServer server)
 
         // A role made for patients' documents alone (attach and view them), without searching the patient register.
         var suffix = Guid.NewGuid().ToString("N")[..8];
-        var role = await (await server.SignInAsync(HospitalServer.Users.Admin)).PostAsync<RoleDetail>("/api/v1/admin/roles", new SaveRoleRequest(
+        var role = await server.CreateRoleAsync(await server.SignInAsync(HospitalServer.Users.Admin), new SaveRoleRequest(
             "IT documents " + suffix, "Scans and files patients' documents", [PatientsPermissions.Documents, PlatformPermissions.FilesRead], Version: null));
         await server.CreateStaffAccountAsync("it-docs-" + suffix, role.Name);
         var scanner = await server.SignInAsync("it-docs-" + suffix);
@@ -227,7 +227,7 @@ public sealed class PatientDocumentTests(HospitalServer server)
         problem.ShouldContain("\"source\"");
     }
 
-    private static AttachDocumentRequest OutsideReportFrom(Guid fileId) =>
+    internal static AttachDocumentRequest OutsideReportFrom(Guid fileId) =>
         new(fileId, PatientDocumentType.ExternalReport, "MRI brain", new DateOnly(2026, 8, 14), "Apollo Diagnostics, Pune", null);
 
     private async Task<PatientCreated> RegisterPatientAsync(bool isVip)
@@ -244,7 +244,7 @@ public sealed class PatientDocumentTests(HospitalServer server)
     }
 
     /// <summary>Uploads the outside report as the staff app does before attaching it.</summary>
-    private static async Task<Guid> UploadAsync(ApiClient client, Guid? patientId)
+    internal static async Task<Guid> UploadAsync(ApiClient client, Guid? patientId)
     {
         using var form = new MultipartFormDataContent();
         var file = new ByteArrayContent(OutsideReport);

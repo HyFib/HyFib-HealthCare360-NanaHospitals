@@ -112,14 +112,18 @@ The installer:
   with `-UpdateActiveHoursStart` and `-UpdateActiveHoursEnd` (at most 18 apart, as Windows allows); an upgrade keeps
   the hours set before.
 - Starts HC360 and checks that it is ready: up, and reaching the database.
+- Registers the scheduled task *HC360 certificate probe* (Task Scheduler › HyFib), which checks every day, as SYSTEM, the
+  certificate the staff address serves, as HC360 Desktop and the lab agents check it, against the hospital CA
+  fingerprint printed below; on a day the server was off at that time, once it starts. It runs it once and shows what
+  it found. What needs attention goes to the Application event log, where monitoring tools read it, even while HC360 is
+  down ([CA-ROLLOVER.md](CA-ROLLOVER.md#the-certificate-probe)).
 
 At the end it prints two things. Write them down:
 - the **hospital CA fingerprint**, which staff compare when setting up HC360 Desktop;
 - the **first administrator password** (user `admin`).
 
-Give the fingerprint to the certificate probe too, run every day from the server and from a machine in IT
-([CA-ROLLOVER.md](CA-ROLLOVER.md#the-certificate-probe)): it says when the certificate devices are served is about to
-expire or would be refused, even while HC360 is down.
+Give the fingerprint to a certificate probe on a machine in IT too ([CA-ROLLOVER.md](CA-ROLLOVER.md#the-certificate-probe)):
+the server's own cannot see the network or the server's name as the devices do, nor run while the server is off.
 
 ### When PostgreSQL stops
 
@@ -195,6 +199,52 @@ Get-Content "$env:ProgramData\HyFib\HealthCare360\logs\hc360-server-$(Get-Date -
   ConvertFrom-Json | Where-Object { $_.'@l' -in 'Error', 'Fatal' } | Format-List '@t', '@m', '@x', CorrelationId
 ```
 
+### Sending the log and the audit anchors off the server
+
+The log file and the audit chain's anchor file are on the server's own disk, where the server's administrators, and
+anyone who takes the server over, can change them. To keep a copy they cannot, send both to another machine. Each is
+off until it is set in `config\hc360.settings.json` (then restart the `HC360Server` service):
+
+```json
+"HealthCare360": {
+  "Syslog": {
+    "Enabled": true,
+    "Host": "siem.hospital.lan",
+    "Port": 6514,
+    "CaCertificatePath": "C:\\ProgramData\\HyFib\\HealthCare360\\certs\\siem-ca.cer",
+    "MinimumLevel": "Information"
+  },
+  "Audit": {
+    "AnchorMirrorFile": "\\\\audit-nas\\hc360\\anchors.log",
+    "AnchorsToSyslog": true
+  }
+}
+```
+
+- **Syslog** sends every log event, as it happens, to the hospital's syslog collector or SIEM (rsyslog, syslog-ng, a
+  SIEM's syslog input) in RFC 5424's format over TLS (RFC 5425, TCP 6514). The collector's certificate must carry the
+  name in `Host` and chain to a root this machine trusts, or to the CA in `CaCertificatePath` (the hospital's own CA,
+  say). A collector that asks for a client certificate gets the PFX in `ClientCertificatePath` (with
+  `ClientCertificatePassword`, protected in the file like the other passwords). Phone, Aadhaar and ABHA numbers,
+  e-mail addresses and secrets are masked in every message, as in the log file. `Facility` (default 16, local0),
+  `AppName` (default `hc360`) and `QueueLimit` (default 10,000 events waiting while the collector is away) can be
+  changed. The logger, the request's correlation id and the level are structured data (`[hc360@32473 …]`).
+- **AnchorMirrorFile** appends each audit anchor, as it is written, to a second anchor file, normally on a share on
+  another machine. Give the service's account (`NT SERVICE\HC360Server`, or the computer account `DOMAIN\HC360SRV$` on
+  a share) the right to read the folder and to create and append to files, and not to change or delete them (in the
+  share's advanced permissions: *List folder / read data*, *Create files / write data* on the folder only, *Create
+  folders / append data*; no *Delete*, no *Write attributes*). The file is brought level with the anchor file at every
+  anchor and every five minutes, so anchors written while the share was away follow once it is back.
+- **AnchorsToSyslog** sends each anchor to the collector too (facility 13, "log audit", MSGID `AUDIT_ANCHOR`), which
+  needs Syslog on.
+
+System health says when the collector cannot be reached (`logs.syslog_unreachable`), when log events were dropped
+because too many were waiting (`logs.syslog_dropped`: the log file still has them), when an anchor cannot be copied
+(`audit.anchor_mirror_failed`, critical after a day), and, critical, when the second anchor file holds an anchor the
+anchor file here no longer has (`audit.anchor_mirror_mismatch`): keep both files as they are, and verify the chain
+under Administration › Audit log. A live server that copies its anchors nowhere shows `audit.anchor_mirror_off` (info).
+With several servers each sends its own log events; every one copies the anchors it writes.
+
 ### How the server signs in to the database
 
 The `HC360Server` service signs in to PostgreSQL with its own Windows account, `NT SERVICE\HC360Server`, through
@@ -222,12 +272,54 @@ for the `postgres` password) and removes the blocks; if HC360 then does not reac
 back, as above. Run the installer again without it to go back to the Windows sign-in. After PostgreSQL is reinstalled, or upgraded to a new version with a new data folder, run the HC360 installer
 again: it writes the blocks into the new files.
 
+### Two database accounts
+
+`-CreateDatabase` makes two PostgreSQL accounts:
+
+- `hc360_owner` owns the database and every table in it. HC360 signs in as it only to change the schema: as it starts
+  (database updates, and the audit trail's triggers, which start-up checks and puts back), and in the jobs that add each
+  month's partitions and their indexes. Its connection string is `ConnectionStrings:HospitalOwner`, with a random
+  password, protected in the settings file like the other.
+- `hc360_app` is the account the server works as (`ConnectionStrings:Hospital`): it reads and writes rows, and nothing
+  else. It cannot change a table, nor drop or turn off the audit trail's triggers, nor empty the audit trail, so
+  neither a flaw in a request nor someone who has its password can make the audit trail editable. It is the account
+  the Windows sign-in (above) and the password change (below) are about.
+
+The installer sets their rights with `hc360-database-roles.sql`, in the `deploy` folder, which it runs as `postgres`.
+On a server installed before the split, where `hc360_app` owns everything, run the installer again with
+`-CreateDatabase -PostgresSuperuserPassword (Read-Host -AsSecureString)`: the database is kept, and handed to
+`hc360_owner` as it is (`REASSIGN OWNED`); nothing in it is copied or changed. Like any `-CreateDatabase`, it gives
+`hc360_app` a new password, and the installer then switches it to the Windows sign-in as before. `Restore-HC360.ps1`
+restores the tables as `hc360_owner` where it exists, and gives `hc360_app` its rights again.
+
+A server whose tables belong to another account than the one it works as, with no `ConnectionStrings:HospitalOwner`,
+does not start: the log says which account owns them. Set the owner's connection string (on a promoted standby, copy
+it from the primary's settings), and start HC360 again.
+
+### The database over TLS
+
+PostgreSQL on the Server Node itself, reached through localhost, needs nothing more. When PostgreSQL runs on another
+machine, every PostgreSQL connection string (`Hospital`, `HospitalOwner`, a reporting replica) must check the
+database's certificate, or HC360 does not start, and the log names the connection string:
+
+```
+Host=db.hospital.lan;Port=5432;Database=hc360;Username=hc360_app;SSL Mode=VerifyFull;Root Certificate=C:\ProgramData\HyFib\HealthCare360\certs\db-ca.crt
+```
+
+`SSL Mode=VerifyFull` encrypts the connection and checks that the certificate names `Host` and chains to a trusted
+root: the CA in `Root Certificate` (the hospital's own CA), or the machine's. `SSL Mode=Require` or `VerifyCA` is taken
+only with a `Root Certificate`. On the database machine, turn TLS on in `postgresql.conf` (`ssl = on`, `ssl_cert_file`,
+`ssl_key_file`, the certificate naming the host the server uses), and use `hostssl` lines, not `host`, for the server's
+address in `pg_hba.conf`. For a lab only, `"HealthCare360": { "Database": { "AllowUnverifiedRemoteConnection": true } }`
+lets HC360 start without it; System health warns while it is on (`database.tls_unverified`).
+
 ### Changing the database password
 
 When the server signs in with a password (above), the password of HC360's database account is changed from
 Administration › System health, while HC360 runs (SRS SEC-07). It needs the permission *Change the server's database
-password and keys, make backup recovery keys, and sign everybody out* (`admin.system.manage`), which only SuperAdmin has
-until it is given to another role in Administration › Roles and permissions. Then:
+password and keys, make backup recovery keys, sign everybody out, and set how long the audit trail is kept and purge it
+(with a second person)* (`admin.system.manage`), which only SuperAdmin has until it is given to another role in
+Administration › Roles and permissions. Then:
 
 1. Open Administration › System health. Under Database it shows when the password was last changed, and by whom.
 2. Select **Change password** and confirm.
@@ -307,6 +399,12 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - The audit trail's anchors go to `%ProgramData%\HyFib\HealthCare360\audit\anchors.log`. To keep them where the
      database's administrators cannot change them, set `HealthCare360:Audit:AnchorFile` to a write-once share or another
      machine, and give that file to auditors with an audit export (Administration › Audit log › Export for auditors).
+   - The audit trail is kept permanently unless two super administrators set a period (8 years at the least, Privacy ›
+     Retention › Audit trail). A purge they agree on writes the months it removes to
+     `%ProgramData%\HyFib\HealthCare360\audit\archive` first (or `HealthCare360:Audit:ArchiveDirectory`): copy each
+     export off the server, with the anchor file, and keep it as long as an auditor may ask for those months. The
+     anchor file is not in the backups: after a purge, a server restored on new hardware verifies its audit trail only
+     with the anchor file put back (the anchor of the purge's boundary is checked), so keep a copy off the server.
    - Set Windows Time to synchronise with NPL or NIC (`w32tm /config /manualpeerlist:"time.nplindia.org samay1.nic.in"
      /syncfromflags:manual /update`), and allow NTP (UDP 123) to them. System health shows the clock's offset and warns
      when it is more than a second off or no time server answers; a hospital with its own time server that follows
@@ -315,21 +413,39 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - **Privacy › Settings › CERT-In point of contact**: name the person CERT-In writes to and who reports an incident
      within the 6 hours, with an e-mail address and a phone number (direction (iii)). System health warns until it is
      set.
-6. **Administration › Users**: create staff accounts, giving each person only the roles their job needs. HC360
-   refuses passwords on public breach lists or holding a facility's name, for temporary passwords too. A temporary
-   password works for 72 hours; after that, reset the password to give out a new one.
+6. **Administration › Users**: create staff accounts, giving each person only the roles their job needs, with their
+   own mobile number (and e-mail address, if they have one). HC360 refuses passwords on public breach lists or holding a
+   facility's name, for temporary passwords too. A temporary password works for 72 hours; after that, reset the
+   password to give out a new one. A reset sends it to the person's own mobile number and e-mail address, and you are
+   told only where it went; for an account with neither, the reset waits for another administrator who may approve
+   grants, who is shown it once and gives it in person. Another user's mobile number or e-mail address, two-step
+   verification resets and linking an account to a doctor wait for such an administrator too.
+   Access is given by two people: create the hospital administrators first, while the Super Administrator is the only
+   one who may approve grants, so their roles are given at once (and audited so). From then on, the roles and
+   facilities you give, and the permissions you add to a role, wait for another administrator who may approve grants
+   (Approvals, or the link on the user's page); taking access away is immediate. Keep at least two such people
+   active: System health warns when fewer remain.
 7. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS for each critical warning in System health, and if the server's
    WiFi drops, its WiFi adapter disappears, it starts without the WiFi it had when it last ran, its signal stays weak for
-   a minute or its network is not secure). Set up the heartbeat outside the hospital as "Alerts that reach someone"
-   below says.
+   a minute or its network is not secure), and who a critical alert nobody acknowledges goes to next:
+   `alerts.escalationPhone` (a second contact, such as the IT head) and `alerts.supportPhone` (HyFib support's number).
+   Set up the heartbeat outside the hospital as "Alerts that reach someone" below says.
    System health warns while the adapter is missing; on a server moved to Ethernet on purpose, restart the
    `HC360Server` service to clear the warning.
    Set `alerts.oncallWhatsApp` to `true` to have those alerts on WhatsApp too, once the hospital's WhatsApp provider
    has approved the `system_alert` template. A failed backup is told to the administrators in the app, not by SMS.
    Set `privacy.noticeVersion` to the version of the privacy notice the desk hands out (default `1`), and change it
    when the notice changes. A lab with more than one pathologist can set `lab.separateVerifier` to `true` for its
-   facility, so whoever entered a result does not also verify it.
+   facility, so whoever entered a result does not also verify it, and a correction of a released report waits for a
+   second pathologist's approval. A second doctor confirms each death certificate before it is reported, unless a
+   facility with a single doctor sets `mrd.deathCertificateConfirmation` to `false`. Who may confirm is the
+   `mrd.deaths.confirm` permission (every doctor by default); a hospital that wants only senior doctors to confirm takes
+   it from the Doctor role and gives it to them. In the blood bank, a second officer verifies each donation's screening
+   results before its units leave quarantine, and issues what one officer both grouped and cross-matched, unless a
+   facility with one blood bank officer on duty sets `bloodbank.separateVerifier` to `false`: that officer then does both,
+   and what they release so is listed on the Donations and Blood requests screens for the medical officer's review.
+   Uncross-matched blood is released only on a doctor's own sign-in, so give doctors' accounts their practitioner record.
    A facility that does ultrasounds in pregnancy sets `pcpndt.registrationNumber` (for that facility) to its PCPNDT
    registration: until then Form F cannot be recorded, and those scans cannot start. Mark each obstetric ultrasound
    procedure "Ultrasound in pregnancy" under Radiology › Procedures and templates; the seeded obstetric and anomaly
@@ -337,6 +453,44 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    A facility approved for terminations of pregnancy sets `mtp.approvalNumber` (for that facility) to its certificate of
    approval (MTP Rules, Form B): until then no MTP case can be opened. No clinical role may certify a termination out of
    the box: grant `mtp.certify` and `patients.sensitive.mtp` to the gynaecologists the approval names.
+   **Some settings wait for a second administrator** who may change settings (Approvals), so that no one person switches
+   off a control another person's check relies on, lets more money out, or sends money, patients' data or critical
+   alerts somewhere else. The screen asks why, says the change was asked for, and the setting stays as it is until
+   another administrator approves it. They are: switching off `lab.separateVerifier`,
+   `mrd.deathCertificateConfirmation`, `bloodbank.separateVerifier`, `security.administrationRequiresDesktop`,
+   `lab.requirePaymentBeforeCollection` or `billing.shift.required`; switching on `ui.biometricUnlock` or `ai.enabled`;
+   raising `billing.discount.defaultMaxPercent`, `pharmacy.discount.max_percent`, `billing.chargeCancel.approvalAbove`,
+   `billing.claimWriteOff.approvalAbove`, `billing.shift.shortageTolerance`, `supportservices.canteen.staffCreditLimit`, `security.maxSessionsPerUser`, `ui.idleLockMinutes`,
+   `inpatient.marGraceMinutes`, `inpatient.verbalOrderCountersignHours` or `lab.deltaCheckPercent` (0, for no limit or
+   no check, counts as the highest), or
+   lowering `lab.deltaCheckWindowDays`; clearing any of these, so the default decides; and any change at all to
+   `portal.baseUrl`, `doctorfees.tds.percent`, every `alerts.*` setting, every integration (`integrations.*`),
+   `abdm.gateway`, `ai.provider`, `ai.openai`, `ai.speech` and every credential (a `*.secret` setting, or one saved as
+   secret). The other direction (a control switched on, a limit lowered) is saved at once, as is every other setting. So
+   set the gateway keys, the alert numbers and the portal's address with a hospital administrator from step 6 at hand to
+   approve them.
+   **Verbal orders on the wards** are countersigned by the doctor within `inpatient.verbalOrderCountersignHours` (24 by
+   default; set fewer at once, more waits for a second administrator). Past it, the doctor and everyone holding
+   `nursing.in_charge` in the facility are told: the hospital administrator holds it out of the box, so give it to the
+   ward sisters' role (Administration › Roles). The drug-safety tables are loosened only with the pharmacy and
+   therapeutics committee's approval (`clinical.drug_safety.approve`, pharmacists and hospital administrators by
+   default): grant it to the committee's members, and take it from anyone who should not approve.
+   **The billing desk's money decisions wait for a second person** (SECURITY.md, Maker-checker): a discount above the
+   giver's own limit (an approver's included), a discount limit raised, a charge cancelled at the desk (every OT,
+   procedure, implant or bed-day charge, and others above `billing.chargeCancel.approvalAbove`, ₹1,000 by default; set
+   0 to make every cancellation wait), a cash shortage at a shift's close beyond `billing.shift.shortageTolerance` (₹0 by
+   default: every shortage waits for a supervisor who is not the cashier) and a doctor's consultation fee. So the hospital
+   needs at least two people holding `billing.discounts.approve`, `billing.refunds.approve` and `masters.prices.approve`
+   (the accountant and the hospital administrator out of the box), and the hospital administrator who bills at a counter
+   has the default discount limit (0%) like everyone else: give them a limit in Billing › Discount approvals › Discount
+   limits, which another approver approves. Doctors added in **Hospital setup › Doctors and clinical staff** charge the
+   consultation service's price until someone who approves prices approves their own fee.
+   **Insurance money waits for a second person too** (MAKER-CHECKER.md slice 12): what an insurer deducts or rejects is
+   written off only when someone who holds `insurance.claims.writeoff.approve` (the accountant and the hospital
+   administrator out of the box) approves it, above `billing.claimWriteOff.approvalAbove` (₹0 by default: every
+   write-off), and an amount an insurer approves on a pre-authorisation moves the bill to the insurer only once a second
+   insurance desk user checks it. So the insurance desk needs at least two users holding `insurance.preauth.manage` (or
+   the hospital administrator as the second), or pre-authorised amounts wait.
 8. **Documents and the messages that carry them** (reports, prescriptions, bills):
    - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a
@@ -385,7 +539,7 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
 ### Alerts that reach someone
 
 A critical warning is told within five minutes: in the app to everyone who may see System health, and to the IT
-on-call number by SMS (and WhatsApp, where the hospital chose it), again a day later while it lasts. Three things make
+on-call number by SMS (and WhatsApp, where the hospital chose it), again a day later while it lasts. Four things make
 sure it reaches someone. On a live server, System health warns while one is missing.
 
 1. **The on-call number, and an SMS that goes** (`alerts.not_ready`). Set `alerts.oncallPhone` (step 7) to IT's mobile
@@ -410,12 +564,38 @@ sure it reaches someone. On a live server, System health warns while one is miss
      encrypted, as a secret setting, and never shows it again or writes it in the audit trail.
 
    System health warns after three failed fetches in a row, naming the monitor's host.
-3. **A drill** (Administration › System health › Alert drills; starting one needs `admin.system.manage`). It raises a
+3. **Someone acknowledges each critical alert** (Administration › System health › Critical alerts). Each critical
+   warning stays an alert until a person acknowledges it there, which says they are on it: the warning itself stays
+   until its condition clears. While nobody acknowledges it:
+
+   | When | Who is paged, by SMS |
+   |---|---|
+   | At once | IT on-call (`alerts.oncallPhone`), and everyone who may see System health, in the app |
+   | `alerts.escalateMinutes` later (15 if not set), or as soon as nothing reached IT on-call | The second contact (`alerts.escalationPhone`) |
+   | `alerts.supportMinutes` after that (30 if not set), or as soon as nothing reached the second contact | HyFib support (`alerts.supportPhone`), with the hospital's name |
+
+   - A message that failed or was never sent (no number set, or the number opted out of SMS) counts as nothing reached:
+     the next contact is paged at the next check, within five minutes, without waiting on the SMS provider's retries.
+   - A level nobody is set for is skipped. With neither set, System health warns (`alerts.no_escalation`) on a live
+     server.
+   - Once acknowledged, nobody further is paged, though the alert is told again a day later while it lasts.
+   - The escalations use the `system.alert` template, so they need no DLT registration of their own.
+   - A warning that clears and comes back is a new alert, told again at once, as before.
+   - The alerts are kept in the database: a restart pages nobody again. Each escalation and acknowledgement is in the
+     audit trail (`alerts.escalated`, `alerts.acknowledged`).
+
+   The same section gives the last 30 days in figures: how many alerts, how long they took to be acknowledged (median and
+   90th percentile), how many reached the second contact and HyFib support, and how many nobody acknowledged. The
+   figures count every alert of the period; the list below them shows every open one and the latest 500 that cleared.
+4. **A drill** (Administration › System health › Alert drills; starting one needs `admin.system.manage`). It raises a
    test critical warning, `alerts.drill:<code>`, which the alerts tell as any other: "Nothing is wrong. Acknowledge
    it". Whoever it reaches acknowledges it there. The drill keeps when it was told in the app, when its SMS was sent and
    delivered, when it was first read, and when it was acknowledged and by whom. One nobody acknowledges within an hour
    ends as not acknowledged.
    - Run one at go-live, every quarter, and whenever the on-call number, the SMS provider or its templates change.
+   - A drill is an alert like any other. Leave one unacknowledged once a year, to see the second contact and HyFib
+     support paged at the times set: check the times against the SMS provider's delivery reports, and against HyFib
+     support's record of the call.
    - Keep the timings with the go-live and quarterly records. A step that never came shows where the chain breaks.
 
 ### Going live on a database used for training
@@ -430,11 +610,32 @@ A live server sweeps its database for them ten minutes after it starts and every
 Simulator records** lists each kind it found:
 - how many, and the money they say moved;
 - when they were made, and the references of the newest;
+- for the six kinds below, how many are still open;
 - what to do about them.
 
+A payment, refund, card sale, Aadhaar link, image or lab result a simulator made stays open until its record shows it
+corrected. **To correct** on the same page lists the open ones of a kind (up to 500, newest first), each with a link to
+the record it is corrected on:
+
+| Kind | Corrected when | Where |
+|---|---|---|
+| Online payments the payment simulator took (bill payments, IP deposits, appointment prepayments, payments kept as an advance) | All of the receipt line's money is recorded as not received | Billing › Receipts › Money not received; a second person approves |
+| Refunds the payment simulator said it paid back | The refund is recorded as not paid out | The refund › Not paid out; a second person approves |
+| Card and UPI sales the terminal simulator approved | All of the money of the receipt line the sale made is recorded as not received | As a payment |
+| Aadhaar numbers the Aadhaar simulator linked | The number is removed from the patient's record or replaced, or a real fingerprint check of it, not with a virtual ID, matches | The patient › Edit |
+| Imaging studies linked to the PACS simulator | The study is linked to its real images, cancelled as not done, or its report has an addendum written after the images were linked | Radiology › the study |
+| Results typed into the training analyser | Each result it gave on the sample is entered again from a real measurement (a verified one is reopened first) or amended on the released report; one still waiting unmatched is discarded | The lab order; Lab › Unmatched analyser results |
+
 System health warns until an IT officer (`admin.system.manage`) has dealt with each kind and signed the sweep off there,
-with a note of what was done. Payments, refunds, card sales, Aadhaar links, images and lab results make the warning
-critical, which is sent to IT on-call. A record a simulator makes after the sign-off brings the warning back.
+with a note of what was done:
+- While any of the six is still open, the warning is critical and is sent to IT on-call, and the sign-off is refused
+  (`simulators.critical_open`, naming the kinds and how many of each). Correct them, **Sweep now**, and sign off that
+  sweep: one that still counted open records is refused too, even when they have been corrected since.
+- The other kinds (settlements, messages, day-book vouchers, attendance punches, cardiology files and labels) leave no
+  trace on their records to tell when they are dealt with. The note says what was done about them.
+- Once none is open, the warning stays (not critical) until the sign-off.
+
+A record a simulator makes after the sign-off brings the warning back.
 
 ## 5. Install HC360 Desktop on workstations
 
@@ -442,6 +643,10 @@ Administration works only in HC360 Desktop on an enrolled workstation or tablet 
 is enrolled, a browser signed in as an administrator can open Administration › Devices and make its code, and nothing
 else of administration: enrol IT's own workstation first, and set up the rest of the hospital from it. Once one is
 enrolled, browsers keep everything but administration.
+
+Once a workstation or tablet is enrolled, the code for another waits for a second administrator who may approve grants
+(Approvals): once approved, Administration › Devices shows it to the administrator who asked, once, and it works for the
+minutes chosen from the approval. Codes for kiosks, queue displays and lab agents are made at once.
 
 Create one-time enrolment codes in **Administration › Devices › Enrol a device**, then on each workstation run
 (Administrator PowerShell, from the extracted desktop package):
@@ -1039,7 +1244,9 @@ password. On the standby, in an elevated PowerShell in the `deploy` folder:
    certificate names it. Lab agents, network analysers and modalities are set up with the server's name or address:
    point it at the standby the same way, or set them up again with the standby's. Without the CA imported at set-up
    (step 6), every workstation must be set up again: Change server…, and compare the new fingerprint.
-6. **Check**: System health; and that the records made just before the failure are there. Where doctors sign
+6. **Check**: System health; and that the records made just before the failure are there. Where the database has two
+   accounts (section 3, "Two database accounts"), the standby's settings need the primary's
+   `ConnectionStrings:HospitalOwner`: HC360 does not start without it, and its log says so. Where doctors sign
    prescriptions with their DSC, System health warns (`prescriptions.dsc_trust_empty`) if the standby's DSC trust
    folder is empty: copy the CCA India roots there (section 4, step 9).
 
@@ -1073,9 +1280,10 @@ A planned failover, at a quiet hour, proves the steps and that the people on cal
 ## 10. Several servers behind a reverse proxy (optional)
 
 One Server Node serves about 250 concurrent users (section 1). Beyond that, or to keep HC360 answering while one machine
-is serviced, HC360 runs as **several API nodes behind a reverse proxy and one node that runs the background jobs**, all
+is serviced, HC360 runs as **several API nodes behind a reverse proxy and a node that runs the background jobs**, all
 on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same program on every machine; the setting
-`HealthCare360:Role` says what each one does.
+`HealthCare360:Role` says what each one does. More than one node may be able to run the jobs: they take turns through
+the **job lease**, so exactly one runs them at a time and another takes over if it goes ("The job lease", below).
 
 ```
   Workstations, tablets, the portal ── HTTPS 7360 / 7361 ──► Reverse proxy (IIS ARR, YARP or nginx)
@@ -1097,9 +1305,11 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
 | The database | One PostgreSQL primary, in every node's `ConnectionStrings:Hospital`. Nothing about a user, a sign-in or a request is kept in one node's memory only: sessions, sign-in challenges, one-time codes, emergency access to a restricted record, the attempts counted against the sign-in limits, and the portal's proof of work (challenges spent, failures counted) are all in the database |
 | The keys and the stored documents | The shared folder (`HealthCare360:Cluster:SharedDirectory`). The keys there are protected with a certificate every node holds (`KeyCertificateThumbprint`), because machine DPAPI, which protects them on a single Server Node, opens only on the machine that wrote them. The keys are never in the database: a copy of the database (a backup, the reporting replica) opens no encrypted value without the shared folder too |
 | Real-time updates (queue boards, bed board, critical alerts) | Redis (`ConnectionStrings:Redis`), through which an update raised on any node reaches the screens connected to every node, its own included. While Redis is away no screen gets updates; once it is back, every screen is told to catch up, and does: it subscribes again to what it opened meanwhile, and refetches what it shows |
+| The request limits (public pages, partners, devices, HC360 Desktop's update, requests per user) | Redis as well, so a client's budget is the hospital's whichever node answers. While Redis is away each node counts them on its own (below). The limits on sign-in and one-time codes are in the database |
+| Which node runs the background jobs | The database: the node holding the job lease, a PostgreSQL advisory lock on a connection of its own (below) |
 | Permissions, sessions and settings held in memory for speed | Each node, for a moment. A change on one node expires them on every node at once, through PostgreSQL's LISTEN/NOTIFY on the database they share. A node that stops hearing the others reads them from the database every time until it hears them again |
-| Analyser and modality worklist status (Lab setup › Analysers, Administration › Integrations and its tests) | The database: each node writes its part, the job node's network analysers and worklist server and the relays and heartbeats of the lab agents on the API nodes they reach, within seconds of a change and every minute, and every node shows them together. The worklist's test on an API node reports what the job node says of its worklist server, or that the job node is not reporting: only the job node can send the worklist server its test echo |
-| System health (Administration › System health, and its summary on the home screen) | The database: each node writes what it reports of its own machine (the computer, its network, data drive, certificate and power, and the warnings about them) every minute, and System health on any node shows every node, the job node first, with when each last reported. A node that has not reported for three minutes is shown as such, and a warning says so: critically for the job node, since nothing makes the backups, sends messages or listens for analysers and modalities while it is away. A node is known by an id kept in its own data folder (`config\server-node-id.txt`) for its machine, so one that starts again, after a power cut too, takes its own place again, and a machine cloned from a node's is a node of its own; another warning says when more than one node runs the background jobs. The database, backups, messages, integrations and keys are the hospital's, and shown once |
+| Analyser and modality worklist status (Lab setup › Analysers, Administration › Integrations and its tests) | The database: each node writes its part, the job node's network analysers and worklist server and the relays and heartbeats of the lab agents on the API nodes they reach, within seconds of a change and every minute, and every node shows them together. The worklist's test on an API node (or a node standing by for the job lease) reports what the job node says of its worklist server, or that the job node is not reporting: only the job node can send the worklist server its test echo |
+| System health (Administration › System health, and its summary on the home screen) | The database: each node writes what it reports of its own machine (the computer, its network, data drive, certificate and power, and the warnings about them) every minute, and System health on any node shows every node, the job node first, with when each last reported. A node that has not reported for three minutes is shown as such, and a warning says so: critically for the job node, since nothing makes the backups, sends messages or listens for analysers and modalities while it is away. A node is known by an id kept in its own data folder (`config\server-node-id.txt`) for its machine, so one that starts again, after a power cut too, takes its own place again, and a machine cloned from a node's is a node of its own; another warning says when more than one node runs the background jobs. With the job lease, each node that may run the jobs is shown as holding it or standing by, read from the database's lock at the moment the page is built. The database, backups, messages, integrations and keys are the hospital's, and shown once |
 | Backups | One folder every node names in `HealthCare360:Backup:Directory` (a second share, such as `\\hc360-files\hc360-backups`). The job node makes the scheduled ones; **Back up now** runs on the API node that answers it, so it must write to the same folder, and every API node needs PostgreSQL's client tools (`pg_dump`, `Backup:PgDumpPath`) as the job node does |
 | The settings file, the TLS certificate, logs, temporary files | Each node's own data folder |
 
@@ -1135,7 +1345,8 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
   Keys). Keep the PFX and its password in the hospital's password safe, offline, with the backup recovery key: without
   the certificate no node can open the keys, so give it a long life, as above.
 - **Redis** 6 or later (or Memurai on Windows), reachable only from the nodes, with a password. Without it every node
-  still works, but a screen sees only the updates raised on the node it is connected to. Once it is set, real-time
+  still works, but a screen sees only the updates raised on the node it is connected to, and each node counts the
+  request limits other than sign-in's on its own. Once it is set, real-time
   updates go through it alone: while it is away, no screen gets any, whichever node it is connected to, until it is back.
   Then every node tells the screens connected to it to catch up, and tells the other nodes to tell theirs: each screen
   subscribes again to what it opened meanwhile and refetches what it shows, so the updates missed meanwhile appear, and
@@ -1215,16 +1426,18 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
    workstation appears on the bed board of another (connected, through the proxy, to another node).
 
 **Running several nodes.**
-- Run **exactly one** node that runs the jobs (`worker`, or `all` on a single Server Node). An API node runs none, so it
-  can be stopped or added at any time. System health warns when more than one runs them: a node whose settings miss
-  `"Role": "api"` runs as `all`.
+- Exactly one node runs the jobs at a time. Either give one node `"Role": "worker"` (or `all`) and every other
+  `"Role": "api"`, or give several `"Role": "worker"` or `all` and let them take turns through the job lease (below),
+  which is on whenever the nodes share a folder. An API node runs no jobs, so it can be stopped or added at any time.
+  System health warns when more than one node runs them without the lease: a node whose settings miss `"Role": "api"`
+  runs as `all`, and with the lease off (`"JobLeadership": { "Enabled": false }`) it runs every job beside the others.
 - A node that starts while the others work holds up none of their audit writes. It changes the audit trail's database
   triggers only if it finds one dropped, turned off or changed, and then waits at most two seconds for the audit trail.
   If something holds it longer (a long transaction writing to it, or, to put back the chain-link trigger, a report or
   backup reading it), the node changes nothing and stops, its log saying that an audit trail trigger could not be put
   back because the audit trail is in use. Let that finish or stop it; Windows starts the service again within a minute.
-- **Upgrades:** stop every node. Upgrade and start the job node first: it backs up the database, applies the database
-  changes and starts. Then upgrade and start the API nodes. An upgrade that partitions large tables (below) may take
+- **Upgrades:** stop every node. Upgrade and start one node that may run the jobs first: it backs up the database,
+  applies the database changes and starts. Then upgrade and start the API nodes. An upgrade that partitions large tables (below) may take
   some minutes on the job node before it is ready. If it stops, its log saying that a table the update changes is in use
   ("canceling statement due to lock timeout"), something still uses those tables (a node left running, or a reporting
   tool with a transaction open): nothing has changed. Stop what uses them, then start the job node again. Windows starts
@@ -1234,9 +1447,48 @@ on one PostgreSQL database (SRS SCAL-01, SCAL-02, SCAL-05). It is the same progr
   signed with it at once.
 - **Restoring** a backup (section 8): stop every node, restore on the job node from the shared backup folder (its
   settings name the shared folder, so the documents and keys go there), then start the job node and the API nodes.
-- The limits on sign-in and one-time codes per address (10 sign-in attempts a minute, 5 code requests in 15 minutes)
-  are counted for the whole hospital, in the database, whichever node answers. The other limits, on public pages, device
-  requests and requests per user, are each node's own, so with *n* API nodes a client may make up to *n* times as many.
+- **Request limits.** The limits on sign-in and one-time codes per address (10 sign-in attempts a minute, 5 code requests
+  in 15 minutes) are counted for the whole hospital, in the database, whichever node answers. The others (public pages
+  and QR codes, partners' calls, devices, HC360 Desktop's update, and every request per user) are counted for the whole
+  hospital too, on Redis: a sliding window for the per-minute limits, a token bucket for devices and users, each request
+  one atomic script timed by Redis's own clock, so the nodes' clocks need not agree. Redis holds a keyed hash of each
+  address, device or user, never the value. If Redis cannot be reached, or does not answer within half a second, each
+  node counts those limits on its own, as a single Server Node does, and asks Redis again every 5 seconds: the limits
+  still hold, but with *n* API nodes a client may make up to *n* times as many requests until Redis is back. System
+  health says so on each node meanwhile ("Request limits have been counted on this server alone…").
+
+#### The job lease
+
+Any node with `"Role": "worker"` or `all` may run the background jobs: the backups, the outbox (SMS, WhatsApp, e-mail),
+the analysers' and modalities' listeners, and every module's scheduled work. With several such nodes on one database,
+they take turns through the **job lease**, a PostgreSQL advisory lock that the node holding it keeps on a connection of
+its own:
+
+- The node holding it says so to the database every 5 seconds. PostgreSQL ends that connection, and with it the lease,
+  once it has been quiet for 20 seconds (`idle_session_timeout`): the node lost its power or its network, hangs, or
+  stopped. The node itself stops its jobs as soon as a heartbeat fails, and at the latest 10 seconds after the last
+  that succeeded, and then stops its service; Windows starts it again, and it stands by.
+- Every other node asks for the lease every 5 seconds. The one that gets it waits 20 seconds more, so that the last
+  holder has stopped its jobs even if the database let the lease go before it knew (PostgreSQL restarted, or its
+  connection was ended by hand), and then starts them. Nothing else is needed: no table, no clock but each machine's own
+  stopwatch, and the database alone says who holds the lease.
+- So **two nodes never run the jobs at once**, and once the node running them has gone, another runs them within
+  45 seconds (a node whose process ended, rather than its machine, within about 25). A node that takes over finds in the
+  database what the last one did, as after a restart of the job node: each job keeps there what it has done (the
+  ledger of charges posted, the messages sent, each report run), and the nightly backup claims its time once for the
+  hospital (02:00 on the 9th runs once, whichever node fires it), so no job runs twice for the same time.
+- The connection names the node (`HC360 jobs <node id>`): System health reads from PostgreSQL which node holds the lease,
+  and shows it first, "holds the job lease", and the others "standing by". Between one holder and the next it warns that
+  another is taking over; if that lasts more than a minute, the nodes standing by cannot reach the database, and their
+  log says why.
+- Point network analysers and modalities at a name or address that moves with the jobs (a DNS name with a short time
+  to live, or a cluster address), or they keep calling the node that ran the jobs before. HC360 does not move an
+  address itself.
+- Like the cache signals, the lease needs PostgreSQL itself, not PgBouncer in transaction pooling: set
+  `ConnectionStrings:Signals` to PostgreSQL if the nodes go through PgBouncer.
+- The timings are settings (`HealthCare360:JobLeadership`: `Heartbeat`, `LeaseTimeout`, `CandidatePoll`), checked at
+  start-up: the lease must last at least three heartbeats. `"Enabled": false` turns the lease off; each node that may run
+  the jobs then runs them all the time, as before.
 
 ### Monthly partitions of the busiest tables
 
@@ -1265,11 +1517,13 @@ then the move is undone, and trying again at every run would hold them as long e
 leaves that month's rows in the default partition, where they are kept and found as before; restart the `HC360Server`
 service at a quiet hour to have it try once more.
 
-**Partitions are never dropped.** How long each kind of record is kept is set in one place, Privacy › Retention, whose
-clean-up keeps every record for at least what the law asks (a year for the message and integration logs), leaves medical
-records, remote-monitoring readings among them, to the medical records department's review instead of deleting them
-(SRS PRV-02), and records every run in the audit trail. Because the logs are partitioned by the time it deletes by, the
-clean-up reads only the months concerned. The audit trail's partitions refuse TRUNCATE and DELETE like the table itself.
+**Partition upkeep never drops a partition.** How long each kind of record is kept is set in one place, Privacy ›
+Retention, whose clean-up keeps every record for at least what the law asks (a year for the message and integration
+logs), leaves medical records, remote-monitoring readings among them, to the medical records department's review instead
+of deleting them (SRS PRV-02), and records every run in the audit trail. Because the logs are partitioned by the time it
+deletes by, the clean-up reads only the months concerned. The audit trail's partitions refuse TRUNCATE and DELETE like the
+table itself; the only ones ever dropped are whole months a purge removes, which two super administrators agree on once
+they keep the audit trail for a period (8 years at the least), after it exports them to the audit archive (ADR-015).
 
 ## 11. Troubleshooting
 
@@ -1300,7 +1554,10 @@ clean-up reads only the months concerned. The audit trail's partitions refuse TR
 | An analyser sends results but none arrive | Integration log (Administration › Integrations) for refused messages. Network analysers: is the analyser's IP the one in its connection, and the port open in the firewall? Serial: compare baud rate, parity and stop bits with the analyser's settings |
 | "PDFs can't be made on this server" (System health), or a PDF download fails | Is Microsoft Edge installed for all users? Set `HealthCare360:Pdf:BrowserPath` if it is somewhere unusual. The log says why the browser did not start. Printing from the screens still works |
 | "… is failing: the latest call failed" (System health) | Administration › Integrations shows the last error for that integration, and its log says more. Correct the settings or the provider's side, then *Send a test*: the warning clears once a call succeeds. An integration no longer used can be switched off instead |
-| "The hospital CA expires on …" or "… expired" (System health) | The CA is made for ten years when the server first starts and is never made again by itself, because every workstation, tablet, HC360 Desktop and lab agent trusts it. System health warns a year ahead: replace it before it expires as [CA-ROLLOVER.md](CA-ROLLOVER.md) says, with HyFib support, since every device must be set up again. A server whose CA has expired does not start, and says so in the Application event log. "The server certificate expires on …" instead means the automatic renewal 30 days before expiry failed: the log says why |
+| "The hospital CA expires on …" or "… expired" (System health) | The CA is made for ten years when the server first starts and is never made again by itself, because every workstation, tablet, HC360 Desktop and lab agent trusts it. System health warns a year ahead: prepare the next CA with `certificates prepare-ca`, and switch to it with `certificates switch-ca` once every device holds it, as [CA-ROLLOVER.md](CA-ROLLOVER.md) says. No device stops connecting, and none is set up again. A server whose CA has expired does not start, and says so in the Application event log: with the next CA prepared it says to switch to it, and every device that holds it trusts the server again; without one, a new CA means setting every device up again. "The server certificate expires on …" instead means the automatic renewal 30 days before expiry failed: the log says why |
+| "The next hospital CA is prepared: … devices seen in the last 30 days do not hold it yet …" (System health) | It names them, and `certificates switch-ca` waits for them: after the switch they would no longer trust the server. **Without it**: the device has not reached the server since the next CA was prepared, or cannot ask it: check that it connects, and its log ("HC360 Desktop" or the lab agent's service log). **Not saying which CAs they hold**: an HC360 Desktop or lab agent older than this server, which does not take the next CA by itself: update it. Revoke a device that is gone for good (Administration › Devices). Revoked devices and those not seen for 30 days are left out. Critical in the current CA's last 90 days ([CA-ROLLOVER.md](CA-ROLLOVER.md#rolling-the-ca-over)) |
+| "HC360 certificate probe, …: No TLS connection" (Application event log, Error) | The server's own daily probe could not reach the staff address: HC360 was down when it ran, or does not listen on that port. Check the service and System health; the probe runs again the next day, or run the task now |
+| "HC360 certificate probe, …: The hospital CA was switched …" (Application event log, Error) | The server's own daily probe still checks for the CA the switch replaced. Give it the new fingerprint as step 4 of the day you switch says ([CA-ROLLOVER.md](CA-ROLLOVER.md#the-day-you-switch)), or run `Install-HC360Server.ps1` again: each install or upgrade gives it the server's CA |
 | "The audit trail failed its check on …" (System health, critical) | A check of the audit chain, asked for under Administration › Audit log or made by the server once a day, found an entry changed, moved or removed in the database. Keep the database and its backups as they are, note the position the message names, and contact HyFib support. The warning clears when a later check passes |
 | "System health: critical" notifications, or an SMS from HC360 to the IT on-call number | A critical System health warning appeared; the notification says which. Open Administration › System health for what to do. Each is told again every day until it is fixed, and at once if it clears and comes back |
 | A report e-mail arrives without its PDF | The notification log notes "Sent without the document" and why. The PDF was tried three times first |
@@ -1316,11 +1573,16 @@ clean-up reads only the months concerned. The audit trail's partitions refuse TR
 | HC360 does not start, and its log says "The database is a read-only warm standby" | HC360 was started on the standby. Leave its service disabled; to fail over, promote the standby first (section 9) |
 | "Critical warnings do not reach IT on-call by phone" or "…may not arrive by SMS" (System health) | The on-call number, the SMS provider, or the `system.alert` template's DLT template id: the warning names which (section 4, "Alerts that reach someone"). Then run an alert drill |
 | "The outside heartbeat to … has failed" (System health) | The server's internet access, the firewall towards the monitor's host, and `alerts.heartbeatUrl.secret`. The monitoring service raises its own alarm meanwhile |
-| "This live server's database holds records the integrations' simulators made" (System health) | The database was used for training, or set up before HC360 refused the simulators on a live server (section 4, "Going live on a database used for training"). Administration › Simulator records lists each kind and what to do about it. Deal with each, then sign them off there |
+| "This live server's database holds records the integrations' simulators made" (System health) | The database was used for training, or set up before HC360 refused the simulators on a live server (section 4, "Going live on a database used for training"). Administration › Simulator records lists each kind and what to do about it, and under "To correct" the payments, refunds, card sales, Aadhaar links, images and lab results not corrected yet. Correct those, deal with the rest, sweep again, then sign them off there |
+| "… record(s) the simulators made are not corrected yet" or "The sweep of … found … record(s) not corrected" when signing off (Administration › Simulator records) | The sign-off waits for the records: each kind named still has records open, or the sweep being signed off counted some. Correct each under "To correct" as the table in section 4 says, press **Sweep now**, and sign off the new sweep |
 | HC360 does not start, and its log says "HealthCare360:SeedDemoData is on, but this database holds patients" | `SeedDemoData` was turned on for the hospital's database. Demonstration data, its accounts and the simulators would mix into real records, so HC360 refuses. Remove `"SeedDemoData": true` from `config\hc360.settings.json` and start the service. A training or test server needs a database of its own, with demonstration data on before anyone is registered (docs/testing/LOAD-TESTS.md); one made before this check that holds patients needs a new database |
 | A node of several does not start: "this server has a data encryption key of its own …, and the shared folder … has none" | The keys are not in the shared folder yet. Put them there with `backup restore` (section 10, "Setting it up", step 4) |
 | A node of several does not start: "… names certificate …, which is not in the Local Computer's Personal store", or "… has no RSA private key this server may use" | Import the cluster key certificate on this node, with its private key, and give `NT SERVICE\HC360Server` *Read* on the key (section 10) |
 | `/health/ready` on a node answers 503 (*Unhealthy*) | The node cannot reach the database, or, with several nodes, the shared folder; its log names the check that failed. For the share: is the file server up, and does the node's computer account still have *Modify* on it? |
+| "Request limits have been counted on this server alone since …" (System health, with several nodes) | That node cannot reach Redis, or Redis does not answer within half a second: is Redis up, and does `ConnectionStrings:Redis` name it with its password? The node counts the limits on its own meanwhile, and asks Redis again every 5 seconds; the warning clears once Redis answers |
+| "No server holds the job lease at this moment: … stand by" (System health, with several nodes) | One of them takes the jobs over within a minute. If it lasts, the nodes standing by cannot reach PostgreSQL itself (through PgBouncer in transaction pooling, set `ConnectionStrings:Signals` to PostgreSQL), or PostgreSQL is older than 14 (it has no `idle_session_timeout`); their log says why |
+| "… hold the job lease, which only one server can" (System health, critical) | Should never happen: restart the `HC360Server` service on each of them but one, and send their logs to HyFib support |
+| "This server may no longer hold the job lease …" (a node's log, critical), and the service stopped | It lost the database for a moment, or hung: it stopped its jobs before another node could take them over, and stopped. Windows starts it again within a minute, and it stands by |
 | "… has not reported for more than three minutes" or "No server that runs the background jobs is reporting" (System health, with several nodes) | Is that node on, and its `HC360Server` service running? Its log says why it cannot reach the database, if it cannot. A node stopped on purpose removes itself from System health; one that lost its power is shown as not reporting until it is back, or for a day. A node set up again with a new data folder, or renamed, is a new node: the old one is shown as not reporting for that day |
 | "… both run the background jobs, and only one server should" (System health, with several nodes) | A node meant as an API node runs as `all`: its `hc360.settings.json` misses `"Role": "api"` (section 10, step 3). Add it and restart its `HC360Server` service. Until then each of them makes the nightly backup and listens for analysers and modalities |
 | A node's log: "Not listening for cache signals from the other servers" | It cannot hear the other nodes' changes, so it reads permissions, sessions and settings from the database every time (slower, still correct). Is PostgreSQL reachable? Behind PgBouncer in transaction pooling, set `ConnectionStrings:Signals` to PostgreSQL itself (section 10) |

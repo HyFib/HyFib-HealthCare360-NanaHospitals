@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Services;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Immunizations;
 
@@ -12,6 +13,7 @@ internal static class ImmunizationEndpoints
         var group = app.MapGroup("/api/v1/emr").WithTags("EMR");
 
         group.MapGet("/patients/{patientId:guid}/immunizations", List).RequirePermission(ClinicalPermissions.EmrRead);
+        group.MapGet("/vaccines", Vaccines).RequirePermission(ClinicalPermissions.ImmunizationsRecord);
         group.MapPost("/patients/{patientId:guid}/immunizations", Record).RequirePermission(ClinicalPermissions.ImmunizationsRecord)
             .WithValidation<RecordImmunizationRequest>();
         group.MapPost("/immunizations/{id:guid}/entered-in-error", EnteredInError).RequirePermission(ClinicalPermissions.ImmunizationsRecord)
@@ -35,6 +37,10 @@ internal static class ImmunizationEndpoints
         return TypedResults.Ok((await rows.OrderByDescending(i => i.AdministeredOn).ToListAsync(ct)).Select(ToDto).ToList());
     }
 
+    /// <summary>The vaccines a dose can be recorded as by card code; HC360 sends other providers their SNOMED CT codes.</summary>
+    private static IResult Vaccines() =>
+        TypedResults.Ok(VaccineCodes.All.Select(v => new VaccineChoiceDto(v.Code, v.Name, v.Route)).ToList());
+
     private static async Task<IResult> Record(Guid patientId, RecordImmunizationRequest request, ClinicalAccess access, HospitalDbContext db, ICurrentUser user,
         CancellationToken ct)
     {
@@ -44,10 +50,30 @@ internal static class ImmunizationEndpoints
             return allowed.Error!.ToProblem();
         }
 
+        // An encounter the dose was given in is one of this patient's (in whichever facility): the dose's record, and
+        // its ABDM document, would otherwise carry someone else's encounter.
+        Guid? encounterFacility = null;
+        if (request.EncounterId is { } encounterId)
+        {
+            var encounter = await db.Set<Encounter>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(e => e.Id == encounterId).Select(e => new { e.PatientId, e.FacilityId }).FirstOrDefaultAsync(ct);
+            if (encounter is null || encounter.PatientId != patientId)
+            {
+                return Error.Rule("immunization.encounter_not_patients", "That encounter is not this patient's.").ToProblem();
+            }
+
+            encounterFacility = encounter.FacilityId;
+        }
+
+        // Where it was recorded: the facility the user works in, else the encounter's, else the patient's own.
+        var facilityId = user.FacilityId ?? encounterFacility
+            ?? await db.Set<Patient>().Where(p => p.Id == patientId).Select(p => p.RegisteredFacilityId).FirstAsync(ct);
+
         var immunization = new Immunization
         {
             PatientId = patientId,
             EncounterId = request.EncounterId,
+            FacilityId = facilityId,
             VaccineName = request.VaccineName.Trim(),
             VaccineCode = request.VaccineCode?.Trim().ToUpperInvariant(),
             DoseNumber = request.DoseNumber,

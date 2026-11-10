@@ -13,7 +13,9 @@ internal static class ShiftEndpoints
         group.MapGet("/", List).RequirePermission(BillingPermissions.Shifts);
         group.MapGet("/{id:guid}", Get).RequirePermission(BillingPermissions.Shifts);
         group.MapPost("/open", Open).RequirePermission(BillingPermissions.Shifts).WithValidation<OpenShiftRequest>();
+        // Closed (200); short beyond the tolerance, closed with the shortage asked of a supervisor (202, billing.shift_shortage).
         group.MapPost("/{id:guid}/close", Close).RequirePermission(BillingPermissions.Shifts).WithValidation<CloseShiftRequest>();
+        group.MapPost("/{id:guid}/shortage", AskShortage).RequirePermission(BillingPermissions.Shifts).WithValidation<AskShortageRequest>();
 
         app.MapGet("/api/v1/billing/reports/day-end", DayEnd).WithTags("Billing - Cash counter").RequirePermission(BillingPermissions.Shifts);
     }
@@ -54,7 +56,12 @@ internal static class ShiftEndpoints
         (await shifts.OpenAsync(request, ct)).ToCreated(s => $"/api/v1/billing/shifts/{s.Id}");
 
     private static async Task<IResult> Close(Guid id, CloseShiftRequest request, ShiftService shifts, CancellationToken ct) =>
-        (await shifts.CloseAsync(id, request, ct)).ToOk();
+        (await shifts.CloseAsync(id, request, ct)).ToHttpResult(outcome => outcome.Asked is { } asked
+            ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", outcome.Shift)
+            : TypedResults.Ok(outcome.Shift));
+
+    private static async Task<IResult> AskShortage(Guid id, AskShortageRequest request, ShiftService shifts, CancellationToken ct) =>
+        (await shifts.AskShortageAsync(id, request.Reason, ct)).ToHttpResult(asked => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked));
 
     private static async Task<IResult> DayEnd(DateOnly? date, string? counter, ShiftService shifts, TimeProvider time, CancellationToken ct) =>
         TypedResults.Ok(await shifts.DayEndAsync(date ?? BillingTime.Today(time), counter, ct));

@@ -34,6 +34,12 @@ internal static class AmbulanceEndpoints
         group.MapPost("/trips/{id:guid}/complete", async (Guid id, CompleteTripRequest request, AmbulanceService ambulance, PatientAccessGuard guard,
                 CancellationToken ct) => await OpenAsync(id, ambulance, guard, ct) ?? (await ambulance.CompleteAsync(id, request, ct)).ToOk())
             .RequirePermission(SupportServicesPermissions.AmbulanceDispatch).WithValidation<CompleteTripRequest>();
+        // Waiving a charge waits for a second person (202) unless the hospital let the desk waive alone (200, audited).
+        group.MapPost("/trips/{id:guid}/waive", async (Guid id, WaiveTripChargeRequest request, AmbulanceService ambulance, PatientAccessGuard guard,
+                CancellationToken ct) => await OpenAsync(id, ambulance, guard, ct) ?? (await ambulance.WaiveAsync(id, request, ct)).ToHttpResult(outcome => outcome.Asked is { } asked
+                    ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked)
+                    : TypedResults.Ok(outcome.Trip)))
+            .RequirePermission(SupportServicesPermissions.AmbulanceDispatch).WithValidation<WaiveTripChargeRequest>();
         group.MapPost("/trips/{id:guid}/cancel", async (Guid id, CancelTripRequest request, AmbulanceService ambulance, PatientAccessGuard guard,
                 CancellationToken ct) => await OpenAsync(id, ambulance, guard, ct) ?? (await ambulance.CancelAsync(id, request, ct)).ToOk())
             .RequirePermission(SupportServicesPermissions.AmbulanceDispatch).WithValidation<CancelTripRequest>();

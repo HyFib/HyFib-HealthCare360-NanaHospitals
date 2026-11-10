@@ -1,6 +1,7 @@
 import type { Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type {
   CriticalCallDetails,
   CriticalCallDto,
@@ -227,6 +228,8 @@ export interface SaveLabTestRequest {
   displayOrder: number;
   isActive: boolean;
   version: number | null;
+  /** Why: asked for when the change waits for a second pathologist (automatic verification switched on). */
+  reason?: string | null;
 }
 
 export interface ComponentEntry {
@@ -249,7 +252,35 @@ export interface LabInstrumentDto {
   version: number;
 }
 
-export type SaveLabInstrumentRequest = Omit<LabInstrumentDto, 'id' | 'version'> & { version: number | null };
+export type SaveLabInstrumentRequest = Omit<LabInstrumentDto, 'id' | 'version'> & {
+  version: number | null;
+  reason?: string | null;
+};
+
+/** The lab's decision that an analyser's channel goes on no report, with why. */
+export interface IgnoredAnalyserChannelDto {
+  reason: string;
+  ignoredBy: string | null;
+  ignoredAt: string;
+}
+
+/**
+ * A channel an analyser sends that no active test maps: its values go on no report until a test maps it. `mapping` is
+ * how to write it in a test's channel codes (null when its characters cannot be written as a mapping).
+ */
+export interface AnalyserChannelDto {
+  id: string;
+  instrumentId: string;
+  instrumentCode: string;
+  channelCode: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  timesSeen: number;
+  lastValue: string | null;
+  lastUnit: string | null;
+  mapping: string | null;
+  ignored: IgnoredAnalyserChannelDto | null;
+}
 
 // ---------------------------------------------------------------------------------------------------- connections
 
@@ -289,6 +320,19 @@ export interface LabConnectionStatusDto {
   lastError: string | null;
   messagesAccepted: number;
   messagesRefused: number;
+  /**
+   * Devices that connected to a network analyser's port from an address that is not its IP, refused before anything
+   * they sent was read (ASVS V13.2.1), most recent first.
+   */
+  refusedAddresses?: LabRefusedAddress[];
+}
+
+/** An address refused on an analyser's port: how many times, first and last. */
+export interface LabRefusedAddress {
+  address: string;
+  count: number;
+  firstAt: string;
+  lastAt: string;
 }
 
 export interface LabConnectionDto {
@@ -313,6 +357,10 @@ export interface LabConnectionDto {
   problem: string | null;
   status: LabConnectionStatusDto | null;
   pendingOrders: number;
+  /** A network connection saved without the analyser's IP address: it takes results from any device on the network. */
+  openToAnyDevice?: boolean;
+  /** How the connection's devices prove who they are before a message is read. */
+  deviceAuthentication?: LabDeviceAuthentication;
 }
 
 /** An enrolled HC360 lab agent. Online: it called in during the last three minutes, or relays an analyser now. */
@@ -346,6 +394,7 @@ export interface SaveLabConnectionRequest {
   agentDeviceId: string | null;
   serial: LabSerialPortDto | null;
   listVersion: number;
+  deviceAuthentication?: LabDeviceAuthentication;
 }
 
 export interface ReferralLabDto {
@@ -708,6 +757,8 @@ export interface ResultSheetLine {
   instrumentFlags: string | null;
   instrumentStatus: string | null;
   instrumentComment: string | null;
+  /** The analyser's own word for an answer the server read as one of the test's ("Neg" kept as Nil). */
+  instrumentValue?: string | null;
   /** Why the analyser's result was not auto-verified, as the server found it when the result came. */
   heldReasons: string[];
   method: string | null;
@@ -887,7 +938,13 @@ export interface LabAmendmentView {
   reason: string;
   changes: string;
   amendedAt: string;
+  /** Who released the correction. */
   amendedBy: string | null;
+  /**
+   * The pathologist who asked for it, where a second pathologist approved it (the lab requires a separate verifier);
+   * null when the one who made it released it.
+   */
+  requestedBy?: string | null;
 }
 
 export interface LabReportView {
@@ -914,6 +971,11 @@ export interface LabReportView {
   verificationPath: string | null;
   /** Absolute portal verification page for the QR code; null until the public address (`portal.baseUrl`) is configured. */
   verificationUrl: string | null;
+  /**
+   * When a correction of the released report was asked for that still waits for a second pathologist's approval: its
+   * results may change. Null when none waits.
+   */
+  amendmentWaitingSince?: string | null;
 }
 
 // ------------------------------------------------------------------------------------------------ quality control
@@ -1107,6 +1169,9 @@ export const labKeys = {
   unmatched: ['lab', 'unmatched'] as const,
 };
 
+/** How often a report with a correction waiting for approval is asked for again. */
+export const WAITING_REFRESH_MS = 30_000;
+
 export const labQueries = {
   tests: (params: TestSearch) =>
     queryOptions({
@@ -1131,6 +1196,13 @@ export const labQueries = {
       queryFn: ({ signal }) =>
         api.get<LabInstrumentDto[]>('/api/v1/lab/instruments', { query: { includeInactive }, signal }),
       staleTime: 10 * 60_000,
+    }),
+  /** The channels the analysers in use send that no active test maps, with the lab's decisions to ignore some. */
+  analyserChannels: () =>
+    queryOptions({
+      queryKey: ['lab', 'masters', 'analyser-channels'],
+      queryFn: ({ signal }) => api.get<AnalyserChannelDto[]>('/api/v1/lab/instruments/channels', { signal }),
+      staleTime: 60_000,
     }),
   connections: () =>
     queryOptions({
@@ -1222,6 +1294,9 @@ export const labQueries = {
     queryOptions({
       queryKey: ['lab', 'reports', 'detail', id],
       queryFn: ({ signal }) => api.get<LabReportView>(`/api/v1/lab/reports/${id}`, { signal }),
+      // While a correction waits for approval, ask again every 30 s. Its rejection, withdrawal or lapse, on any
+      // workstation, sends no lab event, and the page must offer Amend again once a correction may be asked for.
+      refetchInterval: (query) => (query.state.data?.amendmentWaitingSince ? WAITING_REFRESH_MS : false),
     }),
   tat: (from?: string, to?: string, section?: LabSection) =>
     queryOptions({
@@ -1326,8 +1401,12 @@ export const labApi = {
 
   // reports
   releaseReport: (reportId: string) => api.post<ReleaseOutcome>(`/api/v1/lab/reports/${reportId}/release`),
+  /**
+   * Corrects released results at once (204, nothing returned), or, where the lab requires a separate verifier, asks for
+   * the correction (202): it waits for another pathologist's approval in the approvals inbox.
+   */
   amendReport: (reportId: string, request: AmendReportRequest) =>
-    api.post<void>(`/api/v1/lab/reports/${reportId}/amend`, request),
+    api.post<ApprovalRequestDto | undefined>(`/api/v1/lab/reports/${reportId}/amend`, request),
 
   // quality control
   saveQcLot: (id: string | null, request: SaveQcLotRequest): Promise<Created | undefined> =>
@@ -1336,8 +1415,9 @@ export const labApi = {
     api.post<QcRunDto>('/api/v1/lab/qc/runs', { lotId, value, runAt }),
   reviewQcRun: (runId: string, note: string | null, correctiveAction: string | null) =>
     api.post<QcRunDto>(`/api/v1/lab/qc/runs/${runId}/review`, { note, correctiveAction }),
+  /** 200 with the runs overridden, or 202 with the approval request where the lab asks for a second pathologist. */
   overrideQc: (labTestId: string, reason: string) =>
-    api.post<{ overrides: number }>('/api/v1/lab/qc/overrides', { labTestId, reason }),
+    api.post<{ overrides: number } | ApprovalRequestDto>('/api/v1/lab/qc/overrides', { labTestId, reason }),
 
   // outsourcing
   sendOut: (itemId: string, referralLabId: string, dispatchReference: string | null) =>
@@ -1346,16 +1426,34 @@ export const labApi = {
     api.post<void>(`/api/v1/lab/outsourcing/items/${itemId}/receive`, { externalReference, reportFileId }),
 
   // masters
-  saveTest: (id: string | null, request: SaveLabTestRequest): Promise<Created | undefined> =>
-    id ? api.put<undefined>(`/api/v1/lab/tests/${id}`, request) : api.post<Created>('/api/v1/lab/tests', request),
+  /**
+   * 201 with the id, 204, or 202 with the approval request when automatic verification is switched on where the lab asks
+   * for a second pathologist (the rest is saved; automatic verification waits for another pathologist).
+   */
+  saveTest: (id: string | null, request: SaveLabTestRequest): Promise<Created | ApprovalRequestDto | undefined> =>
+    id
+      ? api.put<ApprovalRequestDto | undefined>(`/api/v1/lab/tests/${id}`, request)
+      : api.post<Created | ApprovalRequestDto>('/api/v1/lab/tests', request),
   setComponents: (id: string, components: ComponentEntry[], version: number) =>
     api.put<void>(`/api/v1/lab/tests/${id}/components`, { components, version }),
-  setRanges: (id: string, ranges: ReferenceRangeDto[], version: number) =>
-    api.put<void>(`/api/v1/lab/tests/${id}/ranges`, { ranges, version }),
-  saveInstrument: (id: string | null, request: SaveLabInstrumentRequest): Promise<Created | undefined> =>
+  /** 204, or 202 with the approval request when a critical limit is loosened where the lab asks for a second pathologist. */
+  setRanges: (id: string, ranges: ReferenceRangeDto[], version: number, reason?: string | null) =>
+    api.put<ApprovalRequestDto | undefined>(`/api/v1/lab/tests/${id}/ranges`, {
+      ranges,
+      version,
+      reason: reason ?? null,
+    }),
+  saveInstrument: (
+    id: string | null,
+    request: SaveLabInstrumentRequest,
+  ): Promise<Created | ApprovalRequestDto | undefined> =>
     id
-      ? api.put<undefined>(`/api/v1/lab/instruments/${id}`, request)
-      : api.post<Created>('/api/v1/lab/instruments', request),
+      ? api.put<ApprovalRequestDto | undefined>(`/api/v1/lab/instruments/${id}`, request)
+      : api.post<Created | ApprovalRequestDto>('/api/v1/lab/instruments', request),
+  /** The channel goes on no report: listed as ignored, with the reason, until the decision is taken back. */
+  ignoreAnalyserChannel: (id: string, reason: string) =>
+    api.post<void>(`/api/v1/lab/instruments/channels/${id}/ignore`, { reason }),
+  stopIgnoringAnalyserChannel: (id: string) => api.delete<void>(`/api/v1/lab/instruments/channels/${id}/ignore`),
   saveReferralLab: (id: string | null, request: SaveReferralLabRequest): Promise<Created | undefined> =>
     id
       ? api.put<undefined>(`/api/v1/lab/referral-labs/${id}`, request)
@@ -1421,3 +1519,50 @@ export const LAB_PERMISSIONS = {
   /** See whether analysers and their lab agents are connected. */
   connectionStatus: 'integrations.lab.status',
 } as const;
+
+/** How an analyser connection's devices prove who they are (LabDeviceAuthentication). */
+export type LabDeviceAuthentication = 'None' | 'SharedSecret' | 'MutualTls' | 'LabAgent';
+
+/** A device of an analyser connection (LabDeviceDto): one refused at the door (Seen), added, approved or revoked. */
+export interface LabDeviceDto {
+  id: string;
+  connectionCode: string;
+  name: string | null;
+  method: LabDeviceAuthentication;
+  identifier: string;
+  subject: string | null;
+  status: 'Seen' | 'PendingApproval' | 'Approved' | 'Revoked';
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  lastAddress: string | null;
+  refusedAttempts: number;
+  addedByName: string | null;
+  addedAt: string | null;
+  approvedByName: string | null;
+  approvedAt: string | null;
+  pendingApprovalId: string | null;
+  version: number;
+}
+
+/** POST /api/v1/integrations/lab/devices answers 202 with the approval; a shared-secret device's key id and secret, shown once. */
+export interface LabDeviceAdded {
+  device: LabDeviceDto;
+  approval: { id: string };
+  keyId: string | null;
+  secret: string | null;
+}
+
+export const labDevicesApi = {
+  list: (connection: string, signal?: AbortSignal) =>
+    api.get<LabDeviceDto[]>('/api/v1/integrations/lab/devices', { signal, query: { connection } }),
+  add: (body: {
+    connectionCode: string;
+    name: string;
+    method: LabDeviceAuthentication;
+    fingerprint: string | null;
+    seenDeviceId: string | null;
+    reason: string;
+  }) => api.post<LabDeviceAdded>('/api/v1/integrations/lab/devices', body),
+  revoke: (id: string, version: number, reason: string) =>
+    api.post<void>(`/api/v1/integrations/lab/devices/${id}/revoke`, { version, reason }),
+};

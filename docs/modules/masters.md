@@ -16,6 +16,7 @@ Code: `src/server/HyFib.HealthCare360.Platform/Organization` (schema `org`). Scr
 |---|---|---|
 | `masters.read` | Read facilities, departments, doctors and services (pickers, prints) | All staff |
 | `masters.manage` | Add and change them, preview the letterhead | HospitalAdmin |
+| `masters.prices.approve` | Approve the price changes another person makes (maker-checker; see *A service's price*) | Accountant, HospitalAdmin |
 
 ## Screens: Administration › Hospital setup
 
@@ -24,9 +25,9 @@ Code: `src/server/HyFib.HealthCare360.Platform/Organization` (schema `org`). Scr
 | Facilities and letterhead | `/setup/facilities` | Name, legal name, address, contact, GSTIN, PAN, registration, NABH and HFR ids, the logo and the letterhead line. *Preview letterhead* shows the report letterhead the server prints, from the details being typed |
 | Departments | `/setup/departments` | Kind, speciality, head of department, location, queue token prefix and position in lists, for the signed-in facility |
 | Specialities | `/setup/specialties` | Shared by every facility; patients choose one when booking online |
-| Doctors and clinical staff | `/setup/practitioners` | Name and role, council registration (required for doctors), HPR ID (ABDM's Healthcare Professionals Registry, which identifies the doctor in ABDM health records and NHCX claims), department, speciality, facilities, fees and follow-up days, online and video booking, languages, profile, photo and signature |
+| Doctors and clinical staff | `/setup/practitioners` | Name and role, council registration (required for doctors), HPR ID (ABDM's Healthcare Professionals Registry, which identifies the doctor in ABDM health records and NHCX claims), department, speciality, facilities, fees (approved by someone who approves prices) and follow-up days, online and video booking, languages, profile, photo and signature |
 | Services and prices | `/setup/services` | Category, department, base price, GST, SAC, whether discounts and price changes are allowed, and a name in each facility's local language, which that facility's rate list prints under the English name (billing.md, *The rate list*) |
-| Number formats | `/setup/numbering` | The format of every number the hospital issues, set before the first one if needed (`admin.numbering.manage`; see `docs/modules/numbering.md`) |
+| Number formats | `/setup/numbering` | The format of every number the hospital issues, set before the first one if needed (`admin.numbering.manage`; see `docs/modules/numbering.md`). Invoice, bill of supply, credit and debit note series are held to the 16 characters of GST rule 46, measured with the longest facility code in use, so a longer facility code can make a saved format refuse |
 | Print templates | `/setup/print-templates` | How each kind of document prints: the letterhead or pre-printed stationery, the logo, a closing note and the paper, hospital-wide or for one facility (`admin.print.manage`; see `docs/modules/print-templates.md`) |
 | Features | `/setup/features` | Switch the patient portal and video consultations on or off (`admin.settings.manage`; see `docs/modules/features.md`) |
 
@@ -58,11 +59,11 @@ embeds), keeping PNG transparency for logos and signatures, then stored in the f
 | POST · PUT | `/departments` · `/departments/{id}` | masters.manage | `SaveDepartmentRequest` (+`version`) → 201 · 204; 422 `facility.required` without a facility |
 | GET | `/specialties` · `/specialties/{id}` | masters.read | → `SpecialtyDto[]` · `SpecialtyDto` |
 | POST · PUT | `/specialties` · `/specialties/{id}` | masters.manage | `SaveSpecialtyRequest` (+`version`) → 201 · 204 |
-| GET | `/practitioners?page&pageSize&search&departmentId&specialtyId&kind&active` · `/practitioners/{id}` | masters.read | → `PagedResult<PractitionerDto>` (search: name, code, registration number) · `PractitionerDto` |
-| POST · PUT | `/practitioners` · `/practitioners/{id}` | masters.manage | `SavePractitionerRequest` (+`version`) → 201 · 204 |
+| GET | `/practitioners?page&pageSize&search&departmentId&specialtyId&kind&active` · `/practitioners/{id}` | masters.read | → `PagedResult<PractitionerDto>` (search: name, code, registration number) · `PractitionerDto` (one read also gives `linkedAccounts`, the accounts that sign as them, `pendingIdentity` and `pendingFee`) |
+| POST · PUT | `/practitioners` · `/practitioners/{id}` | masters.manage | `SavePractitionerRequest` (+`version`; `takeOutOfUseAnyway` after a 409 `practitioner.work_ahead`) → 201 `{ id, feeApprovalId }` · 204, or 202 with the `ApprovalRequestDto` when a linked doctor's registration number, HPR ID or signature, or the consultation fees, wait for approval (both in one save: the identity's request answers, the read shows both); 409 `approval.already_requested` when another one waits |
 | GET | `/services?page&pageSize&search&sort&desc&category&departmentId&active` · `/services/{id}` | masters.read | → `PagedResult<ServiceItemDto>` (sort: code, name, price, category) · `ServiceItemDto` |
-| POST · PUT | `/services` · `/services/{id}` | masters.manage | `SaveServiceItemRequest` (+`version`) → 201 · 204 |
-| GET | `/lookups/departments?kind` · `/lookups/specialties` · `/lookups/practitioners?departmentId&search` · `/lookups/services?category&search` | masters.read | → active items for pickers (at most 50 doctors or services) |
+| POST · PUT | `/services` · `/services/{id}` | masters.manage | `SaveServiceItemRequest` (+`version`, `reason` for the approver) → 201 `{ id, approvalId }` · 204, or 202 with the `ApprovalRequestDto` when the price waits for approval; 409 `approval.already_requested` when a change to the price waits and this save does not fit it |
+| GET | `/lookups/departments?kind` · `/lookups/specialties` · `/lookups/practitioners?departmentId&search&kind` (`kind` repeated to narrow to those kinds, e.g. `kind=Nurse&kind=Technician` for the OT nurse picker) · `/lookups/services?category&search` | masters.read | → active items for pickers (at most 50 doctors or services) |
 | GET | `/lookups/local-languages` | masters.read | → `LocalLanguageItem[]`: the languages a service may be named in (`code`, `name`), `atFacility` when one is an active facility's local language (billing.md, *The rate list*) |
 
 A save replaces every field, so screens send the whole record.
@@ -89,13 +90,77 @@ A save replaces every field, so screens send the whole record.
   any facility.
 - **Images.** A new logo, photo or signature must be a PNG, JPEG or WebP of at most 300 KB uploaded for the purpose, not
   a patient's document. Before, a bigger image was saved and then silently left off documents.
+- **A doctor someone signs in as keeps their identity until a second administrator agrees** (MAKER-CHECKER.md, slice 4;
+  `PractitionerIdentityApprovals`). The registration number, HPR ID and signature image print on the prescriptions,
+  certificates and discharge summaries the linked account signs, and identify the doctor in ABDM records. For a
+  practitioner linked to a staff account, a change to any of them waits for another administrator who holds
+  `admin.grants.approve` (`masters.practitioner_identity`): the rest of the save is made at once (the fees wait on their
+  own, below), the form says it was
+  asked for, and the approver reads the before and after ("Registration number: 45120 → 45210", "a signature image
+  uploaded now"). It is made only over the identity it replaces (`approval.stale`; a fee changed meanwhile does not
+  stand in the way), and audited with both names (`practitioner.identity_changed`). A practitioner with no account is
+  edited at once, as before. Linking an account to a practitioner waits too (`identity.practitioner_link`, SECURITY.md).
+- **A doctor's consultation fee changes only as a service's price does** (MAKER-CHECKER.md, slice 6;
+  `PractitionerFeeApprovals`). The fee for a new visit and for a follow-up is charged to a self-pay patient instead of the
+  consultation service's approved price (billing's `PriceResolver.ConsultationOverride`; a payer's negotiated tariff
+  still wins, and 0 means the service price), and is the fee appointments are booked at and the rate list shows. A
+  change, lower or higher, waits for someone else who holds `masters.prices.approve` (`masters.practitioner_fee`;
+  accountants and hospital administrators by default), never the doctor whose fee it is
+  (`masters.practitioner_fee_own`); the rest of the save is made at once, and the fee in force is charged until then.
+  The approver reads "Consultation fee, new visit: ₹500.00 → ₹700.00". A new practitioner is created with no fee of
+  their own (the service price applies) and their fee asked for (`feeApprovalId`). Saving the record again with the fee
+  in force, or with the fee that waits, asks nothing twice; another fee while one waits is refused (409
+  `approval.already_requested`). It is set only over the fees it replaces (`approval.stale`; an identity or a phone
+  number changed meanwhile does not stand in the way), audited with both names (`practitioner.fee_changed`). The form
+  shows the fee that waits, with its request.
 - **Facilities in use.** Staff sign in only to a facility in use, so the facility the user is signed in to (422
   `facility.current`) and the last facility in use (422 `facility.last_active`) can't be taken out of use.
 - **Out of use, not deleted.** A department out of use takes no new visits; a doctor out of use can't be booked or chosen
   for new visits (appointments already booked stay); a service out of use can't be added to new bills or orders.
+- **A service charged by itself stays in use while it is** (`IServiceChargeSource`, each module's own): a ward's beds,
+  a stay in progress in one of them (it keeps the bed charge its bed was taken with until it moves bed or ends, whatever
+  its ward is re-pointed to) and a diet are charged day after day by a service, and billing refuses every charge of a
+  service out of use, so the days would go unbilled. Taking it out of use is refused (409 `service.charged_by_itself`),
+  naming each ward, stay and diet; point them to another service first, or wait for the stays to end. The nursing day and
+  the consultant's visit are looked up by code and charged only while in use: taking them out of use is how a hospital
+  stops charging them, and is not refused.
+- **A doctor with work ahead goes out of use only once that work is named** (`IPractitionerWorkSource`, each module's
+  own): OPD appointments booked or confirmed from now on, patients checked in to see them now, patients on the waiting
+  list for a slot with them (Scheduling); video consultations no appointment stands for (Virtual care); patients admitted
+  under them as consultant, discharge started too (Inpatient); surgeries asked for, scheduled, in pre-op, in theatre or
+  postponed with them as surgeon, anaesthetist or assisting nurse / OT in-charge (OT). Taking the doctor out of use while any is ahead is refused (409
+  `practitioner.work_ahead`), naming each kind with how many, when the first is and the first five by number, in the
+  problem's `data.workAhead` for the screen; saving again with `takeOutOfUseAnyway` goes ahead, and the audit trail keeps
+  what was ahead and who went ahead (`practitioner.out_of_use_with_work_ahead`). Nothing booked is cancelled: the desk
+  moves the patients to another doctor or cancels with them. A doctor with nothing ahead, or put back in use, is saved
+  without a question.
+- **A service's price is approved by a second person** (maker-checker, `ServicePrices`). A self-pay patient pays the
+  service's own price and GST, so a save that changes either, lets the counter type a price, allows discounts or puts
+  the service in use saves everything else and asks for that (`masters.service_price`); someone else who holds
+  `masters.prices.approve` decides it in Approvals. What only narrows the terms (no counter price, no discounts, out of
+  use) is made at once, also while a price waits. A new service is made out of use at ₹0 and goes live at the price
+  approved. `GET /services/{id}` returns the terms waiting (`pendingPrice`), the editor shows them with a notice and a
+  link to the request, so saving again asks for nothing twice; any other change to the terms while they wait, the price
+  in use put back included, is refused (409 `approval.already_requested`) until the request is withdrawn or decided.
+  The approver sets them only over the terms the request replaced; a change made meanwhile fails it (422
+  `prices.changed`) and the person who asked asks again. Billing quotes and charges the terms in use until then. Each
+  approved change is audited as `service.price_changed` (before and after, who asked, who approved). The SAC code
+  changes at once: it classifies the service for GST returns, not what a patient pays.
 - **Audit.** Every save writes a data audit event with each changed value (from/to). Addresses are recorded part by
   part (`address.city`), as are the other compound values in the system: patients', employees' and donors' addresses,
   cardiology findings and TTI results.
+
+## HPR verification
+
+A practitioner's HPR ID is checked against ABDM's Healthcare Professionals Registry from the practitioner's editor
+(**Check with the HPR registry**, `POST /api/v1/masters/practitioners/{id}/hpr-check` with the version last read,
+`masters.manage`). The registry's name, council and registration number are compared with the master's: names without
+titles, case, accents, punctuation or word order; councils without case, punctuation or the words council, medical,
+of and the (abbreviations are not guessed); registration numbers without case, punctuation or leading zeros; and the
+registration must be active. The result (verified, mismatch with what differs, or not in the registry), when, by whom
+and against what source is shown on the master, and kept as history (`org.practitioner_hpr_checks`). Once the HPR ID,
+council, registration number or name changes, the check is shown as no longer current. The registry is reached through
+`IHprRegistry`; until the hospital is connected to ABDM's HPR service it is the simulator, and every check says so.
 
 ## The letterhead
 
@@ -114,5 +179,11 @@ document follows its print template: the letterhead or pre-printed stationery, t
 ## Not covered yet
 
 - The facility's time zone and currency can't be edited (India only).
-- Nothing warns, before a doctor is taken out of use, how many future appointments they have.
-- Taking a service out of use is not checked against the wards, lab tests and packages that charge it.
+- Taking a doctor out of use names the work ahead but doesn't move it: their booked patients are moved or cancelled
+  at the desk, appointment by appointment.
+- Taking a service out of use is checked against what charges it by itself (wards, stays in progress, diets), not
+  against the lab tests, procedures and packages that charge it when ordered: those are refused when ordered, where the
+  person ordering sees it.
+- Tariff plans' prices and terms, payers' terms, a stay's plan other than its payer's, billing packages' price and
+  cover, doctor-fee rules and the non-payable list wait for a second person (billing.md), and a health check-up
+  package's price is its service's, asked for from the package's form (clinical.md).

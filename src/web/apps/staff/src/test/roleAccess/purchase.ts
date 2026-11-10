@@ -14,7 +14,7 @@ import { RECORD_ID } from '../roleAccessIds';
 
 // Purchase: vendors, requisitions (awaiting approval, approved, ordered), purchase orders in each open state and
 // goods receipts (a draft and a posted one). The records opened by id wait for the next step: the requisition and the
-// order await approval, the goods receipt is a draft to post.
+// order await approval, the goods receipt is a draft to send for approval (a second person posts it into stock).
 
 const now = Date.now();
 const daysAgo = (days: number) => new Date(now - days * 86_400_000).toISOString();
@@ -353,6 +353,8 @@ const GRN: GoodsReceiptDetail = {
     },
   ],
   version: 1,
+  vendorInvoiceAmount: 2_310,
+  approvalWaitingSince: null,
 };
 
 export const ANSWERS: FakeAnswers = {

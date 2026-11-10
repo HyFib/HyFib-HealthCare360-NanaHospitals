@@ -1,12 +1,14 @@
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Features;
 using HyFib.HealthCare360.Modules.Interop.Services;
+using HyFib.HealthCare360.Modules.Patients.Services;
 
 namespace HyFib.HealthCare360.Modules.Interop;
 
 /// <summary>
 /// HL7 FHIR R4 read facade (EHR-05): Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest,
-/// DiagnosticReport and DocumentReference for other providers, subject to the patient's record-sharing consent. ABDM
+/// DiagnosticReport, DocumentReference, Immunization and Procedure for other providers, subject to the patient's
+/// record-sharing consent, and the hospital's Practitioner, Organization and Location directory, which needs none. ABDM
 /// health records (EHR-08, behind the <c>features.abdm</c> switch): discharge summaries, lab reports, consultation notes
 /// and prescriptions as FHIR documents of the NRCeS implementation guide, and the ABDM gateway client: records linked to a
 /// patient's ABHA (HIP-initiated and user-initiated linking) and sent, encrypted, to other providers under the
@@ -24,6 +26,7 @@ public sealed class InteropModule : IModule
     {
         services.AddScoped<ReferenceDirectoryLoader>();
         services.AddScoped<PatientSharingService>();
+        services.AddScoped<ISharingPartnerDirectory, SharingPartnerDirectory>();
         services.AddScoped<FhirAuditTrail>();
         services.AddScoped<PatientRecords>();
         services.AddScoped<IFhirResourceProvider, EncounterProvider>();
@@ -33,7 +36,15 @@ public sealed class InteropModule : IModule
         services.AddScoped<IFhirResourceProvider, MedicationRequestProvider>();
         services.AddScoped<IFhirResourceProvider, DiagnosticReportProvider>();
         services.AddScoped<IFhirResourceProvider, DocumentReferenceProvider>();
+        services.AddScoped<IFhirResourceProvider, ImmunizationProvider>();
+        services.AddScoped<IFhirResourceProvider, ProcedureProvider>();
+        services.AddScoped<IFhirDirectoryProvider, PractitionerDirectory>();
+        services.AddScoped<IFhirDirectoryProvider, OrganizationDirectory>();
+        services.AddScoped<IFhirDirectoryProvider, LocationDirectory>();
         services.AddScoped<FhirApi>();
+        services.AddScoped<SmartAuthorization>();
+        services.AddScoped<SmartClientRegistry>();
+        SmartAuthenticationHandler.Register(services);
         FhirAuthorizationResultHandler.Register(services);
 
         services.AddScoped<AbdmRecordLoader>();
@@ -61,6 +72,7 @@ public sealed class InteropModule : IModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         FhirEndpoints.Map(endpoints);
+        SmartEndpoints.Map(endpoints);
         AbdmEndpoints.Map(endpoints);
         AbdmGatewayCallbackEndpoints.Map(endpoints);
     }

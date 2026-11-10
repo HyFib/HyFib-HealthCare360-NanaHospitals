@@ -22,9 +22,9 @@ public enum EInvoiceCancelReason
 }
 
 /// <summary>
-/// The IRN the Invoice Registration Portal gave a B2B tax invoice (GST rule 48(4)), with its acknowledgement and the
-/// signed QR code the invoice must print. One live IRN per invoice; an IRN is cancelled on the portal within 24 hours of
-/// its generation, and after that only a credit note undoes the invoice.
+/// The IRN the Invoice Registration Portal gave a B2B tax invoice or credit note (GST rule 48(4)), with its
+/// acknowledgement and the signed QR code the document must print. One live IRN per document; an IRN is cancelled on the
+/// portal within 24 hours of its generation, and after that only a credit note undoes the invoice.
 /// </summary>
 public sealed class EInvoice : AuditableEntity, IFacilityScoped
 {
@@ -53,10 +53,52 @@ public sealed class EInvoice : AuditableEntity, IFacilityScoped
     public string SignedQrCode { get; set; } = string.Empty;
 
     public string RecordedByName { get; set; } = string.Empty;
+
+    /// <summary>For a credit note: the invoice it reduces (its source and id), whose IRN is not cancelled while this one stands.</summary>
+    public string? PrecedingSource { get; set; }
+
+    public Guid? PrecedingId { get; set; }
+
+    /// <summary>
+    /// How the IRN came: <c>manual</c> (uploaded on the portal and recorded by hand) or the portal provider that answered
+    /// HC360's request (<c>nic</c>, <c>gsp</c>, or <c>simulator</c>, whose IRNs are made up and swept on a live server).
+    /// </summary>
+    public string Provider { get; set; } = ManualProvider;
+
+    /// <summary>The portal's signed invoice (a JWT) when HC360 asked for the IRN itself; null when recorded by hand.</summary>
+    public string? SignedInvoice { get; set; }
+
+    /// <summary>The e-way bill generated from this IRN (goods only), its date and the last moment it is valid.</summary>
+    public long? EwbNo { get; private set; }
+
+    public DateTimeOffset? EwbDate { get; private set; }
+    public DateTimeOffset? EwbValidTill { get; private set; }
+
+    public const string ManualProvider = "manual";
+
     public EInvoiceStatus Status { get; private set; }
     public DateTimeOffset? CancelledAt { get; private set; }
     public EInvoiceCancelReason? CancelReason { get; private set; }
     public string? CancelRemark { get; private set; }
+
+    /// <summary>Records the e-way bill the portal generated from this IRN.</summary>
+    public Result RecordEwayBill(long number, DateTimeOffset date, DateTimeOffset? validTill)
+    {
+        if (Status != EInvoiceStatus.Registered)
+        {
+            return Error.Rule("einvoice.not_registered", "An e-way bill is generated only from a live IRN.");
+        }
+
+        if (EwbNo is not null)
+        {
+            return Error.Conflict("einvoice.ewaybill_exists", $"E-way bill {EwbNo} is already generated for this invoice.");
+        }
+
+        EwbNo = number;
+        EwbDate = date;
+        EwbValidTill = validTill;
+        return Result.Success();
+    }
 
     public bool CanCancel(DateTimeOffset now) => Status == EInvoiceStatus.Registered && now - AckDate <= CancelWindow;
 
@@ -86,8 +128,9 @@ public sealed class EInvoice : AuditableEntity, IFacilityScoped
 public sealed record EInvoiceSeller(string? Gstin, string LegalName, Address Address, string? Phone, string? Email);
 
 /// <summary>
-/// The e-invoice JSON in the portal's schema (INV-01, version 1.1) for a B2B tax invoice, and the checks the portal
-/// applies before it gives an IRN, so a refusal is seen here with its reason instead of on the portal.
+/// The e-invoice JSON in the portal's schema (INV-01, version 1.1) for a B2B tax invoice or a credit note against one
+/// (<c>CRN</c>, naming the invoice in <c>RefDtls.PrecDocDtls</c>), and the checks the portal applies before it gives an
+/// IRN, so a refusal is seen here with its reason instead of on the portal.
 /// </summary>
 public static partial class InvoiceRegistrationPayload
 {
@@ -98,6 +141,7 @@ public static partial class InvoiceRegistrationPayload
     public static (JsonObject? Payload, IReadOnlyList<string> Problems) Build(EInvoiceSeller seller, EInvoiceDocument document)
     {
         var problems = new List<string>();
+        var noun = Noun(document);
         if (document.Problem is { } problem)
         {
             problems.Add(problem);
@@ -105,12 +149,26 @@ public static partial class InvoiceRegistrationPayload
 
         if (document.IsCancelled)
         {
-            problems.Add("The invoice is cancelled.");
+            problems.Add($"The {noun} is cancelled.");
         }
 
         if (!DocumentNumber().IsMatch(document.Number))
         {
-            problems.Add($"The portal takes invoice numbers of up to 16 letters, digits, / and -, not starting with 0; {document.Number} is not one. Shorten the number format under Hospital setup.");
+            problems.Add($"The portal takes {noun} numbers of up to 16 letters, digits, / and -, not starting with 0; {document.Number} is not one. Shorten the number format under Hospital setup.");
+        }
+
+        var note = document.Type is EInvoiceDocumentTypes.CreditNote or EInvoiceDocumentTypes.DebitNote;
+        if (document.Type is not (EInvoiceDocumentTypes.Invoice or EInvoiceDocumentTypes.CreditNote or EInvoiceDocumentTypes.DebitNote))
+        {
+            problems.Add($"The portal does not take documents of type {document.Type} from HC360.");
+        }
+        else if (note && document.Preceding is null)
+        {
+            problems.Add($"A {noun} names the invoice it {(document.Type == EInvoiceDocumentTypes.CreditNote ? "reduces" : "raises")}.");
+        }
+        else if (note && !DocumentNumber().IsMatch(document.Preceding!.Number))
+        {
+            problems.Add($"The portal names the invoice a {noun} changes by a number of up to 16 letters, digits, / and -; {document.Preceding.Number} is not one.");
         }
 
         var sellerState = Gstin.StateCode(seller.Gstin);
@@ -150,12 +208,12 @@ public static partial class InvoiceRegistrationPayload
         var interState = sellerState is not null && document.PlaceOfSupply != sellerState;
         if (document.Items.Count == 0)
         {
-            problems.Add("The invoice has no lines.");
+            problems.Add($"The {noun} has no lines.");
         }
 
         if (document.Items.Count > 1000)
         {
-            problems.Add("The portal takes at most 1000 lines on one invoice.");
+            problems.Add($"The portal takes at most 1000 lines on one {noun}.");
         }
 
         var items = new JsonArray();
@@ -192,7 +250,7 @@ public static partial class InvoiceRegistrationPayload
         if (Math.Abs(total - document.Total) > 0.01m)
         {
             problems.Add(string.Create(CultureInfo.InvariantCulture,
-                $"The lines and the round-off come to {total:0.00}, not the invoice's {document.Total:0.00}."));
+                $"The lines and the round-off come to {total:0.00}, not the {noun}'s {document.Total:0.00}."));
         }
 
         if (Math.Abs(document.RoundOff) >= 100m)
@@ -209,7 +267,7 @@ public static partial class InvoiceRegistrationPayload
         {
             ["Version"] = "1.1",
             ["TranDtls"] = new JsonObject { ["TaxSch"] = "GST", ["SupTyp"] = "B2B", ["RegRev"] = "N", ["IgstOnIntra"] = "N" },
-            ["DocDtls"] = new JsonObject { ["Typ"] = "INV", ["No"] = document.Number, ["Dt"] = Date(document.Date) },
+            ["DocDtls"] = new JsonObject { ["Typ"] = document.Type, ["No"] = document.Number, ["Dt"] = Date(document.Date) },
             ["SellerDtls"] = Party(Gstin.Normalize(seller.Gstin)!, sellerLegalName!, null, sellerAddress!, seller.Address.Line2, sellerLocation!,
                 sellerPin!.Value, sellerState!, seller.Phone, seller.Email),
             ["BuyerDtls"] = Party(Gstin.Normalize(document.Buyer.Gstin)!, buyerLegalName!, document.PlaceOfSupply, buyerAddress.Line!, null,
@@ -226,8 +284,24 @@ public static partial class InvoiceRegistrationPayload
                 ["TotInvVal"] = Money.Round(document.Total),
             },
         };
+        if (document.Preceding is { } preceding)
+        {
+            payload["RefDtls"] = new JsonObject
+            {
+                ["PrecDocDtls"] = new JsonArray(new JsonObject { ["InvNo"] = preceding.Number, ["InvDt"] = Date(preceding.Date) }),
+            };
+        }
+
         return (payload, []);
     }
+
+    /// <summary>What the document is called in a problem: an invoice or a credit note.</summary>
+    public static string Noun(EInvoiceDocument document) => document.Type switch
+    {
+        EInvoiceDocumentTypes.CreditNote => "credit note",
+        EInvoiceDocumentTypes.DebitNote => "debit note",
+        _ => "invoice",
+    };
 
     /// <summary>The portal's date: dd/MM/yyyy.</summary>
     public static string Date(DateOnly date) => date.ToString("dd'/'MM'/'yyyy", CultureInfo.InvariantCulture);
@@ -531,24 +605,25 @@ public static partial class SignedQrCode
         }
     }
 
-    /// <summary>What in the code does not match the invoice; empty when it is this invoice's.</summary>
+    /// <summary>What in the code does not match the document; empty when it is this document's.</summary>
     public static IReadOnlyList<string> Mismatches(Contents qr, EInvoiceDocument document, string? sellerGstin)
     {
         var problems = new List<string>();
+        var noun = InvoiceRegistrationPayload.Noun(document);
         void Check(bool same, string what, string found, string expected)
         {
             if (!same)
             {
-                problems.Add($"The code's {what} is {found}, the invoice's {expected}.");
+                problems.Add($"The code's {what} is {found}, the {noun}'s {expected}.");
             }
         }
 
         Check(string.Equals(qr.SellerGstin, Gstin.Normalize(sellerGstin), StringComparison.OrdinalIgnoreCase), "supplier GSTIN", qr.SellerGstin, sellerGstin ?? "none");
         Check(string.Equals(qr.BuyerGstin, Gstin.Normalize(document.Buyer.Gstin), StringComparison.OrdinalIgnoreCase), "buyer GSTIN", qr.BuyerGstin, document.Buyer.Gstin);
-        Check(string.Equals(qr.DocNo, document.Number, StringComparison.OrdinalIgnoreCase), "invoice number", qr.DocNo, document.Number);
-        Check(qr.DocTyp == "INV", "document type", qr.DocTyp, "INV");
-        Check(qr.DocDt == InvoiceRegistrationPayload.Date(document.Date), "invoice date", qr.DocDt, InvoiceRegistrationPayload.Date(document.Date));
-        Check(Math.Abs(qr.TotInvVal - document.Total) <= 0.01m, "invoice value",
+        Check(string.Equals(qr.DocNo, document.Number, StringComparison.OrdinalIgnoreCase), $"{noun} number", qr.DocNo, document.Number);
+        Check(qr.DocTyp == document.Type, "document type", qr.DocTyp, document.Type);
+        Check(qr.DocDt == InvoiceRegistrationPayload.Date(document.Date), $"{noun} date", qr.DocDt, InvoiceRegistrationPayload.Date(document.Date));
+        Check(Math.Abs(qr.TotInvVal - document.Total) <= 0.01m, $"{noun} value",
             qr.TotInvVal.ToString("0.00", CultureInfo.InvariantCulture), document.Total.ToString("0.00", CultureInfo.InvariantCulture));
         Check(qr.ItemCnt == document.Items.Count, "number of lines",
             qr.ItemCnt.ToString(CultureInfo.InvariantCulture), document.Items.Count.ToString(CultureInfo.InvariantCulture));

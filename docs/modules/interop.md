@@ -1,11 +1,13 @@
 # Interop module (`interop`) — HL7 FHIR R4 read API and ABDM health records
 
 Read-only HL7 FHIR R4 API that lets other providers read a patient's record, **subject to the patient's consent**
-(SRS **EHR-05**): Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport
-and DocumentReference under `/fhir/r4`. It is built with the Firely .NET SDK (`Hl7.Fhir.R4` 6.6.0), returns JSON only
-and writes nothing.
+(SRS **EHR-05**): Patient, Encounter, Observation (the clinic's vital signs, lab results and the readings of the patient's
+home-monitoring devices), Condition, AllergyIntolerance, MedicationRequest, DiagnosticReport, DocumentReference,
+Immunization and Procedure under `/fhir/r4`, with the hospital's own directory, Practitioner, Organization and Location,
+which is no patient's and needs no consent ([Practitioner, Organization and Location](#practitioner-organization-and-location)). It is built with the
+Firely .NET SDK (`Hl7.Fhir.R4` 6.6.0), returns JSON only and writes nothing.
 
-It also exports discharge summaries, lab reports, radiology and cardiology reports, consultation notes and prescriptions as **ABDM health records**
+It also exports discharge summaries, lab reports, radiology and cardiology reports, consultation notes, prescriptions, the vaccine doses given here and finalised bills as **ABDM health records**
 (SRS **EHR-08**): FHIR documents of the NRCeS implementation guide for the Ayushman Bharat Digital Mission, carrying the
 patient's ABHA number, behind the `features.abdm` switch, which is **off** until an administrator turns it on
 ([ABDM health records](#abdm-health-records-ehr-08)). Completed records can be linked to the patient's ABHA through the
@@ -19,27 +21,88 @@ encrypted for the hospital alone and erased at the consent's erase date (the hos
 
 | | |
 |---|---|
-| Project | `src/server/Modules/HyFib.HealthCare360.Modules.Interop` (layer 8; references Patients, Clinical, Diagnostics and Inpatient) |
+| Project | `src/server/Modules/HyFib.HealthCare360.Modules.Interop` (layer 8; references Patients, Clinical, Diagnostics, Inpatient, VirtualCare and Billing, layer 7, whose bills it exports as ABDM invoice records) |
 | Schema | `interop`: `abdm_link_requests` (a request to link records to a patient's ABHA and where it has got to) `abdm_link_tokens` (the link token the gateway issued for an ABHA address, encrypted), `abdm_discoveries` (a patient's search for their records from their PHR app, and the code sent to them, hashed) `abdm_care_contexts` (every record linked to an ABHA address, whichever way), `abdm_consents` (the consents ABDM notified for this hospital's records), `abdm_transfers` (each request for records under a consent, where its push went and what was delivered) and `abdm_profile_shares` (ABHA profiles shared at a counter by scan and share, with the token given, the ABHA number encrypted; kept a week) `abdm_abha_verifications` (checks of a patient's ABHA with ABDM: the ABHA number masked, its address and what differed from the record), `abdm_consent_requests` (the hospital's requests for a patient's records at other providers, as HIU), `abdm_consent_artefacts` (the consents a patient granted: each provider and its records), `abdm_health_information_requests` (each request for the records under a consent, its transaction and its own key pair, the private key encrypted and dropped when the transfer ends) and `abdm_received_records` (the records received, decrypted, until the consent's erase date); migrations `AbdmLinking`, `AbdmUserLinking`, `AbdmDataFlow`, `AbdmProfileShares`, `AbhaVerifications`, `AbdmConsentRequests` and `AbdmHealthInformation`. Everything else is read from the other modules' entities through `HospitalDbContext` |
-| Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); EHR-08, **partly met**: ABHA capture and the ABDM document export of consultations, prescriptions, lab reports, radiology and cardiology reports and discharge summaries are built, and so is linking completed records to the patient's ABHA through the ABDM gateway (HIP-initiated linking, and user-initiated linking from the patient's PHR app), and so are the consent notification and the encrypted transfer of consented records to the HIU, and scan and share and checking a patient's ABHA with ABDM at the registration desk (ABDM M1), and asking a patient for their records at other providers, receiving their consents and then the records, decrypted and read by the doctor, and erased at the consent's erase date or when it is revoked (ABDM M3; tested against a fake gateway built to NHA's wrapper; they need the hospital's NHA credentials and a sandbox run); creating an ABHA for a patient is not built |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper, the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters), in-memory search and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database); ABDM: `AbdmDocumentTests` (each record type against the IG, ids, references, versions, narratives, statuses and attesters, referral laboratories, the validated samples in `Fixtures/Abdm`), `AbdmDocumentVersionTests` (a document as of its record, its PDF made again, the order of rows, the PDF rule), `ValidatorSetupTests` (`Abdm/`: the Firely validator set-up, see [Validation](#validation)), `AbdmGatewayTests`, `HttpAbdmGatewayClientTests` (`Abdm/`: the gateway calls against a fake gateway, see [Linking](#linking-records-to-the-patients-abha-abdm-m2)) and `AbdmCallbackVerifierTests`. Elsewhere: `HealthIdTests` (Verhoeff for Aadhaar, ABHA number incl. the IG's example ids, ABHA address, Platform.Tests), `AbhaValidationTests` (Patients.Tests), `AbdmEndpointTests` (ArchitectureTests: switch, permissions, the one write, the anonymous signed callbacks), `AbdmLinkingTests` (IntegrationTests: a record linked end to end through a fake gateway and its signed callbacks, a kept token reused and a refused one dropped, forged and unsigned callbacks refused, nothing sent while the gateway is off), `AbdmUserLinkingTests` (IntegrationTests: a patient finds their records by ABHA address or verified mobile, links one with the code sent to them; wrong, spent and re-asked codes, a record not offered, three wrong codes), `AbdmDemographicsTests` (Interop.Tests: the gender, year-of-birth and name match), `AbdmDataFlowTests` (IntegrationTests: a consent for records not linked here refused, a granted consent kept, a private push URL refused, the consented record encrypted, pushed and decrypted with the HIU's key into a FHIR document, the gateway told it was delivered, a revoked consent refusing the next request), `AbdmDataPushTests` (Interop.Tests: the push URLs allowed and the gateway's times read), `AbdmConsentRequestTests` (IntegrationTests: only doctors ask, a patient without an ABHA address cannot be asked, the request sent as the HIU with the purpose, kinds, dates and the doctor's registration, on-init, a notification for another HIU ignored, two artefacts granted, acknowledged and fetched, one arriving with its provider and records, one naming another artefact ignored; its records asked for with a fresh key pair, a page refused before the transaction is named, two pages pushed encrypted for that key with a record for a visit not consented and one altered on the way, the consent manager told which arrived, the readable one opened by the doctor and not by front office; a revocation erasing what was received; records past their erase date deleted with their keys and others kept), staff `modules/patients/AbdmConsentRequestsPanel.test.tsx` and `abdmReceivedRecords.test.ts` (what a doctor reads of a received bundle), `AbhaVerificationTests` (IntegrationTests: against a fake ABHA service that decrypts what HC360 sends with its private key: the code requested for the ABHA number on record, a wrong code counted, the right one compared with the record, a mismatch listed, three wrong codes, the fourth code refused, only the identity permission starts one), `AbhaClientTests` (Interop.Tests: RSA-OAEP with SHA-1, ABDM's key read from JSON, base64, PEM or a certificate, the date of birth's year), staff `modules/patients/AbhaChecksPanel.test.tsx`, `AbdmProfileShareTests` (IntegrationTests: a share answered with a token, the same token when scanned again, the next for someone else, the match by ABHA address, the queue masked, the share in full, registered or dismissed once, a share without an address answered with an error, an unsigned one refused), staff `modules/front-office/abhaShares.test.tsx` (the form filled in from a share, the queue, done, take off, no Register without the contact permission), `AbdmExportTests` (IntegrationTests: registration, export, who may export, refusals audited, amended notes, records under a merged duplicate (a restricted one at either end of the merge, in a discharge summary, the survivor deleted), an ABHA number a merge links, a later allergy left out of a signed note, the LOINC name rule, the download's file and the DSC rule, every downloaded document validated), `LabTestLoincTests` (Diagnostics.Tests: a LOINC name only with its code), staff `modules/patients/validation.test.ts`, `modules/emr/AbdmRecordButton.test.tsx`, `modules/emr/abdmRecords.test.tsx` |
+| Requirements | EHR-05 (with EHR-06 consent and EHR-07 restricted records); EHR-08, **partly met**: ABHA capture and the ABDM document export of consultations, prescriptions, lab reports, radiology and cardiology reports, discharge summaries, vaccine doses given here (immunisation records), signed clinical notes with their addenda (health documents) and the readings patients take at home in a remote monitoring programme (wellness records, a document for each month) and finalised bills (invoice records, not yet validated against the guide's InvoiceRecord profile) are built, and so is linking completed records to the patient's ABHA through the ABDM gateway (HIP-initiated linking, and user-initiated linking from the patient's PHR app), and so are the consent notification and the encrypted transfer of consented records to the HIU, and scan and share and checking a patient's ABHA with ABDM at the registration desk (ABDM M1), and asking a patient for their records at other providers, receiving their consents and then the records, decrypted and read by the doctor, and erased at the consent's erase date or when it is revoked (ABDM M3; tested against a fake gateway built to NHA's wrapper; they need the hospital's NHA credentials and a sandbox run); creating an ABHA for a patient is not built |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests`: every mapper (`ClinicalNoteDocumentTests`: each kind of note under LOINC's document type, checked against FHIR R4's Document Type value set in the specification; the note as signed; who wrote and signed it and where; addenda; the restricted label on counselling notes; every kind against the ABDM guide's DocumentReference profile), the vital-sign codes and BP components, lab values and ranges, missing data, the consent and sharing rules, the SQL patient search, search parsing (`_count` cap, dates, tokens, strict parameters, `_sort`), in-memory search, ordering and paging links, OperationOutcomes, the CapabilityStatement, FHIR JSON round trips, the FHIR 401/403 handler and the SQL translation of every query (Npgsql, no database); ABDM: `AbdmDocumentTests` (each record type against the IG, ids, references, versions, narratives, statuses and attesters, referral laboratories, the validated samples in `Fixtures/Abdm`), `AbdmImmunizationRecordTests` (a dose given here with the next dose due, without one, by name alone, without an encounter; which doses are exported; a dose's name as a care context; every kind of record with its own reference, name and HI type, and an unknown kind refused; a consent's kinds of record), `AbdmClinicalNoteRecordTests` (a signed note as a health document, its addenda in the order signed with an addendum to an addendum, a note or addendum by staff who are not doctors, no encounter, a note written in a stay, the file name of each kind; which notes are exported; a note's name as a care context, never its title; its HI type and consent), `AbdmHomeReadingsRecordTests` (a month of home readings as a wellness record, each in the guide's section for it with the profile the section asks for, a blood pressure taken with a pulse as one panel; each section's narrative the readings with their times in IST, how each stood and who entered one by hand; the order measured whatever order the rows came in; a month bounded by midnight in India; the dates a consent asks for cutting a month, inclusive, and a cut month a document of its own that says what it covers; months as documents of their own; a month of more readings than one document holds in parts, never parting a blood pressure; the programme's name as a care context, by its kind, never its name; the HI type and consent), `AbdmInvoiceRecordTests` (a finalised bill as an invoice record of the facility that issued it with the printed bill; every line's price components and the totals adding up to the bill's, round-off included; CGST and SGST at half the rate, IGST on a supply to another state, none on exempt services; a bill free of cost by law adding up to nothing without its reason; issued until the patient's share is paid and the payer owes nothing; a draft and a cancelled or refunded bill refused; its HI type, reference, name as a care context and consent; base FHIR R4 enforced and the two profiles the package lacks reported unchecked), `AbdmDocumentVersionTests` (a document as of its record, its PDF made again, the order of rows, the PDF rule), `ValidatorSetupTests` (`Abdm/`: the Firely validator set-up, see [Validation](#validation)), `AbdmGatewayTests`, `HttpAbdmGatewayClientTests` (`Abdm/`: the gateway calls against a fake gateway, see [Linking](#linking-records-to-the-patients-abha-abdm-m2)) and `AbdmCallbackVerifierTests`. Elsewhere: `HealthIdTests` (Verhoeff for Aadhaar, ABHA number incl. the IG's example ids, ABHA address, Platform.Tests), `AbhaValidationTests` (Patients.Tests), `AbdmEndpointTests` (ArchitectureTests: switch, permissions, the one write, the anonymous signed callbacks), `AbdmLinkingTests` (IntegrationTests: a record linked end to end through a fake gateway and its signed callbacks, a kept token reused and a refused one dropped, forged and unsigned callbacks refused, nothing sent while the gateway is off), `AbdmUserLinkingTests` (IntegrationTests: a patient finds their records by ABHA address or verified mobile, links one with the code sent to them; wrong, spent and re-asked codes, a record not offered, three wrong codes), `AbdmDemographicsTests` (Interop.Tests: the gender, year-of-birth and name match), `AbdmDataFlowTests` (IntegrationTests: a consent for records not linked here refused, a granted consent kept, a private push URL refused, the consented record encrypted, pushed and decrypted with the HIU's key into a FHIR document, the gateway told it was delivered, a revoked consent refusing the next request; a vaccine record not sent under a consent for prescriptions and sent, as an immunisation record, under one for immunisation records; a clinical note not sent under a consent for consultations and sent, with its addendum, as a health document under one for health documents; home readings not sent under a consent for consultations and sent under one for wellness records as a document for each month of the dates asked for, only those measured in them, and dates in which nothing was measured answered so; a bill not sent under a consent for consultations and sent, as an invoice record, under one for invoices; a programme whose months fill two
+pages, the first refused and the second accepted, reported errored, not delivered), `AbdmDataPushTests` (Interop.Tests: the push URLs allowed and the gateway's times read), `AbdmConsentRequestTests` (IntegrationTests: only doctors ask, a patient without an ABHA address cannot be asked, the request sent as the HIU with the purpose, kinds, dates and the doctor's registration, on-init, a notification for another HIU ignored, two artefacts granted, acknowledged and fetched, one arriving with its provider and records, one naming another artefact ignored; its records asked for with a fresh key pair, a page refused before the transaction is named, two pages pushed encrypted for that key with a record for a visit not consented and one altered on the way, the consent manager told which arrived, the readable one opened by the doctor and not by front office; a revocation erasing what was received; records past their erase date deleted with their keys and others kept), staff `modules/patients/AbdmConsentRequestsPanel.test.tsx` and `abdmReceivedRecords.test.ts` (what a doctor reads of a received bundle), `AbhaVerificationTests` (IntegrationTests: against a fake ABHA service that decrypts what HC360 sends with its private key: the code requested for the ABHA number on record, a wrong code counted, the right one compared with the record, a mismatch listed, three wrong codes, the fourth code refused, only the identity permission starts one), `AbhaClientTests` (Interop.Tests: RSA-OAEP with SHA-1, ABDM's key read from JSON, base64, PEM or a certificate, the date of birth's year), staff `modules/patients/AbhaChecksPanel.test.tsx`, `AbdmProfileShareTests` (IntegrationTests: a share answered with a token, the same token when scanned again, the next for someone else, the match by ABHA address, the queue masked, the share in full, registered or dismissed once, a share without an address answered with an error, an unsigned one refused), staff `modules/front-office/abhaShares.test.tsx` (the form filled in from a share, the queue, done, take off, no Register without the contact permission), `AbdmExportTests` (IntegrationTests: registration, export, who may export, refusals audited, amended notes, records under a merged duplicate (a restricted one at either end of the merge, in a discharge summary, the survivor deleted), an ABHA number a merge links, a later allergy left out of a signed note, the LOINC name rule, the download's file and the DSC rule, every downloaded document validated; a vaccine dose given here exported with the next dose due, from the facility that recorded it, one from the card or in error refused, one in another patient's encounter refused when it is recorded; a signed note exported with its two signed addenda, one kept by another facility, and not a draft addendum; a counselling note, a draft and an addendum on its own refused; the note offered for linking by its kind; an enrolment's home readings exported a month at a time, the month of the latest reading unless one is named, a month with none and one that is not a month refused, the same month the same document, the programme offered for linking by its kind), `AbdmInvoiceExportTests` (IntegrationTests: a finalised bill downloaded by the medical records department and the hospital administrator, the same document twice, its lines and totals the bill's, audited; a draft and a cancelled bill refused, saying why; the billing desk and a doctor refused; offered for linking by its number, not the draft or the cancelled one; a paid bill balanced; nothing while ABDM is off), `LabTestLoincTests` (Diagnostics.Tests: a LOINC name only with its code), staff `modules/patients/validation.test.ts`, `modules/emr/AbdmRecordButton.test.tsx`, `modules/emr/abdmRecords.test.tsx`, `modules/emr/ImmunizationAbdm.test.tsx` (the dose's ABDM record downloaded and linked from its row, for a dose given here only), `modules/emr/NotesAbdm.test.tsx` (a signed note's ABDM record downloaded and linked from the note, not an addendum's, a counselling note's or a draft's), `modules/virtualcare/rpm/AbdmReadings.test.tsx` (an enrolment's months, a month's ABDM record downloaded and the programme linked from the enrolment, not while ABDM is off); `ClinicalNoteSharingTests` (IntegrationTests: a partner reads the signed notes and the addendum a consent for clinical notes covers, never a draft or the counselling note; a consent for the whole record withholds the counselling note, one naming counselling notes shares it labelled restricted; a note naming another patient's stay refused), staff `modules/patients/consents.test.ts` (what a consent shares, counselling notes only when named); `DeviceReadingObservationsTests` (Interop.Tests: each kind of home reading coded as the clinic's vital signs are, a blood pressure taken together as one panel and one taken alone, how each stood against the patient's limits, the device and who entered a reading by hand; every kind validated against the FHIR R4 vital-signs profiles and ABDM's; HC360's own device intake reading each one back as the reading it was; the reading types and times a search reaches; and the query's consent rule checked against the rule the rest of the record is shared by, at the edges of a day in hospital time), `DeviceReadingSharingTests` (IntegrationTests: readings a device pushed and a nurse entered, shared kind by kind; the days a consent names; a search past 5,000 readings refused unless narrowed, never on readings the consent leaves out; a merge taking the monitoring records along), `FhirObservationParserTests` (VirtualCare.Tests: ABDM's own heart rate example read by its UCUM code), `RemovedRecordSharingTests` (IntegrationTests: a document front office removes is no longer listed) |
 
 ## Permission and set-up
 
 | Permission | Purpose | Default roles |
 |---|---|---|
-| `fhir.read` | Read and search patient records through the FHIR API (patients with record-sharing consent only; every access is audited) | HospitalAdmin |
+| `fhir.read` | Read and search patient records through the FHIR API (what the patient's record-sharing consents let the account read; every access is audited) | HospitalAdmin |
 | `abdm.records.request` | Ask a patient, through ABDM, to let the hospital see their records at other providers, in their name as the requesting doctor (every request is audited) | Doctor |
-| `abdm.export` | Export discharge summaries, lab reports, radiology and cardiology reports, consultation notes and prescriptions as ABDM health records (every export is audited). Staff only: it does not check the record-sharing consent, so never give it to an integration service account | HospitalAdmin, MrdOfficer |
+| `fhir.clients.manage` | Register partner applications for SMART on FHIR (a second holder approves) and suspend them | HospitalAdmin |
+| `abdm.export` | Export discharge summaries, lab reports, radiology and cardiology reports, consultation notes, prescriptions and vaccine doses given here as ABDM health records (every export is audited). Staff only: it does not check the record-sharing consent, so never give it to an integration service account | HospitalAdmin, MrdOfficer |
 
 Integration partners (a referral hospital, a health information exchange) get their own service user:
 
 1. Create a role such as "FHIR integration" with `fhir.read`. Add `patients.restricted.read` only if restricted (VIP)
    records may also be shared. Never add `abdm.export`: the ABDM export is a staff download that does not check the
-   patient's record-sharing consent ([ABDM health records](#abdm-health-records-ehr-08)).
+   patient's record-sharing consent ([ABDM health records](#abdm-health-records-ehr-08)). The accounts of a role the
+   hospital made are the ones a patient's consent can name (*Who may read*); the built-in roles that hold `fhir.read`,
+   such as the hospital administrator's, are staff and are not offered.
 2. Create a user for the partner, give it only that role, and sign it in with `POST /api/v1/auth/login` (and
    `/api/v1/auth/refresh`). Access tokens live 10 minutes; send them as `Authorization: Bearer <token>`.
-3. The user's facility decides which visits, encounters, orders, results and reports it sees (platform facility filter).
+3. Assign the user to **one** facility: the partner reads that facility's records and patients only (#251, decided
+   by the hospital), whatever a patient's consent says. A request from an account assigned to no facility, or from a
+   session at a facility it is not assigned to, is refused with 403 `facility-required` before anything is looked up
+   (an account assigned to none may sign in at any facility, so it is no facility's partner). What "the facility's"
+   means for each kind of record:
+   * visits, encounters, orders, lab results and reports, imaging and cardiology reports, prescriptions, discharge
+     summaries, clinical notes, procedures, home readings, wards, rooms and beds: recorded there (platform facility
+     filter);
+   * vital signs: taken there (the facility of the person who took them), or, for a set recorded without one, taken in
+     one of its encounters;
+   * conditions: diagnosed in one of its encounters;
+   * vaccine doses: recorded there, given there or copied from a card there;
+   * documents: uploaded there (the facility of the staff who stored the file);
+   * patients: registered there, or with a visit, an encounter or a stay there; another facility's patient is not
+     found (404) and no search lists them;
+   * allergies are the patient's, not a facility's, and are read whole.
+
+   Staff see a patient's clinical notes, procedures, vital signs, diagnoses and doses from every facility; the ABDM
+   export, a staff download for the patient's own locker, is not limited this way.
+4. The partner states why it reads in `X-Purpose-Of-Use` with each request (for example `TREAT`), as patients'
+   consents may allow some purposes only ([Consent and access rules](#consent-and-access-rules)).
+
+### SMART on FHIR (partner applications)
+
+Partners read with SMART on FHIR access tokens (App Launch 2.0 and Backend Services), discovered at
+`/fhir/r4/.well-known/smart-configuration` and in the CapabilityStatement (`rest.security.service` SMART-on-FHIR and
+the `oauth-uris` extension).
+
+* **Registration** (Administration, `/api/v1/smart/clients`, `fhir.clients.manage`): one administrator registers a
+  client, a second approves it (`interop.smart_client`; the one who registered it cannot), and only then is it issued
+  tokens. An **app** has exact redirect URIs (https, or http on 127.0.0.1/[::1] for a native app) and `patient/` or
+  `user/` read scopes; a **backend service** has its public keys (a JSON Web Key Set: RSA 2048+ or EC P-256/P-384, no
+  private parts), `system/` read scopes, the integration account it reads as and that account's facility. Suspending a
+  client revokes all its tokens at once.
+* **Apps** (`GET /oauth2/authorize`): authorization code with PKCE (S256 only). The request is checked (client, exact
+  redirect URI, `aud`, scopes) and handed to the staff app's **Authorize an app** screen, where a staff member who holds
+  `fhir.read` and is assigned to the facility signs in, sees what is asked, names the patient by UHID for a `patient/`
+  grant, and allows or denies. The code is single use for ten minutes; presenting it twice revokes the token it bought.
+  The token reads as that staff member, at their facility.
+* **Backend services** (`POST /oauth2/token`, `grant_type=client_credentials`): a JWT client assertion signed by a
+  registered key (RS384, ES384, RS256 or ES256), `iss` = `sub` = the client id, `aud` the token endpoint, expiring within
+  five minutes, each `jti` accepted once. The token reads as the client's integration account at its facility.
+* **Scopes**: SMART v2 (`patient/*.rs`, `user/Observation.r`…) and v1 `.read`, read and search only; others asked
+  for are dropped and the granted scopes are said back. A token reads only the types its scopes name (403
+  `scope-insufficient` otherwise); a `patient/` token only its patient's record: reads of another patient's records and
+  searches without that patient are refused, and a Patient search must be `_id` of that patient.
+* **Consent still applies on every read**: a token signs the request in as its account, so the account's
+  `fhir.read`, its facility and each patient's record-sharing consent (who may read, purpose, kinds, dates, until)
+  decide exactly as for a session; scopes only narrow.
+* **Tokens**: opaque, 15 minutes, stored as SHA-256, accepted by the FHIR API only. `POST /oauth2/introspect` (RFC 7662)
+  and `POST /oauth2/revoke` (RFC 7009) answer the client the token was issued to (an assertion, or a public app's
+  `client_id` for revocation). No refresh tokens are issued: an app asks again, a service mints a new assertion.
+* **Migration**: partners on a password-signed-in service user keep working. Registering a backend service with
+  *replaces password sign-in* makes the FHIR API refuse that account's own sessions (403 `smart-required`) once the
+  client is active.
+* Audit: `smart.client_registered`, `smart.client_approved`, `smart.client_suspended`, `smart.app_authorized`,
+  `smart.token_issued`, `smart.token_refused`, beside the FHIR read audit, which names the account as before.
+* Tests: `SmartOnFhirTests` (IntegrationTests), `SmartScopeTests` (Interop.Tests), staff `modules/interop/smartAuthorize.test.tsx`.
 
 ## Consent and access rules
 
@@ -48,24 +111,63 @@ Every read and search passes the same gate for the patient the data belongs to:
 | Rule | Read (`GET {type}/{id}`) | Search |
 |---|---|---|
 | Patient does not exist | 404 | patient left out |
+| Patient neither registered nor ever seen (a visit, an encounter or a stay) at the reader's facility | 404 | patient left out |
 | Patient record deleted | 410 `deleted` | patient left out |
 | Patient merged into another UHID | 410 `patient-merged` (names the surviving `Patient/{id}` when the caller may read it) | patient left out |
-| No active record-sharing consent | **403 `consent-required`** | **patient left out** |
+| No record-sharing consent admits the reader today, for the purpose they stated | **403 `consent-required`** | **patient left out** |
+| The consents that admit the reader do not cover the record (its kind or its date) | **403 `consent-required`** | **record left out**, with a `records-withheld` outcome |
 | Restricted (VIP) record the caller may not open | 403 `restricted-record` | patient left out |
 
 * **Consent** is the Patients module's `PatientConsent` of type **`DataSharing`** (captured under EHR-06; the existing
-  type, so no new consent type was added). A patient's record is shared while they hold a granted, unrevoked
-  `DataSharing` consent that no later recorded refusal supersedes, the same rule Engagement applies to marketing
-  consent. Withdrawing the consent (revoking it, or recording a refusal) stops sharing at once.
+  type, so no new consent type was added). A patient's record is shared under each granted, unrevoked `DataSharing`
+  consent that no later recorded refusal supersedes, the same rule Engagement applies to marketing consent.
+  Withdrawing a consent (revoking it, or recording a refusal) stops sharing at once.
+* **What a consent covers** (`RecordSharingConsent`, `SharingScope`). Each consent is one permission, as a FHIR
+  `Consent.provision` or an ABDM consent artefact is, and may be limited when it is recorded
+  ([clinical.md](clinical.md#consents-ehr-06)):
+
+  | Part | Admits or covers | Left open |
+  |---|---|---|
+  | Who may read (`shareWith`) | only the named accounts | every account with `fhir.read` |
+  | For what (`purposes`) | only a reader who states one of them in `X-Purpose-Of-Use` | any purpose, or none stated |
+  | Which records (`kinds`) | Encounter and Condition (*visits*), AllergyIntolerance, MedicationRequest, laboratory Observations and lab DiagnosticReports (*lab results*, a glucose by glucometer at home included), imaging and cardiology DiagnosticReports and an ECG patch's rhythm (*scans and heart tests*), vital-signs Observations (vital signs, pain score, coma scale, those measured at home), DocumentReference of documents and discharge summaries (*documents*), Immunization (*vaccines given*), DocumentReference of signed progress, procedure, referral and other notes (*clinical notes*), DocumentReference of signed counselling notes (*counselling notes*), Procedure (*procedures*, operations included) | every kind but counselling notes |
+  | Records from / up to | records whose day (hospital time) is within: the visit's start, the diagnosis or allergy's recording, the prescription, the sample's collection or the study, the document (a note: the day it was signed), the day a vaccine was given, the day a reading was measured, the day a procedure was performed | every date; a record without a date is left out once dates are set |
+  | Until | the consent admits nobody after its last day, without anyone withdrawing it | no end |
+
+  A reader may read what any consent that admits them covers. The patient's own details (Patient) go with any consent
+  that admits the reader: they say whose records they are. A consent recorded without a scope shares the whole
+  record with every account, as every consent did before scopes, but for counselling notes.
+* **Counselling notes are shared only under a consent that names them** (`SharedRecordKinds.NamedOnly`). A
+  counselling note holds what the patient said in confidence, about an HIV test (HIV and AIDS (Prevention and Control)
+  Act 2017, s.8), their mental health (Mental Healthcare Act 2017, s.23) or their family, so a consent to share "all
+  records", or one naming other kinds, does not reach it. The kind is read from the note's LOINC type (47042-7), so a
+  counselling note is never shared as a milder kind. One that is shared carries the confidentiality label `R`
+  (restricted) for the receiving system to honour. Of the consents recorded before notes were served, one that names
+  no kinds (the whole record) now shares the clinical notes too, as part of the record; one that names kinds shares no
+  notes; and none shares a counselling note.
+* **The purpose of use** is stated with each request in `X-Purpose-Of-Use`, an HL7 v3 ActReason code: `TREAT`,
+  `ETREAT`, `CAREMGT`, `HPAYMT`, `PUBHLTH`, `HRESCH` or `PATRQT` (the codes ABDM consents use too). Any other value is
+  refused with 400 `invalid-parameter`. A consent that names purposes admits no request without one. The stated
+  purpose is in the audit entry of every read, search and refusal.
 * **Restricted records** use the platform guard `PatientAccessGuard` (EHR-07): reads and patient-scoped searches need
   `patients.restricted.read` or an active break-the-glass grant. Patient searches include restricted patients only
   for callers with `patients.restricted.read` (a break-the-glass grant opens one record, not a search).
 * Consent comes first: a record without consent is never opened, not even by break-the-glass.
 * A patient-scoped search whose patient is left out returns an empty `searchset` with one `outcome` entry
-  (information, `suppressed`, `records-withheld`). Its wording is the same whatever the reason, so it reveals nothing
-  about the patient.
+  (information, `suppressed`, `records-withheld`); so does one that leaves out some of the patient's records the
+  consents do not cover, beside the records it returns. Its wording ("Records of this patient may have been left
+  out") is the same whatever the reason, so it reveals nothing about the patient, and it gives no count.
+* A search lists only what a read by id would return: each provider reads its records with the platform's query
+  filters on (removed rows left out; for a facility's records, other facilities' rows too), and the lookups that must
+  see past a filter (an account since removed, a test since retired from the test master, a stored file, a device moved
+  to another facility, an encounter in another facility) are made in queries of their own. A query that ignores a
+  filter for one table it reads ignores it for every table it reads (EF Core's `IgnoreQueryFilters` is query-wide), so
+  such a lookup inside a record's query once let a search list a document front office had removed, and a clinical
+  note of another facility. `QueryTranslationTests` checks each provider query keeps its own filters
+  (`RemovedRecordSharingTests` end to end).
 * Only complete records are shared: released lab results and reports, released radiology and cardiology reports,
-  signed prescriptions (and signed ones cancelled later), signed or amended discharge summaries. Drafts, unverified
+  signed prescriptions (and signed ones cancelled later), signed or amended discharge summaries, signed clinical notes
+  and their signed addenda. Drafts, unverified
   and unreleased work never leave the hospital. Identity proofs and insurance cards are never shared.
 * Deactivated (not merged) patients stay readable by id (`active: false`) but are not returned by Patient searches.
 * ABDM health records pass the same gate, with answers worded for staff
@@ -75,11 +177,12 @@ Every read and search passes the same gate for the patient the data belongs to:
 
 | Event | Category / action | Recorded |
 |---|---|---|
-| Read | `phi` / `patient.accessed` | patient id, `fhir.{Type}`, resource id, `{ api, interaction: read, resourceType }` |
-| Search in a patient's record | `phi` / `patient.accessed` | one entry: patient id, `fhir.{Type}`, returned and total counts, parameter **names** |
+| Read | `phi` / `patient.accessed` | patient id, `fhir.{Type}`, resource id, `{ api, interaction: read, resourceType, purpose }` (the stated purpose, or "not stated") |
+| Search in a patient's record | `phi` / `patient.accessed` | one entry: patient id, `fhir.{Type}`, returned, total and withheld counts, parameter **names**, the stated purpose |
 | Patient search | `phi` / `patient.accessed` | one entry per returned patient, written in one transaction |
 | Patient search that returned nobody | `integration` / `fhir.search` | counts and parameter names |
-| Read or search refused for consent or restriction | `security` / `fhir.access_denied` (Warning) | patient id, type, id, reason |
+| Read or search of the directory (Practitioner, Organization, Location) | `integration` / `fhir.directory` | `fhir.{Type}`, the resource id of a read, returned and total counts, parameter **names**, the stated purpose; no patient. A read that finds a deleted entry or none is recorded too (`gone`, `not-found`) |
+| Read or search refused for consent or restriction | `security` / `fhir.access_denied` (Warning) | patient id, type, id, reason (`consent-required`, `restricted-record`, or `outside-consent` for a record the reader's consents do not cover), the stated purpose |
 | ABDM health record downloaded | `phi` / `abdm.record.exported` | patient id, `DischargeSummary` or `Prescription` and its id, `{ format: fhir-r4-document, profile, document, resources }` (`document` is the bundle's identifier, `resources` its entry count) |
 | ABDM download refused for consent or restriction | `security` / `abdm.export_refused` (Warning) | patient id, `DischargeSummary` or `Prescription` and its id, reason (`consent-required`, `restricted-record`) |
 
@@ -94,19 +197,40 @@ not be decrypted (no value).
 
 | Method | Path | Access | Response |
 |---|---|---|---|
-| GET | `/metadata` | anonymous, rate limit `public` | `CapabilityStatement` (FHIR 4.0.1, JSON, read + search-type for the eight types, every search parameter) |
+| GET | `/metadata` | anonymous, rate limit `public` | `CapabilityStatement` (FHIR 4.0.1, JSON, read + search-type for the thirteen types, every search parameter) |
 | GET | `/{type}/{id}` | `fhir.read` | the resource, or an `OperationOutcome` |
 | GET | `/{type}?…` | `fhir.read` | `searchset` `Bundle` |
 | POST | `/{type}/_search` | `fhir.read` | same as GET; parameters as `application/x-www-form-urlencoded` (keeps identifiers out of the request line) |
 | any | anything else under `/fhir` | anonymous, rate limit `public` | `OperationOutcome` 404 (unknown interaction) or 405 (the API is read-only) |
 
+* Every read and search may carry `X-Purpose-Of-Use` (an HL7 v3 ActReason code, see
+  [Consent and access rules](#consent-and-access-rules)); an unknown code is refused with 400 `invalid-parameter`.
 * Content type `application/fhir+json; charset=utf-8`; `_pretty=true` indents. `_format` and `Accept` must allow JSON
   (406 otherwise). Responses carry `Cache-Control: no-store` (the CapabilityStatement `no-cache`).
 * Paging: `_count` (default 20, capped at **100** — the `self` link shows the size used; `0` returns only `total`) and
   `_offset`. Bundles have `total`, `self`, `previous` and `next` links (which repeat the search parameters), and one
   `match` entry per resource with its `fullUrl`.
-* Every type except Patient is searched **one patient at a time** (`patient`/`subject` = `Patient/{id}`, `{id}` or an
-  absolute URL). Results are newest first by the resource's main date, then by id.
+* The types of a patient's record are searched **one patient at a time** (`patient`/`subject` = `Patient/{id}`, `{id}`
+  or an absolute URL). Patient and Practitioner searches need a selector ([search parameters](#search-parameters));
+  the facilities and the places of care may be listed. Results are newest first by the resource's main date, then by id (the directory by id).
+* Ordering (`_sort`): a comma-separated list of the type's search parameters in priority order, each with a leading `-`
+  for decreasing order (`_sort=-date,code`), given once. Dates, strings and codes order, `_id` and `_lastUpdated`
+  included; a reference (`patient`, `partof`…) or an `identifier` is refused with 400 (`invalid-parameter`), as is a
+  parameter named twice or a `_sort` left empty (an empty value of any other parameter is left out). The value is the
+  one the resource is served with:
+  * where it has several (codes, names, the instants of a period or of a date at its precision), the one that comes
+    first in the asked order counts: the earliest start in increasing order, the latest end in decreasing order, so an
+    ongoing stay is the latest of all, and a birth date estimated from a stated age (served as its year) counts as the
+    whole year;
+  * a person's name orders by family name, then given names; names and other texts compare lower-cased, character by
+    character; codes compare as written;
+  * a resource without the value comes last, whichever the direction;
+  * ties fall back to the default order, newest first, then by id, so paging through a sorted search is stable. The
+    links repeat `_sort`.
+
+  Patient searches are ordered in PostgreSQL by the same values (the name lower-cased and compared byte by byte,
+  whatever the database's collation; the last update cut to the millisecond it is served with, so two patients changed
+  within one millisecond tie); the other types in memory.
 * Parameters are checked strictly: an unknown parameter, a modifier (`:exact`, `:text`…), a malformed value or a second
   patient is a 400 `OperationOutcome` instead of being ignored, so a mistyped filter never widens the result.
 * Dates take `eq` (default), `ne`, `gt`, `ge`, `lt` and `le` with FHIR range semantics at the value's precision
@@ -121,8 +245,9 @@ Every error is an `OperationOutcome` whose `issue.details.coding` (`urn:hc360:fh
 | Status | Issue type | Reason codes |
 |---|---|---|
 | 400 | invalid / not-supported | `invalid-parameter`, `unsupported-parameter`, `patient-required` |
+| 400 | too-costly | `too-many-records`: an Observation search that would load more than 5,000 home-monitoring readings; narrow its `date` range, `category` or `code` |
 | 401 | login (with the scheme's `WWW-Authenticate`) | `authentication-required` |
-| 403 | forbidden | `permission-required`, `consent-required`, `restricted-record` |
+| 403 | forbidden | `permission-required`, `facility-required` (an account not assigned to the facility of its session), `consent-required`, `restricted-record` |
 | 404 | not-found / not-supported | `not-found`, `unknown-resource-type` |
 | 405 | not-supported | `read-only` |
 | 406 | not-supported | `not-acceptable` |
@@ -141,12 +266,17 @@ All types also take `_id` and `_lastUpdated` (meta.lastUpdated).
 |---|---|
 | Patient | `identifier` (UHID `urn:hc360:uhid`, ABHA number `https://healthid.ndhm.gov.in`; a bare value tries both), `name` (every word must appear; trigram ILIKE), `birthdate` (date only), `gender`. At least one of `_id`, `identifier`, `name`, `birthdate`, `_lastUpdated` is required |
 | Encounter | `patient`/`subject`, `date` (period), `status`, `class` |
-| Observation | `patient`/`subject`, `category` (`vital-signs`, `laboratory`, `survey`, `exam`), `code` (LOINC), `date` (effective), `status` (`entered-in-error` only when asked for) |
+| Observation | `patient`/`subject`, `category` (`vital-signs`, `laboratory`, `survey`, `exam`, `procedure`), `code` (LOINC), `date` (effective: recorded, collected or measured), `status` (`entered-in-error` only when asked for). A search that would load more than 5,000 home-monitoring readings is refused (400 `too-many-records`) |
 | Condition | `patient`/`subject`, `clinical-status`, `verification-status`, `category`, `code` (ICD-10), `onset-date`, `recorded-date` |
 | AllergyIntolerance | `patient`, `clinical-status`, `verification-status` (`entered-in-error` only when asked for), `category`, `date` |
 | MedicationRequest | `patient`/`subject`, `status`, `intent`, `category`, `authoredon` |
 | DiagnosticReport | `patient`/`subject`, `category` (`LAB`, `RAD`, `EC`, `CUS`, `OTH`), `code`, `date`, `status` |
-| DocumentReference | `patient`/`subject`, `type` (LOINC), `date`, `status` |
+| DocumentReference | `patient`/`subject`, `type` (LOINC: 18842-5 a discharge summary, 11506-3 a progress note, 28570-0 a procedure note, 57133-1 a referral note or letter, 47042-7 a counselling note, 34109-9 another note), `date` (the reference created, a summary or note signed), `status` |
+| Immunization | `patient`, `status` (`entered-in-error` only when asked for), `vaccine-code` (SNOMED CT), `date` (the day given) |
+| Procedure | `patient`, `status` (`entered-in-error` only when asked for), `date` (when it was performed) |
+| Practitioner | `identifier` (HPR ID `https://doctor.ndhm.gov.in`, council registration `urn:hc360:medical-council-registration`, staff code `urn:hc360:practitioner`; a bare value tries each), `name` (each word must start a word of the name), `active`. At least one of `_id`, `identifier` or `name`: a practitioner is looked up, the staff are never listed |
+| Organization | `identifier` (HFR ID `https://facility.ndhm.gov.in`, facility code `urn:hc360:facility`), `name`, `active` |
+| Location | `identifier` (ward code `urn:hc360:ward`, bed label `urn:hc360:bed`), `name`, `type` (v3 RoleCode `HU`, `ICU`, `PEDICU`, `PEDNICU`, `ER`), `partof` (`Location/ward-{id}` or `Location/room-{id}`; a bare id or an absolute URL also), `organization` (`Organization/{id}`), `status` (`active`, `inactive`) |
 
 ## Resource ids
 
@@ -154,12 +284,17 @@ All types also take `_id` and `_lastUpdated` (meta.lastUpdated).
 |---|---|---|
 | Patient | `{patientId}` | Patients `Patient` |
 | Encounter | `visit-{visitId}`, `enc-{encounterId}` | Patients `Visit` (+ Inpatient `Admission`), Clinical `Encounter` |
-| Observation | `vs-{vitalsId}-{bp,hr,spo2,temp,rr,wt,ht,bmi,pain,gcs,glucose}`, `lab-{resultId}` | Clinical `VitalSigns`, Diagnostics `LabResult` |
+| Observation | `vs-{vitalsId}-{bp,hr,spo2,temp,rr,wt,ht,bmi,pain,gcs,glucose}`, `lab-{resultId}`, `rpm-{readingId}` (a blood pressure taken together: the systolic reading's id) | Clinical `VitalSigns`, Diagnostics `LabResult`, VirtualCare `RpmReading` (+ `RpmDevice`) |
 | Condition | `{diagnosisId}` | Clinical `Diagnosis` |
 | AllergyIntolerance | `{allergyId}` | Clinical `Allergy` |
 | MedicationRequest | `{prescriptionItemId}` | Clinical `PrescriptionItem` + `Prescription` |
 | DiagnosticReport | `lab-{labReportId}`, `rad-{radiologyReportId}`, `card-{cardiologyReportId}` | Diagnostics reports |
-| DocumentReference | `doc-{documentId}`, `ds-{dischargeSummaryId}` | Patients `PatientDocument` (+ stored file metadata), Clinical `DischargeSummary` |
+| DocumentReference | `doc-{documentId}`, `ds-{dischargeSummaryId}`, `note-{noteId}` | Patients `PatientDocument` (+ stored file metadata), Clinical `DischargeSummary`, Clinical `ClinicalNote` (signed only) |
+| Immunization | `{immunizationId}` | Clinical `Immunization` |
+| Procedure | `{procedureId}` | Clinical `ProcedureRecord` |
+| Practitioner | `{practitionerId}` | the practitioner master (Platform `Practitioner`) |
+| Organization | `{facilityId}` | the facility master (Platform `Facility`) |
+| Location | `ward-{wardId}`, `room-{roomId}`, `bed-{bedId}` | Inpatient `Ward`, `Room`, `Bed` |
 
 `meta.lastUpdated` is the source rows' audit timestamp (`UpdatedAt`, else `CreatedAt`; the latest of the rows a
 resource is built from). Times are written in IST (+05:30), clinical times to the second.
@@ -180,7 +315,7 @@ resource is built from). Times are written in IST (+05:30), clinical times to th
 | `maritalStatus` | v3 MaritalStatus S, M, D, W, L; Unknown → NullFlavor UNK |
 | `contact` | emergency contact (v2-0131 `C`, relation as text, phone); guardian with the v3 RoleCode of the "S/O, D/O, W/O…" relation (PRN, HUSB, WIFE, CHILD, GUARD) |
 | `communication` | preferred language as BCP-47 (en, hi, ta, te, kn, ml, mr, bn, gu, pa, or, ur, as), preferred = true |
-| `managingOrganization` | registering facility (display name, HFR id `https://facility.ndhm.gov.in`) |
+| `managingOrganization` | registering facility: `Organization/{id}`, display name, HFR id (`https://facility.ndhm.gov.in`) |
 
 ### Encounter
 * **Visit** (`visit-`): class (v3 ActCode) OutPatient/HealthCheckup AMB, InPatient IMP, Emergency EMER, DayCare SS,
@@ -192,6 +327,9 @@ resource is built from). Times are written in IST (+05:30), clinical times to th
   (`urn:hc360:admission-number`); admitting (ADM) and treating (ATND) doctors; `hospitalization.admitSource`
   (OutPatient outp, Emergency emd, Referral mp, Direct other, TransferIn hosp-trans) and `dischargeDisposition`
   (Normal home, Referred other-hcf, LAMA/DAMA/Absconded aadvice with the text, Expired exp).
+* Where the patient stayed (`location`, the read API only: ABDM documents name no ward or bed): for each stay in one bed,
+  in order (Inpatient bed assignments), the ward the bed was in then (`Location/ward-{id}`, physical type `wa`) and the
+  bed (`Location/bed-{id}`, `bd`), each with the stay's period and `completed`, or `active` for where the patient is now.
 * **Clinical encounter** (`enc-`): `partOf` the visit (or the admission's visit), class from its type, in-progress
   until signed (then finished, period end = signing), the doctor as primary performer (PPRF), chief complaint.
 
@@ -223,6 +361,34 @@ are notes. Flag → v3 interpretation (N, L, H, LL, HH, A, AA). The printed refe
 text, with low/high for "a - b", "Up to b", "a and above", "< b" and "> a". `effective` = sample collection (else order)
 time, `issued` = release time, encounter = the visit. A result re-verified after release (a numbered amendment) is
 `amended`.
+
+### Observation — home monitoring (`rpm-`, remote patient monitoring)
+What a patient's monitoring devices push (RPM-02), or a nurse enters as the patient reads it out, coded as the clinic's
+vital signs are, so a receiver reads a reading taken at home as one taken here:
+
+| Reading | Observation |
+|---|---|
+| Systolic and diastolic taken together (same enrolment, same instant) | one blood pressure panel 85354-9 (profile `bp`) under the systolic reading's id, components 8480-6 and 8462-4 in `mm[Hg]`, each with its own interpretation; one taken alone is a panel stating the other absent (`dataAbsentReason` unknown) |
+| Heart rate, SpO₂, temperature, weight | 8867-4 `/min`, 59408-5 with 2708-6 `%`, 8310-5 `Cel`, 29463-7 `kg`, with their FHIR vital-signs profiles |
+| Glucose by glucometer | 41653-7 `mg/dL`, category `laboratory` (as a bedside glucose; shared with the lab results) |
+| ECG patch rhythm | 8884-9, category `procedure`, `valueCodeableConcept` text: the device's words, else its class (normal sinus rhythm; other or inconclusive; atrial fibrillation or worse); shared with the heart tests |
+
+`effective` = when it was measured, `issued` = when HC360 received it (a panel: its later reading), `performer` = the
+patient, `device` = the device by name with its serial number (no Device resource is served), and a note "Read out by
+the patient and entered by {who}" on a reading entered by hand. `interpretation` says how the reading stood against the
+limits the care team set for the patient when it arrived: N within, A outside, AA beyond the critical limits (a panel:
+its further reading). The limits are not sent as reference ranges: the care team changes them, and each reading was
+judged against those of its day. Readings are kept as they arrived, so a reading's status is always `final`.
+
+A search loads only the readings it could match and the consents cover, both decided in SQL on the readings' (patient,
+time) index: the reading types its `category` and `code` can match (judged on a reading of each type, as the search
+itself judges), the measurement times its `date` allows (a second wider either side), and the kinds and days the
+consents admitting the reader cover, a day in hospital time being a range of instants. A unit test runs that query
+condition against the rule every other record is shared by (`PatientAccess.Covers`), for each kind of reading at the
+edges of a day under consents of every shape. Past 5,000 readings the search is refused (`too-many-records`) rather than
+cut short, so no client takes part of the record for all of it; readings the consents do not cover never count toward
+the limit, so a refusal says nothing of them. A read by the id of a diastolic reading taken with a systolic one is 404:
+the panel is served under the systolic reading's id.
 
 ### Condition
 ICD-10 (`http://hl7.org/fhir/sid/icd-10`, code upper-cased, title as display) when chosen from the catalogue; free-text
@@ -267,6 +433,100 @@ duration. Requester = prescribing doctor; encounter = the clinical encounter, el
 * Discharge summaries (`ds-`): LOINC 18842-5; docStatus final or amended; author and authenticator = the signing
   doctor; context = the admission's encounter and stay period; the whole summary embedded as UTF-8 text (diagnoses and
   ICD-10 codes, complaints, course, procedures, investigations, condition at discharge, medications, advice, follow-up).
+* Clinical notes (`note-`): only signed notes; a draft is answered 404 as if there were none.
+  * `type`: LOINC's document type, as FHIR R4's Document Type value set names it: 11506-3 *Provider-unspecified
+    Progress note*, 28570-0 *Provider-unspecified Procedure note*, 57133-1 *Referral note*, 47042-7 *Counseling note*,
+    34109-9 *Note* for any other kind; HC360's name for it as text.
+  * `docStatus` final; `date` = when it was signed; `description` = its title, else its kind.
+  * `author` = the practitioner who wrote it (with the HPR ID), else the account by name (a nurse is not a
+    practitioner); `authenticator` = who signed it, the same way; `custodian` = the facility where it was written (with
+    its HFR id).
+  * `context.encounter` = the consultation, else the stay's in-patient visit, only when it is the patient's own (a note
+    filed against another patient's names none; such a note can no longer be written).
+  * An addendum: `relatesTo` `appends` → `DocumentReference/note-{original}`. The original stays `current`.
+  * `content`: the note as UTF-8 text exactly as it was signed (`text/plain; charset=utf-8`), its title, the signing
+    time; no language is stated, as HC360 does not know it.
+  * A counselling note carries the confidentiality label `R` (restricted) in `meta.security` and `securityLabel`.
+  * Every kind meets the ABDM guide's DocumentReference profile (checked in the tests), though the API claims no
+    profile.
+
+### Immunization
+* Every dose staff record on the patient's **Immunisations** tab at the reader's facility, given there or copied from
+  the patient's card there (doses recorded at another facility of the hospital are that facility's).
+* `vaccineCode`: the SNOMED CT vaccine product of the card code staff chose (`VaccineCodes`: the National Immunisation
+  Schedule's BCG, hepatitis B, bOPV, pentavalent, rotavirus, fIPV and IPV, PCV, MR, JE, DPT, Td and TT, and the usual
+  adult, travel and private vaccines), always one of the ABDM guide's vaccine codes (`ndhm-vaccine-codes`) with its
+  display, and the name staff recorded as text. A dose recorded without a code, or with one HC360 does not know, is
+  sent by its name only: HC360 never guesses a code.
+* `occurrenceDateTime` = the day given; `recorded` = when it was recorded; `lotNumber`, `expirationDate`,
+  `manufacturer` (name), `site` (as written); `route` coded in SNOMED CT (372464004 intradermal, 78421000
+  intramuscular, 34206005 subcutaneous, 26643006 oral: the ABDM guide's profile fixes the route's system to SNOMED CT)
+  when staff wrote one of those in any usual spelling ("ID", "I.M.", "s.c.", "oral drops"), else as written;
+  `protocolApplied.doseNumber`.
+* `performer` (function `AP`, administering provider): the account that recorded a dose given here, else who gave it
+  as written on the card. Named only: an account or a card names no practitioner record.
+* A dose copied from a card is not the hospital's own record: `primarySource` false and `reportOrigin` `record`
+  (written record).
+* A dose marked as entered in error is `entered-in-error`, with the reason as a note: a read by id still returns it, so
+  a provider that read it learns it is wrong; searches leave it out unless `status` asks for it.
+* Every mapping meets the ABDM guide's Immunization profile (checked in the tests), though the API claims no profile.
+
+### Procedure
+* Every procedure recorded at the partner's facility ([set-up](#permission-and-set-up), step 3): on the chart, and
+  every operation recorded when the theatre completed it. A procedure on the chart is the facility's where it was
+  recorded, an operation the theatre's. Staff see a patient's procedures from every facility; the API serves the
+  partner's facility's own, as it does clinical notes.
+* `code`: the procedure's name only. The ABDM guide's Procedure profile fixes the system of every coding of a
+  procedure (code, body site, outcome, category) to SNOMED CT; HC360 codes a procedure in ICD-10-PCS (the procedure
+  catalogue) or names it in words, and holds no SNOMED CT map for it. So an ICD-10-PCS code is never sent under SNOMED
+  CT's system, as a diagnosis in an unknown code system goes by its title ([Condition](#condition)).
+* `category`: SNOMED CT 387713003 *Surgical procedure* for an operation the theatre completed; none for a procedure on
+  the chart, which may be minor or diagnostic.
+* `performedDateTime` = when it was performed; `encounter` = the clinician's encounter, else the visit, else the stay's
+  in-patient visit.
+* `performer.actor`: the practitioner (`Practitioner/{id}`, by name with their HPR ID) when they have a record here;
+  else the name written for a performer from elsewhere, by name only.
+* `bodySite` and `outcome` as written, the side included in the body site ("Knee, left"; "Right side" when only the
+  side was recorded); `note`: the notes.
+* A corrected record is `completed`, with "Corrected:" and the reason as a note. A record marked as entered in error is
+  `entered-in-error`, with the reason: a read by id still returns it, so a provider that read it learns it is wrong;
+  searches leave it out unless `status` asks for it.
+* A procedure that ends a pregnancy (ICD-10-PCS 10A) or is electroconvulsive therapy (GZB) puts the patient's record
+  in the MTP or mental health category in the save that records it, as the matching diagnosis does (see the Clinical
+  module's *Procedures*). From then on the record is restricted: a read is refused (403 `restricted-record`) and a search
+  returns nothing, withheld, for the procedure and for everything shared before. So such a procedure never leaves under
+  a consent, even one that names procedures.
+* Every mapping meets the ABDM guide's Procedure profile (checked in the tests), though the API claims no profile.
+
+### Practitioner, Organization and Location
+
+The hospital's directory: who and where the people and places in the records are. It is in no patient's record, so a
+reader needs `fhir.read` and no consent, and every read and search is audited as an integration event, not PHI access.
+Every reference to a practitioner, a facility, a ward or a bed in the other resources is literal (`Practitioner/{id}`,
+`Organization/{id}`, `Location/{id}`), with the name (and the HPR or HFR id), and resolves here.
+
+* **Practitioner**: as the ABDM documents carry them (NRCeS Practitioner profile, claimed): name, gender,
+  qualification, HPR ID, council registration with the council, and staff code; `active` false once taken out of use.
+  Never a phone number, e-mail, photograph or signature: who a practitioner is, not how to reach them.
+* **Organization**: as the ABDM documents carry it (NRCeS Organization profile, claimed): name, type `prov`, HFR ID,
+  facility code, and the facility's own phone, e-mail and address; `active` false once out of use.
+* **Location** (base R4: the guide has no Location profile): the wards (`ward-`), the rooms in them (`room-`) and their
+  beds (`bed-`), of the reader's facility, as the stays that name them are.
+  * The name (a room's is its ward's and its number); the ward code or the bed label as an identifier.
+  * `type`: the kind of ward as a v3 service delivery location type (the binding is extensible), with the ward type in
+    words: `ICU`, `PEDICU` (paediatric) and `PEDNICU` (neonatal) intensive care, `ER` the emergency ward, and `HU`
+    (hospital unit) every other ward, whose kind the value set has no code for. A room or a bed has its ward's.
+  * `physicalType` `wa`, `ro` or `bd`; `partOf`: a room its ward, a bed its room or, in an open ward, its ward;
+    `managingOrganization` the facility; `status` active, or inactive once out of use.
+  * `meta.lastUpdated`: a room's or bed's own last change, or its ward's (and a bed's room's) when later, as its name,
+    kind and `partOf` come from them: a renamed ward is a change to each of its rooms and beds for a `_lastUpdated` search.
+  * Never free text (a ward's notes, a room's description, why a bed is blocked, which may name a patient) and never
+    occupancy (`operationalStatus`): what and where a place is, not what happens in it.
+* A search needs `_id`, `identifier` or `name` for Practitioner, so the staff cannot be listed; the facilities and the
+  places of care can be.
+* Deleted (a practitioner, facility or place recorded by mistake): Gone (410) by id, as records may still refer to it;
+  never in a search.
+* A nurse or other account that wrote or gave something, and is not in the practitioner master, is named only.
 
 ## ABDM health records (EHR-08)
 
@@ -307,6 +567,10 @@ ABHA numbers, end in).
 | GET | `/bundles/cardiology-reports/{id}` | `abdm.export` | DiagnosticReportRecord document of a released ECG, echo, TMT, Holter or ABPM report (the report's id), as `cardiology-report-{accession number}-abdm.json` |
 | GET | `/bundles/op-consultations/{id}` | `abdm.export` | OPConsultRecord document of a signed out-patient, emergency, telehealth or health check-up consultation (clinical encounter id), as `consultation-{UHID}-{date}-abdm.json` |
 | GET | `/bundles/prescriptions/{id}` | `abdm.export` | PrescriptionRecord document of a signed prescription, as `prescription-{number}-abdm.json` |
+| GET | `/bundles/immunizations/{id}` | `abdm.export` | ImmunizationRecord document of a vaccine dose given here (the dose's id), with the next dose when one is due, as `immunization-{UHID}-{card code}-{day given}-abdm.json`. A dose copied from the patient's card, or marked as entered in error, is not exported (422 `abdm.not_exportable`): the card's dose is the record of whoever gave it |
+| GET | `/bundles/home-readings/{id}?month=yyyy-MM` | `abdm.export` | WellnessRecord document of a remote monitoring enrolment's home readings measured in a month in IST (the enrolment's id; the month of the latest reading when none is named), as `home-readings-{UHID}-{yyyy-MM}-abdm.json`. An enrolment with no reading yet, a month with none, and a month of more readings than one document holds (ABDM sends those in parts) are refused (422 `abdm.not_exportable`, saying why); a month not written `yyyy-MM` is 400 |
+| GET | `/bundles/clinical-notes/{id}` | `abdm.export` | HealthDocumentRecord document of a signed progress, procedure, referral or other note (the note's id), carrying every addendum signed to it since, as `{kind}-{UHID}-{day signed}-abdm.json` (`progress-note-…`). A counselling note, an addendum on its own and a draft are not exported (422 `abdm.not_exportable`, saying why) |
+| GET | `/bundles/invoices/{id}` | `abdm.export` | InvoiceRecord document of a finalised, partly paid or paid bill (the bill's id), with its Invoice and the printed bill, as `bill-{bill number}-abdm.json`. A draft (an estimate, with no number yet) and a cancelled bill, refunded or not, are not exported (422 `abdm.not_exportable`, saying why). The guide's InvoiceRecord and Invoice profiles are not in the package HC360 validates against: see [Validation](#validation) |
 | GET | `/gateway` | `admin.integrations.manage` (no role has it by default: the super administrator) | `AbdmGatewayStatus`: how the gateway is set up, what is missing, `live` (switched on and set up) and what remains |
 | GET | `/shares` | `patients.register` | `AbdmShareRow[]`: today's scan-and-share queue, the waiting first, by token; mobile and ABHA numbers masked, the patient a share matched or was registered as ([Scan and share](#scan-and-share-abdm-m1)) |
 | GET | `/shares/{id}` | `patients.register` and `patients.contact.read` | `AbdmShareDetail`: one share in full (ABHA number, mobile number, date of birth, address) to fill in the registration form |
@@ -358,7 +622,7 @@ ABHA numbers, end in).
   **Download ABDM record** on a signed or amended discharge summary (patient chart > Admissions > Discharge summary;
   disabled while it has unsaved changes, hidden while it is being amended), on a signed consultation (the encounter),
   on a released lab, radiology or cardiology report, and in the menu of a signed prescription (the patient chart's and
-  the encounter's prescriptions). **Link to patient's ABHA** sits beside it on each
+  the encounter's prescriptions), and in the menu of a vaccine dose given here (patient chart > Immunisations). **Link to patient's ABHA** sits beside it on each
   ([Linking](#linking-records-to-the-patients-abha-abdm-m2)).
 
 ### The documents
@@ -374,17 +638,23 @@ profiles.
 | Lab report | `DiagnosticReportRecord`, SNOMED CT 721981007 "Diagnostic studies report" | 4241000179101 "Laboratory report": the DiagnosticReport (results as Observations) and the printed PDF as DocumentReference. The laboratory (facility) is the author |
 | Radiology report | `DiagnosticReportRecord`, SNOMED CT 721981007 "Diagnostic studies report" | 4201000179104 "Imaging report" (the parent of the IG's per-modality imaging report codes, so it fits every modality): the DiagnosticReport (`DiagnosticReportImaging`, with its ImagingStudy) and the printed PDF as DocumentReference. The radiologist who signed it off is the author and attester; an addendum after the release makes it `amended`, with the doctor who added the latest one as a second author and the attester from then (no one when that user is not a doctor). An addendum before the release is part of the report as first released |
 | Cardiology report | `DiagnosticReportRecord`, SNOMED CT 721981007 "Diagnostic studies report" | 4201000179104 "Imaging report", as for radiology: the IG's DiagnosticReportRecord takes a DiagnosticReportLab or a DiagnosticReportImaging, and gives the imaging one to "imaging services like Radiology, Cardiology, Endoscopy". The DiagnosticReport (`DiagnosticReportImaging`, with no ImagingStudy: an ECG, TMT or Holter is a recording, and HC360 keeps no echo series UIDs) and the printed PDF as DocumentReference, typed with the report's LOINC study, else LOINC 26441-6 "Cardiology studies (set)". The cardiologist who signed it off is the author and attester; a released cardiology report is not changed afterwards, so the document is final |
-| Consultation | `OPConsultRecord`, SNOMED CT 371530004 "Clinical consultation report" | 422843007 chief complaint: Conditions; 371529009 medical history (HPI); 425044008 physical examination: vital-sign Observations; 722446000 allergies; 721912009 medications: MedicationRequests; 390906007 follow-up; 306206005 referral; then LOINC 51847-2 assessment and plan (the IG has no such section; its slicing is open) |
-| Discharge summary | `DischargeSummaryRecord`, SNOMED CT 373942005 "Discharge summary" | 422843007 complaints and diagnoses: the stay's Conditions; 722446000 allergies; 721981007 investigations: the stay's lab DiagnosticReports; 1003606003 medications: the doctor's medicines on discharge as text, then the MedicationRequests prescribed during the stay; 1003640003 procedures; 734163000 care plan (advice, follow-up); 373942005 the summary as DocumentReference (the printed PDF, else the summary's text); then LOINC 8648-8 hospital course |
+| Consultation | `OPConsultRecord`, SNOMED CT 371530004 "Clinical consultation report" | 422843007 chief complaint: Conditions; 371529009 medical history (HPI); 425044008 physical examination: vital-sign Observations; 722446000 allergies; 721912009 medications: MedicationRequests; 390906007 follow-up; 371525003 procedures: the Procedures done in the consultation; 306206005 referral; then LOINC 51847-2 assessment and plan (the IG has no such section; its slicing is open) |
+| Immunisation record | `ImmunizationRecord`, SNOMED CT 41000179103 "Immunization record" | 41000179103 (the profile's one section): the Immunization, and an ImmunizationRecommendation when staff wrote when the next dose is due. The facility where the dose was given (`Immunization.FacilityId`, the facility it was recorded at) is the author and custodian; the nurse or doctor who gave it is the dose's administering provider, by name. Its date is when the dose was recorded; it is final, as a dose is not changed afterwards, only marked as entered in error, and then not exported. A dose recorded in an encounter the document does not hold names no encounter |
+| Home readings | `WellnessRecord`, typed as the profile fixes it, by its text alone (`type.text` "Wellness Record", no coding); titled "Home readings: {programme}, {month}", with an `event.period` of what it covers: the month's days, or the instants the dates a consent asks for cut it at | The guide's sections, told apart by title alone as the profile slices them, each with the profile it asks of its entries: Vital Signs (blood pressure, a systolic and a diastolic reading taken together as one panel; heart rate; SpO₂; temperature: ObservationVitalSigns), Body Measurement (weight: ObservationBodyMeasurement), General Assessment (a glucometer reading: ObservationGeneralAssessment, whose value set names blood glucose) and Other Observations (an ECG patch's rhythm: Observation), each reading as the FHIR API serves it (the patient measured it, with the device named; one read out on the phone names who entered it; interpreted N, A or AA against the limits the care team set). Each section's narrative is its readings in the order measured, each with its time in IST, how it stood when not normal and who entered one by hand, `generated`. No one signs a reading: the facility that runs the programme is the author and custodian, no attester, dated when it received the latest reading. One document holds a month of one enrolment's readings in IST; a consent's dates cut the months they begin and end in (inclusive), and a month of more than 1,000 readings goes in parts in the order measured, a blood pressure never parted, the first part keeping the month's identity. The programme is one care context (`home-readings/{enrolment}`), named by its kind ("Home readings: Hypertension monitoring, from 02 Sep 2026"), never by its name, which the hospital writes as it likes; a programme of the hospital's own kind by the record's kind alone |
+| Clinical note | `HealthDocumentRecord`, SNOMED CT 419891008 "Record artifact" (the profile fixes both, and the one section's code); its title and `type.text` the note's kind ("Progress note") | 419891008 (the profile's one section, titled with the note's own title): the note as the FHIR API serves it (DocumentReference typed with LOINC's document type for its kind, the text exactly as signed as a `text/plain` UTF-8 attachment: the hospital prints no clinical note), then each addendum signed to it since, an addendum to an addendum included, oldest first, each appending to the one it adds to and naming its own writer, signer and the facility where it was written (an addendum written at another facility of the hospital included, as the record staff see lists a patient's notes from every facility). The section's narrative is that text: the note's, then each addendum's, after who signed it and when (IST), `generated`. The doctor who wrote the note is the author (the facility, for a note by staff who are not doctors), and the doctor who signed it attests it; once an addendum is signed the document is `amended`, dated and attested as of the latest addendum (no attester when its signer is not a doctor), whose writer is a second author. A note written in an encounter the document does not hold names no encounter. A counselling note is not exported: an ABDM consent names kinds of record, and none names counselling notes apart from the patient's other health documents, which the FHIR API's consents can (a counselling note goes there only under a consent that names counselling notes). An addendum goes only with its note |
+| Discharge summary | `DischargeSummaryRecord`, SNOMED CT 373942005 "Discharge summary" | 422843007 complaints and diagnoses: the stay's Conditions; 722446000 allergies; 721981007 investigations: the stay's lab DiagnosticReports; 1003606003 medications: the doctor's medicines on discharge as text, then the MedicationRequests prescribed during the stay; 1003640003 procedures: the doctor's procedures as text, then the Procedures recorded during the stay (operations the theatre completed included); 734163000 care plan (advice, follow-up); 373942005 the summary as DocumentReference (the printed PDF, else the summary's text); then LOINC 8648-8 hospital course |
+| Invoice (bill) | `InvoiceRecord`, typed `INVOICE` "Invoice" of the guide's billing code system (`https://nrces.in/ndhm/fhir/r4/CodeSystem/ndhm-billing-codes`): SNOMED CT has no concept for an invoice, and the InvoiceRecord profile is not in the 6.5.0 package, so this is the guide's code as best known when it was written, **not checked against the published profile** ([Validation](#validation)) | The same code (one section, titled "Invoice"): the Invoice, and the printed bill as Binary (Billing's A4 bill, in the patient's language, with the payments received by then) where this server can make PDFs. The facility that issued the bill is the author, custodian and the invoice's issuer; the visit or stay is the encounter; no one attests it. Its date is when the bill was finalised. Only a finalised, partly paid or paid bill is exported; a draft is an estimate with no number, and a cancelled bill (`Cancelled`, or `Refunded`: a cancelled bill whose payments went back) is not owed |
 
 Section and document codes, systems and displays are the ones the IG's profiles fix. Empty sections are left out.
 A section's narrative reads whole on its own, since it is what the doctor attests: the free text the doctor wrote,
 then one line per entry under a heading ("Diagnoses:", "Vital signs:", "Medicines:", "Lab reports:", "Prescribed
-during the stay:"), with status `additional`; a section without free text has one line per entry, `generated`. Every
+during the stay:", "Recorded during the stay:"), with status `additional`; a section without free text has one line per entry, `generated`. Every
 resource has a generated narrative. A diagnosis's line says when it is provisional, differential, chronic or resolved,
 and an allergy's when it is inactive or resolved, its high criticality and its reaction ("Viral fever (differential)",
 "Allergy Penicillin (high criticality): Hives (severe)"): in FHIR those statuses change what the resource means, and a
-narrative must read safely on its own.
+narrative must read safely on its own. A procedure's line says when, where and on which side, by whom, and how it went
+("Incision and drainage of abscess: performed 2026-09-25T08:45:00+05:30, Axilla, right, by Dr. Asha Rao. Outcome: Pus
+drained; wound packed").
 
 | Resource | Profile | What the IG adds to the read API's resource |
 |---|---|---|
@@ -394,12 +664,16 @@ narrative must read safely on its own.
 | Encounter | `Encounter` | The visit (with its admission for a stay) or the clinical encounter; a consultation's link to its visit (`partOf`) is left out, as the visit is not in the document |
 | Condition | `Condition` | ICD-10 coding only (free-text diagnoses as text) |
 | AllergyIntolerance | `AllergyIntolerance` | Allergen as text; allergies recorded in error left out |
+| Procedure | `Procedure` | As the read API ([Procedure](#procedure)): by name, as the profile fixes every coding's system to SNOMED CT and HC360 codes procedures in ICD-10-PCS; an operation the theatre completed is a surgical procedure (SNOMED CT 387713003), the one coding. Recorded by the document's date, and never one recorded in error; in the order done |
 | MedicationRequest | `MedicationRequest` | As the read API (medicine as text, dosage with v3-GTSAbbreviation timing codes and their displays) |
 | Observation | `ObservationVitalSigns`, `ObservationBodyMeasurement` (weight, height, BMI) or `Observation` (lab results, pain, GCS) | LOINC (and SNOMED CT) codings only, and only with the code system's own display, which the IG requires: a lab result's LOINC coding needs its LOINC name in the test master, else the test goes by its name as text; performer = the laboratory (results; the referral laboratory for a test sent out to one, as the printed report says) or the hospital (vital signs) |
 | DiagnosticReport | `DiagnosticReportLab` | Category SNOMED CT 394595002 "Pathology"; LOINC 11502-2; performer and results interpreter = the laboratory; conclusion (the IG requires one; the laboratory writes none) = the results the laboratory flagged ("Flagged by the laboratory: Haemoglobin (Low)."), or "See the individual results." when it flagged none: an unflagged result is not a normal one (a qualitative result, or one without a reference range, is never flagged), so nothing is said about the results |
 | DiagnosticReport (radiology) | `DiagnosticReportImaging` | Category SNOMED CT 394914008 "Radiology"; LOINC 18748-4 only (the service code dropped); performer = the hospital; results interpreter = the doctors who wrote it, signed it off and added addenda (else the hospital); `imagingStudy`; issued = the release or the latest addendum after it. The profile requires a key image (`media`): HC360 keeps none (the images stay in PACS), so the one media entry says so in its comment and its link carries data-absent-reason `unsupported`, rather than something that is not a key image |
 | DiagnosticReport (cardiology) | `DiagnosticReportImaging` | Category SNOMED CT 394579002 "Cardiology"; the LOINC study only, where LOINC names one (see the cardiology mapping above; the service code dropped); performer = the hospital; results interpreter = the doctors who wrote and signed off the report; no ImagingStudy; the media entry and the measurements in `presentedForm` as for radiology. The measurements are not separate coded Observations: LOINC's codes for the ECG intervals, LVEF and ambulatory BP could not be checked against LOINC when this was built, and an unchecked code is worse than none |
 | ImagingStudy | `ImagingStudy` | Accession number (ACSN) and, once PACS linked the images, the study instance UID (`urn:dicom:uid`) with the number of series and images; modality as a DICOM code as the worklist sends it (an X-ray as CR); started; interpreters; body part in the narrative (a series needs PACS's series UID, which HC360 does not keep) |
+| Immunization | `Immunization` | As the read API ([Immunization](#immunization)): the vaccine as the SNOMED CT product of the guide's value set when its card code is known, else by name; the route in SNOMED CT; batch, expiry, manufacturer, site, dose number. In a document it is always a dose given here (`primarySource` true), completed |
+| ImmunizationRecommendation | `ImmunizationRecommendation` | The next dose staff wrote is due: the same vaccine, `forecastStatus` `due` (immunization-recommendation-status), `dateCriterion` LOINC 30980-7 "Date vaccine due" with that day, the dose number after this one when it is known, `supportingImmunization` the dose, `authority` the hospital, `date` when the dose was recorded |
+| Invoice | `Invoice` (not in the 6.5.0 package) | The bill: `identifier` its number (`urn:hc360:bill-number`); `status` `issued`, or `balanced` once the patient's share is paid and the payer owes nothing (a paid insured bill whose insurer has not settled stays `issued`); `type` out-patient, in-patient interim or in-patient final bill (`urn:hc360:bill-type`); `subject` the patient; `date` when it was finalised; `issuer` the facility; `participant` the doctors whose services it bills ("Service provider"). A `lineItem` per bill line, in the bill's order: `chargeItemCodeableConcept` the service by its HC360 code (`urn:hc360:service`) and its SAC code (`urn:hc360:gst-sac`), then the price components, which add up to the line's net amount: `base` (the quantity as `factor`, the unit price times the quantity as `amount`), the package cover (`deduction`), the tariff concession, the staff discount and the line's share of the bill discount (`discount`), each as a negative amount, then CGST and SGST at half the rate each, or IGST at the full rate on a supply to another state (`tax`, the rate as `factor`); the unit price is stated as `informational`, outside the sum. `totalPriceComponent` the same for the bill, with its round-off of the patient's share (`surcharge` or `deduction`), adding up to the bill's net amount; `totalNet` the taxable amount, `totalGross` the net amount, all in INR; `paymentTerms` the patient's share and the payer's. Component codes are HC360's (`urn:hc360:price-component`: `unit-price`, `package`, `tariff-discount`, `line-discount`, `bill-discount`, `not-charged`, `CGST`, `SGST`, `IGST`, `round-off`). On a bill free of cost by law each line's uncharged value is a `not-charged` deduction, so it adds up to nothing; its reason is never in the document. No free-text bill notes |
 | DocumentReference, Binary | `DocumentReference`, `Binary` | The printed PDF (made by the same document sources as the download and the messages); when this server cannot make PDFs, the lab report and prescription go without it and the discharge summary carries its text. An amended discharge summary's DocumentReference is authenticated by the doctor who amended it, an author with the signer (by no one when it was not a doctor), as its Composition is attested |
 
 * **Ids** are UUIDs derived from HC360's ids (SHA-256, RFC 9562 version 8), so exporting a record again gives the
@@ -420,14 +694,14 @@ narrative must read safely on its own.
   the Composition's id does not. Every list is in an order of its own (time, then id), so the order the database
   returns rows in changes nothing. `meta.security` is v3-Confidentiality V.
 * **As of the record.** A document holds what its record held when it was completed: signed, released, or amended
-  for an amended record (`AbdmAsOf`). An allergy, diagnosis, vital sign, prescription or lab report entered later is
+  for an amended record (`AbdmAsOf`). An allergy, diagnosis, vital sign, prescription, procedure or lab report entered later is
   not in it (a lab report counts from its first release, a result from its test's release); a diagnosis resolved since
   (on a later day, or that day after the time) is active, a prescription cancelled since is signed, a lab report
   completed since is partial with the tests released by then, and a medicine is active or completed as of that day; an
   entry recorded in error since is left out, as never true. These entries carry no `meta.lastUpdated`: their latest
   change may be after the date, and would make a new version of a document that says the same. HC360 keeps no history
   of other changes, which show as they are now and make a new version: an allergy made inactive, a diagnosis
-  confirmed, an edited reaction, an amended lab result (its report stays in the summary, amended), the patient's
+  confirmed, an edited reaction, a corrected procedure, an amended lab result (its report stays in the summary, amended), the patient's
   details, records moved to the patient by a later merge, and the PDF as the hospital prints it today.
 * **Status and attestation.** An amended record is an `amended` Composition. A lab report released before all its
   results is `preliminary` (its Composition and its PDF's DocumentReference), as its DiagnosticReport is `partial`.
@@ -450,16 +724,31 @@ README says where from). Structure, cardinality, slicing, fixed values, invarian
 can be checked offline (MIME types, languages, UCUM, HL7 code systems) are checked; SNOMED CT and LOINC need a
 terminology server, so those checks are skipped and listed (`AbdmProfileValidator`), never passed silently.
 
-* `AbdmDocumentTests`: the six sample documents (consultation, prescription, lab report, radiology report, cardiology report, discharge summary) validate
-  with no error and no warning.
-* `Abdm/ValidatorSetupTests`: the guide's own discharge summary and prescription examples validate, and fourteen
-  deliberately broken documents fail on the rule they break, so a validator that checks nothing cannot pass.
+* `AbdmDocumentTests`: the sample document of each kind of record (consultation, prescription, lab report, radiology
+  report, cardiology report, discharge summary, immunisation record, clinical note, home readings) validates with no
+  error and no warning.
+* **Invoices are validated only in part.** The guide's `InvoiceRecord` (Composition) and `Invoice` profiles are not in
+  the 6.5.0 package HC360 has, and the package registry cannot be reached from the development machine, so a bill's
+  document (`invoice.json`) is checked against base FHIR R4 for every resource (the Composition and the Invoice
+  included), the guide's `DocumentBundle`, and its `Patient`, `Practitioner`, `Organization`, `Encounter` and `Binary`
+  profiles. Firely reports each of the two missing profiles as an error ("Unable to resolve reference to profile …",
+  `incomplete`): the tests require exactly those two errors and no other (`AbdmDocumentTests`,
+  `AbdmInvoiceRecordTests`, `AbdmInvoiceExportTests`), so a missing profile is never passed silently, and
+  `AbdmInvoiceRecordTests` shows base R4's rules are still enforced on the Invoice and the Composition (a line with no
+  service, a price component with no type, a participant with no one, a Composition with no title each fail). The
+  document's type code (`INVOICE` of `ndhm-billing-codes`), the price component codes (HC360's own) and whatever else
+  the guide's profiles require of a bill are **not validated**: run the document through NHA's sandbox, or the HL7
+  validator with a package that has InvoiceRecord, before it is sent to anyone.
+* `Abdm/ValidatorSetupTests`: the guide's own discharge summary, prescription, immunisation record, health document and
+  wellness record examples validate, and deliberately broken documents fail on the rule they break (for a wellness
+  record: a type of other text, no patient, no section, a vital sign valued as a code, a vital-signs entry that is not
+  an observation or names nothing), so a validator that checks nothing cannot pass.
   `AbdmDocumentTests` does the same for the radiology sample against DiagnosticReportImaging and ImagingStudy (seven
   breakages: no media entry, an empty media link, an absent reason the value set lacks, no interpreter, no
   conclusion, the service code kept, a series without its UID).
 * `AbdmExportTests` (IntegrationTests): every document downloaded from the endpoints validates.
 
-The five sample documents built by `AbdmDocumentTests` are kept in
+The sample documents built by `AbdmDocumentTests` are kept in
 `tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests/Fixtures/Abdm` (a test fails when the code builds anything
 else; `HC360_WRITE_ABDM_FIXTURES=1` writes them again, after which they are validated again). They were checked on
 2026-10-16, and again after each review's fixes (2026-10-20 and 2026-10-21) with the same results, with the official
@@ -477,8 +766,8 @@ example documents were validated the same way, as a control.
 |---|---|---|---|
 | `prescription.json` | 3 | 4 | `Bundle-Prescription-example-06`: 5 errors, 4 warnings |
 | `lab-report.json` | 3 | 6 | `Bundle-DiagnosticReport-Lab-example-03`: 8 errors, 12 warnings |
-| `op-consultation.json` | **0** | 23 | `Bundle-OPConsultNote-example-05`: 5 errors, 4 warnings |
-| `discharge-summary.json` | 3 | 7 | `Bundle-DischargeSummary-example-04`: 8 errors, 14 warnings |
+| `op-consultation.json` (2026-11-04, with a procedure) | **0** | 23 | `Bundle-OPConsultNote-example-05`: 5 errors, 4 warnings |
+| `discharge-summary.json` (2026-11-04, with the stay's procedure) | 3 | 7 | `Bundle-DischargeSummary-example-04`: 8 errors, 14 warnings |
 | `radiology-report.json` (2026-10-23) | 6 | 4 | `Bundle-DiagnosticReport-Imaging-DCM-example-01`: 11 errors, 12 warnings; `…-Imaging-Media-example-02`: 11 errors, 8 warnings |
 
 * **Every error is the MIME type of an attachment** (`application/pdf`, `text/plain; charset=utf-8`): the HL7 validator
@@ -502,7 +791,7 @@ build. What is built:
 |---|---|
 | Settings | `abdm.gateway` (hospital-wide JSON): `enabled` (false), `baseUrl` (https, no user name, e.g. the sandbox `https://dev.abdm.gov.in/api/hiecm`), `hipId` (the HFR id registered as HIP), `cmId` (`sbx` or `abdm`), `timeoutSeconds` (30, between 5 and 120), `jwksUrl` (optional, https: where the gateway publishes the keys its callbacks are signed with; by default `{baseUrl}/gateway/v3/certs`, the v3 place of the specification's `/v0.5/certs`, to be confirmed in the sandbox), `callbackClientId` and `callbackIssuer` (the `clientId` and `iss` claims of the tokens the gateway's own calls carry, as seen in the sandbox; `callbackClientId` is required with the production gateway, `cmId` `abdm`), `hiuId` (optional: the HIU id when the hospital asks for records, by default the HIP id), `abhaBaseUrl` (optional, https: ABDM's ABHA service for [ABHA checks](#checking-a-patients-abha-abdm-m1), by default the sandbox's or production's by `cmId`), `dataPushUrl` (https: the hospital's public address of `/api/v3/hiu/health-information/transfer`, where other providers post the records it asks for as HIU; without it records are not asked for). `abdm.gateway.secret` (encrypted secret setting): `clientId`, `clientSecret` issued by NHA. Both are added under Administration › Settings (Add setting); the secret is never shown again |
 | Status | `GET /api/v1/abdm/gateway`: enabled, configured, `live` (true when it is switched on and its set-up is complete: records are then linked and sent), the URL and ids, whether the client id and secret are set (never their values), the problems in the set-up and what remains |
-| Client | `IAbdmGatewayClient` (gateway v3), registered as `HttpAbdmGatewayClient`: `CreateSessionAsync` (`POST /gateway/v3/sessions` with the client id and secret, `grantType: client_credentials`; the access token is kept and shared until five minutes before it expires, twenty minutes in the sandbox), `RequestLinkTokenAsync` (`POST /v3/token/generate-token`: ABHA address, name, gender `M`/`F`/`O`/`U`, year of birth), `LinkCareContextsAsync` (`POST /hip/v3/link/carecontext` with the token in `X-LINK-TOKEN`: the ABHA number and address and the care contexts, one group per health-information type: `OPConsultation`, `Prescription`, `DischargeSummary`, `DiagnosticReport` for lab, radiology and cardiology reports, each group under the patient's id and name), and the answers of user-initiated linking: `AnswerDiscoveryAsync`, `AnswerLinkInitAsync` and `AnswerLinkConfirmAsync` (`POST /user-initiated-linking/v3/patient/care-context/on-discover`, `…/v3/link/care-context/on-init` and `…/on-confirm`, each naming the gateway's call in `response.requestId`), and those of consent and the transfer of records: `AnswerConsentNotifyAsync` (`POST /consent/v3/request/hip/on-notify`), `AnswerHealthInformationRequestAsync` (`POST /data-flow/v3/health-information/hip/on-request`) and `NotifyTransferAsync` (`POST /data-flow/v3/health-information/notify`), and scan and share's `AnswerShareAsync` (`POST /patient-share/v3/on-share`). Every call carries `Authorization: Bearer`, `X-CM-ID`, `REQUEST-ID`, `TIMESTAMP` (UTC, milliseconds) and `X-HIP-ID`. The gateway accepts with 202 and answers later on a callback; any other answer is refused with 422 `abdm.gateway_refused` and the gateway's code and message (it sends `{ error }` or `{ errors: [{ error }] }`, both read), and a gateway that cannot be reached within the timeout gives 422 `abdm.gateway_unreachable`. A call is not retried, as the gateway may have acted on it when its answer was lost; a session the gateway ended (401) is renewed once. While the gateway is off or its set-up incomplete nothing is sent and every call answers 422 `abdm.gateway_disabled`, naming what is missing (`DisabledAbdmGatewayClient`) |
+| Client | `IAbdmGatewayClient` (gateway v3), registered as `HttpAbdmGatewayClient`: `CreateSessionAsync` (`POST /gateway/v3/sessions` with the client id and secret, `grantType: client_credentials`; the access token is kept and shared until five minutes before it expires, twenty minutes in the sandbox), `RequestLinkTokenAsync` (`POST /v3/token/generate-token`: ABHA address, name, gender `M`/`F`/`O`/`U`, year of birth), `LinkCareContextsAsync` (`POST /hip/v3/link/carecontext` with the token in `X-LINK-TOKEN`: the ABHA number and address and the care contexts, one group per health-information type: `OPConsultation`, `Prescription`, `DischargeSummary`, `DiagnosticReport` for lab, radiology and cardiology reports, `ImmunizationRecord` for vaccine doses, `HealthDocumentRecord` for clinical notes, `WellnessRecord` for home readings, `Invoice` for bills, each group under the patient's id and name), and the answers of user-initiated linking: `AnswerDiscoveryAsync`, `AnswerLinkInitAsync` and `AnswerLinkConfirmAsync` (`POST /user-initiated-linking/v3/patient/care-context/on-discover`, `…/v3/link/care-context/on-init` and `…/on-confirm`, each naming the gateway's call in `response.requestId`), and those of consent and the transfer of records: `AnswerConsentNotifyAsync` (`POST /consent/v3/request/hip/on-notify`), `AnswerHealthInformationRequestAsync` (`POST /data-flow/v3/health-information/hip/on-request`) and `NotifyTransferAsync` (`POST /data-flow/v3/health-information/notify`), and scan and share's `AnswerShareAsync` (`POST /patient-share/v3/on-share`). Every call carries `Authorization: Bearer`, `X-CM-ID`, `REQUEST-ID`, `TIMESTAMP` (UTC, milliseconds) and `X-HIP-ID`. The gateway accepts with 202 and answers later on a callback; any other answer is refused with 422 `abdm.gateway_refused` and the gateway's code and message (it sends `{ error }` or `{ errors: [{ error }] }`, both read), and a gateway that cannot be reached within the timeout gives 422 `abdm.gateway_unreachable`. A call is not retried, as the gateway may have acted on it when its answer was lost; a session the gateway ended (401) is renewed once. While the gateway is off or its set-up incomplete nothing is sent and every call answers 422 `abdm.gateway_disabled`, naming what is missing (`DisabledAbdmGatewayClient`) |
 | Encryption | `FideliusCipher` (`IFideliusCipher`): every document of a transfer encrypted for the HIU under one fresh HIP key pair, with each document's MD5 as the entry's checksum. Built and tested against NHA's reference implementation, see [Fidelius](#fidelius) |
 | Callback check | `AbdmCallbackVerifier`: a call to the callback endpoints is the gateway's only when its `Authorization: Bearer` token is signed RS256 by a key in the gateway's key set (JWKS) whose key id the token names, and is within its lifetime (one minute's clock difference allowed). `none`, HMAC (including the HS256-with-the-public-key confusion) and any other algorithm are refused. A token naming a key id not in the set is refused, so the client fetches the set again (the gateway rotated its keys) rather than trying every key. The gateway signs every ABDM client's session token with the same keys and issuer, so another provider's own token would pass on the signature alone: the token's `clientId` must be `callbackClientId` and its issuer `callbackIssuer` when set, and the production gateway is not live until `callbackClientId` is set (ABDM publishes neither value, nor the key set's URL; they are read off a sandbox callback). Audience is not checked. The key set is fetched from `jwksUrl` and kept six hours (`AbdmGatewayKeys`); a token naming a key not in it has it fetched again, at most once a minute. NHA's own reference HIP (`NHA-ABDM/ABDM-wrapper`) checks nothing, so anyone reaching its callback URLs could post a consent notification. `AbdmCallbackVerifierTests` holds a key set and tokens made with Python's jwcrypto 1.5.6, independent of .NET; they found two faults while this was built (a token naming an unknown key accepted by trying every key, and the lifetime check overflowing on the library's minimum date) |
 
@@ -516,8 +805,9 @@ sees in their PHR app and can later consent to share (`AbdmLinkingService`).
    the permission or break-the-glass, as for the export); all must be the same patient's (422 `abdm.link_patients`),
    who is not merged into another UHID (`abdm.link_merged`) and has an ABHA address (`abdm.no_abha_address`) and a date
    of birth (`abdm.no_year_of_birth`). Each record is a care context with reference `{kind}/{record id}`
-   (`op-consultation/…`, `prescription/…`, `lab-report/…`), stable and unique per patient, and display
-   "Consultation note, 12 Oct 2026"; the patient's reference is their HC360 patient id. Audited as `phi` /
+   (`op-consultation/…`, `prescription/…`, `lab-report/…`, `immunization/…`, `invoice/…`), stable and unique per patient, and display
+   "Consultation note, 12 Oct 2026", or for a dose its vaccine too ("Immunisation record: Pentavalent, dose 2, 12 Oct 2026":
+   three vaccines are given at birth, and the patient tells them apart); the patient's reference is their HC360 patient id. Audited as `phi` /
    `abdm.link_requested`, "Records linked to the patient's ABHA: 2", entity `abdm.link`, details `{ api, records }`.
 2. With a link token kept for the ABHA address the care contexts are sent at once (`Sent`). Otherwise a token is asked
    for (`AwaitingToken`), and the care contexts go when the gateway's `on-generate-token` brings it. Each step is saved
@@ -531,8 +821,8 @@ never returned by the API. The request is answered 202 also when the gateway ref
 reached: its view then says `Failed` and why. A failed request is not retried by HC360: staff link the records again.
 
 On the screens, **Link to patient's ABHA** sits beside **Download ABDM record**, on the records the export sends:
-a signed consultation, an issued prescription (in its row's menu), a released lab, radiology or cardiology report and
-a signed discharge summary. It is offered while ABDM health records are switched on, to staff with `abdm.export`. It
+a signed consultation, an issued prescription (in its row's menu), a released lab, radiology or cardiology report,
+a signed discharge summary and a vaccine dose given here (in its row's menu). It is offered while ABDM health records are switched on, to staff with `abdm.export`. It
 asks first, then links that one record (`useAbdmLink`). The screen asks after the request every five seconds for two
 minutes and says that ABDM linked it, why it did not, or that it has not answered yet; a dropped WiFi connection is
 asked again. The server says at once why it cannot link a record: no ABHA address or year of birth on the patient, or
@@ -551,7 +841,7 @@ HC360 answers each with a call of its own (`AbdmUserLinkingService`):
    (`MR`). Exactly one must match: none is `ABDM-1010` "Patient not found", more than one `1000`, so that a family
    sharing a number is not guessed between. The answer offers the patient's completed records (what the export would
    send: signed consultations and discharge summaries, issued prescriptions, released lab, radiology and cardiology
-   reports, in every facility, newest first, at most 100) not already linked to that ABHA address, grouped as for
+   reports, vaccine doses given here, in every facility, newest first, at most 100) not already linked to that ABHA address, grouped as for
    HIP-initiated linking, with `matchedBy` (`ABHA_ADDRESS`, or `MOBILE` and `MR`). Audited as `phi` /
    `abdm.discovered` with the records offered. A repeated call with the same transaction id gets the same answer.
 2. **Link init** (`{ transactionId, abhaAddress, patient: [{ referenceNumber, careContexts: [{ referenceNumber }] }] }`):
@@ -594,16 +884,21 @@ the HIU asks for under that consent, encrypted for the HIU alone (`AbdmDataFlowS
    The same transaction again is acknowledged again and sent once.
 3. **The transfer**, from the outbox: each record the consent names is made into its ABDM document as the export makes
    it (without the staff checks: the patient's consent authorises it, a restricted or sensitive record included) if it
-   is still at the hospital and within the dates asked for; the documents are encrypted with a fresh HIP key pair
-   ([Fidelius](#fidelius)) and posted to `dataPushUrl` in pages of seven (`{ pageNumber, pageCount, transactionId,
-   entries: [{ content, media: application/fhir+json, checksum, careContextReference }], keyMaterial }`, the HIP's
-   public key and nonce), plain JSON with no gateway session, as NHA's wrapper does, each page within 60 seconds.
+   is of a kind the consent covers (its `hiTypes`: a consent for prescriptions does not send a vaccine record or a lab
+   report the patient also chose; `ERRORED` "The consent does not cover this kind of record."), still at the hospital
+   and within the dates asked for. A remote monitoring programme runs on, so its home readings go by when each was
+   measured: a document for each month of those measured in the dates, all under the programme's care context. The
+   documents are encrypted with a fresh HIP key pair ([Fidelius](#fidelius)) and posted to `dataPushUrl` in pages of
+   seven (`{ pageNumber, pageCount, transactionId, entries: [{ content, media: application/fhir+json, checksum,
+   careContextReference }], keyMaterial }`, the HIP's public key and nonce), plain JSON with no gateway session, as
+   NHA's wrapper does, each page within 60 seconds.
    Audited as `phi` / `abdm.shared`, "Records sent through ABDM under the patient's consent: 2", entity
    `abdm.transfer` and the transaction id, details `{ api, consent, hiu, delivered, failed }`; the patient sees it in
    their privacy summary ("Times your records were sent to another provider through ABDM").
 4. **Notify**: the gateway gets `health-information/notify` with the session status (`TRANSFERRED` when every page was
-   accepted, else `FAILED`) and each record's `DELIVERED` or `ERRORED` with the reason. A transfer is not retried: the
-   HIU asks again with a new transaction.
+   accepted, else `FAILED`) and each record's `DELIVERED` or `ERRORED` with the reason. A record whose documents fill
+   more than one page (a programme's months) is `DELIVERED` only when every page holding one of them was accepted. A
+   transfer is not retried: the HIU asks again with a new transaction.
 
 #### Scan and share (ABDM M1)
 
@@ -681,7 +976,7 @@ records** tab (staff app, while ABDM is switched on, for `abdm.records.request`:
 
 1. The doctor chooses why (care management, break the glass, the patient asked: `CAREMGT`, `BTG`, `PATRQT`), the kinds
    of records (`OPConsultation`, `Prescription`, `DischargeSummary`, `DiagnosticReport`, `ImmunizationRecord`,
-   `HealthDocumentRecord`, `WellnessRecord`), the dates they may come from, and until when the hospital may keep them
+   `HealthDocumentRecord`, `WellnessRecord`, `Invoice`), the dates they may come from, and until when the hospital may keep them
    (at most a year). The patient needs an ABHA address on record, and the doctor a medical-council registration number
    on their staff record: the request is in their name (`requester: { name, identifier: { type: "REGNO", value,
    system: "https://www.nmc.org.in" } }`). `POST /consent/v3/request/init` as the HIU (`X-HIU-ID`: `hiuId` in
@@ -814,27 +1109,39 @@ was decrypted by the reference CLI when this was built (a one-off check, as it n
   hospital's NHA credentials and a sandbox run, user-initiated linking from the patient's PHR app, and the consent
   notification and encrypted transfer of consented records to the HIU, and scan and share at the registration desk.
   Checking a patient's ABHA with ABDM is built. Not met: creating an ABHA for a patient at the desk (Aadhaar OTP enrolment)
-  ([ABDM gateway](#abdm-gateway)); and cardiology reports (ECG,
-  echo, TMT, Holter, ABPM: their own studies, with no imaging study) are not exported as ABDM documents, nor are immunisations, wellness and
-  invoice records. The FHIR read API's resources keep the ABDM-friendly identifiers (ABHA number, HFR id) but claim no
-  NRCeS profiles; the ABDM documents do.
+  ([ABDM gateway](#abdm-gateway)). Finalised bills are exported as invoice records, but checked only against base FHIR R4 and the guide's other profiles: the guide's InvoiceRecord and Invoice profiles were not in the package, so the document's type code and what those profiles require need a sandbox validation run ([Validation](#validation)). The FHIR read API's resources keep the ABDM-friendly identifiers (ABHA number, HFR id) but claim no
+  NRCeS profiles, Practitioner and Organization aside; the ABDM documents do.
 * A doctor without an HPR ID in the practitioner master is identified in ABDM documents and NHCX claims by medical
   council registration number and HC360 code only. HC360 checks that an HPR ID has 14 digits; it does not look it up
   in the registry.
 * An ABDM download is in the patient's record access log (`patient.accessed`), but the privacy data summary does not
   list its recipient, as HC360 does not know who receives the file.
-* No `vread`/history, `_include`/`_revinclude`, `_sort`, `_summary`, `_elements`, XML, or bulk export (`$export`);
+* No `vread`/history, `_include`/`_revinclude`, `_summary`, `_elements`, XML, or bulk export (`$export`); no ordering by
+  relevance (`_score`);
   clinical searches are per patient.
-* Practitioner, Organization and Location are not served by the FHIR API: references carry a display name (and the
-  HPR ID for doctors, the HFR id for facilities). ABDM documents carry their doctor and hospital as entries. Binary is not served, so uploaded
-  documents are metadata only.
-* Not exported yet: immunizations, procedures, clinical notes, antibiotic susceptibilities, RPM device readings,
-  vital-sign interpretation flags, the primary-diagnosis rank.
+* Binary is not served, so uploaded documents are metadata only. Operating theatres are not Locations yet, so a
+  procedure names no place; ABDM documents name no ward or bed; and a Location carries no occupancy.
+* A counselling note is served by the FHIR API under a consent that names counselling notes, but never exported as an
+  ABDM document (an ABDM consent cannot keep it apart from the patient's other health documents). A clinical note's
+  ABDM document carries its text, not a printed copy, as the hospital prints no clinical note.
+* A bill's ABDM record has no button in the staff app yet: it is downloaded from `/api/v1/abdm/bundles/invoices/{id}`, and offered to the patient's PHR app for linking (user-initiated). Its status is as of the export (issued, then balanced once paid and settled); a bill cancelled after it was sent through ABDM is not retracted from the HIU that holds it, as for a dose marked in error. Credit notes are not exported, so an invoice sent before a credit note was issued shows the bill's amounts without it.
+* Home readings go to ABDM a month to a document, and a month's document is made when it is asked for: the gateway is
+  not told when a linked programme has new readings (ABDM's care-context notify), so a PHR app shows the programme's
+  readings as of its last request. The patient's other wellness data (steps, sleep, diet, women's health) is not kept by
+  HC360, so those sections of the guide's wellness record are never filled.
+* Not exported yet: antibiotic susceptibilities, vital-sign
+  interpretation flags, the primary-diagnosis rank. A dose copied from the patient's card is served by the FHIR API but
+  not exported as an ABDM immunisation record (it is the record of whoever gave it), and the FHIR API serves no
+  `ImmunizationRecommendation` (the ABDM document carries the next dose due). A dose marked as entered in error after it
+  was sent through ABDM is not retracted from the HIU that holds it: ABDM gives a HIP no way to push one, and the next
+  request for it is refused.
 * Offset paging: rows added or changed between two page requests can shift the pages. The `next` links repeat the
   search parameters (including identifiers); POST `_search` keeps them only out of the first request line.
 * Sign-in is the HC360 bearer token (10-minute access token and refresh). A SMART-on-FHIR / OAuth client-credentials
   flow for system-to-system access is a follow-up.
-* Consent is all-or-nothing per patient (`DataSharing`); purpose-of-use, recipient-specific or expiring consents are a
-  follow-up.
+* A consent's purposes are what the reader states in `X-Purpose-Of-Use`; HC360 cannot check what the partner then
+  does with the record. The statement is audited with each request, and a consent can name the partner accounts too.
+* The portal's privacy summary lists a record-sharing consent as given or withdrawn, without what it covers; staff see
+  the scope on the patient's consents.
 * Maintainer: add `application/fhir+json` to the server's response-compression MIME types in `Program.cs` (FHIR
   responses are not compressed today).

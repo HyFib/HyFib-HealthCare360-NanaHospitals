@@ -4,12 +4,14 @@ using HyFib.HealthCare360.Modules.SpecialtyCare.Features.BloodBank;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Realtime;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare.Services;
 
 /// <summary>
 /// Donor side of the blood bank (BB-01..04): registration, screening against the NBTC criteria, collection,
-/// component separation and grouping/TTI results that release (or discard) units.
+/// component separation, grouping/TTI results that discard units or hold them for verification, and the second officer's
+/// verification that releases them.
 /// </summary>
 public sealed class DonorService(
     HospitalDbContext db,
@@ -18,6 +20,7 @@ public sealed class DonorService(
     IAuditLogger audit,
     IRealtimePublisher realtime,
     ICurrentUser currentUser,
+    ISettingsService settings,
     TimeProvider time)
 {
     public async Task<Result<Guid>> RegisterAsync(SaveDonorRequest request, CancellationToken ct)
@@ -204,7 +207,7 @@ public sealed class DonorService(
         return donation.Id;
     }
 
-    /// <summary>Prepares component units (in quarantine until grouping and TTI are complete).</summary>
+    /// <summary>Prepares component units (in quarantine until grouping and TTI are complete and verified).</summary>
     public async Task<Result<IReadOnlyList<BloodComponent>>> SeparateAsync(Guid donationId, SeparateComponentsRequest request, CancellationToken ct)
     {
         var donation = await db.Set<Donation>().FirstOrDefaultAsync(d => d.Id == donationId, ct);
@@ -231,6 +234,12 @@ public sealed class DonorService(
             components.ForEach(c => c.ApplyLabResults(donation.BloodGroup, donation.Tti, now));
         }
 
+        // Separated after the results were verified, the units go to stock as the donation's earlier ones would have.
+        if (donation.IsVerified)
+        {
+            components.ForEach(c => c.Release(now));
+        }
+
         db.AddRange(components);
         donation.MarkSeparated(now);
         await db.SaveChangesAsync(ct);
@@ -239,8 +248,10 @@ public sealed class DonorService(
     }
 
     /// <summary>
-    /// Records grouping and TTI screening for a donation and every component made from it. Reactive results discard
-    /// the units, defer the donor and alert blood bank officers so the donor can be recalled for counselling.
+    /// Records grouping and TTI screening for a donation and every component made from it, with the officer who entered
+    /// them. Reactive results discard the units at once, defer the donor and alert blood bank officers so the donor can be
+    /// recalled for counselling. Results that clear the donation leave its units in quarantine until another officer
+    /// verifies them (<see cref="VerifyLabResultsAsync"/>).
     /// </summary>
     public async Task<Result> RecordLabResultsAsync(Guid donationId, RecordLabResultsRequest request, CancellationToken ct)
     {
@@ -254,7 +265,7 @@ public sealed class DonorService(
         var donor = await db.Set<Donor>().FirstAsync(d => d.Id == donation.DonorId, ct);
         var now = time.GetUtcNow();
         var tti = request.ToPanel();
-        var recorded = donation.RecordLabResults(request.BloodGroup, tti, now);
+        var recorded = donation.RecordLabResults(request.BloodGroup, tti, currentUser.Stamp(now));
         if (recorded.IsFailure)
         {
             return recorded;
@@ -290,6 +301,47 @@ public sealed class DonorService(
                 $"/blood-bank/donations/{donation.Id}", "bloodbank", "warning", ct);
         }
 
+        await PublishAsync(donation.FacilityId, ct);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// A second blood bank officer verifies a donation's results as they were shown to them (<c>version</c>), and its units
+    /// leave quarantine. While the facility asks for a second officer (<see cref="BloodBankSettings.SeparateVerifier"/>, on
+    /// by default) the officer who entered the results may not (403 <c>bloodbank.verify_own_results</c>); where it does not,
+    /// they may, audited at Warning, and the donation is listed for the medical officer's review.
+    /// </summary>
+    public async Task<Result> VerifyLabResultsAsync(Guid donationId, VerifyLabResultsRequest request, CancellationToken ct)
+    {
+        var donation = await db.Set<Donation>().FirstOrDefaultAsync(d => d.Id == donationId, ct);
+        if (donation is null)
+        {
+            return Error.NotFound(nameof(Donation), donationId);
+        }
+
+        db.SetExpectedVersion(donation, request.Version);
+        var now = time.GetUtcNow();
+        var separate = await settings.SeparateVerifierAsync(donation.FacilityId, ct);
+        var verified = donation.Verify(currentUser.Stamp(now), separate);
+        if (verified.IsFailure)
+        {
+            return verified;
+        }
+
+        var components = await db.Set<BloodComponent>().Where(c => c.DonationId == donationId).ToListAsync(ct);
+        components.ForEach(c => c.Release(now));
+        var released = components.Count(c => c.Status == BloodUnitStatus.Available);
+        var units = components.Count == 0 ? "its units go to stock as they are prepared" : $"{released} unit{(released == 1 ? string.Empty : "s")} released to stock";
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "bloodbank.results_verified", donation.VerifiedByEnterer
+            ? $"Screening results of donation {donation.BagNumber} entered and verified by {donation.VerifiedByName} alone (no second officer at this facility), {units}: for the medical officer's review"
+            : $"Screening results of donation {donation.BagNumber} entered by {donation.LabResultsByName}, verified by {donation.VerifiedByName}, {units}")
+        {
+            EntityType = nameof(Donation),
+            EntityId = donation.Id.ToString(),
+            Severity = donation.VerifiedByEnterer ? AuditSeverity.Warning : AuditSeverity.Info,
+        });
+
+        await db.SaveChangesAsync(ct);
         await PublishAsync(donation.FacilityId, ct);
         return Result.Success();
     }

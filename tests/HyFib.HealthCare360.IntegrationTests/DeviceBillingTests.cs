@@ -72,10 +72,7 @@ public sealed class DeviceBillingTests(HospitalServer server)
             (await noMrp.Content.ReadAsStringAsync(Ct)).ShouldContain("grn.mrp_required");
         }
 
-        using (var received = await ReceiveRawAsync(storeKeeper, store, Line(implant, batch, 2, 41_000m, PackMrp)))
-        {
-            received.EnsureSuccessStatusCode();
-        }
+        await ReceiveAsync(storeKeeper, store, Line(implant, batch, 2, 41_000m, PackMrp));
 
         // In theatre, the nurse records the implant. Its pack says ₹60,000, yet no more than the ceiling may be charged.
         var (patientId, visit) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice);
@@ -104,10 +101,7 @@ public sealed class DeviceBillingTests(HospitalServer server)
         // A later batch arrives. Two packs with no lot written would come from both batches: each is recorded on a line of
         // its own, so that a recall by either lot finds this patient.
         var later = $"KN{Letters(8)}";
-        using (var received = await ReceiveRawAsync(storeKeeper, store, Line(implant, later, 1, 41_000m, PackMrp, years: 4)))
-        {
-            received.EnsureSuccessStatusCode();
-        }
+        await ReceiveAsync(storeKeeper, store, Line(implant, later, 1, 41_000m, PackMrp, years: 4));
 
         using (var two = await nurse.SendRawAsync(HttpMethod.Post, Materials(booking), StoreImplant(implant, name, Ceiling, null) with { Quantity = 2m }))
         {
@@ -193,10 +187,7 @@ public sealed class DeviceBillingTests(HospitalServer server)
         var implant = await ImplantAsync(storeKeeper, name, Brand, Maker, Specification, Ceiling);
         var store = await StoreAsync(storeKeeper, "IPPH");
         var batch = $"KP{Letters(8)}";
-        using (var received = await ReceiveRawAsync(storeKeeper, store, Line(implant, batch, 2, 41_000m, PackMrp)))
-        {
-            received.EnsureSuccessStatusCode();
-        }
+        await ReceiveAsync(storeKeeper, store, Line(implant, batch, 2, 41_000m, PackMrp));
 
         // The pharmacist issues both to an admitted patient: each is charged at the ceiling, not the pack's MRP.
         var (patientId, _) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice);
@@ -237,7 +228,7 @@ public sealed class DeviceBillingTests(HospitalServer server)
 
         (await pharmacist.GetAsync<IpIssueDetail>($"/api/v1/pharmacy/ip-issues/{created.Id}")).Lines.ShouldHaveSingleItem().UnitPrice.ShouldBe(PackMrp);
 
-        // The wards' beds are shared by every test of the run.
+        // The run's tests read the same wards' boards and housekeeping lists.
         await CancelAdmissionAsync(frontOffice, nurse, admission.Id);
     }
 
@@ -302,13 +293,19 @@ public sealed class DeviceBillingTests(HospitalServer server)
             d.MinimumStock, d.MaximumStock, d.Manufacturer, d.Barcode, d.IsActive, d.Version, d.Specification, ceiling));
     }
 
-    /// <summary>Store keeper: receives a vendor invoice into the store and posts it to stock.</summary>
-    private static async Task<HttpResponseMessage> ReceiveRawAsync(ApiClient storeKeeper, Guid storeId, GoodsReceiptLineInput line)
+    /// <summary>Store keeper: receives a vendor invoice into the store and sends it for approval, as entered (refused or not).</summary>
+    private static async Task<HttpResponseMessage> ReceiveRawAsync(ApiClient storeKeeper, Guid storeId, GoodsReceiptLineInput line) =>
+        await storeKeeper.SendRawAsync(HttpMethod.Post, GoodsReceipts.Path, await ReceiptAsync(storeKeeper, storeId, line));
+
+    /// <summary>Store keeper: receives a vendor invoice into the store; someone else approves it into stock.</summary>
+    private async Task ReceiveAsync(ApiClient storeKeeper, Guid storeId, GoodsReceiptLineInput line) =>
+        await GoodsReceipts.IntoStockAsync(server, storeKeeper, await ReceiptAsync(storeKeeper, storeId, line));
+
+    private static async Task<CreateGoodsReceiptRequest> ReceiptAsync(ApiClient storeKeeper, Guid storeId, GoodsReceiptLineInput line)
     {
         var vendor = (await storeKeeper.GetAsync<PagedResult<VendorListItem>>("/api/v1/purchase/vendors?pageSize=100")).Items.Single(v => v.Code == "VEN-SBPD");
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        return await storeKeeper.SendRawAsync(HttpMethod.Post, "/api/v1/purchase/grns", new CreateGoodsReceiptRequest(
-            vendor.Id, storeId, null, $"INV-{Letters(10)}", today, today, null, [line], Post: true));
+        return new CreateGoodsReceiptRequest(vendor.Id, storeId, null, $"INV-{Letters(10)}", today, today, null, [line], SendForApproval: true);
     }
 
     /// <summary>
@@ -344,12 +341,11 @@ public sealed class DeviceBillingTests(HospitalServer server)
         (await billing.GetAsync<List<ServiceItemDto>>($"/api/v1/masters/lookups/services?search={code}")).Single(s => s.Code == code).Id;
 
     /// <summary>The front office admits the patient under the doctor to a free bed of the male general ward.</summary>
-    private static async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
+    private async Task<AdmissionCreated> AdmitAsync(ApiClient frontOffice, ApiClient doctor, Guid patientId)
     {
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
         var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWM");
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patientId}&wardId={ward.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant);
+        var bed = await TestBeds.AddAsync(server, ward.Id);
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patientId, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.Direct, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,

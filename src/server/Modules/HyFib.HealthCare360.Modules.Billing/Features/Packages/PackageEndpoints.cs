@@ -9,6 +9,8 @@ namespace HyFib.HealthCare360.Modules.Billing.Features.Packages;
 /// </summary>
 internal static class PackageEndpoints
 {
+    private const string WaitingCode = "approval.already_requested";
+
     private static readonly string[] Readers =
         [BillingPermissions.TariffsManage, BillingPermissions.IpManage, BillingPermissions.ChargesRead, BillingPermissions.OpCreate];
 
@@ -35,13 +37,15 @@ internal static class PackageEndpoints
         return TypedResults.Ok(rows);
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> Get(Guid id, HospitalDbContext db, PackageApprovals approvals, CancellationToken ct)
     {
         var package = await db.Set<Package>().AsNoTracking().Include(p => p.Inclusions).FirstOrDefaultAsync(p => p.Id == id, ct);
-        return package is null ? Error.NotFound(nameof(Package), id).ToProblem() : TypedResults.Ok(await ToDetailAsync(db, package, ct));
+        return package is null
+            ? Error.NotFound(nameof(Package), id).ToProblem()
+            : TypedResults.Ok(await ToDetailAsync(db, package, ct) with { PendingTerms = await approvals.PendingAsync(package.Id, ct) });
     }
 
-    private static async Task<IResult> Create(SavePackageRequest request, HospitalDbContext db, HbpService hbp, CancellationToken ct)
+    private static async Task<IResult> Create(SavePackageRequest request, HospitalDbContext db, HbpService hbp, PackageApprovals approvals, CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         if (await db.Set<Package>().IgnoreQueryFilters().AnyAsync(p => p.Code == code, ct))
@@ -50,18 +54,39 @@ internal static class PackageEndpoints
         }
 
         var package = new Package { Code = code };
-        var applied = await ApplyAsync(db, hbp, package, request, ct);
-        if (applied.IsFailure)
+        var checkedRequest = await CheckAsync(db, hbp, package, request, ct);
+        if (checkedRequest.IsFailure)
         {
-            return applied.Error!.ToProblem();
+            return checkedRequest.Error!.ToProblem();
         }
 
+        // What a package's patients pay changes only when two people agree (maker-checker): a new package is made out of
+        // use, at ₹0 and covering nothing, and goes live with the terms a second person approves.
+        ApplyDetails(package, request, checkedRequest.Value);
+        var asked = Terms(request);
+        var now = asked.OutOfUse();
+        now.ApplyTo(package);
         db.Add(package);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return TypedResults.Created($"/api/v1/billing/packages/{package.Id}", await ToDetailAsync(db, package, ct));
+        PendingPackageTerms? pending = null;
+        if (asked != now)
+        {
+            var approval = await approvals.AskAsync(package, now, asked, request.Reason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            // As GET reads it: with the service it would be billed as and its covers named.
+            pending = await approvals.PendingAsync(package.Id, ct);
+        }
+
+        await transaction.CommitAsync(ct);
+        return TypedResults.Created($"/api/v1/billing/packages/{package.Id}", await ToDetailAsync(db, package, ct) with { PendingTerms = pending });
     }
 
-    private static async Task<IResult> Update(Guid id, SavePackageRequest request, HospitalDbContext db, HbpService hbp, CancellationToken ct)
+    private static async Task<IResult> Update(Guid id, SavePackageRequest request, HospitalDbContext db, HbpService hbp, PackageApprovals approvals, CancellationToken ct)
     {
         var package = await db.Set<Package>().Include(p => p.Inclusions).FirstOrDefaultAsync(p => p.Id == id, ct);
         if (package is null)
@@ -70,17 +95,56 @@ internal static class PackageEndpoints
         }
 
         db.GuardVersion(package, request.Version ?? 0);
-        var applied = await ApplyAsync(db, hbp, package, request, ct);
-        if (applied.IsFailure)
+        var checkedRequest = await CheckAsync(db, hbp, package, request, ct);
+        if (checkedRequest.IsFailure)
         {
-            return applied.Error!.ToProblem();
+            return checkedRequest.Error!.ToProblem();
         }
 
+        // The terms wait for a second person, except taking the package out of use, which only stops it being chosen
+        // again. While a change waits, a save must ask for the same terms.
+        var before = PackageTerms.Of(package);
+        var asked = Terms(request);
+        var waiting = await approvals.PendingAsync(package.Id, ct);
+        if (waiting is not null && waiting.Asked != asked)
+        {
+            return Error.Conflict(WaitingCode,
+                    $"A change to package {package.Code}'s price or cover, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.")
+                .ToProblem();
+        }
+
+        ApplyDetails(package, request, checkedRequest.Value);
+        var now = before.Narrowed(asked);
+        if (asked == now && asked.NotesDiffer(now))
+        {
+            // Only the covers' notes changed: they decide nothing, and are saved at once.
+            asked.ApplyTo(package);
+        }
+        else
+        {
+            package.IsActive = now.IsActive;
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
-        return TypedResults.Ok(await ToDetailAsync(db, package, ct));
+        if (waiting is null && asked != now)
+        {
+            var approval = await approvals.AskAsync(package, now, asked, request.Reason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!.ToProblem();
+            }
+
+            await transaction.CommitAsync(ct);
+            return TypedResults.Accepted($"/api/v1/approvals/{approval.Value.Id}", approval.Value);
+        }
+
+        await transaction.CommitAsync(ct);
+        return TypedResults.Ok(await ToDetailAsync(db, package, ct) with { PendingTerms = waiting });
     }
 
-    private static async Task<Result> ApplyAsync(HospitalDbContext db, HbpService hbp, Package package, SavePackageRequest request, CancellationToken ct)
+    /// <summary>Checks a save: its PM-JAY procedure, the service it is billed as, and the services it covers. The procedure code to keep.</summary>
+    private static async Task<Result<string?>> CheckAsync(HospitalDbContext db, HbpService hbp, Package package, SavePackageRequest request, CancellationToken ct)
     {
         var hbpCode = await hbp.CheckForPackageAsync(request.HbpCode, package.HbpCode, ct);
         if (hbpCode.IsFailure)
@@ -100,31 +164,23 @@ internal static class PackageEndpoints
             return Error.Field("inclusions", "One or more included services were not found.");
         }
 
-        package.Name = request.Name.Trim();
-        package.ServiceItemId = request.ServiceItemId;
-        package.Price = request.Price;
-        package.LengthOfStayDays = request.LengthOfStayDays;
-        package.TariffPlanId = request.TariffPlanId;
-        package.UsedFor = request.UsedFor;
-        package.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
-        package.IsActive = request.IsActive;
-        package.HbpCode = hbpCode.Value;
-        package.Inclusions.Clear();
-        foreach (var inclusion in request.Inclusions)
-        {
-            package.Inclusions.Add(new PackageInclusion
-            {
-                PackageId = package.Id,
-                ServiceItemId = inclusion.ServiceItemId,
-                Category = inclusion.ServiceItemId is null ? inclusion.Category : null,
-                MaxQuantity = inclusion.MaxQuantity,
-                MaxAmount = inclusion.MaxAmount,
-                Notes = string.IsNullOrWhiteSpace(inclusion.Notes) ? null : inclusion.Notes.Trim(),
-            });
-        }
-
-        return Result.Success();
+        return hbpCode.Value;
     }
+
+    /// <summary>The details a save makes at once: the name, stay, description and the PM-JAY procedure it is claimed as.</summary>
+    private static void ApplyDetails(Package package, SavePackageRequest request, string? hbpCode)
+    {
+        package.Name = request.Name.Trim();
+        package.LengthOfStayDays = request.LengthOfStayDays;
+        package.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        package.HbpCode = hbpCode;
+    }
+
+    /// <summary>The terms a save asks for: what decides what the package's patients pay.</summary>
+    private static PackageTerms Terms(SavePackageRequest request) => PackageTerms.Create(
+        request.ServiceItemId, request.Price, request.TariffPlanId, request.UsedFor, request.IsActive,
+        request.Inclusions.Select(i => new PackageCover(i.ServiceItemId, i.ServiceItemId is null ? i.Category : null, i.MaxQuantity, i.MaxAmount,
+            string.IsNullOrWhiteSpace(i.Notes) ? null : i.Notes.Trim())));
 
     private static async Task<PackageDetail> ToDetailAsync(HospitalDbContext db, Package package, CancellationToken ct)
     {

@@ -1,4 +1,6 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.DoctorFees;
 
@@ -16,9 +18,13 @@ public sealed record ShareRuleDto(
     DateOnly? EffectiveTo,
     bool IsActive,
     string? Notes,
-    uint Version);
+    uint Version,
+    PendingShareRule? Pending = null);
 
-/// <summary>A sharing rule; leave the practitioner empty for the hospital-wide default.</summary>
+/// <summary>
+/// A sharing rule; leave the practitioner empty for the hospital-wide default. Its notes are saved at once; its terms wait
+/// for a second person, with <paramref name="Reason"/> for them.
+/// </summary>
 public sealed record SaveShareRuleRequest(
     Guid? PractitionerId,
     Guid? ServiceItemId,
@@ -30,7 +36,11 @@ public sealed record SaveShareRuleRequest(
     DateOnly? EffectiveTo,
     bool IsActive,
     string? Notes,
-    uint? Version);
+    uint? Version,
+    string? Reason = null);
+
+/// <summary>A rule saved, and the approval its terms wait for, if they were asked for.</summary>
+public sealed record SavedShareRule(Guid Id, ApprovalRequestDto? Asked);
 
 public sealed record AccrualDto(
     Guid Id,
@@ -122,6 +132,7 @@ public sealed class SaveShareRuleRequestValidator : AbstractValidator<SaveShareR
             .Must((request, to) => to is null || to >= request.EffectiveFrom)
             .WithMessage("The end date must be on or after the start date.");
         RuleFor(x => x.Notes).SafeText(300);
+        RuleFor(x => x.Reason).SafeText(500);
     }
 }
 
@@ -148,5 +159,32 @@ public sealed class PayPayoutRequestValidator : AbstractValidator<PayPayoutReque
     {
         RuleFor(x => x.Mode).IsInEnum().Must(m => m is not (PaymentMode.Advance or PaymentMode.Insurance)).WithMessage("Choose how the doctor is paid.");
         RuleFor(x => x.Reference).MaximumLength(64);
+    }
+}
+
+public sealed record DoctorTaxProfileDto(
+    Guid PractitionerId, string? PanMasked, string? NameAsPerPan, string? CertificateNumber, decimal? CertificateRate, DateOnly? CertificateValidFrom,
+    DateOnly? CertificateValidTo, uint? Version);
+
+/// <param name="Pan">None keeps the PAN on record; empty removes it.</param>
+/// <param name="CertificateNumber">A lower-deduction certificate under s.197; empty clears it with its rate and dates.</param>
+/// <param name="Version">The version loaded; none on the first save.</param>
+public sealed record SaveDoctorTaxProfileRequest(
+    string? Pan, string? NameAsPerPan, string? CertificateNumber, decimal? CertificateRate, DateOnly? CertificateValidFrom, DateOnly? CertificateValidTo,
+    uint? Version);
+
+public sealed class SaveDoctorTaxProfileRequestValidator : AbstractValidator<SaveDoctorTaxProfileRequest>
+{
+    public SaveDoctorTaxProfileRequestValidator()
+    {
+        RuleFor(x => x.Pan).Must(p => p is null || p.Trim().Length == 0 || HyFib.HealthCare360.Modules.HR.Domain.HrIdentifiers.IsValidPan(p))
+            .WithMessage("Enter the PAN as five letters, four digits and a letter.");
+        RuleFor(x => x.NameAsPerPan).SafeText(75);
+        RuleFor(x => x.CertificateNumber).SafeText(20).Must(c => c is null || c.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == ' ')).WithMessage("Letters and digits only.");
+        RuleFor(x => x.CertificateRate).NotNull().InclusiveBetween(0, 10).When(x => !string.IsNullOrWhiteSpace(x.CertificateNumber))
+            .WithMessage("Enter the certificate's rate (0 to 10%).");
+        RuleFor(x => x.CertificateValidFrom).NotNull().When(x => !string.IsNullOrWhiteSpace(x.CertificateNumber));
+        RuleFor(x => x.CertificateValidTo).NotNull().GreaterThanOrEqualTo(x => x.CertificateValidFrom).When(x => !string.IsNullOrWhiteSpace(x.CertificateNumber))
+            .WithMessage("The certificate must end on or after it starts.");
     }
 }

@@ -354,7 +354,7 @@ public sealed class PatientIdentityCheckTests(HospitalServer server)
         await admin.PostAsync<IntegrationTestResult>("/api/v1/admin/integrations/aadhaar/test", new TestIntegrationRequest(null, null, null, null, null));
 
     /// <summary>Complete UIDAI settings, with a self-signed signing certificate standing in for the AUA's.</summary>
-    private static async Task UseUidaiAsync(ApiClient admin, string subject)
+    private async Task UseUidaiAsync(ApiClient admin, string subject)
     {
         using var key = RSA.Create(2048);
         var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -362,17 +362,44 @@ public sealed class PatientIdentityCheckTests(HospitalServer server)
         var pfx = Convert.ToBase64String(certificate.Export(X509ContentType.Pfx, "pw"));
         await SaveAsync(admin, "integrations.aadhaar",
             """{"enabled":true,"provider":"uidai","authUrl":"https://asa.example.invalid/2.5/{ac}/{uid0}/{uid1}/{asalk}","auaCode":"HC0000001","subAuaCode":"HC0000001"}""");
-        await admin.SaveSettingAsync("integrations.aadhaar.secret", new SaveSettingRequest(
+        await server.SaveSettingAsync(admin, "integrations.aadhaar.secret", new SaveSettingRequest(
             JsonNode.Parse($$"""{"licenceKey":"LK-TEST","asaLicenceKey":"ASA-TEST","signingCertificate":"{{pfx}}","signingCertificatePassword":"pw"}"""), null, true, null));
     }
 
-    private static async Task SwitchOffAsync(ApiClient admin)
+    private async Task SwitchOffAsync(ApiClient admin)
     {
         await SaveAsync(admin, "integrations.aadhaar", """{"enabled":false,"provider":"simulator"}""");
-        await admin.SaveSettingAsync("integrations.aadhaar.secret", new SaveSettingRequest(JsonNode.Parse("{}"), null, true, null));
+        await server.SaveSettingAsync(admin, "integrations.aadhaar.secret", new SaveSettingRequest(JsonNode.Parse("{}"), null, true, null));
     }
 
     private static string Path(PatientCreated patient) => $"/api/v1/patients/{patient.Id}/identity-checks";
+
+    [Fact]
+    public async Task A_number_the_simulator_linked_is_open_until_it_is_removed_from_the_record()
+    {
+        await WithSimulatorAsync(async () =>
+        {
+            var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+            var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+            var patient = await RegisterAsync(isVip: false, aadhaar: null);
+            var check = await frontOffice.PostAsync<IdentityCheckDto>(Path(patient), new VerifyIdentityRequest(NewAadhaar(), Matching, true));
+            check.LinkedAadhaar.ShouldBeTrue();
+
+            // Nobody's fingerprint was checked: open while the record holds the number.
+            (await SimulatorRecords.OpenAsync(admin, "aadhaar-links")).Single(r => r.EntityId == patient.Id).Reference.ShouldBe(patient.Uhid);
+
+            // Removed from the record (the patient › Edit): open no more.
+            var full = await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}");
+            await frontOffice.PutAsync($"/api/v1/patients/{patient.Id}", new UpdatePatientRequest(
+                full.Title, full.FirstName, full.MiddleName, full.LastName, full.Gender, full.DateOfBirth, null, null, full.Phone, full.AlternatePhone,
+                full.Email, full.Address, full.BloodGroup, full.MaritalStatus, full.GuardianName, full.GuardianRelation, full.EmergencyContactName,
+                full.EmergencyContactPhone, full.EmergencyContactRelation, full.Occupation, full.Religion, full.Nationality, full.PreferredLanguage,
+                full.Category, null, full.AbhaAddress, "", full.PhotoFileId, full.IsVip, full.IsDeceased, full.DeceasedAt,
+                "The Aadhaar number was linked by the training simulator", full.IsActive, full.Version));
+            (await frontOffice.GetAsync<PatientDetail>($"/api/v1/patients/{patient.Id}")).AadhaarLast4.ShouldBeNull();
+            (await SimulatorRecords.OpenAsync(admin, "aadhaar-links")).ShouldNotContain(r => r.EntityId == patient.Id);
+        });
+    }
 
     private async Task WithSimulatorAsync(Func<Task> test)
     {
@@ -388,8 +415,8 @@ public sealed class PatientIdentityCheckTests(HospitalServer server)
         }
     }
 
-    private static Task SaveAsync(ApiClient admin, string key, string json) =>
-        admin.SaveSettingAsync(key, new SaveSettingRequest(JsonNode.Parse(json), null, false, null));
+    private Task SaveAsync(ApiClient admin, string key, string json) =>
+        server.SaveSettingAsync(admin, key, new SaveSettingRequest(JsonNode.Parse(json), null, false, null));
 
     private async Task<PatientCreated> RegisterAsync(bool isVip, string? aadhaar)
     {

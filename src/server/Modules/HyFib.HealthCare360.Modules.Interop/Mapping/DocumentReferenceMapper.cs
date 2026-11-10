@@ -11,12 +11,16 @@ namespace HyFib.HealthCare360.Modules.Interop.Mapping;
 /// <item>documents attached to the patient record (<c>doc-</c>), typed with LOINC document codes where one fits. The
 /// metadata (type, date, title, source, content type and size) is shared; the encrypted file itself is not served by
 /// this facade. Identity proofs and insurance cards are not clinical records and are never shared;</item>
-/// <item>signed discharge summaries (<c>ds-</c>, LOINC 18842-5) with the whole summary embedded as UTF-8 text.</item>
+/// <item>signed discharge summaries (<c>ds-</c>, LOINC 18842-5) with the whole summary embedded as UTF-8 text;</item>
+/// <item>signed clinical notes (<c>note-</c>) with the note embedded as UTF-8 text, as it was signed.</item>
 /// </list>
 /// </summary>
 internal static class DocumentReferenceMapper
 {
     public const string DischargeSummaryLoinc = "18842-5";
+
+    /// <summary>LOINC's document type of a counselling note, which a consent shares only when it names counselling notes.</summary>
+    public const string CounsellingNoteLoinc = "47042-7";
 
     /// <summary>Only clinical documents leave the hospital; identity and insurance documents stay.</summary>
     public static bool IsShared(PatientDocumentType type) =>
@@ -97,6 +101,100 @@ internal static class DocumentReferenceMapper
         });
         return document;
     }
+
+    /// <summary>
+    /// A signed clinical note (<c>note-</c>): typed with LOINC's document type for its kind (<see cref="NoteType"/>), the
+    /// note embedded as UTF-8 text exactly as it was signed, written and signed by its author and kept by the facility
+    /// where it was written, in its encounter or stay. An addendum appends to the note it adds to, which stays current.
+    /// A counselling note is labelled restricted (v3 confidentiality <c>R</c>, on the reference and on the document), so a
+    /// receiving system that honours security labels keeps it to those caring for the patient. A drafted note is never
+    /// shared, and nothing says the language it is written in, as HC360 does not know it.
+    /// </summary>
+    public static R4.DocumentReference FromClinicalNote(ClinicalNoteRow n, ReferenceDirectory refs)
+    {
+        var name = NoteName(n.Type);
+        var document = new R4.DocumentReference
+        {
+            Id = FhirIds.Of(FhirIds.ClinicalNote, n.Id),
+            Meta = FhirElements.Meta(n.CreatedAt, n.UpdatedAt),
+            Status = R4.DocumentReferenceStatus.Current,
+            DocStatus = R4.CompositionStatus.Final,
+            Type = NoteType(n.Type),
+            Subject = FhirReferences.Patient(n.PatientId),
+            Date = FhirTime.ToMilliseconds(n.SignedAt),
+            Description = FhirElements.Clean(n.Title) ?? name,
+            Authenticator = refs.Practitioner(n.SignedByPractitionerId) ?? Named(n.SignedByUserName),
+            Custodian = refs.Organization(n.FacilityId),
+        };
+
+        if ((refs.Practitioner(n.AuthorPractitionerId) ?? Named(n.AuthorUserName)) is { } author)
+        {
+            document.Author.Add(author);
+        }
+
+        if (n.AmendsNoteId is { } original)
+        {
+            document.RelatesTo.Add(new R4.DocumentReference.RelatesToComponent
+            {
+                Code = R4.DocumentRelationshipType.Appends,
+                Target = new R4.ResourceReference($"{FhirResourceTypes.DocumentReference}/{FhirIds.Of(FhirIds.ClinicalNote, original)}"),
+            });
+        }
+
+        if (n.Type == ClinicalNoteType.Counselling)
+        {
+            document.Meta.Security.Add(Restricted());
+            document.SecurityLabel.Add(new R4.CodeableConcept { Coding = [Restricted()] });
+        }
+
+        if (FhirReferences.Context(n.EncounterId, null, n.AdmissionId, refs) is { } encounter)
+        {
+            document.Context = new R4.DocumentReference.ContextComponent();
+            document.Context.Encounter.Add(encounter);
+        }
+
+        document.Content.Add(new R4.DocumentReference.ContentComponent
+        {
+            Attachment = DiagnosticReportMapper.TextAttachment(n.Body, FhirElements.Clean(n.Title) ?? name, n.SignedAt, language: null),
+        });
+        return document;
+    }
+
+    /// <summary>
+    /// A note's document type: LOINC's code and name for it, as FHIR R4's Document Type value set (<c>c80-doc-typecodes</c>)
+    /// lists them: 11506-3 progress note, 28570-0 procedure note, 57133-1 referral note, 47042-7 counselling note, and
+    /// 34109-9 (a note of no stated kind) for any other; HC360's name for it as text.
+    /// </summary>
+    public static R4.CodeableConcept NoteType(ClinicalNoteType type) => type switch
+    {
+        ClinicalNoteType.ProgressNote => FhirElements.Concept(FhirSystems.Loinc, "11506-3", "Provider-unspecified Progress note", NoteName(type)),
+        ClinicalNoteType.Procedure => FhirElements.Concept(FhirSystems.Loinc, "28570-0", "Provider-unspecified Procedure note", NoteName(type)),
+        ClinicalNoteType.Referral => FhirElements.Concept(FhirSystems.Loinc, "57133-1", "Referral note", NoteName(type)),
+        ClinicalNoteType.Counselling => FhirElements.Concept(FhirSystems.Loinc, CounsellingNoteLoinc, "Counseling note", NoteName(type)),
+        ClinicalNoteType.Other => FhirElements.Concept(FhirSystems.Loinc, "34109-9", "Note", NoteName(type)),
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of clinical note."),
+    };
+
+    /// <summary>What staff call the kind of note.</summary>
+    public static string NoteName(ClinicalNoteType type) => type switch
+    {
+        ClinicalNoteType.ProgressNote => "Progress note",
+        ClinicalNoteType.Procedure => "Procedure note",
+        ClinicalNoteType.Referral => "Referral note",
+        ClinicalNoteType.Counselling => "Counselling note",
+        ClinicalNoteType.Other => "Clinical note",
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Not a kind of clinical note."),
+    };
+
+    /// <summary>Whether a DocumentReference the API serves is a counselling note.</summary>
+    public static bool IsCounsellingNote(R4.DocumentReference document) =>
+        document.Type?.Coding.Any(c => c.System == FhirSystems.Loinc && c.Code == CounsellingNoteLoinc) == true;
+
+    private static R4.Coding Restricted() => FhirElements.Coding(FhirSystems.Confidentiality, "R", "restricted");
+
+    /// <summary>Someone named only (an account that is not a practitioner): there is no Practitioner to point at.</summary>
+    private static R4.ResourceReference? Named(string? name) =>
+        FhirElements.Clean(name) is { } display ? new R4.ResourceReference { Display = display } : null;
 
     /// <summary>Document type: LOINC for discharge summaries, referral notes, consents, prescriptions, imaging and photographs.</summary>
     public static R4.CodeableConcept Type(PatientDocumentType type) => type switch

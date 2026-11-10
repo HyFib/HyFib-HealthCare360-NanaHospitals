@@ -81,16 +81,28 @@ public sealed class ProcessJobTests : IDisposable
         return ["-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(script))];
     }
 
+    // Windows may report the file in use for a moment after the script renamed it into place (a virus scanner reading
+    // a file it has just seen opens it without letting others read), so it is read again until the deadline.
     private async Task<string> ReadyAsync()
     {
         var ready = Path.Combine(_folder, "ready");
         using var wait = CancellationTokenSource.CreateLinkedTokenSource(Ct);
         wait.CancelAfter(TimeSpan.FromSeconds(60));
-        while (!File.Exists(ready))
+        while (true)
         {
+            if (File.Exists(ready))
+            {
+                try
+                {
+                    return await File.ReadAllTextAsync(ready, wait.Token);
+                }
+                catch (IOException) when (!wait.IsCancellationRequested)
+                {
+                    // In use for now: read it again below.
+                }
+            }
+
             await Task.Delay(50, wait.Token);
         }
-
-        return await File.ReadAllTextAsync(ready, wait.Token);
     }
 }

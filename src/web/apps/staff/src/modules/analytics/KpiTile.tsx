@@ -8,11 +8,20 @@ import {
   tokens,
   Tooltip,
 } from '@fluentui/react-components';
-import { ArrowDownRegular, ArrowUpRegular, InfoRegular, SubtractRegular } from '@fluentui/react-icons';
+import {
+  ArrowDownRegular,
+  ArrowUpRegular,
+  CheckmarkCircleRegular,
+  DismissCircleRegular,
+  InfoRegular,
+  QuestionCircleRegular,
+  SubtractRegular,
+  WarningRegular,
+} from '@fluentui/react-icons';
 import { Link } from '@tanstack/react-router';
 import type { KpiValue, ReportInputs } from './api';
 import { sparklinePaths } from './charts';
-import { formatKpi, formatKpiFull, kpiChange } from './format';
+import { formatKpi, formatKpiFull, kpiChange, kpiTargetSummary, type TargetTone } from './format';
 import { DEFAULT_KPI_ICON, KPI_ICONS } from './icons';
 import { toSearchInputs } from './params';
 
@@ -72,6 +81,17 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     whiteSpace: 'nowrap',
   },
+  target: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    minWidth: 0,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  targetStatus: { fontWeight: tokens.fontWeightSemibold },
+  warning: { color: tokens.colorPaletteDarkOrangeForeground1 },
   good: { color: tokens.colorPaletteGreenForeground1 },
   bad: { color: tokens.colorPaletteRedForeground1 },
   neutral: { color: tokens.colorNeutralForeground3 },
@@ -87,7 +107,8 @@ const useStyles = makeStyles({
 
 /**
  * One executive KPI: the value, the change on the previous period (green when better, red when worse — with an arrow and
- * words, never colour alone), a sparkline and a link to the report behind it.
+ * words, never colour alone), where it stands against the facility's target when one is set (an icon and words), a
+ * sparkline with the daily target and a link to the report behind it.
  */
 export function KpiTile({ kpi, inputs, compact }: { kpi: KpiValue; inputs: ReportInputs; compact?: boolean }) {
   const styles = useStyles();
@@ -96,6 +117,8 @@ export function KpiTile({ kpi, inputs, compact }: { kpi: KpiValue; inputs: Repor
   const Arrow =
     change?.direction === 'up' ? ArrowUpRegular : change?.direction === 'down' ? ArrowDownRegular : SubtractRegular;
   const full = formatKpiFull(kpi.value, kpi.unit);
+  const target = kpiTargetSummary(kpi);
+  const TargetIcon = target ? TARGET_ICONS[target.tone] : null;
 
   const body = (
     <>
@@ -115,6 +138,17 @@ export function KpiTile({ kpi, inputs, compact }: { kpi: KpiValue; inputs: Repor
       <span className={mergeClasses(styles.value, compact && styles.valueCompact)} title={full}>
         {formatKpi(kpi.value, kpi.unit)}
       </span>
+      {target && TargetIcon && (
+        <Tooltip content={target.description} relationship="description" withArrow>
+          <Caption1 className={styles.target}>
+            <span className={mergeClasses(styles.target, styles.targetStatus, styles[target.tone])}>
+              <TargetIcon aria-hidden />
+              {target.label}
+            </span>
+            {!compact && <span className={styles.previous}>· {target.text}</span>}
+          </Caption1>
+        </Tooltip>
+      )}
       <span className={styles.foot}>
         <span className={styles.changeBlock}>
           {change ? (
@@ -130,7 +164,11 @@ export function KpiTile({ kpi, inputs, compact }: { kpi: KpiValue; inputs: Repor
           )}
         </span>
         {!compact && kpi.trend && kpi.trend.length > 1 && (
-          <Sparkline values={kpi.trend.map((p) => p.value)} tone={change?.tone ?? 'neutral'} />
+          <Sparkline
+            values={kpi.trend.map((p) => p.value)}
+            tone={change?.tone ?? 'neutral'}
+            reference={kpi.target?.dailyTarget ?? null}
+          />
         )}
       </span>
     </>
@@ -145,7 +183,7 @@ export function KpiTile({ kpi, inputs, compact }: { kpi: KpiValue; inputs: Repor
       params={{ reportId: kpi.reportId }}
       search={toSearchInputs(inputs)}
       className={mergeClasses(styles.tile, compact && styles.compact)}
-      aria-label={`${kpi.label}: ${full}. ${change?.description ?? ''}. Open the report.`}
+      aria-label={`${kpi.label}: ${full}. ${change?.description ?? ''}. ${target ? `${target.description} ` : ''}Open the report.`}
     >
       {body}
     </Link>
@@ -168,9 +206,25 @@ export function KpiTileSkeleton() {
 const SPARK_WIDTH = 96;
 const SPARK_HEIGHT = 28;
 
-function Sparkline({ values, tone }: { values: number[]; tone: 'good' | 'bad' | 'neutral' }) {
+const TARGET_ICONS: Record<TargetTone, typeof CheckmarkCircleRegular> = {
+  good: CheckmarkCircleRegular,
+  warning: WarningRegular,
+  bad: DismissCircleRegular,
+  neutral: QuestionCircleRegular,
+};
+
+function Sparkline({
+  values,
+  tone,
+  reference,
+}: {
+  values: number[];
+  tone: 'good' | 'bad' | 'neutral';
+  /** The daily target, drawn as a dotted line. */
+  reference: number | null;
+}) {
   const styles = useStyles();
-  const paths = sparklinePaths(values, SPARK_WIDTH, SPARK_HEIGHT);
+  const paths = sparklinePaths(values, SPARK_WIDTH, SPARK_HEIGHT, 2, reference);
   if (!paths) {
     return null;
   }
@@ -191,6 +245,17 @@ function Sparkline({ values, tone }: { values: number[]; tone: 'good' | 'bad' | 
     >
       <path d={paths.area} fill={stroke} opacity={0.12} />
       <path d={paths.line} fill="none" stroke={stroke} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
+      {paths.referenceY !== null && (
+        <line
+          x1={0}
+          x2={SPARK_WIDTH}
+          y1={paths.referenceY}
+          y2={paths.referenceY}
+          stroke={tokens.colorNeutralForeground3}
+          strokeWidth={1}
+          strokeDasharray="2 2"
+        />
+      )}
     </svg>
   );
 }

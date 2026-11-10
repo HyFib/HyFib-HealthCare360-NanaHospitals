@@ -7,7 +7,9 @@ namespace HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 
 /// <summary>
 /// /api/v1/clinical — the configurable prescribing-safety tables (drug–drug interactions and maximum daily doses, ERX-02)
-/// and the prescribing register of Schedule H1/X medicines (ERX-06).
+/// and the prescribing register of Schedule H1/X medicines (ERX-06). Tightening a table is saved at once; loosening it
+/// (switching an alert off or weakening it) answers 202 with the approval request, which the pharmacy and therapeutics
+/// committee decides (<see cref="DrugSafetyApprovals"/>). The committee reads the tables it decides about.
 /// </summary>
 internal static class DrugSafetyEndpoints
 {
@@ -15,22 +17,29 @@ internal static class DrugSafetyEndpoints
     {
         var group = app.MapGroup("/api/v1/clinical").WithTags("E-Prescribing");
 
-        group.MapGet("/drug-interactions", ListInteractions).RequireAnyPermission(ClinicalPermissions.EmrRead, ClinicalPermissions.TemplatesManage);
-        group.MapPost("/drug-interactions", (SaveDrugInteractionRequest r, HospitalDbContext db, CancellationToken ct) => SaveInteraction(null, r, db, ct))
+        group.MapGet("/drug-interactions", ListInteractions)
+            .RequireAnyPermission(ClinicalPermissions.EmrRead, ClinicalPermissions.TemplatesManage, ClinicalPermissions.DrugSafetyApprove);
+        group.MapPost("/drug-interactions", (SaveDrugInteractionRequest r, HospitalDbContext db, DrugSafetyApprovals tables, IAuditLogger audit, CancellationToken ct) =>
+                SaveInteraction(null, r, db, tables, audit, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDrugInteractionRequest>();
-        group.MapPut("/drug-interactions/{id:guid}", (Guid id, SaveDrugInteractionRequest r, HospitalDbContext db, CancellationToken ct) => SaveInteraction(id, r, db, ct))
+        group.MapPut("/drug-interactions/{id:guid}", (Guid id, SaveDrugInteractionRequest r, HospitalDbContext db, DrugSafetyApprovals tables, IAuditLogger audit, CancellationToken ct) =>
+                SaveInteraction(id, r, db, tables, audit, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDrugInteractionRequest>().RequireVersion();
 
-        group.MapGet("/dose-limits", ListDoseLimits).RequireAnyPermission(ClinicalPermissions.EmrRead, ClinicalPermissions.TemplatesManage);
-        group.MapPost("/dose-limits", (SaveDoseLimitRequest r, HospitalDbContext db, CancellationToken ct) => SaveDoseLimit(null, r, db, ct))
+        group.MapGet("/dose-limits", ListDoseLimits)
+            .RequireAnyPermission(ClinicalPermissions.EmrRead, ClinicalPermissions.TemplatesManage, ClinicalPermissions.DrugSafetyApprove);
+        group.MapPost("/dose-limits", (SaveDoseLimitRequest r, HospitalDbContext db, DrugSafetyApprovals tables, IAuditLogger audit, CancellationToken ct) =>
+                SaveDoseLimit(null, r, db, tables, audit, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDoseLimitRequest>();
-        group.MapPut("/dose-limits/{id:guid}", (Guid id, SaveDoseLimitRequest r, HospitalDbContext db, CancellationToken ct) => SaveDoseLimit(id, r, db, ct))
+        group.MapPut("/dose-limits/{id:guid}", (Guid id, SaveDoseLimitRequest r, HospitalDbContext db, DrugSafetyApprovals tables, IAuditLogger audit, CancellationToken ct) =>
+                SaveDoseLimit(id, r, db, tables, audit, ct))
             .RequirePermission(ClinicalPermissions.TemplatesManage).WithValidation<SaveDoseLimitRequest>().RequireVersion();
 
         group.MapGet("/controlled-drug-register", Register).RequireAnyPermission(ClinicalPermissions.PrescriptionsSign, ClinicalPermissions.MrdRecords);
     }
 
-    private static async Task<IResult> ListInteractions([AsParameters] PageQuery query, InteractionSeverity? severity, HospitalDbContext db, CancellationToken ct)
+    private static async Task<IResult> ListInteractions([AsParameters] PageQuery query, InteractionSeverity? severity, HospitalDbContext db, DrugSafetyApprovals tables,
+        CancellationToken ct)
     {
         var page = query.ToRequest();
         var rows = db.Set<DrugInteraction>().AsNoTracking();
@@ -46,15 +55,22 @@ internal static class DrugSafetyEndpoints
         }
 
         // Severity is stored as text; order by clinical weight, not alphabetically.
-        return TypedResults.Ok(await rows.OrderByDescending(i => i.Severity == InteractionSeverity.Major)
+        var found = await rows.OrderByDescending(i => i.Severity == InteractionSeverity.Major)
             .ThenByDescending(i => i.Severity == InteractionSeverity.Moderate)
             .ThenBy(i => i.DrugA).ThenBy(i => i.DrugB)
-            .Select(i => new DrugInteractionDto(i.Id, i.DrugA, i.DrugB, i.Severity, i.Effect, i.Management, i.IsActive, i.Version))
-            .ToPagedResultAsync(page, ct));
+            .Select(i => new DrugInteractionDto(i.Id, i.DrugA, i.DrugB, i.Severity, i.Effect, i.Management, i.IsActive, i.Version, null))
+            .ToPagedResultAsync(page, ct);
+        var waiting = await tables.WaitingInteractionsAsync([.. found.Items.Select(i => i.Id)], ct);
+        return TypedResults.Ok(found.Map(i => i with { ApprovalWaitingSince = waiting.TryGetValue(i.Id, out var since) ? since : null }));
     }
 
-    /// <summary>Pairs are stored in canonical, alphabetical order so (A, B) and (B, A) cannot both exist.</summary>
-    private static async Task<IResult> SaveInteraction(Guid? id, SaveDrugInteractionRequest request, HospitalDbContext db, CancellationToken ct)
+    /// <summary>
+    /// Pairs are stored in canonical, alphabetical order so (A, B) and (B, A) cannot both exist. A new interaction, and a
+    /// change that adds or strengthens an alert, are saved at once; switching one off, making it less severe or moving it to
+    /// another pair is asked for, with a reason, and made once someone else approves it (202).
+    /// </summary>
+    private static async Task<IResult> SaveInteraction(Guid? id, SaveDrugInteractionRequest request, HospitalDbContext db, DrugSafetyApprovals tables, IAuditLogger audit,
+        CancellationToken ct)
     {
         var a = Canonical(request.DrugA);
         var b = Canonical(request.DrugB);
@@ -69,7 +85,9 @@ internal static class DrugSafetyEndpoints
             return Error.Conflict("interaction.exists", $"An interaction between {a} and {b} is already defined.").ToProblem();
         }
 
+        var after = new InteractionState(a, b, request.Severity, request.Effect.Trim(), Clean(request.Management), request.IsActive);
         DrugInteraction interaction;
+        InteractionState? before = null;
         if (id is { } existingId)
         {
             var found = await db.Set<DrugInteraction>().FirstOrDefaultAsync(i => i.Id == existingId, ct);
@@ -78,11 +96,26 @@ internal static class DrugSafetyEndpoints
                 return Error.NotFound(nameof(DrugInteraction), existingId).ToProblem();
             }
 
-            interaction = found;
-            if (request.Version is { } version)
+            if (request.Version is { } version && version != found.Version)
             {
-                db.SetExpectedVersion(interaction, version);
+                return Error.ConcurrencyConflict.ToProblem();
             }
+
+            interaction = found;
+            before = InteractionState.Of(found);
+            if (DrugSafetyChanges.Loosens(before, after))
+            {
+                if (string.IsNullOrWhiteSpace(request.Reason))
+                {
+                    return Error.Field("reason",
+                        "Say why: switching an interaction off, making it less severe or moving it to other drugs waits for approval by the pharmacy and therapeutics committee.").ToProblem();
+                }
+
+                var asked = await tables.AskAsync(found, after, request.Reason.Trim(), ct);
+                return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
+            }
+
+            db.SetExpectedVersion(interaction, found.Version);
         }
         else
         {
@@ -90,24 +123,35 @@ internal static class DrugSafetyEndpoints
             db.Add(interaction);
         }
 
-        interaction.DrugA = a;
-        interaction.DrugB = b;
-        interaction.Severity = request.Severity;
-        interaction.Effect = request.Effect.Trim();
-        interaction.Management = string.IsNullOrWhiteSpace(request.Management) ? null : request.Management.Trim();
-        interaction.IsActive = request.IsActive;
+        after.ApplyTo(interaction);
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "clinical.drug_interaction_saved",
+            before is null ? $"Added {after.Words()}" : $"{after.Words()} (was {before.Words()})")
+        {
+            EntityType = nameof(DrugInteraction),
+            EntityId = interaction.Id.ToString(),
+            Details = new { before, after },
+        });
         await db.SaveChangesAsync(ct);
         var dto = new DrugInteractionDto(interaction.Id, interaction.DrugA, interaction.DrugB, interaction.Severity, interaction.Effect, interaction.Management,
             interaction.IsActive, interaction.Version);
         return id is null ? TypedResults.Created($"/api/v1/clinical/drug-interactions/{interaction.Id}", dto) : TypedResults.Ok(dto);
     }
 
-    private static async Task<IResult> ListDoseLimits(HospitalDbContext db, CancellationToken ct) =>
-        TypedResults.Ok(await db.Set<DrugDoseLimit>().AsNoTracking().OrderBy(l => l.GenericName)
-            .Select(l => new DoseLimitDto(l.Id, l.GenericName, l.MaxDailyDoseMg, l.Route, l.Notes, l.IsActive, l.Version))
-            .ToListAsync(ct));
+    private static async Task<IResult> ListDoseLimits(HospitalDbContext db, DrugSafetyApprovals tables, CancellationToken ct)
+    {
+        var limits = await db.Set<DrugDoseLimit>().AsNoTracking().OrderBy(l => l.GenericName)
+            .Select(l => new DoseLimitDto(l.Id, l.GenericName, l.MaxDailyDoseMg, l.Route, l.Notes, l.IsActive, l.Version, null))
+            .ToListAsync(ct);
+        var waiting = await tables.WaitingDoseLimitsAsync([.. limits.Select(l => l.Id)], ct);
+        return TypedResults.Ok(limits.Select(l => l with { ApprovalWaitingSince = waiting.TryGetValue(l.Id, out var since) ? since : null }).ToList());
+    }
 
-    private static async Task<IResult> SaveDoseLimit(Guid? id, SaveDoseLimitRequest request, HospitalDbContext db, CancellationToken ct)
+    /// <summary>
+    /// A new limit, and one lowered or widened to every route, are saved at once; switching one off, raising it, or moving it
+    /// to another drug or a narrower route is asked for, with a reason, and made once someone else approves it (202).
+    /// </summary>
+    private static async Task<IResult> SaveDoseLimit(Guid? id, SaveDoseLimitRequest request, HospitalDbContext db, DrugSafetyApprovals tables, IAuditLogger audit,
+        CancellationToken ct)
     {
         var name = Canonical(request.GenericName);
         var route = string.IsNullOrWhiteSpace(request.Route) ? null : request.Route.Trim().ToLowerInvariant();
@@ -121,7 +165,9 @@ internal static class DrugSafetyEndpoints
             return Error.Conflict("dose_limit.exists", $"A limit for {name} is already defined for this route.").ToProblem();
         }
 
+        var after = new DoseLimitState(name, request.MaxDailyDoseMg, route, Clean(request.Notes), request.IsActive);
         DrugDoseLimit limit;
+        DoseLimitState? before = null;
         if (id is { } existingId)
         {
             var found = await db.Set<DrugDoseLimit>().FirstOrDefaultAsync(l => l.Id == existingId, ct);
@@ -130,11 +176,26 @@ internal static class DrugSafetyEndpoints
                 return Error.NotFound("Dose limit", existingId).ToProblem();
             }
 
-            limit = found;
-            if (request.Version is { } version)
+            if (request.Version is { } version && version != found.Version)
             {
-                db.SetExpectedVersion(limit, version);
+                return Error.ConcurrencyConflict.ToProblem();
             }
+
+            limit = found;
+            before = DoseLimitState.Of(found);
+            if (DrugSafetyChanges.Loosens(before, after))
+            {
+                if (string.IsNullOrWhiteSpace(request.Reason))
+                {
+                    return Error.Field("reason",
+                        "Say why: raising a maximum dose, switching it off or checking fewer routes waits for approval by the pharmacy and therapeutics committee.").ToProblem();
+                }
+
+                var asked = await tables.AskAsync(found, after, request.Reason.Trim(), ct);
+                return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
+            }
+
+            db.SetExpectedVersion(limit, found.Version);
         }
         else
         {
@@ -142,11 +203,13 @@ internal static class DrugSafetyEndpoints
             db.Add(limit);
         }
 
-        limit.GenericName = name;
-        limit.MaxDailyDoseMg = request.MaxDailyDoseMg;
-        limit.Route = route;
-        limit.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
-        limit.IsActive = request.IsActive;
+        after.ApplyTo(limit);
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "clinical.dose_limit_saved", before is null ? $"Added {after.Words()}" : $"{after.Words()} (was {before.Words()})")
+        {
+            EntityType = nameof(DrugDoseLimit),
+            EntityId = limit.Id.ToString(),
+            Details = new { before, after },
+        });
         await db.SaveChangesAsync(ct);
         var dto = new DoseLimitDto(limit.Id, limit.GenericName, limit.MaxDailyDoseMg, limit.Route, limit.Notes, limit.IsActive, limit.Version);
         return id is null ? TypedResults.Created($"/api/v1/clinical/dose-limits/{limit.Id}", dto) : TypedResults.Ok(dto);
@@ -172,4 +235,6 @@ internal static class DrugSafetyEndpoints
     }
 
     private static string Canonical(string name) => DrugNames.Components(name).FirstOrDefault() ?? string.Empty;
+
+    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

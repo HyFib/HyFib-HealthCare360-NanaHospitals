@@ -1,6 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type {
   AbcClass,
   AbcVedCategory,
@@ -14,6 +15,7 @@ import type {
   StockCountStatus,
   StockMovementType,
   StoreType,
+  TelemedicineList,
   TransferStatus,
   VedClass,
 } from './labels';
@@ -68,6 +70,36 @@ export interface ItemListItem {
   gstRate: number;
   reorderLevel: number;
   isActive: boolean;
+  isHighAlert: boolean;
+  /** The Telemedicine Practice Guidelines' list; null when the committee has put the medicine on none yet. */
+  telemedicineList: TelemedicineList | null;
+}
+
+/**
+ * A drug's classification: its schedule, whether it is controlled (NDPS), whether it is a high-alert medicine, and its
+ * Telemedicine Practice Guidelines list.
+ */
+export interface DrugSafetyClass {
+  schedule: DrugSchedule;
+  isControlled: boolean;
+  isHighAlert: boolean;
+  telemedicineList: TelemedicineList | null;
+}
+
+/** A drug made less strictly handled, waiting for a second person (a pharmacist) to approve it. */
+export interface PendingDrugClass {
+  approvalId: string;
+  asked: DrugSafetyClass;
+  requestedBy: string;
+  requestedAt: string;
+}
+
+/** A ceiling price raised or removed, or a GST rate changed, waiting for someone who approves prices. */
+export interface PendingItemPricing {
+  approvalId: string;
+  asked: { ceilingPrice: number | null; ceilingNotification: string | null; gstRate: number };
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface ItemDetail {
@@ -103,13 +135,42 @@ export interface ItemDetail {
   version: number;
   /** For an implant or another device, what it is as its bill says (for a stent, BMS or DES first; material, size). */
   specification: string | null;
-  /** For a price-controlled implant (coronary stent, knee implant), the NPPA ceiling price of a unit with GST. */
+  /**
+   * The NPPA ceiling price of a base unit with GST: for a scheduled medicine (DPCO 2013) no pack is received or sold above
+   * it; a price-controlled implant (coronary stent, knee implant) is charged no more than it.
+   */
   ceilingPrice: number | null;
+  /** The NPPA notification that fixed the ceiling (S.O. number and date). */
+  ceilingNotification: string | null;
+  /** A higher or no ceiling, or another GST rate, waiting for someone who approves prices; the item keeps its own till then. */
+  pendingPricing: PendingItemPricing | null;
+  /** A high-alert medicine (insulin, heparin, concentrated potassium chloride…): its doses on the ward are witnessed. */
+  isHighAlert: boolean;
+  /** A less strict classification asked for and waiting for a pharmacist's approval; the item keeps its own till then. */
+  pendingClass: PendingDrugClass | null;
+  /**
+   * The Telemedicine Practice Guidelines 2020 list the pharmacy and therapeutics committee put the medicine on; null when on
+   * none yet, which keeps it out of a first teleconsultation.
+   */
+  telemedicineList: TelemedicineList | null;
 }
 
-export type SaveItemRequest = Omit<ItemDetail, 'id' | 'requiresPrescription' | 'requiresRegister' | 'version'> & {
+export type SaveItemRequest = Omit<
+  ItemDetail,
+  'id' | 'requiresPrescription' | 'requiresRegister' | 'version' | 'pendingClass' | 'pendingPricing'
+> & {
   version: number | null;
+  /** Why a drug is to be handled less strictly; the pharmacist who approves it reads this. */
+  classChangeReason?: string | null;
+  /** Why a ceiling is raised or removed, or the GST rate changed; whoever approves prices reads this. */
+  priceChangeReason?: string | null;
 };
+
+/** What saving an item did: its id, and the request a less strict classification waits on. */
+export interface ItemSaved {
+  id: string;
+  approval: ApprovalRequestDto | null;
+}
 
 /** Picker row: the item plus its sellable stock in the chosen store. */
 export interface ItemLookup {
@@ -129,6 +190,7 @@ export interface ItemLookup {
   available: number | null;
   mrp: number | null;
   nearestExpiry: string | null;
+  isHighAlert: boolean;
 }
 
 export interface StoreDto {
@@ -171,7 +233,12 @@ export interface StockSummaryRow {
   nearestExpiry: string | null;
   valueAtCost: number;
   reorderLevel: number;
+  /** Usable stock plus what is due on the store's open purchase orders is at or under the reorder level. */
   belowReorder: boolean;
+  /** On hand in blocked batches (a recall, a quality hold): not available. */
+  blockedQuantity: number;
+  /** Ordered and not yet received on the store's open purchase orders, in the base unit. */
+  onOrder: number;
 }
 
 /** One batch of an item in a store (FEFO order from the server). */
@@ -190,6 +257,8 @@ export interface BatchStock {
   isExpired: boolean;
   isBlocked: boolean;
   blockReason: string | null;
+  /** Held on a manufacturer's or regulator's recall: released only with a second person's approval. */
+  isRecalled?: boolean;
   daysToExpiry: number | null;
 }
 
@@ -469,8 +538,16 @@ export interface TransferDetail {
     purchaseRate: number;
     sourceBatchId: string;
     destinationBatchId: string | null;
+    /** What the receiving store counted in, when it was short of what was sent. */
+    receivedQuantity?: number | null;
   }[];
   version: number;
+}
+
+/** Only the lines counted short need be sent; none receives every line as sent. */
+export interface ReceiveTransferBody {
+  lines: { lineId: string; receivedQuantity: number }[] | null;
+  note: string | null;
 }
 
 export interface DispatchTransferRequest {
@@ -833,17 +910,24 @@ export const inventoryApi = {
     id
       ? (await api.put<void>(`${BASE}/categories/${id}`, body), id)
       : (await api.post<{ id: string }>(`${BASE}/categories`, body)).id,
-  saveItem: async (id: string | null, body: SaveItemRequest): Promise<string> =>
+  /**
+   * Creates (id null) or updates an item. On an existing drug, a less strict classification waits for a second person:
+   * the rest is saved, and the request it waits on comes back (202).
+   */
+  saveItem: async (id: string | null, body: SaveItemRequest): Promise<ItemSaved> =>
     id
-      ? (await api.put<void>(`${BASE}/items/${id}`, body), id)
-      : (await api.post<{ id: string }>(`${BASE}/items`, body)).id,
+      ? { id, approval: (await api.put<ApprovalRequestDto | undefined>(`${BASE}/items/${id}`, body)) ?? null }
+      : { id: (await api.post<{ id: string }>(`${BASE}/items`, body)).id, approval: null },
   itemByCode: (code: string) => api.get<ItemDetail>(`${BASE}/items/by-code/${encodeURIComponent(code)}`),
   saveStore: async (id: string | null, body: SaveStoreRequest): Promise<string> =>
     id
       ? (await api.put<void>(`${BASE}/stores/${id}`, body), id)
       : (await api.post<{ id: string }>(`${BASE}/stores`, body)).id,
-  blockBatch: (batchId: string, reason: string) => api.post<void>(`${BASE}/stock/batches/${batchId}/block`, { reason }),
-  unblockBatch: (batchId: string) => api.post<void>(`${BASE}/stock/batches/${batchId}/unblock`),
+  blockBatch: (batchId: string, reason: string, recall = false) =>
+    api.post<void>(`${BASE}/stock/batches/${batchId}/block`, { reason, recall }),
+  /** A quality hold is released at once (null); a recall waits for a second person, and the request comes back. */
+  unblockBatch: async (batchId: string, reason: string | null = null) =>
+    (await api.post<ApprovalRequestDto | undefined>(`${BASE}/stock/batches/${batchId}/unblock`, { reason })) ?? null,
 
   createIndent: (body: CreateIndentRequest) => api.post<DocumentCreated>(`${BASE}/indents`, body),
   approveIndent: (id: string, lines: { lineId: string; approvedQuantity: number }[] | null) =>
@@ -854,7 +938,12 @@ export const inventoryApi = {
   cancelIndent: (id: string, reason: string) => api.post<void>(`${BASE}/indents/${id}/cancel`, { reason }),
 
   dispatchTransfer: (body: DispatchTransferRequest) => api.post<DocumentCreated>(`${BASE}/transfers`, body),
-  receiveTransfer: (id: string) => api.post<void>(`${BASE}/transfers/${id}/receive`),
+  /**
+   * Received at once when every line is counted in full (null); a line counted short sends the shortfall to a second
+   * person, and the request waiting for them comes back.
+   */
+  receiveTransfer: async (id: string, body: ReceiveTransferBody = { lines: null, note: null }) =>
+    (await api.post<ApprovalRequestDto | undefined>(`${BASE}/transfers/${id}/receive`, body)) ?? null,
   cancelTransfer: (id: string, reason: string) => api.post<void>(`${BASE}/transfers/${id}/cancel`, { reason }),
 
   createAdjustment: (body: CreateAdjustmentRequest) => api.post<DocumentCreated>(`${BASE}/adjustments`, body),

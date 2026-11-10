@@ -24,14 +24,46 @@ public sealed record IssueVisitorPassRequest(
     Guid? PatientId, string VisitorName, string? Phone, string? Relation, string? IdProofType, string? IdProofNumber, string? Purpose,
     string? Location, bool IsAttendant, int ValidHours);
 
-/// <summary>A consent and its history: who recorded it, and, once withdrawn, when, by whom and why.</summary>
+/// <summary>
+/// A consent and its history: who recorded it, and, once withdrawn, when, by whom and why. A record-sharing consent that
+/// was limited carries what it covers (<see cref="SharingScope"/>); null shares the whole record with every FHIR account.
+/// </summary>
 public sealed record ConsentDto(
     Guid Id, ConsentType Type, string ConsentVersion, bool Granted, DateTimeOffset CapturedAt, string? CapturedByName, string? WitnessName,
     string? SignedByRelation, string? SignedByName, Guid? DocumentFileId, DateTimeOffset? RevokedAt, string? RevokedReason, string? RevokedByName,
-    string? Notes, bool IsActive);
+    string? Notes, bool IsActive, RecordSharingScopeDto? SharingScope = null);
 
+/// <summary>
+/// What a given record-sharing consent covers, as the patient agreed to it: the accounts that may read the record through
+/// the FHIR API, what for, which kinds of records, the records' first and last days, and the last day it lets anyone read.
+/// An empty or missing list, or a missing date, leaves that part open.
+/// </summary>
+public sealed record RecordSharingScope(
+    IReadOnlyList<Guid>? ShareWith,
+    IReadOnlyList<SharingPurpose>? Purposes,
+    IReadOnlyList<SharedRecordKind>? Kinds,
+    DateOnly? RecordsFrom,
+    DateOnly? RecordsTo,
+    DateOnly? Until);
+
+/// <summary>A record-sharing consent's scope as shown, the accounts by name (an account since removed is still named).</summary>
+public sealed record RecordSharingScopeDto(
+    IReadOnlyList<SharingPartner> ShareWith,
+    IReadOnlyList<SharingPurpose> Purposes,
+    IReadOnlyList<SharedRecordKind> Kinds,
+    DateOnly? RecordsFrom,
+    DateOnly? RecordsTo,
+    DateOnly? Until);
+
+/// <param name="SharingScope">Only for a given record-sharing consent: what it covers. Null: the whole record, for every FHIR account.</param>
+/// <param name="WitnessConfirmationId">
+/// A record-sharing consent given with no scope and no signed form: the confirmation of the witness, a second member of
+/// staff who confirmed at this screen with their own credentials (<c>POST /api/v1/auth/witness</c>, purpose
+/// <c>consent.record_sharing</c>). It names the witness on the consent.
+/// </param>
 public sealed record CaptureConsentRequest(
-    ConsentType Type, string? ConsentVersion, bool Granted, string? WitnessName, string? SignedByRelation, string? SignedByName, Guid? DocumentFileId, string? Notes);
+    ConsentType Type, string? ConsentVersion, bool Granted, string? WitnessName, string? SignedByRelation, string? SignedByName, Guid? DocumentFileId, string? Notes,
+    RecordSharingScope? SharingScope = null, Guid? WitnessConfirmationId = null);
 
 public sealed record RevokeConsentRequest(string Reason);
 
@@ -99,7 +131,24 @@ public sealed class CaptureConsentRequestValidator : AbstractValidator<CaptureCo
         RuleFor(x => x.SignedByName).NotEmpty().When(x => !string.IsNullOrWhiteSpace(x.SignedByRelation))
             .WithMessage("Enter the name of the person consenting on the patient's behalf.");
         RuleFor(x => x.Notes).SafeText(1000);
+        RuleFor(x => x.DocumentFileId).OptionalId();
+        RuleFor(x => x.WitnessConfirmationId).OptionalId();
+        RuleFor(x => x.SharingScope).Null().When(x => x.Type != ConsentType.DataSharing || !x.Granted)
+            .WithMessage("Only a record-sharing consent that is given says what it covers.");
+        When(x => x.SharingScope is not null, () =>
+        {
+            RuleFor(x => x.SharingScope!.ShareWith).Must(ids => ids is null || ids.Count <= MaxPartners)
+                .WithMessage($"Name at most {MaxPartners} accounts.");
+            RuleForEach(x => x.SharingScope!.Purposes).IsInEnum();
+            RuleForEach(x => x.SharingScope!.Kinds).IsInEnum();
+            RuleFor(x => x.SharingScope!.RecordsTo)
+                .Must((request, to) => to is null || request.SharingScope!.RecordsFrom is not { } from || from <= to)
+                .WithMessage("The records' last day must be on or after their first day.");
+        });
     }
+
+    /// <summary>The most accounts one consent names.</summary>
+    public const int MaxPartners = 20;
 }
 
 public sealed class RevokeConsentRequestValidator : AbstractValidator<RevokeConsentRequest>
@@ -149,6 +198,7 @@ internal static class FrontOfficeEndpoints
 
         var patients = app.MapGroup("/api/v1/patients").WithTags("Patients");
         patients.MapGet("/{patientId:guid}/consents", ListConsents).RequirePermission(PatientsPermissions.Read);
+        patients.MapGet("/consents/sharing-partners", SharingPartners).RequirePermission(PatientsPermissions.Consents);
         patients.MapPost("/{patientId:guid}/consents", CaptureConsent).RequirePermission(PatientsPermissions.Consents).WithValidation<CaptureConsentRequest>();
         patients.MapGet("/{patientId:guid}/whatsapp", WhatsAppStatus).RequirePermission(PatientsPermissions.Read);
         patients.MapPost("/{patientId:guid}/whatsapp/opt-in", WhatsAppOptIn).RequirePermission(PatientsPermissions.Consents);
@@ -367,18 +417,43 @@ internal static class FrontOfficeEndpoints
         }
 
         var users = db.Set<User>();
-        var consents = await db.Set<PatientConsent>().AsNoTracking()
+        var rows = await db.Set<PatientConsent>().AsNoTracking()
             .Where(c => c.PatientId == patientId)
             .OrderByDescending(c => c.CapturedAt)
-            .Select(c => new ConsentDto(c.Id, c.Type, c.ConsentVersion, c.Granted, c.CapturedAt,
-                users.Where(u => u.Id == c.CapturedByUserId).Select(u => u.DisplayName).FirstOrDefault(),
-                c.WitnessName, c.SignedByRelation, c.SignedByName, c.DocumentFileId, c.RevokedAt, c.RevokedReason,
-                users.Where(u => u.Id == c.RevokedByUserId).Select(u => u.DisplayName).FirstOrDefault(),
-                c.Notes, c.Granted && c.RevokedAt == null))
+            .Select(c => new
+            {
+                Dto = new ConsentDto(c.Id, c.Type, c.ConsentVersion, c.Granted, c.CapturedAt,
+                    users.Where(u => u.Id == c.CapturedByUserId).Select(u => u.DisplayName).FirstOrDefault(),
+                    c.WitnessName, c.SignedByRelation, c.SignedByName, c.DocumentFileId, c.RevokedAt, c.RevokedReason,
+                    users.Where(u => u.Id == c.RevokedByUserId).Select(u => u.DisplayName).FirstOrDefault(),
+                    c.Notes, c.Granted && c.RevokedAt == null, null),
+                c.ShareWith,
+                c.SharePurposes,
+                c.ShareKinds,
+                c.ShareRecordsFrom,
+                c.ShareRecordsTo,
+                c.ShareUntil,
+            })
             .ToListAsync(ct);
+
+        var partnerIds = rows.SelectMany(r => r.ShareWith).Distinct().ToList();
+        var names = await users.Where(u => partnerIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
+        var consents = rows.Select(r => r.Dto with
+        {
+            SharingScope = r.ShareWith.Count == 0 && r.SharePurposes.Count == 0 && r.ShareKinds.Count == 0
+                && r.ShareRecordsFrom is null && r.ShareRecordsTo is null && r.ShareUntil is null
+                ? null
+                : new RecordSharingScopeDto(
+                    [.. r.ShareWith.Select(id => new SharingPartner(id, names.GetValueOrDefault(id) ?? "Removed account"))],
+                    r.SharePurposes, r.ShareKinds, r.ShareRecordsFrom, r.ShareRecordsTo, r.ShareUntil),
+        }).ToList();
         await audit.PatientRecordAccessedAsync(patientId, "Viewed consents", ct);
         return TypedResults.Ok(consents);
     }
+
+    /// <summary>The accounts a record-sharing consent can name: other providers' FHIR integration accounts.</summary>
+    private static async Task<IResult> SharingPartners(ISharingPartnerDirectory partners, CancellationToken ct) =>
+        TypedResults.Ok(await partners.ListAsync(ct));
 
     private static async Task<IResult> WhatsAppStatus(
         Guid patientId, HospitalDbContext db, PatientAccessGuard guard, WhatsAppConsent whatsApp, CancellationToken ct)
@@ -432,13 +507,58 @@ internal static class FrontOfficeEndpoints
             Phone.Mask(phone), status.OptedIn, status.OptedInAt, status.Source, capturedBy, status.OptedOut, status.OptedOutAt, status.Reachable);
     }
 
+    /// <summary>
+    /// A witness to a patient's consent to share their whole record (no recipient, purpose, kinds of records or period) when
+    /// no signed form is attached: another member of the front office, at the screen with their own credentials
+    /// (MAKER-CHECKER.md, slice 14).
+    /// </summary>
+    public static readonly WitnessPurpose RecordSharingWitness = new("consent.record_sharing", PatientsPermissions.Consents,
+        "a patient's consent to share their whole record, given with no signed form");
+
     private static async Task<IResult> CaptureConsent(Guid patientId, CaptureConsentRequest request, HospitalDbContext db, PatientAccessGuard guard,
-        ICurrentUser user, ISettingsService settings, TimeProvider time, CancellationToken ct)
+        ICurrentUser user, ISettingsService settings, ISharingPartnerDirectory partners, IWitnessConfirmations witnesses, IAuditLogger audit,
+        IEnumerable<IGuardianConsents> guardians, TimeProvider time, CancellationToken ct)
     {
         var access = await guard.EnsureCanOpenAsync(patientId, ct);
         if (access.IsFailure)
         {
             return access.Error!.ToProblem();
+        }
+
+        // DPDP Act s.9: for a child, no marketing at all, and nothing outside health care without a guardian's verified consent.
+        if (request.Granted)
+        {
+            var born = await db.Set<Patient>().Where(p => p.Id == patientId).Select(p => p.DateOfBirth).FirstOrDefaultAsync(ct);
+            var today = time.Today();
+            if (ChildData.IsChild(born, today))
+            {
+                var verified = false;
+                foreach (var guardian in guardians)
+                {
+                    verified |= await guardian.HasVerifiedAsync(patientId, ct);
+                }
+
+                if (ChildData.WhyRefused(request.Type, born, today, verified) is { } refused)
+                {
+                    return refused.ToProblem();
+                }
+            }
+        }
+
+        var scope = request.SharingScope;
+        if (scope?.Until is { } until && until < time.Today())
+        {
+            return Error.Validation("consent.sharing_ended", "The last day of sharing has passed: choose today or a later day.").ToProblem();
+        }
+
+        var shareWith = scope?.ShareWith?.Distinct().ToList() ?? [];
+        if (shareWith.Count > 0)
+        {
+            var known = (await partners.ListAsync(ct)).Select(p => p.Id).ToHashSet();
+            if (shareWith.Any(id => !known.Contains(id)))
+            {
+                return Error.Validation("consent.sharing_partner", "Choose the accounts from the list: one of them is not an account other care providers read records with.").ToProblem();
+            }
         }
 
         var consent = new PatientConsent
@@ -457,8 +577,50 @@ internal static class FrontOfficeEndpoints
             SignedByName = request.SignedByName?.Trim(),
             DocumentFileId = request.DocumentFileId,
             Notes = request.Notes?.Trim(),
+            ShareWith = shareWith,
+            SharePurposes = scope?.Purposes?.Distinct().ToList() ?? [],
+            ShareKinds = scope?.Kinds?.Distinct().ToList() ?? [],
+            ShareRecordsFrom = scope?.RecordsFrom,
+            ShareRecordsTo = scope?.RecordsTo,
+            ShareUntil = scope?.Until,
         };
         db.Add(consent);
+
+        // An unscoped record-sharing consent with no signed form is the widest sharing there is, on one person's word: a
+        // second member of staff witnesses it at the screen. A scoped one, or one with the signed form attached, is as before.
+        if (consent is { Type: ConsentType.DataSharing, Granted: true, IsScopedSharing: false })
+        {
+            if (request.DocumentFileId is { } form)
+            {
+                if (!await db.Set<StoredFile>().AnyAsync(f => f.Id == form && (f.PatientId == null || f.PatientId == patientId), ct))
+                {
+                    return Error.Field("documentFileId", "The signed form was not found for this patient. Upload it again.").ToProblem();
+                }
+            }
+            else if (request.WitnessConfirmationId is not { } confirmation)
+            {
+                return Error.Rule("consent.witness_required",
+                    "Sharing the whole record with no signed form needs a witness: another member of staff confirms at this screen. Or limit what is shared, or attach the signed form.").ToProblem();
+            }
+            else
+            {
+                var witness = await witnesses.UseAsync(confirmation, RecordSharingWitness.Key, patientId, nameof(PatientConsent), consent.Id, ct);
+                if (witness.IsFailure)
+                {
+                    return witness.Error!.ToProblem();
+                }
+
+                consent.WitnessName = witness.Value.Name;
+                audit.Add(new AuditEntry(AuditCategories.Data, "patient.consent.witnessed",
+                    $"Consent to share the whole record recorded with no signed form, witnessed by {witness.Value.Name} (recorded by {user.DisplayName ?? user.UserName ?? "unknown"})")
+                {
+                    PatientId = patientId,
+                    EntityType = nameof(PatientConsent),
+                    EntityId = consent.Id.ToString(),
+                    Details = new { witnessUserId = witness.Value.UserId, witness = witness.Value.Name, recordedBy = user.UserId },
+                });
+            }
+        }
 
         // A refusal of a standing permission ends the earlier grants, as the checks that use it already read it.
         if (!consent.Granted && PatientConsent.IsStandingPermission(consent.Type))

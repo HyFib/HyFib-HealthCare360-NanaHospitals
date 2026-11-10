@@ -67,6 +67,8 @@ export interface Body {
   releaseNotes: string | null;
   releasedByName: string | null;
   version: number;
+  /** The second member of staff who witnessed a release on the police's clearance (maker-checker, slice 9). */
+  releaseWitnessName?: string | null;
 }
 
 export interface SlotInput {
@@ -103,6 +105,11 @@ export interface ReleaseBodyRequest {
   belongingsHandedOver: boolean;
   notes: string | null;
   version: number;
+  /**
+   * A second member of the mortuary staff's confirmation, given at this screen with their own user name and password;
+   * required for a release on the police's clearance (`needsPoliceClearance`).
+   */
+  witnessConfirmationId: string | null;
 }
 
 export const mortuaryKeys = {
@@ -146,13 +153,29 @@ export const MORTUARY_PERMISSIONS = {
 export const MORTUARY_READERS = [MORTUARY_PERMISSIONS.manage, MORTUARY_PERMISSIONS.configure] as const;
 
 /**
+ * A release on the police's clearance: a medico-legal body to the relatives, or an unclaimed body to the municipality.
+ * The clearance is recorded and a second member of the mortuary staff witnesses the release at this screen
+ * (maker-checker, slice 9).
+ */
+export const needsPoliceClearance = (body: Pick<Body, 'isMlc'>, to: ReleaseTo | '') =>
+  (to === 'Relatives' && body.isMlc) || to === 'Municipality';
+
+/**
  * What the release still needs, as the server checks it: relatives give their relationship and identity proof and
  * take only an identified body, a medico-legal one only on police clearance; the police give the officer's details;
  * the municipality takes an unclaimed body on police clearance; a medico-legal body cannot be donated.
  */
 export function releaseProblems(
   body: Pick<Body, 'isMlc' | 'identified'>,
-  input: { to: ReleaseTo | ''; receivedBy: string; relationship: string; idProof: string; policeClearance: string },
+  input: {
+    to: ReleaseTo | '';
+    receivedBy: string;
+    relationship: string;
+    idProof: string;
+    policeClearance: string;
+    /** Whether a second member of staff has confirmed at this screen. */
+    witnessed?: boolean;
+  },
 ) {
   const blank = (s: string) => !s.trim();
   return {
@@ -172,8 +195,12 @@ export function releaseProblems(
           : "Record the officer's name, number and police station."
         : null,
     policeClearance:
-      ((input.to === 'Relatives' && body.isMlc) || input.to === 'Municipality') && blank(input.policeClearance)
+      needsPoliceClearance(body, input.to) && blank(input.policeClearance)
         ? 'Record the police clearance (inquest or post-mortem reference).'
+        : null,
+    witness:
+      needsPoliceClearance(body, input.to) && !input.witnessed
+        ? 'A second member of the mortuary staff witnesses this release here with their own user name and password.'
         : null,
   };
 }

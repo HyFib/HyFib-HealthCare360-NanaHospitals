@@ -269,7 +269,7 @@ public sealed class MakerCheckerTests(HospitalServer server)
     /// A new patient's health check-up visit, billed and finalized: the ₹100 registration fee of a first visit (REG-NEW) and
     /// two dressings at ₹250 (no GST), so ₹600 is due.
     /// </summary>
-    private static async Task<BillDetail> FinalizedBillAsync(ApiClient frontOffice, ApiClient billing)
+    internal static async Task<BillDetail> FinalizedBillAsync(ApiClient frontOffice, ApiClient billing)
     {
         var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
         var visit = await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", new CreateVisitRequest(

@@ -276,6 +276,12 @@ public partial class SetupWindow : Window
         _settings.ServerAddresses = [.. ServerFallback.Remember(sameServer ? others.Concat(_settings.ServerAddresses) : others, _serverUri!)];
         _settings.CaCertificatePem = _caPem;
         _settings.CaFingerprint = _fingerprint;
+        if (!sameServer)
+        {
+            // The next and previous CAs belong to the CA this workstation pinned until now.
+            _settings.ForgetRollover();
+        }
+
         if (!enrolled && !sameServer)
         {
             // An enrolment belongs to one server; forget it when switching servers.

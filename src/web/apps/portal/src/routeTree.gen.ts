@@ -18,6 +18,7 @@ import { Route as OpenPaymentReturnRouteImport } from './routes/_open/payment-re
 import { Route as OpenPrivacyRouteImport } from './routes/_open/privacy'
 import { Route as OpenRatesRouteImport } from './routes/_open/rates'
 import { Route as FeedbackTokenRouteImport } from './routes/feedback/$token'
+import { Route as LinkTokenRouteImport } from './routes/link/$token'
 import { Route as TelehealthSessionIdRouteImport } from './routes/telehealth/$sessionId'
 import { Route as UnsubscribeTokenRouteImport } from './routes/unsubscribe/$token'
 import { Route as AuthAppointmentsIndexRouteImport } from './routes/_auth/appointments/index'
@@ -27,6 +28,7 @@ import { Route as AuthBillsBillIdRouteImport } from './routes/_auth/bills/$billI
 import { Route as AuthMyFeedbackIndexRouteImport } from './routes/_auth/my-feedback/index'
 import { Route as AuthMyFeedbackFormIdRouteImport } from './routes/_auth/my-feedback/$formId'
 import { Route as AuthMyPrivacyIndexRouteImport } from './routes/_auth/my-privacy/index'
+import { Route as AuthMyPrivacyConsentsRouteImport } from './routes/_auth/my-privacy/consents'
 import { Route as AuthMyPrivacyDataRouteImport } from './routes/_auth/my-privacy/data'
 import { Route as AuthMyPrivacyNomineeRouteImport } from './routes/_auth/my-privacy/nominee'
 import { Route as AuthPrescriptionsIndexRouteImport } from './routes/_auth/prescriptions/index'
@@ -94,6 +96,11 @@ const FeedbackTokenRoute = FeedbackTokenRouteImport.update({
   path: '/feedback/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LinkTokenRoute = LinkTokenRouteImport.update({
+  id: '/link/$token',
+  path: '/link/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TelehealthSessionIdRoute = TelehealthSessionIdRouteImport.update({
   id: '/telehealth/$sessionId',
   path: '/telehealth/$sessionId',
@@ -138,6 +145,11 @@ const AuthMyFeedbackFormIdRoute = AuthMyFeedbackFormIdRouteImport.update({
 const AuthMyPrivacyIndexRoute = AuthMyPrivacyIndexRouteImport.update({
   id: '/my-privacy/',
   path: '/my-privacy/',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthMyPrivacyConsentsRoute = AuthMyPrivacyConsentsRouteImport.update({
+  id: '/my-privacy/consents',
+  path: '/my-privacy/consents',
   getParentRoute: () => AuthRoute,
 } as any)
 const AuthMyPrivacyDataRoute = AuthMyPrivacyDataRouteImport.update({
@@ -270,11 +282,13 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof OpenPrivacyRoute
   '/rates': typeof OpenRatesRoute
   '/feedback/$token': typeof FeedbackTokenRoute
+  '/link/$token': typeof LinkTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
   '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/appointments/$appointmentId': typeof AuthAppointmentsAppointmentIdRoute
   '/bills/$billId': typeof AuthBillsBillIdRoute
   '/my-feedback/$formId': typeof AuthMyFeedbackFormIdRoute
+  '/my-privacy/consents': typeof AuthMyPrivacyConsentsRoute
   '/my-privacy/data': typeof AuthMyPrivacyDataRoute
   '/my-privacy/nominee': typeof AuthMyPrivacyNomineeRoute
   '/prescriptions/$prescriptionId': typeof AuthPrescriptionsPrescriptionIdRoute
@@ -311,11 +325,13 @@ export interface FileRoutesByTo {
   '/privacy': typeof OpenPrivacyRoute
   '/rates': typeof OpenRatesRoute
   '/feedback/$token': typeof FeedbackTokenRoute
+  '/link/$token': typeof LinkTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
   '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/appointments/$appointmentId': typeof AuthAppointmentsAppointmentIdRoute
   '/bills/$billId': typeof AuthBillsBillIdRoute
   '/my-feedback/$formId': typeof AuthMyFeedbackFormIdRoute
+  '/my-privacy/consents': typeof AuthMyPrivacyConsentsRoute
   '/my-privacy/data': typeof AuthMyPrivacyDataRoute
   '/my-privacy/nominee': typeof AuthMyPrivacyNomineeRoute
   '/prescriptions/$prescriptionId': typeof AuthPrescriptionsPrescriptionIdRoute
@@ -355,11 +371,13 @@ export interface FileRoutesById {
   '/_open/privacy': typeof OpenPrivacyRoute
   '/_open/rates': typeof OpenRatesRoute
   '/feedback/$token': typeof FeedbackTokenRoute
+  '/link/$token': typeof LinkTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
   '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/_auth/appointments/$appointmentId': typeof AuthAppointmentsAppointmentIdRoute
   '/_auth/bills/$billId': typeof AuthBillsBillIdRoute
   '/_auth/my-feedback/$formId': typeof AuthMyFeedbackFormIdRoute
+  '/_auth/my-privacy/consents': typeof AuthMyPrivacyConsentsRoute
   '/_auth/my-privacy/data': typeof AuthMyPrivacyDataRoute
   '/_auth/my-privacy/nominee': typeof AuthMyPrivacyNomineeRoute
   '/_auth/prescriptions/$prescriptionId': typeof AuthPrescriptionsPrescriptionIdRoute
@@ -398,11 +416,13 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/rates'
     | '/feedback/$token'
+    | '/link/$token'
     | '/telehealth/$sessionId'
     | '/unsubscribe/$token'
     | '/appointments/$appointmentId'
     | '/bills/$billId'
     | '/my-feedback/$formId'
+    | '/my-privacy/consents'
     | '/my-privacy/data'
     | '/my-privacy/nominee'
     | '/prescriptions/$prescriptionId'
@@ -439,11 +459,13 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/rates'
     | '/feedback/$token'
+    | '/link/$token'
     | '/telehealth/$sessionId'
     | '/unsubscribe/$token'
     | '/appointments/$appointmentId'
     | '/bills/$billId'
     | '/my-feedback/$formId'
+    | '/my-privacy/consents'
     | '/my-privacy/data'
     | '/my-privacy/nominee'
     | '/prescriptions/$prescriptionId'
@@ -482,11 +504,13 @@ export interface FileRouteTypes {
     | '/_open/privacy'
     | '/_open/rates'
     | '/feedback/$token'
+    | '/link/$token'
     | '/telehealth/$sessionId'
     | '/unsubscribe/$token'
     | '/_auth/appointments/$appointmentId'
     | '/_auth/bills/$billId'
     | '/_auth/my-feedback/$formId'
+    | '/_auth/my-privacy/consents'
     | '/_auth/my-privacy/data'
     | '/_auth/my-privacy/nominee'
     | '/_auth/prescriptions/$prescriptionId'
@@ -522,6 +546,7 @@ export interface RootRouteChildren {
   OpenRoute: typeof OpenRouteWithChildren
   SignInRoute: typeof SignInRoute
   FeedbackTokenRoute: typeof FeedbackTokenRoute
+  LinkTokenRoute: typeof LinkTokenRoute
   TelehealthSessionIdRoute: typeof TelehealthSessionIdRoute
   UnsubscribeTokenRoute: typeof UnsubscribeTokenRoute
   FeedbackFormTokenRoute: typeof FeedbackFormTokenRoute
@@ -592,6 +617,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FeedbackTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/link/$token': {
+      id: '/link/$token'
+      path: '/link/$token'
+      fullPath: '/link/$token'
+      preLoaderRoute: typeof LinkTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/telehealth/$sessionId': {
       id: '/telehealth/$sessionId'
       path: '/telehealth/$sessionId'
@@ -653,6 +685,13 @@ declare module '@tanstack/react-router' {
       path: '/my-privacy'
       fullPath: '/my-privacy/'
       preLoaderRoute: typeof AuthMyPrivacyIndexRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/my-privacy/consents': {
+      id: '/_auth/my-privacy/consents'
+      path: '/my-privacy/consents'
+      fullPath: '/my-privacy/consents'
+      preLoaderRoute: typeof AuthMyPrivacyConsentsRouteImport
       parentRoute: typeof AuthRoute
     }
     '/_auth/my-privacy/data': {
@@ -824,6 +863,7 @@ interface AuthRouteChildren {
   AuthAppointmentsAppointmentIdRoute: typeof AuthAppointmentsAppointmentIdRoute
   AuthBillsBillIdRoute: typeof AuthBillsBillIdRoute
   AuthMyFeedbackFormIdRoute: typeof AuthMyFeedbackFormIdRoute
+  AuthMyPrivacyConsentsRoute: typeof AuthMyPrivacyConsentsRoute
   AuthMyPrivacyDataRoute: typeof AuthMyPrivacyDataRoute
   AuthMyPrivacyNomineeRoute: typeof AuthMyPrivacyNomineeRoute
   AuthPrescriptionsPrescriptionIdRoute: typeof AuthPrescriptionsPrescriptionIdRoute
@@ -853,6 +893,7 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthAppointmentsAppointmentIdRoute: AuthAppointmentsAppointmentIdRoute,
   AuthBillsBillIdRoute: AuthBillsBillIdRoute,
   AuthMyFeedbackFormIdRoute: AuthMyFeedbackFormIdRoute,
+  AuthMyPrivacyConsentsRoute: AuthMyPrivacyConsentsRoute,
   AuthMyPrivacyDataRoute: AuthMyPrivacyDataRoute,
   AuthMyPrivacyNomineeRoute: AuthMyPrivacyNomineeRoute,
   AuthPrescriptionsPrescriptionIdRoute: AuthPrescriptionsPrescriptionIdRoute,
@@ -907,6 +948,7 @@ const rootRouteChildren: RootRouteChildren = {
   OpenRoute: OpenRouteWithChildren,
   SignInRoute: SignInRoute,
   FeedbackTokenRoute: FeedbackTokenRoute,
+  LinkTokenRoute: LinkTokenRoute,
   TelehealthSessionIdRoute: TelehealthSessionIdRoute,
   UnsubscribeTokenRoute: UnsubscribeTokenRoute,
   FeedbackFormTokenRoute: FeedbackFormTokenRoute,

@@ -7,7 +7,11 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 /// abnormal flags (R.7, OBX-8), the result status (R.9, OBX-11: F final, P preliminary…) and its comment (C records,
 /// NTE segments).
 /// </summary>
-public sealed record AnalyserReading(string? Unit, string? Flags, string? Status, string? Comment);
+public sealed record AnalyserReading(string? Unit, string? Flags, string? Status, string? Comment)
+{
+    /// <summary>The value as the analyser sent it, before HC360 read it ("Neg" for the test's Nil).</summary>
+    public string? Value { get; init; }
+}
 
 /// <summary>Everything captured for one result entry, already interpreted against the patient's reference interval.</summary>
 public sealed record ResultCapture(
@@ -28,6 +32,9 @@ public sealed record ResultCapture(
 /// </summary>
 public sealed class LabResult : AuditableEntity, IFacilityScoped
 {
+    /// <summary>Longest analyser word kept in <see cref="InstrumentValue"/>.</summary>
+    public const int InstrumentValueLength = 64;
+
     public Guid FacilityId { get; set; }
     public Guid LabOrderId { get; set; }
     public Guid LabOrderItemId { get; set; }
@@ -69,6 +76,12 @@ public sealed class LabResult : AuditableEntity, IFacilityScoped
 
     /// <summary>The analyser's comment on the result.</summary>
     public string? InstrumentComment { get; set; }
+
+    /// <summary>
+    /// The analyser's own word for an answer HC360 read as one of the test's answers ("Neg" kept as Nil, "+-" as
+    /// Trace); null when it sent the answer as the test writes it, and for every value typed in.
+    /// </summary>
+    public string? InstrumentValue { get; set; }
 
     /// <summary>
     /// Why the auto-validation rules left an analyser result for a person, as they found it when the result came, so
@@ -202,6 +215,11 @@ public sealed class LabResult : AuditableEntity, IFacilityScoped
         InstrumentFlags = capture.Reading?.Flags;
         InstrumentStatus = capture.Reading?.Status;
         InstrumentComment = capture.Reading?.Comment;
+        InstrumentValue = ResultType == LabResultType.Options
+                          && capture.Reading?.Value?.Trim() is { Length: > 0 } sent
+                          && !string.Equals(sent, capture.Value.ValueText, StringComparison.OrdinalIgnoreCase)
+            ? sent[..Math.Min(sent.Length, InstrumentValueLength)]
+            : null;
         HeldReasons = [];
     }
 }

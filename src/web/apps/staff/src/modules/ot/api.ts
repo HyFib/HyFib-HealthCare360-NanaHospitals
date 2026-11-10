@@ -1,6 +1,7 @@
 import { isApiError, type Gender, type LookupItem, type PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { PatientSummary } from '@/modules/patients/api';
 import type { ChargeOutcome, ChargeStatus } from './shared/types';
 
@@ -9,8 +10,11 @@ import type { ChargeOutcome, ChargeStatus } from './shared/types';
 export const THEATRE_TYPES = ['Major', 'Minor', 'Cardiac', 'Ortho', 'Emergency'] as const;
 export type TheatreType = (typeof THEATRE_TYPES)[number];
 
-export const ANAESTHESIA_TYPES = ['GA', 'Spinal', 'Epidural', 'Regional', 'Local', 'Sedation'] as const;
+export const ANAESTHESIA_TYPES = ['GA', 'Spinal', 'Epidural', 'Regional', 'Local', 'Sedation', 'Topical'] as const;
 export type AnaesthesiaType = (typeof ANAESTHESIA_TYPES)[number];
+
+/** Local and topical anaesthesia are given by the surgeon; every other technique needs a named anaesthetist (as on the server). */
+export const givenBySurgeon = (type: AnaesthesiaType): boolean => type === 'Local' || type === 'Topical';
 
 export const SURGERY_PRIORITIES = ['Elective', 'Urgent', 'Emergency'] as const;
 export type SurgeryPriority = (typeof SURGERY_PRIORITIES)[number];
@@ -37,11 +41,42 @@ export type SafetyPhase = (typeof SAFETY_PHASES)[number];
 export const ASA_GRADES = ['I', 'II', 'III', 'IV', 'V', 'VI'] as const;
 export type AsaGrade = (typeof ASA_GRADES)[number];
 
+export const OXYGEN_DELIVERIES = ['RoomAir', 'NasalCannula', 'FaceMask', 'VenturiMask', 'NonRebreatherMask'] as const;
+export type OxygenDelivery = (typeof OXYGEN_DELIVERIES)[number];
+
+/** AVPU. */
+export const CONSCIOUSNESS_LEVELS = ['Alert', 'Voice', 'Pain', 'Unresponsive'] as const;
+export type RecoveryConsciousness = (typeof CONSCIOUSNESS_LEVELS)[number];
+
+export const BREATHING = ['DeepBreathAndCough', 'Limited', 'Apnoeic'] as const;
+export type RecoveryBreathing = (typeof BREATHING)[number];
+
+export const PONV = ['None', 'Nausea', 'Vomiting'] as const;
+export type Ponv = (typeof PONV)[number];
+
+export const RECOVERY_DESTINATIONS = ['Ward', 'Icu', 'Hdu'] as const;
+export type RecoveryDestination = (typeof RECOVERY_DESTINATIONS)[number];
+
+export type AldreteSign = 'Activity' | 'Respiration' | 'Circulation' | 'Consciousness' | 'OxygenSaturation';
+
 export const AIRWAY_DEVICES = ['None', 'FaceMask', 'SupraglotticAirway', 'EndotrachealTube', 'Tracheostomy'] as const;
 export type AirwayDevice = (typeof AIRWAY_DEVICES)[number];
 
 export const SPECIMEN_DESTINATIONS = ['Histopathology', 'Microbiology', 'Cytology', 'FrozenSection', 'Other'] as const;
 export type SpecimenDestination = (typeof SPECIMEN_DESTINATIONS)[number];
+
+export const COUNT_CATEGORIES = ['Swabs', 'Needles', 'Instruments'] as const;
+export type CountCategory = (typeof COUNT_CATEGORIES)[number];
+
+export const COUNT_STAGES = ['Initial', 'Additional', 'Final'] as const;
+export type CountStage = (typeof COUNT_STAGES)[number];
+
+export const DISCREPANCY_RESOLUTIONS = ['Found', 'XrayNoRetainedItem', 'RetainedItem'] as const;
+export type DiscrepancyResolution = (typeof DISCREPANCY_RESOLUTIONS)[number];
+
+/** Harm graded as NABH incident reporting grades it (server `IncidentHarm`). */
+export const INCIDENT_HARMS = ['NearMiss', 'NoHarm', 'Mild', 'Moderate', 'Severe', 'Death'] as const;
+export type IncidentHarm = (typeof INCIDENT_HARMS)[number];
 
 export const MATERIAL_KINDS = ['Implant', 'Consumable'] as const;
 export type MaterialKind = (typeof MATERIAL_KINDS)[number];
@@ -183,6 +218,8 @@ export interface SurgeryListItem {
   timeOutDone: boolean;
   signOutDone: boolean;
   chargeStatus: ChargeStatus;
+  /** Between the WHO Sign-out and the discharge from recovery. */
+  inRecovery?: boolean;
 }
 
 export interface ChecklistItemDto {
@@ -242,6 +279,115 @@ export interface SurgeryDetail {
   chargeStatus: ChargeStatus;
   chargeError: string | null;
   version: number;
+  /** The assisting nurse / OT in-charge (a nurse or OT technician from the practitioner master). */
+  nurseId: string | null;
+  nurseName: string | null;
+  /** The level or digit operated on (a spinal level, a finger, a tooth), where a side alone does not say where. */
+  siteLevel?: string | null;
+  /** A side or level is booked: the site is marked by the surgeon, never "not applicable". */
+  siteMarkingRequired?: boolean;
+  counts?: SurgicalCount[] | null;
+  countTallies?: CountTally[] | null;
+  countDiscrepancies?: CountDiscrepancy[] | null;
+  /** WHO checklist phases voided by a change of side or procedure after the Sign-in. */
+  checklistVoids?: ChecklistVoid[] | null;
+  /** Between the WHO Sign-out and the discharge from recovery: shown as "In recovery". */
+  inRecovery?: boolean;
+  recoveryDischargedAt?: string | null;
+  recoveryDestination?: RecoveryDestination | null;
+}
+
+/** One count, by one member of the theatre team and witnessed by a second at the same screen. */
+export interface SurgicalCount {
+  id: string;
+  category: CountCategory;
+  stage: CountStage;
+  number: number;
+  countedByUserId: string | null;
+  countedByName: string;
+  witnessUserId: string;
+  witnessName: string;
+  at: string;
+  remarks: string | null;
+}
+
+/** A category's counts so far: what is expected back, and whether the final count tallies. */
+export interface CountTally {
+  category: CountCategory;
+  initial: number | null;
+  added: number;
+  final: number | null;
+  expected: number | null;
+  isFinal: boolean;
+  tallies: boolean;
+}
+
+/** A final count that did not tally; open until it is settled, and the Sign-out waits for it. */
+export interface CountDiscrepancy {
+  id: string;
+  category: CountCategory;
+  expected: number;
+  counted: number;
+  finalCountId: string;
+  openedAt: string;
+  resolution: DiscrepancyResolution | null;
+  resolutionNote: string | null;
+  xrayResult: string | null;
+  incidentId: string | null;
+  incidentNumber: string | null;
+  resolvedByUserId: string | null;
+  resolvedByName: string | null;
+  resolvedAt: string | null;
+  isOpen: boolean;
+}
+
+export interface ChecklistVoid {
+  at: string;
+  byUserId: string | null;
+  byName: string;
+  reason: string;
+  before: string;
+  after: string;
+  phases: SafetyPhase[];
+}
+
+export interface RecordSurgicalCountRequest {
+  category: CountCategory;
+  stage: CountStage;
+  number: number;
+  /** From `POST /api/v1/auth/witness`, purpose `ot.count`, by the second member of the team at this screen. */
+  witnessConfirmationId: string;
+  remarks: string | null;
+}
+
+export interface ResolveCountDiscrepancyRequest {
+  resolution: DiscrepancyResolution;
+  note: string;
+  xrayResult: string | null;
+  harm: IncidentHarm | null;
+}
+
+export interface CountDiscrepancyResolved {
+  discrepancyId: string;
+  resolution: DiscrepancyResolution;
+  incidentId: string | null;
+  incidentNumber: string | null;
+}
+
+/** A correction of a line after the operation started: waits for the OT in-charge; 0 says the item was not used. */
+export interface CorrectSurgeryMaterialRequest {
+  lotNumber: string | null;
+  serialNumber: string | null;
+  expiryDate: string | null;
+  quantity: number;
+  reason: string;
+}
+
+export interface PendingMaterialCorrection {
+  approvalId: string;
+  summary: string;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface CreateSurgeryBookingRequest {
@@ -263,6 +409,8 @@ export interface CreateSurgeryBookingRequest {
   scheduledStart: string | null;
   scheduledEnd: string | null;
   notes: string | null;
+  nurseId: string | null;
+  siteLevel?: string | null;
 }
 
 export interface UpdateSurgeryPlanRequest {
@@ -279,6 +427,10 @@ export interface UpdateSurgeryPlanRequest {
   preferredDate: string | null;
   notes: string | null;
   version: number;
+  nurseId: string | null;
+  siteLevel?: string | null;
+  /** Required when the side, level or procedure changes after the WHO Sign-in (operating surgeon or anaesthetist only). */
+  changeReason?: string | null;
 }
 
 export interface ScheduleSurgeryRequest {
@@ -309,6 +461,93 @@ export interface SchedulingConflict {
 }
 
 // ---------------------------------------------------------------- clinical records
+
+/** One row of the recovery chart. */
+export interface RecoveryObservation {
+  id: string;
+  at: string;
+  heartRate: number | null;
+  systolic: number | null;
+  diastolic: number | null;
+  spO2: number | null;
+  onOxygen: boolean;
+  respiratoryRate: number | null;
+  temperatureC: number | null;
+  consciousness: RecoveryConsciousness | null;
+  breathing: RecoveryBreathing | null;
+  limbsMoving: number | null;
+  painScore: number | null;
+  ponv: Ponv | null;
+  recordedByName: string;
+}
+
+export interface AldreteComponent {
+  sign: AldreteSign;
+  points: number | null;
+  missing: string | null;
+}
+
+/** The modified Aldrete score of the latest observations; `wardBlockedBy` says why the ward waits (null when it need not). */
+export interface RecoveryScore {
+  components: AldreteComponent[];
+  total: number | null;
+  at: string | null;
+  missing: string[];
+  meetsWardDischarge: boolean;
+  wardBlockedBy: string | null;
+}
+
+export interface RecoveryRecordDto {
+  id: string;
+  surgeryBookingId: string;
+  patientId: string;
+  receivedAt: string;
+  receivedByName: string;
+  airway: AirwayDevice;
+  oxygen: OxygenDelivery;
+  oxygenLitresPerMinute: number | null;
+  preAnaesthesiaSystolic: number | null;
+  notes: string | null;
+  handoverRequired: boolean;
+  handoverAt: string | null;
+  handedOverByName: string | null;
+  handoverConfirmedAtScreen: boolean;
+  handoverNotes: string | null;
+  observations: RecoveryObservation[];
+  score: RecoveryScore;
+  dischargedAt: string | null;
+  destination: RecoveryDestination | null;
+  dischargeScore: number | null;
+  dischargedByName: string | null;
+  overrideReason: string | null;
+  overrideByName: string | null;
+  version: number;
+}
+
+export interface ReceiveInRecoveryRequest {
+  airway: AirwayDevice;
+  oxygen: OxygenDelivery;
+  oxygenLitresPerMinute: number | null;
+  preAnaesthesiaSystolic: number | null;
+  receivedAt?: string | null;
+  notes?: string | null;
+}
+
+export interface AddRecoveryObservationRequest {
+  heartRate: number | null;
+  systolic: number | null;
+  diastolic: number | null;
+  spO2: number | null;
+  onOxygen: boolean;
+  respiratoryRate: number | null;
+  temperatureC: number | null;
+  consciousness: RecoveryConsciousness | null;
+  breathing: RecoveryBreathing | null;
+  limbsMoving: number | null;
+  painScore: number | null;
+  ponv: Ponv | null;
+  at?: string | null;
+}
 
 export interface AnaesthesiaVitals {
   at: string;
@@ -440,6 +679,15 @@ export interface SurgeryMaterialDto {
   mrp: number | null;
   /** The NPPA ceiling price of a unit of a price-controlled implant. */
   ceilingPrice: number | null;
+  /** The line this one corrects; the original is kept, superseded. */
+  correctsMaterialId?: string | null;
+  /** When an approved correction replaced this line (its charge withdrawn, its stock returned). */
+  supersededAt?: string | null;
+  supersededByMaterialId?: string | null;
+  correctionReason?: string | null;
+  correctionRequestedByName?: string | null;
+  correctionApprovedByName?: string | null;
+  pendingCorrection?: PendingMaterialCorrection | null;
 }
 
 /**
@@ -544,6 +792,7 @@ export const otKeys = {
   booking: (id: string) => ['ot', 'booking', id] as const,
   anaesthesia: (id: string) => ['ot', 'booking', id, 'anaesthesia'] as const,
   operationNote: (id: string) => ['ot', 'booking', id, 'operation-note'] as const,
+  recovery: (id: string) => ['ot', 'booking', id, 'recovery'] as const,
   materials: (id: string) => ['ot', 'booking', id, 'materials'] as const,
   storeItems: (search: string) => ['ot', 'store-items', search] as const,
   trace: (lot: string, serial: string) => ['ot', 'implant-trace', lot, serial] as const,
@@ -602,6 +851,11 @@ export const otQueries = {
     queryOptions({
       queryKey: otKeys.operationNote(id),
       queryFn: ({ signal }) => getOrNull<OperationNoteDto>(`/api/v1/ot/bookings/${id}/operation-note`, signal),
+    }),
+  recovery: (id: string) =>
+    queryOptions({
+      queryKey: otKeys.recovery(id),
+      queryFn: ({ signal }) => getOrNull<RecoveryRecordDto>(`/api/v1/ot/bookings/${id}/recovery`, signal),
     }),
   materials: (id: string) =>
     queryOptions({
@@ -664,6 +918,28 @@ export const otApi = {
     api.post<SurgeryMaterialDto>(`/api/v1/ot/bookings/${id}/materials`, request),
   removeMaterial: (id: string, materialId: string) =>
     api.delete<void>(`/api/v1/ot/bookings/${id}/materials/${materialId}`),
+  /** 202: the correction waits for the OT in-charge (`ot.materials.approve`), never the one who asked. */
+  correctMaterial: (id: string, materialId: string, request: CorrectSurgeryMaterialRequest) =>
+    api.post<ApprovalRequestDto>(`/api/v1/ot/bookings/${id}/materials/${materialId}/corrections`, request),
+  receiveInRecovery: (id: string, request: ReceiveInRecoveryRequest) =>
+    api.post<RecoveryRecordDto>(`/api/v1/ot/bookings/${id}/recovery/receive`, request),
+  /** No confirmation: the signed-in user is the anaesthetist. With one: the anaesthetist confirmed at this screen. */
+  recoveryHandover: (id: string, witnessConfirmationId: string | null, notes: string | null) =>
+    api.post<RecoveryRecordDto>(`/api/v1/ot/bookings/${id}/recovery/handover`, { witnessConfirmationId, notes }),
+  addRecoveryObservation: (id: string, request: AddRecoveryObservationRequest) =>
+    api.post<RecoveryRecordDto>(`/api/v1/ot/bookings/${id}/recovery/observations`, request),
+  dischargeFromRecovery: (id: string, destination: RecoveryDestination) =>
+    api.post<RecoveryRecordDto>(`/api/v1/ot/bookings/${id}/recovery/discharge`, { destination }),
+  /** The anaesthetist (`ot.anaesthesia.record`) sends the patient to the ward below the score, with the reason. */
+  overrideRecoveryDischarge: (id: string, reason: string) =>
+    api.post<RecoveryRecordDto>(`/api/v1/ot/bookings/${id}/recovery/discharge/override`, { reason }),
+  recordCount: (id: string, request: RecordSurgicalCountRequest) =>
+    api.post<void>(`/api/v1/ot/bookings/${id}/counts`, request),
+  resolveDiscrepancy: (id: string, discrepancyId: string, request: ResolveCountDiscrepancyRequest) =>
+    api.post<CountDiscrepancyResolved>(
+      `/api/v1/ot/bookings/${id}/counts/discrepancies/${discrepancyId}/resolve`,
+      request,
+    ),
 };
 
 /** Procedures from the service catalogue (Surgery category), without the OT time/fee items. */

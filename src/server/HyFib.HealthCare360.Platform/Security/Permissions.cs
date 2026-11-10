@@ -105,6 +105,12 @@ public static class PlatformPermissions
     public const string UsersRead = "admin.users.read";
     public const string UsersManage = "admin.users.manage";
     public const string RolesManage = "admin.roles.manage";
+
+    /// <summary>
+    /// Approve access another administrator gives: roles and facilities added to a user, a user reactivated, permissions
+    /// added to a role. Administrative, so only those who hold it give it out, and they use two-step verification.
+    /// </summary>
+    public const string GrantsApprove = "admin.grants.approve";
     public const string DevicesManage = "admin.devices.manage";
     public const string AuditRead = "admin.audit.read";
     public const string SettingsManage = "admin.settings.manage";
@@ -118,16 +124,25 @@ public static class PlatformPermissions
 
     /// <summary>
     /// Change the server's own credentials (its database password and encryption keys), make a new backup recovery key,
-    /// and sign everybody out. Only SuperAdmin has it by default.
+    /// sign everybody out, and set how long the audit trail is kept and purge it (one asks, another approves). Only SuperAdmin
+    /// has it by default.
     /// </summary>
     public const string SystemManage = "admin.system.manage";
     public const string BackupsManage = "admin.backups.manage";
     public const string MastersRead = "masters.read";
     public const string MastersManage = "masters.manage";
+
+    /// <summary>
+    /// Approve a price another person changes (maker-checker): a service's price and GST rate, and whether it may be priced
+    /// at the counter, discounted or charged at all; a tariff plan's prices and terms; a payer's category, plan and co-pay,
+    /// and putting it in use. Held by those who approve money today, as refunds and discounts.
+    /// </summary>
+    public const string PricesApprove = "masters.prices.approve";
     public const string FilesRead = "files.read";
     public const string FilesWrite = "files.write";
 
     private static readonly string[] Admins = [SystemRoles.HospitalAdmin];
+    private static readonly string[] PriceApprovers = [SystemRoles.Accountant, SystemRoles.HospitalAdmin];
 
     /// <summary>
     /// The permissions that control accounts, roles, credentials and the server itself: all-access and the Administration
@@ -156,6 +171,7 @@ public static class PlatformPermissions
         new(UsersRead, "Administration", "View users and their roles", Admins),
         new(UsersManage, "Administration", "Create, edit, lock and reset users", Admins),
         new(RolesManage, "Administration", "Create roles and assign permissions"),
+        new(GrantsApprove, "Administration", "Approve roles, facilities and permissions another administrator gives", Admins),
         new(DevicesManage, "Administration", "Enrol and revoke workstations", Admins),
         new(AuditRead, "Administration", "View and verify the audit trail", [SystemRoles.HospitalAdmin, SystemRoles.QualityManager]),
         new(SettingsManage, "Administration", "Change system settings", Admins),
@@ -164,10 +180,11 @@ public static class PlatformPermissions
         new(PrintManage, "Administration", "Set up print templates (letterhead, logo, closing notes)", Admins),
         new(NotificationTemplatesManage, "Administration", "Edit SMS/WhatsApp/e-mail templates", [SystemRoles.HospitalAdmin, SystemRoles.CrmExecutive]),
         new(SystemRead, "Administration", "View server health, WiFi link and backups", Admins),
-        new(SystemManage, "Administration", "Change the server's database password and keys, make backup recovery keys, and sign everybody out"),
+        new(SystemManage, "Administration", "Change the server's database password and keys, make backup recovery keys, sign everybody out, and set how long the audit trail is kept and purge it (with a second person)"),
         new(BackupsManage, "Administration", "Run backups and see which recovery key opens each"),
         new(MastersRead, "Masters", "View facilities, departments, doctors and services", AllStaff),
         new(MastersManage, "Masters", "Edit facilities, departments, doctors and services", Admins),
+        new(PricesApprove, "Masters", "Approve the changes another person makes to a service's price, GST and use, to tariff plans, packages and payers' terms, and to the PM-JAY HBP master", PriceApprovers),
         new(FilesRead, "Documents", "Download stored documents", AllStaff),
         new(FilesWrite, "Documents", "Upload documents", AllStaff),
     ];

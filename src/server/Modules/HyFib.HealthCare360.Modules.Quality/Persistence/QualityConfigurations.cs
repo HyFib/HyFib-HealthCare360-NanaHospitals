@@ -1,4 +1,8 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Quality.Domain;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace HyFib.HealthCare360.Modules.Quality.Persistence;
 
@@ -24,11 +28,16 @@ internal sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
         b.Property(x => x.ReporterName).HasMaxLength(200);
         b.Property(x => x.ClosureNote).HasMaxLength(2000);
         b.Property(x => x.LastStatusNote).HasMaxLength(2000);
+        b.Ignore(x => x.IsDeviceRelated);
         b.HasIndex(x => x.IncidentNumber).IsUnique();
         b.HasIndex(x => new { x.FacilityId, x.Status });
         b.HasIndex(x => new { x.FacilityId, x.OccurredAt });
         b.HasIndex(x => x.ReporterUserId).HasFilter("reporter_user_id IS NOT NULL");
         b.HasIndex(x => x.PatientId).HasFilter("patient_id IS NOT NULL");
+        b.Property(x => x.SourceModule).HasMaxLength(32);
+        b.Property(x => x.SourceRecordType).HasMaxLength(48);
+        b.Property(x => x.SourceReference).HasMaxLength(120);
+        b.HasIndex(x => new { x.SourceRecordType, x.SourceRecordId }).IsUnique().HasFilter("source_record_id IS NOT NULL");
     }
 }
 
@@ -108,6 +117,8 @@ internal sealed class QualityIndicatorConfiguration : IEntityTypeConfiguration<Q
         b.Property(x => x.NabhReference).HasMaxLength(32);
         b.Property(x => x.Multiplier).HasPrecision(12, 4);
         b.Property(x => x.Target).HasPrecision(18, 4);
+        b.Property(x => x.ComputedBy).HasMaxLength(32);
+        b.Ignore(x => x.IsComputed);
         b.HasIndex(x => x.Code).IsUnique().HasFilter(QualitySchema.NotDeleted);
     }
 }
@@ -142,5 +153,44 @@ internal sealed class DowntimeEventConfiguration : IEntityTypeConfiguration<Down
         b.Ignore(x => x.Status);
         b.HasIndex(x => x.Number).IsUnique();
         b.HasIndex(x => new { x.FacilityId, x.StartedAt });
+    }
+}
+
+internal sealed class MvpiReportConfiguration : IEntityTypeConfiguration<MvpiReport>
+{
+    // The device is a handful of printed facts kept together, as the form gives them; names, not numbers, for its choices.
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
+
+    public void Configure(EntityTypeBuilder<MvpiReport> b)
+    {
+        b.ToTable("mvpi_reports", QualitySchema.Name);
+        b.Property(x => x.Number).HasMaxLength(24);
+        b.Property(x => x.PatientInitials).HasMaxLength(40);
+        b.Property(x => x.PatientSex).HasMaxLength(20);
+        b.Property(x => x.WeightKg).HasPrecision(5, 1);
+        b.Property(x => x.Location).HasMaxLength(150);
+        b.Property(x => x.Description).HasMaxLength(4000);
+        b.Property(x => x.ReporterName).HasMaxLength(200);
+        b.Property(x => x.ReporterDesignation).HasMaxLength(120);
+        b.Property(x => x.ReporterDepartment).HasMaxLength(120);
+        b.Property(x => x.SubmittedByName).HasMaxLength(200);
+        b.Property(x => x.Reference).HasMaxLength(64);
+        b.Property(x => x.ReferenceCorrectionReason).HasMaxLength(500);
+        b.Property(x => x.ReferenceCorrectedByName).HasMaxLength(200);
+        b.Property(x => x.Device)
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, Json),
+                v => JsonSerializer.Deserialize<MvpiDevice>(v, Json) ?? MvpiDevice.Blank,
+                new ValueComparer<MvpiDevice>((x, y) => Equals(x, y), v => v.GetHashCode(), v => v))
+            .HasColumnType("jsonb");
+        b.Ignore(x => x.IsSerious);
+        b.HasOne<Incident>().WithMany().HasForeignKey(x => x.IncidentId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<MvpiReport>().WithMany().HasForeignKey(x => x.FollowUpOfId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.Number).IsUnique();
+        b.HasIndex(x => x.PatientId).HasFilter("patient_id IS NOT NULL");
+        b.HasIndex(x => x.IncidentId).HasFilter("incident_id IS NOT NULL");
+        b.HasIndex(x => x.FollowUpOfId).HasFilter("follow_up_of_id IS NOT NULL");
+        b.HasIndex(x => new { x.FacilityId, x.Status, x.EventOn });
     }
 }

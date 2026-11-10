@@ -43,7 +43,8 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
-import { adminQueries, type PermissionGroup, type RoleDetail } from '@/modules/admin/api';
+import { adminQueries, askedForApproval, type PermissionGroup, type RoleDetail } from '@/modules/admin/api';
+import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 
 export const Route = createFileRoute('/_app/admin/roles')({
   component: RolesPage,
@@ -122,6 +123,9 @@ function RoleDrawer({ roleId, readOnly, onClose }: { roleId: string | null; read
   const ready = (roleId === null || role.data) && groups.data;
 
   const closing = useCloseRequests({ onClose });
+  // A dialog moves focus to its first control when it opens, and one with nothing to focus is hidden from assistive
+  // technology, and stays hidden when its content comes. So the drawer has a title and a close button while it waits
+  // for the role, as it has once the form is there.
   return (
     <OverlayDrawer open position="end" size="large" onOpenChange={closing.onOpenChange}>
       {ready ? (
@@ -129,9 +133,18 @@ function RoleDrawer({ roleId, readOnly, onClose }: { roleId: string | null; read
           <RoleForm role={role.data ?? null} groups={groups.data} readOnly={readOnly} onClose={onClose} />
         </CloseRequestScope>
       ) : (
-        <DrawerBody>
-          {error ? <ErrorState error={error} title="Could not load the role" /> : <Spinner label="Loading…" />}
-        </DrawerBody>
+        <>
+          <DrawerHeader>
+            <DrawerHeaderTitle
+              action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+            >
+              {roleId === null ? 'New role' : 'Role'}
+            </DrawerHeaderTitle>
+          </DrawerHeader>
+          <DrawerBody>
+            {error ? <ErrorState error={error} title="Could not load the role" /> : <Spinner label="Loading…" />}
+          </DrawerBody>
+        </>
       )}
     </OverlayDrawer>
   );
@@ -153,7 +166,12 @@ function RoleForm({
   const queryClient = useQueryClient();
   const [name, setName] = useState(role?.name ?? '');
   const [description, setDescription] = useState(role?.description ?? '');
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(role?.permissions ?? []));
+  // Permissions waiting for approval are shown as given: saving the role again asks for nothing twice.
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set([...(role?.permissions ?? []), ...(role?.pendingGrant?.permissions ?? [])]),
+  );
+  const [reason, setReason] = useState('');
+  const pending = role?.pendingGrant;
   // The role as the form was filled: it is read again in the background, and a newer version must not be sent with
   // these choices (REL-04). Opening the role again fills it afresh.
   const [loadedVersion] = useState(role?.version ?? null);
@@ -202,12 +220,27 @@ function RoleForm({
         description: description.trim() || null,
         permissions: [...selected],
         version: loadedVersion,
+        reason: reason.trim() || null,
       };
       return role ? api.put(`/api/v1/admin/roles/${role.id}`, body) : api.post('/api/v1/admin/roles', body);
     },
-    onSuccess: () => {
-      notify.success('Role saved', 'Users with this role get the new permissions within two minutes.');
+    onSuccess: (result) => {
+      // Permissions added wait for another administrator who may approve grants.
+      const asked =
+        askedForApproval(result) ??
+        (result && typeof result === 'object' && 'pendingGrant' in result && (result as RoleDetail).pendingGrant
+          ? { summary: `Permissions for the role ${name.trim()}` }
+          : null);
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Another administrator who may approve grants decides it.`,
+        );
+      } else {
+        notify.success('Role saved', 'Users with this role get the new permissions within two minutes.');
+      }
       invalidate();
+      void queryClient.invalidateQueries({ queryKey: ['approvals'] });
       onClose();
     },
     onError: (error) => {
@@ -268,6 +301,22 @@ function RoleForm({
               maxLength={500}
             />
           </Field>
+          {pending && (
+            <PendingGrantNotice
+              approvalId={pending.approvalId}
+              what={`Permissions ${pending.permissions.join(', ')}`}
+              requestedBy={pending.requestedBy}
+              requestedAt={pending.requestedAt}
+            />
+          )}
+          {!readOnly && !isWildcard && (
+            <Field
+              label="Reason, for the approver"
+              hint="Why the role needs the permissions you add. Added permissions wait for another administrator who may approve grants."
+            >
+              <Textarea value={reason} onChange={(_, d) => setReason(d.value)} rows={2} maxLength={500} />
+            </Field>
+          )}
           {isWildcard ? (
             <MessageBar intent="info">
               <MessageBarBody>This role has every permission, including ones added in future updates.</MessageBarBody>

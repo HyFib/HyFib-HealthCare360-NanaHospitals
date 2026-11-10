@@ -23,6 +23,7 @@ namespace HyFib.HealthCare360.IntegrationTests;
 public sealed class AlertingTests(HospitalServer server)
 {
     private const string Drills = "/api/v1/admin/system/alert-drills";
+    private const string Alerts = "/api/v1/admin/system/alerts";
     private const string Health = "/api/v1/admin/system/health";
     private const string Settings = "/api/v1/admin/settings";
 
@@ -59,8 +60,9 @@ public sealed class AlertingTests(HospitalServer server)
             warning.Message.ShouldContain("Nothing is wrong");
 
             // The alerts tell it as they tell any critical warning: in the app, and to IT on-call by SMS.
+            // The server's own alerts, every five minutes, may be the ones to tell it: either way, it is told once.
             using var alerts = ActivatorUtilities.CreateInstance<SystemHealthAlerts>(server.Services);
-            (await alerts.CheckAsync(Ct)).ShouldContain(w => w.Code == warning.Code);
+            await alerts.CheckAsync(Ct);
 
             var told = (await admin.GetAsync<List<AlertDrill>>(Drills)).Single(d => d.Id == drill.Id);
             told.ToldAt.ShouldNotBeNull().ShouldBeGreaterThanOrEqualTo(drill.StartedAt);
@@ -76,6 +78,8 @@ public sealed class AlertingTests(HospitalServer server)
             (acknowledged.State, acknowledged.ToldAt).ShouldBe(("acknowledged", told.ToldAt));
             acknowledged.AcknowledgedAt.ShouldNotBeNull().ShouldBeGreaterThanOrEqualTo(told.ToldAt.Value);
             acknowledged.AcknowledgedBy.ShouldNotBeNullOrWhiteSpace();
+            (await IncidentAsync(admin, AlertDrills.WarningPrefix + drill.Code)).AcknowledgedAt.ShouldNotBeNull(
+                "its alert with it, so the report counts it acknowledged, not one that cleared unseen");
             (await admin.GetAsync<SystemHealthReport>(Health)).Warnings.ShouldNotContain(w => w.Code.StartsWith(AlertDrills.WarningPrefix, StringComparison.Ordinal));
             using var again = await hospitalAdmin.SendRawAsync(HttpMethod.Post, $"{Drills}/{drill.Id}/acknowledge");
             again.StatusCode.ShouldBe(HttpStatusCode.Conflict);
@@ -96,6 +100,218 @@ public sealed class AlertingTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task An_alert_nobody_acknowledges_reaches_the_second_contact_then_HyFib_support_and_the_report_says_how_far_it_went()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        await using var onCall = await SettingAsync("alerts.oncallPhone", "+919800000146");
+        await using var second = await SettingAsync(AlertEscalation.SecondContactSetting, "+919800000147");
+        await using var support = await SettingAsync(AlertEscalation.SupportSetting, "+919800000148");
+        await using var escalateAt = await SettingAsync(AlertEscalation.EscalateMinutesSetting, 0);
+        await using var supportAt = await SettingAsync(AlertEscalation.SupportMinutesSetting, 0);
+        var drill = await admin.PostAsync<AlertDrill>(Drills);
+        try
+        {
+            // Nobody acknowledges it: IT on-call is told at once, and with no wait set, each check pages the next.
+            var code = AlertDrills.WarningPrefix + drill.Code;
+            using var alerts = ActivatorUtilities.CreateInstance<SystemHealthAlerts>(server.Services);
+            for (var check = 0; check < 3; check++)
+            {
+                await alerts.CheckAsync(Ct);
+            }
+
+            var paged = await IncidentAsync(admin, code);
+            paged.Level.ShouldBe(AlertLevel.Support);
+            var told = paged.ToldAt.ShouldNotBeNull();
+            paged.SecondContactAt.ShouldNotBeNull().ShouldBeGreaterThanOrEqualTo(told);
+            paged.SupportAt.ShouldNotBeNull().ShouldBeGreaterThanOrEqualTo(paged.SecondContactAt.Value);
+            paged.Messages.Where(m => m.Level == AlertLevel.OnCall).ShouldAllBe(m => m.Recipient == Masked("+919800000146"));
+            paged.Messages.Where(m => m.Level == AlertLevel.SecondContact).ShouldHaveSingleItem().Recipient.ShouldBe(Masked("+919800000147"));
+            paged.Messages.Where(m => m.Level == AlertLevel.Support).ShouldHaveSingleItem().Recipient.ShouldBe(Masked("+919800000148"));
+            (await EscalationsAsync(paged.Id)).ShouldBe(2, "each escalation is in the audit trail");
+
+            // Acknowledged at last: by whom, and the drill with it; the warning goes, and its alert is closed.
+            var acknowledged = await hospitalAdmin.PostAsync<AlertIncidentDto>($"{Alerts}/{paged.Id}/acknowledge");
+            acknowledged.AcknowledgedBy.ShouldNotBeNullOrWhiteSpace();
+            acknowledged.MinutesToAcknowledge.ShouldNotBeNull().ShouldBeGreaterThanOrEqualTo(0);
+            (await admin.GetAsync<List<AlertDrill>>(Drills)).Single(d => d.Id == drill.Id).State.ShouldBe("acknowledged");
+            using (var again = await hospitalAdmin.SendRawAsync(HttpMethod.Post, $"{Alerts}/{paged.Id}/acknowledge"))
+            {
+                again.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+            }
+
+            await alerts.CheckAsync(Ct);
+            var report = await admin.GetAsync<AlertReport>($"{Alerts}?days=1");
+            var closed = report.Incidents.Single(i => i.Code == code);
+            closed.ClearedAt.ShouldNotBeNull().ShouldBeGreaterThanOrEqualTo(acknowledged.AcknowledgedAt.ShouldNotBeNull());
+            closed.Messages.Count.ShouldBe(paged.Messages.Count, "nobody is paged once it is acknowledged");
+            report.ReachedSecondContact.ShouldBeGreaterThanOrEqualTo(1);
+            report.ReachedSupport.ShouldBeGreaterThanOrEqualTo(1);
+            report.Acknowledged.ShouldBeGreaterThanOrEqualTo(1);
+            report.MedianMinutesToAcknowledge.ShouldNotBeNull();
+        }
+        finally
+        {
+            await AcknowledgeOpenDrillsAsync(admin);
+        }
+    }
+
+    [Fact]
+    public async Task An_alert_acknowledged_in_time_pages_nobody_else_and_a_restart_does_not_tell_it_again()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        await using var onCall = await SettingAsync("alerts.oncallPhone", "+919800000149");
+        await using var second = await SettingAsync(AlertEscalation.SecondContactSetting, "+919800000150");
+
+        // SMS that goes (to the simulator): one that fails would page the second contact at once, as it should.
+        await using var sms = await SettingAsync("integrations.sms", new { enabled = true, provider = "simulator" });
+        var drill = await admin.PostAsync<AlertDrill>(Drills);
+        try
+        {
+            var code = AlertDrills.WarningPrefix + drill.Code;
+            using (var before = ActivatorUtilities.CreateInstance<SystemHealthAlerts>(server.Services))
+            {
+                await before.CheckAsync(Ct);
+            }
+
+            var told = await IncidentAsync(admin, code);
+            told.ToldAt.ShouldNotBeNull();
+
+            // A restart: alerts that remember nothing in memory tell it no more, for it is kept in the database.
+            using var alerts = ActivatorUtilities.CreateInstance<SystemHealthAlerts>(server.Services);
+            await alerts.CheckAsync(Ct);
+            var after = await IncidentAsync(admin, code);
+            (after.Id, after.ToldAt, after.Messages.Count).ShouldBe((told.Id, told.ToldAt, told.Messages.Count));
+
+            // Acknowledged before the wait is up: even with no wait left, nobody else is paged, and the drill is acknowledged.
+            await hospitalAdmin.PostAsync<AlertIncidentDto>($"{Alerts}/{told.Id}/acknowledge");
+            await using var escalateAt = await SettingAsync(AlertEscalation.EscalateMinutesSetting, 0);
+            await alerts.CheckAsync(Ct);
+            var acknowledged = await IncidentAsync(admin, code);
+            (acknowledged.Level, acknowledged.SecondContactAt).ShouldBe((AlertLevel.OnCall, null));
+            acknowledged.Messages.ShouldNotContain(m => m.Level != AlertLevel.OnCall);
+            (await admin.GetAsync<List<AlertDrill>>(Drills)).Single(d => d.Id == drill.Id).State.ShouldBe("acknowledged");
+        }
+        finally
+        {
+            await AcknowledgeOpenDrillsAsync(admin);
+        }
+    }
+
+    [Fact]
+    public async Task An_alert_that_reached_nobody_at_IT_on_call_goes_to_the_second_contact_without_waiting()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        await using var onCall = await SettingAsync("alerts.oncallPhone", "");
+        await using var second = await SettingAsync(AlertEscalation.SecondContactSetting, "+919800000151");
+        var drill = await admin.PostAsync<AlertDrill>(Drills);
+        try
+        {
+            using var alerts = ActivatorUtilities.CreateInstance<SystemHealthAlerts>(server.Services);
+            await alerts.CheckAsync(Ct);
+            await alerts.CheckAsync(Ct);
+
+            // No on-call number: told in the app only, so the next check pages the second contact, well within the quarter hour.
+            var paged = await IncidentAsync(admin, AlertDrills.WarningPrefix + drill.Code);
+            paged.Messages.ShouldNotContain(m => m.Level == AlertLevel.OnCall);
+            paged.Level.ShouldBe(AlertLevel.SecondContact);
+            paged.SecondContactAt.ShouldNotBeNull().ShouldBeLessThan(paged.ToldAt.ShouldNotBeNull() + AlertEscalation.DefaultEscalateAfter);
+            paged.Messages.ShouldHaveSingleItem().Recipient.ShouldBe(Masked("+919800000151"));
+        }
+        finally
+        {
+            await AcknowledgeOpenDrillsAsync(admin);
+        }
+    }
+
+    [Fact]
+    public async Task A_warning_that_clears_and_comes_back_is_a_new_alert_told_again()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        await using var onCall = await SettingAsync("alerts.oncallPhone", "+919800000152");
+        var recurring = new HealthWarning("test.recurring:" + Guid.NewGuid().ToString("N")[..8], "critical", "A test warning that clears and comes back.");
+
+        await CheckWithAsync(recurring);
+        var first = await IncidentAsync(admin, recurring.Code);
+        first.ToldAt.ShouldNotBeNull();
+        first.Messages.ShouldNotBeEmpty();
+
+        await CheckWithAsync();
+        (await IncidentAsync(admin, recurring.Code)).ClearedAt.ShouldNotBeNull();
+        using (var cleared = await admin.SendRawAsync(HttpMethod.Post, $"{Alerts}/{first.Id}/acknowledge"))
+        {
+            cleared.StatusCode.ShouldBe(HttpStatusCode.Conflict, "it cleared before anyone acknowledged it");
+        }
+
+        // Back again, however soon: a new alert, told at once, as a broken audit chain that comes back is a second break.
+        await CheckWithAsync(recurring);
+        var back = await IncidentAsync(admin, recurring.Code);
+        back.Id.ShouldNotBe(first.Id);
+        (back.ToldAt, back.ClearedAt).ShouldBe((back.RaisedAt, null));
+        back.Messages.ShouldNotBeEmpty();
+        (await admin.GetAsync<AlertReport>($"{Alerts}?days=1")).Incidents.Count(i => i.Code == recurring.Code).ShouldBe(2);
+
+        await CheckWithAsync();
+    }
+
+    [Fact]
+    public async Task A_warning_whose_code_is_longer_than_its_column_stays_one_alert_told_once()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        await using var onCall = await SettingAsync("alerts.oncallPhone", "+919800000153");
+        var lengthy = new HealthWarning($"test.lengthy:{Guid.NewGuid().ToString("N")[..8]}:" + new string('x', AlertIncident.CodeLength), "critical",
+            "A test warning whose code is longer than the alerts keep.");
+        var kept = lengthy.Code[..AlertIncident.CodeLength];
+
+        await CheckWithAsync(lengthy);
+        var first = await IncidentAsync(admin, kept);
+        first.Messages.ShouldNotBeEmpty();
+
+        // The next check finds the same warning: the same alert, still open, and nobody told it again.
+        await CheckWithAsync(lengthy);
+        var next = await IncidentAsync(admin, kept);
+        next.Id.ShouldBe(first.Id);
+        next.ClearedAt.ShouldBeNull();
+        next.Messages.Count.ShouldBe(first.Messages.Count);
+        (await admin.GetAsync<AlertReport>($"{Alerts}?days=1")).Incidents.Count(i => i.Code == kept).ShouldBe(1);
+
+        await CheckWithAsync();
+    }
+
+    [Fact]
+    public async Task The_report_counts_every_alert_of_the_period_though_it_lists_only_the_latest_that_cleared()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var code = "test.report:" + Guid.NewGuid().ToString("N")[..8];
+        var raised = DateTimeOffset.UtcNow.AddDays(-200);
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            db.AddRange(Enumerable.Range(0, AlertIncidents.Listed + 1).Select(n => new AlertIncident
+            {
+                Code = code,
+                Server = $"report-{n}",
+                Message = "A test alert of the report.",
+                RaisedAt = raised.AddMinutes(n),
+                ToldAt = raised.AddMinutes(n),
+                AcknowledgedAt = raised.AddMinutes(n + 7),
+                ClearedAt = raised.AddMinutes(n + 60),
+            }));
+            await db.SaveChangesAsync(Ct);
+        }
+
+        // These alone are more than a year's report lists: the oldest is left out of the list, but not of the figures.
+        var report = await admin.GetAsync<AlertReport>($"{Alerts}?days=366");
+        var open = report.Incidents.Count(i => i.ClearedAt is null);
+        report.Incidents.Count(i => i.ClearedAt is not null).ShouldBe(AlertIncidents.Listed, "the latest that cleared are listed");
+        report.Incidents.ShouldNotContain(i => i.Code == code && i.Server == "report-0");
+        report.Total.ShouldBeGreaterThanOrEqualTo(AlertIncidents.Listed + 1 + open, "every alert of the period is counted, listed or not");
+        report.Acknowledged.ShouldBeGreaterThanOrEqualTo(AlertIncidents.Listed + 1);
+        report.MedianMinutesToAcknowledge.ShouldBe(7, "over every alert acknowledged, most of them these");
+    }
+
+    [Fact]
     public async Task The_heartbeat_fetches_its_outside_address_and_system_health_says_when_it_fails()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
@@ -103,9 +319,9 @@ public sealed class AlertingTests(HospitalServer server)
         var token = Guid.NewGuid().ToString("N");
         await using var monitor = Monitor.Start();
 
-        // Set as an administrator sets it, without asking for a secret. The address holds the monitor's token: it is kept
-        // encrypted, never shown again, and left out of the audit trail.
-        await admin.PutAsync($"{Settings}/{AlertHeartbeat.UrlSetting}", new SaveSettingRequest(JsonValue.Create($"{monitor.Address}ping/{token}"), null, false, null));
+        // Set as an administrator sets it, without asking for a secret, and approved by a second (where alerts go waits for
+        // one). The address holds the monitor's token: it is kept encrypted, never shown again, and left out of the audit trail.
+        await server.SaveSettingAsync(admin, AlertHeartbeat.UrlSetting, new SaveSettingRequest(JsonValue.Create($"{monitor.Address}ping/{token}"), null, false, null));
         try
         {
             var saved = (await admin.GetAsync<List<SettingDto>>($"{Settings}?prefix={AlertHeartbeat.UrlSetting}")).Single(s => s.Key == AlertHeartbeat.UrlSetting);
@@ -159,6 +375,7 @@ public sealed class AlertingTests(HospitalServer server)
         var training = (await admin.GetAsync<SystemHealthReport>(Health)).Warnings;
         training.ShouldNotContain(w => w.Code == AlertReadiness.Code);
         training.ShouldNotContain(w => w.Code == AlertHeartbeat.OffCode);
+        training.ShouldNotContain(w => w.Code == AlertEscalation.NotSetCode);
 
         using (server.AsLiveServer())
         {
@@ -167,6 +384,11 @@ public sealed class AlertingTests(HospitalServer server)
             notReady.Severity.ShouldBe("critical", "MSG91 refuses every alert SMS whose template has no DLT template id");
             notReady.Message.ShouldContain("MSG91 requires");
             live.Single(w => w.Code == AlertHeartbeat.OffCode).Severity.ShouldBe("warning", "nothing outside the hospital notices if the server stops");
+            live.Single(w => w.Code == AlertEscalation.NotSetCode).Severity.ShouldBe("warning", "an alert nobody acknowledges would stop at IT on-call");
+            await using (await SettingAsync(AlertEscalation.SupportSetting, "+919800000154"))
+            {
+                (await admin.GetAsync<SystemHealthReport>(Health)).Warnings.ShouldNotContain(w => w.Code == AlertEscalation.NotSetCode);
+            }
 
             await using (await AlertTemplateDltIdAsync("1107161234567890123"))
             {
@@ -174,6 +396,38 @@ public sealed class AlertingTests(HospitalServer server)
             }
         }
     }
+
+    /// <summary>The alert of <paramref name="code"/> raised last, as the alerts' report has it.</summary>
+    private static async Task<AlertIncidentDto> IncidentAsync(ApiClient admin, string code) =>
+        (await admin.GetAsync<AlertReport>($"{Alerts}?days=1")).Incidents.Where(i => i.Code == code).MaxBy(i => i.RaisedAt).ShouldNotBeNull();
+
+    /// <summary>One check of the alerts with System health's critical warnings now and <paramref name="extra"/>.</summary>
+    private async Task CheckWithAsync(params HealthWarning[] extra)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var critical = (await scope.ServiceProvider.GetRequiredService<SystemHealthService>().BuildAsync(Ct)).Warnings
+            .Where(w => w.Severity == "critical" && !w.Code.StartsWith("wifi.", StringComparison.Ordinal));
+        await scope.ServiceProvider.GetRequiredService<AlertIncidents>().CheckAsync([.. critical, .. extra], DateTimeOffset.UtcNow, Ct);
+    }
+
+    private async Task<int> EscalationsAsync(Guid incidentId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var entityId = incidentId.ToString();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuditEvent>()
+            .CountAsync(e => e.Action == AlertIncidents.EscalatedAction && e.EntityId == entityId, Ct);
+    }
+
+    /// <summary>The server is shared by every test of the run: no drill is left open.</summary>
+    private static async Task AcknowledgeOpenDrillsAsync(ApiClient admin)
+    {
+        foreach (var open in (await admin.GetAsync<List<AlertDrill>>(Drills)).Where(d => d.State == "open"))
+        {
+            using var _ = await admin.SendRawAsync(HttpMethod.Post, $"{Drills}/{open.Id}/acknowledge");
+        }
+    }
+
+    private static string Masked(string phone) => Phone.Mask(Phone.Normalize(phone));
 
     /// <summary>
     /// A setting changed for the rest of the test, then put back as it was: the server is shared by every test of the run.

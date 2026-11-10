@@ -1,6 +1,8 @@
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Common;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
+using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Realtime;
 
@@ -16,6 +18,8 @@ public sealed class SurgeryService(
     SpecialtyChargeService charges,
     IRealtimePublisher realtime,
     ICurrentUser currentUser,
+    IAuditLogger audit,
+    INotificationService notifications,
     TimeProvider time)
 {
     public async Task<Result<SurgeryCreated>> CreateAsync(CreateSurgeryBookingRequest request, CancellationToken ct)
@@ -25,7 +29,8 @@ public sealed class SurgeryService(
             return Error.Rule("facility.required", "Select a facility first.");
         }
 
-        var checks = await ValidateReferencesAsync(request.PatientId, request.SurgeonId, request.AnaesthetistId, request.AssistantIds, request.ProcedureServiceItemId, ct);
+        var checks = await ValidateReferencesAsync(
+            request.PatientId, request.SurgeonId, request.AnaesthetistId, request.AssistantIds, request.NurseId, request.ProcedureServiceItemId, ct);
         if (checks.IsFailure)
         {
             return checks.Error!;
@@ -41,8 +46,9 @@ public sealed class SurgeryService(
             Status = SurgeryStatus.Requested,
             PreferredDate = request.PreferredDate,
         };
-        await ApplyPlanAsync(booking, request.ProcedureServiceItemId, request.ProcedureCode, request.ProcedureName, request.Laterality, request.Diagnosis,
-            request.SurgeonId, request.AssistantIds, request.AnaesthetistId, request.AnaesthesiaType, request.Priority, request.Notes, ct);
+        await ApplyPlanAsync(booking, request.ProcedureServiceItemId, request.ProcedureCode, request.ProcedureName, request.Laterality, request.SiteLevel,
+            request.Diagnosis, request.SurgeonId, request.AssistantIds, request.AnaesthetistId, request.NurseId, request.AnaesthesiaType, request.Priority,
+            request.Notes, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (request.TheatreId is { } theatreId)
@@ -63,6 +69,12 @@ public sealed class SurgeryService(
         return new SurgeryCreated(booking.Id, booking.BookingNumber, booking.Status);
     }
 
+    /// <summary>
+    /// Edits the plan. Before the WHO Sign-in, as asked. After it, a change of side, level or procedure is made only by the
+    /// operating surgeon or the anaesthetist, from their own sign-in, with a reason (<see cref="SiteChangeRule"/>): the Sign-in
+    /// and Time-out done are voided and redone, the change is audited at Warning, and the theatre team is told. After the
+    /// incision it is refused (maker-checker slice 10).
+    /// </summary>
     public async Task<Result> UpdatePlanAsync(Guid id, UpdateSurgeryPlanRequest request, CancellationToken ct)
     {
         var booking = await db.Set<SurgeryBooking>().FirstOrDefaultAsync(b => b.Id == id, ct);
@@ -71,22 +83,54 @@ public sealed class SurgeryService(
             return Error.NotFound(nameof(SurgeryBooking), id);
         }
 
+        var before = booking.Site;
+        var asked = new SurgicalSite(request.ProcedureServiceItemId, request.ProcedureName, request.Laterality, Clean(request.SiteLevel));
+        var siteChange = SiteChangeRule.Check(booking.Status, booking.SignInCompletedAt is not null, before, asked, booking.SurgeonId, booking.AnaesthetistId,
+            currentUser.PractitionerId, request.ChangeReason);
         var editable = booking.CanChangePlan();
+        if (editable.IsFailure && booking.Status != SurgeryStatus.InProgress)
+        {
+            return editable;
+        }
+
+        if (siteChange.IsFailure)
+        {
+            return siteChange;
+        }
+
         if (editable.IsFailure)
         {
             return editable;
         }
 
-        var checks = await ValidateReferencesAsync(booking.PatientId, request.SurgeonId, request.AnaesthetistId, request.AssistantIds, request.ProcedureServiceItemId, ct);
+        var checks = await ValidateReferencesAsync(
+            booking.PatientId, request.SurgeonId, request.AnaesthetistId, request.AssistantIds, request.NurseId, request.ProcedureServiceItemId, ct);
         if (checks.IsFailure)
         {
             return checks;
         }
 
         db.SetExpectedVersion(booking, request.Version);
+        var voids = booking.SignInCompletedAt is not null && before.Differs(asked);
         booking.PreferredDate = request.PreferredDate;
-        await ApplyPlanAsync(booking, request.ProcedureServiceItemId, request.ProcedureCode, request.ProcedureName, request.Laterality, request.Diagnosis,
-            request.SurgeonId, request.AssistantIds, request.AnaesthetistId, request.AnaesthesiaType, request.Priority, request.Notes, ct);
+        await ApplyPlanAsync(booking, request.ProcedureServiceItemId, request.ProcedureCode, request.ProcedureName, request.Laterality, request.SiteLevel,
+            request.Diagnosis, request.SurgeonId, request.AssistantIds, request.AnaesthetistId, request.NurseId, request.AnaesthesiaType, request.Priority,
+            request.Notes, ct);
+        booking.ResetSiteMarkingIfMoved(before);
+        var voided = voids ? booking.VoidChecklistForSiteChange(before, request.ChangeReason!, currentUser.Stamp(time.GetUtcNow())) : null;
+        if (voided is not null)
+        {
+            audit.Add(new AuditEntry(AuditCategories.Clinical, "surgery.site_changed_after_sign_in",
+                Fit($"Surgery {booking.BookingNumber}: {voided.Before} → {voided.After} after the WHO Sign-in, by {voided.ByName}: {voided.Reason}. "
+                    + $"Voided: {string.Join(", ", voided.Phases.Select(SurgeryBooking.Describe))}; redo them before the incision.", 1000))
+            {
+                PatientId = booking.PatientId,
+                EntityType = nameof(SurgeryBooking),
+                EntityId = booking.Id.ToString(),
+                Severity = AuditSeverity.Warning,
+                Details = new { before = voided.Before, after = voided.After, reason = voided.Reason, phases = voided.Phases, voided = voided.Voided },
+            });
+        }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (SurgeryScheduling.IsBlocking(booking.Status))
@@ -101,6 +145,11 @@ public sealed class SurgeryService(
 
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+        if (voided is not null)
+        {
+            await TellTheTeamAsync(booking, voided, ct);
+        }
+
         await realtime.OtChangedAsync(booking.FacilityId, booking.Id, ct);
         return Result.Success();
     }
@@ -254,7 +303,7 @@ public sealed class SurgeryService(
 
         if (booking.RequiresAnaesthetist && booking.AnaesthetistId is null)
         {
-            return Error.Field("anaesthetistId", "Choose the anaesthetist (required for every technique except local anaesthesia).");
+            return Error.Field("anaesthetistId", "Choose the anaesthetist (required for every technique except local and topical anaesthesia).");
         }
 
         if (booking.ToSlot() is not { } slot)
@@ -288,7 +337,7 @@ public sealed class SurgeryService(
     }
 
     private async Task<Result> ValidateReferencesAsync(
-        Guid patientId, Guid? surgeonId, Guid? anaesthetistId, IReadOnlyList<Guid>? assistants, Guid? procedureItemId, CancellationToken ct)
+        Guid patientId, Guid? surgeonId, Guid? anaesthetistId, IReadOnlyList<Guid>? assistants, Guid? nurseId, Guid? procedureItemId, CancellationToken ct)
     {
         var patient = await SpecialtyLookups.EnsurePatientAsync(db, patientId, ct);
         if (patient.IsFailure)
@@ -309,15 +358,23 @@ public sealed class SurgeryService(
             return Error.Field("anaesthetistId", "The anaesthetist must be a different doctor from the operating surgeon.");
         }
 
+        // The OT register names the assisting nurse or OT in-charge with a nursing qualification and registration: a nurse or
+        // an OT technician from the practitioner master, still in use.
+        if (nurseId is { } nurse && !await db.Set<Practitioner>().AnyAsync(
+                p => p.Id == nurse && p.IsActive && (p.Kind == PractitionerKind.Nurse || p.Kind == PractitionerKind.Technician), ct))
+        {
+            return Error.Field("nurseId", "Choose a nurse or OT technician who is in use.");
+        }
+
         return procedureItemId is { } itemId && !await db.Set<ServiceItem>().AnyAsync(s => s.Id == itemId && s.IsActive, ct)
             ? Error.Field("procedureServiceItemId", "Choose an active procedure from the service catalogue.")
             : Result.Success();
     }
 
     private async Task ApplyPlanAsync(
-        SurgeryBooking booking, Guid? procedureItemId, string? procedureCode, string procedureName, Laterality laterality, string? diagnosis,
-        Guid? surgeonId, IReadOnlyList<Guid>? assistants, Guid? anaesthetistId, AnaesthesiaType anaesthesia, SurgeryPriority priority, string? notes,
-        CancellationToken ct)
+        SurgeryBooking booking, Guid? procedureItemId, string? procedureCode, string procedureName, Laterality laterality, string? siteLevel, string? diagnosis,
+        Guid? surgeonId, IReadOnlyList<Guid>? assistants, Guid? anaesthetistId, Guid? nurseId, AnaesthesiaType anaesthesia, SurgeryPriority priority,
+        string? notes, CancellationToken ct)
     {
         booking.ProcedureServiceItemId = procedureItemId;
         booking.ProcedureCode = string.IsNullOrWhiteSpace(procedureCode)
@@ -325,10 +382,12 @@ public sealed class SurgeryService(
             : procedureCode.Trim().ToUpperInvariant();
         booking.ProcedureName = procedureName.Trim();
         booking.Laterality = laterality;
+        booking.SiteLevel = Clean(siteLevel);
         booking.Diagnosis = Clean(diagnosis);
         booking.SurgeonId = surgeonId;
         booking.AssistantIds = (assistants ?? []).Distinct().Where(a => a != surgeonId).ToList();
         booking.AnaesthetistId = anaesthetistId;
+        booking.NurseId = nurseId;
         booking.AnaesthesiaType = anaesthesia;
         booking.Priority = priority;
         booking.Notes = Clean(notes);
@@ -366,6 +425,31 @@ public sealed class SurgeryService(
 
         return await charges.PostAsync(lines, ct);
     }
+
+    /// <summary>
+    /// Tells the theatre team (the surgeon, assistants, anaesthetist and assisting nurse with an account), other than the one who
+    /// changed it, that the side or procedure changed after the Sign-in and the checklist is to be redone.
+    /// </summary>
+    private async Task TellTheTeamAsync(SurgeryBooking booking, ChecklistVoid voided, CancellationToken ct)
+    {
+        var team = new List<Guid?> { booking.SurgeonId, booking.AnaesthetistId, booking.NurseId };
+        team.AddRange(booking.AssistantIds.Select(a => (Guid?)a));
+        var practitioners = team.OfType<Guid>().Distinct().ToList();
+        var users = await db.Set<User>().AsNoTracking()
+            .Where(u => u.PractitionerId != null && practitioners.Contains(u.PractitionerId.Value) && u.IsActive && u.Id != currentUser.UserId)
+            .Select(u => u.Id)
+            .ToListAsync(ct);
+        if (users.Count == 0)
+        {
+            return;
+        }
+
+        await notifications.NotifyUsersAsync(users, $"Surgery {booking.BookingNumber}: side or procedure changed, redo the WHO checklist",
+            $"{voided.Before} → {voided.After}, by {voided.ByName}: {voided.Reason}. The {string.Join(" and ", voided.Phases.Select(SurgeryBooking.Describe))} must be done again before the incision.",
+            $"/ot/bookings/{booking.Id}", "ot", "warning", ct);
+    }
+
+    private static string Fit(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

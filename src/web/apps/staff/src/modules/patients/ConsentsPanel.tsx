@@ -1,6 +1,7 @@
 import {
   Button,
   Caption1,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogBody,
@@ -23,9 +24,11 @@ import { AddRegular, ShieldKeyholeRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDate, formatDateTime, isApiError } from '@hc360/core';
 import {
+  CheckboxGroup,
   ChoiceField,
   CloseRequestScope,
   DataTable,
+  DateField,
   EmptyState,
   FormGrid,
   StatusBadge,
@@ -37,15 +40,27 @@ import {
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Controller, useForm, useWatch } from 'react-hook-form';
+import { Controller, useForm, useWatch, type Control, type FieldPath } from 'react-hook-form';
 import { usePermission } from '@/lib/permissions';
 import { ReasonDialog } from '@/modules/inpatient/ReasonDialog';
-import { consentApi, patientKeys, patientQueries, type CaptureConsentRequest, type ConsentDto } from './api';
+import type { WitnessConfirmed } from '@/modules/witness/api';
+import { WitnessPanel } from '@/modules/witness/WitnessPanel';
+import {
+  consentApi,
+  patientKeys,
+  patientQueries,
+  SHARED_RECORD_KINDS,
+  SHARING_PURPOSES,
+  type CaptureConsentRequest,
+  type ConsentDto,
+} from './api';
 import {
   CONSENT_LIMITS,
   consentFormDefaults,
   consentFormSchema,
   consentServerErrors,
+  limitsSharing,
+  needsWitness,
   toCaptureRequest,
   type ConsentFormValues,
 } from './consentForm';
@@ -59,6 +74,9 @@ import {
   otherGivenConsents,
   otherGivenNote,
   recordedNotice,
+  SHARED_RECORD_KIND_LABELS,
+  SHARING_PURPOSE_LABELS,
+  sharingScopeSummary,
   signedByText,
   whatsAppSummary,
   withdrawalEffect,
@@ -82,6 +100,16 @@ const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
   details: { display: 'flex', flexDirection: 'column', gap: '8px' },
   whatsApp: { marginBottom: '12px' },
+  scope: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    paddingLeft: '12px',
+    borderLeftWidth: tokens.strokeWidthThick,
+    borderLeftStyle: 'solid',
+    borderLeftColor: tokens.colorNeutralStroke2,
+  },
+  choices: { display: 'flex', flexWrap: 'wrap', columnGap: '16px' },
 });
 
 interface Withdrawal {
@@ -177,6 +205,7 @@ export function ConsentsPanel({ patientId }: { patientId: string }) {
             render: (c) => (
               <span className={styles.cell}>
                 <Text weight="semibold">{consentTypeLabel(c.type)}</Text>
+                {c.sharingScope && <Caption1>{sharingScopeSummary(c.sharingScope)}</Caption1>}
                 {c.notes && <Caption1 className={styles.muted}>{c.notes}</Caption1>}
               </span>
             ),
@@ -355,6 +384,103 @@ function RecordConsentDialog({ patientId, open, onClose }: { patientId: string; 
   );
 }
 
+/**
+ * What a limited record-sharing consent covers: the partner accounts, the purposes, the kinds of records, the records'
+ * dates and the last day. Nothing chosen in a group leaves that part open, as the server reads it.
+ */
+function SharingScopeFields({ control }: { control: Control<ConsentFormValues> }) {
+  const styles = useStyles();
+  const partners = useQuery(patientQueries.sharingPartners());
+  return (
+    <div className={styles.scope}>
+      {partners.isError ? (
+        <MessageBar intent="error">
+          <MessageBarBody>
+            The partner accounts could not be loaded. {isApiError(partners.error) ? partners.error.userMessage : ''}
+          </MessageBarBody>
+        </MessageBar>
+      ) : (
+        <ChecklistField
+          control={control}
+          name="shareWith"
+          label="Who may read"
+          hint={
+            partners.data?.length === 0
+              ? 'The hospital has not set up any partner accounts yet: leave this open or ask the administrator.'
+              : 'None ticked: every partner account.'
+          }
+          options={(partners.data ?? []).map((p) => ({ value: p.id, label: p.name }))}
+        />
+      )}
+      <ChecklistField
+        control={control}
+        name="purposes"
+        label="For what"
+        hint="None ticked: any purpose. A partner states its purpose with each request."
+        options={SHARING_PURPOSES.map((p) => ({ value: p, label: SHARING_PURPOSE_LABELS[p] }))}
+      />
+      <ChecklistField
+        control={control}
+        name="kinds"
+        label="Which records"
+        hint="None ticked: all of them but counselling notes, which are shared only when ticked. The patient’s name, sex and date of birth go with any of them."
+        options={SHARED_RECORD_KINDS.map((k) => ({ value: k, label: SHARED_RECORD_KIND_LABELS[k] }))}
+      />
+      <FormGrid columns={3} minColumnWidth={160}>
+        <DateField control={control} name="recordsFrom" label="Records from" hint="The records’ first day." />
+        <DateField control={control} name="recordsTo" label="Records up to" hint="The records’ last day." />
+        <DateField control={control} name="until" label="Until" hint="The last day anyone may read." />
+      </FormGrid>
+    </div>
+  );
+}
+
+/** Several ticks from a list, as the form's array fields hold them. */
+function ChecklistField({
+  control,
+  name,
+  label,
+  hint,
+  options,
+}: {
+  control: Control<ConsentFormValues>;
+  name: Extract<FieldPath<ConsentFormValues>, 'shareWith' | 'purposes' | 'kinds'>;
+  label: string;
+  hint: string;
+  options: { value: string; label: string }[];
+}) {
+  const styles = useStyles();
+  return (
+    <Controller
+      control={control}
+      name={name}
+      render={({ field, fieldState }) => {
+        const selected = field.value as string[];
+        return (
+          <CheckboxGroup label={label} hint={hint} validationMessage={fieldState.error?.message}>
+            <div className={styles.choices}>
+              {options.map((option) => (
+                <Checkbox
+                  key={option.value}
+                  label={option.label}
+                  checked={selected.includes(option.value)}
+                  onChange={(_, data) =>
+                    field.onChange(
+                      data.checked === true
+                        ? [...selected, option.value]
+                        : selected.filter((value) => value !== option.value),
+                    )
+                  }
+                />
+              ))}
+            </div>
+          </CheckboxGroup>
+        );
+      }}
+    />
+  );
+}
+
 /** The record-consent form. The dialog mounts it each time it opens, so it always starts empty. */
 export function RecordConsentForm({ patientId, onClose }: { patientId: string; onClose: () => void }) {
   const styles = useStyles();
@@ -367,6 +493,11 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
     defaultValues: consentFormDefaults(),
   });
   const signer = useWatch({ control: form.control, name: 'signer' });
+  const [type, decision, sharing] = useWatch({ control: form.control, name: ['type', 'decision', 'sharing'] });
+  const askScope = type === 'DataSharing' && decision === 'given';
+  // The whole record shared with no signed form is witnessed at this screen (MAKER-CHECKER.md, slice 14).
+  const witnessed = needsWitness({ type, decision, sharing });
+  const [witness, setWitness] = useState<WitnessConfirmed | null>(null);
 
   const save = useMutation({
     mutationFn: (request: CaptureConsentRequest) => consentApi.capture(patientId, request),
@@ -377,6 +508,13 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
       onClose();
     },
     onError: (error) => {
+      // The confirmation is used once: a refused save needs the witness to confirm again.
+      if (
+        isApiError(error) &&
+        (error.code === 'witness.confirmation_unusable' || error.code === 'consent.witness_required')
+      ) {
+        setWitness(null);
+      }
       // A field the server refused keeps Save disabled until it is changed; the first one gets the focus.
       const { fields, other } = consentServerErrors(error);
       fields.forEach(([field, message], index) =>
@@ -392,7 +530,7 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
     <form
       onSubmit={form.handleSubmit((values) => {
         setProblems([]);
-        save.mutate(toCaptureRequest(values));
+        save.mutate(toCaptureRequest(values, witness?.confirmationId ?? null));
       })}
       noValidate
     >
@@ -440,6 +578,29 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
               { value: 'refused', label: 'Refused' },
             ]}
           />
+          {askScope && (
+            <ChoiceField
+              control={form.control}
+              name="sharing"
+              label="What the patient agreed to share"
+              hint="Through the FHIR API, with other care providers’ integration accounts. Counselling notes are shared only when the patient chooses them."
+              options={[
+                { value: 'everything', label: 'The whole record but counselling notes, with every partner' },
+                { value: 'limited', label: 'Only what the patient chose' },
+              ]}
+            />
+          )}
+          {askScope && limitsSharing({ type, decision, sharing }) && <SharingScopeFields control={form.control} />}
+          {witnessed && (
+            <WitnessPanel
+              purpose="consent.record_sharing"
+              patientId={patientId}
+              witness={witness}
+              onChange={setWitness}
+              legend="Witness (another member of staff, at this screen)"
+              description="Sharing the whole record with no signed form is witnessed: another member of staff types their own user name and password here. Nothing is signed in, and the password is not kept. Or limit what is shared."
+            />
+          )}
           <ChoiceField
             control={form.control}
             name="signer"
@@ -471,13 +632,15 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
             </FormGrid>
           )}
           <FormGrid columns={2} minColumnWidth={200}>
-            <TextField
-              control={form.control}
-              name="witnessName"
-              label="Witness"
-              maxLength={CONSENT_LIMITS.witnessName}
-              autoComplete="off"
-            />
+            {!witnessed && (
+              <TextField
+                control={form.control}
+                name="witnessName"
+                label="Witness"
+                maxLength={CONSENT_LIMITS.witnessName}
+                autoComplete="off"
+              />
+            )}
             <TextField
               control={form.control}
               name="consentVersion"
@@ -511,7 +674,7 @@ export function RecordConsentForm({ patientId, onClose }: { patientId: string; o
           <Button
             type="submit"
             appearance="primary"
-            disabled={!form.formState.isValid || save.isPending}
+            disabled={!form.formState.isValid || save.isPending || (witnessed && !witness)}
             icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
             Save

@@ -17,6 +17,7 @@ using HyFib.HealthCare360.Modules.Privacy.Services;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Dialysis;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Physiotherapy;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
@@ -54,28 +55,41 @@ public sealed class AuditedChangeTests(HospitalServer server)
             Letters(6).ToUpperInvariant(), annexeName, null, new Address { City = "Chennai", PinCode = "600002" },
             null, null, null, null, null, null, null, null, null, null, IsActive: false, null))).Id;
 
-        // A front office clerk moves to the wards, and covers the annexe too.
+        // A front office clerk moves to the wards, and covers the annexe too. What adds access is asked for, and given when
+        // another administrator approves it; what takes it away is done at once.
         var account = await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", new CreateUserRequest(
             "it-ward-" + Letters(6), "Saranya", Email: null, Phone: null, [frontOffice.Id], [main], main, PractitionerId: null, TemporaryPassword: null));
+        await server.ApproveGrantAsync(account.ApprovalId.ShouldNotBeNull("a new account's roles wait for approval"));
         var user = await admin.GetAsync<UserDetail>($"/api/v1/admin/users/{account.UserId}");
-        await admin.PutAsync($"/api/v1/admin/users/{user.Id}", new UpdateUserRequest(
+        user.RoleIds.ShouldBe([frontOffice.Id]);
+        await server.UpdateAndApproveAsync(admin, $"/api/v1/admin/users/{user.Id}", new UpdateUserRequest(
             user.DisplayName, user.Email, user.Phone, [nurse.Id], [main, annexe], main, null, IsActive: true, user.Version));
 
         var trail = await TrailAsync(nameof(User), user.Id);
 
         var created = Details(trail, "user.created");
-        Names(created["roles"]!).ShouldBe([SystemRoles.FrontOffice]);
-        Ids(created["facilities"]!).ShouldBe([main]);
+        created["roles"]!.AsArray().ShouldBeEmpty();
+        Names(created["asked"]!["roles"]!).ShouldBe([SystemRoles.FrontOffice]);
+        Ids(created["asked"]!["facilities"]!).ShouldBe([main]);
         var updated = Details(trail, "user.updated");
-        Names(updated["roles"]!["granted"]!).ShouldBe([SystemRoles.Nurse]);
+        updated["roles"]!["granted"]!.AsArray().ShouldBeEmpty();
         Names(updated["roles"]!["withdrawn"]!).ShouldBe([SystemRoles.FrontOffice]);
-        Names(updated["facilities"]!["granted"]!).ShouldBe([annexeName]);
-        updated["facilities"]!["withdrawn"]!.AsArray().ShouldBeEmpty();
+        Names(updated["asked"]!["roles"]!).ShouldBe([SystemRoles.Nurse]);
+        Names(updated["asked"]!["facilities"]!).ShouldBe([annexeName]);
 
-        // The account's own data events hold the grants too, whichever way they are made.
-        Rows(Details(trail, "User.create")["roles"]!, "roleId").ShouldBe([frontOffice.Id]);
+        // Each approval gives what was asked, newest first.
+        var given = trail.Where(e => e.Action == "user.access_granted").Select(e => JsonNode.Parse(e.Details!)!).ToList();
+        given.Count.ShouldBe(2);
+        Ids(given[0]["roles"]!).ShouldBe([nurse.Id]);
+        Ids(given[0]["facilities"]!).ShouldBe([annexe]);
+        Ids(given[1]["roles"]!).ShouldBe([frontOffice.Id]);
+        Ids(given[1]["facilities"]!).ShouldBe([main]);
+
+        // The account's own data events hold the grants too, whichever way they are made: the last one is the nurse role
+        // and the annexe given on approval.
+        RowsOrNone(Details(trail, "User.create")["roles"], "roleId").ShouldBeEmpty();
         var change = Details(trail, "User.update");
-        Rows(change["roles"]!["from"]!, "roleId").ShouldBe([frontOffice.Id]);
+        RowsOrNone(change["roles"]!["from"], "roleId").ShouldBeEmpty();
         Rows(change["roles"]!["to"]!, "roleId").ShouldBe([nurse.Id]);
         Rows(change["facilities"]!["from"]!, "facilityId").ShouldBe([main]);
         Rows(change["facilities"]!["to"]!, "facilityId").ShouldBe([main, annexe], ignoreOrder: true);
@@ -192,25 +206,28 @@ public sealed class AuditedChangeTests(HospitalServer server)
         var privateRoom = await ServiceAsync(admin, "Private room", ServiceCategory.BedCharge, 3_000m);
         var icu = await ServiceAsync(admin, "ICU bed", ServiceCategory.BedCharge, 8_000m);
         var code = "AT" + Letters(6).ToUpperInvariant();
-        var plan = await admin.PostAsync<TariffPlanDetail>("/api/v1/billing/tariffs", Plan(code, null, new BedMultiplierInput(privateRoom, 1.5m)));
+        // A plan's terms change only when two people agree: each save of the multipliers is approved by the other administrator.
+        var plan = await server.SaveTariffPlanAsync(admin, Plan(code, null, new BedMultiplierInput(privateRoom, 1.5m)));
 
         // The insurer's new contract: private rooms at twice the rate, and the ICU at two and a half.
-        plan = await admin.PutAsync<TariffPlanDetail>($"/api/v1/billing/tariffs/{plan.Id}",
-            Plan(code, plan.Version, new BedMultiplierInput(privateRoom, 2m), new BedMultiplierInput(icu, 2.5m)));
+        plan = await server.SaveTariffPlanAsync(admin,
+            Plan(code, plan.Version, new BedMultiplierInput(privateRoom, 2m), new BedMultiplierInput(icu, 2.5m)), plan.Id);
 
-        // Saved again from the screen, multipliers untouched.
+        // Saved again from the screen, multipliers untouched: nothing to ask for, the description saved at once.
         await admin.PutAsync<TariffPlanDetail>($"/api/v1/billing/tariffs/{plan.Id}",
             Plan(code, plan.Version, new BedMultiplierInput(icu, 2.5m), new BedMultiplierInput(privateRoom, 2m)) with { Description = "2027 contract" });
 
+        // Newest first: the multipliers as each approval set them, from none (a new plan is made without its terms).
         var trail = await TrailAsync(nameof(TariffPlan), plan.Id);
-        Multipliers(Details(trail, "TariffPlan.create")["bedMultipliers"]!).ShouldBe([(privateRoom, 1.5m)]);
         var updates = trail.Where(e => e.Action == "TariffPlan.update").Select(e => JsonNode.Parse(e.Details!)!).ToList();
-        updates.Count.ShouldBe(2);
-        var changed = updates[1]["bedMultipliers"]!;
-        Multipliers(changed["from"]!).ShouldBe([(privateRoom, 1.5m)]);
-        Multipliers(changed["to"]!).ShouldBe([(privateRoom, 2m), (icu, 2.5m)], ignoreOrder: true);
-        updates[0].AsObject().ContainsKey("bedMultipliers").ShouldBeFalse("The same multipliers saved again are no change.");
-        updates[0]["description"]!["to"]!.GetValue<string>().ShouldBe("2027 contract");
+        var set = updates.Where(u => u.AsObject().ContainsKey("bedMultipliers")).Select(u => u["bedMultipliers"]!).ToList();
+        set.Count.ShouldBe(2, "each approval sets them once");
+        Multipliers(set[0]["from"]!).ShouldBe([(privateRoom, 1.5m)]);
+        Multipliers(set[0]["to"]!).ShouldBe([(privateRoom, 2m), (icu, 2.5m)], ignoreOrder: true);
+        Multipliers(set[1]["to"]!).ShouldBe([(privateRoom, 1.5m)]);
+        var described = updates.Single(u => u.AsObject().ContainsKey("description"));
+        described.AsObject().ContainsKey("bedMultipliers").ShouldBeFalse("The same multipliers saved again are no change.");
+        described["description"]!["to"]!.GetValue<string>().ShouldBe("2027 contract");
     }
 
     [Fact]
@@ -219,15 +236,16 @@ public sealed class AuditedChangeTests(HospitalServer server)
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var item = await ServiceAsync(admin, "Cataract package", ServiceCategory.Package, 18_000m);
         var lens = await ServiceAsync(admin, "Foldable IOL", ServiceCategory.Consumable, 6_000m);
-        var package = await admin.PostAsync<PackageDetail>("/api/v1/billing/packages", new SavePackageRequest(
+        var package = await server.SavePackageAsync(admin, new SavePackageRequest(
             $"PKG-{Letters(8)}", "Cataract (per eye)", item, 18_000m, 1, null, PackageUse.Both, null, true,
             [new PackageInclusionInput(null, ServiceCategory.Consumable, null, 4_000m, "Drugs and consumables")], null));
 
-        // The lens is covered by name now, with the consumables cap raised.
-        await admin.PutAsync<PackageDetail>($"/api/v1/billing/packages/{package.Id}", new SavePackageRequest(
+        // The lens is covered by name now, with the consumables cap raised: asked for, and approved by the other
+        // administrator (a package's cover changes only when two people agree), so the newest update is the approved one.
+        await server.SavePackageAsync(admin, new SavePackageRequest(
             package.Code, package.Name, item, 18_000m, 1, null, PackageUse.Both, null, true,
             [new PackageInclusionInput(lens, null, 1m, null, "One lens"), new PackageInclusionInput(null, ServiceCategory.Consumable, null, 4_500m, "Drugs and consumables")],
-            package.Version));
+            package.Version), package.Id);
 
         var inclusions = Details(await TrailAsync(nameof(Package), package.Id), "Package.update")["inclusions"]!;
         Caps(inclusions["from"]!).ShouldBe([(null, 4_000m)]);
@@ -257,9 +275,11 @@ public sealed class AuditedChangeTests(HospitalServer server)
         var hr = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var components = (await hr.GetAsync<List<SalaryComponentDto>>("/api/v1/hr/payroll/components")).ToDictionary(c => c.Code);
         var employee = await hr.PostAsync<EmployeeCreated>("/api/v1/hr/employees/", Employee());
-        var structure = await hr.PostAsync<Created>($"/api/v1/hr/employees/{employee.Id}/salary-structures", new SaveSalaryStructureRequest(
+        var asked = await hr.PostAsync<ApprovalRequestDto>($"/api/v1/hr/employees/{employee.Id}/salary-structures", new SaveSalaryStructureRequest(
             new DateOnly(2026, 4, 1), null, 0, PfApplicable: true, PfOnActualBasic: false, EsiApplicable: false, null, null,
             [new SalaryStructureLineInput(components["BASIC"].Id, 18_000), new SalaryStructureLineInput(components["HRA"].Id, 40)]));
+        await server.ApproveHrChangeAsync(asked.Id);
+        var structure = (await hr.GetAsync<List<SalaryStructureDto>>($"/api/v1/hr/employees/{employee.Id}/salary-structures")).ShouldHaveSingleItem();
 
         var lines = Details(await TrailAsync(nameof(EmployeeSalaryStructure), structure.Id), "EmployeeSalaryStructure.create")["lines"]!;
 
@@ -516,6 +536,9 @@ public sealed class AuditedChangeTests(HospitalServer server)
 
     private static List<Guid> Rows(JsonNode list, string property) => [.. list.AsArray().Select(n => n![property]!.GetValue<Guid>())];
 
+    /// <summary>The rows of a list the trail may leave out when it is empty.</summary>
+    private static List<Guid> RowsOrNone(JsonNode? list, string property) => list is null ? [] : Rows(list, property);
+
     private static List<string> Strings(JsonNode list, string? property = null) =>
         [.. list.AsArray().Select(n => property is null ? n!.GetValue<string>() : n![property]!.GetValue<string>())];
 
@@ -537,8 +560,8 @@ public sealed class AuditedChangeTests(HospitalServer server)
     private static TemplateMedicationRequest Medicine(string name, string dose, DoseFrequency frequency, int days) =>
         new(null, name, null, null, null, "Oral", dose, frequency, null, days, null);
 
-    private static async Task<Guid> ServiceAsync(ApiClient admin, string name, ServiceCategory category, decimal price) =>
-        (await admin.PostAsync<ServiceItemDto>("/api/v1/masters/services", new SaveServiceItemRequest(
+    private async Task<Guid> ServiceAsync(ApiClient admin, string name, ServiceCategory category, decimal price) =>
+        (await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Letters(8).ToUpperInvariant()}", name, null, category, null, price, 0m, null, true, false, null, true, null))).Id;
 
     private static DialysisPatientProfile Profile(Guid facility, Guid patient, DateOnly enrolled) => new()

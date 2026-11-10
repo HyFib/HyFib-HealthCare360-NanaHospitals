@@ -3,6 +3,7 @@ import {
   Button,
   Caption1,
   Field,
+  Input,
   makeStyles,
   Radio,
   RadioGroup,
@@ -12,7 +13,15 @@ import {
 } from '@fluentui/react-components';
 import { PersonRegular, SaveRegular, WarningRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { bloodGroupLabel, humanize, todayIso, useDebouncedValue, useHotkey, type BloodGroup } from '@hc360/core';
+import {
+  bloodGroupLabel,
+  humanize,
+  normalizePhone,
+  todayIso,
+  useDebouncedValue,
+  useHotkey,
+  type BloodGroup,
+} from '@hc360/core';
 import {
   ChoiceField,
   DateField,
@@ -27,7 +36,7 @@ import {
   useLeaveGuard,
 } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Controller, useForm, useWatch, type UseFormReturn } from 'react-hook-form';
 import { enumOptions } from '@/lib/lookups';
 import {
@@ -39,6 +48,7 @@ import {
   type DuplicateCheckRequest,
 } from './api';
 import { PatientPhotoField } from './PatientPhotoField';
+import { PhoneChangeDialog } from './PhoneChangeDialog';
 import {
   INDIAN_STATES,
   isValidAbhaNumber,
@@ -106,6 +116,12 @@ export interface PatientFormProps {
    * belongs to the number rather than to the form.
    */
   askWhatsAppOptIn?: boolean;
+  /**
+   * Editing a registered patient: the mobile number is shown read-only and changes only through "Change number", a code
+   * sent to the new number (PhoneChangeDialog), because the patient portal signs in with it. Offered while nothing else
+   * is unsaved (`otherChanges` for what the page keeps outside the form): the page reloads with the new number.
+   */
+  changePhone?: { patientId: string; otherChanges?: boolean; onChanged: () => void };
 }
 
 /**
@@ -245,14 +261,22 @@ export function PatientForm(props: PatientFormProps) {
 
           <Section title="Contact">
             <FormGrid columns={4}>
-              <TextField
-                control={control}
-                name="phone"
-                label="Mobile number"
-                type="tel"
-                autoComplete="off"
-                hint="Used for SMS/WhatsApp updates and patient portal sign-in"
-              />
+              {props.changePhone ? (
+                <LockedPhoneField
+                  control={control}
+                  change={props.changePhone}
+                  blocked={form.formState.isDirty || props.changePhone.otherChanges === true}
+                />
+              ) : (
+                <TextField
+                  control={control}
+                  name="phone"
+                  label="Mobile number"
+                  type="tel"
+                  autoComplete="off"
+                  hint="Used for SMS/WhatsApp updates and patient portal sign-in"
+                />
+              )}
               <TextField
                 control={control}
                 name="alternatePhone"
@@ -396,6 +420,63 @@ export function PatientForm(props: PatientFormProps) {
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * The registered mobile number of a patient being edited: read-only, with "Change number" (or "Add number") opening the
+ * dialog that sends a code to the new number. A refusal from the server about the number shows under it.
+ */
+function LockedPhoneField({
+  control,
+  change,
+  blocked,
+}: {
+  control: UseFormReturn<PatientFormValues>['control'];
+  change: NonNullable<PatientFormProps['changePhone']>;
+  blocked: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Controller
+      control={control}
+      name="phone"
+      render={({ field, fieldState }) => (
+        <>
+          <Field
+            label="Mobile number"
+            hint={
+              blocked
+                ? 'Save or cancel your other changes first, then change the number.'
+                : 'Used for SMS/WhatsApp updates and patient portal sign-in. Changing it needs a code sent to the new number.'
+            }
+            validationMessage={fieldState.error?.message}
+            validationState={fieldState.error ? 'error' : 'none'}
+          >
+            <Input
+              ref={field.ref}
+              name={field.name}
+              value={field.value}
+              type="tel"
+              readOnly
+              contentAfter={
+                <Button size="small" appearance="transparent" disabled={blocked} onClick={() => setOpen(true)}>
+                  {field.value ? 'Change number' : 'Add number'}
+                </Button>
+              }
+            />
+          </Field>
+          {open && (
+            <PhoneChangeDialog
+              patientId={change.patientId}
+              currentPhone={normalizePhone(field.value)}
+              onClose={() => setOpen(false)}
+              onChanged={change.onChanged}
+            />
+          )}
+        </>
+      )}
+    />
   );
 }
 

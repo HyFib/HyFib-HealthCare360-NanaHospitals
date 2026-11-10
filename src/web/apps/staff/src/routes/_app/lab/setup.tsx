@@ -32,6 +32,7 @@ import {
   type ReferralLabDto,
 } from '@/modules/lab/api';
 import { TubeChip } from '@/modules/lab/badges';
+import { AnalyserChannelsDialog } from '@/modules/lab/setup/AnalyserChannelsDialog';
 import { searchFlag, searchId, searchOneOf, searchPage, searchText } from '@/modules/lab/common/search';
 import { resultTypeLabel, sectionLabel } from '@/modules/lab/labels';
 import { ConnectionDrawer } from '@/modules/lab/setup/ConnectionDrawer';
@@ -306,6 +307,11 @@ function AnalysersTab({
     'admin.integrations.manage',
   ]);
   const connections = useQuery({ ...labQueries.connections(), enabled: canSeeConnections });
+  const canManageMasters = usePermission(LAB_PERMISSIONS.masters);
+  const channels = useQuery(labQueries.analyserChannels());
+  const [viewingChannels, setViewingChannels] = useState<LabInstrumentDto | null>(null);
+  const channelsOf = (instrument: LabInstrumentDto) =>
+    channels.data?.filter((channel) => channel.instrumentId === instrument.id) ?? [];
   const [editing, setEditing] = useState<LabInstrumentDto | null>(null);
   const [connecting, setConnecting] = useState<LabInstrumentDto | null>(null);
   const [training, setTraining] = useState<LabInstrumentDto | null>(null);
@@ -388,6 +394,30 @@ function AnalysersTab({
               ]
             : []),
           {
+            key: 'channels',
+            header: 'Channels to map',
+            render: (instrument: LabInstrumentDto) => {
+              const sent = channelsOf(instrument);
+              if (sent.length === 0) {
+                return <Caption1 className={styles.muted}>{channels.isLoading ? 'Checking…' : 'None'}</Caption1>;
+              }
+              const toMap = sent.filter((channel) => !channel.ignored).length;
+              return (
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  aria-label={`Channels ${instrument.code} sends that no test maps`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setViewingChannels(instrument);
+                  }}
+                >
+                  {toMap > 0 ? <Badge color="warning">{toMap} to map</Badge> : `${sent.length} ignored`}
+                </Button>
+              );
+            },
+          },
+          {
             key: 'auto',
             header: 'Auto-verify',
             priority: 'low',
@@ -454,6 +484,15 @@ function AnalysersTab({
         />
       )}
       {training && <TrainingResultsDialog instrument={training} onClose={() => setTraining(null)} />}
+      {viewingChannels && (
+        <AnalyserChannelsDialog
+          key={viewingChannels.id}
+          instrument={viewingChannels}
+          channels={channelsOf(viewingChannels)}
+          canManage={canManageMasters}
+          onClose={() => setViewingChannels(null)}
+        />
+      )}
     </Section>
   );
 }

@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Notifications;
 using Microsoft.Extensions.Logging;
 
@@ -21,12 +22,16 @@ public sealed class IpBillingService(
     ReceiptService receipts,
     RefundService refunds,
     TariffService tariffs,
+    StayPlanApprovals stays,
     INotificationService notifications,
     IAuditLogger audit,
     ICurrentUser currentUser,
+    IPayerDirectory payers,
     TimeProvider time,
     ILogger<IpBillingService> logger)
 {
+    private const string WaitingCode = "approval.already_requested";
+
     // ------------------------------------------------------------------ admission events
     // These run inside the Inpatient module's SaveChanges (same transaction): they stage changes and never save.
 
@@ -223,7 +228,8 @@ public sealed class IpBillingService(
             a.Id, a.AdmissionId, a.AdmissionNumber, a.PatientId, patient?.Uhid, patient?.FullName, a.VisitId, a.PayerType, a.PayerId, payerName,
             a.TariffPlanId, planName, a.PolicyId, a.AttendingPractitionerId, doctor, a.BedServiceItemId, bedCode, a.AdmittedAt, a.DischargeInitiatedAt,
             a.DischargedAt, a.Status, a.EstimatedAmount, a.DepositReceived, a.DepositAdjusted, a.DepositRefunded, a.DepositBalance, a.PackageId,
-            packageName, a.DischargeWithDuesApproved, a.DischargeApprovalReason, a.Notes, a.Version, await BillFreeTreatment.ReasonAsync(db, a.VisitId, ct));
+            packageName, a.DischargeWithDuesApproved, a.DischargeApprovalReason, a.Notes, a.Version, await BillFreeTreatment.ReasonAsync(db, a.VisitId, ct),
+            (await tariffs.ResolvePlanAsync(a.PayerType, a.PayerId, a.FacilityId, ct))?.Id, a.IsActive ? await stays.PendingAsync(a.Id, ct) : null);
     }
 
     public async Task<Result<RunningBill>> RunningBillAsync(Guid id, CancellationToken ct)
@@ -250,6 +256,8 @@ public sealed class IpBillingService(
         var free = await BillFreeTreatment.ReasonAsync(db, account.VisitId, ct);
         var estimate = await EstimateAsync(services, package, terms, free is not null, ct);
         var payerName = terms.HasPayer ? await db.Set<Payer>().Where(p => p.Id == terms.PayerId).Select(p => p.Name).FirstOrDefaultAsync(ct) : null;
+        var cancelAbove = await charges.CancelApprovalAboveAsync(account.FacilityId, ct);
+        var cancelsAsked = await charges.CancellationsAskedAsync(all.Where(c => c.Status == ChargeStatus.Unbilled).Select(c => c.Id).ToList(), ct);
 
         return new RunningBill(
             account.Id,
@@ -263,7 +271,8 @@ public sealed class IpBillingService(
                 .ToList(),
             all.Select(c => new RunningBillLine(
                 c.Id, c.ServiceDate, c.ServiceCode, c.Description, c.Category, c.Quantity, c.UnitPrice, c.NetAmount, c.Status, c.BillId,
-                c.PractitionerId is { } pid ? doctors.GetValueOrDefault(pid) : null, c.IsCredit, c.Device)).ToList(),
+                c.PractitionerId is { } pid ? doctors.GetValueOrDefault(pid) : null, c.IsCredit, c.Device,
+                ChargeService.CancelNeedsApproval(c, cancelAbove), cancelsAsked.TryGetValue(c.Id, out var asked) ? asked : null)).ToList(),
             GrossTotal: all.Sum(c => c.GrossAmount),
             DiscountTotal: all.Sum(c => c.DiscountAmount),
             TaxTotal: all.Sum(c => c.TaxAmount),
@@ -314,7 +323,13 @@ public sealed class IpBillingService(
 
     // ------------------------------------------------------------------ commands
 
-    public async Task<Result> UpdateAsync(Guid id, UpdateIpAccountRequest request, CancellationToken ct)
+    /// <summary>
+    /// Changes a stay's payer, policy and plan, and the estimate given to the patient. A stay is billed on its payer's plan:
+    /// the payer terms change at once when they put it on that plan, or keep the plan it has while its payer stays the
+    /// same. Any other plan (a concession, or a dearer plan) is asked for, with the payer and policy asked with it, and a
+    /// second person decides (maker-checker): the request is returned. The estimate and notes are saved at once.
+    /// </summary>
+    public async Task<Result<ApprovalRequestDto?>> UpdateAsync(Guid id, UpdateIpAccountRequest request, CancellationToken ct)
     {
         var account = await db.Set<IpAccount>().FirstOrDefaultAsync(a => a.Id == id, ct);
         if (account is null)
@@ -338,9 +353,10 @@ public sealed class IpBillingService(
             return Error.Field("tariffPlanId", "Choose an active tariff plan.");
         }
 
-        if (request.PolicyId is { } policyId && !await db.Set<PatientPolicy>().AnyAsync(p => p.Id == policyId && p.PatientId == account.PatientId, ct))
+        if (request.PolicyId is { } policyId
+            && !await db.Set<PatientPolicy>().AnyAsync(p => p.Id == policyId && p.PatientId == account.PatientId && p.PayerId == request.PayerId, ct))
         {
-            return Error.Field("policyId", "Choose one of this patient's policies.");
+            return Error.Field("policyId", "Choose one of this patient's policies with the payer.");
         }
 
         if (request.RepriceUnbilledCharges && await db.Set<Bill>().AnyAsync(b => b.AdmissionId == account.AdmissionId && b.Status == BillStatus.Draft, ct))
@@ -348,13 +364,56 @@ public sealed class IpBillingService(
             return Error.Rule("billing.draft_bill_exists", "Discard the admission's draft bill before re-pricing its services.");
         }
 
-        account.EstimatedAmount = request.EstimatedAmount;
-        account.PayerType = request.PayerType;
-        account.PayerId = request.PayerId;
-        account.PolicyId = request.PolicyId;
-        account.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
-        account.TariffPlanId = request.TariffPlanId ?? (await tariffs.ResolvePlanAsync(request.PayerType, request.PayerId, account.FacilityId, ct))?.Id;
+        // Only a third party is a payer of the payer master: the patient, staff and charity price on their own plans.
+        var askedPayerId = PayerChoice.IsThirdParty(request.PayerType) ? request.PayerId : null;
+        var payerPlanId = (await tariffs.ResolvePlanAsync(request.PayerType, askedPayerId, account.FacilityId, ct))?.Id;
+        var before = StayPayerTerms.Of(account);
+        var asked = new StayPayerTerms(request.PayerType, askedPayerId, request.PolicyId, request.TariffPlanId ?? payerPlanId);
 
+        // Putting the stay on another third party rests on a second person, as at the admission desk (PayerChoice): the
+        // patient's policy or membership with it, in date and verified by someone other than whoever recorded it.
+        if (PayerChoice.IsThirdParty(asked.PayerType) && (asked.PayerType, asked.PayerId) != (before.PayerType, before.PayerId))
+        {
+            var standing = askedPayerId is { } newPayerId ? await payers.StandingAsync(account.PatientId, newPayerId, BillingTime.Today(time), ct) : null;
+            if (PayerChoice.Refusal(asked.PayerType, askedPayerId, standing) is { } refused)
+            {
+                return refused;
+            }
+        }
+        var waiting = asked == before ? null : await stays.PendingAsync(account.Id, ct);
+        if (waiting is not null && waiting.Asked != asked)
+        {
+            return Error.Conflict(WaitingCode,
+                $"A change to admission {account.AdmissionNumber}'s payer and plan, asked for by {waiting.RequestedBy}, is waiting for approval. Withdraw it in Approvals first, or wait for its decision.");
+        }
+
+        account.EstimatedAmount = request.EstimatedAmount;
+        account.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
+        if (waiting is not null)
+        {
+            // The same payer and plan are already asked for: they wait as they are.
+            await db.SaveChangesAsync(ct);
+            return Result<ApprovalRequestDto?>.Ok(null);
+        }
+
+        if (!StayPlanApprovals.AtOnce(before, asked, payerPlanId))
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            await db.SaveChangesAsync(ct);
+            var approval = await stays.AskAsync(account, asked, request.RepriceUnbilledCharges, payerPlanId, request.Reason, ct);
+            if (approval.IsFailure)
+            {
+                return approval.Error!;
+            }
+
+            await transaction.CommitAsync(ct);
+            return approval.Value;
+        }
+
+        account.PayerType = asked.PayerType;
+        account.PayerId = asked.PayerId;
+        account.PolicyId = asked.PolicyId;
+        account.TariffPlanId = asked.TariffPlanId;
         if (request.RepriceUnbilledCharges)
         {
             var plan = await tariffs.FindPlanAsync(account.TariffPlanId, ct);
@@ -365,7 +424,7 @@ public sealed class IpBillingService(
         }
 
         await db.SaveChangesAsync(ct);
-        return Result.Success();
+        return Result<ApprovalRequestDto?>.Ok(null);
     }
 
     /// <summary>Assigns (or removes) the admission's package; the old package's charge is cancelled and a draft final bill re-prepared.</summary>
@@ -389,6 +448,13 @@ public sealed class IpBillingService(
             if (!package.CanBill(BillType.InPatient))
             {
                 return Error.Field("packageId", $"{package.Name} is a package for out-patient visits.");
+            }
+
+            // As an out-patient bill takes only a package for its plan or any plan: the plan a package is approved for
+            // decides which patients it prices.
+            if (package.TariffPlanId is { } planId && planId != account.TariffPlanId)
+            {
+                return Error.Field("packageId", $"{package.Name} is priced for another tariff plan than this stay's.");
             }
         }
 

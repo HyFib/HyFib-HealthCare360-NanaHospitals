@@ -25,8 +25,11 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import {
+  DocumentArrowDownRegular,
   DocumentArrowLeftRegular,
   EditRegular,
+  LinkRegular,
+  MoreHorizontalRegular,
   NoteAddRegular,
   SaveRegular,
   SignatureRegular,
@@ -53,7 +56,10 @@ import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
+import { AbdmLinkDialog } from './AbdmLinkButton';
+import { useAbdmRecordDownload, useAbdmRecordsAvailable } from './abdmRecords';
 import {
+  abdmClinicalNoteBundle,
   emrApi,
   emrKeys,
   emrQueries,
@@ -459,10 +465,17 @@ export function NotesList({
   const userId = useSession((s) => s.user?.id);
   const canSign = usePermission('clinical.encounters.sign');
   const canWrite = usePermission('clinical.emr.write');
+  const abdmAvailable = useAbdmRecordsAvailable();
+  const abdmDownload = useAbdmRecordDownload();
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<ClinicalNoteDto | null>(null);
   const [addendumFor, setAddendumFor] = useState<ClinicalNoteDto | null>(null);
+  const [linking, setLinking] = useState<ClinicalNoteDto | null>(null);
   const notes = useQuery(emrQueries.notes(patientId, encounterId, page));
+  // A signed note goes through ABDM with the addenda signed to it; an addendum goes only with its note, and a counselling
+  // note not at all (an ABDM consent cannot keep it apart from the patient's other health documents).
+  const exportable = (note: ClinicalNoteDto) =>
+    abdmAvailable && note.isSigned && !note.amendsNoteId && note.type !== 'Counselling';
 
   const sign = useMutation({
     mutationFn: (note: ClinicalNoteDto) => emrApi.signNote(note.id, note.version),
@@ -537,6 +550,31 @@ export function NotesList({
                     Addendum
                   </Button>
                 )}
+                {exportable(note) && (
+                  <Menu>
+                    <MenuTrigger disableButtonEnhancement>
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<MoreHorizontalRegular />}
+                        aria-label={`More actions for ${note.title ?? noteTypeLabel[note.type]}`}
+                      />
+                    </MenuTrigger>
+                    <MenuPopover>
+                      <MenuList>
+                        <MenuItem
+                          icon={<DocumentArrowDownRegular />}
+                          onClick={() => abdmDownload.mutate(abdmClinicalNoteBundle(note.id))}
+                        >
+                          Download ABDM record
+                        </MenuItem>
+                        <MenuItem icon={<LinkRegular />} onClick={() => setLinking(note)}>
+                          Link to patient&apos;s ABHA
+                        </MenuItem>
+                      </MenuList>
+                    </MenuPopover>
+                  </Menu>
+                )}
               </span>
             </div>
             <Caption1 className={styles.muted}>
@@ -551,6 +589,12 @@ export function NotesList({
       )}
       <EditNoteDialog note={editing} patientId={patientId} onClose={() => setEditing(null)} />
       <AddendumDialog note={addendumFor} patientId={patientId} onClose={() => setAddendumFor(null)} />
+      <AbdmLinkDialog
+        record={{ type: 'ClinicalNote', id: linking?.id ?? '' }}
+        what={`${linking ? noteTypeLabel[linking.type].toLowerCase() : 'note'}, with the addenda signed to it,`}
+        open={linking !== null}
+        onClose={() => setLinking(null)}
+      />
     </div>
   );
 }

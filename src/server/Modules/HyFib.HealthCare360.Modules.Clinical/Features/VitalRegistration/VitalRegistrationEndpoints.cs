@@ -15,7 +15,7 @@ namespace HyFib.HealthCare360.Modules.Clinical.Features.VitalRegistration;
 internal static class VitalRegistrationEndpoints
 {
     private static readonly string[] BirthReaders = [ClinicalPermissions.BirthsRecord, ClinicalPermissions.VitalRegister];
-    private static readonly string[] DeathReaders = [ClinicalPermissions.DeathsCertify, ClinicalPermissions.VitalRegister];
+    private static readonly string[] DeathReaders = [ClinicalPermissions.DeathsCertify, ClinicalPermissions.DeathsConfirm, ClinicalPermissions.VitalRegister];
 
     public static void Map(IEndpointRouteBuilder app)
     {
@@ -39,6 +39,8 @@ internal static class VitalRegistrationEndpoints
         group.MapPost("/deaths", CertifyDeath).RequirePermission(ClinicalPermissions.DeathsCertify).WithValidation<SaveDeathRequest>();
         group.MapPut("/deaths/{id:guid}", CorrectDeath).RequirePermission(ClinicalPermissions.DeathsCertify).WithValidation<SaveDeathRequest>()
             .RequireVersion();
+        group.MapPost("/deaths/{id:guid}/confirmation", AskDeathConfirmation).RequirePermission(ClinicalPermissions.DeathsCertify)
+            .WithValidation<AskDeathConfirmationRequest>();
         group.MapPost("/deaths/{id:guid}/report", ReportDeath).RequirePermission(ClinicalPermissions.VitalRegister)
             .WithValidation<ReportToRegistrarRequest>();
         group.MapPost("/deaths/{id:guid}/entered-in-error", DeathInError).RequireAnyPermission(DeathReaders)
@@ -112,6 +114,17 @@ internal static class VitalRegistrationEndpoints
     private static async Task<IResult> ReportBirth(Guid id, ReportToRegistrarRequest request, VitalRegistrationService vital, CancellationToken ct) =>
         (await vital.ReportBirthAsync(id, request, ct)).ToOk();
 
+    private static async Task<IResult> AskDeathConfirmation(
+        Guid id, AskDeathConfirmationRequest request, VitalRegistrationService vital, ClinicalAccess access, CancellationToken ct)
+    {
+        if (await vital.FindDeathAsync(id, ct) is not { } death)
+        {
+            return Error.NotFound("Death", id).ToProblem();
+        }
+
+        return await Refused(access, death.PatientId, ct) ?? (await vital.AskDeathConfirmationAsync(id, request, ct)).ToOk();
+    }
+
     private static async Task<IResult> ReportDeath(Guid id, ReportToRegistrarRequest request, VitalRegistrationService vital, CancellationToken ct) =>
         (await vital.ReportDeathAsync(id, request, ct)).ToOk();
 
@@ -132,7 +145,9 @@ internal static class VitalRegistrationEndpoints
             return Error.NotFound("Death", id).ToProblem();
         }
 
-        return await Refused(access, death.PatientId, ct) ?? (await vital.DeathInErrorAsync(id, request, ct)).ToOk();
+        // Marked at once (200), or, for a certificate a second doctor confirmed, asked for (202 with the request).
+        return await Refused(access, death.PatientId, ct) ?? (await vital.DeathInErrorAsync(id, request, ct)).ToHttpResult(outcome =>
+            outcome.Asked is { } asked ? TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked) : TypedResults.Ok(outcome.Death));
     }
 
     private static async Task<IResult> BirthDocument(

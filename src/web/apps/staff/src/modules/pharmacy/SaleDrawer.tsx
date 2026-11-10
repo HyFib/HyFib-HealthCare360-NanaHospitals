@@ -46,6 +46,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useLetterhead } from '@/lib/letterhead';
+import { approvalKeys } from '@/modules/approvals/api';
 import { usePermission } from '@/lib/permissions';
 import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatPercent, formatQty, istDateOf, parseNumber } from '@/modules/inventory/format';
@@ -53,6 +54,7 @@ import { gstStateName } from '@/modules/inventory/gst';
 import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
 import { Detail, DetailGrid, ExpiryText, ScheduleBadge } from '@/modules/inventory/StockBits';
 import {
+  isApprovalRequest,
   pharmacyApi,
   pharmacyKeys,
   pharmacyQueries,
@@ -62,9 +64,10 @@ import {
   type PharmacySaleItemDto,
   type SaleReturnDto,
 } from './api';
-import { PHARMACY_PERMISSIONS as P } from './permissions';
-import { refundFor } from './pricing';
+import { PHARMACY_PERMISSIONS as P, REFUNDS_APPROVE } from './permissions';
+import { refundFor, refundSplit, refundWords } from './pricing';
 import { printReceipt } from './print';
+import { WaitingForApproval } from './WaitingForApproval';
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '16px' },
@@ -80,7 +83,6 @@ const useStyles = makeStyles({
     padding: '6px 0',
     borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
   },
-  grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
 });
 
 function refundedByItem(returns: readonly SaleReturnDto[] | undefined): Map<string, number> {
@@ -93,13 +95,18 @@ function refundedByItem(returns: readonly SaleReturnDto[] | undefined): Map<stri
   return totals;
 }
 
-/** Invoice detail with reprint, collection of dues, returns and same-day cancellation. */
+/**
+ * Invoice detail with reprint, collection of dues, returns and same-day cancellation. A cancellation, and a return that
+ * pays money out or writes stock off, are asked for here and wait for someone who approves refunds; whoever sold the
+ * invoice or took its payment does not ask (the server refuses them too).
+ */
 export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () => void }) {
   const styles = useStyles();
   const notify = useNotify();
   const letterhead = useLetterhead();
   const canCollect = usePermission(P.sales);
   const canReturn = usePermission(P.returns);
+  const canApproveRefunds = usePermission(REFUNDS_APPROVE);
   const sale = useQuery(pharmacyQueries.sale(saleId));
   const returns = useQuery(pharmacyQueries.saleReturns(saleId));
   const [dialog, setDialog] = useState<'collect' | 'return' | 'cancel' | null>(null);
@@ -108,6 +115,11 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
   const returnable = s ? s.items.filter((i) => i.quantity - i.returnedQuantity > 0) : [];
   const soldToday = s ? istDateOf(s.soldAt) === todayIso() : false;
   const hasReturns = s ? s.returnedAmount > 0 || s.items.some((i) => i.returnedQuantity > 0) : false;
+  const ownSale = s?.ownSale === true;
+  const cancellationWaits = s?.pending?.some((p) => p.kind === 'pharmacy.sale_cancel') === true;
+  const returnWaits = s?.pending?.some((p) => p.kind === 'pharmacy.sale_return') === true;
+  const notYours =
+    'You sold this invoice or took its payment: another pharmacist asks for its cancellation or takes its returns.';
 
   const reprint = () => {
     if (s) {
@@ -139,6 +151,11 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
         {sale.error && <ErrorState error={sale.error} onRetry={() => void sale.refetch()} />}
         {s && (
           <div className={styles.stack}>
+            <WaitingForApproval
+              pending={s.pending}
+              decidedBy="someone who approves refunds"
+              canDecide={canApproveRefunds}
+            />
             {s.status === 'Cancelled' && (
               <MessageBar intent="error">
                 <MessageBarBody>
@@ -340,24 +357,43 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
               </Button>
             )}
             {canReturn && s.status !== 'Cancelled' && returnable.length > 0 && (
-              <Button icon={<ArrowUndoRegular />} onClick={() => setDialog('return')}>
-                Return items
-              </Button>
+              <Tooltip
+                relationship="description"
+                content={
+                  ownSale
+                    ? notYours
+                    : returnWaits
+                      ? 'A return of this invoice is waiting for approval.'
+                      : 'Takes medicines back; money paid back, or stock not restocked, waits for approval'
+                }
+              >
+                <Button
+                  icon={<ArrowUndoRegular />}
+                  disabled={ownSale || returnWaits}
+                  onClick={() => setDialog('return')}
+                >
+                  Return items
+                </Button>
+              </Tooltip>
             )}
             {canReturn && s.status !== 'Cancelled' && (
               <Tooltip
                 relationship="description"
                 content={
-                  !soldToday
-                    ? "Only today's invoices can be cancelled. Use a return instead."
-                    : hasReturns
-                      ? 'Invoices with returns cannot be cancelled.'
-                      : 'Voids the invoice, refunds the money and puts the stock back'
+                  ownSale
+                    ? notYours
+                    : !soldToday
+                      ? "Only today's invoices can be cancelled. Use a return instead."
+                      : hasReturns
+                        ? 'Invoices with returns cannot be cancelled.'
+                        : cancellationWaits
+                          ? 'A cancellation of this invoice is waiting for approval.'
+                          : 'Asks for approval to void the invoice, pay the money back the way it was paid and put the stock back'
                 }
               >
                 <Button
                   icon={<DismissCircleRegular />}
-                  disabled={!soldToday || hasReturns}
+                  disabled={ownSale || !soldToday || hasReturns || cancellationWaits}
                   onClick={() => setDialog('cancel')}
                 >
                   Cancel invoice
@@ -383,6 +419,7 @@ function useSaleRefresh(saleId: string) {
     void queryClient.invalidateQueries({ queryKey: pharmacyKeys.stock });
     void queryClient.invalidateQueries({ queryKey: pharmacyKeys.queue });
     void queryClient.invalidateQueries({ queryKey: ['pharmacy', 'sales', 'detail', saleId] });
+    void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
   };
 }
 
@@ -447,7 +484,11 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
                 />
               </Field>
               {needsReference && (
-                <Field label={mode === 'Card' ? 'Card slip number' : 'UPI transaction ID'} required>
+                <Field
+                  label={mode === 'Card' ? 'RRN or approval code' : 'UPI reference (UTR)'}
+                  hint={mode === 'Card' ? 'From the charge slip' : 'The 12-digit number on the payer’s screen'}
+                  required
+                >
                   <Input value={reference} maxLength={64} onChange={(_, d) => setReference(d.value)} />
                 </Field>
               )}
@@ -502,8 +543,6 @@ function ReturnDialog({
   const items = sale.items.filter((i) => i.quantity - i.returnedQuantity > 0);
   const [lines, setLines] = useState<Record<string, ReturnLine>>({});
   const [reason, setReason] = useState('');
-  const [refundMode, setRefundMode] = useState<Exclude<PaymentMode, 'Credit'>>('Cash');
-  const [reference, setReference] = useState('');
 
   const planned = items
     .map((item) => {
@@ -523,26 +562,28 @@ function ReturnDialog({
   const totalRefund = toNumber(sum(chosen.map((p) => dec(p.refund))));
   const againstDue = Math.min(totalRefund, sale.dueAmount);
   const payBack = toNumber(dec(totalRefund) - dec(againstDue));
+  // The money goes back the way the sale was paid, as the server will pay it: a card payment to the card, never cash.
+  const paidBack = refundSplit(sale.payments, payBack);
+  const writesOff = chosen.some((p) => !p.restock);
+  const waits = payBack > 0 || writesOff;
   const invalid = planned.some((p) => p.invalid);
-  const needsReference = payBack > 0 && refundMode !== 'Cash';
-  const valid =
-    chosen.length > 0 && !invalid && reason.trim().length >= 3 && (!needsReference || reference.trim().length > 0);
+  const valid = chosen.length > 0 && !invalid && reason.trim().length >= 3;
 
   const submit = useMutation({
     mutationFn: () =>
       pharmacyApi.returnSale(sale.id, {
         lines: chosen.map((p) => ({ saleItemId: p.item.id, quantity: p.quantity, restock: p.restock })),
         reason: reason.trim(),
-        refundMode,
-        refundReference: reference.trim() || null,
       }),
     onSuccess: (result) => {
-      notify.success(
-        `Return ${result.returnNumber} recorded`,
-        result.cashRefund > 0
-          ? `Pay back ${formatInr(result.cashRefund)}${result.adjustedAgainstDue > 0 ? `; ${formatInr(result.adjustedAgainstDue)} taken off the balance due` : ''}.`
-          : 'The refund was taken off the balance due.',
-      );
+      if (isApprovalRequest(result)) {
+        notify.success(
+          'Asked for approval',
+          `The return waits for someone who approves refunds. When approved: ${refundWords(paidBack)}${againstDue > 0 ? `; ${formatInr(againstDue)} off the balance due` : ''}${writesOff ? '; what is not restocked is written off' : ''}.`,
+        );
+      } else {
+        notify.success(`Return ${result.returnNumber} recorded`, 'The refund was taken off the balance due.');
+      }
       refresh();
       onClose();
     },
@@ -555,7 +596,7 @@ function ReturnDialog({
     }));
 
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ lines, reason, refundMode, reference }),
+    dirty: useValuesChanged({ lines, reason }),
     busy: submit.isPending,
     onClose,
   });
@@ -568,7 +609,8 @@ function ReturnDialog({
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Caption1>
               Enter what is being returned. Unopened, in-date packs go back on the shelf; expired or damaged ones are
-              refunded but not restocked. The refund first clears any balance due, the rest is paid back.
+              refunded but written off. The refund first clears any balance due; the rest goes back the way the sale was
+              paid. Money paid back, or anything written off, waits for someone who approves refunds.
             </Caption1>
             <div>
               <div className={styles.returnRow}>
@@ -625,27 +667,14 @@ function ReturnDialog({
                 placeholder="e.g. Doctor changed the prescription, patient discharged"
               />
             </Field>
-            <div className={styles.grid2}>
-              <Field label="Pay back by">
-                <Select value={refundMode} onChange={(_, d) => setRefundMode(d.value as typeof refundMode)}>
-                  <option value="Cash">Cash</option>
-                  <option value="Card">Card (reversal)</option>
-                  <option value="Upi">UPI</option>
-                </Select>
-              </Field>
-              {needsReference && (
-                <Field label="Reference" required>
-                  <Input value={reference} maxLength={64} onChange={(_, d) => setReference(d.value)} />
-                </Field>
-              )}
-            </div>
             {chosen.length > 0 && (
-              <MessageBar intent="info">
+              <MessageBar intent={waits ? 'warning' : 'info'} layout="multiline">
                 <MessageBarBody>
+                  <MessageBarTitle>{waits ? 'Waits for approval' : 'Made at once'}</MessageBarTitle>
                   Refund {formatInr(totalRefund)}
-                  {againstDue > 0 ? ` · ${formatInr(againstDue)} clears the balance due` : ''} · pay back{' '}
-                  {formatInr(payBack)}
-                  {payBack > 0 ? ` by ${paymentModeLabel[refundMode]}` : ''}
+                  {againstDue > 0 ? ` · ${formatInr(againstDue)} clears the balance due` : ''}. How it goes back:{' '}
+                  {refundWords(paidBack)}.{writesOff ? ' What is not restocked is written off.' : ''}
+                  {waits ? ' Nothing is paid back or written off until someone who approves refunds approves it.' : ''}
                 </MessageBarBody>
               </MessageBar>
             )}
@@ -667,7 +696,7 @@ function ReturnDialog({
               icon={submit.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => submit.mutate()}
             >
-              Record return
+              {waits ? 'Ask for approval' : 'Record return'}
             </Button>
           </DialogActions>
         </DialogBody>
@@ -680,12 +709,14 @@ function ReturnDialog({
 function CancelSale({ sale, onClose }: { sale: PharmacySaleDetail; onClose: () => void }) {
   const notify = useNotify();
   const refresh = useSaleRefresh(sale.id);
+  // Every payment goes back whole, the way it was paid: a card payment to the card, UPI by UPI, cash as cash.
+  const paidBack = refundSplit(sale.payments, toNumber(dec(sale.paidAmount) - dec(sale.refundedAmount)));
   const cancel = useMutation({
     mutationFn: (reason: string) => pharmacyApi.cancelSale(sale.id, reason),
     onSuccess: () => {
       notify.success(
-        `Invoice ${sale.invoiceNumber} cancelled`,
-        sale.paidAmount > 0 ? `Refund ${formatInr(sale.paidAmount)} in cash.` : undefined,
+        'Asked for approval',
+        `Cancelling invoice ${sale.invoiceNumber} waits for someone who approves refunds. When approved: ${refundWords(paidBack)}.`,
       );
       refresh();
       onClose();
@@ -693,8 +724,8 @@ function CancelSale({ sale, onClose }: { sale: PharmacySaleDetail; onClose: () =
   });
   return (
     <ReasonDialog
-      title={`Cancel invoice ${sale.invoiceNumber}?`}
-      confirmLabel="Cancel invoice"
+      title={`Ask to cancel invoice ${sale.invoiceNumber}?`}
+      confirmLabel="Ask for approval"
       destructive
       busy={cancel.isPending}
       error={cancel.error}
@@ -702,11 +733,7 @@ function CancelSale({ sale, onClose }: { sale: PharmacySaleDetail; onClose: () =
       onSubmit={(reason) => cancel.mutate(reason)}
       onClose={onClose}
     >
-      {`The stock goes back to the original batches${sale.type === 'Prescription' ? ' and the prescription returns to the queue' : ''}. ${
-        sale.paidAmount > 0 ? `${formatInr(sale.paidAmount)} taken is refunded in cash.` : ''
-      } This cannot be undone.`
-        .replace(/\s+/g, ' ')
-        .trim()}
+      {`Someone who approves refunds decides; until then nothing changes. When approved: ${refundWords(paidBack)}; the stock goes back to the original batches${sale.type === 'Prescription' ? ' and the prescription returns to the queue' : ''}. It must be approved today: after midnight, take a return instead.`}
     </ReasonDialog>
   );
 }

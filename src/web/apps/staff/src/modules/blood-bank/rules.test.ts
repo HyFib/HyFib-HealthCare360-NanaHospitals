@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   compatibilityText,
+  haemovigilanceReportable,
+  reactionLowers,
   compatibleDonorGroups,
   crossmatchValidity,
   expiryFor,
   expiryUrgency,
   isCompatible,
   issueCheck,
+  ownChecksReason,
   plasmaCompatible,
   redCellsCompatible,
   returnOutcome,
@@ -174,6 +177,55 @@ describe('issue gate (mirrors IssueCompatibility and BloodComponent.Issue)', () 
       'This unit is reserved for another patient’s request.',
     );
   });
+
+  it('keeps a unit whose results wait for a second officer, and a request whose grouping is held, from going out', () => {
+    expect(issueCheck({ ...base, unitStatus: 'Quarantine' }).reasons).toEqual([
+      'This unit’s screening results wait for a second officer’s verification (still in quarantine).',
+    ]);
+    expect(issueCheck({ ...base, hasValidCompatibleCrossmatch: false, groupingHeld: true }).reasons).toContain(
+      'The patient’s group on this request differs from earlier requests: another officer groups a new sample before anything is issued.',
+    );
+    // Under the doctor's release, O Rh(D)-negative red cells still go while the grouping is held.
+    expect(
+      issueCheck({
+        ...base,
+        unitGroup: 'ONegative',
+        patientGroup: 'Unknown',
+        hasValidCompatibleCrossmatch: false,
+        emergencyReleaseAuthorised: true,
+        groupingHeld: true,
+        unitStatus: 'Available',
+      }),
+    ).toEqual({ allowed: true, emergency: true, reasons: [] });
+  });
+});
+
+describe('the second officer at issue (mirrors IssueSeparation)', () => {
+  const checks = {
+    userId: 'santosh',
+    groupedByUserId: 'santosh',
+    crossMatchedByUserId: 'santosh',
+    crossMatched: true,
+    emergency: false,
+    releaseAuthorisedByUserId: null,
+  };
+
+  it('refuses red cells to the officer who both grouped the patient and cross-matched the unit', () => {
+    expect(ownChecksReason(checks)).toMatch(/You grouped the patient and cross-matched this unit/);
+    expect(ownChecksReason({ ...checks, userId: 'priya' })).toBeNull();
+    expect(ownChecksReason({ ...checks, crossMatchedByUserId: 'priya' })).toBeNull();
+    expect(ownChecksReason({ ...checks, groupedByUserId: 'priya' })).toBeNull();
+  });
+
+  it('refuses plasma to the officer who grouped the patient, and an uncross-matched unit to the doctor who released it', () => {
+    const plasma = { ...checks, crossMatched: false, crossMatchedByUserId: null };
+    expect(ownChecksReason(plasma)).toMatch(/issued on the group alone/);
+    expect(ownChecksReason({ ...plasma, groupedByUserId: 'priya' })).toBeNull();
+
+    const release = { ...plasma, emergency: true, releaseAuthorisedByUserId: 'dr-rao' };
+    expect(ownChecksReason(release)).toBeNull();
+    expect(ownChecksReason({ ...release, userId: 'dr-rao' })).toMatch(/You authorised this uncross-matched release/);
+  });
 });
 
 describe('cold chain on return (mirrors ColdChain.CanRestock)', () => {
@@ -249,5 +301,23 @@ describe('components, shelf life and screening', () => {
     expect(stockLevel('PRBC', 0)).toBe('out');
     expect(stockLevel('PRBC', 2)).toBe('low');
     expect(stockLevel('PRBC', 6)).toBe('ok');
+  });
+});
+
+describe('reactionLowers', () => {
+  it('finds a lower severity and a weaker imputability than one assessed, but not a raise or a first assessment', () => {
+    expect(reactionLowers('Severe', 'Probable', 'Mild', 'Unlikely')).toEqual([
+      'severity Severe → Mild',
+      'imputability Probable → Unlikely',
+    ]);
+    expect(reactionLowers('Moderate', 'NotAssessed', 'Severe', 'Excluded')).toEqual([]);
+    expect(reactionLowers('Moderate', 'Possible', 'Moderate', 'Definite')).toEqual([]);
+  });
+
+  it('keeps a reaction in haemovigilance reporting until it is unlikely or excluded', () => {
+    expect(haemovigilanceReportable('NotAssessed')).toBe(true);
+    expect(haemovigilanceReportable('Possible')).toBe(true);
+    expect(haemovigilanceReportable('Unlikely')).toBe(false);
+    expect(haemovigilanceReportable('Excluded')).toBe(false);
   });
 });

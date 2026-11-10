@@ -12,6 +12,7 @@ public static class AnalyticsPermissions
     public const string ClinicalRead = "analytics.clinical.read";
     public const string DashboardsManage = "analytics.dashboards.manage";
     public const string SchedulesManage = "analytics.schedules.manage";
+    public const string KpiTargetsManage = "analytics.kpi_targets.manage";
 
     /// <summary>Any analytics reader (the catalogue, KPIs and dashboards are filtered per report afterwards).</summary>
     public static readonly string[] AnyRead = [MisRead, FinanceRead, ClinicalRead];
@@ -23,5 +24,6 @@ public static class AnalyticsPermissions
         new(ClinicalRead, "Analytics", "View clinical quality reports, including reports that list individual patients (audited)", [SystemRoles.HospitalAdmin, SystemRoles.QualityManager, SystemRoles.MrdOfficer]),
         new(DashboardsManage, "Analytics", "Build, share and edit BI dashboards", [SystemRoles.HospitalAdmin, SystemRoles.MisAnalyst]),
         new(SchedulesManage, "Analytics", "Schedule reports to be e-mailed as Excel, CSV or PDF files, and BI extracts for tools such as Power BI", [SystemRoles.HospitalAdmin, SystemRoles.MisAnalyst]),
+        new(KpiTargetsManage, "Analytics", "Set each KPI's target and amber and red thresholds for the facility, and who is told when it is missed", [SystemRoles.HospitalAdmin]),
     ];
 }

@@ -10,9 +10,10 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// <summary>
 /// What a gateway webhook is about: the event type and the gateway ids, nothing else. Razorpay's shape is
 /// <c>{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_…","order_id":"order_…"}}}}</c>; refunds,
-/// payment links, orders and settlements sit under their own names. Ids that do not look like gateway ids are dropped.
+/// payment links, orders, settlements and disputes sit under their own names. Ids that do not look like gateway ids are
+/// dropped.
 /// </summary>
-public sealed partial record GatewayWebhookInfo(string? EventType, string? OrderId, string? PaymentId, string? RefundId, string? SettlementId)
+public sealed partial record GatewayWebhookInfo(string? EventType, string? OrderId, string? PaymentId, string? RefundId, string? SettlementId, string? DisputeId = null)
 {
     public static GatewayWebhookInfo Read(string payload)
     {
@@ -30,9 +31,47 @@ public sealed partial record GatewayWebhookInfo(string? EventType, string? Order
             return new GatewayWebhookInfo(
                 eventType,
                 Id(Entity(body, "payment"), "order_id") ?? Id(Entity(body, "order"), "id") ?? Id(Entity(body, "payment_link"), "id"),
-                Id(Entity(body, "payment"), "id") ?? Id(Entity(body, "refund"), "payment_id"),
+                Id(Entity(body, "payment"), "id") ?? Id(Entity(body, "refund"), "payment_id") ?? Id(Entity(body, "dispute"), "payment_id"),
                 Id(Entity(body, "refund"), "id"),
-                Id(Entity(body, "settlement"), "id"));
+                Id(Entity(body, "settlement"), "id"),
+                Id(Entity(body, "dispute"), "id"));
+        }
+        catch (JsonException)
+        {
+            return new GatewayWebhookInfo(null, null, null, null, null);
+        }
+    }
+
+    /// <summary>
+    /// What a Cashfree webhook names: <c>{"type":"PAYMENT_SUCCESS_WEBHOOK","event_time":…,"data":{…}}</c>, with the order
+    /// and payment under <c>data.order</c> and <c>data.payment</c>, a refund under <c>data.refund</c>, a settlement under
+    /// <c>data.settlement</c> (Cashfree's SDKs). Its dispute and payment-link events are not described there, so a
+    /// <c>dispute_id</c> or <c>link_id</c> is taken from wherever it sits. Ids come as strings or numbers; anything that
+    /// does not look like an id is dropped. Nothing else in the body is used: the gateway is asked.
+    /// </summary>
+    public static GatewayWebhookInfo ReadCashfree(string payload)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payload, new JsonDocumentOptions { MaxDepth = 32 });
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return new GatewayWebhookInfo(null, null, null, null, null);
+            }
+
+            var type = Text(root, "type") is { } named && CashfreeTypePattern().IsMatch(named) ? named : null;
+            var data = root.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Object ? d : default;
+            var payment = Child(data, "payment");
+            var refund = Child(data, "refund");
+            var dispute = Find(data, "dispute_id", 0) is { } found && DisputeNumberPattern().IsMatch(found) ? found : null;
+            return new GatewayWebhookInfo(
+                type,
+                CashfreeId(Find(data, "link_id", 0)) ?? CashfreeId(Text(Child(data, "order"), "order_id")) ?? CashfreeId(Text(payment, "order_id")),
+                CashfreeId(Text(payment, "cf_payment_id")) ?? CashfreeId(Text(refund, "cf_payment_id")),
+                CashfreeId(Text(refund, "refund_id")),
+                CashfreeId(Text(Child(data, "settlement"), "cf_settlement_id")),
+                dispute);
         }
         catch (JsonException)
         {
@@ -55,7 +94,56 @@ public sealed partial record GatewayWebhookInfo(string? EventType, string? Order
     private static string? Id(JsonElement element, string name) => Text(element, name) is { } id && IdPattern().IsMatch(id) ? id : null;
 
     private static string? Text(JsonElement element, string name) =>
-        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value)
+            ? value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString(),
+                JsonValueKind.Number when value.TryGetInt64(out var number) => number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                _ => null,
+            }
+            : null;
+
+    private static JsonElement Child(JsonElement element, string name) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var child) && child.ValueKind == JsonValueKind.Object ? child : default;
+
+    /// <summary>The first <paramref name="name"/> found in <paramref name="element"/>, depth first, at most eight levels down.</summary>
+    private static string? Find(JsonElement element, string name, int depth)
+    {
+        if (depth > 8)
+        {
+            return null;
+        }
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (Text(element, name) is { } here)
+            {
+                return here;
+            }
+
+            foreach (var property in element.EnumerateObject())
+            {
+                if (Find(property.Value, name, depth + 1) is { } found)
+                {
+                    return found;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray().Take(50))
+            {
+                if (Find(item, name, depth + 1) is { } found)
+                {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? CashfreeId(string? id) => id is not null && CashfreeIdPattern().IsMatch(id) ? id : null;
 
     [GeneratedRegex("^[a-z]{2,8}_[A-Za-z0-9]{6,40}$")]
     private static partial Regex IdPattern();
@@ -65,6 +153,15 @@ public sealed partial record GatewayWebhookInfo(string? EventType, string? Order
 
     [GeneratedRegex("^[A-Za-z0-9_-]{1,64}$")]
     private static partial Regex HeaderPattern();
+
+    [GeneratedRegex("^[A-Za-z0-9_-]{1,64}$")]
+    private static partial Regex CashfreeIdPattern();
+
+    [GeneratedRegex("^[A-Z_]{2,64}$")]
+    private static partial Regex CashfreeTypePattern();
+
+    [GeneratedRegex("^[0-9]{1,18}$")]
+    private static partial Regex DisputeNumberPattern();
 }
 
 /// <summary>
@@ -121,6 +218,7 @@ public sealed class GatewayWebhookLog(IDbContextFactory<HospitalDbContext> conte
             PaymentId = info.PaymentId,
             RefundId = info.RefundId,
             SettlementId = info.SettlementId,
+            DisputeId = info.DisputeId,
             FacilityId = facilityId,
             ReceivedAt = now,
             StartedAt = now,

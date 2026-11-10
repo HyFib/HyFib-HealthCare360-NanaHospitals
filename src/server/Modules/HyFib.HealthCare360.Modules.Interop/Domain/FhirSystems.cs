@@ -37,6 +37,11 @@ internal static class FhirSystems
     public const string RoleCode = "http://terminology.hl7.org/CodeSystem/v3-RoleCode";
     public const string MedicationRequestCategory = "http://terminology.hl7.org/CodeSystem/medicationrequest-category";
     public const string TimingAbbreviation = "http://terminology.hl7.org/CodeSystem/v3-GTSAbbreviation";
+    public const string ImmunizationOrigin = "http://terminology.hl7.org/CodeSystem/immunization-origin";
+    public const string ImmunizationFunction = "http://terminology.hl7.org/CodeSystem/v2-0443";
+    public const string ImmunizationRecommendationStatus = "http://terminology.hl7.org/CodeSystem/immunization-recommendation-status";
+    public const string Confidentiality = "http://terminology.hl7.org/CodeSystem/v3-Confidentiality";
+    public const string LocationPhysicalType = "http://terminology.hl7.org/CodeSystem/location-physical-type";
 
     // FHIR-defined code systems of coded elements (used when a client searches with a system-qualified token).
     public const string AdministrativeGender = "http://hl7.org/fhir/administrative-gender";
@@ -47,6 +52,9 @@ internal static class FhirSystems
     public const string DiagnosticReportStatus = "http://hl7.org/fhir/diagnostic-report-status";
     public const string DocumentReferenceStatus = "http://hl7.org/fhir/document-reference-status";
     public const string AllergyCategory = "http://hl7.org/fhir/allergy-intolerance-category";
+    public const string ImmunizationStatus = "http://hl7.org/fhir/event-status";
+    public const string ProcedureStatus = "http://hl7.org/fhir/event-status";
+    public const string LocationStatus = "http://hl7.org/fhir/location-status";
 
     // Profiles.
     public const string VitalSignsProfile = "http://hl7.org/fhir/StructureDefinition/";
@@ -65,6 +73,8 @@ internal static class FhirSystems
     public const string AccessionNumber = "urn:hc360:accession-number";
     public const string LabTest = "urn:hc360:lab-test";
     public const string Service = "urn:hc360:service";
+    public const string Ward = "urn:hc360:ward";
+    public const string Bed = "urn:hc360:bed";
 
     /// <summary>Machine-readable reasons in <c>OperationOutcome.issue.details</c>.</summary>
     public const string Issue = "urn:hc360:fhir-issue";

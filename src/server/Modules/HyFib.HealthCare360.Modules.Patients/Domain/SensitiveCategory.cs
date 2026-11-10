@@ -60,6 +60,19 @@ public static class SensitiveCategories
         };
     }
 
+    /// <summary>
+    /// The category an ICD-10-PCS procedure puts a record in, or none, as <see cref="FromIcd"/> does for a diagnosis:
+    /// an abortion (root operation 10A, which ends a pregnancy, in every approach and device) puts it in the MTP
+    /// category; electroconvulsive therapy (GZB), a treatment for mental illness (Mental Healthcare Act 2017, s.95), in
+    /// the mental health category. A miscarriage's retained products removed (10D1) are not a termination.
+    /// </summary>
+    public static SensitiveCategory FromIcd10Pcs(string? code) => code?.Trim().ToUpperInvariant() switch
+    {
+        { Length: 7 } pcs when pcs.StartsWith("10A", StringComparison.Ordinal) => SensitiveCategory.Mtp,
+        { Length: 7 } pcs when pcs.StartsWith("GZB", StringComparison.Ordinal) => SensitiveCategory.MentalHealth,
+        _ => SensitiveCategory.None,
+    };
+
     /// <summary>"HIV, mental health" for messages and the audit trail.</summary>
     public static string Describe(SensitiveCategory categories) => string.Join(", ", new[]
     {

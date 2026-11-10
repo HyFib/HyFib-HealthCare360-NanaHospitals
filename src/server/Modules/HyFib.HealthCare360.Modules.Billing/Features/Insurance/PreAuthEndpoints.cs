@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Insurance;
 
@@ -14,6 +15,7 @@ internal static class PreAuthEndpoints
         var group = app.MapGroup("/api/v1/insurance/preauths").WithTags("Insurance - Pre-authorisation");
         group.MapGet("/", List).RequireAnyPermission(Readers);
         group.MapGet("/{id:guid}", Get).RequireAnyPermission(Readers);
+        group.MapGet("/procedure-options", ProcedureOptions).RequirePermission(BillingPermissions.PreAuthManage);
         group.MapPost("/", Create).RequirePermission(BillingPermissions.PreAuthManage).WithValidation<SavePreAuthRequest>();
         group.MapPut("/{id:guid}", Update).RequirePermission(BillingPermissions.PreAuthManage).WithValidation<SavePreAuthRequest>().RequireVersion();
         group.MapPost("/{id:guid}/submit", Submit).RequirePermission(BillingPermissions.PreAuthManage);
@@ -67,9 +69,11 @@ internal static class PreAuthEndpoints
         }));
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Get(
+        Guid id, HospitalDbContext db, PreAuthService preAuths, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
-        var p = await db.Set<PreAuthorization>().AsNoTracking().Include(x => x.Enhancements).FirstOrDefaultAsync(x => x.Id == id, ct);
+        var p = await db.Set<PreAuthorization>().AsNoTracking().Include(x => x.Enhancements).Include(x => x.Procedures)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (p is null)
         {
             return Error.NotFound(nameof(PreAuthorization), id).ToProblem();
@@ -94,14 +98,21 @@ internal static class PreAuthEndpoints
 
         return TypedResults.Ok(new PreAuthDetail(
             p.Id, p.Number, p.PatientId, patient?.Uhid, patient?.FullName, p.AdmissionId, p.VisitId, p.PolicyId, masked, p.PayerId, names.GetValueOrDefault(p.PayerId),
-            p.TpaId, p.TpaId is { } tpa ? names.GetValueOrDefault(tpa) : null, p.RequestedAmount, p.DiagnosisCodes, p.ProcedureCodes, p.ClinicalSummary,
+            p.TpaId, p.TpaId is { } tpa ? names.GetValueOrDefault(tpa) : null, p.RequestedAmount, p.DiagnosisCodes,
+            p.Procedures.OrderBy(l => l.LineNumber).Select(l => new PreAuthProcedureDto(l.System, l.Code, l.Name, l.Quantity, l.Amount)).ToList(),
+            p.LegacyProcedureText, p.ClinicalSummary,
             p.ExpectedStayDays, p.DocumentFileIds, p.Status, p.ApprovedAmount, p.ApprovalReference, p.FinalApprovedAmount, p.EffectiveApprovedAmount,
             p.QueryText, p.QueryResponse, p.RejectionReason, p.SubmittedAt, p.ApprovedAt, p.RejectedAt,
             p.Enhancements.OrderBy(e => e.RequestedAt)
                 .Select(e => new EnhancementDto(e.Id, e.RequestedAmount, e.Reason, e.Status, e.ApprovedAmount, e.Reference, e.RequestedAt, e.RespondedAt))
                 .ToList(),
-            p.Version));
+            p.Version,
+            (await preAuths.AmountsAskedAsync([p.Id], ct)).TryGetValue(p.Id, out var asked) ? asked : null));
     }
+
+    /// <summary>Procedures to code a planned procedure with: <c>system</c> Hbp (PM-JAY's HBP master) or Icd10Pcs, by code or name.</summary>
+    private static async Task<IResult> ProcedureOptions(PreAuthProcedureSystem? system, string? search, PreAuthService preAuths, CancellationToken ct) =>
+        TypedResults.Ok(await preAuths.ProcedureOptionsAsync(system ?? PreAuthProcedureSystem.Hbp, search is { Length: > 100 } ? search[..100] : search, ct));
 
     private static async Task<IResult> Create(SavePreAuthRequest request, PreAuthService preAuths, CancellationToken ct)
     {
@@ -120,8 +131,9 @@ internal static class PreAuthEndpoints
     private static async Task<IResult> AnswerQuery(Guid id, PreAuthTextRequest request, PreAuthService preAuths, CancellationToken ct) =>
         (await preAuths.AnswerQueryAsync(id, request.Text, ct)).ToNoContent();
 
+    /// <summary>202: the amount waits for a second insurance desk user (MAKER-CHECKER.md, slice 12).</summary>
     private static async Task<IResult> Approve(Guid id, ApprovePreAuthRequest request, PreAuthService preAuths, CancellationToken ct) =>
-        (await preAuths.ApproveAsync(id, request, ct)).ToNoContent();
+        (await preAuths.ApproveAsync(id, request, ct)).ToHttpResult(Asked);
 
     private static async Task<IResult> Reject(Guid id, RejectPreAuthRequest request, PreAuthService preAuths, CancellationToken ct) =>
         (await preAuths.RejectAsync(id, request.Reason, ct)).ToNoContent();
@@ -129,9 +141,13 @@ internal static class PreAuthEndpoints
     private static async Task<IResult> RequestEnhancement(Guid id, RequestEnhancementRequest request, PreAuthService preAuths, CancellationToken ct) =>
         (await preAuths.RequestEnhancementAsync(id, request, ct)).ToNoContent();
 
+    /// <summary>204 for a refusal (recorded at once); 202 for an approved enhancement, which waits for a second insurance desk user.</summary>
     private static async Task<IResult> RespondToEnhancement(Guid id, Guid enhancementId, RespondEnhancementRequest request, PreAuthService preAuths, CancellationToken ct) =>
-        (await preAuths.RespondToEnhancementAsync(id, enhancementId, request, ct)).ToNoContent();
+        (await preAuths.RespondToEnhancementAsync(id, enhancementId, request, ct)).ToHttpResult(asked => asked is null ? TypedResults.NoContent() : Asked(asked));
 
+    /// <summary>202: the final approval waits for a second insurance desk user.</summary>
     private static async Task<IResult> FinalApproval(Guid id, FinalApprovalRequest request, PreAuthService preAuths, CancellationToken ct) =>
-        (await preAuths.RecordFinalApprovalAsync(id, request, ct)).ToNoContent();
+        (await preAuths.RecordFinalApprovalAsync(id, request, ct)).ToHttpResult(Asked);
+
+    private static IResult Asked(ApprovalRequestDto asked) => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked);
 }

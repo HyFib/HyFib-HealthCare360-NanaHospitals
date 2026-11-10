@@ -55,3 +55,28 @@ and run the Interop module tests and `AbdmExportTests`.
   which the response reader is checked against figure by figure.
 - `package/CodeSystem-ndhm-program-code.json`: the government programme codes, against which the `AB-PMJAY` code and
   display on PM-JAY claims are checked (`Nhcx/NhcxClaimBundleTests`). Added 2026-10-27 from the same package.
+- `package/ValueSet-ndhm-vaccine-codes.json`: the guide's vaccine codes (179 SNOMED CT vaccine products, listed one by
+  one). Every card code HC360 sends as SNOMED CT (`VaccineCodes`, `src/server/Modules/HyFib.HealthCare360.Modules.Clinical/Domain/VaccineCodes.cs`)
+  must be one of them, with the guide's display (`VaccineCodeTests`), and the validator checks an immunisation's vaccine
+  against it. Added 2026-11-03 from the same package (the downloaded package's sha512 matched the integrity above; the
+  `StructureDefinition-Immunization.json` and `StructureDefinition-ImmunizationRecommendation.json` already here were
+  checked byte for byte against it).
+- `package/StructureDefinition-ImmunizationRecord.json`: the immunisation record profile HC360's vaccine doses must
+  meet as ABDM documents (`AbdmDocumentTests`, `AbdmExportTests`), and `example/Bundle-ImmunizationRecord-example-07.json`:
+  the guide's own immunisation record, which must validate (`Abdm/ValidatorSetupTests`). Added 2026-11-03 from the same
+  package as the vaccine codes (its sha512 matched the integrity above); the `Immunization`, `ImmunizationRecommendation`
+  and `DocumentBundle` profiles already here were checked byte for byte against it.
+- `package/StructureDefinition-HealthDocumentRecord.json`: the health document profile HC360's signed clinical notes
+  must meet as ABDM documents (`AbdmDocumentTests`, `AbdmExportTests`), and
+  `example/Bundle-HealthDocumentRecord-example-01.json`: the guide's own health document, which must validate
+  (`Abdm/ValidatorSetupTests`). Added 2026-11-04 from the same package (its sha512 matched the integrity above); every
+  file already here was checked byte for byte against it, the `DocumentReference`, `Patient`, `Practitioner`,
+  `PractitionerRole`, `Organization` and `Encounter` profiles it points to among them.
+- `package/StructureDefinition-WellnessRecord.json`: the wellness record profile HC360's home readings must meet as ABDM
+  documents (`AbdmDocumentTests`, `AbdmHomeReadingsRecordTests`, `AbdmExportTests`), with the profiles its sections ask
+  of their entries that were not here yet (`StructureDefinition-ObservationGeneralAssessment.json`,
+  `…ObservationPhysicalActivity.json`, `…ObservationWomenHealth.json` and `…ObservationLifestyle.json`: Firely compiles
+  every profile a section entry may target), and `example/Bundle-WellnessRecord-example-01.json`: the guide's own
+  wellness record, which must validate (`Abdm/ValidatorSetupTests`). Added 2026-11-04 from the same package (its sha512
+  matched the integrity above, and each file matched the package's byte for byte); every file already here was checked
+  byte for byte against it, the `ObservationVitalSigns` and `ObservationBodyMeasurement` profiles among them.

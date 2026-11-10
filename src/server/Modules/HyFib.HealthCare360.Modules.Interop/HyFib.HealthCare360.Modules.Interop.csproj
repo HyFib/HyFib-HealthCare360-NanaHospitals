@@ -2,7 +2,8 @@
   <!--
     HL7 FHIR R4 read facade (layer 8, EHR-05): read and search APIs over the patient record for other providers, limited
     to patients with an active record-sharing consent. It reads other modules' entities through HospitalDbContext, never
-    writes to their schemas and owns no tables (no migration needed).
+    writes to their schemas and owns no tables (no migration needed). It also exports completed records as ABDM health
+    records (EHR-08), finalised bills among them, which it reads from Billing (layer 7).
   -->
   <PropertyGroup>
     <RootNamespace>HyFib.HealthCare360.Modules.Interop</RootNamespace>
@@ -18,5 +19,8 @@
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Clinical\HyFib.HealthCare360.Modules.Clinical.csproj" />
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Diagnostics\HyFib.HealthCare360.Modules.Diagnostics.csproj" />
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Inpatient\HyFib.HealthCare360.Modules.Inpatient.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.VirtualCare\HyFib.HealthCare360.Modules.VirtualCare.csproj" />
+    <!-- A finalised bill as an ABDM InvoiceRecord (AbdmRecords.Invoice): Bill and BillLine, read only. -->
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Billing\HyFib.HealthCare360.Modules.Billing.csproj" />
   </ItemGroup>
 </Project>

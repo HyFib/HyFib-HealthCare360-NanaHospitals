@@ -29,7 +29,7 @@ internal static partial class AbdmDocumentBuilder
     public static R4.Bundle Build(AbdmDocument document)
     {
         var resources = Resources(document);
-        var compositionKey = $"Composition/{document.Type}/{FhirIds.Of(document.SourceId)}";
+        var compositionKey = $"Composition/{document.Type}/{FhirIds.Of(document.SourceId)}{Part(document)}";
         var ids = resources.ToDictionary(Key, r => Uuid(Key(r)), StringComparer.Ordinal);
         ids[compositionKey] = Uuid(compositionKey);
 
@@ -61,7 +61,7 @@ internal static partial class AbdmDocumentBuilder
         composition.Meta!.LastUpdated = FhirTime.ToMilliseconds(lastUpdated);
         var version = Version(lastUpdated, resources.Prepend(composition));
         composition.Meta.VersionId = version;
-        var bundleId = Uuid($"Bundle/{document.Type}/{FhirIds.Of(document.SourceId)}/{version}");
+        var bundleId = Uuid($"Bundle/{document.Type}/{FhirIds.Of(document.SourceId)}{Part(document)}/{version}");
         var bundle = new R4.Bundle
         {
             Id = bundleId,
@@ -100,6 +100,9 @@ internal static partial class AbdmDocumentBuilder
     }
 
     public static string Urn(string uuid) => "urn:uuid:" + uuid;
+
+    /// <summary>The part of a record a document is, in its identity: none for a record made into one document.</summary>
+    private static string Part(AbdmDocument document) => document.Part is { } part ? "/" + part : string.Empty;
 
     /// <summary>
     /// The document's version: its latest change in Unix milliseconds, and the first 8 bytes of a SHA-256 hash of its
@@ -261,7 +264,7 @@ internal static partial class AbdmDocumentBuilder
             Meta = new R4.Meta { Profile = [document.Profile] },
             Identifier = new R4.Identifier(AbdmSystems.Uri, Urn(id)),
             Status = document.Status,
-            Type = document.DocumentType.Concept(document.Title),
+            Type = document.DocumentType?.Concept(document.TypeText ?? document.Title) ?? new R4.CodeableConcept { Text = document.TypeText ?? document.Title },
             Subject = Reference(document.Patient),
             Encounter = document.Encounter is { } encounter ? Reference(encounter) : null,
             Date = FhirTime.DateTime(document.Date),
@@ -269,6 +272,11 @@ internal static partial class AbdmDocumentBuilder
             Title = document.Title,
             Custodian = Reference(document.Custodian),
         };
+
+        if (document.Covers is { } period)
+        {
+            composition.Event.Add(new R4.Composition.EventComponent { Period = period });
+        }
 
         if (document.AmendedBy is { } amender && Key(amender) != Key(document.Author))
         {
@@ -290,7 +298,7 @@ internal static partial class AbdmDocumentBuilder
             composition.Section.Add(new R4.Composition.SectionComponent
             {
                 Title = section.Title,
-                Code = section.Code.Concept(),
+                Code = section.Code?.Concept(),
                 Text = SectionText(section),
                 Entry = section.Entries.Select(Reference).ToList(),
             });
@@ -300,6 +308,7 @@ internal static partial class AbdmDocumentBuilder
         [
             document.Title,
             $"Date: {FhirTime.DateTime(document.Date)}",
+            .. document.Covers is { } covers ? [$"Covers: {covers.Start} to {covers.End}"] : Array.Empty<string>(),
             .. composition.Section.Select(s => s.Title).OfType<string>(),
         ]);
         return composition;
@@ -308,10 +317,16 @@ internal static partial class AbdmDocumentBuilder
     /// <summary>
     /// A section's narrative, which must read whole on its own (it is what a doctor attests): its free text, then a line
     /// for each entry, under the section's heading for them when there is free text. With free text it is <c>additional</c>
-    /// (it says more than the entries), else <c>generated</c> from them.
+    /// (it says more than the entries), else <c>generated</c> from them. A section whose free text is what its entries hold
+    /// (<see cref="AbdmSection.TextIsEntries"/>: a note and its addenda as signed) has that text alone, <c>generated</c>.
     /// </summary>
     private static R4.Narrative SectionText(AbdmSection section)
     {
+        if (section.TextIsEntries && section.Text.Count > 0)
+        {
+            return AbdmNarrative.Generated(section.Text);
+        }
+
         var entries = section.Entries.Select(e => AbdmNarrative.Summary(e)).OfType<string>().ToList();
         if (section.Text.Count == 0)
         {
@@ -451,6 +466,7 @@ internal static class AbdmNarrative
         R4.Patient p => p.Name.FirstOrDefault()?.Text,
         R4.Practitioner p => p.Name.FirstOrDefault()?.Text,
         R4.Organization o => o.Name,
+        R4.Invoice i => i.Identifier.FirstOrDefault()?.Value is { } number ? $"Bill {number}" : "Bill",
         _ => Summary(resource),
     };
 
@@ -467,8 +483,99 @@ internal static class AbdmNarrative
         R4.Observation o => Join(Text(o.Code) + ":", Value(o)),
         R4.DiagnosticReport r => Join(Text(r.Code), r.Conclusion is { } conclusion and not AbdmProfiler.SeeTheResults ? $"({conclusion})" : null),
         R4.DocumentReference d => d.Description ?? Text(d.Type),
+        R4.Immunization i => Immunization(i),
+        R4.ImmunizationRecommendation r => NextDose(r),
+        R4.Procedure p => Procedure(p),
+        R4.Invoice i => Invoice(i),
         _ => null,
     };
+
+    /// <summary>
+    /// "Bill NHOB260000001 (issued), Out-patient bill: total ₹1,180.00, taxes excluded ₹1,000.00", then a line for each
+    /// service with its quantity and net amount ("Consultation fee × 1: ₹500.00"), and who pays what: the bill as it reads.
+    /// </summary>
+    private static string Invoice(R4.Invoice invoice)
+    {
+        var lines = new List<string>
+        {
+            $"Bill {invoice.Identifier.FirstOrDefault()?.Value} ({invoice.Status?.ToString().ToLowerInvariant()}), {Text(invoice.Type)}: "
+            + $"total {Rupees(invoice.TotalGross)}, taxes excluded {Rupees(invoice.TotalNet)}",
+        };
+        foreach (var item in invoice.LineItem)
+        {
+            var quantity = item.PriceComponent.FirstOrDefault(c => c.Type == R4.InvoicePriceComponentType.Base)?.Factor;
+            var net = item.PriceComponent.Where(c => c.Type != R4.InvoicePriceComponentType.Informational).Sum(c => c.Amount?.Value ?? 0m);
+            var name = Text(item.ChargeItem as R4.CodeableConcept) ?? "Service";
+            lines.Add($"{name} × {quantity?.ToString("0.###", CultureInfo.InvariantCulture) ?? "1"}: {AbdmRecords.Rupees(net)}");
+        }
+
+        if (FhirElements.Clean(invoice.PaymentTerms) is { } terms)
+        {
+            lines.Add(terms);
+        }
+
+        return string.Join('\n', lines);
+
+        static string Rupees(R4.Money? money) => AbdmRecords.Rupees(money?.Value ?? 0m);
+    }
+
+    /// <summary>
+    /// "Incision and drainage of abscess: performed 2026-10-15T10:15:00+05:30, Axilla, right, by Dr. Asha Rao. Outcome:
+    /// Pus drained": a procedure with when, where and by whom it was done, and how it went, as the chart lists it.
+    /// </summary>
+    private static string? Procedure(R4.Procedure procedure)
+    {
+        if (Text(procedure.Code) is not { } name)
+        {
+            return null;
+        }
+
+        var details = new[]
+        {
+            (procedure.Performed as R4.FhirDateTime)?.Value is { } performed ? $"performed {performed}" : null,
+            procedure.BodySite.Select(Text).FirstOrDefault(t => t is not null),
+            FhirElements.Clean(procedure.Performer.FirstOrDefault()?.Actor?.Display) is { } performer ? $"by {performer}" : null,
+        }.OfType<string>().ToList();
+        var line = details.Count == 0 ? name : $"{name}: {string.Join(", ", details)}";
+        return Text(procedure.Outcome) is { } outcome ? $"{line}. Outcome: {outcome}" : line;
+    }
+
+    /// <summary>
+    /// "BCG, dose 1: given 2026-09-24, batch B2611-07, Intradermal route, Left upper arm": a dose as its card reads, the
+    /// route by its coded name when it has one.
+    /// </summary>
+    private static string? Immunization(R4.Immunization immunization)
+    {
+        var dose = immunization.ProtocolApplied.Select(p => p.DoseNumber).OfType<R4.PositiveInt>().FirstOrDefault()?.Value;
+        if (Text(immunization.VaccineCode) is not { } vaccine)
+        {
+            return null;
+        }
+
+        var details = new[]
+        {
+            (immunization.Occurrence as R4.FhirDateTime)?.Value is { } given ? $"given {given}" : null,
+            FhirElements.Clean(immunization.LotNumber) is { } lot ? $"batch {lot}" : null,
+            immunization.Route?.Coding.Select(c => c.Display).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d)) ?? Text(immunization.Route),
+            Text(immunization.Site),
+        }.OfType<string>().ToList();
+        var line = dose is { } number ? $"{vaccine}, dose {number}" : vaccine;
+        return details.Count == 0 ? line : $"{line}: {string.Join(", ", details)}";
+    }
+
+    /// <summary>"Next dose due 2026-11-05: BCG, dose 2".</summary>
+    private static string? NextDose(R4.ImmunizationRecommendation recommendation)
+    {
+        if (recommendation.Recommendation.FirstOrDefault() is not { } next)
+        {
+            return null;
+        }
+
+        var vaccine = next.VaccineCode.Select(Text).FirstOrDefault(t => t is not null);
+        var dose = (next.DoseNumber as R4.PositiveInt)?.Value;
+        var due = next.DateCriterion.Select(c => c.Value).FirstOrDefault(v => v is not null);
+        return Join(due is null ? "Next dose due:" : $"Next dose due {due}:", vaccine is null ? null : dose is { } number ? $"{vaccine}, dose {number}" : vaccine);
+    }
 
     /// <summary>
     /// "Viral fever (differential)", "Asthma (provisional, resolved)", "Hypertension (chronic)": a diagnosis with what its

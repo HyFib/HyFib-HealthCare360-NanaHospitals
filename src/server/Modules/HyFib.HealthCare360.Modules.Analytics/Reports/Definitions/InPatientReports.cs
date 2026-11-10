@@ -657,8 +657,10 @@ internal sealed class AdverseDischargesReport : ReportDefinition
             admissions = admissions.Where(a => a.DepartmentId == departmentId);
         }
 
+        // A merged patient's record is removed but its stays still count; the stays themselves keep their removed rows out
+        // in so many words, as EF Core ignores a query filter for the whole query.
         var list = await ctx.ListAsync(
-            from a in admissions
+            from a in admissions.NotRemoved()
             join p in ctx.Db.Set<Patient>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]) on a.PatientId equals p.Id
             orderby a.DischargedAt descending
             select new RegisterRow(

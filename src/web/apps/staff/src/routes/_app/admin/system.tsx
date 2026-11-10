@@ -26,6 +26,7 @@ import {
   type WifiSample,
 } from '@/modules/admin/api';
 import { AlertDrills } from '@/modules/admin/AlertDrills';
+import { AlertIncidents } from '@/modules/admin/AlertIncidents';
 import { DatabasePassword } from '@/modules/admin/DatabasePassword';
 import { EncryptionKeys } from '@/modules/admin/EncryptionKeys';
 import { encryptionSummary } from '@/modules/admin/diskEncryption';
@@ -238,6 +239,9 @@ function SystemHealthPage() {
             <Row label="Oldest">{h.outbox.oldestPendingAt ? formatRelative(h.outbox.oldestPendingAt) : 'None'}</Row>
           </div>
         </Section>
+        <Section title="Critical alerts">
+          <AlertIncidents />
+        </Section>
         <Section title="Alert drills">
           <AlertDrills />
         </Section>
@@ -249,6 +253,22 @@ function SystemHealthPage() {
             <Row label="CA expires" tone={expiryTone(h.certificate.caExpiresAt, HOSPITAL_CA)}>
               {h.certificate.caExpiresAt ? formatDateTime(h.certificate.caExpiresAt) : 'Not issued by HC360'}
             </Row>
+            {/* A rollover in two steps: the next CA, which devices take before the switch; after it, the CA it replaced. */}
+            {h.certificate.nextCaFingerprint && (
+              <Row label="Next CA (prepared; devices take it before the switch)">
+                <span className={styles.mono}>{h.certificate.nextCaFingerprint}</span>
+              </Row>
+            )}
+            {h.certificate.previousCaFingerprint && (
+              <>
+                <Row label="Previous CA (switched from)">
+                  <span className={styles.mono}>{h.certificate.previousCaFingerprint}</span>
+                </Row>
+                <Row label="Devices keep it as a second CA until">
+                  {h.certificate.previousCaExpiresAt ? formatDateTime(h.certificate.previousCaExpiresAt) : '—'}
+                </Row>
+              </>
+            )}
             {/* Each server of several has a certificate of its own, on its card. */}
             {!servers && (
               <>
@@ -322,7 +342,7 @@ function ServerCard({ node }: { node: ServerNodeHealth }) {
   const styles = useStyles();
   const wifi = node.network.wifi;
   return (
-    <Section title={node.server.machineName} description={serverRole(node.server.role)}>
+    <Section title={node.server.machineName} description={serverRole(node.server)}>
       <div className={styles.rows}>
         <Row label="Reported" tone={node.reporting ? undefined : 'bad'}>
           {node.reporting ? formatRelative(node.reportedAt) : `Not since ${formatDateTime(node.reportedAt)}`}

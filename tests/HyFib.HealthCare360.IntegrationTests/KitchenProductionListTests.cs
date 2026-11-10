@@ -104,8 +104,7 @@ public sealed class KitchenProductionListTests(HospitalServer server)
             Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
             ConfirmedNotDuplicate: true));
 
-        var bed = (await frontOffice.GetAsync<List<AvailableBedDto>>($"/api/v1/beds/available?patientId={patient.Id}"))
-            .First(b => b.IsEligible && b.Status == BedStatus.Vacant && b.WardType is WardType.General or WardType.SemiPrivate or WardType.Private);
+        var bed = await TestBeds.AddAsync(server, gender == Gender.Female ? "GWF" : "GWM");
         return await frontOffice.PostAsync<AdmissionCreated>("/api/v1/inpatient/admissions", new AdmitPatientRequest(
             PatientId: patient.Id, BedId: bed.BedId, Type: AdmissionType.Elective, Source: AdmissionSource.OutPatient, SourceVisitId: null,
             DepartmentId: null, AdmittingPractitionerId: consultantId, ConsultantPractitionerId: consultantId,

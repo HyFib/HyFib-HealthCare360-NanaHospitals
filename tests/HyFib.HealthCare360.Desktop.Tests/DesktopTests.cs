@@ -264,8 +264,9 @@ public sealed class ServerTrustTests
                     rejected.Add(report);
                 }
             };
+            // By its address, where it listens, not "localhost", which Windows tries as ::1 first (CaRolloverTests.ServeOnce).
             using var http = trust.CreateHttpClient(
-                new Uri($"https://localhost:{((IPEndPoint)listener.LocalEndpoint).Port}/"), TimeSpan.FromSeconds(10));
+                new Uri($"https://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/"), TimeSpan.FromSeconds(10));
 
             await Should.ThrowAsync<HttpRequestException>(
                 () => http.GetAsync(new Uri("health/live", UriKind.Relative), TestContext.Current.CancellationToken));

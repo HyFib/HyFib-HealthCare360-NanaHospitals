@@ -76,6 +76,11 @@ internal sealed class SupplyChainSeeder(IOptions<PlatformOptions> options, Stock
                 GstRate = seed.Gst,
                 Schedule = seed.Schedule,
                 IsControlled = seed.Controlled,
+                IsHighAlert = ItemCatalogSeed.HighAlert.Contains(seed.Code),
+
+                // Only the law's list is seeded (Schedule X and NDPS are Prohibited); Lists O, A and B are the pharmacy and
+                // therapeutics committee's to fill in.
+                TelemedicineList = TelemedicineLists.ByLaw(seed.Schedule, seed.Controlled) ? TelemedicineLists.Prohibited : null,
                 IsColdChain = seed.ColdChain,
                 VedClass = seed.Ved,
                 ReorderLevel = seed.ReorderLevel,

@@ -59,7 +59,7 @@ serves both apps):
 
 ```bash
 export HC360_DEMO_PASSWORD='<demo password>' NODE_EXTRA_CA_CERTS=<the server's CA certificate>
-export HC360_DEMO_DB=postgresql://<user>:<password>@localhost:5432/<demo database>   # the patient's sign-in code
+export HC360_DEMO_DB=postgresql://<user>:<password>@localhost:5432/<demo database>   # codes sent by SMS
 DEMO_CLOCK_FILE=/var/tmp/hc360-demo-clock.txt node demo/story.mjs demo/out/story.json   # about 3 min
 DEMO_PARALLEL=4 node demo/capture.mjs demo/out/recordings                                # 40 to 60 min
 node demo/build.mjs demo/out/recordings demo/out/story.json demo/out/demo
@@ -71,7 +71,8 @@ The demo's clock starts where the story stopped the server's, and runs on from t
 
 The patient (`PORTAL_PATIENT` in `app/personas.ts`) signs in to the portal on the server's patients' port
 (`HC360_PORTAL`, `https://localhost:7361` by default) with a code sent by SMS. A demo server has no SMS gateway, so
-`capture.mjs` reads the code the server queued for one from its database, with `psql` and `HC360_DEMO_DB`.
+`capture.mjs` reads the code the server queued for one from its database, with `psql` and `HC360_DEMO_DB`
+(`lib/db.mjs`). `story.mjs` reads the codes that give the seeded patients their fictional numbers the same way.
 
 ## Publishing at hc360.hyfib.com
 
@@ -85,7 +86,7 @@ serves it, as the Worker `hc360-demo` with static assets only (no Worker script 
   committed. It also fails if a header is missing or Cloudflare is not in front.
 - **Check only.** Run by hand with _check only_, it deploys nothing and checks the live site.
 
-`site/` holds the morning recorded on 31 October from `main` at 06e8f71: 12 roles, 1,343 screens walked, no unrecorded
+`site/` holds the morning recorded on 9 November from `main` at b8425c9: 12 roles, 1,440 screens walked, no unrecorded
 calls, no browser errors, and 30 of 30 guided places. Building it again from the same recordings gives the same 16
 files, byte for byte. To publish a new recording, make it and check it as above, then replace the folder in a pull
 request:

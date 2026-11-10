@@ -29,20 +29,21 @@ public sealed class PharmacyDayBookTests
         var cancelled = Sale("NHPH260000003", 50m, 1, 12m, new SalePayment(PaymentMode.Cash, 50m, null));
         cancelled.Cancel("Wrong patient", Today, Today, Now.AddMinutes(5), null).IsSuccess.ShouldBeTrue();
         var refund = paid.Items[0].Return(1).Value;
-        var applied = paid.ApplyReturn(refund, PaymentMode.Cash, null, Now.AddHours(3), null).Value;
+        var applied = paid.ApplyReturn(refund, Now.AddHours(3), null).Value;
         var saleReturn = new PharmacySaleReturn
         {
             ReturnNumber = "NHPR260000001",
             SaleId = paid.Id,
             RefundAmount = refund,
             AdjustedAgainstDue = applied.AdjustedAgainstDue,
-            CashRefund = applied.CashRefund,
-            RefundMode = PaymentMode.Cash,
+            CashRefund = applied.PaidBack.Sum(p => p.Amount),
+            RefundMode = PaymentMode.Upi,
             Items = [new PharmacySaleReturnItem { SaleItemId = paid.Items[0].Id, RefundAmount = refund, Quantity = 1 }],
         };
 
+        // The invoice paid by UPI is paid back by UPI: the refunds of the day, as the source reads them.
         var day = PharmacyDayBook.Day(Today, [credit, paid, cancelled], [saleReturn], new Dictionary<Guid, decimal> { [paid.Items[0].Id] = 12m },
-            [new PharmacyCollection(PaymentMode.Card, 25m)]);
+            [new PharmacyCollection(PaymentMode.Card, 25m)], paidBack: [.. paid.Payments.Where(p => p.IsRefund).Select(p => new PharmacyCollection(p.Mode, p.Amount))]);
 
         day.Counter.ShouldBe("pharmacy");
         day.Sales.Count.ShouldBe(2);
@@ -53,7 +54,7 @@ public sealed class PharmacyDayBookTests
 
         day.Returns.Count.ShouldBe(1);
         day.Returns.Tax.ShouldBe([new CounterTaxLine(12m, 100m, 6m, 6m)]);
-        day.Returns.Payments.ShouldBe([new CounterMoney(CounterPaymentMode.Cash, 112m)]);
+        day.Returns.Payments.ShouldBe([new CounterMoney(CounterPaymentMode.Upi, 112m)]);
         day.Returns.OnAccount.ShouldBe(0m);
 
         day.Collected.ShouldBe([new CounterMoney(CounterPaymentMode.Card, 25m)]);
@@ -64,12 +65,12 @@ public sealed class PharmacyDayBookTests
     {
         var credit = Sale("NHPH260000001", 2.25m, 20, 5m, new SalePayment(PaymentMode.Credit, 45m, null));
         var refund = credit.Items[0].Return(4).Value;
-        var applied = credit.ApplyReturn(refund, PaymentMode.Cash, null, Now, null).Value;
+        var applied = credit.ApplyReturn(refund, Now, null).Value;
         var saleReturn = new PharmacySaleReturn
         {
             RefundAmount = refund,
             AdjustedAgainstDue = applied.AdjustedAgainstDue,
-            CashRefund = applied.CashRefund,
+            CashRefund = applied.PaidBack.Sum(p => p.Amount),
             RefundMode = PaymentMode.Cash,
             Items = [new PharmacySaleReturnItem { SaleItemId = credit.Items[0].Id, RefundAmount = refund }],
         };
@@ -79,6 +80,49 @@ public sealed class PharmacyDayBookTests
         day.Returns.Total.ShouldBe(9m);
         day.Returns.Payments.ShouldBeEmpty();
         day.Returns.OnAccount.ShouldBe(9m);
+    }
+
+    [Fact]
+    public void A_return_after_the_time_to_reduce_the_sales_gst_takes_back_the_value_and_not_the_gst()
+    {
+        var paid = Sale("NHPH260000002", 112m, 1, 12m, new SalePayment(PaymentMode.Upi, 112m, "UPI1"));
+        var refund = paid.Items[0].Return(1).Value;
+        var saleReturn = new PharmacySaleReturn
+        {
+            RefundAmount = refund,
+            CashRefund = refund,
+            RefundMode = PaymentMode.Cash,
+            Items = [new PharmacySaleReturnItem { SaleItemId = paid.Items[0].Id, RefundAmount = refund, Quantity = 1 }],
+        };
+        var rates = new Dictionary<Guid, decimal> { [paid.Items[0].Id] = 12m };
+
+        var late = PharmacyDayBook.Day(Today, [], [saleReturn], rates, [], timeBarredItems: new HashSet<Guid> { paid.Items[0].Id });
+        var inTime = PharmacyDayBook.Day(Today, [], [saleReturn], rates, []);
+
+        late.Returns.Tax.ShouldBe([new CounterTaxLine(12m, 112m, 0m, 0m)]);
+        inTime.Returns.Tax.ShouldBe([new CounterTaxLine(12m, 100m, 6m, 6m)]);
+        late.Returns.Total.ShouldBe(inTime.Returns.Total, "The money returned is the same; only the GST in it is not taken back.");
+    }
+
+    [Fact]
+    public void A_return_paid_back_to_the_card_and_in_cash_counts_in_each_mode()
+    {
+        var split = Sale("NHPH260000004", 100m, 10, 12m, new SalePayment(PaymentMode.Card, 600m, "627910123456"), new SalePayment(PaymentMode.Cash, 400m, null));
+        var refund = split.Items[0].Return(1).Value;
+        var applied = split.ApplyReturn(refund, Now.AddHours(1), null).Value;
+        var saleReturn = new PharmacySaleReturn
+        {
+            RefundAmount = refund,
+            CashRefund = applied.PaidBack.Sum(p => p.Amount),
+            RefundMode = PaymentMode.Card,
+            Items = [new PharmacySaleReturnItem { SaleItemId = split.Items[0].Id, RefundAmount = refund, Quantity = 1 }],
+        };
+
+        var day = PharmacyDayBook.Day(Today, [], [saleReturn], new Dictionary<Guid, decimal> { [split.Items[0].Id] = 12m }, [],
+            paidBack: [.. split.Payments.Where(p => p.IsRefund).Select(p => new PharmacyCollection(p.Mode, p.Amount))]);
+
+        day.Returns.Payments.ShouldBe([new CounterMoney(CounterPaymentMode.Cash, 40m), new CounterMoney(CounterPaymentMode.Card, 60m)]);
+        day.Returns.OnAccount.ShouldBe(0m);
     }
 
     [Fact]

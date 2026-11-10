@@ -2,14 +2,28 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 
-/// <summary>Drug names are generic ingredients ("warfarin", "potassium chloride"); they are stored in canonical form.</summary>
-public sealed record SaveDrugInteractionRequest(string DrugA, string DrugB, InteractionSeverity Severity, string Effect, string? Management, bool IsActive, uint? Version);
+/// <summary>
+/// Drug names are generic ingredients ("warfarin", "potassium chloride"); they are stored in canonical form. A change that
+/// switches the interaction off, makes it less severe or moves it to another pair waits for approval, and needs
+/// <paramref name="Reason"/>; any other is saved at once.
+/// </summary>
+public sealed record SaveDrugInteractionRequest(
+    string DrugA, string DrugB, InteractionSeverity Severity, string Effect, string? Management, bool IsActive, uint? Version, string? Reason = null);
 
-public sealed record DrugInteractionDto(Guid Id, string DrugA, string DrugB, InteractionSeverity Severity, string Effect, string? Management, bool IsActive, uint Version);
+/// <param name="ApprovalWaitingSince">When a change loosening it was asked for, while it waits for approval; null when none waits.</param>
+public sealed record DrugInteractionDto(
+    Guid Id, string DrugA, string DrugB, InteractionSeverity Severity, string Effect, string? Management, bool IsActive, uint Version,
+    DateTimeOffset? ApprovalWaitingSince = null);
 
-public sealed record SaveDoseLimitRequest(string GenericName, decimal MaxDailyDoseMg, string? Route, string? Notes, bool IsActive, uint? Version);
+/// <summary>
+/// A maximum adult daily dose. Switching it off, raising it, or moving it to another drug or a narrower route waits for
+/// approval, and needs <paramref name="Reason"/>; any other change is saved at once.
+/// </summary>
+public sealed record SaveDoseLimitRequest(string GenericName, decimal MaxDailyDoseMg, string? Route, string? Notes, bool IsActive, uint? Version, string? Reason = null);
 
-public sealed record DoseLimitDto(Guid Id, string GenericName, decimal MaxDailyDoseMg, string? Route, string? Notes, bool IsActive, uint Version);
+/// <param name="ApprovalWaitingSince">When a change loosening it was asked for, while it waits for approval; null when none waits.</param>
+public sealed record DoseLimitDto(
+    Guid Id, string GenericName, decimal MaxDailyDoseMg, string? Route, string? Notes, bool IsActive, uint Version, DateTimeOffset? ApprovalWaitingSince = null);
 
 public sealed record ControlledDrugRegisterDto(
     Guid Id,
@@ -38,6 +52,7 @@ public sealed class SaveDrugInteractionRequestValidator : AbstractValidator<Save
             .WithMessage("Choose two different drugs.");
         RuleFor(x => x.Effect).NotEmpty().SafeText(500);
         RuleFor(x => x.Management).SafeText(500);
+        RuleFor(x => x.Reason).SafeText(500);
     }
 }
 
@@ -49,5 +64,6 @@ public sealed class SaveDoseLimitRequestValidator : AbstractValidator<SaveDoseLi
         RuleFor(x => x.MaxDailyDoseMg).GreaterThan(0).LessThan(1_000_000);
         RuleFor(x => x.Route).MaximumLength(32);
         RuleFor(x => x.Notes).SafeText(300);
+        RuleFor(x => x.Reason).SafeText(500);
     }
 }

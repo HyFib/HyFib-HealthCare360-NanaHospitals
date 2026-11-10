@@ -1,9 +1,12 @@
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Privacy.Features.Breaches;
+using HyFib.HealthCare360.Modules.Privacy.Features.Dpdp;
 using HyFib.HealthCare360.Modules.Privacy.Features.Portal;
 using HyFib.HealthCare360.Modules.Privacy.Features.Requests;
 using HyFib.HealthCare360.Modules.Privacy.Features.Retention;
 using HyFib.HealthCare360.Modules.Privacy.Features.Settings;
 using HyFib.HealthCare360.Modules.Privacy.Services;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Numbering;
 
@@ -20,8 +23,24 @@ public static class PrivacyPermissions
     public const string RequestsLog = "privacy.requests.log";
 
     public const string BreachesManage = "privacy.breaches.manage";
+
+    /// <summary>
+    /// Approve closing a personal data breach, and taking patients off its notification list, asked for by someone else
+    /// (MAKER-CHECKER.md, slice 14): the Data Protection Officer. Held by the hospital administrator by default; grant it to
+    /// the DPO's or privacy officer's role.
+    /// </summary>
+    public const string BreachesApprove = "privacy.breaches.approve";
     public const string RetentionManage = "privacy.retention.manage";
     public const string SettingsManage = "privacy.settings.manage";
+
+    /// <summary>The Significant Data Fiduciary duties: the DPO, impact assessments and data audits (DPDP Act s.10).</summary>
+    public const string SdfManage = "privacy.sdf.manage";
+
+    /// <summary>Approve an impact assessment someone else wrote: the Data Protection Officer's role.</summary>
+    public const string SdfApprove = "privacy.sdf.approve";
+
+    /// <summary>Register the consent managers the hospital accepts consent from (DPDP Act s.6(7)).</summary>
+    public const string ConsentManagersManage = "privacy.consent_managers.manage";
 
     private static readonly string[] Officers = [SystemRoles.HospitalAdmin, SystemRoles.QualityManager, SystemRoles.MrdOfficer];
 
@@ -33,8 +52,15 @@ public static class PrivacyPermissions
             [SystemRoles.FrontOffice, .. Officers]),
         new(BreachesManage, "Privacy", "Record personal data breaches, report them to the Board and notify the people affected",
             [SystemRoles.HospitalAdmin, SystemRoles.QualityManager]),
+        new(BreachesApprove, "Privacy",
+            "Approve closing a personal data breach and taking patients off its notification list, asked for by someone else (the Data Protection Officer)",
+            [SystemRoles.HospitalAdmin]),
         new(RetentionManage, "Privacy", "Set how long each kind of data is kept, and run the clean-up", [SystemRoles.HospitalAdmin]),
         new(SettingsManage, "Privacy", "Set the grievance officer's contact details and the response period", [SystemRoles.HospitalAdmin]),
+        new(SdfManage, "Privacy", "Keep the Significant Data Fiduciary records: the Data Protection Officer, impact assessments and data audits",
+            [SystemRoles.HospitalAdmin, SystemRoles.QualityManager]),
+        new(SdfApprove, "Privacy", "Approve data protection impact assessments written by someone else (the Data Protection Officer)", [SystemRoles.HospitalAdmin]),
+        new(ConsentManagersManage, "Privacy", "Register the consent managers the hospital accepts patients' consent from", [SystemRoles.HospitalAdmin]),
     ];
 }
 
@@ -62,6 +88,27 @@ public sealed class PrivacyModule : IModule
         services.AddScoped<BreachService>();
         services.AddScoped<RetentionService>();
         services.AddHostedService<RetentionJob>();
+
+        // Erasure and backups: the ledger outside the database, replayed after a restore.
+        services.AddSingleton<ErasureLedger>();
+        services.AddScoped<ErasureLedgerReplay>();
+        services.AddScoped<ISeeder, ErasureLedgerSeeder>();
+        services.AddHostedService<ErasureLedgerJob>();
+
+        // Children (s.9): a guardian's verifiable consent, which the consent screens check.
+        services.AddScoped<GuardianConsentService>();
+        services.AddScoped<IGuardianConsents>(sp => sp.GetRequiredService<GuardianConsentService>());
+
+        // Consent managers (s.6(7)): the protocol, the real gateway and the simulator.
+        services.AddScoped<ConsentManagerService>();
+        services.AddHttpClient<IConsentManagerGateway, HttpConsentManagerGateway>(client => client.Timeout = TimeSpan.FromSeconds(20));
+        services.AddKeyedSingleton<IConsentManagerGateway, SimulatorConsentManagerGateway>("simulator");
+
+        // Significant Data Fiduciary (s.10): the DPO, impact assessments (approved by a second person), data audits and reminders.
+        services.AddScoped<SdfService>();
+        services.AddScoped<IApprovalAction, DpiaApproval>();
+        services.AddScoped<IHealthWarningSource, SdfHealthWarnings>();
+        services.AddHostedService<SdfReminderJob>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -71,5 +118,6 @@ public sealed class PrivacyModule : IModule
         RetentionEndpoints.Map(endpoints);
         PrivacySettingsEndpoints.Map(endpoints);
         PortalPrivacyEndpoints.Map(endpoints);
+        DpdpEndpoints.Map(endpoints);
     }
 }

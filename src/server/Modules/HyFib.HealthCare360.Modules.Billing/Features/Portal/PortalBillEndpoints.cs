@@ -9,9 +9,9 @@ using HyFib.HealthCare360.Platform.Localization;
 namespace HyFib.HealthCare360.Modules.Billing.Features.Portal;
 
 /// <summary>
-/// /api/v1/portal/bills — the patient portal's bills (PP-02), their PDFs, and "pay now" (PP-03). Every call is limited to
-/// the patients linked to the signed-in mobile number (<see cref="PortalPatientScope"/>); drafts and cancelled bills are
-/// never shown.
+/// /api/v1/portal/bills — the patient portal's bills (PP-02), their PDFs, and "pay now" (PP-03); /api/v1/portal/refunds —
+/// where each refund stands (<see cref="PortalRefunds"/>). Every call is limited to the patients linked to the signed-in
+/// mobile number (<see cref="PortalPatientScope"/>); drafts and cancelled bills are never shown.
 /// </summary>
 internal static class PortalBillEndpoints
 {
@@ -26,6 +26,10 @@ internal static class PortalBillEndpoints
         group.MapGet("/{id:guid}/pdf", Pdf);
         group.MapPost("/{id:guid}/pay", Pay);
         group.MapPost("/{id:guid}/payments/{orderId:guid}/verify", Verify);
+
+        var refunds = app.MapGroup("/api/v1/portal/refunds").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal)
+            .RequireFeature(FeatureKeys.PatientPortal);
+        refunds.MapGet("/", Refunds);
     }
 
     private static async Task<IResult> List([AsParameters] PageQuery query, Guid? patientId, PortalPatientScope scope, HospitalDbContext db, TimeProvider time, CancellationToken ct)
@@ -63,6 +67,7 @@ internal static class PortalBillEndpoints
             .Where(r => r.BillId == id && r.Purpose != ReceiptPurpose.PayerSettlement)
             .OrderBy(r => r.ReceivedAt)
             .ToListAsync(ct);
+        var reversed = await BillQueries.ReversedAsync(db, receipts.Select(r => r.Id).ToList(), ct);
         return TypedResults.Ok(new PortalBillDetail(
             b.Id, b.BillNumber, b.Type, b.Status, b.PatientId, patient?.FullName, b.FinalizedAt, b.GrossAmount, b.DiscountAmount, b.TaxAmount, b.RoundOffAmount,
             b.NetAmount, b.PayerAmount, b.PatientAmount, b.PaidAmount - b.RefundedAmount, b.DueAmount,
@@ -71,7 +76,20 @@ internal static class PortalBillEndpoints
                     l.Description, l.Quantity, l.UnitPrice, l.TariffDiscountAmount + l.LineDiscountAmount + l.BillDiscountShare + l.PackageCoveredAmount, l.TaxAmount,
                     l.NetAmount, l.ServiceDate, IsReturn: l.GrossAmount < 0))
                 .ToList(),
-            receipts.Select(BillQueries.ToSummary).ToList()));
+            receipts.Select(r => BillQueries.ToSummary(r, reversed.GetValueOrDefault(r.Id))).ToList(),
+            await PortalRefunds.OfAsync(db, [b.PatientId], b.Id, time, ct)));
+    }
+
+    /// <summary>The refunds of the patients linked to the signed-in mobile number (or of one of them), newest first.</summary>
+    private static async Task<IResult> Refunds(Guid? patientId, PortalPatientScope scope, HospitalDbContext db, TimeProvider time, CancellationToken ct)
+    {
+        var accessible = await scope.AccessiblePatientIdsAsync(ct);
+        if (patientId is { } requested && !accessible.Contains(requested))
+        {
+            return Error.Forbidden("portal.patient_denied", "This record is not linked to your mobile number.").ToProblem();
+        }
+
+        return TypedResults.Ok(await PortalRefunds.OfAsync(db, patientId is { } one ? [one] : [.. accessible], null, time, ct));
     }
 
     /// <summary>The bill as a PDF: the same A4 document the counter prints, for the bills the patient can see above.</summary>

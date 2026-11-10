@@ -29,6 +29,7 @@ internal sealed class PatientsMergedHandler(HospitalDbContext db) : IDomainEvent
         await RepointAsync<GatewayOrder>(o => o.PatientId == from, o => o.PatientId = to, cancellationToken);
         await RepointAsync<PosTransaction>(t => t.PatientId == from, t => t.PatientId = to, cancellationToken);
         await RepointAsync<DoctorFeeAccrual>(a => a.PatientId == from, a => a.PatientId = to, cancellationToken);
+        await RepointAsync<ChargeRefusal>(r => r.PatientId == from, r => r.PatientId = to, cancellationToken);
     }
 
     private async Task RepointAsync<T>(Expression<Func<T, bool>> ofSource, Action<T> repoint, CancellationToken ct)

@@ -2,7 +2,10 @@ using HyFib.HealthCare360.Modules.Quality.Domain;
 
 namespace HyFib.HealthCare360.Modules.Quality.Features.Incidents;
 
-/// <summary>Any staff member's report. With <see cref="IsAnonymous"/> no reporter identity is stored.</summary>
+/// <summary>
+/// Any staff member's report. With <see cref="IsAnonymous"/> no reporter identity is stored. <see cref="InvolvesDevice"/>:
+/// a medical device was involved, which the quality team may report to MvPI.
+/// </summary>
 public sealed record ReportIncidentRequest(
     IncidentType Type,
     IncidentSeverity Severity,
@@ -16,7 +19,8 @@ public sealed record ReportIncidentRequest(
     string? Witnesses,
     SentinelEventKind? SentinelKind,
     bool FlagAsSentinel,
-    bool IsAnonymous);
+    bool IsAnonymous,
+    bool InvolvesDevice = false);
 
 /// <summary>What the reporter gets back (anonymous reporters can quote the number to the quality team).</summary>
 public sealed record IncidentReceipt(Guid Id, string IncidentNumber, bool IsSentinel, IncidentSeverity Severity, IncidentType Type);
@@ -42,6 +46,9 @@ public sealed record MyIncidentItem(Guid Id, string IncidentNumber, IncidentType
 public sealed record PersonRef(Guid Id, string Name);
 
 public sealed record IncidentCapaItem(Guid Id, string CapaNumber, CapaType Type, string Action, CapaStatus Status, DateOnly DueDate, bool IsOverdue);
+
+/// <summary>A device adverse event report (MvPI) raised from the incident.</summary>
+public sealed record IncidentMvpiItem(Guid Id, string Number, MvpiReportStatus Status, bool IsFollowUp, string? Reference);
 
 public sealed record IncidentDetail(
     Guid Id,
@@ -72,9 +79,17 @@ public sealed record IncidentDetail(
     int ReopenCount,
     InvestigationStatus? InvestigationStatus,
     IReadOnlyList<IncidentCapaItem> Capas,
-    uint Version);
+    bool InvolvesDevice,
+    bool IsDeviceRelated,
+    IReadOnlyList<IncidentMvpiItem> MvpiReports,
+    uint Version,
+    DateTimeOffset? ClosureAskedAt = null,
+    DateTimeOffset? DowngradeAskedAt = null);
 
-/// <summary>Re-grading after review (type, harm grade, sentinel classification, location details).</summary>
+/// <summary>
+/// Re-grading after review (type, harm grade, sentinel classification, location details, and whether a medical device was
+/// involved).
+/// </summary>
 public sealed record UpdateIncidentRequest(
     IncidentType Type,
     IncidentSeverity Severity,
@@ -84,7 +99,9 @@ public sealed record UpdateIncidentRequest(
     Guid? DepartmentId,
     Guid? PatientId,
     IReadOnlyList<Guid>? InvolvedStaffUserIds,
-    uint Version);
+    uint Version,
+    bool InvolvesDevice = false,
+    string? Reason = null);
 
 public sealed record TransitionIncidentRequest(IncidentStatus Status, string? Note);
 
@@ -145,6 +162,7 @@ public sealed class UpdateIncidentRequestValidator : AbstractValidator<UpdateInc
     {
         RuleFor(x => x.Location).NotEmpty().SafeText(150);
         RuleFor(x => x.InvolvedStaffUserIds).Must(ids => ids is null || ids.Count <= 20).WithMessage("At most 20 staff members.");
+        RuleFor(x => x.Reason).SafeText(500);
     }
 }
 

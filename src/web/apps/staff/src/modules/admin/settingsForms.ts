@@ -1118,12 +1118,17 @@ const emailSpec: SettingsSpec = {
 
 const PAY = 'integrations.payment';
 const PAY_SECRET = 'integrations.payment.secret';
+/** Cashfree's client secret has a row of its own, so that replacing one gateway's credentials never wipes the other's. */
+const PAY_CASHFREE_SECRET = 'integrations.payment.cashfree.secret';
 const payBy = (...providers: string[]) => when(PAY, 'provider', ...providers);
 
 const paymentSpec: SettingsSpec = {
   id: 'payment',
   title: 'Payment gateway',
-  intro: 'Online payment links and portal prepayments through Razorpay. Amounts from ₹1 to ₹1,00,00,000.',
+  intro:
+    'Online payment links and portal prepayments through Razorpay or Cashfree. Amounts from ₹1 to ₹1,00,00,000. ' +
+    'New payments go through the provider chosen here; keep the other gateway set up after a switch, so the payments it ' +
+    'took are still checked, refunded and reconciled with its account.',
   prefix: PAY,
   fields: [
     { key: PAY, path: 'enabled', label: 'Take online payments', kind: 'switch' },
@@ -1134,6 +1139,7 @@ const paymentSpec: SettingsSpec = {
       kind: 'select',
       options: [
         { value: 'razorpay', label: 'Razorpay' },
+        { value: 'cashfree', label: 'Cashfree' },
         { value: 'simulator', label: 'Simulator (training: no money moves)' },
       ],
       requiredWhen: switchedOn(PAY),
@@ -1162,19 +1168,42 @@ const paymentSpec: SettingsSpec = {
     },
     {
       key: PAY,
+      path: 'cashfreeBaseUrl',
+      label: 'Cashfree address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://api.cashfree.com/pg',
+      when: payBy('cashfree'),
+      group: 'Cashfree',
+      hint: 'https://sandbox.cashfree.com/pg for Cashfree’s test mode.',
+    },
+    {
+      key: PAY,
+      path: 'cashfreeClientId',
+      label: 'Client id (App ID)',
+      kind: 'text',
+      when: payBy('cashfree'),
+      hint: 'From Cashfree’s dashboard (Developers → API keys); the client secret goes in the credentials. Webhooks go to /api/v1/billing/webhooks/cashfree on this server.',
+      pattern: {
+        regex: /^[A-Za-z0-9_-]{4,100}$/,
+        message: 'A Cashfree client id is letters and digits.',
+      },
+    },
+    {
+      key: PAY,
       path: 'paymentLinkCallbackUrl',
       label: 'Page after paying a link',
       kind: 'url',
       https: true,
-      when: payBy('razorpay'),
+      when: payBy('razorpay', 'cashfree'),
       hint: 'Optional.',
     },
     {
       key: PAY,
       path: 'notifyByRazorpay',
-      label: 'Let Razorpay also send payment links by SMS or e-mail',
+      label: 'Let the gateway also send payment links by SMS or e-mail',
       kind: 'switch',
-      when: payBy('razorpay'),
+      when: payBy('razorpay', 'cashfree'),
       hint: 'Off: HC360 sends links with its own templates.',
     },
     {
@@ -1211,6 +1240,12 @@ const paymentSpec: SettingsSpec = {
       prop: 'simulatorSecret',
       label: 'Simulator signing key',
       hint: 'Optional, simulator only: for test tools that sign simulated payments.',
+    },
+    {
+      key: PAY_CASHFREE_SECRET,
+      prop: 'clientSecret',
+      label: 'Cashfree client secret',
+      hint: 'Used by Cashfree’s API and to check its webhooks. Kept apart from Razorpay’s credentials.',
     },
   ],
 };
@@ -1668,6 +1703,84 @@ const icdSpec: SettingsSpec = {
   ],
 };
 
+const IRP = 'integrations.irp';
+const IRP_SECRET = 'integrations.irp.secret';
+const irpBy = (...providers: string[]) => when(IRP, 'provider', ...providers);
+
+const irpSpec: SettingsSpec = {
+  id: 'irp',
+  title: 'E-invoice portal (IRP)',
+  intro:
+    'Ask the Invoice Registration Portal for the IRN of B2B invoices and notes, cancel IRNs within 24 hours, and generate e-way bills, through the NIC e-invoice API directly or a GST suvidha provider. Credentials are per GSTIN: set them at each facility. The simulator is for training servers only.',
+  prefix: IRP,
+  fields: [
+    { key: IRP, path: 'enabled', label: 'Ask the portal for IRNs', kind: 'switch' },
+    {
+      key: IRP,
+      path: 'provider',
+      label: 'Provider',
+      kind: 'select',
+      options: [
+        { value: 'nic', label: 'NIC e-invoice API (encrypted)' },
+        { value: 'gsp', label: 'GST suvidha provider (NIC API passed through)' },
+        { value: 'simulator', label: 'Simulator (training: made-up IRNs)' },
+      ],
+      requiredWhen: switchedOn(IRP),
+    },
+    {
+      key: IRP,
+      path: 'baseUrl',
+      label: 'API address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://einv-apisandbox.nic.in',
+      when: irpBy('nic', 'gsp'),
+    },
+    {
+      key: IRP,
+      path: 'authPath',
+      label: 'Sign-in path',
+      kind: 'text',
+      placeholder: '/eivital/v1.04/auth',
+      when: irpBy('nic', 'gsp'),
+    },
+    {
+      key: IRP,
+      path: 'invoicePath',
+      label: 'Invoice path',
+      kind: 'text',
+      placeholder: '/eicore/v1.03/Invoice',
+      when: irpBy('nic', 'gsp'),
+    },
+    {
+      key: IRP,
+      path: 'ewayBillPath',
+      label: 'E-way bill path',
+      kind: 'text',
+      placeholder: '/eiewb/v1.03/ewaybill',
+      when: irpBy('nic', 'gsp'),
+    },
+    { key: IRP, path: 'encrypt', label: 'Encrypt as NIC requires', kind: 'switch', when: irpBy('gsp') },
+  ],
+  secrets: [
+    { key: IRP_SECRET, prop: 'clientId', label: 'Client id', hint: 'Issued by NIC or the GSP.' },
+    { key: IRP_SECRET, prop: 'clientSecret', label: 'Client secret' },
+    {
+      key: IRP_SECRET,
+      prop: 'userName',
+      label: 'API user',
+      hint: 'The API user created on the e-invoice portal for this GSTIN.',
+    },
+    { key: IRP_SECRET, prop: 'password', label: 'API password' },
+    {
+      key: IRP_SECRET,
+      prop: 'publicKeyPem',
+      label: "NIC's public key (PEM)",
+      hint: 'For the NIC API: the key NIC publishes, pasted whole. Not needed for most GSPs.',
+    },
+  ],
+};
+
 const BIOMETRIC = 'integrations.biometric';
 
 const biometricSpec: SettingsSpec = {
@@ -1952,6 +2065,7 @@ export const INTEGRATION_SETTINGS: Partial<Record<IntegrationName, SettingsSpec>
   icd: icdSpec,
   biometric: biometricSpec,
   aadhaar: aadhaarSpec,
+  irp: irpSpec,
 };
 
 const SPEECH = 'ai.speech';

@@ -73,7 +73,9 @@ public sealed class RequestLanguageMiddleware(RequestDelegate next, IMemoryCache
     public const string LanguageHeader = "X-HC360-Language";
 
     private static readonly TimeSpan PreferenceLifetime = TimeSpan.FromMinutes(5);
-    private static readonly string[] PatientPaths = ["/api/v1/portal", "/api/v1/public", "/api/v1/auth/otp"];
+
+    /// <summary>The paths whose answers are always for patients: the portal's API, the public pages' and OTP sign-in.</summary>
+    public static IReadOnlyList<string> PatientPathPrefixes { get; } = ["/api/v1/portal", "/api/v1/public", "/api/v1/auth/otp"];
 
     public async Task InvokeAsync(HttpContext context, IPatientLanguageSource preferences)
     {
@@ -104,7 +106,7 @@ public sealed class RequestLanguageMiddleware(RequestDelegate next, IMemoryCache
     internal static bool IsForPatients(HttpContext context) =>
         IsPatient(context)
         || string.Equals(context.Request.Headers[AuthService.ClientHeader], "portal", StringComparison.OrdinalIgnoreCase)
-        || PatientPaths.Any(path => context.Request.Path.StartsWithSegments(path, StringComparison.OrdinalIgnoreCase));
+        || PatientPathPrefixes.Any(path => context.Request.Path.StartsWithSegments(path, StringComparison.OrdinalIgnoreCase));
 
     private static bool IsPatient(HttpContext context) =>
         context.User.Identity?.IsAuthenticated == true

@@ -5,7 +5,7 @@ Platform feature: `src/server/HyFib.HealthCare360.Platform/Numbering` · table `
 (HospitalAdmin by default).
 
 Every kind of number HC360 issues is a **number series**: UHIDs, visit numbers, OP and IP bills, receipts, lab accession
-numbers, purchase orders and so on, 54 in all. Each module declares its series, so all of them are on the screen from
+numbers, purchase orders and so on, 56 in all. Each module declares its series, so all of them are on the screen from
 the first start, before a single number is issued. Administrators can set the format, when numbers start again from 1,
 and the next number of each series, before go-live or later. A change applies to numbers issued from then on: numbers
 already issued never change.
@@ -30,9 +30,15 @@ number is never cut short: once it outgrows its padding it simply has more digit
 Dates are India Standard Time. A series shared by all facilities fills in `{FAC}` with the code of the first facility set
 up (the hospital's main one).
 
-Under the GST rules, the serial number of an invoice or a bill of supply has at most 16 characters (letters, digits, `-`
-and `/`) and is unique in a financial year. Keep the formats of bills, pharmacy invoices and canteen bills within 16
-characters for the facility codes in use.
+Under the GST rules (CGST rules 46, 49 and 53), the serial number of an invoice, a bill of supply, a credit note or a
+debit note has at most 16 characters (letters, digits, `-` and `/`) and is unique in a financial year; the e-invoice
+portal also refuses one that starts with 0. These series are **GST documents** (`NumberSeriesDefinition.GstDocument`):
+OP and IP bills, credit notes, debit notes, pharmacy invoices, pharmacy sale returns and canteen bills. Saving a format
+for one is refused when its numbers can pass 16 characters, measured with the longest facility code in use, the date
+parts, the fixed text and the running number at its padding and at least 6 digits (a facility's documents of a year;
+8 digits when the numbers never start again, since they grow), or when the format starts with the running number,
+`{MM}`, `{DD}` or a 0. The defaults of these series fit at a 6-letter facility code; before, `{FAC}OB{YY}{SEQ:7}` and its
+like could reach 17. A series already in use keeps the format it was created with until it is changed.
 
 ## Starting again from 1
 
@@ -80,6 +86,8 @@ saving.
   is always allowed:
   refunds and pharmacy refill requests share the default `{FAC}RF{YY}{SEQ:6}`, and credit notes and canteen bills both
   start `{FAC}CN{YY}`, but each pair is kept in different tables.
+* For a GST document, at most 16 characters and not starting with 0 (see above). The message gives the length part by
+  part.
 * A stored running number padded to more than 12 digits (possible only from before these rules) is padded to 12 when
   numbers are made, rather than to the width written.
 
@@ -128,7 +136,7 @@ Customised series and locked ones are marked.
 `NumberSeriesItem {key, name, area, scope: "facility"|"global", format, resetPolicy: Never|Yearly|Monthly|Daily,
 lastNumber (the running number last issued in the current period, 0 if none), nextExample (the number the next
 allocation would make now), facilityCode, isCustomised, isLocked, lockedReason, maxLength, defaultFormat,
-defaultResetPolicy}`. Hidden series are left out; a series with no row yet shows its defaults.
+defaultResetPolicy, gstDocument}`. Hidden series are left out; a series with no row yet shows its defaults.
 
 The PUT creates the series' row if it has none yet, so formats can be set before the first number. `expectedFormat` and
 `expectedResetPolicy` are the values the editor started from: if they differ from those in use, someone else changed
@@ -181,15 +189,18 @@ again and the next number cannot be set below them.
 | Area | Number | Key | Default format | Starts again | Counted | Room |
 |---|---|---|---|---|---|---|
 | Appointments | Appointment | `appointment` | `{FAC}AP{YY}{SEQ:7}` | every year | per facility | 24 |
-| Billing | Credit note | `billing.creditnote` | `{FAC}CN{YY}{SEQ:6}` | every year | per facility | 24 |
-| Billing | IP bill | `billing.bill.ip` | `{FAC}IB{YY}{SEQ:7}` | every year | per facility | 24 |
-| Billing | OP bill | `billing.bill.op` | `{FAC}OB{YY}{SEQ:7}` | every year | per facility | 24 |
+| Billing | Credit note (GST) | `billing.creditnote` | `{FAC}CN{YY}{SEQ:6}` | every year | per facility | 24 |
+| Billing | Debit note (GST) | `billing.debitnote` | `{FAC}DB{YY}{SEQ:6}` | every year | per facility | 24 |
+| Billing | IP bill (GST) | `billing.bill.ip` | `{FAC}IB{YY}{SEQ:6}` | every year | per facility | 24 |
+| Billing | OP bill (GST) | `billing.bill.op` | `{FAC}OB{YY}{SEQ:6}` | every year | per facility | 24 |
 | Billing | Receipt | `billing.receipt` | `{FAC}RC{YY}{SEQ:7}` | every year | per facility | 24 |
+| Billing | Receipt reversal | `billing.receiptreversal` | `{FAC}RR{YY}{SEQ:6}` | every year | per facility | 24 |
 | Billing | Refund | `billing.refund` | `{FAC}RF{YY}{SEQ:6}` | every year | per facility | 24 |
+| Billing | Refund not paid out | `billing.refundreversal` | `{FAC}RX{YY}{SEQ:6}` | every year | per facility | 24 |
 | Blood bank | Blood bag | `blood-bag` | `{FAC}BB{YY}{SEQ:6}` | every year | per facility | 24 |
 | Blood bank | Blood donor | `blood-donor` | `{FAC}DN{SEQ:6}` | never | shared | 20 |
 | Blood bank | Blood request | `blood-request` | `{FAC}BR{YY}{SEQ:6}` | every year | per facility | 24 |
-| Canteen | Canteen bill | `canteen-bill` | `{FAC}CN{YY}{SEQ:7}` | every year | per facility | 24 |
+| Canteen | Canteen bill (GST) | `canteen-bill` | `{FAC}CN{YY}{SEQ:6}` | every year | per facility | 24 |
 | Cardiology | Cardiology accession number (locked) | `cardiology.accession` | `{FAC}CD{YY}{SEQ:7}` | every year | per facility | 24 |
 | Clinical | Clinical order | `clinical-order` | `{FAC}OR{YY}{SEQ:7}` | every year | per facility | 24 |
 | Clinical | Prescription | `prescription` | `{FAC}RX{YY}{SEQ:7}` | every year | per facility | 24 |
@@ -200,7 +211,7 @@ again and the next number cannot be set below them.
 | Doctor fees | Doctor payout | `doctorfees.payout` | `{FAC}DP{YY}{SEQ:5}` | every year | per facility | 24 |
 | Equipment and assets | Asset tag | `supplychain.asset` | `{FAC}AS{SEQ:6}` | never | per facility | 24 |
 | Equipment and assets | Maintenance ticket | `supplychain.ticket` | `{FAC}MT{YY}{SEQ:6}` | every year | per facility | 24 |
-| Front office | Visitor pass | `visitor-pass` | `VP{YY}{MM}{DD}-{SEQ:4}` | every day | per facility | 24 |
+| Front office | Visitor pass | `visitor-pass` | `{FAC}VP{YY}{MM}{DD}-{SEQ:4}` | every day | per facility | 24 |
 | Health check-ups | Corporate check-up drive | `healthcheck-batch` | `{FAC}HCB{YY}{SEQ:4}` | every year | per facility | 24 |
 | Health check-ups | Health check-up booking | `healthcheck-booking` | `{FAC}HC{YY}{SEQ:6}` | every year | per facility | 24 |
 | Human resources | Employee code | `hr.employee` | `{FAC}EMP{SEQ:5}` | never | per facility | 20 |
@@ -215,9 +226,9 @@ again and the next number cannot be set below them.
 | Patient relations | Lead | `crm.lead` | `{FAC}LD{YY}{SEQ:5}` | every year | per facility | 24 |
 | Patients | UHID (patient number) (locked) | `uhid` | `{FAC}{YY}{SEQ:6}` | never | shared | 20 |
 | Patients | Visit number (out-patient visits and admissions) | `visit` | `{FAC}V{YY}{SEQ:7}` | every year | per facility | 24 |
-| Pharmacy | Pharmacy invoice | `pharmacy.invoice` | `{FAC}PH{YY}{SEQ:7}` | every year | per facility | 24 |
+| Pharmacy | Pharmacy invoice (GST) | `pharmacy.invoice` | `{FAC}PH{YY}{SEQ:6}` | every year | per facility | 24 |
 | Pharmacy | Refill request | `pharmacy.refill` | `{FAC}RF{YY}{SEQ:6}` | every year | per facility | 24 |
-| Pharmacy | Sale return | `pharmacy.return` | `{FAC}PHR{YY}{SEQ:6}` | every year | per facility | 24 |
+| Pharmacy | Sale return (GST) | `pharmacy.return` | `{FAC}SR{YY}{SEQ:6}` | every year | per facility | 24 |
 | Pharmacy | Ward indent | `pharmacy.ward_indent` | `{FAC}WI{YY}{SEQ:6}` | every year | per facility | 24 |
 | Pharmacy | Ward issue | `pharmacy.ip_issue` | `{FAC}IPI{YY}{SEQ:6}` | every year | per facility | 24 |
 | Pharmacy | Ward return | `pharmacy.ward_return` | `{FAC}WR{YY}{SEQ:6}` | every year | per facility | 24 |
@@ -227,6 +238,7 @@ again and the next number cannot be set below them.
 | Purchase | Purchase order | `supplychain.po` | `{FAC}PO{YY}{SEQ:6}` | every year | per facility | 24 |
 | Purchase | Purchase requisition | `supplychain.pr` | `{FAC}PR{YY}{SEQ:6}` | every year | per facility | 24 |
 | Quality and safety | Corrective action (CAPA) | `quality.capa` | `{FAC}CAPA{YY}{SEQ:4}` | every year | per facility | 24 |
+| Quality and safety | Device adverse event report (MvPI) | `quality.mvpi` | `{FAC}MDAE{YY}{SEQ:5}` | every year | per facility | 24 |
 | Quality and safety | Downtime | `quality.downtime` | `{FAC}DT{YY}{SEQ:4}` | every year | per facility | 24 |
 | Quality and safety | Incident report | `quality.incident` | `{FAC}IR{YY}{SEQ:5}` | every year | per facility | 24 |
 | Quality and safety | Risk | `quality.risk` | `{FAC}RSK{SEQ:4}` | never | per facility | 24 |
@@ -237,6 +249,7 @@ again and the next number cannot be set below them.
 | Stores and inventory | Store indent | `supplychain.indent` | `{FAC}IND{YY}{SEQ:6}` | every year | per facility | 24 |
 | Stores and inventory | Store issue | `supplychain.issue` | `{FAC}ISS{YY}{SEQ:6}` | every year | per facility | 24 |
 
-Employee codes have room for 20 characters because the canteen's staff credit keeps them that long. The visitor pass
-default has no `{FAC}`: a hospital with more than one facility should add it, or two facilities would issue the same
-pass numbers on the same day.
+Employee codes have room for 20 characters because the canteen's staff credit keeps them that long. Visitor passes
+must always carry `{FAC}`, whatever the number of facilities (a format without it is refused, even with one facility),
+because pass numbers are unique across facilities and a facility opened later must not issue another's numbers; a
+format saved before this rule gets the facility code put in front when passes are made.

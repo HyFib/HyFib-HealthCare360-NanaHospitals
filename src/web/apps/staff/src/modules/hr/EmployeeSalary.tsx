@@ -3,6 +3,9 @@ import {
   Button,
   Caption1,
   makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
   Table,
   TableBody,
   TableCell,
@@ -13,7 +16,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { MoneyRegular } from '@fluentui/react-icons';
-import { formatDateOnly } from '@hc360/core';
+import { formatDateOnly, formatDateTime } from '@hc360/core';
 import { DataTable, EmptyState, ErrorState, LoadingState, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -47,6 +50,8 @@ export function EmployeeSalary({
   const [revealed, setRevealed] = useState(false);
   const [revising, setRevising] = useState(false);
   const structures = useQuery(hrQueries.salaryStructures(employeeId));
+  const pending = useQuery(hrQueries.pendingPayChanges({ employeeId }));
+  const waiting = pending.data ?? [];
 
   if (structures.isLoading) {
     return <LoadingState />;
@@ -64,11 +69,27 @@ export function EmployeeSalary({
       <Toolbar spaced={false}>
         <RevealButton revealed={revealed} onChange={setRevealed} />
         {canRevise && (
-          <Button appearance="primary" icon={<MoneyRegular />} onClick={() => setRevising(true)}>
+          <Button
+            appearance="primary"
+            icon={<MoneyRegular />}
+            onClick={() => setRevising(true)}
+            disabled={waiting.length > 0}
+          >
             {current ? 'Revise salary' : 'Set salary'}
           </Button>
         )}
       </Toolbar>
+
+      {waiting.map((p) => (
+        <MessageBar key={p.approvalId} intent="warning" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Asked for approval: what waits</MessageBarTitle>
+            {p.summary}. Asked for by {p.requestedBy} on {formatDateTime(p.requestedAt)}. Someone else who approves
+            payroll decides it, never the person who asked and never {employeeName}; the salary below stays in force
+            until then.
+          </MessageBarBody>
+        </MessageBar>
+      ))}
 
       {!current ? (
         <EmptyState

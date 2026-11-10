@@ -1,6 +1,7 @@
 import type { Address, BloodGroup, Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { ChargeStatus } from '@/modules/ot/shared/types';
 
 // ---------------------------------------------------------------- enums (JSON strings)
@@ -75,6 +76,17 @@ export type ReactionType = (typeof REACTION_TYPES)[number];
 export const REACTION_SEVERITIES = ['Mild', 'Moderate', 'Severe', 'LifeThreatening', 'Death'] as const;
 export type ReactionSeverity = (typeof REACTION_SEVERITIES)[number];
 
+/** How sure the blood bank is that the transfusion caused the reaction, weakest to strongest (ISBT, HvPI). */
+export const REACTION_IMPUTABILITIES = [
+  'NotAssessed',
+  'Excluded',
+  'Unlikely',
+  'Possible',
+  'Probable',
+  'Definite',
+] as const;
+export type ReactionImputability = (typeof REACTION_IMPUTABILITIES)[number];
+
 export const REACTION_STATUSES = ['Reported', 'UnderInvestigation', 'Closed'] as const;
 export type ReactionStatus = (typeof REACTION_STATUSES)[number];
 
@@ -120,6 +132,8 @@ export interface BloodUnitDto {
   issuedAt: string | null;
   discardReason: string | null;
   isExpired: boolean;
+  /** In quarantine with results that clear it, until a second officer verifies them. */
+  awaitingVerification: boolean;
 }
 
 export interface InventoryCell {
@@ -218,6 +232,10 @@ export interface DonationListItem {
   bloodGroup: BloodGroup;
   ttiComplete: boolean;
   ttiReactive: boolean;
+  /** Results clear the donation and wait for a second officer before the units leave quarantine. */
+  awaitingVerification: boolean;
+  /** Released on one officer's word (no second officer at the facility), for the medical officer's review. */
+  verifiedByEnterer: boolean;
 }
 
 export interface DonorDetail {
@@ -307,6 +325,15 @@ export interface DonationDetail {
   bloodGroup: BloodGroup;
   tti: TtiPanel;
   labResultsAt: string | null;
+  /** Who entered the results: they correct them before verification, and another officer verifies them. */
+  labResultsByUserId: string | null;
+  labResultsByName: string | null;
+  awaitingVerification: boolean;
+  verifiedAt: string | null;
+  verifiedByName: string | null;
+  verifiedByEnterer: boolean;
+  /** The facility asks for a second officer (bloodbank.separateVerifier). */
+  separateVerifier: boolean;
   separatedAt: string | null;
   donorReaction: string | null;
   notes: string | null;
@@ -351,6 +378,7 @@ export interface CrossMatchDto {
   method: CrossmatchMethod;
   result: CrossmatchResult;
   performedAt: string;
+  performedByUserId: string | null;
   performedByName: string | null;
   remarks: string | null;
   isValid: boolean;
@@ -373,6 +401,8 @@ export interface BloodIssueDto {
   returnNotes: string | null;
   chargeStatus: ChargeStatus;
   chargeError: string | null;
+  /** Issued on checks the issuer alone made (no second officer at the facility), for the medical officer's review. */
+  issuedOnOwnChecks: boolean;
 }
 
 export interface BloodRequestDetail {
@@ -396,9 +426,22 @@ export interface BloodRequestDetail {
   plateletCount: number | null;
   patientBloodGroup: BloodGroup;
   groupedAt: string | null;
+  groupedByUserId: string | null;
   groupedByName: string | null;
+  /** The group of the patient's earlier requests, when this request's sample grouped otherwise. */
+  earlierGroup: BloodGroup | null;
+  /** The first sample's group, kept when another officer's new sample replaced it. */
+  firstSampleGroup: BloodGroup | null;
+  regroupedAt: string | null;
+  /** Nothing is cross-matched or issued on the grouping until another officer groups a new sample. */
+  groupingHeld: boolean;
+  /** The doctor who authorised uncross-matched release from their own sign-in. */
   emergencyReleaseAuthorisedBy: string | null;
+  emergencyReleaseByUserId: string | null;
+  emergencyReleaseAt: string | null;
   emergencyReleaseReason: string | null;
+  /** The facility asks for a second officer (bloodbank.separateVerifier). */
+  separateVerifier: boolean;
   status: BloodRequestStatus;
   cancelReason: string | null;
   crossMatches: CrossMatchDto[];
@@ -430,6 +473,16 @@ export interface CloseReactionRequest {
   severity: ReactionSeverity;
   findings: string;
   reportedToHaemovigilance: boolean;
+  imputability: ReactionImputability;
+}
+
+/** The blood bank's classification while it investigates; lowering severity or imputability needs a reason and waits. */
+export interface ClassifyReactionRequest {
+  type: ReactionType;
+  severity: ReactionSeverity;
+  imputability: ReactionImputability;
+  reason: string | null;
+  version: number;
 }
 
 export interface TransfusionReactionDto {
@@ -455,6 +508,14 @@ export interface TransfusionReactionDto {
   reportedToHaemovigilance: boolean;
   closedAt: string | null;
   closedByName: string | null;
+  imputability: ReactionImputability;
+  /** Who lowered the classification, who asked, and why. */
+  loweredByName: string | null;
+  lowerRequestedByName: string | null;
+  lowerReason: string | null;
+  /** A lowering asked for and waiting for the blood bank medical officer. */
+  lowerPendingApprovalId: string | null;
+  version: number;
 }
 
 // ---------------------------------------------------------------- queries
@@ -477,6 +538,10 @@ export interface DonorFilters {
 export interface DonationFilters {
   status?: DonationStatus;
   pendingResults?: boolean;
+  /** Results that clear the donation, waiting for a second officer. */
+  awaitingVerification?: boolean;
+  /** Released on one officer's word, for the medical officer's review. */
+  oneOfficer?: boolean;
   search?: string;
   page?: number;
 }
@@ -484,6 +549,8 @@ export interface DonationFilters {
 export interface RequestFilters {
   status?: BloodRequestStatus;
   closed?: boolean;
+  /** With a unit issued on one officer's checks, for the medical officer's review (open or closed). */
+  oneOfficer?: boolean;
   search?: string;
   page?: number;
 }
@@ -574,6 +641,7 @@ export const bloodQueries = {
           query: {
             status: filters.status,
             openOnly: filters.closed ? false : undefined,
+            oneOfficer: filters.oneOfficer,
             search: filters.search,
             page: filters.page,
             pageSize: 25,
@@ -625,15 +693,19 @@ export const bloodApi = {
     api.post<BloodUnitDto[]>(`/api/v1/blood-bank/donations/${donationId}/components`, { components }),
   recordLabResults: (donationId: string, request: RecordLabResultsRequest) =>
     api.put<void>(`/api/v1/blood-bank/donations/${donationId}/lab-results`, request),
+  /** A second officer verifies the results as shown (version), and the units leave quarantine. */
+  verifyLabResults: (donationId: string, version: number) =>
+    api.post<void>(`/api/v1/blood-bank/donations/${donationId}/lab-results/verify`, { version }),
   discardUnit: (unitId: string, reason: string) =>
     api.post<void>(`/api/v1/blood-bank/units/${unitId}/discard`, { reason }),
   createRequest: (request: CreateBloodRequestRequest) =>
     api.post<{ id: string; requestNumber: string }>('/api/v1/blood-bank/requests', request),
   cancelRequest: (id: string, reason: string) => api.post<void>(`/api/v1/blood-bank/requests/${id}/cancel`, { reason }),
-  groupPatient: (id: string, bloodGroup: BloodGroup) =>
-    api.post<void>(`/api/v1/blood-bank/requests/${id}/grouping`, { bloodGroup }),
-  emergencyRelease: (id: string, authorisedBy: string, reason: string) =>
-    api.post<void>(`/api/v1/blood-bank/requests/${id}/emergency-release`, { authorisedBy, reason }),
+  groupPatient: (id: string, bloodGroup: BloodGroup, newSample = false) =>
+    api.post<void>(`/api/v1/blood-bank/requests/${id}/grouping`, { bloodGroup, newSample }),
+  /** The treating doctor authorises uncross-matched release from their own sign-in. */
+  emergencyRelease: (id: string, reason: string) =>
+    api.post<void>(`/api/v1/blood-bank/requests/${id}/emergency-release`, { reason }),
   crossMatch: (
     id: string,
     componentId: string,
@@ -651,4 +723,7 @@ export const bloodApi = {
   investigateReaction: (id: string) => api.post<void>(`/api/v1/blood-bank/reactions/${id}/investigate`),
   closeReaction: (id: string, request: CloseReactionRequest) =>
     api.post<void>(`/api/v1/blood-bank/reactions/${id}/close`, request),
+  /** Made at once (nothing), or, when it lowers the reaction, asked for (the request) and waits for the medical officer. */
+  classifyReaction: (id: string, request: ClassifyReactionRequest) =>
+    api.put<ApprovalRequestDto | undefined>(`/api/v1/blood-bank/reactions/${id}/classification`, request),
 };

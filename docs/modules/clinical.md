@@ -33,24 +33,26 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | `clinical.encounters.sign` | Sign/amend encounters, sign notes | Doctor |
 | `clinical.vitals.record` | Record vitals | Doctor, Nurse |
 | `clinical.allergies.manage` | Record/update allergies | Doctor, Nurse |
-| `clinical.alerts.manage` | DNR, fall-risk, isolation, infection-control, pregnancy alerts | Doctor, Nurse |
+| `clinical.alerts.manage` | DNR, fall-risk, isolation, infection-control, pregnancy alerts (DNR is put on, and asked to come off, only by a holder of `clinical.encounters.sign`: a doctor) | Doctor, Nurse |
 | `clinical.immunizations.record` | Record immunisations | Doctor, Nurse |
 | `clinical.orders.place` | Place/cancel orders | Doctor |
 | `clinical.templates.manage` | Templates, order sets, interaction and dose tables | Doctor, HospitalAdmin |
 | `clinical.prescriptions.write` | Draft/check/repeat prescriptions | Doctor |
 | `clinical.prescriptions.sign` | Sign/cancel prescriptions | Doctor |
 | `clinical.prescriptions.refill` | Issue an authorised refill | Doctor, Pharmacist |
-| `clinical.discharge_summary.write` | Draft/sign/amend discharge summaries | Doctor |
+| `clinical.drug_safety.approve` | Approve, as the pharmacy and therapeutics committee, a drug interaction switched off or made less severe, or a maximum dose raised or switched off, that someone else asked for | Pharmacist, HospitalAdmin |
+| `clinical.discharge_summary.write` | Draft/sign/amend discharge summaries (a planned discharge waits for the signed summary: `DischargeSummaryDischargeHold`, below) | Doctor |
 | `mrd.coding` | Clinical coding and verification | MrdOfficer |
 | `mrd.records` | Charts, deficiencies, record requests, archival, morbidity report | MrdOfficer, HospitalAdmin |
 | `mrd.births.record` | Record births in the hospital (Form 1; Form 3 for a still birth) | Doctor, Nurse, MrdOfficer |
 | `mrd.deaths.certify` | Certify the cause of death (MCCD, Form 4) | Doctor |
+| `mrd.deaths.confirm` | Confirm, as a second doctor, a death certificate another doctor certified, before it is reported | Doctor |
 | `mrd.vital.register` | The births and deaths registers, and reporting them to the Registrar | MrdOfficer, HospitalAdmin |
 | `mrd.idsp.report` | Notifiable diseases (IDSP): the cases, the weekly P and L forms to IHIP, the outbreak alerts | MrdOfficer, QualityManager |
 | `clinical.er.board` | The ER board and the cases on it | Doctor, Nurse, FrontOffice, HospitalAdmin |
-| `clinical.er.triage` | Triage emergency patients on the ESI | Nurse, Doctor |
+| `clinical.er.triage` | Triage emergency patients on the ESI, and put them in a bay, move them and free it | Nurse, Doctor |
 | `clinical.er.disposition` | See emergency patients and decide where they go | Doctor |
-| `clinical.er.mlc` | Enter medico-legal cases in the MLC register and record the police intimation, and a sexual-assault victim's examination and its report | Doctor |
+| `clinical.er.mlc` | Enter medico-legal cases in the MLC register and record the police intimation, a sexual-assault victim's examination and its report, and write and sign the wound certificate | Doctor |
 | `clinical.ams.approve` | Approve or reject restricted antibiotics and review antibiotic courses (grant it to the ID physician and clinical pharmacist the hospital names) | Pathologist |
 | `clinical.ams.read` | The stewardship queue and report | Doctor, Nurse, Pharmacist, Pathologist, QualityManager |
 | `mrd.mlc.register` | The MLC register | MrdOfficer, HospitalAdmin |
@@ -64,7 +66,8 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
 | GET | `/emr/worklist?date&practitionerId&departmentId` | emr.read | → `EmrWorklist` (defaults: today and the signed-in doctor; department optional; restricted patients masked, see below). `appointments`: the doctor's bookings for the day in slot order, or the department's when no doctor is chosen, without cancelled and rescheduled ones; each with its status, visit type, video flag, and once checked in the visit, queue token and encounter |
-| POST | `/emr/results/{id}/acknowledge` | emr.write | `AcknowledgeResultRequest{note}` → 204 |
+| POST | `/emr/results/{id}/acknowledge` | emr.write | `AcknowledgeResultRequest{note}` → 204. Another doctor's **critical** result: only a doctor on the same stay's care team or one the ordering doctor handed over to (403 `result.not_covering`; see *Who signs off another doctor's work*) |
+| GET / POST | `/emr/handovers`, `/emr/handovers/{id}/end` | emr.read / emr.write | The signed-in doctor's handovers now, given and received (`DoctorHandoverDto[]`); `RecordHandoverRequest{toPractitionerId, until, patientId?, note?}` → `DoctorHandoverDto` (recorded by the doctor who hands over, from an account linked to them, 403 `handover.doctor_only`; to another active doctor, for up to 7 days); `EndHandoverRequest{version}` ends it early (either doctor, 403 `handover.not_party`) |
 | GET | `/emr/patients/{patientId}/summary` | emr.read | → `PatientClinicalSummary` (patient, `allergiesEverRecorded`, `allergyStatus` (`Recorded`\|`NoKnownAllergies`\|`NotRecorded`), allergies, alerts, activeProblems, currentMedications, lastVitals+flags, recentEncounters(5), resultsAwaitingReview) |
 | GET | `/emr/patients/{patientId}/flags` | flags.read or emr.read | → `PatientFlags{allergyStatus, allergies[AllergySummary], alerts[AlertSummary]}`: the summary's flags alone (same rule, same order: most severe first, alerts in force today). Restricted-record guard (403 `patient.restricted`) and a PHI-access audit entry ("Viewed allergies and alerts") like the chart; 404 for an unknown patient |
 | GET | `/emr/patients/{patientId}/timeline?types=Encounter,Vitals,…&encounterTypes=OutPatient,InPatient,…&from&to&departmentId&page` | emr.read | → `PagedResult<TimelineEntry>` (types: Encounter, Vitals, Diagnosis, Prescription, Order, Note, Immunization, Document, DischargeSummary, Result, Procedure). `encounterTypes` (OutPatient, InPatient, Emergency, Telehealth, HealthCheckup) and `departmentId` keep the matching encounters and the entries recorded in one of them; documents and entries recorded outside an encounter then drop out. An unknown name is a 400 on `types` or `encounterTypes`. A `Result`'s `id` is the released report's id in its department and `reportKind` (`Laboratory`, `Radiology`, `Cardiology`; null on other entries) says which (see *Results on the patient's record*) |
@@ -75,25 +78,26 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | GET | `/emr/encounters/{id}/previous-visit` | emr.read | → `PreviousVisitResponse{previous}`: the previous visit summary the encounter workspace shows (EMR-02..07), of the patient's latest signed or amended encounter that started before this one, at any facility; null when there is none. Never the encounter itself, a later one or one still in progress. `PreviousVisitSummary{encounterId, type, status, startedAt, practitionerName, departmentName, chiefComplaint, diagnoses[], assessment, plan, followUpDate, followUpAdvice, medicines[{drugName, strength, dose, frequency, durationDays, instructions}], vitals}`. Diagnoses leave out the differential ones (only considered, not found); medicines are those of its signed prescriptions (a draft is not what the patient was given); `vitals` is the last set recorded in it, flagged for the patient's age on that day. Each read is recorded as "Viewed previous visit" (`PreviousVisitTests`) |
 | PUT | `/emr/encounters/{id}` | emr.write | `UpdateEncounterRequest{chiefComplaint, historyOfPresentIllness, examination, assessment, plan, followUpDate, followUpAdvice, referral*, version}` |
 | POST | `/emr/encounters/{id}/sign` | encounters.sign | `SignEncounterRequest{version}` → `EncounterDetail` |
-| POST | `/emr/encounters/{id}/amend` | encounters.sign | `AmendEncounterRequest{reason, …content, version}` |
-| GET / POST | `/emr/patients/{patientId}/vitals` | emr.read / vitals.record | `RecordVitalsRequest{encounterId?, recordedAt?, temperature, temperatureUnit, pulse, respiratoryRate, systolicBp, diastolicBp, spO2, onSupplementalOxygen, heightCm, weightKg, painScore, bloodGlucose, glucoseTiming, gcs, notes}` → `VitalsDto` with `flags` |
+| POST | `/emr/encounters/{id}/amend` | encounters.sign | `AmendEncounterRequest{reason, …content, version}` → 200 `EncounterDetail` from the encounter's author; → 202 `ApprovalRequestDto` (`clinical.encounter_amend`) from any other doctor, made when the author or the head of the encounter's department approves (see *Who signs off another doctor's work*). Either way the original is kept in the amendment history |
+| GET / POST | `/emr/patients/{patientId}/vitals` | emr.read / vitals.record | `RecordVitalsRequest{encounterId?, recordedAt?, temperature, temperatureUnit, pulse, respiratoryRate, systolicBp, diastolicBp, spO2, onSupplementalOxygen, heightCm, weightKg, painScore, bloodGlucose, glucoseTiming, gcs, notes, consciousness? (ACVPU: Alert, NewConfusion, Voice, Pain, Unresponsive), spO2Scale (Scale1 default; Scale2 only when a doctor prescribed a target of 88–92 %)}` → `VitalsDto` with `flags` and `news2` (see *NEWS2* below) |
 | POST | `/emr/patients/{patientId}/vitals/preview` | vitals.record | same request → `VitalFlag[]` (nothing saved) |
 | POST | `/emr/vitals/{id}/entered-in-error` | vitals.record | `EnteredInErrorRequest{reason}` |
 | GET / POST | `/emr/patients/{patientId}/allergies` | emr.read / allergies.manage | `RecordAllergyRequest{allergen, type, reaction, severity, onsetDate, notes}` → `AllergyDto` (409 `allergy.duplicate`). Recording an allergy removes a "no known allergies" statement in the same save |
-| PUT | `/emr/allergies/{id}` | allergies.manage | `UpdateAllergyRequest{reaction, severity, status, statusReason, notes, version}`. Re-activating an allergy also removes a "no known allergies" statement |
+| PUT | `/emr/allergies/{id}` | allergies.manage | `UpdateAllergyRequest{reaction, severity, status, statusReason, notes, version, changeReason?}`. Re-activating an allergy also removes a "no known allergies" statement. A higher severity, active again, the reaction and notes → 200 `AllergyDto` at once. An active allergy made inactive, resolved or entered in error (reason in `statusReason`), or given a lower severity (reason in `changeReason`, 400 without it), → 202 `ApprovalRequestDto` (`clinical.allergy_change`): a prescriber (`clinical.prescriptions.sign`) who did not ask approves it, and the allergy stays as it is in every check and on the banner until then (maker-checker slice 7; made only over the allergy as asked, `approval.stale`; audited `allergy.changed_with_approval`). The allergy list shows what waits (`pendingChange`); another such change while one waits is 409 `approval.already_requested` |
 | GET | `/emr/patients/{patientId}/allergies/status` | emr.read | → `AllergyStatusDto{status: Recorded\|NoKnownAllergies\|NotRecorded, recordedAt?, recordedByName?}` (see *No known allergies*); restricted-record guard and PHI audit like the allergy list |
 | POST | `/emr/patients/{patientId}/allergies/none` | allergies.manage | no body → 200 `AllergyStatusDto` (`NoKnownAllergies`). 409 `allergy.active_exist` (`data.activeAllergies`) while an active allergy exists; idempotent (repeats return the existing statement); 422 `patient.merged` on a merged-away UHID; publishes `clinical.flags.changed` |
-| GET / POST | `/emr/patients/{patientId}/alerts` | emr.read / alerts.manage | `RaiseAlertRequest{type, title?, detail?, severity?, expiresOn?}` → `PatientAlertDto` |
-| POST | `/emr/alerts/{id}/deactivate` | alerts.manage | `DeactivateAlertRequest{reason}` |
+| GET / POST | `/emr/patients/{patientId}/alerts` | emr.read / alerts.manage | `RaiseAlertRequest{type, title?, detail?, severity?, expiresOn?}` → `PatientAlertDto`. DNR only by a doctor (`clinical.encounters.sign`; 403 `alert.dnr_doctor_only`) and with no end date (400): it records the treating doctor's documented decision, at once. The list shows a DNR asked to come off (`pendingChange`) |
+| POST | `/emr/alerts/{id}/deactivate` | alerts.manage | `DeactivateAlertRequest{reason}` → 200 `PatientAlertDto`. DNR: only a doctor asks (403 `alert.dnr_doctor_only`), → 202 `ApprovalRequestDto` (`clinical.dnr_lift`), and a second doctor (`clinical.encounters.sign`, never the one who asked) takes it off; it stays on the banner and the wristband until then, as taking it off overrides a documented end-of-life decision (maker-checker slice 7; audited `alert.dnr_lifted`) |
 | GET | `/emr/patients/{patientId}/diagnoses?encounterId&problemsOnly` | emr.read | → `DiagnosisDto[]` |
 | POST | `/emr/encounters/{encounterId}/diagnoses` | emr.write | `AddDiagnosisRequest{icdCode?, title?, type, isPrimary, onsetDate, status, notes}` |
 | PUT | `/emr/diagnoses/{id}` | emr.write | `UpdateDiagnosisRequest{type, isPrimary, status, onsetDate, notes, version}` |
-| GET / POST | `/emr/patients/{patientId}/notes` | emr.read / emr.write | `WriteNoteRequest{encounterId?, admissionId?, type, title?, body}` → `ClinicalNoteDto` |
+| GET / POST | `/emr/patients/{patientId}/notes` | emr.read / emr.write | `WriteNoteRequest{encounterId?, admissionId?, type, title?, body}` → `ClinicalNoteDto`. The encounter and the admission must be this patient's (400 on `encounterId` or `admissionId`). Once signed, a note is served by the FHIR API to providers the patient's consent covers ([interop.md](interop.md#documentreference)); a counselling note only under a consent that names counselling notes |
 | PUT | `/emr/notes/{id}` | emr.write | `EditNoteRequest{type, title, body, version}` (author only, unsigned only) |
 | POST | `/emr/notes/{id}/sign` | encounters.sign | `SignNoteRequest{version}` |
-| POST | `/emr/notes/{id}/addendum` | emr.write | `AddendumRequest{body}` → new note with `amendsNoteId` |
-| GET / POST | `/emr/patients/{patientId}/immunizations` | emr.read / immunizations.record | `RecordImmunizationRequest{vaccineName, vaccineCode, doseNumber, administeredOn, route, site, batchNumber, manufacturer, expiryDate, administeredBy, isExternal, nextDueOn, notes}` |
+| POST | `/emr/notes/{id}/addendum` | emr.write | `AddendumRequest{body}` → new note with `amendsNoteId`, kept by the facility where it is written. A signed note other than a counselling note also downloads as an ABDM health document carrying every addendum signed to it, wherever written, and links to the patient's ABHA from the note ([interop.md](interop.md#the-documents)); an addendum goes only with its note |
+| GET / POST | `/emr/patients/{patientId}/immunizations` | emr.read / immunizations.record | `RecordImmunizationRequest{encounterId, vaccineName, vaccineCode, doseNumber, administeredOn, route, site, batchNumber, manufacturer, expiryDate, administeredBy, isExternal, nextDueOn, notes}`. A dose keeps the facility it was recorded at (the user's, else the encounter's, else the patient's registered facility): the custodian of its ABDM immunisation record ([interop.md](interop.md#the-documents)); the history itself is the patient's in every facility. An `encounterId` must be one of this patient's encounters (422 `immunization.encounter_not_patients`) |
 | POST | `/emr/immunizations/{id}/entered-in-error` | immunizations.record | `EnteredInErrorRequest{reason}` |
+| GET | `/emr/vaccines` | immunizations.record | → `VaccineChoiceDto[]{code, name, route}`: the card codes the form offers (`VaccineCodes`: the National Immunisation Schedule and the usual adult, travel and private vaccines). A dose recorded with one of them is sent to other providers as its SNOMED CT vaccine code ([interop.md](interop.md#immunization)); choosing one in the form names the vaccine and fills in its usual route |
 | GET / POST | `/emr/patients/{patientId}/procedures?includeEnteredInError` | emr.read / emr.write | `RecordProcedureRequest{encounterId?, performedAt, code?, display?, performerPractitionerId?, performerName?, side, bodySite?, outcome?, notes?}` → 201 `ProcedureDto` (see *Procedures*); the list is newest first, from every facility, with a PHI-access audit entry ("Viewed procedures") |
 | PUT | `/emr/procedures/{id}` | emr.write | `CorrectProcedureRequest{…same fields, reason}` → `ProcedureDto` (`Amended`); 422 `procedure.entered_in_error` once voided |
 | POST | `/emr/procedures/{id}/entered-in-error` | emr.write | `EnteredInErrorRequest{reason}` → `ProcedureDto` (`EnteredInError`); 422 `procedure.already_voided` |
@@ -114,6 +118,14 @@ in (its admission and visit are copied). A correction changes the fields and lea
 (the previous values are in the data-change audit); a record made in error is `EnteredInError` with the reason, kept
 for the audit trail but off the timeline. Operations completed in the theatre arrive on their own (`Source`
 `OperationTheatre`, see *Events*). The chart's *Procedures* tab lists, records, corrects and voids them.
+
+A procedure that reveals what a sensitive diagnosis would puts the patient's record in its category in the same save,
+recorded, corrected to it or completed in theatre (`SensitiveCategories.FromIcd10Pcs`): one ending a pregnancy (ICD-10-PCS
+root operation Abortion, `10A`, every approach and device; the catalogue's suction evacuation is one) the MTP category,
+as an O04 diagnosis does; electroconvulsive therapy (`GZB`) the mental health category, as an F20–F69 diagnosis does.
+A record is never taken out of a category here (a doctor does that with a reason). A procedure named in words without a
+code puts the record in no category; the MTP register does for a termination. The `SensitiveProcedures` migration puts
+the records already kept in the category, leaving out procedures marked as entered in error.
 
 #### Results on the patient's record (IMG-02, IMG-03)
 
@@ -158,7 +170,7 @@ permissions, released-only rule, restricted-record guard and PHI audit apply as 
 | POST | `/clinical/prescriptions/{id}/sign` | prescriptions.sign | `SignPrescriptionRequest{overrideReason?, acknowledgeWarnings, confirmControlledDrugs, version}` → `SignPrescriptionResult{prescription, alerts}`; 422 `prescription.safety_block` / `prescription.warnings_unacknowledged` / `prescription.controlled_confirmation_required` with `data` = alerts; 422 `prescription.registration_missing` when the prescriber's practitioner record has no medical council registration number, which every prescription carries (MCI ethics regulations 2002, 1.4.1; refills too). The number and council are kept on the prescription as signed, and every copy shows them (the print, the portal, the QR check and the bytes the doctor signs with their DSC), whatever the practitioner record says later; 422 `prescription.generic_missing`, naming the medicine, when a line has no generic name: every physician prescribes by generic name (MCI ethics regulations 2002, 1.5, as amended in 2016), so the print names each medicine by it (a refill too); 403 `prescription.not_prescriber` |
 | POST | `/clinical/prescriptions/{id}/cancel` | prescriptions.sign | `CancelPrescriptionRequest{reason}` |
 | POST | `/clinical/prescriptions/{id}/repeat` | prescriptions.write | → 201 new Draft |
-| POST | `/clinical/prescriptions/{id}/refill` | prescriptions.refill | `RefillPrescriptionRequest{overrideReason?, acknowledgeWarnings, confirmControlledDrugs}` → 201 `SignPrescriptionResult` (new signed prescription, `refillOfPrescriptionId`, in the original prescriber's name). Where the DSC is required its `finalCopyAvailable` is false: only that prescriber can make it printable, by signing it with their DSC (*Signing with the doctor's DSC*). 422 `prescription.generic_missing`, before the safety check, when a medicine still has no generic name once the drug master has named its own: one typed in without it before a prescription had to name it. A refill can't be edited, so the message says to repeat the prescription as a new draft and enter the generic name there |
+| POST | `/clinical/prescriptions/{id}/refill` | prescriptions.refill | `RefillPrescriptionRequest{overrideReason?, acknowledgeWarnings, confirmControlledDrugs}` → 201 `SignPrescriptionResult` (new signed prescription, `refillOfPrescriptionId`, in the original prescriber's name). Where the DSC is required its `finalCopyAvailable` is false: only that prescriber can make it printable, by signing it with their DSC (*Signing with the doctor's DSC*). 422 `prescription.generic_missing`, before the safety check, when a medicine still has no generic name once the drug master has named its own: one typed in without it before a prescription had to name it. A refill can't be edited, so the message says to repeat the prescription as a new draft and enter the generic name there 422 `prescription.refill_controlled` when a medicine is a controlled drug (Schedule H1 or X, or NDPS, as the drug master says at refill): the doctor writes a new prescription (maker-checker slice 5). A blocking alert found at refill is overridden (`overrideReason`) only by the doctor who wrote the prescription, signed in as themselves: anyone else gets 422 `prescription.refill_needs_prescriber` with `data` = alerts, nothing is used up, the doctor is told ("Refill held for your decision") and the refusal is audited (`prescription.refill_blocked`); another doctor repeats the prescription as their own. The refill records who issued it (`refilledByName`, `signedByUserId`; audited `prescription.refilled`) |
 | GET | `/clinical/prescriptions/{id}/print` | emr.read | → `PrescriptionPrintModel` (letterhead, prescriber qualification + council registration, patient, diagnoses, known allergies, lines with English/Hindi directions, advice, follow-up, `verificationToken`, `verificationPath`, `verificationUrl`) — print `verificationUrl` as the QR code (see *QR verification links*) |
 | GET | `/clinical/prescriptions/{id}/document` | emr.read | → `PrintableDocumentDto{title, fileName, pageSize: "A5", landscape, html}`: the printed prescription for the staff app to print (see *Prescription and discharge summary documents*). Same rules as `/print`: signed only (422 `prescription.not_printable`), where the hospital requires the doctor's DSC a valid DSC signature (422 `prescription.digital_signature_required`, `…_untrusted` or `…_invalid`, see *Facility setting*), restricted-record guard, audit "Printed prescription {number}" |
 | GET | `/clinical/prescriptions/{id}/pdf` | emr.read | → `application/pdf` attachment `prescription-{number}.pdf`, the same document. Same rules; audit "Downloaded prescription {number} as a PDF"; 503 `pdf.unavailable` when the server cannot make PDFs |
@@ -167,13 +179,13 @@ permissions, released-only rule, restricted-record guard and PHI audit apply as 
 | GET | `/clinical/prescriptions/{id}/digital-signature` | emr.read | → `PrescriptionDigitalSignatureDto{state: NotSigned|Valid|Invalid|Untrusted, policy: Off|Optional|Required, signedAt, signerName, signerSubject, certificateSerialNumber, certificateIssuer, certificateThumbprint, contentHash, contentMatchesRecord, chainStatus, chainTrusted, message, finalCopyAvailable}`, re-checked on every read. `chainStatus` is "Trusted" or why the chain does not hold, built against the trust folder as it is now; when the signature itself does not check out the chain is not built and it reads "Not checked: the signature does not check out", never the "Trusted" stored at signing. `finalCopyAvailable`: the DSC rules let the prescription be printed, downloaded and shared (always unless the policy is `Required`, and then only with a Valid signature). `PrescriptionDto` carries the same `finalCopyAvailable` |
 | GET | `/clinical/prescriptions/{id}/signature.p7s` | emr.read | → `application/pkcs7-signature` attachment `prescription-{number}.p7s`; 404 until signed with a DSC |
 | GET | `/clinical/prescriptions/{id}/signed-content` | emr.read | → `application/json` attachment `prescription-{number}.json`: the exact bytes the DSC signed. They name the patient, so each download is in the PHI access audit ("Downloaded the signed content of prescription {number}") |
-| GET / POST / PUT | `/clinical/drug-interactions[/{id}]` | emr.read / templates.manage | `SaveDrugInteractionRequest{drugA, drugB, severity, effect, management, isActive, version?}` |
-| GET / POST / PUT | `/clinical/dose-limits[/{id}]` | emr.read / templates.manage | `SaveDoseLimitRequest{genericName, maxDailyDoseMg, route, notes, isActive, version?}` |
+| GET / POST / PUT | `/clinical/drug-interactions[/{id}]` | emr.read, templates.manage or drug_safety.approve / templates.manage | `SaveDrugInteractionRequest{drugA, drugB, severity, effect, management, isActive, version?, reason?}`; a change that switches the interaction off, lowers its severity or moves it to another pair answers 202 `ApprovalRequestDto` (`clinical.drug_interaction`; 400 on `reason` without one); the list's `approvalWaitingSince` shows one waiting |
+| GET / POST / PUT | `/clinical/dose-limits[/{id}]` | emr.read, templates.manage or drug_safety.approve / templates.manage | `SaveDoseLimitRequest{genericName, maxDailyDoseMg, route, notes, isActive, version?, reason?}`; switching it off, raising it, or moving it to another drug or a narrower route answers 202 (`clinical.dose_limit`) |
 | GET | `/clinical/controlled-drug-register?from&to&page` | prescriptions.sign or mrd.records | → `PagedResult<ControlledDrugRegisterDto>` |
 | GET | `/clinical/discharge-summaries/by-admission/{admissionId}` | emr.read | → `DischargeSummaryDto` |
 | PUT | `/clinical/discharge-summaries/by-admission/{admissionId}` | discharge_summary.write | `SaveDischargeSummaryRequest{patientId, encounterId?, practitionerId?, admittedAt?, dischargedAt?, diagnoses, diagnosisCodes[], presentingComplaints, courseInHospital, procedures, investigationsSummary, conditionAtDischarge, medications, advice, followUpDate, followUpInstructions, version?}` |
 | GET | `/clinical/discharge-summaries/by-admission/{admissionId}/prefill?patientId` | discharge_summary.write | → `DischargeSummaryPrefill` (from diagnoses, orders, prescriptions) |
-| POST | `/clinical/discharge-summaries/{id}/sign` / `/amend` | discharge_summary.write | `SignDischargeSummaryRequest{version}` / `AmendDischargeSummaryRequest{reason, …, version}` |
+| POST | `/clinical/discharge-summaries/{id}/sign` / `/amend` | discharge_summary.write | `SignDischargeSummaryRequest{version}` / `AmendDischargeSummaryRequest{reason, …, version}`. Signed only by the stay's consultant or a doctor on its care team, as themselves (403 `discharge_summary.not_care_team`, or `discharge_summary.doctor_required` from an account not linked to a doctor; see *Who signs off another doctor's work*) |
 | GET | `/clinical/discharge-summaries/{id}/print` | emr.read | → `DischargeSummaryPrint` |
 | GET | `/clinical/discharge-summaries/{id}/document` | emr.read | → `PrintableDocumentDto` (`pageSize: "A4"`): the printed discharge summary. Same rules as `/print`: drafts print too, marked "DRAFT — not signed"; restricted-record guard; audit "Printed discharge summary" |
 | GET | `/clinical/discharge-summaries/{id}/pdf` | emr.read | → `application/pdf` attachment `discharge-summary-{UHID}-{yyyy-MM-dd}.pdf`, the same document. Same rules; audit "Downloaded discharge summary as a PDF"; 503 `pdf.unavailable` |
@@ -186,6 +198,19 @@ not exported, and a prescription is exported only under the DSC rule of its prin
 ([interop.md](interop.md#abdm-health-records-ehr-08)).
 
 Public (anonymous, rate limit policy `public`): `GET /public/prescriptions/verify/{token}` → `PrescriptionVerification{found, status: Valid|Cancelled, doctor, qualification, registrationNumber, facility, issuedOn, itemCount, prescriptionNumber, digitalSignature?: {state: Valid|Invalid|Untrusted, signerName, certificateSerialNumber, certificateIssuer, signedAt, contentHash, chainTrusted, message}, signaturePath}` — no patient data; the DSC signature, and its chain to the DSC trust folder's roots, are verified again for each answer. `GET /public/prescriptions/verify/{token}/signature.p7s` → the .p7s (404 without a DSC signature).
+
+#### The prescribing-safety tables are loosened by two people (maker-checker slice 5)
+
+The interactions and maximum doses make the alerts every prescriber in the hospital gets before signing (a Major
+interaction and a dose above the maximum block signing). A change that adds or strengthens an alert (a new row, a higher
+severity, a lower maximum, every route instead of one, switching a row on) or changes only its words is saved at once and
+audited (`clinical.drug_interaction_saved`, `clinical.dose_limit_saved`). One that switches an alert off or weakens it
+waits: whoever keeps the tables asks with the reason, and someone else who holds `clinical.drug_safety.approve` (the
+pharmacy and therapeutics committee: pharmacists and hospital administrators) approves in the Approvals inbox, never the
+one who asked (`approval.self`). The request shows the row now and as asked, and what it switches off for prescribers
+(`DrugSafetyApprovals`, `DrugSafetyChanges`). The row is changed only if it is still as it was asked against
+(`approval.stale`), audited at Warning with both names. Only what alerts now counts: a row already switched off alerts
+nobody, so changing it waits for nothing (and switching it on is stricter).
 
 #### QR verification links
 
@@ -267,10 +292,35 @@ prescriptions are refused with 422 `prescription.digital_signature_untrusted`, n
 (`prescriptions.dsc_trust_unreadable` with the reason, critical where the DSC is required) or when it holds files that
 are not certificates (`prescriptions.dsc_trust_unreadable`, a warning); Clinical adds these through Platform's
 `IHealthWarningSource` (`DscTrustHealthWarnings`). While it holds no root, or cannot be read, DSC signing is refused
-before the doctor enters a PIN (`prescription.signature_not_set_up`, saying which). The check is offline (no revocation lists, no
-downloads; the hospital LAN has no route to the CAs), so a revoked DSC is not detected; the QR page says so. A
+before the doctor enters a PIN (`prescription.signature_not_set_up`, saying which). The chain is built offline (no
+certificate downloads); revocation is checked as below. A
 self-signed certificate (`New-SelfSignedCertificate`), a domain user certificate or any other certificate that may sign
 is refused (`prescription.signature_untrusted`), whatever the setting.
+
+**Revocation (a revoked or expired DSC never signs).** Before a signature is accepted, the certificate must be valid
+today (422 `prescription.certificate_expired`) and not revoked (422 `prescription.certificate_revoked`; the refusal is
+audited `prescription.dsc_refused`). `DscRevocationCheck` asks, in order:
+
+1. **The CA, when it can be reached**: Windows' (or OpenSSL's) own revocation checking with the CCA India roots as the
+   only trust, OCSP where the certificate names a responder, else the CA's CRL, with a 5-second time-out; after a failure
+   it does not try again for 10 minutes, so a server with no route to the CAs does not make every doctor wait
+   (`DscOnlineRevocation`; `HealthCare360:Clinical:DscOnlineRevocation` false switches it off). Revoked refuses.
+2. **The CA's CRL fetched now**, from the certificate's CRL distribution points, believed only when its signature checks
+   out against the issuing CA's certificate (from the trust folder or the certificates the signature carries), and
+   saved in the **CRL cache**.
+3. **The cached CRL** (`DscCrlCache`): `HealthCare360:Clinical:DscCrlDirectory`, by default `certs\dsc-crl` in the data
+   folder. Used however old when the CA cannot be reached, and its date and age recorded ("Not revoked on the CRL of 6 Nov
+   2026 10:00 (26 hours old)", "… past its next update of …"). `DscCrlRefreshJob` fetches every CRL address HC360 has
+   seen, and those of the licensed CAs' certificates in the trust folder, every six hours where the server runs jobs;
+   IT may copy CRLs (DER or PEM `.crl`) there by hand for a server with no route to the CAs. A CRL is parsed by HC360
+   (`CertificateRevocationList`, RFC 5280) and believed only from the CA that signed it.
+
+With no CRL cached and the CA out of reach the signature is accepted, recorded as "Revocation not checked …". How
+revocation was checked is kept with the signature (`clinical.prescriptions.signer_revocation_status`) and shown on the
+chart's *Digital signature* section (`revocationStatus`) and the QR page. A signature is checked for revocation when it
+is made, not again later: a DSC revoked after it signed leaves the signature as it was. System health shows the cached
+CRLs and their age (`prescriptions.dsc_crl_age`, info), warns of one past its next update (`prescriptions.dsc_crl_stale`)
+and of none cached (`prescriptions.dsc_crl_missing`), while DSC signing is on.
 
 **The doctor's own DSC.** The printed copy pairs the certificate's name with the prescriber's registration number, so
 the certificate must be the prescribing doctor's: its common name, the name an Indian DSC is issued in (as on the
@@ -350,7 +400,7 @@ saves the .p7s like other HC360 documents). Anyone else who may sign prescriptio
 sign it with their DSC. Where the DSC is required, Print and PDF are offered only once the prescription has a valid DSC
 signature, and a signature that no longer checks out says the prescription is not printed or shared until it is
 resolved. The QR page shows the signature as re-checked, whether the certificate chains to the CCA
-India root (it says "the signature checks out" only then), the hash, that revocation is not checked, and a .p7s
+India root (it says "the signature checks out" only then), the hash, how revocation was checked when it signed, and a .p7s
 download, never the patient or the medicines.
 
 **Checking a signature with OpenSSL alone.** Download the .p7s (from the QR page or the chart) and the signed data
@@ -504,16 +554,42 @@ through the Civil Registration System; medical records enters the registration n
 cannot change here (422 `vital.reported`: a correction goes through the Registrar). Reads go through the chart check and
 are audited; the registers' CSV export is audited.
 
+A death certificate is confirmed by a second doctor before it is reported (maker-checker, kind
+`mrd.death_certificate`, `DeathCertificateApproval`): certifying it (or correcting it, which takes any confirmation
+away) asks in the same transaction, and a doctor with `mrd.deaths.confirm`, never the one who certified it, confirms the
+certificate as it then stands from their Approvals (`approval.stale` if it changed since it was asked for). The request
+names the register number, the time of death, Part I and II, the manner, the medico-legal mark, pregnancy and the
+certifier, but not the patient: the confirming doctor opens the certificate, as the patient's record, to see who it is,
+and one who may not open a restricted patient's record does not confirm it (the request stays for another). The
+confirming doctor is printed on Form 4 with the registration number of their practitioner record (403
+`death.registration_missing` when it has none). The death itself is recorded at once (the patient is deceased, and the
+mortuary, hearse and bookings follow); only the report waits: 422 `death.not_confirmed` until it is confirmed, the
+certificate prints "NOT YET CONFIRMED" and the register shows it. While the request waits, the certificate is not
+corrected or marked entered in error (409 `death.confirmation_waiting`): the certifying doctor withdraws the request, or
+the confirming doctor returns it. A certificate saved before the facility asked for confirmations, or whose request was
+returned, withdrawn or ran out (seven days), is asked for again by its certifier (`POST /mrd/deaths/{id}/confirmation`).
+A certificate a second doctor confirmed is marked entered in error only when a second doctor agrees (maker-checker, slice
+8, kind `mrd.death_certificate_void`, `DeathCertificateVoidApproval`): its certifier asks with the reason (202), another
+holder of `mrd.deaths.confirm` approves, never the one who asked, and until then the certificate and the patient's
+deceased status stand, and the certificate is neither corrected nor reported (409 `death.void_waiting`; the record shows
+`voidWaitingSince`). Approved, it leaves the register and the deceased mark is taken back only when no other certificate
+stands for the patient (audited `death.voided` with both names). An unconfirmed certificate is marked at once, as before;
+a reported one not at all (`vital.reported`). The ward closing a stay as expired reads the certificate's standing through
+`DeathCertificateStandings` (Inpatient's `/discharge/death-certificate`).
+A facility with one doctor sets `mrd.deathCertificateConfirmation` to `false`: one doctor's certificate is then reported
+as certified.
+
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
 | GET | `/mrd/births?year&month` · `/mrd/births/export` | mrd.vital.register | → `BirthRegister` (rows with `dueBy`, `overdue`; live and still births) / CSV |
 | GET | `/mrd/births/{id}` · `/document` | mrd.births.record or mrd.vital.register | → `BirthRecordDto` / the printable Form 1 or Form 3 |
 | POST · PUT | `/mrd/births` · `/mrd/births/{id}` | mrd.births.record | `SaveBirthRequest` (mother, baby's record, time of birth, outcome, sex, weight, weeks, method, attendant, names, mother's age, live children, informant, still-birth cause; PUT with `version`) |
 | GET | `/mrd/deaths?year&month` · `/mrd/deaths/export` | mrd.vital.register | → `DeathRegister` (rows with the underlying cause, `dueBy`, `overdue`) / CSV |
-| GET | `/mrd/deaths/{id}` · `/document` | mrd.deaths.certify or mrd.vital.register | → `DeathRecordDto` / the printable MCCD |
-| POST · PUT | `/mrd/deaths` · `/mrd/deaths/{id}` | mrd.deaths.certify | `SaveDeathRequest` (patient, time of death, age when no date of birth, causes, other conditions, manner, medico-legal, pregnancy, registration number; PUT with `version`). 409 `death.exists` for a second certificate |
-| POST | `/mrd/{births\|deaths}/{id}/report` | mrd.vital.register | `ReportToRegistrarRequest{reportedOn, registrationNumber, version}` |
-| POST | `/mrd/{births\|deaths}/{id}/entered-in-error` | as GET of one, and only by whoever recorded or certified it | `VitalEntryErrorRequest{reason, version}`: out of the register; a death's deceased mark is taken back; 403 `vital.not_own_entry` |
+| GET | `/mrd/deaths/{id}` · `/document` | mrd.deaths.certify, mrd.deaths.confirm or mrd.vital.register | → `DeathRecordDto` (with `confirmationRequired`, `confirmationWaitingSince`, `confirmedBy`, `confirmerRegistrationNumber`, `confirmedAt`) / the printable MCCD |
+| POST · PUT | `/mrd/deaths` · `/mrd/deaths/{id}` | mrd.deaths.certify | `SaveDeathRequest` (patient, time of death, age when no date of birth, causes, other conditions, manner, medico-legal, pregnancy, registration number; PUT with `version`). 409 `death.exists` for a second certificate; asks a second doctor's confirmation; PUT 409 `death.confirmation_waiting` while one waits |
+| POST | `/mrd/deaths/{id}/confirmation` | mrd.deaths.certify, only the certifying doctor | `AskDeathConfirmationRequest{version}`: asks for the certificate as it stands. 403 `vital.not_own_entry`; 422 `death.confirmation_off`, `death.confirmed`; 409 `approval.already_requested` |
+| POST | `/mrd/{births\|deaths}/{id}/report` | mrd.vital.register | `ReportToRegistrarRequest{reportedOn, registrationNumber, version}`; a death 422 `death.not_confirmed` until a second doctor confirms it |
+| POST | `/mrd/{births\|deaths}/{id}/entered-in-error` | as GET of one, and only by whoever recorded or certified it | `VitalEntryErrorRequest{reason, version}`: out of the register; a death's deceased mark is taken back; 403 `vital.not_own_entry`; 409 `death.confirmation_waiting` while a confirmation waits. A confirmed death certificate → 202 `ApprovalRequestDto` (`mrd.death_certificate_void`), made when a second doctor approves; 409 `death.void_waiting` while it waits; 422 `vital.reported` once reported |
 
 #### Notifiable diseases (IDSP, `/idsp`, tag Disease Surveillance, permission `mrd.idsp.report`)
 A diagnosis (not a differential) whose ICD-10 code is on the IDSP list (`IdspDiseases`) opens a case on the week's
@@ -603,7 +679,7 @@ supplies, in Medical records > ICD catalogue > Import or with the server command
 |---|---|---|---|
 | GET | `/health-checkups/packages?search&includeInactive`, `/{id}` | healthcheck.manage or emr.read | → `PackageDto` |
 | GET | `/health-checkups/packages/{id}/eligibility?patientId` | healthcheck.manage or emr.read | → `PackageEligibility{isEligible, reason, excludedItems}` |
-| POST / PUT | `/health-checkups/packages[/{id}]` | healthcheck.manage | `SavePackageRequest{code "HC-…", name, description, gender, minAgeYears, maxAgeYears, price, isActive, items[{kind, serviceItemId?, departmentCode?, gender, minAgeYears}], version?}` — also creates/updates the package's `org.service_items` row (category HealthCheckup). Saving replaces the items; the package's audit event lists them as they were and as they are (`items`) |
+| POST / PUT | `/health-checkups/packages[/{id}]` | healthcheck.manage | `SavePackageRequest{code "HC-…", name, description, gender, minAgeYears, maxAgeYears, price, isActive, items[{kind, serviceItemId?, departmentCode?, gender, minAgeYears}], version?, reason?}` → 201 `PackageDto` (a new package out of use at ₹0, `pendingPrice` while its price waits) / 200 `PackageDto` (saved at once) / 202 `ApprovalRequestDto` (its price or putting it in use asked for, `masters.service_price`) / 409 `approval.already_requested` (another price while one waits). Also creates/updates the package's `org.service_items` row (category HealthCheckup): see *A check-up's price* below. Saving replaces the items; the package's audit event lists them as they were and as they are (`items`) |
 | GET / POST | `/health-checkups/bookings` | healthcheck.manage or emr.read / healthcheck.manage | `BookCheckupRequest{patientId, packageId, scheduledDate, visitId?, notes}` (a `visitId` makes it a walk-in: checked in and charged at once) → `BookingDto` (itinerary + one ClinicalOrder for the included lab/radiology/cardiology tests). Not on a visit closed at the desk or cancelled: 422 `visit.closed` / `visit.cancelled`, asked under the visit's lock as an order asks it |
 | GET | `/health-checkups/bookings/{id}` | healthcheck.manage or emr.read | → `BookingDto` |
 | POST | `/health-checkups/bookings/{id}/check-in` | healthcheck.manage | `CheckInCheckupRequest{visitId?}` — posts the package charge (see *Package billing*); refused if Billing refuses the charge, if the package has no service item (422 `package.not_billable`), if the visit is another patient's, or if it is closed or cancelled (422 `visit.closed` / `visit.cancelled`). A corporate batch's booking is charged on a visit billed to its company: a linked visit billed to anyone else is refused (400 on `visitId`), and without one a health check-up visit billed to the company is opened (see *Corporate check-ups*) |
@@ -615,6 +691,19 @@ supplies, in Medical records > ICD catalogue > Import or with the server command
 | GET | `/health-checkups/bookings/{id}/report/document`, `/report/pdf` | healthcheck.manage or emr.read | The full check-up report (summary, then every released lab, radiology and cardiology result) as a printable document or PDF. Served by the Diagnostics module, which reads the results; see [diagnostics.md](diagnostics.md) |
 | GET / POST | `/health-checkups/corporate-batches`, `GET /{id}` | healthcheck.manage | `CorporateBatchRequest{payerId, contactPerson, contactPhone, reference, packageId, scheduledDate, patientIds[≤500], notes}` → `CorporateBatchResult{batchId, batchNumber, booked, skipped[{patientId, reason}]}`. `payerId` is the company: an active corporate payer of the payer master, else 400 on `payerId`. The batch (`CorporateBatchDto.payerId`, `corporateName` as the payer master names it) and each booking (`BookingDto.corporatePayerId`) carry it. Every employee the package's sex and age rules allow is booked once (a repeated id counts once), under the batch, with their own itinerary and tests; the others (wrong sex or age, already booked for the package that day, unknown or inactive record) are reported with the reason and not booked. Nothing is charged until each employee checks in, and then to the company (see *Corporate check-ups*; `CorporateCheckupTests`) |
 | GET | `/health-checkups/corporate-payers` | healthcheck.manage | → `CorporatePayer[]{id, name, contactPerson, phone}`: the payer master's active corporate payers by name, the companies a batch can be booked for (through `IPayerDirectory.ListCorporateAsync`, so the check-up desk needs no billing or insurance permission) |
+
+#### A check-up's price
+
+A check-up's price is its billable service's price (category HealthCheckup), and changes only when two people agree
+(maker-checker), as any service's price does ([masters.md](masters.md), `ServicePrices`). Saving a package saves its
+name, description, eligibility and lines at once, and asks for its service's new price, and for putting it in use
+(`masters.service_price`, approved by someone else who holds `masters.prices.approve`); `reason` goes to the approver.
+Taking a package out of use is made at once. A new package is made out of use at ₹0 and goes live at the price
+approved; while it is out of use it is not booked (422 `package.not_in_use`), as its service could not be charged at
+check-in. The package shows, and is booked and charged at, the price in use until a new one is approved, and follows its
+service whichever screen set the service's price or use: the package's form, the services master, or an approval of
+either (`ServicePriceChanged`, handled in the same transaction). `PackageDto.pendingPrice` holds what waits; while it
+waits, a save must ask for the same price (409).
 
 #### Package billing
 
@@ -687,6 +776,20 @@ the user may not open shows initials.
   and records the disposition (`/disposition`): discharged, admitted, referred to another hospital (named), LAMA,
   absconded or died (these three with notes). The case leaves the board and the emergency visit closes; an admitted
   patient's stay goes on as the admission's own visit. A patient must be triaged first, unless they died or absconded.
+  LAMA goes with `againstAdvice` (maker-checker, slice 8; 400 without it, 422 `er.lama_witness_required`): who signed
+  the form (the patient, a relative named with the relationship, or "refused to sign"), the doctor who explained the
+  risks (the doctor signed in, or their confirmation at the screen, `against_advice.doctor`), a witness who confirms
+  with their own credentials (purpose `er.lama`, `clinical.er.triage`; never the doctor, `against_advice.witness_is_doctor`)
+  and optionally the scanned form; the case keeps them (`againstAdvice` on `EmergencyCaseDetail`).
+* **Bays** (`ErBay`, `clinical.er_bays`). The department treats patients in bays (resuscitation, acute, minor, observation,
+  isolation), each with a code painted on it, kept by whoever keeps the masters (`POST /bays`, `PUT /bays/{bayId}`,
+  `masters.manage`; the board's *Bays…*). `GET /bays` lists them in board order with who is in each (initials for a
+  restricted patient), how many are free and taken. The nurse or doctor (`clinical.er.triage`) puts a patient in a free
+  bay or moves them to another (`PUT /cases/{id}/bay {bayId, version}`), and frees it while the patient stays in the
+  department (`POST /cases/{id}/bay/release`); the disposition frees it. A bay holds one patient: a taken bay is refused
+  (409 `er.bay_taken`, naming the case in it), and a unique index on an open case's bay settles two nurses at once; a bay
+  out of use takes no patient (422 `er.bay_inactive`), and one already in it stays until moved. The board shows each
+  patient's bay. Bays are not charged.
 * **Medico-legal cases** (`PUT /cases/{id}/mlc`, `clinical.er.mlc`): the doctor enters the case in the MLC register,
   numbered `mlc-register`: who brought the patient, named unless a member of the public (a Good Samaritan is not
   compelled to give their name or other details, for the MLC form either: Motor Vehicles Act 1988, s.134A, and Central
@@ -696,6 +799,25 @@ the user may not open shows initials.
   (`/mlc/intimation`) records when, how, who received it and the GD/DD entry; after it the entry's facts cannot change
   (422 `mlc.intimated`). `/mlc/document` prints the intimation; `GET /mlc?from&to` is the register
   (`clinical.er.mlc` or `mrd.mlc.register`).
+* **The wound certificate** (`WoundCertificate`, `clinical.wound_certificates`, one per MLC entry;
+  `PUT /cases/{id}/mlc/wound-certificate`, first save creates, `clinical.er.mlc`). When the patient was examined, two marks
+  of identification, the alleged history, and each injury numbered 1, 2, 3…: its kind (abrasion, contusion, laceration,
+  incised, stab, chop, fracture, dislocation, burn, firearm, bite), site with its distance from a landmark, size,
+  description, the weapon in the doctor's opinion (blunt, sharp, sharp-pointed, heavy sharp, firearm, thermal, chemical,
+  bite, not known), its age, and its **nature under the Bharatiya Nyaya Sanhita 2023**: simple hurt (s.114), grievous
+  hurt naming its kind of s.116 ((a) emasculation to (h) hurt that endangers life or leaves the sufferer in severe pain or
+  unable to follow their ordinary pursuits for fifteen days), or the opinion reserved, saying what it waits for (an
+  X-ray, a scan). A fracture or dislocation is never simple (s.116(g)). The examining doctor signs it from their own
+  sign-in (`POST …/wound-certificate/sign`; an account linked to a doctor in the practitioner master, 403
+  `wound_certificate.doctor_only`), whose name and registration are printed; signed, it does not change (422
+  `wound_certificate.signed`). `GET …/wound-certificate/document` prints it (a draft is marked "Draft: not signed"),
+  with the doctor's signature image, audited as PHI access.
+* **The medico-legal report for a court** (`POST /cases/{id}/mlc/court-report {court, caseReference?, requisition?}`,
+  `clinical.er.mlc` or `mrd.mlc.register`) → `PrintableDocumentDto`, made from the record and never typed again: the court
+  and the case or requisition it answers; the MLC entry as registered; the police intimation; the examination and
+  injuries of the **signed** wound certificate (a draft is left out and the report says no signed certificate is on the
+  record); a sexual-assault victim's examination (BNSS s.184); the treatment's outcome in the department; the doctor's
+  signature and space for the Medical Superintendent's. Each issue is on the patient's record, naming the court.
 * **Sexual assault** (Bharatiya Nagarik Suraksha Sanhita 2023, s.184, formerly CrPC s.164A). The victim's medical
   examination is recorded (`POST /cases/{id}/mlc/examination`, `clinical.er.mlc`): by a doctor in the practitioner
   master, whose name, registration and gender come from it; its exact start and end; and who consented, the patient or
@@ -734,9 +856,10 @@ the user may not open shows initials.
   Billing, the pharmacy and the lab then charge nothing and ask nothing first (see billing.md, pharmacy.md and
   diagnostics' payment gate). A cause corrected to another unmarks the visits it marked; a bill already finalised stays
   as issued.
-* **Not built:** ER bed allocation and a tracking display for the waiting area; trauma scores beyond ESI; the wound
-  certificate and the formal MLC report to the court; the examination report's own form (the hospital's proforma is
-  used, and HC360 keeps when it was made and sent).
+* **Not built:** a tracking display for the waiting area; trauma scores beyond ESI; a supplementary wound certificate
+  giving a reserved opinion (the signed one stays as it was; the opinion is given on paper, or the court report says it
+  is reserved); the examination report's own form (the hospital's proforma is used, and HC360 keeps when it was made and
+  sent).
 
 ## Antimicrobial stewardship
 Antibiotics are classified on the WHO AWaRe list (2023) by their generic name (`Aware`; a combination needs every part,
@@ -790,11 +913,45 @@ is left out: the complaint, booking reason and note title, a result's name and a
 round also leaves out the diagnosis and vital-sign details. The token, time, bed, UHID and safety flags stay, so the
 patient is still called and seen. Opening the chart asks for break-the-glass access.
 
+**Confidential records** (a sensitive category, R-4: HIV, mental health, MTP, sexual violence) are treated the same way
+for a user who does not hold every category the record is in, except that the name stays, as on the bed board: a
+*Confidential* badge (`isConfidential`), and the same clinical text left out (a result reads "Confidential record").
+Whether a list withholds a record is the chart's own rule (`PatientAccessGuard.WithheldChartsAsync`): break-the-glass
+still running opens it on the lists too, as does `patients.restricted.read`.
+
 The page header sums it up: the people waiting, the in-patients still to see, and the results to review.
 
 **Dictating the note.** On the encounter workspace, *Dictate with AI* turns the doctor's dictation into a SOAP draft
 with ICD-10 suggestions, which the doctor checks and inserts into the note (AI module, see `docs/modules/ai.md`). The
 signing checklist warns while a placeholder from the draft (`[NAME_1]`) remains in the note.
+
+## Who signs off another doctor's work (maker-checker, slice 15)
+
+Three acts let one doctor answer for another's patient. Each is strict by default; the hospital relaxes one only for
+the whole hospital or a facility, through its setting, and switching a setting off waits for a second administrator
+(SettingGuard; switching it back on is at once):
+
+| Act | The rule | Setting (default on) |
+|---|---|---|
+| Sign a discharge summary | Only the stay's consultant or a doctor on its care team signs it, as themselves: signing records the signer's own practitioner, never the consultant's in their place, and an account not linked to a doctor does not sign (403 `discharge_summary.not_care_team`, `discharge_summary.doctor_required`) | `clinical.dischargeSummary.careTeamOnly` |
+| Amend a signed encounter | Its author (the doctor it was signed as, or the account that signed it) amends at once. Any other doctor asks (202, `clinical.encounter_amend`); the author or the head of the encounter's department (`Department.HeadPractitionerId`) approves, anyone else holding `clinical.encounters.sign` is refused (403 `encounter.amend_approver`, the request still waiting). Made only over the encounter as asked (`approval.stale`), recorded as the asking doctor's amendment "(approved by …)", the original kept in the amendment history, audited `encounter.amended_with_approval` | `clinical.encounters.amendByAuthorOnly` |
+| Acknowledge another doctor's critical result | The ordering doctor, a doctor on the care team of the patient's stay in a bed now when the ordering doctor is on it too, or a doctor the ordering doctor handed this patient (or all their patients) over to, while the handover runs (403 `result.not_covering`). An acknowledgement on someone's behalf is audited `result.acknowledged_covering`. Results that are not critical, and results no doctor ordered, are anyone's to acknowledge, as before | `clinical.criticalResults.coveringOnly` |
+
+**The care team** of a stay is its consultant, the admitting doctor, and every doctor who recorded a consultant visit
+during it (a cross-consultation, a round for a colleague). The Inpatient module keeps the stay and gives it to
+Clinical through `IStayCareTeams` (`StayCareTeams`), as Inpatient references Clinical and not the other way round.
+
+**Handovers** (`DoctorHandover`, `clinical.doctor_handovers`; `/emr/handovers`, the worklist's *Hand over…*): the
+doctor who hands over records it from their own sign-in, to another active doctor, for all their patients or one, for
+up to 7 days; either doctor ends it early. The pure rules are in `ClinicalSignOff` (`ClinicalSignOffTests`); the API,
+the approvals and the settings are tested end to end (`ClinicalSignOffTests`, integration).
+
+**A planned discharge waits for the signed discharge summary** (NABH COP/MOM): Clinical's `DischargeSummaryDischargeHold`
+is one of the Inpatient discharge's `IDischargeHoldSource`s, marked `PlannedDischargeOnly`. While the stay's summary is
+unwritten or a draft, a discharge home or a referral is refused with 422 `discharge.summary_unsigned`; once it is signed
+(or amended after signing) the stay closes. A death, LAMA, DAMA or an absconded patient is not held by it: they keep
+their own rules. On by default; `clinical.discharge.signedSummaryRequired` set to false for the hospital or a facility
+turns it off, which a second administrator approves (SettingGuard). Tested end to end in `DischargeSummaryHoldTests`.
 
 ## Consents (EHR-06)
 
@@ -804,6 +961,18 @@ on the patient profile and in the chart's **Consents** tab.
 
 * **Recording** (`patients.consents`): the consent, the decision (given or refused), who signed (the patient, or a
   named relative or guardian with the relation), the witness, the form's version and notes.
+* **What a record-sharing consent covers.** A given *Sharing records with other care providers* consent shares the
+  whole record with every partner account, or only what the patient chose: which partner accounts may read
+  (`GET /api/v1/patients/consents/sharing-partners`, `patients.consents`: other providers' integration accounts, given
+  `fhir.read` by a role the hospital made), what for (the HL7 v3 purposes of use: treatment, emergency treatment, care
+  coordination, insurance or scheme claims, public health, research, the patient's own request), which kinds of
+  records (visits and diagnoses, allergies, medicines, lab results, scan and heart test reports, vital signs,
+  documents; a patient's home-monitoring readings go with the vital signs, a home glucose with the lab results and an
+  ECG patch's rhythm with the heart tests, as the labels say), the records' first and last days, and the last day it lets anyone read. It is recorded as
+  `CaptureConsentRequest.sharingScope` and listed as `ConsentDto.sharingScope`, the accounts by name. 400 when a scope
+  comes with another consent or a refusal, or its records end before they start; 400 `consent.sharing_ended` for a last
+  day already past; 400 `consent.sharing_partner` for an account that is not a partner. The FHIR API applies it to
+  every read and search ([interop.md](interop.md#consent-and-access-rules)).
 * **Withdrawing** (`patients.consents`, a reason of up to 300 characters): only a consent that was given and not
   withdrawn; a refusal has nothing to withdraw (422 `consent.not_granted`), and a withdrawal is final
   (422 `consent.revoked`). The consent stays in the list, marked withdrawn, with when, by whom
@@ -971,3 +1140,17 @@ Documents that messages can carry (`INotificationDocumentSource`, made when the 
   LAB-LFT, LAB-KFT, LAB-TFT, LAB-URINE-RE, LAB-ESR, LAB-CRP, LAB-VITD, LAB-VITB12, LAB-PSA, LAB-ELECTROLYTES,
   RAD-XR-CHEST, RAD-USG-ABD, RAD-USG-PELVIS, RAD-MAMMO, CARD-ECG, CARD-ECHO, CARD-TMT and CONS-NEW. Codes not yet
   seeded by Diagnostics are skipped (logged) and added on a later start unless the hospital has edited the entry.
+
+## NEWS2 (National Early Warning Score 2)
+
+`News2` (`Domain/News2.cs`) scores every set of vital signs on the Royal College of Physicians' NEWS2 chart (2017):
+respiration rate, oxygen saturation on scale 1 (or scale 2, for a patient in hypercapnic respiratory failure whose doctor
+prescribed a target of 88–92 %: 88–92 % scores 0, and above 92 % scores 1–3 only on oxygen), air or supplemental oxygen
+(2), systolic pressure, pulse, consciousness on ACVPU (anything but Alert scores 3, new confusion included) and
+temperature. `VitalsDto.news2` = `News2Score{total, anySingleParameterThree, response (Routine | Urgent | Emergency),
+isComplete, scale, parts[{parameter, value, points}], missing[], summary}`: urgent at 5–6 or any single parameter
+scoring 3, emergency at 7 or more. A set missing parameters is still scored (a missing parameter can only add) and marked
+incomplete. NEWS2 is validated for adults: it is not calculated under 16 years (a paediatric score, PEWS, is not part of
+this release) and pregnancy is not detected (the chart's own caveat: use an obstetric score). Each recorded set raises
+`VitalSignsRecorded` with its score, which Inpatient turns into an early-warning escalation for a patient in a bed (see
+inpatient.md, *NEWS2 escalation*).
