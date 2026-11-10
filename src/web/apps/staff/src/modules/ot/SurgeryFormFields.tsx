@@ -27,7 +27,7 @@ import {
   TextAreaField,
   TextField,
 } from '@hc360/ui';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useWatch, type UseFormReturn } from 'react-hook-form';
 import { searchOtNurses, searchPractitioners } from '@/lib/lookups';
@@ -75,6 +75,8 @@ export function ProcedurePicker({ form }: { form: Form }) {
     queryKey: ['ot', 'procedures', search],
     queryFn: () => searchProcedures(search),
     staleTime: 5 * 60_000,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
   const [itemId] = useWatch({ control: form.control, name: ['procedureServiceItemId'] });
   const picked = procedures.data?.find((p) => p.id === itemId);
@@ -107,10 +109,10 @@ export function ProcedurePicker({ form }: { form: Form }) {
               form.setValue('procedureServiceItemId', null);
             }}
             onOptionSelect={(_, data) => {
-              const item = procedures.data?.find((p) => p.id === data.optionValue);
-              if (item) {
-                field.onChange(item.name);
-                form.setValue('procedureServiceItemId', item.id, { shouldDirty: true });
+              // The procedure comes from the option chosen (its text is the name), not from the results as they are now.
+              if (data.optionValue && data.optionText) {
+                field.onChange(data.optionText);
+                form.setValue('procedureServiceItemId', data.optionValue, { shouldDirty: true });
                 form.clearErrors('procedureName');
               }
             }}
@@ -137,6 +139,8 @@ export function AssistantsPicker({ form, knownNames }: { form: Form; knownNames?
     queryKey: ['lookups', 'practitioners', 'search', search],
     queryFn: () => searchPractitioners(search),
     staleTime: 5 * 60_000,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
   const [names, setNames] = useState<Record<string, string>>(knownNames ?? {});
   const [surgeonId] = useWatch({ control: form.control, name: ['surgeonId'] });
@@ -162,8 +166,11 @@ export function AssistantsPicker({ form, knownNames }: { form: Form; knownNames?
               selectedOptions={selected}
               onChange={(event) => setTerm(event.target.value)}
               onOptionSelect={(_, data) => {
-                const chosen = results.data?.filter((p) => data.selectedOptions.includes(p.id)) ?? [];
-                setNames((current) => ({ ...current, ...Object.fromEntries(chosen.map((p) => [p.id, p.name])) }));
+                // The name comes from the option toggled on, not from the results as they are now.
+                const { optionValue, optionText } = data;
+                if (optionValue && optionText && data.selectedOptions.includes(optionValue)) {
+                  setNames((current) => ({ ...current, [optionValue]: optionText }));
+                }
                 field.onChange(data.selectedOptions.slice(0, 10));
                 setTerm('');
               }}
