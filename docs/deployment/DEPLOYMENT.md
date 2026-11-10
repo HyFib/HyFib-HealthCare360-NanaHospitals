@@ -1025,6 +1025,39 @@ any installed before self-update or with `-NoAutoUpdate`, with `Install-HC360Des
 distribution tool). Self-update replaces the program files only: run the installer again when a release's notes ask for
 it.
 
+### Going back
+
+The way back from an upgrade is the previous version **and** the backup HC360 took just before the update changed the
+database. Never the previous version alone: on a database a newer version changed, it stops, says so in its log and in
+Windows Event Viewer, and names the database changes it does not know. It changes nothing.
+
+Restoring that backup loses everything entered since the upgrade. So upgrade at the quietest hour with the downtime kit
+out (docs/modules/downtime.md), decide within about half an hour whether the upgrade stands, and keep on paper what is
+done after that, to enter again once the previous version is back. With several servers, stop them all and go back on
+each.
+
+1. **Find the backup.** It is the newest file in the backup folder (`%ProgramData%\HyFib\HealthCare360\backups`, or the
+   folder in `HealthCare360:Backup:Directory`) from just before the upgrade. Check it:
+
+   ```powershell
+   & 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe' backup verify --in '<file>'
+   ```
+
+   It says `PreMigration backup ... by HC360 <the previous version>`. An upgrade that changed no table made no such
+   backup, and the previous version starts on the database as it is: skip step 3.
+2. **Put the previous version back, stopped.** From the previous release's `deploy` folder, checked and unblocked as in
+   section 1, run `.\Install-HC360Server.ps1 -NoStart`. It replaces the program files and keeps the configuration and
+   data.
+3. **Restore the backup:** `.\Restore-HC360.ps1 -BackupFile '<file>'`. It keeps the upgraded database under another
+   name (`hc360_before_restore_<time>`), restores the one from before the update, and starts HC360. The backup holds
+   the database and its keys, not the documents, which stay as they are.
+4. **Run the previous version's `.\Install-HC360Server.ps1` again**, without `-NoStart`, so that HC360 starts with
+   Windows again. *Check:* Administration › System health shows the previous version and nothing red.
+5. **Workstations.** HC360 Desktop never goes back a version by itself. One that took the newer version keeps it; where
+   it misbehaves, install the previous one there with that release's `Install-HC360Desktop.ps1`.
+
+Rehearse these steps once, on a copy restored on a spare PC, before the first upgrade a hospital depends on.
+
 ## 8. Backups and disaster recovery
 
 - An **encrypted** backup (AES-256-GCM) runs every night at 01:30 IST and is kept for 30 days. With

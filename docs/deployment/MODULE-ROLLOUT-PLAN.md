@@ -1,7 +1,8 @@
 # Going live one department at a time
 
-**Status: proposed, not decided.** The switches, the profile and the tests in sections 3, 4 and 9 are not built. This
-plan is written from the code as it stands on 10 November 2026 (commit `ad5acb37`). Every figure in section 2 was
+**Status: proposed, not decided.** Of the work in section 9, items 7 and 8 are built: the start-up guard against a
+newer database, and the way back from an upgrade. The switches, the profile and their tests are not. This plan is
+written from the code as it stands on 10 November 2026 (commit `ad5acb37`). Every figure in section 2 was
 counted from the source, and the appendix gives the command for each. What could not be checked is marked
 **to confirm**.
 
@@ -71,10 +72,11 @@ department. Section 3 extends that mechanism. It does not add a second one.
    reviewed, applied to the training server, or tested.
 5. **Only "everything on" is tested**, apart from the three switches' own tests. A department that is off is a
    product configuration of its own, and it has no test.
-6. **An older version starts on a newer database.** Start-up applies the changes that are pending and returns when
-   there are none. Nothing found in it looks for changes the build does not know
-   (`DatabaseInitializer.MigrateAsync`). So the way back from an upgrade is the previous package **and** the "before
-   an update" backup, never the package alone. DEPLOYMENT.md section 7 describes only the way forward.
+6. **An older version started on a newer database.** Start-up applied the changes that were pending and returned
+   when there were none, without looking for changes the build did not know (`DatabaseInitializer.MigrateAsync`).
+   *Built since (section 9, item 7):* start-up now stops on such a database, names the changes it does not know, and
+   changes nothing. The way back from an upgrade is the previous package **and** the "before an update" backup, never
+   the package alone, and DEPLOYMENT.md section 7 now says how (*Going back*).
 
 ## 3. The configuration model
 
@@ -222,7 +224,8 @@ in an emergency.
   was entered after the upgrade.
 - **An upgrade lands at least a week before the go-live that needs it.** By the go-live, the version has run a week
   with the departments already live.
-- **Add the guard**: a build refuses to start on a database that holds changes it does not know (section 2, item 6).
+- **The guard is built**: start-up stops on a database that holds changes it does not know (section 9, item 7), and
+  DEPLOYMENT.md section 7, *Going back*, gives the steps.
 
 ## 5. The waves proposed for Nana Hospitals, Theni
 
@@ -334,11 +337,15 @@ that the hospital owns and reviews at each go or no-go. England's NHS asks this 
 | 4 | Background services | 29 | None runs for a department that is off |
 | 5 | Seams: events and direct calls | 41 kinds of event; 28 contracts, 18 with no stand-in | Each handler is declared work or book-keeping; each caller is tested against a receiver that is off |
 | 6 | Profiles in CI | One run for each wave | Section 8, rows 2 and 3 |
-| 7 | The start-up guard against a newer database | One check | An older build stops, and names the changes it does not know |
-| 8 | The way back, written into DEPLOYMENT.md section 7 | One section; one drill | A person who has not done it before completes the drill from the page |
+| 7 | The start-up guard against a newer database | One check | An older build stops, and names the changes it does not know. **Built**: `DatabaseInitializer.RefuseNewerDatabaseAsync`, proved by `NewerDatabaseTests` and `UnknownMigrationsTests` |
+| 8 | The way back, written into DEPLOYMENT.md section 7 | One section; one drill | A person who has not done it before completes the drill from the page. **Written** (*Going back*); the drill is still to run |
 
-Items 1 to 4, 6 and 7 come before wave 1. Item 5 is first needed at wave 3: the EMR is the first live sender with a
-receiver still on paper. It is the part most likely to hold a surprise, so start it early.
+Items 7 and 8 come before the first upgrade, 1.0.1, and are built. Wave 1 needs none of items 1 to 6: no live
+department hands work to one that is not live, and roles keep the other departments closed
+([RELEASE-1.0.0-READINESS.md](RELEASE-1.0.0-READINESS.md), section 5). Wave 2 has one hand-over: an emergency visit
+registered at the front office opens a case on the ER board, which goes live in wave 3. A procedure covers it until
+then (close those cases at wave 3's take-on). From wave 3 the hand-overs are many, the EMR's orders first, so items 1
+to 6 must be built by then. Item 5 is the part most likely to hold a surprise, so start it early.
 
 ## 10. What only the hospital can answer
 

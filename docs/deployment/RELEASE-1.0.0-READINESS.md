@@ -1,7 +1,9 @@
 # Release 1.0.0: readiness report
 
-**Status: not released. The recommendation is no-go until the six items in section 1 are closed.** Written on 10
-November 2026 from:
+**Status: not released.** Updated on 10 November 2026: the blockers' fixes are in pull request #333, and *Where the
+blockers stand* below says what each needs still. Two remain before a tag: a green run of the release build on that
+pull request, and HyFib's release signing key (R2), which only HyFib can make. The rest of this report is the
+assessment as written first, on 10 November 2026, from:
 
 - commit `ad5acb37`, the head of `main`, and its CI run (#1030);
 - the last 30 completed CI runs on `main`;
@@ -14,6 +16,21 @@ The appendix lists every source. What could not be checked is marked **to confir
 This report covers the first release to Nana Hospitals, Theni: the version, the evidence that it works, what stops it,
 and how it is built, installed and undone. [MODULE-ROLLOUT-PLAN.md](MODULE-ROLLOUT-PLAN.md) covers what goes live
 after it, one department at a time.
+
+## Where the blockers stand
+
+| # | What was done | Shown by | Still needed |
+|---|---|---|---|
+| R1 | `release.yml` starts the runner's PostgreSQL for the tests, as CI does. A pull request that changes the release (the workflow, `Publish-HC360.ps1` or `tools/release`) now runs the release build, without the signing key and without publishing | The release build on pull request #333. Its first run stopped earlier, at R7 | A green run of the release build on #333 |
+| R2 | A tagged release now stops when HC360 Desktop's package is not signed, with what to do. SECURITY.md keeps the procedure and adds: never make the key in a CI job or a hosted session | The workflow step *Refuse to release an unsigned HC360 Desktop* | **HyFib makes the key pair**, stores the private key as the workflow's secret, keeps a copy offline, and merges the public key into `ReleaseKeys.cs` (SECURITY.md, *Release signing key*) |
+| R3 | The cause was the test, not screen unlock. It polled for the waiting request through `pg_stat_activity` inside one transaction, and PostgreSQL reads that view once per transaction: a connection the server opened after the first poll never appeared. It now reads `pg_locks`, which is read again at every query | Reproduced on PostgreSQL 16: a waiting connection opened after the first poll counts 0 in `pg_stat_activity` and 1 in `pg_locks` | CI runs the test on every change |
+| R4 | DEPLOYMENT.md section 1 now opens with the release files: check the hashes against `SHA256SUMS.txt` and HyFib's second copy, unblock the checked zip, extract it, and set a process-scope execution policy, before the preflight runs. The Theni steps follow | — | — |
+| R5 | `tools/release/Test-ReleaseVersion.ps1` runs first in the release workflow: the version is a release version, `InformationalVersion` agrees, and the tag names it. A tag with a label is published as a pre-release | `tests/deploy/Test-ReleaseVersion.ps1`, 16 cases and the repository's own file, in CI in Windows PowerShell 5.1 and PowerShell 7 | — |
+| R6 | The alerts were in two tools with lockfiles of their own, not in what ships. cdxgen 12.8.5 → 12.9.0, with body-parser held at 2.4.0; wrangler 4.151.1 → 4.156.2. CI and the daily Security audit now fail on a high advisory against either tool | `npm audit`: the SBOM tool has no high left (5 moderate, recorded in SECURITY.md, *Tools that do not ship*); the demo site's tool none at all | GitHub's count on `main` falls once #333 merges |
+| R7 (new) | **The staff app did not build on Windows**, where the release is built: `AbdmReceivedRecords.tsx` beside `abdmReceivedRecords.ts` are one file there. The module is now `receivedRecords.ts`, and CI fails on any two files or modules whose names differ only in case | Found by R1's release build on #333 | — |
+| Rollout item 7 | Start-up stops on a database a newer version changed, names the changes it does not know, and changes nothing | `NewerDatabaseTests`, `UnknownMigrationsTests` | — |
+| Rollout item 8 | DEPLOYMENT.md section 7, *Going back*: the previous package and the backup taken before the update | — | The drill, once, on a spare PC |
+| S1 | DEPLOYMENT.md section 1 now tells IT to compare the checksums with the copy HyFib sends another way | — | HyFib sends them with each release; a code-signing certificate later |
 
 ## 1. The answer in one page
 
@@ -68,8 +85,8 @@ Also needed, though none of them blocks the tag:
 1. HyFib closes R1 to R6 and starts S1's second channel. Then it tags `1.0.0-rc.1` and installs it on the test server.
 2. Once that works, HyFib tags 1.0.0 from the same code.
 3. Install 1.0.0 at Theni for **wave 0 and wave 1 only** (foundation, then pharmacy and stores), as in section 5.
-   Wave 1 needs no new code (section 5). The department switches of MODULE-ROLLOUT-PLAN.md are first needed at
-   wave 3, when the EMR goes live and the laboratory is still on paper.
+   Wave 1 needs no new code (section 5). Wave 2 has one hand-over, which a procedure covers; from wave 3, when the
+   EMR goes live and the laboratory is still on paper, the department switches of MODULE-ROLLOUT-PLAN.md are needed.
 4. Go-live then waits on the hospital's gates in section 7: the UPS, the backup disks, BitLocker, the preflight, the
    load test, the restore drill and the ASVS sign-off.
 
@@ -162,10 +179,10 @@ So one green run is good evidence, but it is not proof that the suite is stable.
 
 | Step | What happens | State |
 |---|---|---|
-| 1. Tag `vX.Y.Z` | Starts `release.yml` | Works. **No check of tag against version (R5)** |
-| 2. `Publish-HC360.ps1` | Web apps: install from the lockfile, type check, tests, build. .NET: every test. Publishes the server (self-contained, web apps included), HC360 Desktop and the lab agent. Writes `SHA256SUMS.txt` | **The tests have no database (R1)** |
+| 1. Tag `vX.Y.Z` | Starts `release.yml`, which first checks that the tag names the version | Works. There was no such check (R5, fixed) |
+| 2. `Publish-HC360.ps1` | Web apps: install from the lockfile, type check, tests, build. .NET: every test. Publishes the server (self-contained, web apps included), HC360 Desktop and the lab agent. Writes `SHA256SUMS.txt` | **The tests have no database (R1, fixed)**. The staff app did not build on Windows (R7, fixed) |
 | 3. `Sign-HC360Release.ps1` | Signs HC360 Desktop's manifest (ECDSA P-256) with `HC360_RELEASE_SIGNING_KEY`. Without the secret, it builds unsigned and says so in the job summary | Tested in CI with a throwaway key |
-| 4. Check the signature | `desktop verify` with the keys built into this version, when the package was signed | **No key is built in (R2)**: a signed package fails here |
+| 4. Check the signature | `desktop verify` with the keys built into this version, when the package was signed. An unsigned package now stops a tagged release | **No key is built in (R2)**: a signed package fails here, and until the key exists no release can be made |
 | 5. Patch windows | No advisory past its window, and none unrecorded | Works |
 | 6. SBOMs | CycloneDX, for each package and web app, added to `SHA256SUMS.txt` | Works |
 | 7. Attach to the GitHub release | Zips, manifests, signature, SBOMs, checksums | Not yet run |
@@ -175,8 +192,8 @@ So one green run is good evidence, but it is not proof that the suite is stable.
 
 Follow [NANA-THENI-READINESS.md](NANA-THENI-READINESS.md), section 4. This release adds four things to it:
 
-1. **Before step 4 (check the files).** Compare the hashes with the checksums HyFib sent by the second channel (S1),
-   then unblock the extracted folder (R4).
+1. **In step 1, before anything runs.** Check the files against `SHA256SUMS.txt` and the copy HyFib sent another
+   way (S1), unblock the checked zip, and let the window run scripts (R4; DEPLOYMENT.md section 1).
 2. **After step 7 (install HC360).** Under Hospital setup › Features, turn the **patient portal** and **video
    consultations** off. They are on by default, and they belong to wave 7. ABDM is already off by default.
 3. **Accounts.** Give roles to pharmacy and stores staff and to administrators only. Without department switches,
@@ -191,7 +208,9 @@ Follow [NANA-THENI-READINESS.md](NANA-THENI-READINESS.md), section 4. This relea
 - the stores' movements of register drugs go to the pharmacy's registers, and both are live.
 
 The background services of other departments find nothing to work on. The pharmacy's refill reminders do run: decide
-in wave 1 whether they send SMS. The seams in MODULE-ROLLOUT-PLAN.md, section 3.4, begin at wave 3.
+in wave 1 whether they send SMS. The seams in MODULE-ROLLOUT-PLAN.md, section 3.4, begin at wave 2, with one: an
+emergency visit registered at the front office opens a case on the ER board, which goes live in wave 3. Close those
+cases at wave 3's take-on. From wave 3 they are many.
 
 ## 6. Undoing it
 
@@ -199,8 +218,9 @@ in wave 1 whether they send SMS. The seams in MODULE-ROLLOUT-PLAN.md, section 3.
   go-live means going back to entering in it alone. Print what was entered in HC360 that day from its registers, and
   enter it by hand.
 - **Upgrades from 1.0.1 onwards.** The way back is the previous package and the backup HC360 takes before an update.
-  Never the previous package alone: nothing found at start-up stops an older version from starting on a database a
-  newer one has changed (MODULE-ROLLOUT-PLAN.md, section 2). Rehearse each upgrade on a restored copy first.
+  Never the previous package alone: on a database a newer version changed, start-up now stops and changes nothing
+  (rollout item 7). DEPLOYMENT.md section 7, *Going back*, gives the steps. Rehearse each upgrade on a restored copy
+  first.
 - **HC360 Desktop.** Until R2 is closed, every new version is installed on each workstation with
   `Install-HC360Desktop.ps1`.
 
