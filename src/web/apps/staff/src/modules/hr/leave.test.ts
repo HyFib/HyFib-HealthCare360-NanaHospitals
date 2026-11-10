@@ -28,6 +28,8 @@ function type(partial: Partial<LeaveTypeDto>): LeaveTypeDto {
     applicableGender: null,
     isActive: true,
     version: 1,
+    inServiceEncashmentDaysPerYear: null,
+    minimumBalanceAfterEncashment: 0,
     ...partial,
   };
 }

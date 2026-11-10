@@ -61,10 +61,12 @@ internal sealed class HrSeeder(IOptions<PlatformOptions> options, INumberSeries 
 
     /// <summary>
     /// The seeded earnings the Code on Social Security 2020 leaves out of wages: house rent, conveyance and overtime
-    /// (s.2(88)(f), (d) and (h)). The others (medical, special, night duty, arrears, incentive) count as wages: the
-    /// definition does not leave them out.
+    /// (s.2(88)(f), (d) and (h)). Leave encashment is kept out too: the Supreme Court held it is not basic wages for
+    /// provident fund (Manipal Academy of Higher Education v. Provident Fund Commissioner, 2008); a hospital that treats it
+    /// otherwise for ESI changes the pay head's wage treatment. The others (medical, special, night duty, arrears,
+    /// incentive) count as wages: the definition does not leave them out.
     /// </summary>
-    internal static readonly IReadOnlySet<string> ExcludedFromWages = new HashSet<string>(StringComparer.Ordinal) { "HRA", "CONV", "OT" };
+    internal static readonly IReadOnlySet<string> ExcludedFromWages = new HashSet<string>(StringComparer.Ordinal) { "HRA", "CONV", "OT", LeaveEncashmentService.ComponentCode };
 
     private static readonly (string Code, string Name, SalaryComponentKind Kind, SalaryCalculationType Type, decimal Value, bool Taxable, bool Statutory, int Sort)[] Components =
     [
@@ -77,6 +79,7 @@ internal sealed class HrSeeder(IOptions<PlatformOptions> options, INumberSeries 
         ("OT", "Overtime", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 0, true, false, 70),
         ("ARREARS", "Arrears", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 0, true, false, 80),
         ("INCENTIVE", "Incentive", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 0, true, false, 90),
+        (LeaveEncashmentService.ComponentCode, "Leave Encashment", SalaryComponentKind.Earning, SalaryCalculationType.Fixed, 0, true, false, 95),
         ("CANTEEN", "Canteen Staff Credit", SalaryComponentKind.Deduction, SalaryCalculationType.Fixed, 0, false, false, 10),
         ("ADVANCE", "Salary Advance Recovery", SalaryComponentKind.Deduction, SalaryCalculationType.Fixed, 0, false, false, 20),
         ("LOAN", "Loan Recovery", SalaryComponentKind.Deduction, SalaryCalculationType.Fixed, 0, false, false, 30),

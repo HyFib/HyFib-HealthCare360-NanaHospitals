@@ -24,6 +24,7 @@ accounts are made when asked for, never stored, and each export is written to th
 | Gratuity | `GET …/employees/{id}/gratuity?asOf` (process or approve) | service and the current structure |
 | Bonus register | `GET …/bonus/{fy}?ratePercent&minimumWage` (process or approve) | the year's payslips |
 | Full and final statement | `POST …/employees/{id}/full-and-final` (payroll.process) | structure, leave balance, payslips, the recoveries given |
+| Full and final settled | `POST …/employees/{id}/full-and-final/settle` (payroll.approve, not one's own) | as the statement; debits the leave it pays out, once |
 | Employer and deductor details | `GET/PUT …/profile` (PUT: payroll.approve) | entered once per facility |
 | TDS challans (ITNS 281) | `GET/POST …/challans`, `DELETE …/challans/{id}` (POST/DELETE: payroll.approve) | entered after each deposit |
 | Form 26Q (FVU input) | `GET /api/v1/doctor-fees/tds/26q/{fy}/{quarter}/file`, check without `/file` (doctorfees.payouts.manage) | approved doctor payouts and the 26Q challans |
@@ -145,6 +146,13 @@ of the contribution period (April–September, October–March) once covered in 
   pay in lieu of notice when the employer withholds notice. Less notice not served (gross ÷ 30 a day, unless waived)
   and the recoveries given. It is a statement. Payment goes through the final payroll month (pay heads with
   `PaidOnLeaving` treatment) and its maker-checker approval.
+* **Settling it:** `…/full-and-final/settle` works the same statement out and debits the leave days it pays out from
+  the employee's encashable balances of the last working day's year, type by type in code order
+  (`LeaveBalance.Encashed`), recording each as a separation encashment (`hr.leave_encashments`), so the balance no longer
+  shows days already paid. Only for an employee with a leaving date (`settlement.not_leaving`), once
+  (`settlement.already_settled`, 409), with no in-service encashment waiting (`settlement.encashment_waiting`), and by
+  someone who approves payroll and is not the employee (`hr.pay_own`). Days given above the encashable balance are
+  refused (`settlement.leave_over_balance`). Audited `settlement.settled` at Warning.
 
 ## Bank files
 

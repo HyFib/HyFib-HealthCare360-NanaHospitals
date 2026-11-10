@@ -152,13 +152,16 @@ shift.
 | Method | Path | Permission | Body → Response |
 |---|---|---|---|
 | GET | `/api/v1/hr/leave/types` | hr.self, leave.approve or employees.read | → `LeaveTypeDto[]` |
-| POST/PUT | `/api/v1/hr/leave/types[/{id}]` | employees.manage | `SaveLeaveTypeRequest {code, name, annualQuota, carryForwardCap, isEncashable, isPaid, allowHalfDay, tracksBalance, countsNonWorkingDays, maxDaysPerRequest, documentRequiredAfterDays, applicableGender, isActive}` |
+| POST/PUT | `/api/v1/hr/leave/types[/{id}]` | employees.manage | `SaveLeaveTypeRequest {code, name, annualQuota, carryForwardCap, isEncashable, isPaid, allowHalfDay, tracksBalance, countsNonWorkingDays, maxDaysPerRequest, documentRequiredAfterDays, applicableGender, isActive, inServiceEncashmentDaysPerYear, minimumBalanceAfterEncashment}` |
 | GET | `/api/v1/hr/holidays?year` | hr.self, attendance.manage or leave.approve | facility holidays → `HolidayDto[]` |
 | POST/DELETE | `/api/v1/hr/holidays[/{id}]` | attendance.manage | `SaveHolidayRequest {date, name, kind: National|Festival|Restricted}` (restricted holidays are working days) |
 | GET | `/api/v1/hr/leave/balances?employeeId&year` | leave.approve or employees.read | → `LeaveBalanceDto {opening, credited, adjusted, availed, encashed, closing, pending, available}` |
 | POST | `/api/v1/hr/leave/balances/credit` | leave.approve | `CreditLeaveRequest {year}` → `CreditLeaveResult`; carry-forward (capped) + pro-rated quota; re-runnable |
 | POST | `/api/v1/hr/leave/balances/adjust` | leave.approve | `AdjustLeaveBalanceRequest {employeeId, leaveTypeId, year, days (±, half days), reason}` (comp-off credits, corrections; audited): a debit → 204; a credit → 202 (`hr.leave_adjust`); one's own → 403 `hr.leave_own` |
 | GET | `/api/v1/hr/leave/balances/pending?employeeId` | leave.approve or employees.read | → `PendingLeaveAdjustment[]` |
+| POST | `/api/v1/hr/leave/encashments` | payroll.process | `EncashLeaveRequest {employeeId, leaveTypeId, year, days, payYear, payMonth, reason}` → 202 (`hr.leave_encash`), approved by someone else who holds payroll.approve; one's own → 403 `hr.pay_own`; refused by the policy `leave.encash_not_allowed` / `leave.encash_over_cap` / `leave.encash_below_minimum`, for a leaver `leave.encash_leaving`, for an approved month `payroll.closed`, for a month to come `payroll.future_month` |
+| GET | `/api/v1/hr/leave/encashments?employeeId` · `/pending?employeeId` | payroll.process, payroll.approve or employees.read | → `LeaveEncashmentDto[]` (in service and on leaving) · `PendingLeaveEncashment[]` |
+| GET | `/api/v1/hr/leave/encashments/encashable?employeeId&year` | payroll.process or payroll.approve | → `EncashableLeaveDto[]`: per type that pays out in service, the cap, encashed this year, waiting, the most days now and the daily rate |
 | GET | `/api/v1/hr/leave/requests?status&employeeId&from&to` | leave.approve | → `LeaveRequestDto` (pending first) |
 | POST | `/api/v1/hr/employees/{employeeId}/leave-requests` | leave.approve | `ApplyLeaveRequest {leaveTypeId, fromDate, fromSession, toDate, toSession, reason, attachmentFileId}` (HR on behalf) |
 | POST | `/api/v1/hr/leave/requests/{id}/approve` · `/reject` · `/cancel` | leave.approve | `DecisionRequest` / `CancelLeaveRequest {reason}` |
@@ -168,6 +171,21 @@ Starting in the second half or ending in the first half removes half a day. Pend
 Overlapping requests are refused. The balance is re-checked at approval. Documents are required above
 `documentRequiredAfterDays`. Leave cannot cross the new year. Decisions on past dates recompute attendance
 immediately.
+
+**Leave encashment (HR-05).** A leave type that is encashable is paid out on leaving, in the full and final settlement;
+it is paid out while in service only when the type names `inServiceEncashmentDaysPerYear` (the yearly cap; none
+seeded, so each hospital opts in). An in-service encashment is asked for by HR who process payroll and approved by
+someone else who approves payroll, never the employee. It is checked against the policy when asked and again when
+approved (`LeaveEncashmentPolicy`): whole days unless the type allows half days; what was encashed in service this year
+plus what waits stays within the cap; and the balance left, after leave and encashments still waiting, stays at or
+above `minimumBalanceAfterEncashment`. Its days are reserved while it waits, as pending leave is (shown in the balance's
+`pending`). Approved, the days are debited (`LeaveBalance.Encashed`), the amount (days × the month's wages ÷ 30, the
+full and final settlement's wages) is posted into the month's payroll inputs as the `LEAVE_ENC` earning, and the
+encashment is kept in `hr.leave_encashments` with its approval and earning. In-service encashment is taxable salary:
+s.10(10AA) exempts leave encashment only on retirement or leaving, so `LEAVE_ENC` is a taxable pay head. It is kept
+out of PF and ESI wages (*Manipal Academy of Higher Education v. Provident Fund Commissioner*, Supreme Court, 2008). One
+encashment waits per employee at a time. An employee with a leaving date is refused (`leave.encash_leaving`): their
+leave is settled in the full and final settlement, which debits what it pays out ([statutory-returns.md](statutory-returns.md)).
 
 ### Payroll
 | Method | Path | Permission | Body → Response |
@@ -311,7 +329,7 @@ attendance terminal not heard from (to `hr.attendance.manage` holders, once per 
 ## Seed data (`HrSeeder`, order 110, idempotent)
 23 designations, leave types (CL 12, SL 12 with 30 carry-forward, EL 15 with 45 carry-forward and encashable, ML
 182 calendar days for women, CO, LOP unpaid), pay heads (BASIC, HRA 40 %, CONV, MEDICAL, SPECIAL, NIGHT, OT,
-ARREARS, INCENTIVE; deductions CANTEEN, ADVANCE, LOAN, UNIFORM, OTHER_DED; statutory PF/ESI/PT/TDS), professional
+ARREARS, INCENTIVE, LEAVE_ENC (taxable, outside PF and ESI wages); deductions CANTEEN, ADVANCE, LOAN, UNIFORM, OTHER_DED; statutory PF/ESI/PT/TDS), professional
 tax for **TN** (half-yearly, collected in Sep and Mar: ₹0 / 180 / 430 / 930 / 1,025 / 1,250 at ₹21,001 / 30,001 /
 45,001 / 60,001 / 75,001) and **KA** (₹200 a month from ₹25,000, ₹300 in February), and shifts GEN 09:00–17:30, MOR
 07:00–14:00, EVE 14:00–21:00 and NGT 21:00–07:00 per facility. National holidays (26 Jan, 1 May, 15 Aug, 2 Oct) are

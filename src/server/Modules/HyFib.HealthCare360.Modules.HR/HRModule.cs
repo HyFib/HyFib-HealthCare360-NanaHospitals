@@ -69,6 +69,7 @@ public sealed class HRModule : IModule
         // Maker-checker slice 11: payment details, pay and leave credits asked for and approved by someone else.
         services.AddScoped<PaymentDetailsApprovals>();
         services.AddScoped<PayApprovals>();
+        services.AddScoped<LeaveEncashmentService>();
 
         // Cross-module lookup (canteen staff credit and similar); identification only.
         services.AddScoped<IEmployeeDirectory, EmployeeDirectory>();

@@ -21,7 +21,17 @@ public sealed class LeaveType : AuditableEntity
     /// <summary>Maximum unused days carried into the next year (0 = lapses).</summary>
     public decimal CarryForwardCap { get; set; }
 
+    /// <summary>Unused days are paid out when the employee leaves (full and final settlement).</summary>
     public bool IsEncashable { get; set; }
+
+    /// <summary>
+    /// The most days of this type an employee may encash in a calendar year while still in service; null when the policy
+    /// pays out only on leaving. Needs <see cref="IsEncashable"/>.
+    /// </summary>
+    public decimal? InServiceEncashmentDaysPerYear { get; set; }
+
+    /// <summary>The days that must stay in the balance after an in-service encashment (the leave the policy keeps for use).</summary>
+    public decimal MinimumBalanceAfterEncashment { get; set; }
 
     /// <summary>Unpaid leave (LOP) reduces salary; paid leave does not.</summary>
     public bool IsPaid { get; set; } = true;
@@ -196,3 +206,48 @@ public sealed class Holiday : AuditableEntity, IFacilityScoped
 
     public bool IsClosure => Kind != HolidayKind.Restricted;
 }
+
+public enum LeaveEncashmentKind
+{
+    /// <summary>Asked for while in service, approved by a second person and paid through the month's payroll (taxable salary).</summary>
+    InService = 0,
+
+    /// <summary>Paid in the full and final settlement on leaving.</summary>
+    Separation,
+}
+
+/// <summary>
+/// Days of a leave balance paid out in money: the ledger behind <see cref="LeaveBalance.Encashed"/>. An in-service
+/// encashment names the payroll month and the earning it posted; a separation names the settlement's last working day.
+/// </summary>
+public sealed class LeaveEncashmentRecord : AuditableEntity, IFacilityScoped
+{
+    public Guid FacilityId { get; set; }
+    public Guid EmployeeId { get; set; }
+    public Guid LeaveTypeId { get; set; }
+
+    /// <summary>The balance year the days came from.</summary>
+    public int Year { get; set; }
+
+    public LeaveEncashmentKind Kind { get; set; }
+    public decimal Days { get; set; }
+
+    /// <summary>The month's encashment wages divided by the policy's divisor.</summary>
+    public decimal DailyRate { get; set; }
+
+    public decimal Amount { get; set; }
+
+    /// <summary>In service: the payroll run the earning was posted to, and the earning itself.</summary>
+    public Guid? PayrollRunId { get; set; }
+
+    public Guid? PayrollInputId { get; set; }
+
+    /// <summary>The approval it was made on (in service).</summary>
+    public Guid? ApprovalId { get; set; }
+
+    /// <summary>On leaving: the last working day the settlement was worked out to.</summary>
+    public DateOnly? LastWorkingDay { get; set; }
+
+    public string Reason { get; set; } = string.Empty;
+}
+

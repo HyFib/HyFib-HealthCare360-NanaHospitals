@@ -847,6 +847,12 @@ and grants nothing.
     - a manual leave credit (`hr.leave_adjust`): approved by someone else who holds `hr.leave.approve`; a debit is made at
       once; nobody adjusts their own balance or decides their own leave request (403 `hr.leave_own`). The yearly credit,
       worked out by rule, is unchanged;
+    - leave encashed while in service (`hr.leave_encash`, `POST /api/v1/hr/leave/encashments` answers 202): asked by
+      `hr.payroll.process`, approved by someone else who holds `hr.payroll.approve`, never the employee (`hr.pay_own`);
+      checked against the leave policy when asked and again when approved; approved, the balance is debited and the amount
+      posted to the month's payroll inputs, audited `leave.encashed` with both names. Settling a full and final statement
+      (`…/full-and-final/settle`, `hr.payroll.approve`, never one's own) debits the leave it pays out, once
+      (`settlement.already_settled`);
   - the PCPNDT Form F, the MTP second opinion and the mortuary (MAKER-CHECKER.md, slice 9):
     - an **ultrasound in pregnancy** (a study whose procedure requires a Form F) is cancelled only before its scan begins.
       Once started on the machine, acquired, or found in PACS, `POST /api/v1/radiology/studies/{id}/cancel` is refused

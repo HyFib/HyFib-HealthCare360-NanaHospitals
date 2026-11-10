@@ -17,7 +17,9 @@ public sealed record LeaveTypeDto(
     decimal? DocumentRequiredAfterDays,
     Gender? ApplicableGender,
     bool IsActive,
-    uint Version);
+    uint Version,
+    decimal? InServiceEncashmentDaysPerYear = null,
+    decimal MinimumBalanceAfterEncashment = 0);
 
 public sealed record SaveLeaveTypeRequest(
     string Code,
@@ -33,7 +35,9 @@ public sealed record SaveLeaveTypeRequest(
     decimal? DocumentRequiredAfterDays,
     Gender? ApplicableGender,
     bool IsActive,
-    uint? Version);
+    uint? Version,
+    decimal? InServiceEncashmentDaysPerYear = null,
+    decimal MinimumBalanceAfterEncashment = 0);
 
 public sealed record HolidayDto(Guid Id, DateOnly Date, string Name, HolidayKind Kind);
 
@@ -103,6 +107,12 @@ public sealed class SaveLeaveTypeRequestValidator : AbstractValidator<SaveLeaveT
         RuleFor(x => x.MaxDaysPerRequest).InclusiveBetween(0.5m, 366);
         RuleFor(x => x.DocumentRequiredAfterDays).InclusiveBetween(0, 366);
         RuleFor(x => x.AnnualQuota).Must(q => q * 2 == Math.Floor(q * 2)).WithMessage("Use whole or half days.");
+        RuleFor(x => x.InServiceEncashmentDaysPerYear).InclusiveBetween(0.5m, 366)
+            .Must(d => d is null || d * 2 == Math.Floor(d.Value * 2)).WithMessage("Use whole or half days.");
+        RuleFor(x => x.InServiceEncashmentDaysPerYear).Null().When(x => !x.IsEncashable || !x.TracksBalance)
+            .WithMessage("Only an encashable leave type that keeps a balance can be paid out in service.");
+        RuleFor(x => x.MinimumBalanceAfterEncashment).InclusiveBetween(0, 366)
+            .Must(d => d * 2 == Math.Floor(d * 2)).WithMessage("Use whole or half days.");
     }
 }
 
@@ -153,3 +163,48 @@ public sealed class CancelLeaveRequestValidator : AbstractValidator<CancelLeaveR
 {
     public CancelLeaveRequestValidator() => RuleFor(x => x.Reason).NotEmpty().SafeText(300);
 }
+
+/// <summary>
+/// An in-service leave encashment asked for: days of one leave type and year, paid in the payroll of
+/// <paramref name="PayYear"/>/<paramref name="PayMonth"/> once someone else who approves payroll approves it.
+/// </summary>
+public sealed record EncashLeaveRequest(Guid EmployeeId, Guid LeaveTypeId, int Year, decimal Days, int PayYear, int PayMonth, string Reason);
+
+/// <summary>An encashment made: in service through payroll, or on leaving in the full and final settlement.</summary>
+public sealed record LeaveEncashmentDto(
+    Guid Id,
+    Guid LeaveTypeId,
+    string LeaveTypeCode,
+    int Year,
+    LeaveEncashmentKind Kind,
+    decimal Days,
+    decimal DailyRate,
+    decimal Amount,
+    Guid? PayrollRunId,
+    string? PayrollMonth,
+    DateOnly? LastWorkingDay,
+    string Reason,
+    DateTimeOffset CreatedAt);
+
+/// <summary>An encashment waiting for a second person, for the employee's leave screen.</summary>
+public sealed record PendingLeaveEncashment(Guid ApprovalId, Guid LeaveTypeId, int Year, decimal Days, decimal Amount, string Summary, string RequestedBy, DateTimeOffset RequestedAt);
+
+/// <summary>What an employee may encash now, per leave type that pays out in service.</summary>
+public sealed record EncashableLeaveDto(Guid LeaveTypeId, string LeaveTypeCode, string LeaveTypeName, int Year, decimal CapPerYear, decimal MinimumBalance,
+    decimal EncashedThisYear, decimal Waiting, decimal MostDays, decimal DailyRate);
+
+public sealed class EncashLeaveRequestValidator : AbstractValidator<EncashLeaveRequest>
+{
+    public EncashLeaveRequestValidator()
+    {
+        RuleFor(x => x.EmployeeId).NotEmpty();
+        RuleFor(x => x.LeaveTypeId).NotEmpty();
+        RuleFor(x => x.Year).InclusiveBetween(2000, 2100);
+        RuleFor(x => x.Days).GreaterThan(0).LessThanOrEqualTo(366)
+            .Must(d => d * 2 == Math.Floor(d * 2)).WithMessage("Use whole or half days.");
+        RuleFor(x => x.PayYear).InclusiveBetween(2000, 2100);
+        RuleFor(x => x.PayMonth).InclusiveBetween(1, 12);
+        RuleFor(x => x.Reason).NotEmpty().SafeText(300);
+    }
+}
+

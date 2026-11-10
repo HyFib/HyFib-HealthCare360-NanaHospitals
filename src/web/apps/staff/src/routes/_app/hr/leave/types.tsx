@@ -19,7 +19,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
 import { hrApi, hrKeys, hrQueries, type LeaveTypeDto } from '@/modules/hr/api';
@@ -107,7 +107,9 @@ function LeaveTypesPage() {
                   )}
                   {t.isEncashable && (
                     <Badge size="small" appearance="tint">
-                      Encashable
+                      {t.inServiceEncashmentDaysPerYear !== null
+                        ? `Encashable, ${formatDays(t.inServiceEncashmentDaysPerYear)} a year in service`
+                        : 'Encashable on leaving'}
                     </Badge>
                   )}
                   {t.countsNonWorkingDays && (
@@ -182,6 +184,17 @@ const schema = z.object({
   documentRequiredAfterDays: z.number().min(0).max(366).nullable(),
   applicableGender: z.enum(['Male', 'Female', 'Other']).nullable(),
   isActive: z.boolean(),
+  inServiceEncashmentDaysPerYear: z
+    .number()
+    .min(0.5)
+    .max(366)
+    .refine((v) => v * 2 === Math.floor(v * 2), 'Use whole or half days.')
+    .nullable(),
+  minimumBalanceAfterEncashment: z
+    .number({ error: 'Enter the days kept (0 if none).' })
+    .min(0)
+    .max(366)
+    .refine((v) => v * 2 === Math.floor(v * 2), 'Use whole or half days.'),
 });
 
 type Values = z.infer<typeof schema>;
@@ -209,12 +222,20 @@ function LeaveTypeDrawer({ type, onClose }: { type: LeaveTypeDto | null; onClose
       documentRequiredAfterDays: type?.documentRequiredAfterDays ?? null,
       applicableGender: genderOrNull(type?.applicableGender),
       isActive: type?.isActive ?? true,
+      inServiceEncashmentDaysPerYear: type?.inServiceEncashmentDaysPerYear ?? null,
+      minimumBalanceAfterEncashment: type?.minimumBalanceAfterEncashment ?? 0,
     },
   });
+  const [encashable, tracksBalance] = useWatch({ control: form.control, name: ['isEncashable', 'tracksBalance'] });
 
   const save = useMutation({
     mutationFn: (v: Values) =>
-      hrApi.saveLeaveType(type?.id ?? null, { ...v, code: v.code.toUpperCase(), version: type?.version ?? null }),
+      hrApi.saveLeaveType(type?.id ?? null, {
+        ...v,
+        code: v.code.toUpperCase(),
+        inServiceEncashmentDaysPerYear: v.isEncashable && v.tracksBalance ? v.inServiceEncashmentDaysPerYear : null,
+        version: type?.version ?? null,
+      }),
     onSuccess: () => {
       notify.success('Leave type saved');
       void queryClient.invalidateQueries({ queryKey: hrKeys.masters });
@@ -301,6 +322,28 @@ function LeaveTypeDrawer({ type, onClose }: { type: LeaveTypeDto | null; onClose
         label="Counts holidays and weekly offs (calendar days, e.g. maternity)"
       />
       <SwitchField control={form.control} name="isEncashable" label="Unused days can be encashed" />
+      {encashable && tracksBalance && (
+        <FormGrid columns={2} minColumnWidth={160}>
+          <NumberField
+            control={form.control}
+            name="inServiceEncashmentDaysPerYear"
+            label="Encashed in service, at most (days a year)"
+            min={0.5}
+            max={366}
+            step={0.5}
+            hint="Blank: paid out only on leaving"
+          />
+          <NumberField
+            control={form.control}
+            name="minimumBalanceAfterEncashment"
+            label="Days kept after encashing"
+            required
+            min={0}
+            max={366}
+            step={0.5}
+          />
+        </FormGrid>
+      )}
       <SwitchField control={form.control} name="isActive" label="In use" />
     </EditorDrawer>
   );
