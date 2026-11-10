@@ -245,6 +245,15 @@ jobs:
           pwsh -NoProfile -File tests/deploy/Test-ReleaseSigning.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
+      # The release workflow's first step: the version in Directory.Build.props, and the tag that names it.
+      - name: Test the release's check of its version and tag
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-ReleaseVersion.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-ReleaseVersion.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
       # The preflight run on a machine before it becomes the Server Node: it only reads, it grades as DEPLOYMENT.md and the
       # SRS sizing say, and a run on the runner writes its report.
       - name: Test the Server Node preflight (Test-HC360ServerNode.ps1)

@@ -25,6 +25,15 @@ jobs:
         with:
           persist-credentials: false
 
+      # The packages are named after the version in Directory.Build.props, and the tag only starts the release: a tag
+      # v1.0.1 on a commit that still says 1.0.0 would publish packages named 1.0.0. Checked first, before an hour of
+      # build and tests. A pull request has no tag, so only its version is checked (tests/deploy/Test-ReleaseVersion.ps1).
+      - name: Check the version, and that the tag names it
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        run: ./tools/release/Test-ReleaseVersion.ps1 -Tag $env:RELEASE_TAG
+
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           global-json-file: global.json
@@ -116,6 +125,8 @@ jobs:
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
+          # A version with a label (v1.0.0-rc.1) is a release candidate: GitHub marks it a pre-release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             artifacts/*.zip
             artifacts/*.manifest.json
