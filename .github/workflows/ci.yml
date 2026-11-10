@@ -327,6 +327,14 @@ jobs:
       - name: Check formatting
         run: pnpm format:check
 
+      # The release is built on Windows, whose file names ignore case: two files whose names differ only in case are one
+      # file there, and an import of either finds the other (.github/scripts/case-clashes.mjs).
+      - name: Check that no two files differ only in case
+        working-directory: .
+        run: |
+          node --test .github/scripts/case-clashes.test.mjs
+          node .github/scripts/case-clashes.mjs
+
       - name: Type check
         run: pnpm -r typecheck
 
