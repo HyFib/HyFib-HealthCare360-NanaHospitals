@@ -1713,9 +1713,13 @@ add one, and every copy of HC360 runs the same checks (`ReleasePackages`):
   installs only while HC360 Desktop is closed, never goes back a version, and puts the previous version back when an
   installation fails. Users may start the task ("Restart to update") but not change it.
 
-An unsigned package is never installed by itself. Until HyFib has set up its key, releases are built unsigned (the
-release job's summary says so) and workstations are upgraded with `Install-HC360Desktop.ps1`, as before. IT can turn
-self-update off on a computer with `"autoUpdate": false` in its policy (`Install-HC360Desktop.ps1 -NoAutoUpdate`).
+An unsigned package is never installed by itself, and no release is made unsigned: the release workflow stops when
+the package is not signed. HC360 Desktop can update itself only from a version that already trusts the key, so the
+first version a workstation installs must be signed; a key added later would reach each workstation only when someone
+reinstalled it by hand. Until HyFib has set up its key, no release can be made. A pull request that changes the release
+build still runs it, unsigned and unpublished, and never receives the key. Workstations installed from a package without
+a signature, before this, are upgraded with `Install-HC360Desktop.ps1`. IT can turn self-update off on a computer with
+`"autoUpdate": false` in its policy (`Install-HC360Desktop.ps1 -NoAutoUpdate`).
 
 **Setting up the key, once (HyFib):**
 1. On a computer HyFib trusts with the key, run `.\tools\release\Sign-HC360Release.ps1 -NewKey -KeyPath <file>`, with
@@ -1724,9 +1728,12 @@ self-update off on a computer with `"autoUpdate": false` in its policy (`Install
    `Get-Content -Raw <file> | gh secret set HC360_RELEASE_SIGNING_KEY --repo HyFib/HyFib-HealthCare360-NanaHospitals`
    (or Settings › Secrets and variables › Actions). Keep one copy offline: an encrypted USB drive in the safe, or the
    company password manager.
-3. Add the printed public key to `ReleaseKeys.Trusted` and merge that before tagging the first release to be signed.
-   The release workflow checks each signature against the keys built into that same release, and fails when the key is
-   not among them, rather than publish a package no workstation would take.
+3. Add the printed public key to `ReleaseKeys.Trusted` and merge that before tagging the first release. The release
+   workflow stops without the secret, checks each signature against the keys built into that same release, and fails
+   when the key is not among them, rather than publish a package no workstation would take.
+
+Make the key on a computer HyFib controls, never in a CI job or a hosted development session: the private key must not
+pass through any log, transcript or shared machine.
 
 **Rotating it** (every few years, at once if it may be exposed, or when someone who held it leaves): make a new pair as
 above, add the new public key beside the old one and release that version signed with the old key; then replace the

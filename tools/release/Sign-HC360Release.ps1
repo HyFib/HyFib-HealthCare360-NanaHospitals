@@ -13,8 +13,9 @@
 
     The key is read from the HC360_RELEASE_SIGNING_KEY environment variable, never from a parameter, so it appears on no
     command line and in no log: a PKCS#8 private key in PEM form, the release workflow's secret. Without it
-    the package is not signed: the script says so, in the job summary too, and succeeds, so the release is still built.
-    HC360 Desktop never installs an unsigned package by itself.
+    the package is not signed: the script says so, in the job summary too, and succeeds. The release workflow then stops
+    before it publishes anything, since no release is made unsigned; a pull request's run of the release build goes on
+    unsigned. HC360 Desktop never installs an unsigned package by itself.
 
     -NewKey makes HyFib's key pair, once. The private key goes to -KeyPath, a new file only the current user can read: put
     it in the HC360_RELEASE_SIGNING_KEY secret, keep a copy offline, and delete the file. The public key is printed, with
