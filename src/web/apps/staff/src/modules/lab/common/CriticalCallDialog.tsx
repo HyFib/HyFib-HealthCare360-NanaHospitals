@@ -23,9 +23,9 @@ import {
 } from '@fluentui/react-components';
 import { CallRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useDebouncedValue, type LookupItem } from '@hc360/core';
+import { useDebouncedValue } from '@hc360/core';
 import { FormGrid, useUnsavedChanges } from '@hc360/ui';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -332,18 +332,21 @@ function PractitionerSearch({
   onChange,
 }: {
   value: string | null;
-  onChange: (item: LookupItem | null) => void;
+  onChange: (item: { id: string; name: string } | null) => void;
 }) {
   const [term, setTerm] = useState('');
-  const [selected, setSelected] = useState<LookupItem | null>(null);
+  const [selected, setSelected] = useState<{ id: string; name: string } | null>(null);
   const search = useDebouncedValue(term.trim(), 250);
   const results = useQuery({
     queryKey: ['lookups', 'practitioners', 'search', search],
     queryFn: () => searchPractitioners(search),
     enabled: search.length >= 2,
     staleTime: 60_000,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
-  const items = results.data ?? [];
+  // Below 2 characters there is no search, and the last one's results are not offered either.
+  const items = search.length >= 2 ? (results.data ?? []) : [];
 
   return (
     <Field label="Doctor in the system" hint="Optional: links the call to the doctor's record">
@@ -359,7 +362,8 @@ function PractitionerSearch({
           }
         }}
         onOptionSelect={(_, data) => {
-          const item = items.find((i) => i.id === data.optionValue) ?? null;
+          // The doctor comes from the option chosen, not from the results as they are by now.
+          const item = data.optionValue ? { id: data.optionValue, name: data.optionText ?? '' } : null;
           setSelected(item);
           setTerm('');
           onChange(item);
