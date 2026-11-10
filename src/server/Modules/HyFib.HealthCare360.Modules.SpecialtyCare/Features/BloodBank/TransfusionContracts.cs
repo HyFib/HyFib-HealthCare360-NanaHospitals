@@ -73,13 +73,31 @@ public sealed record ReportReactionRequest(
     DateTimeOffset OnsetAt, IReadOnlyList<ReactionSymptom> Symptoms, string? Vitals, bool TransfusionStopped, int? VolumeTransfusedMl, string? ActionsTaken,
     ReactionSeverity Severity);
 
-public sealed record CloseReactionRequest(ReactionType Type, ReactionSeverity Severity, string Findings, bool ReportedToHaemovigilance);
+public sealed record CloseReactionRequest(
+    ReactionType Type, ReactionSeverity Severity, string Findings, bool ReportedToHaemovigilance, ReactionImputability Imputability = ReactionImputability.NotAssessed);
+
+/// <summary>The blood bank's classification while the reaction is investigated; lowering severity or imputability needs a reason and waits.</summary>
+public sealed record ClassifyReactionRequest(ReactionType Type, ReactionSeverity Severity, ReactionImputability Imputability, string? Reason, uint Version);
 
 public sealed record TransfusionReactionDto(
     Guid Id, Guid IssueId, Guid RequestId, Guid PatientId, string Uhid, string PatientName, string UnitNumber, DateTimeOffset ReportedAt,
     string? ReportedByName, DateTimeOffset OnsetAt, IReadOnlyList<ReactionSymptom> Symptoms, string? Vitals, bool TransfusionStopped,
     int? VolumeTransfusedMl, string? ActionsTaken, ReactionSeverity Severity, ReactionType Type, ReactionStatus Status, string? InvestigationFindings,
-    bool ReportedToHaemovigilance, DateTimeOffset? ClosedAt, string? ClosedByName);
+    bool ReportedToHaemovigilance, DateTimeOffset? ClosedAt, string? ClosedByName)
+{
+    public ReactionImputability Imputability { get; init; }
+
+    /// <summary>Who lowered the classification, who asked, and why, when it was lowered.</summary>
+    public string? LoweredByName { get; init; }
+
+    public string? LowerRequestedByName { get; init; }
+    public string? LowerReason { get; init; }
+
+    /// <summary>A lowering asked for and waiting for the medical officer, if any.</summary>
+    public Guid? LowerPendingApprovalId { get; init; }
+
+    public uint Version { get; init; }
+}
 
 public sealed class DiscardUnitRequestValidator : AbstractValidator<DiscardUnitRequest>
 {
@@ -154,6 +172,19 @@ public sealed class CloseReactionRequestValidator : AbstractValidator<CloseReact
     public CloseReactionRequestValidator()
     {
         RuleFor(x => x.Type).NotEqual(ReactionType.Unclassified).WithMessage("Classify the reaction.");
+        RuleFor(x => x.Imputability).IsInEnum().NotEqual(ReactionImputability.NotAssessed).WithMessage("Assess the imputability.");
         RuleFor(x => x.Findings).NotEmpty().SafeText(4000);
+    }
+}
+
+public sealed class ClassifyReactionRequestValidator : AbstractValidator<ClassifyReactionRequest>
+{
+    public ClassifyReactionRequestValidator()
+    {
+        RuleFor(x => x.Type).IsInEnum();
+        RuleFor(x => x.Severity).IsInEnum();
+        RuleFor(x => x.Imputability).IsInEnum();
+        RuleFor(x => x.Reason).SafeText(1000);
+        RuleFor(x => x.Version).SeenVersion();
     }
 }

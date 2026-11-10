@@ -369,6 +369,7 @@ const series = (
   maxLength: 30,
   defaultFormat: format,
   defaultResetPolicy: 'Yearly',
+  gstDocument: false,
   ...more,
 });
 

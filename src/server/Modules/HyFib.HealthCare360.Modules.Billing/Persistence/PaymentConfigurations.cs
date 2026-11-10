@@ -200,6 +200,41 @@ internal sealed class CreditNoteLineConfiguration : IEntityTypeConfiguration<Cre
     }
 }
 
+internal sealed class DebitNoteConfiguration : IEntityTypeConfiguration<DebitNote>
+{
+    public void Configure(EntityTypeBuilder<DebitNote> b)
+    {
+        b.ToTable("debit_notes", BillingSchema.Name);
+        b.Property(x => x.Number).HasMaxLength(24);
+        b.Property(x => x.Party).HasMaxLength(16);
+        b.Property(x => x.Reason).HasMaxLength(300);
+        b.Property(x => x.RequestedByName).HasMaxLength(200);
+        b.Property(x => x.IssuedByName).HasMaxLength(200);
+        b.HasOne<Bill>().WithMany().HasForeignKey(x => x.BillId).OnDelete(DeleteBehavior.Restrict);
+        b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.DebitNoteId).OnDelete(DeleteBehavior.Cascade);
+        b.Ignore(x => x.GstAmount);
+        b.HasIndex(x => x.Number).IsUnique();
+        b.HasIndex(x => x.BillId);
+        b.HasIndex(x => new { x.FacilityId, x.IssuedAt });
+    }
+}
+
+internal sealed class DebitNoteLineConfiguration : IEntityTypeConfiguration<DebitNoteLine>
+{
+    public void Configure(EntityTypeBuilder<DebitNoteLine> b)
+    {
+        b.ToTable("debit_note_lines", BillingSchema.Name);
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Description).HasMaxLength(300);
+        b.Property(x => x.SacCode).HasMaxLength(16);
+        b.Property(x => x.GstRate).HasPrecision(5, 2);
+        b.Ignore(x => x.GstAmount);
+        b.HasOne<BillLine>().WithMany().HasForeignKey(x => x.BillLineId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.BillLineId);
+        b.HasIndex(x => x.DebitNoteId);
+    }
+}
+
 internal sealed class CashierShiftConfiguration : IEntityTypeConfiguration<CashierShift>
 {
     public void Configure(EntityTypeBuilder<CashierShift> b)

@@ -65,7 +65,56 @@ public sealed class EmergencyCase : AuditableEntity, IFacilityScoped
     /// <summary>The scanned LAMA form, a file of the document store.</summary>
     public Guid? LamaSignedFormFileId { get; private set; }
 
+    /// <summary>The bay the patient is in now, if any (<see cref="ErBay"/>); freed when they move or leave.</summary>
+    public Guid? BayId { get; private set; }
+
+    public DateTimeOffset? BayAssignedAt { get; private set; }
+
     public bool IsOpen => Disposition is null;
+
+    /// <summary>
+    /// Puts the patient in <paramref name="bay"/>, or moves them there from the bay they were in. The service checks that no
+    /// other open case holds the bay; the database's unique index on an open case's bay is the last word.
+    /// </summary>
+    public Result PutInBay(ErBay bay, DateTimeOffset now)
+    {
+        if (!IsOpen)
+        {
+            return Error.Rule("er.closed", "The patient has left the emergency department.");
+        }
+
+        if (!bay.IsActive)
+        {
+            return Error.Rule("er.bay_inactive", $"Bay {bay.Code} is out of use.");
+        }
+
+        if (bay.FacilityId != FacilityId)
+        {
+            return Error.Field("bayId", "Choose a bay of this emergency department.");
+        }
+
+        if (BayId == bay.Id)
+        {
+            return Result.Success();
+        }
+
+        BayId = bay.Id;
+        BayAssignedAt = now;
+        return Result.Success();
+    }
+
+    /// <summary>Frees the patient's bay (they went for a scan, to a chair, or the bay is needed for someone sicker).</summary>
+    public Result ReleaseBay()
+    {
+        if (BayId is null)
+        {
+            return Error.Rule("er.no_bay", "The patient is not in a bay.");
+        }
+
+        BayId = null;
+        BayAssignedAt = null;
+        return Result.Success();
+    }
 
     public Result Triage(EsiTriage triage, ArrivalMode arrivalMode)
     {
@@ -143,6 +192,10 @@ public sealed class EmergencyCase : AuditableEntity, IFacilityScoped
 
         Disposition = disposition;
         DisposedAt = now;
+
+        // Leaving the department frees the bay for the next patient.
+        BayId = null;
+        BayAssignedAt = null;
         DisposedByName = byName;
         DispositionNotes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
         ReferredTo = disposition == EmergencyDisposition.ReferredOut ? referredTo!.Trim() : null;

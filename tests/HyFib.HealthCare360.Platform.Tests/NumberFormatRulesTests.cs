@@ -113,6 +113,24 @@ public sealed class NumberFormatRulesTests
     }
 
     [Fact]
+    public void A_series_that_must_carry_the_facility_code_needs_it_with_one_facility()
+    {
+        var pass = new NumberSeriesDefinition("visitor-pass", "Visitor pass", "Front office", "{FAC}VP{YY}{MM}{DD}-{SEQ:4}", NumberResetPolicy.Daily, MaxLength: 24)
+        {
+            FacilityCodeReason = "Passes are checked at every gate.",
+        };
+
+        NumberFormatRules.Check(Change(pass, "VP{YY}{MM}{DD}-{SEQ:4}") with { ResetPolicy = NumberResetPolicy.Daily })[NumberFormatRules.FormatField]
+            .ShouldBe(["Add {FAC}. Passes are checked at every gate."]);
+        NumberFormatRules.Check(Change(pass, "{FAC}VP{YY}{MM}{DD}-{SEQ:4}") with { ResetPolicy = NumberResetPolicy.Daily }).ShouldBeEmpty();
+
+        // A format saved before the rule gets the facility code in front when numbers are made; others are left as they are.
+        NumberSeriesService.WithFacilityCode(pass, "VP{YY}{MM}{DD}-{SEQ:4}").ShouldBe("{FAC}VP{YY}{MM}{DD}-{SEQ:4}");
+        NumberSeriesService.WithFacilityCode(pass, "V{FAC}{YY}{SEQ:4}").ShouldBe("V{FAC}{YY}{SEQ:4}");
+        NumberSeriesService.WithFacilityCode(OpBill, "OB{YY}{SEQ:7}").ShouldBe("OB{YY}{SEQ:7}");
+    }
+
+    [Fact]
     public void A_changed_format_must_differ_from_the_other_series()
     {
         var change = Change(OpBill, "{FAC}IB{YY}{SEQ:7}") with { OtherFormats = [new OtherNumberFormat("IP bill", "{FAC}IB{YY}{SEQ:7}", IsDefault: true)] };
@@ -368,6 +386,51 @@ public sealed class NumberFormatRulesTests
         NumberFormatRules.LargestStartAt(Uhid, "{FAC}{YY}{SEQ:6}").ShouldBe(999_999);
         NumberFormatRules.LargestStartAt(OpBill, "{FAC}OB{YY}").ShouldBeNull();
     }
+
+    private static readonly NumberSeriesDefinition GstBill =
+        new("billing.bill.op", "OP bill", "Billing", "{FAC}OB{YY}{SEQ:6}", NumberResetPolicy.Yearly, MaxLength: 24) { GstDocument = true };
+
+    /// <summary>GST rule 46: the old OP bill default, {FAC}OB{YY}{SEQ:7}, reaches 17 characters at a 6-letter facility code.</summary>
+    [Fact]
+    public void A_gst_invoice_format_that_can_pass_16_characters_is_refused()
+    {
+        var errors = NumberFormatRules.Check(Change(GstBill, "{FAC}OB{YY}{SEQ:7}"));
+        errors[NumberFormatRules.FormatField].ShouldBe([
+            "GST rule 46 allows at most 16 characters in an invoice or note number; numbers in this format can reach 17 " +
+            "(facility code 6, date 2, running number 7, fixed text 2). Shorten the fixed text, use {YY} instead of {YYYY}, or use fewer digits in {SEQ:n}.",
+        ]);
+    }
+
+    [Theory]
+    [InlineData("{FAC}OB{YY}{SEQ:6}", 6, true)]   // 16
+    [InlineData("{FAC}OB{YY}{SEQ:7}", 5, true)]   // 16 at the hospital's longest code of 5 letters
+    [InlineData("{FAC}OB{YY}{SEQ:7}", 6, false)]  // 17
+    [InlineData("{FAC}OB{YY}{SEQ}", 6, true)]     // the running number is taken as 6 digits a year
+    [InlineData("{FAC}/OB/{YYYY}/{SEQ:5}", 4, false)]
+    public void A_gst_number_is_measured_with_the_longest_facility_code_and_a_years_running_number(string format, int facilityCode, bool fits)
+    {
+        var errors = NumberFormatRules.Check(Change(GstBill, format) with { LongestFacilityCode = facilityCode });
+        errors.ContainsKey(NumberFormatRules.FormatField).ShouldBe(!fits);
+    }
+
+    [Fact]
+    public void A_gst_series_that_never_starts_again_is_measured_as_growing()
+    {
+        NumberFormatRules.GstProblems("{FAC}B{SEQ:5}", NumberResetPolicy.Never, 6).ShouldBeEmpty(); // 6 + 1 + 8 = 15
+        NumberFormatRules.GstProblems("{FAC}BL{YY}{SEQ:5}", NumberResetPolicy.Never, 6).Single().ShouldContain("running number 8, since it never starts again");
+    }
+
+    [Theory]
+    [InlineData("{SEQ:6}{YY}")]
+    [InlineData("{MM}{YY}{SEQ:6}")]
+    [InlineData("0B{YY}{SEQ:6}")]
+    public void A_gst_number_may_not_start_with_zero(string format) =>
+        NumberFormatRules.GstProblems(format, NumberResetPolicy.Yearly, 2).ShouldContain(
+            "The e-invoice portal refuses invoice and note numbers that start with 0. Start the format with a letter, {FAC} or the year.");
+
+    [Fact]
+    public void Series_that_are_not_gst_documents_keep_their_24_characters() =>
+        NumberFormatRules.Check(Change(OpBill, "{FAC}OB{YY}{SEQ:8}")).ShouldBeEmpty();
 
     private static NumberFormatChange Change(NumberSeriesDefinition series, string format) => new()
     {

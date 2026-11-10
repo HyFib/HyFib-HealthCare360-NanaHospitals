@@ -12,11 +12,11 @@
 // messages it queued for one, in its database (HC360_DEMO_DB, a connection URI for psql).
 
 import { chromium } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PORTAL_PATIENT } from './app/personas.ts';
 import { Api, BASE } from './lib/api.mjs';
+import { ask, sentCodes } from './lib/db.mjs';
 import { walkRole } from './lib/walk.mjs';
 
 const PASSWORD = process.env.HC360_DEMO_PASSWORD;
@@ -40,7 +40,6 @@ const PARALLEL = Number(process.env.DEMO_PARALLEL ?? 3);
 const MAX_MINUTES = Number(process.env.DEMO_MAX_MINUTES ?? 40);
 /** Where the server serves the patient portal: its own port, which a hospital opens to the internet. */
 const PORTAL = process.env.HC360_PORTAL ?? 'https://localhost:7361';
-const DB = process.env.HC360_DEMO_DB;
 
 const ORIGINS = new Set([new URL(BASE).origin, new URL(PORTAL).origin]);
 const isApi = (url) => {
@@ -84,33 +83,13 @@ async function patientIds() {
   return (await admin.get('/api/v1/patients?page=1&pageSize=50')).items.map((p) => p.id);
 }
 
-/** Asks the demo server's database (psql, HC360_DEMO_DB) one question; `values` are passed as psql variables. */
-function ask(query, values) {
-  if (!DB) {
-    throw new Error("Set HC360_DEMO_DB to a connection URI for the demo server's database (the patient role).");
-  }
-  const variables = Object.entries(values).flatMap(([name, value]) => ['-v', `${name}=${value}`]);
-  return execFileSync('psql', [DB, '-At', '-v', 'ON_ERROR_STOP=1', ...variables], { input: query, encoding: 'utf8' })
-    .split('\n')
-    .filter(Boolean)
-    .map((row) => row.split('|'));
-}
-
-/** The portal sign-in codes the server has queued for a number, as [message id, code]. */
-const sentCodes = (phone) =>
-  ask(
-    `select id, payload->'values'->>'code' from platform.outbox_messages
-     where payload->>'templateKey' = 'auth.otp' and payload->>'to' = :'phone';`,
-    { phone },
-  );
-
 /** Signs in to the patient portal as PORTAL_PATIENT, with the code the server sent to their phone. */
 async function signInPatient(page) {
   const [[phone] = []] = ask(`select phone from patients.patients where full_name = :'name' limit 1;`, {
     name: PORTAL_PATIENT,
   });
   if (!phone) throw new Error(`No patient called ${PORTAL_PATIENT}: run story.mjs first.`);
-  const earlier = new Set(sentCodes(phone).map(([id]) => id));
+  const earlier = new Set(sentCodes('auth.otp', phone).map(([id]) => id));
   await page.goto(`${PORTAL}/portal/sign-in`);
   const number = page.locator('input[autocomplete="tel-national"]');
   await number.fill(phone.replace(/^\+91/, ''));
@@ -120,7 +99,7 @@ async function signInPatient(page) {
   ]);
   let code;
   for (let i = 0; i < 40 && !code; i++) {
-    code = sentCodes(phone).find(([id]) => !earlier.has(id))?.[1];
+    code = sentCodes('auth.otp', phone).find(([id]) => !earlier.has(id))?.[1];
     if (!code) await page.waitForTimeout(250);
   }
   if (!code) throw new Error(`The server queued no sign-in code for ${PORTAL_PATIENT}.`);

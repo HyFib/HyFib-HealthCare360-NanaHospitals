@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.HR.Domain;
+using HyFib.HealthCare360.Modules.HR.Services;
 
 namespace HyFib.HealthCare360.Modules.HR.Features.Payroll;
 
@@ -155,74 +156,12 @@ internal static class PayrollSetupEndpoints
         return TypedResults.Ok(structures.Select(s => ToDto(s, components)).ToList());
     }
 
-    /// <summary>A new structure closes the one in force the day before it starts (salary revisions keep history).</summary>
-    private static async Task<IResult> CreateStructure(Guid employeeId, SaveSalaryStructureRequest request, HospitalDbContext db, CancellationToken ct)
-    {
-        var employee = await db.Set<Employee>().AsNoTracking().Where(e => e.Id == employeeId).Select(e => new { e.FacilityId, e.JoiningDate, e.Status }).FirstOrDefaultAsync(ct);
-        if (employee is null)
-        {
-            return Error.NotFound(nameof(Employee), employeeId).ToProblem();
-        }
-
-        if (employee.Status == EmployeeStatus.Separated)
-        {
-            return Error.Rule("employee.separated", "Salary structures cannot be added for separated employees.").ToProblem();
-        }
-
-        var componentIds = request.Lines.Select(l => l.SalaryComponentId).ToList();
-        var components = await db.Set<SalaryComponent>().AsNoTracking().Where(c => componentIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, ct);
-        if (components.Count != componentIds.Count || components.Values.Any(c => c.IsStatutory || !c.IsActive))
-        {
-            return Error.Field("lines", "Use active, non-statutory pay heads only (PF, ESI, PT and TDS are computed).").ToProblem();
-        }
-
-        if (!components.Values.Any(c => c.Code == SalaryComponent.BasicCode))
-        {
-            return Error.Field("lines", "A salary structure needs a BASIC pay head.").ToProblem();
-        }
-
-        if (request.Lines.Any(l => components[l.SalaryComponentId].CalculationType == SalaryCalculationType.PercentOfBasic && l.Value > 100))
-        {
-            return Error.Field("lines", "A percentage of basic cannot exceed 100.").ToProblem();
-        }
-
-        var locked = await db.Set<PayrollRun>().AnyAsync(r => r.FacilityId == employee.FacilityId && r.Status != PayrollRunStatus.Draft
-                                                          && r.Status != PayrollRunStatus.Processed
-                                                          && (r.Year * 100) + r.Month >= (request.EffectiveFrom.Year * 100) + request.EffectiveFrom.Month, ct);
-        if (locked)
-        {
-            return Error.Rule("salary_structure.month_closed", "Payroll for that month is already approved; revisions start from the next open month.").ToProblem();
-        }
-
-        var existing = await db.Set<EmployeeSalaryStructure>().Where(s => s.EmployeeId == employeeId).ToListAsync(ct);
-        if (existing.Any(s => s.EffectiveFrom >= request.EffectiveFrom))
-        {
-            return Error.Conflict("salary_structure.overlap", "A structure already starts on or after this date.").ToProblem();
-        }
-
-        foreach (var open in existing.Where(s => s.EffectiveTo is null || s.EffectiveTo >= request.EffectiveFrom))
-        {
-            open.EffectiveTo = request.EffectiveFrom.AddDays(-1);
-        }
-
-        var structure = new EmployeeSalaryStructure
-        {
-            FacilityId = employee.FacilityId,
-            EmployeeId = employeeId,
-            EffectiveFrom = request.EffectiveFrom,
-            AnnualCtc = request.AnnualCtc,
-            MonthlyTds = Money.Round(request.MonthlyTds),
-            PfApplicable = request.PfApplicable,
-            PfOnActualBasic = request.PfOnActualBasic,
-            EsiApplicable = request.EsiApplicable,
-            ProfessionalTaxState = string.IsNullOrWhiteSpace(request.ProfessionalTaxState) ? null : request.ProfessionalTaxState.Trim().ToUpperInvariant(),
-            Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
-        };
-        structure.Lines.AddRange(request.Lines.Select(l => new SalaryStructureLine { StructureId = structure.Id, SalaryComponentId = l.SalaryComponentId, Value = l.Value }));
-        db.Add(structure);
-        await db.SaveChangesAsync(ct);
-        return TypedResults.Created($"/api/v1/hr/employees/{employeeId}/salary-structures", new { structure.Id });
-    }
+    /// <summary>
+    /// A new structure closes the one in force the day before it starts (salary revisions keep history). It is asked for
+    /// (202) and made once someone else who approves payroll approves it (maker-checker slice 11).
+    /// </summary>
+    private static async Task<IResult> CreateStructure(Guid employeeId, SaveSalaryStructureRequest request, PayApprovals pay, CancellationToken ct) =>
+        (await pay.AskStructureAsync(employeeId, request, ct)).ToHttpResult(asked => TypedResults.Accepted($"/api/v1/approvals/{asked.Id}", asked));
 
     internal static SalaryStructureDto ToDto(EmployeeSalaryStructure s, IReadOnlyDictionary<Guid, SalaryComponent> components)
     {

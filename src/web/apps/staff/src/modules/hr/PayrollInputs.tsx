@@ -19,37 +19,58 @@ import {
   Tooltip,
 } from '@fluentui/react-components';
 import { AddRegular, ArrowUploadRegular, DeleteRegular } from '@fluentui/react-icons';
-import { formatInr, humanize, isApiError } from '@hc360/core';
+import { formatDateTime, formatInr, humanize, isApiError } from '@hc360/core';
 import { ConfirmDialog, DataTable, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { hrApi, hrKeys, hrQueries, type PayrollInputDto } from './api';
+import { hrApi, hrKeys, hrQueries, isApprovalRequest, type PayrollInputDto } from './api';
 import { EmployeePicker, type PickedEmployee } from './EmployeePicker';
 import { PAYROLL_INPUT_KINDS, payrollInputKindLabel, type PayrollInputKind } from './labels';
+import { payRefusal } from './makerChecker';
 import { inputAmountLabel, previewInputsCsv, previewTotal } from './payroll';
 import { readTextFile } from './shared/files';
 import { Toolbar } from './shared/layout';
 
 /**
  * The month's variable items: one-off earnings and recoveries, loss-of-pay and TDS overrides, and deductions posted by
- * other modules (canteen credit). Editable until the payroll is approved.
+ * other modules (canteen credit). Editable until the payroll is approved. What raises pay (an earning, an override, a file
+ * with earnings) and a deduction another module posted or another person entered, taken off, wait for someone else who
+ * approves payroll; nobody changes their own pay (maker-checker slice 11). What waits is listed above the inputs.
  */
 export function PayrollInputsPanel({ runId, editable }: { runId: string; editable: boolean }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const inputs = useQuery(hrQueries.payrollInputs(runId));
+  const pending = useQuery(hrQueries.pendingPayChanges({ runId }));
+  const waiting = pending.data ?? [];
+  const removalWaiting = new Set(waiting.map((p) => p.inputId).filter(Boolean));
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
   const [deleting, setDeleting] = useState<PayrollInputDto | null>(null);
 
   const remove = useMutation({
     mutationFn: (id: string) => hrApi.deleteInput(id),
-    onSuccess: () => {
+    onSuccess: (asked) => {
       setDeleting(null);
-      notify.success('Input removed', 'Process the payroll again to update the payslip.');
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          'Someone else who approves payroll decides it; the deduction stays until then.',
+        );
+      } else {
+        notify.success('Input removed', 'Process the payroll again to update the payslip.');
+      }
       void queryClient.invalidateQueries({ queryKey: hrKeys.payroll });
     },
-    onError: (error) => notify.error(error, 'Could not remove the input'),
+    onError: (error) => {
+      setDeleting(null);
+      const words = isApiError(error) ? payRefusal(error.code) : null;
+      if (words) {
+        notify.warning('Not removed', words);
+      } else {
+        notify.error(error, 'Could not remove the input');
+      }
+    },
   });
 
   const total = (inputs.data ?? []).reduce(
@@ -82,6 +103,22 @@ export function PayrollInputsPanel({ runId, editable }: { runId: string; editabl
           {formatInr(total.deductions)}
         </Caption1>
       </Toolbar>
+      {waiting.length > 0 && (
+        <MessageBar intent="warning" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Asked for approval: {waiting.length} change(s) wait</MessageBarTitle>
+            Someone else who approves payroll decides each, never the person who asked and never the employee whose pay
+            it is. Nothing below changes until then.
+            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+              {waiting.map((p) => (
+                <li key={p.approvalId}>
+                  {p.summary} · asked for by {p.requestedBy}, {formatDateTime(p.requestedAt)}
+                </li>
+              ))}
+            </ul>
+          </MessageBarBody>
+        </MessageBar>
+      )}
       <DataTable
         ariaLabel="Payroll inputs"
         rows={inputs.data}
@@ -115,11 +152,14 @@ export function PayrollInputsPanel({ runId, editable }: { runId: string; editabl
         ]}
         rowActions={
           editable
-            ? (i) => (
-                <Tooltip content="Remove this input" relationship="label">
-                  <Button size="small" appearance="subtle" icon={<DeleteRegular />} onClick={() => setDeleting(i)} />
-                </Tooltip>
-              )
+            ? (i) =>
+                removalWaiting.has(i.id) ? (
+                  <Caption1>Removal waiting</Caption1>
+                ) : (
+                  <Tooltip content="Remove this input" relationship="label">
+                    <Button size="small" appearance="subtle" icon={<DeleteRegular />} onClick={() => setDeleting(i)} />
+                  </Tooltip>
+                )
             : undefined
         }
         emptyTitle="No inputs this month"
@@ -130,15 +170,25 @@ export function PayrollInputsPanel({ runId, editable }: { runId: string; editabl
       {importing && <ImportDialog runId={runId} onClose={() => setImporting(false)} />}
       <ConfirmDialog
         open={deleting !== null}
-        title="Remove this input?"
-        confirmLabel="Remove"
+        title={
+          deleting?.kind === 'Deduction' && deleting.source === 'Integration'
+            ? 'Ask for this deduction to be removed?'
+            : 'Remove this input?'
+        }
+        confirmLabel={
+          deleting?.kind === 'Deduction' && deleting.source === 'Integration' ? 'Ask for approval' : 'Remove'
+        }
         destructive
         busy={remove.isPending}
         onConfirm={() => deleting && remove.mutate(deleting.id)}
         onCancel={() => setDeleting(null)}
       >
         {deleting
-          ? `${deleting.employeeName}: ${payrollInputKindLabel[deleting.kind]} ${inputAmountLabel(deleting.kind, deleting.amount)}.`
+          ? `${deleting.employeeName}: ${payrollInputKindLabel[deleting.kind]} ${inputAmountLabel(deleting.kind, deleting.amount)}.${
+              deleting.kind === 'Deduction'
+                ? ' A deduction another module posted, or another person entered, is taken off only when someone else who approves payroll approves it.'
+                : ''
+            }`
           : null}
       </ConfirmDialog>
     </>
@@ -156,7 +206,9 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
   const [amount, setAmount] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const needsHead = kind === 'Earning' || kind === 'Deduction';
+  const waits = kind !== 'Deduction';
   const heads = useMemo(
     () =>
       (components.data ?? []).filter(
@@ -179,19 +231,30 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
       return;
     }
     setBusy(true);
+    setRefusal(null);
     try {
-      await hrApi.addInput(runId, {
+      const added = await hrApi.addInput(runId, {
         employeeId: employee.id,
         kind,
         componentCode: needsHead ? componentCode : null,
         description: description.trim(),
         amount: value,
       });
-      notify.success('Input added', 'Process the payroll again to include it.');
+      if (isApprovalRequest(added)) {
+        notify.success(
+          'Asked for approval',
+          `${added.summary}. Someone else who approves payroll approves it; then process the payroll again.`,
+        );
+      } else {
+        notify.success('Input added', 'Process the payroll again to include it.');
+      }
       void queryClient.invalidateQueries({ queryKey: hrKeys.payroll });
       onClose();
     } catch (error) {
-      if (isApiError(error) && error.isValidation) {
+      const words = isApiError(error) ? payRefusal(error.code) : null;
+      if (words) {
+        setRefusal(words);
+      } else if (isApiError(error) && error.isValidation) {
         setErrors(
           Object.fromEntries(Object.entries(error.fieldErrors).map(([field, messages]) => [field, messages[0] ?? ''])),
         );
@@ -295,6 +358,20 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
                   onChange={(_, d) => setAmount(d.value)}
                 />
               </Field>
+              <Caption1>
+                {waits
+                  ? 'This raises or replaces pay, so it waits for someone else who approves payroll, never you.'
+                  : 'A deduction is added at once.'}{' '}
+                Nobody enters a change to their own pay.
+              </Caption1>
+              {refusal && (
+                <MessageBar intent="error" layout="multiline" politeness="assertive">
+                  <MessageBarBody>
+                    <MessageBarTitle>Not added</MessageBarTitle>
+                    {refusal}
+                  </MessageBarBody>
+                </MessageBar>
+              )}
             </DialogContent>
             <DialogActions>
               <Button onClick={guard.requestClose} disabled={busy}>
@@ -306,7 +383,7 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
                 disabled={busy}
                 icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
-                Add
+                {waits ? 'Ask for approval' : 'Add'}
               </Button>
             </DialogActions>
           </DialogBody>
@@ -331,11 +408,24 @@ function ImportDialog({ runId, onClose }: { runId: string; onClose: () => void }
     setServerErrors([]);
     try {
       const result = await hrApi.importInputs(runId, csv);
-      notify.success('Inputs imported', `${result.imported} line(s) added. Process the payroll again to include them.`);
+      if (result.approval) {
+        notify.success(
+          'Asked for approval',
+          'The file has earnings in it, so it waits as a whole for someone else who approves payroll.',
+        );
+      } else {
+        notify.success(
+          'Inputs imported',
+          `${result.imported} line(s) added. Process the payroll again to include them.`,
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: hrKeys.payroll });
       onClose();
     } catch (error) {
-      if (isApiError(error) && (error.isValidation || error.status === 400)) {
+      const words = isApiError(error) ? payRefusal(error.code) : null;
+      if (words) {
+        setServerErrors([words]);
+      } else if (isApiError(error) && (error.isValidation || error.status === 400)) {
         const messages = Object.entries(error.fieldErrors).flatMap(([field, list]) =>
           list.map((message) => (field && field !== 'csv' ? `${field}: ${message}` : message)),
         );
@@ -358,7 +448,9 @@ function ImportDialog({ runId, onClose }: { runId: string; onClose: () => void }
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Text>
               One line per item: <code>employeeCode,componentCode,amount,description</code>. The header line is
-              optional. The whole file is imported or nothing is, so fix every line shown below first.
+              optional. The whole file is imported or nothing is, so fix every line shown below first. A file with an
+              earning in it waits, as a whole, for someone else who approves payroll; deductions only are imported at
+              once.
             </Text>
             <Field label="CSV file">
               <input

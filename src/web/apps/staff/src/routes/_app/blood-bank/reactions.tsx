@@ -15,8 +15,8 @@ import {
   type TransfusionReactionDto,
 } from '@/modules/blood-bank/api';
 import { ReactionStatusBadge, SeverityBadge } from '@/modules/blood-bank/BloodBadges';
-import { reactionStatusLabel, reactionTypeLabel, symptomLabel } from '@/modules/blood-bank/labels';
-import { CloseReactionDialog } from '@/modules/blood-bank/ReactionDialogs';
+import { imputabilityLabel, reactionStatusLabel, reactionTypeLabel, symptomLabel } from '@/modules/blood-bank/labels';
+import { ClassifyReactionDialog, CloseReactionDialog } from '@/modules/blood-bank/ReactionDialogs';
 import { NoAccess } from '@/modules/ot/shared/feedback';
 import { useFacilityId, useLiveInvalidation } from '@/modules/ot/shared/hooks';
 
@@ -43,6 +43,7 @@ function ReactionsPage() {
   const canRead = usePermission('bloodbank.read');
   const canInvestigate = usePermission('bloodbank.reactions.investigate');
   const [closing, setClosing] = useState<TransfusionReactionDto | null>(null);
+  const [classifying, setClassifying] = useState<TransfusionReactionDto | null>(null);
   const page = search.page ?? 1;
   const reactions = useQuery({ ...bloodQueries.reactions(search.status, page), enabled: canRead });
 
@@ -128,7 +129,13 @@ function ReactionsPage() {
               priority: 'low',
               render: (r) => r.symptoms.map((s) => symptomLabel[s]).join(', '),
             },
-            { key: 'type', header: 'Classification', priority: 'low', render: (r) => reactionTypeLabel[r.type] },
+            {
+              key: 'type',
+              header: 'Classification',
+              priority: 'low',
+              render: (r) =>
+                `${reactionTypeLabel[r.type]}${r.imputability === 'NotAssessed' ? '' : ` · ${imputabilityLabel[r.imputability]}`}${r.loweredByName ? ` · lowered by ${r.loweredByName}` : ''}`,
+            },
             { key: 'status', header: 'Status', render: (r) => <ReactionStatusBadge status={r.status} /> },
           ]}
           rowActions={
@@ -144,9 +151,23 @@ function ReactionsPage() {
                       Start investigation
                     </Button>
                   ) : r.status === 'UnderInvestigation' ? (
-                    <Button size="small" appearance="primary" icon={<CheckmarkRegular />} onClick={() => setClosing(r)}>
-                      Close
-                    </Button>
+                    <>
+                      <Button
+                        size="small"
+                        disabled={r.lowerPendingApprovalId !== null}
+                        onClick={() => setClassifying(r)}
+                      >
+                        {r.lowerPendingApprovalId !== null ? 'Lowering waits for approval' : 'Classify'}
+                      </Button>
+                      <Button
+                        size="small"
+                        appearance="primary"
+                        icon={<CheckmarkRegular />}
+                        onClick={() => setClosing(r)}
+                      >
+                        Close
+                      </Button>
+                    </>
                   ) : null
               : undefined
           }
@@ -160,6 +181,7 @@ function ReactionsPage() {
         />
       </Section>
       {closing && <CloseReactionDialog reaction={closing} onClose={() => setClosing(null)} />}
+      {classifying && <ClassifyReactionDialog reaction={classifying} onClose={() => setClassifying(null)} />}
     </Page>
   );
 }

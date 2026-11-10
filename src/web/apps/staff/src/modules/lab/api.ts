@@ -228,6 +228,8 @@ export interface SaveLabTestRequest {
   displayOrder: number;
   isActive: boolean;
   version: number | null;
+  /** Why: asked for when the change waits for a second pathologist (automatic verification switched on). */
+  reason?: string | null;
 }
 
 export interface ComponentEntry {
@@ -250,7 +252,10 @@ export interface LabInstrumentDto {
   version: number;
 }
 
-export type SaveLabInstrumentRequest = Omit<LabInstrumentDto, 'id' | 'version'> & { version: number | null };
+export type SaveLabInstrumentRequest = Omit<LabInstrumentDto, 'id' | 'version'> & {
+  version: number | null;
+  reason?: string | null;
+};
 
 /** The lab's decision that an analyser's channel goes on no report, with why. */
 export interface IgnoredAnalyserChannelDto {
@@ -315,6 +320,19 @@ export interface LabConnectionStatusDto {
   lastError: string | null;
   messagesAccepted: number;
   messagesRefused: number;
+  /**
+   * Devices that connected to a network analyser's port from an address that is not its IP, refused before anything
+   * they sent was read (ASVS V13.2.1), most recent first.
+   */
+  refusedAddresses?: LabRefusedAddress[];
+}
+
+/** An address refused on an analyser's port: how many times, first and last. */
+export interface LabRefusedAddress {
+  address: string;
+  count: number;
+  firstAt: string;
+  lastAt: string;
 }
 
 export interface LabConnectionDto {
@@ -339,6 +357,10 @@ export interface LabConnectionDto {
   problem: string | null;
   status: LabConnectionStatusDto | null;
   pendingOrders: number;
+  /** A network connection saved without the analyser's IP address: it takes results from any device on the network. */
+  openToAnyDevice?: boolean;
+  /** How the connection's devices prove who they are before a message is read. */
+  deviceAuthentication?: LabDeviceAuthentication;
 }
 
 /** An enrolled HC360 lab agent. Online: it called in during the last three minutes, or relays an analyser now. */
@@ -372,6 +394,7 @@ export interface SaveLabConnectionRequest {
   agentDeviceId: string | null;
   serial: LabSerialPortDto | null;
   listVersion: number;
+  deviceAuthentication?: LabDeviceAuthentication;
 }
 
 export interface ReferralLabDto {
@@ -1392,8 +1415,9 @@ export const labApi = {
     api.post<QcRunDto>('/api/v1/lab/qc/runs', { lotId, value, runAt }),
   reviewQcRun: (runId: string, note: string | null, correctiveAction: string | null) =>
     api.post<QcRunDto>(`/api/v1/lab/qc/runs/${runId}/review`, { note, correctiveAction }),
+  /** 200 with the runs overridden, or 202 with the approval request where the lab asks for a second pathologist. */
   overrideQc: (labTestId: string, reason: string) =>
-    api.post<{ overrides: number }>('/api/v1/lab/qc/overrides', { labTestId, reason }),
+    api.post<{ overrides: number } | ApprovalRequestDto>('/api/v1/lab/qc/overrides', { labTestId, reason }),
 
   // outsourcing
   sendOut: (itemId: string, referralLabId: string, dispatchReference: string | null) =>
@@ -1402,16 +1426,30 @@ export const labApi = {
     api.post<void>(`/api/v1/lab/outsourcing/items/${itemId}/receive`, { externalReference, reportFileId }),
 
   // masters
-  saveTest: (id: string | null, request: SaveLabTestRequest): Promise<Created | undefined> =>
-    id ? api.put<undefined>(`/api/v1/lab/tests/${id}`, request) : api.post<Created>('/api/v1/lab/tests', request),
+  /**
+   * 201 with the id, 204, or 202 with the approval request when automatic verification is switched on where the lab asks
+   * for a second pathologist (the rest is saved; automatic verification waits for another pathologist).
+   */
+  saveTest: (id: string | null, request: SaveLabTestRequest): Promise<Created | ApprovalRequestDto | undefined> =>
+    id
+      ? api.put<ApprovalRequestDto | undefined>(`/api/v1/lab/tests/${id}`, request)
+      : api.post<Created | ApprovalRequestDto>('/api/v1/lab/tests', request),
   setComponents: (id: string, components: ComponentEntry[], version: number) =>
     api.put<void>(`/api/v1/lab/tests/${id}/components`, { components, version }),
-  setRanges: (id: string, ranges: ReferenceRangeDto[], version: number) =>
-    api.put<void>(`/api/v1/lab/tests/${id}/ranges`, { ranges, version }),
-  saveInstrument: (id: string | null, request: SaveLabInstrumentRequest): Promise<Created | undefined> =>
+  /** 204, or 202 with the approval request when a critical limit is loosened where the lab asks for a second pathologist. */
+  setRanges: (id: string, ranges: ReferenceRangeDto[], version: number, reason?: string | null) =>
+    api.put<ApprovalRequestDto | undefined>(`/api/v1/lab/tests/${id}/ranges`, {
+      ranges,
+      version,
+      reason: reason ?? null,
+    }),
+  saveInstrument: (
+    id: string | null,
+    request: SaveLabInstrumentRequest,
+  ): Promise<Created | ApprovalRequestDto | undefined> =>
     id
-      ? api.put<undefined>(`/api/v1/lab/instruments/${id}`, request)
-      : api.post<Created>('/api/v1/lab/instruments', request),
+      ? api.put<ApprovalRequestDto | undefined>(`/api/v1/lab/instruments/${id}`, request)
+      : api.post<Created | ApprovalRequestDto>('/api/v1/lab/instruments', request),
   /** The channel goes on no report: listed as ignored, with the reason, until the decision is taken back. */
   ignoreAnalyserChannel: (id: string, reason: string) =>
     api.post<void>(`/api/v1/lab/instruments/channels/${id}/ignore`, { reason }),
@@ -1481,3 +1519,50 @@ export const LAB_PERMISSIONS = {
   /** See whether analysers and their lab agents are connected. */
   connectionStatus: 'integrations.lab.status',
 } as const;
+
+/** How an analyser connection's devices prove who they are (LabDeviceAuthentication). */
+export type LabDeviceAuthentication = 'None' | 'SharedSecret' | 'MutualTls' | 'LabAgent';
+
+/** A device of an analyser connection (LabDeviceDto): one refused at the door (Seen), added, approved or revoked. */
+export interface LabDeviceDto {
+  id: string;
+  connectionCode: string;
+  name: string | null;
+  method: LabDeviceAuthentication;
+  identifier: string;
+  subject: string | null;
+  status: 'Seen' | 'PendingApproval' | 'Approved' | 'Revoked';
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  lastAddress: string | null;
+  refusedAttempts: number;
+  addedByName: string | null;
+  addedAt: string | null;
+  approvedByName: string | null;
+  approvedAt: string | null;
+  pendingApprovalId: string | null;
+  version: number;
+}
+
+/** POST /api/v1/integrations/lab/devices answers 202 with the approval; a shared-secret device's key id and secret, shown once. */
+export interface LabDeviceAdded {
+  device: LabDeviceDto;
+  approval: { id: string };
+  keyId: string | null;
+  secret: string | null;
+}
+
+export const labDevicesApi = {
+  list: (connection: string, signal?: AbortSignal) =>
+    api.get<LabDeviceDto[]>('/api/v1/integrations/lab/devices', { signal, query: { connection } }),
+  add: (body: {
+    connectionCode: string;
+    name: string;
+    method: LabDeviceAuthentication;
+    fingerprint: string | null;
+    seenDeviceId: string | null;
+    reason: string;
+  }) => api.post<LabDeviceAdded>('/api/v1/integrations/lab/devices', body),
+  revoke: (id: string, version: number, reason: string) =>
+    api.post<void>(`/api/v1/integrations/lab/devices/${id}/revoke`, { version, reason }),
+};

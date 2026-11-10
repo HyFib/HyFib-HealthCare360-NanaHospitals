@@ -27,6 +27,8 @@ internal sealed class DialysisPatientProfileConfiguration : IEntityTypeConfigura
         b.Property(x => x.AccessSite).HasMaxLength(SpecialtyCareSchema.Name200);
         b.Property(x => x.PrimaryDiagnosis).HasMaxLength(300);
         b.Property(x => x.AnticoagulationNotes).HasMaxLength(1000);
+        b.Property(x => x.SeroChangedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.SeroChangeRequestedByName).HasMaxLength(SpecialtyCareSchema.Name200);
         b.Property(x => x.ScheduleDays).HasJsonRows();
         b.Ignore(x => x.EffectiveMaxDialyzerUses);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);

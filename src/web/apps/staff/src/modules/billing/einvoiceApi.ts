@@ -5,14 +5,19 @@ import { api } from '@/lib/api';
  * GST e-invoice register: /api/v1/billing/einvoices (GST rule 48(4)). B2B tax invoices (`bill`: bills to payers
  * registered for GST; `pharmacy`: the pharmacy's B2B sales) and the credit notes against them (`creditnote`: a bill's
  * credit notes; `pharmacyreturn`: returns of B2B sales) are downloaded as the portal's JSON, uploaded to the Invoice
- * Registration Portal, and the IRN it gives back is recorded with its signed QR code. A credit note (`CRN`) names the
- * invoice it reduces and goes after it. Permission `billing.einvoice`.
+ * Registration Portal, and the IRN it gives back is recorded with its signed QR code; a facility connected to the portal
+ * (`integrations.irp`) asks for the IRN itself, cancels it there within 24 hours, and generates the e-way bill of a
+ * pharmacy invoice of goods above the threshold. A credit note (`CRN`) or debit note (`DBN`, `debitnote`) names the
+ * invoice it changes and goes after it. Permission `billing.einvoice`.
  */
 
-export type EInvoiceSource = 'bill' | 'pharmacy' | 'creditnote' | 'pharmacyreturn';
+export type EInvoiceSource = 'bill' | 'pharmacy' | 'creditnote' | 'debitnote' | 'pharmacyreturn';
 
-/** The portal's document type: a tax invoice or a credit note against one. */
-export type EInvoiceType = 'INV' | 'CRN';
+/** The portal's document type: a tax invoice, or a credit or debit note against one. */
+export type EInvoiceType = 'INV' | 'CRN' | 'DBN';
+
+/** Mirrors `TransportMode`: how the goods of an e-way bill move. */
+export type TransportMode = 'Road' | 'Rail' | 'Air' | 'Ship';
 
 /** Mirrors `EInvoiceState`. */
 export type EInvoiceState = 'Pending' | 'Registered' | 'IrnCancelled' | 'NotNeeded';
@@ -65,6 +70,11 @@ export interface EInvoiceRegistration {
   /** The signed QR code as an SVG data URI. */
   qrCodeSvg: string;
   version: number;
+  /** `manual` (recorded by hand), or the portal provider HC360 asked: `nic`, `gsp` or `simulator`. */
+  provider: string;
+  ewbNo: number | null;
+  ewbDate: string | null;
+  ewbValidTill: string | null;
 }
 
 export interface EInvoiceDetail {
@@ -85,6 +95,21 @@ export interface EInvoiceDetail {
   /** For a credit note: the invoice it reduces, and its date. */
   against: string | null;
   againstDate: string | null;
+  /** The facility is connected to the portal: HC360 asks for the IRN itself. */
+  portalConnected: boolean;
+  /** An invoice of goods above the e-way bill threshold (CGST rule 138). */
+  ewayBillNeeded: boolean;
+}
+
+export interface GenerateEwayBill {
+  /** 0: the portal works it out from the PIN codes. */
+  distanceKm: number;
+  mode: TransportMode;
+  vehicleNumber: string | null;
+  transporterGstin: string | null;
+  transporterName: string | null;
+  transportDocumentNumber: string | null;
+  transportDocumentDate: string | null;
 }
 
 /** The IRN printed on an invoice (`EInvoiceStamp`), on bills and pharmacy sales that have one. */
@@ -103,6 +128,7 @@ export const SOURCE_LABELS: Record<EInvoiceSource, string> = {
   bill: 'Bill',
   pharmacy: 'Pharmacy',
   creditnote: 'Credit note',
+  debitnote: 'Debit note',
   pharmacyreturn: 'Pharmacy return',
 };
 
@@ -113,7 +139,7 @@ export function documentLabel(row: {
   type: EInvoiceType;
   against: string | null;
 }): string {
-  return row.type === 'CRN' && row.against
+  return row.type !== 'INV' && row.against
     ? `${row.number} (${SOURCE_LABELS[row.source]} against ${row.against})`
     : `${row.number} (${SOURCE_LABELS[row.source]})`;
 }
@@ -160,6 +186,10 @@ export const einvoiceApi = {
     api.post<EInvoiceDetail>(`${base}/${source}/${id}/irn`, { ackNo, signedQrCode }),
   cancel: (source: EInvoiceSource, id: string, reason: EInvoiceCancelReason, remark: string, version: number) =>
     api.post<EInvoiceDetail>(`${base}/${source}/${id}/irn/cancel`, { reason, remark, version }),
+  /** Asks the connected portal for the IRN. */
+  generate: (source: EInvoiceSource, id: string) => api.post<EInvoiceDetail>(`${base}/${source}/${id}/irn/generate`),
+  ewayBill: (source: EInvoiceSource, id: string, body: GenerateEwayBill) =>
+    api.post<EInvoiceDetail>(`${base}/${source}/${id}/ewaybill`, body),
 };
 
 /** What stops the IRN from being recorded: the portal's 10–20-digit acknowledgement number and its signed QR code (a JWT). */

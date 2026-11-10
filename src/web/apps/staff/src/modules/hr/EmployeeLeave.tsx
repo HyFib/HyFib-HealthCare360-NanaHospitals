@@ -7,14 +7,23 @@ import {
   DialogSurface,
   DialogTitle,
   Field,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
   Select,
   Spinner,
   Text,
   Tooltip,
 } from '@fluentui/react-components';
-import { AddRegular, ArrowDownloadRegular, CalendarCancelRegular, EditRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  ArrowDownloadRegular,
+  CalendarCancelRegular,
+  EditRegular,
+  MoneyRegular,
+} from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatDateTime, todayIso } from '@hc360/core';
+import { formatDateTime, isApiError, todayIso } from '@hc360/core';
 import {
   applyServerErrors,
   CloseRequestScope,
@@ -31,7 +40,7 @@ import {
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
 import { DecisionButtons } from './ApprovalActions';
@@ -40,6 +49,8 @@ import { formatDays } from './attendance';
 import type { PickedEmployee } from './EmployeePicker';
 import { BALANCE_VIEWERS, HR_PERMISSIONS } from './labels';
 import { canCancelLeave, leavePeriodText } from './leave';
+import { EncashLeaveDialog, EncashmentsTable } from './LeaveEncashment';
+import { payRefusal } from './makerChecker';
 import { LeaveOnBehalfDialog } from './LeaveOnBehalfDialog';
 import { ReasonDialog } from './shared/ReasonDialog';
 import { currentMonth, yearOptions } from './shared/dates';
@@ -93,11 +104,20 @@ export function EmployeeLeave({ employee, readOnly }: { employee: PickedEmployee
   const queryClient = useQueryClient();
   const canSeeBalances = usePermission(BALANCE_VIEWERS);
   const canApprove = usePermission(HR_PERMISSIONS.leaveApprove) && !readOnly;
+  const canEncash = usePermission(HR_PERMISSIONS.payrollProcess) && !readOnly;
+  const canSeeEncashments = usePermission([HR_PERMISSIONS.payrollProcess, HR_PERMISSIONS.payrollApprove]);
+  const [encashing, setEncashing] = useState(false);
   const [year, setYear] = useState(currentMonth().year);
   const [applying, setApplying] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
   const [cancelling, setCancelling] = useState<LeaveRequestDto | null>(null);
   const balances = useQuery({ ...hrQueries.leaveBalances(employee.id, year), enabled: canSeeBalances });
+  const pendingCredits = useQuery({ ...hrQueries.pendingLeaveAdjustments(employee.id), enabled: canSeeBalances });
+  const encashments = useQuery({ ...hrQueries.leaveEncashments(employee.id), enabled: canSeeEncashments });
+  const pendingEncashments = useQuery({
+    ...hrQueries.pendingLeaveEncashments(employee.id),
+    enabled: canSeeEncashments,
+  });
   const requests = useQuery({
     ...hrQueries.leaveRequests({ employeeId: employee.id, from: `${year}-01-01`, to: `${year}-12-31`, pageSize: 100 }),
     enabled: canApprove,
@@ -137,7 +157,34 @@ export function EmployeeLeave({ employee, readOnly }: { employee: PickedEmployee
             </Button>
           </>
         )}
+        {canEncash && (
+          <Button icon={<MoneyRegular />} onClick={() => setEncashing(true)} style={{ alignSelf: 'flex-end' }}>
+            Encash leave
+          </Button>
+        )}
       </Toolbar>
+
+      {(pendingCredits.data ?? []).map((p) => (
+        <MessageBar key={p.approvalId} intent="warning" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Asked for approval: what waits</MessageBarTitle>
+            {p.summary}. Asked for by {p.requestedBy} on {formatDateTime(p.requestedAt)}. Someone else who approves
+            leave decides it, never the person who asked and never {employee.name}; the balance below does not include
+            it until then.
+          </MessageBarBody>
+        </MessageBar>
+      ))}
+
+      {(pendingEncashments.data ?? []).map((p) => (
+        <MessageBar key={p.approvalId} intent="warning" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Encashment asked for: what waits</MessageBarTitle>
+            {p.summary}. Asked for by {p.requestedBy} on {formatDateTime(p.requestedAt)}. Someone else who approves
+            payroll decides it, never the person who asked and never {employee.name}; its days are reserved meanwhile,
+            and nothing is paid until then.
+          </MessageBarBody>
+        </MessageBar>
+      ))}
 
       {canSeeBalances && (
         <Section title={`Balances ${year}`} flush>
@@ -210,7 +257,19 @@ export function EmployeeLeave({ employee, readOnly }: { employee: PickedEmployee
         </Section>
       )}
 
+      {canSeeEncashments && (
+        <Section title="Leave encashed" flush>
+          <EncashmentsTable
+            rows={encashments.data}
+            loading={encashments.isLoading}
+            error={encashments.error}
+            onRetry={() => void encashments.refetch()}
+          />
+        </Section>
+      )}
+
       <LeaveOnBehalfDialog open={applying} onClose={() => setApplying(false)} employee={employee} />
+      <EncashLeaveDialog open={encashing} onClose={() => setEncashing(false)} employee={employee} year={year} />
       <AdjustBalanceDialog open={adjusting} onClose={() => setAdjusting(false)} employee={employee} year={year} />
       <ReasonDialog
         open={cancelling !== null}
@@ -243,7 +302,10 @@ const adjustSchema = z.object({
 
 type AdjustValues = z.infer<typeof adjustSchema>;
 
-/** Comp-off credits and corrections (±, half days allowed). The reason is written to the audit trail. */
+/**
+ * Comp-off credits and corrections (±, half days allowed). The reason is written to the audit trail. A credit waits for
+ * someone else who approves leave; a debit is made at once; nobody adjusts their own balance (maker-checker slice 11).
+ */
 export function AdjustBalanceDialog({
   open,
   onClose,
@@ -272,27 +334,41 @@ function AdjustBody({ onClose, employee, year }: { onClose: () => void; employee
   const queryClient = useQueryClient();
   const types = useQuery(hrQueries.leaveTypes());
   const [busy, setBusy] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const form = useForm<AdjustValues>({
     resolver: zodResolver(adjustSchema),
     defaultValues: { leaveTypeId: '', days: 1, reason: '' },
   });
+  const days = useWatch({ control: form.control, name: 'days' });
+  const credit = typeof days === 'number' && days > 0;
 
   const onValid = async (values: AdjustValues) => {
     setBusy(true);
+    setRefusal(null);
     try {
-      await hrApi.adjustLeave({
+      const asked = await hrApi.adjustLeave({
         employeeId: employee.id,
         leaveTypeId: values.leaveTypeId,
         year,
         days: values.days,
         reason: values.reason.trim(),
       });
-      notify.success('Balance adjusted', `${values.days > 0 ? '+' : ''}${values.days} day(s) for ${employee.name}`);
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `+${values.days} day(s) for ${employee.name}. Someone else who approves leave approves the credit.`,
+        );
+      } else {
+        notify.success('Balance adjusted', `${values.days > 0 ? '+' : ''}${values.days} day(s) for ${employee.name}`);
+      }
       void queryClient.invalidateQueries({ queryKey: hrKeys.leave });
       void queryClient.invalidateQueries({ queryKey: hrKeys.me });
       onClose();
     } catch (error) {
-      if (!applyServerErrors(error, form.setError)) {
+      const words = isApiError(error) ? payRefusal(error.code) : null;
+      if (words) {
+        setRefusal(words);
+      } else if (!applyServerErrors(error, form.setError)) {
         notify.error(error, 'Could not adjust the balance');
       }
     } finally {
@@ -342,6 +418,20 @@ function AdjustBody({ onClose, employee, year }: { onClose: () => void; employee
             maxLength={300}
             placeholder="For example: comp-off for working on 15 Aug"
           />
+          <Text size={200}>
+            {credit
+              ? 'A credit waits for someone else who approves leave, never you.'
+              : 'Removing days is made at once.'}{' '}
+            Nobody adjusts their own balance.
+          </Text>
+          {refusal && (
+            <MessageBar intent="error" layout="multiline" politeness="assertive">
+              <MessageBarBody>
+                <MessageBarTitle>Not adjusted</MessageBarTitle>
+                {refusal}
+              </MessageBarBody>
+            </MessageBar>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={guard.requestClose} disabled={busy}>
@@ -353,7 +443,7 @@ function AdjustBody({ onClose, employee, year }: { onClose: () => void; employee
             disabled={busy}
             icon={busy ? <Spinner size="tiny" aria-hidden /> : undefined}
           >
-            Adjust
+            {credit ? 'Ask for approval' : 'Adjust'}
           </Button>
         </DialogActions>
       </DialogBody>

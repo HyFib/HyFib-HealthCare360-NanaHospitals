@@ -1,3 +1,4 @@
+using System.Globalization;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Patients.Services;
@@ -36,6 +37,32 @@ internal static class BillQueries
         }).ToList();
     }
 
+    /// <summary>
+    /// For a bill entered from paper after its month's GSTR-1 was recorded as filed: that it is not in the filed return and
+    /// is to be reported as an amendment in the next one. Null otherwise, and for a month whose filing is not recorded.
+    /// </summary>
+    internal static async Task<string?> LateForFiledReturnAsync(HospitalDbContext db, Bill bill, CancellationToken ct)
+    {
+        if (bill.EnteredFromPaperAt is not { } entered || bill.FinalizedAt is not { } finalized)
+        {
+            return null;
+        }
+
+        var own = await db.Set<Facility>().AsNoTracking().IgnoreQueryFilters().Where(f => f.Id == bill.FacilityId).Select(f => f.Gstin).FirstOrDefaultAsync(ct);
+        if (Gstin.Normalize(own) is not { } gstin)
+        {
+            return null;
+        }
+
+        var date = BillingTime.LocalDate(finalized);
+        var filing = await db.Set<GstReturnFiling>().AsNoTracking()
+            .FirstOrDefaultAsync(f => f.Gstin == gstin && f.ReturnType == GstReturnFiling.Gstr1 && f.Year == date.Year && f.Month == date.Month && f.RecordedAt <= entered, ct);
+        return filing is null
+            ? null
+            : string.Create(CultureInfo.InvariantCulture,
+                $"This bill is dated {date:d MMM yyyy}, but GSTR-1 for {GstFilingService.Words((date.Year, date.Month))} was already filed (ARN {filing.Arn}, {filing.FiledOn:d MMM yyyy}). It is not in that return: report it as an amendment (B2BA or B2CSA) in the next GSTR-1.");
+    }
+
     public static async Task<BillDetail?> DetailAsync(HospitalDbContext db, Guid billId, TimeProvider time, CancellationToken ct)
     {
         var bill = await db.Set<Bill>().AsNoTracking().Include(b => b.Lines).FirstOrDefaultAsync(b => b.Id == billId, ct);
@@ -57,6 +84,12 @@ internal static class BillQueries
         var creditIds = credits.Select(c => c.Id).ToList();
         var creditIrns = (await db.Set<EInvoice>().AsNoTracking()
                 .Where(e => e.Source == CreditNoteEInvoiceSource.Key && creditIds.Contains(e.SourceId) && e.Status == EInvoiceStatus.Registered)
+                .ToListAsync(ct))
+            .ToDictionary(e => e.SourceId);
+        var debits = await db.Set<DebitNote>().AsNoTracking().Include(n => n.Lines).Where(n => n.BillId == billId).OrderBy(n => n.IssuedAt).ToListAsync(ct);
+        var debitIds = debits.Select(n => n.Id).ToList();
+        var debitIrns = (await db.Set<EInvoice>().AsNoTracking()
+                .Where(e => e.Source == DebitNoteEInvoiceSource.Key && debitIds.Contains(e.SourceId) && e.Status == EInvoiceStatus.Registered)
                 .ToListAsync(ct))
             .ToDictionary(e => e.SourceId);
         var pending = await db.Set<DiscountApproval>().AsNoTracking()
@@ -92,7 +125,16 @@ internal static class BillQueries
             bill.Version,
             einvoice is null ? null : EInvoiceService.Stamp(einvoice),
             bill.FreeTreatmentReason,
-            bill.FreeTreatmentAmount);
+            bill.FreeTreatmentAmount,
+            debits.Select(n => new DebitNoteDto(
+                n.Id, n.Number, n.Party, n.Amount, n.TaxableAmount, n.GstAmount, n.Reason, n.IssuedAt, n.IssuedByName, n.RequestedByName,
+                n.Lines.OrderBy(l => l.SortOrder)
+                    .Select(l => new DebitNoteLineDto(l.BillLineId, l.Description, l.SacCode, l.GstRate, l.Amount, l.TaxableAmount, l.CgstAmount, l.SgstAmount, l.IgstAmount))
+                    .ToList(),
+                debitIrns.TryGetValue(n.Id, out var irn) ? EInvoiceService.Stamp(irn) : null)).ToList(),
+            bill.DebitAmount,
+            bill.PayerDebitAmount,
+            await LateForFiledReturnAsync(db, bill, ct));
     }
 
     /// <summary>A credit note with the lines it corrects, their GST, and its IRN when it is a registered e-invoice.</summary>

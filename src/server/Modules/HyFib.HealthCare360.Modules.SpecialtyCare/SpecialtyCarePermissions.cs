@@ -26,6 +26,9 @@ public static class SpecialtyCarePermissions
     public const string DialysisPatients = "dialysis.patients.manage";
     public const string DialysisSessions = "dialysis.sessions.manage";
 
+    /// <summary>Approve a dialysis patient taken off a positive infection status (HBV, HCV, HIV) another asked for, on the lab result.</summary>
+    public const string DialysisInfectionStatusApprove = "dialysis.infection_status.approve";
+
     // ------------------------------------------------------------------ physiotherapy (PHY-01..04)
     public const string PhysioRead = "physio.read";
     public const string PhysioReferrals = "physio.referrals.manage";
@@ -40,6 +43,9 @@ public static class SpecialtyCarePermissions
     public const string BloodBankIssue = "bloodbank.units.issue";
     public const string BloodBankReactions = "bloodbank.reactions.report";
     public const string BloodBankReactionsInvestigate = "bloodbank.reactions.investigate";
+
+    /// <summary>The blood bank medical officer: approve a transfusion reaction's severity or imputability lowered.</summary>
+    public const string BloodBankReactionsApprove = "bloodbank.reactions.approve";
     public const string BloodBankTransfuse = "bloodbank.transfuse";
 
     // ------------------------------------------------------------------ termination of pregnancy (MTP Act; gap R-2c)
@@ -69,6 +75,8 @@ public static class SpecialtyCarePermissions
         new(DialysisRead, Dialysis, "View the dialysis board, patients, machines and sessions", [SystemRoles.DialysisTechnician, SystemRoles.Nurse, SystemRoles.Doctor, SystemRoles.HospitalAdmin]),
         new(DialysisMachines, Dialysis, "Add and edit dialysis machines and stations", [SystemRoles.DialysisTechnician, SystemRoles.HospitalAdmin]),
         new(DialysisPatients, Dialysis, "Enrol dialysis patients and edit their dialysis profile", [SystemRoles.Doctor, SystemRoles.DialysisTechnician, SystemRoles.Nurse]),
+        new(DialysisInfectionStatusApprove, Dialysis,
+            "Approve a dialysis patient taken off a positive infection status (HBV, HCV, HIV) another asked for, on the lab result", [SystemRoles.Doctor]),
         new(DialysisSessions, Dialysis, "Schedule and record dialysis sessions, dialyzers and machine disinfection", [SystemRoles.DialysisTechnician, SystemRoles.Nurse, SystemRoles.Doctor]),
 
         new(PhysioRead, Physio, "View physiotherapy referrals, plans and sessions", [SystemRoles.Physiotherapist, SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.HospitalAdmin]),
@@ -83,6 +91,9 @@ public static class SpecialtyCarePermissions
         new(BloodBankIssue, BloodBank, "Issue blood units and accept returns", [SystemRoles.BloodBankOfficer]),
         new(BloodBankReactions, BloodBank, "Report transfusion reactions", [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.BloodBankOfficer]),
         new(BloodBankReactionsInvestigate, BloodBank, "Investigate and close transfusion reaction reports", [SystemRoles.BloodBankOfficer]),
+        new(BloodBankReactionsApprove, BloodBank,
+            "Blood bank medical officer: approve a transfusion reaction's severity or imputability lowered (which can take it out of haemovigilance reporting)",
+            [SystemRoles.HospitalAdmin]),
 
         // The two staff at the bedside: one starts the unit, the other witnesses the check at the same screen.
         new(BloodBankTransfuse, BloodBank, "Check a unit of blood at the bedside, start and end its transfusion, and witness another's check",

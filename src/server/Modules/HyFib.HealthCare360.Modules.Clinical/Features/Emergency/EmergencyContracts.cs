@@ -24,7 +24,9 @@ public sealed record ErBoardRow(
     bool IsMlc,
     string? MlcNumber,
     bool MlcIntimationOverdue,
-    uint Version);
+    uint Version,
+    Guid? BayId = null,
+    string? BayCode = null);
 
 /// <summary>The department now: who is in it, most urgent first, and how many at each level.</summary>
 /// <param name="ByLevel">Patients at levels 1 to 5, in that order.</param>
@@ -115,7 +117,61 @@ public sealed record EmergencyCaseDetail(
     IReadOnlyList<EsiTriageDto> Triages,
     MlcDto? Mlc,
     uint Version,
-    AgainstAdviceDto? AgainstAdvice = null);
+    AgainstAdviceDto? AgainstAdvice = null,
+    Guid? BayId = null,
+    string? BayCode = null,
+    DateTimeOffset? BayAssignedAt = null,
+    WoundCertificateDto? WoundCertificate = null);
+
+/// <summary>
+/// A bay of the emergency department and who is in it: the case, the patient (initials for a restricted record the user
+/// may not open), their level and since when. A free bay has no case.
+/// </summary>
+public sealed record ErBayDto(
+    Guid Id,
+    string Code,
+    ErArea Area,
+    int DisplayOrder,
+    bool IsActive,
+    Guid? CaseId,
+    string? PatientName,
+    string? Uhid,
+    int? Level,
+    DateTimeOffset? Since,
+    uint Version);
+
+/// <summary>The department's bays in board order, with how many are free (in use, no patient) and taken.</summary>
+public sealed record ErBays(IReadOnlyList<ErBayDto> Bays, int Free, int Occupied);
+
+/// <summary>Adds a bay, or changes one (<paramref name="Version"/>: the bay's).</summary>
+public sealed record SaveErBayRequest(string Code, ErArea Area, int DisplayOrder, bool IsActive, uint? Version);
+
+/// <summary>Puts the patient in a bay, or moves them to another. <paramref name="Version"/>: the case's.</summary>
+public sealed record AssignBayRequest(Guid BayId, uint Version);
+
+/// <summary>The wound certificate of a medico-legal case, as written and, once signed, by whom.</summary>
+public sealed record WoundCertificateDto(
+    Guid Id,
+    DateTimeOffset ExaminedAt,
+    string IdentificationMarks,
+    string? History,
+    IReadOnlyList<WoundInjury> Injuries,
+    string? Remarks,
+    bool IsSigned,
+    DateTimeOffset? SignedAt,
+    string? DoctorName,
+    string? DoctorRegistration,
+    uint Version);
+
+/// <summary>Writes the wound certificate while it is a draft. <paramref name="Version"/>: the certificate's, once it exists.</summary>
+public sealed record SaveWoundCertificateRequest(
+    DateTimeOffset ExaminedAt, string IdentificationMarks, string? History, IReadOnlyList<WoundInjury> Injuries, string? Remarks, uint? Version);
+
+/// <summary>
+/// The medico-legal report for a court, made from the MLC record: the court and the case it is for, and the police's
+/// requisition it answers.
+/// </summary>
+public sealed record CourtReportRequest(string Court, string? CaseReference, string? Requisition);
 
 /// <summary>A patient who left against medical advice: who signed (or "refused to sign"), the doctor who explained the risks, the witness and the scanned form.</summary>
 public sealed record AgainstAdviceDto(AgainstAdviceSignatory SignedBy, string? SignatoryName, string? Relationship, string DoctorName, string WitnessName, Guid? SignedFormFileId);
@@ -306,3 +362,52 @@ public sealed class MlcReportRequestValidator : AbstractValidator<MlcReportReque
 }
 
 public sealed class CaseVersionRequestValidator : AbstractValidator<CaseVersionRequest>;
+
+public sealed class SaveErBayRequestValidator : AbstractValidator<SaveErBayRequest>
+{
+    public SaveErBayRequestValidator()
+    {
+        RuleFor(x => x.Code).NotEmpty().SafeText(16);
+        RuleFor(x => x.Area).IsInEnum();
+        RuleFor(x => x.DisplayOrder).InclusiveBetween(0, 10_000);
+    }
+}
+
+public sealed class AssignBayRequestValidator : AbstractValidator<AssignBayRequest>
+{
+    public AssignBayRequestValidator() => RuleFor(x => x.BayId).NotEmpty();
+}
+
+public sealed class SaveWoundCertificateRequestValidator : AbstractValidator<SaveWoundCertificateRequest>
+{
+    public SaveWoundCertificateRequestValidator()
+    {
+        RuleFor(x => x.IdentificationMarks).NotEmpty().SafeText(500);
+        RuleFor(x => x.History).SafeText(2000);
+        RuleFor(x => x.Remarks).SafeText(2000);
+        RuleFor(x => x.Injuries).NotEmpty().Must(i => i.Count <= 50).WithMessage("Up to 50 injuries.");
+        RuleForEach(x => x.Injuries).ChildRules(i =>
+        {
+            i.RuleFor(x => x.Number).InclusiveBetween(1, 50);
+            i.RuleFor(x => x.Kind).IsInEnum();
+            i.RuleFor(x => x.Site).NotEmpty().SafeText(200);
+            i.RuleFor(x => x.Size).SafeText(100);
+            i.RuleFor(x => x.Description).NotEmpty().SafeText(500);
+            i.RuleFor(x => x.Weapon).IsInEnum();
+            i.RuleFor(x => x.Age).NotEmpty().SafeText(100);
+            i.RuleFor(x => x.Nature).IsInEnum();
+            i.RuleFor(x => x.Clause).IsInEnum();
+            i.RuleFor(x => x.ReservedFor).SafeText(200);
+        });
+    }
+}
+
+public sealed class CourtReportRequestValidator : AbstractValidator<CourtReportRequest>
+{
+    public CourtReportRequestValidator()
+    {
+        RuleFor(x => x.Court).NotEmpty().SafeText(200);
+        RuleFor(x => x.CaseReference).SafeText(100);
+        RuleFor(x => x.Requisition).SafeText(200);
+    }
+}

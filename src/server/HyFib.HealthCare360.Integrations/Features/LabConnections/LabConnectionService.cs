@@ -96,9 +96,11 @@ internal sealed class LabConnectionService(
                 instrument.Validate(),
                 statuses.TryGetValue(instrument.Code, out var status)
                     ? new LabConnectionStatusDto(status.State, status.ActiveConnections, status.ConnectedSince, status.LastMessageAt, status.LastErrorAt,
-                        status.LastError, status.MessagesAccepted, status.MessagesRefused)
+                        status.LastError, status.MessagesAccepted, status.MessagesRefused, status.RefusedAddresses)
                     : null,
-                pending.GetValueOrDefault(instrument.Code.ToUpperInvariant())));
+                pending.GetValueOrDefault(instrument.Code.ToUpperInvariant()),
+                tcp && LabConnectionHealthWarnings.OpenToAnyDevice(instrument),
+                instrument.DeviceAuthentication));
         }
 
         return new LabConnectionsDto(gateway.Enabled, row?.Version ?? 0, connections, agents);
@@ -193,6 +195,11 @@ internal sealed class LabConnectionService(
             Encoding = request.Encoding,
             SampleIdFields = hl7 ? Clean(request.SampleIdFields) : null,
             OrderMessage = hl7 ? request.OrderMessage : null,
+
+            // Not sent (an older screen): the connection keeps how its devices prove themselves.
+            DeviceAuthentication = request.DeviceAuthentication
+                ?? stored.Instruments.FirstOrDefault(i => string.Equals(i.Code, profile.Code, StringComparison.OrdinalIgnoreCase))?.DeviceAuthentication
+                ?? Laboratory.Devices.LabDeviceAuthentication.None,
         };
         if (entry.Validate() is { } problem)
         {
@@ -208,7 +215,16 @@ internal sealed class LabConnectionService(
         {
             EntityType = "LabConnection",
             EntityId = profile.Code,
-            Details = new { transport = transport.ToString(), entry.Enabled, entry.Port, entry.AllowedIps, entry.AgentDeviceId, comPort = entry.Serial?.PortName },
+            Details = new
+            {
+                transport = transport.ToString(),
+                entry.Enabled,
+                entry.Port,
+                entry.AllowedIps,
+                entry.AgentDeviceId,
+                comPort = entry.Serial?.PortName,
+                deviceAuthentication = entry.DeviceAuthentication.ToString(),
+            },
             Severity = AuditSeverity.Warning,
         });
         await StoreAsync([.. others, entry], cancellationToken);

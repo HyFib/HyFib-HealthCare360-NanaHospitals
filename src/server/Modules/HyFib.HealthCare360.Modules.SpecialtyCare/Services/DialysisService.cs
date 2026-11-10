@@ -59,6 +59,14 @@ public sealed class DialysisService(
         else
         {
             db.SetExpectedVersion(profile, request.Version);
+
+            // The infection status decides the machine: once enrolled it changes only on the lab result, and taking a
+            // patient off a positive status waits for a second person (InfectionStatusService).
+            if (profile.SeroStatus != request.SeroStatus)
+            {
+                return Error.Rule("dialysis.infection_status_change",
+                    $"The patient is {SeroSegregation.Describe(profile.SeroStatus)}. Change the infection status with the lab result that supports it (Change infection status), not from the profile.");
+            }
         }
 
         profile.DryWeightKg = request.DryWeightKg;

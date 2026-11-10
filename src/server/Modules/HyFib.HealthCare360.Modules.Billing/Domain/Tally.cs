@@ -159,6 +159,21 @@ public sealed record TallyLedgerMap
     public string DoctorRecoveries { get; init; } = "Doctor Recoveries";
     public string PayoutBank { get; init; } = "Bank";
 
+    /// <summary>Goods handed back to suppliers on debit notes, at cost without GST.</summary>
+    public string PurchaseReturns { get; init; } = "Purchase Returns";
+
+    /// <summary>Input GST a debit note takes back (the credit claimed when the goods were bought).</summary>
+    public string InputCgst { get; init; } = "Input CGST";
+    public string InputSgst { get; init; } = "Input SGST";
+    public string InputIgst { get; init; } = "Input IGST";
+
+    /// <summary>What a supplier payable adjustment is set against: a rate difference, a scheme credit, freight billed later.</summary>
+    public string VendorAdjustments { get; init; } = "Purchase Rate Differences";
+
+    /// <summary>Post to a ledger named after each supplier (sundry creditor), else to <see cref="SundryCreditors"/>.</summary>
+    public bool LedgerPerVendor { get; init; } = true;
+    public string SundryCreditors { get; init; } = "Sundry Creditors";
+
     /// <summary>Pharmacy counter sales and returns (their own income ledger; GST on the output GST ledgers).</summary>
     public TallyCounterLedgers Pharmacy { get; init; } = new();
 
@@ -196,6 +211,8 @@ public sealed record TallyLedgerMap
     public string PayerLedger(string? payerName) => LedgerPerPayer && !string.IsNullOrWhiteSpace(payerName) ? payerName.Trim() : PayerReceivables;
 
     public string DoctorPayable(string doctorName) => DoctorPayablePrefix + doctorName;
+
+    public string VendorLedger(string? vendorName) => LedgerPerVendor && !string.IsNullOrWhiteSpace(vendorName) ? vendorName.Trim() : SundryCreditors;
 
     private static string? Find(Dictionary<string, string>? map, string key) =>
         map?.FirstOrDefault(kv => string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(kv.Value)).Value;
@@ -289,8 +306,12 @@ public sealed record TallyDayBook(
     /// <summary>Refunds recorded as paid out that never reached the patient, reversed on the day.</summary>
     public IReadOnlyList<TallyRefundReversal> RefundReversals { get; init; } = [];
 
+    /// <summary>Purchase returns (debit notes) and supplier payable adjustments posted on the day, each approved by a second person.</summary>
+    public VendorAccountsDay Vendors { get; init; } = VendorAccountsDay.None;
+
     public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DoctorFees.Count + Payouts.Count
-                           + (GatewaySettlements?.Count ?? 0) + PosSettlements.Count + ReceiptReversals.Count + RefundReversals.Count == 0
+                           + (GatewaySettlements?.Count ?? 0) + PosSettlements.Count + ReceiptReversals.Count + RefundReversals.Count
+                           + Vendors.DebitNotes.Count + Vendors.Adjustments.Count == 0
                            && Counters.All(c => c.IsEmpty);
 }
 
@@ -308,6 +329,7 @@ public static class TallyVoucherBuilder
     public const string ReceiptType = "Receipt";
     public const string PaymentType = "Payment";
     public const string JournalType = "Journal";
+    public const string DebitNoteType = "Debit Note";
 
     public static IReadOnlyList<AccountingVoucher> Build(TallyDayBook day, TallyLedgerMap map)
     {
@@ -324,7 +346,43 @@ public static class TallyVoucherBuilder
         vouchers.AddRange(TallyCounters.Vouchers(day, map));
         vouchers.AddRange((day.GatewaySettlements ?? []).Select(s => SettlementVoucher(s, map)));
         vouchers.AddRange(day.PosSettlements.Select(s => PosSettlementVoucher(s, map)));
+        vouchers.AddRange(day.Vendors.DebitNotes.Select(n => VendorDebitNote(n, day.Date, map)));
+        vouchers.AddRange(day.Vendors.Adjustments.Select(a => VendorAdjustment(a, day.Date, map)));
         return vouchers.OfType<AccountingVoucher>().ToList();
+    }
+
+    /// <summary>
+    /// A purchase return: the supplier is owed the whole note less, the goods leave purchases at cost and the input GST
+    /// claimed on them is taken back.
+    /// </summary>
+    private static AccountingVoucher? VendorDebitNote(VendorDebitNoteEntry note, DateOnly date, TallyLedgerMap map)
+    {
+        var entries = new EntryList();
+        entries.Debit(map.VendorLedger(note.VendorName), note.Total);
+        entries.Credit(map.PurchaseReturns, note.Taxable);
+        entries.Credit(map.InputCgst, note.Cgst);
+        entries.Credit(map.InputSgst, note.Sgst);
+        entries.Credit(map.InputIgst, note.Igst);
+        var narration = note.VendorReference is { Length: > 0 } reference ? $"Purchase return {note.Number} (supplier's ref. {reference})" : $"Purchase return {note.Number}";
+        return entries.ToVoucher(DebitNoteType, date, note.Number, narration, note.Number);
+    }
+
+    /// <summary>A supplier payable adjustment: the supplier's ledger against the adjustments ledger, whichever way it goes.</summary>
+    private static AccountingVoucher? VendorAdjustment(VendorPayableAdjustmentEntry adjustment, DateOnly date, TallyLedgerMap map)
+    {
+        var entries = new EntryList();
+        if (adjustment.Reduce)
+        {
+            entries.Debit(map.VendorLedger(adjustment.VendorName), adjustment.Amount);
+            entries.Credit(map.VendorAdjustments, adjustment.Amount);
+        }
+        else
+        {
+            entries.Debit(map.VendorAdjustments, adjustment.Amount);
+            entries.Credit(map.VendorLedger(adjustment.VendorName), adjustment.Amount);
+        }
+
+        return entries.ToVoucher(JournalType, date, adjustment.Number, $"Supplier payable adjustment {adjustment.Number}", adjustment.Number);
     }
 
     /// <summary>
@@ -503,8 +561,16 @@ public static class TallyVoucherBuilder
         entries.Debit(map.OutputCgst, note.Cgst);
         entries.Debit(map.OutputSgst, note.Sgst);
         entries.Debit(map.OutputIgst, note.Igst);
-        entries.Credit(map.PatientDebtors, note.Amount);
-        return entries.ToVoucher(CreditNoteType, note.Date, note.Number, $"{(note.Kind == CreditNoteKind.WriteOff ? "Write-off" : "Credit note")} {note.Number}", note.Number);
+        // A payer credit note turns the settlement's deduction (already debited to insurance disallowances, the payer
+        // credited) into a GST credit note: the disallowance comes back out, and sales returns and output GST take it.
+        entries.Credit(note.Kind == CreditNoteKind.PayerShare ? map.InsuranceDisallowances : map.PatientDebtors, note.Amount);
+        var words = note.Kind switch
+        {
+            CreditNoteKind.WriteOff => "Write-off",
+            CreditNoteKind.PayerShare => "Payer credit note",
+            _ => "Credit note",
+        };
+        return entries.ToVoucher(CreditNoteType, note.Date, note.Number, $"{words} {note.Number}", note.Number);
     }
 
     /// <summary>

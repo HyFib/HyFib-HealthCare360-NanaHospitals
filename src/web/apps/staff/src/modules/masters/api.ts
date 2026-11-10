@@ -150,6 +150,24 @@ export interface PractitionerDto {
   pendingIdentity?: PendingPractitionerIdentity | null;
   /** On a single practitioner's read: consultation fees waiting for someone who approves prices. */
   pendingFee?: PendingPractitionerFee | null;
+  /** On a single practitioner's read: the latest check of the HPR ID with ABDM's registry. */
+  hprCheck?: PractitionerHprCheck | null;
+}
+
+/** PractitionerHprCheckDto: the latest check of a practitioner's HPR ID with ABDM's Healthcare Professionals Registry. */
+export interface PractitionerHprCheck {
+  result: 'Verified' | 'Mismatch' | 'NotFound';
+  /** What differs: name, council, registrationNumber, status. */
+  mismatches: string[];
+  checkedAt: string;
+  checkedByName: string;
+  /** Where the answer came from: "simulator" until the hospital is connected to ABDM's HPR service. */
+  source: string;
+  registryName: string | null;
+  registryCouncil: string | null;
+  registryNumber: string | null;
+  /** False when the HPR ID, council, registration number or name changed since the check. */
+  current: boolean;
 }
 
 /** A doctor's own consultation fees (0: the consultation service's approved price applies). */
@@ -200,6 +218,7 @@ export type SavePractitionerRequest = Omit<
   | 'linkedAccounts'
   | 'pendingIdentity'
   | 'pendingFee'
+  | 'hprCheck'
 > & {
   version: number | null;
   /** Take the doctor out of use although work is still ahead (the person saw the list the server named). */
@@ -416,6 +435,8 @@ export const mastersApi = {
   saveDepartment: (id: string | null, body: SaveDepartmentRequest) => save('departments', id, body),
   saveSpecialty: (id: string | null, body: SaveSpecialtyRequest) => save('specialties', id, body),
   savePractitioner: (id: string | null, body: SavePractitionerRequest) => save('practitioners', id, body),
+  checkHpr: (id: string, version: number) =>
+    api.post<PractitionerHprCheck>(`${BASE}/practitioners/${id}/hpr-check`, { version }),
   saveService: (id: string | null, body: SaveServiceItemRequest) => save('services', id, body),
   previewLetterhead: (body: LetterheadPreviewRequest) =>
     api.post<PrintableDocumentDto>(`${BASE}/facilities/letterhead-preview`, body),

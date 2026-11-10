@@ -97,6 +97,15 @@ Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The 
   the GST carved out of its refund at the sale line's rate (`PharmacyReturnEInvoiceSource`), the same split the day
   book posts. A return made after 30 November following the financial year of the sale (s.34(2)) takes back the value
   and not the GST, in the day book too, and is not reported.
+  When the facility is connected to the e-invoice portal (`integrations.irp`, billing.md *The portal connection*), the
+  register asks the portal for the sale's IRN itself; a B2B invoice above `gst.ewaybill.threshold` (₹50,000 by
+  default) then gets its **e-way bill** from the IRN, with the vehicle number or the transporter's GSTIN and the
+  distance (one day's validity per 200 km), and the number and validity are kept with the IRN.
+* **GST returns.** Counter sales and their returns are in Billing's GSTR-1 and GSTR-3B (`PharmacyGstReturnSource`): a
+  sale to a registered buyer is B2B; to a patient, B2CS, or B2CL when dispatched to another state above ₹1,00,000; a
+  medicine at 0% is nil-rated; returns are credit notes at the GST carved out of their refund (CDNR, CDNUR, or netted
+  into B2CS), and each medicine is in the HSN summary at its HSN code and quantity (`NOS`). Sales and returns are their
+  own series in the documents issued.
 * **Payments** may be split across modes and must add up to the bill (`payment.mismatch`). Credit (a due) is
   allowed only for registered patients (`payment.credit_not_allowed`).
 
@@ -215,6 +224,17 @@ The controlled-drug register holds exactly one line per stock-ledger movement (u
 documents write their own lines with the patient and prescriber. Everything else arrives through
 `ControlledStockMoved` (see Events): GRN, transfers, adjustments, write-offs, OT consumption.
 
+### Recall trace — `/recalls/trace`
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/recalls/trace?itemId&batchNumber` | `pharmacy.registers` | → `RecallTrace`: every hand-over of the batch (matched by item and batch number, any case) to a patient, oldest first: OP dispensing against an e-prescription, counter sales (to a registered patient, or a walk-in by the name and phone given at the counter) and issues to the ward for an admitted patient, each with the document, the store, the patient's UHID, name and phone, what was given, what came back and what the patient kept; cancelled sales are left out. Also the stores still holding the batch, and whether each holds it on recall. Audited `pharmacy.recall_trace` (PHI access, Warning) with who ran it, the batch and how many patients |
+
+The staff app's **Recall trace** page (Pharmacy) runs it only when asked, never as one types, and prints the call-back
+list on the letterhead with a column to note each patient contacted. It does not reach implants recorded against an
+operation or stock consumed in a ward sub-store, which are not issued to a named patient by batch through the
+pharmacy; the stock ledger follows those. A batch is held on recall from Stock (`inventory`), and released only with a
+second person's approval (see the Supply chain module).
+
 ### NDPS accounts — `/ndps` (NDPS Rules 52-O to 52-T, as amended in 2015)
 The essential narcotic drugs (`EssentialNarcoticDrugs`: morphine, fentanyl, methadone, oxycodone, codeine and
 hydrocodone, by the item's generic name) are accounted for from the controlled-drug register, which already holds every
@@ -244,6 +264,11 @@ patient is named by initials, as the form asks. A reporter sees and corrects the
 (`pharmacy.adr.manage`) sees every report, assesses causality (WHO-UMC) and records it as sent to the ADR monitoring
 centre, after which it cannot change. A serious reaction is due within 15 days of the hospital learning of it
 (`dueBy`, `overdue`). Reads and prints go through the patient guard and are audited.
+
+A new report raises an incident (type AdverseDrugReaction) in the Quality register in the same save, unless an incident
+number was given on the form: death is graded death; life-threatening, disability or a congenital anomaly severe (so a
+root-cause analysis is due); any other seriousness moderate; a non-serious reaction mild. The incident's number is kept
+on the report.
 
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
@@ -318,8 +343,8 @@ while SMS/WhatsApp consent is active.
 
 | Series key | Format |
 |---|---|
-| `pharmacy.invoice` | `{FAC}PH{YY}{SEQ:7}` (OP dispensing and counter sales) |
-| `pharmacy.return` | `{FAC}PHR{YY}{SEQ:6}` |
+| `pharmacy.invoice` | `{FAC}PH{YY}{SEQ:6}` (OP dispensing and counter sales; a GST series, at most 16 characters) |
+| `pharmacy.return` | `{FAC}SR{YY}{SEQ:6}` (a credit note; a GST series, at most 16 characters) |
 | `pharmacy.ward_indent` · `pharmacy.ip_issue` · `pharmacy.ward_return` | `{FAC}WI{YY}{SEQ:6}` · `{FAC}IPI{YY}{SEQ:6}` · `{FAC}WR{YY}{SEQ:6}` |
 | `pharmacy.refill` | `{FAC}RF{YY}{SEQ:6}` |
 
@@ -346,6 +371,9 @@ optimistic concurrency. Foreign keys go to the Patients `Patient` table and to t
 stock-batch tables.
 
 ## Open items for maintainers
+
+* **GST series in use.** The invoice and return defaults were `{FAC}PH{YY}{SEQ:7}` and `{FAC}PHR{YY}{SEQ:6}`, 17 characters at a
+  6-letter facility code; a series already in use keeps its stored format until an administrator changes it.
 
 * **ServiceCategory**: the IP pharmacy service items are seeded as `ServiceCategory.Consumable`. A
   `ServiceCategory.Pharmacy` value in Billing would give cleaner bill grouping.

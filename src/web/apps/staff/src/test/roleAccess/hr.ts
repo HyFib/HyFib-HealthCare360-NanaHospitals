@@ -474,6 +474,8 @@ const LEAVE_TYPES: LeaveTypeDto[] = [
     applicableGender: null,
     isActive: true,
     version: 1,
+    inServiceEncashmentDaysPerYear: null,
+    minimumBalanceAfterEncashment: 0,
   },
   {
     id: id('36'),
@@ -491,6 +493,8 @@ const LEAVE_TYPES: LeaveTypeDto[] = [
     applicableGender: null,
     isActive: true,
     version: 1,
+    inServiceEncashmentDaysPerYear: 10,
+    minimumBalanceAfterEncashment: 15,
   },
 ];
 
@@ -833,10 +837,15 @@ export const ANSWERS: FakeAnswers = {
   'GET /api/v1/hr/leave/types': LEAVE_TYPES,
   'GET /api/v1/hr/holidays': HOLIDAYS,
   'GET /api/v1/hr/leave/balances': BALANCES,
+  'GET /api/v1/hr/leave/balances/pending': [],
+  'GET /api/v1/hr/leave/encashments': [],
+  'GET /api/v1/hr/leave/encashments/pending': [],
+  'GET /api/v1/hr/leave/encashments/encashable': [],
   'GET /api/v1/hr/leave/requests': inStatus(LEAVE_REQUESTS),
   'GET /api/v1/hr/payroll/components': COMPONENTS,
   'GET /api/v1/hr/payroll/professional-tax': PROFESSIONAL_TAX,
   'GET /api/v1/hr/payroll/runs': paged(RUNS),
+  'GET /api/v1/hr/payroll/pending-changes': [],
   ...Object.fromEntries(RUNS.map((r) => [`GET /api/v1/hr/payroll/runs/${r.id}`, r])),
   ...Object.fromEntries(RUNS.map((r) => [`GET /api/v1/hr/payroll/runs/${r.id}/payslips`, paged(PAYSLIPS)])),
   [`GET /api/v1/hr/payroll/runs/${RECORD_ID}/inputs`]: INPUTS,

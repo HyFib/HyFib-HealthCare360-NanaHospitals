@@ -91,6 +91,8 @@ internal sealed class PayslipConfiguration : IEntityTypeConfiguration<Payslip>
         b.Property(x => x.DesignationName).HasMaxLength(100);
         b.Property(x => x.DepartmentName).HasMaxLength(200);
         b.Property(x => x.BankAccountMasked).HasMaxLength(24);
+        b.Property(x => x.BankAccountCipher).HasMaxLength(256).IsProtectedValue();
+        b.Property(x => x.BankIfscCipher).HasMaxLength(256).IsProtectedValue();
         b.Property(x => x.PayableDays).HasPrecision(6, 2);
         b.Property(x => x.LopDays).HasPrecision(6, 2);
         b.HasOne<PayrollRun>().WithMany().HasForeignKey(x => x.PayrollRunId).OnDelete(DeleteBehavior.Restrict);

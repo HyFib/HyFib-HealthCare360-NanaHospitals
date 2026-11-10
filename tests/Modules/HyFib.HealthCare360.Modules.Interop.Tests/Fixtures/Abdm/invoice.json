@@ -1,0 +1,936 @@
+{
+  "resourceType": "Bundle",
+  "id": "6052173f-e530-833d-b8f0-f572fde4495e",
+  "meta": {
+    "versionId": "1790309400000-873c2bb21fea2c06",
+    "lastUpdated": "2026-09-25T09:40:00+05:30",
+    "profile": [
+      "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle"
+    ],
+    "security": [
+      {
+        "system": "http://terminology.hl7.org/CodeSystem/v3-Confidentiality",
+        "code": "V",
+        "display": "very restricted"
+      }
+    ]
+  },
+  "identifier": {
+    "system": "urn:ietf:rfc:3986",
+    "value": "urn:uuid:6052173f-e530-833d-b8f0-f572fde4495e"
+  },
+  "type": "document",
+  "timestamp": "2026-09-25T09:40:00+05:30",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:f27c6e94-6d01-8cbb-aecd-24a2e3ce82b0",
+      "resource": {
+        "resourceType": "Composition",
+        "id": "f27c6e94-6d01-8cbb-aecd-24a2e3ce82b0",
+        "meta": {
+          "versionId": "1790309400000-873c2bb21fea2c06",
+          "lastUpdated": "2026-09-25T09:40:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/InvoiceRecord"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Invoice</p><p>Date: 2026-09-25T09:40:00+05:30</p><p>Invoice</p></div>"
+        },
+        "identifier": {
+          "system": "urn:ietf:rfc:3986",
+          "value": "urn:uuid:f27c6e94-6d01-8cbb-aecd-24a2e3ce82b0"
+        },
+        "status": "final",
+        "type": {
+          "coding": [
+            {
+              "system": "https://nrces.in/ndhm/fhir/r4/CodeSystem/ndhm-billing-codes",
+              "code": "INVOICE",
+              "display": "Invoice"
+            }
+          ],
+          "text": "Invoice"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a",
+          "type": "Patient",
+          "display": "Meera Anil Kulkarni"
+        },
+        "encounter": {
+          "reference": "urn:uuid:65c90a44-0f19-890c-8822-79affffc444c",
+          "type": "Encounter",
+          "display": "Out-patient consultation 2026-09-25T08:10:00+05:30"
+        },
+        "date": "2026-09-25T09:40:00+05:30",
+        "author": [
+          {
+            "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+            "type": "Organization",
+            "display": "Nana Hospitals, Pune"
+          }
+        ],
+        "title": "Invoice",
+        "custodian": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "display": "Nana Hospitals, Pune"
+        },
+        "section": [
+          {
+            "title": "Invoice",
+            "code": {
+              "coding": [
+                {
+                  "system": "https://nrces.in/ndhm/fhir/r4/CodeSystem/ndhm-billing-codes",
+                  "code": "INVOICE",
+                  "display": "Invoice"
+                }
+              ]
+            },
+            "text": {
+              "status": "generated",
+              "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Bill NHOB260000123 (issued), Out-patient bill: total ₹1,399.00, taxes excluded ₹1,363.25</p><p>Consultation, General Medicine × 1: ₹684.00</p><p>Complete blood count × 1: ₹380.00</p><p>Dressing kit × 2: ₹335.16</p><p>Payable by the patient: ₹1,399.00.</p></div>"
+            },
+            "entry": [
+              {
+                "reference": "urn:uuid:cb1150f4-f6c7-8cf8-8526-7dcb7aea9cd1",
+                "type": "Invoice",
+                "display": "Bill NHOB260000123"
+              },
+              {
+                "reference": "urn:uuid:0d456858-8e9a-8675-b872-ea9752e5d616",
+                "type": "Binary"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "4e080a21-3966-8efc-9236-64b034d9a58a",
+        "meta": {
+          "lastUpdated": "2026-09-22T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Patient"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Meera Anil Kulkarni UHID NH-UH-2600123</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MR",
+                  "display": "Medical record number"
+                }
+              ]
+            },
+            "system": "urn:hc360:uhid",
+            "value": "NH-UH-2600123"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "https://nrces.in/ndhm/fhir/r4/CodeSystem/ndhm-identifier-type-code",
+                  "code": "ABHA",
+                  "display": "Ayushman Bharat Health Account (ABHA) ID"
+                }
+              ],
+              "text": "ABHA number"
+            },
+            "system": "https://healthid.ndhm.gov.in",
+            "value": "91-1234-5678-9010"
+          }
+        ],
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "text": "Meera Anil Kulkarni",
+            "family": "Kulkarni",
+            "given": [
+              "Meera",
+              "Anil"
+            ],
+            "prefix": [
+              "Mrs"
+            ]
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+919876543210",
+            "use": "mobile",
+            "rank": 1
+          },
+          {
+            "system": "email",
+            "value": "meera@example.org",
+            "use": "home",
+            "rank": 2
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1984-04-12",
+        "address": [
+          {
+            "use": "home",
+            "type": "physical",
+            "text": "12 MG Road, Pune, Pune, Maharashtra, 411001",
+            "line": [
+              "12 MG Road"
+            ],
+            "city": "Pune",
+            "district": "Pune",
+            "state": "Maharashtra",
+            "postalCode": "411001",
+            "country": "India"
+          }
+        ],
+        "maritalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus",
+              "code": "M",
+              "display": "Married"
+            }
+          ]
+        },
+        "managingOrganization": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "identifier": {
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          "display": "Nana Hospitals, Pune"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:65c90a44-0f19-890c-8822-79affffc444c",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "65c90a44-0f19-890c-8822-79affffc444c",
+        "meta": {
+          "lastUpdated": "2026-09-25T08:10:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Encounter"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Out-patient consultation 2026-09-25T08:10:00+05:30</p></div>"
+        },
+        "identifier": [
+          {
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "VN",
+                  "display": "Visit number"
+                }
+              ]
+            },
+            "system": "urn:hc360:visit-number",
+            "value": "NHOP2600871"
+          }
+        ],
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "type": [
+          {
+            "text": "Out-patient consultation"
+          }
+        ],
+        "serviceType": {
+          "text": "General Medicine"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "participant": [
+          {
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-ParticipationType",
+                    "code": "ATND",
+                    "display": "attender"
+                  }
+                ]
+              }
+            ],
+            "individual": {
+              "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+              "type": "Practitioner",
+              "identifier": {
+                "system": "https://doctor.ndhm.gov.in",
+                "value": "21-1521-3828-3227"
+              },
+              "display": "Dr. Asha Rao"
+            }
+          }
+        ],
+        "period": {
+          "start": "2026-09-25T08:10:00+05:30",
+          "end": "2026-09-25T09:10:00+05:30"
+        },
+        "reasonCode": [
+          {
+            "text": "Fever for three days"
+          }
+        ],
+        "serviceProvider": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "identifier": {
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          "display": "Nana Hospitals, Pune"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "8878f630-7199-8fcb-8182-a92e8749eb27",
+        "meta": {
+          "lastUpdated": "2022-09-25T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Nana Hospitals, Pune</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PRN",
+                  "display": "Provider number"
+                }
+              ]
+            },
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "XX",
+                  "display": "Organization identifier"
+                }
+              ]
+            },
+            "system": "urn:hc360:facility",
+            "value": "NHP"
+          }
+        ],
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "prov",
+                "display": "Healthcare Provider"
+              }
+            ]
+          }
+        ],
+        "name": "Nana Hospitals, Pune",
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+912026001234",
+            "use": "work"
+          },
+          {
+            "system": "email",
+            "value": "records@nanahospitals.example",
+            "use": "work"
+          }
+        ],
+        "address": [
+          {
+            "use": "work",
+            "type": "physical",
+            "text": "1 Hospital Road, Pune, Pune, Maharashtra, 411001",
+            "line": [
+              "1 Hospital Road"
+            ],
+            "city": "Pune",
+            "district": "Pune",
+            "state": "Maharashtra",
+            "postalCode": "411001",
+            "country": "India"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:cb1150f4-f6c7-8cf8-8526-7dcb7aea9cd1",
+      "resource": {
+        "resourceType": "Invoice",
+        "id": "cb1150f4-f6c7-8cf8-8526-7dcb7aea9cd1",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Invoice"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Bill NHOB260000123 (issued), Out-patient bill: total ₹1,399.00, taxes excluded ₹1,363.25</p><p>Consultation, General Medicine × 1: ₹684.00</p><p>Complete blood count × 1: ₹380.00</p><p>Dressing kit × 2: ₹335.16</p><p>Payable by the patient: ₹1,399.00.</p></div>"
+        },
+        "identifier": [
+          {
+            "system": "urn:hc360:bill-number",
+            "value": "NHOB260000123"
+          }
+        ],
+        "status": "issued",
+        "type": {
+          "coding": [
+            {
+              "system": "urn:hc360:bill-type",
+              "code": "op",
+              "display": "Out-patient bill"
+            }
+          ],
+          "text": "Out-patient bill"
+        },
+        "subject": {
+          "reference": "urn:uuid:4e080a21-3966-8efc-9236-64b034d9a58a"
+        },
+        "date": "2026-09-25T09:40:00+05:30",
+        "participant": [
+          {
+            "role": {
+              "text": "Service provider"
+            },
+            "actor": {
+              "reference": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+              "type": "Practitioner",
+              "identifier": {
+                "system": "https://doctor.ndhm.gov.in",
+                "value": "21-1521-3828-3227"
+              },
+              "display": "Dr. Asha Rao"
+            }
+          }
+        ],
+        "issuer": {
+          "reference": "urn:uuid:8878f630-7199-8fcb-8182-a92e8749eb27",
+          "type": "Organization",
+          "identifier": {
+            "system": "https://facility.ndhm.gov.in",
+            "value": "IN2710000123"
+          },
+          "display": "Nana Hospitals, Pune"
+        },
+        "lineItem": [
+          {
+            "sequence": 1,
+            "chargeItemCodeableConcept": {
+              "coding": [
+                {
+                  "system": "urn:hc360:service",
+                  "code": "CONS-GM",
+                  "display": "Consultation, General Medicine"
+                },
+                {
+                  "system": "urn:hc360:gst-sac",
+                  "code": "999312"
+                }
+              ],
+              "text": "Consultation, General Medicine"
+            },
+            "priceComponent": [
+              {
+                "type": "base",
+                "factor": 1,
+                "amount": {
+                  "value": 800,
+                  "currency": "INR"
+                }
+              },
+              {
+                "type": "informational",
+                "code": {
+                  "coding": [
+                    {
+                      "system": "urn:hc360:price-component",
+                      "code": "unit-price",
+                      "display": "Unit price"
+                    }
+                  ],
+                  "text": "Unit price"
+                },
+                "amount": {
+                  "value": 800,
+                  "currency": "INR"
+                }
+              },
+              {
+                "type": "discount",
+                "code": {
+                  "coding": [
+                    {
+                      "system": "urn:hc360:price-component",
+                      "code": "tariff-discount",
+                      "display": "Tariff concession"
+                    }
+                  ],
+                  "text": "Tariff concession"
+                },
+                "amount": {
+                  "value": -80,
+                  "currency": "INR"
+                }
+              },
+              {
+                "type": "discount",
+                "code": {
+                  "coding": [
+                    {
+                      "system": "urn:hc360:price-component",
+                      "code": "bill-discount",
+                      "display": "Share of the bill discount"
+                    }
+                  ],
+                  "text": "Share of the bill discount"
+                },
+                "amount": {
+                  "value": -36,
+                  "currency": "INR"
+                }
+              }
+            ]
+          },
+          {
+            "sequence": 2,
+            "chargeItemCodeableConcept": {
+              "coding": [
+                {
+                  "system": "urn:hc360:service",
+                  "code": "LAB-CBC",
+                  "display": "Complete blood count"
+                },
+                {
+                  "system": "urn:hc360:gst-sac",
+                  "code": "999316"
+                }
+              ],
+              "text": "Complete blood count"
+            },
+            "priceComponent": [
+              {
+                "type": "base",
+                "factor": 1,
+                "amount": {
+                  "value": 450,
+                  "currency": "INR"
+                }
+              },
+              {
+                "type": "informational",
+                "code": {
+                  "coding": [
+                    {
+                      "system": "urn:hc360:price-component",
+                      "code": "unit-price",
+                      "display": "Unit price"
+                    }
+                  ],
+                  "text": "Unit price"
+                },
+                "amount": {
+                  "value": 450,
+                  "currency": "INR"
+                }
+              },
+              {
+                "type": "discount",
+                "code": {
+                  "coding": [
+                    {
+                      "system": "urn:hc360:price-component",
+                      "code": "line-discount",
+                      "display": "Discount on the service"
+                    }
+                  ],
+                  "text": "Discount on the service"
+                },
+                "amount": {
+                  "value": -50,
+                  "currency": "INR"
+                }
+              },
+              {
+                "type": "discount",
+                "code": {
+                  "coding": [
+                    {
+                      "system": "urn:hc360:price-component",
+                      "code": "bill-discount",
+                      "display": "Share of the bill discount"
+                    }
+                  ],
+                  "text": "Share of the bill discount"
+                },
+                "amount": {
+                  "value": -20,
+                  "currency": "INR"
+                }
+              }
+            ]
+          },
+          {
+            "sequence": 3,
+            "chargeItemCodeableConcept": {
+              "coding": [
+                {
+                  "system": "urn:hc360:service",
+                  "code": "CSM-DRK",
+                  "display": "Dressing kit"
+                },
+                {
+                  "system": "urn:hc360:gst-sac",
+                  "code": "999319"
+                }
+              ],
+              "text": "Dressing kit"
+            },
+            "priceComponent": [
+              {
+                "type": "base",
+                "factor": 2,
+                "amount": {
+                  "value": 315,
+                  "currency": "INR"
+                }
+              },
+              {
+                "type": "informational",
+                "code": {
+                  "coding": [
+                    {
+                      "system": "urn:hc360:price-component",
+                      "code": "unit-price",
+                      "display": "Unit price"
+                    }
+                  ],
+                  "text": "Unit price"
+                },
+                "amount": {
+                  "value": 157.5,
+                  "currency": "INR"
+                }
+              },
+              {
+                "type": "discount",
+                "code": {
+                  "coding": [
+                    {
+                      "system": "urn:hc360:price-component",
+                      "code": "bill-discount",
+                      "display": "Share of the bill discount"
+                    }
+                  ],
+                  "text": "Share of the bill discount"
+                },
+                "amount": {
+                  "value": -15.75,
+                  "currency": "INR"
+                }
+              },
+              {
+                "type": "tax",
+                "code": {
+                  "coding": [
+                    {
+                      "system": "urn:hc360:price-component",
+                      "code": "CGST",
+                      "display": "Central GST"
+                    }
+                  ],
+                  "text": "Central GST"
+                },
+                "factor": 0.06,
+                "amount": {
+                  "value": 17.96,
+                  "currency": "INR"
+                }
+              },
+              {
+                "type": "tax",
+                "code": {
+                  "coding": [
+                    {
+                      "system": "urn:hc360:price-component",
+                      "code": "SGST",
+                      "display": "State GST"
+                    }
+                  ],
+                  "text": "State GST"
+                },
+                "factor": 0.06,
+                "amount": {
+                  "value": 17.95,
+                  "currency": "INR"
+                }
+              }
+            ]
+          }
+        ],
+        "totalPriceComponent": [
+          {
+            "type": "base",
+            "amount": {
+              "value": 1565,
+              "currency": "INR"
+            }
+          },
+          {
+            "type": "discount",
+            "code": {
+              "coding": [
+                {
+                  "system": "urn:hc360:price-component",
+                  "code": "tariff-discount",
+                  "display": "Tariff concession"
+                }
+              ],
+              "text": "Tariff concession"
+            },
+            "amount": {
+              "value": -80,
+              "currency": "INR"
+            }
+          },
+          {
+            "type": "discount",
+            "code": {
+              "coding": [
+                {
+                  "system": "urn:hc360:price-component",
+                  "code": "line-discount",
+                  "display": "Discount on the service"
+                }
+              ],
+              "text": "Discount on the service"
+            },
+            "amount": {
+              "value": -50,
+              "currency": "INR"
+            }
+          },
+          {
+            "type": "discount",
+            "code": {
+              "coding": [
+                {
+                  "system": "urn:hc360:price-component",
+                  "code": "bill-discount",
+                  "display": "Share of the bill discount"
+                }
+              ],
+              "text": "Share of the bill discount"
+            },
+            "amount": {
+              "value": -71.75,
+              "currency": "INR"
+            }
+          },
+          {
+            "type": "tax",
+            "code": {
+              "coding": [
+                {
+                  "system": "urn:hc360:price-component",
+                  "code": "CGST",
+                  "display": "Central GST"
+                }
+              ],
+              "text": "Central GST"
+            },
+            "amount": {
+              "value": 17.96,
+              "currency": "INR"
+            }
+          },
+          {
+            "type": "tax",
+            "code": {
+              "coding": [
+                {
+                  "system": "urn:hc360:price-component",
+                  "code": "SGST",
+                  "display": "State GST"
+                }
+              ],
+              "text": "State GST"
+            },
+            "amount": {
+              "value": 17.95,
+              "currency": "INR"
+            }
+          },
+          {
+            "type": "deduction",
+            "code": {
+              "coding": [
+                {
+                  "system": "urn:hc360:price-component",
+                  "code": "round-off",
+                  "display": "Round off"
+                }
+              ],
+              "text": "Round off"
+            },
+            "amount": {
+              "value": -0.16,
+              "currency": "INR"
+            }
+          }
+        ],
+        "totalNet": {
+          "value": 1363.25,
+          "currency": "INR"
+        },
+        "totalGross": {
+          "value": 1399,
+          "currency": "INR"
+        },
+        "paymentTerms": "Payable by the patient: ₹1,399.00."
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:0d456858-8e9a-8675-b872-ea9752e5d616",
+      "resource": {
+        "resourceType": "Binary",
+        "id": "0d456858-8e9a-8675-b872-ea9752e5d616",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Binary"
+          ]
+        },
+        "contentType": "application/pdf",
+        "data": "JVBERi0xLjQKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgNTk1IDg0Ml0+PmVuZG9iagp0cmFpbGVyPDwvUm9vdCAxIDAgUj4+CiUlRU9GCg=="
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:c5eb9e84-7367-8996-a1d6-35025a050d1b",
+      "resource": {
+        "resourceType": "Practitioner",
+        "id": "c5eb9e84-7367-8996-a1d6-35025a050d1b",
+        "meta": {
+          "lastUpdated": "2026-03-25T10:30:00+05:30",
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Practitioner"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\"><p>Dr. Asha Rao</p></div>"
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MD",
+                  "display": "Medical License number"
+                }
+              ]
+            },
+            "system": "https://doctor.ndhm.gov.in",
+            "value": "21-1521-3828-3227"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MD",
+                  "display": "Medical License number"
+                }
+              ]
+            },
+            "system": "urn:hc360:medical-council-registration",
+            "value": "MMC-2009-041234",
+            "assigner": {
+              "display": "Maharashtra Medical Council"
+            }
+          },
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "PRN",
+                  "display": "Provider number"
+                }
+              ]
+            },
+            "system": "urn:hc360:practitioner",
+            "value": "D0007"
+          }
+        ],
+        "name": [
+          {
+            "text": "Dr. Asha Rao",
+            "family": "Rao",
+            "given": [
+              "Asha"
+            ],
+            "prefix": [
+              "Dr."
+            ]
+          }
+        ],
+        "gender": "female",
+        "qualification": [
+          {
+            "code": {
+              "text": "MBBS, MD (General Medicine)"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

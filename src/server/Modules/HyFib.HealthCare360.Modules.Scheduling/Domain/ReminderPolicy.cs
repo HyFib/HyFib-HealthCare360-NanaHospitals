@@ -19,9 +19,6 @@ public static class ReminderPolicy
     public static readonly TimeSpan DayBeforeLead = TimeSpan.FromHours(24);
     public static readonly TimeSpan TwoHourLead = TimeSpan.FromHours(2);
 
-    public static ReminderDecision Decide(Appointment appointment, DateTimeOffset now) =>
-        Decide(appointment.Status, appointment.StartsAt, appointment.BookedAt, appointment.Reminder24hSentAt, appointment.Reminder2hSentAt, now);
-
     public static ReminderDecision Decide(
         AppointmentStatus status,
         DateTimeOffset startsAt,

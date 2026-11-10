@@ -8,6 +8,7 @@ import {
   groupAlerts,
   signBlockers,
   signRequirements,
+  telemedicineRefusalsFromProblem,
   toSignRequest,
   type SafetyAlert,
 } from './safety';
@@ -177,5 +178,34 @@ describe('loosening the drug-safety tables', () => {
   it('saves at once a maximum dose lowered or checked on every route', () => {
     expect(doseLimitLoosens(limit, { ...limit, maxDailyDoseMg: 3000 })).toBe(false);
     expect(doseLimitLoosens(limit, { ...limit, route: '' })).toBe(false);
+  });
+});
+
+describe('a teleconsultation refusing medicines', () => {
+  const refused = {
+    telemedicine: [
+      {
+        name: 'Amoxicillin 500 mg',
+        list: 'B',
+        code: 'prescription.telemedicine_list_b_needs_follow_up',
+        reason: 'Only a follow-up.',
+      },
+      { name: 'Morphine 10 mg', list: 'Prohibited', code: 'prescription.telemedicine_prohibited', reason: 'Never.' },
+      { name: 42 },
+    ],
+    consult: { byVideo: false, isFollowUp: false },
+  };
+
+  it('lists each medicine refused, with its list and why', () => {
+    expect(telemedicineRefusalsFromProblem('prescription.telemedicine_prohibited', refused)).toEqual([
+      refused.telemedicine[0],
+      refused.telemedicine[1],
+    ]);
+  });
+
+  it('is not a telemedicine refusal for another code, or without the list', () => {
+    expect(telemedicineRefusalsFromProblem('prescription.safety_block', refused)).toBeNull();
+    expect(telemedicineRefusalsFromProblem('prescription.telemedicine_unlisted', null)).toBeNull();
+    expect(telemedicineRefusalsFromProblem(undefined, refused)).toBeNull();
   });
 });

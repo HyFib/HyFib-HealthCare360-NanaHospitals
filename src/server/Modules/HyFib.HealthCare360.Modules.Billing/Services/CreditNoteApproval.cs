@@ -31,7 +31,12 @@ internal sealed class CreditNoteApproval(RefundService refunds) : IApprovalActio
 
     public static string KindOf(CreditNoteKind kind) => kind == CreditNoteKind.WriteOff ? WriteOffApproval.Key : Key;
 
-    public static string Words(CreditNoteKind kind) => kind == CreditNoteKind.WriteOff ? "Write-off" : "Credit note";
+    public static string Words(CreditNoteKind kind) => kind switch
+    {
+        CreditNoteKind.WriteOff => "Write-off",
+        CreditNoteKind.PayerShare => "Payer credit note",
+        _ => "Credit note",
+    };
 }
 
 /// <summary>A write-off of a due that cannot be recovered: asked for and approved as a credit note is.</summary>

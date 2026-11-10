@@ -37,12 +37,25 @@ internal sealed class TheatreCases(HospitalServer server)
         var anaesthetistId = (await (await server.SignInAsync(Users.SecondDoctor)).GetAsync<AuthUser>("/api/v1/auth/me")).PractitionerId.ShouldNotBeNull();
         var (patientId, visit) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice);
         var theatre = (await doctor.GetAsync<List<TheatreDto>>("/api/v1/ot/theatres")).First();
-        var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(400 + Random.Shared.Next(1500)).AddMinutes(30 * Random.Shared.Next(40)), TimeSpan.Zero);
-        var booking = await doctor.PostAsync<SurgeryCreated>(Bookings, new CreateSurgeryBookingRequest(
-            PatientId: patientId, AdmissionId: null, VisitId: visit.Id, ProcedureServiceItemId: null, ProcedureCode: null, ProcedureName: procedure,
-            Laterality: laterality, Diagnosis: "For the theatre's checks", SurgeonId: surgeonId, AssistantIds: null, AnaesthetistId: anaesthetistId,
-            AnaesthesiaType: AnaesthesiaType.Spinal, Priority: SurgeryPriority.Elective, PreferredDate: null, TheatreId: theatre.Id,
-            ScheduledStart: start, ScheduledEnd: start.AddMinutes(90), Notes: null, SiteLevel: level));
+        // A random slot years ahead, where nothing else of the run should be; the surgeon and anaesthetist are the same in
+        // every case, so on the rare clash with another test's case another slot is tried.
+        SurgeryCreated? booking = null;
+        for (var attempt = 0; booking is null; attempt++)
+        {
+            var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(400 + Random.Shared.Next(1500)).AddMinutes(30 * Random.Shared.Next(40)), TimeSpan.Zero);
+            using var response = await doctor.SendRawAsync(HttpMethod.Post, Bookings, new CreateSurgeryBookingRequest(
+                PatientId: patientId, AdmissionId: null, VisitId: visit.Id, ProcedureServiceItemId: null, ProcedureCode: null, ProcedureName: procedure,
+                Laterality: laterality, Diagnosis: "For the theatre's checks", SurgeonId: surgeonId, AssistantIds: null, AnaesthetistId: anaesthetistId,
+                AnaesthesiaType: AnaesthesiaType.Spinal, Priority: SurgeryPriority.Elective, PreferredDate: null, TheatreId: theatre.Id,
+                ScheduledStart: start, ScheduledEnd: start.AddMinutes(90), Notes: null, SiteLevel: level));
+            if (response.StatusCode == HttpStatusCode.Conflict && attempt < 5)
+            {
+                continue;
+            }
+
+            booking = await ApiClient.ReadAsync<SurgeryCreated>(response, HttpMethod.Post, Bookings);
+        }
+
         await nurse.PostAsync($"{Bookings}/{booking.Id}/receive");
         return new Case(booking.Id, patientId, visit.Id, $"{Bookings}/{booking.Id}");
     }

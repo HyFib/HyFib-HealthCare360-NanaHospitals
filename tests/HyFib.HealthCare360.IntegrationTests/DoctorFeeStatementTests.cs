@@ -43,8 +43,9 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
 
         // ------------------------------------------------------------------ the period's fees, paid out
 
-        // The accountant closes the period: his unpaid fees, less an advance already paid to him and TDS at the hospital's
-        // 10 % (section 194J) on the gross. The hospital administrator approves the payout and it is paid by bank transfer.
+        // The accountant closes the period: his unpaid fees, less an advance already paid to him. His fees this year are within
+        // the s.194J threshold (₹50,000), so no TDS (DoctorFeeTdsTests has the tax). The hospital administrator approves the
+        // payout and it is paid by bank transfer.
         var created = await accountant.PostAsync<JsonElement>($"{Fees}/payouts", new CreatePayoutRequest(
             doctor.Id, today, today, [new PayoutDeductionInput("Advance paid on the 1st", 200m)], null, "Fees for today"));
         var payoutId = created.GetProperty("id").GetGuid();
@@ -66,7 +67,7 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
 
         var paid = statement.Payouts.ShouldHaveSingleItem();
         (paid.Id, paid.Status, paid.PeriodFrom, paid.PeriodTo, paid.AccrualCount).ShouldBe((payoutId, PayoutStatus.Paid, today, today, 3));
-        Amounts(paid).ShouldBe((1900m, 200m, 10m, 190m, 1510m), "net = gross − TDS on the gross − deductions");
+        Amounts(paid).ShouldBe((1900m, 200m, 0m, 0m, 1700m), "net = gross − TDS (none within the threshold) − deductions");
         paid.Deductions.Select(d => (d.Description, d.Amount)).ShouldBe([("Advance paid on the 1st", 200m)]);
 
         // ------------------------------------------------------------------ a cancelled bill, and the next payout
@@ -94,7 +95,7 @@ public sealed class DoctorFeeStatementTests(HospitalServer server)
         statement.Payouts.Select(p => p.Id).ShouldBe([payoutId, nextId], ignoreOrder: true);
         var next = statement.Payouts.Single(p => p.Id == nextId);
         (next.Status, next.AccrualCount).ShouldBe((PayoutStatus.Draft, 3));
-        Amounts(next).ShouldBe((150m, 0m, 10m, 15m, 135m));
+        Amounts(next).ShouldBe((150m, 0m, 0m, 0m, 150m));
         next.Deductions.ShouldBeEmpty();
 
         // ------------------------------------------------------------------ the period

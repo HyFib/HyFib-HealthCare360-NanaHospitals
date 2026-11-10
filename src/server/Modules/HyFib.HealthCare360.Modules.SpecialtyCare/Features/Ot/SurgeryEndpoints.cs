@@ -130,6 +130,8 @@ internal static class SurgeryEndpoints
                     TimeOut = b.TimeOutCompletedAt != null,
                     SignOut = b.SignOutCompletedAt != null,
                     b.ChargeStatus,
+                    InRecovery = b.SignOutCompletedAt != null && b.RecoveryDischargedAt == null
+                                 && (b.Status == SurgeryStatus.InProgress || b.Status == SurgeryStatus.Completed),
                 })
             .ToPagedResultAsync(page, ct);
 
@@ -138,7 +140,7 @@ internal static class SurgeryEndpoints
         return TypedResults.Ok(result.Map(r => new SurgeryListItem(
             r.Id, r.BookingNumber, r.PatientId, r.Uhid, r.FullName, r.Gender, r.DateOfBirth is { } dob ? Age.Format(dob, today) : null, r.ProcedureName,
             r.Laterality, r.Priority, r.Status, r.TheatreId, r.TheatreCode, r.ScheduledStart, r.ScheduledEnd, r.PreferredDate, r.SurgeonId,
-            r.SurgeonId is { } s ? names.GetValueOrDefault(s) : null, r.AnaesthesiaType, r.SignIn, r.TimeOut, r.SignOut, r.ChargeStatus)));
+            r.SurgeonId is { } s ? names.GetValueOrDefault(s) : null, r.AnaesthesiaType, r.SignIn, r.TimeOut, r.SignOut, r.ChargeStatus, r.InRecovery)));
     }
 
     private static async Task<IResult> Get(
@@ -222,7 +224,7 @@ internal static class SurgeryEndpoints
             p.Value.Select(i => ToItem(i, b.SafetyChecks.FirstOrDefault(e => e.Phase == p.Key && e.Key == i.Key))).ToList())).ToList(),
         b.Notes, b.CancelReason, b.PostponeReason, b.PostponeCount, b.ChargeStatus, b.ChargeError, b.Version,
         b.NurseId, b.NurseId is { } n ? names.GetValueOrDefault(n) : null, b.SiteLevel, b.Site.NeedsMarking, b.Counts, SurgicalCounts.Tally(b.Counts),
-        b.CountDiscrepancies, b.ChecklistVoids);
+        b.CountDiscrepancies, b.ChecklistVoids, b.InRecovery, b.RecoveryDischargedAt, b.RecoveryDestination);
 
     private static ChecklistItemDto ToItem(ChecklistItemDefinition definition, ChecklistEntry? entry) => new(
         definition.Key, definition.Text, definition.AllowsNotApplicable, entry?.State ?? ChecklistItemState.Pending, entry?.Remarks,

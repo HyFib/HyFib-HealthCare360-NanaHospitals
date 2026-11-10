@@ -1,5 +1,6 @@
 using System.Text;
 using HyFib.HealthCare360.Modules.HR.Domain;
+using HyFib.HealthCare360.Modules.HR.Domain.Statutory;
 using HyFib.HealthCare360.Modules.HR.Features.Payroll;
 using HyFib.HealthCare360.Platform.Notifications;
 
@@ -18,6 +19,9 @@ public sealed class PayrollService(
     INotificationService notifications,
     TimeProvider time)
 {
+    /// <summary>The bank file of a payroll approved before payment details were fixed at approval is refused.</summary>
+    public const string BankDetailsNotFixedCode = "payroll.bank_details_not_fixed";
+
     public async Task<Result<Guid>> CreateRunAsync(CreatePayrollRunRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -125,11 +129,29 @@ public sealed class PayrollService(
         }
 
         var result = run.Approve(userId, time.GetUtcNow());
-        if (result.IsSuccess)
+        if (result.IsFailure)
         {
-            await db.SaveChangesAsync(ct);
+            return result;
         }
 
+        // The payment details in force now are the ones this payroll pays (maker-checker slice 11): a change approved after
+        // this does not reach its bank file. A change still waiting is not in force, so the details it replaces are fixed.
+        var payslips = await db.Set<Payslip>().Where(p => p.PayrollRunId == runId).ToListAsync(ct);
+        var employeeIds = payslips.Select(p => p.EmployeeId).ToList();
+        var details = await db.Set<Employee>().AsNoTracking().Where(e => employeeIds.Contains(e.Id))
+            .Select(e => new { e.Id, e.PaymentMode, e.BankAccountMasked, e.BankAccountCipher, e.BankIfscCipher })
+            .ToDictionaryAsync(e => e.Id, ct);
+        foreach (var payslip in payslips)
+        {
+            var employee = details[payslip.EmployeeId];
+            var byBank = employee.PaymentMode == SalaryPaymentMode.BankTransfer;
+            payslip.PaymentMode = employee.PaymentMode;
+            payslip.BankAccountMasked = byBank ? employee.BankAccountMasked : null;
+            payslip.BankAccountCipher = byBank ? employee.BankAccountCipher : null;
+            payslip.BankIfscCipher = byBank ? employee.BankIfscCipher : null;
+        }
+
+        await db.SaveChangesAsync(ct);
         return result;
     }
 
@@ -218,13 +240,18 @@ public sealed class PayrollService(
             return Error.Rule("payroll.not_approved", "The bank file can be generated only after the payroll is approved.");
         }
 
-        var payees = await (
-                from p in db.Set<Payslip>().AsNoTracking()
-                join e in db.Set<Employee>() on p.EmployeeId equals e.Id
-                where p.PayrollRunId == runId && p.NetPay > 0 && e.PaymentMode == SalaryPaymentMode.BankTransfer
-                      && e.BankAccountCipher != null && e.BankIfscCipher != null
-                orderby p.EmployeeCode
-                select new { p.EmployeeCode, p.EmployeeName, p.NetPay, e.BankAccountCipher, e.BankIfscCipher })
+        // The accounts are the ones in force when the payroll was approved, fixed on its payslips then, never the employees'
+        // accounts as they are now (maker-checker slice 11).
+        if (run.BankDetailsFixedAt is null)
+        {
+            return Error.Rule(BankDetailsNotFixedCode,
+                "This payroll was approved before the payment details were fixed at approval, so its bank file would read today's accounts. Reopen it and approve it again.");
+        }
+
+        var payees = await db.Set<Payslip>().AsNoTracking()
+            .Where(p => p.PayrollRunId == runId && p.NetPay > 0 && p.PaymentMode == SalaryPaymentMode.BankTransfer && p.BankAccountCipher != null && p.BankIfscCipher != null)
+            .OrderBy(p => p.EmployeeCode)
+            .Select(p => new { p.EmployeeCode, p.EmployeeName, p.NetPay, p.BankAccountCipher, p.BankIfscCipher })
             .ToListAsync(ct);
 
         var narration = BankTransferFile.Narration(run.Year, run.Month);
@@ -253,7 +280,8 @@ public sealed class PayrollService(
         IReadOnlyDictionary<Guid, decimal> EarlierHalfYearGross,
         IReadOnlyDictionary<Guid, Payslip> Existing,
         IReadOnlyDictionary<Guid, string> Departments,
-        IReadOnlyDictionary<Guid, string> Designations);
+        IReadOnlyDictionary<Guid, string> Designations,
+        PayrollTaxContext Tax);
 
     private async Task<PayrollContext> LoadContextAsync(PayrollRun run, CancellationToken ct)
     {
@@ -306,6 +334,7 @@ public sealed class PayrollService(
         var existing = await db.Set<Payslip>().Include(p => p.Lines).Where(p => p.PayrollRunId == run.Id).ToDictionaryAsync(p => p.EmployeeId, ct);
         var departments = await db.Set<Department>().AsNoTracking().ToDictionaryAsync(d => d.Id, d => d.Name, ct);
         var designations = await db.Set<Designation>().AsNoTracking().ToDictionaryAsync(d => d.Id, d => d.Name, ct);
+        var tax = await PayrollTaxContext.LoadAsync(db, run, ids, ct);
 
         return new PayrollContext(
             employees,
@@ -317,7 +346,8 @@ public sealed class PayrollService(
             earlier,
             existing,
             departments,
-            designations);
+            designations,
+            tax);
     }
 
     private static void Compute(PayrollRun run, Employee employee, EmployeeSalaryStructure structure, PayrollContext context, Payslip payslip)
@@ -347,12 +377,22 @@ public sealed class PayrollService(
             ? earlier
             : null;
 
-        var result = PayrollCalculator.Calculate(new PayrollCalculationInput(
+        var calculation = new PayrollCalculationInput(
             run.Year, run.Month, lop.DaysInMonth, lop.PayableDays, lines, adjustments,
-            new StatutoryProfile(structure.PfApplicable, structure.PfOnActualBasic, structure.EsiApplicable, schedule),
-            structure.MonthlyTds, tdsOverride, earlierHalfYear));
+            new StatutoryProfile(structure.PfApplicable, structure.PfOnActualBasic, structure.EsiApplicable, schedule,
+                context.Tax.EsiCoveredInPeriod.Contains(employee.Id)),
+            structure.MonthlyTds, tdsOverride, earlierHalfYear);
+        var result = PayrollCalculator.Calculate(calculation);
+        var warnings = new List<string>();
 
-        var warnings = result.Warnings.ToList();
+        // TDS is computed from the year's salary and the employee's declaration (s.192), unless typed in for this month.
+        if (tdsOverride is null)
+        {
+            var monthlyTds = context.Tax.MonthlyTds(run, employee, structure, schedule, result, warnings);
+            result = PayrollCalculator.Calculate(calculation with { MonthlyTds = monthlyTds });
+        }
+
+        warnings.InsertRange(0, result.Warnings);
         if (lop.MissingAttendanceDays > 0)
         {
             warnings.Add($"{lop.MissingAttendanceDays} day(s) without computed attendance were treated as absent.");

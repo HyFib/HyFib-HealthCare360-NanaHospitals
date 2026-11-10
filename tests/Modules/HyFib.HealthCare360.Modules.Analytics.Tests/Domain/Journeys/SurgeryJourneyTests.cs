@@ -4,7 +4,10 @@ using static HyFib.HealthCare360.Modules.Analytics.Tests.Domain.Journeys.Journey
 
 namespace HyFib.HealthCare360.Modules.Analytics.Tests.Domain.Journeys;
 
-/// <summary>An operation's stages, the OT day-of-surgery stepper's, from request to leaving the theatre with the charges posted.</summary>
+/// <summary>
+/// An operation's stages, the OT day-of-surgery stepper's, from request until the patient leaves the recovery room, with the
+/// charges posted alongside.
+/// </summary>
 public sealed class SurgeryJourneyTests
 {
     /// <summary>A knee replacement requested yesterday at 16:00, given the 14:00 slot in OT-2 today; nothing done on the day yet.</summary>
@@ -24,10 +27,10 @@ public sealed class SurgeryJourneyTests
         false);
 
     [Fact]
-    public void The_stages_are_the_day_of_surgery_without_a_recovery_stage_nothing_records()
+    public void The_stages_are_the_day_of_surgery_and_the_recovery_room()
     {
         SurgeryJourney.Stages.Select(s => s.Key).ShouldBe(
-            ["requested", "scheduled", "pre-op", "received", "sign-in", "time-out", "incision", "sign-out", "out-and-billed"]);
+            ["requested", "scheduled", "pre-op", "received", "sign-in", "time-out", "incision", "sign-out", "in-recovery", "recovery-discharged", "out-and-billed"]);
     }
 
     [Fact]
@@ -120,27 +123,54 @@ public sealed class SurgeryJourneyTests
     }
 
     [Fact]
-    public void A_patient_out_of_theatre_whose_charges_failed_is_not_billed_yet()
+    public void A_patient_signed_out_is_in_recovery_until_discharged_from_it_whether_received_there_yet_or_not()
     {
-        var unbilled = Completed() with { ChargesFailed = true };
+        var signedOut = Completed() with { Status = SurgeryStatus.InProgress, CompletedAt = null };
+        var onTheWay = SurgeryJourney.Progress(signedOut, Now);
+        onTheWay.Current.ShouldNotBeNull().ShouldSatisfyAllConditions(
+            s => s.Key.ShouldBe("in-recovery"), s => s.At.ShouldBe(At(10, 40)), s => s.Detail.ShouldBe("Not yet received in recovery"));
+
+        var received = SurgeryJourney.Progress(Completed() with { RecoveryReceivedAt = At(10, 55), RecoveryReceivedBy = "Sr. Leela" }, Now);
+        received.Status.ShouldBe(JourneyStatus.Active, "billed, but still in recovery");
+        received.Current.ShouldNotBeNull().ShouldSatisfyAllConditions(
+            s => s.Key.ShouldBe("in-recovery"), s => s.MinutesInStage.ShouldBe(5), s => s.Detail.ShouldBe("Received by Sr. Leela"));
+        State(received, "out-and-billed").ShouldBe(StageState.Done);
+    }
+
+    [Fact]
+    public void A_patient_out_of_recovery_whose_charges_failed_is_not_billed_yet()
+    {
+        var unbilled = Discharged() with { ChargesFailed = true };
 
         var progress = SurgeryJourney.Progress(unbilled, Now);
 
         progress.Status.ShouldBe(JourneyStatus.Active);
-        progress.Current.ShouldNotBeNull().Key.ShouldBe("sign-out");
+        progress.Current.ShouldNotBeNull().Key.ShouldBe("recovery-discharged");
         Stage(progress, "out-and-billed").ShouldSatisfyAllConditions(
             s => s.State.ShouldBe(StageState.Pending),
             s => s.Detail.ShouldBe("Out of theatre; the OT charges were not posted"));
     }
 
     [Fact]
-    public void An_operation_finished_with_the_charges_posted_is_complete()
+    public void An_operation_finished_with_the_patient_out_of_recovery_and_the_charges_posted_is_complete()
     {
-        var progress = SurgeryJourney.Progress(Completed(), Now);
+        var progress = SurgeryJourney.Progress(Discharged(), Now);
 
         progress.Status.ShouldBe(JourneyStatus.Completed);
         progress.Current.ShouldBeNull();
         Stage(progress, "out-and-billed").ShouldSatisfyAllConditions(s => s.State.ShouldBe(StageState.Done), s => s.At.ShouldBe(At(10, 50)));
+        Stage(progress, "recovery-discharged").ShouldSatisfyAllConditions(s => s.At.ShouldBe(At(11, 40)), s => s.Detail.ShouldBe("Back to the ward"));
+    }
+
+    [Fact]
+    public void An_operation_finished_before_the_recovery_record_has_no_recovery_stage()
+    {
+        // Operations completed before the recovery room was recorded count as discharged from it when they left the theatre.
+        var progress = SurgeryJourney.Progress(Completed() with { RecoveryDischargedAt = At(10, 50) }, Now);
+
+        progress.Status.ShouldBe(JourneyStatus.Completed);
+        State(progress, "in-recovery").ShouldBe(StageState.NotApplicable);
+        Stage(progress, "in-recovery").Detail.ShouldBe("No recovery record");
     }
 
     [Fact]
@@ -166,6 +196,14 @@ public sealed class SurgeryJourneyTests
         StartedAt = At(9, 10),
         SignOutAt = At(10, 40),
         CompletedAt = At(10, 50),
+    };
+
+    private static SurgeryFacts Discharged() => Completed() with
+    {
+        RecoveryReceivedAt = At(10, 55),
+        RecoveryReceivedBy = "Sr. Leela",
+        RecoveryDischargedAt = At(11, 40),
+        RecoveryDestination = RecoveryDestination.Ward,
     };
 
     private static JourneyStage Stage(JourneyProgress progress, string key) => progress.Stages.Single(s => s.Key == key);

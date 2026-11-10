@@ -21,7 +21,8 @@ public sealed class VisitService(
     IApprovals approvals,
     IVisitClinicalWork clinicalWork,
     IAuditLogger audit,
-    TimeProvider time)
+    TimeProvider time,
+    DowntimeNumberService downtimeNumbers)
 {
     public async Task<Result<VisitDetail>> CreateAsync(CreateVisitRequest request, CancellationToken ct)
     {
@@ -46,8 +47,9 @@ public sealed class VisitService(
             return Error.Rule("patient.inactive", "Visits cannot be created for inactive or deceased patients.");
         }
 
-        var now = time.GetUtcNow();
-        var today = time.Today();
+        // A visit entered from paper keeps the number and the time on the paper (downtime visit numbers).
+        var now = request.Paper?.At ?? time.GetUtcNow();
+        var today = request.Paper is null ? time.Today() : DateOnly.FromDateTime(HyFib.HealthCare360.Platform.Numbering.NumberFormat.ToHospitalTime(now).Date);
         var dayStart = StartOfLocalDay(now);
 
         // The desk names a third party that pays only when a second person already stands behind it: the patient's policy
@@ -101,10 +103,28 @@ public sealed class VisitService(
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
+        var visitId = Guid.CreateVersion7();
+        string visitNumber;
+        if (request.Paper is { } paper)
+        {
+            var claimed = await downtimeNumbers.ClaimAsync(DowntimeNumberKind.Visit, paper, nameof(Visit), visitId, patient.Id, ct);
+            if (claimed.IsFailure)
+            {
+                return claimed.Error!;
+            }
+
+            visitNumber = claimed.Value.Number;
+        }
+        else
+        {
+            visitNumber = await numbers.NextAsync(PatientsNumberSeries.Visit, facilityId, ct);
+        }
+
         var visit = new Visit
         {
+            Id = visitId,
             FacilityId = facilityId,
-            VisitNumber = await numbers.NextAsync(PatientsNumberSeries.Visit, facilityId, ct),
+            VisitNumber = visitNumber,
             PatientId = patient.Id,
             Type = request.Type,
             Status = VisitStatus.Open,

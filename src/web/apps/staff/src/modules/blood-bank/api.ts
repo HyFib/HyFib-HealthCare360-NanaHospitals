@@ -1,6 +1,7 @@
 import type { Address, BloodGroup, Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { ApprovalRequestDto } from '@/modules/approvals/api';
 import type { ChargeStatus } from '@/modules/ot/shared/types';
 
 // ---------------------------------------------------------------- enums (JSON strings)
@@ -74,6 +75,17 @@ export type ReactionType = (typeof REACTION_TYPES)[number];
 
 export const REACTION_SEVERITIES = ['Mild', 'Moderate', 'Severe', 'LifeThreatening', 'Death'] as const;
 export type ReactionSeverity = (typeof REACTION_SEVERITIES)[number];
+
+/** How sure the blood bank is that the transfusion caused the reaction, weakest to strongest (ISBT, HvPI). */
+export const REACTION_IMPUTABILITIES = [
+  'NotAssessed',
+  'Excluded',
+  'Unlikely',
+  'Possible',
+  'Probable',
+  'Definite',
+] as const;
+export type ReactionImputability = (typeof REACTION_IMPUTABILITIES)[number];
 
 export const REACTION_STATUSES = ['Reported', 'UnderInvestigation', 'Closed'] as const;
 export type ReactionStatus = (typeof REACTION_STATUSES)[number];
@@ -461,6 +473,16 @@ export interface CloseReactionRequest {
   severity: ReactionSeverity;
   findings: string;
   reportedToHaemovigilance: boolean;
+  imputability: ReactionImputability;
+}
+
+/** The blood bank's classification while it investigates; lowering severity or imputability needs a reason and waits. */
+export interface ClassifyReactionRequest {
+  type: ReactionType;
+  severity: ReactionSeverity;
+  imputability: ReactionImputability;
+  reason: string | null;
+  version: number;
 }
 
 export interface TransfusionReactionDto {
@@ -486,6 +508,14 @@ export interface TransfusionReactionDto {
   reportedToHaemovigilance: boolean;
   closedAt: string | null;
   closedByName: string | null;
+  imputability: ReactionImputability;
+  /** Who lowered the classification, who asked, and why. */
+  loweredByName: string | null;
+  lowerRequestedByName: string | null;
+  lowerReason: string | null;
+  /** A lowering asked for and waiting for the blood bank medical officer. */
+  lowerPendingApprovalId: string | null;
+  version: number;
 }
 
 // ---------------------------------------------------------------- queries
@@ -693,4 +723,7 @@ export const bloodApi = {
   investigateReaction: (id: string) => api.post<void>(`/api/v1/blood-bank/reactions/${id}/investigate`),
   closeReaction: (id: string, request: CloseReactionRequest) =>
     api.post<void>(`/api/v1/blood-bank/reactions/${id}/close`, request),
+  /** Made at once (nothing), or, when it lowers the reaction, asked for (the request) and waits for the medical officer. */
+  classifyReaction: (id: string, request: ClassifyReactionRequest) =>
+    api.put<ApprovalRequestDto | undefined>(`/api/v1/blood-bank/reactions/${id}/classification`, request),
 };

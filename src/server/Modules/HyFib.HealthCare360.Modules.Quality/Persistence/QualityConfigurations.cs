@@ -34,6 +34,10 @@ internal sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
         b.HasIndex(x => new { x.FacilityId, x.OccurredAt });
         b.HasIndex(x => x.ReporterUserId).HasFilter("reporter_user_id IS NOT NULL");
         b.HasIndex(x => x.PatientId).HasFilter("patient_id IS NOT NULL");
+        b.Property(x => x.SourceModule).HasMaxLength(32);
+        b.Property(x => x.SourceRecordType).HasMaxLength(48);
+        b.Property(x => x.SourceReference).HasMaxLength(120);
+        b.HasIndex(x => new { x.SourceRecordType, x.SourceRecordId }).IsUnique().HasFilter("source_record_id IS NOT NULL");
     }
 }
 
@@ -113,6 +117,8 @@ internal sealed class QualityIndicatorConfiguration : IEntityTypeConfiguration<Q
         b.Property(x => x.NabhReference).HasMaxLength(32);
         b.Property(x => x.Multiplier).HasPrecision(12, 4);
         b.Property(x => x.Target).HasPrecision(18, 4);
+        b.Property(x => x.ComputedBy).HasMaxLength(32);
+        b.Ignore(x => x.IsComputed);
         b.HasIndex(x => x.Code).IsUnique().HasFilter(QualitySchema.NotDeleted);
     }
 }

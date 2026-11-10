@@ -31,6 +31,7 @@ public sealed class AdverseDrugReactionTests(HospitalServer server)
         var report = await nurse.PostAsync<AdrReportDto>("/api/v1/pharmacy/adr", request);
         (report.Status, report.DueBy, report.Uhid).ShouldBe((AdrReportStatus.Draft, today.AddDays(AdrReport.SeriousDays), patient.Uhid));
         report.PatientInitials.Length.ShouldBeLessThan(8, "the form names the patient by initials");
+        report.IncidentNumber.ShouldNotBeNull("a new ADR report raises an incident in the quality register");
 
         // Another doctor reports too, but does not open the nurse's report; pharmacovigilance sees every report.
         using (var notTheirs = await doctor.SendRawAsync(HttpMethod.Get, $"/api/v1/pharmacy/adr/{report.Id}"))

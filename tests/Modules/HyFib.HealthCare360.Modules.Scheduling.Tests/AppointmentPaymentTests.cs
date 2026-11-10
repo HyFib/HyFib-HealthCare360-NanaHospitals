@@ -107,7 +107,7 @@ public sealed class AppointmentPaymentTests
         appointment.HoldsSeat.ShouldBeTrue();
         appointment.PaymentStatus.ShouldBe(AppointmentPaymentStatus.Unpaid);
         appointment.DomainEvents.OfType<AppointmentCancelled>().ShouldBeEmpty();
-        ReminderPolicy.Decide(appointment, Start.AddHours(-23)).SendDayBefore.ShouldBeTrue();
+        ReminderPolicy.Decide(appointment.Status, appointment.StartsAt, appointment.BookedAt, null, null, Start.AddHours(-23)).SendDayBefore.ShouldBeTrue();
         appointment.AttachPaymentOrder("simulator", "order_9", Start.AddDays(-1)).IsSuccess.ShouldBeTrue();
     }
 

@@ -455,6 +455,23 @@ export function creditableAmount(bill: { patientAmount: number; creditAmount: nu
   return fromPaise(maxBig(toPaise(bill.patientAmount) - toPaise(bill.creditAmount), 0n));
 }
 
+/**
+ * What a payer credit note can still credit (`RefundService.PayerCreditableAsync`): what the payer's settlements
+ * disallowed, less earlier payer credit notes.
+ */
+export function payerCreditableAmount(bill: {
+  payerDisallowedAmount?: number | null;
+  creditNotes: { kind: string; amount: number }[];
+}): number {
+  if (!bill.payerDisallowedAmount) {
+    return 0;
+  }
+  const credited = bill.creditNotes
+    .filter((n) => n.kind === 'PayerShare')
+    .reduce((sum, n) => sum + toPaise(n.amount), 0n);
+  return fromPaise(maxBig(toPaise(bill.payerDisallowedAmount) - credited, 0n));
+}
+
 /** A service a credit note can correct, and what is left of its value after earlier credit notes. */
 export interface CreditableLine {
   id: string;
@@ -514,4 +531,9 @@ export function gstBreakdown(
         { label: 'CGST', amount: totals.cgst },
         { label: 'SGST', amount: totals.sgst },
       ];
+}
+
+/** The GST a debit note adds on `taxable` at `rate`% (paise), as `DebitNotes.Gst` rounds it. */
+export function debitGst(taxable: number, rate: number): number {
+  return fromPaise((toPaise(taxable) * BigInt(Math.round(rate * 100)) + 5000n) / 10000n);
 }

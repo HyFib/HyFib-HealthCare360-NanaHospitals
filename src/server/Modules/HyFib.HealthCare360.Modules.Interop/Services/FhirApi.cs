@@ -41,6 +41,12 @@ internal sealed class FhirApi(
             return FhirResponse.From(FhirOutcomes.UnknownType(type));
         }
 
+        // A SMART token reads only the types its scopes name, before anything is looked up.
+        if (reader.Smart is { } smart && !smart.Allows(type, search: false, patientId: null))
+        {
+            return FhirResponse.From(FhirOutcomes.OutsideScope($"reading {type}"));
+        }
+
         if (FhirResourceTypes.IsDirectory(type))
         {
             return await ReadDirectoryAsync(type, id, reader, ct);
@@ -57,10 +63,20 @@ internal sealed class FhirApi(
             return FhirResponse.From(FhirOutcomes.UnknownType(type));
         }
 
+        if (reader.Smart is { } smart && !smart.Allows(definition.Type, search: true, patientId: null))
+        {
+            return FhirResponse.From(FhirOutcomes.OutsideScope($"searching {definition.Type}"));
+        }
+
         var parsed = SearchRequestParser.Parse(definition, parameters);
         if (parsed.Request is not { } request)
         {
             return FhirResponse.From(parsed.Error!);
+        }
+
+        if (OutsideSmartPatient(request, reader) is { } outside)
+        {
+            return FhirResponse.From(outside);
         }
 
         if (FhirResourceTypes.IsDirectory(definition.Type))
@@ -112,6 +128,11 @@ internal sealed class FhirApi(
             return FhirResponse.From(FhirOutcomes.ResourceNotFound(FhirResourceTypes.Patient, FhirOutcomes.Printable(id)));
         }
 
+        if (reader.Smart is { } smart && !smart.Allows(FhirResourceTypes.Patient, search: false, patientId))
+        {
+            return FhirResponse.From(FhirOutcomes.OutsideScope("another patient's record than the one the app was authorized for"));
+        }
+
         var access = await sharing.EvaluateAsync(patientId, reader, ct);
         if (!access.IsAllowed)
         {
@@ -134,6 +155,11 @@ internal sealed class FhirApi(
         if (lookup.PatientId is not { } patientId)
         {
             return FhirResponse.From(FhirOutcomes.ResourceNotFound(type, FhirOutcomes.Printable(id)));
+        }
+
+        if (reader.Smart is { } smart && !smart.Allows(type, search: false, patientId))
+        {
+            return FhirResponse.From(FhirOutcomes.OutsideScope("another patient's record than the one the app was authorized for"));
         }
 
         // The patient gate comes first, so nothing (not even a deletion) is revealed about a record that may not be shared.
@@ -214,6 +240,34 @@ internal sealed class FhirApi(
         var ids = page.Select(p => FhirIds.TryParse(p.Id, out var id) ? id : (Guid?)null).OfType<Guid>().ToList();
         await audit.PatientSearchAsync(ids, total, request.ParameterNames, reader, ct);
         return FhirResponse.Ok(SearchBundles.Build(baseUrl, request, new SearchPage(page, total), time.GetUtcNow()), request.Pretty);
+    }
+
+    /// <summary>
+    /// A search by a SMART token whose only scopes for the type are <c>patient/</c> ones: it must be of the patient the app
+    /// was authorized for (a Patient search names that patient by <c>_id</c>), never a wider one.
+    /// </summary>
+    private static FhirError? OutsideSmartPatient(SearchRequest request, SharingReader reader)
+    {
+        if (reader.Smart is not { } smart || !smart.LimitedToPatient(request.Definition.Type, search: true))
+        {
+            return null;
+        }
+
+        var context = smart.PatientId!.Value.ToString("D");
+        if (request.Definition.IsPatientScoped)
+        {
+            return FhirIds.TryParse(request.PatientId, out var asked) && asked == smart.PatientId ? null
+                : FhirOutcomes.OutsideScope("searching another patient's record than the one the app was authorized for");
+        }
+
+        if (FhirResourceTypes.IsDirectory(request.Definition.Type))
+        {
+            return null;
+        }
+
+        var ids = request.LinkParameters.Where(p => p.Key == "_id").Select(p => p.Value).ToList();
+        return ids.Count == 1 && string.Equals(ids[0], context, StringComparison.OrdinalIgnoreCase) ? null
+            : FhirOutcomes.OutsideScope("a Patient search other than _id of the patient the app was authorized for");
     }
 
     /// <summary>The audit reason of a read refused because the consents admitting the reader do not cover the record.</summary>

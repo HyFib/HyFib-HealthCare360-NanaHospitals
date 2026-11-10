@@ -58,13 +58,20 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<PrescriptionNoticeRelease>();
         services.AddHostedService<PrescriptionNoticeReleaseJob>();
         services.AddSingleton<DscTrustStore>();
+        services.AddSingleton<DscCrlCache>();
+        services.AddSingleton<IDscOnlineRevocation, DscOnlineRevocation>();
+        services.AddScoped<DscRevocationCheck>();
+        services.AddHostedService<DscCrlRefreshJob>();
         services.AddScoped<IHealthWarningSource, DscTrustHealthWarnings>();
         services.AddScoped<PatientRecordQueries>();
         services.AddScoped<TimelineQueries>();
         services.AddScoped<WorklistQueries>();
+        services.AddScoped<DoctorHandovers>();
         services.AddScoped<DischargeSummaryService>();
+        services.AddScoped<IDischargeHoldSource, DischargeSummaryDischargeHold>();
         services.AddScoped<CodingService>();
         services.AddScoped<IVerifiedCodingSource, VerifiedCodingSource>();
+        services.AddScoped<IProcedureCatalogue, ProcedureCatalogue>();
         services.AddScoped<MedicalRecordService>();
         services.AddScoped<RecordCopyService>();
         services.AddScoped<HealthCheckupService>();
@@ -98,6 +105,7 @@ public sealed class ClinicalModule : IModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         WorklistEndpoints.Map(endpoints);
+        HandoverEndpoints.Map(endpoints);
         PatientRecordEndpoints.Map(endpoints);
         EncounterEndpoints.Map(endpoints);
         VitalEndpoints.Map(endpoints);

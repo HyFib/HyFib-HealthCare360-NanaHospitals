@@ -10,6 +10,7 @@ using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 using HyFib.HealthCare360.Integrations.Pos;
 using HyFib.HealthCare360.Integrations.WhatsApp;
+using HyFib.HealthCare360.Platform.Organization;
 
 namespace HyFib.HealthCare360.Integrations.Features.Admin;
 
@@ -28,6 +29,9 @@ internal sealed class IntegrationTestService(
     IPacsClient pacs,
     ModalityWorklistSelfTest worklist,
     IIcdLookup icd,
+    IInvoiceRegistrationPortal irp,
+    HospitalDbContext db,
+    ICurrentUser currentUser,
     ILabelPrinterService labels,
     LabelJobs labelJobs,
     IntegrationSettingsReader settings,
@@ -57,6 +61,7 @@ internal sealed class IntegrationTestService(
             IntegrationNames.Labels => await LabelsAsync(cancellationToken),
             IntegrationNames.Biometric => await BiometricAsync(cancellationToken),
             IntegrationNames.Aadhaar => await AadhaarAsync(cancellationToken),
+            IntegrationNames.Irp => await IrpAsync(cancellationToken),
             _ => null,
         };
 
@@ -252,6 +257,35 @@ internal sealed class IntegrationTestService(
         return results.Count > 0
             ? new IntegrationTestResult(true, $"Online ICD lookup returned {results.Count} result(s), for example {results[0].Code} {results[0].Title}.")
             : new IntegrationTestResult(false, "No results. Check that online ICD lookup is enabled with the WHO ICD-API or the simulator.");
+    }
+
+    /// <summary>
+    /// Signs in to the portal and asks for an IRN that cannot exist (64 zeros): the portal answering "no such IRN" shows the
+    /// credentials work, and nothing is registered.
+    /// </summary>
+    private async Task<IntegrationTestResult> IrpAsync(CancellationToken cancellationToken)
+    {
+        if (currentUser.FacilityId is not { } facility)
+        {
+            return new IntegrationTestResult(false, "Select a facility first: the portal's credentials are per facility.");
+        }
+
+        var connection = await irp.ConnectionAsync(facility, cancellationToken);
+        if (!connection.Connected)
+        {
+            return new IntegrationTestResult(false, connection.Problem ?? "The e-invoice portal is not connected.");
+        }
+
+        var gstin = await db.Set<Facility>().AsNoTracking().Where(f => f.Id == facility).Select(f => f.Gstin).FirstOrDefaultAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(gstin))
+        {
+            return new IntegrationTestResult(false, "Enter the facility's GSTIN under Hospital setup first.");
+        }
+
+        var answer = await irp.GetByIrnAsync(facility, gstin, new string('0', 64), cancellationToken);
+        return answer.Error?.Code is IrpError.Unreachable or IrpError.NotConnected
+            ? new IntegrationTestResult(false, answer.Error.Message)
+            : new IntegrationTestResult(true, $"The e-invoice portal ({connection.Provider}) signed in and answered for GSTIN {gstin}.");
     }
 
     private async Task<IntegrationTestResult> LabAsync(CancellationToken cancellationToken)

@@ -340,6 +340,14 @@ public enum CreditNoteKind
 
     /// <summary>Unrecoverable due written off (bad debt), with approval. It reduces no GST.</summary>
     WriteOff,
+
+    /// <summary>
+    /// A GST credit note to the payer (insurer, TPA or corporate) for part of its share it settled less than billed: up to
+    /// the bill's disallowed amount not already credited, naming the services. It lowers the GST of the payer's invoice and
+    /// is an e-invoice (<c>CRN</c>) to a payer registered for GST; it does not change what the patient owes, since the
+    /// settlement already took the deduction off what the payer owes.
+    /// </summary>
+    PayerShare,
 }
 
 /// <summary>

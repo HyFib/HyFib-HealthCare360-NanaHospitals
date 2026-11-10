@@ -1,10 +1,12 @@
 using HyFib.HealthCare360.Modules.Quality.Domain;
+using HyFib.HealthCare360.Modules.Quality.Services.Indicators;
 
 namespace HyFib.HealthCare360.Modules.Quality.Seed;
 
 /// <summary>
-/// Seeds the core NABH (5th edition) quality indicators so the quality team starts with a standard catalogue.
-/// Idempotent by code; targets are common starting points and are expected to be tuned by the quality committee.
+/// Seeds the core NABH quality indicators so the quality team starts with a standard catalogue: those HC360 computes from
+/// its records (<see cref="IndicatorMeasures.Catalogue"/>) marked as computed, the rest entered by hand. Idempotent by code;
+/// targets are common starting points and are expected to be tuned by the quality committee.
 /// </summary>
 internal sealed class QualitySeeder : ISeeder
 {
@@ -60,33 +62,70 @@ internal sealed class QualitySeeder : ISeeder
 
     public async Task SeedAsync(HospitalDbContext db, CancellationToken cancellationToken)
     {
-        var existing = await db.Set<QualityIndicator>().Select(i => i.Code).ToListAsync(cancellationToken);
+        var existing = await db.Set<QualityIndicator>().ToDictionaryAsync(i => i.Code, cancellationToken);
         var order = 0;
         foreach (var i in Indicators)
         {
             order += 10;
-            if (existing.Contains(i.Code))
+            var computed = IndicatorMeasures.Find(i.Code);
+            if (existing.TryGetValue(i.Code, out var row))
             {
+                // A seeded indicator HC360 now computes is switched over only while its definition is still the one seeded: an
+                // indicator the quality committee redefined stays as they made it, entered by hand.
+                if (computed is not null && row.ComputedBy is null && row.NumeratorDefinition == i.Numerator && row.DenominatorDefinition == i.Denominator)
+                {
+                    Apply(row, computed);
+                }
+
                 continue;
             }
 
-            db.Add(new QualityIndicator
+            var indicator = new QualityIndicator { Code = i.Code, SortOrder = order, Frequency = IndicatorFrequency.Monthly };
+            if (computed is not null)
             {
-                Code = i.Code,
-                Name = i.Name,
-                Category = i.Category,
-                NumeratorDefinition = i.Numerator,
-                DenominatorDefinition = i.Denominator,
-                Unit = i.Unit,
-                Multiplier = IndicatorMath.DefaultMultiplier(i.Unit),
-                Target = i.Target,
-                Direction = i.Direction,
-                Frequency = IndicatorFrequency.Monthly,
-                NabhReference = i.Nabh,
-                SortOrder = order,
-            });
+                Apply(indicator, computed);
+            }
+            else
+            {
+                indicator.Name = i.Name;
+                indicator.Category = i.Category;
+                indicator.NumeratorDefinition = i.Numerator;
+                indicator.DenominatorDefinition = i.Denominator;
+                indicator.Unit = i.Unit;
+                indicator.Multiplier = IndicatorMath.DefaultMultiplier(i.Unit);
+                indicator.Target = i.Target;
+                indicator.Direction = i.Direction;
+                indicator.NabhReference = i.Nabh;
+            }
+
+            db.Add(indicator);
+            existing[i.Code] = indicator;
+        }
+
+        // The indicators HC360 computes that were not in the first catalogue (ER assessment, return to ICU, LAMA/DAMA, ALOS…).
+        foreach (var m in IndicatorMeasures.Catalogue.Where(m => !existing.ContainsKey(m.Code)))
+        {
+            order += 10;
+            var indicator = new QualityIndicator { Code = m.Code, SortOrder = order, Frequency = IndicatorFrequency.Monthly };
+            Apply(indicator, m);
+            db.Add(indicator);
         }
 
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void Apply(QualityIndicator indicator, MeasureDefinition m)
+    {
+        indicator.Name = m.Name;
+        indicator.Category = m.Category;
+        indicator.NumeratorDefinition = m.Numerator;
+        indicator.DenominatorDefinition = m.Denominator;
+        indicator.Unit = m.Unit;
+        indicator.Multiplier = IndicatorMath.DefaultMultiplier(m.Unit);
+        indicator.Target ??= m.Target;
+        indicator.Direction = m.Direction;
+        indicator.NabhReference = m.Nabh;
+        indicator.Frequency = IndicatorFrequency.Monthly;
+        indicator.ComputedBy = m.Code;
     }
 }

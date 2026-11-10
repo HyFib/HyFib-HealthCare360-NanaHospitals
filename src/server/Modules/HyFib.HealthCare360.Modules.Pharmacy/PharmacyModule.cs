@@ -90,6 +90,7 @@ public sealed class PharmacyModule : IModule
         services.AddScoped<ICounterSalesSource, PharmacyDayBookSource>();
         services.AddScoped<IEInvoiceSource, PharmacyEInvoiceSource>();
         services.AddScoped<IEInvoiceSource, PharmacyReturnEInvoiceSource>();
+        services.AddScoped<IGstReturnSource, PharmacyGstReturnSource>();
 
         // The cash the counter takes, for the cash limit (s.269ST) that Billing's counters keep too.
         services.AddScoped<ICashReceiptSource, PharmacyCashReceipts>();
@@ -102,6 +103,7 @@ public sealed class PharmacyModule : IModule
         SaleEndpoints.Map(endpoints);
         InpatientEndpoints.Map(endpoints);
         RegisterEndpoints.Map(endpoints);
+        RecallTraceEndpoints.Map(endpoints);
         NdpsEndpoints.Map(endpoints);
         AdrEndpoints.Map(endpoints);
         RefillEndpoints.Map(endpoints);

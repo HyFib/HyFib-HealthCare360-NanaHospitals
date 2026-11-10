@@ -6,6 +6,7 @@ import type {
   DialysisSessionDetail,
   DialysisSessionListItem,
   DialyzerDto,
+  InfectionResultDto,
 } from '@/modules/dialysis/api';
 import { paged, type FakeAnswers, type FakeRequest } from '../fakeApi';
 import { RECORD_ID } from '../roleAccessIds';
@@ -233,6 +234,18 @@ const SESSION: DialysisSessionDetail = {
   version: 2,
 };
 
+// The verified HBsAg, anti-HCV and HIV results the infection status is changed against (/patients/{id}/infection-results).
+const INFECTION_RESULTS: InfectionResultDto[] = [
+  {
+    id: id('ir1'),
+    infection: 'HBsAg',
+    testName: 'HBsAg (ELISA)',
+    value: 'Non-reactive',
+    flag: null,
+    verifiedOn: today,
+  },
+];
+
 export const ANSWERS: FakeAnswers = {
   'GET /api/v1/dialysis/machines': MACHINES,
   'GET /api/v1/dialysis/board': BOARD,
@@ -240,7 +253,11 @@ export const ANSWERS: FakeAnswers = {
   [`GET /api/v1/dialysis/sessions/${RECORD_ID}`]: SESSION,
   'GET /api/v1/dialysis/patients': paged(PROFILES),
   ...Object.fromEntries(PROFILES.map((p) => [`GET /api/v1/dialysis/patients/${p.patientId}`, p])),
-  // Each patient's own dialyzers (/patients/{id}/dialyzers); a patient who is not enrolled stays a 404.
+  // Each patient's own dialyzers and infection results; a patient who is not enrolled stays a 404.
   'GET /api/v1/dialysis/patients/*': (request: FakeRequest) =>
-    request.path.endsWith('/dialyzers') ? DIALYZERS : undefined,
+    request.path.endsWith('/dialyzers')
+      ? DIALYZERS
+      : request.path.endsWith('/infection-results')
+        ? INFECTION_RESULTS
+        : undefined,
 };

@@ -142,9 +142,9 @@ public sealed class IssueCompatibilityTests
         var reaction = new TransfusionReaction { Severity = ReactionSeverity.Severe, Status = ReactionStatus.Reported };
         reaction.IsSerious.ShouldBeTrue();
 
-        reaction.Close(ReactionType.Unclassified, ReactionSeverity.Severe, "DAT positive", true, "Dr. BB", TestData.Now).IsFailure.ShouldBeTrue();
-        reaction.Close(ReactionType.AcuteHaemolytic, ReactionSeverity.Severe, " ", true, "Dr. BB", TestData.Now).IsFailure.ShouldBeTrue();
-        reaction.Close(ReactionType.AcuteHaemolytic, ReactionSeverity.Severe, "DAT positive; clerical error at bedside", true, "Dr. BB", TestData.Now)
+        reaction.Close(ReactionType.Unclassified, ReactionSeverity.Severe, ReactionImputability.Definite, "DAT positive", true, "Dr. BB", TestData.Now).IsFailure.ShouldBeTrue();
+        reaction.Close(ReactionType.AcuteHaemolytic, ReactionSeverity.Severe, ReactionImputability.Definite, " ", true, "Dr. BB", TestData.Now).IsFailure.ShouldBeTrue();
+        reaction.Close(ReactionType.AcuteHaemolytic, ReactionSeverity.Severe, ReactionImputability.Definite, "DAT positive; clerical error at bedside", true, "Dr. BB", TestData.Now)
             .IsSuccess.ShouldBeTrue();
 
         reaction.Status.ShouldBe(ReactionStatus.Closed);

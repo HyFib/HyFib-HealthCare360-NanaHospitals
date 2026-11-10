@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.HR.Features.Leave;
 using HyFib.HealthCare360.Modules.HR.Features.Payroll;
 using HyFib.HealthCare360.Modules.HR.Features.Rostering;
 using HyFib.HealthCare360.Modules.HR.Features.SelfService;
+using HyFib.HealthCare360.Modules.HR.Features.Statutory;
 using HyFib.HealthCare360.Modules.HR.Services;
 using HyFib.HealthCare360.Platform.Numbering;
 
@@ -62,6 +63,13 @@ public sealed class HRModule : IModule
         services.AddScoped<LeaveService>();
         services.AddScoped<PayrollService>();
         services.AddScoped<PayrollInputService>();
+        services.AddScoped<StatutoryService>();
+        services.AddScoped<SalaryStructureService>();
+
+        // Maker-checker slice 11: payment details, pay and leave credits asked for and approved by someone else.
+        services.AddScoped<PaymentDetailsApprovals>();
+        services.AddScoped<PayApprovals>();
+        services.AddScoped<LeaveEncashmentService>();
 
         // Cross-module lookup (canteen staff credit and similar); identification only.
         services.AddScoped<IEmployeeDirectory, EmployeeDirectory>();
@@ -85,5 +93,6 @@ public sealed class HRModule : IModule
         PayrollSetupEndpoints.Map(endpoints);
         PayrollEndpoints.Map(endpoints);
         SelfServiceEndpoints.Map(endpoints);
+        StatutoryEndpoints.Map(endpoints);
     }
 }

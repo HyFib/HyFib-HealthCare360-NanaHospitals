@@ -210,11 +210,12 @@ export const REFUND_PURPOSE_LABEL: Record<RefundPurpose, string> = {
   Advance: 'Unused patient advance',
 };
 
-export const CREDIT_NOTE_KINDS = ['CreditNote', 'WriteOff'] as const;
+export const CREDIT_NOTE_KINDS = ['CreditNote', 'WriteOff', 'PayerShare'] as const;
 export type CreditNoteKind = (typeof CREDIT_NOTE_KINDS)[number];
 export const CREDIT_NOTE_KIND_LABEL: Record<CreditNoteKind, string> = {
   CreditNote: 'Credit note',
   WriteOff: 'Write-off (bad debt)',
+  PayerShare: "Payer credit note (the payer's disallowed share)",
 };
 
 export const DISCOUNT_APPROVAL_STATUSES = ['Pending', 'Approved', 'Rejected', 'Withdrawn'] as const;

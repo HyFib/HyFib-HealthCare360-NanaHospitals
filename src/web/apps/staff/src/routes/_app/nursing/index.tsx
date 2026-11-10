@@ -36,6 +36,8 @@ import { BedAlertBadges } from '@/modules/inpatient/BedTile';
 import { useStoredState, useWardRealtime } from '@/modules/inpatient/hooks';
 import { DowntimePrintButton } from '@/modules/inpatient/DowntimePrintButton';
 import { Assessments } from '@/modules/inpatient/nursing/Assessments';
+import { Restraints, WardRestraints } from '@/modules/inpatient/nursing/Restraints';
+import { SafetyEvents } from '@/modules/inpatient/nursing/SafetyEvents';
 import { CarePlan } from '@/modules/inpatient/nursing/CarePlan';
 import { PatientObservations, WardEscalations } from '@/modules/inpatient/nursing/EarlyWarning';
 import { PatientHandovers, WardHandoverSheet } from '@/modules/inpatient/nursing/Handovers';
@@ -48,8 +50,19 @@ import { TransferRequestList } from '@/modules/inpatient/TransferRequests';
 import { nursingQueries } from '@/modules/inpatient/nursingApi';
 import { dutyDate, SHIFT_LABEL, shiftAt } from '@/modules/inpatient/time';
 
-type ChartTab = 'mar' | 'medicines' | 'obs' | 'blood' | 'notes' | 'handover' | 'careplan' | 'io' | 'risk';
-const CHART_TABS: ChartTab[] = ['mar', 'medicines', 'obs', 'blood', 'notes', 'handover', 'careplan', 'io', 'risk'];
+type ChartTab = 'mar' | 'medicines' | 'obs' | 'blood' | 'notes' | 'handover' | 'careplan' | 'io' | 'risk' | 'restraint';
+const CHART_TABS: ChartTab[] = [
+  'mar',
+  'medicines',
+  'obs',
+  'blood',
+  'notes',
+  'handover',
+  'careplan',
+  'io',
+  'risk',
+  'restraint',
+];
 
 interface NursingSearch {
   wardId?: string;
@@ -144,6 +157,7 @@ function NursingStationPage() {
   const canTransfuse = usePermission('bloodbank.transfuse');
   const canReadAdmissions = usePermission('inpatient.admissions.read');
   const canTransfer = usePermission('inpatient.admissions.transfer');
+  const canOrderRestraint = usePermission('nursing.restraint.order');
   const [storedWard, setStoredWard] = useStoredState(WARD_KEY);
   const [term, setTerm] = useState('');
   const [now] = useState(() => new Date());
@@ -308,6 +322,7 @@ function NursingStationPage() {
               canChart={canChart}
               canMar={canMar}
               canTransfuse={canTransfuse}
+              canOrderRestraint={canOrderRestraint}
               onTab={(tab) => void navigate({ search: (prev) => ({ ...prev, tab }), replace: true })}
               onBack={() => openPatient(undefined)}
               onOpenAdmission={() =>
@@ -326,6 +341,7 @@ function NursingStationPage() {
           ) : (
             <div className={styles.wardView}>
               {canChart && <WardEscalations wardId={wardId} onOpenPatient={(id) => openPatient(id)} />}
+              {canChart && <WardRestraints wardId={wardId} onOpenPatient={(id) => openPatient(id)} />}
               {canReadAdmissions && <TransferRequestList wardId={wardId} canSend={canTransfer} />}
               {canMar && <WardMarDue wardId={wardId} onOpenPatient={(id) => openPatient(id)} />}
               {canChart && <WardHandoverSheet wardId={wardId} canWrite={canChart} />}
@@ -348,6 +364,7 @@ function PatientChart({
   canChart,
   canMar,
   canTransfuse,
+  canOrderRestraint,
   onTab,
   onBack,
   onOpenAdmission,
@@ -357,6 +374,7 @@ function PatientChart({
   canChart: boolean;
   canMar: boolean;
   canTransfuse: boolean;
+  canOrderRestraint: boolean;
   onTab: (tab: ChartTab) => void;
   onBack: () => void;
   onOpenAdmission: () => void;
@@ -375,6 +393,7 @@ function PatientChart({
     { id: 'careplan', label: 'Care plan', show: canChart },
     { id: 'io', label: 'Intake / output', show: canChart },
     { id: 'risk', label: 'Risk scores', show: canChart },
+    { id: 'restraint', label: 'Restraint', show: canChart },
   ];
   const visible = tabs.filter((t) => t.show);
   const current = visible.some((t) => t.id === tab) ? tab : (visible[0]?.id ?? 'notes');
@@ -429,7 +448,15 @@ function PatientChart({
           )}
           {current === 'careplan' && <CarePlan admissionId={admissionId} canWrite={canChart} />}
           {current === 'io' && <IntakeOutput admissionId={admissionId} canWrite={canChart} />}
-          {current === 'risk' && <Assessments admissionId={admissionId} canWrite={canChart} />}
+          {current === 'risk' && (
+            <>
+              <Assessments admissionId={admissionId} canWrite={canChart} />
+              <SafetyEvents admissionId={admissionId} canWrite={canChart} />
+            </>
+          )}
+          {current === 'restraint' && (
+            <Restraints admissionId={admissionId} canChart={canChart} canOrder={canOrderRestraint} />
+          )}
         </div>
       </Section>
     </div>
