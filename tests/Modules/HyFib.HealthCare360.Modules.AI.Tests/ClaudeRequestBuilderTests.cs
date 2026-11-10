@@ -20,8 +20,21 @@ public sealed class ClaudeRequestBuilderTests
         system.ShouldBe(AiPrompts.CommandSystem);
         var message = parameters.Messages.ShouldHaveSingleItem();
         message.Role.Raw().ShouldBe("user");
-        message.Content.TryPickString(out var content).ShouldBeTrue();
+        message.Content.ShouldNotBeNull().TryPickString(out var content).ShouldBeTrue();
         content!.ShouldContain("Command: go to [UHID_1]");
+    }
+
+    [Fact]
+    public void Keeps_each_turns_role_and_order_in_a_conversation()
+    {
+        var request = new AiRequest("assistant.chat", "Be brief.",
+            [new AiMessage("user", "hello"), new AiMessage("Assistant", "Hi."), new AiMessage("user", "and now?")]);
+
+        var messages = ClaudeRequestBuilder.Build(request, "claude-opus-5").Messages;
+
+        messages.Select(m => m.Role.Raw()).ShouldBe(["user", "assistant", "user"]);
+        messages[1].Content.ShouldNotBeNull().TryPickString(out var reply).ShouldBeTrue();
+        reply.ShouldBe("Hi.");
     }
 
     [Fact]
