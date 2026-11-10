@@ -299,7 +299,11 @@ Invoke-Section 'Security' 'BitLocker on every fixed disk' {
         Add-Check 'Security' 'BitLocker on every fixed disk' 'BitLocker is not available on this Windows' $needed 'Fail' 'HC360 keeps the keys that open its stored data on this machine (SRS SEC-05): use Windows Pro or above, with BitLocker.'
         return
     }
-    $letters = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | ForEach-Object { $_.DeviceID })
+    # USB disks are left out, as HC360's own daily check leaves them out (DiskEncryption.cs): the backup copies on them
+    # are encrypted by HC360, and BitLocker counts a USB disk as removable even where Windows lists it as fixed.
+    $usb = @(Get-Disk | Where-Object { [string]$_.BusType -eq 'USB' } | Get-Partition -ErrorAction SilentlyContinue |
+            Where-Object { [string]$_.DriveLetter -match '^[A-Z]$' } | ForEach-Object { "$($_.DriveLetter):" })
+    $letters = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | ForEach-Object { $_.DeviceID } | Where-Object { $usb -notcontains $_ })
     $volumes = @(Get-BitLockerVolume -MountPoint $letters)
     $facts.BitLocker = @($volumes | ForEach-Object {
             [pscustomobject][ordered]@{
@@ -311,6 +315,7 @@ Invoke-Section 'Security' 'BitLocker on every fixed disk' {
         })
     $off = @($facts.BitLocker | Where-Object { $_.Protection -ne 'On' })
     $found = ($facts.BitLocker | ForEach-Object { "$($_.Volume) $($_.Protection) ($($_.Status))" }) -join '; '
+    if ($usb.Count -gt 0) { $found += "; on USB, left out: $($usb -join ', ')" }
     $note = if ($off.Count -eq 0) { '' } else { "Turn BitLocker on, with the TPM, for $(($off | ForEach-Object { $_.Volume }) -join ', '), and keep the recovery keys in the hospital's password safe, not on this machine. A disk that shows FullyEncrypted but Off is waiting for its key to be saved: finish turning it on." }
     Add-Check 'Security' 'BitLocker on every fixed disk' $found $needed $(if ($off.Count -eq 0) { 'Pass' } else { 'Fail' }) $note
 }
