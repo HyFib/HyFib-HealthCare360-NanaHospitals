@@ -1,10 +1,10 @@
 # Release 1.0.0: readiness report
 
 **Status: not released.** Updated on 10 November 2026: the blockers' fixes are in pull request #333, and *Where the
-blockers stand* below says what each needs still. The release build has now run on that pull request: it passed once,
-and the runs before and after found two faults the Linux CI could not see (R7, R8), both fixed. Before a tag, the
-build must pass on the pull request's last commit, and HyFib must make its release signing key (R2), which only
-HyFib can do. The rest of this report is the assessment as written first, on 10 November 2026, from:
+blockers stand* below says what each needs still. The release build has run seven times on that pull request. Two
+runs found faults the Linux CI could not see (R7, R8), both fixed; the others passed, the last of them on all of the
+pull request's code. What remains before a tag is HyFib's: merge the pull request, and make the release signing key
+(R2), which only HyFib can do. The rest of this report is the assessment as written first, on 10 November 2026, from:
 
 - commit `ad5acb37`, the head of `main`, and its CI run (#1030);
 - the last 30 completed CI runs on `main`;
@@ -22,7 +22,7 @@ after it, one department at a time.
 
 | # | What was done | Shown by | Still needed |
 |---|---|---|---|
-| R1 | `release.yml` starts the runner's PostgreSQL for the tests, as CI does. A pull request that changes the release (the workflow, `Publish-HC360.ps1` or `tools/release`) now runs the release build, without the signing key and without publishing; a newer push stops the older build | **The release build passed on #333** (run 2, `934f4eab`, 1 h 39 min): the version check, every test with the runner's PostgreSQL, the publish, the patch windows and the SBOMs. Signing and attaching were skipped, as on every pull request. Run 1 stopped at R7, run 3 at R8 | A green run on #333's last commit (under way) |
+| R1 | `release.yml` starts the runner's PostgreSQL for the tests, as CI does. A pull request that changes the release (the workflow, `Publish-HC360.ps1` or `tools/release`) now runs the release build, without the signing key and without publishing; a newer push stops the older build | **The release build passes on #333.** Run 2 (`934f4eab`, 1 h 39 min) was the first through every step: the version check, every test with the runner's PostgreSQL, the publish, the patch windows and the SBOMs. Signing and attaching were skipped, as on every pull request. Run 1 stopped at R7, run 3 at R8. Runs 4 to 7 passed, run 7 on `1a964c02`, which holds every change to code and to the workflow in the pull request | — |
 | R2 | A tagged release now stops when HC360 Desktop's package is not signed, with what to do. SECURITY.md keeps the procedure and adds: never make the key in a CI job or a hosted session | The workflow step *Refuse to release an unsigned HC360 Desktop* | **HyFib makes the key pair**, stores the private key as the workflow's secret, keeps a copy offline, and merges the public key into `ReleaseKeys.cs` (SECURITY.md, *Release signing key*) |
 | R3 | The cause was the test, not screen unlock. It polled for the waiting request through `pg_stat_activity` inside one transaction, and PostgreSQL reads that view once per transaction: a connection the server opened after the first poll never appeared. It now reads `pg_locks`, which is read again at every query | Reproduced on PostgreSQL 16: a waiting connection opened after the first poll counts 0 in `pg_stat_activity` and 1 in `pg_locks` | CI runs the test on every change |
 | R4 | DEPLOYMENT.md section 1 now opens with the release files: check the hashes against `SHA256SUMS.txt` and HyFib's second copy, unblock the checked zip, extract it, and set a process-scope execution policy, before the preflight runs. The Theni steps follow | — | — |
@@ -271,7 +271,9 @@ From GitHub, on 10 November 2026:
   default branch (12 high, 19 moderate, 3 low)."
 - Release workflow runs on pull request #333, added with *Where the blockers stand*: run 1 (42820982602, `8c27aff7`)
   failed at the staff app's type check (R7); run 2 (42822682123, `934f4eab`) passed every step; run 3 (42823227135,
-  `1df1293d`) failed one web test, in the doctor fee screens (R8).
+  `1df1293d`) failed one web test, in the doctor fee screens (R8). Run 4 (42823506101, `730b49a8`, still without the
+  R8 fix) passed, as the race allows; runs 5 (42829792250, `0b192096`), 6 (42835499077, `6ac9c3f8`) and 7
+  (42839765907, `1a964c02`) passed with it.
 - Codex's review of #333: two comments, on `release.yml` (the checksums) and DEPLOYMENT.md (*Going back*).
 
 From the repository, at `ad5acb37`:
