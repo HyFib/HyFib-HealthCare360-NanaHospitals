@@ -3,6 +3,14 @@ name: Release
 on:
   push:
     tags: ['v*.*.*']
+  # A change to the release itself (this workflow, the publish script or the release tools) is tried before it merges:
+  # the same build, tests, patch-window check and SBOMs, on the pull request's code. Nothing is signed or published, and
+  # the signing key is never given to it (the steps that use it run only for a tag).
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - deploy/windows/Publish-HC360.ps1
+      - tools/release/**
 
 permissions:
   contents: write
@@ -31,6 +39,22 @@ jobs:
           cache: pnpm
           cache-dependency-path: src/web/pnpm-lock.yaml
 
+      # Publish-HC360.ps1 runs every test before it packages, the end-to-end journeys (IntegrationTests) among them, and
+      # they need PostgreSQL. Windows runners cannot run Linux containers, but they come with PostgreSQL installed (service
+      # stopped): start it and give the tests a server to create databases on, as CI does (ci.yml).
+      - name: Start PostgreSQL for the end-to-end journeys
+        shell: pwsh
+        run: |
+          $service = Get-Service -Name 'postgresql*' | Select-Object -First 1
+          Set-Service -InputObject $service -StartupType Manual
+          Start-Service -InputObject $service
+          & (Join-Path $env:PGBIN 'pg_isready.exe') -h localhost -p 5432 -t 60
+          if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL did not start.' }
+          & (Join-Path $env:PGBIN 'postgres.exe') --version
+          $user = if ($env:PGUSER) { $env:PGUSER } else { 'postgres' }
+          $password = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { 'root' }
+          "HC360_TEST_DATABASE=Host=localhost;Port=5432;Username=$user;Password=$password;Database=postgres" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Publish HC360 (server, desktop, deployment scripts)
         shell: pwsh
         run: ./deploy/windows/Publish-HC360.ps1 -Configuration Release
@@ -40,6 +64,7 @@ jobs:
       # unsigned, and the job summary says so. tests/deploy/Test-ReleaseSigning.ps1 tests the script with a throwaway key.
       - name: Sign the HC360 Desktop package
         id: sign
+        if: github.event_name == 'push'
         shell: pwsh
         env:
           HC360_RELEASE_SIGNING_KEY: ${{ secrets.HC360_RELEASE_SIGNING_KEY }}
@@ -48,7 +73,7 @@ jobs:
       # Signed, the package must verify with the keys built into this release, as the server and the workstations check
       # it: a key not yet added to ReleaseKeys.cs fails the release instead of shipping a package no workstation takes.
       - name: Check the signature with the release keys HC360 trusts
-        if: steps.sign.outputs.signed == 'true'
+        if: github.event_name == 'push' && steps.sign.outputs.signed == 'true'
         shell: pwsh
         env:
           DESKTOP_PACKAGE: ${{ steps.sign.outputs.package }}
@@ -88,6 +113,7 @@ jobs:
           } | Add-Content artifacts/SHA256SUMS.txt -Encoding ascii
 
       - name: Attach packages to the GitHub release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
