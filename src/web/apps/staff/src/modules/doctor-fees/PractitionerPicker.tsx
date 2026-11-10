@@ -1,6 +1,6 @@
 import { Combobox, Field, Option, Spinner } from '@fluentui/react-components';
 import { useDebouncedValue } from '@hc360/core';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { searchPractitioners } from '@/lib/lookups';
 
@@ -31,6 +31,8 @@ export function PractitionerPicker({
     queryKey: ['doctor-fees', 'doctor-search', debounced],
     queryFn: () => searchPractitioners(debounced),
     staleTime: 5 * 60_000,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
   const items = results.data ?? [];
 
@@ -47,8 +49,9 @@ export function PractitionerPicker({
           }
         }}
         onOptionSelect={(_, data) => {
-          const item = items.find((d) => d.id === data.optionValue);
-          onChange(item ? { id: item.id, name: item.name } : null);
+          // The doctor comes from the option chosen, not from the results as they are by now: the search runs 250 ms
+          // after the last key, and a choice made as its results arrived used to find nothing and pick no one.
+          onChange(data.optionValue ? { id: data.optionValue, name: data.optionText ?? '' } : null);
           setTerm('');
         }}
         expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}

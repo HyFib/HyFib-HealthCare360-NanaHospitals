@@ -504,6 +504,24 @@ describe('doctor fee screens (DFA-01..05)', SCREEN_TESTS, () => {
     });
   });
 
+  it('a doctor chosen as the search for what was typed runs is still the one chosen', async () => {
+    // The search runs 250 ms after the last key; a slower click once found no doctor (the release build on Windows).
+    const user = userEvent.setup();
+    openScreen('/doctor-fees/payouts');
+    await screen.findByText('DP-26-0007', {}, SLOW);
+    await user.click(screen.getByRole('button', { name: 'Prepare payout' }));
+    const dialog = await dialogTitled('Prepare a doctor payout');
+    const prepare = within(dialog).getByRole('button', { name: 'Prepare payout' });
+
+    await user.type(within(dialog).getByRole('combobox', { name: /^Doctor/ }), 'Anil');
+    const option = await screen.findByRole('option', { name: 'Dr. Anil Rao (D002)' }, SLOW);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await user.click(option);
+
+    await waitFor(() => expect(prepare).toBeEnabled());
+    expect(within(dialog).getByRole('combobox', { name: /^Doctor/ })).toHaveValue('Dr. Anil Rao');
+  });
+
   it('a payout is prepared for a doctor and last month, with TDS of 0–100 % and described deductions', async () => {
     const user = userEvent.setup();
     openScreen('/doctor-fees/payouts');
