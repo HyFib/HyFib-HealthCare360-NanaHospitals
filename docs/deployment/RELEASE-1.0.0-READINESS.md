@@ -1,6 +1,6 @@
 # Release 1.0.0: readiness report
 
-**Status: not released. The recommendation is no-go until the five items in section 1 are closed.** Written on 10
+**Status: not released. The recommendation is no-go until the six items in section 1 are closed.** Written on 10
 November 2026 from:
 
 - commit `ad5acb37`, the head of `main`, and its CI run (#1030);
@@ -29,7 +29,7 @@ after it, one department at a time.
 
 173 of the 183 requirements are Done. The other 10 are Blocked, each waiting on someone outside HyFib.
 
-**It cannot be released as it stands.** Five things stand in the way, all on HyFib's side and each small:
+**It cannot be released as it stands.** Six things stand in the way, all on HyFib's side:
 
 | # | What stops it | Found by | Fix |
 |---|---|---|---|
@@ -38,6 +38,7 @@ after it, one department at a time.
 | R3 | **A test failed on `main` and nobody knows why.** `WebAuthnUnlockTests.A_refused_answer_stays_on_the_audit_trail_when_the_session_ends_meanwhile` failed on `653e7dde`: the unlock request was still running after 30 s and had not reached the session's row. Nothing changed the test or the code before `ad5acb37` passed. It is in screen unlock, a security path | CI run #1024, its test log | Find the cause: a slow runner, or an unlock that waits 30 s on something else. Running CI again until it is green explains nothing |
 | R4 | **The install scripts may not run on the hospital's PC.** They are not signed. A browser marks a downloaded zip as from the internet, and Windows' execution policy then refuses the scripts in it (RemoteSigned refuses such scripts; Restricted refuses all scripts). DEPLOYMENT.md does not mention it. CI cannot see it, because its scripts come from a checkout, not a download | Microsoft's *about_Execution_Policies*; a search of `docs` and `deploy` | After checking the hashes, unblock the extracted folder (`Get-ChildItem -Recurse \| Unblock-File`) and say so in DEPLOYMENT.md section 1. *To confirm* on the Theni PC: `Get-ExecutionPolicy -List` |
 | R5 | **Nothing checks the tag against the version.** A tag `v1.0.1` on a commit that still says 1.0.0 publishes packages named 1.0.0 | `release.yml`: the tag only starts the workflow | One step that compares the tag (`GITHUB_REF_NAME`) with `Directory.Build.props` and stops on a difference |
+| R6 | **GitHub holds 34 open Dependabot alerts on `main` (12 high, 19 moderate, 3 low), while CI's audits find none.** CI audits what ships: the .NET solution and `src/web/pnpm-lock.yaml`. The repository has two more npm lockfiles, for tools: the demo site (`.github/demo-site`) and the SBOM tool (`.github/sbom`), which runs inside the release build. The likely reading is that the alerts are there, or are advisories the project accepted (*to confirm*) | GitHub's reply to this branch's push; `ci.yml`; SECURITY.md, *Patching security advisories* | Read every high alert on the Security tab. For each: update the package, or show that it neither ships nor runs in the release build, and write that down. Then audit the tool lockfiles in CI as well |
 
 Also needed, though none of them blocks the tag:
 
@@ -64,7 +65,7 @@ Also needed, though none of them blocks the tag:
 
 **Recommendation**
 
-1. HyFib closes R1 to R5 and starts S1's second channel. Then it tags `1.0.0-rc.1` and installs it on the test server.
+1. HyFib closes R1 to R6 and starts S1's second channel. Then it tags `1.0.0-rc.1` and installs it on the test server.
 2. Once that works, HyFib tags 1.0.0 from the same code.
 3. Install 1.0.0 at Theni for **wave 0 and wave 1 only** (foundation, then pharmacy and stores), as in section 5.
    Wave 1 needs no new code (section 5). The department switches of MODULE-ROLLOUT-PLAN.md are first needed at
@@ -140,9 +141,10 @@ So one green run is good evidence, but it is not proof that the suite is stable.
   shared runner, so its timings are only reported; they decide nothing about the hospital.
 - **CodeQL** runs on every change. Its alerts on `main` were not read here (*to confirm*, on the repository's
   Security tab).
-- When this branch was pushed, GitHub's reply pointed to the repository's **Dependabot alerts** page. It does this
-  when the default branch has open alerts. How many there are, and how severe, could not be read with the tools in
-  this session (*to confirm*). CI's own package audits and the patch-window check passed on the candidate.
+- **Dependabot.** When this branch was pushed, GitHub replied that it found 34 vulnerabilities on the default branch:
+  12 high, 19 moderate and 3 low. CI's package audits and the patch-window check passed on the candidate, and
+  `.github/security-advisories.json` records none. The alerts themselves could not be read with the tools in this
+  session, so which packages they name is *to confirm* (R6).
 
 ### 3.4 What CI does not prove, and what does
 
@@ -206,7 +208,7 @@ in wave 1 whether they send SMS. The seams in MODULE-ROLLOUT-PLAN.md, section 3.
 
 | Gate | Evidence | Signed by |
 |---|---|---|
-| R1 to R5 closed | The pull requests that close them; CI green on the tagged commit | HyFib engineering lead |
+| R1 to R6 closed | The pull requests that close them; CI green on the tagged commit; each high Dependabot alert fixed or written down | HyFib engineering lead |
 | The release workflow works | A green run on `v1.0.0-rc.1`, with every file attached | HyFib engineering lead |
 | The checksums reached IT by a second channel | IT's note of the values compared | Hospital IT officer |
 | The machine is fit | The preflight with no Fail, and a decision against each Warn | Hospital IT officer |
@@ -242,6 +244,8 @@ From GitHub, on 10 November 2026:
   `WebAuthnUnlockTests.cs:338`. #980 (`c3602887`, run 42663896829): failed in
   `OutpatientJourneyTests.FreeSlotTodayAsync`.
 - Security audit: run #20, 10 November, passed. Load test: run #23 (scheduled), 9 November IST, passed.
+- `git push` of this branch, 10 November: "GitHub found 34 vulnerabilities on HyFib/HyFib-HealthCare360-NanaHospitals's
+  default branch (12 high, 19 moderate, 3 low)."
 
 From the repository, at `ad5acb37`:
 
