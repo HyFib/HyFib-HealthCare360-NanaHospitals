@@ -22,11 +22,14 @@ param(
     # The tag that started the release, such as v1.0.0. Empty when no tag started the build.
     [string] $Tag,
     # Directory.Build.props; by default the repository's.
-    [string] $PropsPath = (Join-Path $PSScriptRoot '..\..\Directory.Build.props')
+    [string] $PropsPath
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+# Here, not as the parameter's default: Windows PowerShell 5.1 leaves $PSScriptRoot empty while it reads the defaults.
+if (-not $PropsPath) { $PropsPath = Join-Path $PSScriptRoot '..\..\Directory.Build.props' }
 
 $ReleaseVersionPattern = '^\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$'
 
