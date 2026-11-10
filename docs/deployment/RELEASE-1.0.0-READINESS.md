@@ -1,9 +1,10 @@
 # Release 1.0.0: readiness report
 
 **Status: not released.** Updated on 10 November 2026: the blockers' fixes are in pull request #333, and *Where the
-blockers stand* below says what each needs still. Two remain before a tag: a green run of the release build on that
-pull request, and HyFib's release signing key (R2), which only HyFib can make. The rest of this report is the
-assessment as written first, on 10 November 2026, from:
+blockers stand* below says what each needs still. The release build has now run on that pull request: it passed once,
+and the runs before and after found two faults the Linux CI could not see (R7, R8), both fixed. Before a tag, the
+build must pass on the pull request's last commit, and HyFib must make its release signing key (R2), which only
+HyFib can do. The rest of this report is the assessment as written first, on 10 November 2026, from:
 
 - commit `ad5acb37`, the head of `main`, and its CI run (#1030);
 - the last 30 completed CI runs on `main`;
@@ -21,13 +22,15 @@ after it, one department at a time.
 
 | # | What was done | Shown by | Still needed |
 |---|---|---|---|
-| R1 | `release.yml` starts the runner's PostgreSQL for the tests, as CI does. A pull request that changes the release (the workflow, `Publish-HC360.ps1` or `tools/release`) now runs the release build, without the signing key and without publishing | The release build on pull request #333. Its first run stopped earlier, at R7 | A green run of the release build on #333 |
+| R1 | `release.yml` starts the runner's PostgreSQL for the tests, as CI does. A pull request that changes the release (the workflow, `Publish-HC360.ps1` or `tools/release`) now runs the release build, without the signing key and without publishing; a newer push stops the older build | **The release build passed on #333** (run 2, `934f4eab`, 1 h 39 min): the version check, every test with the runner's PostgreSQL, the publish, the patch windows and the SBOMs. Signing and attaching were skipped, as on every pull request. Run 1 stopped at R7, run 3 at R8 | A green run on #333's last commit (under way) |
 | R2 | A tagged release now stops when HC360 Desktop's package is not signed, with what to do. SECURITY.md keeps the procedure and adds: never make the key in a CI job or a hosted session | The workflow step *Refuse to release an unsigned HC360 Desktop* | **HyFib makes the key pair**, stores the private key as the workflow's secret, keeps a copy offline, and merges the public key into `ReleaseKeys.cs` (SECURITY.md, *Release signing key*) |
 | R3 | The cause was the test, not screen unlock. It polled for the waiting request through `pg_stat_activity` inside one transaction, and PostgreSQL reads that view once per transaction: a connection the server opened after the first poll never appeared. It now reads `pg_locks`, which is read again at every query | Reproduced on PostgreSQL 16: a waiting connection opened after the first poll counts 0 in `pg_stat_activity` and 1 in `pg_locks` | CI runs the test on every change |
 | R4 | DEPLOYMENT.md section 1 now opens with the release files: check the hashes against `SHA256SUMS.txt` and HyFib's second copy, unblock the checked zip, extract it, and set a process-scope execution policy, before the preflight runs. The Theni steps follow | — | — |
 | R5 | `tools/release/Test-ReleaseVersion.ps1` runs first in the release workflow: the version is a release version, `InformationalVersion` agrees, and the tag names it. A tag with a label is published as a pre-release | `tests/deploy/Test-ReleaseVersion.ps1`, 16 cases and the repository's own file, in CI in Windows PowerShell 5.1 and PowerShell 7 | — |
 | R6 | The alerts were in two tools with lockfiles of their own, not in what ships. cdxgen 12.8.5 → 12.9.0, with body-parser held at 2.4.0; wrangler 4.151.1 → 4.156.2. CI and the daily Security audit now fail on a high advisory against either tool | `npm audit`: the SBOM tool has no high left (5 moderate, recorded in SECURITY.md, *Tools that do not ship*); the demo site's tool none at all | GitHub's count on `main` falls once #333 merges |
-| R7 (new) | **The staff app did not build on Windows**, where the release is built: `AbdmReceivedRecords.tsx` beside `abdmReceivedRecords.ts` are one file there. The module is now `receivedRecords.ts`, and CI fails on any two files or modules whose names differ only in case | Found by R1's release build on #333 | — |
+| R7 (new) | **The staff app did not build on Windows**, where the release is built: `AbdmReceivedRecords.tsx` beside `abdmReceivedRecords.ts` are one file there. The module is now `receivedRecords.ts`, and CI fails on any two files or modules whose names differ only in case | Found by R1's release build on #333 (run 1) | — |
+| R8 (new) | **A doctor chosen in the payout picker could be lost, silently.** The picker searched 250 ms after the last key and, on a choice, looked the doctor up in the results as they were by then. A choice made as that search started (the list empties while it fetches) found nothing and set no doctor, so *Prepare payout* stayed disabled with no message. The doctor now comes from the option chosen, and the list keeps its options while the next search runs | Found by R1's release build on #333 (run 3): 1 of 2,796 web tests failed on the loaded Windows runner. Clicking 400 ms after typing fails as on Windows before the fix and passes after; that is now a test | Fifteen other pickers look the choice up the same way: a change of their own, not a blocker for wave 1 |
+| Review | Codex reviewed #333 and found two faults, both fixed. `SHA256SUMS.txt` did not list HC360 Desktop's manifest and signature, so IT could not check them against HyFib's second copy (S1). *Going back* said the backup taken before an update names the previous version; the new version takes it as it starts, so it names the version upgraded to | Codex's two comments on #333, each answered with its fix | — |
 | Rollout item 7 | Start-up stops on a database a newer version changed, names the changes it does not know, and changes nothing | `NewerDatabaseTests`, `UnknownMigrationsTests` | — |
 | Rollout item 8 | DEPLOYMENT.md section 7, *Going back*: the previous package and the backup taken before the update | — | The drill, once, on a spare PC |
 | S1 | DEPLOYMENT.md section 1 now tells IT to compare the checksums with the copy HyFib sends another way | — | HyFib sends them with each release; a code-signing certificate later |
@@ -180,11 +183,11 @@ So one green run is good evidence, but it is not proof that the suite is stable.
 | Step | What happens | State |
 |---|---|---|
 | 1. Tag `vX.Y.Z` | Starts `release.yml`, which first checks that the tag names the version | Works. There was no such check (R5, fixed) |
-| 2. `Publish-HC360.ps1` | Web apps: install from the lockfile, type check, tests, build. .NET: every test. Publishes the server (self-contained, web apps included), HC360 Desktop and the lab agent. Writes `SHA256SUMS.txt` | **The tests have no database (R1, fixed)**. The staff app did not build on Windows (R7, fixed) |
+| 2. `Publish-HC360.ps1` | Web apps: install from the lockfile, type check, tests, build. .NET: every test. Publishes the server (self-contained, web apps included), HC360 Desktop and the lab agent. Writes `SHA256SUMS.txt` | **The tests had no database (R1, fixed)**. The staff app did not build on Windows (R7, fixed). A web test lost a race on the Windows runner (R8, fixed). Passed on #333 |
 | 3. `Sign-HC360Release.ps1` | Signs HC360 Desktop's manifest (ECDSA P-256) with `HC360_RELEASE_SIGNING_KEY`. Without the secret, it builds unsigned and says so in the job summary | Tested in CI with a throwaway key |
 | 4. Check the signature | `desktop verify` with the keys built into this version, when the package was signed. An unsigned package now stops a tagged release | **No key is built in (R2)**: a signed package fails here, and until the key exists no release can be made |
 | 5. Patch windows | No advisory past its window, and none unrecorded | Works |
-| 6. SBOMs | CycloneDX, for each package and web app, added to `SHA256SUMS.txt` | Works |
+| 6. SBOMs | CycloneDX, for each package and web app. They, and HC360 Desktop's manifest and signature, are added to `SHA256SUMS.txt` | Works. The manifest and signature were not listed (found by Codex, fixed) |
 | 7. Attach to the GitHub release | Zips, manifests, signature, SBOMs, checksums | Not yet run |
 | — | Authenticode signature on the programs | **None (S1)** |
 
@@ -228,7 +231,7 @@ cases at wave 3's take-on. From wave 3 they are many.
 
 | Gate | Evidence | Signed by |
 |---|---|---|
-| R1 to R6 closed | The pull requests that close them; CI green on the tagged commit; each high Dependabot alert fixed or written down | HyFib engineering lead |
+| R1 to R8 closed | The pull requests that close them; CI green on the tagged commit; each high Dependabot alert fixed or written down | HyFib engineering lead |
 | The release workflow works | A green run on `v1.0.0-rc.1`, with every file attached | HyFib engineering lead |
 | The checksums reached IT by a second channel | IT's note of the values compared | Hospital IT officer |
 | The machine is fit | The preflight with no Fail, and a decision against each Warn | Hospital IT officer |
@@ -266,6 +269,10 @@ From GitHub, on 10 November 2026:
 - Security audit: run #20, 10 November, passed. Load test: run #23 (scheduled), 9 November IST, passed.
 - `git push` of this branch, 10 November: "GitHub found 34 vulnerabilities on HyFib/HyFib-HealthCare360-NanaHospitals's
   default branch (12 high, 19 moderate, 3 low)."
+- Release workflow runs on pull request #333, added with *Where the blockers stand*: run 1 (42820982602, `8c27aff7`)
+  failed at the staff app's type check (R7); run 2 (42822682123, `934f4eab`) passed every step; run 3 (42823227135,
+  `1df1293d`) failed one web test, in the doctor fee screens (R8).
+- Codex's review of #333: two comments, on `release.yml` (the checksums) and DEPLOYMENT.md (*Going back*).
 
 From the repository, at `ad5acb37`:
 
