@@ -57,7 +57,7 @@ $methods = @($ast.FindAll({ param($node) $node -is [System.Management.Automation
         Where-Object { $_.Member.Extent.Text -match '^(Write|Delete|Create|Move|Copy|Kill|Start|Set|Remove|Open)' } | ForEach-Object { $_.Extent.Text })
 Assert ($methods.Count -eq 0) "no method writes, deletes or starts anything ($($methods -join ' | '))"
 
-$names = 'Get-SizingProfile', 'Get-MinimumVerdict', 'Get-DiskMediaVerdict', 'Get-ComputerNameVerdict', 'Get-OsVerdict', 'Get-PowerHistoryVerdict'
+$names = 'Get-SizingProfile', 'Get-MinimumVerdict', 'Get-DiskMediaVerdict', 'Get-ComputerNameVerdict', 'Get-OsVerdict', 'Get-PowerHistoryVerdict', 'Get-AddressNote'
 foreach ($name in $names) {
     $found = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $false))
     if ($found.Count -ne 1) { throw "Test-HC360ServerNode.ps1 no longer defines $name." }
@@ -101,6 +101,11 @@ Write-Host 'Power: a server stays on'
 Assert ((Get-PowerHistoryVerdict 0 2 30) -eq 'Pass') 'two restarts in 30 days pass'
 Assert ((Get-PowerHistoryVerdict 1 0 30) -eq 'Warn') 'one power loss warns'
 Assert ((Get-PowerHistoryVerdict 0 25 30) -eq 'Warn') 'switched off most nights warns'
+
+Write-Host 'The address the workstations reach'
+Assert ((Get-AddressNote 'Enabled' '192.168.1.20' 'AA-BB-CC-DD-EE-FF') -match 'Reserve 192\.168\.1\.20 for MAC AA-BB-CC-DD-EE-FF') 'an address from DHCP is to be reserved for its MAC'
+Assert ((Get-AddressNote 'Disabled' '192.168.1.20' 'AA-BB-CC-DD-EE-FF') -match 'fixed address') 'a fixed address is kept out of the DHCP range'
+Assert ((Get-AddressNote '' '192.168.1.20' 'AA-BB-CC-DD-EE-FF') -notmatch 'fixed address set') 'an address whose source Windows did not give is not called fixed'
 
 Write-Host 'A run on this machine'
 $out = Join-Path ([System.IO.Path]::GetTempPath()) ('hc360-preflight-test-{0}.json' -f [guid]::NewGuid().ToString('N'))

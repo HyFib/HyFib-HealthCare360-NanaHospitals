@@ -102,6 +102,14 @@ function Get-PowerHistoryVerdict([int] $PowerLosses, [int] $Shutdowns, [int] $Da
     return 'Pass'
 }
 
+# What to do so that the address workstations reach stays this machine's. Only "Disabled" means a fixed address: when
+# Windows does not say, the address is not called fixed.
+function Get-AddressNote([string] $Dhcp, [string] $IPv4, [string] $MacAddress) {
+    if ($Dhcp -eq 'Enabled') { return "The address comes from DHCP. Reserve $IPv4 for MAC $MacAddress on the router, so it never changes (this script cannot see whether it is reserved)." }
+    if ($Dhcp -eq 'Disabled') { return 'A fixed address set on this machine: keep it out of the router''s DHCP range.' }
+    return "Whether the address comes from DHCP could not be read. Keep $IPv4 for this machine: reserve it for MAC $MacAddress on the router, or set it here, outside the router's DHCP range."
+}
+
 # A property's value, or $null when the object or the property is missing (strict mode refuses either).
 function Get-Value($Object, [string] $Name) {
     if ($null -eq $Object) { return $null }
@@ -373,8 +381,10 @@ Invoke-Section 'Network' 'Network connection' {
             }
         })
 
-    $wired = @($facts.Network | Where-Object { $_.Kind -eq 'Ethernet' })
-    $wireless = @($facts.Network | Where-Object { $_.Kind -eq 'WiFi' })
+    # Graded: the adapters with an IPv4 address. One that is up without an address carries nothing to the workstations.
+    $addressed = @($facts.Network | Where-Object { $_.IPv4 })
+    $wired = @($addressed | Where-Object { $_.Kind -eq 'Ethernet' })
+    $wireless = @($addressed | Where-Object { $_.Kind -eq 'WiFi' })
     $needed = 'An Ethernet cable to the access point, or WiFi 6 (802.11ax) or later'
     if ($wired.Count -gt 0) {
         Add-Check 'Network' 'Network connection' (($wired | ForEach-Object { "Ethernet ($($_.Name), $($_.LinkSpeed))" }) -join '; ') $needed 'Pass'
@@ -387,12 +397,12 @@ Invoke-Section 'Network' 'Network connection' {
         Add-Check 'Network' 'Network connection' "WiFi only ($standard$strength)" $needed 'Warn' $note
     }
     else {
-        Add-Check 'Network' 'Network connection' 'No network adapter is connected' $needed 'Fail'
+        Add-Check 'Network' 'Network connection' 'No network adapter is connected with an address' $needed 'Fail'
     }
 
-    $public = @($facts.Network | Where-Object { $_.Profile -eq 'Public' })
-    $profiles = ($facts.Network | ForEach-Object { "$($_.Name): $(if ($_.Profile) { $_.Profile } else { 'not read' })" }) -join '; '
-    if ($facts.Network.Count -eq 0) {
+    $public = @($addressed | Where-Object { $_.Profile -eq 'Public' })
+    $profiles = ($addressed | ForEach-Object { "$($_.Name): $(if ($_.Profile) { $_.Profile } else { 'not read' })" }) -join '; '
+    if ($addressed.Count -eq 0) {
         Add-Check 'Network' 'Network profile' 'No connected adapter' 'Private' 'Unknown'
     }
     elseif ($public.Count -gt 0) {
@@ -403,9 +413,10 @@ Invoke-Section 'Network' 'Network connection' {
         Add-Check 'Network' 'Network profile' $profiles 'Private' 'Pass'
     }
 
-    foreach ($adapter in $facts.Network) {
-        $note = if ($adapter.Dhcp -eq 'Enabled') { "The address comes from DHCP. Reserve $($adapter.IPv4) for MAC $($adapter.MacAddress) on the router, so it never changes (this script cannot see whether it is reserved)." } else { 'A fixed address set on this machine: keep it out of the router''s DHCP range.' }
-        Add-Check 'Network' 'Address' "$($adapter.Name): $($adapter.IPv4), MAC $($adapter.MacAddress), DHCP $($adapter.Dhcp)" 'The same address every day' 'Info' $note
+    foreach ($adapter in $addressed) {
+        $dhcp = if ($adapter.Dhcp) { $adapter.Dhcp } else { 'not read' }
+        Add-Check 'Network' 'Address' "$($adapter.Name): $($adapter.IPv4), MAC $($adapter.MacAddress), DHCP $dhcp" 'The same address every day' 'Info' `
+            (Get-AddressNote $adapter.Dhcp $adapter.IPv4 $adapter.MacAddress)
     }
 }
 
