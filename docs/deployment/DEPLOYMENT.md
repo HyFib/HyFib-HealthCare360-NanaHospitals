@@ -21,8 +21,34 @@ internet to work; SMS/WhatsApp, payment gateways, ABDM and the AI assistant use 
 
 ## 1. Before you start
 
-**Read the machine first.** On the machine meant to be the server, from the release's `deploy` folder, in PowerShell as
-Administrator:
+**The release files.** Download from the release `HC360-Server-<version>-win-x64.zip`,
+`HC360-Desktop-<version>-win-x64.zip` with its `.manifest.json` and `.manifest.sig`,
+`HC360-LabAgent-<version>-win-x64.zip` if analysers are cabled to lab PCs by serial (RS-232) cable, and
+`SHA256SUMS.txt`. Nothing in them runs until they are checked:
+
+1. **Check each file** against `SHA256SUMS.txt`: `(Get-FileHash <file> -Algorithm SHA256).Hash` must be the value on
+   its line (the case of the letters does not matter). HyFib also sends the checksums to the hospital's IT another way,
+   by e-mail from a known HyFib address or read out by phone: compare them with those too. A page that served a changed
+   file could serve changed checksums beside it, and the programs carry no Windows (Authenticode) signature.
+2. **Unblock each checked zip before extracting it**, for example `Unblock-File .\HC360-Server-<version>-win-x64.zip`.
+   A browser marks what it downloads as from the internet, Windows copies the mark to every file extracted from it, and
+   PowerShell then refuses the release's scripts, which are not signed. The files extracted from an unblocked zip are
+   not marked. Unblock only what you checked.
+3. **Extract** the server package. Keep the HC360 Desktop package and its `.manifest.json` and `.manifest.sig` in the
+   folder you extract the server package in: the server offers it from there to the workstations, which update
+   themselves (section 5).
+4. **Let the PowerShell window you work in run the scripts**, as Administrator:
+
+   ```powershell
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+   ```
+
+   It applies to that window alone and ends when it closes. A Windows 10 or 11 PC where nobody has set a policy refuses
+   every script until then. If `Get-ExecutionPolicy -List` shows a `MachinePolicy` or `UserPolicy`, a group policy
+   decides instead: ask its administrator.
+
+**Read the machine first.** On the machine meant to be the server, from the release's `deploy` folder, in the PowerShell
+window of step 4, as Administrator:
 
 ```powershell
 .\Test-HC360ServerNode.ps1 -ConcurrentUsers <staff using HC360 at once at the busiest hour>
@@ -60,12 +86,6 @@ one. Windows 10/11 and Windows Server 2022 come with Edge; keep it installed and
 Edge was removed, install Edge (or Google Chrome) for all users, or set its path in the configuration
 (`HealthCare360:Pdf:BrowserPath`). Without it, everything else works and Administration › System health says that PDFs
 can't be made.
-
-**You need**: `HC360-Server-<version>-win-x64.zip` and `HC360-Desktop-<version>-win-x64.zip` from the release, and
-`HC360-LabAgent-<version>-win-x64.zip` if analysers are cabled to lab PCs by serial (RS-232) cable. Check them
-against `SHA256SUMS.txt` (`Get-FileHash <file> -Algorithm SHA256`). Keep the HC360 Desktop package's `.manifest.json`
-and `.manifest.sig` beside it, in the folder you extract the server package in: the server offers it from there to the
-workstations, which update themselves (section 5).
 
 ## 2. Install PostgreSQL (once)
 
@@ -663,7 +683,9 @@ Once a workstation or tablet is enrolled, the code for another waits for a secon
 minutes chosen from the approval. Codes for kiosks, queue displays and lab agents are made at once.
 
 Create one-time enrolment codes in **Administration › Devices › Enrol a device**, then on each workstation run
-(Administrator PowerShell, from the extracted desktop package):
+(Administrator PowerShell, from the extracted desktop package). Copy the checked and unblocked zip there, or the
+extracted folder, and let the window run scripts first, as in section 1 (*The release files*, steps 2 and 4); the same
+holds for the lab agent's package (section 6):
 
 ```powershell
 # Reception, OPD, wards, billing counters
@@ -1002,6 +1024,41 @@ says what is offered). A release without a signature (`.manifest.sig`) is not of
 any installed before self-update or with `-NoAutoUpdate`, with `Install-HC360Desktop.ps1` (or through your software
 distribution tool). Self-update replaces the program files only: run the installer again when a release's notes ask for
 it.
+
+### Going back
+
+The way back from an upgrade is the previous version **and** the backup HC360 took just before the update changed the
+database. Never the previous version alone: on a database a newer version changed, it stops, says so in its log and in
+Windows Event Viewer, and names the database changes it does not know. It changes nothing.
+
+Restoring that backup loses everything entered since the upgrade. So upgrade at the quietest hour with the downtime kit
+out (docs/modules/downtime.md), decide within about half an hour whether the upgrade stands, and keep on paper what is
+done after that, to enter again once the previous version is back. With several servers, stop them all and go back on
+each.
+
+1. **Find the backup.** It is the newest file in the backup folder (`%ProgramData%\HyFib\HealthCare360\backups`, or the
+   folder in `HealthCare360:Backup:Directory`) from just before the upgrade. Check it:
+
+   ```powershell
+   & 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe' backup verify --in '<file>'
+   ```
+
+   It says `PreMigration backup ... taken <the time of the upgrade> ... by HC360 <the version upgraded to>`: the new
+   version takes it as it starts, just before it changes the database, so the backup names the new version while its
+   database is still the previous version's, which the previous version restores. An upgrade that changed no table made
+   no such backup, and the previous version starts on the database as it is: skip step 3.
+2. **Put the previous version back, stopped.** From the previous release's `deploy` folder, checked and unblocked as in
+   section 1, run `.\Install-HC360Server.ps1 -NoStart`. It replaces the program files and keeps the configuration and
+   data.
+3. **Restore the backup:** `.\Restore-HC360.ps1 -BackupFile '<file>'`. It keeps the upgraded database under another
+   name (`hc360_before_restore_<time>`), restores the one from before the update, and starts HC360. The backup holds
+   the database and its keys, not the documents, which stay as they are.
+4. **Run the previous version's `.\Install-HC360Server.ps1` again**, without `-NoStart`, so that HC360 starts with
+   Windows again. *Check:* Administration › System health shows the previous version and nothing red.
+5. **Workstations.** HC360 Desktop never goes back a version by itself. One that took the newer version keeps it; where
+   it misbehaves, install the previous one there with that release's `Install-HC360Desktop.ps1`.
+
+Rehearse these steps once, on a copy restored on a spare PC, before the first upgrade a hospital depends on.
 
 ## 8. Backups and disaster recovery
 

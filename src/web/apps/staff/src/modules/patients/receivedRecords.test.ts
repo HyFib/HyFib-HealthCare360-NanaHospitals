@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bundleSummary } from './abdmReceivedRecords';
+import { bundleSummary } from './receivedRecords';
 
 // What a doctor reads of a FHIR bundle another provider sent: the clinical entries and the files, not the header.
 

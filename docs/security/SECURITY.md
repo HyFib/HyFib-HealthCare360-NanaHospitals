@@ -1713,9 +1713,13 @@ add one, and every copy of HC360 runs the same checks (`ReleasePackages`):
   installs only while HC360 Desktop is closed, never goes back a version, and puts the previous version back when an
   installation fails. Users may start the task ("Restart to update") but not change it.
 
-An unsigned package is never installed by itself. Until HyFib has set up its key, releases are built unsigned (the
-release job's summary says so) and workstations are upgraded with `Install-HC360Desktop.ps1`, as before. IT can turn
-self-update off on a computer with `"autoUpdate": false` in its policy (`Install-HC360Desktop.ps1 -NoAutoUpdate`).
+An unsigned package is never installed by itself, and no release is made unsigned: the release workflow stops when
+the package is not signed. HC360 Desktop can update itself only from a version that already trusts the key, so the
+first version a workstation installs must be signed; a key added later would reach each workstation only when someone
+reinstalled it by hand. Until HyFib has set up its key, no release can be made. A pull request that changes the release
+build still runs it, unsigned and unpublished, and never receives the key. Workstations installed from a package without
+a signature, before this, are upgraded with `Install-HC360Desktop.ps1`. IT can turn self-update off on a computer with
+`"autoUpdate": false` in its policy (`Install-HC360Desktop.ps1 -NoAutoUpdate`).
 
 **Setting up the key, once (HyFib):**
 1. On a computer HyFib trusts with the key, run `.\tools\release\Sign-HC360Release.ps1 -NewKey -KeyPath <file>`, with
@@ -1724,9 +1728,12 @@ self-update off on a computer with `"autoUpdate": false` in its policy (`Install
    `Get-Content -Raw <file> | gh secret set HC360_RELEASE_SIGNING_KEY --repo HyFib/HyFib-HealthCare360-NanaHospitals`
    (or Settings › Secrets and variables › Actions). Keep one copy offline: an encrypted USB drive in the safe, or the
    company password manager.
-3. Add the printed public key to `ReleaseKeys.Trusted` and merge that before tagging the first release to be signed.
-   The release workflow checks each signature against the keys built into that same release, and fails when the key is
-   not among them, rather than publish a package no workstation would take.
+3. Add the printed public key to `ReleaseKeys.Trusted` and merge that before tagging the first release. The release
+   workflow stops without the secret, checks each signature against the keys built into that same release, and fails
+   when the key is not among them, rather than publish a package no workstation would take.
+
+Make the key on a computer HyFib controls, never in a CI job or a hosted development session: the private key must not
+pass through any log, transcript or shared machine.
 
 **Rotating it** (every few years, at once if it may be exposed, or when someone who held it leaves): make a new pair as
 above, add the new public key beside the old one and release that version signed with the old key; then replace the
@@ -1770,6 +1777,20 @@ CI runs these checks on every pull request and on main. A pull request cannot me
     updates them. `.github/scripts/sbom.mjs` makes the files and checks each against the CycloneDX schema.
   - HC360 ships no container images, so there is no image to scan. `deploy/docker/compose.dev.yml` is for developers
     only.
+- **Tools that do not ship**: the SBOM tool (cdxgen, `.github/sbom`), which runs inside the release build, and the
+  demo site's deploy tool (wrangler, `.github/demo-site`) each pin their whole tree in a lockfile of their own.
+  - CI and the daily Security audit fail on a high or critical advisory against either (`npm audit --audit-level=high`).
+    The patch windows (SEC-11) cover only what HC360 ships, so these are not recorded in
+    `.github/security-advisories.json`.
+  - Fix one by updating the tool, past Dependabot's 7-day wait. Where no release of the tool has the fix yet, hold the
+    package at a fixed version in the tool's `overrides`, within the same major version, and say why in its
+    `package.json`: body-parser is held at 2.4.0 under cdxgen 12.9.0 (GHSA-27r3-jxmh-p828; cdxgen's server mode, which
+    the release does not run, is where it is used).
+  - Moderate and low ones wait for the tool's next update. On 10 November 2026 these were five moderate advisories
+    under cdxgen 12.9.0, all through glob 13 and minimatch 10, whose fixes are in their next major versions: a glob
+    that keeps walking after its AbortSignal fires (GHSA-3g3m-2fjr-6pw4) and pattern amplification in minimatch
+    (GHSA-g3hv-75wg-m249). The release build gives cdxgen the repository's own lockfile and patterns, so neither is
+    reachable with outside input.
 - **Dependabot** proposes updates every Monday: NuGet packages, the web packages, the .NET SDK (the server and HC360
   Desktop ship the runtime that comes with it) and the CI actions.
   - Minor and patch updates come grouped, and CI tests them like any change.

@@ -3,9 +3,23 @@ name: Release
 on:
   push:
     tags: ['v*.*.*']
+  # A change to the release itself (this workflow, the publish script or the release tools) is tried before it merges:
+  # the same build, tests, patch-window check and SBOMs, on the pull request's code. Nothing is signed or published, and
+  # the signing key is never given to it (the steps that use it run only for a tag).
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - deploy/windows/Publish-HC360.ps1
+      - tools/release/**
 
 permissions:
   contents: write
+
+# A pull request's build takes over an hour on Windows, and each push to it starts one: a newer push stops the older
+# build, which it supersedes. A tag's build, which publishes, is never stopped.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   package:
@@ -16,6 +30,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # The packages are named after the version in Directory.Build.props, and the tag only starts the release: a tag
+      # v1.0.1 on a commit that still says 1.0.0 would publish packages named 1.0.0. Checked first, before an hour of
+      # build and tests. A pull request has no tag, so only its version is checked (tests/deploy/Test-ReleaseVersion.ps1).
+      - name: Check the version, and that the tag names it
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        run: ./tools/release/Test-ReleaseVersion.ps1 -Tag $env:RELEASE_TAG
 
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
@@ -31,24 +54,49 @@ jobs:
           cache: pnpm
           cache-dependency-path: src/web/pnpm-lock.yaml
 
+      # Publish-HC360.ps1 runs every test before it packages, the end-to-end journeys (IntegrationTests) among them, and
+      # they need PostgreSQL. Windows runners cannot run Linux containers, but they come with PostgreSQL installed (service
+      # stopped): start it and give the tests a server to create databases on, as CI does (ci.yml).
+      - name: Start PostgreSQL for the end-to-end journeys
+        shell: pwsh
+        run: |
+          $service = Get-Service -Name 'postgresql*' | Select-Object -First 1
+          Set-Service -InputObject $service -StartupType Manual
+          Start-Service -InputObject $service
+          & (Join-Path $env:PGBIN 'pg_isready.exe') -h localhost -p 5432 -t 60
+          if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL did not start.' }
+          & (Join-Path $env:PGBIN 'postgres.exe') --version
+          $user = if ($env:PGUSER) { $env:PGUSER } else { 'postgres' }
+          $password = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { 'root' }
+          "HC360_TEST_DATABASE=Host=localhost;Port=5432;Username=$user;Password=$password;Database=postgres" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Publish HC360 (server, desktop, deployment scripts)
         shell: pwsh
         run: ./deploy/windows/Publish-HC360.ps1 -Configuration Release
 
       # HC360 Desktop updates itself from the Server Node only with a package HyFib signed (SRS DED-18). The key is the
-      # HC360_RELEASE_SIGNING_KEY secret, which the script reads from its environment; without it the release is built
-      # unsigned, and the job summary says so. tests/deploy/Test-ReleaseSigning.ps1 tests the script with a throwaway key.
+      # HC360_RELEASE_SIGNING_KEY secret, which the script reads from its environment; without it the script builds the
+      # package unsigned and says so in the job summary. tests/deploy/Test-ReleaseSigning.ps1 tests it with a throwaway key.
       - name: Sign the HC360 Desktop package
         id: sign
+        if: github.event_name == 'push'
         shell: pwsh
         env:
           HC360_RELEASE_SIGNING_KEY: ${{ secrets.HC360_RELEASE_SIGNING_KEY }}
         run: ./tools/release/Sign-HC360Release.ps1 -ArtifactsDir artifacts
 
+      # No release is made unsigned. HC360 Desktop can update itself only from a version that trusts the key, so the first
+      # version a workstation installs must already be signed: a key added later reaches each workstation only when
+      # someone reinstalls it by hand. Setting the key up, once: docs/security/SECURITY.md, "Release signing key".
+      - name: Refuse to release an unsigned HC360 Desktop
+        if: github.event_name == 'push' && steps.sign.outputs.signed != 'true'
+        shell: pwsh
+        run: throw 'The HC360 Desktop package is not signed, because the HC360_RELEASE_SIGNING_KEY secret is not set. Set the release signing key up as docs/security/SECURITY.md ("Release signing key") says, merge its public key into ReleaseKeys.cs, and tag that commit.'
+
       # Signed, the package must verify with the keys built into this release, as the server and the workstations check
       # it: a key not yet added to ReleaseKeys.cs fails the release instead of shipping a package no workstation takes.
       - name: Check the signature with the release keys HC360 trusts
-        if: steps.sign.outputs.signed == 'true'
+        if: github.event_name == 'push' && steps.sign.outputs.signed == 'true'
         shell: pwsh
         env:
           DESKTOP_PACKAGE: ${{ steps.sign.outputs.package }}
@@ -73,7 +121,9 @@ jobs:
 
       # The SBOMs (CycloneDX) of what this release ships, beside the packages and in SHA256SUMS.txt: one per package (the
       # server's with the staff app and portal it serves) and one per web app (.github/scripts/sbom.mjs; the tools at their
-      # pinned versions; docs/security/SECURITY.md, "SBOMs").
+      # pinned versions; docs/security/SECURITY.md, "SBOMs"). HC360 Desktop's manifest and signature, made after the
+      # packages were listed, go into SHA256SUMS.txt here too, so every file the release attaches can be checked
+      # (docs/deployment/DEPLOYMENT.md, section 1).
       - name: Make the SBOMs
         shell: pwsh
         run: |
@@ -83,13 +133,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'cdxgen could not be installed.' }
           node .github/scripts/sbom.mjs --output artifacts
           if ($LASTEXITCODE -ne 0) { throw 'The SBOMs could not be made.' }
-          Get-ChildItem artifacts -Filter '*.cdx.json' | ForEach-Object {
+          Get-ChildItem artifacts -File | Where-Object { $_.Name -like '*.cdx.json' -or $_.Name -like '*.manifest.json' -or $_.Name -like '*.manifest.sig' } | ForEach-Object {
             '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
           } | Add-Content artifacts/SHA256SUMS.txt -Encoding ascii
 
       - name: Attach packages to the GitHub release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
+          # A version with a label (v1.0.0-rc.1) is a release candidate: GitHub marks it a pre-release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             artifacts/*.zip
             artifacts/*.manifest.json

@@ -332,7 +332,11 @@ public sealed class WebAuthnUnlockTests(HospitalServer server) : IAsyncLifetime
             await db.Database.ExecuteSqlAsync($"SELECT 1 FROM identity.user_sessions WHERE id = {sessionId} FOR NO KEY UPDATE", Ct);
             var sending = client.SendRawAsync(HttpMethod.Post, Unlock, copied);
             var waited = Stopwatch.StartNew();
-            while (await db.Database.SqlQuery<int>($"SELECT count(*)::int AS \"Value\" FROM pg_stat_activity WHERE pg_backend_pid() = ANY(pg_blocking_pids(pid))").SingleAsync(Ct) == 0)
+            // pg_locks, not pg_stat_activity: PostgreSQL reads pg_stat_activity once per transaction, and this loop runs in
+            // one. A connection the server opens after the first look (the refused answer's audit entry takes one of its
+            // own) never appears in it, so its wait went unseen and the test failed at 30 s (CI run 1024). pg_locks is
+            // read again at every query.
+            while (await db.Database.SqlQuery<int>($"SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE NOT granted AND pg_backend_pid() = ANY(pg_blocking_pids(pid))").SingleAsync(Ct) == 0)
             {
                 sending.IsCompleted.ShouldBeFalse("The unlock finished without waiting for the session's row.");
                 waited.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(30), "The unlock never reached the session's row.");

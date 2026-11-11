@@ -245,6 +245,15 @@ jobs:
           pwsh -NoProfile -File tests/deploy/Test-ReleaseSigning.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
+      # The release workflow's first step: the version in Directory.Build.props, and the tag that names it.
+      - name: Test the release's check of its version and tag
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-ReleaseVersion.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-ReleaseVersion.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
       # The preflight run on a machine before it becomes the Server Node: it only reads, it grades as DEPLOYMENT.md and the
       # SRS sizing say, and a run on the runner writes its report.
       - name: Test the Server Node preflight (Test-HC360ServerNode.ps1)
@@ -318,6 +327,14 @@ jobs:
       - name: Check formatting
         run: pnpm format:check
 
+      # The release is built on Windows, whose file names ignore case: two files whose names differ only in case are one
+      # file there, and an import of either finds the other (.github/scripts/case-clashes.mjs).
+      - name: Check that no two files differ only in case
+        working-directory: .
+        run: |
+          node --test .github/scripts/case-clashes.test.mjs
+          node .github/scripts/case-clashes.mjs
+
       - name: Type check
         run: pnpm -r typecheck
 
@@ -368,6 +385,14 @@ jobs:
         run: |
           dotnet tool restore
           npm ci --prefix .github/sbom --ignore-scripts --omit=optional --no-audit --no-fund
+
+      # The SBOM tool runs inside the release build, and the demo site's tool deploys the demo. Neither ships, so the patch
+      # windows (SEC-11) do not cover them, but a high or critical advisory against either fails here. Moderate and low
+      # ones wait for Dependabot's next update of the tool (docs/security/SECURITY.md, "Tools that do not ship").
+      - name: Audit the SBOM tool and the demo site's deploy tool
+        run: |
+          npm audit --prefix .github/sbom --package-lock-only --audit-level=high
+          npm audit --prefix .github/demo-site --package-lock-only --audit-level=high
 
       - name: Make the SBOMs
         run: node .github/scripts/sbom.mjs --output "$RUNNER_TEMP/sbom"

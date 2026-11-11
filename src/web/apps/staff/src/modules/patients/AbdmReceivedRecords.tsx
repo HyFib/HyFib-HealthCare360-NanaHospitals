@@ -26,7 +26,7 @@ import {
   type BundleAttachment,
   bundleSummary,
   receivedRecordQueries,
-} from './abdmReceivedRecords';
+} from './receivedRecords';
 
 const useStyles = makeStyles({
   cell: { display: 'flex', flexDirection: 'column', gap: '2px', paddingBlock: '6px', whiteSpace: 'normal' },
