@@ -10,8 +10,9 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { useDebouncedValue } from '@hc360/core';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { usePermission } from '@/lib/permissions';
+import { useShownItems } from '@/lib/useShownItems';
 import { emrQueries } from './api';
 import { frequencyMeaning } from './dosing';
 import { drugMasterDefaults, drugOptionView, favouriteDefaults, type MedicineDefaults } from './prescriptionForm';
@@ -57,11 +58,15 @@ export function DrugPicker({
   const master = useQuery({
     ...prescriptionQueries.drugs(debounced),
     enabled: canSearchMaster && debounced.length >= 2,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
 
   const favouriteMatches = (favourites.data ?? []).filter((f) => matches(value, f.label, f.genericName)).slice(0, 8);
   const suggestionMatches = suggestions.filter((s) => matches(value, s.drugName, s.genericName)).slice(0, 8);
   const masterMatches = debounced.length >= 2 ? (master.data ?? []) : [];
+  // The drug comes from the options shown, not from the results as they are by the time one is chosen.
+  const shownDrug = useShownItems(masterMatches, (d) => d.id);
 
   const pick = (optionValue: string | undefined) => {
     if (!optionValue) {
@@ -79,7 +84,7 @@ export function DrugPicker({
         onPick(suggestion);
       }
     } else if (source === 'drug') {
-      const item = masterMatches.find((d) => d.id === id);
+      const item = shownDrug(id);
       if (item) {
         onPick(drugMasterDefaults(item));
       }

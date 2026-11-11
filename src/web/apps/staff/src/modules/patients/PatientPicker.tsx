@@ -1,8 +1,9 @@
 import { Combobox, Field, Option, Spinner, type FieldProps } from '@fluentui/react-components';
 import { useDebouncedValue, type PagedResult } from '@hc360/core';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/lib/api';
+import { useShownItems } from '@/lib/useShownItems';
 import type { PatientListItem } from './api';
 
 export interface PickedPatient {
@@ -38,9 +39,14 @@ export function PatientPicker({
       api.get<PagedResult<PatientListItem>>('/api/v1/patients', { query: { search: debounced, pageSize: 8 }, signal }),
     enabled: debounced.length >= 3,
     staleTime: 15_000,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
 
-  const items = results.data?.items ?? [];
+  // Below 3 characters there is no search, and the last one's results are not offered either.
+  const items = debounced.length >= 3 ? (results.data?.items ?? []) : [];
+  // The patient comes from the options shown, not from the results as they are by the time one is chosen.
+  const shown = useShownItems(items, (p) => p.id);
 
   return (
     <Field
@@ -63,7 +69,7 @@ export function PatientPicker({
           }
         }}
         onOptionSelect={(_, data) => {
-          const picked = items.find((p) => p.id === data.optionValue);
+          const picked = shown(data.optionValue);
           onChange(picked ? { id: picked.id, uhid: picked.uhid, fullName: picked.fullName } : null);
           setTerm('');
         }}

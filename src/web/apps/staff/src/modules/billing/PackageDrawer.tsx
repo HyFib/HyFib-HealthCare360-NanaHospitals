@@ -20,8 +20,9 @@ import {
 import { AddRegular, DeleteRegular, DismissRegular } from '@fluentui/react-icons';
 import { formatInr, useDebouncedValue } from '@hc360/core';
 import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useShownItems } from '@/lib/useShownItems';
 import { askedForApproval } from '@/modules/admin/api';
 import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import { searchServices } from './api';
@@ -92,11 +93,18 @@ function ServiceSearch({
 }) {
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term.trim(), 250);
+  const searching = category !== undefined || debounced.length >= 2;
   const results = useQuery({
     queryKey: ['billing', 'service-search', debounced, category ?? ''],
     queryFn: () => searchServices(debounced, category),
-    enabled: category !== undefined || debounced.length >= 2,
+    enabled: searching,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
+  // With no search there are no options, and the last search's results are not offered either.
+  const services = searching ? (results.data ?? []) : [];
+  // The service comes from the options shown, not from the results as they are by the time one is chosen.
+  const shown = useShownItems(services, (s) => s.id);
   return (
     <Field label={label} required={required}>
       <Combobox
@@ -104,14 +112,14 @@ function ServiceSearch({
         value={term}
         onChange={(event) => setTerm(event.target.value)}
         onOptionSelect={(_, data) => {
-          const item = results.data?.find((s) => s.id === data.optionValue);
+          const item = shown(data.optionValue);
           if (item) {
             onPick(item);
           }
           setTerm('');
         }}
       >
-        {(results.data ?? []).map((s) => (
+        {services.map((s) => (
           <Option key={s.id} value={s.id} text={s.name}>
             {s.name} ({s.code}) · {formatInr(s.basePrice)}
           </Option>

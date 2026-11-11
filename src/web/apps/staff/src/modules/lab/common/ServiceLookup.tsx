@@ -1,8 +1,9 @@
 import { Combobox, Field, Option } from '@fluentui/react-components';
 import { formatInr, useDebouncedValue } from '@hc360/core';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/lib/api';
+import { useShownItems } from '@/lib/useShownItems';
 
 /** Billable service from the platform service catalogue (masters). */
 export interface ServiceItem {
@@ -52,7 +53,13 @@ export function ServiceLookup({
     queryFn: () => api.get<ServiceItem[]>('/api/v1/masters/lookups/services', { query: { category, search } }),
     enabled: search.length >= 2,
     staleTime: 60_000,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
+  // Below 2 characters there is no search, and the last one's results are not offered either.
+  const items = search.length >= 2 ? (results.data ?? []) : [];
+  // The service comes from the options shown, not from the results as they are by the time one is chosen.
+  const shown = useShownItems(items, (service) => service.id);
   const selected = picked?.id === value ? picked : current.data;
   const label = selected
     ? `${selected.name} (${selected.code}) · ${formatInr(selected.basePrice, { whole: true })}`
@@ -80,14 +87,14 @@ export function ServiceLookup({
           }
         }}
         onOptionSelect={(_, data) => {
-          const item = results.data?.find((service) => service.id === data.optionValue) ?? null;
+          const item = shown(data.optionValue) ?? null;
           setPicked(item);
           setTerm('');
           onChange(item?.id ?? null);
         }}
         clearable
       >
-        {(results.data ?? []).map((service) => (
+        {items.map((service) => (
           <Option key={service.id} value={service.id} text={service.name}>
             {service.name} · {service.code} · {formatInr(service.basePrice, { whole: true })}
           </Option>

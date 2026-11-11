@@ -23,7 +23,7 @@ import {
 import { DismissRegular } from '@fluentui/react-icons';
 import { todayIso, useDebouncedValue, type PayerType } from '@hc360/core';
 import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import type { ApprovalRequestDto } from '@/modules/approvals/api';
@@ -108,7 +108,11 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
     queryKey: ['billing', 'service-search', debounced],
     queryFn: () => searchServices(debounced),
     enabled: scope === 'service' && debounced.length >= 2,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
+  // Below 2 characters there is no search, and the last one's results are not offered either.
+  const serviceOptions = debounced.length >= 2 ? (services.data ?? []) : [];
 
   const check = checkRuleForm({
     doctorId: doctor?.id ?? null,
@@ -229,12 +233,12 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
                   selectedOptions={service ? [service.id] : []}
                   onChange={(event) => setServiceTerm(event.target.value)}
                   onOptionSelect={(_, data) => {
-                    const item = services.data?.find((s) => s.id === data.optionValue);
-                    setService(item ? { id: item.id, label: `${item.name} (${item.code})` } : null);
+                    // The service comes from the option chosen, not from the results as they are by now.
+                    setService(data.optionValue ? { id: data.optionValue, label: data.optionText ?? '' } : null);
                     setServiceTerm('');
                   }}
                 >
-                  {(services.data ?? []).map((s) => (
+                  {serviceOptions.map((s) => (
                     <Option key={s.id} value={s.id} text={`${s.name} (${s.code})`}>
                       {s.name} ({s.code})
                     </Option>

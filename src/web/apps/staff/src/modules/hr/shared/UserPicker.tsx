@@ -1,6 +1,6 @@
 import { Combobox, Field, Option, Spinner, type FieldProps } from '@fluentui/react-components';
 import { useDebouncedValue, useSession } from '@hc360/core';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { searchUsers, USER_DIRECTORY_PERMISSION, useUserName, type PickedUser } from './users';
@@ -37,13 +37,17 @@ export function UserPicker({
     queryFn: ({ signal }) => searchUsers(debounced, signal),
     enabled: canSearch && debounced.length >= 2,
     staleTime: 60_000,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
 
   const options: { id: string; name: string; text: string }[] = [];
   if (me) {
     options.push({ id: me.id, name: me.displayName, text: `${me.displayName} (you)` });
   }
-  for (const user of results.data?.items ?? []) {
+  // Below two characters there is no search, and the last one's results are not offered either.
+  const found = canSearch && debounced.length >= 2 ? (results.data?.items ?? []) : [];
+  for (const user of found) {
     if (user.id !== me?.id) {
       options.push({ id: user.id, name: user.displayName, text: `${user.displayName} · ${user.userName}` });
     }
@@ -77,8 +81,8 @@ export function UserPicker({
           }
         }}
         onOptionSelect={(_, data) => {
-          const picked = options.find((option) => option.id === data.optionValue);
-          onChange(picked ? { id: picked.id, name: picked.name } : null);
+          // The user comes from the option chosen, not from the results as they are by the time it is chosen.
+          onChange(data.optionValue ? { id: data.optionValue, name: data.optionText ?? '' } : null);
           setTerm('');
         }}
         expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}

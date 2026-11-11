@@ -14,9 +14,10 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular } from '@fluentui/react-icons';
 import { formatInr, useDebouncedValue, useHotkey } from '@hc360/core';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import { useRef, useState, type Ref } from 'react';
 import { usePractitioners } from '@/lib/lookups';
+import { useShownItems } from '@/lib/useShownItems';
 import { billingApi, quotePrice, searchServices, type BillDetail, type ServiceItemDto } from './api';
 import { PRICE_SOURCE_LABEL, SERVICE_CATEGORY_LABEL } from './labels';
 import { amountInputText, formatPercent, fromPaise, parseQuantity, parseRupees, roundDiv, toPaise } from './money';
@@ -61,6 +62,8 @@ export function ServiceSearchField({
     queryFn: () => searchServices(debounced),
     enabled: enabled && debounced.length >= 2,
     staleTime: 60_000,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
   // The text clears once a service is picked; picking nothing (cleared) clears the service too.
   const [shown, setShown] = useState(value);
@@ -71,7 +74,10 @@ export function ServiceSearchField({
     }
   }
 
-  const items = results.data ?? [];
+  // Below 2 characters there is no search, and the last one's results are not offered either.
+  const items = debounced.length >= 2 ? (results.data ?? []) : [];
+  // The service comes from the options shown, not from the results as they are by the time one is chosen.
+  const shownItem = useShownItems(items, (s) => s.id);
   return (
     <Field label={label} className={className} required={required}>
       <Combobox
@@ -87,7 +93,7 @@ export function ServiceSearchField({
         }}
         onOptionSelect={(_, data) => {
           setTerm('');
-          onChange(items.find((s) => s.id === data.optionValue) ?? null);
+          onChange(shownItem(data.optionValue) ?? null);
         }}
         expandIcon={results.isFetching ? <Spinner size="extra-tiny" aria-hidden /> : undefined}
         freeform

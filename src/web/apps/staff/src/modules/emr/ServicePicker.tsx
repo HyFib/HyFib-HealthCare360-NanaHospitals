@@ -11,8 +11,9 @@ import {
   type FieldProps,
 } from '@fluentui/react-components';
 import { formatInr, useDebouncedValue } from '@hc360/core';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useShownItems } from '@/lib/useShownItems';
 import { serviceCategoryLabel, type ServiceCategory } from './orderCart';
 import { orderQueries, type ServiceItemDto } from './ordersApi';
 
@@ -50,9 +51,17 @@ export function ServicePicker({
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term.trim(), 250);
   const single = categories && categories.length === 1 ? categories[0]! : null;
-  const results = useQuery({ ...orderQueries.services(single, debounced), enabled: debounced.length >= 2 });
+  const results = useQuery({
+    ...orderQueries.services(single, debounced),
+    enabled: debounced.length >= 2,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
+  });
   const items =
     debounced.length >= 2 ? (results.data ?? []).filter((s) => !categories || categories.includes(s.category)) : [];
+
+  // The service comes from the options shown, not from the results as they are by the time one is chosen.
+  const shown = useShownItems(items, (s) => s.id);
 
   return (
     <Field label={label} hint={hint}>
@@ -65,7 +74,7 @@ export function ServicePicker({
         selectedOptions={[]}
         onChange={(event) => setTerm(event.target.value)}
         onOptionSelect={(_, data) => {
-          const picked = items.find((s) => s.id === data.optionValue);
+          const picked = shown(data.optionValue);
           if (picked) {
             onPick(picked);
           }

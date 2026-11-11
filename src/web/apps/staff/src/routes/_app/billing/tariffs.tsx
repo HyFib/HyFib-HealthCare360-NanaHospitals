@@ -36,10 +36,11 @@ import {
   useUnsavedChanges,
   useValuesChanged,
 } from '@hc360/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { useShownItems } from '@/lib/useShownItems';
 import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 import { searchServices, type ServiceItemDto } from '@/modules/billing/api';
 import { SERVICE_CATEGORY_LABEL, TARIFF_TYPE_LABEL } from '@/modules/billing/labels';
@@ -444,7 +445,13 @@ function PriceDialog({
     queryKey: ['billing', 'service-search', debounced],
     queryFn: () => searchServices(debounced),
     enabled: !price && debounced.length >= 2,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
+  // Below 2 letters there is no search, and the last one's results are not offered either.
+  const services = debounced.length >= 2 ? (results.data ?? []) : [];
+  // The service comes from the options shown, not from the results as they are by the time one is chosen.
+  const shown = useShownItems(services, (s) => s.id);
   const parsed = parseRupees(amount, { allowZero: true });
   const datesOk = !to || to >= from;
   const valid = service !== null && parsed.ok && Boolean(from) && datesOk;
@@ -499,12 +506,12 @@ function PriceDialog({
                     selectedOptions={service ? [service.id] : []}
                     onChange={(event) => setTerm(event.target.value)}
                     onOptionSelect={(_, data) => {
-                      setService(results.data?.find((s) => s.id === data.optionValue) ?? null);
+                      setService(shown(data.optionValue) ?? null);
                       setTerm('');
                     }}
                     autoFocus
                   >
-                    {(results.data ?? []).map((s) => (
+                    {services.map((s) => (
                       <Option key={s.id} value={s.id} text={`${s.name} (${s.code})`}>
                         {s.name} ({s.code}) · standard {formatInr(s.basePrice)}
                       </Option>

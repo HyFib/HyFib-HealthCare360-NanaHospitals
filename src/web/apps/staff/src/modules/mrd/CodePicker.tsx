@@ -11,8 +11,9 @@ import {
   type FieldProps,
 } from '@fluentui/react-components';
 import { useDebouncedValue } from '@hc360/core';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
+import { useShownItems } from '@/lib/useShownItems';
 import { mrdQueries, type IcdCodeDto, type ProcedureCodeDto } from './api';
 import { usageMark } from './catalogue';
 
@@ -126,8 +127,15 @@ export function ProcedureCodePicker({ onPick, ...common }: CommonProps & { onPic
   const styles = useStyles();
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term.trim(), 200);
-  const results = useQuery({ ...mrdQueries.procedures(debounced), enabled: debounced.length >= 2 });
+  const results = useQuery({
+    ...mrdQueries.procedures(debounced),
+    enabled: debounced.length >= 2,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
+  });
   const items = debounced.length >= 2 ? (results.data ?? []) : [];
+  // The code comes from the options shown, not from the results as they are by the time one is chosen.
+  const shown = useShownItems(items, (item) => item.id);
 
   return (
     <PickerShell
@@ -136,7 +144,7 @@ export function ProcedureCodePicker({ onPick, ...common }: CommonProps & { onPic
       onTermChange={setTerm}
       busy={results.isFetching}
       onSelect={(value) => {
-        const picked = items.find((item) => item.id === value);
+        const picked = shown(value);
         if (picked) {
           onPick(picked);
         }

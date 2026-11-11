@@ -17,7 +17,7 @@ import {
 } from '@fluentui/react-components';
 import { formatInr, useDebouncedValue, useSession, type PagedResult } from '@hc360/core';
 import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
@@ -105,8 +105,8 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
   const queryClient = useQueryClient();
   const canPickUsers = usePermission('admin.users.read');
   const myId = useSession((session) => session.user?.id);
-  const [user, setUser] = useState<UserOption | null>(
-    limit ? { id: limit.userId, displayName: limit.userName ?? 'User', userName: '' } : null,
+  const [user, setUser] = useState<{ id: string; displayName: string } | null>(
+    limit ? { id: limit.userId, displayName: limit.userName ?? 'User' } : null,
   );
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term.trim(), 300);
@@ -124,7 +124,11 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
         signal,
       }),
     enabled: canPickUsers && !limit && debounced.length >= 2,
+    // The list keeps its options while the next search runs, so an option is never taken away under the pointer.
+    placeholderData: keepPreviousData,
   });
+  // Below 2 characters there is no search, and the last one's results are not offered either.
+  const options = debounced.length >= 2 ? (users.data?.items ?? []) : [];
 
   const parsedPercent = parsePercent(percent, { allowZero: true });
   const parsedCap = cap.trim() ? parseRupees(cap, { allowZero: true }) : null;
@@ -195,12 +199,13 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
                       selectedOptions={user ? [user.id] : []}
                       onChange={(event) => setTerm(event.target.value)}
                       onOptionSelect={(_, data) => {
-                        setUser(users.data?.items.find((u) => u.id === data.optionValue) ?? null);
+                        // The user comes from the option chosen, not from the results as they are by now.
+                        setUser(data.optionValue ? { id: data.optionValue, displayName: data.optionText ?? '' } : null);
                         setTerm('');
                       }}
                       autoFocus
                     >
-                      {(users.data?.items ?? []).map((u) => (
+                      {options.map((u) => (
                         <Option key={u.id} value={u.id} text={u.displayName}>
                           {u.displayName} ({u.userName})
                         </Option>
