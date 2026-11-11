@@ -170,9 +170,10 @@ SRS 3.2 asks every profile for a UPS and an external backup target, and the hosp
   copy target, and swap them once a week in the daytime, taking the other off site. HC360 encrypts its backups
   (AES-256-GCM), so a disk taken home holds nothing readable without the recovery key. The copy is made with the
   nightly backup at 01:30, so a disk swapped in the day misses nothing. A night with no disk connected leaves that
-  backup without its copy. The Backups screen shows that in its copy column, but System health does not warn about it,
-  so look at the Backups screen every week (DEPLOYMENT.md section 8). Size the disks from the backups: the Backups
-  screen shows each one's size after the first week.
+  backup without its copy: the Backups screen shows "No" in its copy column, the administrators are told in the app the
+  next morning, and System health warns. After three nights without a copy the warning turns critical and is told to
+  IT on-call by SMS (DEPLOYMENT.md section 8). Size the disks from the backups: the Backups screen shows each one's size
+  after the first week.
 - **A dedicated server**, if the hospital takes the recommendation above.
 
 ## 4. Deploying to this machine, step by step
@@ -225,7 +226,9 @@ Each step ends with a check, and the next step starts only once it passes.
    ```
 
    `E:` is the USB backup disks' drive letter. Write down the CA fingerprint and the first administrator password.
-   *Check:* Administration › System health shows nothing red.
+   *Check:* Administration › System health shows nothing red. Then unplug the USB disk and press **Back up now**
+   (Administration › Backups): the copy column says "No", the administrators are told in the app, and System health
+   shows `backup.copy_failed`. Plug the disk back in and back up again: the warning clears.
 8. **Run a restore drill before go-live.** Let the first night's backup run, check it with `backup verify`, and restore
    it on a spare PC with `Restore-HC360.ps1` (DEPLOYMENT.md section 8).
    *Check:* the restored copy opens and holds what the original holds.
@@ -245,6 +248,7 @@ None of these depends on HyFib's word:
 | The machine is fit | The preflight's report, read from the machine itself; then the installer's own checks and Administration › System health |
 | It is fast enough | The load test on this machine (PERF-01), and pg_test_fsync's figures for its disk |
 | The data survives a failure | A backup verified, then restored on another PC |
+| Each night's backup leaves the server | At each weekly swap, the disk going off site holds the last night's backup file, and `backup verify --in` passes on it (DEPLOYMENT.md section 8). That a missing copy is noticed: the disk unplugged at step 7, and an alert drill's SMS on IT's phone for the critical alert |
 | The registers are right | The day-by-day reconciliation against the current software's printouts, signed by the pharmacist-in-charge, and then the Drugs Inspector |
 | Each drug is in the right schedule | The Schedule H1 list (G.S.R. 588(E), 2013, and later amendments), molecule by molecule |
 

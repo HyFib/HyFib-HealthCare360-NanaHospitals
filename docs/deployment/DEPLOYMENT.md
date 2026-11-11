@@ -1009,6 +1009,23 @@ it.
   `-SecondaryBackupDir`, each backup is also copied to the second disk or NAS.
 - Check **Administration › Backups** weekly for green "Succeeded" rows. A failure is also told to the administrators in
   the app, and System health warns once no backup has succeeded for 36 hours.
+- **The copy to the second disk or NAS** is what survives if the server's own disk fails. When a copy fails (the USB
+  disk is unplugged or has another drive letter, the NAS is down), the backup is kept on the server and:
+  - the Backups screen shows "No" in its **Second copy** column, and the reason in its **File / error** column;
+  - the administrators are told in the app ("Backup not copied");
+  - System health warns (`backup.copy_failed`), naming the folder and the reason;
+  - once no backup has been copied for three and a half days, the warning turns critical and is told to IT on-call
+    and escalated like every critical warning (section 4, "Alerts that reach someone"). A disk taken out on a Friday
+    and not put back is told on the Monday afternoon.
+
+  Plug the disk back in, or bring the NAS back, then **Back up now**: the warning clears once a backup is copied.
+  Only full backups count, so a failed copy of the backup taken before an update raises nothing. With several servers
+  (section 10), give every node the same `Backup:SecondaryDirectory`, since **Back up now** runs on the node that
+  answers it.
+- **At go-live, test the copy warning.** Unplug the backup disk (or point a NAS path at a share that is off) and press
+  **Back up now**: check that the Second copy column says "No", the in-app notice arrives, and System health shows
+  `backup.copy_failed`. Plug the disk back in and back up again: the warning clears. Keep the result with the go-live
+  records.
 - Each backup holds the database, the stored documents, the field encryption keys and the audit seal key, all encrypted.
   Every backup is read back and checked when it is made. The **Contents** and **Checked** columns show this.
 - **Restore test every quarter** on a spare machine. To check a copy on the NAS or a USB drive without restoring it:
@@ -1552,6 +1569,7 @@ they keep the audit trail for a period (8 years at the least), after it exports 
 | "HC360 stopped: the server could not be verified" | Something answered for the server with a certificate that is not from the hospital CA; the screen shows its issuer. A proxy or security product that inspects HTTPS: exempt the HC360 server from it. The server was reinstalled with a new CA: re-run setup (Change server…) and compare the fingerprint. Also check the workstation's date and time |
 | Service will not start | The newest `hc360-server-<date>.json` in `%ProgramData%\HyFib\HealthCare360\logs\` (see "Reading the server log"), then Windows Event Viewer › Application (source *HyFib HealthCare360*) |
 | A restore says "This backup opens with recovery key …, not with the key entered" | Each backup opens with the key in use when it was made. Use the copy whose ID the message names; the Backups list names every backup's key |
+| "The backup of … was not copied to …" or "No backup has been copied to … since …" (System health), or "Backup not copied" in the app | The message gives Windows' reason. "Could not find a part of the path": the USB disk is unplugged, or came back with another drive letter (give both disks the same one in Disk Management). "The network path was not found": the NAS is off or unreachable. "Access … denied": HC360 may not write there: on the server that is `NT SERVICE\HC360Server`, on a NAS share the server's computer account (`HOSPITAL\HC360-SRV$`). Fix it, then **Back up now** (section 8) |
 | A restore says "The recovery key has a mistake in it" | A character was copied or typed wrong. The key has no letters I, L, O or U; an I or L is read as 1, and an O as 0 |
 | Service will not start, and the log says `SSPI authentication failed for user "hc360_app"` or `No password has been provided but the backend requires one` | PostgreSQL no longer has HC360's sign-in rules, for example after it was reinstalled or upgraded to a new version with a new data folder. Run `Install-HC360Server.ps1` again: it writes them again. To sign in with a password instead, run it with `-DatabaseSignIn Password` |
 | The installer warns "The server did not reach the database with its Windows account" | It put everything back, and HC360 signs in with its password as before. The HC360 log in `logs\` and PostgreSQL's log (`log\` in its data folder) say why. Send both to HyFib support; until then HC360 works as it did |

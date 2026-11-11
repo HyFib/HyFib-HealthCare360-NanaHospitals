@@ -72,6 +72,26 @@ public sealed class BackupServiceTests : IDisposable
         Directory.EnumerateFiles(_directories.Backups, "*.partial").ShouldBeEmpty();
     }
 
+    /// <summary>
+    /// The USB disk is unplugged, or the NAS down: the backup is made and verified all the same, and only its copy fails.
+    /// Its note says why, as System health reads it back (<see cref="BackupCopies"/>).
+    /// </summary>
+    [Fact]
+    public async Task A_backup_whose_copy_cannot_be_made_is_kept_and_says_why()
+    {
+        var unplugged = Path.Combine(_root, "unplugged");
+        await File.WriteAllTextAsync(unplugged, string.Empty, TestContext.Current.CancellationToken);
+        _options.Backup.SecondaryDirectory = Path.Combine(unplugged, "HC360-Backups");
+
+        var result = await Service().CreatePreMigrationAsync(["20260928102924_InitialCreate"], CancellationToken.None);
+
+        result.SecondaryCopied.ShouldBeFalse();
+        result.Warning.ShouldNotBeNull().ShouldStartWith(BackupService.CopyFailedNote);
+        BackupCopies.Reason(result.Warning).ShouldNotBeNullOrWhiteSpace();
+        File.Exists(Path.Combine(_directories.Backups, result.FileName)).ShouldBeTrue("the backup is kept on the server's disk");
+        Directory.EnumerateFiles(_directories.Backups, "*.partial").ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task A_document_saved_while_the_database_is_dumped_is_in_the_backup()
     {
