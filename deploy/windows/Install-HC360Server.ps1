@@ -2,7 +2,8 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Installs (or upgrades) the HyFib HealthCare360 Server Node on the hospital's dedicated WiFi-connected machine.
+    Installs (or upgrades) the HyFib HealthCare360 Server Node on the hospital's dedicated server machine, on a network
+    cable or on WiFi.
 
 .DESCRIPTION
     - Copies the published server to Program Files (the data folder is kept across upgrades).
@@ -31,9 +32,10 @@
       (UDP 5353) in Windows Firewall for Private/Domain networks only. Serial analysers reach the server through their
       lab agent on 7360. With -LabPorts it also opens the ports network analysers connect
       to (Lab setup > Analysers > Connection), limited to -LabAnalyserAddresses when given.
-    - Tunes the machine for an always-on WiFi server: no sleep, hibernation, disk spin-down or WiFi power saving, on
-      mains and on the UPS's battery in a power cut (what Windows does at critical battery is left as it is, so the
-      server can still shut down cleanly), WiFi adapter never powered down, and Windows Update's active hours set to
+    - Tunes the machine for an always-on server: no sleep, hibernation, disk spin-down or WiFi power saving, on mains
+      and on the UPS's battery in a power cut (what Windows does at critical battery is left as it is, so the server
+      can still shut down cleanly), its network cards, cable and WiFi, never powered down (from the next restart of
+      Windows, so that a remote session over them does not drop), and Windows Update's active hours set to
       -UpdateActiveHoursStart..-UpdateActiveHoursEnd (default 06:00-23:00), so updates do not restart the server during
       clinical hours (SRS DED-15).
     - With -HospitalCaFile, installs the hospital CA exported on another Server Node ("certificates export-ca"), so
@@ -313,6 +315,35 @@ function Set-AlwaysOnPower([scriptblock] $PowerCfg = { powercfg.exe @args | Out-
     return $taken
 }
 
+# Has Windows never turn off a network card to save power, a cable's as well as a WiFi's: workstations reach HC360
+# through it (SRS DED-15; at Nana Hospitals, Theni, the Server Node is on a cable). Other physical cards (Bluetooth and
+# the like) are left alone. Set-NetAdapterPowerManagement has no -AllowComputerToTurnOffDevice (Microsoft documents
+# none: the setting is a read-only property of the card's power settings), so the settings are read, changed and given
+# back to the card, as Microsoft's Q&A answer for Windows 11 does. The call with that parameter, made for WiFi cards
+# before, stopped there: the installer warned and changed nothing. A card is not restarted, so that a remote session
+# over it does not drop: the setting applies from the next restart of Windows. $Adapters are Get-NetAdapter -Physical's;
+# the tests pass their own and stand in for the NetAdapter cmdlets, so the machine's cards are left alone.
+function Set-AdapterAlwaysOn([object[]] $Adapters) {
+    foreach ($adapter in $Adapters) {
+        # NdisPhysicalMedium: 9 is WiFi (native 802.11), 14 a cable (802.3).
+        $wifi = $adapter.NdisPhysicalMedium -eq 9 -or $adapter.InterfaceDescription -match 'Wi-?Fi|Wireless|802\.11'
+        if (-not $wifi -and $adapter.NdisPhysicalMedium -ne 14) { continue }
+        $kind = if ($wifi) { 'WiFi adapter' } else { 'Network card' }
+        try {
+            $power = Get-NetAdapterPowerManagement -Name $adapter.Name -ErrorAction Stop
+            $allowed = [string]$power.AllowComputerToTurnOffDevice
+            if ($allowed -eq 'Disabled') { Write-Host "    $kind '$($adapter.Name)' is already never powered down to save power." }
+            elseif ($allowed -eq 'Unsupported') { Write-Host "    $kind '$($adapter.Name)' has no power saving that Windows could turn off." }
+            else {
+                $power.AllowComputerToTurnOffDevice = 'Disabled'
+                $power | Set-NetAdapterPowerManagement -NoRestart -ErrorAction Stop
+                Write-Host "    $kind '$($adapter.Name)' will never be powered down to save power, from the next restart of Windows."
+            }
+        }
+        catch { Write-Warning "Could not change power management for '$($adapter.Name)': $($_.Exception.Message)" }
+    }
+}
+
 # Opens HC360 in Windows Firewall on Private and Domain networks only, never on Public ones (SRS DED-14), and for the
 # server's $Program alone: the staff app's HTTPS port, the patient portal's, and mDNS (UDP 5353) for discovery. HC360's
 # rules from before are replaced. With $LabPorts it also opens the ports network analysers connect to, in a group of
@@ -346,7 +377,7 @@ function Set-HC360Firewall([int] $HttpsPort, [int] $PortalHttpsPort, [string] $P
     }
     $public = Get-NetConnectionProfile | Where-Object NetworkCategory -eq 'Public'
     foreach ($netProfile in $public) {
-        Write-Warning "The network '$($netProfile.Name)' ($($netProfile.InterfaceAlias)) is marked Public, so workstations cannot connect. Mark the hospital WiFi as Private: Set-NetConnectionProfile -InterfaceAlias '$($netProfile.InterfaceAlias)' -NetworkCategory Private"
+        Write-Warning "The network '$($netProfile.Name)' ($($netProfile.InterfaceAlias)) is marked Public, so workstations cannot connect. Mark the hospital network as Private: Set-NetConnectionProfile -InterfaceAlias '$($netProfile.InterfaceAlias)' -NetworkCategory Private"
     }
 }
 
@@ -934,19 +965,13 @@ if (-not $SkipFirewall) {
         -LabPorts $LabPorts -LabAnalyserAddresses $LabAnalyserAddresses
 }
 
-# ---------------------------------------------------------------- always-on WiFi server
+# ---------------------------------------------------------------- always-on server
 if (-not $SkipPowerTuning) {
     Write-Step 'Tuning power settings for an always-on server'
     if (Set-AlwaysOnPower) {
         Write-Host '    The server will not sleep, hibernate, stop its disk or save power on its WiFi adapter, on mains or on the UPS''s battery.'
     }
-    Get-NetAdapter -Physical | Where-Object { $_.NdisPhysicalMedium -eq 9 -or $_.InterfaceDescription -match 'Wi-?Fi|Wireless|802\.11' } | ForEach-Object {
-        try {
-            Set-NetAdapterPowerManagement -Name $_.Name -AllowComputerToTurnOffDevice Disabled -ErrorAction Stop
-            Write-Host "    WiFi adapter '$($_.Name)' will not be powered down."
-        }
-        catch { Write-Warning "Could not change power management for '$($_.Name)': $($_.Exception.Message)" }
-    }
+    Set-AdapterAlwaysOn @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue)
     Set-UpdateActiveHours $UpdateActiveHoursStart $UpdateActiveHoursEnd
     Write-Host ("    Windows Update will not restart the server between {0:00}:00 and {1:00}:00." -f $UpdateActiveHoursStart, $UpdateActiveHoursEnd)
 }
