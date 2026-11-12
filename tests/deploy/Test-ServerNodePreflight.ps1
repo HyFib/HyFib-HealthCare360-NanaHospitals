@@ -10,7 +10,7 @@
        method that writes, deletes or starts anything is called.
     2. Takes its grading functions (running it would read this machine, not a hospital's) and checks them against the
        machine in the photographs that prompted it: a 6-core i5-12400 with 32 GB under Windows 11 Pro, named
-       DESKTOP-RMI9PCM.
+       DESKTOP-RMI9PCM, not activated, on Nana Hospitals' cabled LAN.
     3. Runs it here, as the hospital would, and reads the JSON report back.
     Exit code 1 when a check fails.
 #>
@@ -57,7 +57,8 @@ $methods = @($ast.FindAll({ param($node) $node -is [System.Management.Automation
         Where-Object { $_.Member.Extent.Text -match '^(Write|Delete|Create|Move|Copy|Kill|Start|Set|Remove|Open)' } | ForEach-Object { $_.Extent.Text })
 Assert ($methods.Count -eq 0) "no method writes, deletes or starts anything ($($methods -join ' | '))"
 
-$names = 'Get-SizingProfile', 'Get-MinimumVerdict', 'Get-DiskMediaVerdict', 'Get-ComputerNameVerdict', 'Get-OsVerdict', 'Get-PowerHistoryVerdict', 'Get-AddressNote'
+$names = 'Get-SizingProfile', 'Get-MinimumVerdict', 'Get-DiskMediaVerdict', 'Get-ComputerNameVerdict', 'Get-OsVerdict', 'Get-PowerHistoryVerdict', 'Get-AddressNote',
+    'Get-LinkSpeedMbps', 'Get-LinkSpeedVerdict', 'Get-LicenseStatusName', 'Get-ActivationVerdict'
 foreach ($name in $names) {
     $found = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $false))
     if ($found.Count -ne 1) { throw "Test-HC360ServerNode.ps1 no longer defines $name." }
@@ -107,6 +108,27 @@ Assert ((Get-AddressNote 'Enabled' '192.168.1.20' 'AA-BB-CC-DD-EE-FF') -match 'R
 Assert ((Get-AddressNote 'Disabled' '192.168.1.20' 'AA-BB-CC-DD-EE-FF') -match 'fixed address') 'a fixed address is kept out of the DHCP range'
 Assert ((Get-AddressNote '' '192.168.1.20' 'AA-BB-CC-DD-EE-FF') -notmatch 'fixed address set') 'an address whose source Windows did not give is not called fixed'
 
+Write-Host 'The network cable every workstation reaches the server over'
+Assert ((Get-LinkSpeedMbps '1 Gbps') -eq 1000) '"1 Gbps", as Windows gives it, is 1000 Mbps'
+Assert ((Get-LinkSpeedMbps '100 Mbps') -eq 100) '"100 Mbps" is 100'
+Assert ((Get-LinkSpeedMbps '2.5 Gbps') -eq 2500) '"2.5 Gbps" is 2500'
+Assert ((Get-LinkSpeedMbps '2,5 Gbps') -eq 2500) 'and so is "2,5 Gbps", where a comma is the decimal separator'
+Assert ($null -eq (Get-LinkSpeedMbps '')) 'a speed Windows did not give is not read as 0'
+Assert ((Get-LinkSpeedVerdict 1000) -eq 'Pass') 'a cable at 1 Gbps passes'
+Assert ((Get-LinkSpeedVerdict 2500) -eq 'Pass') 'and one at 2.5 Gbps'
+Assert ((Get-LinkSpeedVerdict 100) -eq 'Warn') 'at 100 Mbps it warns: a broken pair, a cable older than Cat5e or a 10/100 switch port'
+Assert ((Get-LinkSpeedVerdict 500) -eq 'Warn') 'at 500 Mbps too'
+Assert ((Get-LinkSpeedVerdict 10) -eq 'Fail') 'at 10 Mbps it fails'
+Assert ((Get-LinkSpeedVerdict $null) -eq 'Unknown') 'a speed not read is unknown, not a pass'
+
+Write-Host 'Windows activation: the server in the photographs shows "Activate Windows"'
+Assert ((Get-ActivationVerdict 1) -eq 'Pass') 'activated Windows passes'
+Assert ((Get-ActivationVerdict 5) -eq 'Warn') 'Windows not activated, as in the photographs, warns: to be activated before go-live'
+Assert ((Get-ActivationVerdict 0) -eq 'Warn') 'unlicensed Windows warns'
+Assert ((Get-ActivationVerdict 2) -eq 'Warn') 'a new installation not yet activated warns'
+Assert ((Get-LicenseStatusName 1) -eq 'Activated' -and (Get-LicenseStatusName 5) -eq 'Not activated') 'the licence state is said in words'
+Assert ((Get-LicenseStatusName 9) -eq 'Licence state 9') 'a state Windows adds later is shown as it is'
+
 Write-Host 'A run on this machine'
 $out = Join-Path ([System.IO.Path]::GetTempPath()) ('hc360-preflight-test-{0}.json' -f [guid]::NewGuid().ToString('N'))
 $shell = (Get-Process -Id $PID).Path
@@ -126,7 +148,7 @@ try {
         $graded = @($checks | ForEach-Object { $_.Check })
         foreach ($expected in 'Edition and build', 'Computer name', 'Time zone', 'Pending restart', 'Processor cores', 'Memory', 'System disk type',
             'Free space', 'BitLocker on every fixed disk', 'TPM', 'Remote access', 'Network connection', 'Ports', 'Database engines',
-            'Microsoft Edge (PDFs)', 'UPS on USB', 'Power history') {
+            'Microsoft Edge (PDFs)', 'UPS on USB', 'Power history', 'Activation') {
             Assert ($graded -contains $expected) "it grades $expected"
         }
         $failed = @($checks | Where-Object { $_.Verdict -eq 'Fail' }).Count
