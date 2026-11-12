@@ -210,6 +210,17 @@ export interface IntegrationHealthSummary {
   failuresLast24Hours: number;
 }
 
+/** One of the server's own network adapters, a cable or WiFi (DED-06): `isUp` is a cable in with a link to its switch. */
+export interface NetworkLink {
+  name: string;
+  description: string;
+  medium: 'Cable' | 'Wifi';
+  isUp: boolean;
+  speedMbps: number | null;
+  addresses: string[];
+  carriesNetwork: boolean;
+}
+
 export interface WifiConnectionInfo {
   interfaceDescription: string;
   isConnected: boolean;
@@ -388,6 +399,11 @@ export interface SystemHealthReport {
     httpsPort: number;
     portalHttpsPort: number;
     mdnsEnabled: boolean;
+    /** The network cables up, empty when none is; null when the link monitor has not read them (it is off). */
+    cables: NetworkLink[] | null;
+    /** The cable the server was on is lost, and none is up again. */
+    cableLost: boolean;
+    lastCableDropAt: string | null;
   };
   database: {
     reachable: boolean;

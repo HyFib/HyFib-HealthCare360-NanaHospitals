@@ -57,6 +57,9 @@ export const SYSTEM_HEALTH: SystemHealthReport = {
     httpsPort: 7360,
     portalHttpsPort: 7361,
     mdnsEnabled: true,
+    cables: [],
+    cableLost: false,
+    lastCableDropAt: null,
   },
   database: {
     reachable: true,

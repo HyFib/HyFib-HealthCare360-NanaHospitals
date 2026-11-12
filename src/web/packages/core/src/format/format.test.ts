@@ -3,6 +3,7 @@ import {
   formatAge,
   formatDateOnly,
   formatInr,
+  formatLinkSpeed,
   formatPhone,
   humanize,
   initials,
@@ -49,5 +50,14 @@ describe('format', () => {
     expect(isIndianMobile('9876543210')).toBe(true);
     expect(isIndianMobile('5876543210')).toBe(false);
     expect(isIndianMobile('044 2345 6789')).toBe(false);
+  });
+});
+
+describe('formatLinkSpeed', () => {
+  it('says a network link speed as people say it', () => {
+    expect(formatLinkSpeed(100)).toBe('100 Mbps');
+    expect(formatLinkSpeed(1000)).toBe('1 Gbps');
+    expect(formatLinkSpeed(2500)).toBe('2.5 Gbps');
+    expect(formatLinkSpeed(10_000)).toBe('10 Gbps');
   });
 });

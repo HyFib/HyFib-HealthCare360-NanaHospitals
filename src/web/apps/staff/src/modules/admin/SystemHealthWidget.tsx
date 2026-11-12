@@ -5,7 +5,7 @@ import { ErrorState, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { adminQueries } from './api';
-import { serversSummary, wifiAdapterMissing } from './systemHealth';
+import { linkSummary, serversSummary } from './systemHealth';
 
 const useStyles = makeStyles({
   rows: { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px', alignItems: 'center' },
@@ -29,8 +29,8 @@ export function SystemHealthWidget() {
   }
   const h = health.data;
   const problems = h?.warnings.filter((w) => w.severity !== 'info') ?? [];
-  const wifi = h?.network.wifi;
   const servers = h?.servers ? serversSummary(h.servers) : null;
+  const link = h ? linkSummary(h) : null;
 
   return (
     <Section
@@ -64,20 +64,14 @@ export function SystemHealthWidget() {
                 {servers.text}
               </Caption1>
             </>
-          ) : (
+          ) : link ? (
             <>
-              <Caption1 className={styles.muted}>WiFi</Caption1>
-              <Caption1 className={wifiAdapterMissing(h) ? styles.bad : undefined}>
-                {wifi?.isConnected
-                  ? `${wifi.ssid ?? 'Connected'}${wifi.detailsAvailable ? ` · ${wifi.signalQuality}%` : ''}`
-                  : h.network.wifiSupported
-                    ? 'Disconnected'
-                    : wifiAdapterMissing(h)
-                      ? 'Adapter missing'
-                      : 'Wired network'}
+              <Caption1 className={styles.muted}>{link.label}</Caption1>
+              <Caption1 className={link.tone === 'bad' ? styles.bad : link.tone === 'warn' ? styles.warn : undefined}>
+                {link.text}
               </Caption1>
             </>
-          )}
+          ) : null}
           <Caption1 className={styles.muted}>Database</Caption1>
           <Caption1 className={h.database.reachable ? undefined : styles.bad}>
             {h.database.reachable ? 'Online' : 'Not reachable'}

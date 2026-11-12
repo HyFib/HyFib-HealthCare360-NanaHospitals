@@ -14,9 +14,12 @@ namespace HyFib.HealthCare360.Platform.Networking;
 /// (<see cref="WifiMonitor"/>); while nobody acknowledges it, to the second contact and then HyFib support
 /// (<see cref="AlertEscalation"/>). It is told again a day after it was last told while it lasts, so one put off at
 /// go-live, such as nobody holding the backups' recovery key, is not forgotten (audit P8); and again, as a new alert,
-/// when it clears and comes back. The alerts are kept in the database, so a restart tells none again. The WiFi warnings are the WiFi monitor's to tell: it tells a drop, a lost adapter or an insecure network as it
-/// happens, and not at all where the hospital turned it off. An alert drill's warning is told as any other, and the drill
-/// keeps when, and the messages it went out in (<see cref="AlertDrills"/>, audit P2).
+/// when it clears and comes back. The alerts are kept in the database, so a restart tells none again. The link warnings
+/// are the link monitor's to tell (<see cref="ToldByTheLinkMonitor"/>): it tells a WiFi drop, a lost adapter or an
+/// insecure network, and the network cable lost, as it happens, and not at all where the hospital turned it off. A server
+/// with no link at all (<c>network.down</c>), as when it started with its cable out, is told here: no monitor tells it.
+/// An alert drill's warning is told as any other, and the drill keeps when, and the messages it went out in
+/// (<see cref="AlertDrills"/>, audit P2).
 /// </summary>
 internal sealed class SystemHealthAlerts(
     IServiceScopeFactory scopeFactory, IOptions<PlatformOptions> options, TimeProvider time, ILogger<SystemHealthAlerts> logger) : BackgroundService
@@ -61,7 +64,7 @@ internal sealed class SystemHealthAlerts(
             await using var scope = scopeFactory.CreateAsyncScope();
             var services = scope.ServiceProvider;
             var critical = (await services.GetRequiredService<SystemHealthService>().BuildAsync(cancellationToken)).Warnings
-                .Where(w => w.Severity == "critical" && !w.Code.StartsWith("wifi.", StringComparison.Ordinal))
+                .Where(w => w.Severity == "critical" && !ToldByTheLinkMonitor(w.Code))
                 .ToList();
             var told = await services.GetRequiredService<AlertIncidents>().CheckAsync(critical, time.GetUtcNow(), cancellationToken);
             if (told.Count > 0)
@@ -76,6 +79,10 @@ internal sealed class SystemHealthAlerts(
             _checking.Release();
         }
     }
+
+    /// <summary>A warning the link monitor tells as it happens (<see cref="WifiMonitor"/>), so that one loss is not told twice.</summary>
+    internal static bool ToldByTheLinkMonitor(string code) =>
+        code.StartsWith("wifi.", StringComparison.Ordinal) || string.Equals(code, "network.cable_down", StringComparison.Ordinal);
 
     public override void Dispose()
     {
