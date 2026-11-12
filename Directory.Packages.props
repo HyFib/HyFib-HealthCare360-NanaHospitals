@@ -28,7 +28,14 @@
       it decodes may be (a deep request could otherwise exhaust the stack).
     -->
     <PackageVersion Include="Fido2" Version="4.3.2" />
-    <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.14" />
+    <!--
+      Not referenced directly: Fido2 brings System.Formats.Cbor 9.0.0, which GHSA-vmv3-wvjp-wqpj affects (moderate; fixed in
+      9.0.24 and 10.0.15, 10 November 2026). Fido2 decodes the CBOR a browser sends in a WebAuthn request, so it applies.
+      Transitive pinning raises it to the fixed 10.0 release; remove this once Fido2 needs a fixed version itself.
+    -->
+    <PackageVersion Include="System.Formats.Cbor" Version="10.0.15" />
+    <!-- 10.0.15: GHSA-wr8v-9x5q-ggcm (high) affects 10.0.14 and earlier, and the ASP.NET Core runtime of SDKs before 10.0.404. -->
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.15" />
     <!--
       Not referenced directly: the Redis backplane above brings MessagePack 2.5.302, which GHSA-qhrr-8q5h-9q3h affects
       (fixed in 2.5.303). Transitive pinning raises it to the newest 2.x release; remove this once the backplane needs a
