@@ -378,4 +378,11 @@ address, through the firewall rule `-LabPorts` and `-LabAnalyserAddresses` open 
 
 The release installed on 23 November must include .NET's security release of 10 November 2026 (runtime 10.0.15):
 the advisories published that day (one of them high) affect the runtime of earlier builds. It is built with the .NET
-SDK 10.0.404 (`global.json`), which carries it: check the release notes name that SDK, or later.
+SDK 10.0.404 (`global.json`), which carries it, and the server takes its runtime with it (self-contained).
+*Check:* once installed, on the server:
+
+```powershell
+(Get-Item "$env:ProgramFiles\HyFib\HealthCare360\Server\Microsoft.AspNetCore.dll").VersionInfo.ProductVersion
+```
+
+starts with 10.0.15 or later.
