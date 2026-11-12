@@ -66,7 +66,10 @@ public enum WifiEventKind
     /// <summary>Every network cable the Server Node was on during this run is out, or its switch is off: see <see cref="CableEventDetector"/>.</summary>
     CableDisconnected,
 
-    /// <summary>A network cable is connected again after <see cref="CableDisconnected"/>.</summary>
+    /// <summary>
+    /// A network cable is up after <see cref="CableDisconnected"/>, or after a WiFi loss that was told: the server is back on
+    /// the network.
+    /// </summary>
     CableReconnected,
 }
 
@@ -205,6 +208,23 @@ internal sealed class WifiMonitor(
 
     private DateTimeOffset _lastCleanup = DateTimeOffset.MinValue;
 
+    /// <summary>
+    /// One sample of the server's links: the WiFi's events, then the cable's. <paramref name="cables"/> are the cables up
+    /// now, <paramref name="current"/> the WiFi (null when Windows shows no WiFi adapter), and <paramref name="diagnose"/>
+    /// says why there is no adapter, asked only when there is neither an adapter nor a cable. A WiFi loss told before this
+    /// sample that a cable up now ends is told over by the cable: the WiFi detector ends it without a word on a cable.
+    /// </summary>
+    internal static List<WifiEvent> SampleLinks(
+        WifiEventDetector detector, CableEventDetector cableDetector, WifiConnectionInfo? previous, WifiConnectionInfo? current,
+        IReadOnlyList<NetworkLink> cables, DateTimeOffset now, NetworkOptions network, Func<WifiAdapterAbsence> diagnose)
+    {
+        var onCable = cables.Count > 0;
+        var wifiLossTold = detector.LinkLost;
+        var events = detector.Evaluate(previous, current, now, network, current is null && !onCable ? diagnose() : WifiAdapterAbsence.Unknown, onCable);
+        events.AddRange(cableDetector.Evaluate(cables, current, now, wifiLossTold));
+        return events;
+    }
+
     /// <summary>How often the link is sampled: <see cref="NetworkOptions.WifiSampleSeconds"/>, kept between 10 seconds and 10 minutes.</summary>
     internal static TimeSpan SampleInterval(NetworkOptions network) => TimeSpan.FromSeconds(Math.Clamp(network.WifiSampleSeconds, 10, 600));
 
@@ -228,11 +248,8 @@ internal sealed class WifiMonitor(
             try
             {
                 var cables = NetworkLinks.Cables(NetworkLinks.Read());
-                var onCable = cables.Count > 0;
                 var current = WlanClient.GetPrimaryConnection();
-                var events = detector.Evaluate(previous, current, now, network,
-                    current is null && !onCable ? WlanService.Diagnose() : WifiAdapterAbsence.Unknown, onCable);
-                events.AddRange(cableDetector.Evaluate(cables, current, now));
+                var events = SampleLinks(detector, cableDetector, previous, current, cables, now, network, WlanService.Diagnose);
                 state.Update(current, now, detector.AdapterMissing, detector.LinkLost, cables, cableDetector.CableLost);
                 foreach (var linkEvent in events)
                 {
@@ -372,7 +389,7 @@ internal sealed class WifiMonitor(
             var (action, title) = wifiEvent.Kind switch
             {
                 WifiEventKind.CableDisconnected => ("network.cable_disconnected", "Server network cable: Disconnected"),
-                WifiEventKind.CableReconnected => ("network.cable_reconnected", "Server network cable: Connected again"),
+                WifiEventKind.CableReconnected => ("network.cable_reconnected", "Server network cable: Connected"),
                 _ => ($"network.wifi_{wifiEvent.Kind.ToString().ToLowerInvariant()}", "Server WiFi: " + wifiEvent.Kind),
             };
             audit.Add(new AuditEntry(category, action, wifiEvent.Message) { Severity = severity });
@@ -633,17 +650,22 @@ internal sealed class CableEventDetector
     /// <param name="cables">The cables up now (<see cref="NetworkLinks.Cables"/>).</param>
     /// <param name="wifi">The WiFi at the same sample, for the message: null when Windows shows no WiFi adapter.</param>
     /// <param name="now">When the sample was taken.</param>
-    public List<WifiEvent> Evaluate(IReadOnlyList<NetworkLink> cables, WifiConnectionInfo? wifi, DateTimeOffset now)
+    /// <param name="wifiLossTold">
+    /// A loss of the WiFi was told before this sample and has not ended: a cable up now ends it, and says so.
+    /// </param>
+    public List<WifiEvent> Evaluate(IReadOnlyList<NetworkLink> cables, WifiConnectionInfo? wifi, DateTimeOffset now, bool wifiLossTold = false)
     {
         var events = new List<WifiEvent>();
         if (cables.Count > 0)
         {
             var cable = cables[0];
-            if (CableLost)
+            if (CableLost || wifiLossTold)
             {
-                CableLost = false;
                 var speed = cable.SpeedMbps is { } mbps ? $", {Speed(mbps)}" : string.Empty;
-                events.Add(new WifiEvent(now, WifiEventKind.CableReconnected, $"Server Node's network cable is connected again ('{cable.Name}'{speed})."));
+                events.Add(new WifiEvent(now, WifiEventKind.CableReconnected, CableLost
+                    ? $"Server Node's network cable is connected again ('{cable.Name}'{speed})."
+                    : $"Server Node is back on the network, on a network cable ('{cable.Name}'{speed}): workstations can reach HC360 again."));
+                CableLost = false;
             }
 
             _lastCable = cable.Name;

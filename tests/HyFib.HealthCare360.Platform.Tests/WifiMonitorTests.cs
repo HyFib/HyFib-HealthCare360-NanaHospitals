@@ -311,6 +311,40 @@ public sealed class WifiMonitorTests
     }
 
     /// <summary>
+    /// A WiFi drop told to the administrators and the on-call number ("workstations cannot reach HC360"), then ended with a
+    /// network cable: its end is told too, once. Before, it ended without a word, since a cable takes the WiFi's place
+    /// silently and the cable had not been lost: whoever was told HC360 could not be reached was never told it can.
+    /// </summary>
+    [Fact]
+    public void A_WiFi_loss_ended_by_a_cable_is_told_over()
+    {
+        var detector = new WifiEventDetector();
+        var cables = new CableEventDetector();
+        List<WifiEvent> Step(WifiConnectionInfo? previous, WifiConnectionInfo? current, int sample, params NetworkLink[] up) =>
+            WifiMonitor.SampleLinks(detector, cables, previous, current, up, At(sample), new NetworkOptions(), () => WifiAdapterAbsence.Unknown);
+
+        Step(null, Link(80), 1).ShouldBeEmpty();
+        Step(Link(80), Down(), 2).Select(e => e.Kind).ShouldBe([Disconnected]);
+        Step(Down(), Down(), 3).ShouldBeEmpty("told once");
+
+        Step(Down(), Down(), 4, Cable(speedMbps: 1000)).Select(e => (e.Kind, e.Message)).ShouldBe([(CableReconnected,
+            "Server Node is back on the network, on a network cable ('Ethernet', 1 Gbps): workstations can reach HC360 again.")]);
+        Step(Down(), Down(), 5, Cable(speedMbps: 1000)).ShouldBeEmpty("its end is told once");
+        detector.LinkLost.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_cable_connected_beside_a_WiFi_that_was_never_lost_is_not_news()
+    {
+        var detector = new WifiEventDetector();
+        var cables = new CableEventDetector();
+
+        WifiMonitor.SampleLinks(detector, cables, null, Link(80), [], At(1), new NetworkOptions(), () => WifiAdapterAbsence.Unknown).ShouldBeEmpty();
+        WifiMonitor.SampleLinks(detector, cables, Link(80), Link(80), [Cable()], At(2), new NetworkOptions(), () => WifiAdapterAbsence.Unknown)
+            .ShouldBeEmpty();
+    }
+
+    /// <summary>
     /// DED-06 on a cabled LAN: the cable the server is on, lost because it is out or its switch is off, is told once with
     /// what it means, and its return once. Before, nothing watched the cable: a server on a cable that lost it said nothing,
     /// and System health said "Wired".
@@ -360,7 +394,7 @@ public sealed class WifiMonitorTests
             (AuditCategories.Admin, "network.cable_disconnected", AuditSeverity.Critical),
             (AuditCategories.Admin, "network.cable_reconnected", AuditSeverity.Info)]);
         notifications.InApp.Select(n => (n.Title, n.Severity)).ShouldBe([
-            ("Server network cable: Disconnected", "critical"), ("Server network cable: Connected again", "info")]);
+            ("Server network cable: Disconnected", "critical"), ("Server network cable: Connected", "info")]);
         Rendered(notifications.Queued.ShouldHaveSingleItem()).ShouldBe(
             "HC360 server alert (HC360-SRV): Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. Workstations cannot reach HC360 until it is back.");
     }
