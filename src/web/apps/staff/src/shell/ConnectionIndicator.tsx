@@ -15,12 +15,13 @@ import {
 import {
   ArrowClockwiseRegular,
   DismissRegular,
+  PlugConnectedRegular,
   PlugDisconnectedRegular,
   Wifi1Regular,
   Wifi3Regular,
   WifiWarningRegular,
 } from '@fluentui/react-icons';
-import { connectionHealth, formatRelative, useConnection, weakWifiSignal } from '@hc360/core';
+import { connectionHealth, formatLinkSpeed, formatRelative, onCable, useConnection, weakWifiSignal } from '@hc360/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
@@ -36,12 +37,24 @@ const useStyles = makeStyles({
 
 const LABELS = { good: 'Connected', degraded: 'Connection is weak', offline: 'Offline' } as const;
 
-/** Top-bar pill: green/amber/red with details about the WiFi, the server and live updates (SRS DED-07). */
+/**
+ * Top-bar pill: green/amber/red with details about this computer's link (its network cable, or its WiFi), the server and
+ * live updates (SRS DED-07).
+ */
 export function ConnectionIndicator() {
   const styles = useStyles();
   const state = useConnection();
   const health = connectionHealth(state);
-  const Icon = health === 'good' ? Wifi3Regular : health === 'degraded' ? Wifi1Regular : WifiWarningRegular;
+  const cable = onCable(state);
+  const Icon = cable
+    ? health === 'offline'
+      ? PlugDisconnectedRegular
+      : PlugConnectedRegular
+    : health === 'good'
+      ? Wifi3Regular
+      : health === 'degraded'
+        ? Wifi1Regular
+        : WifiWarningRegular;
 
   return (
     <Popover withArrow positioning="below-end">
@@ -68,7 +81,16 @@ export function ConnectionIndicator() {
                 ? 'Off (retrying)'
                 : 'Connecting…'}
           </Caption1>
-          {state.wifi && (
+          {state.wifi && cable && (
+            <>
+              <Caption1 className={styles.label}>Network</Caption1>
+              <Caption1>
+                Cable
+                {state.wifi.cableSpeedMbps ? ` · ${formatLinkSpeed(state.wifi.cableSpeedMbps)}` : ''}
+              </Caption1>
+            </>
+          )}
+          {state.wifi && !cable && (
             <>
               <Caption1 className={styles.label}>WiFi</Caption1>
               <Caption1>
@@ -99,6 +121,8 @@ export function OfflineBanner() {
   const state = useConnection();
   const queryClient = useQueryClient();
   const offline = !state.browserOnline || !state.serverReachable;
+  // On a cable that is up, this computer's own link is fine: what is down is beyond it.
+  const beyondThisComputer = state.browserOnline && onCable(state);
   const wasOffline = useRef(false);
 
   // Back online: refresh everything on screen so nobody works from stale data.
@@ -119,7 +143,10 @@ export function OfflineBanner() {
         <MessageBarTitle>
           {state.browserOnline ? 'Cannot reach the HealthCare360 server' : 'This computer is offline'}
         </MessageBarTitle>
-        Check the WiFi connection. Your unsaved work stays on this screen and nothing will be duplicated when you retry.
+        {beyondThisComputer
+          ? "This computer's network cable is connected, so the server or the hospital network may be down: tell IT."
+          : "Check this computer's network cable or WiFi."}{' '}
+        Your unsaved work stays on this screen and nothing will be duplicated when you retry.
       </MessageBarBody>
       <MessageBarActions>
         <Button

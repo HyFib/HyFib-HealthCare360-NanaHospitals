@@ -1,8 +1,10 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import { useConnection, type NetworkStatus } from '@hc360/core';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEGRADED_NOTICE_AFTER_MS, DegradedBanner } from './ConnectionIndicator';
+import { ConnectionIndicator, DEGRADED_NOTICE_AFTER_MS, DegradedBanner, OfflineBanner } from './ConnectionIndicator';
 
 const wifi = (signalQuality: number): NetworkStatus => ({
   wifiConnected: true,
@@ -16,11 +18,18 @@ const wifi = (signalQuality: number): NetworkStatus => ({
   serverLatencyMs: 12,
 });
 
+/** A workstation on its network cable, its WiFi also on (and weak) beside it. */
+const cabled = (signalQuality = 28): NetworkStatus => ({ ...wifi(signalQuality), wired: true, cableSpeedMbps: 1000 });
+
 function renderBanner() {
+  renderShell(<DegradedBanner />);
+}
+
+function renderShell(ui: ReactNode) {
   render(
-    <FluentProvider theme={webLightTheme}>
-      <DegradedBanner />
-    </FluentProvider>,
+    <QueryClientProvider client={new QueryClient()}>
+      <FluentProvider theme={webLightTheme}>{ui}</FluentProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -89,6 +98,16 @@ describe('DegradedBanner', () => {
     expect(screen.getByText('Live updates are paused')).toBeInTheDocument();
   });
 
+  it('says nothing about a weak WiFi signal beside a network cable, which HC360 goes over', () => {
+    useConnection.setState({ wifi: cabled(28) });
+    renderBanner();
+
+    wait(DEGRADED_NOTICE_AFTER_MS);
+
+    expect(screen.queryByText('The WiFi signal is weak')).not.toBeInTheDocument();
+    expect(screen.queryByText(/WiFi signal is weak/)).not.toBeInTheDocument();
+  });
+
   it('leaves an unreachable server to the offline banner', () => {
     useConnection.setState({ serverReachable: false, realtime: 'disconnected' });
     renderBanner();
@@ -97,5 +116,57 @@ describe('DegradedBanner', () => {
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('Live updates are paused')).not.toBeInTheDocument();
+  });
+});
+
+// DED-07 on a cabled LAN, as at Nana Hospitals: the pill names the link a workstation is on.
+describe('ConnectionIndicator', () => {
+  beforeEach(() =>
+    useConnection.setState({ browserOnline: true, serverReachable: true, realtime: 'connected', lastOkAt: null }),
+  );
+
+  it('says a cabled workstation is on its cable, not that its WiFi is or is not connected', () => {
+    useConnection.setState({ wifi: { ...cabled(), wifiConnected: false, ssid: null } });
+    renderShell(<ConnectionIndicator />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connection: Connected' }));
+
+    expect(screen.getByText('Cable · 1 Gbps')).toBeInTheDocument();
+    expect(screen.getByText('Network')).toBeInTheDocument();
+    expect(screen.queryByText('WiFi')).not.toBeInTheDocument();
+    expect(screen.queryByText('Not connected')).not.toBeInTheDocument();
+  });
+
+  it('shows the WiFi of a workstation that is not on a cable, as before', () => {
+    useConnection.setState({ wifi: wifi(82) });
+    renderShell(<ConnectionIndicator />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connection: Connected' }));
+
+    expect(screen.getByText('WiFi')).toBeInTheDocument();
+    expect(screen.getByText('NH-Staff · 82% signal')).toBeInTheDocument();
+    expect(screen.queryByText(/^Cable/)).not.toBeInTheDocument();
+  });
+});
+
+describe('OfflineBanner', () => {
+  beforeEach(() => useConnection.setState({ browserOnline: true, serverReachable: false, realtime: 'disconnected' }));
+
+  it("does not send a cabled workstation's user to its WiFi: the fault is beyond this computer", () => {
+    useConnection.setState({ wifi: cabled() });
+    renderShell(<OfflineBanner />);
+
+    expect(screen.getByText('Cannot reach the HealthCare360 server')).toBeInTheDocument();
+    expect(
+      screen.getByText(/network cable is connected, so the server or the hospital network may be down/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Check this computer's network cable or WiFi/)).not.toBeInTheDocument();
+  });
+
+  it('asks a workstation not known to be on a cable to check its cable or WiFi', () => {
+    useConnection.setState({ wifi: null });
+    renderShell(<OfflineBanner />);
+
+    expect(screen.getByText(/Check this computer's network cable or WiFi/)).toBeInTheDocument();
   });
 });

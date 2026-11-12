@@ -4,7 +4,11 @@ using Serilog;
 
 namespace HyFib.HealthCare360.Desktop.Services;
 
-/// <summary>Shape sent to the web app over the bridge (see packages/core/src/bridge/bridge.ts NetworkStatus).</summary>
+/// <summary>
+/// Shape sent to the web app over the bridge (see packages/core/src/bridge/bridge.ts NetworkStatus). <see cref="Wired"/>:
+/// a network cable is up, which is then the workstation's link, not its WiFi (SRS DED-07 on a cabled LAN, as at Nana
+/// Hospitals); <see cref="CableSpeedMbps"/> is the fastest cable's speed, when Windows gives it.
+/// </summary>
 internal sealed record NetworkStatus(
     bool WifiConnected,
     string? Ssid,
@@ -14,11 +18,14 @@ internal sealed record NetworkStatus(
     bool DetailsAvailable,
     string? Note,
     bool ServerReachable,
-    int? ServerLatencyMs);
+    int? ServerLatencyMs,
+    bool Wired,
+    long? CableSpeedMbps);
 
 /// <summary>
-/// Watches this workstation's WiFi link and the round-trip to the server every 10 seconds (sooner when Windows
-/// reports a network change) and raises <see cref="Changed"/> when something the user would notice changes.
+/// Watches this workstation's link, its network cable or its WiFi, and the round-trip to the server every 10 seconds
+/// (sooner when Windows reports a network change) and raises <see cref="Changed"/> when something the user would notice
+/// changes.
 /// </summary>
 internal sealed class NetworkStatusService(ServerClient client) : IDisposable
 {
@@ -51,7 +58,8 @@ internal sealed class NetworkStatusService(ServerClient client) : IDisposable
                 {
                     if (_last?.ServerReachable != status.ServerReachable)
                     {
-                        Log.Information("Server {State} (WiFi {Ssid}, signal {Signal})", status.ServerReachable ? "reachable" : "unreachable", status.Ssid, status.SignalQuality);
+                        Log.Information("Server {State} (cable {Wired}, WiFi {Ssid}, signal {Signal})", status.ServerReachable ? "reachable" : "unreachable",
+                            status.Wired ? "up" : "not up", status.Ssid, status.SignalQuality);
                     }
 
                     _last = status;
@@ -88,20 +96,41 @@ internal sealed class NetworkStatusService(ServerClient client) : IDisposable
             Log.Debug(ex, "WLAN query failed");
         }
 
-        return new NetworkStatus(
-            wifi?.IsConnected ?? NetworkInterface.GetIsNetworkAvailable(),
+        IReadOnlyList<NetworkLink> cables = [];
+        try
+        {
+            cables = NetworkLinks.Cables(NetworkLinks.Read());
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.Debug(ex, "Network link query failed");
+        }
+
+        return Describe(wifi, cables, NetworkInterface.GetIsNetworkAvailable(), latency);
+    }
+
+    /// <summary>
+    /// What the web app is told, from this workstation's WiFi (null without a WiFi adapter), its network cables that are
+    /// up, and the server's round-trip (null when it did not answer). Without a WiFi adapter, <c>WifiConnected</c> says
+    /// whether Windows has a network at all, as before, for a staff app that does not know <c>Wired</c>.
+    /// </summary>
+    internal static NetworkStatus Describe(WifiConnectionInfo? wifi, IReadOnlyList<NetworkLink> cables, bool networkAvailable, TimeSpan? latency) =>
+        new(
+            wifi?.IsConnected ?? networkAvailable,
             wifi?.Ssid,
             wifi is { DetailsAvailable: true } ? wifi.SignalQuality : null,
             wifi?.ReceiveRateMbps,
             wifi?.Security.ToString(),
             wifi?.DetailsAvailable ?? false,
-            wifi?.Note ?? (wifi is null ? "Wired or no WiFi adapter" : null),
+            wifi?.Note ?? (wifi is null ? (cables.Count > 0 ? "On a network cable" : "Wired or no WiFi adapter") : null),
             latency is not null,
-            latency is { } l ? (int)Math.Round(l.TotalMilliseconds) : null);
-    }
+            latency is { } l ? (int)Math.Round(l.TotalMilliseconds) : null,
+            cables.Count > 0,
+            cables.Max(c => c.SpeedMbps));
 
     private static bool Differs(NetworkStatus a, NetworkStatus b) =>
         a.WifiConnected != b.WifiConnected
+        || a.Wired != b.Wired
         || a.ServerReachable != b.ServerReachable
         || !string.Equals(a.Ssid, b.Ssid, StringComparison.Ordinal)
         || Math.Abs((a.SignalQuality ?? 0) - (b.SignalQuality ?? 0)) >= 10;

@@ -41,6 +41,13 @@ export interface NetworkStatus {
   note: string | null;
   serverReachable: boolean;
   serverLatencyMs: number | null;
+  /**
+   * A network cable is up on this workstation, which is then its link, not its WiFi (DED-07 on a cabled LAN, as at Nana
+   * Hospitals). An HC360 Desktop from before it was told does not say, so absent means "not known to be on a cable".
+   */
+  wired?: boolean;
+  /** The cable's speed in Mbps, when Windows gives it. */
+  cableSpeedMbps?: number | null;
 }
 
 export interface PrinterInfo {

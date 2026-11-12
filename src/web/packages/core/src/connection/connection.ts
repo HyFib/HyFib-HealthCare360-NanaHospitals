@@ -40,8 +40,19 @@ export type ConnectionHealth = 'good' | 'degraded' | 'offline';
 /** Below this WiFi signal quality (per cent) the connection counts as weak. */
 export const WEAK_WIFI_SIGNAL = 40;
 
-/** The WiFi signal quality (per cent) when HC360 Desktop reports it and it is weak, otherwise null. */
+/** HC360 Desktop reports a network cable up on this workstation: the cable is its link, not its WiFi. */
+export function onCable(state: Pick<ConnectionState, 'wifi'>): boolean {
+  return state.wifi?.wired === true;
+}
+
+/**
+ * The WiFi signal quality (per cent) when HC360 Desktop reports it and it is weak, otherwise null. On a network cable the
+ * WiFi is not the link, and Windows sends HC360's traffic over the cable, so how weak the WiFi is does not matter.
+ */
 export function weakWifiSignal(state: Pick<ConnectionState, 'wifi'>): number | null {
+  if (onCable(state)) {
+    return null;
+  }
   const signal = state.wifi?.detailsAvailable ? state.wifi.signalQuality : null;
   return signal !== null && signal !== undefined && signal < WEAK_WIFI_SIGNAL ? signal : null;
 }
