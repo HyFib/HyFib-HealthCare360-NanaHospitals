@@ -1,4 +1,4 @@
-# Nana Hospitals, Theni: the drug registers and the server machine
+# Nana Hospitals, Theni: the drug registers, the server machine and the network
 
 **Status: assessment, before installation.** Written on 10 November 2026 from four photographs sent from the site (two
 registers printed by the pharmacy's current software, and two Settings › About screens of the machine meant to run
@@ -7,6 +7,11 @@ is marked **to confirm**, and [`Test-HC360ServerNode.ps1`](../../deploy/windows/
 machine (section 4, step 1).
 
 The hospital answered the open questions on 10 November 2026 (section 6). Sections 3 and 4 follow those answers.
+
+On 12 November 2026 the hospital set the release for **23 November 2026** and sent two more Settings › About
+photographs: the server's again, and the lab PC's. One server serves every client (nurses, front office, doctors and
+the rest), and every machine is on the hospital's **cabled LAN**. Section 7 covers the network and the lab PC, and what
+changed in HC360 for a cabled LAN.
 
 The printouts name patients and doctors. None of them is copied here.
 
@@ -117,7 +122,8 @@ Put them beside the registers the pharmacy signs today:
 | Graphics | Intel UHD 730 | Not used | — |
 | Name | DESKTOP-RMI9PCM, a name Windows chose | A fixed name, e.g. HC360-SRV | Rename before installing |
 | BitLocker, TPM | Not shown (Windows 11 Pro has both) | On for every fixed disk, with the TPM, before HC360 holds patient data | **To confirm** |
-| Network | Not shown | An Ethernet cable to the access point, the Private profile and a DHCP reservation | **To confirm** |
+| Network | On the hospital's cabled LAN (the hospital, 12 November); the cable's speed is not shown | A network cable to a gigabit port of the switch, running at 1 Gbps; the Private profile; a DHCP reservation | **Cabled. The speed is to confirm**: the preflight grades it |
+| Activation | "Activate Windows" across the screen (12 November); product ID ending AAOEM | Windows activated with the hospital's licence | **Not activated: activate before go-live** (below) |
 | UPS | None (the hospital's answer) | 30 minutes or more, connected by USB (SRS 3.2, every profile) | **Missing: buy before go-live** (below) |
 | Backup copies | No NAS and no USB disk (the hospital's answer) | An external backup target, a USB drive or a NAS (SRS 3.2, every profile) | **Missing: buy before go-live** (below) |
 | Use | In daily use at a desk (the hospital's answer); everyday programs on the taskbar (browsers, WhatsApp, Office and others) | "One dedicated Windows machine" | **Departs from DEPLOYMENT.md** (below) |
@@ -147,6 +153,19 @@ If HC360 runs on this PC all the same, these are conditions of go-live, not advi
 - It is on the UPS, with the USB cable connected.
 - The load test (section 4, step 6) runs with the desk user's everyday programs open, as on a working day.
 - The decision is recorded in writing, because it departs from DEPLOYMENT.md.
+
+### Windows is not activated
+
+The 12 November photograph shows "Activate Windows" over the desktop, and a product ID ending AAOEM: a key of the kind
+PC makers install, not activated. HC360 installs and runs on it, but a hospital's server is to run licensed Windows,
+and the preflight warns until it does. Activate it in Settings › System › Activation before go-live. Activation needs
+the internet once. A licence built into the PC is for the edition it was sold with: if that is Home, Windows 11 Pro
+(which BitLocker needs) needs a Pro licence or the upgrade to Pro.
+*Check:* Settings › System › Activation says Windows is activated, and the preflight's *Activation* passes.
+
+The same photograph shows a remote-access tool's toolbar on the server's screen. The preflight's *Remote access* lists
+every such tool: keep the one IT uses, protected by a strong password and its two-step sign-in, and remove the rest
+(section 4, step 3).
 
 ### Is a 6-core i5 enough for 40 staff?
 
@@ -200,13 +219,15 @@ Each step ends with a check, and the next step starts only once it passes.
      The USB backup disks are left out: HC360 encrypts the backups on them.
    - Give the two USB backup disks the same drive letter, e.g. `E:`.
    - Make a standard (not administrator) Windows account for the person who works at the PC (section 3).
-   - Use an Ethernet cable to the access point if at all possible, set the Private profile, and reserve the address the
-     report gives for its MAC address.
+   - Connect it to a gigabit port of the hospital's switch by a Cat5e or Cat6 cable, set the Private profile, and
+     reserve the address the report gives for its MAC address.
+   - Activate Windows (section 3, *Windows is not activated*).
    - Connect the UPS by USB.
    - Set the time zone to India Standard Time.
    - Keep one remote-access tool, protected, and remove the rest.
 
-   *Check:* run the preflight again. Nothing fails, and BitLocker passes.
+   *Check:* run the preflight again. Nothing fails, BitLocker passes, *Network connection* passes (the cable at 1 Gbps),
+   and *Activation* passes.
 4. **Check the release files again** if any were downloaded since step 1, for a newer release: the same check, and
    the same unblocking, as in step 1. The release installed must be the one checked.
 5. **Install PostgreSQL** with `.\Install-PostgreSQL.ps1` (DEPLOYMENT.md section 2). Then measure how fast its disk
@@ -232,14 +253,20 @@ Each step ends with a check, and the next step starts only once it passes.
    `E:` is the USB backup disks' drive letter. Write down the CA fingerprint and the first administrator password.
    *Check:* Administration › System health shows nothing red. Then unplug the USB disk and press **Back up now**
    (Administration › Backups): the copy column says "No", the administrators are told in the app, and System health
-   shows `backup.copy_failed`. Plug the disk back in and back up again: the warning clears.
+   shows `backup.copy_failed`. Plug the disk back in and back up again: the warning clears. Restart the server once:
+   HC360 starts with Windows, and the network card is from then on never powered down (DEPLOYMENT.md section 3).
+   Then pull the server's network cable for a minute: System health shows "Cable disconnected" and IT's phone gets the
+   SMS; plug it back in, and both say it is back.
 8. **Run a restore drill before go-live.** Let the first night's backup run, check it with `backup verify`, and restore
    it on a spare PC with `Restore-HC360.ps1` (DEPLOYMENT.md section 8).
    *Check:* the restored copy opens and holds what the original holds.
 9. **Build the item master in HC360.** No data comes from the current software. Set each scheduled drug's schedule
    from its molecule against the H1 list, and fill in its manufacturer.
    *Check:* the pharmacist-in-charge reviews the H1 and X list before it is used.
-10. **Install the workstations** (DEPLOYMENT.md section 5), the pharmacy's first.
+10. **Install the workstations** (DEPLOYMENT.md section 5), the pharmacy's first, and the lab PC (section 7).
+    *Check:* on each, `Test-NetConnection HC360-SRV -Port 7360` ends with `TcpTestSucceeded : True`, and HC360
+    Desktop's connection pill shows "Network: Cable · 1 Gbps" (or "100 Mbps" for a workstation on an older switch,
+    which is enough for a workstation).
 11. **Run the registers in parallel** (section 2 above).
     *Check:* the pharmacist-in-charge signs them off.
 
@@ -250,13 +277,16 @@ None of these depends on HyFib's word:
 | Claim | Shown by |
 |---|---|
 | The machine is fit | The preflight's report, read from the machine itself; then the installer's own checks and Administration › System health |
+| Windows is licensed | Settings › System › Activation, and the preflight's *Activation* |
+| The server's cable is right, and its loss is noticed | The preflight's *Network connection* at 1 Gbps; the cable pulled at step 7: System health and an SMS on IT's phone, then its return |
+| Every workstation reaches the server | `Test-NetConnection HC360-SRV -Port 7360` from each, and its connection pill showing the cable |
 | It is fast enough | The load test on this machine (PERF-01), and pg_test_fsync's figures for its disk |
 | The data survives a failure | A backup verified, then restored on another PC |
 | Each night's backup leaves the server | At each weekly swap, the disk going off site holds the last night's backup file, and `backup verify --in` passes on it (DEPLOYMENT.md section 8). That a missing copy is noticed: the disk unplugged at step 7, and an alert drill's SMS on IT's phone for the critical alert |
 | The registers are right | The day-by-day reconciliation against the current software's printouts, signed by the pharmacist-in-charge, and then the Drugs Inspector |
 | Each drug is in the right schedule | The Schedule H1 list (G.S.R. 588(E), 2013, and later amendments), molecule by molecule |
 
-## 6. The hospital's answers (10 November 2026)
+## 6. The hospital's answers (10 and 12 November 2026)
 
 | Question | Answer | What it changes |
 |---|---|---|
@@ -266,7 +296,86 @@ None of these depends on HyFib's word:
 | Where is the current pharmacy software's database? | Not applicable | No data is moved. HC360's item master is built afresh (section 4, step 9) |
 | What should be done about the tramadol supplies already in the H register? | Nothing: not applicable | Only HC360's own item master must class tramadol as H1 (section 2) |
 
+The hospital's answers of 12 November 2026:
+
+| Question | Answer | What it changes |
+|---|---|---|
+| When is the release? | 23 November 2026 | The steps of section 4 and the checks of section 7 are done by then |
+| How are the machines connected? | One server, the clients (nurses, front office, doctors and the rest) on the hospital's LAN | A cabled LAN: what HC360 now does for one, and the checks, are in section 7 |
+| The lab PC? | "A different CPU" (photograph: i5-6500T, 8 GB, 238 GB SSD) | Fit for HC360 Desktop and the lab agent; its Windows is to confirm (section 7) |
+
 Still open:
 1. Does the pharmacist-in-charge want Doctor before Patient, and "Drug Report" as the title? Which signature lines?
-2. Is there an Ethernet point near the access point? The preflight shows the connection the PC has.
-3. Will the hospital buy a dedicated server, or run HC360 on this PC under the conditions in section 3?
+2. Will the hospital buy a dedicated server, or run HC360 on this PC under the conditions in section 3?
+3. Are the lab's analysers connected by serial (RS-232) cable to the lab PC, or to the network? Section 7 says what each
+   needs.
+4. Which Windows, and which version, is the lab PC on (section 7)?
+
+## 7. The cabled LAN and the lab PC (12 November 2026)
+
+### What changed in HC360 for a cabled LAN
+
+HC360 was written for a server on WiFi (SRS assumption A-09). On a cabled LAN that left gaps, closed in this release:
+- **The server watches its network cable.** A cable pulled or a switch turned off is told at once, in the app to the
+  administrators and by SMS to IT's phone, and so is its return. Before, only the server's WiFi was watched: a cabled
+  server could lose its cable and nobody would be told.
+- **A WiFi card beside the cable raises nothing.** A cabled server's idle WiFi card was a critical "WiFi is
+  disconnected" in System health for as long as it ran, and a WiFi that dropped beside the cable sent critical SMS.
+- **System health shows the cable and its speed** ("Cable · 1 Gbps"), and says "Not connected" for a server with no
+  link at all.
+- **The installer keeps the network card at full power.** It only meant to for a WiFi card, and passed Windows a
+  parameter Windows does not have, so it never did.
+- **The preflight grades the cable's speed** (1 Gbps passes, 100 Mbps warns) **and Windows activation.**
+- **HC360 Desktop says "Cable"** in its connection pill on a cabled workstation, no longer counts a weak WiFi beside the
+  cable as a weak connection, and tells the user of a cabled workstation that cannot reach the server that the fault is
+  beyond their PC, rather than to check their WiFi.
+
+### The network, before go-live
+
+| Check | How | Passes when |
+|---|---|---|
+| The server's cable | The preflight's *Network connection* | Pass: 1 Gbps. At 100 Mbps, change the cable (Cat5e or Cat6) or the switch port |
+| The switches stay up in a power cut | The switch the server is on, and those between it and the wards, on a UPS; then switch the mains off for five minutes | Workstations on UPS keep working, and HC360 Desktop shows no offline banner |
+| The server's cable loss is noticed | Section 4, step 7: pull the cable for a minute | System health shows "Cable disconnected" and IT's phone gets the SMS, and both say it is back once it is in |
+| Each workstation reaches the server | `Test-NetConnection HC360-SRV -Port 7360` on each | `TcpTestSucceeded : True` |
+| HC360 Desktop finds the server by itself | Setup on each workstation without `-ServerUrl` | It lists HC360-SRV. If not, multicast (mDNS) does not cross the switches: use `-ServerUrl` (DEPLOYMENT.md section 1) |
+
+### The lab PC
+
+| | The photograph shows | HC360 needs | Verdict |
+|---|---|---|---|
+| Processor | Intel Core i5-6500T: 4 cores, 4 threads, 2.5 GHz, a 35 W part from 2015 (6th generation) | HC360 Desktop (WebView2) and, for serial analysers, the lab agent: any 64-bit (x64) PC | Enough. HC360 Desktop and the lab agent are the same x64 programs on any CPU |
+| Memory | 8 GB, 2400 MHz | — | Enough |
+| Storage | 238 GB SSD | — | Enough |
+| Graphics | Intel HD Graphics 530 | — | Enough |
+| Name | DESKTOP-RLOF787 | Any; HC360 names the workstation at enrolment ("Lab PC") | — |
+| Windows | Settings › About in the Windows 11 style; the version is not shown; product ID 00330-80000-00000-AA881 | Windows 10 version 2004 or later, still getting security updates | **To confirm** (below) |
+
+**Its Windows.** The i5-6500T is older than Windows 11's supported processors (8th generation and later). If the PC is on
+Windows 11, it was installed past that check, and Microsoft does not promise such a PC its updates. If it is on Windows
+10, Windows 10's support ended on 14 October 2025, and only Extended Security Updates keep it patched. Either way it is
+the PC that relays results into patient records, so: read the edition and version (`winver`, or Settings › System ›
+About › Windows specifications), and check that Windows Update has installed the November 2026 security update.
+*Check:* Windows Update shows the 10 November 2026 security update installed, and Windows is activated. If it cannot be
+kept updated, give the lab a PC that can be, or keep this one off everything but the hospital LAN.
+
+**Its analysers.** For analysers on **serial** cables, this PC runs the HC360 lab agent (DEPLOYMENT.md section 6,
+*Lab analysers*), and it must never sleep: the agent is a Windows service, but a PC asleep relays nothing, and an
+analyser may give up on a result nobody takes. The lab agent's installer does not change the power settings, so set
+them, as Administrator:
+
+```powershell
+powercfg /change standby-timeout-ac 0
+powercfg /change hibernate-timeout-ac 0
+```
+
+*Check:* `powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE` shows `Current AC Power Setting Index: 0x00000000`,
+and a result sent at night, after an hour with nobody at the PC, reaches the worklist. For analysers on the
+**network**, the lab PC needs nothing more than HC360 Desktop: each analyser connects to the server, with a fixed
+address, through the firewall rule `-LabPorts` and `-LabAnalyserAddresses` open (DEPLOYMENT.md section 6).
+
+### The release itself
+
+The release installed on 23 November must include .NET's security release of 10 November 2026 (runtime 10.0.15):
+the advisories published that day (one of them high) affect the runtime of earlier builds. It is built with the .NET
+SDK 10.0.404 (`global.json`), which carries it: check the release notes name that SDK, or later.
