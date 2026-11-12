@@ -161,7 +161,12 @@ public sealed class NetworkOptions
     public bool EnableMdns { get; set; } = true;
     public string MdnsServiceType { get; set; } = "_hc360._tcp";
 
+    /// <summary>
+    /// The link monitor (DED-06): the Server Node's WiFi and, on a cabled LAN, its network cables, sampled every
+    /// <see cref="WifiSampleSeconds"/>. Off, neither is watched, and System health judges no link.
+    /// </summary>
     public bool EnableWifiMonitor { get; set; } = true;
+
     public int WifiSampleSeconds { get; set; } = 30;
 
     /// <summary>Signal quality (0–100) below which the link is considered degraded.</summary>

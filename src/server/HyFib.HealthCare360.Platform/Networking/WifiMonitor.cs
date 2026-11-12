@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Management;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -61,6 +62,12 @@ public enum WifiEventKind
 
     /// <summary>Windows shows no WiFi adapter while the link was in use: see <see cref="WifiAdapterAbsence"/>.</summary>
     AdapterLost,
+
+    /// <summary>Every network cable the Server Node was on during this run is out, or its switch is off: see <see cref="CableEventDetector"/>.</summary>
+    CableDisconnected,
+
+    /// <summary>A network cable is connected again after <see cref="CableDisconnected"/>.</summary>
+    CableReconnected,
 }
 
 /// <summary>Why Windows shows no WiFi adapter, as far as the server can tell (<see cref="WlanService"/>).</summary>
@@ -78,7 +85,7 @@ public enum WifiAdapterAbsence
 
 public sealed record WifiEvent(DateTimeOffset At, WifiEventKind Kind, string Message);
 
-/// <summary>Latest known state of the Server Node's WiFi link (singleton, read by the health dashboard).</summary>
+/// <summary>Latest known state of the Server Node's links, its WiFi and its network cables (singleton, read by the health dashboard).</summary>
 public sealed class WifiLinkState
 {
     private readonly Lock _gate = new();
@@ -93,6 +100,21 @@ public sealed class WifiLinkState
     /// <summary>Why the adapter of a WiFi link that was in use is missing, while it is (System health warns); null otherwise.</summary>
     public string? AdapterMissing { get; private set; }
 
+    /// <summary>The monitor told the WiFi link lost (a drop, or its adapter gone), and it is not back.</summary>
+    public bool WifiLinkLost { get; private set; }
+
+    /// <summary>
+    /// The network cables up at the last sample, empty when none is; null until the monitor has read them (it is off, or
+    /// this server does not run the jobs), when System health judges the WiFi alone, as before cables were read.
+    /// </summary>
+    public IReadOnlyList<NetworkLink>? Cables { get; private set; }
+
+    /// <summary>The monitor told the cable the Server Node was on lost, and none is up again.</summary>
+    public bool CableLost { get; private set; }
+
+    /// <summary>When the cable was last lost, during this run.</summary>
+    public DateTimeOffset? LastCableDropAt { get; private set; }
+
     public IReadOnlyList<WifiEvent> RecentEvents
     {
         get
@@ -104,12 +126,32 @@ public sealed class WifiLinkState
         }
     }
 
-    internal void Update(WifiConnectionInfo? info, DateTimeOffset at, string? adapterMissing = null)
+    /// <param name="info">The WiFi sample: null when Windows shows no WiFi adapter.</param>
+    /// <param name="at">When it was taken.</param>
+    /// <param name="adapterMissing">Why the adapter of a WiFi link in use is missing (<see cref="WifiEventDetector.AdapterMissing"/>).</param>
+    /// <param name="wifiLinkLost">The WiFi link was told lost and is not back (<see cref="WifiEventDetector.LinkLost"/>).</param>
+    /// <param name="cables">The cables up now; null leaves those of the last sample (none read, before the first).</param>
+    /// <param name="cableLost">The cable was told lost and none is back (<see cref="CableEventDetector.CableLost"/>).</param>
+    internal void Update(
+        WifiConnectionInfo? info, DateTimeOffset at, string? adapterMissing = null, bool wifiLinkLost = false,
+        IReadOnlyList<NetworkLink>? cables = null, bool cableLost = false)
     {
         lock (_gate)
         {
             Supported = info is not null;
             AdapterMissing = info is null ? adapterMissing : null;
+            WifiLinkLost = wifiLinkLost;
+            if (cables is not null)
+            {
+                if (cableLost && !CableLost)
+                {
+                    LastCableDropAt = at;
+                }
+
+                Cables = cables;
+                CableLost = cableLost;
+            }
+
             if (info is { IsConnected: true } && Current is not { IsConnected: true })
             {
                 ConnectedSince = at;
@@ -139,12 +181,14 @@ public sealed class WifiLinkState
 }
 
 /// <summary>
-/// Monitors the dedicated machine's own WiFi connection (DED-06/12): drops, weak signal, access-point changes, a WiFi
+/// Monitors the dedicated machine's own links (DED-06/12). Its WiFi: drops, weak signal, access-point changes, a WiFi
 /// adapter that disappears (disabled, removed, or the WLAN AutoConfig service stopped), a link that is down when the
 /// server starts though it was on WiFi when it last ran, and insecure (open, WEP), shared-password (WPA-Personal) or
-/// unapproved networks. Events are audited, pushed to administrators in-app and, when an on-call number is configured
-/// (<c>alerts.oncallPhone</c>), sent by SMS, and by WhatsApp too when <c>alerts.oncallWhatsApp</c> is on, through the
-/// outbox (delivered as soon as connectivity returns).
+/// unapproved networks. And its network cables, for a hospital whose machines are cabled to its LAN: the cable it was on
+/// lost, and back (<see cref="CableEventDetector"/>). While a cable is up, the WiFi is not what the workstations reach it
+/// over, so the WiFi's drops and signal raise nothing then; what network it joins still does. Events are audited, pushed
+/// to administrators in-app and, when an on-call number is configured (<c>alerts.oncallPhone</c>), sent by SMS, and by
+/// WhatsApp too when <c>alerts.oncallWhatsApp</c> is on, through the outbox (delivered as soon as connectivity returns).
 /// </summary>
 internal sealed class WifiMonitor(
     WifiLinkState state,
@@ -174,37 +218,36 @@ internal sealed class WifiMonitor(
 
         var interval = SampleInterval(network);
         var detector = await DetectorAsync(stoppingToken);
+        var cableDetector = new CableEventDetector();
         WifiConnectionInfo? previous = null;
 
+        // Every interval, a cabled server as much as one on WiFi: a cable pulled for a minute is a drop as a WiFi one is.
         while (!stoppingToken.IsCancellationRequested)
         {
             var now = time.GetUtcNow();
-            var wait = interval;
             try
             {
+                var cables = NetworkLinks.Cables(NetworkLinks.Read());
+                var onCable = cables.Count > 0;
                 var current = WlanClient.GetPrimaryConnection();
-                var events = detector.Evaluate(previous, current, now, network, current is null ? WlanService.Diagnose() : WifiAdapterAbsence.Unknown);
-                state.Update(current, now, detector.AdapterMissing);
-                foreach (var wifiEvent in events)
+                var events = detector.Evaluate(previous, current, now, network,
+                    current is null && !onCable ? WlanService.Diagnose() : WifiAdapterAbsence.Unknown, onCable);
+                events.AddRange(cableDetector.Evaluate(cables, current, now));
+                state.Update(current, now, detector.AdapterMissing, detector.LinkLost, cables, cableDetector.CableLost);
+                foreach (var linkEvent in events)
                 {
-                    state.Add(wifiEvent);
+                    state.Add(linkEvent);
                 }
 
                 await PersistAsync(current, now, events, stoppingToken);
                 previous = current;
-
-                // No wireless adapter and no link lost with it: the node may be on Ethernet, so check rarely.
-                if (current is null && !detector.LinkLost)
-                {
-                    wait = TimeSpan.FromMinutes(5);
-                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogWarning(ex, "WiFi monitoring sample failed");
+                logger.LogWarning(ex, "Network link monitoring sample failed");
             }
 
-            await Task.Delay(wait, time, stoppingToken);
+            await Task.Delay(interval, time, stoppingToken);
         }
     }
 
@@ -231,9 +274,10 @@ internal sealed class WifiMonitor(
     }
 
     /// <summary>
-    /// Keeps the sample (none when Windows shows no WiFi adapter) and records and alerts the events. When the adapter of a
-    /// link in use disappears, a sample of no link is kept in its place, so that a start-up while it is still missing
-    /// does not report it again.
+    /// Keeps the WiFi sample (none when Windows shows no WiFi adapter) and records and alerts the events. When the adapter
+    /// of a link in use disappears, a sample of no link is kept in its place, so that a start-up while it is still missing
+    /// does not report it again. A cable's event keeps no WiFi sample: on a server without WiFi it would chart a WiFi that
+    /// is not there.
     /// </summary>
     private async Task PersistAsync(WifiConnectionInfo? current, DateTimeOffset now, List<WifiEvent> events, CancellationToken ct)
     {
@@ -245,20 +289,23 @@ internal sealed class WifiMonitor(
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
 
-        db.Add(current is null
-            ? new WifiSample { At = now, Connected = false }
-            : new WifiSample
-            {
-                At = now,
-                Connected = current.IsConnected,
-                Ssid = current.Ssid,
-                Bssid = current.Bssid,
-                SignalQuality = current.SignalQuality,
-                RssiDbm = current.RssiDbm,
-                ReceiveRateMbps = current.ReceiveRateMbps,
-                TransmitRateMbps = current.TransmitRateMbps,
-                Security = current.Security.ToString(),
-            });
+        if (current is not null || events.Exists(e => !CableEventDetector.IsCable(e.Kind)))
+        {
+            db.Add(current is null
+                ? new WifiSample { At = now, Connected = false }
+                : new WifiSample
+                {
+                    At = now,
+                    Connected = current.IsConnected,
+                    Ssid = current.Ssid,
+                    Bssid = current.Bssid,
+                    SignalQuality = current.SignalQuality,
+                    RssiDbm = current.RssiDbm,
+                    ReceiveRateMbps = current.ReceiveRateMbps,
+                    TransmitRateMbps = current.TransmitRateMbps,
+                    Security = current.Security.ToString(),
+                });
+        }
 
         if (events.Count > 0)
         {
@@ -303,9 +350,9 @@ internal sealed class WifiMonitor(
     /// <summary>
     /// Logs each event in the audit trail and alerts on it: administrators (those who may see System health) in-app, for
     /// every event but a roam to another access point; and, for a warning or worse (a drop, a missing adapter, a weak
-    /// signal, an insecure, shared-password or unapproved network), the IT on-call number by SMS when one is set, and by
-    /// WhatsApp too when the hospital turned that on. The messages are queued in the outbox, with the audit entries and the
-    /// sample, so they go as soon as the internet is back, for 6 hours.
+    /// signal, an insecure, shared-password or unapproved network, the network cable lost), the IT on-call number by SMS
+    /// when one is set, and by WhatsApp too when the hospital turned that on. The messages are queued in the outbox, with
+    /// the audit entries and the sample, so they go as soon as the internet is back, for 6 hours.
     /// </summary>
     internal static async Task AlertAsync(
         IReadOnlyList<WifiEvent> events, IAuditLogger audit, INotificationService notifications, OnCallAlerts onCall, string server, CancellationToken ct)
@@ -314,18 +361,25 @@ internal sealed class WifiMonitor(
         {
             var severity = wifiEvent.Kind switch
             {
-                WifiEventKind.Disconnected or WifiEventKind.AdapterLost or WifiEventKind.InsecureNetwork or WifiEventKind.UnapprovedNetwork => AuditSeverity.Critical,
+                WifiEventKind.Disconnected or WifiEventKind.AdapterLost or WifiEventKind.InsecureNetwork or WifiEventKind.UnapprovedNetwork
+                    or WifiEventKind.CableDisconnected => AuditSeverity.Critical,
                 WifiEventKind.WeakSignal or WifiEventKind.SharedPasswordNetwork => AuditSeverity.Warning,
                 _ => AuditSeverity.Info,
             };
             var category = wifiEvent.Kind is WifiEventKind.InsecureNetwork or WifiEventKind.SharedPasswordNetwork or WifiEventKind.UnapprovedNetwork
                 ? AuditCategories.Security
                 : AuditCategories.Admin;
-            audit.Add(new AuditEntry(category, $"network.wifi_{wifiEvent.Kind.ToString().ToLowerInvariant()}", wifiEvent.Message) { Severity = severity });
+            var (action, title) = wifiEvent.Kind switch
+            {
+                WifiEventKind.CableDisconnected => ("network.cable_disconnected", "Server network cable: Disconnected"),
+                WifiEventKind.CableReconnected => ("network.cable_reconnected", "Server network cable: Connected again"),
+                _ => ($"network.wifi_{wifiEvent.Kind.ToString().ToLowerInvariant()}", "Server WiFi: " + wifiEvent.Kind),
+            };
+            audit.Add(new AuditEntry(category, action, wifiEvent.Message) { Severity = severity });
 
             if (wifiEvent.Kind is not WifiEventKind.AccessPointChanged)
             {
-                await notifications.NotifyPermissionHoldersAsync(PlatformPermissions.SystemRead, null, "Server WiFi: " + wifiEvent.Kind, wifiEvent.Message,
+                await notifications.NotifyPermissionHoldersAsync(PlatformPermissions.SystemRead, null, title, wifiEvent.Message,
                     "/admin/system", "system", severity == AuditSeverity.Critical ? "critical" : severity == AuditSeverity.Warning ? "warning" : "info", ct);
             }
 
@@ -397,7 +451,8 @@ internal static class WlanService
 /// adapter missing though the server was on WiFi when it last ran; a weak signal once it has stayed below
 /// <see cref="NetworkOptions.WifiWeakSignalThreshold"/> for <see cref="WeakStreakThreshold"/> samples in a row, and its
 /// recovery once it is back at the threshold or above; a roam to another access point; and an insecure, shared-password
-/// or unapproved network.
+/// or unapproved network. While a network cable is up, the workstations reach the server over the cable, so the WiFi's
+/// coming and going and its signal raise nothing, and a loss already told is over; what network it joins still does.
 /// </summary>
 /// <param name="onWifiWhenLastRun">The server's last sample before this run (kept 30 days) had a link.</param>
 /// <param name="lastSsid">That sample's network, for the message.</param>
@@ -407,10 +462,10 @@ internal sealed class WifiEventDetector(bool onWifiWhenLastRun = false, string? 
     internal const int WeakStreakThreshold = 3;
 
     /// <summary>
-    /// The warning lasts until the WiFi is back. A server moved to Ethernet on purpose clears it with a restart: its last
-    /// stored sample has no link, so the next run does not count the WiFi as lost.
+    /// The warning lasts until the WiFi is back, or a network cable is up: a server moved to a cable on purpose clears it
+    /// by connecting it.
     /// </summary>
-    private const string WiredOnPurpose = " If Server Node now runs on Ethernet on purpose, restart the HC360Server service to clear this warning.";
+    private const string WiredOnPurpose = " If Server Node now runs on a network cable on purpose, this warning clears once the cable is connected.";
 
     private bool _started;
     private int _weakStreak;
@@ -427,13 +482,28 @@ internal sealed class WifiEventDetector(bool onWifiWhenLastRun = false, string? 
     /// <param name="previous">The sample before (null when it had no adapter), or null for the first since the server started.</param>
     /// <param name="current">This sample, or null when Windows shows no WiFi adapter.</param>
     /// <param name="absence">Why there is no adapter, when <paramref name="current"/> is null.</param>
+    /// <param name="onCable">A network cable is up (<see cref="NetworkLinks.Cables"/>): the WiFi is not the server's link.</param>
     public List<WifiEvent> Evaluate(
         WifiConnectionInfo? previous, WifiConnectionInfo? current, DateTimeOffset now, NetworkOptions network,
-        WifiAdapterAbsence absence = WifiAdapterAbsence.Unknown)
+        WifiAdapterAbsence absence = WifiAdapterAbsence.Unknown, bool onCable = false)
     {
         var events = new List<WifiEvent>();
         var starting = !_started;
         _started = true;
+
+        if (onCable)
+        {
+            LinkLost = false;
+            AdapterMissing = null;
+            _weakStreak = 0;
+            _weakAlerted = false;
+            if (current is { IsConnected: true, DetailsAvailable: true })
+            {
+                NetworkEvents(previous, current, now, network, events);
+            }
+
+            return events;
+        }
 
         // Whether the link was up just before: at the sample before, or, at the first sample, when the server last ran.
         var wasUp = starting ? onWifiWhenLastRun : previous is { IsConnected: true };
@@ -495,32 +565,38 @@ internal sealed class WifiEventDetector(bool onWifiWhenLastRun = false, string? 
                 _weakAlerted = false;
             }
 
-            if (previous is { IsConnected: true, Bssid: not null } && current.Bssid is not null && previous.Bssid != current.Bssid)
-            {
-                events.Add(new WifiEvent(now, WifiEventKind.AccessPointChanged, $"Server Node roamed to access point {current.Bssid}."));
-            }
-
-            if (current.IsInsecure && _lastInsecureAlertSsid != current.Ssid)
-            {
-                _lastInsecureAlertSsid = current.Ssid;
-                events.Add(new WifiEvent(now, WifiEventKind.InsecureNetwork,
-                    $"Server Node is connected to an insecure WiFi network ({current.Security}). Use WPA2/WPA3-Enterprise for clinical data."));
-            }
-            else if (current.UsesSharedPassword && _lastSharedPasswordAlertSsid != current.Ssid)
-            {
-                _lastSharedPasswordAlertSsid = current.Ssid;
-                events.Add(new WifiEvent(now, WifiEventKind.SharedPasswordNetwork,
-                    $"Server Node is on a WiFi network with a shared password ({current.Security}): anyone who has the password can join it or imitate it. Use WPA2/WPA3-Enterprise for clinical data."));
-            }
-
-            if (network.ApprovedSsids.Length > 0 && current.Ssid is not null
-                && !network.ApprovedSsids.Contains(current.Ssid, StringComparer.Ordinal))
-            {
-                events.Add(new WifiEvent(now, WifiEventKind.UnapprovedNetwork, $"Server Node joined an unapproved WiFi network '{current.Ssid}'."));
-            }
+            NetworkEvents(previous, current, now, network, events);
         }
 
         return events;
+    }
+
+    /// <summary>What the network the WiFi is on raises: a roam to another access point, and an insecure, shared-password or unapproved network.</summary>
+    private void NetworkEvents(WifiConnectionInfo? previous, WifiConnectionInfo current, DateTimeOffset now, NetworkOptions network, List<WifiEvent> events)
+    {
+        if (previous is { IsConnected: true, Bssid: not null } && current.Bssid is not null && previous.Bssid != current.Bssid)
+        {
+            events.Add(new WifiEvent(now, WifiEventKind.AccessPointChanged, $"Server Node roamed to access point {current.Bssid}."));
+        }
+
+        if (current.IsInsecure && _lastInsecureAlertSsid != current.Ssid)
+        {
+            _lastInsecureAlertSsid = current.Ssid;
+            events.Add(new WifiEvent(now, WifiEventKind.InsecureNetwork,
+                $"Server Node is connected to an insecure WiFi network ({current.Security}). Use WPA2/WPA3-Enterprise for clinical data."));
+        }
+        else if (current.UsesSharedPassword && _lastSharedPasswordAlertSsid != current.Ssid)
+        {
+            _lastSharedPasswordAlertSsid = current.Ssid;
+            events.Add(new WifiEvent(now, WifiEventKind.SharedPasswordNetwork,
+                $"Server Node is on a WiFi network with a shared password ({current.Security}): anyone who has the password can join it or imitate it. Use WPA2/WPA3-Enterprise for clinical data."));
+        }
+
+        if (network.ApprovedSsids.Length > 0 && current.Ssid is not null
+            && !network.ApprovedSsids.Contains(current.Ssid, StringComparer.Ordinal))
+        {
+            events.Add(new WifiEvent(now, WifiEventKind.UnapprovedNetwork, $"Server Node joined an unapproved WiFi network '{current.Ssid}'."));
+        }
     }
 
     /// <summary>What the on-call engineer is to do: start the service, or enable the adapter.</summary>
@@ -530,4 +606,59 @@ internal sealed class WifiEventDetector(bool onWifiWhenLastRun = false, string? 
         WifiAdapterAbsence.NoAdapter => $"Server Node {(starting ? "started without" : "lost")} its WiFi adapter: Windows shows none (disabled or removed). Enable it in Network Connections. Workstations cannot reach HC360 over WiFi until then.",
         _ => $"Server Node {(starting ? "started without" : "lost")} its WiFi adapter (disabled or removed, or the WLAN AutoConfig service stopped). Workstations cannot reach HC360 over WiFi until it is back.",
     };
+}
+
+/// <summary>
+/// Decides which events a new sample of the Server Node's network cables raises (DED-06, where the hospital's machines are
+/// cabled to its LAN): the cable lost, once, when every cable that was up during this run is down, because the cable is
+/// out or its switch is off; and back, once. Its message says whether the server is still on WiFi. A server that starts
+/// with no cable up raises nothing here: it may simply have started before its switch, and System health tells a server
+/// with no link at all (<c>network.down</c>) once that has lasted.
+/// </summary>
+internal sealed class CableEventDetector
+{
+    /// <summary>The cable the server was last on during this run; null until one is up.</summary>
+    private string? _lastCable;
+
+    /// <summary>The cable was told lost, and none is up again.</summary>
+    public bool CableLost { get; private set; }
+
+    /// <summary>Whether <paramref name="kind"/> is a cable's event rather than the WiFi's.</summary>
+    public static bool IsCable(WifiEventKind kind) => kind is WifiEventKind.CableDisconnected or WifiEventKind.CableReconnected;
+
+    /// <summary>A link's speed as people say it: 100 Mbps, 1 Gbps, 2.5 Gbps.</summary>
+    public static string Speed(long mbps) =>
+        mbps >= 1000 ? (mbps / 1000.0).ToString("0.#", CultureInfo.InvariantCulture) + " Gbps" : mbps.ToString(CultureInfo.InvariantCulture) + " Mbps";
+
+    /// <param name="cables">The cables up now (<see cref="NetworkLinks.Cables"/>).</param>
+    /// <param name="wifi">The WiFi at the same sample, for the message: null when Windows shows no WiFi adapter.</param>
+    /// <param name="now">When the sample was taken.</param>
+    public List<WifiEvent> Evaluate(IReadOnlyList<NetworkLink> cables, WifiConnectionInfo? wifi, DateTimeOffset now)
+    {
+        var events = new List<WifiEvent>();
+        if (cables.Count > 0)
+        {
+            var cable = cables[0];
+            if (CableLost)
+            {
+                CableLost = false;
+                var speed = cable.SpeedMbps is { } mbps ? $", {Speed(mbps)}" : string.Empty;
+                events.Add(new WifiEvent(now, WifiEventKind.CableReconnected, $"Server Node's network cable is connected again ('{cable.Name}'{speed})."));
+            }
+
+            _lastCable = cable.Name;
+            return events;
+        }
+
+        if (_lastCable is not null && !CableLost)
+        {
+            CableLost = true;
+            var lost = $"Server Node lost its network cable ('{_lastCable}'): the cable is out or its switch is off.";
+            events.Add(new WifiEvent(now, WifiEventKind.CableDisconnected, wifi is { IsConnected: true }
+                ? $"{lost} It is on WiFi{(wifi.Ssid is null ? string.Empty : $" '{wifi.Ssid}'")} only."
+                : $"{lost} Workstations cannot reach HC360 until it is back."));
+        }
+
+        return events;
+    }
 }
