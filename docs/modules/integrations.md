@@ -261,15 +261,18 @@ what goes out (`TemplateSwitch`):
   stored version: patients would otherwise be locked out of the portal.
 * WhatsApp templates that Meta must approve first are seeded **not in use** (`DefaultNotificationTemplates.SeededNotInUse`,
   and Engagement's own): the queue token (`visit_token`), the payment receipt (`bill_receipt`), the admission
-  (`admission_admitted`), the discharge (`discharge_completed`), the feedback request (`feedback_request`), the follow-up
+  (`admission_admitted`), the discharge (`discharge_completed`), the discharge summary (`discharge_summary`), the feedback request (`feedback_request`), the follow-up
   reminder (`followup_reminder`) and the complaint acknowledgement (`complaint_acknowledged`). Register each in WhatsApp
   Manager, then switch it on; until then those messages go by SMS alone. The WhatsApp templates seeded before them
   (appointments, reports, bills, payment links, prescriptions, video consultations, refills, portal links, alerts) are in
   use, as they were.
-* The discharge message names the stay's signed discharge summary (`clinical.discharge-summary`): with "Document header"
-  ticked on its WhatsApp template (registered with a document header), the summary's PDF goes in it. A header can't be
-  left empty, so a discharge with no signed summary (LAMA or DAMA, or a planned discharge while the summary hold is off)
-  then goes by SMS only; without the header, every discharge gets the WhatsApp message.
+* The discharge has two WhatsApp templates. `discharge_completed` is text only and goes with the SMS for every discharge.
+  `discharge_summary` is seeded with "Document header" ticked (`DefaultNotificationTemplates.SeededWithDocumentHeader`) and
+  carries the stay's signed discharge summary (`clinical.discharge-summary`) as its document. A header can't be left
+  empty, so `DischargeService` queues `discharge_summary` only for a stay with a signed summary, and only where that
+  template is in use for the patient (`NotificationTemplateRenderer.InUseAsync`); every other discharge (LAMA or DAMA, or a
+  planned discharge while the summary hold is off) gets `discharge_completed` on WhatsApp. The SMS is always
+  `discharge_completed`.
 * A receipt goes on WhatsApp only when the payment does not settle the bill: a payment that settles it sends the bill
   itself there (`bill.shared`), so the patient gets one WhatsApp message for it, not two. When the bill can't go there
   (its WhatsApp template not in use, `billing.bills.sendOnWhatsApp` off, or a protected record on a shared number), the

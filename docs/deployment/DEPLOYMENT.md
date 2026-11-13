@@ -575,16 +575,18 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
      without its PDF, so those WhatsApp messages would be skipped; the SMS and e-mail still go.
    - WhatsApp templates seeded **Not in use** in Administration › Notification templates wait for Meta: the queue token
      (`visit_token`), the payment receipt (`bill_receipt`), the admission (`admission_admitted`), the discharge
-     (`discharge_completed`, without a document header: see below), the feedback request (`feedback_request`), the
-     follow-up reminder (`followup_reminder`) and the complaint acknowledgement (`complaint_acknowledged`). Register each in WhatsApp Manager as a utility template (the feedback
+     (`discharge_completed`, without a document header), the discharge summary (`discharge_summary`, with a document
+     header: see below), the feedback request (`feedback_request`), the follow-up reminder (`followup_reminder`) and the
+     complaint acknowledgement (`complaint_acknowledged`). Register each in WhatsApp Manager as a utility template (the feedback
      request and the follow-up reminder go only to numbers that opted in), then switch it on; until then those messages
      go by SMS only. Any template can be switched off the same way: when no version of a message is in use, it is not
      sent on that channel (sign-in codes always go).
-   - The discharge message can carry the signed discharge summary: register `discharge_completed` with a document header
-     and tick "Document header" on it. A header can't be left empty, though, so a discharge without a signed summary
-     (against advice, or a planned one while the summary hold is off) then goes by SMS only, as reports do with
-     `diagnostics.reports.sendPdf` off. Without the header every discharge gets the WhatsApp message, and the summary is
-     on the patient portal.
+   - The discharge has two WhatsApp templates. Register `discharge_completed` without a document header: every
+     discharge gets it. Register `discharge_summary` **with a document header**, and Administration › Notification
+     templates already has "Document header" ticked on it. Switch on either or both. With `discharge_summary` on, a
+     discharge with a signed summary gets it, with the summary's PDF, and the other discharges (against advice, or a
+     planned one while the summary hold is off) get `discharge_completed`, so none loses its WhatsApp message. With it
+     off, the summary is on the patient portal.
    - Patients get their messages in the language their record prefers when the hospital adds that language's version of
      the template (Hindi `hi`, Tamil `ta`), English otherwise. Register each language's WhatsApp template under the same
      name in WhatsApp Manager, and map it in `integrations.whatsapp` `languageCodes` (for example `{"en":"en_US","ta":"ta"}`).
