@@ -103,6 +103,19 @@ public interface IEInvoiceSource
     Task<EInvoiceDocument?> FindAsync(Guid id, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Asks the e-invoice register (kept by Billing) to get a document's IRN on its own once the document is final (GST rule
+/// 48(4)): the request goes out through the outbox when the caller's transaction commits, and the portal is asked when the
+/// facility is connected to it. A module calls it in the transaction that makes one of its B2B documents final; a document
+/// dated before e-invoicing applies is let go.
+/// </summary>
+public interface IEInvoiceQueue
+{
+    /// <param name="source">The document's <see cref="IEInvoiceSource.Source"/>.</param>
+    /// <param name="date">The document's date, the hospital's (IST) day.</param>
+    Task QueueAsync(string source, Guid id, Guid facilityId, DateOnly date, CancellationToken cancellationToken);
+}
+
 /// <summary>The IRN the portal gave an invoice, for its print. <paramref name="QrCodeSvg"/>: the signed QR code as an SVG data URI.</summary>
 public sealed record EInvoiceStamp(string Irn, string AckNo, DateTimeOffset AckDate, string SignedQrCode, string QrCodeSvg);
 
@@ -152,6 +165,10 @@ public sealed record IrpConnection(bool Connected, string? Provider, bool IsSimu
 /// <summary>
 /// The IRN the portal gave a document (NIC e-invoice API v1.03, <c>Invoice</c> and <c>Invoice/irn</c>): the acknowledgement,
 /// the signed invoice and the signed QR code (both JWTs signed by the portal), and the e-way bill generated with it, if any.
+/// <paramref name="Status"/> is how the portal holds the IRN now, as its IRN details say it: <see cref="ActiveStatus"/> or
+/// <see cref="CancelledStatus"/>; null when the answer did not say, which confirms neither. <paramref name="CancelledAt"/>:
+/// when the portal cancelled it, where its answer gives the time. The details of a cancelled IRN may come without the acknowledgement or the QR code:
+/// then they are empty.
 /// </summary>
 public sealed record IrpIrn(
     string Irn,
@@ -161,7 +178,29 @@ public sealed record IrpIrn(
     string SignedQrCode,
     long? EwbNo = null,
     DateTimeOffset? EwbDate = null,
-    DateTimeOffset? EwbValidTill = null);
+    DateTimeOffset? EwbValidTill = null,
+    string? Status = null,
+    DateTimeOffset? CancelledAt = null)
+{
+    /// <summary>The portal's status of a live IRN.</summary>
+    public const string ActiveStatus = "ACT";
+
+    /// <summary>The portal's status of a cancelled IRN.</summary>
+    public const string CancelledStatus = "CNL";
+
+    /// <summary>The portal holds the IRN as active: its answer says so.</summary>
+    public bool IsActive => string.Equals(Status, ActiveStatus, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The portal holds the IRN as cancelled.</summary>
+    public bool IsCancelled => string.Equals(Status, CancelledStatus, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// How long after its generation the portal still gives an IRN's details (<c>Invoice/irn</c>). GSP documentation of the
+    /// NIC API gives three days; HC360 asks within two, so a lookup it relies on is never one the portal no longer answers.
+    /// Not yet confirmed on NIC's sandbox.
+    /// </summary>
+    public static readonly TimeSpan DetailsWindow = TimeSpan.FromDays(2);
+}
 
 /// <summary>The portal's answer to a cancellation: the IRN and when it was cancelled.</summary>
 public sealed record IrpCancellation(string Irn, DateTimeOffset CancelledAt);
@@ -177,6 +216,9 @@ public sealed record IrpError(string Code, string Message, string? ExistingIrn =
 {
     /// <summary>The portal's code for a document it already gave an IRN.</summary>
     public const string DuplicateIrn = "2150";
+
+    /// <summary>The portal's code for a cancellation asked for more than 24 hours after the IRN was generated.</summary>
+    public const string CancelWindowCrossed = "2270";
 
     /// <summary>Not a code of the portal's: the call did not reach it or got no answer.</summary>
     public const string Unreachable = "unreachable";

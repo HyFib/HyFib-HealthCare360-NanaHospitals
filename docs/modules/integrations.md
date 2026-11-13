@@ -633,6 +633,44 @@ builds the import file.
   REMOTEID, so an import alters as Tally does) and answers the read-back from it, so the whole flow can be tried
   without Tally.
 
+### E-invoice portal (IRP, GST rule 48(4))
+
+The Invoice Registration Portal gives a B2B tax invoice, credit note or debit note its IRN. Billing keeps the register
+and decides when to ask ([billing.md](billing.md#gst-e-invoicing)); this module only talks to the portal, behind the
+Platform contract `IInvoiceRegistrationPortal`, through `IrpRouter` and the provider named per facility in
+`integrations.irp` (its credentials, per GSTIN, in `integrations.irp.secret`):
+* **`nic` / `gsp`** (`NicIrpClient`): the NIC e-invoice API v1.03, directly (encrypted as NIC requires, `NicIrpCrypto`)
+  or through a GST suvidha provider passing it on (plain JSON unless `encrypt`). The token and session key are kept per
+  facility, GSTIN and credential; 1005 (token not valid) signs in again, once.
+* **`simulator`** (`SimulatorIrp`), on training and test servers only: the portal's IRN hash, 2150 with the IRN it
+  holds, 2270 after 24 hours, an IRN's details as `ACT` or `CNL` (with when) to its own GSTIN only, and e-way bills.
+
+What HC360 relies on from the portal, and where it comes from:
+
+| Behaviour | Used for | Source |
+|---|---|---|
+| A document asked for twice is refused with 2150 and the IRN the portal holds (`InfoDtls`, `DUPIRN`) | Asking again after a lost answer never makes a second IRN | NIC API v1.03, as built in `NicIrpClient` |
+| An IRN is cancelled only within 24 hours of its generation (2270 after) | The cancel window | NIC API v1.03 |
+| An IRN's details (`Invoice/irn/{irn}`) carry its `Status`: `ACT` or `CNL` (`IrpIrn.IsActive`, `IrpIrn.IsCancelled`; an answer without it confirms neither), and a cancelled one's `CancelDate` | Reading back a cancellation whose answer was lost; checking an IRN recorded by hand | GSP documentation of the NIC API; to be confirmed on NIC's sandbox |
+| The details are given for about three days after the IRN's generation (`IrpIrn.DetailsWindow`: HC360 asks within two) | Whether an IRN recorded by hand is checked with the portal | GSP documentation of the NIC API; to be confirmed on NIC's sandbox |
+| Documents more than 30 days old are refused from taxpayers with an aggregate turnover of ₹10 crore or more (from 1 April 2025) | The register's due dates and the morning reminder | GSTN advisory of 5 November 2024 |
+
+`IrpAnswers.Irn` reads an IRN's details whoever passed them on: a live IRN needs its acknowledgement and signed QR code,
+while a cancelled one is read for its state alone, since the portal may give it without them.
+
+**What a failed call means.** `IrpError.Unreachable` is a call that got no usable answer (a timeout, a broken
+connection, an answer that could not be read or decrypted): the portal may have done what was asked. Billing asks again
+where the portal makes that safe (generation, through 2150) and reads the IRN back where it does not (cancellation); it
+never takes an unanswered call for nothing done. `IrpError.NotConnected` is a connection that cannot be used (switched
+off, credentials missing). Anything else is the portal's refusal, in its own code and words; Billing does not repeat
+a refused request (a refused cancellation is still read back, since the portal refuses an IRN it already cancelled).
+
+**Practising the failures.** The simulator's ledger takes faults (`SimulatorIrpLedger.Fail`) on the next calls of an
+operation (`SimulatorIrpOperations`: `irn.generate`, `irn.cancel`, `irn.get`, `ewaybill.generate`), for one IRN or for
+any: the portal does what was asked and loses its answer (`LoseAnswer`), or is not reached and does nothing (`Down`).
+Each failed call is in the integration log as the real portal's would be. The integration tests drive the lost answers
+end to end with them (`EInvoiceRegisterTests`).
+
 ### PACS (INT-PACS)
 
 PACS work has three parts: searches and images over DICOMweb (`DicomWebPacsProvider`, behind `IPacsClient`), which
@@ -1286,6 +1324,7 @@ Permissions:
   * `IAccountingProvider`: tally, simulator.
   * `IPacsProvider`: dicomweb, simulator.
   * `IAadhaarAuthProvider`: uidai (a typed HTTP client, 60 s), simulator.
+  * `IIrpProvider`: nic and gsp (`NicIrpClient`, a typed HTTP client), simulator (with the singleton `SimulatorIrpLedger`).
 * **Platform contracts** (scoped routers):
   * `ISmsSender` → `SmsRouter` (with `ISmsTemplateCatalog` → `SmsTemplateCatalog`)
   * `IWhatsAppSender` → `WhatsAppRouter`
@@ -1296,6 +1335,7 @@ Permissions:
   * `IAccountingExporter` → `AccountingExporterRouter`
   * `IPacsClient` → `PacsClientRouter`
   * `IIcdLookup` → `IcdLookupRouter`
+  * `IInvoiceRegistrationPortal` → `IrpRouter`
   * `IAadhaarAuthenticator` → `AadhaarAuthRouter` (Platform's fallback, without this module, is
     `UnconfiguredAadhaarAuthenticator`, which refuses every check)
   * `ILabelPrinterService` → `LabelPrinterService`, a singleton
