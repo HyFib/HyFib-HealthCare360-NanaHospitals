@@ -34,9 +34,10 @@ internal static class RelayPlan
 /// gets back its analysers, then starts, restarts or stops relays to match. While the server cannot be reached the
 /// relays keep trying on their own. When the server no longer knows the agent (revoked, or enrolled again elsewhere), every
 /// relay stops until the agent is enrolled again. A changed configuration file (a new enrolment) is picked up without a
-/// restart.
+/// restart. While it relays an analyser, it keeps the PC from sleeping (<see cref="KeepAwake"/>).
 /// </summary>
-internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, TimeProvider time, ILoggerFactory loggers) : BackgroundService
+internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, IPowerRequests power, TimeProvider time, ILoggerFactory loggers)
+    : BackgroundService
 {
     private static readonly TimeSpan NotEnrolledWait = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan RevokedWait = TimeSpan.FromMinutes(5);
@@ -46,6 +47,13 @@ internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, Ti
 
     private readonly ILogger _logger = loggers.CreateLogger<AgentWorker>();
     private readonly Dictionary<string, InstrumentRelay> _relays = new(StringComparer.OrdinalIgnoreCase);
+    private readonly KeepAwake _awake = new(power, loggers.CreateLogger<KeepAwake>());
+
+    public override void Dispose()
+    {
+        _awake.Dispose();
+        base.Dispose();
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -196,7 +204,8 @@ internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, Ti
         return Stamp();
     }
 
-    private async Task ApplyAsync(IReadOnlyList<Assignment> assigned, IRelayConnector connector)
+    /// <summary>Starts, restarts and stops relays to match <paramref name="assigned"/> (internal for the tests).</summary>
+    internal async Task ApplyAsync(IReadOnlyList<Assignment> assigned, IRelayConnector connector)
     {
         var (start, stop) = RelayPlan.Diff(_relays.ToDictionary(r => r.Key, r => r.Value.Assignment, StringComparer.OrdinalIgnoreCase), assigned);
         foreach (var code in stop)
@@ -213,9 +222,12 @@ internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, Ti
             _relays[assignment.Code] = relay;
             relay.Start();
         }
+
+        _awake.Relaying(_relays.Values.Select(r => r.Assignment.Port.PortName));
     }
 
-    private async Task StopAllAsync()
+    /// <summary>Stops every relay (internal for the tests).</summary>
+    internal async Task StopAllAsync()
     {
         foreach (var relay in _relays.Values)
         {
@@ -223,6 +235,7 @@ internal sealed class AgentWorker(AgentPaths paths, ISerialLineFactory lines, Ti
         }
 
         _relays.Clear();
+        _awake.Relaying([]);
     }
 
     /// <summary>When the configuration file was last written, so a new enrolment is noticed.</summary>

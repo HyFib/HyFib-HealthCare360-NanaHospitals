@@ -360,17 +360,19 @@ About › Windows specifications), and check that Windows Update has installed t
 kept updated, give the lab a PC that can be, or keep this one off everything but the hospital LAN.
 
 **Its analysers.** For analysers on **serial** cables, this PC runs the HC360 lab agent (DEPLOYMENT.md section 6,
-*Lab analysers*), and it must never sleep: the agent is a Windows service, but a PC asleep relays nothing, and an
-analyser may give up on a result nobody takes. The lab agent's installer does not change the power settings, so set
-them, as Administrator:
+*Lab analysers*). A PC asleep relays nothing, and an analyser may give up on a result nobody takes, so while the agent
+relays an analyser it keeps the PC from sleeping when nobody uses it. It does not stop someone putting the PC to sleep:
+staff leave it on.
+*Check:* once the analyser is set up (Lab setup › Analysers › Connection), as Administrator:
 
 ```powershell
-powercfg /change standby-timeout-ac 0
-powercfg /change hibernate-timeout-ac 0
+powercfg /requests
 ```
 
-*Check:* `powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE` shows `Current AC Power Setting Index: 0x00000000`,
-and a result sent at night, after an hour with nobody at the PC, reaches the worklist. For analysers on the
+lists under SYSTEM `HC360 lab agent: relaying analyser results from COM3` (its COM port), and a result sent at night,
+after the PC has gone untouched for longer than its sleep timer, reaches the worklist. If the agent's line is not
+listed, the Application event log (source *HyFib HC360 Lab Agent*) says why: set the PC never to sleep then
+(`powercfg /change standby-timeout-ac 0`). For analysers on the
 **network**, the lab PC needs nothing more than HC360 Desktop: each analyser connects to the server, with a fixed
 address, through the firewall rule `-LabPorts` and `-LabAnalyserAddresses` open (DEPLOYMENT.md section 6).
 

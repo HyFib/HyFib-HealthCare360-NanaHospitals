@@ -857,6 +857,13 @@ agent**. The agent is a Windows service: it keeps relaying when nobody is signed
 Windows. It relays the COM port to the server over HTTPS (port 7360), so the lab PC needs no inbound firewall rule and
 the server needs none beyond 7360. One agent can relay several analysers on different COM ports.
 
+While it relays an analyser, the agent keeps the PC from sleeping when nobody uses it: a PC asleep relays nothing, and an
+analyser may give up on a result nobody takes. As Administrator, `powercfg /requests` then lists under SYSTEM
+`HC360 lab agent: relaying analyser results from COM3` (its COM ports). It does not stop someone putting the PC to sleep
+(Start › Power › Sleep, or a power button set to sleep), and the screen still turns off as set. If Windows refuses the
+request, the agent says so in the Application event log (source *HyFib HC360 Lab Agent*): set the PC never to sleep then,
+`powercfg /change standby-timeout-ac 0`.
+
 1. Signed in to the facility the lab belongs to, open **Administration › Devices › Enrol a device** and choose the
    device type **Lab analyser agent**. Note the one-time code (valid 30 minutes by default). The agent belongs to that
    facility, and an analyser can only be relayed by an agent of its own facility.
