@@ -292,7 +292,7 @@ public sealed class AlertingTests(HospitalServer server)
     {
         await using var onCall = await SettingAsync("alerts.oncallPhone", "+919800000154");
         var name = ServerName();
-        var toldAt = DateTimeOffset.UtcNow;
+        var toldAt = Now();
         await CheckWithAsync(toldAt, [], Silent(name));
         var told = await SilentIncidentAsync(name);
         told.ToldAt.ShouldNotBeNull();
@@ -330,7 +330,7 @@ public sealed class AlertingTests(HospitalServer server)
         await using var escalateAt = await SettingAsync(AlertEscalation.EscalateMinutesSetting, 15);
         await using var supportAt = await SettingAsync(AlertEscalation.SupportMinutesSetting, 30);
         var name = ServerName();
-        var toldAt = DateTimeOffset.UtcNow;
+        var toldAt = Now();
         await CheckWithAsync(toldAt, [], Silent(name));
         await CheckWithAsync(toldAt.AddMinutes(15), [], Silent(name));
         await CheckWithAsync(toldAt.AddMinutes(45), [], Silent(name));
@@ -360,7 +360,7 @@ public sealed class AlertingTests(HospitalServer server)
     {
         await using var onCall = await SettingAsync("alerts.oncallPhone", "+919800000158");
         var name = ServerName();
-        var toldAt = DateTimeOffset.UtcNow;
+        var toldAt = Now();
         await CheckWithAsync(toldAt, [], Silent(name));
         await CheckWithAsync(toldAt.AddMinutes(10), [name]);
         var first = await SilentIncidentAsync(name);
@@ -388,7 +388,7 @@ public sealed class AlertingTests(HospitalServer server)
     {
         await using var onCall = await SettingAsync("alerts.oncallPhone", "+919800000159");
         var name = ServerName();
-        var toldAt = DateTimeOffset.UtcNow;
+        var toldAt = Now();
         await CheckWithAsync(toldAt, [], Silent(name));
         var loss = (await SilentIncidentAsync(name)).OnCallMessageIds.ShouldHaveSingleItem();
         await FailedAndWaitingAsync(loss);
@@ -539,6 +539,13 @@ public sealed class AlertingTests(HospitalServer server)
         await scope.ServiceProvider.GetRequiredService<AlertIncidents>().CheckAsync([.. critical, .. extra], now, reporting, Ct);
     }
 
+    /// <summary>Now to the second, which the database keeps as it is: it keeps microseconds, not .NET's ticks.</summary>
+    private static DateTimeOffset Now()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new DateTimeOffset(now.Ticks - (now.Ticks % TimeSpan.TicksPerSecond), TimeSpan.Zero);
+    }
+
     /// <summary>A server name of this test alone, as a machine is named.</summary>
     private static string ServerName() => "TEST-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
 
@@ -558,13 +565,14 @@ public sealed class AlertingTests(HospitalServer server)
             .FirstAsync(Ct);
     }
 
-    /// <summary>What a message waiting in the outbox says, and to whom.</summary>
+    /// <summary>What a message waiting in the outbox says, and to whom: its payload is JSON, found by its log's id.</summary>
     private async Task<NotificationDelivery> QueuedAsync(Guid logId)
     {
         await using var scope = server.Services.CreateAsyncScope();
-        var id = logId.ToString();
-        return (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<OutboxMessage>().AsNoTracking()
-            .SingleAsync(m => m.Payload.Contains(id), Ct)).Read<NotificationDelivery>();
+        return (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<OutboxMessage>()
+            .FromSqlInterpolated($"SELECT * FROM platform.outbox_messages WHERE payload->>'logId' = {logId.ToString()}")
+            .AsNoTracking()
+            .SingleAsync(Ct)).Read<NotificationDelivery>();
     }
 
     /// <summary>
@@ -576,10 +584,9 @@ public sealed class AlertingTests(HospitalServer server)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
-        var id = logId.ToString();
-        await db.Set<OutboxMessage>().Where(m => m.Payload.Contains(id)).ExecuteUpdateAsync(s => s
-            .SetProperty(m => m.Status, OutboxStatus.Pending)
-            .SetProperty(m => m.NextAttemptAt, DateTimeOffset.UtcNow.AddHours(1)), Ct);
+        await db.Database.ExecuteSqlAsync(
+            $"UPDATE platform.outbox_messages SET status = 'Pending', next_attempt_at = {DateTimeOffset.UtcNow.AddHours(1)} WHERE payload->>'logId' = {logId.ToString()}",
+            Ct);
         await db.Set<NotificationLog>().Where(l => l.Id == logId).ExecuteUpdateAsync(s => s
             .SetProperty(l => l.Status, NotificationStatus.Failed)
             .SetProperty(l => l.Error, "The SMS gateway could not be reached."), Ct);
