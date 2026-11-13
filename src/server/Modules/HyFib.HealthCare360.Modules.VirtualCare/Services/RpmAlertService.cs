@@ -21,7 +21,7 @@ public sealed class RpmAlertService(HospitalDbContext db, INotificationService n
     public const string CareTeamTemplate = "rpm.alert";
     public const string DeviceSilentTemplate = "rpm.device_silent";
 
-    private static readonly NotificationChannel[] Channels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
+    internal static readonly NotificationChannel[] Channels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
 
     /// <summary>Opens or escalates alerts for out-of-range readings; returns the alerts that need notifying.</summary>
     public async Task<IReadOnlyList<RpmAlert>> RaiseForReadingsAsync(RpmEnrollment enrollment, IReadOnlyList<RpmReading> outOfRange, DateTimeOffset now, CancellationToken ct)

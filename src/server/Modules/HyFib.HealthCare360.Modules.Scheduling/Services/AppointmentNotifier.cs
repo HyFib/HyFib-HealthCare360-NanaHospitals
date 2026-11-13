@@ -20,7 +20,7 @@ public sealed class AppointmentNotifier(HospitalDbContext db, INotificationServi
     public const string CancelledTemplate = "appointment.cancelled";
     public const string WaitlistTemplate = "appointment.waitlist";
 
-    private static readonly NotificationChannel[] PatientChannels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
+    internal static readonly NotificationChannel[] PatientChannels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
 
     public Task ConfirmedAsync(Appointment appointment, CancellationToken ct) => QueueAsync(ConfirmedTemplate, appointment, ct);
 

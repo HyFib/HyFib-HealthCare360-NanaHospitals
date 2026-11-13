@@ -17,7 +17,7 @@ public sealed class TelehealthLinkSender(HospitalDbContext db, INotificationServ
 {
     public const string Template = "telehealth.link";
 
-    private static readonly NotificationChannel[] Channels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
+    internal static readonly NotificationChannel[] Channels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
 
     public async Task<string> JoinUrlAsync(TelehealthSession session, string token, CancellationToken ct) =>
         JoinUrl(await PortalAddress.BaseUrlAsync(settings, session.FacilityId, ct), session.Id, token);
