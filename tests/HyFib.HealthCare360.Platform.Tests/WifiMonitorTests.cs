@@ -328,7 +328,7 @@ public sealed class WifiMonitorTests
         Step(Down(), Down(), 3).ShouldBeEmpty("told once");
 
         Step(Down(), Down(), 4, Cable(speedMbps: 1000)).Select(e => (e.Kind, e.Message)).ShouldBe([(CableReconnected,
-            "Server Node is back on the network, on a network cable ('Ethernet', 1 Gbps): workstations can reach HC360 again.")]);
+            "Server Node is back on the network, on a network cable ('Ethernet', 1 Gbps): workstations can reach HC360 again. Back at 09:32.")]);
         Step(Down(), Down(), 5, Cable(speedMbps: 1000)).ShouldBeEmpty("its end is told once");
         detector.LinkLost.ShouldBeFalse();
     }
@@ -357,7 +357,7 @@ public sealed class WifiMonitorTests
 
         events.Select(e => (e.Kind, e.At)).ShouldBe([(CableDisconnected, At(2)), (CableReconnected, At(5))]);
         events[0].Message.ShouldBe("Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. Workstations cannot reach HC360 until it is back.");
-        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps).");
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps): workstations can reach HC360 again. Lost at 09:31, back at 09:32.");
         detector.CableLost.ShouldBeFalse();
     }
 
@@ -367,6 +367,29 @@ public sealed class WifiMonitorTests
         var events = CableSamples(new CableEventDetector(), Link(80), [Cable()], []);
 
         events.ShouldHaveSingleItem().Message.ShouldBe("Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. It is on WiFi 'Staff' only.");
+    }
+
+    /// <summary>The server stayed on WiFi while its cable was out: its return does not say the workstations were cut off.</summary>
+    [Fact]
+    public void The_cable_back_while_the_server_was_on_WiFi_says_only_that_it_is_back()
+    {
+        var events = CableSamples(new CableEventDetector(), Link(80), [Cable()], [], [Cable()]);
+
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet'). Lost at 09:30, back at 09:31.");
+    }
+
+    /// <summary>A cable out past midnight: the return names both days, so a late SMS is not read as today's.</summary>
+    [Fact]
+    public void A_cable_back_on_another_day_names_both_days()
+    {
+        var detector = new CableEventDetector();
+        var evening = new DateTimeOffset(2026, 11, 13, 18, 25, 0, TimeSpan.Zero); // 23:55 in India
+
+        detector.Evaluate([Cable()], null, evening);
+        detector.Evaluate([], null, evening.AddMinutes(1));
+
+        detector.Evaluate([Cable()], null, evening.AddMinutes(10)).ShouldHaveSingleItem().Message.ShouldBe(
+            "Server Node's network cable is connected again ('Ethernet'): workstations can reach HC360 again. Lost at 13 Nov 23:56, back at 14 Nov 00:05.");
     }
 
     /// <summary>
@@ -382,8 +405,9 @@ public sealed class WifiMonitorTests
         detector.CableLost.ShouldBeFalse();
     }
 
+    /// <summary>The cable lost and back: both are logged, told in the app, and sent to IT's on-call phone.</summary>
     [Fact]
-    public async Task The_cable_lost_is_logged_and_alerts_the_administrators_in_app_and_the_on_call_number_by_sms()
+    public async Task The_cable_lost_and_back_are_logged_and_alert_the_administrators_in_app_and_the_on_call_number_by_sms()
     {
         var events = CableSamples(new CableEventDetector(), null, [Cable()], [], [Cable()]);
         var (audit, notifications) = (new RecordingAudit(), new RecordingNotifications());
@@ -395,8 +419,66 @@ public sealed class WifiMonitorTests
             (AuditCategories.Admin, "network.cable_reconnected", AuditSeverity.Info)]);
         notifications.InApp.Select(n => (n.Title, n.Severity)).ShouldBe([
             ("Server network cable: Disconnected", "critical"), ("Server network cable: Connected", "info")]);
-        Rendered(notifications.Queued.ShouldHaveSingleItem()).ShouldBe(
-            "HC360 server alert (HC360-SRV): Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. Workstations cannot reach HC360 until it is back.");
+        notifications.Queued.Select(m => Rendered(m)).ShouldBe([
+            "HC360 server alert (HC360-SRV): Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. Workstations cannot reach HC360 until it is back.",
+            "HC360 server alert (HC360-SRV): Server Node's network cable is connected again ('Ethernet'): workstations can reach HC360 again. Lost at 09:30, back at 09:31."]);
+    }
+
+    /// <summary>
+    /// Theni's server reaches the SMS gateway over its one cable, so the alert of the cable's loss waits in the outbox while
+    /// the cable is out, tried again at 10, 20, 40 seconds and on. The return, queued once the cable is back, would go
+    /// first and leave "lost" as the last word on IT's phone. So the loss not sent yet is withdrawn, and the return says
+    /// when the cable was lost and when it was back.
+    /// </summary>
+    [Fact]
+    public async Task A_loss_not_sent_when_the_cable_is_back_is_withdrawn_and_the_return_says_both()
+    {
+        var detector = new CableEventDetector();
+        var told = new CableLossMessages();
+        var notifications = new RecordingNotifications();
+        var onCall = BySms with { WhatsApp = true };
+        var withdrawn = new List<Guid>();
+        Task Withdraw(IReadOnlyList<Guid> ids, CancellationToken _)
+        {
+            withdrawn.AddRange(ids);
+            return Task.CompletedTask;
+        }
+
+        Task Step(int sample, params NetworkLink[] up) =>
+            WifiMonitor.AlertAsync(detector.Evaluate(up, null, At(sample)), new RecordingAudit(), notifications, onCall, Server, told, Withdraw, Ct);
+
+        await Step(0, Cable());
+        await Step(1);
+        await Step(2);
+        var loss = notifications.Queued.ShouldHaveSingleItem();
+        withdrawn.ShouldBeEmpty("the cable is still out");
+
+        await Step(3, Cable());
+
+        withdrawn.ShouldBe(loss.Ids, "its SMS and its WhatsApp message, those not gone yet");
+        notifications.Queued.Count.ShouldBe(2);
+        Rendered(notifications.Queued[1]).ShouldBe(
+            "HC360 server alert (HC360-SRV): Server Node's network cable is connected again ('Ethernet'): workstations can reach HC360 again. Lost at 09:30, back at 09:31.");
+
+        await Step(4);
+        await Step(5, Cable());
+        withdrawn.ShouldBe([.. loss.Ids, .. notifications.Queued[2].Ids], "a later loss is followed afresh, and its return withdraws its own");
+    }
+
+    /// <summary>
+    /// The switch both cards are on goes off: one alert tells both cables lost. It is withdrawn only once both are back; while
+    /// one is still out it still goes, as the only word of that one.
+    /// </summary>
+    [Fact]
+    public void A_loss_told_for_two_cables_is_withdrawn_only_once_both_are_back()
+    {
+        var told = new CableLossMessages();
+        var message = Guid.CreateVersion7();
+        told.Lost(["Ethernet", "Ethernet 2"], [message]);
+
+        told.Back(["ethernet"]).ShouldBeEmpty("it also told 'Ethernet 2', still out");
+        told.Back(["Ethernet 2"]).ShouldBe([message]);
+        told.Back(["Ethernet", "Ethernet 2"]).ShouldBeEmpty("it is followed no longer");
     }
 
     /// <summary>
@@ -413,7 +495,8 @@ public sealed class WifiMonitorTests
         events.Select(e => (e.Kind, e.At)).ShouldBe([(CableDisconnected, At(1)), (CableReconnected, At(3))]);
         events[0].Message.ShouldBe("Server Node lost its network cable 'Ethernet' (192.168.1.10), which workstations reach it over: "
             + "they cannot reach HC360 until it is back. It is still on 'Ethernet 2' (10.20.0.5).");
-        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps).");
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps): workstations can reach HC360 again. Lost at 09:30, back at 09:31.");
+        events[1].Cables.ShouldBe(["Ethernet"]);
         detector.CableLost.ShouldBeFalse();
     }
 
@@ -425,7 +508,7 @@ public sealed class WifiMonitorTests
         events.Select(e => (e.Kind, e.At)).ShouldBe([(OtherCableDisconnected, At(1)), (CableReconnected, At(3))]);
         events[0].Message.ShouldBe("Server Node lost its network cable 'Ethernet 2' (10.20.0.5). Workstations reach it over 'Ethernet', "
             + "which is up; what used 'Ethernet 2' cannot reach it until it is back.");
-        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet 2', 1 Gbps).");
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet 2', 1 Gbps). Lost at 09:30, back at 09:31.");
     }
 
     [Fact]
@@ -446,8 +529,9 @@ public sealed class WifiMonitorTests
         events.Select(e => (e.Kind, e.At)).ShouldBe([(CableDisconnected, At(1)), (CableReconnected, At(3)), (CableReconnected, At(4))]);
         events[0].Message.ShouldBe("Server Node lost its network cables ('Ethernet', 'Ethernet 2'): the cables are out or their switch is off. "
             + "No cable is up now: workstations cannot reach HC360 until one is back.");
-        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps).");
-        events[2].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet 2', 1 Gbps).");
+        events[0].Cables.ShouldBe(["Ethernet", "Ethernet 2"]);
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps): workstations can reach HC360 again. Lost at 09:30, back at 09:31.");
+        events[2].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet 2', 1 Gbps). Lost at 09:30, back at 09:32.");
     }
 
     [Fact]
@@ -475,7 +559,8 @@ public sealed class WifiMonitorTests
         var events = TwoCards(detector, ["192.168.1.10"], [Lan], [], [other], [other]);
 
         events.Select(e => (e.Kind, e.At)).ShouldBe([(CableDisconnected, At(1)), (CableReconnected, At(2))]);
-        events[1].Message.ShouldBe("Server Node is back on the network, on a network cable ('Ethernet 3', 1 Gbps): workstations can reach HC360 again.");
+        events[1].Message.ShouldBe("Server Node is back on the network, on a network cable ('Ethernet 3', 1 Gbps): workstations can reach HC360 again. Lost at 09:30, back at 09:31.");
+        events[1].Cables.ShouldBe(["Ethernet"], "the port it left: the alert of its loss is settled");
         detector.Lost.ShouldBeEmpty();
     }
 
@@ -645,8 +730,9 @@ public sealed class WifiMonitorTests
             Guid? facilityId = null,
             NotificationDocument? document = null)
         {
-            Queued.Add(new QueuedMessage(templateKey, recipient, values, channels, expiresIn));
-            return [Guid.CreateVersion7()];
+            var ids = channels.Select(_ => Guid.CreateVersion7()).ToList();
+            Queued.Add(new QueuedMessage(templateKey, recipient, values, channels, expiresIn, ids));
+            return ids;
         }
 
         public Task NotifyUsersAsync(IEnumerable<Guid> userIds, string title, string? body, string? link, string category, string severity = "info", CancellationToken cancellationToken = default) =>
@@ -659,6 +745,7 @@ public sealed class WifiMonitorTests
         }
 
         public sealed record QueuedMessage(
-            string TemplateKey, NotificationRecipient Recipient, IReadOnlyDictionary<string, string> Values, IReadOnlyList<NotificationChannel> Channels, TimeSpan? ExpiresIn);
+            string TemplateKey, NotificationRecipient Recipient, IReadOnlyDictionary<string, string> Values, IReadOnlyList<NotificationChannel> Channels, TimeSpan? ExpiresIn,
+            IReadOnlyList<Guid> Ids);
     }
 }
