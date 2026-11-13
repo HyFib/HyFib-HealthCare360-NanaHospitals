@@ -2,6 +2,7 @@ using System.Globalization;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
 using HyFib.HealthCare360.Platform.Integrations;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Realtime;
 using Microsoft.Extensions.Logging;
 
@@ -68,12 +69,16 @@ internal static class PaymentTargets
 
 /// <summary>
 /// Card/UPI terminal sales (INT-POS): push the amount to the terminal, poll its status, and record the receipt once when
-/// the terminal approves — keyed on the terminal transaction id, so concurrent polls cannot record it twice.
+/// the terminal approves — keyed on the terminal transaction id, so concurrent polls cannot record it twice. When the
+/// bill or admission refuses an approved sale's receipt, the money taken is kept on the sale and in the reconciliation
+/// exceptions, and the accountants are alerted, as for an online payment.
 /// </summary>
 public sealed class PosService(
     HospitalDbContext db,
     ReceiptService receipts,
     ShiftService shifts,
+    GatewayDiscrepancyService discrepancies,
+    INotificationService notifications,
     IServiceProvider services,
     IRealtimePublisher realtime,
     ICurrentUser currentUser,
@@ -262,9 +267,15 @@ public sealed class PosService(
         s.Id, s.Provider, s.TerminalId, s.TransactionId, s.Amount, s.Mode, s.Status, s.ApprovalCode, s.CardLast4, s.Rrn, s.Message, s.ReceiptId,
         s.CreatedAt, s.CompletedAt);
 
-    /// <summary>Records the approved sale's receipt; returns false when a concurrent poll recorded it first.</summary>
+    /// <summary>
+    /// Records the approved sale's receipt; returns false when a concurrent poll recorded it first. When the bill or
+    /// admission refuses it, the attempt is rolled back (so its receipt number goes back to the series) and the failure is
+    /// kept: on the sale, for the counter, and as an exception for the accountants, who are alerted the first time. The
+    /// next re-check tries again, and a receipt recorded later clears the exception.
+    /// </summary>
     private async Task<bool> TryRecordAsync(PosTransaction sale, CancellationToken ct)
     {
+        string? refused = null;
         await using (var transaction = await db.BeginOwnedTransactionAsync(ct))
         {
             try
@@ -273,15 +284,19 @@ public sealed class PosService(
                 var receipt = await receipts.RecordExternalAsync(new ExternalPayment(
                     sale.FacilityId, sale.Purpose, sale.PatientId, sale.BillId, sale.IpAccountId, sale.Mode, sale.Amount, sale.TransactionId, sale.Rrn,
                     sale.CardLast4, ReceiptSource.PosTerminal, shift), ct);
-                if (receipt.IsFailure)
+                if (receipt.Error is { } error)
                 {
-                    logger.LogError("Approved terminal sale {TransactionId} could not be recorded: {Error}", sale.TransactionId, receipt.Error!.Message);
-                    return true;
+                    // Not committed: the transaction rolls back when it is disposed.
+                    refused = error.Message;
                 }
-
-                sale.ReceiptId = receipt.Value.Id;
-                await db.SaveChangesAsync(ct);
-                await transaction.CommitAsync(ct);
+                else
+                {
+                    sale.ReceiptId = receipt.Value.Id;
+                    sale.Message = sale.Message?.StartsWith(NotRecordedPrefix, StringComparison.Ordinal) == true ? null : sale.Message;
+                    await discrepancies.ClearAsync(DiscrepancyKind.UnrecordedPayment, sale.TransactionId, $"Receipt {receipt.Value.ReceiptNumber} recorded.", ct);
+                    await db.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
+                }
             }
             catch (DbUpdateException ex)
             {
@@ -291,7 +306,57 @@ public sealed class PosService(
             }
         }
 
+        if (refused is not null)
+        {
+            await KeepRecordFailureAsync(sale, refused, ct);
+            return true;
+        }
+
         await realtime.ToFacilityAsync(sale.FacilityId, "billing.pos.changed", new { sale.Id, sale.Status, sale.BillId }, ct);
         return true;
+    }
+
+    /// <summary>The start of the message an approved sale carries while its receipt could not be recorded.</summary>
+    internal const string NotRecordedPrefix = "Paid on the terminal, but no receipt could be recorded";
+
+    /// <summary>The terminal took money that HC360 could not record yet: kept on the sale and in the exceptions.</summary>
+    private async Task KeepRecordFailureAsync(PosTransaction sale, string reason, CancellationToken ct)
+    {
+        logger.LogError("Approved terminal sale {TransactionId} could not be recorded: {Error}", sale.TransactionId, reason);
+        var message = $"{NotRecordedPrefix}: {reason} The accountants have been told; do not take the money again.";
+        sale.Message = message.Length > 300 ? message[..300] : message;
+        var reference = sale.Rrn is { } rrn ? $", RRN {rrn}" : sale.ApprovalCode is { } approval ? $", approval {approval}" : string.Empty;
+        var exception = await discrepancies.RaiseAsync(
+            DiscrepancyKind.UnrecordedPayment, sale.TransactionId, sale.FacilityId,
+            $"₹{Money.FormatInr(sale.Amount)} was paid on card/UPI terminal {sale.TerminalId}{reference}, but the receipt could not be recorded: {reason}",
+            d =>
+            {
+                d.BillId = sale.BillId;
+                d.IpAccountId = sale.IpAccountId;
+                d.GatewayAmount = sale.Amount;
+                d.GatewayAt = sale.CompletedAt;
+            },
+            ct);
+        var isNew = db.Entry(exception).State == EntityState.Added;
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            // A concurrent check kept the same failure first; it alerts the accountants.
+            logger.LogInformation(ex, "The failure to record terminal sale {TransactionId} was kept by a concurrent request", sale.TransactionId);
+            db.ChangeTracker.Clear();
+            return;
+        }
+
+        await realtime.ToFacilityAsync(sale.FacilityId, "billing.pos.changed", new { sale.Id, sale.Status, sale.BillId }, ct);
+        if (isNew)
+        {
+            await notifications.NotifyPermissionHoldersAsync(
+                BillingPermissions.GatewayReconcile, sale.FacilityId, "Card/UPI payment not recorded",
+                $"₹{Money.FormatInr(sale.Amount)} was paid on terminal {sale.TerminalId}, but no receipt could be recorded. Open Gateway reconciliation to see why, then record it or refund it on the terminal.",
+                "/billing/reconciliation", "billing", "warning", ct);
+        }
     }
 }

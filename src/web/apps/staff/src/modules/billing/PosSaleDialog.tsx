@@ -209,8 +209,17 @@ export function PosSaleDialog({
                       .join(' · ')}
                   </Caption1>
                 )}
-                {current.status === 'Approved' && (
+                {current.status === 'Approved' && current.receiptId && (
                   <Caption1 className={styles.muted}>The receipt has been recorded.</Caption1>
+                )}
+                {current.status === 'Approved' && !current.receiptId && (
+                  <MessageBar intent="warning">
+                    <MessageBarBody>
+                      <MessageBarTitle>Paid, but no receipt yet</MessageBarTitle>
+                      The terminal took the payment, but HC360 has not recorded its receipt. Do not take the money
+                      again: HC360 keeps trying, and the accountants are told if it cannot be recorded.
+                    </MessageBarBody>
+                  </MessageBar>
                 )}
                 {sale.error && (
                   <MessageBar intent="warning">
