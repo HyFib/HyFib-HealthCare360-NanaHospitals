@@ -23,6 +23,10 @@ internal sealed class AbdmLinkRequestConfiguration : IEntityTypeConfiguration<Ab
         // The gateway's answers find their request by the id it was sent under.
         b.HasIndex(x => x.TokenRequestId).IsUnique().HasFilter("token_request_id IS NOT NULL");
         b.HasIndex(x => x.LinkRequestId).IsUnique().HasFilter("link_request_id IS NOT NULL");
+
+        // The requests still awaiting the gateway, which the sweeper reads every minute (AbdmUnansweredRequests): a few
+        // among a row for every record linked.
+        b.HasIndex(x => new { x.Status, x.SentAt }).HasFilter("status IN ('AwaitingToken', 'Sent')");
     }
 }
 

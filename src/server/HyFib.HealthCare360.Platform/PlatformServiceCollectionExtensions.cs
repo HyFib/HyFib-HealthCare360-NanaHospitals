@@ -301,6 +301,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IApprovalAction, SettingChangeApproval>();
         services.AddScoped<IFeatureFlags, FeatureFlags>();
         services.AddScoped<IIntegrationLogger, IntegrationLogger>();
+        services.AddScoped<IntegrationTrace>();
 
         // Cash limit (Income-tax Act s.269ST) over every counter that takes cash: each registers its ICashReceiptSource.
         services.AddScoped<CashLimit>();

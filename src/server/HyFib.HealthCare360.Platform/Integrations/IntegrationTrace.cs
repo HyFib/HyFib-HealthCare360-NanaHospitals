@@ -1,12 +1,13 @@
-namespace HyFib.HealthCare360.Integrations.Common;
+namespace HyFib.HealthCare360.Platform.Integrations;
 
 /// <summary>
 /// Writes one integration-log row per external call. Callers pass summaries they built themselves — recipient masked,
 /// no message bodies, never credentials — because provider responses often echo PHI (Twilio returns the SMS text,
 /// Meta the phone number). The platform logger then applies its own phone/e-mail/secret masking as a second line of
-/// defence (SEC-10).
+/// defence (SEC-10). It lives in Platform so that modules calling an outside service of their own (the ABDM gateway in
+/// Interop) log it as the integration adapters do: modules may not reference the adapters (LayeringTests).
 /// </summary>
-internal sealed class IntegrationTrace(IIntegrationLogger logger, TimeProvider time)
+public sealed class IntegrationTrace(IIntegrationLogger logger, TimeProvider time)
 {
     public long Start() => time.GetTimestamp();
 

@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using HyFib.HealthCare360.Platform.Integrations;
 using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Modules.Interop.Abdm;
@@ -77,13 +78,15 @@ internal sealed class AbdmGatewaySessions
 /// accepts a call with 202 and answers it later through HC360's callback endpoints; any other answer is a refusal,
 /// with the gateway's error code and message. A call is never retried here: the gateway may have acted on it when an
 /// answer is lost, so the request is marked failed and staff send it again. A session the gateway no longer accepts
-/// (401) is renewed once.
+/// (401) is renewed once. Every exchange, the session's included, is a row of the integration log under the call's
+/// REQUEST-ID (<see cref="AbdmTrace"/>): what was asked and what came back, never the body.
 /// </summary>
 internal sealed class HttpAbdmGatewayClient(
     HttpClient http,
     AbdmGatewayConfiguration configuration,
     DisabledAbdmGatewayClient refusal,
     AbdmGatewaySessions sessions,
+    IntegrationTrace trace,
     TimeProvider time,
     ILogger<HttpAbdmGatewayClient> log) : IAbdmGatewayClient
 {
@@ -134,8 +137,13 @@ internal sealed class HttpAbdmGatewayClient(
             requestId,
             linkToken,
             "link the records to the patient's ABHA",
-            ct);
+            ct,
+            detail: CareContextCount(groups));
     }
+
+    /// <summary>How many care contexts went, per health-information type: what the log says of them.</summary>
+    private static string CareContextCount(IReadOnlyList<AbdmGatewayMessages.CareContextGroup> groups) =>
+        $"{groups.Sum(g => g.Count)} care context(s): " + string.Join(", ", groups.Select(g => $"{g.HiType} {g.Count}"));
 
     public Task<Result> AnswerDiscoveryAsync(AbdmGatewayMessages.OnDiscover answer, CancellationToken ct) =>
         SendAsync(OnDiscoverPath, answer, Guid.CreateVersion7(), linkToken: null, "answer a patient's search for their records", ct);
@@ -175,9 +183,11 @@ internal sealed class HttpAbdmGatewayClient(
 
     /// <summary>
     /// Sends a call as the hospital's HIP (<c>X-HIP-ID</c>), or with <paramref name="asHiu"/> as its HIU (<c>X-HIU-ID</c>),
-    /// when it asks for other providers' records.
+    /// when it asks for other providers' records. <paramref name="detail"/> adds to <paramref name="what"/> in the log
+    /// (counts, never the patient's details).
     /// </summary>
-    private async Task<Result> SendAsync(string path, object body, Guid requestId, string? linkToken, string what, CancellationToken ct, bool asHiu = false)
+    private async Task<Result> SendAsync(
+        string path, object body, Guid requestId, string? linkToken, string what, CancellationToken ct, bool asHiu = false, string? detail = null)
     {
         var setUp = await SetUpAsync(ct);
         if (setUp.IsFailure)
@@ -209,7 +219,9 @@ internal sealed class HttpAbdmGatewayClient(
                 request.Headers.Add("X-LINK-TOKEN", linkToken);
             }
 
-            var answer = await ExchangeAsync(gateway, request, what, ct);
+            var summary = detail is null ? what : $"{what}: {detail}";
+            var started = trace.Start();
+            var answer = await TracedExchangeAsync(gateway, request, path, requestId, summary, started, what, ct);
             if (answer.IsFailure)
             {
                 return answer.Error!;
@@ -218,31 +230,70 @@ internal sealed class HttpAbdmGatewayClient(
             using var response = answer.Value;
             if (response.StatusCode is HttpStatusCode.Accepted or HttpStatusCode.OK or HttpStatusCode.NoContent)
             {
+                await TraceAsync(gateway, path, requestId, summary, started, success: true, AbdmTrace.Status((int)response.StatusCode));
                 return Result.Success();
             }
 
             if (response.StatusCode == HttpStatusCode.Unauthorized && attempt == 0)
             {
                 // The gateway ended the session early: a new one, and the call once more (it was refused, not acted on).
+                await TraceAsync(gateway, path, requestId, summary, started, success: false, AbdmTrace.Status((int)response.StatusCode),
+                    "The gateway no longer accepted the session: a new one is started and the call sent again.");
                 sessions.Forget(session.Value);
                 continue;
             }
 
-            return await RefusedAsync(response, what, ct);
+            var (refused, code) = await RefusedAsync(response, what, ct);
+            await TraceAsync(gateway, path, requestId, summary, started, success: false, AbdmTrace.Status((int)response.StatusCode, code), refused.Message);
+            return refused;
         }
     }
+
+    /// <summary>
+    /// The exchange, traced when it fails: a gateway that could not be reached, or a call given up before the gateway
+    /// answered (the caller's cancellation, a job's time limit), which may have reached the gateway all the same.
+    /// </summary>
+    private async Task<Result<HttpResponseMessage>> TracedExchangeAsync(
+        GatewaySetUp gateway, HttpRequestMessage request, string path, Guid requestId, string summary, long started, string what, CancellationToken ct)
+    {
+        Result<HttpResponseMessage> answer;
+        try
+        {
+            answer = await ExchangeAsync(gateway, request, what, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await TraceAsync(gateway, path, requestId, summary, started, success: false, response: null,
+                "Given up before the gateway answered: the call may have reached it.");
+            throw;
+        }
+
+        if (answer.IsFailure)
+        {
+            await TraceAsync(gateway, path, requestId, summary, started, success: false, response: null, answer.Error!.Message);
+        }
+
+        return answer;
+    }
+
+    private Task TraceAsync(GatewaySetUp gateway, string path, Guid requestId, string summary, long started, bool success, string? response, string? error = null) =>
+        trace.LogAsync(AbdmTrace.Integration, AbdmTrace.Provider(gateway.Settings.CmId), path, success, started,
+            reference: requestId.ToString("D"), request: summary, response: response, error: error);
 
     private async Task<Result<string>> SessionAsync(GatewaySetUp gateway, CancellationToken ct)
     {
         var key = $"{gateway.BaseUrl}|{gateway.Credentials.ClientId}";
         return await sessions.GetAsync(key, time.GetUtcNow(), async innerCt =>
         {
+            const string what = "start a gateway session";
+            var requestId = Guid.CreateVersion7();
             using var request = Request(
                 gateway,
                 SessionPath,
                 new AbdmGatewayMessages.SessionRequest(gateway.Credentials.ClientId!, gateway.Credentials.ClientSecret!),
-                Guid.CreateVersion7());
-            var answer = await ExchangeAsync(gateway, request, "start a gateway session", innerCt);
+                requestId);
+            var started = trace.Start();
+            var answer = await TracedExchangeAsync(gateway, request, SessionPath, requestId, what, started, what, innerCt);
             if (answer.IsFailure)
             {
                 return answer.Error!;
@@ -251,7 +302,9 @@ internal sealed class HttpAbdmGatewayClient(
             using var response = answer.Value;
             if (!response.IsSuccessStatusCode)
             {
-                return (await RefusedAsync(response, "start a gateway session", innerCt)).Error!;
+                var (refused, code) = await RefusedAsync(response, what, innerCt);
+                await TraceAsync(gateway, SessionPath, requestId, what, started, success: false, AbdmTrace.Status((int)response.StatusCode, code), refused.Message);
+                return refused;
             }
 
             AbdmGatewayMessages.SessionResponse? session;
@@ -266,9 +319,12 @@ internal sealed class HttpAbdmGatewayClient(
 
             if (string.IsNullOrWhiteSpace(session?.AccessToken))
             {
-                return Error.Rule(RefusedCode, "The ABDM gateway started no session: its answer had no access token.");
+                var noToken = Error.Rule(RefusedCode, "The ABDM gateway started no session: its answer had no access token.");
+                await TraceAsync(gateway, SessionPath, requestId, what, started, success: false, AbdmTrace.Status((int)response.StatusCode), noToken.Message);
+                return noToken;
             }
 
+            await TraceAsync(gateway, SessionPath, requestId, what, started, success: true, AbdmTrace.Status((int)response.StatusCode));
             var lifetime = session.ExpiresIn is { } seconds and > 0 ? TimeSpan.FromSeconds(seconds) : AbdmGatewaySessions.DefaultLifetime;
             return (session.AccessToken, lifetime);
         }, ct);
@@ -305,14 +361,15 @@ internal sealed class HttpAbdmGatewayClient(
         }
     }
 
-    private async Task<Result> RefusedAsync(HttpResponseMessage response, string what, CancellationToken ct)
+    /// <summary>The refusal, and the gateway's error code for the log (null when its answer had none).</summary>
+    private async Task<(Error Error, string? Code)> RefusedAsync(HttpResponseMessage response, string what, CancellationToken ct)
     {
         var text = await response.Content.ReadAsStringAsync(ct);
         var error = AbdmGatewayMessages.ReadError(text.Length > MaxErrorBodyChars ? text[..MaxErrorBodyChars] : text);
         var detail = error is null ? $"HTTP {(int)response.StatusCode}"
             : string.Join(" ", new[] { error.Code, error.Message }.Where(s => !string.IsNullOrWhiteSpace(s)));
         log.LogWarning("The ABDM gateway refused to {What}: {Status} {Detail}", what, (int)response.StatusCode, detail);
-        return Error.Rule(RefusedCode, $"The ABDM gateway refused to {what}: {detail}.");
+        return (Error.Rule(RefusedCode, $"The ABDM gateway refused to {what}: {detail}."), IntegrationTrace.Truncate(error?.Code, 32));
     }
 
     private async Task<Result<GatewaySetUp>> SetUpAsync(CancellationToken ct)

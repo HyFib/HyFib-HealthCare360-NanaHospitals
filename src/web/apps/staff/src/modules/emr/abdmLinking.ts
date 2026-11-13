@@ -35,6 +35,10 @@ export interface AbdmLinkView {
   answeredAt: string | null;
   errorCode: string | null;
   error: string | null;
+  /** The hospital made it as the record was completed, not staff. */
+  automatic: boolean;
+  /** It failed and some of its records are still unlinked: `POST …/links/{id}/retry` sends them again. */
+  retryable: boolean;
 }
 
 export const abdmLinksPath = '/api/v1/abdm/links';
@@ -43,7 +47,8 @@ export const abdmLinksPath = '/api/v1/abdm/links';
 export const FOLLOW_EVERY_MS = 5_000;
 export const FOLLOW_TIMES = 24;
 
-const waiting = (status: AbdmLinkStatus) => status === 'AwaitingToken' || status === 'Sent';
+/** The request awaits ABDM's answer: a link token, or whether the records were linked. */
+export const abdmLinkWaiting = (status: AbdmLinkStatus) => status === 'AwaitingToken' || status === 'Sent';
 
 const recordKey = (record: AbdmLinkRecord) => `${record.type}/${record.id}`;
 
@@ -58,8 +63,9 @@ const answerLost = (error: unknown) =>
  * Linking a record to the patient's ABHA (ABDM M2, HIP-initiated linking): the server sends it to the ABDM gateway as a
  * care context on the ABHA address in the patient's details, where the patient sees it in their PHR app. The gateway
  * answers later, on a callback, so the request is asked after every few seconds for two minutes, and the outcome told
- * then, or that ABDM has not answered yet. The server says at once why it cannot link a record (no ABHA address, the
- * gateway not set up).
+ * then, or that ABDM has not answered yet: the server marks a request ABDM does not answer as failed, and the
+ * patient's ABDM records list it, with "Link again". The server says at once why it cannot link a record (no ABHA
+ * address, the gateway not set up, linked already or awaiting ABDM's answer).
  */
 export function useAbdmLink() {
   const notify = useNotify();
@@ -72,13 +78,14 @@ export function useAbdmLink() {
     } else {
       notify.info(
         'ABDM has not answered yet',
-        `The patient sees the record in their PHR app once ABDM links it to ${view.abhaAddress}.`,
+        `The patient sees the record in their PHR app once ABDM links it to ${view.abhaAddress}. ` +
+          "If ABDM does not answer, it can be linked again from the patient's ABDM records.",
       );
     }
   };
 
   const follow = async (view: AbdmLinkView) => {
-    for (let time = 0; time < FOLLOW_TIMES && waiting(view.status); time++) {
+    for (let time = 0; time < FOLLOW_TIMES && abdmLinkWaiting(view.status); time++) {
       await new Promise((done) => setTimeout(done, FOLLOW_EVERY_MS));
       try {
         view = await api.get<AbdmLinkView>(`${abdmLinksPath}/${view.id}`);
@@ -108,7 +115,7 @@ export function useAbdmLink() {
     },
     onSuccess: (view, record) => {
       attempts.current.delete(recordKey(record));
-      if (!waiting(view.status)) {
+      if (!abdmLinkWaiting(view.status)) {
         tell(view);
         return;
       }
