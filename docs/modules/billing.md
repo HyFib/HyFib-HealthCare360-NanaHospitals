@@ -1018,7 +1018,8 @@ finds it and stops. IRNs asked for automatically are recorded by `HC360 (automat
   above. Answering otherwise (refusing to give the IRN's details, which it keeps for about three days, or giving no
   status), whether it cancelled the IRN in time is not known and asking again may not tell: staff are told to look on
   the portal and to issue a credit note while the IRN is active there (422 `einvoice.irp_cancel_unknown`), never a
-  credit note outright.
+  credit note outright. Past the 24 hours, the staff app's dialog puts that question for a connected facility under
+  *Ask the portal whether it was cancelled*, with the reason and remark the cancellation was made with.
 * **A duplicate's IRN is checked.** The IRN fetched for a duplicate (2150) is not recorded when the portal holds it as
   cancelled (422 `einvoice.irp_cancelled`): the portal registers a number once, so the document is cancelled here and
   issued again under a new number.
@@ -1035,7 +1036,7 @@ finds it and stops. IRNs asked for automatically are recorded by `HC360 (automat
   screens: *Get IRN from the portal* stays its main action, and *Record an IRN generated on the portal* opens the same
   form as for a facility that is not connected. Each refusal shows in plain words over the server's sentence, one whose
   outcome is still open (`einvoice.irp_unreachable`, `einvoice.irp_cancel_unknown`, the server not reached) as a
-  warning to try again, and the dialog reads the document again after every answer.
+  warning, and the dialog reads the document again after every answer.
 
 ### The morning reminder
 Each morning from 09:00 (the hospital's time), `EInvoiceReminderJob` queues one `billing.einvoice.reminder` for each
