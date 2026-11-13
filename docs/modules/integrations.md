@@ -475,6 +475,9 @@ Pine Labs Plutus Cloud-style push-to-terminal:
   and a `UnrecordedPayment` exception keyed on the transaction id alerts the accountants, as for an online payment.
   A receipt recorded later clears it.
 
+* **Counters' sales**: the pharmacy and the canteen take card and UPI payments on the same terminal through the Platform
+  contract `ICounterTerminal` (below), not through `IPosTerminal`.
+
 A status code that is neither 0 nor in `pendingResponseCodes` ends the sale (declined, or cancelled or timed out when the
 message says so). Pine Labs' Cloud Integration document (v1.36) confirms the payment-mode codes HC360 sends (`0` all
 modes, `1` card, `10` UPI sale; several joined with `|`), the cancel request, and the `RRN`, `ApprovalCode` and
@@ -494,6 +497,33 @@ would prompt a customer at a counter.
 facility). Billing's `PosRecheckJob` uses it to ask about sales the counter stopped polling with the sale's facility's
 terminal, and to cancel those nobody paid within `billing.pos.recheck` (see
 [billing.md](billing.md#outbox-jobs-and-notifications)); its log rows count against that facility.
+
+**Counters that bill their own sales.** The pharmacy and the canteen use the terminal through the Platform contract
+`ICounterTerminal`, which Billing implements (`CounterTerminalService` over `PosService`), so a counter's sale has the
+same lifecycle as Billing's: pushed, polled every two seconds, cancelled, followed by `PosRecheckJob` when the counter
+stops polling, and cancelled and timed out after `billing.pos.recheck`. Billing keeps every terminal sale in
+`billing.pos_transactions`; a counter's has `owner` set to the counter (`pharmacy` or `canteen`), no receipt, and no
+patient for a walk-in. The contract's methods:
+
+| Method | Does |
+|---|---|
+| `StartAsync(CounterTerminalStart)` | Pushes the amount (counter, amount, terminal id, card or UPI, patient if registered) to the terminal; the signed-in facility's settings apply |
+| `RefreshAsync(counter, id)` | The sale as the terminal has it now |
+| `CancelAsync(counter, id)` | Cancels it on the terminal; a sale the customer paid first stays approved |
+| `UnusedAsync(counter)` | The counter's approved sales that no payment records yet, within two days, newest first |
+| `UseAsync(CounterTerminalUse)` | Marks the approved sale as recorded by the counter's payment and returns what the terminal reported (`CounterTerminalPayment`: RRN, approval code, card digits) |
+
+`UseAsync` is staged in the counter's own unit of work, so the sale is recorded in the same database transaction as the
+invoice or bill, once (unique index on `owner_payment_id`). It is refused when the sale is another counter's or unknown
+(`pos.sale_unknown`), the customer has not paid yet (`pos.sale_pending`), it was declined, cancelled or timed out
+(`pos.sale_not_paid`), it is of another amount or mode (`pos.sale_amount`, `pos.sale_mode`; all 422), or an invoice
+already records it (`pos.sale_used`, 409). Only a counter that reports its card and UPI payments to the settlement match
+(`ICounterSalesSource`) may take terminal payments. The Platform helper `MapCounterTerminalSales` gives each counter the
+endpoints `POST …/terminal-sales`, `GET …/terminal-sales/{id}`, `POST …/terminal-sales/{id}/cancel` and
+`GET …/terminal-sales/unused` (see [pharmacy.md](pharmacy.md) and [supportservices.md](supportservices.md)), returning
+`CounterTerminalSale`. An approved sale that no invoice records within the timeout is shown to the accountants as an
+unrecorded payment (see [billing.md](billing.md#outbox-jobs-and-notifications)). Without Billing, `NullCounterTerminal`
+refuses with `pos.unavailable` and the counter's payment is typed from the slip.
 
 **Reconcile.** The terminal's RRN and approval code are kept with the receipt, and Billing matches them with the
 acquirer's settlement report, which an accountant imports; see *Card and UPI reconciliation* in
