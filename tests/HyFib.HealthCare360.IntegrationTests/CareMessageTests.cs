@@ -129,12 +129,13 @@ public sealed class CareMessageTests(HospitalServer server)
         part.Select(d => d.Channel).ShouldBe([NotificationChannel.Sms, NotificationChannel.WhatsApp], ignoreOrder: true);
         part.ShouldAllBe(d => d.Language == "hi");
 
-        // The rest settles it: the bill itself goes on WhatsApp, so the receipt goes by SMS alone.
-        var settledFrom = DateTimeOffset.UtcNow.AddSeconds(-1);
+        // The rest settles it: the bill itself goes on WhatsApp, so the receipt goes by SMS alone. The part payment's
+        // receipts are told apart by their logs, not by the time: both payments can fall within the same second.
         await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new CollectPaymentRequest(
             bill.Id, [new PaymentLineInput(PaymentMode.Cash, bill.DueAmount - 200m, null, null, null, null, null, null)], Notes: null));
-        (await DeliveriesAsync("bill.receipt", phone, settledFrom)).Select(d => d.Channel).ShouldBe([NotificationChannel.Sms]);
-        (await DeliveriesAsync(BillSharing.Template, phone, settledFrom)).ShouldHaveSingleItem().Channel.ShouldBe(NotificationChannel.WhatsApp);
+        (await DeliveriesAsync("bill.receipt", phone, since)).Where(d => !part.Any(p => p.LogId == d.LogId))
+            .Select(d => d.Channel).ShouldBe([NotificationChannel.Sms]);
+        (await DeliveriesAsync(BillSharing.Template, phone, since)).ShouldHaveSingleItem().Channel.ShouldBe(NotificationChannel.WhatsApp);
     }
 
     [Fact]
