@@ -20,6 +20,13 @@ internal sealed record WhatsAppSettings : IIntegrationSettings
     /// <summary>HC360 language → template language code, for example <c>{"en":"en_US","hi":"hi"}</c>.</summary>
     public IReadOnlyDictionary<string, string>? LanguageCodes { get; init; }
 
+    /// <summary>
+    /// How a message's text goes into its template, as the hospital registered its templates in WhatsApp Manager:
+    /// <c>text</c> (the whole text as the one parameter), <c>positional</c> or <c>named</c> (the HC360 template's
+    /// placeholders as the parameters). See <see cref="WhatsAppTemplateParameters"/>.
+    /// </summary>
+    public string Parameters { get; init; } = WhatsAppTemplateParameters.Text;
+
     public int MaxDocumentMegabytes { get; init; } = 20;
 
     /// <summary>Template used by the administrator's "send test" (Meta's sample template needs no parameters).</summary>

@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Billing.Documents;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Settings;
 
@@ -19,7 +20,8 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// the number of a record in a protected category that another patient shares (<see cref="SharedNumbers"/>).
 /// </para>
 /// </summary>
-public sealed class BillSharing(HospitalDbContext db, INotificationService notifications, WhatsAppConsent whatsApp, ISettingsService settings)
+public sealed class BillSharing(
+    HospitalDbContext db, INotificationService notifications, WhatsAppConsent whatsApp, ISettingsService settings, NotificationTemplateRenderer templates)
 {
     public const string Template = "bill.shared";
 
@@ -30,18 +32,25 @@ public sealed class BillSharing(HospitalDbContext db, INotificationService notif
     public static bool CanShare(BillStatus status) => status is BillStatus.Finalized or BillStatus.PartiallyPaid or BillStatus.Paid;
 
     /// <summary>Queues the bill when a payment has just settled it. Adds to the caller's unit of work.</summary>
-    internal async Task QueueOnPaymentAsync(Bill bill, CancellationToken ct)
+    /// <returns>Whether the bill was queued, so the receipt need not go on WhatsApp as well.</returns>
+    internal async Task<bool> QueueOnPaymentAsync(Bill bill, CancellationToken ct)
     {
         if (bill.Status != BillStatus.Paid || bill.BillNumber is null
             || !(await settings.GetAsync<bool?>(SendOnPaymentSetting, bill.FacilityId, ct) ?? true))
         {
-            return;
+            return false;
         }
 
-        if (await RecipientAsync(bill.PatientId, ct) is { } patient && !await SharedNumbers.HiddenFromNumberAsync(db, bill.PatientId, ct))
+        // Only where the bill's WhatsApp template is in use: otherwise the delivery handler would skip the bill, and the
+        // receipt, which leaves WhatsApp to the bill, would not go there either.
+        if (await RecipientAsync(bill.PatientId, ct) is { } patient && !await SharedNumbers.HiddenFromNumberAsync(db, bill.PatientId, ct)
+            && await TemplateInUseAsync(bill, patient, ct))
         {
             Queue(bill, patient);
+            return true;
         }
+
+        return false;
     }
 
     /// <summary>The billing desk sends the bill on WhatsApp. Saves.</summary>
@@ -76,6 +85,12 @@ public sealed class BillSharing(HospitalDbContext db, INotificationService notif
                 "This number replied STOP on WhatsApp, so the bill can't be sent there. Print it, or the patient can download it from the patient portal.");
         }
 
+        if (!await TemplateInUseAsync(bill, patient, ct))
+        {
+            return Error.Rule("billing.whatsapp_template_off",
+                "The bill's WhatsApp template is not in use, so the bill can't be sent there. Switch it on in Administration › Notification templates, or print the bill.");
+        }
+
         Queue(bill, patient);
         await db.SaveChangesAsync(ct);
         return Result.Success();
@@ -84,7 +99,7 @@ public sealed class BillSharing(HospitalDbContext db, INotificationService notif
     private void Queue(Bill bill, Recipient patient) =>
         notifications.Queue(
             Template,
-            new NotificationRecipient(patient.Phone, null, bill.PatientId, patient.FullName),
+            NotificationRecipient.Patient(patient.Phone, null, bill.PatientId, patient.FullName, patient.PreferredLanguage),
             new Dictionary<string, string>
             {
                 ["name"] = patient.FullName,
@@ -96,14 +111,18 @@ public sealed class BillSharing(HospitalDbContext db, INotificationService notif
             bill.FacilityId,
             new NotificationDocument(BillDocumentSource.DocumentKind, bill.Id));
 
+    private Task<bool> TemplateInUseAsync(Bill bill, Recipient patient, CancellationToken ct) =>
+        templates.InUseAsync(Template, NotificationChannel.WhatsApp, bill.FacilityId,
+            PatientLanguages.FromPreference(patient.PreferredLanguage) ?? PatientLanguages.Default, ct);
+
     private async Task<Recipient?> RecipientAsync(Guid patientId, CancellationToken ct)
     {
         var patient = await db.Set<Patient>().IgnoreQueryFilters().AsNoTracking()
             .Where(p => p.Id == patientId)
-            .Select(p => new { p.Phone, p.FullName, p.IsDeceased })
+            .Select(p => new { p.Phone, p.FullName, p.IsDeceased, p.PreferredLanguage })
             .FirstOrDefaultAsync(ct);
-        return patient is { Phone: { } phone, IsDeceased: false } ? new Recipient(phone, patient.FullName) : null;
+        return patient is { Phone: { } phone, IsDeceased: false } ? new Recipient(phone, patient.FullName, patient.PreferredLanguage) : null;
     }
 
-    private sealed record Recipient(string Phone, string FullName);
+    private sealed record Recipient(string Phone, string FullName, string? PreferredLanguage);
 }

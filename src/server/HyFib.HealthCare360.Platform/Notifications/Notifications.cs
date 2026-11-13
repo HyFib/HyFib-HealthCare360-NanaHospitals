@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Integrations;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -31,8 +32,9 @@ public enum NotificationStatus
     Failed,
 
     /// <summary>
-    /// Not attempted, and never retried: there are no contact details for the channel, or the WhatsApp template needs a
-    /// document the message does not carry (the log's error says which).
+    /// Not attempted, and never retried: there are no contact details for the channel, the WhatsApp template needs a
+    /// document the message does not carry, or every version of the channel's template is "Not in use" (the log's
+    /// error says which).
     /// </summary>
     Skipped,
 
@@ -180,7 +182,15 @@ internal sealed class NotificationLogConfiguration : IEntityTypeConfiguration<No
     }
 }
 
-public sealed record NotificationRecipient(string? Phone, string? Email, Guid? PatientId, string? Name, string Language = "en");
+public sealed record NotificationRecipient(string? Phone, string? Email, Guid? PatientId, string? Name, string Language = "en")
+{
+    /// <summary>
+    /// A patient, written to in the language their record prefers when HC360 writes it (Hindi, Tamil: the template of that
+    /// language when the hospital has one), English otherwise. The record's preference is free text ("Tamil", "தமிழ்", "ta").
+    /// </summary>
+    public static NotificationRecipient Patient(string? phone, string? email, Guid patientId, string? name, string? preferredLanguage) =>
+        new(phone, email, patientId, name, PatientLanguages.FromPreference(preferredLanguage) ?? PatientLanguages.Default);
+}
 
 /// <summary>
 /// A document to send with a message, named rather than attached: it is made when the message goes out, so the patient
@@ -370,7 +380,9 @@ public static class DefaultNotificationTemplates
         ("appointment.reminder", NotificationChannel.WhatsApp, null, "Reminder: your appointment with {{doctor}} is on {{date}} at {{time}}.", "Appointment reminder (WhatsApp)"),
         ("appointment.cancelled", NotificationChannel.Sms, null, "Dear {{name}}, your appointment with {{doctor}} on {{date}} at {{time}} has been cancelled. - {{hospital}}", "Appointment cancelled"),
         ("visit.token", NotificationChannel.Sms, null, "Your token for {{department}} is {{token}}. Please wait for your turn. - {{hospital}}", "Queue token issued"),
+        ("visit.token", NotificationChannel.WhatsApp, null, "Your token for {{department}} is {{token}}. Please wait for your turn; the display board calls it.", "Queue token issued (WhatsApp)"),
         ("bill.receipt", NotificationChannel.Sms, null, "Payment of Rs.{{amount}} received for {{billNumber}}. Thank you. - {{hospital}}", "Payment receipt"),
+        ("bill.receipt", NotificationChannel.WhatsApp, null, "Dear {{name}}, we have received your payment of Rs.{{amount}} for {{billNumber}} (receipt {{receiptNumber}}). Thank you.", "Payment receipt (WhatsApp; not sent when the paid bill itself goes on WhatsApp)"),
         ("payment.link", NotificationChannel.Sms, null, "Dear {{name}}, pay Rs.{{amount}} for {{purpose}} securely: {{link}} - {{hospital}}", "Payment link"),
         ("payment.link", NotificationChannel.WhatsApp, null, "Dear {{name}}, please pay Rs.{{amount}} for {{purpose}} using this secure link: {{link}}", "Payment link (WhatsApp)"),
         ("lab.report_ready", NotificationChannel.Sms, null, "Dear {{name}}, your report {{reference}} is ready. View it on the patient portal. - {{hospital}}", "Report ready"),
@@ -378,10 +390,15 @@ public static class DefaultNotificationTemplates
         ("telehealth.link", NotificationChannel.Sms, null, "Dear {{name}}, join your video consultation with {{doctor}} at {{time}}: {{link}} - {{hospital}}", "Telehealth join link"),
         ("telehealth.link", NotificationChannel.WhatsApp, null, "Dear {{name}}, join your video consultation with {{doctor}} at {{time}} using this link: {{link}}", "Telehealth join link (WhatsApp)"),
         ("admission.admitted", NotificationChannel.Sms, null, "{{name}} has been admitted to {{ward}} bed {{bed}} under {{doctor}}. - {{hospital}}", "Admission confirmation"),
+        ("admission.admitted", NotificationChannel.WhatsApp, null, "{{name}} has been admitted to {{ward}}, bed {{bed}}, under {{doctor}}. Visiting hours and the ward's rules are at the nursing station.", "Admission confirmation (WhatsApp)"),
         ("discharge.completed", NotificationChannel.Sms, null, "{{name}} has been discharged. Your discharge summary is on the patient portal. Get well soon. - {{hospital}}", "Discharge completed"),
+        ("discharge.completed", NotificationChannel.WhatsApp, null, "{{name}} has been discharged. The discharge summary is on the patient portal. We wish you a speedy recovery.", "Discharge completed (WhatsApp)"),
+        ("discharge.summary", NotificationChannel.WhatsApp, null, "{{name}} has been discharged. The signed discharge summary is attached, and it is also on the patient portal. We wish you a speedy recovery.", "Discharge summary (WhatsApp; carries the signed summary in its document header, and goes only for a discharge that has one)"),
         ("prescription.shared", NotificationChannel.WhatsApp, null, "Dear {{name}}, your prescription from {{doctor}} dated {{date}} is available on the patient portal.", "Prescription shared"),
         ("feedback.request", NotificationChannel.Sms, null, "Dear {{name}}, how was your visit? Please share feedback: {{link}} - {{hospital}}", "Feedback request"),
+        ("feedback.request", NotificationChannel.WhatsApp, null, "Dear {{name}}, how was your visit? It takes a minute to tell us: {{link}}", "Feedback request (WhatsApp; numbers that opted in only)"),
         ("followup.reminder", NotificationChannel.Sms, null, "Dear {{name}}, your follow-up with {{doctor}} is due on {{date}}. Book at {{link}} - {{hospital}}", "Follow-up reminder"),
+        ("followup.reminder", NotificationChannel.WhatsApp, null, "Dear {{name}}, your follow-up with {{doctor}} is due on {{date}}. You can book it at {{link}}", "Follow-up reminder (WhatsApp; numbers that opted in only)"),
         ("rpm.alert", NotificationChannel.Sms, null, "HC360 RPM alert: {{patient}} reported {{reading}} (outside set range) at {{time}}.", "Remote monitoring alert to care team"),
         ("lab.critical", NotificationChannel.Sms, null, "HC360 CRITICAL LAB: {{patient}} ({{uhid}}) {{test}} = {{value}}. Please review immediately.", "Critical lab value to doctor"),
         ("system.alert", NotificationChannel.Sms, null, "HC360 server alert ({{server}}): {{message}}", "Server Node alert to IT on-call (WiFi down, backup failed…)"),
@@ -402,6 +419,31 @@ public static class DefaultNotificationTemplates
             "{{change}} This happened to your account {{user}} on {{time}}. If you did not ask for this, tell your IT administrator at once.",
             "Tells staff at their old e-mail address that the address or mobile number on their account changed"),
     ];
+
+    /// <summary>
+    /// Built-in templates stored "Not in use" when they are first seeded: WhatsApp messages Meta must approve before they
+    /// can go. Until an administrator switches one on in Notification templates (once its template is approved in
+    /// WhatsApp Manager), the message is skipped on WhatsApp and its other channels go as before.
+    /// </summary>
+    public static IReadOnlySet<(string Key, NotificationChannel Channel)> SeededNotInUse { get; } = new HashSet<(string, NotificationChannel)>
+    {
+        ("visit.token", NotificationChannel.WhatsApp),
+        ("bill.receipt", NotificationChannel.WhatsApp),
+        ("admission.admitted", NotificationChannel.WhatsApp),
+        ("discharge.completed", NotificationChannel.WhatsApp),
+        ("discharge.summary", NotificationChannel.WhatsApp),
+        ("feedback.request", NotificationChannel.WhatsApp),
+        ("followup.reminder", NotificationChannel.WhatsApp),
+    };
+
+    /// <summary>
+    /// Built-in WhatsApp templates seeded with "Document header" ticked (<see cref="NotificationTemplate.WhatsAppDocumentHeader"/>):
+    /// their message always names a document, and Meta approves the template with that header.
+    /// </summary>
+    public static IReadOnlySet<(string Key, NotificationChannel Channel)> SeededWithDocumentHeader { get; } = new HashSet<(string, NotificationChannel)>
+    {
+        ("discharge.summary", NotificationChannel.WhatsApp),
+    };
 }
 
 internal sealed class NotificationTemplateSeeder : ISeeder
@@ -424,6 +466,8 @@ internal sealed class NotificationTemplateSeeder : ISeeder
                 Subject = template.Subject,
                 Body = template.Body,
                 Description = template.Description,
+                IsActive = !DefaultNotificationTemplates.SeededNotInUse.Contains((template.Key, template.Channel)),
+                WhatsAppDocumentHeader = DefaultNotificationTemplates.SeededWithDocumentHeader.Contains((template.Key, template.Channel)),
             });
         }
 
@@ -431,47 +475,115 @@ internal sealed class NotificationTemplateSeeder : ISeeder
     }
 }
 
-/// <summary>Resolves the best template (facility → global, language → English) and renders placeholders.</summary>
+/// <summary>A message rendered from its template (<see cref="NotificationTemplateRenderer.RenderMessageAsync"/>).</summary>
+/// <param name="Template">The stored version used; null when the built-in text was.</param>
+/// <param name="Placeholders">
+/// Each placeholder of the template's body with the value it took, in the order they occur (a placeholder used twice
+/// is listed twice).
+/// </param>
+public sealed record RenderedNotification(NotificationTemplate? Template, string? Subject, string Body, IReadOnlyList<TemplatePlaceholder> Placeholders);
+
+/// <summary>
+/// Resolves the best template (facility → global, language → English) and renders placeholders. A version that is
+/// "Not in use" is passed over for the next one that fits; when every version that fits is not in use, the message is
+/// not sent on that channel at all (<see cref="NotInUseAsync"/>).
+/// </summary>
 public sealed partial class NotificationTemplateRenderer(HospitalDbContext db, IMemoryCache cache)
 {
+    /// <summary>
+    /// Why the message must not go on its channel: an administrator set every version of its template that could apply
+    /// to it (this facility's or all facilities', in the patient's language or English) to "Not in use". Null when one of
+    /// them is in use, and when none is stored (the built-in text is used then).
+    /// </summary>
+    public async Task<string?> NotInUseAsync(NotificationDelivery delivery, CancellationToken cancellationToken) =>
+        await InUseAsync(delivery.TemplateKey, delivery.Channel, delivery.FacilityId, delivery.Language, cancellationToken)
+            ? null
+            : TemplateSwitch.NotInUseReason(delivery.Channel);
+
+    /// <summary>
+    /// Whether a message of this key would go on this channel, as far as its templates decide: a stored version that fits
+    /// (this facility's or all facilities', in <paramref name="language"/> or English) is in use, or none is stored and the
+    /// built-in template does not start "Not in use". For a sender that chooses between messages before it queues one.
+    /// </summary>
+    public async Task<bool> InUseAsync(string templateKey, NotificationChannel channel, Guid? facilityId, string language, CancellationToken cancellationToken)
+    {
+        var versionsInUse = await Versions(templateKey, channel, facilityId, language).Select(t => t.IsActive).ToListAsync(cancellationToken);
+        return !TemplateSwitch.IsOff(templateKey, channel, versionsInUse);
+    }
+
     public async Task<(NotificationTemplate? Template, string? Subject, string Body)> RenderAsync(NotificationDelivery delivery, CancellationToken cancellationToken)
     {
-        var candidates = await db.Set<NotificationTemplate>().AsNoTracking()
-            .Where(t => t.Key == delivery.TemplateKey && t.Channel == delivery.Channel && t.IsActive
-                        && (t.FacilityId == null || t.FacilityId == delivery.FacilityId)
-                        && (t.Language == delivery.Language || t.Language == "en"))
-            .ToListAsync(cancellationToken);
+        var message = await RenderMessageAsync(delivery, cancellationToken);
+        return (message.Template, message.Subject, message.Body);
+    }
+
+    /// <summary>
+    /// The message as <see cref="RenderAsync"/> renders it, with the placeholders of its template's body and the values
+    /// they took, for WhatsApp templates registered with those placeholders as their parameters.
+    /// </summary>
+    public async Task<RenderedNotification> RenderMessageAsync(NotificationDelivery delivery, CancellationToken cancellationToken)
+    {
+        var versions = await Versions(delivery.TemplateKey, delivery.Channel, delivery.FacilityId, delivery.Language).ToListAsync(cancellationToken);
+        var candidates = versions.Where(t => t.IsActive).ToList();
+        if (candidates.Count == 0 && WhatsAppOptOutPolicy.IsEssential(delivery.TemplateKey))
+        {
+            // A sign-in code can't be switched off (TemplateSwitch): the stored version goes, with its DLT template id,
+            // rather than the built-in text without one, which the SMS gateway would refuse.
+            candidates = versions;
+        }
 
         var template = candidates
             .OrderByDescending(t => t.FacilityId == delivery.FacilityId && t.FacilityId != null)
             .ThenByDescending(t => t.Language == delivery.Language)
             .FirstOrDefault();
 
-        var values = new Dictionary<string, string>(delivery.Values, StringComparer.OrdinalIgnoreCase);
-        if (!values.ContainsKey("hospital"))
-        {
-            values["hospital"] = await FacilityNameAsync(delivery.FacilityId, cancellationToken) ?? "Hospital";
-        }
-
-        if (!values.ContainsKey("name") && delivery.Name is not null)
-        {
-            values["name"] = delivery.Name;
-        }
-
         var body = template?.Body ?? DefaultNotificationTemplates.All
             .FirstOrDefault(t => t.Key == delivery.TemplateKey && t.Channel == delivery.Channel).Body
             ?? throw new InvalidOperationException($"No template '{delivery.TemplateKey}' for {delivery.Channel}.");
 
-        var html = delivery.Channel == NotificationChannel.Email;
-        return (template, template?.Subject is { } subject ? Render(subject, values, false) : null, Render(body, values, html));
+        // The facility's name is looked up only for a message that does not give the hospital's name itself.
+        var facilityName = delivery.Values.Keys.Any(key => string.Equals(key, "hospital", StringComparison.OrdinalIgnoreCase))
+            ? null
+            : await FacilityNameAsync(delivery.FacilityId, cancellationToken);
+        return Fill(delivery, template, body, facilityName);
     }
 
-    internal static string Render(string text, IReadOnlyDictionary<string, string> values, bool htmlEncode) =>
+    /// <summary>
+    /// Fills the template's subject and <paramref name="body"/> with the message's values. Where the message gives none,
+    /// <c>{{hospital}}</c> takes <paramref name="facilityName"/> ("Hospital" when there is none) and <c>{{name}}</c> the
+    /// recipient's name; a placeholder without a value is left empty. The pass that fills the body also lists its
+    /// placeholders with the values they took, so the two always agree.
+    /// </summary>
+    internal static RenderedNotification Fill(NotificationDelivery delivery, NotificationTemplate? template, string body, string? facilityName)
+    {
+        var values = new Dictionary<string, string>(delivery.Values, StringComparer.OrdinalIgnoreCase);
+        values.TryAdd("hospital", facilityName ?? "Hospital");
+        if (delivery.Name is not null)
+        {
+            values.TryAdd("name", delivery.Name);
+        }
+
+        var placeholders = new List<TemplatePlaceholder>();
+        var text = Render(body, values, delivery.Channel == NotificationChannel.Email, placeholders);
+        return new(template, template?.Subject is { } subject ? Render(subject, values, false) : null, text, placeholders);
+    }
+
+    /// <param name="placeholders">When given, each placeholder filled is added to it, in order, with the value it took (not encoded).</param>
+    internal static string Render(
+        string text, IReadOnlyDictionary<string, string> values, bool htmlEncode, ICollection<TemplatePlaceholder>? placeholders = null) =>
         PlaceholderRegex().Replace(text, m =>
         {
             var value = values.TryGetValue(m.Groups[1].Value, out var v) ? v : string.Empty;
+            placeholders?.Add(new TemplatePlaceholder(m.Groups[1].Value, value));
             return htmlEncode ? WebUtility.HtmlEncode(value) : value;
         });
+
+    /// <summary>The stored versions of a message's template on a channel that could apply to it, in use or not.</summary>
+    private IQueryable<NotificationTemplate> Versions(string templateKey, NotificationChannel channel, Guid? facilityId, string language) =>
+        db.Set<NotificationTemplate>().AsNoTracking()
+            .Where(t => t.Key == templateKey && t.Channel == channel
+                        && (t.FacilityId == null || t.FacilityId == facilityId)
+                        && (t.Language == language || t.Language == "en"));
 
     private Task<string?> FacilityNameAsync(Guid? facilityId, CancellationToken ct) =>
         cache.GetOrCreateAsync($"facility-name:{facilityId}", async entry =>
@@ -485,6 +597,35 @@ public sealed partial class NotificationTemplateRenderer(HospitalDbContext db, I
 
     [GeneratedRegex(@"\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}")]
     private static partial Regex PlaceholderRegex();
+}
+
+/// <summary>
+/// "In use" on a notification template: a version not in use is passed over for the next one that fits, and when no
+/// version that fits the message is in use, the message is not sent on that channel. So the hospital decides, message by
+/// message and channel by channel, what goes out: a WhatsApp template waiting for Meta's approval, say, or an SMS
+/// whose DLT registration lapsed. Sign-in codes can't be switched off: patients would be locked out of the portal.
+/// </summary>
+internal static class TemplateSwitch
+{
+    /// <param name="versionsInUse">
+    /// Whether each stored version that could apply to the message is in use. None stored: the built-in text goes, unless
+    /// the built-in template starts "Not in use" (<see cref="DefaultNotificationTemplates.SeededNotInUse"/>), as it is
+    /// stored when it is seeded.
+    /// </param>
+    public static bool IsOff(string templateKey, NotificationChannel channel, IReadOnlyCollection<bool> versionsInUse) =>
+        !WhatsAppOptOutPolicy.IsEssential(templateKey)
+        && (versionsInUse.Count > 0 ? !versionsInUse.Contains(true) : DefaultNotificationTemplates.SeededNotInUse.Contains((templateKey, channel)));
+
+    public static string NotInUseReason(NotificationChannel channel) =>
+        $"Not sent: this message's {ChannelName(channel)} template is set to \"Not in use\" (Administration › Notification templates). Switch it on there to send it.";
+
+    private static string ChannelName(NotificationChannel channel) => channel switch
+    {
+        NotificationChannel.Sms => "SMS",
+        NotificationChannel.WhatsApp => "WhatsApp",
+        NotificationChannel.Email => "e-mail",
+        _ => channel.ToString(),
+    };
 }
 
 /// <summary>Outbox handlers that render templates and call the configured channel provider.</summary>
@@ -515,6 +656,21 @@ internal abstract class NotificationDeliveryHandler(
             return;
         }
 
+        // Checked before anything is rendered or made (a report's PDF): the hospital chose not to send this message on
+        // this channel, so it is skipped, not tried again. The message's other channels still go.
+        if (await renderer.NotInUseAsync(delivery, cancellationToken) is { } notInUse)
+        {
+            if (log is not null)
+            {
+                log.Status = NotificationStatus.Skipped;
+                log.Error = notInUse;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            logger.LogInformation("Notification {TemplateKey} via {Channel} not sent: its template is not in use", delivery.TemplateKey, delivery.Channel);
+            return;
+        }
+
         if (await SuppressionReasonAsync(delivery, cancellationToken) is { } reason)
         {
             if (log is not null)
@@ -528,8 +684,8 @@ internal abstract class NotificationDeliveryHandler(
             return;
         }
 
-        var (template, subject, body) = await renderer.RenderAsync(delivery, cancellationToken);
-        if (NeedsDocument(template) && delivery.Document is null)
+        var rendered = await renderer.RenderMessageAsync(delivery, cancellationToken);
+        if (NeedsDocument(rendered.Template) && delivery.Document is null)
         {
             // Meta refuses a template approved with a document header when there is no document, so sending would only
             // fail and be retried (say, report PDFs are switched off but the template still has its header). It is
@@ -545,9 +701,9 @@ internal abstract class NotificationDeliveryHandler(
             return;
         }
 
-        var (file, missing) = await DocumentAsync(delivery, template, message.Attempts, cancellationToken);
+        var (file, missing) = await DocumentAsync(delivery, rendered.Template, message.Attempts, cancellationToken);
 
-        var result = await SendAsync(delivery, template, subject, body, file, cancellationToken);
+        var result = await SendAsync(delivery, rendered, file, cancellationToken);
         if (log is not null)
         {
             log.Status = result.Success ? NotificationStatus.Sent : NotificationStatus.Failed;
@@ -576,7 +732,7 @@ internal abstract class NotificationDeliveryHandler(
     protected virtual bool NeedsDocument(NotificationTemplate? template) => false;
 
     protected abstract Task<SendResult> SendAsync(
-        NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken);
+        NotificationDelivery delivery, RenderedNotification message, NotificationFile? document, CancellationToken cancellationToken);
 
     /// <summary>The document to send, and a note for the log when the message goes without the one it names.</summary>
     private async Task<(NotificationFile? File, string? Missing)> DocumentAsync(
@@ -621,8 +777,8 @@ internal sealed class SmsDeliveryHandler(
     public override string Type => NotificationService.SmsType;
 
     protected override Task<SendResult> SendAsync(
-        NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken) =>
-        sms.SendAsync(new SmsMessage(delivery.To, body, template?.DltTemplateId, null, delivery.LogId.ToString("N"), delivery.FacilityId), cancellationToken);
+        NotificationDelivery delivery, RenderedNotification message, NotificationFile? document, CancellationToken cancellationToken) =>
+        sms.SendAsync(new SmsMessage(delivery.To, message.Body, message.Template?.DltTemplateId, null, delivery.LogId.ToString("N"), delivery.FacilityId), cancellationToken);
 }
 
 internal sealed class WhatsAppDeliveryHandler(
@@ -660,13 +816,16 @@ internal sealed class WhatsAppDeliveryHandler(
     protected override bool NeedsDocument(NotificationTemplate? template) => template?.WhatsAppDocumentHeader == true;
 
     // The template is asked for in the language of the one chosen: a patient whose language has none gets the English
-    // template, which Meta knows only in English.
+    // template, which Meta knows only in English. The whole text goes as the one body parameter, and the body's
+    // placeholders with their values go with it, for templates registered with those as their parameters (the
+    // integrations.whatsapp setting "parameters" chooses).
     protected override Task<SendResult> SendAsync(
-        NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken) =>
+        NotificationDelivery delivery, RenderedNotification message, NotificationFile? document, CancellationToken cancellationToken) =>
         whatsApp.SendTemplateAsync(
-            new WhatsAppTemplateMessage(delivery.To, template?.WhatsAppTemplateName ?? delivery.TemplateKey.Replace('.', '_'), template?.Language ?? delivery.Language,
-                [body], delivery.LogId.ToString("N"), delivery.FacilityId,
-                document is null ? null : new WhatsAppHeaderDocument(document.FileName, document.Content, document.ContentType)),
+            new WhatsAppTemplateMessage(delivery.To, message.Template?.WhatsAppTemplateName ?? delivery.TemplateKey.Replace('.', '_'),
+                message.Template?.Language ?? delivery.Language, [message.Body], delivery.LogId.ToString("N"), delivery.FacilityId,
+                document is null ? null : new WhatsAppHeaderDocument(document.FileName, document.Content, document.ContentType),
+                message.Placeholders),
             cancellationToken);
 }
 
@@ -680,9 +839,9 @@ internal sealed class EmailDeliveryHandler(
     protected override bool CarriesDocument(NotificationTemplate? template) => true;
 
     protected override Task<SendResult> SendAsync(
-        NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken) =>
+        NotificationDelivery delivery, RenderedNotification message, NotificationFile? document, CancellationToken cancellationToken) =>
         email.SendAsync(
-            new EmailMessage(delivery.To, subject ?? "Message from the hospital", body,
+            new EmailMessage(delivery.To, message.Subject ?? "Message from the hospital", message.Body,
                 document is null ? null : [new EmailAttachment(document.FileName, document.Content, document.ContentType)],
                 delivery.LogId.ToString("N"), delivery.FacilityId),
             cancellationToken);

@@ -493,7 +493,7 @@ public sealed class BreachService(
                     join p in db.Set<Patient>() on a.PatientId equals p.Id
                     where a.BreachId == id && a.NotifiedAt == null && a.Id.CompareTo(cursor) > 0
                     orderby a.Id
-                    select new { Affected = a, p.Phone, p.Email, p.FullName })
+                    select new { Affected = a, p.Phone, p.Email, p.FullName, p.PreferredLanguage })
                 .Take(Batch)
                 .ToListAsync(ct);
             if (pending.Count == 0)
@@ -523,7 +523,7 @@ public sealed class BreachService(
                     continue;
                 }
 
-                notifications.Queue(NoticeTemplate, new NotificationRecipient(row.Phone, row.Email, row.Affected.PatientId, row.FullName),
+                notifications.Queue(NoticeTemplate, NotificationRecipient.Patient(row.Phone, row.Email, row.Affected.PatientId, row.FullName, row.PreferredLanguage),
                     values, channels);
                 row.Affected.NotifiedAt = now;
                 row.Affected.NoticeChannels = string.Join(",", channels).ToLowerInvariant();

@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Privacy.Domain;
 using HyFib.HealthCare360.Modules.Privacy.Features.Requests;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Realtime;
@@ -359,7 +360,15 @@ public sealed class DataRequestService(
         }
 
         values["contact"] = PrivacySettings.ContactLine(await privacy.PublishedContactAsync(ct));
-        notifications.Queue(template, new NotificationRecipient(request.ContactPhone, request.ContactEmail, request.PatientId, request.PrincipalName),
+
+        // A patient's request (or one made for them) is answered in the language their record prefers, with that
+        // language's template when the hospital has one; a requester who is no patient gets English.
+        var preferred = request.PatientId is { } patientId
+            ? await db.Set<Patient>().AsNoTracking().Where(p => p.Id == patientId).Select(p => p.PreferredLanguage).FirstOrDefaultAsync(ct)
+            : null;
+        notifications.Queue(template,
+            new NotificationRecipient(request.ContactPhone, request.ContactEmail, request.PatientId, request.PrincipalName,
+                PatientLanguages.FromPreference(preferred) ?? PatientLanguages.Default),
             values, channels, facilityId: request.FacilityId);
     }
 

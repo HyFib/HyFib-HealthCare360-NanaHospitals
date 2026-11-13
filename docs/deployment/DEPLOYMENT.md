@@ -578,6 +578,32 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - To stop sending report PDFs by e-mail and WhatsApp, set `diagnostics.reports.sendPdf` to `false`, and use a
      WhatsApp template without a document header (untick "Document header"). A template with a header can't go
      without its PDF, so those WhatsApp messages would be skipped; the SMS and e-mail still go.
+   - WhatsApp templates seeded **Not in use** in Administration › Notification templates wait for Meta: the queue token
+     (`visit_token`), the payment receipt (`bill_receipt`), the admission (`admission_admitted`), the discharge
+     (`discharge_completed`, without a document header), the discharge summary (`discharge_summary`, with a document
+     header: see below), the feedback request (`feedback_request`), the follow-up reminder (`followup_reminder`) and the
+     complaint acknowledgement (`complaint_acknowledged`). Register each in WhatsApp Manager as a utility template (the feedback
+     request and the follow-up reminder go only to numbers that opted in), then switch it on; until then those messages
+     go by SMS only. Any template can be switched off the same way: when no version of a message is in use, it is not
+     sent on that channel (sign-in codes always go).
+   - The discharge has two WhatsApp templates. Register `discharge_completed` without a document header: every
+     discharge gets it. Register `discharge_summary` **with a document header**, and Administration › Notification
+     templates already has "Document header" ticked on it. Switch on either or both. With `discharge_summary` on, a
+     discharge with a signed summary gets it, with the summary's PDF, and the other discharges (against advice, or a
+     planned one while the summary hold is off) get `discharge_completed`, so none loses its WhatsApp message. With it
+     off, the summary is on the patient portal.
+   - Patients get their messages in the language their record prefers when the hospital adds that language's version of
+     the template (Hindi `hi`, Tamil `ta`), English otherwise. Register each language's WhatsApp template under the same
+     name in WhatsApp Manager, and map it in `integrations.whatsapp` `languageCodes` (for example `{"en":"en_US","ta":"ta"}`).
+   - A WhatsApp template takes the message's text as `integrations.whatsapp` `parameters` says (Administration ›
+     Integrations › WhatsApp, *Template parameters*). By default (*One parameter*, `text`) the whole text is the
+     template's one parameter, so each template is registered as the single variable `{{1}}`, which Meta no longer
+     approves for a new template. For new registrations choose *By name* (`named`): register each template with its
+     HC360 text (Administration › Notification templates; each language's with its own), each placeholder in lower case
+     with underscores (`{{billNumber}}` as `{{bill_number}}`), as a template with named parameters. *Numbered*
+     (`positional`) takes the HC360 text with each placeholder replaced by its number, counting from 1 (a placeholder
+     used twice takes two numbers). The setting applies to every WhatsApp template, so register all those in use the new
+     way before changing it (docs/modules/integrations.md, "Template parameters").
 9. **Doctors' DSC signatures on prescriptions** (ERX-04; only where the hospital sets
    `clinical.prescriptions.signature` to `"optional"` or `"required"`, docs/modules/clinical.md): HC360 accepts a
    doctor's DSC only from a certificate that chains to a CCA India root in the server's **DSC trust folder**, and HC360

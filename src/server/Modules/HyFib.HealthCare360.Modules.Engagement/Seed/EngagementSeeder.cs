@@ -30,7 +30,7 @@ internal sealed class EngagementSeeder : ISeeder
             "Scan, rate and help us improve. No login needed."),
     ];
 
-    private static readonly (string Key, NotificationChannel Channel, string Body, string Description)[] Templates =
+    internal static readonly (string Key, NotificationChannel Channel, string Body, string Description)[] Templates =
     [
         ("campaign.message", NotificationChannel.Sms, "{{message}} Stop offers: {{optout}} - {{hospital}}",
             "Marketing campaign (consented patients only; set the DLT template id before use)"),
@@ -39,7 +39,19 @@ internal sealed class EngagementSeeder : ISeeder
         (FeedbackService.ComplaintAcknowledgedTemplate, NotificationChannel.Sms,
             "Dear {{name}}, we are sorry about your experience. Complaint {{reference}} is registered and our team will contact you soon. - {{hospital}}",
             "Acknowledges a complaint raised from low feedback when the patient asked for a call-back"),
+        (FeedbackService.ComplaintAcknowledgedTemplate, NotificationChannel.WhatsApp,
+            "Dear {{name}}, we are sorry about your experience. Complaint {{reference}} is registered, and our team will call you back soon.",
+            "Acknowledges a complaint raised from low feedback when the patient asked for a call-back (WhatsApp)"),
     ];
+
+    /// <summary>
+    /// Stored "Not in use" when first seeded: WhatsApp messages Meta must approve first. An administrator switches each on
+    /// in Notification templates once its template is approved in WhatsApp Manager.
+    /// </summary>
+    internal static readonly IReadOnlySet<(string Key, NotificationChannel Channel)> SeededNotInUse = new HashSet<(string, NotificationChannel)>
+    {
+        (FeedbackService.ComplaintAcknowledgedTemplate, NotificationChannel.WhatsApp),
+    };
 
     public async Task SeedAsync(HospitalDbContext db, CancellationToken cancellationToken)
     {
@@ -74,7 +86,14 @@ internal sealed class EngagementSeeder : ISeeder
             .ToListAsync(cancellationToken);
         foreach (var template in Templates.Where(t => !existingTemplates.Any(e => e.Key == t.Key && e.Channel == t.Channel)))
         {
-            db.Add(new NotificationTemplate { Key = template.Key, Channel = template.Channel, Body = template.Body, Description = template.Description });
+            db.Add(new NotificationTemplate
+            {
+                Key = template.Key,
+                Channel = template.Channel,
+                Body = template.Body,
+                Description = template.Description,
+                IsActive = !SeededNotInUse.Contains((template.Key, template.Channel)),
+            });
         }
 
         await db.SaveChangesAsync(cancellationToken);

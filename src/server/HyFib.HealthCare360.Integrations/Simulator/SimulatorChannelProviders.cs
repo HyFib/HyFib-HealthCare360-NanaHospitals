@@ -21,7 +21,11 @@ internal sealed class SimulatorSmsProvider(SimulatorInbox inbox, IntegrationTrac
     }
 }
 
-/// <summary>WhatsApp template, document and text messages "delivered" to the simulator inbox.</summary>
+/// <summary>
+/// WhatsApp template, document and text messages "delivered" to the simulator inbox. A template message is recorded as
+/// its body parameters would be sent (<see cref="WhatsAppTemplateParameters"/>), one per line, a named one as
+/// <c>name: value</c>.
+/// </summary>
 internal sealed class SimulatorWhatsAppProvider(SimulatorInbox inbox, IntegrationTrace trace) : IWhatsAppProvider
 {
     public string Key => ProviderKeys.Simulator;
@@ -29,9 +33,16 @@ internal sealed class SimulatorWhatsAppProvider(SimulatorInbox inbox, Integratio
     public async Task<SendResult> SendTemplateAsync(WhatsAppTemplateMessage message, WhatsAppSettings settings, WhatsAppSecrets secrets, CancellationToken cancellationToken)
     {
         var started = trace.Start();
+        if (WhatsAppTemplateParameters.Problem(settings) is { } problem)
+        {
+            await trace.LogAsync(IntegrationNames.WhatsApp, Key, "template", false, started, message.Reference, error: problem);
+            return SendResult.Fail(problem);
+        }
+
+        var parameters = WhatsAppTemplateParameters.For(message, settings).Select(p => p.Name is null ? p.Value : $"{p.Name}: {p.Value}");
         var document = message.HeaderDocument is { } file ? $", document {file.FileName} ({file.ContentType}, {file.Content.Length} bytes)" : "";
         var id = await inbox.RecordAsync(SimulatorChannel.WhatsApp, Phone.Mask(message.To), message.TemplateName,
-            string.Join("\n", message.BodyParameters), $"template {message.TemplateName} ({message.Language}){document}", message.Reference, cancellationToken);
+            string.Join("\n", parameters), $"template {message.TemplateName} ({message.Language}){document}", message.Reference, cancellationToken);
         await trace.LogAsync(IntegrationNames.WhatsApp, Key, "template", true, started, message.Reference,
             $"{{\"to\":\"{Phone.Mask(message.To)}\",\"template\":\"{message.TemplateName}\"}}", id);
         return SendResult.Ok(id);

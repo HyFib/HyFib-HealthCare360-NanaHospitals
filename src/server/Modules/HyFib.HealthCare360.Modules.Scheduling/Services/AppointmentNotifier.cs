@@ -1,5 +1,6 @@
 using System.Globalization;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Notifications;
@@ -20,7 +21,7 @@ public sealed class AppointmentNotifier(HospitalDbContext db, INotificationServi
     public const string CancelledTemplate = "appointment.cancelled";
     public const string WaitlistTemplate = "appointment.waitlist";
 
-    private static readonly NotificationChannel[] PatientChannels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
+    internal static readonly NotificationChannel[] PatientChannels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
 
     public Task ConfirmedAsync(Appointment appointment, CancellationToken ct) => QueueAsync(ConfirmedTemplate, appointment, ct);
 
@@ -45,7 +46,8 @@ public sealed class AppointmentNotifier(HospitalDbContext db, INotificationServi
 
     /// <summary>
     /// Tells the patient that the doctor is not available for the booking (a leave or a block), with a link to choose
-    /// another time on the portal; on the <paramref name="channels"/> given. False when the patient has no contact details.
+    /// another time on the portal; on the <paramref name="channels"/> given. False when the patient has no contact
+    /// details, or the record is hidden from the number (a protected category on a shared mobile number).
     /// </summary>
     public async Task<bool> DoctorUnavailableAsync(Appointment appointment, IReadOnlyList<NotificationChannel> channels, CancellationToken ct)
     {
@@ -120,6 +122,13 @@ public sealed class AppointmentNotifier(HospitalDbContext db, INotificationServi
             .Select(p => new { p.Id, p.FullName, p.Phone, p.Email, p.PreferredLanguage })
             .FirstOrDefaultAsync(ct);
         if (patient is null || (patient.Phone is null && patient.Email is null))
+        {
+            return null;
+        }
+
+        // The message names the doctor, whose speciality can reveal the care (a psychiatrist, say), so a record in a
+        // protected category gets none on a number another patient shares (SharedNumbers): the desk tells the patient.
+        if (await SharedNumbers.HiddenFromNumberAsync(db, patient.Id, ct))
         {
             return null;
         }

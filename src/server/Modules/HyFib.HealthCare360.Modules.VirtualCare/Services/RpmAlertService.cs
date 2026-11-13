@@ -21,7 +21,7 @@ public sealed class RpmAlertService(HospitalDbContext db, INotificationService n
     public const string CareTeamTemplate = "rpm.alert";
     public const string DeviceSilentTemplate = "rpm.device_silent";
 
-    private static readonly NotificationChannel[] Channels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
+    internal static readonly NotificationChannel[] Channels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
 
     /// <summary>Opens or escalates alerts for out-of-range readings; returns the alerts that need notifying.</summary>
     public async Task<IReadOnlyList<RpmAlert>> RaiseForReadingsAsync(RpmEnrollment enrollment, IReadOnlyList<RpmReading> outOfRange, DateTimeOffset now, CancellationToken ct)
@@ -68,14 +68,14 @@ public sealed class RpmAlertService(HospitalDbContext db, INotificationService n
 
         var patient = await db.Set<Patient>().AsNoTracking()
             .Where(p => p.Id == enrollment.PatientId)
-            .Select(p => new { p.Id, p.FullName, p.Phone, p.Email })
+            .Select(p => new { p.Id, p.FullName, p.Phone, p.Email, p.PreferredLanguage })
             .FirstOrDefaultAsync(ct);
         if (patient?.Phone is not null)
         {
             var since = HospitalCalendar.India.ToLocal(device.LastSeenAt ?? device.AssignedAt ?? now - silentFor);
             notifications.Queue(
                 DeviceSilentTemplate,
-                new NotificationRecipient(patient.Phone, patient.Email, patient.Id, patient.FullName),
+                NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
                 new Dictionary<string, string>
                 {
                     ["name"] = patient.FullName,

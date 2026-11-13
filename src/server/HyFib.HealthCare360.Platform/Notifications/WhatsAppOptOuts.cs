@@ -101,7 +101,7 @@ public static class WhatsAppOptOutPolicy
     {
         // Service messages: most also go by SMS, and the portal has the same information.
         "appointment.confirmed", "appointment.reminder", "appointment.cancelled", "visit.token", "admission.admitted",
-        "discharge.completed", "bill.receipt", "payment.link", "lab.report_ready", "prescription.shared",
+        "discharge.completed", "discharge.summary", "bill.receipt", "payment.link", "lab.report_ready", "prescription.shared",
         "feedback.request", "followup.reminder",
 
         // Asked for just now, but the portal has the link too.

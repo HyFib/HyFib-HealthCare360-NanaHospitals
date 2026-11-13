@@ -4,9 +4,10 @@ using System.Text.RegularExpressions;
 namespace HyFib.HealthCare360.Integrations.WhatsApp;
 
 /// <summary>
-/// Meta WhatsApp Cloud API: approved template messages with body parameters (and, for templates approved with one, a
-/// document header such as a report's PDF), documents (reports, bills) uploaded to <c>/{phone-number-id}/media</c>
-/// first and then sent by media id, and free-form text replies. Parameter values, texts and documents can carry PHI,
+/// Meta WhatsApp Cloud API: approved template messages with body parameters (the whole text, or the HC360 template's
+/// placeholders, positional or named: <see cref="WhatsAppTemplateParameters"/>) and, for templates approved with one, a
+/// document header such as a report's PDF; documents (reports, bills) uploaded to <c>/{phone-number-id}/media</c>
+/// first and then sent by media id; and free-form text replies. Parameter values, texts and documents can carry PHI,
 /// so only the template name, parameter count, text length and file size are logged.
 /// </summary>
 internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationTrace trace) : IWhatsAppProvider
@@ -23,13 +24,14 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
     public async Task<SendResult> SendTemplateAsync(WhatsAppTemplateMessage message, WhatsAppSettings settings, WhatsAppSecrets secrets, CancellationToken cancellationToken)
     {
         var started = trace.Start();
-        if (Validate(settings, secrets) is { } problem)
+        if ((Validate(settings, secrets) ?? WhatsAppTemplateParameters.Problem(settings)) is { } problem)
         {
             return await FailAsync("template", message.Reference, started, problem);
         }
 
         var language = settings.LanguageCodes?.GetValueOrDefault(message.Language) ?? message.Language;
-        var summary = $"{{\"to\":\"{Phone.Mask(message.To)}\",\"template\":\"{message.TemplateName}\",\"language\":\"{language}\",\"parameters\":{message.BodyParameters.Count}"
+        var parameters = WhatsAppTemplateParameters.For(message, settings);
+        var summary = $"{{\"to\":\"{Phone.Mask(message.To)}\",\"template\":\"{message.TemplateName}\",\"language\":\"{language}\",\"parameters\":{parameters.Count}"
             + (message.HeaderDocument is { } attached ? $",\"document\":{attached.Content.Length}}}" : "}");
         HeaderMedia? header = null;
         if (message.HeaderDocument is { } document)
@@ -58,7 +60,7 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
             header = new HeaderMedia(mediaId, fileName);
         }
 
-        var payload = TemplatePayload(message.To, message.TemplateName, language, message.BodyParameters, header);
+        var payload = TemplatePayload(message.To, message.TemplateName, language, parameters, header);
         return await SendMessageAsync(settings, secrets, payload, "template", summary, message.Reference, started, cancellationToken);
     }
 
@@ -126,10 +128,12 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
     };
 
     /// <summary>
-    /// Template message: an optional document header (an uploaded file, by media id) and the body parameters. Meta
-    /// rejects parameters containing newlines, tabs or long runs of spaces.
+    /// Template message: an optional document header (an uploaded file, by media id) and the body parameters, a named
+    /// one with its <c>parameter_name</c>; no body without parameters. Meta rejects parameters containing newlines, tabs
+    /// or long runs of spaces.
     /// </summary>
-    internal static object TemplatePayload(string to, string templateName, string language, IReadOnlyList<string> parameters, HeaderMedia? header = null)
+    internal static object TemplatePayload(
+        string to, string templateName, string language, IReadOnlyList<WhatsAppBodyParameter> parameters, HeaderMedia? header = null)
     {
         var components = new List<object>();
         if (header is not null)
@@ -139,7 +143,11 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
 
         if (parameters.Count > 0)
         {
-            components.Add(new { type = "body", parameters = parameters.Select(p => new { type = "text", text = SanitizeParameter(p) }).ToArray() });
+            components.Add(new
+            {
+                type = "body",
+                parameters = parameters.Select(p => new { type = "text", parameter_name = p.Name, text = SanitizeParameter(p.Value) }).ToArray(),
+            });
         }
 
         return new

@@ -122,7 +122,7 @@ internal sealed class SharePrescriptionAfterTeleconsultation(HospitalDbContext d
 
         var patient = await db.Set<Patient>().AsNoTracking()
             .Where(p => p.Id == domainEvent.PatientId)
-            .Select(p => new { p.Id, p.FullName, p.Phone, p.Email })
+            .Select(p => new { p.Id, p.FullName, p.Phone, p.Email, p.PreferredLanguage })
             .FirstOrDefaultAsync(cancellationToken);
         if (patient?.Phone is null)
         {
@@ -132,12 +132,13 @@ internal sealed class SharePrescriptionAfterTeleconsultation(HospitalDbContext d
         var doctor = await db.Set<Practitioner>().AsNoTracking().Where(p => p.Id == domainEvent.PractitionerId).Select(p => p.DisplayName).FirstOrDefaultAsync(cancellationToken);
         notifications.Queue(
             Template,
-            new NotificationRecipient(patient.Phone, patient.Email, patient.Id, patient.FullName),
+            NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
             new Dictionary<string, string>
             {
                 ["name"] = patient.FullName,
                 ["doctor"] = doctor ?? "your doctor",
-                ["date"] = HospitalCalendar.India.ToLocal(domainEvent.SignedAt).ToString("dd MMM yyyy", CultureInfo.InvariantCulture),
+                // As Clinical writes it in the same message on WhatsApp, so the patient reads one date the same way twice.
+                ["date"] = HospitalCalendar.India.ToLocal(domainEvent.SignedAt).ToString("dd-MM-yyyy", CultureInfo.InvariantCulture),
             },
             Channels,
             TimeSpan.FromDays(2),

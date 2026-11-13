@@ -22,6 +22,9 @@ public sealed class FeedbackInvitationService(
 {
     public const string RequestTemplate = "feedback.request";
 
+    /// <summary>By SMS, and on WhatsApp to numbers that opted in, once its WhatsApp template is switched on.</summary>
+    internal static readonly IReadOnlyList<NotificationChannel> Channels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
+
     /// <summary>Adds the invitation and queues the SMS in the caller's unit of work; the caller saves.</summary>
     public async Task<Result<Guid>> InviteAsync(FeedbackInviteRequest request, CancellationToken ct)
     {
@@ -95,7 +98,7 @@ public sealed class FeedbackInvitationService(
             RequestTemplate,
             new NotificationRecipient(patient.Phone, null, patient.Id, patient.FullName, CampaignService.LanguageCode(patient.PreferredLanguage)),
             new Dictionary<string, string> { ["link"] = PublicLinks.Feedback(baseUrl, token) },
-            [NotificationChannel.Sms],
+            Channels,
             TimeSpan.FromDays(3),
             form.FacilityId);
         return invitation.Id;
