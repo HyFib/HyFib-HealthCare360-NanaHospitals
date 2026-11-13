@@ -173,7 +173,7 @@ public sealed class VisitService(
             if (request.NotifyPatient && patient.Phone is not null)
             {
                 notifications.Queue("visit.token",
-                    new NotificationRecipient(patient.Phone, patient.Email, patient.Id, patient.FullName),
+                    NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
                     new Dictionary<string, string> { ["department"] = department.Name, ["token"] = token.Label },
                     [NotificationChannel.Sms],
                     TimeSpan.FromHours(2));

@@ -91,7 +91,7 @@ internal sealed class RefillReminderJob(
             var patients = await db.Set<Patient>().AsNoTracking()
                 .Where(p => patientIds.Contains(p.Id) && p.IsActive && !p.IsDeceased && p.Phone != null
                             && db.Set<PatientConsent>().Any(c => c.PatientId == p.Id && c.Type == ConsentType.SmsWhatsAppUpdates && c.Granted && c.RevokedAt == null))
-                .Select(p => new { p.Id, p.FullName, p.Phone, p.Email })
+                .Select(p => new { p.Id, p.FullName, p.Phone, p.Email, p.PreferredLanguage })
                 .ToDictionaryAsync(p => p.Id, ct);
 
             foreach (var (entry, last) in due)
@@ -103,7 +103,7 @@ internal sealed class RefillReminderJob(
                 }
 
                 notifications.Queue(RefillService.ReminderTemplate,
-                    new NotificationRecipient(patient.Phone, patient.Email, patient.Id, patient.FullName),
+                    NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
                     new Dictionary<string, string>
                     {
                         ["medicines"] = string.Join(", ", entry.Lines.Select(l => l.DrugName).Take(3)),

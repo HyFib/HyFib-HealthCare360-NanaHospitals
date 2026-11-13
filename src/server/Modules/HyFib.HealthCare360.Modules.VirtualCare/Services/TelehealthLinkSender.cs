@@ -31,7 +31,7 @@ public sealed class TelehealthLinkSender(HospitalDbContext db, INotificationServ
     {
         var patient = await db.Set<Patient>().AsNoTracking()
             .Where(p => p.Id == session.PatientId)
-            .Select(p => new { p.Id, p.FullName, p.Phone, p.Email })
+            .Select(p => new { p.Id, p.FullName, p.Phone, p.Email, p.PreferredLanguage })
             .FirstOrDefaultAsync(ct);
         if (patient is null || (patient.Phone is null && patient.Email is null))
         {
@@ -46,7 +46,7 @@ public sealed class TelehealthLinkSender(HospitalDbContext db, INotificationServ
 
         notifications.Queue(
             Template,
-            new NotificationRecipient(patient.Phone, patient.Email, patient.Id, patient.FullName),
+            NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
             new Dictionary<string, string>
             {
                 ["name"] = patient.FullName,

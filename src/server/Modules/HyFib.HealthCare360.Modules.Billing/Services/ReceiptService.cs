@@ -422,7 +422,7 @@ public sealed class ReceiptService(
 
         var patient = await db.Set<Patient>().IgnoreQueryFilters()
             .Where(p => p.Id == receipt.PatientId)
-            .Select(p => new { p.Phone, p.Email, p.FullName })
+            .Select(p => new { p.Phone, p.Email, p.FullName, p.PreferredLanguage })
             .FirstOrDefaultAsync(ct);
         if (patient?.Phone is null)
         {
@@ -431,7 +431,7 @@ public sealed class ReceiptService(
 
         notifications.Queue(
             "bill.receipt",
-            new NotificationRecipient(patient.Phone, patient.Email, receipt.PatientId, patient.FullName),
+            NotificationRecipient.Patient(patient.Phone, patient.Email, receipt.PatientId, patient.FullName, patient.PreferredLanguage),
             new Dictionary<string, string>
             {
                 ["amount"] = Money.FormatInr(receipt.Amount),

@@ -448,12 +448,12 @@ public sealed class DischargeService(
         {
             var patient = await db.Set<Patient>().AsNoTracking()
                 .Where(p => p.Id == admission.PatientId)
-                .Select(p => new { p.Id, p.FullName, p.Phone, p.Email })
+                .Select(p => new { p.Id, p.FullName, p.Phone, p.Email, p.PreferredLanguage })
                 .FirstOrDefaultAsync(ct);
             if (patient?.Phone is not null)
             {
                 notifications.Queue("discharge.completed",
-                    new NotificationRecipient(patient.Phone, patient.Email, patient.Id, patient.FullName),
+                    NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
                     new Dictionary<string, string> { ["name"] = patient.FullName },
                     [NotificationChannel.Sms],
                     TimeSpan.FromHours(12));

@@ -84,7 +84,7 @@ public sealed class BillSharing(HospitalDbContext db, INotificationService notif
     private void Queue(Bill bill, Recipient patient) =>
         notifications.Queue(
             Template,
-            new NotificationRecipient(patient.Phone, null, bill.PatientId, patient.FullName),
+            NotificationRecipient.Patient(patient.Phone, null, bill.PatientId, patient.FullName, patient.PreferredLanguage),
             new Dictionary<string, string>
             {
                 ["name"] = patient.FullName,
@@ -100,10 +100,10 @@ public sealed class BillSharing(HospitalDbContext db, INotificationService notif
     {
         var patient = await db.Set<Patient>().IgnoreQueryFilters().AsNoTracking()
             .Where(p => p.Id == patientId)
-            .Select(p => new { p.Phone, p.FullName, p.IsDeceased })
+            .Select(p => new { p.Phone, p.FullName, p.IsDeceased, p.PreferredLanguage })
             .FirstOrDefaultAsync(ct);
-        return patient is { Phone: { } phone, IsDeceased: false } ? new Recipient(phone, patient.FullName) : null;
+        return patient is { Phone: { } phone, IsDeceased: false } ? new Recipient(phone, patient.FullName, patient.PreferredLanguage) : null;
     }
 
-    private sealed record Recipient(string Phone, string FullName);
+    private sealed record Recipient(string Phone, string FullName, string? PreferredLanguage);
 }

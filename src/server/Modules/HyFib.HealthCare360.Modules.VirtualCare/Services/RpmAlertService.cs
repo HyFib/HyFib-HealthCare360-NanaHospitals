@@ -68,14 +68,14 @@ public sealed class RpmAlertService(HospitalDbContext db, INotificationService n
 
         var patient = await db.Set<Patient>().AsNoTracking()
             .Where(p => p.Id == enrollment.PatientId)
-            .Select(p => new { p.Id, p.FullName, p.Phone, p.Email })
+            .Select(p => new { p.Id, p.FullName, p.Phone, p.Email, p.PreferredLanguage })
             .FirstOrDefaultAsync(ct);
         if (patient?.Phone is not null)
         {
             var since = HospitalCalendar.India.ToLocal(device.LastSeenAt ?? device.AssignedAt ?? now - silentFor);
             notifications.Queue(
                 DeviceSilentTemplate,
-                new NotificationRecipient(patient.Phone, patient.Email, patient.Id, patient.FullName),
+                NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
                 new Dictionary<string, string>
                 {
                     ["name"] = patient.FullName,

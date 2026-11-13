@@ -1,4 +1,6 @@
 using HyFib.HealthCare360.Modules.Engagement.Domain;
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Services;
@@ -114,7 +116,13 @@ public sealed class FeedbackService(HospitalDbContext db, ComplaintService compl
 
             if (contactPhone is not null)
             {
-                notifications.Queue(ComplaintAcknowledgedTemplate, new NotificationRecipient(contactPhone, null, context.PatientId, "Patient"),
+                // In the patient's language when the feedback came from their own invitation; the number is the one they
+                // typed, so the message still names no one.
+                var language = context.PatientId is { } patientId
+                    ? await db.Set<Patient>().AsNoTracking().Where(p => p.Id == patientId).Select(p => p.PreferredLanguage).FirstOrDefaultAsync(ct)
+                    : null;
+                notifications.Queue(ComplaintAcknowledgedTemplate,
+                    new NotificationRecipient(contactPhone, null, context.PatientId, "Patient", PatientLanguages.FromPreference(language) ?? PatientLanguages.Default),
                     new Dictionary<string, string> { ["reference"] = complaint.ComplaintNumber, ["name"] = "Patient" }, [NotificationChannel.Sms], TimeSpan.FromDays(1));
             }
         }

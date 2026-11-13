@@ -223,7 +223,7 @@ public sealed class AdmissionService(
         if (request.NotifyPatient && patient.Phone is not null)
         {
             notifications.Queue("admission.admitted",
-                new NotificationRecipient(patient.Phone, patient.Email, patient.Id, patient.FullName),
+                NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
                 new Dictionary<string, string>
                 {
                     ["name"] = patient.FullName,

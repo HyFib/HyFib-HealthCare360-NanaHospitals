@@ -19,7 +19,8 @@ internal sealed record PatientSnapshot(
     string? Email,
     bool IsActive,
     bool IsDeceased,
-    Guid? MergedIntoPatientId)
+    Guid? MergedIntoPatientId,
+    string? PreferredLanguage = null)
 {
     public string? AgeOn(DateOnly onDate) => DateOfBirth is { } dob ? Age.Format(dob, onDate) : null;
 
@@ -71,7 +72,7 @@ internal sealed class DiagnosticsLookups(HospitalDbContext db, ISettingsService 
             .Where(p => list.Contains(p.Id))
             .Select(p => new PatientSnapshot(
                 p.Id, p.Uhid, p.FullName, p.FirstName, p.MiddleName, p.LastName, p.Gender, p.DateOfBirth, p.Phone, p.Email, p.IsActive,
-                p.IsDeceased, p.MergedIntoPatientId))
+                p.IsDeceased, p.MergedIntoPatientId, p.PreferredLanguage))
             .ToDictionaryAsync(p => p.Id, ct);
     }
 

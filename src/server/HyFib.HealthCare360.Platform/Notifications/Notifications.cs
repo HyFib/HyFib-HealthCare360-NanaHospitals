@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Integrations;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -149,7 +150,15 @@ internal sealed class NotificationLogConfiguration : IEntityTypeConfiguration<No
     }
 }
 
-public sealed record NotificationRecipient(string? Phone, string? Email, Guid? PatientId, string? Name, string Language = "en");
+public sealed record NotificationRecipient(string? Phone, string? Email, Guid? PatientId, string? Name, string Language = "en")
+{
+    /// <summary>
+    /// A patient, written to in the language their record prefers when HC360 writes it (Hindi, Tamil: the template of that
+    /// language when the hospital has one), English otherwise. The record's preference is free text ("Tamil", "தமிழ்", "ta").
+    /// </summary>
+    public static NotificationRecipient Patient(string? phone, string? email, Guid patientId, string? name, string? preferredLanguage) =>
+        new(phone, email, patientId, name, PatientLanguages.FromPreference(preferredLanguage) ?? PatientLanguages.Default);
+}
 
 /// <summary>
 /// A document to send with a message, named rather than attached: it is made when the message goes out, so the patient

@@ -82,7 +82,7 @@ public sealed class PaymentGatewayService(
         {
             notifications.Queue(
                 "payment.link",
-                new NotificationRecipient(patient.Phone, patient.Email, order.PatientId, patient.FullName),
+                NotificationRecipient.Patient(patient.Phone, patient.Email, order.PatientId, patient.FullName, patient.PreferredLanguage),
                 new Dictionary<string, string>
                 {
                     ["name"] = patient.FullName,
@@ -618,8 +618,8 @@ public sealed class PaymentGatewayService(
     private async Task<Contact?> ContactAsync(Guid patientId, CancellationToken ct) =>
         await db.Set<Patient>().IgnoreQueryFilters()
             .Where(p => p.Id == patientId)
-            .Select(p => new Contact(p.FullName, p.Phone, p.Email))
+            .Select(p => new Contact(p.FullName, p.Phone, p.Email, p.PreferredLanguage))
             .FirstOrDefaultAsync(ct);
 
-    private sealed record Contact(string FullName, string? Phone, string? Email);
+    private sealed record Contact(string FullName, string? Phone, string? Email, string? PreferredLanguage);
 }
