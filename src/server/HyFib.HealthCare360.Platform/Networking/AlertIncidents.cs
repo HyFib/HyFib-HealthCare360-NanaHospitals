@@ -305,8 +305,8 @@ public sealed class AlertIncidents(
     /// <summary>
     /// Whether an alert that cleared was told for a server that had stopped reporting
     /// (<see cref="SystemHealthService.NotReportingCode"/>) and reports again: it is among <paramref name="reporting"/>.
-    /// Its warning also goes when the server is stopped on purpose, which removes it from the servers, and when it has been
-    /// silent for a day, when it is dropped from them; neither is back, and nobody is told so.
+    /// Its warning also goes when the server is stopped on purpose, which removes it from the servers, and when someone
+    /// removes it from System health (<see cref="ServerRemoval"/>); neither is back, and nobody is told so.
     /// </summary>
     internal static bool IsBack(AlertIncident incident, IReadOnlyCollection<string>? reporting)
     {

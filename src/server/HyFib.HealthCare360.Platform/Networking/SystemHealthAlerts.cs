@@ -85,7 +85,7 @@ internal sealed class SystemHealthAlerts(
     /// <summary>
     /// The alerts of <paramref name="report"/> at <paramref name="now"/>: of its warnings, the critical ones but those the
     /// link monitor tells; and with several servers, those that report now, from the same report, for a server whose alert
-    /// for not reporting clears is back only if it is among them. One stopped on purpose, or silent for a day, is not.
+    /// for not reporting clears is back only if it is among them. One stopped on purpose, or removed, is not.
     /// </summary>
     internal static Task<IReadOnlyList<HealthWarning>> CheckAsync(SystemHealthReport report, AlertIncidents alerts, DateTimeOffset now, CancellationToken ct)
     {

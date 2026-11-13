@@ -380,8 +380,8 @@ public sealed class AlertingTests(HospitalServer server)
     }
 
     /// <summary>
-    /// A server stopped on purpose removes itself from the servers that report, and one silent for a day is dropped from
-    /// them: its alert clears all the same, but it is not back, and nobody is told it is. The alert of its silence stands.
+    /// A server stopped on purpose removes itself from the servers that report, and one removed from System health is gone
+    /// from them: its alert clears all the same, but it is not back, and nobody is told it is. The alert of its silence stands.
     /// </summary>
     [Fact]
     public async Task A_server_gone_rather_than_back_is_not_told_back()

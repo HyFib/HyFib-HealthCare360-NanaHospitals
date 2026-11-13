@@ -106,8 +106,8 @@ public sealed class ServerReportingTests
     }
 
     /// <summary>
-    /// Its warning goes too when the server is stopped on purpose (it removes itself from the servers) or has been silent
-    /// for a day (it is dropped from them): a message on its alert's clearing alone told IT a dead server was back.
+    /// Its warning goes too when the server is stopped on purpose (it removes itself from the servers) or someone removes
+    /// it from System health: a message on its alert's clearing alone told IT a server gone for good was back.
     /// </summary>
     [Fact]
     public void A_server_gone_rather_than_back_is_not_back()
