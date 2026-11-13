@@ -278,7 +278,7 @@ internal sealed class WifiMonitor(
                 var cables = NetworkLinks.Cables(NetworkLinks.Read());
                 var current = WlanClient.GetPrimaryConnection();
                 var events = SampleLinks(detector, cableDetector, previous, current, cables, now, network, WlanService.Diagnose,
-                    addresses => served.Recently(addresses, now));
+                    served.Recently);
                 state.Update(current, now, detector.AdapterMissing, detector.LinkLost, cables, cableDetector.Lost);
                 foreach (var linkEvent in events)
                 {
