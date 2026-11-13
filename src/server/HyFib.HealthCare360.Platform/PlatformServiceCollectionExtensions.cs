@@ -309,6 +309,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<SimulatorRecordSweep>();
         services.AddScoped<AlertDrills>();
         services.AddScoped<AlertIncidents>();
+        services.AddScoped<ServerRemoval>();
 
         // Access is given by two people: the decision, its approval actions, and whether the hospital has had two.
         services.AddSingleton<GrantLatch>();

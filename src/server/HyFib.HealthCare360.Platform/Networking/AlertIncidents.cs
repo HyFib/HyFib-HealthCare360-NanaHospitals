@@ -270,6 +270,27 @@ public sealed class AlertIncidents(
     }
 
     /// <summary>
+    /// Acknowledges the open alert of a server that stopped reporting, as someone removes it from System health
+    /// (<see cref="ServerRemoval"/>): they are on it, so nobody further is paged, and the alerts report says who. Its warning
+    /// goes with the server, and the alert clears at the next check without a word: the server is gone, not back. Saved with
+    /// the caller's changes, in its transaction, which holds the alerts' turn.
+    /// </summary>
+    internal static async Task AcknowledgeRemovedServerAsync(
+        HospitalDbContext db, IAuditLogger audit, ICurrentUser user, TimeProvider time, string server, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(time);
+        var key = Clip(server, AlertIncident.ServerLength);
+        var open = await db.Set<AlertIncident>()
+            .Where(i => i.Code == SystemHealthService.NotReportingCode && i.Server == key && i.ClearedAt == null && i.AcknowledgedAt == null)
+            .ToListAsync(ct);
+        foreach (var incident in open)
+        {
+            Acknowledge(audit, user, incident, time.GetUtcNow());
+        }
+    }
+
+    /// <summary>
     /// Whether a message in this state has reached someone or may still: queued, sent or delivered. One that failed (its
     /// last attempt, though the outbox may try again), was skipped or was suppressed (the number opted out of WhatsApp)
     /// has not, and a critical alert does not wait on the retries.

@@ -1,3 +1,5 @@
+using System.Net;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
@@ -165,6 +167,147 @@ public sealed class SystemHealthServersTests(HospitalServer server)
     }
 
     /// <summary>
+    /// A server that stopped without saying so and stays silent for days, as one whose power supply died: it stays on System
+    /// health, critically, saying since when and how to remove it if it was retired, and its alert is told again every day.
+    /// Before, its row was dropped after a day, and the alert cleared unseen, a few minutes before its reminder was due.
+    /// </summary>
+    [Fact]
+    public async Task A_server_silent_for_days_stays_and_its_alert_is_told_again_every_day()
+    {
+        var scopes = server.Services.GetRequiredService<IServiceScopeFactory>();
+        var jobs = new ServerNodeBoard(scopes, NodeFolder());
+        var dead = new ServerNodeBoard(scopes, NodeFolder());
+        var suffix = Guid.NewGuid().ToString("N")[..6].ToUpperInvariant();
+        var name = "IT-DEAD-" + suffix;
+        try
+        {
+            await jobs.PublishAsync(JobNode("IT-JOBS-" + suffix) with { Warnings = [] }, Ct);
+            await dead.PublishAsync(ApiNode(name), Ct);
+            await SilenceAsync(dead.Node, "2 days");
+            await jobs.PublishAsync(JobNode("IT-JOBS-" + suffix) with { Warnings = [] }, Ct);
+
+            var report = await ApiNodeReportAsync();
+            report.Servers.ShouldNotBeNull().Single(s => s.Server.MachineName == name).Reporting.ShouldBeFalse();
+            report.Warnings.Single(w => w.Code == SystemHealthService.NotReportingCode && w.Server == name).ShouldSatisfyAllConditions(
+                w => w.Severity.ShouldBe("critical"),
+                w => w.Message.ShouldStartWith($"{name} has not reported since "),
+                w => w.Message.ShouldEndWith(" If it was retired, remove it under Administration › System health."));
+
+            var toldAt = DateTimeOffset.UtcNow;
+            await AlertsAsync(report, toldAt);
+            await AlertsAsync(await ApiNodeReportAsync(), toldAt.Add(SystemHealthAlerts.RemindAfter).AddMinutes(1));
+            var alert = await NotReportingAsync(name);
+            (alert.ClearedAt, alert.RemindedAt is not null).ShouldBe((null, true), "still open, and told again a day later");
+        }
+        finally
+        {
+            await dead.WithdrawAsync(Ct);
+            await jobs.WithdrawAsync(Ct);
+            await using var scope = server.Services.CreateAsyncScope();
+            await AlertsAsync(await scope.ServiceProvider.GetRequiredService<SystemHealthService>().BuildAsync(Ct), DateTimeOffset.UtcNow);
+        }
+    }
+
+    /// <summary>
+    /// A server set up again in the same machine and data folder, its id made anew (the folder made again), takes its old
+    /// row's place: the old one would otherwise stay, not reporting, now that a silent server's row is kept. A second server
+    /// on the same machine, in a data folder of its own, keeps its own.
+    /// </summary>
+    [Fact]
+    public async Task A_server_set_up_again_in_the_same_place_replaces_its_old_row()
+    {
+        var scopes = server.Services.GetRequiredService<IServiceScopeFactory>();
+        var before = new ServerNodeBoard(scopes, NodeFolder());
+        var after = new ServerNodeBoard(scopes, NodeFolder());
+        var second = new ServerNodeBoard(scopes, NodeFolder());
+        var name = "IT-JOBS-" + Guid.NewGuid().ToString("N")[..6].ToUpperInvariant();
+        try
+        {
+            await before.PublishAsync(JobNode(name) with { Warnings = [] }, Ct);
+            await SilenceAsync(before.Node, "10 minutes");
+            after.Node.ShouldNotBe(before.Node);
+            await after.PublishAsync(JobNode(name) with { Warnings = [] }, Ct);
+
+            (await ReportOfAsync(before.Node)).ShouldBeNull("the server set up again removed its old row");
+            var shown = (await ApiNodeReportAsync()).Servers.ShouldNotBeNull().Where(s => s.Server.MachineName == name).ToList();
+            shown.ShouldHaveSingleItem().Reporting.ShouldBeTrue();
+
+            var elsewhere = JobNode(name) with { Warnings = [] };
+            await second.PublishAsync(elsewhere with { Storage = elsewhere.Storage with { DataDirectory = @"D:\HC360-second" } }, Ct);
+            (await ReportOfAsync(after.Node)).ShouldNotBeNull("another server on the same machine, in a folder of its own, is not the same one");
+        }
+        finally
+        {
+            await second.WithdrawAsync(Ct);
+            await after.WithdrawAsync(Ct);
+            await before.WithdrawAsync(Ct);
+        }
+    }
+
+    /// <summary>
+    /// A silent server removed by whoever manages the server, once it was retired, renamed or set up elsewhere: its alert is
+    /// acknowledged by them, so nobody further is paged, and it clears without telling anyone the server is back. One that
+    /// reports cannot be removed, and those who only see System health cannot remove one. The removal is audited.
+    /// </summary>
+    [Fact]
+    public async Task A_silent_server_is_removed_by_whoever_manages_the_server_and_its_alert_acknowledged()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var scopes = server.Services.GetRequiredService<IServiceScopeFactory>();
+        var jobs = new ServerNodeBoard(scopes, NodeFolder());
+        var retired = new ServerNodeBoard(scopes, NodeFolder());
+        var suffix = Guid.NewGuid().ToString("N")[..6].ToUpperInvariant();
+        var name = "IT-OLD-" + suffix;
+        try
+        {
+            await jobs.PublishAsync(JobNode("IT-JOBS-" + suffix) with { Warnings = [] }, Ct);
+            await retired.PublishAsync(ApiNode(name), Ct);
+            await SilenceAsync(retired.Node, "2 days");
+            var toldAt = DateTimeOffset.UtcNow;
+            await AlertsAsync(await ApiNodeReportAsync(), toldAt);
+            (await NotReportingAsync(name)).ToldAt.ShouldNotBeNull();
+
+            using (var refused = await hospitalAdmin.SendRawAsync(HttpMethod.Delete, $"{Servers}/{retired.Node}"))
+            {
+                refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden, "only those who manage the server remove one");
+            }
+
+            using (var reporting = await admin.SendRawAsync(HttpMethod.Delete, $"{Servers}/{jobs.Node}"))
+            {
+                reporting.StatusCode.ShouldBe(HttpStatusCode.Conflict, "a server that reports removes itself when it is stopped");
+            }
+
+            using (var removed = await admin.SendRawAsync(HttpMethod.Delete, $"{Servers}/{retired.Node}"))
+            {
+                removed.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+            }
+
+            (await ReportOfAsync(retired.Node)).ShouldBeNull();
+            (await NotReportingAsync(name)).AcknowledgedBy.ShouldNotBeNullOrWhiteSpace("whoever removes it is on it: nobody further is paged");
+            (await RemovalsAsync(name)).ShouldBe(1);
+            using (var again = await admin.SendRawAsync(HttpMethod.Delete, $"{Servers}/{retired.Node}"))
+            {
+                again.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+            }
+
+            // Its warning is gone, and so is its alert: cleared, but not told back.
+            var after = await ApiNodeReportAsync();
+            after.Servers.ShouldNotBeNull().ShouldNotContain(s => s.Server.MachineName == name);
+            await AlertsAsync(after, toldAt.AddMinutes(10));
+            (await NotReportingAsync(name)).ClearedAt.ShouldNotBeNull();
+            (await ToldBackAsync(name)).ShouldBe(0, "a server removed is gone, not back");
+        }
+        finally
+        {
+            await retired.WithdrawAsync(Ct);
+            await jobs.WithdrawAsync(Ct);
+            await using var scope = server.Services.CreateAsyncScope();
+            await AlertsAsync(await scope.ServiceProvider.GetRequiredService<SystemHealthService>().BuildAsync(Ct), DateTimeOffset.UtcNow);
+        }
+    }
+
+    /// <summary>
     /// Exactly one server should run the background jobs: each that does makes the nightly backup and listens for analysers
     /// and modalities. An API node whose settings miss "Role": "api" runs them as "all", and nothing said so. One that no
     /// longer reports runs nothing.
@@ -319,11 +462,24 @@ public sealed class SystemHealthServersTests(HospitalServer server)
     private static ServerNodeHealth ApiNode(string machine) => JobNode(machine, role: "api") with { Warnings = [] };
 
     /// <summary>A server's row as when it stopped writing it ten minutes ago, without saying so, as in a power cut.</summary>
-    private async Task SilenceAsync(string node)
+    private Task SilenceAsync(string node) => SilenceAsync(node, "10 minutes");
+
+    /// <summary>A server's row as when it stopped writing it <paramref name="ago"/> ago (a PostgreSQL interval).</summary>
+    private async Task SilenceAsync(string node, string ago)
     {
         await using var scope = server.Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Database.ExecuteSqlAsync(
-            $"UPDATE platform.server_nodes SET reported_at = now() - interval '10 minutes' WHERE node = {node}", Ct);
+            $"UPDATE platform.server_nodes SET reported_at = now() - CAST({ago} AS interval) WHERE node = {node}", Ct);
+    }
+
+    private const string Servers = "/api/v1/admin/system/servers";
+
+    /// <summary>How many times <paramref name="machine"/> was removed from System health, as the audit trail has it.</summary>
+    private async Task<int> RemovalsAsync(string machine)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuditEvent>()
+            .CountAsync(e => e.Action == ServerRemoval.RemovedAction && e.EntityId == machine, Ct);
     }
 
     /// <summary>One check of the alerts at <paramref name="now"/>, from <paramref name="report"/>, as the node that runs them makes it.</summary>

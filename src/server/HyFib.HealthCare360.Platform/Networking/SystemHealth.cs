@@ -317,7 +317,7 @@ public sealed class SystemHealthService(
 
         // Several servers: every one's, after the hospital's.
         var everyServer = await EveryServerAsync(own.ToNode(now), ct);
-        List<HealthWarning> all = [.. databaseWarnings, .. backupWarnings, .. messageWarnings, .. keyWarnings, .. ServerWarnings(everyServer)];
+        List<HealthWarning> all = [.. databaseWarnings, .. backupWarnings, .. messageWarnings, .. keyWarnings, .. ServerWarnings(everyServer, now)];
         return new SystemHealthReport(own.Server, own.Network, database, own.Storage, backup, outbox, own.Certificate, own.Power, integrations, all, now, everyServer);
     }
 
@@ -357,11 +357,12 @@ public sealed class SystemHealthService(
     }
 
     /// <summary>
-    /// The warnings about every server, each naming it: its own while it reports, and that it has stopped when it has not;
-    /// when none of them runs the jobs, that nothing runs them, or, while servers stand by for the job lease, that one of
-    /// them is about to; and when more than one that reports does, that one should.
+    /// The warnings about every server, each naming it: its own while it reports, and that it has stopped when it has not,
+    /// since when (<paramref name="now"/> tells today from another day); when none of them runs the jobs, that nothing runs
+    /// them, or, while servers stand by for the job lease, that one of them is about to; and when more than one that
+    /// reports does, that one should.
     /// </summary>
-    internal static IReadOnlyList<HealthWarning> ServerWarnings(IReadOnlyList<ServerNodeHealth> servers)
+    internal static IReadOnlyList<HealthWarning> ServerWarnings(IReadOnlyList<ServerNodeHealth> servers, DateTimeOffset now)
     {
         var warnings = new List<HealthWarning>();
         var standingBy = servers.Where(s => s.Reporting && s.Server.Jobs is { Active: false }).Select(s => s.Server.MachineName).ToArray();
@@ -374,15 +375,16 @@ public sealed class SystemHealthService(
             }
             else if (!RunsJobs(server))
             {
-                warnings.Add(NotReporting(server, servers));
+                warnings.Add(NotReporting(server, servers, now));
             }
             else
             {
                 warnings.Add(new(NotReportingCode, "critical",
-                    $"{name}, which ran the background jobs, has not reported for more than three minutes: {SilentBecause} " +
+                    $"{name}, which ran the background jobs, has not reported since {Since(server.ReportedAt, now)}: {SilentBecause} " +
                     (standingBy.Length > 0
                         ? $"{string.Join(", ", standingBy)} stand{(standingBy.Length == 1 ? "s" : string.Empty)} by to take the jobs over within a minute."
-                        : "Until it is back, nothing makes the backups, sends messages or listens for analysers and modalities."),
+                        : "Until it is back, nothing makes the backups, sends messages or listens for analysers and modalities.")
+                    + IfRetired(server, now),
                     name));
             }
         }
@@ -443,30 +445,51 @@ public sealed class SystemHealthService(
         "it may be off, its HC360Server service stopped, its network cable out, or the database out of its reach.";
 
     /// <summary>
+    /// How long a server is silent before its warning says how to remove it, if it was retired: by then it is told again
+    /// every day (<see cref="SystemHealthAlerts.RemindAfter"/>), until it is back or someone removes it (<see cref="ServerRemoval"/>).
+    /// </summary>
+    public static readonly TimeSpan RetiredHintAfter = TimeSpan.FromDays(1);
+
+    /// <summary>When a silent server last reported, in the hospital's time, with the day when it was not today.</summary>
+    internal static string Since(DateTimeOffset reportedAt, DateTimeOffset now)
+    {
+        var at = TimeZoneInfo.ConvertTime(reportedAt, SharedKernel.HospitalTimeZone.Zone);
+        var today = TimeZoneInfo.ConvertTime(now, SharedKernel.HospitalTimeZone.Zone);
+        return at.ToString(at.Date == today.Date ? "HH:mm" : "d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>What a warning of a server silent for a day adds: it may have been retired, and how to stop its alert then.</summary>
+    private static string IfRetired(ServerNodeHealth server, DateTimeOffset now) =>
+        now - server.ReportedAt >= RetiredHintAfter ? " If it was retired, remove it under Administration › System health." : string.Empty;
+
+    /// <summary>
     /// A server that does not run the background jobs and has stopped reporting. One that takes requests (an API node, or one
     /// standing by for the job lease) is critical, so IT's phone is told, as for the job node: it may have been the last one
     /// taking them, and the warning says whether another still does. A server stopped on purpose removes itself instead, and
     /// pages nobody. One that only stands by for the jobs (a worker) is a warning: nothing stops until the job node does too.
     /// </summary>
-    private static HealthWarning NotReporting(ServerNodeHealth server, IReadOnlyList<ServerNodeHealth> servers)
+    private static HealthWarning NotReporting(ServerNodeHealth server, IReadOnlyList<ServerNodeHealth> servers, DateTimeOffset now)
     {
         var name = server.Server.MachineName;
+        var since = Since(server.ReportedAt, now);
         if (!ServesApi(server))
         {
             var standby = servers.Where(s => !ReferenceEquals(s, server) && s.Reporting && s.Server.Jobs is { Active: false })
                 .Select(s => s.Server.MachineName).ToArray();
             return new(NotReportingCode, "warning",
-                $"{name}, which stands by for the background jobs, has not reported for more than three minutes: {SilentBecause} " + (standby.Length > 0
+                $"{name}, which stands by for the background jobs, has not reported since {since}: {SilentBecause} " + (standby.Length > 0
                     ? $"{string.Join(", ", standby)} still stand{(standby.Length == 1 ? "s" : string.Empty)} by."
-                    : "Until it is back, no server takes the jobs over if the one that runs them stops."),
+                    : "Until it is back, no server takes the jobs over if the one that runs them stops.")
+                + IfRetired(server, now),
                 name);
         }
 
         var others = servers.Where(s => !ReferenceEquals(s, server) && s.Reporting && ServesApi(s)).Select(s => s.Server.MachineName).ToArray();
         return new(NotReportingCode, "critical",
-            $"{name} has not reported for more than three minutes: {SilentBecause} " + (others.Length > 0
+            $"{name} has not reported since {since}: {SilentBecause} " + (others.Length > 0
                 ? $"The reverse proxy sends requests to {string.Join(", ", others)} meanwhile."
-                : "No other server takes requests: workstations cannot reach HC360 until it is back."),
+                : "No other server takes requests: workstations cannot reach HC360 until it is back.")
+            + IfRetired(server, now),
             name);
     }
 
@@ -889,6 +912,11 @@ internal static class SystemEndpoints
         var admin = app.MapGroup("/api/v1/admin/system").WithTags("Administration").RequirePermission(PlatformPermissions.SystemRead);
 
         admin.MapGet("/health", async (SystemHealthService health, CancellationToken ct) => TypedResults.Ok(await health.BuildAsync(ct)));
+
+        // A server of several that stopped reporting stays, and its alert is told every day, until it is back or someone who
+        // manages the server removes it (retired, renamed, or set up again elsewhere); one that reports cannot be removed.
+        admin.MapDelete("/servers/{node}", async (string node, ServerRemoval removal, CancellationToken ct) => (await removal.RemoveAsync(node, ct)).ToNoContent())
+            .RequirePermission(PlatformPermissions.SystemManage);
 
         // The database password (SRS SEC-07): who may see whether it can be changed, and who may change it.
         admin.MapGet("/database-password", async (DatabasePasswordService passwords, CancellationToken ct) => TypedResults.Ok(await passwords.StatusAsync(ct)));
