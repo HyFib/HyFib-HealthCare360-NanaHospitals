@@ -225,7 +225,7 @@ describe('GST e-invoices', SCREEN_TESTS, () => {
       [`GET ${DOC}`]: live(true),
       [`POST ${DOC}/irn/cancel`]: refused(
         'einvoice.irp_cancel_unknown',
-        `The e-invoice portal did not answer. Whether the portal cancelled IRN ${IRN} is not known: it could not be asked how it holds it either. Try again once the portal answers: HC360 then asks it first, and records the cancellation if it was made.`,
+        `The e-invoice portal did not answer. Whether the portal cancelled IRN ${IRN} is not known: it did not say how it holds it. Try again once the portal answers: HC360 then asks it first, and records the cancellation if it was made.`,
       ),
     });
 
@@ -233,7 +233,7 @@ describe('GST e-invoices', SCREEN_TESTS, () => {
     const cancel = dialog.getByRole('button', { name: 'Cancel IRN on the portal' });
     const before = reads();
     await user.click(cancel);
-    expect(await dialog.findByText('Outcome not known: trying again settles it', {}, SLOW)).toBeInTheDocument();
+    expect(await dialog.findByText('Not known whether the portal cancelled the IRN', {}, SLOW)).toBeInTheDocument();
     expect(dialog.getByText(/records the cancellation if it was made/)).toBeInTheDocument();
     expect(posted(`${DOC}/irn/cancel`)[0]?.body).toEqual({
       reason: 'DataEntryMistake',

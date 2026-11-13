@@ -230,8 +230,10 @@ const HEADINGS: Record<IrnAction, Record<string, Heading>> = {
     'einvoice.irp_unreachable': ['warning', 'No IRN yet: the portal did not answer'],
     'einvoice.irp_cancelled': ['error', 'Cancelled on the portal: it needs a new number'],
   },
+  // Not known: the server's sentence says what to do, try again (the portal did not answer) or look the IRN up on the
+  // portal (it would not say how it holds the IRN, as after the days it keeps an IRN's details).
   cancel: {
-    'einvoice.irp_cancel_unknown': ['warning', 'Outcome not known: trying again settles it'],
+    'einvoice.irp_cancel_unknown': ['warning', 'Not known whether the portal cancelled the IRN'],
     'einvoice.irp_unreachable': ['warning', 'Not cancelled: the IRN is still active on the portal'],
   },
 };

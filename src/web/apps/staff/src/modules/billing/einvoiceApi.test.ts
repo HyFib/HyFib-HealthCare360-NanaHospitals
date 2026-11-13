@@ -74,9 +74,9 @@ describe('irnAnswer', () => {
     [
       'cancel',
       'einvoice.irp_cancel_unknown',
-      `The e-invoice portal did not answer. Whether the portal cancelled IRN ${IRN} is not known: it could not be asked how it holds it either. Try again once the portal answers: HC360 then asks it first, and records the cancellation if it was made.`,
+      `The e-invoice portal did not answer. Whether the portal cancelled IRN ${IRN} is not known: it did not say how it holds it. Try again once the portal answers: HC360 then asks it first, and records the cancellation if it was made.`,
       'warning',
-      'Outcome not known: trying again settles it',
+      'Not known whether the portal cancelled the IRN',
     ],
     [
       'cancel',
