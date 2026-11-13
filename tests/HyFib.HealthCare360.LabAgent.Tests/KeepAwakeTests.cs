@@ -106,6 +106,28 @@ public sealed class KeepAwakeTests
     }
 
     /// <summary>
+    /// The analysers change while a request is held, and Windows refuses the new one: the one held is kept, so the PC stays
+    /// awake while its analysers are relayed, and it is still let go once none is.
+    /// </summary>
+    [Fact]
+    public void Keeps_the_request_it_holds_when_Windows_refuses_the_new_one()
+    {
+        using var awake = new KeepAwake(_power, _logger);
+        awake.Relaying(["COM3"]);
+
+        _power.Refuse = true;
+        awake.Relaying(["COM3", "COM4"]);
+
+        _power.Held.ShouldBe([$"{KeepAwake.ReasonPrefix}COM3"], "the PC stays awake while it relays");
+        _logger.Warnings.Count.ShouldBe(1);
+        _logger.Warnings[0].ShouldContain("kept", Case.Insensitive, "it says the request it held is kept");
+
+        _power.Refuse = false;
+        awake.Relaying([]);
+        _power.Held.ShouldBeEmpty();
+    }
+
+    /// <summary>
     /// Windows' own list of what keeps a computer awake (<c>powercfg /requests</c>, under SYSTEM) names the request while it
     /// is held, and not once it is let go: what IT checks on the lab PC. powercfg needs an elevated prompt, which the
     /// Windows CI job has.

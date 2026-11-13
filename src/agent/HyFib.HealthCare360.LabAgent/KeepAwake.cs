@@ -44,23 +44,35 @@ internal sealed class KeepAwake(IPowerRequests power, ILogger logger) : IDisposa
             return;
         }
 
-        // The new request is taken before the old one is let go, so the PC is never without one while it relays. One that
-        // Windows refused is not asked for again until the analysers change: not at every heartbeat.
-        var previous = _held;
-        _held = null;
+        // One that Windows refused is not asked for again until the analysers change: not at every heartbeat.
         _reason = reason;
         if (reason is null)
         {
+            _held?.Dispose();
+            _held = null;
             logger.LogInformation("No analyser is relayed: Windows may let this PC sleep again");
+            return;
         }
-        else
+
+        // The new request is taken before the old one is let go, and the old one is kept if Windows refuses the new one, so
+        // the PC is never without one while it relays.
+        try
         {
-            try
+            var held = power.Hold(reason);
+            _held?.Dispose();
+            _held = held;
+            logger.LogInformation("Keeping this PC awake while it relays analyser results from {Ports}", string.Join(", ", names));
+        }
+        catch (Exception ex) when (ex is Win32Exception or EntryPointNotFoundException or DllNotFoundException)
+        {
+            if (_held is not null)
             {
-                _held = power.Hold(reason);
-                logger.LogInformation("Keeping this PC awake while it relays analyser results from {Ports}", string.Join(", ", names));
+                logger.LogWarning(ex,
+                    "Windows did not take this lab agent's new request to keep the PC awake while it relays {Ports}: the request it held is kept, "
+                    + "so the PC stays awake",
+                    string.Join(", ", names));
             }
-            catch (Exception ex) when (ex is Win32Exception or EntryPointNotFoundException or DllNotFoundException)
+            else
             {
                 logger.LogWarning(ex,
                     "Windows did not take this lab agent's request to keep the PC awake while it relays {Ports}: set the PC never to sleep "
@@ -68,8 +80,6 @@ internal sealed class KeepAwake(IPowerRequests power, ILogger logger) : IDisposa
                     string.Join(", ", names));
             }
         }
-
-        previous?.Dispose();
     }
 
     public void Dispose()
