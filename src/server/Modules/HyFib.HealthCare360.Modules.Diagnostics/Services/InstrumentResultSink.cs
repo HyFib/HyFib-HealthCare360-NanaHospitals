@@ -18,6 +18,11 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// (<see cref="UnmatchedLabResult"/>) for a lab user to assign or discard, and the message is acknowledged: the analyser
 /// neither sends it for ever nor loses it. The same reading sent again (after a lost acknowledgement) changes nothing.
 /// Verified results are never overwritten; a rerun needs the result to be reopened first.</item>
+/// <item>A result the analyser withdraws (posted in error, deleted) stops counting: its value on a test not yet verified
+/// is cleared, the test pending again with why; a verified value of its own stands, released or not, and the withdrawal
+/// is kept among the unmatched results for a person to check it; and its values kept aside for the sample are
+/// discarded, so none is put on a test. A result it could not obtain is noted on the test, for the bench to run it
+/// again or enter it by hand. Neither is a value to keep aside, and neither changes anything when sent again.</item>
 /// <item>Results are interpreted and delta-checked like manual entry, and keep what the analyser said about them: unit,
 /// flags, status and comment. They are auto-validated only when in range, QC was accepted today on this analyser, the
 /// delta check passed, and the analyser raised no flag, used the test's unit and reported the result as final.
@@ -78,7 +83,14 @@ internal sealed class InstrumentResultSink(
         var barcode = message.SampleBarcode.Trim();
         if (barcode.Length == 0)
         {
-            notOnTube.AddRange(message.Results);
+            if (message.Results.Any(r => r.Kind == InstrumentResultKind.Withdrawn))
+            {
+                // Without a sample id, nothing kept tells which results it withdraws: those stay for the lab to decide.
+                logger.LogWarning("Analyser {Instrument} withdrew results without a sample id: {Channels}", instrument.Code,
+                    string.Join(", ", message.Results.Where(r => r.Kind == InstrumentResultKind.Withdrawn).Select(r => r.ChannelCode)));
+            }
+
+            notOnTube.AddRange(Values(message));
             return await KeepAllAsync(instrument, message, tube: null, UnmatchedResultReason.NoSampleId,
                 $"{instrument.Code} sent the result without a sample id.", cancellationToken);
         }
@@ -86,7 +98,7 @@ internal sealed class InstrumentResultSink(
         var tube = await db.Set<LabSample>().FirstOrDefaultAsync(s => s.Barcode == barcode, cancellationToken);
         if (tube is null || tube.FacilityId != instrument.FacilityId)
         {
-            notOnTube.AddRange(message.Results);
+            notOnTube.AddRange(Values(message));
             return await KeepAllAsync(instrument, message, tube: null, UnmatchedResultReason.UnknownSample,
                 $"No sample of {instrument.Code}'s facility has the barcode {barcode}.", cancellationToken);
         }
@@ -106,7 +118,7 @@ internal sealed class InstrumentResultSink(
         }
         else if (tube.Status is not (SampleStatus.Received or SampleStatus.InProcess or SampleStatus.Completed))
         {
-            notOnTube.AddRange(message.Results);
+            notOnTube.AddRange(Values(message));
             return await KeepAllAsync(instrument, message, tube, UnmatchedResultReason.SampleNotInLab,
                 $"Sample {barcode} is {tube.Status.ToString().ToLowerInvariant()}, not in the lab.", cancellationToken);
         }
@@ -118,6 +130,7 @@ internal sealed class InstrumentResultSink(
         var context = await evaluator.LoadAsync(onTube, cancellationToken);
         var qcAccepted = await qc.AcceptedTestsAsync(tube.FacilityId, instrument.Code, open.Select(r => r.LabTestId).Distinct().ToList(), cancellationToken);
         var recorded = new List<LabResult>();
+        var told = new List<LabResult>();
         var unplaced = new List<Unplaced>();
         var unmapped = new List<InstrumentResult>();
         var unchanged = 0;
@@ -125,6 +138,37 @@ internal sealed class InstrumentResultSink(
         foreach (var reading in message.Results)
         {
             int Score(LabResult result) => context.Test(result.LabTestId)?.ChannelMatchScore(instrument.Code, reading.ChannelCode) ?? 0;
+            if (reading.Kind != InstrumentResultKind.Value)
+            {
+                // Said of the test the channel maps: the one a value would go on (or went on earlier in this message), else a
+                // verified one. A channel no test on the tube maps has nothing to withdraw or note.
+                if ((Best(onTube.Where(r => r.Status != LabResultStatus.Verified), Score) ?? Best(onTube, Score)) is not { } subject)
+                {
+                    continue;
+                }
+
+                var outcome = Told(subject, reading, instrument.Code, barcode);
+                if (outcome.Kept is { } held)
+                {
+                    unplaced.Add(held);
+                }
+                else if (outcome.Changed)
+                {
+                    told.Add(subject);
+                    if (subject.Status == LabResultStatus.Pending && !open.Contains(subject))
+                    {
+                        // Its value withdrawn, the test is open again: a value later in this message goes on it.
+                        open.Add(subject);
+                    }
+                }
+                else
+                {
+                    unchanged++;
+                }
+
+                continue;
+            }
+
             var analyser = Reading(reading);
             if (Best(open, Score) is not { } target)
             {
@@ -192,7 +236,7 @@ internal sealed class InstrumentResultSink(
         }
 
         notOnTube.AddRange(unmapped);
-        if (recorded.Count == 0 && unchanged == 0 && unplaced.Count == 0)
+        if (recorded.Count == 0 && told.Count == 0 && unchanged == 0 && unplaced.Count == 0)
         {
             // None of the tube's tests maps any channel sent: kept for a person, who can tell what the analyser ran.
             unplaced.AddRange(unmapped.Select(r => new Unplaced(r, UnmatchedResultReason.NoMatchingTest,
@@ -200,7 +244,7 @@ internal sealed class InstrumentResultSink(
             unmapped.Clear();
         }
 
-        if (recorded.Count == 0)
+        if (recorded.Count == 0 && told.Count == 0)
         {
             // Nothing goes on the tube, so nothing of it changes: a collected tube is neither received nor ordered.
             db.ChangeTracker.Clear();
@@ -215,6 +259,12 @@ internal sealed class InstrumentResultSink(
         {
             logger.LogInformation("Analyser {Instrument} sent channels no test on sample {Barcode} maps: {Channels}",
                 instrument.Code, barcode, string.Join(", ", unmapped.Select(r => r.ChannelCode)));
+        }
+
+        if (told.Count > 0)
+        {
+            logger.LogInformation("Analyser {Instrument} withdrew, or could not obtain, the result of {Tests} on sample {Barcode}",
+                instrument.Code, string.Join(", ", told.Select(r => r.TestName).Distinct(StringComparer.Ordinal)), barcode);
         }
 
         var criticals = recorded.Where(r => r.IsCritical).ToList();
@@ -273,6 +323,36 @@ internal sealed class InstrumentResultSink(
             $"{stored.TestName} on sample {barcode} is verified as {stored.Describe()}{source}; {instrumentCode} sent {sent}.", stored.Id);
     }
 
+    /// <summary>
+    /// Acts on what the analyser said of a test instead of a value. A withdrawal clears its own value from a test not
+    /// yet verified, the test pending again with why; beside a verified value of its own, which stands, released or not,
+    /// it is kept for a person to check (<see cref="UnmatchedResultReason.Withdrawn"/>). A result not obtained is noted on
+    /// a test not yet verified. Anything else changes nothing: no value to withdraw (the message sent again), a value
+    /// typed in or from another analyser, a verified result, or the note there already.
+    /// </summary>
+    internal static TestTold Told(LabResult test, InstrumentResult reading, string instrumentCode, string barcode)
+    {
+        var sent = reading.Status is { } status ? $"status {status}" : "no status";
+        if (reading.Kind == InstrumentResultKind.NotObtained)
+        {
+            return new TestTold(test.Note(test.Status == LabResultStatus.Pending
+                ? $"{instrumentCode} could not obtain a result for this test ({sent}): run it again or enter the result by hand."
+                : $"{instrumentCode} reported that it could not obtain a result for this test ({sent})."));
+        }
+
+        if (test.Status != LabResultStatus.Verified)
+        {
+            return new TestTold(test.Withdraw(instrumentCode,
+                $"{instrumentCode} withdrew its result {test.Describe()} ({sent}): run the test again or enter the result by hand."));
+        }
+
+        return string.Equals(test.InstrumentCode, instrumentCode, StringComparison.OrdinalIgnoreCase)
+            ? new TestTold(false, new Unplaced(reading, UnmatchedResultReason.Withdrawn,
+                $"{test.TestName} on sample {barcode} is verified as {test.Describe()}; {instrumentCode} withdrew it ({sent}). "
+                + "Check it, and reopen or amend it if it is wrong.", test.Id))
+            : new TestTold(false);
+    }
+
     /// <summary>How the analyser's reading differs from the one on the result: "status C", "flags H, no comment".</summary>
     private static string Differences(LabResult stored, AnalyserReading? reading)
     {
@@ -321,14 +401,18 @@ internal sealed class InstrumentResultSink(
 
     private Task<Result> KeepAllAsync(
         LabInstrument instrument, InstrumentResultMessage message, LabSample? tube, UnmatchedResultReason reason, string detail, CancellationToken ct) =>
-        KeepAsync(instrument, message, tube, message.Results.Select(r => new Unplaced(r, reason, detail)).ToList(), ct);
+        KeepAsync(instrument, message, tube, Values(message).Select(r => new Unplaced(r, reason, detail)).ToList(), ct);
+
+    /// <summary>The message's values: what the analyser says of a test instead (withdrawn, not obtained) is no value to keep.</summary>
+    private static List<InstrumentResult> Values(InstrumentResultMessage message) =>
+        [.. message.Results.Where(r => r.Kind == InstrumentResultKind.Value)];
 
     /// <summary>Stores results kept aside on their own (none of the message's results went on the tube).</summary>
     private async Task<Result> KeepAsync(
         LabInstrument instrument, InstrumentResultMessage message, LabSample? tube, IReadOnlyList<Unplaced> unplaced, CancellationToken ct)
     {
         var kept = await AddUnmatchedAsync(instrument, message, tube, unplaced, ct);
-        if (kept > 0)
+        if (kept.Added > 0 || kept.Discarded > 0)
         {
             await db.SaveChangesAsync(ct);
         }
@@ -339,17 +423,19 @@ internal sealed class InstrumentResultSink(
 
     /// <summary>
     /// Adds results that could not go on a test to the unmatched results, to be saved by the caller, but not one kept
-    /// already from the same analyser for the same sample id (see <see cref="NotKeptYet"/>).
+    /// already from the same analyser for the same sample id (see <see cref="NotKeptYet"/>). Those kept for the sample id
+    /// whose channel the message withdraws are discarded (see <see cref="DiscardWithdrawn"/>).
     /// </summary>
-    private async Task<int> AddUnmatchedAsync(
+    private async Task<KeptAside> AddUnmatchedAsync(
         LabInstrument instrument, InstrumentResultMessage message, LabSample? tube, IReadOnlyList<Unplaced> unplaced, CancellationToken ct)
     {
-        if (unplaced.Count == 0)
+        var barcode = TextLimits.ClipOrNull(message.SampleBarcode, UnmatchedLabResult.SampleBarcodeLength);
+        var withdrawals = barcode is null ? [] : message.Results.Where(r => r.Kind == InstrumentResultKind.Withdrawn).ToList();
+        if (unplaced.Count == 0 && withdrawals.Count == 0)
         {
-            return 0;
+            return default;
         }
 
-        var barcode = TextLimits.ClipOrNull(message.SampleBarcode, UnmatchedLabResult.SampleBarcodeLength);
         var rows = unplaced.Select(item => new UnmatchedLabResult
         {
             FacilityId = instrument.FacilityId,
@@ -358,7 +444,7 @@ internal sealed class InstrumentResultSink(
             SampleId = tube?.Id,
             PatientId = tube?.PatientId,
             LabResultId = item.LabResultId,
-            ChannelCode = TextLimits.Clip(item.Reading.ChannelCode.Trim(), UnmatchedLabResult.ChannelCodeLength),
+            ChannelCode = ChannelOf(item.Reading),
             Value = TextLimits.Clip(item.Reading.Value.Trim(), ResultInterpreter.MaxTextLength),
             InstrumentUnit = TextLimits.ClipOrNull(item.Reading.Units, 32),
             InstrumentFlags = TextLimits.ClipOrNull(item.Reading.Flags, 64),
@@ -370,15 +456,38 @@ internal sealed class InstrumentResultSink(
             Detail = TextLimits.Clip(item.Detail, 500),
             Status = UnmatchedResultStatus.Open,
         }).ToList();
-        var keptBefore = barcode is null
-            ? []
-            : await db.Set<UnmatchedLabResult>().AsNoTracking()
-                .Where(u => u.InstrumentCode == instrument.Code && u.SampleBarcode == barcode)
-                .ToListAsync(ct);
+
+        // Tracked only when some are to be discarded.
+        var query = db.Set<UnmatchedLabResult>().Where(u => u.InstrumentCode == instrument.Code && u.SampleBarcode == barcode);
+        var keptBefore = barcode is null ? [] : await (withdrawals.Count > 0 ? query : query.AsNoTracking()).ToListAsync(ct);
+        var discarded = DiscardWithdrawn(keptBefore, withdrawals, instrument.Code, time.GetUtcNow());
         var added = NotKeptYet(rows, keptBefore);
         db.AddRange(added);
-        return added.Count;
+        return new KeptAside(added.Count, discarded);
     }
+
+    /// <summary>
+    /// Discards, with why, the analyser's open results kept aside for a sample id on the channels it now withdraws, so
+    /// none is put on a test. A withdrawal kept for a person to check a verified result stays. Returns how many.
+    /// </summary>
+    internal static int DiscardWithdrawn(
+        IEnumerable<UnmatchedLabResult> keptBefore, IReadOnlyCollection<InstrumentResult> withdrawals, string instrumentCode, DateTimeOffset now)
+    {
+        var discarded = 0;
+        foreach (var row in keptBefore.Where(r => r.Status == UnmatchedResultStatus.Open && r.Reason != UnmatchedResultReason.Withdrawn))
+        {
+            if (withdrawals.FirstOrDefault(w => ChannelOf(w) == row.ChannelCode) is { } withdrawal
+                && row.Discard($"{instrumentCode} withdrew this result ({(withdrawal.Status is { } status ? $"status {status}" : "no status")}).", null, now).IsSuccess)
+            {
+                discarded++;
+            }
+        }
+
+        return discarded;
+    }
+
+    /// <summary>The channel as a result kept aside stores it.</summary>
+    private static string ChannelOf(InstrumentResult reading) => TextLimits.Clip(reading.ChannelCode.Trim(), UnmatchedLabResult.ChannelCodeLength);
 
     /// <summary>
     /// The results to keep of those built for one analyser and sample id: not one kept for them before, nor one built
@@ -392,16 +501,24 @@ internal sealed class InstrumentResultSink(
         return [.. built.Where(row => row.SampleBarcode is null || kept.Add(KeptResult.Of(row)))];
     }
 
-    private async Task AnnounceKeptAsync(LabInstrument instrument, string barcode, int kept, CancellationToken ct)
+    private async Task AnnounceKeptAsync(LabInstrument instrument, string barcode, KeptAside kept, CancellationToken ct)
     {
-        if (kept == 0)
+        if (kept.Added > 0)
         {
-            return;
+            logger.LogInformation("Analyser {Instrument} sent {Count} result(s) for sample {Barcode} that could not go on its tests; kept for the lab to assign",
+                instrument.Code, kept.Added, barcode.Length == 0 ? "(none)" : barcode);
         }
 
-        logger.LogInformation("Analyser {Instrument} sent {Count} result(s) for sample {Barcode} that could not go on its tests; kept for the lab to assign",
-            instrument.Code, kept, barcode.Length == 0 ? "(none)" : barcode);
-        await realtime.PublishAsync(instrument.FacilityId, UnmatchedEvent, new { Count = kept }, ct);
+        if (kept.Discarded > 0)
+        {
+            logger.LogInformation("Analyser {Instrument} withdrew {Count} result(s) for sample {Barcode} kept for the lab to assign; discarded",
+                instrument.Code, kept.Discarded, barcode);
+        }
+
+        if (kept.Added > 0 || kept.Discarded > 0)
+        {
+            await realtime.PublishAsync(instrument.FacilityId, UnmatchedEvent, new { Count = kept.Added }, ct);
+        }
     }
 
     /// <summary>Host query: which channels the analyser should run for a scanned tube (tests not yet verified).</summary>
@@ -491,6 +608,15 @@ internal sealed class InstrumentResultSink(
 
     /// <summary>A result that could not go on a test, with why, and the test's result it was meant for when one was found.</summary>
     internal sealed record Unplaced(InstrumentResult Reading, UnmatchedResultReason Reason, string Detail, Guid? LabResultId = null);
+
+    /// <summary>
+    /// What a withdrawal or a result not obtained did to the test its channel maps: changed it (withdrawn, or noted), or
+    /// is kept for a person (<see cref="Kept"/>), or neither.
+    /// </summary>
+    internal sealed record TestTold(bool Changed, Unplaced? Kept = null);
+
+    /// <summary>Results added to the unmatched results, and those kept before that the message withdrew.</summary>
+    private readonly record struct KeptAside(int Added, int Discarded);
 
     /// <summary>
     /// A kept result as stored, all the analyser said of it, which tells it from a new one for the same analyser and

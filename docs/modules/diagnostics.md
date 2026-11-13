@@ -130,7 +130,7 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/?status&search` | results.enter or results.verify | → `PagedResult<UnmatchedResultDto>` (analyser, sample barcode as sent, the tube and patient when known, the result it was for, channel, value, the analyser's unit, flags, status and comment, resulted and received times, reason, detail, status, who resolved it and how), newest first; `status` Open (default), Assigned or Discarded; `search` is a sample barcode, an analyser code or a channel code |
-| POST | `/{id}/assign` | `lab.results.enter` | `AssignUnmatchedResultRequest` (resultId) → 204; the value is entered on that result as an analyser's, never auto-validated; 422 `lab.result_verified` (a pathologist reopens it first), `lab.unmatched_value_invalid`, `lab.unmatched_resolved`, or the result entry refusals (`lab.item_cancelled`, `lab.result_released`, `lab.sample_not_in_lab`); audited `lab.unmatched.assigned` |
+| POST | `/{id}/assign` | `lab.results.enter` | `AssignUnmatchedResultRequest` (resultId) → 204; the value is entered on that result as an analyser's, never auto-validated; 422 `lab.result_verified` (a pathologist reopens it first), `lab.unmatched_value_invalid`, `lab.unmatched_resolved`, `lab.unmatched_withdrawn` (the analyser's withdrawal of a verified result, which is only discarded), or the result entry refusals (`lab.item_cancelled`, `lab.result_released`, `lab.sample_not_in_lab`); audited `lab.unmatched.assigned` |
 | POST | `/{id}/discard` | `lab.results.enter` | `DiscardUnmatchedResultRequest` (reason, 5 to 300 characters) → 204; 422 `lab.unmatched_resolved`; audited `lab.unmatched.discarded` |
 
 ### Reports — `/api/v1/lab/reports`
@@ -633,6 +633,17 @@ acknowledged:
 | `DiffersFromVerified` | The test is verified and the analyser sent another value, or the same value with another unit, flags, status or comment (a correction, status `C`), or for a result typed in or from another analyser. Only the reading on the test sent again (after a lost acknowledgement) changes nothing |
 | `InvalidValue` | The value is not one the test can hold (not a number for a numeric test, not one of its answers, nor one of them as analysers write it) |
 | `RepeatedInMessage` | The message gave the test twice, the second time with another value or the same value read otherwise; the first is on the test |
+| `Withdrawn` | The analyser withdrew its result (HL7 OBX-11 `W` posted in error, `D` deleted) for a test verified, or released, with its value: the result stands until a person checks it, and reopens or amends it. Never assigned to a test, only discarded |
+
+**Withdrawn results and results not obtained.** The gateway passes on what an analyser says of a test instead of a
+value (`InstrumentResult.Kind`, read from the protocol's status: HL7 OBX-11 `W` and `D` withdraw a result, HL7 and ASTM
+`X` could not obtain one; ASTM `W` is a validity warning on a value). A withdrawal clears that analyser's value from a
+test not yet verified: the test is pending again, with "… withdrew its result …: run the test again or enter the result
+by hand" in `heldReasons`, shown under the test on the result sheet, and the audit trail keeps the value. A verified
+value of its own stands, and the withdrawal is kept as `Withdrawn` above; its values kept aside for that sample id on
+that channel are discarded with the reason, so none is assigned. A result not obtained is noted the same way on a test
+not yet verified. Neither is kept aside as a value, and neither changes anything when sent again or when the analyser
+has no value on the test (one typed in, or from another analyser, is left as it is).
 
 The same result sent again for the same sample id (the same channel, value, unit, flags, status, comment and time, as
 stored) is kept once; one differing in any of them is kept too, and results without a sample id are each kept, since

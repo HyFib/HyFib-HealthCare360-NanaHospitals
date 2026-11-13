@@ -76,7 +76,8 @@ public sealed class MllpSessionTests
         ack.ShouldEndWith("\rMSA|AA|MSG00042\r");
         await _processor.Received(1).SubmitResultsAsync(
             Arg.Is(LabSamples.Hl7Instrument),
-            Arg.Is<IReadOnlyList<InstrumentResultMessage>>(m => m.Count == 1 && m[0].SampleBarcode == "SMP-26090042" && m[0].Results.Count == 3),
+            // Three values and the platelet count the analyser could not obtain; not the histogram.
+            Arg.Is<IReadOnlyList<InstrumentResultMessage>>(m => m.Count == 1 && m[0].SampleBarcode == "SMP-26090042" && m[0].Results.Count == 4),
             Arg.Is(LabSamples.HematologyOru),
             Arg.Any<CancellationToken>());
     }

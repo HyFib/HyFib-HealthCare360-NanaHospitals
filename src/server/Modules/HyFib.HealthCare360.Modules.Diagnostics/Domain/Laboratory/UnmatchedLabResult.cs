@@ -29,6 +29,13 @@ public enum UnmatchedResultReason
     /// otherwise; the first is on the test.
     /// </summary>
     RepeatedInMessage,
+
+    /// <summary>
+    /// The analyser withdrew its result (posted in error, deleted) for a test verified already with its value: the
+    /// verified result stands until a person checks it, and reopens or amends it if it is wrong. It is no value, so it
+    /// is never put on a test.
+    /// </summary>
+    Withdrawn,
 }
 
 public enum UnmatchedResultStatus
@@ -100,11 +107,19 @@ public sealed class UnmatchedLabResult : AuditableEntity, IFacilityScoped
     public Guid? ResolvedBy { get; set; }
     public DateTimeOffset? ResolvedAt { get; set; }
 
+    /// <summary>Whether it may go on a test: still open, and a value rather than the analyser's withdrawal.</summary>
+    public Result EnsureAssignable() =>
+        Status != UnmatchedResultStatus.Open ? Resolved()
+        : Reason == UnmatchedResultReason.Withdrawn ? Error.Rule("lab.unmatched_withdrawn",
+            $"{InstrumentCode} withdrew its {ChannelCode} result, so it cannot go on a test. Check the verified result it names, then discard it.")
+        : Result.Success();
+
     public Result Assign(Guid labResultId, Guid? by, DateTimeOffset at)
     {
-        if (Status != UnmatchedResultStatus.Open)
+        var assignable = EnsureAssignable();
+        if (assignable.IsFailure)
         {
-            return Resolved();
+            return assignable;
         }
 
         Status = UnmatchedResultStatus.Assigned;

@@ -972,6 +972,9 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
                                 Not auto-verified: {line.heldReasons.join(' ')}
                               </Caption1>
                             )}
+                            {line.status === 'Pending' && line.heldReasons.length > 0 && (
+                              <Caption1 className={styles.muted}>{line.heldReasons.join(' ')}</Caption1>
+                            )}
                           </div>
                         </td>
                         <td className={mergeClasses(styles.td, styles.valueCell)}>
