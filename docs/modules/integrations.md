@@ -267,7 +267,9 @@ what goes out (`TemplateSwitch`):
   (appointments, reports, bills, payment links, prescriptions, video consultations, refills, portal links, alerts) are in
   use, as they were.
 * The discharge message names the stay's signed discharge summary (`clinical.discharge-summary`): with "Document header"
-  ticked on its WhatsApp template (registered with a document header), the summary's PDF goes in it.
+  ticked on its WhatsApp template (registered with a document header), the summary's PDF goes in it. A header can't be
+  left empty, so a discharge with no signed summary (LAMA or DAMA, or a planned discharge while the summary hold is off)
+  then goes by SMS only; without the header, every discharge gets the WhatsApp message.
 * A receipt goes on WhatsApp only when the payment does not settle the bill: a payment that settles it sends the bill
   itself there (`bill.shared`), so the patient gets one WhatsApp message for it, not two. When the bill can't go there
   (its WhatsApp template not in use, `billing.bills.sendOnWhatsApp` off, or a protected record on a shared number), the
