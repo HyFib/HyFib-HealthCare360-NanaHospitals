@@ -1024,7 +1024,11 @@ finds it and stops. IRNs asked for automatically are recorded by `HC360 (automat
   invoice is kept with it. When the portal cannot be asked, nothing is recorded (422 `einvoice.irp_unreachable`; while
   the portal's API stays down, an administrator can switch the connection off to record IRNs without the check). An
   older IRN is recorded on its signed QR code alone. The audit trail (`billing.einvoice.irn_recorded`) says how each was
-  checked. The staff app offers recording by hand only to a facility that is not connected; the check guards the API.
+  checked. The staff app's e-invoice dialog offers recording by hand to a connected facility too, for an IRN generated
+  on the portal's own screens: *Get IRN from the portal* stays its main action, and *Record an IRN generated on the
+  portal* opens the same form as for a facility that is not connected. Each refusal shows in plain words over the
+  server's sentence, one whose outcome is still open (`einvoice.irp_unreachable`, `einvoice.irp_cancel_unknown`, the
+  server not reached) as a warning to try again, and the dialog reads the document again after every answer.
 
 ### The morning reminder
 Each morning from 09:00 (the hospital's time), `EInvoiceReminderJob` queues one `billing.einvoice.reminder` for each
