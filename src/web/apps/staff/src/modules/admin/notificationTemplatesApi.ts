@@ -149,7 +149,7 @@ export function deliveryStatusDisplay(status: NotificationStatus): {
       return {
         label: 'Suppressed',
         tone: 'subtle',
-        hint: 'Deliberately not sent: the number opted out, or never opted in to WhatsApp.',
+        hint: 'Deliberately not sent: the number opted out, never opted in to WhatsApp, or the message was withdrawn before it went. Its reason says which.',
       };
   }
 }

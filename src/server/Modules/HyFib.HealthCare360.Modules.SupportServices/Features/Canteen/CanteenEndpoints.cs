@@ -11,6 +11,8 @@ internal static class CanteenEndpoints
     {
         var group = app.MapGroup("/api/v1/canteen").WithTags("Canteen");
 
+        group.MapCounterTerminalSales(CanteenDayBookSource.Key, SupportServicesPermissions.CanteenSales);
+
         group.MapGet("/menu", ListMenu).RequireAnyPermission(SupportServicesPermissions.CanteenSales, SupportServicesPermissions.CanteenMenu);
         group.MapPost("/menu", CreateMenuItem).RequirePermission(SupportServicesPermissions.CanteenMenu).WithValidation<SaveMenuItemRequest>();
         group.MapPut("/menu/{id:guid}", UpdateMenuItem).RequirePermission(SupportServicesPermissions.CanteenMenu).WithValidation<SaveMenuItemRequest>().RequireVersion();

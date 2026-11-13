@@ -1,14 +1,28 @@
-import { Button, Caption1, Field, Input, makeStyles, Text, ToggleButton, tokens } from '@fluentui/react-components';
-import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
+import {
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  Text,
+  ToggleButton,
+  Tooltip,
+  tokens,
+} from '@fluentui/react-components';
+import { AddRegular, DeleteRegular, PaymentRegular } from '@fluentui/react-icons';
 import { formatInr } from '@hc360/core';
 import { useState } from 'react';
 import { parseNumber } from '@/modules/inventory/format';
-import { PAYMENT_MODES, paymentModeLabel, type PaymentMode } from './api';
+import { terminalDetailsLine } from '@/lib/terminal/labels';
+import { TerminalSaleDialog } from '@/lib/terminal/TerminalSaleDialog';
+import { toTerminalPaid } from '@/lib/terminal/types';
+import { PAYMENT_MODES, paymentModeLabel, pharmacyTerminalApi, type PaymentMode } from './api';
 import {
   changeDue,
   MAX_PAYMENTS,
   newPaymentKey,
   paymentsTotal,
+  roomForRow,
   type PaymentCheck,
   type PaymentDraft,
   type ResolvedPayment,
@@ -46,6 +60,7 @@ export function PaymentPanel({
   check,
   creditAllowed,
   disabled,
+  patientId,
 }: {
   bill: number;
   drafts: PaymentDraft[];
@@ -54,9 +69,12 @@ export function PaymentPanel({
   check: PaymentCheck;
   creditAllowed: boolean;
   disabled?: boolean;
+  /** The registered patient the bill is for (passed to the terminal); walk-ins have none. */
+  patientId?: string | null;
 }) {
   const styles = useStyles();
   const [cashReceived, setCashReceived] = useState('');
+  const [terminalKey, setTerminalKey] = useState<string | null>(null);
   const modes = PAYMENT_MODES.filter((m) => m !== 'Credit' || creditAllowed);
   const cashTotal = paymentsTotal(resolved.filter((p) => p.mode === 'Cash'));
   const change = changeDue(parseNumber(cashReceived), cashTotal);
@@ -65,6 +83,15 @@ export function PaymentPanel({
   const update = (key: string, patch: Partial<PaymentDraft>) =>
     onChange(drafts.map((d) => (d.key === key ? { ...d, ...patch } : d)));
   const remove = (key: string) => onChange(drafts.filter((d) => d.key !== key));
+  /** Takes the terminal payment off a row; with no other row, it goes back to a cash balance row. */
+  const detach = (key: string) =>
+    onChange(
+      drafts.length > 1
+        ? drafts.filter((d) => d.key !== key)
+        : drafts.map((d) => (d.key === key ? { ...d, mode: 'Cash' as const, amount: null, terminal: null } : d)),
+    );
+  const terminalDraft = drafts.find((d) => d.key === terminalKey);
+  const terminalCurrent = resolved.find((p) => p.key === terminalKey);
   const add = () => {
     const used = new Set(drafts.map((d) => d.mode));
     const mode: PaymentMode = (['Upi', 'Card', 'Cash'] as const).find((m) => !used.has(m)) ?? 'Cash';
@@ -76,7 +103,8 @@ export function PaymentPanel({
       {drafts.map((draft, index) => {
         const current = resolved.find((p) => p.key === draft.key);
         const isBalance = index === balanceIndex;
-        const needsReference = draft.mode === 'Card' || draft.mode === 'Upi';
+        const paidOnTerminal = draft.terminal ?? null;
+        const needsReference = (draft.mode === 'Card' || draft.mode === 'Upi') && !paidOnTerminal;
         const missingAmount = draft.amount === null && !isBalance;
         return (
           <div key={draft.key} className={styles.payment}>
@@ -86,7 +114,7 @@ export function PaymentPanel({
                   key={mode}
                   size="small"
                   checked={draft.mode === mode}
-                  disabled={disabled}
+                  disabled={disabled || paidOnTerminal !== null}
                   onClick={() => update(draft.key, { mode })}
                 >
                   {mode === 'Credit' ? 'Credit' : paymentModeLabel[mode]}
@@ -106,8 +134,10 @@ export function PaymentPanel({
                   min={0}
                   step="0.01"
                   contentBefore="₹"
-                  disabled={disabled}
-                  value={draft.amount === null ? '' : String(draft.amount)}
+                  disabled={disabled || paidOnTerminal !== null}
+                  value={
+                    paidOnTerminal ? String(paidOnTerminal.amount) : draft.amount === null ? '' : String(draft.amount)
+                  }
                   placeholder={
                     isBalance ? (current ? `${current.amount.toFixed(2)} (balance)` : 'Nothing left') : 'Amount'
                   }
@@ -130,14 +160,44 @@ export function PaymentPanel({
                   />
                 </Field>
               )}
-              {drafts.length > 1 && (
+              {(draft.mode === 'Card' || draft.mode === 'Upi') && !paidOnTerminal && (
                 <Button
-                  appearance="subtle"
-                  icon={<DeleteRegular />}
-                  aria-label={`Remove payment ${index + 1}`}
-                  disabled={disabled}
-                  onClick={() => remove(draft.key)}
-                />
+                  size="small"
+                  icon={<PaymentRegular />}
+                  disabled={disabled || !current || !(current.amount > 0)}
+                  onClick={() => setTerminalKey(draft.key)}
+                >
+                  Take on terminal
+                </Button>
+              )}
+              {paidOnTerminal && (
+                <Text className={styles.reference}>
+                  {['Paid on the terminal', terminalDetailsLine(paidOnTerminal) || null].filter(Boolean).join(' · ')}
+                </Text>
+              )}
+              {paidOnTerminal ? (
+                <Tooltip
+                  content="Removing this does not return the money: it stays on the terminal and can be used again from “Already paid on the terminal”."
+                  relationship="description"
+                >
+                  <Button
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    aria-label={`Remove payment ${index + 1}`}
+                    disabled={disabled}
+                    onClick={() => detach(draft.key)}
+                  />
+                </Tooltip>
+              ) : (
+                drafts.length > 1 && (
+                  <Button
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    aria-label={`Remove payment ${index + 1}`}
+                    disabled={disabled}
+                    onClick={() => remove(draft.key)}
+                  />
+                )
               )}
             </div>
             {draft.mode === 'Credit' && (
@@ -158,6 +218,30 @@ export function PaymentPanel({
             <Caption1 className={styles.warn}>{check.message}</Caption1>
           ))}
       </div>
+
+      {terminalDraft && terminalCurrent && (
+        <TerminalSaleDialog
+          open
+          api={pharmacyTerminalApi}
+          counter="pharmacy"
+          amount={terminalCurrent.amount}
+          initialMode={terminalDraft.mode === 'Upi' ? 'Upi' : 'Card'}
+          patientId={patientId}
+          maxAmount={roomForRow(bill, resolved, terminalDraft.key)}
+          exact={false}
+          approveLabel="Use this payment"
+          onClose={() => setTerminalKey(null)}
+          onApproved={(sale) => {
+            update(terminalDraft.key, {
+              terminal: toTerminalPaid(sale),
+              mode: sale.mode,
+              amount: sale.amount,
+              reference: '',
+            });
+            setTerminalKey(null);
+          }}
+        />
+      )}
 
       {cashTotal > 0 && (
         <div className={styles.fields}>

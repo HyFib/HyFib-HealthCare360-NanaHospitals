@@ -27,7 +27,7 @@ internal sealed class PharmacyDayBookSource(HospitalDbContext db) : ICounterSale
                 orderby p.ReceivedAt
                 select new CounterCardPayment(
                     p.Id, s.InvoiceNumber, p.Mode == PaymentMode.Card ? CounterPaymentMode.Card : CounterPaymentMode.Upi, p.Amount, p.Reference, p.ReceivedAt,
-                    p.IsRefund, s.Status == SaleStatus.Cancelled))
+                    p.IsRefund, s.Status == SaleStatus.Cancelled, p.ApprovalCode))
             .ToListAsync(cancellationToken);
 
     public async Task<CounterSalesDay> GetDayAsync(Guid facilityId, DateOnly date, CancellationToken cancellationToken)

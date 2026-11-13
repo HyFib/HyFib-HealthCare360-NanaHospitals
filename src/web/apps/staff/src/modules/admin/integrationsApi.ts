@@ -49,6 +49,22 @@ export function isIntegrationName(value: unknown): value is IntegrationName {
   return typeof value === 'string' && (INTEGRATION_NAMES as readonly string[]).includes(value);
 }
 
+/**
+ * What the integration log can be filtered by: the integrations set up here, and the ABDM gateway, whose calls and
+ * callbacks the Interop module logs (`abdm`) but which is set up under its own settings (`abdm.gateway`), not here.
+ */
+export const LOG_INTEGRATION_NAMES = [...INTEGRATION_NAMES, 'abdm'] as const;
+export type LogIntegrationName = (typeof LOG_INTEGRATION_NAMES)[number];
+
+export const LOG_INTEGRATION_LABELS: Record<LogIntegrationName, string> = {
+  ...INTEGRATION_LABELS,
+  abdm: 'ABDM gateway',
+};
+
+export function isLogIntegrationName(value: unknown): value is LogIntegrationName {
+  return typeof value === 'string' && (LOG_INTEGRATION_NAMES as readonly string[]).includes(value);
+}
+
 export type IntegrationHealth = 'healthy' | 'degraded' | 'failing' | 'idle' | 'disabled' | 'not_configured';
 
 /**
@@ -183,7 +199,7 @@ export interface InboundWhatsAppMessageDto {
 }
 
 export interface IntegrationLogFilters {
-  integration?: IntegrationName;
+  integration?: LogIntegrationName;
   success?: boolean;
   from?: string;
   to?: string;
@@ -417,7 +433,7 @@ export function providerLabel(provider: string | null | undefined): string {
 }
 
 export function integrationLabel(name: string): string {
-  return isIntegrationName(name) ? INTEGRATION_LABELS[name] : name;
+  return isLogIntegrationName(name) ? LOG_INTEGRATION_LABELS[name] : name;
 }
 
 /** What a STOP or START did, for the WhatsApp inbox; null for ordinary messages. */

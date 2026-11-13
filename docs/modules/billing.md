@@ -13,10 +13,12 @@ printed bill's HTML, plus change-tracking checks on the real EF model without a 
 webhook delivered twice, who may reconcile), `PosSettlementTests` (a terminal sale and a typed card payment matched
 from the acquirer's report, the review, the settlement journal, a card receipt never settled), `PosRecheckTests`
 (the training terminal: a sale paid after the counter stopped polling is recorded once; one nobody paid is cancelled
-and timed out), `InterimBillTests` (a self-paying stay billed in parts, and none for insured, scheme and package
-stays; see [Interim bills](#interim-bills-ipb-05)) and `DoctorFeeStatementTests` (a doctor's statement for a period
-from bills that accrued fees under his rules: the fee lines, a cancelled bill's reversal, and the payouts with their
-deductions, TDS and net). The staff app's doctor-fee screens keep their logic in `modules/doctor-fees/logic.ts`,
+and timed out), `CounterTerminalTests` (the pharmacy's and the canteen's payments on the terminal: recorded as the
+terminal reported them, matched with the invoice or bill and not a Billing receipt, an unrecorded one kept as an
+exception, and the go-live check), `InterimBillTests` (a self-paying stay billed in parts, and none for insured, scheme
+and package stays; see [Interim bills](#interim-bills-ipb-05)) and `DoctorFeeStatementTests` (a doctor's statement for a
+period from bills that accrued fees under his rules: the fee lines, a cancelled bill's reversal, and the payouts with
+their deductions, TDS and net). The staff app's doctor-fee screens keep their logic in `modules/doctor-fees/logic.ts`,
 tested with the statement and payout-advice prints by vitest.
 
 The module implements the Platform contracts `IChargePoster`, `IBillingStatusProvider` and `IPayerDirectory`
@@ -315,6 +317,13 @@ case, and its Tally journal reads "taken back by a chargeback" rather than "mone
 | POST | `/payment-links/{id}/refresh` | `payments.collect` / `deposits` | → `GatewayOrderDto` (asks the gateway for the real status: records a captured payment, or marks the order `Failed`, `Expired` or `Cancelled`; for a paid order whose receipt could not be recorded, it tries again) |
 | POST | `/api/v1/billing/webhooks/payment-gateway` (optional `?facility=<id>`) | anonymous, rate limit `partner`; the signature is checked with the merchant account of the facility that owns the order, prepaid booking or refund named in the payload (`?facility=` only when the payload names none of them) | raw provider JSON (≤ 64 KB) → 200 `WebhookAck`; 401 bad signature (`X-Razorpay-Signature` / `X-PayU-Signature` / `X-Webhook-Signature` / `X-Signature`), 503 no gateway, 413 too large. The status is always re-fetched from the gateway; receipts are idempotent on the gateway payment id. Each verified event is kept by its id (`X-Razorpay-Event-Id`, else a SHA-256 of the body) in `gateway_webhook_events`: a redelivery of an event already handled gets `processed: false` and changes nothing. A webhook for a portal booking's prepayment confirms the booking and receipts its advance, also for an order the booking had before its current one (the booking's own payment, or a second payment kept as an advance with its refund asked for); one for a gateway refund updates the refund's status. A dispute's event (`payment.dispute.*`, whatever follows the prefix) names the dispute: it is read from the gateway with the account of the facility whose receipt holds the payment, and its [chargeback case](#chargebacks) follows it; nothing else in the body is used. Each delivery is checked with the account of the gateway that sent it (Razorpay's headers, else the facility's gateway), also after the facility switched gateways. |
 | POST | `/api/v1/billing/webhooks/cashfree` (optional `?facility=<id>`) | anonymous, rate limit `partner`; checked with Cashfree's account (its client secret) of the facility that owns the link, booking or refund the body names (`?facility=` only when it names none of them) | Cashfree's raw JSON (≤ 64 KB) with `x-webhook-signature` and `x-webhook-timestamp` → 200 `WebhookAck`; 401 for a bad signature or one signed more than three days ago or five minutes ahead, 503 no gateway, 413 too large. A redelivery is known by a SHA-256 of its body. Only the ids in the body are used (as strings or numbers): the link, payment, refund or dispute is read from Cashfree. One naming nothing HC360 holds has the facility's open Cashfree links and bookings of the last week asked again. |
+
+The pharmacy's and the canteen's card and UPI sales use the same lifecycle through the Platform contract
+`ICounterTerminal` (`CounterTerminalService` over `PosService`; see
+[integrations.md](integrations.md#cardupi-pos-int-pos)), on their own endpoints (`/api/v1/pharmacy/terminal-sales`,
+`/api/v1/canteen/terminal-sales`). Billing keeps those sales in `pos_transactions` too, with `owner` (`pharmacy` or
+`canteen`), no receipt and, for a walk-in, no patient; the counter's invoice or bill records the sale
+(`owner_payment_id`, `owner_document`) once, in its own transaction.
 
 ### Cash counter — `/api/v1/billing/shifts`, day-end
 | Method | Path | Permission | Request → response |
@@ -1020,7 +1029,8 @@ finds it and stops. IRNs asked for automatically are recorded by `HC360 (automat
   above. Answering otherwise (refusing to give the IRN's details, which it keeps for about three days, or giving no
   status), whether it cancelled the IRN in time is not known and asking again may not tell: staff are told to look on
   the portal and to issue a credit note while the IRN is active there (422 `einvoice.irp_cancel_unknown`), never a
-  credit note outright.
+  credit note outright. Past the 24 hours, the staff app's dialog puts that question for a connected facility under
+  *Ask the portal whether it was cancelled*, with the reason and remark the cancellation was made with.
 * **A failed e-way bill request is read back.** Its answer may have been lost after the e-way bill was generated, and
   asked again the portal refuses a second one for the IRN (4002). So after any failure HC360 asks the portal for the
   IRN's e-way bill (`GetEwayBillAsync`, `EwayBillRequests`). A live one (the answer says `ACT`) is recorded whatever the
@@ -1040,12 +1050,18 @@ finds it and stops. IRNs asked for automatically are recorded by `HC360 (automat
   days (`IrnVerification`; the portal gives an IRN's details for about three days after its generation,
   `IrpIrn.DetailsWindow`). It is recorded only when the portal holds it, active (its answer says `ACT`: one that does
   not say confirms nothing), under the acknowledgement given, with a signed QR code naming the document (422
-  `einvoice.irp_unconfirmed` with what differs), and the portal's signed invoice is kept with it. When the portal
-  cannot be asked, nothing is recorded: 422 `einvoice.irp_unreachable` when it does not answer,
+  `einvoice.irp_unconfirmed` with what differs). What is kept and printed is then the portal's own: its signed QR code,
+  its signed invoice and the time it generated the IRN, whatever was pasted, since HC360 does not hold the portal's key
+  and never checks a pasted code's signature (`IrnVerification.Recorded`). When the portal cannot be asked, nothing is
+  recorded: 422 `einvoice.irp_unreachable` when it does not answer,
   `einvoice.irp_not_connected` when the connection is switched on but cannot be used (its credentials are incomplete).
   Meanwhile an administrator can switch the connection off to record IRNs without the check. An older IRN is recorded
   on its signed QR code alone. The audit trail (`billing.einvoice.irn_recorded`) says how each was checked. The staff
-  app offers recording by hand only to a facility that is not connected; the check guards the API.
+  app's e-invoice dialog offers recording by hand to a connected facility too, for an IRN generated on the portal's own
+  screens: *Get IRN from the portal* stays its main action, and *Record an IRN generated on the portal* opens the same
+  form as for a facility that is not connected. Each refusal shows in plain words over the server's sentence, one whose
+  outcome is still open (`einvoice.irp_unreachable`, `einvoice.irp_cancel_unknown`, the server not reached) as a
+  warning, and the dialog reads the document again after every answer.
 
 ### The morning reminder
 Each morning from 09:00 (the hospital's time), `EInvoiceReminderJob` queues one `billing.einvoice.reminder` for each
@@ -1300,7 +1316,7 @@ only the one that clashed is merely refreshed.
 
 | Rank | Kind | Raised when | Clears itself when |
 |---|---|---|---|
-| 1 | `UnrecordedPayment` | a settled payment has no receipt; or the gateway reports a payment captured but its receipt could not be recorded (the reason is kept on the order and accountants get an alert); or a card/UPI terminal approved a sale whose receipt could not be recorded (keyed on the terminal transaction id; the reason is kept on the sale and accountants get an alert) | the receipt is recorded |
+| 1 | `UnrecordedPayment` | a settled payment has no receipt; or the gateway reports a payment captured but its receipt could not be recorded (the reason is kept on the order and accountants get an alert); or a card/UPI terminal approved a sale whose receipt could not be recorded (keyed on the terminal transaction id; the reason is kept on the sale and accountants get an alert); or a counter's approved terminal sale that no invoice or bill records within `billing.pos.recheck` (the message starts "Paid on the terminal, but no invoice records it yet"; holders of `billing.gateway.reconcile` get one alert, "Card/UPI payment not recorded at the pharmacy/canteen") | the receipt is recorded, or the counter's invoice or bill records the sale |
 | 2 | `UnsettledReceipt` | an online receipt is not in any settlement `settlementDays` after the payment, while the gateway has settled something newer (receipts of the last month are looked at) | a settlement carries the payment, or the payment is reversed as not received |
 | 2 | `FailedSettlement` | a settlement paid out fails afterwards; its journal is reversed in the books of the day it is learnt (accountants get an alert) | the gateway pays the settlement out after all (its journal is restored); "Read the settlements again" reads its day |
 | 3 | `AmountMismatch` | a settled payment's amount differs from its receipt; the gateway adjusted a settlement; a settlement's payout differs from its transactions | the amounts agree on a later match |
@@ -1393,8 +1409,11 @@ report's days (from two days before its first transaction) are read and compared
 reference as typed. Billing's receipts and refunds are looked for at Billing's terminals; what is left, at any
 terminal, is looked for among the pharmacy's and the canteen's card and UPI payments and refunds of the report's days,
 read through the Platform contract `ICounterSalesSource.GetCardPaymentsAsync` (Pharmacy and SupportServices implement
-it; Billing does not reference them). The pharmacy's and the canteen's counters ask for the RRN or approval code (card)
-or the UPI reference (UTR) when they take the payment.
+it; Billing does not reference them). The pharmacy's and the canteen's counters take the payment on the terminal,
+which reports the RRN and approval code itself, or ask for the RRN or approval code (card) or the UPI reference (UTR)
+typed from the slip. A settled transaction whose RRN (or approval code with the same amount) is a counter's terminal
+sale is never matched with a Billing receipt, whichever terminal took it (a terminal Billing shares included): it goes
+to the counters' match.
 
 | Settled | Matches | Shown as |
 |---|---|---|
@@ -1405,7 +1424,7 @@ or the UPI reference (UTR) when they take the payment.
 | Refund | the refund paid by card or UPI whose reference is the RRN or (same amount) the approval code | `Matched`, else `NoRefund` |
 | Chargeback | the sale with the same RRN (without one, the approval code at the same terminal) that matched a receipt | followed as a [chargeback case](#chargebacks), not to look at; `Review` when the sale matched no receipt |
 | Chargeback reversed (money back) | the case on that sale: open, or won without its money back yet | wins the open case by itself (or is the money back of a won one), not to look at; `Review` otherwise |
-| Payment or refund that matched nothing above, at any terminal | the pharmacy's or the canteen's card or UPI payment (for a refund, money it paid back by card or UPI) whose typed reference is the RRN, else is the approval code with the same amount within two days; a payment of the same mode first | `Matched` by the RRN or the approval code, with the counter and its invoice or bill, or `AmountDiffers` |
+| Payment or refund that matched nothing above, at any terminal | the pharmacy's or the canteen's card or UPI payment (for a refund, money it paid back by card or UPI) whose reference, typed or reported by the terminal, is the RRN, else is the approval code (`CounterCardPayment.ApprovalCode`, as reported by the terminal, or typed as the reference) with the same amount within two days; a payment of the same mode first | `Matched` by the RRN or the approval code, with the counter and its invoice or bill, or `AmountDiffers` |
 | Any, at a TID in `otherTerminals`, that matched nothing | another counter's sale HC360 does not record, or one typed without its reference; Billing's receipts are not looked for there | `OtherCounter` |
 
 `NoReceipt`, `AmountDiffers`, `NoRefund` and `Review` are listed to look at until an accountant reviews them with a
@@ -1644,6 +1663,11 @@ the bill's day again, never to delete it.
   keyed on the transaction id, as when the counter polls), and a sale still waiting after the facility's
   `billing.pos.recheck` timeout is cancelled on the terminal and marked `TimedOut` ("Nobody completed the payment
   within 15 minutes; HC360 cancelled the sale on the terminal."), so a later approval cannot leave money unrecorded.
+  It follows the pharmacy's and the canteen's terminal sales the same way. An approved one that no invoice or bill
+  records after the timeout opens an `UnrecordedPayment` exception ("Paid on the terminal, but no invoice records it
+  yet") and alerts the holders of `billing.gateway.reconcile` once; recording it on an invoice later clears it. One an
+  accountant resolves instead (refunded on the terminal) is no longer offered to the counter or recorded
+  (`pos.sale_closed`).
   If the terminal does not confirm the cancel, the sale stays open and is tried again on the next run. An answer from
   another provider than the one that started the sale (POS switched off or changed since) is not applied. An approved
   sale whose receipt the bill or admission refuses (an advance for a stay whose account was closed meanwhile, or that
@@ -1754,6 +1778,8 @@ facility and `line_key`; unique matched `receipt_payment_id` and `refund_id` whe
 token), and indexes on `receipt_payments.reference` and `pos_transactions.approval_code` for the matching. Both tables
 are append-mostly and not data-audited; imports and reviews are audited. `OpBillPackages` adds `bills.package_id`
 (foreign key to `packages`, restrict) and `packages.used_for` (text; packages that existed before are `InPatient`).
+`CounterTerminalPayments` adds `pos_transactions.owner`, `owner_document` and `owner_payment_id` (unique where set),
+and makes `patient_id` and the receipt purpose optional, for a counter's sale.
 `CreditNoteGst` adds `credit_note_lines` (a note's bill lines with their taxable value and GST; foreign keys to the
 note, cascade, and to the bill line, restrict; indexed by bill line), the CGST, SGST and IGST of `credit_notes` and
 `gst_time_barred`, and the invoice a credit note's IRN names on `einvoices` (`preceding_source`, `preceding_id`,

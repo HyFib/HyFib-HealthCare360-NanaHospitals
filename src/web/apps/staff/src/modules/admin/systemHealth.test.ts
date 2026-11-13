@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   IntegrationHealthSummary,
+  LostCable,
   NetworkLink,
   ServerNodeHealth,
   SystemHealthReport,
@@ -15,6 +16,7 @@ import {
   integrationTone,
   linkSummary,
   lowDiskSpace,
+  removableServer,
   runningFor,
   runsJobs,
   serverRole,
@@ -143,6 +145,7 @@ function server(machineName: string, role: string, reporting = true): ServerNode
       cables: null,
       cableLost: false,
       lastCableDropAt: null,
+      lostCables: null,
     },
     storage: { dataDirectory: 'C:\\data', freeBytes: 1, totalBytes: 2, encryption: null },
     certificate: { caFingerprint: null, serverExpiresAt: null, subjectAlternativeNames: [], caExpiresAt: null },
@@ -152,6 +155,20 @@ function server(machineName: string, role: string, reporting = true): ServerNode
     reporting,
   };
 }
+
+describe('removableServer', () => {
+  const silent = { ...server('API1', 'api', false), server: { ...server('API1', 'api').server, node: 'a1b2' } };
+
+  it('lets one who manages the server remove a server that stopped reporting', () => {
+    expect(removableServer(silent, true)).toBe(true);
+  });
+
+  it('keeps a server that reports, one without an id, and anyone who only sees System health from removing it', () => {
+    expect(removableServer({ ...silent, reporting: true }, true)).toBe(false);
+    expect(removableServer({ ...silent, server: { ...silent.server, node: null } }, true)).toBe(false);
+    expect(removableServer(silent, false)).toBe(false);
+  });
+});
 
 describe('serversSummary', () => {
   it('is green while every server reports, the one that runs the jobs among them', () => {
@@ -343,6 +360,28 @@ describe('linkSummary', () => {
       label: 'WiFi',
       text: 'Adapter missing',
       tone: 'bad',
+    });
+  });
+
+  // A server with two cards, the hospital LAN and an imaging network: each lost cable is named, beside the one still up.
+  it('names a cable lost beside one still up: bad if the workstations used it, a warning otherwise', () => {
+    const imaging: NetworkLink = { ...cable(), name: 'Ethernet 2', addresses: ['10.20.0.5'] };
+    const lost = (name: string, servedWorkstations: boolean): LostCable => ({
+      name,
+      addresses: [],
+      lostAt: '2026-11-13T06:00:00Z',
+      servedWorkstations,
+    });
+
+    expect(link({ cables: [imaging], cableLost: true, lostCables: [lost('Ethernet', true)] })).toEqual({
+      label: 'Network',
+      text: "Cable 'Ethernet' disconnected",
+      tone: 'bad',
+    });
+    expect(link({ cables: [cable()], cableLost: true, lostCables: [lost('Ethernet 2', false)] })).toEqual({
+      label: 'Network',
+      text: "Cable · 1 Gbps · 'Ethernet 2' disconnected",
+      tone: 'warn',
     });
   });
 

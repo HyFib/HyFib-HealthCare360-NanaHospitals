@@ -37,11 +37,13 @@ public sealed record ServerInfo(string MachineName, string OsDescription, string
 
 /// <summary>The Server Node's links: its WiFi and, on a cabled LAN, its network cables (DED-06, DED-17).</summary>
 /// <param name="Cables">The network cables up, empty when none is; null when the link monitor has not read them (it is off).</param>
-/// <param name="CableLost">The cable the server was on during this run is lost, and none is up again.</param>
-/// <param name="LastCableDropAt">When the cable was last lost, during this run.</param>
+/// <param name="CableLost">A cable the server was on during this run is lost and not back (<paramref name="LostCables"/>).</param>
+/// <param name="LastCableDropAt">When a cable was last lost, during this run.</param>
+/// <param name="LostCables">Each cable lost and not back, with its last addresses; null when the cables are not read.</param>
 public sealed record NetworkInfo(bool WifiSupported, WifiConnectionInfo? Wifi, DateTimeOffset? ConnectedSince, DateTimeOffset? LastDisconnectAt,
     IReadOnlyList<WifiEvent> RecentEvents, IReadOnlyList<string> IpAddresses, int HttpsPort, int PortalHttpsPort, bool MdnsEnabled,
-    IReadOnlyList<NetworkLink>? Cables = null, bool CableLost = false, DateTimeOffset? LastCableDropAt = null);
+    IReadOnlyList<NetworkLink>? Cables = null, bool CableLost = false, DateTimeOffset? LastCableDropAt = null,
+    IReadOnlyList<LostCable>? LostCables = null);
 
 public sealed record DatabaseInfo(bool Reachable, string? Version, long? SizeBytes, int? Connections, string? LastMigration, string? Error);
 
@@ -182,6 +184,12 @@ public sealed class SystemHealthService(
     /// <summary>How long before the hospital CA expires its warning turns critical, which is told to IT on-call.</summary>
     public static readonly TimeSpan CaUrgentPeriod = TimeSpan.FromDays(90);
 
+    /// <summary>
+    /// The warning that a server of several (SCAL-01) has stopped reporting. Its alert, once told, is over when the server
+    /// reports again, and those it paged are told so (<see cref="AlertIncidents"/>).
+    /// </summary>
+    public const string NotReportingCode = "server.not_reporting";
+
     public async Task<SystemHealthReport> BuildAsync(CancellationToken ct)
     {
         var now = time.GetUtcNow();
@@ -309,7 +317,7 @@ public sealed class SystemHealthService(
 
         // Several servers: every one's, after the hospital's.
         var everyServer = await EveryServerAsync(own.ToNode(now), ct);
-        List<HealthWarning> all = [.. databaseWarnings, .. backupWarnings, .. messageWarnings, .. keyWarnings, .. ServerWarnings(everyServer)];
+        List<HealthWarning> all = [.. databaseWarnings, .. backupWarnings, .. messageWarnings, .. keyWarnings, .. ServerWarnings(everyServer, now)];
         return new SystemHealthReport(own.Server, own.Network, database, own.Storage, backup, outbox, own.Certificate, own.Power, integrations, all, now, everyServer);
     }
 
@@ -349,11 +357,12 @@ public sealed class SystemHealthService(
     }
 
     /// <summary>
-    /// The warnings about every server, each naming it: its own while it reports, and that it has stopped when it has not;
-    /// when none of them runs the jobs, that nothing runs them, or, while servers stand by for the job lease, that one of
-    /// them is about to; and when more than one that reports does, that one should.
+    /// The warnings about every server, each naming it: its own while it reports, and that it has stopped when it has not,
+    /// since when (<paramref name="now"/> tells today from another day); when none of them runs the jobs, that nothing runs
+    /// them, or, while servers stand by for the job lease, that one of them is about to; and when more than one that
+    /// reports does, that one should.
     /// </summary>
-    internal static IReadOnlyList<HealthWarning> ServerWarnings(IReadOnlyList<ServerNodeHealth> servers)
+    internal static IReadOnlyList<HealthWarning> ServerWarnings(IReadOnlyList<ServerNodeHealth> servers, DateTimeOffset now)
     {
         var warnings = new List<HealthWarning>();
         var standingBy = servers.Where(s => s.Reporting && s.Server.Jobs is { Active: false }).Select(s => s.Server.MachineName).ToArray();
@@ -366,17 +375,16 @@ public sealed class SystemHealthService(
             }
             else if (!RunsJobs(server))
             {
-                warnings.Add(new("server.not_reporting", "warning",
-                    $"{name} has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. The reverse proxy sends requests to the other servers meanwhile.",
-                    name));
+                warnings.Add(NotReporting(server, servers, now));
             }
             else
             {
-                warnings.Add(new("server.not_reporting", "critical",
-                    $"{name}, which ran the background jobs, has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. " +
+                warnings.Add(new(NotReportingCode, "critical",
+                    $"{name}, which ran the background jobs, has not reported since {Since(server.ReportedAt, now)}: {SilentBecause} " +
                     (standingBy.Length > 0
                         ? $"{string.Join(", ", standingBy)} stand{(standingBy.Length == 1 ? "s" : string.Empty)} by to take the jobs over within a minute."
-                        : "Until it is back, nothing makes the backups, sends messages or listens for analysers and modalities."),
+                        : "Until it is back, nothing makes the backups, sends messages or listens for analysers and modalities.")
+                    + IfRetired(server, now),
                     name));
             }
         }
@@ -432,6 +440,63 @@ public sealed class SystemHealthService(
         ];
     }
 
+    /// <summary>Why a server may have stopped reporting, as its warning says.</summary>
+    private const string SilentBecause =
+        "it may be off, its HC360Server service stopped, its network cable out, or the database out of its reach.";
+
+    /// <summary>
+    /// How long a server is silent before its warning says how to remove it, if it was retired: by then it is told again
+    /// every day (<see cref="SystemHealthAlerts.RemindAfter"/>), until it is back or someone removes it (<see cref="ServerRemoval"/>).
+    /// </summary>
+    public static readonly TimeSpan RetiredHintAfter = TimeSpan.FromDays(1);
+
+    /// <summary>When a silent server last reported, in the hospital's time, with the day when it was not today.</summary>
+    internal static string Since(DateTimeOffset reportedAt, DateTimeOffset now)
+    {
+        var at = TimeZoneInfo.ConvertTime(reportedAt, SharedKernel.HospitalTimeZone.Zone);
+        var today = TimeZoneInfo.ConvertTime(now, SharedKernel.HospitalTimeZone.Zone);
+        return at.ToString(at.Date == today.Date ? "HH:mm" : "d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>What a warning of a server silent for a day adds: it may have been retired, and how to stop its alert then.</summary>
+    private static string IfRetired(ServerNodeHealth server, DateTimeOffset now) =>
+        now - server.ReportedAt >= RetiredHintAfter ? " If it was retired, remove it under Administration › System health." : string.Empty;
+
+    /// <summary>
+    /// A server that does not run the background jobs and has stopped reporting. One that takes requests (an API node, or one
+    /// standing by for the job lease) is critical, so IT's phone is told, as for the job node: it may have been the last one
+    /// taking them, and the warning says whether another still does. A server stopped on purpose removes itself instead, and
+    /// pages nobody. One that only stands by for the jobs (a worker) is a warning: nothing stops until the job node does too.
+    /// </summary>
+    private static HealthWarning NotReporting(ServerNodeHealth server, IReadOnlyList<ServerNodeHealth> servers, DateTimeOffset now)
+    {
+        var name = server.Server.MachineName;
+        var since = Since(server.ReportedAt, now);
+        if (!ServesApi(server))
+        {
+            var standby = servers.Where(s => !ReferenceEquals(s, server) && s.Reporting && s.Server.Jobs is { Active: false })
+                .Select(s => s.Server.MachineName).ToArray();
+            return new(NotReportingCode, "warning",
+                $"{name}, which stands by for the background jobs, has not reported since {since}: {SilentBecause} " + (standby.Length > 0
+                    ? $"{string.Join(", ", standby)} still stand{(standby.Length == 1 ? "s" : string.Empty)} by."
+                    : "Until it is back, no server takes the jobs over if the one that runs them stops.")
+                + IfRetired(server, now),
+                name);
+        }
+
+        var others = servers.Where(s => !ReferenceEquals(s, server) && s.Reporting && ServesApi(s)).Select(s => s.Server.MachineName).ToArray();
+        return new(NotReportingCode, "critical",
+            $"{name} has not reported since {since}: {SilentBecause} " + (others.Length > 0
+                ? $"The reverse proxy sends requests to {string.Join(", ", others)} meanwhile."
+                : "No other server takes requests: workstations cannot reach HC360 until it is back.")
+            + IfRetired(server, now),
+            name);
+    }
+
+    /// <summary>Whether a server takes requests (SCAL-01): any but a dedicated worker.</summary>
+    internal static bool ServesApi(ServerNodeHealth server) =>
+        !string.Equals(server.Server.Role, "worker", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Whether a server runs the background jobs: the one holding the job lease, where the servers take turns at them
     /// (<see cref="ServerInfo.Jobs"/>); else a <c>worker</c>, or a whole Server Node (<c>all</c>).
@@ -465,7 +530,7 @@ public sealed class SystemHealthService(
             wifi.Supported, wifi.Current, wifi.ConnectedSince, wifi.LastDisconnectAt, wifi.RecentEvents,
             LanCertificateManager.CurrentAddresses().Select(a => a.ToString()).ToList(),
             options.Value.HttpsPort, options.Value.PortalHttpsPort, options.Value.Network.EnableMdns,
-            wifi.Cables, wifi.CableLost, wifi.LastCableDropAt);
+            wifi.Cables, wifi.CableLost, wifi.LastCableDropAt, wifi.Cables is null ? null : wifi.LostCables);
 
         var encryption = OperatingSystem.IsWindows() ? DiskEncryption.Load(DiskEncryption.PathIn(directories)) : null;
         var storage = ReadStorage() with { Encryption = encryption };
@@ -497,8 +562,8 @@ public sealed class SystemHealthService(
 
         // Its link: its certificate, and its network cable and WiFi.
         var link = new List<HealthWarning>(CertificateWarnings(certificate, now));
-        link.AddRange(LinkWarnings(network.Cables, network.CableLost, network.WifiSupported, network.Wifi, wifi.AdapterMissing, wifi.WifiLinkLost,
-            options.Value.Network.WifiWeakSignalThreshold));
+        link.AddRange(LinkWarnings(network.Cables, network.LostCables ?? [], network.WifiSupported, network.Wifi, wifi.AdapterMissing, wifi.WifiLinkLost,
+            options.Value.Network.WifiWeakSignalThreshold, directories.IsShared));
 
         // What runs on it: the modules' own set-up here (such as the DSC trust folder), the PDF browser, and its UPS.
         var services = new List<HealthWarning>();
@@ -695,14 +760,18 @@ public sealed class SystemHealthService(
     /// <summary>
     /// The warnings about the Server Node's link to the network (DED-06), cable or WiFi. Until the link monitor has read the
     /// cables (it is off), the WiFi's alone (<see cref="WifiWarnings"/>), as before cables were read. On a cable, the WiFi is
-    /// not the server's link: only an insecure or shared-password network it joins is said. With the cable it was on lost:
-    /// <c>network.cable_down</c>, critical unless it is still on WiFi. Off a cable all this run, on WiFi or with a WiFi
-    /// loss the monitor told: the WiFi's warnings. And with no cable up, no WiFi connected, and no loss told, as when the
-    /// server started with its cable out: <c>network.down</c>, which no monitor tells, so System health's alerts do.
+    /// not the server's link: only an insecure or shared-password network it joins is said; and a cable lost beside the one
+    /// still up is <c>network.cable_down</c>, critical if the workstations' requests came over it, a warning otherwise. With
+    /// every cable it was on lost: <c>network.cable_down</c>, critical unless it is still on WiFi. Off a cable all this run,
+    /// on WiFi or with a WiFi loss the monitor told: the WiFi's warnings. And with no cable up, no WiFi connected, and no loss
+    /// told, as when the server started with its cable out: <c>network.down</c>, which no monitor tells, so System health's
+    /// alerts do. One server of several (<paramref name="severalServers"/>, SCAL-01) takes its requests through the reverse
+    /// proxy, which sends them to the other servers while it is out: its warnings say so, rather than that the workstations
+    /// cannot reach HC360.
     /// </summary>
     internal static IEnumerable<HealthWarning> LinkWarnings(
-        IReadOnlyList<NetworkLink>? cables, bool cableLost, bool wifiSupported, WifiConnectionInfo? wifi, string? adapterMissing, bool wifiLinkLost,
-        int weakThreshold)
+        IReadOnlyList<NetworkLink>? cables, IReadOnlyList<LostCable> lostCables, bool wifiSupported, WifiConnectionInfo? wifi, string? adapterMissing,
+        bool wifiLinkLost, int weakThreshold, bool severalServers = false)
     {
         var wifiWarnings = WifiWarnings(wifiSupported, wifi, adapterMissing, weakThreshold).ToList();
         if (cables is null)
@@ -712,16 +781,17 @@ public sealed class SystemHealthService(
 
         if (cables.Count > 0)
         {
-            return wifiWarnings.Where(w => w.Code is "wifi.insecure" or "wifi.shared_password");
+            var network = wifiWarnings.Where(w => w.Code is "wifi.insecure" or "wifi.shared_password");
+            return lostCables.Count == 0 ? network : [LostBesideAnother(cables, lostCables, severalServers), .. network];
         }
 
         var onWifi = wifi is { IsConnected: true };
-        if (cableLost)
+        var cutOff = severalServers ? "the reverse proxy sends requests to the other servers" : "workstations cannot reach HC360";
+        if (lostCables.Count > 0)
         {
             HealthWarning cable = onWifi
                 ? new("network.cable_down", "warning", "The Server Node's network cable is disconnected: it is on WiFi only.")
-                : new("network.cable_down", "critical",
-                    "The Server Node's network cable is disconnected, and it has no WiFi connection: workstations cannot reach HC360.");
+                : new("network.cable_down", "critical", $"The Server Node's network cable is disconnected, and it has no WiFi connection: {cutOff}.");
             return [cable, .. wifiWarnings.Where(w => w.Code is not ("wifi.down" or "wifi.adapter_missing"))];
         }
 
@@ -733,10 +803,36 @@ public sealed class SystemHealthService(
         return
         [
             new("network.down", "critical", wifiSupported
-                ? "The Server Node has no network connection: no network cable is connected, and its WiFi is not connected. Workstations cannot reach HC360."
-                : "The Server Node has no network connection: no network cable is connected, and it has no WiFi. Workstations cannot reach HC360."),
+                ? $"The Server Node has no network connection: no network cable is connected, and its WiFi is not connected. {Sentence(cutOff)}"
+                : $"The Server Node has no network connection: no network cable is connected, and it has no WiFi. {Sentence(cutOff)}"),
         ];
     }
+
+    /// <summary>
+    /// The cables lost while the server is still on another (two cards: the hospital LAN and an imaging network, say), named
+    /// with their last addresses: critical when the workstations' requests came over one of them, a warning otherwise.
+    /// </summary>
+    private static HealthWarning LostBesideAnother(IReadOnlyList<NetworkLink> up, IReadOnlyList<LostCable> lost, bool severalServers)
+    {
+        static string Named(string name, IReadOnlyList<string> addresses) =>
+            addresses.Count == 0 ? $"'{name}'" : $"'{name}' ({string.Join(", ", addresses)})";
+
+        var cables = lost.Count == 1
+            ? $"network cable {Named(lost[0].Name, lost[0].Addresses)} is"
+            : $"network cables {string.Join(", ", lost.Select(l => Named(l.Name, l.Addresses)))} are";
+        var stillOn = $"It is still on {string.Join(", ", up.Select(c => Named(c.Name, c.Addresses)))}.";
+        var used = lost.Where(l => l.ServedWorkstations).Select(l => $"'{l.Name}'").ToList();
+        return used.Count == 0
+            ? new("network.cable_down", "warning", $"The Server Node's {cables} disconnected. {stillOn}")
+            : new("network.cable_down", "critical", severalServers
+                ? $"The Server Node's {cables} disconnected. Requests reached it over {(lost.Count == 1 ? "it" : string.Join(", ", used))}, "
+                  + $"so the reverse proxy sends them to the other servers until it is back. {stillOn}"
+                : $"The Server Node's {cables} disconnected. Workstations reached HC360 over {(lost.Count == 1 ? "it" : string.Join(", ", used))}, "
+                  + $"so they cannot until it is back. {stillOn}");
+    }
+
+    /// <summary><paramref name="clause"/> as a sentence of its own: capitalised, with its full stop.</summary>
+    private static string Sentence(string clause) => string.Concat(char.ToUpperInvariant(clause[0]).ToString(), clause.AsSpan(1), ".");
 
     /// <summary>
     /// The warnings about the Server Node's WiFi link (DED-06): details Windows withholds, a weak signal, an insecure or
@@ -817,6 +913,11 @@ internal static class SystemEndpoints
 
         admin.MapGet("/health", async (SystemHealthService health, CancellationToken ct) => TypedResults.Ok(await health.BuildAsync(ct)));
 
+        // A server of several that stopped reporting stays, and its alert is told every day, until it is back or someone who
+        // manages the server removes it (retired, renamed, or set up again elsewhere); one that reports cannot be removed.
+        admin.MapDelete("/servers/{node}", async (string node, ServerRemoval removal, CancellationToken ct) => (await removal.RemoveAsync(node, ct)).ToNoContent())
+            .RequirePermission(PlatformPermissions.SystemManage);
+
         // The database password (SRS SEC-07): who may see whether it can be changed, and who may change it.
         admin.MapGet("/database-password", async (DatabasePasswordService passwords, CancellationToken ct) => TypedResults.Ok(await passwords.StatusAsync(ct)));
         admin.MapPost("/database-password/change", async (DatabasePasswordService passwords, CancellationToken ct) => (await passwords.ChangeAsync(ct)).ToOk())
@@ -862,10 +963,12 @@ internal static class SystemEndpoints
         admin.MapPost("/alerts/{id:guid}/acknowledge", async (Guid id, AlertIncidents alerts, CancellationToken ct) =>
             (await alerts.AcknowledgeAsync(id, ct)).ToOk());
 
-        admin.MapGet("/wifi-samples", async (int? hours, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
+        // This server's WiFi history: with several, each watches its own link (WifiSample.Node).
+        admin.MapGet("/wifi-samples", async (int? hours, HospitalDbContext db, ServerNodeBoard board, TimeProvider time, CancellationToken ct) =>
         {
             var since = time.GetUtcNow().AddHours(-Math.Clamp(hours ?? 24, 1, 24 * 30));
             return TypedResults.Ok(await db.Set<WifiSample>().AsNoTracking()
+                .Where(WifiSample.Of(board.Node))
                 .Where(s => s.At >= since)
                 .OrderBy(s => s.At)
                 .Select(s => new WifiSampleDto(s.At, s.Connected, s.SignalQuality, s.RssiDbm, s.ReceiveRateMbps, s.Ssid))

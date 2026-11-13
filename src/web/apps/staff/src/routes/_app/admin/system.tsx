@@ -9,10 +9,10 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowClockwiseRegular, ArrowDownloadRegular } from '@fluentui/react-icons';
+import { ArrowClockwiseRegular, ArrowDownloadRegular, DeleteRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatLinkSpeed, formatRelative, formatTime, humanize } from '@hc360/core';
-import { ErrorState, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
-import { useQuery } from '@tanstack/react-query';
+import { ConfirmDialog, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMemo, useState, type ReactNode } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
@@ -20,6 +20,7 @@ import { usePermission } from '@/lib/permissions';
 import {
   adminQueries,
   formatBytes,
+  removeServer,
   type ClockCheck,
   type ServerNodeHealth,
   type SystemHealthReport,
@@ -40,6 +41,7 @@ import {
   integrationTone,
   linkSummary,
   lowDiskSpace,
+  removableServer,
   runningFor,
   serverRole,
   wifiAdapterMissing,
@@ -100,6 +102,23 @@ function SystemHealthPage() {
   const health = useQuery(adminQueries.health());
   const [hours, setHours] = useState(24);
   const samples = useQuery(adminQueries.wifiSamples(hours));
+  const canManage = usePermission('admin.system.manage');
+  const [removing, setRemoving] = useState<ServerNodeHealth | null>(null);
+  const queryClient = useQueryClient();
+  const notify = useNotify();
+  const remove = useMutation({
+    mutationFn: (node: ServerNodeHealth) => removeServer(node.server.node ?? ''),
+    onSuccess: (_, node) => {
+      setRemoving(null);
+      notify.success(
+        `${node.server.machineName} removed`,
+        'Its alert is acknowledged, and nobody further is paged. It is shown again if it reports again.',
+      );
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'health'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'alerts'] });
+    },
+    onError: (error) => notify.error(error, 'Could not remove the server'),
+  });
 
   if (health.isLoading) {
     return <LoadingState label="Checking the server…" />;
@@ -182,7 +201,13 @@ function SystemHealthPage() {
 
       <div className={styles.grid}>
         {servers ? (
-          servers.map((node) => <ServerCard key={`${node.server.machineName}:${node.server.startedAt}`} node={node} />)
+          servers.map((node) => (
+            <ServerCard
+              key={`${node.server.machineName}:${node.server.startedAt}`}
+              node={node}
+              onRemove={removableServer(node, canManage) ? () => setRemoving(node) : undefined}
+            />
+          ))
         ) : (
           <NetworkCard h={h} />
         )}
@@ -321,6 +346,18 @@ function SystemHealthPage() {
           </>
         )}
       </div>
+      <ConfirmDialog
+        open={removing !== null}
+        title={`Remove ${removing?.server.machineName}?`}
+        confirmLabel="Remove"
+        destructive
+        busy={remove.isPending}
+        onConfirm={() => removing && remove.mutate(removing)}
+        onCancel={() => setRemoving(null)}
+      >
+        Remove it only if it was retired, renamed, or set up again elsewhere. Its alert is acknowledged in your name,
+        and it is no longer told every day. If it reports again, it is shown again.
+      </ConfirmDialog>
     </Page>
   );
 }
@@ -337,14 +374,25 @@ function ClockRow({ clock }: { clock: ClockCheck | null | undefined }) {
 
 /**
  * One server of several (SCAL-01): what it last reported of its own machine, and when. One that stopped reporting (off,
- * its service stopped, or the database out of its reach) is shown with the last it said.
+ * its service stopped, or the database out of its reach) is shown with the last it said, however long ago, until it
+ * reports again or one who manages the server removes it (`onRemove`).
  */
-function ServerCard({ node }: { node: ServerNodeHealth }) {
+function ServerCard({ node, onRemove }: { node: ServerNodeHealth; onRemove?: () => void }) {
   const styles = useStyles();
   const wifi = node.network.wifi;
   const link = linkSummary(node);
   return (
-    <Section title={node.server.machineName} description={serverRole(node.server)}>
+    <Section
+      title={node.server.machineName}
+      description={serverRole(node.server)}
+      actions={
+        onRemove && (
+          <Button icon={<DeleteRegular />} onClick={onRemove} aria-label={`Remove ${node.server.machineName}`}>
+            Remove
+          </Button>
+        )
+      }
+    >
       <div className={styles.rows}>
         <Row label="Reported" tone={node.reporting ? undefined : 'bad'}>
           {node.reporting ? formatRelative(node.reportedAt) : `Not since ${formatDateTime(node.reportedAt)}`}
@@ -433,7 +481,17 @@ function NetworkCard({ h }: { h: SystemHealthReport }) {
             {cable.speedMbps !== null ? ` · ${formatLinkSpeed(cable.speedMbps)}` : ''}
           </Row>
         ))}
-        {h.network.cableLost && (
+        {(h.network.lostCables ?? []).map((lost) => (
+          <Row
+            key={`lost-${lost.name}`}
+            label="Cable"
+            tone={lost.servedWorkstations || (!onCable && !wifi?.isConnected) ? 'bad' : 'warn'}
+          >
+            {lost.name} · Disconnected since {formatTime(lost.lostAt)}
+            {lost.addresses.length > 0 ? ` (was ${lost.addresses.join(', ')})` : ''}
+          </Row>
+        ))}
+        {h.network.cableLost && !h.network.lostCables && (
           <Row label="Cable" tone={wifi?.isConnected ? 'warn' : 'bad'}>
             Disconnected
           </Row>

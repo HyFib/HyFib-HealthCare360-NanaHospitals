@@ -61,14 +61,21 @@ internal static class AbdmEndpoints
         abdm.MapGet("/gateway", async (AbdmGatewayConfiguration gateway, CancellationToken ct) => TypedResults.Ok(await gateway.StatusAsync(ct)))
             .RequirePermission(PlatformPermissions.IntegrationsManage);
 
-        // HIP-initiated linking: completed records linked to the patient's ABHA as care contexts (AbdmLinkingService). The
-        // gateway answers later through its callbacks (AbdmGatewayCallbackEndpoints); the request shows where it has got to.
+        // HIP-initiated linking: completed records linked to the patient's ABHA as care contexts (AbdmLinkingService), by
+        // staff here or by the hospital itself as they are completed (AbdmAutoLinking). The gateway answers later through
+        // its callbacks (AbdmGatewayCallbackEndpoints); the request shows where it has got to, and one that failed (or
+        // that ABDM never answered, AbdmUnansweredRequests) is sent again with /retry, as a new request.
         var links = abdm.MapGroup("/links").RequirePermission(InteropPermissions.AbdmExport);
         links.MapPost("", async (AbdmLinkInput input, AbdmLinkingService linking, CancellationToken ct) =>
                 (await linking.StartAsync(input, ct)).ToHttpResult(view => TypedResults.Accepted($"{BasePath}/links/{view.Id}", view)))
             .WithValidation<AbdmLinkInput>();
         links.MapGet("/{id:guid}", async (Guid id, AbdmLinkingService linking, CancellationToken ct) =>
             (await linking.GetAsync(id, ct)).ToOk());
+        links.MapPost("/{id:guid}/retry", async (Guid id, AbdmLinkingService linking, CancellationToken ct) =>
+            (await linking.RetryAsync(id, ct)).ToHttpResult(view => TypedResults.Accepted($"{BasePath}/links/{view.Id}", view)));
+        abdm.MapGet("/patients/{patientId:guid}/links", async (Guid patientId, AbdmLinkingService linking, CancellationToken ct) =>
+                (await linking.ListAsync(patientId, ct)).ToOk())
+            .RequirePermission(InteropPermissions.AbdmExport);
 
         // Scan and share: the counter's queue of patients who shared their ABHA profile (AbdmProfileShareService). The desk
         // registers them from it; the full details (ABHA number, mobile) need the contact permission, as a patient's edit does.
@@ -99,6 +106,9 @@ internal static class AbdmEndpoints
                 (await service.RequestAsync(patientId, input, ct)).ToOk())
             .RequirePermission(InteropPermissions.AbdmRecordsRequest)
             .WithValidation<AbdmConsentRequestInput>();
+        abdm.MapPost("/patients/{patientId:guid}/consent-requests/{id:guid}/retry", async (Guid patientId, Guid id, AbdmConsentRequestService service, CancellationToken ct) =>
+                (await service.RetryAsync(patientId, id, ct)).ToOk())
+            .RequirePermission(InteropPermissions.AbdmRecordsRequest);
         abdm.MapPost("/patients/{patientId:guid}/consent-artefacts/{artefactId}/records-requests", async (Guid patientId, string artefactId, AbdmHealthInformationService service, CancellationToken ct) =>
                 (await service.RequestAsync(patientId, artefactId, ct)).ToOk())
             .RequirePermission(InteropPermissions.AbdmRecordsRequest);

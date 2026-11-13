@@ -42,8 +42,9 @@ public enum NotificationStatus
     Delivered,
 
     /// <summary>
-    /// Deliberately not sent, and never retried: the number opted out of the channel, or a WhatsApp reminder went to a
-    /// number that never opted in (the log's error says which).
+    /// Deliberately not sent, and never retried: the number opted out of the channel, a WhatsApp reminder went to a number
+    /// that never opted in, or the message was withdrawn before it went (<see cref="NotificationLogs.WithdrawAsync"/>: a
+    /// server's network cable back before the alert of its loss could go). The log's error says which.
     /// </summary>
     Suppressed,
 }
@@ -97,6 +98,37 @@ public sealed class NotificationLog : Entity
     public string? Error { get; set; }
     public DateTimeOffset? SentAt { get; set; }
     public DateTimeOffset? DeliveredAt { get; set; }
+}
+
+/// <summary>Messages queued earlier, found by their notification log ids.</summary>
+internal static class NotificationLogs
+{
+    /// <summary>
+    /// Withdraws those of <paramref name="logIds"/> not sent yet: queued, or failed and waiting for the outbox to try again.
+    /// They are marked suppressed, with <paramref name="reason"/>, and the outbox, which reads the log before each try, does
+    /// not send them (<see cref="NotificationDeliveryHandler"/>). One already sent is left as it is. Saved with the
+    /// caller's changes; returns how many were withdrawn.
+    /// </summary>
+    internal static async Task<int> WithdrawAsync(HospitalDbContext db, IReadOnlyCollection<Guid> logIds, string reason, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(logIds);
+        if (logIds.Count == 0)
+        {
+            return 0;
+        }
+
+        var unsent = await db.Set<NotificationLog>()
+            .Where(l => logIds.Contains(l.Id) && (l.Status == NotificationStatus.Queued || l.Status == NotificationStatus.Failed))
+            .ToListAsync(ct);
+        foreach (var log in unsent)
+        {
+            log.Status = NotificationStatus.Suppressed;
+            log.Error = reason;
+        }
+
+        return unsent.Count;
+    }
 }
 
 internal sealed class NotificationTemplateConfiguration : IEntityTypeConfiguration<NotificationTemplate>
@@ -616,6 +648,13 @@ internal abstract class NotificationDeliveryHandler(
     {
         var delivery = message.Read<NotificationDelivery>();
         var log = await db.Set<NotificationLog>().FirstOrDefaultAsync(l => l.Id == delivery.LogId, cancellationToken);
+        if (log is { Status: NotificationStatus.Suppressed })
+        {
+            // Withdrawn before it went (NotificationLogs.WithdrawAsync): a server's network cable back before the alert of
+            // its loss could go, say. It is not sent, nor tried again.
+            logger.LogInformation("Notification {TemplateKey} via {Channel} not sent: it was withdrawn", delivery.TemplateKey, delivery.Channel);
+            return;
+        }
 
         // Checked before anything is rendered or made (a report's PDF): the hospital chose not to send this message on
         // this channel, so it is skipped, not tried again. The message's other channels still go.

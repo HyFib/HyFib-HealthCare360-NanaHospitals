@@ -4,7 +4,10 @@ import {
   formatDuration,
   healthDisplay,
   INTEGRATION_NAMES,
+  integrationLabel,
+  isIntegrationName,
   isIsoDay,
+  isLogIntegrationName,
   istDayEnd,
   istDayStart,
   keywordActionDisplay,
@@ -81,6 +84,14 @@ describe('log filters', () => {
     expect(pageFromUrl(1)).toBeUndefined();
     expect(pageFromUrl('3')).toBeUndefined();
     expect(pageFromUrl(2.5)).toBeUndefined();
+  });
+
+  it('offers the ABDM gateway, which logs its calls, without making it an integration set up here', () => {
+    expect(isLogIntegrationName('abdm')).toBe(true);
+    expect(integrationLabel('abdm')).toBe('ABDM gateway');
+    expect(isIntegrationName('abdm')).toBe(false);
+    expect(INTEGRATION_NAMES.every(isLogIntegrationName)).toBe(true);
+    expect(integrationLabel('something-else')).toBe('something-else');
   });
 
   it('turns IST calendar days into the server’s from/to range (to is exclusive)', () => {

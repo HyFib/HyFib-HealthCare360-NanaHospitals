@@ -242,7 +242,7 @@ export function ActionError({ error, title, onReload }: { error: unknown; title?
       </MessageBar>
     );
   }
-  const conflict = error.isConflict && error.code !== 'billing.draft_exists';
+  const conflict = error.isConflict && error.code !== 'billing.draft_exists' && error.code !== 'pos.sale_used';
   const heading = error.isNetworkError
     ? 'Cannot reach the server'
     : conflict

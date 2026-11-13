@@ -607,6 +607,8 @@ public sealed class PosSettlementService(
     {
         public string? Key { get; } = PosSettlementFile.Reference(Payment.Reference, 32);
 
+        public string? ApprovalKey { get; } = PosSettlementFile.Reference(Payment.ApprovalCode, 32);
+
         public PaymentMode Mode => Payment.Mode == CounterPaymentMode.Upi ? PaymentMode.Upi : PaymentMode.Card;
     }
 
@@ -633,9 +635,13 @@ public sealed class PosSettlementService(
             line.Unmatch();
         }
 
-        // Billing's receipts and refunds are taken at Billing's terminals.
+        // Billing's receipts and refunds are taken at Billing's terminals. A sale a counter that bills its own sales took
+        // on the terminal (the pharmacy's, the canteen's) is the counter's payment wherever it was taken, a terminal Billing
+        // shares included, so it is left for the counters' match.
         var own = lines.Where(l => !setup.IsOtherTerminal(l.TerminalId)).ToList();
-        var sales = own.Where(l => l.Type == PosSettlementLineType.Sale && l.Match == PosSettlementMatch.NoReceipt)
+        var unmatched = own.Where(l => l.Type == PosSettlementLineType.Sale && l.Match == PosSettlementMatch.NoReceipt).ToList();
+        var counterSales = await CounterTerminalSalesAsync(facilityId, unmatched, ct);
+        var sales = unmatched.Where(l => !counterSales.Contains(l))
             .OrderBy(l => l.TransactionAt ?? BillingTime.StartOfDay(l.SettledOn)).ThenBy(l => l.LineKey, StringComparer.Ordinal).ToList();
         if (sales.Count > 0)
         {
@@ -667,9 +673,9 @@ public sealed class PosSettlementService(
 
     /// <summary>
     /// Matches settled transactions with the card and UPI payments, and refunds, of the counters that bill their own sales
-    /// (the pharmacy, the canteen): by the RRN (UPI: the UTR) the cashier typed as the reference, else by the approval
-    /// code typed as the reference with the same amount within two days. A sale takes a payment and a refund a refund,
-    /// each once, of the same mode first. The counters record no card digits, so a payment typed without its reference is
+    /// (the pharmacy, the canteen): by the RRN (UPI: the UTR), typed as the reference or reported by the terminal, else by
+    /// the approval code, typed as the reference or reported by the terminal, with the same amount within two days. A sale
+    /// takes a payment and a refund a refund, each once, of the same mode first. A payment typed without its reference is
     /// not matched: it is listed as not settled.
     /// </summary>
     private async Task MatchCountersAsync(Guid facilityId, IReadOnlyList<PosSettlementLine> lines, DateTimeOffset now, CancellationToken ct)
@@ -683,7 +689,7 @@ public sealed class PosSettlementService(
         {
             candidates.AddRange((await counter.GetCardPaymentsAsync(facilityId, start, end, ct))
                 .Select(p => new CounterCandidate(counter.Counter, p))
-                .Where(c => c.Key is not null && keys.Contains(c.Key)));
+                .Where(c => (c.Key is not null && keys.Contains(c.Key)) || (c.ApprovalKey is not null && keys.Contains(c.ApprovalKey))));
         }
 
         if (candidates.Count == 0)
@@ -703,6 +709,9 @@ public sealed class PosSettlementService(
         var byReference = candidates.Where(c => c.Key is not null)
             .OrderBy(c => c.Payment.At).ThenBy(c => c.Payment.PaymentId)
             .ToLookup(c => c.Key!, StringComparer.Ordinal);
+        var byApproval = candidates.Where(c => c.ApprovalKey is not null)
+            .OrderBy(c => c.Payment.At).ThenBy(c => c.Payment.PaymentId)
+            .ToLookup(c => c.ApprovalKey!, StringComparer.Ordinal);
         foreach (var line in lines)
         {
             var refund = line.Type == PosSettlementLineType.Refund;
@@ -711,7 +720,8 @@ public sealed class PosSettlementService(
                 ? byReference[rrn].Where(Free).OrderBy(c => c.Mode == line.Mode ? 0 : 1).FirstOrDefault()
                 : null;
             var byCode = byRrn is null && line.ApprovalCode is { } code
-                ? byReference[code].Where(c => Free(c) && c.Payment.Amount == line.Amount && Near(line, c.Payment.At, 2)).OrderBy(c => c.Mode == line.Mode ? 0 : 1).FirstOrDefault()
+                ? byReference[code].Concat(byApproval[code]).Where(c => Free(c) && c.Payment.Amount == line.Amount && Near(line, c.Payment.At, 2))
+                    .OrderBy(c => c.Mode == line.Mode ? 0 : 1).FirstOrDefault()
                 : null;
             if ((byRrn ?? byCode) is not { } found)
             {
@@ -722,6 +732,33 @@ public sealed class PosSettlementService(
                 byRrn is not null ? PosMatchBasis.Rrn : PosMatchBasis.ApprovalCode, now);
             taken.Add(found.Payment.PaymentId);
         }
+    }
+
+    /// <summary>
+    /// The lines that are sales a counter that bills its own sales took on the terminal (<see cref="PosTransaction.Owner"/>):
+    /// by the terminal's RRN, else by its approval code with the same amount. Compared as the settlement file's references
+    /// are, by their letters and digits.
+    /// </summary>
+    private async Task<HashSet<PosSettlementLine>> CounterTerminalSalesAsync(Guid facilityId, IReadOnlyList<PosSettlementLine> lines, CancellationToken ct)
+    {
+        if (lines.Count == 0)
+        {
+            return [];
+        }
+
+        var (start, end) = Window(lines);
+        var sales = await db.Set<PosTransaction>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(t => t.FacilityId == facilityId && t.Owner != null && t.Status == PosTransactionStatus.Approved && t.CompletedAt >= start && t.CompletedAt < end)
+            .Select(t => new { t.Rrn, t.ApprovalCode, t.Amount })
+            .ToListAsync(ct);
+        if (sales.Count == 0)
+        {
+            return [];
+        }
+
+        var rrns = sales.Select(t => PosSettlementFile.Reference(t.Rrn, 32)).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        var codes = sales.Select(t => (Code: PosSettlementFile.Reference(t.ApprovalCode, 32), t.Amount)).Where(t => t.Code is not null).ToHashSet();
+        return lines.Where(l => (l.Rrn is { } rrn && rrns.Contains(rrn)) || (l.ApprovalCode is { } code && codes.Contains((code, l.Amount)))).ToHashSet();
     }
 
     private async Task MatchSalesAsync(Guid facilityId, IReadOnlyList<PosSettlementLine> sales, DateTimeOffset now, CancellationToken ct)
@@ -753,7 +790,7 @@ public sealed class PosSettlementService(
         foreach (var chunk in codes.Chunk(1000))
         {
             approvals.AddRange(await db.Set<PosTransaction>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
-                .Where(t => t.FacilityId == facilityId && t.Status == PosTransactionStatus.Approved && t.ApprovalCode != null && chunk.Contains(t.ApprovalCode)
+                .Where(t => t.FacilityId == facilityId && t.Owner == null && t.Status == PosTransactionStatus.Approved && t.ApprovalCode != null && chunk.Contains(t.ApprovalCode)
                             && t.CompletedAt >= start && t.CompletedAt < end)
                 .Select(t => new PosApproval(t.TransactionId, t.ApprovalCode!, t.Amount, t.CompletedAt!.Value))
                 .ToListAsync(ct));

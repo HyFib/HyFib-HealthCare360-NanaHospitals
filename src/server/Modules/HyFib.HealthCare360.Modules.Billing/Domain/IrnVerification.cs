@@ -47,4 +47,13 @@ public static class IrnVerification
 
         return problems;
     }
+
+    /// <summary>
+    /// The signed QR code printed for an IRN recorded by hand, and the time the IRN was generated. Confirmed by the portal
+    /// (<paramref name="held"/>), they are the portal's own, as for an IRN HC360 asks the portal for: HC360 does not hold the
+    /// portal's key, so the pasted code's signature is never checked, and a code damaged or altered there, or in what the
+    /// check does not compare, would otherwise be printed. The portal not asked, they are the pasted code and its time.
+    /// </summary>
+    public static (string SignedQrCode, DateTimeOffset GeneratedAt) Recorded(IrpIrn? held, string pastedQrCode, DateTimeOffset pastedGeneratedAt) =>
+        held is { SignedQrCode.Length: > 0 } ? (held.SignedQrCode, held.AckDate) : (pastedQrCode.Trim(), pastedGeneratedAt);
 }

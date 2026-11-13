@@ -23,7 +23,7 @@ internal sealed class CanteenDayBookSource(HospitalDbContext db) : ICounterSales
             .OrderBy(s => s.SoldAt)
             .Select(s => new CounterCardPayment(
                 s.Id, s.BillNumber, s.PaymentMode == CanteenPaymentMode.Card ? CounterPaymentMode.Card : CounterPaymentMode.Upi, s.NetAmount, s.PaymentReference,
-                s.SoldAt, false, s.Status == CanteenSaleStatus.Cancelled))
+                s.SoldAt, false, s.Status == CanteenSaleStatus.Cancelled, s.ApprovalCode))
             .ToListAsync(cancellationToken);
 
     public async Task<CounterSalesDay> GetDayAsync(Guid facilityId, DateOnly date, CancellationToken cancellationToken)

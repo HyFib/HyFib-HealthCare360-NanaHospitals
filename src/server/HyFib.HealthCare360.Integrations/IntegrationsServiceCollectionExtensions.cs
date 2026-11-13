@@ -49,7 +49,6 @@ internal static class IntegrationsServiceCollectionExtensions
     public static IServiceCollection AddIntegrations(this IServiceCollection services)
     {
         services.AddScoped<IntegrationSettingsReader>();
-        services.AddScoped<IntegrationTrace>();
         services.AddScoped<SimulatorInbox>();
 
         AddMessaging(services);

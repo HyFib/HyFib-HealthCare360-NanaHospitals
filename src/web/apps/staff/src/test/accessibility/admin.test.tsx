@@ -2,11 +2,13 @@ import type * as Core from '@hc360/core';
 import type * as EChartModule from '@/lib/EChart';
 import { formatDateTime } from '@hc360/core';
 import { expectNoAxeViolations } from '@hc360/ui/testing';
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeServer, openScreen, SCREEN_TESTS, SLOW, STAFF_USER, stubBrowserApis } from '../appScreen';
 import { DEVICES_ANSWERS, SYSTEM_HEALTH, SYSTEM_HEALTH_ANSWERS } from './fixtures/admin';
+import type { ServerNodeHealth } from '@/modules/admin/api';
 
 // Administration screens in the frame, checked with axe-core for WCAG 2.2 A and AA problems (SRS UX-10): the devices
 // page as a hospital administrator sees it in a browser while the hospital enrols its first HC360 Desktop workstation,
@@ -101,6 +103,57 @@ describe('system health', SCREEN_TESTS, () => {
     expect(screen.getByText(formatDateTime(until))).toBeInTheDocument();
     expect(screen.queryByText(/^Next CA/)).not.toBeInTheDocument();
     await expectNoAxeViolations();
+  });
+
+  /** Several servers (SCAL-01), one silent for two days: it stays, and its alert is told every day, until it is removed. */
+  const severalServers = (): ServerNodeHealth[] => {
+    const node = (machineName: string, role: string, id: string, reporting: boolean): ServerNodeHealth => ({
+      server: { ...SYSTEM_HEALTH.server, machineName, role, node: id },
+      network: SYSTEM_HEALTH.network,
+      storage: SYSTEM_HEALTH.storage,
+      certificate: SYSTEM_HEALTH.certificate,
+      power: SYSTEM_HEALTH.power,
+      warnings: [],
+      reportedAt: new Date(Date.now() - (reporting ? 30_000 : 50 * 3600_000)).toISOString(),
+      reporting,
+    });
+    return [node('HC360-JOBS', 'worker', 'a1b2', true), node('HC360-API2', 'api', 'c3d4', false)];
+  };
+
+  it('with several servers, one who manages the server removes one that stopped reporting, once confirmed', async () => {
+    server = fakeServer({
+      ...SYSTEM_HEALTH_ANSWERS,
+      'GET /api/v1/admin/system/health': { ...SYSTEM_HEALTH, servers: severalServers() },
+      'DELETE /api/v1/admin/system/servers/c3d4': null,
+    });
+    openScreen('/admin/system');
+
+    const remove = await screen.findByRole('button', { name: 'Remove HC360-API2' }, SLOW);
+    expect(screen.queryByRole('button', { name: 'Remove HC360-JOBS' })).not.toBeInTheDocument();
+    await expectNoAxeViolations();
+
+    await userEvent.click(remove);
+    const dialog = await screen.findByRole('alertdialog', { name: 'Remove HC360-API2?' });
+    expect(within(dialog).getByText(/only if it was retired, renamed, or set up again elsewhere/)).toBeInTheDocument();
+    await expectNoAxeViolations();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    await waitFor(() =>
+      expect(server.requests.filter((r) => r.method === 'DELETE').map((r) => r.path)).toEqual([
+        '/api/v1/admin/system/servers/c3d4',
+      ]),
+    );
+  });
+
+  it('with several servers, one who only sees System health is not offered to remove one', async () => {
+    server = fakeServer({
+      ...SYSTEM_HEALTH_ANSWERS,
+      'GET /api/v1/admin/system/health': { ...SYSTEM_HEALTH, servers: severalServers() },
+    });
+    openScreen('/admin/system', { ...STAFF_USER, permissions: ['admin.system.read'] });
+
+    expect(await screen.findByText('HC360-API2', {}, SLOW)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Remove/ })).not.toBeInTheDocument();
   });
 
   it('without a rollover, says nothing of a next or previous CA', async () => {

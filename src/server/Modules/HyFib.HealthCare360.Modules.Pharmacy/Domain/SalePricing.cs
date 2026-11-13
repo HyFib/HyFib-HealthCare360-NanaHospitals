@@ -21,7 +21,11 @@ public enum SaleStatus
 }
 
 /// <summary>One payment split at the counter (card/UPI carry the terminal or UPI reference).</summary>
-public sealed record SalePayment(PaymentMode Mode, decimal Amount, string? Reference);
+/// <param name="TerminalSaleId">
+/// A card or UPI payment taken on the hospital's terminal (<c>ICounterTerminal</c>): its reference, approval code and card's
+/// last four digits come from the terminal, not from the counter.
+/// </param>
+public sealed record SalePayment(PaymentMode Mode, decimal Amount, string? Reference, Guid? TerminalSaleId = null);
 
 public sealed record SaleLinePrice(decimal Gross, decimal Discount, decimal Taxable, decimal Cgst, decimal Sgst, decimal Net, decimal Igst = 0);
 

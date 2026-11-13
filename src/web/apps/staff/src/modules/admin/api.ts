@@ -221,6 +221,17 @@ export interface NetworkLink {
   carriesNetwork: boolean;
 }
 
+/**
+ * A cable the server was on during this run, lost and not back (DED-06): the addresses it last had, and whether the
+ * workstations reached HC360 over it then.
+ */
+export interface LostCable {
+  name: string;
+  addresses: string[];
+  lostAt: string;
+  servedWorkstations: boolean;
+}
+
 export interface WifiConnectionInfo {
   interfaceDescription: string;
   isConnected: boolean;
@@ -401,9 +412,11 @@ export interface SystemHealthReport {
     mdnsEnabled: boolean;
     /** The network cables up, empty when none is; null when the link monitor has not read them (it is off). */
     cables: NetworkLink[] | null;
-    /** The cable the server was on is lost, and none is up again. */
+    /** A cable the server was on is lost and not back. */
     cableLost: boolean;
     lastCableDropAt: string | null;
+    /** Each cable lost and not back; null when the link monitor has not read the cables. */
+    lostCables: LostCable[] | null;
   };
   database: {
     reachable: boolean;
@@ -771,6 +784,15 @@ export function confirmRecoveryKey(keyId: string, key: string) {
   return api.post<RecoveryKeyStatus>(`/api/v1/admin/backups/recovery-key/${encodeURIComponent(keyId)}/confirm`, {
     key,
   });
+}
+
+/**
+ * Removes a server of several that stopped reporting from System health, once it was retired, renamed or set up again
+ * elsewhere: its alert is acknowledged, so nobody further is paged. 409 `servers.reporting` for one that reports, which
+ * removes itself when it is stopped. Needs `admin.system.manage`.
+ */
+export function removeServer(node: string) {
+  return api.delete<void>(`/api/v1/admin/system/servers/${encodeURIComponent(node)}`);
 }
 
 /** Makes a new data encryption key current; data encrypted before moves to it in the background. Needs `admin.system.manage`. */

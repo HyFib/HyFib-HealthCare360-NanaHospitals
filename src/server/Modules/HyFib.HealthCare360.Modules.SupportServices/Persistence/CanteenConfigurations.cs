@@ -38,6 +38,8 @@ internal sealed class CanteenSaleConfiguration : IEntityTypeConfiguration<Cantee
         b.Property(x => x.EmployeeCode).HasMaxLength(20);
         b.Property(x => x.EmployeeName).HasMaxLength(200);
         b.Property(x => x.PaymentReference).HasMaxLength(64);
+        b.Property(x => x.ApprovalCode).HasMaxLength(32);
+        b.Property(x => x.CardLast4).HasMaxLength(4);
         b.Property(x => x.CashierName).HasMaxLength(200);
         b.Property(x => x.CancelReason).HasMaxLength(300);
         b.Property(x => x.CancelledByName).HasMaxLength(200);
@@ -46,6 +48,7 @@ internal sealed class CanteenSaleConfiguration : IEntityTypeConfiguration<Cantee
         b.HasIndex(x => x.BillNumber).IsUnique();
         b.HasIndex(x => new { x.BusinessDate, x.Status });
         b.HasIndex(x => new { x.EmployeeCode, x.BusinessDate });
+        b.HasIndex(x => x.TerminalSaleId).IsUnique().HasFilter("terminal_sale_id IS NOT NULL");
     }
 }
 
