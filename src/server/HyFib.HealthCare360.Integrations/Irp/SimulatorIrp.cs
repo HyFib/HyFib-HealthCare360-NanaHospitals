@@ -43,22 +43,28 @@ internal sealed class SimulatorIrpLedger
 
     /// <summary>
     /// Makes the next <paramref name="times"/> calls of <paramref name="operation"/> (<see cref="SimulatorIrpOperations"/>)
-    /// fail as <paramref name="fault"/> says. Disposing the handle clears what is left of the operation's faults.
+    /// fail as <paramref name="fault"/> says: the calls for <paramref name="irn"/> only when one is given (a document's IRN
+    /// for its generation), so that calls for other documents go on as usual. Disposing the handle clears what is left.
     /// </summary>
-    public IDisposable Fail(string operation, SimulatorIrpFault fault, int times = 1)
+    public IDisposable Fail(string operation, SimulatorIrpFault fault, int times = 1, string? irn = null)
     {
-        var queue = _faults.GetOrAdd(operation, _ => new ConcurrentQueue<SimulatorIrpFault>());
+        var key = Key(operation, irn);
+        var queue = _faults.GetOrAdd(key, _ => new ConcurrentQueue<SimulatorIrpFault>());
         for (var i = 0; i < times; i++)
         {
             queue.Enqueue(fault);
         }
 
-        return new Faults(() => _faults.TryRemove(operation, out _));
+        return new Faults(() => _faults.TryRemove(key, out _));
     }
 
-    /// <summary>The fault set on the next call of <paramref name="operation"/>, taken; null when it goes as usual.</summary>
-    public SimulatorIrpFault? TakeFault(string operation) =>
-        _faults.TryGetValue(operation, out var queue) && queue.TryDequeue(out var fault) ? fault : null;
+    /// <summary>The fault set on the next call of <paramref name="operation"/> for <paramref name="irn"/>, taken; null when it goes as usual.</summary>
+    public SimulatorIrpFault? TakeFault(string operation, string? irn) =>
+        Take(Key(operation, irn)) ?? Take(Key(operation, null));
+
+    private SimulatorIrpFault? Take(string key) => _faults.TryGetValue(key, out var queue) && queue.TryDequeue(out var fault) ? fault : null;
+
+    private static string Key(string operation, string? irn) => $"{operation}|{irn?.ToLowerInvariant() ?? "*"}";
 
     private sealed class Faults(Action clear) : IDisposable
     {
@@ -85,27 +91,28 @@ internal sealed class SimulatorIrp(SimulatorIrpLedger ledger, IntegrationTrace t
     public IReadOnlyCollection<string> Keys { get; } = [ProviderKeys.Simulator];
 
     public Task<IrpResult<IrpIrn>> GenerateAsync(IrpContext context, JsonObject payload, CancellationToken cancellationToken) =>
-        AnswerAsync(SimulatorIrpOperations.Generate, context, () => Generate(context, payload));
+        AnswerAsync(SimulatorIrpOperations.Generate, IrnOf(payload), context, () => Generate(context, payload));
 
     public Task<IrpResult<IrpCancellation>> CancelAsync(IrpContext context, string irn, int reason, string remark, CancellationToken cancellationToken) =>
-        AnswerAsync(SimulatorIrpOperations.Cancel, context, () => Cancel(irn));
+        AnswerAsync(SimulatorIrpOperations.Cancel, irn, context, () => Cancel(irn));
 
     /// <summary>The IRN's details as the portal gives them to the GSTIN it belongs to: active (<c>ACT</c>) or cancelled (<c>CNL</c>, with when).</summary>
     public Task<IrpResult<IrpIrn>> GetByIrnAsync(IrpContext context, string irn, CancellationToken cancellationToken) =>
-        AnswerAsync(SimulatorIrpOperations.Get, context, () => Details(context, irn));
+        AnswerAsync(SimulatorIrpOperations.Get, irn, context, () => Details(context, irn));
 
     public Task<IrpResult<IrpEwayBill>> GenerateEwayBillAsync(IrpContext context, JsonObject request, CancellationToken cancellationToken) =>
-        AnswerAsync(SimulatorIrpOperations.EwayBill, context, () => EwayBill(request));
+        AnswerAsync(SimulatorIrpOperations.EwayBill, IrpAnswers.Text(request["Irn"]), context, () => EwayBill(request));
 
     /// <summary>
-    /// Answers a call, or fails it as the fault set on its operation says: not reached, nothing is done; the answer lost, the
-    /// work is done and the caller hears nothing. Either way the caller gets what an unanswered call to the portal gives.
+    /// Answers a call, or fails it as the fault set on its operation (for <paramref name="irn"/>, or for any) says: not
+    /// reached, nothing is done; the answer lost, the work is done and the caller hears nothing. Either way the caller gets
+    /// what an unanswered call to the portal gives.
     /// </summary>
-    private async Task<IrpResult<T>> AnswerAsync<T>(string operation, IrpContext context, Func<IrpResult<T>> call)
+    private async Task<IrpResult<T>> AnswerAsync<T>(string operation, string? irn, IrpContext context, Func<IrpResult<T>> call)
         where T : class
     {
         var started = trace.Start();
-        var fault = ledger.TakeFault(operation);
+        var fault = ledger.TakeFault(operation, irn);
         IrpResult<T> result;
         if (fault == SimulatorIrpFault.Down)
         {
@@ -255,6 +262,14 @@ internal sealed class SimulatorIrp(SimulatorIrpLedger ledger, IntegrationTrace t
         ledger.Entries[irn] = new SimulatorIrpLedger.Entry(payload.DeepClone().AsObject(), signed, false, context.Gstin);
         return IrpResult<IrpIrn>.Ok(signed);
     }
+
+    /// <summary>The IRN the portal gives the document in <paramref name="payload"/>; null when it does not name one.</summary>
+    internal static string? IrnOf(JsonObject payload) =>
+        IrpAnswers.Text(payload["SellerDtls"]?["Gstin"]) is { } seller && IrpAnswers.Text(payload["DocDtls"]?["Typ"]) is { } type
+        && IrpAnswers.Text(payload["DocDtls"]?["No"]) is { } number
+        && DateOnly.TryParseExact(IrpAnswers.Text(payload["DocDtls"]?["Dt"]), "dd/MM/yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? IrnOf(seller, date, type, number)
+            : null;
 
     /// <summary>The portal's IRN: SHA-256 of the supplier's GSTIN, the financial year (2026-27), the document type and its number.</summary>
     internal static string IrnOf(string sellerGstin, DateOnly date, string type, string number)

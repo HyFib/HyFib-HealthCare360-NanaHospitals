@@ -218,7 +218,15 @@ public sealed class IrpClientTests : IDisposable
 
         (await simulator.GetByIrnAsync(hospital, irn, Ct)).Value!.IsCancelled.ShouldBeTrue();
         (await simulator.CancelAsync(hospital, irn, 2, "Wrong buyer", Ct)).Error.ShouldBe(new IrpError("9999", "Invoice is not active."));
-        _tracing.Entries.Count(e => e.Error?.StartsWith(IrpError.Unreachable, StringComparison.Ordinal) == true).ShouldBe(3, "each failed call is in the log");
+
+        // A fault set for one IRN leaves the calls for others alone.
+        using (ledger.Fail(SimulatorIrpOperations.Get, SimulatorIrpFault.Down, irn: new string('f', 64)))
+        {
+            (await simulator.GetByIrnAsync(hospital, irn, Ct)).IsSuccess.ShouldBeTrue();
+            (await simulator.GetByIrnAsync(hospital, new string('F', 64), Ct)).Error!.Message.ShouldContain("set to be down");
+        }
+
+        _tracing.Entries.Count(e => e.Error?.StartsWith(IrpError.Unreachable, StringComparison.Ordinal) == true).ShouldBe(4, "each failed call is in the log");
     }
 
     [Fact]
