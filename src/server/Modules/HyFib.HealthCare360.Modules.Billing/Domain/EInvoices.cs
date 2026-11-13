@@ -150,7 +150,7 @@ public enum IrnCancelOutcome
     /// <summary>The portal did not answer the cancellation and holds the IRN as active: nothing was cancelled, and it is asked again.</summary>
     NotCancelled,
 
-    /// <summary>The portal answered neither the cancellation nor how it holds the IRN: whether it was cancelled is not known.</summary>
+    /// <summary>The portal did not answer the cancellation, nor say how it holds the IRN: whether it was cancelled is not known.</summary>
     Unknown,
 
     /// <summary>The portal refused it as past the 24 hours, and does not hold the IRN as cancelled: a credit note undoes the invoice.</summary>
@@ -172,7 +172,7 @@ public static class IrnCancellations
         details.Value is { IsCancelled: true } ? IrnCancelOutcome.Cancelled
         : failure.Code == IrpError.CancelWindowCrossed ? IrnCancelOutcome.WindowCrossed
         : failure.Code != IrpError.Unreachable ? IrnCancelOutcome.Refused
-        : details.IsSuccess ? IrnCancelOutcome.NotCancelled
+        : details.Value is { IsActive: true } ? IrnCancelOutcome.NotCancelled
         : IrnCancelOutcome.Unknown;
 }
 

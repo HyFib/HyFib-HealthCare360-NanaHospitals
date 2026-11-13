@@ -23,9 +23,10 @@ public static class IrnVerification
             return ["The portal holds it as cancelled."];
         }
 
-        if (held.Status is { } status && !string.Equals(status, IrpIrn.ActiveStatus, StringComparison.OrdinalIgnoreCase))
+        // An answer that does not say the IRN is active does not confirm it: it may be cancelled there.
+        if (!held.IsActive)
         {
-            return [$"The portal holds it as {status}, not active."];
+            return [held.Status is { } status ? $"The portal holds it as {status}, not active." : "The portal's answer does not say whether it is active."];
         }
 
         var problems = new List<string>();

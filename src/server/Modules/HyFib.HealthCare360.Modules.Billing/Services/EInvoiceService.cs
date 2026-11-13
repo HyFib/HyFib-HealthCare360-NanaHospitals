@@ -606,9 +606,9 @@ public sealed class EInvoiceService(
         };
     }
 
-    /// <summary>The portal answered neither the cancellation nor how it holds the IRN afterwards.</summary>
+    /// <summary>The portal did not answer the cancellation, nor say how it holds the IRN afterwards.</summary>
     private static Error CancelUnknown(IrpError failure, string irn) => Error.Rule("einvoice.irp_cancel_unknown",
-        $"{failure.Message} Whether the portal cancelled IRN {irn} is not known: it could not be asked how it holds it either. "
+        $"{failure.Message} Whether the portal cancelled IRN {irn} is not known: it did not say how it holds it either. "
         + "Try again once the portal answers: HC360 then asks it first, and records the cancellation if it was made.");
 
     /// <summary>The live IRN of an invoice, if any.</summary>

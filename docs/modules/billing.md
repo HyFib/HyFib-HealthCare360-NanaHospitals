@@ -545,7 +545,7 @@ invoice it reduces (`against`, `againstDate`).
 | GET | `/{source}/{id}/json` | → the INV-01 (version 1.1) JSON, as a list of one invoice for the portal's bulk upload. 422 `einvoice.invalid` with the problems; 422 `einvoice.registered` once it has an IRN |
 | POST | `/{source}/{id}/irn` | `RecordIrnRequest(ackNo, signedQrCode)` → `EInvoiceDetail`. The signed QR code must name this invoice (400 `signedQrCode` with what differs); 409 `einvoice.registered` while an IRN is live, 409 `einvoice.irn_exists` for an IRN already recorded; 422 `einvoice.document_cancelled`. Connected to the portal, an IRN generated within the last two days is checked with it first ([Checks and lost answers](#checks-and-lost-answers)): 422 `einvoice.irp_unconfirmed` (the portal does not hold it, active, under that acknowledgement, for this document), `einvoice.irp_unreachable` or `einvoice.irp_not_connected` (the connection is switched on but cannot be used), and nothing is recorded. Audited as `billing.einvoice.irn_recorded`, saying how it was checked |
 | POST | `/{source}/{id}/irn/generate` | → `EInvoiceDetail`: asks the connected portal for the IRN ([The portal connection](#the-portal-connection)). 422 `einvoice.irp_not_connected`, `einvoice.invalid` (with the problems), `einvoice.irp_refused` (the portal's code and words), `einvoice.irp_unreachable`, `einvoice.irp_mismatch` (the signed QR code is not this document's: nothing recorded), `einvoice.irp_cancelled` (the portal holds the document's number under an IRN it cancelled); 409 `einvoice.registered`, `einvoice.irn_exists`; 422 `einvoice.document_cancelled`. HC360 asks on its own once a document is final ([Automatic IRNs](#automatic-irns)) |
-| POST | `/{source}/{id}/irn/cancel` | `CancelIrnRequest(reason, remark, version, cancelledOnPortal?)` → `EInvoiceDetail`. Within 24 hours of the IRN only (422 `einvoice.cancel_window`); reasons are the portal's: `Duplicate`, `DataEntryMistake`, `OrderCancelled`, `Other`. Connected to the portal, HC360 cancels it there first (`cancelledOnPortal: true` records one cancelled there by hand). A cancellation that fails is read back from the portal before anyone is told to try again ([Checks and lost answers](#checks-and-lost-answers)): one the portal holds as cancelled is recorded, even past the 24 hours here; otherwise 422 `einvoice.irp_unreachable` (it still holds the IRN as active: nothing was cancelled), `einvoice.irp_cancel_unknown` (it answered neither the cancellation nor how it holds the IRN), `einvoice.irp_refused` or `einvoice.cancel_window`. An invoice's IRN is not cancelled while a credit note with an IRN names it (422 `einvoice.credited`) |
+| POST | `/{source}/{id}/irn/cancel` | `CancelIrnRequest(reason, remark, version, cancelledOnPortal?)` → `EInvoiceDetail`. Within 24 hours of the IRN only (422 `einvoice.cancel_window`); reasons are the portal's: `Duplicate`, `DataEntryMistake`, `OrderCancelled`, `Other`. Connected to the portal, HC360 cancels it there first (`cancelledOnPortal: true` records one cancelled there by hand). A cancellation that fails is read back from the portal before anyone is told to try again ([Checks and lost answers](#checks-and-lost-answers)): one the portal holds as cancelled is recorded, even past the 24 hours here; otherwise 422 `einvoice.irp_unreachable` (it still holds the IRN as active: nothing was cancelled), `einvoice.irp_cancel_unknown` (it did not answer the cancellation, nor say how it holds the IRN), `einvoice.irp_refused` or `einvoice.cancel_window`. An invoice's IRN is not cancelled while a credit note with an IRN names it (422 `einvoice.credited`) |
 | POST | `/{source}/{id}/ewaybill` | `GenerateEwayBillRequest(distanceKm, mode, vehicleNumber?, transporterGstin?, transporterName?, transportDocumentNumber?, transportDocumentDate?, overDimensionalCargo?)` → `EInvoiceDetail`: the e-way bill from the live IRN of an invoice of goods above `gst.ewaybill.threshold`. 422 `einvoice.ewaybill_goods`, `einvoice.ewaybill_not_needed`, `einvoice.not_registered`, `einvoice.irp_not_connected`, `einvoice.irp_refused`; 409 `einvoice.ewaybill_exists`; 400 without a vehicle or a transporter |
 
 ### GST returns — `/api/v1/billing/gst-returns` (`billing.gst.returns`)
@@ -1009,23 +1009,24 @@ finds it and stops. IRNs asked for automatically are recorded by `HC360 (automat
 * **A failed cancellation is read back.** A cancellation the portal does not confirm is not taken at its word: its
   answer may have been lost after the IRN was cancelled, and asked again the portal refuses an IRN it no longer holds as
   active. HC360 then asks the portal how it holds the IRN (`GetByIrnAsync`, `IrnCancellations`). Cancelled there, the
-  cancellation is recorded at the portal's time. Still active after an unanswered call, staff are told nothing was
-  cancelled and to try again (422 `einvoice.irp_unreachable`). Unanswered both times, they are told the outcome is not
-  known (422 `einvoice.irp_cancel_unknown`), never that nothing happened; trying again settles it, since HC360 then asks
-  the portal first. Past the 24 hours here, the portal is still asked whether it cancelled the IRN in time with its
-  answer lost.
-* **A duplicate's IRN is checked.** The IRN fetched for a duplicate (2150) is recorded only when the portal holds it as
-  active; one cancelled there is not (422 `einvoice.irp_cancelled`): the portal registers a number once, so the
-  document is cancelled here and issued again under a new number.
+  cancellation is recorded at the portal's time. Still active after an unanswered call (the portal's answer says `ACT`),
+  staff are told nothing was cancelled and to try again (422 `einvoice.irp_unreachable`). Unanswered, and the portal not
+  saying how it holds the IRN, they are told the outcome is not known (422 `einvoice.irp_cancel_unknown`), never that
+  nothing happened; trying again settles it, since HC360 then asks the portal first. Past the 24 hours here, the portal
+  is still asked whether it cancelled the IRN in time with its answer lost.
+* **A duplicate's IRN is checked.** The IRN fetched for a duplicate (2150) is not recorded when the portal holds it as
+  cancelled (422 `einvoice.irp_cancelled`): the portal registers a number once, so the document is cancelled here and
+  issued again under a new number.
 * **An IRN recorded by hand is checked.** Connected, HC360 asks the portal about an IRN generated within the last two
   days (`IrnVerification`; the portal gives an IRN's details for about three days after its generation,
-  `IrpIrn.DetailsWindow`). It is recorded only when the portal holds it, active, under the acknowledgement given, with a
-  signed QR code naming the document (422 `einvoice.irp_unconfirmed` with what differs), and the portal's signed
-  invoice is kept with it. When the portal cannot be asked, nothing is recorded: 422 `einvoice.irp_unreachable` when it
-  does not answer, `einvoice.irp_not_connected` when the connection is switched on but cannot be used (its credentials
-  are incomplete). Meanwhile an administrator can switch the connection off to record IRNs without the check. An
-  older IRN is recorded on its signed QR code alone. The audit trail (`billing.einvoice.irn_recorded`) says how each was
-  checked. The staff app offers recording by hand only to a facility that is not connected; the check guards the API.
+  `IrpIrn.DetailsWindow`). It is recorded only when the portal holds it, active (its answer says `ACT`: one that does
+  not say confirms nothing), under the acknowledgement given, with a signed QR code naming the document (422
+  `einvoice.irp_unconfirmed` with what differs), and the portal's signed invoice is kept with it. When the portal
+  cannot be asked, nothing is recorded: 422 `einvoice.irp_unreachable` when it does not answer,
+  `einvoice.irp_not_connected` when the connection is switched on but cannot be used (its credentials are incomplete).
+  Meanwhile an administrator can switch the connection off to record IRNs without the check. An older IRN is recorded
+  on its signed QR code alone. The audit trail (`billing.einvoice.irn_recorded`) says how each was checked. The staff
+  app offers recording by hand only to a facility that is not connected; the check guards the API.
 
 ### The morning reminder
 Each morning from 09:00 (the hospital's time), `EInvoiceReminderJob` queues one `billing.einvoice.reminder` for each

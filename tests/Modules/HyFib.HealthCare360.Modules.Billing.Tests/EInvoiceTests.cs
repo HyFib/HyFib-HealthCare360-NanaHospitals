@@ -242,21 +242,24 @@ public sealed class EInvoiceTests
     [InlineData("9999", IrpIrn.CancelledStatus, IrnCancelOutcome.Cancelled)]
     [InlineData(IrpError.CancelWindowCrossed, IrpIrn.CancelledStatus, IrnCancelOutcome.Cancelled)]
     [InlineData(IrpError.CancelWindowCrossed, IrpIrn.ActiveStatus, IrnCancelOutcome.WindowCrossed)]
-    [InlineData(IrpError.CancelWindowCrossed, null, IrnCancelOutcome.WindowCrossed)]
+    [InlineData(IrpError.CancelWindowCrossed, IrpError.Unreachable, IrnCancelOutcome.WindowCrossed)]
     [InlineData(IrpError.Unreachable, IrpIrn.ActiveStatus, IrnCancelOutcome.NotCancelled)]
-    [InlineData(IrpError.Unreachable, null, IrnCancelOutcome.Unknown)]
+    [InlineData(IrpError.Unreachable, "", IrnCancelOutcome.Unknown)]
+    [InlineData(IrpError.Unreachable, IrpError.Unreachable, IrnCancelOutcome.Unknown)]
     [InlineData("2163", IrpIrn.ActiveStatus, IrnCancelOutcome.Refused)]
-    [InlineData("9999", null, IrnCancelOutcome.Refused)]
-    [InlineData(IrpError.NotConnected, null, IrnCancelOutcome.Refused)]
-    public void A_failed_cancellation_is_judged_by_how_the_portal_then_holds_the_irn(string failure, string? status, IrnCancelOutcome expected)
-    {
-        // A null status: the IRN's details could not be read either.
-        var details = status is null
-            ? IrpResult<IrpIrn>.Fail(IrpError.Unreachable, "The e-invoice portal did not answer in time.")
-            : IrpResult<IrpIrn>.Ok(new IrpIrn(new string('a', 64), "112610012345678", DateTimeOffset.UtcNow, string.Empty, string.Empty, Status: status));
+    [InlineData("9999", IrpError.Unreachable, IrnCancelOutcome.Refused)]
+    [InlineData(IrpError.NotConnected, IrpError.NotConnected, IrnCancelOutcome.Refused)]
+    public void A_failed_cancellation_is_judged_by_how_the_portal_then_holds_the_irn(string failure, string held, IrnCancelOutcome expected) =>
+        IrnCancellations.After(new IrpError(failure, "The portal's words."), Details(held)).ShouldBe(expected);
 
-        IrnCancellations.After(new IrpError(failure, "The portal's words."), details).ShouldBe(expected);
-    }
+    /// <summary>
+    /// The IRN's details as the portal gives them when asked: <paramref name="held"/> is the status they carry (empty for an
+    /// answer without one), or the code of the error the question got.
+    /// </summary>
+    private static IrpResult<IrpIrn> Details(string held) => held is "" or IrpIrn.ActiveStatus or IrpIrn.CancelledStatus
+        ? IrpResult<IrpIrn>.Ok(new IrpIrn(new string('a', 64), "112610012345678", DateTimeOffset.UtcNow, string.Empty, string.Empty,
+            Status: held is "" ? null : held))
+        : IrpResult<IrpIrn>.Fail(held, "The portal's words about the IRN.");
 
     private static EInvoiceItem Service() => new("Executive health check-up", true, "999311", 1m, 1000m, 1000m, 100m, 900m, 18m, 162m, 0m, 0m, 1062m);
 

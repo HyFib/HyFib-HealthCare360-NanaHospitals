@@ -637,7 +637,7 @@ What HC360 relies on from the portal, and where it comes from:
 |---|---|---|
 | A document asked for twice is refused with 2150 and the IRN the portal holds (`InfoDtls`, `DUPIRN`) | Asking again after a lost answer never makes a second IRN | NIC API v1.03, as built in `NicIrpClient` |
 | An IRN is cancelled only within 24 hours of its generation (2270 after) | The cancel window | NIC API v1.03 |
-| An IRN's details (`Invoice/irn/{irn}`) carry its `Status`: `ACT` or `CNL` (`IrpIrn.IsCancelled`), and a cancelled one's `CancelDate` | Reading back a cancellation whose answer was lost; checking an IRN recorded by hand | GSP documentation of the NIC API; to be confirmed on NIC's sandbox |
+| An IRN's details (`Invoice/irn/{irn}`) carry its `Status`: `ACT` or `CNL` (`IrpIrn.IsActive`, `IrpIrn.IsCancelled`; an answer without it confirms neither), and a cancelled one's `CancelDate` | Reading back a cancellation whose answer was lost; checking an IRN recorded by hand | GSP documentation of the NIC API; to be confirmed on NIC's sandbox |
 | The details are given for about three days after the IRN's generation (`IrpIrn.DetailsWindow`: HC360 asks within two) | Whether an IRN recorded by hand is checked with the portal | GSP documentation of the NIC API; to be confirmed on NIC's sandbox |
 | Documents more than 30 days old are refused from taxpayers with an aggregate turnover of ₹10 crore or more (from 1 April 2025) | The register's due dates and the morning reminder | GSTN advisory of 5 November 2024 |
 
