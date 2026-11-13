@@ -295,9 +295,13 @@ public sealed class PosService(
     /// <summary>More approved sales than this left off invoices within two days is a counter to look at, not a list to scroll.</summary>
     internal const int MaxUnused = 200;
 
-    /// <summary>The unrecorded-payment exceptions a person resolved: the money was dealt with outside HC360.</summary>
+    /// <summary>
+    /// The signed-in facility's unrecorded-payment exceptions a person resolved: the money was dealt with outside HC360.
+    /// Read with the facility filter, as the counter's own sales are: a query that ignored it for the exceptions would
+    /// ignore it for the sales too.
+    /// </summary>
     private IQueryable<GatewayDiscrepancy> ClosedExceptions() =>
-        db.Set<GatewayDiscrepancy>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+        db.Set<GatewayDiscrepancy>()
             .Where(d => d.Kind == DiscrepancyKind.UnrecordedPayment && d.Status == DiscrepancyStatus.Resolved && !d.ResolvedAutomatically);
 
     /// <summary>
