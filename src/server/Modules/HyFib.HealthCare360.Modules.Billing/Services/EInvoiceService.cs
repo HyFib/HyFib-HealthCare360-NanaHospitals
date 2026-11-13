@@ -206,6 +206,7 @@ public sealed class EInvoiceService(
             return check.Error!;
         }
 
+        var (signedQrCode, generatedAt) = IrnVerification.Recorded(check.Value.Held, request.SignedQrCode, qr.IrnDt);
         var registration = new EInvoice
         {
             FacilityId = document.FacilityId,
@@ -217,8 +218,8 @@ public sealed class EInvoiceService(
             InvoiceValue = document.Total,
             Irn = qr.Irn,
             AckNo = request.AckNo.Trim(),
-            AckDate = qr.IrnDt.ToUniversalTime(),
-            SignedQrCode = request.SignedQrCode.Trim(),
+            AckDate = generatedAt.ToUniversalTime(),
+            SignedQrCode = signedQrCode,
             SignedInvoice = check.Value.Held?.SignedInvoice is { Length: > 0 } signed ? signed : null,
             RecordedByName = currentUser.DisplayName ?? currentUser.UserName ?? "Staff",
             PrecedingSource = document.Preceding?.Source,

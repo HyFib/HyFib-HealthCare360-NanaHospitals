@@ -1,3 +1,4 @@
+import { isApiError } from '@hc360/core';
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
@@ -191,6 +192,80 @@ export const einvoiceApi = {
   ewayBill: (source: EInvoiceSource, id: string, body: GenerateEwayBill) =>
     api.post<EInvoiceDetail>(`${base}/${source}/${id}/ewaybill`, body),
 };
+
+/**
+ * The calls that change a document's IRN: recording one by hand, asking the portal for one, cancelling it, and, past the
+ * 24 hours, asking the portal whether a cancellation made in time went through (the same cancel request, read back).
+ */
+export type IrnAction = 'record' | 'generate' | 'cancel' | 'askCancelled';
+
+/**
+ * A refusal of one of those calls as the dialog shows it: `warning` when nothing is wrong with the document and trying
+ * again settles it, `error` when something has to change first; a heading in plain words; and the server's own sentence,
+ * which says what was found and what to do (empty when the error did not come from the server).
+ */
+export interface IrnAnswer {
+  intent: 'warning' | 'error';
+  title: string;
+  detail: string;
+}
+
+type Heading = readonly [intent: IrnAnswer['intent'], title: string];
+
+// A heading of its own only where the outcome is not the call's plain "not done" (UNEXPLAINED): still open, as when the
+// HC360 server or the portal did not answer, or done already. Any other refusal gets the call's heading over the
+// server's sentence, which names what was found and what to do.
+
+/** Whichever call it answers. */
+const COMMON_HEADINGS: Record<string, Heading> = {
+  network: ['warning', 'Cannot reach the HealthCare360 server'],
+  concurrency: ['warning', 'Changed elsewhere: the latest is shown, try again'],
+  'einvoice.registered': ['warning', 'Already registered'],
+};
+
+/** By call: the portal not answering means something different to each (billing.md, "Checks and lost answers"). */
+const HEADINGS: Record<IrnAction, Record<string, Heading>> = {
+  record: {
+    'einvoice.irp_unconfirmed': ['error', 'Not recorded: compare what was entered with the portal'],
+    'einvoice.irp_unreachable': ['warning', 'Not recorded yet: the portal could not be asked'],
+  },
+  generate: {
+    'einvoice.irp_unreachable': ['warning', 'No IRN yet: the portal did not answer'],
+    'einvoice.irp_cancelled': ['error', 'Cancelled on the portal: it needs a new number'],
+  },
+  // Not known: the server's sentence says what to do, try again (the portal did not answer) or look the IRN up on the
+  // portal (it would not say how it holds the IRN, as after the days it keeps an IRN's details).
+  cancel: {
+    'einvoice.irp_cancel_unknown': ['warning', 'Not known whether the portal cancelled the IRN'],
+    'einvoice.irp_unreachable': ['warning', 'Not cancelled: the IRN is still active on the portal'],
+  },
+  askCancelled: {
+    'einvoice.irp_cancel_unknown': ['warning', 'Not known whether the portal cancelled the IRN'],
+    'einvoice.cancel_window': ['error', 'Not cancelled on the portal: the IRN stays'],
+  },
+};
+
+const UNEXPLAINED: Record<IrnAction, string> = {
+  record: 'The IRN was not recorded',
+  generate: 'The portal gave no IRN',
+  cancel: 'The cancellation was not recorded',
+  askCancelled: 'No cancellation was recorded',
+};
+
+/** The problem codes the dialog has words for, by call (each call's own and the common ones). */
+export function irnAnswerCodes(action: IrnAction): string[] {
+  return [...Object.keys(HEADINGS[action]), ...Object.keys(COMMON_HEADINGS)];
+}
+
+/** What the server answered to `action`, in plain words: see {@link IrnAnswer}. */
+export function irnAnswer(action: IrnAction, error: unknown): IrnAnswer {
+  if (!isApiError(error)) {
+    return { intent: 'error', title: UNEXPLAINED[action], detail: '' };
+  }
+  const code = error.code ?? '';
+  const [intent, title] = HEADINGS[action][code] ?? COMMON_HEADINGS[code] ?? ['error', UNEXPLAINED[action]];
+  return { intent, title, detail: error.userMessage };
+}
 
 /** What stops the IRN from being recorded: the portal's 10–20-digit acknowledgement number and its signed QR code (a JWT). */
 export function irnProblems(ackNo: string, signedQrCode: string): string[] {

@@ -50,6 +50,27 @@ public sealed class IrnVerificationTests
         IrnVerification.Contradictions(Held() with { Status = null }, Irn, AckNo, Invoice(), Hospital)
             .ShouldBe(["The portal's answer does not say whether it is active."]);
 
+    [Fact]
+    public void Confirmed_by_the_portal_its_own_signed_qr_code_and_time_are_recorded_not_the_pasted_ones()
+    {
+        // Pasted with its signature damaged (or altered): the payload still names the invoice, so the check passes.
+        var held = Held();
+        var parts = held.SignedQrCode.Split('.');
+        var damaged = $"{parts[0]}.{parts[1]}.ZGFtYWdlZA";
+        IrnVerification.Contradictions(held, Irn, AckNo, Invoice(), Hospital).ShouldBeEmpty();
+
+        IrnVerification.Recorded(held, damaged, held.AckDate.AddMinutes(5)).ShouldBe((held.SignedQrCode, held.AckDate));
+    }
+
+    [Fact]
+    public void The_portal_not_asked_the_pasted_signed_qr_code_and_its_time_are_recorded()
+    {
+        var generated = new DateTimeOffset(2026, 10, 24, 18, 5, 0, TimeSpan.FromHours(5.5));
+        var pasted = Qr(Invoice());
+
+        IrnVerification.Recorded(null, $"  {pasted}\n", generated).ShouldBe((pasted, generated));
+    }
+
     /// <summary>The IRN's details as the portal gives them, its signed QR code naming <paramref name="document"/>.</summary>
     private static IrpIrn Held(EInvoiceDocument? document = null) =>
         new(Irn, AckNo, DateTimeOffset.UtcNow, "signed.invoice.jwt", Qr(document ?? Invoice()), Status: IrpIrn.ActiveStatus);
