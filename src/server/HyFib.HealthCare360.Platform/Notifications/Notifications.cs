@@ -443,6 +443,14 @@ internal sealed class NotificationTemplateSeeder : ISeeder
     }
 }
 
+/// <summary>A message rendered from its template (<see cref="NotificationTemplateRenderer.RenderMessageAsync"/>).</summary>
+/// <param name="Template">The stored version used; null when the built-in text was.</param>
+/// <param name="Placeholders">
+/// Each placeholder of the template's body with the value it took, in the order they occur (a placeholder used twice
+/// is listed twice).
+/// </param>
+public sealed record RenderedNotification(NotificationTemplate? Template, string? Subject, string Body, IReadOnlyList<TemplatePlaceholder> Placeholders);
+
 /// <summary>
 /// Resolves the best template (facility → global, language → English) and renders placeholders. A version that is
 /// "Not in use" is passed over for the next one that fits; when every version that fits is not in use, the message is
@@ -473,6 +481,16 @@ public sealed partial class NotificationTemplateRenderer(HospitalDbContext db, I
 
     public async Task<(NotificationTemplate? Template, string? Subject, string Body)> RenderAsync(NotificationDelivery delivery, CancellationToken cancellationToken)
     {
+        var message = await RenderMessageAsync(delivery, cancellationToken);
+        return (message.Template, message.Subject, message.Body);
+    }
+
+    /// <summary>
+    /// The message as <see cref="RenderAsync"/> renders it, with the placeholders of its template's body and the values
+    /// they took, for WhatsApp templates registered with those placeholders as their parameters.
+    /// </summary>
+    public async Task<RenderedNotification> RenderMessageAsync(NotificationDelivery delivery, CancellationToken cancellationToken)
+    {
         var versions = await Versions(delivery.TemplateKey, delivery.Channel, delivery.FacilityId, delivery.Language).ToListAsync(cancellationToken);
         var candidates = versions.Where(t => t.IsActive).ToList();
         if (candidates.Count == 0 && WhatsAppOptOutPolicy.IsEssential(delivery.TemplateKey))
@@ -487,29 +505,44 @@ public sealed partial class NotificationTemplateRenderer(HospitalDbContext db, I
             .ThenByDescending(t => t.Language == delivery.Language)
             .FirstOrDefault();
 
-        var values = new Dictionary<string, string>(delivery.Values, StringComparer.OrdinalIgnoreCase);
-        if (!values.ContainsKey("hospital"))
-        {
-            values["hospital"] = await FacilityNameAsync(delivery.FacilityId, cancellationToken) ?? "Hospital";
-        }
-
-        if (!values.ContainsKey("name") && delivery.Name is not null)
-        {
-            values["name"] = delivery.Name;
-        }
-
         var body = template?.Body ?? DefaultNotificationTemplates.All
             .FirstOrDefault(t => t.Key == delivery.TemplateKey && t.Channel == delivery.Channel).Body
             ?? throw new InvalidOperationException($"No template '{delivery.TemplateKey}' for {delivery.Channel}.");
 
-        var html = delivery.Channel == NotificationChannel.Email;
-        return (template, template?.Subject is { } subject ? Render(subject, values, false) : null, Render(body, values, html));
+        // The facility's name is looked up only for a message that does not give the hospital's name itself.
+        var facilityName = delivery.Values.Keys.Any(key => string.Equals(key, "hospital", StringComparison.OrdinalIgnoreCase))
+            ? null
+            : await FacilityNameAsync(delivery.FacilityId, cancellationToken);
+        return Fill(delivery, template, body, facilityName);
     }
 
-    internal static string Render(string text, IReadOnlyDictionary<string, string> values, bool htmlEncode) =>
+    /// <summary>
+    /// Fills the template's subject and <paramref name="body"/> with the message's values. Where the message gives none,
+    /// <c>{{hospital}}</c> takes <paramref name="facilityName"/> ("Hospital" when there is none) and <c>{{name}}</c> the
+    /// recipient's name; a placeholder without a value is left empty. The pass that fills the body also lists its
+    /// placeholders with the values they took, so the two always agree.
+    /// </summary>
+    internal static RenderedNotification Fill(NotificationDelivery delivery, NotificationTemplate? template, string body, string? facilityName)
+    {
+        var values = new Dictionary<string, string>(delivery.Values, StringComparer.OrdinalIgnoreCase);
+        values.TryAdd("hospital", facilityName ?? "Hospital");
+        if (delivery.Name is not null)
+        {
+            values.TryAdd("name", delivery.Name);
+        }
+
+        var placeholders = new List<TemplatePlaceholder>();
+        var text = Render(body, values, delivery.Channel == NotificationChannel.Email, placeholders);
+        return new(template, template?.Subject is { } subject ? Render(subject, values, false) : null, text, placeholders);
+    }
+
+    /// <param name="placeholders">When given, each placeholder filled is added to it, in order, with the value it took (not encoded).</param>
+    internal static string Render(
+        string text, IReadOnlyDictionary<string, string> values, bool htmlEncode, ICollection<TemplatePlaceholder>? placeholders = null) =>
         PlaceholderRegex().Replace(text, m =>
         {
             var value = values.TryGetValue(m.Groups[1].Value, out var v) ? v : string.Empty;
+            placeholders?.Add(new TemplatePlaceholder(m.Groups[1].Value, value));
             return htmlEncode ? WebUtility.HtmlEncode(value) : value;
         });
 
@@ -612,8 +645,8 @@ internal abstract class NotificationDeliveryHandler(
             return;
         }
 
-        var (template, subject, body) = await renderer.RenderAsync(delivery, cancellationToken);
-        if (NeedsDocument(template) && delivery.Document is null)
+        var rendered = await renderer.RenderMessageAsync(delivery, cancellationToken);
+        if (NeedsDocument(rendered.Template) && delivery.Document is null)
         {
             // Meta refuses a template approved with a document header when there is no document, so sending would only
             // fail and be retried (say, report PDFs are switched off but the template still has its header). It is
@@ -629,9 +662,9 @@ internal abstract class NotificationDeliveryHandler(
             return;
         }
 
-        var (file, missing) = await DocumentAsync(delivery, template, message.Attempts, cancellationToken);
+        var (file, missing) = await DocumentAsync(delivery, rendered.Template, message.Attempts, cancellationToken);
 
-        var result = await SendAsync(delivery, template, subject, body, file, cancellationToken);
+        var result = await SendAsync(delivery, rendered, file, cancellationToken);
         if (log is not null)
         {
             log.Status = result.Success ? NotificationStatus.Sent : NotificationStatus.Failed;
@@ -660,7 +693,7 @@ internal abstract class NotificationDeliveryHandler(
     protected virtual bool NeedsDocument(NotificationTemplate? template) => false;
 
     protected abstract Task<SendResult> SendAsync(
-        NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken);
+        NotificationDelivery delivery, RenderedNotification message, NotificationFile? document, CancellationToken cancellationToken);
 
     /// <summary>The document to send, and a note for the log when the message goes without the one it names.</summary>
     private async Task<(NotificationFile? File, string? Missing)> DocumentAsync(
@@ -705,8 +738,8 @@ internal sealed class SmsDeliveryHandler(
     public override string Type => NotificationService.SmsType;
 
     protected override Task<SendResult> SendAsync(
-        NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken) =>
-        sms.SendAsync(new SmsMessage(delivery.To, body, template?.DltTemplateId, null, delivery.LogId.ToString("N"), delivery.FacilityId), cancellationToken);
+        NotificationDelivery delivery, RenderedNotification message, NotificationFile? document, CancellationToken cancellationToken) =>
+        sms.SendAsync(new SmsMessage(delivery.To, message.Body, message.Template?.DltTemplateId, null, delivery.LogId.ToString("N"), delivery.FacilityId), cancellationToken);
 }
 
 internal sealed class WhatsAppDeliveryHandler(
@@ -744,13 +777,16 @@ internal sealed class WhatsAppDeliveryHandler(
     protected override bool NeedsDocument(NotificationTemplate? template) => template?.WhatsAppDocumentHeader == true;
 
     // The template is asked for in the language of the one chosen: a patient whose language has none gets the English
-    // template, which Meta knows only in English.
+    // template, which Meta knows only in English. The whole text goes as the one body parameter, and the body's
+    // placeholders with their values go with it, for templates registered with those as their parameters (the
+    // integrations.whatsapp setting "parameters" chooses).
     protected override Task<SendResult> SendAsync(
-        NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken) =>
+        NotificationDelivery delivery, RenderedNotification message, NotificationFile? document, CancellationToken cancellationToken) =>
         whatsApp.SendTemplateAsync(
-            new WhatsAppTemplateMessage(delivery.To, template?.WhatsAppTemplateName ?? delivery.TemplateKey.Replace('.', '_'), template?.Language ?? delivery.Language,
-                [body], delivery.LogId.ToString("N"), delivery.FacilityId,
-                document is null ? null : new WhatsAppHeaderDocument(document.FileName, document.Content, document.ContentType)),
+            new WhatsAppTemplateMessage(delivery.To, message.Template?.WhatsAppTemplateName ?? delivery.TemplateKey.Replace('.', '_'),
+                message.Template?.Language ?? delivery.Language, [message.Body], delivery.LogId.ToString("N"), delivery.FacilityId,
+                document is null ? null : new WhatsAppHeaderDocument(document.FileName, document.Content, document.ContentType),
+                message.Placeholders),
             cancellationToken);
 }
 
@@ -764,9 +800,9 @@ internal sealed class EmailDeliveryHandler(
     protected override bool CarriesDocument(NotificationTemplate? template) => true;
 
     protected override Task<SendResult> SendAsync(
-        NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken) =>
+        NotificationDelivery delivery, RenderedNotification message, NotificationFile? document, CancellationToken cancellationToken) =>
         email.SendAsync(
-            new EmailMessage(delivery.To, subject ?? "Message from the hospital", body,
+            new EmailMessage(delivery.To, message.Subject ?? "Message from the hospital", message.Body,
                 document is null ? null : [new EmailAttachment(document.FileName, document.Content, document.ContentType)],
                 delivery.LogId.ToString("N"), delivery.FacilityId),
             cancellationToken);
