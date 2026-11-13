@@ -76,8 +76,13 @@ public sealed record PharmacySaleItemDto(
 public sealed record PharmacyPaymentDto(Guid Id, PaymentMode Mode, decimal Amount, string? Reference, DateTimeOffset ReceivedAt, bool IsRefund, Guid? RefundOfPaymentId = null);
 
 /// <summary>Everything the GST invoice print needs (letterhead comes from the facility master).</summary>
+/// <param name="EInvoice">The live IRN the portal gave this B2B invoice, printed with its signed QR code.</param>
 /// <param name="Pending">A cancellation or a return of the invoice waiting for someone who approves refunds: nothing has moved yet.</param>
 /// <param name="OwnSale">The signed-in user sold the invoice or took its payment: someone else asks to cancel it or takes its returns.</param>
+/// <param name="MissingIrn">
+/// Set when the invoice is due an IRN and has no live one (the e-invoice register's own test): its print says it is not
+/// a valid tax invoice for the buyer (GST rule 48(5)) in place of the IRN.
+/// </param>
 public sealed record PharmacySaleDetail(
     Guid Id,
     string InvoiceNumber,
@@ -120,7 +125,8 @@ public sealed record PharmacySaleDetail(
     string? FreeTreatmentReason = null,
     DateOnly? PrescriptionDate = null,
     IReadOnlyList<PendingApproval>? Pending = null,
-    bool OwnSale = false);
+    bool OwnSale = false,
+    MissingIrn? MissingIrn = null);
 
 public sealed record CollectPaymentRequest(PaymentMode Mode, decimal Amount, string? Reference);
 

@@ -179,6 +179,8 @@ internal static class SaleEndpoints
 
         var storeName = await db.Set<Store>().Where(s => s.Id == sale.StoreId).Select(s => s.Name).FirstOrDefaultAsync(ct) ?? string.Empty;
         var soldBy = await db.Set<User>().Where(u => u.Id == sale.SoldByUserId).Select(u => u.DisplayName).FirstOrDefaultAsync(ct);
+        // Only a sale to a buyer registered for GST is ever an e-invoice; the register says what its print carries.
+        var einvoice = sale.BuyerGstin is null ? EInvoicePrint.None : await einvoices.PrintAsync(PharmacyEInvoiceSource.Key, sale.Id, ct);
         return TypedResults.Ok(new PharmacySaleDetail(
             sale.Id, sale.InvoiceNumber, sale.Type, sale.StoreId, storeName, sale.PatientId, uhid, sale.CustomerName,
             PatientContacts.Phone(sale.CustomerPhone, await contacts.FullAsync(ct)),
@@ -193,11 +195,12 @@ internal static class SaleEndpoints
             sale.Payments.OrderBy(p => p.ReceivedAt).Select(p => new PharmacyPaymentDto(p.Id, p.Mode, p.Amount, p.Reference, p.ReceivedAt, p.IsRefund, p.RefundOfPaymentId)).ToList(),
             sale.Version,
             sale.BuyerAddress,
-            sale.BuyerGstin is null ? null : await einvoices.FindAsync(PharmacyEInvoiceSource.Key, sale.Id, ct),
+            einvoice.Stamp,
             sale.FreeTreatmentReason,
             sale.PrescriptionDate,
             await adjustments.PendingAsync(sale.Id, ct),
-            sale.HandledBy(currentUser.UserId)));
+            sale.HandledBy(currentUser.UserId),
+            einvoice.Missing));
     }
 
     private static async Task<IResult> Returns(Guid id, HospitalDbContext db, CancellationToken ct)
