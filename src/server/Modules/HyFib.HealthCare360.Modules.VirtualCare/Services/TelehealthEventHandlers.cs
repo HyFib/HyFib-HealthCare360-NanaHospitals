@@ -137,7 +137,8 @@ internal sealed class SharePrescriptionAfterTeleconsultation(HospitalDbContext d
             {
                 ["name"] = patient.FullName,
                 ["doctor"] = doctor ?? "your doctor",
-                ["date"] = HospitalCalendar.India.ToLocal(domainEvent.SignedAt).ToString("dd MMM yyyy", CultureInfo.InvariantCulture),
+                // As Clinical writes it in the same message on WhatsApp, so the patient reads one date the same way twice.
+                ["date"] = HospitalCalendar.India.ToLocal(domainEvent.SignedAt).ToString("dd-MM-yyyy", CultureInfo.InvariantCulture),
             },
             Channels,
             TimeSpan.FromDays(2),
