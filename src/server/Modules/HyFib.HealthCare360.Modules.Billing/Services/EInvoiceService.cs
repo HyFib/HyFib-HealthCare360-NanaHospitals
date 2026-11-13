@@ -21,6 +21,7 @@ public sealed class EInvoiceService(
     ISettingsService settings,
     ICurrentUser currentUser,
     IInvoiceRegistrationPortal portal,
+    IAuditLogger audit,
     TimeProvider time)
 {
     public const string ApplicableFromSetting = "gst.einvoice.from";
@@ -157,6 +158,12 @@ public sealed class EInvoiceService(
             return Error.Field("signedQrCode", "The signed QR code is dated in the future.");
         }
 
+        var check = await CheckWithPortalAsync(document, seller, qr, request.AckNo, ct);
+        if (check.IsFailure)
+        {
+            return check.Error!;
+        }
+
         var registration = new EInvoice
         {
             FacilityId = document.FacilityId,
@@ -170,13 +177,60 @@ public sealed class EInvoiceService(
             AckNo = request.AckNo.Trim(),
             AckDate = qr.IrnDt.ToUniversalTime(),
             SignedQrCode = request.SignedQrCode.Trim(),
+            SignedInvoice = check.Value.Held?.SignedInvoice is { Length: > 0 } signed ? signed : null,
             RecordedByName = currentUser.DisplayName ?? currentUser.UserName ?? "Staff",
             PrecedingSource = document.Preceding?.Source,
             PrecedingId = document.Preceding?.Id,
         };
         db.Add(registration);
+        audit.Add(new AuditEntry(AuditCategories.Data, "billing.einvoice.irn_recorded",
+            $"IRN {qr.Irn} of {noun} {document.Number} recorded by hand: {check.Value.How}.")
+        {
+            EntityType = nameof(EInvoice),
+            EntityId = registration.Id.ToString(),
+        });
         await db.SaveChangesAsync(ct);
         return await DetailAsync(document, [], ct);
+    }
+
+    /// <summary>
+    /// An IRN recorded by hand, checked with the portal when the facility is connected to it (<see cref="IrnVerification"/>):
+    /// it is recorded only when the portal holds it, active, for this document, or when the portal can no longer be asked
+    /// (the IRN is older than the time the portal gives an IRN's details). The answer is the portal's IRN, when it was asked,
+    /// and how the IRN was checked, for the audit trail; or why it is not recorded.
+    /// </summary>
+    private async Task<Result<(IrpIrn? Held, string How)>> CheckWithPortalAsync(
+        EInvoiceDocument document, EInvoiceSeller seller, SignedQrCode.Contents qr, string ackNo, CancellationToken ct)
+    {
+        if (!(await portal.ConnectionAsync(document.FacilityId, ct)).Connected)
+        {
+            return ((IrpIrn?)null, "the facility is not connected to the e-invoice portal, so the portal was not asked");
+        }
+
+        if (!IrnVerification.AsksPortal(qr.IrnDt, time.GetUtcNow()))
+        {
+            return ((IrpIrn?)null, $"generated on {qr.IrnDt.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}, longer ago than the portal gives an IRN's details, so the portal was not asked");
+        }
+
+        var held = await portal.GetByIrnAsync(document.FacilityId, Gstin.Normalize(seller.Gstin)!, qr.Irn, ct);
+        var noun = InvoiceRegistrationPayload.Noun(document);
+        switch (held.Error)
+        {
+            case { Code: IrpError.NotConnected } unusable:
+                return ((IrpIrn?)null, $"the portal connection cannot be used ({unusable.Message}), so the portal was not asked");
+            case { Code: IrpError.Unreachable } unanswered:
+                return Error.Rule("einvoice.irp_unreachable",
+                    $"{unanswered.Message} The IRN could not be checked with the portal, and nothing was recorded. Try again once the portal answers; "
+                    + "while it does not, an administrator can switch the portal connection off (Administration → Integrations) to record IRNs by hand without the check.");
+            case { } refused:
+                return Error.Rule("einvoice.irp_unconfirmed",
+                    $"The portal does not confirm IRN {qr.Irn} for the hospital's GSTIN ({refused.Code}: {refused.Message}). Nothing was recorded: check the IRN on the portal.");
+        }
+
+        var contradictions = IrnVerification.Contradictions(held.Value!, qr.Irn, ackNo, document, seller.Gstin);
+        return contradictions.Count > 0
+            ? Error.Rule("einvoice.irp_unconfirmed", $"The portal does not confirm IRN {qr.Irn} for this {noun}. {string.Join(" ", contradictions)} Nothing was recorded.")
+            : (held.Value, "the e-invoice portal holds it, active, for this document");
     }
 
     /// <summary>

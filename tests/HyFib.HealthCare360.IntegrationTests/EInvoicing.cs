@@ -66,19 +66,21 @@ internal static class EInvoicing
     }
 
     /// <summary>
-    /// A signed QR code as the portal makes it, generated a minute ago: the document's details in the payload's
-    /// <c>data</c>; <paramref name="type"/> is <c>INV</c> for an invoice and <c>CRN</c> for a credit note.
+    /// A signed QR code as the portal makes it, generated a minute ago (or <paramref name="generatedAt"/>), for a document
+    /// of that day (or <paramref name="date"/>): the document's details in the payload's <c>data</c>; <paramref name="type"/>
+    /// is <c>INV</c> for an invoice and <c>CRN</c> for a credit note.
     /// </summary>
-    public static string Qr(string number, decimal total, string buyer, string irn, int items, string type = "INV")
+    public static string Qr(
+        string number, decimal total, string buyer, string irn, int items, string type = "INV", DateOnly? date = null, DateTimeOffset? generatedAt = null)
     {
-        var generated = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(5.5)).AddMinutes(-1);
+        var generated = (generatedAt ?? DateTimeOffset.UtcNow.AddMinutes(-1)).ToOffset(TimeSpan.FromHours(5.5));
         var data = new JsonObject
         {
             ["SellerGstin"] = Hospital,
             ["BuyerGstin"] = buyer,
             ["DocNo"] = number,
             ["DocTyp"] = type,
-            ["DocDt"] = generated.ToString("dd'/'MM'/'yyyy", CultureInfo.InvariantCulture),
+            ["DocDt"] = (date ?? DateOnly.FromDateTime(generated.DateTime)).ToString("dd'/'MM'/'yyyy", CultureInfo.InvariantCulture),
             ["TotInvVal"] = total,
             ["ItemCnt"] = items,
             ["Irn"] = irn,
