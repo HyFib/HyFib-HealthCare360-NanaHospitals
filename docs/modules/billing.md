@@ -1585,8 +1585,10 @@ estimate) or a cancelled bill gives no document and is never sent.
 
 * **When a payment settles the bill** (counter, POS terminal, payment link or portal checkout; not an advance
   adjustment, which sends no receipt either), alongside the `bill.receipt` SMS, unless `billing.bills.sendOnWhatsApp`
-  is off. The receipt of that payment then goes by SMS alone; a payment that leaves something due sends its receipt on
-  WhatsApp as well (`ReceiptService.ReceiptChannels`).
+  is off, and while a version of its WhatsApp template is in use. The receipt of that payment then goes by SMS alone; a
+  payment that leaves something due, or whose bill can't go on WhatsApp, sends its receipt on WhatsApp as well
+  (`ReceiptService.ReceiptChannels`). The desk's send answers 422 `billing.whatsapp_template_off` while the template is
+  not in use.
 * **When the billing desk sends it** from the bill (`POST /bills/{id}/send-whatsapp`), for any finalised, part-paid or
   paid bill.
 * **Consent.** A bill is a service message about the patient's own care, so, like a report, it needs no WhatsApp

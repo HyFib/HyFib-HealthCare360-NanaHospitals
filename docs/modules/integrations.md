@@ -269,7 +269,9 @@ what goes out (`TemplateSwitch`):
 * The discharge message names the stay's signed discharge summary (`clinical.discharge-summary`): with "Document header"
   ticked on its WhatsApp template (registered with a document header), the summary's PDF goes in it.
 * A receipt goes on WhatsApp only when the payment does not settle the bill: a payment that settles it sends the bill
-  itself there (`bill.shared`), so the patient gets one WhatsApp message for it, not two.
+  itself there (`bill.shared`), so the patient gets one WhatsApp message for it, not two. When the bill can't go there
+  (its WhatsApp template not in use, `billing.bills.sendOnWhatsApp` off, or a protected record on a shared number), the
+  receipt goes on WhatsApp instead (`NotificationTemplateRenderer.InUseAsync`).
 
 Messages to a patient are written in the language their record prefers (Hindi or Tamil, read from the free-text
 preferred language by `NotificationRecipient.Patient`), with the template of that language when the hospital has added

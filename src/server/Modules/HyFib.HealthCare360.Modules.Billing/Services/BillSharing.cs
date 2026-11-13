@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Billing.Documents;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Settings;
 
@@ -19,7 +20,8 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// the number of a record in a protected category that another patient shares (<see cref="SharedNumbers"/>).
 /// </para>
 /// </summary>
-public sealed class BillSharing(HospitalDbContext db, INotificationService notifications, WhatsAppConsent whatsApp, ISettingsService settings)
+public sealed class BillSharing(
+    HospitalDbContext db, INotificationService notifications, WhatsAppConsent whatsApp, ISettingsService settings, NotificationTemplateRenderer templates)
 {
     public const string Template = "bill.shared";
 
@@ -39,7 +41,10 @@ public sealed class BillSharing(HospitalDbContext db, INotificationService notif
             return false;
         }
 
-        if (await RecipientAsync(bill.PatientId, ct) is { } patient && !await SharedNumbers.HiddenFromNumberAsync(db, bill.PatientId, ct))
+        // Only where the bill's WhatsApp template is in use: otherwise the delivery handler would skip the bill, and the
+        // receipt, which leaves WhatsApp to the bill, would not go there either.
+        if (await RecipientAsync(bill.PatientId, ct) is { } patient && !await SharedNumbers.HiddenFromNumberAsync(db, bill.PatientId, ct)
+            && await TemplateInUseAsync(bill, patient, ct))
         {
             Queue(bill, patient);
             return true;
@@ -80,6 +85,12 @@ public sealed class BillSharing(HospitalDbContext db, INotificationService notif
                 "This number replied STOP on WhatsApp, so the bill can't be sent there. Print it, or the patient can download it from the patient portal.");
         }
 
+        if (!await TemplateInUseAsync(bill, patient, ct))
+        {
+            return Error.Rule("billing.whatsapp_template_off",
+                "The bill's WhatsApp template is not in use, so the bill can't be sent there. Switch it on in Administration › Notification templates, or print the bill.");
+        }
+
         Queue(bill, patient);
         await db.SaveChangesAsync(ct);
         return Result.Success();
@@ -99,6 +110,10 @@ public sealed class BillSharing(HospitalDbContext db, INotificationService notif
             TimeSpan.FromDays(2),
             bill.FacilityId,
             new NotificationDocument(BillDocumentSource.DocumentKind, bill.Id));
+
+    private Task<bool> TemplateInUseAsync(Bill bill, Recipient patient, CancellationToken ct) =>
+        templates.InUseAsync(Template, NotificationChannel.WhatsApp, bill.FacilityId,
+            PatientLanguages.FromPreference(patient.PreferredLanguage) ?? PatientLanguages.Default, ct);
 
     private async Task<Recipient?> RecipientAsync(Guid patientId, CancellationToken ct)
     {

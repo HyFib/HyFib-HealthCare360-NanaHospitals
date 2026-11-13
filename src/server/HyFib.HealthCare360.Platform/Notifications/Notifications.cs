@@ -443,15 +443,25 @@ public sealed partial class NotificationTemplateRenderer(HospitalDbContext db, I
     /// to it (this facility's or all facilities', in the patient's language or English) to "Not in use". Null when one of
     /// them is in use, and when none is stored (the built-in text is used then).
     /// </summary>
-    public async Task<string?> NotInUseAsync(NotificationDelivery delivery, CancellationToken cancellationToken)
+    public async Task<string?> NotInUseAsync(NotificationDelivery delivery, CancellationToken cancellationToken) =>
+        await InUseAsync(delivery.TemplateKey, delivery.Channel, delivery.FacilityId, delivery.Language, cancellationToken)
+            ? null
+            : TemplateSwitch.NotInUseReason(delivery.Channel);
+
+    /// <summary>
+    /// Whether a message of this key would go on this channel, as far as its templates decide: a stored version that fits
+    /// (this facility's or all facilities', in <paramref name="language"/> or English) is in use, or none is stored and the
+    /// built-in template does not start "Not in use". For a sender that chooses between messages before it queues one.
+    /// </summary>
+    public async Task<bool> InUseAsync(string templateKey, NotificationChannel channel, Guid? facilityId, string language, CancellationToken cancellationToken)
     {
-        var versionsInUse = await Versions(delivery).Select(t => t.IsActive).ToListAsync(cancellationToken);
-        return TemplateSwitch.IsOff(delivery.TemplateKey, delivery.Channel, versionsInUse) ? TemplateSwitch.NotInUseReason(delivery.Channel) : null;
+        var versionsInUse = await Versions(templateKey, channel, facilityId, language).Select(t => t.IsActive).ToListAsync(cancellationToken);
+        return !TemplateSwitch.IsOff(templateKey, channel, versionsInUse);
     }
 
     public async Task<(NotificationTemplate? Template, string? Subject, string Body)> RenderAsync(NotificationDelivery delivery, CancellationToken cancellationToken)
     {
-        var versions = await Versions(delivery).ToListAsync(cancellationToken);
+        var versions = await Versions(delivery.TemplateKey, delivery.Channel, delivery.FacilityId, delivery.Language).ToListAsync(cancellationToken);
         var candidates = versions.Where(t => t.IsActive).ToList();
         if (candidates.Count == 0 && WhatsAppOptOutPolicy.IsEssential(delivery.TemplateKey))
         {
@@ -491,12 +501,12 @@ public sealed partial class NotificationTemplateRenderer(HospitalDbContext db, I
             return htmlEncode ? WebUtility.HtmlEncode(value) : value;
         });
 
-    /// <summary>The stored versions of the message's template on its channel that could apply to it, in use or not.</summary>
-    private IQueryable<NotificationTemplate> Versions(NotificationDelivery delivery) =>
+    /// <summary>The stored versions of a message's template on a channel that could apply to it, in use or not.</summary>
+    private IQueryable<NotificationTemplate> Versions(string templateKey, NotificationChannel channel, Guid? facilityId, string language) =>
         db.Set<NotificationTemplate>().AsNoTracking()
-            .Where(t => t.Key == delivery.TemplateKey && t.Channel == delivery.Channel
-                        && (t.FacilityId == null || t.FacilityId == delivery.FacilityId)
-                        && (t.Language == delivery.Language || t.Language == "en"));
+            .Where(t => t.Key == templateKey && t.Channel == channel
+                        && (t.FacilityId == null || t.FacilityId == facilityId)
+                        && (t.Language == language || t.Language == "en"));
 
     private Task<string?> FacilityNameAsync(Guid? facilityId, CancellationToken ct) =>
         cache.GetOrCreateAsync($"facility-name:{facilityId}", async entry =>
