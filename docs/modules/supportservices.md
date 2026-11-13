@@ -148,7 +148,7 @@ changed. Delivery: Planned → Delivered or NotTaken; Delivered → Returned.
 | POST | `/terminal-sales` | `canteen.sales.create` | `{amount, terminalId, mode Card/Upi, patientId?}` → `CounterTerminalSale` (id, counter, provider, terminalId, transactionId, amount, mode, status, approvalCode, cardLast4, rrn, message, usedFor, createdAt, completedAt). Pushes the amount to the terminal |
 | GET | `/terminal-sales/{id}` | same | → `CounterTerminalSale` (polls the terminal) |
 | POST | `/terminal-sales/{id}/cancel` | same | → `CounterTerminalSale`; a sale the customer paid first stays approved |
-| GET | `/terminal-sales/unused` | same | → `CounterTerminalSale[]`: approved, no bill records it yet, within 2 days, newest first |
+| GET | `/terminal-sales/unused` | same | → `CounterTerminalSale[]`: approved, no bill records it yet and the accountants have not closed it, within 2 days, newest first |
 | GET | `/sales?date&status&paymentMode&employeeCode&search` (paged) | sales.create or reports.read | → `PagedResult<CanteenSaleListItem>` |
 | GET | `/sales/{id}` | same | → `CanteenSaleDto` with `pendingCancellation` (a cancellation waiting) and `ownSale` (the reader sold it) |
 | POST | `/sales/{id}/cancel` | `canteen.sales.cancel` | `CancelSaleRequest` → 202 the approval request (`canteen.sale_cancel`); the bill stands until approved. Same business day only (422 `canteen.day_closed`, `canteen.sale_cancelled`) |
@@ -177,10 +177,12 @@ Nothing is typed: `paymentReference` becomes the terminal's RRN (else the approv
 `approvalCode`, `cardLast4` and `terminalSaleId` (columns of `canteen_sales`; `CanteenSaleDto` has them).
 * The terminal sale is recorded in the same database transaction as the bill, once. Another bill naming it is refused
   (409 `pos.sale_used`). A sale that is not the canteen's, not approved or of another amount is refused: 422
-  `pos.sale_unknown`, `pos.sale_pending`, `pos.sale_not_paid`, `pos.sale_amount`, `pos.sale_mode`.
+  `pos.sale_unknown`, `pos.sale_pending`, `pos.sale_not_paid`, `pos.sale_amount`, `pos.sale_mode`, `pos.sale_closed`
+  (the accountants closed it).
 * A sale approved on the terminal that no bill records within the facility's `billing.pos.recheck` time (15 minutes by
   default) is raised in Billing › Gateway reconciliation as an unrecorded payment, and the accountants are alerted
-  once. Recording it on a bill later clears it.
+  once. Recording it on a bill later clears it; once an accountant resolves it instead (the money refunded on the
+  terminal), it is no longer offered to the counter or recorded.
 * Billing's settlement match finds the bill by its RRN or approval code, and never matches it with a Billing receipt.
 
 On the canteen's bill screen, **Take on terminal** asks for the card or UPI and the terminal id (remembered on the

@@ -134,7 +134,7 @@ blocked, expired or used up is warned about, not picked. Scanners that type like
 | POST | `/terminal-sales` | `pharmacy.dispense` or `pharmacy.sales` | `{amount, terminalId, mode Card/Upi, patientId?}` → `CounterTerminalSale` (id, counter, provider, terminalId, transactionId, amount, mode, status, approvalCode, cardLast4, rrn, message, usedFor, createdAt, completedAt). Pushes the amount to the terminal |
 | GET | `/terminal-sales/{id}` | same | → `CounterTerminalSale` (polls the terminal; the screen asks every 2 seconds) |
 | POST | `/terminal-sales/{id}/cancel` | same | → `CounterTerminalSale`; a sale the customer paid first stays approved |
-| GET | `/terminal-sales/unused` | same | → `CounterTerminalSale[]`: approved, no invoice records it yet, within 2 days, newest first |
+| GET | `/terminal-sales/unused` | same | → `CounterTerminalSale[]`: approved, no invoice records it yet and the accountants have not closed it, within 2 days, newest first |
 | POST | `/sales/{id}/returns` | `pharmacy.returns` | `SaleReturnRequest` (lines[saleItemId, quantity, restock], reason; each sale line once) → 201 `SaleReturnCreated` (returnNumber, refundAmount, adjustedAgainstDue, cashRefund) when restocked and set wholly against the balance due; otherwise 202 `ApprovalRequestDto` (kind `pharmacy.sale_return`). 403 `pharmacy.return_own_sale` for whoever sold it or took its payment |
 | POST | `/sales/{id}/cancel` | `pharmacy.returns` | `PharmacyReasonRequest` → 202 `ApprovalRequestDto` (kind `pharmacy.sale_cancel`). Same local day only and no returns (`sale.cancel_window`, `sale.has_returns`), no IRN (`einvoice.active`); 403 `pharmacy.cancel_own_sale` for whoever sold it or took its payment. Approved, every payment is paid back the way it was paid, the stock goes back to the original batches and the queue entry reopens |
 
@@ -163,10 +163,12 @@ in a request.
 * The terminal sale is recorded in the same database transaction as the invoice, once. Another invoice naming it is
   refused (409 `pos.sale_used`). The amount and mode must be the sale's, and the sale must be the pharmacy's and
   approved: 422 `pos.sale_unknown`, `pos.sale_pending` (the customer has not paid yet), `pos.sale_not_paid` (declined,
-  cancelled or timed out), `pos.sale_amount`, `pos.sale_mode`.
+  cancelled or timed out), `pos.sale_amount`, `pos.sale_mode`, `pos.sale_closed` (the accountants closed it, refunded
+  on the terminal, say).
 * A sale approved on the terminal that no invoice records within the facility's `billing.pos.recheck` time (15 minutes
   by default) is raised in Billing › Gateway reconciliation as an unrecorded payment, and the accountants are alerted
-  once. Recording it on an invoice later clears it.
+  once. Recording it on an invoice later clears it; once an accountant resolves it instead (the money refunded on the
+  terminal), it is no longer offered to the counter or recorded.
 * Billing's settlement match finds the payment by its RRN, or by its approval code (`CounterCardPayment.ApprovalCode`),
   so nothing typed is needed; the transaction is never matched with a Billing receipt.
 

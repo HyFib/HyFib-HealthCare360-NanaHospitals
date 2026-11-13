@@ -1040,7 +1040,8 @@ shown on the counter screen ("Paid, but no receipt yet"), raised in Billing › 
 without a receipt, and the accountants are alerted. Record it or refund it on the terminal there. A pharmacy or canteen
 payment that no invoice or bill records within the re-check time (15 minutes by default) is raised there the same way,
 as "Paid on the terminal, but no invoice records it yet", with one alert "Card/UPI payment not recorded at the
-pharmacy/canteen"; recording it on an invoice later clears it.
+pharmacy/canteen"; recording it on an invoice later clears it. When the customer has gone, refund it on the terminal
+and resolve the exception with a note: the counter is then no longer offered the payment, and cannot record it.
 
 ### BI tools: Power BI and the extract folder
 

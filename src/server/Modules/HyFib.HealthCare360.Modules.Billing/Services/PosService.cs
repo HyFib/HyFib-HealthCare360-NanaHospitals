@@ -277,16 +277,27 @@ public sealed class PosService(
     /// <summary>
     /// A counter's approved sales that no payment of the counter records yet, newest first, within the re-check's window:
     /// money taken on the terminal for a sale the counter did not finish (the screen was closed, the invoice refused).
+    /// One the accountants closed in the reconciliation (refunded on the terminal, say) is no longer the counter's to use.
     /// </summary>
     internal async Task<IReadOnlyList<PosTransaction>> UnusedAsync(string owner, CancellationToken ct)
     {
         var since = time.GetUtcNow() - PosRecheckRunner.Window;
+        var closed = ClosedExceptions();
         return await db.Set<PosTransaction>().AsNoTracking()
             .Where(s => s.Owner == owner && s.Status == PosTransactionStatus.Approved && s.OwnerPaymentId == null && s.CreatedAt > since)
+            .Where(s => !closed.Any(d => d.Key == s.TransactionId))
             .OrderByDescending(s => s.CreatedAt)
-            .Take(20)
+            .Take(MaxUnused)
             .ToListAsync(ct);
     }
+
+    /// <summary>More approved sales than this left off invoices within two days is a counter to look at, not a list to scroll.</summary>
+    internal const int MaxUnused = 200;
+
+    /// <summary>The unrecorded-payment exceptions a person resolved: the money was dealt with outside HC360.</summary>
+    private IQueryable<GatewayDiscrepancy> ClosedExceptions() =>
+        db.Set<GatewayDiscrepancy>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(d => d.Kind == DiscrepancyKind.UnrecordedPayment && d.Status == DiscrepancyStatus.Resolved && !d.ResolvedAutomatically);
 
     /// <summary>
     /// Marks a counter's approved sale as recorded by the counter's payment <paramref name="paymentId"/>, on its invoice or
@@ -320,6 +331,13 @@ public sealed class PosService(
         if (sale.Mode != mode)
         {
             return Error.Rule("pos.sale_mode", $"The terminal took this payment by {ModeWords(sale.Mode)}: record it as a {ModeWords(sale.Mode)} payment.");
+        }
+
+        if (await ClosedExceptions().AsNoTracking().FirstOrDefaultAsync(d => d.Key == sale.TransactionId, ct) is { } closed)
+        {
+            // Refunded on the terminal, or otherwise settled by the accountants: recording it now would count money twice.
+            return Error.Rule("pos.sale_closed",
+                $"The accountants closed this payment in Gateway reconciliation ({closed.Resolution}), so it cannot be put on an invoice. Take a new payment.");
         }
 
         if (sale.Amount != Money.Round(amount))

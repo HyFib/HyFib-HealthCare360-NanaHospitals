@@ -510,14 +510,15 @@ patient for a walk-in. The contract's methods:
 | `StartAsync(CounterTerminalStart)` | Pushes the amount (counter, amount, terminal id, card or UPI, patient if registered) to the terminal; the signed-in facility's settings apply |
 | `RefreshAsync(counter, id)` | The sale as the terminal has it now |
 | `CancelAsync(counter, id)` | Cancels it on the terminal; a sale the customer paid first stays approved |
-| `UnusedAsync(counter)` | The counter's approved sales that no payment records yet, within two days, newest first |
+| `UnusedAsync(counter)` | The counter's approved sales that no payment records yet and the accountants have not closed, within two days, newest first |
 | `UseAsync(CounterTerminalUse)` | Marks the approved sale as recorded by the counter's payment and returns what the terminal reported (`CounterTerminalPayment`: RRN, approval code, card digits) |
 
 `UseAsync` is staged in the counter's own unit of work, so the sale is recorded in the same database transaction as the
 invoice or bill, once (unique index on `owner_payment_id`). It is refused when the sale is another counter's or unknown
 (`pos.sale_unknown`), the customer has not paid yet (`pos.sale_pending`), it was declined, cancelled or timed out
-(`pos.sale_not_paid`), it is of another amount or mode (`pos.sale_amount`, `pos.sale_mode`; all 422), or an invoice
-already records it (`pos.sale_used`, 409). Only a counter that reports its card and UPI payments to the settlement match
+(`pos.sale_not_paid`), it is of another amount or mode (`pos.sale_amount`, `pos.sale_mode`), the accountants closed its
+unrecorded-payment exception (refunded on the terminal, say: `pos.sale_closed`; all 422), or an invoice already records
+it (`pos.sale_used`, 409). Only a counter that reports its card and UPI payments to the settlement match
 (`ICounterSalesSource`) may take terminal payments. The Platform helper `MapCounterTerminalSales` gives each counter the
 endpoints `POST …/terminal-sales`, `GET …/terminal-sales/{id}`, `POST …/terminal-sales/{id}/cancel` and
 `GET …/terminal-sales/unused` (see [pharmacy.md](pharmacy.md) and [supportservices.md](supportservices.md)), returning

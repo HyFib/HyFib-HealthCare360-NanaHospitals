@@ -1577,7 +1577,9 @@ the bill's day again, never to delete it.
   within 15 minutes; HC360 cancelled the sale on the terminal."), so a later approval cannot leave money unrecorded.
   It follows the pharmacy's and the canteen's terminal sales the same way. An approved one that no invoice or bill
   records after the timeout opens an `UnrecordedPayment` exception ("Paid on the terminal, but no invoice records it
-  yet") and alerts the holders of `billing.gateway.reconcile` once; recording it on an invoice later clears it.
+  yet") and alerts the holders of `billing.gateway.reconcile` once; recording it on an invoice later clears it. One an
+  accountant resolves instead (refunded on the terminal) is no longer offered to the counter or recorded
+  (`pos.sale_closed`).
   If the terminal does not confirm the cancel, the sale stays open and is tried again on the next run. An answer from
   another provider than the one that started the sale (POS switched off or changed since) is not applied. An approved
   sale whose receipt the bill or admission refuses (an advance for a stay whose account was closed meanwhile, or that

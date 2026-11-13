@@ -28,8 +28,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// terminal: the counter pushes the amount, the walk-in customer pays, and the invoice records the payment with the RRN,
 /// approval code and card digits the terminal reported, so nothing is typed and the acquirer's settlement finds it. A
 /// payment records one invoice of its own counter, as taken; one the counter never records is kept as an exception for
-/// the accountants until it does; a sale nobody pays is cancelled on the terminal; and the go-live check lists the
-/// training terminal's payments until their money is paid back.
+/// the accountants until it does, and one they close is no longer the counter's; a sale nobody pays is cancelled on the
+/// terminal; and the go-live check lists the training terminal's payments until their money is paid back.
 /// </summary>
 public sealed class CounterTerminalTests(HospitalServer server)
 {
@@ -188,6 +188,28 @@ public sealed class CounterTerminalTests(HospitalServer server)
         (await ExceptionAsync(paid.TransactionId)).ShouldNotBeNull().ShouldSatisfyAllConditions(
             d => d.Status.ShouldBe(DiscrepancyStatus.Resolved),
             d => d.ResolvedAutomatically.ShouldBeTrue());
+    }
+
+    [Fact]
+    public async Task A_payment_the_accountants_closed_is_neither_offered_to_the_counter_nor_recorded()
+    {
+        await using var terminal = await TrainingTerminal.UseAsync(server, approveAfterSeconds: 0);
+        var canteen = await server.SignInAsync(HospitalServer.Users.CanteenManager);
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+        var item = await MenuItemAsync(canteen, 60m);
+        var paid = await PaidAsync(canteen, "canteen", 60m, CounterPaymentMode.Card);
+        await AgeAsync(paid.Id, TimeSpan.FromMinutes(20));
+        await RecheckAsync();
+        var raised = (await ExceptionAsync(paid.TransactionId)).ShouldNotBeNull();
+
+        // The visitor left: the accountant refunds the card on the terminal and closes the exception with a note.
+        await accountant.PostAsync<GatewayDiscrepancyDto>($"/api/v1/billing/gateway/exceptions/{raised.Id}/resolve",
+            new ResolveDiscrepancyRequest("Refunded to the card on the terminal; the visitor left without the bill.", raised.Version));
+
+        (await canteen.GetAsync<List<CounterTerminalSale>>("/api/v1/canteen/terminal-sales/unused")).ShouldNotContain(s => s.Id == paid.Id);
+        (await RefusalAsync(canteen, "/api/v1/canteen/sales", new CreateSaleRequest(
+                CanteenCustomerType.Visitor, null, null, null, null, CanteenPaymentMode.Card, null, [new SaleLineInput(item.Id, 1)], paid.Id)))
+            .ShouldBe((HttpStatusCode.UnprocessableEntity, "pos.sale_closed"), "money paid back must not pay for a bill");
     }
 
     [Fact]
