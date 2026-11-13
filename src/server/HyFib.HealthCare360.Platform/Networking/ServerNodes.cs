@@ -1,7 +1,10 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -14,8 +17,9 @@ namespace HyFib.HealthCare360.Platform.Networking;
 /// <summary>
 /// One server's part of System health while there are several (SCAL-01): <c>platform.server_nodes</c>, written by
 /// <see cref="ServerNodeBoard"/>. A server writes its row every minute and removes it as it stops. One that stopped without
-/// removing it (a power cut) keeps its row, which shows that it no longer reports, until it starts again and writes over
-/// it, or for a day.
+/// removing it (a power cut) keeps its row, which shows that it no longer reports, and its alert is told every day, until
+/// it starts again and writes over it, it is set up again in the same place (<see cref="ServerNodeBoard.PublishAsync"/>),
+/// or someone removes it (<see cref="ServerRemoval"/>). It used to go after a day, and its alert cleared unseen.
 /// </summary>
 [NotAudited]
 public sealed class ServerNode
@@ -60,9 +64,6 @@ public sealed class ServerNodeBoard(IServiceScopeFactory scopes, DataDirectories
     /// </summary>
     public const string IdFileName = "server-node-id.txt";
 
-    /// <summary>A row this old belongs to a server that stopped without removing it, and is no longer shown.</summary>
-    private static readonly TimeSpan GoneAfter = TimeSpan.FromDays(1);
-
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
 
     private readonly Lock _making = new();
@@ -87,7 +88,11 @@ public sealed class ServerNodeBoard(IServiceScopeFactory scopes, DataDirectories
         }
     }
 
-    /// <summary>Writes this server's part for the others, and removes the rows of servers gone for a day.</summary>
+    /// <summary>
+    /// Writes this server's part for the others, and removes the row of a server set up again in its place: the same
+    /// machine and data folder, whose id was made anew (its id file lost with the folder, or the folder made again). A row
+    /// of a machine renamed, or of a server set up in another folder, stays, not reporting, until someone removes it.
+    /// </summary>
     public async Task PublishAsync(ServerNodeHealth part, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(part);
@@ -99,7 +104,12 @@ public sealed class ServerNodeBoard(IServiceScopeFactory scopes, DataDirectories
             VALUES ({Node}, CAST({report} AS jsonb), now())
             ON CONFLICT (node) DO UPDATE SET report = EXCLUDED.report, reported_at = EXCLUDED.reported_at
             """, cancellationToken);
-        await db.Database.ExecuteSqlAsync($"DELETE FROM platform.server_nodes WHERE reported_at < now() - {GoneAfter}", cancellationToken);
+        await db.Database.ExecuteSqlAsync($"""
+            DELETE FROM platform.server_nodes
+            WHERE node <> {Node}
+              AND report->'server'->>'machineName' = {part.Server.MachineName}
+              AND report->'storage'->>'dataDirectory' = {part.Storage.DataDirectory}
+            """, cancellationToken);
     }
 
     /// <summary>Removes this server's row, as it stops.</summary>
@@ -111,21 +121,39 @@ public sealed class ServerNodeBoard(IServiceScopeFactory scopes, DataDirectories
             .ExecuteDeleteAsync(cancellationToken);
     }
 
-    /// <summary>Every other server's part, as it last wrote it and when, and whether it still reports.</summary>
+    /// <summary>
+    /// Every other server's part, as it last wrote it and when, and whether it still reports: one that stopped without
+    /// saying so however long ago, until it is back or removed.
+    /// </summary>
     public async Task<IReadOnlyList<ServerNodeHealth>> ReadOthersAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopes.CreateAsyncScope();
         var rows = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Database.SqlQuery<ServerNodeRow>($"""
             SELECT report::text AS report, reported_at, reported_at > now() - {Lifetime} AS reporting
             FROM platform.server_nodes
-            WHERE node <> {Node} AND reported_at >= now() - {GoneAfter}
+            WHERE node <> {Node}
             """).ToListAsync(cancellationToken);
-        return
-        [
-            .. rows.Select(row => JsonSerializer.Deserialize<ServerNodeHealth>(row.Report, Json) is { } part
-                ? part with { ReportedAt = row.ReportedAt, Reporting = row.Reporting }
-                : null).OfType<ServerNodeHealth>(),
-        ];
+        return [.. rows.Select(Part).OfType<ServerNodeHealth>()];
+    }
+
+    /// <summary>The part of the server <paramref name="node"/>, read in <paramref name="db"/>'s transaction; null when it has none.</summary>
+    internal static async Task<ServerNodeHealth?> ReadAsync(HospitalDbContext db, string node, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        var rows = await db.Database.SqlQuery<ServerNodeRow>($"""
+            SELECT report::text AS report, reported_at, reported_at > now() - {Lifetime} AS reporting
+            FROM platform.server_nodes
+            WHERE node = {node}
+            FOR UPDATE
+            """).ToListAsync(cancellationToken);
+        return rows.Select(Part).OfType<ServerNodeHealth>().SingleOrDefault();
+    }
+
+    /// <summary>Removes the row of the server <paramref name="node"/>, in <paramref name="db"/>'s transaction.</summary>
+    internal static Task<int> DeleteAsync(HospitalDbContext db, string node, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        return db.Database.ExecuteSqlAsync($"DELETE FROM platform.server_nodes WHERE node = {node}", cancellationToken);
     }
 
     /// <summary>
@@ -152,8 +180,56 @@ public sealed class ServerNodeBoard(IServiceScopeFactory scopes, DataDirectories
         return made;
     }
 
+    private static ServerNodeHealth? Part(ServerNodeRow row) =>
+        JsonSerializer.Deserialize<ServerNodeHealth>(row.Report, Json) is { } part ? part with { ReportedAt = row.ReportedAt, Reporting = row.Reporting } : null;
+
     /// <summary>A row as read, its columns named as the model names them (snake case).</summary>
     private sealed record ServerNodeRow(string Report, DateTimeOffset ReportedAt, bool Reporting);
+}
+
+/// <summary>
+/// Removes from System health a server of several that stopped reporting (SCAL-01), once it was retired, renamed, or set
+/// up again elsewhere. Its row stays, and its alert is told every day, until it reports again or someone removes it: a
+/// row's age alone says nothing of why it went silent. One that reports cannot be removed: stopped on purpose, it removes
+/// itself. Whoever removes it acknowledges its alert, so nobody further is paged, and the alert then clears without a
+/// word. The removal is in the audit trail. A server removed that reports again is shown again.
+/// </summary>
+public sealed class ServerRemoval(HospitalDbContext db, IAuditLogger audit, ICurrentUser user, TimeProvider time)
+{
+    public const string RemovedAction = "system.server_removed";
+
+    /// <summary>Removes the server whose id is <paramref name="node"/> (<see cref="ServerInfo.Node"/>).</summary>
+    public async Task<Result> RemoveAsync(string node, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        // In turn with the alerts' checks, so one does not tell its alert again as it goes.
+        await AlertIncidents.TakeTurnAsync(db, ct);
+        if (await ServerNodeBoard.ReadAsync(db, node, ct) is not { } server)
+        {
+            return Error.NotFound("Server", node);
+        }
+
+        var name = server.Server.MachineName;
+        if (server.Reporting)
+        {
+            return Error.Conflict("servers.reporting",
+                $"{name} is reporting. Stop its HC360Server service, and it removes itself from System health.");
+        }
+
+        await ServerNodeBoard.DeleteAsync(db, node, ct);
+        await AlertIncidents.AcknowledgeRemovedServerAsync(db, audit, user, time, name, ct);
+        audit.Add(new AuditEntry(AuditCategories.Admin, RemovedAction, string.Create(CultureInfo.InvariantCulture,
+            $"Removed {name} from System health: it had not reported since {server.ReportedAt:dd MMM yyyy HH:mm} UTC."))
+        {
+            EntityType = "Server",
+            EntityId = name,
+            Severity = AuditSeverity.Warning,
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return Result.Success();
+    }
 }
 
 /// <summary>

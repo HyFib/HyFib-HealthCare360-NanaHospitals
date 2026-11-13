@@ -51122,6 +51122,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("connected");
 
+                    b.Property<string>("Node")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("node");
+
                     b.Property<double?>("ReceiveRateMbps")
                         .HasColumnType("double precision")
                         .HasColumnName("receive_rate_mbps");
@@ -51153,6 +51158,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("At")
                         .HasDatabaseName("ix_wifi_samples_at");
+
+                    b.HasIndex("Node", "At")
+                        .HasDatabaseName("ix_wifi_samples_node_at");
 
                     b.ToTable("wifi_samples", "platform");
                 });

@@ -89,13 +89,18 @@ On a **cabled LAN**, where the server and the workstations are on network cables
   UPS reaches nobody once its switch is off.
 - A managed switch with IGMP snooping on and no IGMP querier can drop mDNS: turn on the querier, or let mDNS through.
 - System health watches the server's cable: a cable pulled or its switch turned off is told at once to the
-  administrators and the on-call number (`alerts.oncallPhone`), and so is its return. If **Last cable drop** in System
+  administrators and the on-call number (`alerts.oncallPhone`), and so is its return, which says when it was lost and
+  when it was back. A server that reaches the SMS gateway over that cable alone cannot send the loss while it is out:
+  the loss is then withdrawn, and the phone gets the return alone, which says both. If **Last cable drop** in System
   health keeps coming back, change the cable, then the switch port. If it still drops, turn off **Energy-Efficient
   Ethernet** in the network card's Advanced settings (Device Manager): some switches drop the link with it. The
   installer leaves the card's driver settings alone.
-- A server with two network cards on cables (one on an imaging network, say) is told when no cable is up. One of them
-  lost while the other is up is not told: on such a server, the cable-pull drill below is done on each cable, watching
-  its card's lights and Administration › System health.
+- A server with two network cards on cables (the hospital LAN and an imaging network, say) has each cable watched on its
+  own. The server reads which one the workstations reach it over from its own traffic: the address their requests
+  arrive on. That cable lost is critical even while the other is up; the other cable lost is a warning. With no
+  workstation's request in the last 15 minutes it cannot tell, and a cable lost while the other is up is a warning.
+  Each alert names the cable, the address it had and what is still up, and each return says when that cable was lost
+  and when it was back. Do the cable-pull drill of section 4, step 10 on each cable.
 - Before go-live, from each workstation: `Test-NetConnection HC360-SRV -Port 7360` must end with
   `TcpTestSucceeded : True`.
 
@@ -487,9 +492,10 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    (Approvals, or the link on the user's page); taking access away is immediate. Keep at least two such people
    active: System health warns when fewer remain.
 7. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
-   `alerts.oncallPhone` (IT's mobile, which gets an SMS for each critical warning in System health, and if the server's
-   network cable is pulled or its switch goes off and when it is back, its WiFi drops, its WiFi adapter disappears, it
-   starts without the WiFi it had when it last ran, its signal stays weak for a minute or its network is not secure),
+   `alerts.oncallPhone` (IT's mobile, which gets an SMS for each critical warning in System health and when a server of
+   several that stopped reporting reports again, and if the server's network cable is pulled or its switch goes off
+   and when it is back, its WiFi drops, its WiFi adapter disappears, it starts without the WiFi it had when it last ran,
+   its signal stays weak for a minute or its network is not secure),
    and who a critical alert nobody acknowledges goes to next:
    `alerts.escalationPhone` (a second contact, such as the IT head) and `alerts.supportPhone` (HyFib support's number).
    Set up the heartbeat outside the hospital as "Alerts that reach someone" below says.
@@ -620,11 +626,19 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    (`prescriptions.dsc_trust_unreadable`). In **Hospital setup › Doctors and clinical staff**, write each doctor's name
    in full as it is on their DSC: a DSC is accepted only from the doctor it is issued to.
 10. **Administration › System health**: everything should be green: the server on its cable at 1 Gbps, or on WiFi with
-   its signal above 60%. On a cabled LAN, pull the server's cable for a minute: System health and the on-call phone must
-   say the cable is lost, and that it is back once it is in again. It also shows each
-   integration set up in step 7 as Administration › Integrations does, and when the hospital CA and the server
-   certificate expire. Run an alert drill there, and keep its timings with the go-live record ("Alerts that reach
-   someone").
+   its signal above 60%. On a cabled LAN, pull the server's cable for a minute: System health must say the cable is
+   lost, and that it is back once it is in again. Within a few minutes of it going back in, the on-call phone must get
+   an SMS that it is connected again, saying when it was lost and when it was back. Where the server reaches the SMS
+   gateway over that cable alone, that is the only SMS: the alert of the loss could not go while the cable was out, and
+   **Administration › Notifications** shows it suppressed, withdrawn. Where it has another way out, the phone gets the
+   loss at once and the return after it. On a server with two cabled cards, do it on each cable in turn while HC360
+   Desktop is open on a workstation: its requests tell the server which cable the workstations use. System health must
+   show the hospital LAN's cable red, and its return's SMS must say the workstations can reach HC360 again. System
+   health must show the other cable amber; its SMS, sent at once over the hospital LAN, must name it and say the
+   workstations reach the server over the hospital LAN's cable, which is up, and its return's SMS must follow. System
+   health also shows each integration set up in step 7 as Administration › Integrations does, and when the hospital CA
+   and the server certificate expire. Run an alert drill there, and keep its timings with the go-live record ("Alerts
+   that reach someone").
 
 ### Alerts that reach someone
 
@@ -671,6 +685,21 @@ sure it reaches someone. On a live server, System health warns while one is miss
    - Once acknowledged, nobody further is paged, though the alert is told again a day later while it lasts.
    - The escalations use the `system.alert` template, so they need no DLT registration of their own.
    - A warning that clears and comes back is a new alert, told again at once, as before.
+   - A server of several that stopped reporting, and reports again, ends its alert with one more message to everyone it
+     reached: IT on-call, and the second contact and HyFib support if it went that far, by SMS, and everyone who may see
+     System health, in the app. It says when it was not reporting and when it was again: "HC360-API1 is reporting again:
+     it is on, its HC360Server service runs and it reaches the database. Not reporting at 09:33, reporting again at
+     09:45." A message of the alert not sent by then, such as one waiting to be tried again because the SMS gateway
+     could not be reached, is withdrawn, so that the return never comes before it; and a return not sent by the time
+     the server stops reporting again is withdrawn for the new alert. **Administration › Notifications** shows each
+     withdrawn message suppressed, and why. A server stopped on purpose, or removed from System health, is gone rather
+     than back: its alert clears without a word.
+   - A server of several that stays silent stays on System health, and its alert is told again every day, saying since
+     when it has not reported, and after a day how to stop it if the server was retired: whoever manages the server
+     (`admin.system.manage`) removes it with **Remove** on its card in System health, once it was retired, renamed, or
+     set up again elsewhere. Removing it acknowledges its alert in their name, so nobody further is paged, and is in the
+     audit trail (`system.server_removed`). A server that reports cannot be removed: stopped on purpose, it removes
+     itself. One removed that reports again is shown again.
    - The alerts are kept in the database: a restart pages nobody again. Each escalation and acknowledgement is in the
      audit trail (`alerts.escalated`, `alerts.acknowledged`).
 
@@ -1216,6 +1245,12 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
      under a new name (nothing is dropped). Only then does it put the documents back and install the backup's
      encryption key. If a step fails, the previous database is put back and HC360 starts again on it. On new hardware,
      later backups open with the key entered here; make a new key if that one should be retired.
+
+     A backup holds no server's part of System health, the heartbeat of the machines that made it: each server here
+     writes its own as it starts, so System health shows the servers that run here, not the old ones. A backup made
+     before HC360 left those out holds them: the script clears them after restoring the database, and names them
+     ("Cleared the rows of the servers the backup knew …"). If it cannot, it says so and goes on; remove any old
+     server that shows as not reporting with **Remove** on its card in System health.
   3. Workstations see a new server certificate. If the hospital CA was exported from the old server and kept (section
      9, step 3), install it with step 1's installer run: `.\Install-HC360Server.ps1 -HospitalCaFile <the .pfx>`, before
      the restore. Workstations then trust the new server as they trusted the old one, and find it on the network.
@@ -1509,7 +1544,8 @@ the **job lease**, so exactly one runs them at a time and another takes over if 
 | Which node runs the background jobs | The database: the node holding the job lease, a PostgreSQL advisory lock on a connection of its own (below) |
 | Permissions, sessions and settings held in memory for speed | Each node, for a moment. A change on one node expires them on every node at once, through PostgreSQL's LISTEN/NOTIFY on the database they share. A node that stops hearing the others reads them from the database every time until it hears them again |
 | Analyser and modality worklist status (Lab setup › Analysers, Administration › Integrations and its tests) | The database: each node writes its part, the job node's network analysers and worklist server and the relays and heartbeats of the lab agents on the API nodes they reach, within seconds of a change and every minute, and every node shows them together. The worklist's test on an API node (or a node standing by for the job lease) reports what the job node says of its worklist server, or that the job node is not reporting: only the job node can send the worklist server its test echo |
-| System health (Administration › System health, and its summary on the home screen) | The database: each node writes what it reports of its own machine (the computer, its network, data drive, certificate and power, and the warnings about them) every minute, and System health on any node shows every node, the job node first, with when each last reported. A node that has not reported for three minutes is shown as such, and a warning says so: critically for the job node, since nothing makes the backups, sends messages or listens for analysers and modalities while it is away. A node is known by an id kept in its own data folder (`config\server-node-id.txt`) for its machine, so one that starts again, after a power cut too, takes its own place again, and a machine cloned from a node's is a node of its own; another warning says when more than one node runs the background jobs. With the job lease, each node that may run the jobs is shown as holding it or standing by, read from the database's lock at the moment the page is built. The database, backups, messages, integrations and keys are the hospital's, and shown once |
+| System health (Administration › System health, and its summary on the home screen) | The database: each node writes what it reports of its own machine (the computer, its network, data drive, certificate and power, and the warnings about them) every minute, and System health on any node shows every node, the job node first, with when each last reported. A node that has not reported for three minutes is shown as such, and a warning says so, critically, so that IT's phone is told: for the job node, since nothing makes the backups, sends messages or listens for analysers and modalities while it is away, and for a node that takes requests, whose warning says which servers take them meanwhile, or that none does and workstations cannot reach HC360. A node that only stands by for the jobs is a plain warning. A node stopped on purpose removes itself, and pages nobody. A node that stopped without saying so stays, and its alert is told every day, until it reports again or someone who manages the server removes it (**Remove** on its card), once it was retired, renamed, or set up again elsewhere; it no longer drops off after a day. Once a node that paged IT reports again, everyone the alert reached is told so, with when it was not reporting and when it was again (section 4, "Alerts that reach someone"). A node is known by an id kept in its own data folder (`config\server-node-id.txt`) for its machine, so one that starts again, after a power cut too, takes its own place again; one set up again on the same machine in the same data folder, which makes a new id, removes its old place as it starts; and a machine cloned from a node's is a node of its own; another warning says when more than one node runs the background jobs. With the job lease, each node that may run the jobs is shown as holding it or standing by, read from the database's lock at the moment the page is built. The database, backups, messages, integrations and keys are the hospital's, and shown once |
+| The network links (cables and WiFi) | Each node watches its own (DED-06), whatever its role and whether or not it holds the job lease: its card in System health shows them, and its alerts name it, in the SMS ("HC360 server alert (HC360-API2): …"), the in-app notification's title and the audit entry. The cable its requests come in on, lost, is critical, and the alert says the reverse proxy sends requests to the other servers until it is back. A node whose only cable is out cannot reach the database to say so: System health shows it as not reporting, critically, so IT's phone is told within about eight minutes (three to count as silent, and System health's alerts run every five). Once it is back, its own SMS says when the cable was lost and when it was back, and within five minutes System health's alerts tell everyone they paged that it reports again. Each node's WiFi history in System health is its own |
 | Backups | One folder every node names in `HealthCare360:Backup:Directory` (a second share, such as `\\hc360-files\hc360-backups`). The job node makes the scheduled ones; **Back up now** runs on the API node that answers it, so it must write to the same folder, and every API node needs PostgreSQL's client tools (`pg_dump`, `Backup:PgDumpPath`) as the job node does |
 | The settings file, the TLS certificate, logs, temporary files | Each node's own data folder |
 
@@ -1623,7 +1659,11 @@ the **job lease**, so exactly one runs them at a time and another takes over if 
 6. Point the workstations at the proxy: HC360 Desktop › Change server…, with the proxy's name, and compare the hospital
    CA fingerprint as at first set-up (section 5). Point `portal.baseUrl` at the proxy's portal address.
 7. Check: `/health/ready` on each node answers 200; Administration › System health shows every node, the job node first, and no warning; a bed changed on a
-   workstation appears on the bed board of another (connected, through the proxy, to another node).
+   workstation appears on the bed board of another (connected, through the proxy, to another node). Then pull one API
+   node's network cable for five minutes: within about eight minutes System health shows it as not reporting,
+   critically, and the on-call phone gets the alert. Within five minutes of the cable going back in, the phone gets that
+   it is reporting again, saying when it was not reporting and when it was again (and the node's own SMS of its cable).
+   Stopping an API node's `HC360Server` service instead removes it from System health, and pages nobody.
 
 **Running several nodes.**
 - Exactly one node runs the jobs at a time. Either give one node `"Role": "worker"` (or `all`) and every other
@@ -1647,6 +1687,9 @@ the **job lease**, so exactly one runs them at a time and another takes over if 
   signed with it at once.
 - **Restoring** a backup (section 8): stop every node, restore on the job node from the shared backup folder (its
   settings name the shared folder, so the documents and keys go there), then start the job node and the API nodes.
+  System health shows each node as it starts: the backup holds none of the nodes it was made with (on new hardware,
+  the old ones would show as nodes that stopped reporting), and `Restore-HC360.ps1` clears, and names, those an older
+  backup holds. Check that every node shows: one that does not start is not shown.
 - **Request limits.** The limits on sign-in and one-time codes per address (10 sign-in attempts a minute, 5 code requests
   in 15 minutes) are counted for the whole hospital, in the database, whichever node answers. The others (public pages
   and QR codes, partners' calls, devices, HC360 Desktop's update, and every request per user) are counted for the whole
@@ -1732,7 +1775,8 @@ they keep the audit trail for a period (8 years at the least), after it exports 
 | "Cannot reach the HealthCare360 server" on workstations | Server switched on? Its network cable in and its switch on, or its WiFi connected? System health on the server; client isolation on the AP. A workstation on a cable that is in says the server or the hospital network may be down: from it, `Test-NetConnection HC360-SRV -Port 7360`. After three tries the details line says HC360 is looking for the server at its other addresses; if the server's address changed and HC360 does not find it, use Change server… |
 | "HC360 now connects to the server at …" (tray) | The server stopped answering at its usual address, and answered at this one. Usually its IP address changed: give the server a fixed address or a DHCP reservation. The desktop log (`%LocalAppData%\HyFib\HC360Desktop\logs`) has both addresses |
 | Slow screens on one ward | Administration › Devices shows each workstation's WiFi signal (a workstation on a cable shows —); Administration › System health shows the server's link: on a cable, its speed (1 Gbps), else its WiFi signal. On a cabled ward, the ward's switch and its uplink |
-| "Cable disconnected" (System health), or the on-call phone says the server lost its network cable | Is the server's cable in at both ends, and its switch on (on the UPS)? The port's lights show a link. If it comes back and drops again (**Last cable drop**), change the cable, then the switch port, then turn off Energy-Efficient Ethernet in the card's Advanced settings (section 1, Network checklist) |
+| "Cable disconnected" (System health), or the on-call phone says the server lost its network cable | Which cable: the alert and System health name it, with the address it had. Is it in at both ends, and its switch on (on the UPS)? The port's lights show a link. If it comes back and drops again (**Last cable drop**), change the cable, then the switch port, then turn off Energy-Efficient Ethernet in the card's Advanced settings (section 1, Network checklist) |
+| The on-call phone says the server's network cable is connected again, with no SMS of its loss before | The server reaches the SMS gateway over that cable alone, so the loss could not go while it was out: it was withdrawn (**Administration › Notifications** shows it suppressed), and the return says when the cable was lost and when it was back. If it happens again, see the row above |
 | Desktop setup finds no server | Multicast blocked. Type the server name (`HC360-SRV`) or use `-ServerUrl` |
 | At busy times staff on some workstations are told to wait before signing in again | Do those workstations reach the server over internet (global) IPv6 addresses from another subnet than the server's? Sign-in limits count such an address by its /64, which the whole subnet shares. List the hospital's IPv6 networks in `HealthCare360:Network:LocalNetworks` in `hc360.settings.json` (for example `[ "2001:db8:12::/48" ]`) and restart the `HC360Server` service: addresses there count one by one, as on the server's own subnet |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
@@ -1761,7 +1805,7 @@ they keep the audit trail for a period (8 years at the least), after it exports 
 | "HC360 certificate probe, …: No TLS connection" (Application event log, Error) | The server's own daily probe could not reach the staff address: HC360 was down when it ran, or does not listen on that port. Check the service and System health; the probe runs again the next day, or run the task now |
 | "HC360 certificate probe, …: The hospital CA was switched …" (Application event log, Error) | The server's own daily probe still checks for the CA the switch replaced. Give it the new fingerprint as step 4 of the day you switch says ([CA-ROLLOVER.md](CA-ROLLOVER.md#the-day-you-switch)), or run `Install-HC360Server.ps1` again: each install or upgrade gives it the server's CA |
 | "The audit trail failed its check on …" (System health, critical) | A check of the audit chain, asked for under Administration › Audit log or made by the server once a day, found an entry changed, moved or removed in the database. Keep the database and its backups as they are, note the position the message names, and contact HyFib support. The warning clears when a later check passes |
-| "System health: critical" notifications, or an SMS from HC360 to the IT on-call number | A critical System health warning appeared; the notification says which. Open Administration › System health for what to do. Each is told again every day until it is fixed, and at once if it clears and comes back |
+| "System health: critical" notifications, or an SMS from HC360 to the IT on-call number | A critical System health warning appeared; the notification says which. Open Administration › System health for what to do. Each is told again every day until it is fixed, and at once if it clears and comes back. "System health: server reporting again" ends the alert of a server of several that had stopped reporting |
 | A report e-mail arrives without its PDF | The notification log notes "Sent without the document" and why. The PDF was tried three times first |
 | WhatsApp refuses the report message (error 132012) | The WhatsApp template has no document header but "Document header" is ticked in HC360, or the other way round. Make them match |
 | A modality cannot read the worklist | Administration › Integrations › Modality worklist: is it listening, and what is the last error? The modality's AE title and IP address must match its entry exactly, and the firewall rule must list its address. Refusals are logged once per ten minutes per network, so wait or look at the refused count |
@@ -1785,7 +1829,8 @@ they keep the audit trail for a period (8 years at the least), after it exports 
 | "No server holds the job lease at this moment: … stand by" (System health, with several nodes) | One of them takes the jobs over within a minute. If it lasts, the nodes standing by cannot reach PostgreSQL itself (through PgBouncer in transaction pooling, set `ConnectionStrings:Signals` to PostgreSQL), or PostgreSQL is older than 14 (it has no `idle_session_timeout`); their log says why |
 | "… hold the job lease, which only one server can" (System health, critical) | Should never happen: restart the `HC360Server` service on each of them but one, and send their logs to HyFib support |
 | "This server may no longer hold the job lease …" (a node's log, critical), and the service stopped | It lost the database for a moment, or hung: it stopped its jobs before another node could take them over, and stopped. Windows starts it again within a minute, and it stands by |
-| "… has not reported for more than three minutes" or "No server that runs the background jobs is reporting" (System health, with several nodes) | Is that node on, and its `HC360Server` service running? Its log says why it cannot reach the database, if it cannot. A node stopped on purpose removes itself from System health; one that lost its power is shown as not reporting until it is back, or for a day. A node set up again with a new data folder, or renamed, is a new node: the old one is shown as not reporting for that day |
+| "… has not reported since …" or "No server that runs the background jobs is reporting" (System health, with several nodes) | Is that node on, and its `HC360Server` service running, and its network cable in? Its log says why it cannot reach the database, if it cannot; a node whose cable was out says so itself once it is back, in an SMS with when the cable was lost and when it was back, and System health's alerts tell everyone they paged that it reports again. A node stopped on purpose removes itself from System health; one that lost its power is shown as not reporting, and told every day, until it is back. A node set up again on the same machine in the same data folder takes its old place; one renamed, retired, or set up in another folder or on another machine is a new node: remove the old one with **Remove** on its card in System health (`admin.system.manage`), which acknowledges its alert. A restore on new hardware shows none of the old nodes: the backup holds none, and `Restore-HC360.ps1` clears those an older backup holds |
+| The on-call phone says a server is reporting again, with no SMS before that it had stopped (with several nodes) | The alert that it had stopped had not gone yet, waiting to be tried again because the SMS gateway could not be reached: it was withdrawn, so that the two could not arrive the wrong way round, and the return says when the server was not reporting and when it was again. **Administration › Notifications** shows it suppressed, and why. If SMS fail often, see "Critical warnings do not reach IT on-call by phone" above |
 | "… both run the background jobs, and only one server should" (System health, with several nodes) | A node meant as an API node runs as `all`: its `hc360.settings.json` misses `"Role": "api"` (section 10, step 3). Add it and restart its `HC360Server` service. Until then each of them makes the nightly backup and listens for analysers and modalities |
 | A node's log: "Not listening for cache signals from the other servers" | It cannot hear the other nodes' changes, so it reads permissions, sessions and settings from the database every time (slower, still correct). Is PostgreSQL reachable? Behind PgBouncer in transaction pooling, set `ConnectionStrings:Signals` to PostgreSQL itself (section 10) |
 | A screen misses updates made on another workstation | With several nodes: is Redis up? `/health/ready` says *Degraded* when a node cannot reach it, and the node's log says that until it is back no screen gets real-time updates, whichever node it is connected to; everything else works. Once Redis is back, each node tells the screens connected to it, and the other nodes theirs, to catch up: within seconds each subscribes again to what it opened meanwhile and refetches what it shows, by itself (the node's log says how many it told); a screen that lost its own connection reconnects and refetches as always |

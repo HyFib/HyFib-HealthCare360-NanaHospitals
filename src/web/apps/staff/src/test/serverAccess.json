@@ -1780,6 +1780,7 @@
   "writes": [
     "DELETE /api/v1/admin/print-templates/{key}/facility admin.print.manage",
     "DELETE /api/v1/admin/roles/{id:guid} admin.roles.manage",
+    "DELETE /api/v1/admin/system/servers/{node} admin.system.read,admin.system.manage",
     "DELETE /api/v1/analytics/dashboards/{id:guid} analytics.dashboards.manage",
     "DELETE /api/v1/analytics/kpi-targets/{key} analytics.kpi_targets.manage",
     "DELETE /api/v1/analytics/schedules/{id:guid} analytics.schedules.manage",

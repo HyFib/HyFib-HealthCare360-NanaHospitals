@@ -309,6 +309,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<SimulatorRecordSweep>();
         services.AddScoped<AlertDrills>();
         services.AddScoped<AlertIncidents>();
+        services.AddScoped<ServerRemoval>();
 
         // Access is given by two people: the decision, its approval actions, and whether the hospital has had two.
         services.AddSingleton<GrantLatch>();
@@ -348,6 +349,9 @@ public static class PlatformServiceCollectionExtensions
         // With several servers, each one's own part of System health, for the API node that answers (SCAL-01).
         services.AddSingleton<ServerNodeBoard>();
         services.AddHostedService<ServerNodeSharing>();
+
+        // Every server watches its own network links (DED-06), whatever its role, and alerts under its own name.
+        services.AddHostedService<WifiMonitor>();
         services.AddSingleton<IClusterStore, ClusterStore>();
         services.AddScoped<PartitionMaintenance>();
         services.AddMonthlyPartitions(PartitionedTables.Audit);
@@ -359,6 +363,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<RecoveryKeyService>();
         services.TryAddSingleton<IPostgresTools, PostgresTools>();
         services.AddSingleton<WifiLinkState>();
+        services.AddSingleton<ServedAddresses>();
 
         // HC360 Desktop's self-update (SRS DED-18): packages are checked against the release keys built in.
         services.TryAddSingleton(ReleaseTrust.BuiltIn);
@@ -420,7 +425,6 @@ public static class PlatformServiceCollectionExtensions
             services.AddHostedService<PartitionMaintenanceJob>();
             services.AddHostedService<AuditEntityIndexJob>();
             services.AddHostedService<ClusterStoreCleanup>();
-            services.AddHostedService<WifiMonitor>();
             services.AddHostedService<FieldKeyMoverService>();
 
             services.AddQuartz(quartz =>
@@ -464,6 +468,9 @@ public static class PlatformServiceCollectionExtensions
     /// </summary>
     public static WebApplication UseHospitalPlatform(this WebApplication app)
     {
+        // Which of the server's addresses each request arrived on, so the link monitor knows the cable the workstations use
+        // on a server with two network cards (DED-06).
+        app.UseMiddleware<ServedAddressesMiddleware>();
         // The correlation id first, so the exception handler's log entries carry it (OBS-04).
         app.UseCorrelationId();
         app.UseExceptionHandler();
