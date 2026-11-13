@@ -118,7 +118,7 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | `integrations.whatsapp` | `enabled`, `provider` (`meta` \| `simulator`), `graphBaseUrl`, `apiVersion` (`v21.0`), `phoneNumberId`, `businessAccountId`, `languageCodes { "en": "en_US" }`, `parameters` (`text` \| `positional` \| `named`; `text`: how the templates are registered, see [Template parameters](#template-parameters)), `maxDocumentMegabytes` (20), `testTemplateName` (`hello_world`), `testTemplateLanguage` | `accessToken`, `appSecret`, `verifyToken` |
 | `integrations.email` | `enabled`, `provider` (`smtp` \| `simulator`), `host`, `port` (587), `useStartTls` (true), `fromAddress`, `fromName`, `userName`, `timeoutSeconds` (20), `maxAttachmentMegabytes` (15) | `userName`, `password` |
 | `integrations.payment` | `enabled`, `provider` (`razorpay` \| `cashfree` \| `simulator`: the gateway new payments go through), `baseUrl`, `keyId` (Razorpay), `cashfreeBaseUrl` (`https://api.cashfree.com/pg`; `https://sandbox.cashfree.com/pg` for its test mode), `cashfreeClientId`, `paymentLinkCallbackUrl` (`https://<portal address>/portal/payment-return`), `notifyByRazorpay` (false; Razorpay's and Cashfree's own SMS/e-mail), `paymentLinkExpiryHours` (72), `simulatorSettlementDays` (1; 0 to 7) | `keySecret`, `webhookSecret`, `simulatorSecret`; Cashfree's `clientSecret` in its own row, `integrations.payment.cashfree.secret`, so replacing one gateway's credentials never wipes the other's |
-| `integrations.pos` | `enabled`, `provider` (`pinelabs` \| `simulator`), `baseUrl`, `uploadPath`, `statusPath`, `cancelPath`, `merchantId`, `userId`, `autoCancelMinutes` (5), `terminals[] { id, name, imei, storePosCode }`, `paymentModes { all, card, upi }`, `pendingResponseCodes` ([1001]), `simulatorApproveAfterSeconds` (8) | `securityToken` |
+| `integrations.pos` | `enabled`, `provider` (`pinelabs` \| `simulator`), `baseUrl`, `uploadPath`, `statusPath`, `cancelPath`, `merchantId`, `userId`, `autoCancelMinutes` (5, at most 30), `terminals[] { id, name, imei, storePosCode }`, `paymentModes { all, card, upi }`, `pendingResponseCodes` ([1001]), `simulatorApproveAfterSeconds` (8) | `securityToken` |
 | `integrations.tally` | `enabled`, `provider` (`tally` \| `simulator`), `url` (`http://localhost:9000`), `companyName`, `ledgerMap { hc360 → tally }`, `costCategory`, `batchSize` (50) | none (Tally's XML port has no authentication) |
 | `integrations.pacs` | `enabled`, `provider` (`dicomweb` \| `simulator`), `qidoUrl` (the DICOMweb root), `wadoUrl` (WADO-RS root when it differs; empty means `qidoUrl`), `stowUrl` (STOW-RS root when it differs; empty means `qidoUrl`), `authType` (`none` \| `basic` \| `bearer`), `userName`, `viewerUrlTemplate` (`{studyUid}`, `{accession}`), `limit` (50, at most 500 studies per search), `timeZone` (`Asia/Kolkata`, for study times sent without an offset) | `password`, `bearerToken` |
 | `integrations.mwl` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `port` (11112), `aeTitle` (`HC360MWL`), `characterSet` (`ISO_IR 100`; `ISO_IR 192` or empty), `maxAssociations` (10, 1–64), `idleTimeoutSeconds` (60, 10–3600), `daysBack` (3, 0–30), `daysAhead` (1, 0–30), `maxResults` (500, 1–1000), `modalities[] { aeTitle, name, allowedIps[], facility, modalities[], enabled }` | none |
@@ -470,6 +470,14 @@ Pine Labs Plutus Cloud-style push-to-terminal:
 * **Upload**: the billed transaction goes to the terminal. The body carries the security token and is never logged.
 * **Poll**: status codes are mapped, and `pendingResponseCodes` means the customer is still paying.
 * **Cancel**: cancels the transaction with its original amount.
+* **Approved, not recorded**: when the bill or admission refuses an approved sale's receipt (an advance for a stay whose
+  account closed meanwhile, say), Billing keeps the reason on the sale, the counter warns not to take the money again,
+  and a `UnrecordedPayment` exception keyed on the transaction id alerts the accountants, as for an online payment.
+  A receipt recorded later clears it.
+
+A status code that is neither 0 nor in `pendingResponseCodes` ends the sale (declined, or cancelled or timed out when the
+message says so). Pine Labs' codes are therefore checked in UAT before going live (DEPLOYMENT.md, "Card and UPI
+terminals (Pine Labs)"): a waiting sale reported with another code would otherwise end while the customer can still pay.
 
 Transaction ids encode what status and cancel need (`OPD-1:987654:125075`, meaning terminal, provider reference and
 paise), so no extra table is required. A sale that never reached a terminal gets a unique `declined-…` id. A lost
