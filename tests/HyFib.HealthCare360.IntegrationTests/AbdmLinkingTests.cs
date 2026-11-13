@@ -9,6 +9,7 @@ using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Features;
+using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.EntityFrameworkCore;
@@ -21,7 +22,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// records officer links a signed consultation to the patient's ABHA address; the server starts a gateway session, asks
 /// for a link token, and sends the care contexts when the gateway's signed <c>on-generate-token</c> brings it; the
 /// gateway's <c>on_carecontext</c> marks them linked. A second request reuses the kept token, a refused link drops it,
-/// a callback the gateway did not sign is refused, and a token for another ABHA address is ignored. The ABDM switch is hospital-wide, so these tests are in the
+/// a callback the gateway did not sign is refused, and a token for another ABHA address is ignored. Each call and callback
+/// is a row of the integration log, the two sides of an exchange under the call's REQUEST-ID. The ABDM switch is hospital-wide, so these tests are in the
 /// feature-switch collection and turn it off again, and remove the gateway set-up, in a <c>finally</c> block.
 /// </summary>
 [Collection(FeatureSwitchCollection.Name)]
@@ -47,6 +49,7 @@ public sealed class AbdmLinkingTests(HospitalServer server)
         var consultation = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: true);
         var later = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: true);
         var draft = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: false);
+        var started = DateTimeOffset.UtcNow;
 
         try
         {
@@ -117,6 +120,24 @@ public sealed class AbdmLinkingTests(HospitalServer server)
             using (var answered = await CallBackAsync(gatewayCaller, AbdmGatewayCallbackEndpoints.OnGenerateTokenPath, onToken, Gateway.Token()))
             {
                 answered.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+            }
+
+            // Both sides of the exchange are in the integration log under the call's REQUEST-ID, and the refused callbacks
+            // too; none of them holds the token, the ABHA address or number, or the patient's name.
+            var exchange = await LogRowsAsync(tokenCall.Header("REQUEST-ID"));
+            exchange.ShouldContain(l => l.Direction == IntegrationDirection.Outbound && l.Operation == TokenPath && l.Success && l.Response == "HTTP 202");
+            exchange.ShouldContain(l => l.Direction == IntegrationDirection.Inbound && l.Operation == AbdmGatewayCallbackEndpoints.OnGenerateTokenPath
+                && l.Success && l.Response == "HTTP 202");
+            exchange.ShouldAllBe(l => l.Integration == "abdm" && l.Provider == "abdm-sandbox");
+            var refusedCallbacks = await LogRowsSinceAsync(started, AbdmGatewayCallbackEndpoints.OnGenerateTokenPath);
+            refusedCallbacks.Count(l => !l.Success && l.Response == "HTTP 401").ShouldBeGreaterThanOrEqualTo(2);
+            foreach (var row in exchange.Concat(refusedCallbacks))
+            {
+                var text = $"{row.Reference}|{row.Request}|{row.Response}|{row.Error}";
+                text.ShouldNotContain(linkToken);
+                text.ShouldNotContain(address);
+                text.ShouldNotContain(registration.AbhaNumber!);
+                text.ShouldNotContain(registration.LastName!);
             }
 
             var linkCall = CareContextCallsWith(linkToken).ShouldHaveSingleItem();
@@ -269,6 +290,24 @@ public sealed class AbdmLinkingTests(HospitalServer server)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         (await admin.SetFeatureAsync(FeatureKeys.Abdm, new SetFeatureRequest(enabled))).Enabled.ShouldBe(enabled);
+    }
+
+    /// <summary>The integration log's ABDM rows under <paramref name="reference"/>, oldest first.</summary>
+    internal async Task<List<IntegrationLog>> LogRowsAsync(string reference)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<IntegrationLog>().AsNoTracking()
+            .Where(l => l.Integration == "abdm" && l.Reference == reference)
+            .OrderBy(l => l.CreatedAt)
+            .ToListAsync(Ct);
+    }
+
+    private async Task<List<IntegrationLog>> LogRowsSinceAsync(DateTimeOffset since, string operation)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<IntegrationLog>().AsNoTracking()
+            .Where(l => l.Integration == "abdm" && l.Operation == operation && l.CreatedAt >= since)
+            .ToListAsync(Ct);
     }
 
     private async Task<AuditEvent?> AuditAsync(Guid patientId, string action)
