@@ -107,6 +107,27 @@ public interface IEInvoiceSource
 public sealed record EInvoiceStamp(string Irn, string AckNo, DateTimeOffset AckDate, string SignedQrCode, string QrCodeSvg);
 
 /// <summary>
+/// Why a document that is due an IRN (GST rule 48(4)) has no live one, in the register's terms: <see cref="Pending"/>
+/// until its IRN is asked of the portal or recorded; <see cref="IrnCancelled"/> once its IRN was cancelled on the portal,
+/// which never registers the same document number again, so the document is cancelled here and issued again.
+/// </summary>
+public enum MissingIrn
+{
+    Pending,
+    IrnCancelled,
+}
+
+/// <summary>
+/// What a document's print says of its e-invoice: the live IRN with its signed QR code (<paramref name="Stamp"/>); or, for a
+/// document due an IRN that has none, why (<paramref name="Missing"/>), so the print says it is not a valid invoice for the
+/// buyer (GST rule 48(5)); or neither, for a document that is not an e-invoice.
+/// </summary>
+public sealed record EInvoicePrint(EInvoiceStamp? Stamp, MissingIrn? Missing)
+{
+    public static EInvoicePrint None { get; } = new(null, null);
+}
+
+/// <summary>
 /// The e-invoice register (kept by Billing), for the modules whose invoices it holds: the IRN to print, and whether one is
 /// live, so the invoice is not cancelled here while the portal still holds it.
 /// </summary>
@@ -114,6 +135,14 @@ public interface IEInvoiceRegister
 {
     /// <summary>The live (not cancelled) IRN of the invoice, if it has one.</summary>
     Task<EInvoiceStamp?> FindAsync(string source, Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// What the document's print says of its e-invoice, as the register sees it now: its live IRN; or, when it is due an
+    /// IRN and has none, why. Due is the register's own test: e-invoicing applies to the document's facility
+    /// (<c>gst.einvoice.from</c>) from its date or earlier, its <see cref="IEInvoiceSource"/> finds it a B2B e-invoice, and
+    /// it is not cancelled. A print asks when it is made, so the next one after the IRN is recorded carries the IRN.
+    /// </summary>
+    Task<EInvoicePrint> PrintAsync(string source, Guid id, CancellationToken cancellationToken);
 }
 
 /// <summary>Whether the facility is connected to the Invoice Registration Portal, through which provider, or why not.</summary>
