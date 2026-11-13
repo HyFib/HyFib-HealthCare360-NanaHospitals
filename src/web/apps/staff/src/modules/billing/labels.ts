@@ -248,16 +248,8 @@ export const PRICE_SOURCE_LABEL: Record<PriceSource, string> = {
   FreeFollowUp: 'Free follow-up',
 };
 
-export const POS_STATUSES = ['Initiated', 'AwaitingCustomer', 'Approved', 'Declined', 'Cancelled', 'TimedOut'] as const;
-export type PosTransactionStatus = (typeof POS_STATUSES)[number];
-export const POS_STATUS_LABEL: Record<PosTransactionStatus, string> = {
-  Initiated: 'Sent to the terminal',
-  AwaitingCustomer: 'Waiting for the patient to tap, insert or scan',
-  Approved: 'Approved',
-  Declined: 'Declined',
-  Cancelled: 'Cancelled',
-  TimedOut: 'Timed out',
-};
+// Moved next to the shared terminal status display; re-exported so existing imports keep working.
+export { POS_STATUSES, POS_STATUS_LABEL, type PosTransactionStatus } from '@/lib/terminal/labels';
 
 export const GATEWAY_ORDER_STATUSES = ['Created', 'Paid', 'Failed', 'Expired', 'Cancelled'] as const;
 export type GatewayOrderStatus = (typeof GATEWAY_ORDER_STATUSES)[number];
