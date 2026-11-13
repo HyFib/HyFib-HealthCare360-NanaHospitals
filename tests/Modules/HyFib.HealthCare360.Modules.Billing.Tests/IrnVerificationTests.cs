@@ -45,6 +45,11 @@ public sealed class IrnVerificationTests
             .ShouldBe("The portal's signed QR code for it is not this invoice's: The code's invoice number is NHOB260000124, the invoice's NHOB260000123.");
     }
 
+    [Fact]
+    public void An_answer_that_does_not_say_the_irn_is_active_does_not_confirm_it() =>
+        IrnVerification.Contradictions(Held() with { Status = null }, Irn, AckNo, Invoice(), Hospital)
+            .ShouldBe(["The portal's answer does not say whether it is active."]);
+
     /// <summary>The IRN's details as the portal gives them, its signed QR code naming <paramref name="document"/>.</summary>
     private static IrpIrn Held(EInvoiceDocument? document = null) =>
         new(Irn, AckNo, DateTimeOffset.UtcNow, "signed.invoice.jwt", Qr(document ?? Invoice()), Status: IrpIrn.ActiveStatus);

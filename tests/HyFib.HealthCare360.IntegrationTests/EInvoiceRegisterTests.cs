@@ -223,6 +223,23 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         var late = (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{third.Id}")).Registration!;
         late.CanCancel.ShouldBeFalse();
         (await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{third.Id}/irn/cancel", Cancel(late.Version))).State.ShouldBe(EInvoiceState.IrnCancelled);
+
+        // After the 24 hours, a portal that does not say how it holds the IRN leaves it unknown whether it was cancelled in
+        // time: staff are not told to issue a credit note outright, but to look on the portal first. Holding it as active,
+        // the portal cancels it no more, and a credit note undoes the invoice.
+        var fourth = await BillAsync(company, service);
+        live = (await billing.IrnFromThePortalAsync("bill", fourth.Id, Ct)).Registration!;
+        await server.BackdateIrnAsync(live.Irn, TimeSpan.FromHours(25), Ct);
+        late = (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{fourth.Id}")).Registration!;
+        await using (await server.IrpPortalAsync(enabled: true, provider: "nic"))
+        {
+            using var unsaid = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{fourth.Id}/irn/cancel", Cancel(late.Version));
+            (await ProblemCodeAsync(unsaid)).ShouldBe("einvoice.irp_cancel_unknown");
+            (await unsaid.Content.ReadAsStringAsync(Ct)).ShouldContain("Check the IRN on the portal: while it is active there, issue a credit note");
+        }
+
+        using var active = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{fourth.Id}/irn/cancel", Cancel(late.Version));
+        (await ProblemCodeAsync(active)).ShouldBe("einvoice.cancel_window");
     }
 
     [Fact]
@@ -287,6 +304,15 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
             using var down = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{unknown.Id}/irn",
                 new RecordIrnRequest("112610012345678", Qr(unknown.BillNumber!, unknown.NetAmount, KeralaCompany, madeUp, lines)));
             (await ProblemCodeAsync(down)).ShouldBe("einvoice.irp_unreachable");
+        }
+
+        // Switched on, a connection without its credentials cannot ask the portal: the IRN is not taken unchecked.
+        await using (await server.IrpPortalAsync(enabled: true, provider: "nic"))
+        {
+            using var unusable = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{unknown.Id}/irn",
+                new RecordIrnRequest("112610012345678", Qr(unknown.BillNumber!, unknown.NetAmount, KeralaCompany, madeUp, lines)));
+            (await ProblemCodeAsync(unusable)).ShouldBe("einvoice.irp_not_connected");
+            (await unusable.Content.ReadAsStringAsync(Ct)).ShouldContain("nothing was recorded");
         }
 
         (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{unknown.Id}")).State.ShouldBe(EInvoiceState.Pending);

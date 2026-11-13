@@ -137,8 +137,8 @@ public sealed record IrpConnection(bool Connected, string? Provider, bool IsSimu
 /// The IRN the portal gave a document (NIC e-invoice API v1.03, <c>Invoice</c> and <c>Invoice/irn</c>): the acknowledgement,
 /// the signed invoice and the signed QR code (both JWTs signed by the portal), and the e-way bill generated with it, if any.
 /// <paramref name="Status"/> is how the portal holds the IRN now, as its IRN details say it: <see cref="ActiveStatus"/> or
-/// <see cref="CancelledStatus"/>; null when the answer did not say. <paramref name="CancelledAt"/>: when the portal cancelled
-/// it, where its answer gives the time. The details of a cancelled IRN may come without the acknowledgement or the QR code:
+/// <see cref="CancelledStatus"/>; null when the answer did not say, which confirms neither. <paramref name="CancelledAt"/>:
+/// when the portal cancelled it, where its answer gives the time. The details of a cancelled IRN may come without the acknowledgement or the QR code:
 /// then they are empty.
 /// </summary>
 public sealed record IrpIrn(
@@ -158,6 +158,9 @@ public sealed record IrpIrn(
 
     /// <summary>The portal's status of a cancelled IRN.</summary>
     public const string CancelledStatus = "CNL";
+
+    /// <summary>The portal holds the IRN as active: its answer says so.</summary>
+    public bool IsActive => string.Equals(Status, ActiveStatus, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The portal holds the IRN as cancelled.</summary>
     public bool IsCancelled => string.Equals(Status, CancelledStatus, StringComparison.OrdinalIgnoreCase);

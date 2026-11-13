@@ -150,11 +150,17 @@ public enum IrnCancelOutcome
     /// <summary>The portal did not answer the cancellation and holds the IRN as active: nothing was cancelled, and it is asked again.</summary>
     NotCancelled,
 
-    /// <summary>The portal answered neither the cancellation nor how it holds the IRN: whether it was cancelled is not known.</summary>
+    /// <summary>The portal did not answer the cancellation, nor say how it holds the IRN: whether it was cancelled is not known.</summary>
     Unknown,
 
-    /// <summary>The portal refused it as past the 24 hours, and does not hold the IRN as cancelled: a credit note undoes the invoice.</summary>
+    /// <summary>The portal refused it as past the 24 hours, and holds the IRN as active: a credit note undoes the invoice.</summary>
     WindowCrossed,
+
+    /// <summary>
+    /// The portal refused it as past the 24 hours, and did not say how it holds the IRN (it refused that too, or its answer
+    /// gave no status): whether it cancelled the IRN in time is not known, and asking again may not tell.
+    /// </summary>
+    WindowCrossedUnconfirmed,
 
     /// <summary>The portal refused it for another reason, and does not hold the IRN as cancelled: its refusal stands.</summary>
     Refused,
@@ -167,13 +173,20 @@ public enum IrnCancelOutcome
 /// </summary>
 public static class IrnCancellations
 {
-    /// <summary>What <paramref name="failure"/> left, given the IRN's <paramref name="details"/> asked for afterwards.</summary>
-    public static IrnCancelOutcome After(IrpError failure, IrpResult<IrpIrn> details) =>
-        details.Value is { IsCancelled: true } ? IrnCancelOutcome.Cancelled
-        : failure.Code == IrpError.CancelWindowCrossed ? IrnCancelOutcome.WindowCrossed
-        : failure.Code != IrpError.Unreachable ? IrnCancelOutcome.Refused
-        : details.IsSuccess ? IrnCancelOutcome.NotCancelled
-        : IrnCancelOutcome.Unknown;
+    /// <summary>
+    /// What <paramref name="failure"/> left, given the IRN's <paramref name="details"/> asked for afterwards. Past the 24 hours
+    /// here the portal is not asked to cancel at all: <paramref name="failure"/> is then its 2270, known beforehand.
+    /// </summary>
+    public static IrnCancelOutcome After(IrpError failure, IrpResult<IrpIrn> details) => (failure.Code, details) switch
+    {
+        (_, { Value.IsCancelled: true }) => IrnCancelOutcome.Cancelled,
+        (IrpError.CancelWindowCrossed, { Value.IsActive: true }) => IrnCancelOutcome.WindowCrossed,
+        (IrpError.CancelWindowCrossed, { Error.Code: IrpError.Unreachable }) => IrnCancelOutcome.Unknown,
+        (IrpError.CancelWindowCrossed, _) => IrnCancelOutcome.WindowCrossedUnconfirmed,
+        (IrpError.Unreachable, { Value.IsActive: true }) => IrnCancelOutcome.NotCancelled,
+        (IrpError.Unreachable, _) => IrnCancelOutcome.Unknown,
+        _ => IrnCancelOutcome.Refused,
+    };
 }
 
 /// <summary>The supplier on an e-invoice: the facility, from its master.</summary>

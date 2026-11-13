@@ -258,8 +258,11 @@ public sealed class EInvoiceService(
         var noun = InvoiceRegistrationPayload.Noun(document);
         switch (held.Error)
         {
+            // Switched on, the connection could not be used (its credentials are incomplete): the IRN is not taken unchecked.
             case { Code: IrpError.NotConnected } unusable:
-                return ((IrpIrn?)null, $"the portal connection cannot be used ({unusable.Message}), so the portal was not asked");
+                return Error.Rule("einvoice.irp_not_connected",
+                    $"{unusable.Message} The IRN could not be checked with the portal, and nothing was recorded. Try again once the connection works; "
+                    + "until then, an administrator can switch it off (Administration → Integrations) to record IRNs by hand without the check.");
             case { Code: IrpError.Unreachable } unanswered:
                 return Error.Rule("einvoice.irp_unreachable",
                     $"{unanswered.Message} The IRN could not be checked with the portal, and nothing was recorded. Try again once the portal answers; "
@@ -573,39 +576,49 @@ public sealed class EInvoiceService(
     private async Task<Result> CancelOnPortalAsync(
         Guid facilityId, string gstin, EInvoice registration, CancelIrnRequest request, DateTimeOffset now, CancellationToken ct)
     {
-        if (!registration.CanCancel(now))
+        // Past the 24 hours the portal would only refuse it (2270), so it is asked how it holds the IRN alone.
+        var failure = new IrpError(IrpError.CancelWindowCrossed, "The portal cancels an IRN only within 24 hours of its generation.");
+        if (registration.CanCancel(now))
         {
-            var held = await portal.GetByIrnAsync(facilityId, gstin, registration.Irn, ct);
-            if (held.Value is { IsCancelled: true } cancelled)
+            var answer = await portal.CancelAsync(facilityId, gstin, registration.Irn, (int)request.Reason, request.Remark.Trim(), ct);
+            if (answer.IsSuccess)
             {
-                return registration.RecordPortalCancellation(request.Reason, request.Remark, cancelled.CancelledAt, now);
+                return registration.Cancel(request.Reason, request.Remark, now);
             }
 
-            return held.Error is { Code: IrpError.Unreachable } unanswered ? CancelUnknown(unanswered, registration.Irn) : EInvoice.CancelWindowCrossed();
+            failure = answer.Error!;
         }
 
-        var answer = await portal.CancelAsync(facilityId, gstin, registration.Irn, (int)request.Reason, request.Remark.Trim(), ct);
-        if (answer.IsSuccess)
-        {
-            return registration.Cancel(request.Reason, request.Remark, now);
-        }
-
-        var failure = answer.Error!;
         var details = await portal.GetByIrnAsync(facilityId, gstin, registration.Irn, ct);
         return IrnCancellations.After(failure, details) switch
         {
             IrnCancelOutcome.Cancelled => registration.RecordPortalCancellation(request.Reason, request.Remark, details.Value!.CancelledAt, now),
             IrnCancelOutcome.WindowCrossed => EInvoice.CancelWindowCrossed(),
+            IrnCancelOutcome.WindowCrossedUnconfirmed => CancelledInTimeUnknown(details, registration.Irn),
             IrnCancelOutcome.NotCancelled => Error.Rule("einvoice.irp_unreachable",
                 $"{failure.Message} The portal still holds IRN {registration.Irn} as active, so nothing was cancelled. Try again."),
-            IrnCancelOutcome.Unknown => CancelUnknown(failure, registration.Irn),
+            IrnCancelOutcome.Unknown => CancelUnknown(failure.Code == IrpError.Unreachable ? failure : details.Error!, registration.Irn),
             _ => PortalError(failure),
         };
     }
 
-    /// <summary>The portal answered neither the cancellation nor how it holds the IRN afterwards.</summary>
-    private static Error CancelUnknown(IrpError failure, string irn) => Error.Rule("einvoice.irp_cancel_unknown",
-        $"{failure.Message} Whether the portal cancelled IRN {irn} is not known: it could not be asked how it holds it either. "
+    /// <summary>
+    /// Past the 24 hours, the portal did not say how it holds the IRN (<paramref name="details"/>): it may have cancelled it in
+    /// time, its answer lost, and asking again may not tell, so staff look on the portal before undoing the invoice.
+    /// </summary>
+    private static Error CancelledInTimeUnknown(IrpResult<IrpIrn> details, string irn)
+    {
+        var unsaid = details.Error is { } error ? $"{error.Code}: {error.Message}"
+            : details.Value?.Status is { } status ? $"it holds it as {status}"
+            : "its answer gave no status";
+        return Error.Rule("einvoice.irp_cancel_unknown",
+            $"The portal cancels an IRN only within 24 hours of its generation, and did not say whether it cancelled IRN {irn} in time ({unsaid}). "
+            + "Check the IRN on the portal: while it is active there, issue a credit note against the invoice instead.");
+    }
+
+    /// <summary><paramref name="unanswered"/>: the call the portal did not answer, the cancellation or the question how it holds the IRN.</summary>
+    private static Error CancelUnknown(IrpError unanswered, string irn) => Error.Rule("einvoice.irp_cancel_unknown",
+        $"{unanswered.Message} Whether the portal cancelled IRN {irn} is not known: it did not say how it holds it. "
         + "Try again once the portal answers: HC360 then asks it first, and records the cancellation if it was made.");
 
     /// <summary>The live IRN of an invoice, if any.</summary>
